@@ -514,7 +514,19 @@ def register_q8ta_add():
 
 
 # =============================================================================
-# Reduce.cpp
+# Q8taUnary.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.q8ta_relu.default)
+def register_q8ta_relu():
+    return OpFeatures(
+        inputs_storage=utils.PACKED_INT8_BUFFER,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
 # =============================================================================
 
 
@@ -812,6 +824,57 @@ def register_q8ta_conv2d_ops():
         ],
         outputs_storage=[
             utils.PACKED_INT8_CHANNELS_PACKED_BUFFER,
+        ],
+        supports_resize=False,
+        supports_prepacking=True,
+    )
+
+
+# =============================================================================
+# Q8taLinear.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.q8ta_linear.default)
+def register_q8ta_linear():
+    return OpFeatures(
+        inputs_storage=[
+            utils.PACKED_INT8_4H4W_BUFFER,  # input
+            utils.NO_STORAGE,  # input_scale (non tensor)
+            utils.NO_STORAGE,  # input_zero_point (non tensor)
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # weight_sums (prepacked)
+            utils.NO_STORAGE,  # weight_scales (prepacked)
+            utils.NO_STORAGE,  # output_scale (non tensor)
+            utils.NO_STORAGE,  # output_zero_point (non tensor)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # activation (non tensor)
+        ],
+        outputs_storage=[
+            utils.PACKED_INT8_4H4W_BUFFER,
+        ],
+        supports_resize=False,
+        supports_prepacking=True,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.q8ta_linear_gemv.default)
+def register_q8ta_linear_gemv():
+    return OpFeatures(
+        inputs_storage=[
+            utils.PACKED_INT8_4W_BUFFER,  # input
+            utils.NO_STORAGE,  # input_scale (non tensor)
+            utils.NO_STORAGE,  # input_zero_point (non tensor)
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # weight_sums (prepacked)
+            utils.NO_STORAGE,  # weight_scales (prepacked)
+            utils.NO_STORAGE,  # output_scale (non tensor)
+            utils.NO_STORAGE,  # output_zero_point (non tensor)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # activation (non tensor)
+        ],
+        outputs_storage=[
+            utils.PACKED_INT8_4W_BUFFER,
         ],
         supports_resize=False,
         supports_prepacking=True,
@@ -1221,25 +1284,11 @@ def register_embedding():
 
 @update_features(exir_ops.edge.aten._native_batch_norm_legit_no_training.default)
 def register_native_batch_norm_legit_no_training():
-    def check_batch_norm_node(node: torch.fx.Node) -> bool:
-        x = node.args[0]
-        if not isinstance(x, torch.fx.Node):
-            return False
-        x_val = x.meta.get("val", None)
-        if x_val is None:
-            return False
-        x_shape = x_val.size()
-        # Only support 4-D input tensors since this is a restriction enforced by the
-        # operator implementation.
-        # TODO(ssjia): Add shape agnostic support for batch norm
-        return len(x_shape) == 4
-
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
         inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
         supports_resize=True,
-        are_node_inputs_supported_fn=check_batch_norm_node,
     )
 
 

@@ -8,28 +8,33 @@
 
 #pragma once
 
-#include <executorch/runtime/platform/assert.h>
+#include <cstddef>
+#include <cstdint>
 
 namespace executorch {
 namespace runtime {
 namespace etensor {
 
-/// Denotes the specific genre of compute device.
-/// Subset of https://github.com/pytorch/pytorch/blob/main/c10/core/Device.h
+/// Represents the type of compute device.
+/// Note: ExecuTorch Device is distinct from PyTorch Device.
 enum class DeviceType : int8_t {
   CPU = 0,
+  CUDA = 1,
 };
 
-/// An index representing a specific device; For cpu it should always be -1 or 0
+/// Total number of device types, used for fixed-size registry arrays.
+constexpr size_t kNumDeviceTypes = 2;
+
+/// An index representing a specific device; e.g. GPU 0 vs GPU 1.
+/// -1 means the default/unspecified device for that type.
 using DeviceIndex = int8_t;
 
 /**
  * An abstraction for the compute device on which a tensor is located.
- * ExecuTorch doesn't allow dynamic dispatching based on device, so this type is
- * just a skeleton to allow certain kernels that expect device as an
- * argument to still be run.
  *
- * In ExecuTorch this is always expected to be CPU.
+ * Tensors carry a Device to express where their underlying data resides
+ * (e.g. CPU host memory vs CUDA device memory). The runtime uses this to
+ * dispatch memory allocation to the appropriate device allocator.
  */
 struct Device final {
   using Type = DeviceType;
@@ -39,7 +44,7 @@ struct Device final {
   /* implicit */ Device(DeviceType type, DeviceIndex index = -1)
       : type_(type), index_(index) {}
 
-  /// Returns the type of device this is. Only CPU is supported.
+  /// Returns the type of device the tensor data resides on.
   DeviceType type() const noexcept {
     return type_;
   }
@@ -49,10 +54,17 @@ struct Device final {
     return type_ == DeviceType::CPU;
   }
 
-  /// Returns the device index. Always 0 if specified or -1 if not provided.
+  /// Returns the device index, or -1 if default/unspecified.
   DeviceIndex index() const noexcept {
-    ET_CHECK(index_ == 0 || index_ == -1);
     return index_;
+  }
+
+  bool operator==(const Device& other) const noexcept {
+    return type_ == other.type_ && index_ == other.index_;
+  }
+
+  bool operator!=(const Device& other) const noexcept {
+    return !(*this == other);
   }
 
  private:

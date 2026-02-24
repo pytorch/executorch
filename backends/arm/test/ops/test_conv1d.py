@@ -26,9 +26,10 @@ input_t = Tuple[torch.Tensor]
 
 
 class Conv1d(torch.nn.Module):
-    """
-    Creates one or many chained 1D-convolutions. For multiple convolutions, the
-    respective parameteres are provided as lists.
+    """Creates one or many chained 1D-convolutions.
+
+    For multiple convolutions, the respective parameters are provided as lists.
+
     """
 
     def __init__(

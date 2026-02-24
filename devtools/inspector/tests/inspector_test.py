@@ -796,14 +796,38 @@ class TestInspector(unittest.TestCase):
             self.assertEqual(df.iloc[1]["gap"][0], 1.0)
 
     def test_calculate_numeric_gap_with_custom_comparator_and_preprocessing(self):
-        """Test calculate_numeric_gap with a custom comparator that includes preprocessing."""
+        """Test calculate_numeric_gap with multiple custom comparators sharing the same preprocessing."""
         from executorch.devtools.inspector.numerical_comparator import (
             IntermediateOutputMapping,
             NumericalComparatorBase,
         )
+        from executorch.devtools.inspector.numerical_comparator.snr_numerical_comparator import (
+            SNRComparator,
+        )
 
-        # Create a custom comparator with preprocessing that scales runtime tensors by 2x
-        class ScalingComparator(NumericalComparatorBase):
+        # Shared preprocessing function that scales runtime tensors by 2x
+        def scale_runtime_tensors(
+            mapping: IntermediateOutputMapping, scale_factor: float = 2.0
+        ) -> IntermediateOutputMapping:
+            """Scale runtime tensors by scale_factor before comparison."""
+            transformed_mapping = {}
+            for (aot_handle, aot_output), (
+                runtime_handle,
+                runtime_output,
+            ) in mapping.items():
+                # Scale the runtime output
+                if isinstance(runtime_output, torch.Tensor):
+                    scaled_runtime_output = runtime_output * scale_factor
+                else:
+                    scaled_runtime_output = runtime_output
+                transformed_mapping[(aot_handle, aot_output)] = (
+                    runtime_handle,
+                    scaled_runtime_output,
+                )
+            return transformed_mapping
+
+        # Create a custom MSE comparator with shared preprocessing
+        class MSEComparatorWithScaling(NumericalComparatorBase):
             def __init__(self, scale_factor: float = 2.0):
                 super().__init__()
                 self.scale_factor = scale_factor
@@ -812,29 +836,29 @@ class TestInspector(unittest.TestCase):
             def preprocessing(
                 self, mapping: IntermediateOutputMapping
             ) -> IntermediateOutputMapping:
-                """Scale runtime tensors by scale_factor before comparison."""
+                """Use the shared preprocessing function."""
                 self.preprocessing_called = True
-                transformed_mapping = {}
-                for (aot_handle, aot_output), (
-                    runtime_handle,
-                    runtime_output,
-                ) in mapping.items():
-                    # Scale the runtime output
-                    if isinstance(runtime_output, torch.Tensor):
-                        scaled_runtime_output = runtime_output * self.scale_factor
-                    else:
-                        scaled_runtime_output = runtime_output
-                    transformed_mapping[(aot_handle, aot_output)] = (
-                        runtime_handle,
-                        scaled_runtime_output,
-                    )
-                return transformed_mapping
+                return scale_runtime_tensors(mapping, self.scale_factor)
 
             def element_compare(self, a, b) -> float:
                 """Compute MSE between two tensors."""
                 if isinstance(a, torch.Tensor) and isinstance(b, torch.Tensor):
                     return torch.mean(torch.square(a.float() - b.float())).item()
                 return (a - b) ** 2
+
+        # Create an SNR comparator with the same shared preprocessing
+        class SNRComparatorWithScaling(SNRComparator):
+            def __init__(self, scale_factor: float = 2.0):
+                super().__init__()
+                self.scale_factor = scale_factor
+                self.preprocessing_called = False
+
+            def preprocessing(
+                self, mapping: IntermediateOutputMapping
+            ) -> IntermediateOutputMapping:
+                """Use the shared preprocessing function."""
+                self.preprocessing_called = True
+                return scale_runtime_tensors(mapping, self.scale_factor)
 
         # Create a context manager to patch functions called by Inspector.__init__
         with patch.object(
@@ -875,19 +899,17 @@ class TestInspector(unittest.TestCase):
                 lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
             )
 
-            # Create custom comparator with 2x scaling
-            custom_comparator = ScalingComparator(scale_factor=2.0)
-
-            # Test with custom comparator
-            df = inspector_instance.calculate_numeric_gap(distance=custom_comparator)
+            # --- Test 1: MSE comparator with scaling preprocessing ---
+            mse_comparator = MSEComparatorWithScaling(scale_factor=2.0)
+            df_mse = inspector_instance.calculate_numeric_gap(distance=mse_comparator)
 
             # Verify preprocessing was called
-            self.assertTrue(custom_comparator.preprocessing_called)
+            self.assertTrue(mse_comparator.preprocessing_called)
 
             # Verify DataFrame structure
-            self.assertIsInstance(df, pd.DataFrame)
-            self.assertEqual(len(df), 2)
-            cols = set(df.columns)
+            self.assertIsInstance(df_mse, pd.DataFrame)
+            self.assertEqual(len(df_mse), 2)
+            cols = set(df_mse.columns)
             expected_cols = {
                 "aot_ops",
                 "aot_intermediate_output",
@@ -897,16 +919,61 @@ class TestInspector(unittest.TestCase):
             }
             self.assertEqual(cols, expected_cols)
 
-            # Verify the comparison after preprocessing
+            # Verify the MSE comparison after preprocessing
             # For (0,): AOT=[1.0, 2.0, 3.0], Runtime after scaling=[2.0, 2.0, 2.0]
             #   MSE = mean((1-2)^2 + (2-2)^2 + (3-2)^2) = mean(1 + 0 + 1) = 2/3
-            expected_gap_0 = (1.0 + 0.0 + 1.0) / 3.0
-            self.assertAlmostEqual(df.iloc[0]["gap"][0], expected_gap_0, places=5)
+            expected_mse_gap_0 = (1.0 + 0.0 + 1.0) / 3.0
+            self.assertAlmostEqual(
+                df_mse.iloc[0]["gap"][0], expected_mse_gap_0, places=5
+            )
 
             # For (1,): AOT=[4.0, 5.0, 6.0], Runtime after scaling=[4.0, 4.0, 4.0]
             #   MSE = mean((4-4)^2 + (5-4)^2 + (6-4)^2) = mean(0 + 1 + 4) = 5/3
-            expected_gap_1 = (0.0 + 1.0 + 4.0) / 3.0
-            self.assertAlmostEqual(df.iloc[1]["gap"][0], expected_gap_1, places=5)
+            expected_mse_gap_1 = (0.0 + 1.0 + 4.0) / 3.0
+            self.assertAlmostEqual(
+                df_mse.iloc[1]["gap"][0], expected_mse_gap_1, places=5
+            )
+
+            # --- Test 2: SNR comparator with the same scaling preprocessing ---
+            snr_comparator = SNRComparatorWithScaling(scale_factor=2.0)
+            df_snr = inspector_instance.calculate_numeric_gap(distance=snr_comparator)
+
+            # Verify preprocessing was called
+            self.assertTrue(snr_comparator.preprocessing_called)
+
+            # Verify DataFrame structure
+            self.assertIsInstance(df_snr, pd.DataFrame)
+            self.assertEqual(len(df_snr), 2)
+            self.assertEqual(set(df_snr.columns), expected_cols)
+
+            # Verify the SNR comparison after preprocessing
+            # For (0,): AOT=[1.0, 2.0, 3.0], Runtime after scaling=[2.0, 2.0, 2.0]
+            #   signal_power = mean([1.0^2, 2.0^2, 3.0^2]) = mean([1, 4, 9]) = 14/3
+            #   error = [1.0-2.0, 2.0-2.0, 3.0-2.0] = [-1.0, 0.0, 1.0]
+            #   error_power = mean([1.0, 0.0, 1.0]) = 2/3
+            #   SNR = 10 * log10(14/3 / (2/3)) = 10 * log10(7) ≈ 8.451
+            signal_power_0 = (1.0 + 4.0 + 9.0) / 3.0  # 14/3
+            error_power_0 = (1.0 + 0.0 + 1.0) / 3.0  # 2/3
+            expected_snr_gap_0 = (
+                10 * torch.log10(torch.tensor(signal_power_0 / error_power_0)).item()
+            )
+            self.assertAlmostEqual(
+                df_snr.iloc[0]["gap"][0], expected_snr_gap_0, places=5
+            )
+
+            # For (1,): AOT=[4.0, 5.0, 6.0], Runtime after scaling=[4.0, 4.0, 4.0]
+            #   signal_power = mean([4.0^2, 5.0^2, 6.0^2]) = mean([16, 25, 36]) = 77/3
+            #   error = [4.0-4.0, 5.0-4.0, 6.0-4.0] = [0.0, 1.0, 2.0]
+            #   error_power = mean([0.0, 1.0, 4.0]) = 5/3
+            #   SNR = 10 * log10(77/3 / (5/3)) = 10 * log10(77/5) ≈ 11.875
+            signal_power_1 = (16.0 + 25.0 + 36.0) / 3.0  # 77/3
+            error_power_1 = (0.0 + 1.0 + 4.0) / 3.0  # 5/3
+            expected_snr_gap_1 = (
+                10 * torch.log10(torch.tensor(signal_power_1 / error_power_1)).item()
+            )
+            self.assertAlmostEqual(
+                df_snr.iloc[1]["gap"][0], expected_snr_gap_1, places=5
+            )
 
     def test_calculate_numeric_gap_with_invalid_preprocessing_output(self):
         """Test that invalid preprocessing output raises appropriate errors."""
