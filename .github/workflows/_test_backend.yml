@@ -62,7 +62,7 @@ jobs:
   package-golden-artifacts:
     if: ${{ inputs.run-linux }}
     needs: test-backend-linux
-    runs-on: ubuntu-22.04
+    runs-on: linux.2xlarge
     steps:
       - name: Download model test artifacts
         uses: actions/download-artifact@v4
@@ -92,6 +92,17 @@ jobs:
           name: golden-artifacts-${{ inputs.backend }}
           path: golden_artifacts_*.zip
           if-no-files-found: ignore
+
+      - name: Upload golden artifacts to S3
+        uses: seemethere/upload-artifact-s3@v5
+        if: ${{ hashFiles('golden_artifacts_*.zip') != '' }}
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifact/golden-artifacts-${{ inputs.backend }}
+          retention-days: 90
+          if-no-files-found: ignore
+          path: golden_artifacts_*.zip
 
   test-backend-macos:
     if: ${{ inputs.run-macos }}
