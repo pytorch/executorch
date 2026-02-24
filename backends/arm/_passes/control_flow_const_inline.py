@@ -15,11 +15,14 @@ from torch.fx import GraphModule
 
 
 class ControlFlowConstInlinePass(ArmPass):
-    """
-        When we lift out each control flow body as its own GraphModule, any scalar constants that were captured in Python become module attributes.  FX represents those as get_attr nodes in the
-    submodule graph. These become getattr nodes submodule graph.
+    """When we lift out each control flow body as its own GraphModule, any
+    scalar constants that were captured in Python become module attributes.  FX
+    represents those as get_attr nodes in the submodule graph. These become
+    getattr nodes submodule graph.
 
-        This pass ensures that Scalar tensors in control flow operation are converted from getattr operators to expected call_function full ops.
+    This pass ensures that Scalar tensors in control flow operation are
+    converted from getattr operators to expected call_function full ops.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()

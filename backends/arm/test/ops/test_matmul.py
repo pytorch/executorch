@@ -357,7 +357,9 @@ def test_matmul_tosa_INT_a16w8(test_case: test_case_t):
 )
 @common.XfailIfNoCorstone300
 def test_matmul_u55_INT_a16w8(test_case: test_case_t):
-    """Test matmul with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test matmul with 16A8W quantization on U55 (16-bit activations, 8-bit
+    weights)
+    """
     model, inputs = test_case()
     pipeline = EthosU55PipelineINT[input_t](
         model,
@@ -372,7 +374,9 @@ def test_matmul_u55_INT_a16w8(test_case: test_case_t):
 @common.parametrize("test_case", test_suite, xfails=xfails)
 @common.XfailIfNoCorstone320
 def test_matmul_u85_INT_a16w8(test_case: test_case_t):
-    """Test matmul with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test matmul with 16A8W quantization on U85 (16-bit activations, 8-bit
+    weights)
+    """
     model, inputs = test_case()
     pipeline = EthosU85PipelineINT[input_t](
         model,

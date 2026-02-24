@@ -18,11 +18,11 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 
 aten_op = "torch.ops.aten.sum.dim_IntList"
 input_t1 = Tuple[torch.Tensor]  # Input x
-
-
 """Tests sum which sums all elements along some specified dimensions.
-keepdim specifies whether the dimension that is summed should
-be squeezed or not.
+
+keepdim specifies whether the dimension that is summed should be squeezed or
+not.
+
 """
 
 

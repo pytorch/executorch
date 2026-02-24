@@ -1766,6 +1766,61 @@ def rope(
     return rotated.view(original_shape)
 
 
+@impl_tracked(m, "rope_rotate_stacked_halves")
+def rope_rotate_stacked_halves(
+    input_tensor: torch.Tensor,
+    sin_tensor: torch.Tensor,
+    cos_tensor: torch.Tensor,
+    pos: torch.Tensor | None,
+) -> torch.Tensor:
+    original_shape = input_tensor.shape
+
+    if len(original_shape) not in [4, 5]:
+        raise ValueError(
+            f"Input tensor must be 4D or 5D. Got {len(original_shape)}D tensor"
+        )
+    if original_shape[0] != 1:
+        raise ValueError("Input tensor must have batch size 1")
+    if len(original_shape) == 5:
+        input_tensor = input_tensor.view(
+            input_tensor.shape[0], input_tensor.shape[1], input_tensor.shape[2], -1
+        )
+
+    _, seq, _, hd = input_tensor.shape
+
+    if hd % 2:
+        raise ValueError("Hidden dimension must be divisible by 2")
+
+    if (
+        sin_tensor.size(-1) * 2 != hd
+        or cos_tensor.size(-1) * 2 != hd
+        or sin_tensor.size(0) < seq
+        or cos_tensor.size(0) < seq
+    ):
+        raise ValueError(
+            f"sin_tensor and cos_tensor must have shape <kvseq (> {seq}) x {hd // 2}>. Got {sin_tensor.shape} and {cos_tensor.shape}"
+        )
+
+    if pos is not None:
+        if pos.shape != (seq,):
+            raise ValueError(
+                f"pos must have shape {input_tensor.shape[1]}. Got {pos.shape}"
+            )
+        sin_tensor = sin_tensor[pos]
+        cos_tensor = cos_tensor[pos]
+
+    # seq x 1 x hd
+    sin_tensor = sin_tensor.unsqueeze(1)
+    cos_tensor = cos_tensor.unsqueeze(1)
+
+    # batch x seq x num_heads x hd -> batch x seq x num_heads x 2 x head_dim_by_two
+    x0, x1 = input_tensor[..., 0 : hd // 2], input_tensor[..., hd // 2 :]
+    o0 = x0 * cos_tensor - x1 * sin_tensor
+    o1 = x1 * cos_tensor + x0 * sin_tensor
+    rotated = torch.cat([o0.view(-1, 1), o1.view(-1, 1)], dim=-2)
+    return rotated.view(original_shape)
+
+
 @impl_tracked(m, "im2row")
 def im2row(
     input_tensor: torch.Tensor,
