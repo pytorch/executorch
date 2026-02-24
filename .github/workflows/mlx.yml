@@ -83,8 +83,7 @@ jobs:
 
         ${CONDA_RUN} pip list
 
-        echo "::group::Run backend test suite"
-        ${CONDA_RUN} pytest
+        echo "::group::Run backend test suite (${{ matrix.suite }})"
         ${CONDA_RUN} pytest -c /dev/null backends/test/suite/${{ matrix.suite }}/ -m flow_mlx -n auto 2>&1 | tee pytest_output.txt || true
         echo "::endgroup::"
 
