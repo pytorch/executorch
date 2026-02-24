@@ -180,7 +180,7 @@ To use MediaTek backend, after installing and setting up the SDK, set NEURON_BUF
 
 - __Using Qualcomm AI Engine Backend__
 
-To use Qualcomm AI Engine Backend, after installing and setting up the SDK, set QNN_SDK_ROOT to the corresponding path.
+To use Qualcomm AI Engine Backend, add the [QNN Runtime Maven dependency](https://mvnrepository.com/artifact/com.qualcomm.qti/qnn-runtime), and after installing and setting up the SDK, set QNN_SDK_ROOT to the corresponding path.
 
 - __Using Vulkan Backend__
 
