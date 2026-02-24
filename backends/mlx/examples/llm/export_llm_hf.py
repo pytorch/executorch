@@ -159,7 +159,7 @@ def _export_with_custom_components(
     torch_dtype = torch_dtype_map.get(dtype, torch.bfloat16)
 
     if use_custom_sdpa:
-        from executorch.backends.mlx.examples.attention import register_mlx_attention
+        from executorch.backends.mlx.llm.attention import register_mlx_attention
 
         register_mlx_attention()
         logger.info("Registered MLX custom SDPA attention")
@@ -221,7 +221,7 @@ def _export_with_custom_components(
     if use_custom_kv_cache:
         if sliding_window is not None:
             # Use ring buffer cache for sliding window models
-            from executorch.backends.mlx.examples.source_transformation import (
+            from executorch.backends.mlx.llm.source_transformation import (
                 replace_hf_cache_with_mlx_ring_buffer,
             )
 
@@ -239,7 +239,7 @@ def _export_with_custom_components(
 
             if use_custom_sdpa:
                 # Re-register attention with sliding window closure
-                from executorch.backends.mlx.examples.attention import (
+                from executorch.backends.mlx.llm.attention import (
                     register_mlx_sliding_window_attention,
                 )
 
@@ -252,7 +252,7 @@ def _export_with_custom_components(
             logger.info("  RingBuffer KV cache installed successfully")
         else:
             # Use standard linear cache for non-sliding-window models
-            from executorch.backends.mlx.examples.source_transformation import (
+            from executorch.backends.mlx.llm.source_transformation import (
                 replace_hf_cache_with_mlx,
             )
 

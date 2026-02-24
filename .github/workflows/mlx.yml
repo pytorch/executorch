@@ -45,6 +45,14 @@ jobs:
         ${CONDA_RUN} python -m executorch.backends.mlx.test.run_all_tests -j4 --max-tasks-per-worker 10 --clean-after
         echo "::endgroup::"
 
+        echo "::group::Run Python unit tests"
+        ${CONDA_RUN} python -m pytest \
+          backends/mlx/test/test_passes.py \
+          backends/mlx/test/test_pattern_utils.py \
+          backends/mlx/test/test_partitioner.py \
+          -v
+        echo "::endgroup::"
+
         echo "::group::Run multi-thread stress test"
         ${CONDA_RUN} python backends/mlx/test/export_multi_thread_test_model.py /tmp/multi_thread_test_model.pte
         ET_TESTING_MODEL_PATH=/tmp/multi_thread_test_model.pte \
@@ -122,7 +130,7 @@ jobs:
         ${CONDA_RUN} pip list
 
         echo "::group::Export Parakeet"
-        ${CONDA_RUN} python -m executorch.examples.models.parakeet \
+        ${CONDA_RUN} python -m executorch.examples.models.parakeet.export_parakeet_tdt \
           --backend mlx \
           --dtype bf16 \
           --qlinear_encoder 4w \
@@ -171,7 +179,7 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Install Voxtral requirements"
-        ${CONDA_RUN} pip install -U "huggingface_hub[cli]<1.0"
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]<1.0" mistral_common
         ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         ${CONDA_RUN} pip install "optimum-executorch @ git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}"
@@ -212,12 +220,14 @@ jobs:
 
   test-mlx-whisper:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    secrets: inherit
     with:
       job-name: test-mlx-whisper
       runner: macos-14-xlarge
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      secrets-env: EXECUTORCH_HF_TOKEN
       timeout: 90
       script: |
         set -eux
@@ -227,6 +237,8 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Install Whisper requirements"
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]<1.0"
+        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         ${CONDA_RUN} pip install transformers soundfile datasets librosa
         echo "::endgroup::"
 
@@ -255,12 +267,14 @@ jobs:
 
   test-mlx-llama:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    secrets: inherit
     with:
       job-name: test-mlx-llama
       runner: macos-14-xlarge
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      secrets-env: EXECUTORCH_HF_TOKEN
       timeout: 90
       script: |
         set -eux
@@ -270,6 +284,8 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Install Llama requirements"
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]<1.0"
+        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         ${CONDA_RUN} pip install "transformers>=4.56.1" "tokenizers>=0.22.2"
         echo "::endgroup::"
 
@@ -374,12 +390,14 @@ jobs:
             name: "gemma3-1b"
         use-custom: [false, true]
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    secrets: inherit
     with:
       job-name: test-mlx-llm-${{ matrix.model.name }}${{ matrix.use-custom && '-custom' || '' }}
       runner: macos-14-xlarge
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      secrets-env: EXECUTORCH_HF_TOKEN
       timeout: 90
       script: |
         set -eux
@@ -399,6 +417,8 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Install LLM requirements"
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]<1.0"
+        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         ${CONDA_RUN} pip install transformers "optimum-executorch @ git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}"
         echo "::endgroup::"
