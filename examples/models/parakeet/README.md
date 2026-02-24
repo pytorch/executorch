@@ -132,6 +132,47 @@ This generates:
 - `aoti_cuda_blob.ptd` - CUDA kernel blob required at runtime
 - `tokenizer.model` - SentencePiece tokenizer
 
+### CUDA-Windows Export
+
+Before running `cuda-windows` export, make sure these requirements are set up:
+- `x86_64-w64-mingw32-g++` is installed and on `PATH` (mingw-w64 cross-compiler).
+- `WINDOWS_CUDA_HOME` points to the extracted Windows CUDA package directory.
+
+Example setup on Ubuntu:
+
+```bash
+# 1) Install cross-compiler + extraction tools
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends \
+  g++-mingw-w64-x86-64-posix mingw-w64-tools p7zip-full wget
+
+# 2) Verify cross-compiler
+x86_64-w64-mingw32-g++ --version
+
+# 3) Download and extract Windows CUDA installer package
+CUDA_VERSION=12.8.1
+CUDA_DRIVER_VERSION=572.61
+CUDA_INSTALLER="cuda_${CUDA_VERSION}_${CUDA_DRIVER_VERSION}_windows.exe"
+CUDA_URL="https://developer.download.nvidia.com/compute/cuda/${CUDA_VERSION}/local_installers/${CUDA_INSTALLER}"
+
+mkdir -p /opt/cuda-windows
+cd /opt/cuda-windows
+wget -q "${CUDA_URL}" -O "${CUDA_INSTALLER}"
+7z x "${CUDA_INSTALLER}" -oextracted -y
+
+# 4) Point WINDOWS_CUDA_HOME to extracted Windows CUDA payload
+export WINDOWS_CUDA_HOME=/opt/cuda-windows/extracted/cuda_cudart/cudart
+```
+
+```bash
+python export_parakeet_tdt.py --backend cuda-windows --output-dir ./parakeet_cuda_windows
+```
+
+This generates:
+- `model.pte` - The compiled Parakeet TDT model
+- `aoti_cuda_blob.ptd` - CUDA kernel blob required at runtime
+- `tokenizer.model` - SentencePiece tokenizer
+
 ## C++ Runner
 
 ### Building
@@ -147,6 +188,15 @@ make parakeet-metal
 
 # CUDA build (Linux)
 make parakeet-cuda
+```
+
+On Windows (PowerShell), use CMake workflow presets directly:
+
+```powershell
+cmake --workflow --preset llm-release-cuda
+Push-Location examples/models/parakeet
+cmake --workflow --preset parakeet-cuda
+Pop-Location
 ```
 
 ### Running
@@ -174,6 +224,18 @@ DYLD_LIBRARY_PATH=/usr/lib ./cmake-out/examples/models/parakeet/parakeet_runner 
   --tokenizer_path examples/models/parakeet/parakeet_cuda/tokenizer.model
 ```
 
+Windows (PowerShell):
+
+```powershell
+.\cmake-out\examples\models\parakeet\Release\parakeet_runner.exe `
+  --model_path C:\path\to\parakeet_cuda_windows\model.pte `
+  --data_path C:\path\to\parakeet_cuda_windows\aoti_cuda_blob.ptd `
+  --audio_path C:\path\to\audio.wav `
+  --tokenizer_path C:\path\to\parakeet_cuda_windows\tokenizer.model
+```
+
+If your generator is single-config, the runner may be at `.\cmake-out\examples\models\parakeet\parakeet_runner.exe` instead.
+
 ### Runner Arguments
 
 | Argument | Description |
@@ -181,5 +243,5 @@ DYLD_LIBRARY_PATH=/usr/lib ./cmake-out/examples/models/parakeet/parakeet_runner 
 | `--model_path` | Path to Parakeet model (.pte) |
 | `--audio_path` | Path to input audio file (.wav) |
 | `--tokenizer_path` | Path to tokenizer file (default: `tokenizer.json`) |
-| `--data_path` | Path to data file (.ptd) for delegate data (required for CUDA) |
+| `--data_path` | Path to data file (.ptd) for delegate data (required for CUDA/CUDA-Windows) |
 | `--timestamps`     | Timestamp output mode: `none\|token\|word\|segment\|all` (default: `segment`) |

@@ -20,15 +20,15 @@ class ConvertFullLikeToFullPass(ArmPass):
     As per the full_like PyTorch documentation, `torch.full_like(input,
     fill_value)` is equivalent to:
 
-    ```
-    torch.full(
-        input.size(),
-        fill_value,
-        dtype=input.dtype,
-        layout=input.layout,
-        device=input.device,
-    )
-    ```
+    ::
+
+        torch.full(
+            input.size(),
+            fill_value,
+            dtype=input.dtype,
+            layout=input.layout,
+            device=input.device,
+        )
 
     Skip layout and device since it's not relevant for our backend.
 

@@ -197,6 +197,7 @@ void q8ta_conv2d_im2col(
   const ValueRef padding = args.at(idx++);
   const ValueRef dilation = args.at(idx++);
   const ValueRef groups = args.at(idx++);
+  const ValueRef activation = args.at(idx++);
   const ValueRef packed_int8_output = args.at(idx++);
 
   QuantizationConfig weight_quant_config(8, kPerChannel, {});
@@ -224,6 +225,9 @@ void q8ta_conv2d_im2col(
     packed_bias =
         prepack_standard(graph, bias_data, utils::kBuffer, utils::kWidthPacked);
   }
+
+  uint32_t activation_type_val = static_cast<uint32_t>(
+      activation_type_from_string(graph.extract_string(activation)));
 
   // Calculate im2col output sizes
   std::vector<int64_t> im2col_sizes = calculate_q8ta_im2col_sizes(
@@ -265,6 +269,7 @@ void q8ta_conv2d_im2col(
       output_zp,
       bias_data,
       packed_bias,
+      activation_type_val,
       packed_int8_output);
 }
 

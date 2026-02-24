@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -47,7 +47,6 @@ def test_rsub_scalar_tosa_FP(test_data):
         test_data(),
         aten_op=Rsub.aten_op,
         exir_op=Rsub.exir_op,
-        use_to_edge_transform_and_lower=False,
     )
     pipeline.run()
 
@@ -60,8 +59,8 @@ def test_rsub_scalar_tosa_INT(test_data):
         test_data(),
         aten_op="torch.ops.aten.sub.Tensor",
         exir_op=Rsub.exir_op,
-        use_to_edge_transform_and_lower=False,
         qtol=0,
+        cosine_threshold=None,  # For rand_4D_big_small, the output diff is large which throws off the cosine similarity even if it is relatively small.
     )
     pipeline.run()
 
@@ -76,7 +75,6 @@ def test_rsub_scalar_u55_INT(test_data):
         aten_ops="torch.ops.aten.sub.Tensor",
         exir_ops=Rsub.exir_op,
         run_on_fvp=True,
-        use_to_edge_transform_and_lower=False,
     )
     pipeline.run()
 
@@ -91,7 +89,6 @@ def test_rsub_scalar_u85_INT(test_data):
         aten_ops="torch.ops.aten.sub.Tensor",
         exir_ops=Rsub.exir_op,
         run_on_fvp=True,
-        use_to_edge_transform_and_lower=False,
     )
     pipeline.run()
 
@@ -105,7 +102,6 @@ def test_rsub_scalar_vgf_no_quant(test_data: Tuple[torch.Tensor]):
         test_data(),
         Rsub.aten_op,
         Rsub.exir_op,
-        use_to_edge_transform_and_lower=False,
         quantize=False,
     )
     pipeline.run()
@@ -120,7 +116,6 @@ def test_rsub_scalar_vgf_quant(test_data: Tuple[torch.Tensor]):
         test_data(),
         aten_op="torch.ops.aten.sub.Tensor",
         exir_op=Rsub.exir_op,
-        use_to_edge_transform_and_lower=False,
         quantize=True,
     )
     pipeline.run()

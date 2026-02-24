@@ -45,9 +45,12 @@ def _get_ops(op):
 
 
 class DecomposeTrilPass(ArmPass):
-    """
-    mask_bool = (row + diagonal) >= col     (intended AOT-constant)
-    out = where(mask_bool, x, 0)            (0 is a scalar tensor, broadcasted)
+    """Tril decomposition.
+
+    Decomposition:
+        mask_bool = (row + diagonal) >= col  (intended AOT-constant)
+        out = where(mask_bool, x, 0)         (0 is a scalar tensor, broadcasted)
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOTPass}

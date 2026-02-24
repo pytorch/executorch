@@ -195,7 +195,9 @@ def test_max_pool2d_u55_INT(test_data: torch.Tensor):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_max_pool2d_16a8w_u55_INT(test_data: torch.Tensor):
-    """Test max_pool2d with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test max_pool2d with 16A8W quantization on U55 (16-bit activations, 8-bit
+    weights)
+    """
     test_data, model_params = test_data()
     pipeline = EthosU55PipelineINT[input_t1](
         MaxPool2d(*model_params),
@@ -224,7 +226,9 @@ def test_max_pool2d_u85_INT(test_data: torch.Tensor):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_max_pool2d_16a8w_u85_INT(test_data: torch.Tensor):
-    """Test max_pool2d with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test max_pool2d with 16A8W quantization on U85 (16-bit activations, 8-bit
+    weights)
+    """
     test_data, model_params = test_data()
     pipeline = EthosU85PipelineINT[input_t1](
         MaxPool2d(*model_params),
@@ -270,9 +274,7 @@ dilation_test_data = {
 
 @common.parametrize("test_data", test_data_suite_unsupported_dilation)
 def test_max_pool2d_tosa_FP_not_delegated_with_dilation(test_data):
-    """
-    Test that dilation cases not supported by TOSA are rejected.
-    """
+    """Test that dilation cases not supported by TOSA are rejected."""
     data, params = test_data()
     module = MaxPool2d(*params)
     pipeline = OpNotSupportedPipeline[input_t1](
@@ -287,9 +289,7 @@ def test_max_pool2d_tosa_FP_not_delegated_with_dilation(test_data):
 
 @common.parametrize("test_data", dilation_test_data)
 def test_max_pool2d_tosa_FP_dilation(test_data):
-    """
-    TOSA FP pipeline with dilation > 1 (and dilation=1 sanity cases).
-    """
+    """TOSA FP pipeline with dilation > 1 (and dilation=1 sanity cases)."""
     data, model_params = test_data()
     pipeline = TosaPipelineFP[input_t1](
         MaxPool2d(*model_params),
@@ -302,9 +302,7 @@ def test_max_pool2d_tosa_FP_dilation(test_data):
 
 @common.parametrize("test_data", dilation_test_data)
 def test_max_pool2d_tosa_INT_dilation(test_data):
-    """
-    TOSA INT pipeline with dilation > 1 (and dilation=1 sanity cases).
-    """
+    """TOSA INT pipeline with dilation > 1 (and dilation=1 sanity cases)."""
     data, model_params = test_data()
     pipeline = TosaPipelineINT[input_t1](
         MaxPool2d(*model_params),
@@ -348,9 +346,7 @@ def test_max_pool2d_vgf_quant(test_data: torch.Tensor):
 @common.parametrize("test_data", dilation_test_data)
 @common.SkipIfNoModelConverter
 def test_max_pool2d_vgf_no_quant_dilation(test_data: torch.Tensor):
-    """
-    VGF FP pipeline with dilation > 1 (and dilation=1 sanity cases).
-    """
+    """VGF FP pipeline with dilation > 1 (and dilation=1 sanity cases)."""
     test_data, model_params = test_data()
     pipeline = VgfPipeline[input_t1](
         MaxPool2d(*model_params),
@@ -365,9 +361,7 @@ def test_max_pool2d_vgf_no_quant_dilation(test_data: torch.Tensor):
 @common.parametrize("test_data", dilation_test_data)
 @common.SkipIfNoModelConverter
 def test_max_pool2d_vgf_quant_dilation(test_data: torch.Tensor):
-    """
-    VGF INT pipeline with dilation > 1 (and dilation=1 sanity cases).
-    """
+    """VGF INT pipeline with dilation > 1 (and dilation=1 sanity cases)."""
     test_data, model_params = test_data()
     pipeline = VgfPipeline[input_t1](
         MaxPool2d(*model_params),

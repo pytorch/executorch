@@ -1193,7 +1193,10 @@ def _gen_edge_manager_for_partitioners(
 
             # Decompose by default if there are no partitioners for the method
             if not partitioners_for_program:
-                program = program.run_decompositions(_default_decomposition_table())
+                table = _default_decomposition_table()
+                for op in config.preserve_ops:
+                    table.pop(op, None)
+                program = program.run_decompositions(table)
 
             # Process each partitioner individually using their specific requirements
             for curr_partitioner in partitioners_for_program:

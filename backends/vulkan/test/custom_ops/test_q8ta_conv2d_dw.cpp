@@ -187,6 +187,10 @@ TestCase create_test_case_from_config(
   test_case.add_input_spec(dilation);
   test_case.add_input_spec(groups);
 
+  // Activation (none = no activation)
+  ValueSpec activation = ValueSpec::make_string("none");
+  test_case.add_input_spec(activation);
+
   // Add memory layout parameter for the quantized tensors
   ValueSpec layout_int(static_cast<int32_t>(int8_memory_layout));
   test_case.add_input_spec(layout_int);

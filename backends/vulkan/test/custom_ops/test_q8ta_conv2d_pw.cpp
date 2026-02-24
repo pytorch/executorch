@@ -179,6 +179,10 @@ static TestCase create_test_case_from_config(
   test_case.add_input_spec(dilation);
   test_case.add_input_spec(groups);
 
+  // Activation (none = no activation)
+  ValueSpec activation = ValueSpec::make_string("none");
+  test_case.add_input_spec(activation);
+
   // Add memory layout parameter for the quantized tensors
   ValueSpec layout_int(static_cast<int32_t>(int8_memory_layout));
   test_case.add_input_spec(layout_int);
@@ -210,6 +214,28 @@ static std::vector<TestCase> generate_quantized_conv2d_pw_test_cases() {
   }
 
   std::vector<Conv2dConfig> configs = {
+      // OC < 4 cases to test edge cases with partial output channel blocks
+      {OutInChannels(1, 16),
+       InputSize2D(8, 8),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
+       Dilation(1, 1),
+       1},
+      {OutInChannels(2, 16),
+       InputSize2D(8, 8),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
+       Dilation(1, 1),
+       1},
+      {OutInChannels(3, 16),
+       InputSize2D(8, 8),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
+       Dilation(1, 1),
+       1},
       // Pointwise convolutions: kernel size 1x1
       {OutInChannels(32, 3),
        InputSize2D(64, 64),
@@ -344,6 +370,8 @@ static void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
   const ValueSpec& padding_spec = test_case.inputs()[idx++];
   const ValueSpec& dilation_spec = test_case.inputs()[idx++];
   const ValueSpec& groups_spec = test_case.inputs()[idx++];
+  const ValueSpec& activation_spec = test_case.inputs()[idx++];
+  (void)activation_spec; // Not used in reference implementation
   const ValueSpec& layout_spec = test_case.inputs()[idx++];
   (void)layout_spec; // Not used in reference implementation
   const ValueSpec& impl_selector_spec = test_case.inputs()[idx++];

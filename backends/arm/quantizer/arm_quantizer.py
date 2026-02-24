@@ -92,7 +92,7 @@ def get_symmetric_quantization_config(
         bias.
 
     """
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
+    extra_args: Dict[str, Any] = {"eps": 2**-16}
     if is_qat:
         if is_dynamic:
             act_observer_or_fake_quant_ctr = FakeQuantize

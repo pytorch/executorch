@@ -176,6 +176,8 @@ int32_t main(int32_t argc, char** argv) {
       .temperature = temperature};
 
   config.ignore_eos = FLAGS_ignore_eos;
+  config.num_bos = FLAGS_num_bos;
+  config.num_eos = FLAGS_num_eos;
 
   if (FLAGS_max_new_tokens != -1) {
     config.max_new_tokens = FLAGS_max_new_tokens;
