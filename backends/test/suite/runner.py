@@ -234,7 +234,9 @@ def run_test(  # noqa: C901
                 tester.stages[StageType.SERIALIZE].dump_artifact(pte_path)
                 logger.info(f"Saved golden .pte to {pte_path}")
             except Exception:
-                logger.warning(f"Failed to save .pte for {artifact_name}", exc_info=True)
+                logger.warning(
+                    f"Failed to save .pte for {artifact_name}", exc_info=True
+                )
     else:
         # Skip the test if nothing is delegated
         return build_result(TestResult.SUCCESS_UNDELEGATED)
