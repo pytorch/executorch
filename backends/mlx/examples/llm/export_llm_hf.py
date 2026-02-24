@@ -159,7 +159,7 @@ def _export_with_custom_components(
     torch_dtype = torch_dtype_map.get(dtype, torch.bfloat16)
 
     if use_custom_sdpa:
-        from executorch.backends.mlx.llm.attention import register_mlx_attention
+        from executorch.backends.mlx.llm.hf_attention import register_mlx_attention
 
         register_mlx_attention()
         logger.info("Registered MLX custom SDPA attention")
@@ -239,7 +239,7 @@ def _export_with_custom_components(
 
             if use_custom_sdpa:
                 # Re-register attention with sliding window closure
-                from executorch.backends.mlx.llm.attention import (
+                from executorch.backends.mlx.llm.hf_attention import (
                     register_mlx_sliding_window_attention,
                 )
 

@@ -19,7 +19,7 @@ custom_sdpa:
 4. MLX pattern handler serializes custom_sdpa as SliceNode(K), SliceNode(V), SdpaNode
 
 Usage:
-    from executorch.backends.mlx.examples.attention import register_mlx_attention
+    from executorch.backends.mlx.llm.hf_attention import register_mlx_attention
 
     register_mlx_attention()
 
