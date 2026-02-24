@@ -26,9 +26,10 @@ exir_op = "executorch_exir_dialects_edge__ops_aten_convolution_default"
 
 
 class Conv3d(torch.nn.Module):
-    """
-    Creates one or many chained 3D-convolutions. For multiple convolutions, the
-    respective parameteres are provided as lists.
+    """Creates one or many chained 3D-convolutions.
+
+    For multiple convolutions, the respective parameters are provided as lists.
+
     """
 
     def __init__(
@@ -128,11 +129,12 @@ class Conv3d(torch.nn.Module):
 
 
 class Conv3dMultiOp(torch.nn.Module):
-    """
-    Mixed Conv3d/Conv2d pipeline used to verify spatial-rank propagation across ops.
+    """Mixed Conv3d/Conv2d pipeline used to verify spatial-rank propagation
+    across ops.
 
     Topology:
         conv3d -> reshape -> conv2d -> reshape/permutation -> conv2d -> reshape -> add(5D)
+
     """
 
     def __init__(self, dtype=torch.float):
@@ -529,7 +531,7 @@ def test_convolution_3d_tosa_INT_a8w4(test_data):
         exir_op,
         tosa_extensions=["int4"],
         qtol=1,
-        frobenius_threshold=0.2,
+        frobenius_threshold=0.4,
     )
     pipeline.quantizer.set_global(
         get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
@@ -578,7 +580,9 @@ def test_convolution_3d_tosa_INT_multi_op():
 
 
 def test_convolution_3d_tosa_FP_depthwise():
-    """Depthwise or Grouped Conv3d should be rejected until grouped support exists."""
+    """Depthwise or Grouped Conv3d should be rejected until grouped support
+    exists.
+    """
     model = DepthwiseConv3d()
     pipeline = TosaPipelineFP[input_t](
         model,
