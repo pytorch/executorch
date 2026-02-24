@@ -207,9 +207,7 @@ def run_test(  # noqa: C901
         artifact_name = None
         if artifact_dir:
             base = test_base_name.removeprefix("test_")
-            artifact_name = (
-                f"{base}_{subtest_index}" if subtest_index > 0 else base
-            )
+            artifact_name = f"{base}_{subtest_index}" if subtest_index > 0 else base
 
         # TODO We should consider refactoring the tester slightly to return more signal on
         # the cause of a failure in run_method_and_compare_outputs. We can look for
