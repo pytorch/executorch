@@ -62,61 +62,36 @@ jobs:
   package-golden-artifacts:
     if: ${{ inputs.run-linux }}
     needs: test-backend-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      ref: ${{ inputs.ref }}
-      timeout: 30
-      upload-artifact: golden-artifacts-${{ inputs.backend }}
-      upload-artifact-to-s3: true
-      script: |
-        set -eux
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download model test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-report-*-models
+          path: downloaded/
 
-        TIMESTAMP=$(date -u +%y%m%d%H)
-        GOLDEN_ZIP="golden_artifacts_${TIMESTAMP}.zip"
-        mkdir -p golden_combined
+      - name: Package golden artifacts
+        run: |
+          set -eux
+          TIMESTAMP=$(date -u +%y%m%d%H)
+          mkdir -p golden_combined
 
-        # Download per-flow model-suite GH artifacts via the GitHub REST API.
-        FLOWS='${{ inputs.flows }}'
-        for flow in $(echo "$FLOWS" | jq -r '.[]'); do
-          ARTIFACT_NAME="test-report-${flow}-models"
-          echo "Downloading artifact: ${ARTIFACT_NAME}"
+          find downloaded/ \( -name '*.pte' -o -name '*_input*.bin' -o -name '*_expected_output*.bin' \) \
+            -exec cp {} golden_combined/ \;
 
-          # Find the artifact download URL
-          DOWNLOAD_URL=$(curl -sfL \
-            -H "Authorization: token ${GITHUB_TOKEN}" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?name=${ARTIFACT_NAME}" \
-            | jq -r '.artifacts[0].archive_download_url // empty')
-
-          if [[ -z "$DOWNLOAD_URL" ]]; then
-            echo "Artifact ${ARTIFACT_NAME} not found, skipping."
-            continue
+          if ls golden_combined/*.pte 1>/dev/null 2>&1; then
+            (cd golden_combined && zip -r "../golden_artifacts_${TIMESTAMP}.zip" .)
+            echo "Created golden_artifacts_${TIMESTAMP}.zip with $(ls golden_combined/*.pte | wc -l) models."
+          else
+            echo "No golden artifacts found."
           fi
 
-          curl -sfL -H "Authorization: token ${GITHUB_TOKEN}" -o artifact.zip "$DOWNLOAD_URL"
-          mkdir -p "extracted/${flow}"
-          unzip -o artifact.zip -d "extracted/${flow}/"
-          rm artifact.zip
-
-          # Collect golden files (pte + bins) into the combined directory.
-          find "extracted/${flow}/" -name '*.pte' -o -name '*_input*.bin' -o -name '*_expected_output*.bin' \
-            | while read -r f; do
-              cp "$f" golden_combined/
-            done
-        done
-
-        # Create the combined zip if any golden files were produced.
-        if ls golden_combined/*.pte 1>/dev/null 2>&1; then
-          (cd golden_combined && zip -r "../${GOLDEN_ZIP}" .)
-          cp "${GOLDEN_ZIP}" "${RUNNER_ARTIFACT_DIR}/"
-          echo "Created ${GOLDEN_ZIP} with $(ls golden_combined/*.pte | wc -l) models."
-        else
-          echo "No golden artifacts found."
-        fi
+      - name: Upload combined golden artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-artifacts-${{ inputs.backend }}
+          path: golden_artifacts_*.zip
+          if-no-files-found: ignore
 
   test-backend-macos:
     if: ${{ inputs.run-macos }}
