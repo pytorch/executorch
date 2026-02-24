@@ -56,7 +56,7 @@ public class LlmModule {
       List<String> dataFiles,
       int numBos,
       int numEos) {
-    ExecuTorchRuntime runtime = ExecuTorchRuntime.getRuntime();
+    ExecuTorchRuntime.getRuntime();
     ExecuTorchRuntime.validateFilePath(modulePath, "model path");
     ExecuTorchRuntime.validateFilePath(tokenizerPath, "tokenizer path");
 
