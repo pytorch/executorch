@@ -204,10 +204,12 @@ def run_test(  # noqa: C901
             # We can do this if we ever see to_executorch() or serialize() fail due a backend issue.
             return build_result(TestResult.UNKNOWN_FAIL, e)
 
-        # Derive a clean model name for golden artifacts (e.g. "test_mobilenet_v3_small" -> "mobilenet_v3_small").
         artifact_name = None
         if artifact_dir:
-            artifact_name = test_base_name.removeprefix("test_")
+            base = test_base_name.removeprefix("test_")
+            artifact_name = (
+                f"{base}_{subtest_index}" if subtest_index > 0 else base
+            )
 
         # TODO We should consider refactoring the tester slightly to return more signal on
         # the cause of a failure in run_method_and_compare_outputs. We can look for

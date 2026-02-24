@@ -76,12 +76,12 @@ jobs:
           TIMESTAMP=$(date -u +%y%m%d%H)
           mkdir -p golden_combined
 
-          find downloaded/ \( -name '*.pte' -o -name '*_input*.bin' -o -name '*_expected_output*.bin' \) \
-            -exec cp {} golden_combined/ \;
+          # Collect per-flow golden zips (already namespaced by flow in filename).
+          find downloaded/ -name '*_golden.zip' -exec cp {} golden_combined/ \;
 
-          if ls golden_combined/*.pte 1>/dev/null 2>&1; then
+          if ls golden_combined/*_golden.zip 1>/dev/null 2>&1; then
             (cd golden_combined && zip -r "../golden_artifacts_${TIMESTAMP}.zip" .)
-            echo "Created golden_artifacts_${TIMESTAMP}.zip with $(ls golden_combined/*.pte | wc -l) models."
+            echo "Created golden_artifacts_${TIMESTAMP}.zip with $(ls golden_combined/ | wc -l) golden zips."
           else
             echo "No golden artifacts found."
           fi

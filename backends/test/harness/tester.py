@@ -352,9 +352,18 @@ class Tester:
             )
 
             if artifact_dir and artifact_name and not artifacts_saved:
-                self._dump_golden_artifacts(
-                    artifact_dir, artifact_name, inputs_to_run, reference_output
-                )
+                try:
+                    self._dump_golden_artifacts(
+                        artifact_dir,
+                        artifact_name,
+                        inputs_to_run,
+                        reference_output,
+                    )
+                except Exception:
+                    logging.getLogger(__name__).warning(
+                        f"Failed to dump golden artifacts for {artifact_name}",
+                        exc_info=True,
+                    )
                 artifacts_saved = True
 
         return self
