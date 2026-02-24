@@ -63,12 +63,16 @@ jobs:
     if: ${{ inputs.run-linux }}
     needs: test-backend-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     with:
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       ref: ${{ inputs.ref }}
       timeout: 30
       upload-artifact: golden-artifacts-${{ inputs.backend }}
+      upload-artifact-to-s3: true
       script: |
         set -eux
 
