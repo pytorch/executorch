@@ -30,6 +30,7 @@ def kv_cache_update(
     cache: Tensor,  # [B, H, S_max, D] - mutated in place
     new_values: Tensor,  # [B, H, S, D]
     start_pos: int,
+    ring_size: int = 0,
 ) -> Tensor:
     """
     Mutating KV cache update that modifies cache in place.
@@ -41,6 +42,9 @@ def kv_cache_update(
         cache: Cache tensor of shape [B, H, S_max, D] (BHSD layout) - mutated
         new_values: New values to insert of shape [B, H, S, D]
         start_pos: Starting position index for insertion
+        ring_size: If > 0, treat as ring buffer of this size: write position
+            is start_pos % ring_size and writes wrap around. If 0 (default),
+            linear update at start_pos with no wrapping.
 
     Returns:
         A dummy tensor (1,) - the return value is not semantically meaningful
@@ -51,16 +55,23 @@ def kv_cache_update(
         The BHSD layout matches what torch SDPA expects, avoiding transposition.
     """
     seq_len = new_values.size(2)
-    end_pos = start_pos + seq_len
 
-    # Validate bounds
-    assert end_pos <= cache.size(2), (
-        f"Cache update out of bounds: start_pos={start_pos}, "
-        f"seq_len={seq_len}, cache_len={cache.size(2)}"
-    )
-
-    # Mutate cache in place
-    cache[:, :, start_pos:end_pos, :] = new_values
+    if ring_size > 0:
+        write_pos = start_pos % ring_size
+        end_pos = write_pos + seq_len
+        if end_pos <= ring_size:
+            cache[:, :, write_pos:end_pos, :] = new_values
+        else:
+            first_part = ring_size - write_pos
+            cache[:, :, write_pos:ring_size, :] = new_values[:, :, :first_part, :]
+            cache[:, :, 0 : seq_len - first_part, :] = new_values[:, :, first_part:, :]
+    else:
+        end_pos = start_pos + seq_len
+        assert end_pos <= cache.size(2), (
+            f"kv_cache_update: write [{start_pos}, {end_pos}) exceeds "
+            f"cache size {cache.size(2)}. Use ring_size > 0 for wrapping."
+        )
+        cache[:, :, start_pos:end_pos, :] = new_values
 
     # Return dummy tensor like llama.update_cache does
     return torch.empty((1,), dtype=new_values.dtype, device=new_values.device)
@@ -71,6 +82,7 @@ def kv_cache_update_fake(
     cache: Tensor,
     new_values: Tensor,
     start_pos: int,
+    ring_size: int = 0,
 ) -> Tensor:
     """Fake implementation for tracing - returns dummy tensor like llama.update_cache."""
     return torch.empty((1,), dtype=new_values.dtype, device="meta")

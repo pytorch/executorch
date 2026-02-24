@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Export Llama model from HuggingFace to MLX backend.
+Export LLM model from HuggingFace to MLX backend.
 
 By default, uses optimum-executorch's CausalLMExportableModule which provides
 a proven export pipeline. Optional flags enable custom MLX-optimized components:
@@ -61,6 +61,7 @@ def _export_with_optimum(
 ) -> None:
     import executorch.exir as exir
     from executorch.backends.mlx import MLXPartitioner
+    from executorch.backends.mlx.passes import get_default_passes
     from executorch.exir import EdgeCompileConfig
     from executorch.exir.capture._config import ExecutorchBackendConfig
     from executorch.exir.passes import MemoryPlanningPass
@@ -76,7 +77,7 @@ def _export_with_optimum(
         max_seq_len=max_seq_len,
     )
 
-    from executorch.backends.mlx.examples.quantization import apply_quantization
+    from executorch.backends.mlx.llm.quantization import apply_quantization
 
     apply_quantization(
         exportable.model,
@@ -104,6 +105,7 @@ def _export_with_optimum(
 
     edge_program = exir.to_edge_transform_and_lower(
         exported_progs,
+        transform_passes=get_default_passes(),
         partitioner=[MLXPartitioner()],
         compile_config=edge_config,
         constant_methods=exportable.metadata,
@@ -140,6 +142,7 @@ def _export_with_custom_components(
     """
     import executorch.exir as exir
     from executorch.backends.mlx import MLXPartitioner
+    from executorch.backends.mlx.passes import get_default_passes
     from executorch.exir import EdgeCompileConfig
     from executorch.exir.capture._config import ExecutorchBackendConfig
     from executorch.exir.passes import MemoryPlanningPass
@@ -163,6 +166,9 @@ def _export_with_custom_components(
 
     attn_implementation = "mlx" if use_custom_sdpa else None
 
+    # Detect sliding window models (e.g., gemma)
+    sliding_window = None
+
     logger.info(f"Loading HuggingFace model: {model_id}")
     load_kwargs = {
         "torch_dtype": torch_dtype,
@@ -172,36 +178,95 @@ def _export_with_custom_components(
         load_kwargs["attn_implementation"] = attn_implementation
     model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
 
+    # Check if model uses sliding window attention
+    sliding_window = getattr(model.config, "sliding_window", None)
+    if sliding_window is not None:
+        logger.info(f"Model has sliding_window={sliding_window}")
+        # Cap max_seq_len to sliding window size for cache allocation
+        effective_cache_len = min(max_seq_len, sliding_window)
+        logger.info(f"  Capping cache length to sliding window: {effective_cache_len}")
+    else:
+        effective_cache_len = max_seq_len
+
     model.generation_config.cache_implementation = "static"
     model.generation_config.cache_config = {
         "batch_size": 1,
-        "max_cache_len": max_seq_len,
+        "max_cache_len": effective_cache_len,
     }
     model.eval()
 
-    logger.info("Creating TorchExportableModuleWithStaticCache wrapper...")
-    exportable = TorchExportableModuleWithStaticCache(
-        model=model,
-        batch_size=1,
-        max_cache_len=max_seq_len,
-    )
+    # Use HybridCache wrapper for sliding window models (stores cache as .cache),
+    # StaticCache wrapper for non-sliding-window models (stores cache as .static_cache).
+    # This matters because the sliding window SDPA closure looks up the cache via
+    # exportable_module.cache, matching the optimum-executorch convention.
+    if sliding_window is not None:
+        from transformers.integrations.executorch import (
+            TorchExportableModuleWithHybridCache,
+        )
+
+        logger.info("Creating TorchExportableModuleWithHybridCache wrapper...")
+        exportable = TorchExportableModuleWithHybridCache(
+            model=model,
+            batch_size=1,
+            max_cache_len=effective_cache_len,
+        )
+    else:
+        logger.info("Creating TorchExportableModuleWithStaticCache wrapper...")
+        exportable = TorchExportableModuleWithStaticCache(
+            model=model,
+            batch_size=1,
+            max_cache_len=effective_cache_len,
+        )
 
     if use_custom_kv_cache:
-        from executorch.backends.mlx.examples.source_transformation import (
-            replace_hf_cache_with_mlx,
-        )
+        if sliding_window is not None:
+            # Use ring buffer cache for sliding window models
+            from executorch.backends.mlx.examples.source_transformation import (
+                replace_hf_cache_with_mlx_ring_buffer,
+            )
 
-        logger.info("Replacing HuggingFace StaticCache with HFStaticCache...")
-        replace_hf_cache_with_mlx(
-            exportable,
-            model.config,
-            max_batch_size=1,
-            max_cache_len=max_seq_len,
-            dtype=torch_dtype,
-        )
-        logger.info("  HFStaticCache installed successfully")
+            logger.info(
+                f"Replacing StaticCache with RingBuffer KV cache "
+                f"(window_size={effective_cache_len})..."
+            )
+            replace_hf_cache_with_mlx_ring_buffer(
+                exportable,
+                model.config,
+                max_batch_size=1,
+                window_size=effective_cache_len,
+                dtype=torch_dtype,
+            )
 
-    from executorch.backends.mlx.examples.quantization import apply_quantization
+            if use_custom_sdpa:
+                # Re-register attention with sliding window closure
+                from executorch.backends.mlx.examples.attention import (
+                    register_mlx_sliding_window_attention,
+                )
+
+                register_mlx_sliding_window_attention(exportable)
+                model.config._attn_implementation = "mlx_sliding_window"
+                logger.info(
+                    "  Registered sliding window attention (mlx_sliding_window)"
+                )
+
+            logger.info("  RingBuffer KV cache installed successfully")
+        else:
+            # Use standard linear cache for non-sliding-window models
+            from executorch.backends.mlx.examples.source_transformation import (
+                replace_hf_cache_with_mlx,
+            )
+
+            logger.info("Replacing HuggingFace StaticCache with HFStaticCache...")
+            replace_hf_cache_with_mlx(
+                exportable,
+                model.config,
+                max_batch_size=1,
+                max_cache_len=effective_cache_len,
+                dtype=torch_dtype,
+            )
+            logger.info("  HFStaticCache installed successfully")
+
+    from executorch.backends.mlx.llm.quantization import apply_quantization
 
     apply_quantization(
         exportable.model,
@@ -218,7 +283,7 @@ def _export_with_custom_components(
     example_input_ids = torch.zeros((1, seq_length), dtype=torch.long)
     example_cache_position = torch.arange(seq_length, dtype=torch.long)
 
-    seq_len_dim = torch.export.Dim("seq_length_dim", max=max_seq_len - 1)
+    seq_len_dim = torch.export.Dim("seq_length_dim", max=effective_cache_len - 1)
     dynamic_shapes = {
         "input_ids": {1: seq_len_dim},
         "cache_position": {0: seq_len_dim},
@@ -248,6 +313,7 @@ def _export_with_custom_components(
 
     edge_program = exir.to_edge_transform_and_lower(
         {"forward": exported_program},
+        transform_passes=get_default_passes(),
         partitioner=[MLXPartitioner()],
         compile_config=edge_config,
     )
@@ -361,7 +427,7 @@ def main():
         default="bf16",
         help="Model dtype",
     )
-    from executorch.backends.mlx.examples.quantization import add_quantization_args
+    from executorch.backends.mlx.llm.quantization import add_quantization_args
 
     add_quantization_args(parser)
     parser.add_argument(

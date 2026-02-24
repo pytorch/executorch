@@ -1056,11 +1056,14 @@ def _to_edge_and_lower_llama_mlx(
 
     logging.info("Lowering model using MLX partitioner")
 
+    from executorch.backends.mlx.passes import get_default_passes
+
     partitioners = [get_mlx_partitioner()]
     modelname = f"mlx_{modelname}"
 
     builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
-        partitioners
+        partitioners,
+        passes=get_default_passes(),
     )
 
     if verbose:
@@ -1817,19 +1820,17 @@ def _get_source_transforms(  # noqa
             transforms.append(replace_kv_cache_with_coreml_kv_cache)
 
         elif mlx:
-            # MLX backend for Apple Silicon
-            # Import MLX source transformations
-            from executorch.backends.mlx.examples.source_transformation import (
-                get_mlx_source_transforms,
+            from executorch.backends.mlx.llm.source_transformation import (
+                replace_et_kv_cache_with_mlx,
+                transform_attention_mha_to_mlx,
+            )
+            from executorch.examples.models.llama.source_transformation.rms_norm import (
+                replace_rms_norm_with_native_rms_norm,
             )
 
-            # Get MLX transforms (replaces attention, KV cache, registers custom ops)
-            mlx_transforms = get_mlx_source_transforms(
-                use_mlx_attention=True,
-                use_mlx_kv_cache=True,
-                use_mlx_rope=False,
-            )
-            transforms.extend(mlx_transforms)
+            transforms.append(transform_attention_mha_to_mlx)
+            transforms.append(replace_et_kv_cache_with_mlx)
+            transforms.append(replace_rms_norm_with_native_rms_norm)
 
     if local_global_attention:
         transforms.append(

@@ -41,7 +41,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 # Import shared KV cache module
-from executorch.backends.mlx.examples.cache import ETKVCache
+from executorch.backends.mlx.llm.cache import KVCache
+from executorch.backends.mlx.passes import get_default_passes
 
 # Import custom ops
 from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
@@ -101,7 +102,7 @@ class WhisperSelfAttentionWithCache(nn.Module):
         self.max_cache_len = max_cache_len
 
         # Initialize KV cache module
-        self.kv_cache = ETKVCache(
+        self.kv_cache = KVCache(
             max_batch_size=1,
             max_context_length=max_cache_len,
             n_heads=self.num_heads,
@@ -470,7 +471,7 @@ def export_whisper_to_mlx(
     # Whisper has 3 separate wrappers to quantize, and embed_positions must be
     # excluded from embedding quantization (accessed via indexing).
     if quantize_linear or quantize_embeddings:
-        from executorch.backends.mlx.examples.quantization import _default_group_size
+        from executorch.backends.mlx.llm.quantization import _default_group_size
 
         try:
             from torchao.quantization.granularity import PerGroup
@@ -634,6 +635,7 @@ def _save_to_pte(ep, output_path: str, name: str) -> None:
 
     edge_program = exir.to_edge_transform_and_lower(
         ep,
+        transform_passes=get_default_passes(),
         partitioner=[MLXPartitioner()],
         compile_config=edge_config,
     )

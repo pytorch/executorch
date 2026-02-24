@@ -62,11 +62,12 @@ Instruction load_instruction(const mlx_delegate::Instruction* fb_instr) {
 
   switch (op_type) {
 {{LOAD_INSTRUCTION_CASES}}
-    default: {
-      instr.op = OpCode::NOOP;
-      instr.node = NoopNode{};
-      break;
-    }
+    default:
+      throw std::runtime_error(
+          "Unknown op_type in load_instruction: " +
+          std::to_string(static_cast<int>(op_type)) +
+          ". The .pte was built with a newer schema than this binary. "
+          "Rebuild with the latest runtime.");
   }
 
   return instr;

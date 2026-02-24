@@ -15,6 +15,7 @@ graph and marks supported operations for delegation to MLX.
 
 from __future__ import annotations
 
+import inspect
 from typing import Any, Callable, Dict, List, Tuple, Union
 
 import torch
@@ -266,6 +267,14 @@ class MLXPartitioner(Partitioner):
             logger.info(f"MLX: Found {pl} subgraphs to be partitioned.")
         return pl != 0
 
+    @staticmethod
+    def _is_to_edge_transform_and_lower() -> bool:
+        """Check whether we are being called from to_edge_transform_and_lower."""
+        for frame_info in inspect.stack():
+            if frame_info.function == "to_edge_transform_and_lower":
+                return True
+        return False
+
     def partition(self, edge_program: ExportedProgram) -> PartitionResult:
         """
         Partition the edge program for MLX delegation.
@@ -275,7 +284,21 @@ class MLXPartitioner(Partitioner):
 
         Returns:
             PartitionResult with tagged nodes and partition specs.
+
+        Raises:
+            RuntimeError: If called from the deprecated ``to_edge`` workflow.
         """
+        if not self._is_to_edge_transform_and_lower():
+            raise RuntimeError(
+                "MLXPartitioner must be used with to_edge_transform_and_lower(). "
+                "The to_edge() + to_backend() workflow is not supported because "
+                "it decomposes ops that MLX has optimized implementations for. "
+                "Please use:\n"
+                "    exir.to_edge_transform_and_lower(\n"
+                '        {"forward": exported_program},\n'
+                "        partitioner=[MLXPartitioner()],\n"
+                "    )"
+            )
         partitions = self.generate_partitions(edge_program=edge_program)
         if self.check_partitions(partitions):
             self.tag_nodes(partitions)

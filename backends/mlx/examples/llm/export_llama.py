@@ -40,7 +40,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 # Import shared KV cache module
-from executorch.backends.mlx.examples.cache import ETKVCache
+from executorch.backends.mlx.llm.cache import KVCache
 
 # Import custom ops to register llama.update_cache
 from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
@@ -172,7 +172,7 @@ class KVCacheAttention(nn.Module):
         self.rope_base = rope_base
 
         # Initialize KV cache module
-        self.kv_cache = ETKVCache(
+        self.kv_cache = KVCache(
             max_batch_size=1,
             max_context_length=self.T_max,
             n_heads=self.num_key_value_heads,
@@ -425,7 +425,7 @@ def export_llama_to_mlx(
     model.eval()
 
     # Apply quantization if requested
-    from executorch.backends.mlx.examples.quantization import apply_quantization
+    from executorch.backends.mlx.llm.quantization import apply_quantization
 
     tie = (
         getattr(base.config, "tie_word_embeddings", False)
@@ -460,6 +460,7 @@ def export_llama_to_mlx(
     logger.info("Delegating to MLX backend...")
     import executorch.exir as exir
     from executorch.backends.mlx import MLXPartitioner
+    from executorch.backends.mlx.passes import get_default_passes
     from executorch.exir import EdgeCompileConfig
     from executorch.exir.capture._config import ExecutorchBackendConfig
 
@@ -473,6 +474,7 @@ def export_llama_to_mlx(
 
     edge_program = exir.to_edge_transform_and_lower(
         ep,
+        transform_passes=get_default_passes(),
         partitioner=[MLXPartitioner()],
         compile_config=edge_config,
     )
@@ -525,7 +527,7 @@ def main():
         default="bf16",
         help="Model dtype (fp32, fp16, bf16)",
     )
-    from executorch.backends.mlx.examples.quantization import add_quantization_args
+    from executorch.backends.mlx.llm.quantization import add_quantization_args
 
     add_quantization_args(parser)
 

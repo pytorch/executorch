@@ -345,6 +345,19 @@ inline void exec_floor_divide_int(
   st.set_value(n.out, result);
 }
 
+// ----- Mod Scalar -----
+inline void
+exec_mod_int(const ModIntNode& n, ExecutionState& st, StreamOrDevice) {
+  int32_t a = resolve_int(n.a, st);
+  int32_t b = resolve_int(n.b, st);
+  // Python modulo semantics: result has same sign as divisor
+  int32_t result = a % b;
+  if ((result != 0) && ((result < 0) != (b < 0))) {
+    result += b;
+  }
+  st.set_value(n.out, result);
+}
+
 // ----- Sym Size -----
 inline void
 exec_sym_size(const SymSizeNode& n, ExecutionState& st, StreamOrDevice) {
@@ -847,6 +860,9 @@ inline void exec_slice_update(
   vstart[axis] = start;
   vstop[axis] = stop;
 
+  if (start == stop)
+    return; // zero-length update, nothing to do
+
   dst = slice_update(dst, upd, to_shape(vstart), to_shape(vstop), s);
 }
 
@@ -1296,6 +1312,13 @@ inline void exec_floor_divide(
   }
 }
 
+// ----- Remainder -----
+inline void
+exec_remainder(const RemainderNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(
+      n.out, remainder(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
 // ----- Power -----
 inline void
 exec_power(const PowerNode& n, ExecutionState& st, StreamOrDevice s) {
@@ -1504,6 +1527,9 @@ class Interpreter {
       case OpCode::FLOOR_DIVIDE_INT:
         ops::exec_floor_divide_int(
             std::get<FloorDivideIntNode>(instr.node), st, s);
+        break;
+      case OpCode::MOD_INT:
+        ops::exec_mod_int(std::get<ModIntNode>(instr.node), st, s);
         break;
       case OpCode::SYM_SIZE:
         ops::exec_sym_size(std::get<SymSizeNode>(instr.node), st, s);
@@ -1745,6 +1771,9 @@ class Interpreter {
         break;
       case OpCode::FLOOR_DIVIDE:
         ops::exec_floor_divide(std::get<FloorDivideNode>(instr.node), st, s);
+        break;
+      case OpCode::REMAINDER:
+        ops::exec_remainder(std::get<RemainderNode>(instr.node), st, s);
         break;
       case OpCode::POWER:
         ops::exec_power(std::get<PowerNode>(instr.node), st, s);

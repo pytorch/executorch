@@ -40,7 +40,7 @@ def add_export_args(parser: argparse.ArgumentParser) -> None:
         default="bf16",
         help="Model dtype",
     )
-    from executorch.backends.mlx.examples.quantization import add_quantization_args
+    from executorch.backends.mlx.llm.quantization import add_quantization_args
 
     add_quantization_args(parser)
 

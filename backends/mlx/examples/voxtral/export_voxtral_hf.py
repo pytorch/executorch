@@ -51,6 +51,7 @@ def export_preprocessor(
     """
     import executorch.exir as exir
     from executorch.backends.mlx import MLXPartitioner
+    from executorch.backends.mlx.passes import get_default_passes
     from executorch.exir import EdgeCompileConfig
     from executorch.exir.capture._config import ExecutorchBackendConfig
     from executorch.exir.passes import MemoryPlanningPass
@@ -79,6 +80,7 @@ def export_preprocessor(
 
         edge_program = exir.to_edge_transform_and_lower(
             ep,
+            transform_passes=get_default_passes(),
             partitioner=[MLXPartitioner()],
             compile_config=EdgeCompileConfig(_check_ir_validity=False),
         )
@@ -153,7 +155,7 @@ def export_voxtral_hf(
     )
 
     # Apply quantization if requested
-    from executorch.backends.mlx.examples.quantization import apply_quantization
+    from executorch.backends.mlx.llm.quantization import apply_quantization
 
     apply_quantization(
         exportable.model,
@@ -170,6 +172,7 @@ def export_voxtral_hf(
     logger.info("Delegating to MLX backend...")
     import executorch.exir as exir
     from executorch.backends.mlx import MLXPartitioner
+    from executorch.backends.mlx.passes import get_default_passes
     from executorch.exir import EdgeCompileConfig
     from executorch.exir.capture._config import ExecutorchBackendConfig
     from executorch.exir.passes import MemoryPlanningPass
@@ -181,6 +184,7 @@ def export_voxtral_hf(
 
     edge_program = exir.to_edge_transform_and_lower(
         exported_progs,
+        transform_passes=get_default_passes(),
         partitioner=[MLXPartitioner()],
         compile_config=edge_config,
         constant_methods=exportable.metadata,
@@ -231,7 +235,7 @@ def main():
         default="bf16",
         help="Model dtype",
     )
-    from executorch.backends.mlx.examples.quantization import add_quantization_args
+    from executorch.backends.mlx.llm.quantization import add_quantization_args
 
     add_quantization_args(parser)
     parser.add_argument(

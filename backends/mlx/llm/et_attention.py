@@ -25,7 +25,7 @@ import executorch.backends.mlx.custom_ops as _mlx_custom_ops  # noqa: F401
 
 import torch
 import torch.nn as nn
-from executorch.backends.mlx.examples.cache import ETKVCache
+from executorch.backends.mlx.llm.cache import KVCache
 from executorch.examples.models.llama.attention import (
     Attention,
     ForwardOptions,
@@ -98,7 +98,7 @@ class MLXAttentionMHA(Attention):
         self.rope_traditional = not rope.params.use_hf_rope
         self.rope_dims = int(self.head_dim * rope.params.partial_rotary_factor)
 
-        self.kv_cache = ETKVCache(
+        self.kv_cache = KVCache(
             max_batch_size=args.max_batch_size,
             max_context_length=args.max_context_len,
             n_heads=self.n_kv_heads,
@@ -120,7 +120,7 @@ class MLXAttentionMHA(Attention):
         Create an MLXAttentionMHA from an existing AttentionMHA.
 
         Shares weight references (wq, wk, wv, wo, rope, norm) and creates
-        a fresh ETKVCache.
+        a fresh KVCache.
         """
         from executorch.examples.models.llama.attention import AttentionMHA
 
@@ -167,7 +167,7 @@ class MLXAttentionMHA(Attention):
         cache_dtype = dtype if dtype is not None else torch.float32
         if hasattr(other, "kv_cache") and hasattr(other.kv_cache, "k_cache"):
             cache_dtype = dtype if dtype is not None else other.kv_cache.k_cache.dtype
-        instance.kv_cache = ETKVCache(
+        instance.kv_cache = KVCache(
             max_batch_size=other.max_batch_size,
             max_context_length=other.max_context_len,
             n_heads=instance.n_kv_heads,

@@ -38,7 +38,7 @@ import argparse
 import torch
 import torch.nn as nn
 
-from executorch.backends.mlx.examples.cache import ETKVCache
+from executorch.backends.mlx.llm.cache import KVCache
 from executorch.backends.mlx.partitioner import MLXPartitioner
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.capture._config import ExecutorchBackendConfig
@@ -60,7 +60,7 @@ class MultiOpCacheModel(nn.Module):
 
     def __init__(self, dim=4, max_len=8):
         super().__init__()
-        self.cache = ETKVCache(
+        self.cache = KVCache(
             max_batch_size=1,
             max_context_length=max_len,
             n_heads=1,

@@ -10,21 +10,6 @@
 Shared KV cache utilities for MLX delegate examples.
 
 Provides reusable KV cache implementations optimized for the MLX backend:
-
-- ETKVCache: Single-layer cache with BHSD layout, ExecutorTorch llama KVCache interface
-- HFStaticCache: Multi-layer cache following HuggingFace's StaticCache interface
-
-Usage with HuggingFace models:
-    from executorch.backends.mlx.examples.source_transformation import (
-        replace_hf_cache_with_mlx,
-    )
-
-    # Load HF model with StaticCache
-    model = AutoModelForCausalLM.from_pretrained(...)
-    model = model.to_exportable(max_batch_size=1, max_cache_len=4096)
-
-    # Replace with MLX-optimized cache before export
-    replace_hf_cache_with_mlx(model, model.config, max_cache_len=4096)
 """
 
 from typing import Tuple
@@ -36,7 +21,7 @@ import torch.nn as nn
 from executorch.backends.mlx import custom_ops as _mlx_custom_ops  # noqa: F401
 
 
-class ETKVCache(nn.Module):
+class KVCache(nn.Module):
     """
     MLX-optimized KV cache with ExecutorTorch llama KVCache interface.
 
@@ -67,7 +52,7 @@ class ETKVCache(nn.Module):
             layer_cache.update(input_pos, k_val, v_val)
 
     Example:
-        >>> cache = ETKVCache(
+        >>> cache = KVCache(
         ...     max_batch_size=1,
         ...     max_context_length=4096,
         ...     n_heads=32,
@@ -161,6 +146,148 @@ class ETKVCache(nn.Module):
 
 
 # =============================================================================
+# RingBufferKVCache - Sliding Window KV Cache
+# =============================================================================
+
+
+class RingBufferKVCache(nn.Module):
+    """
+    Ring buffer KV cache for sliding window attention.
+
+    Instead of a linear cache that fills up and stops, this cache wraps around:
+    write_pos = start_pos % window_size. When the cache is full, new tokens
+    overwrite the oldest ones, enabling infinite-length generation.
+
+    The attention mask is computed branchlessly from ``start_pos`` and
+    ``window_size`` alone using ``torch.where`` — no mutable position-tracking
+    buffers and no Python if/else that would create torch.export guards.
+
+    Mask creation is NOT done here — following optimum-executorch's pattern,
+    the attention function creates the mask lazily by accessing the cache
+    via a closure. This avoids tracing issues with torch.export.
+
+    Layout: BHSD [batch_size, num_heads, window_size, head_dim]
+
+    Example:
+        >>> cache = RingBufferKVCache(
+        ...     max_batch_size=1,
+        ...     max_context_length=512,
+        ...     n_heads=4,
+        ...     head_dim=256,
+        ...     dtype=torch.bfloat16,
+        ... )
+        >>> k_val = torch.randn(1, 4, 1, 256)
+        >>> v_val = torch.randn(1, 4, 1, 256)
+        >>> k_cache, v_cache = cache.update(start_pos=0, k_val=k_val, v_val=v_val)
+    """
+
+    def __init__(
+        self,
+        max_batch_size: int,
+        max_context_length: int,
+        n_heads: int,
+        head_dim: int,
+        dtype: torch.dtype = torch.float32,
+    ):
+        super().__init__()
+        assert (
+            max_batch_size == 1
+        ), f"Only max_batch_size=1 is supported, but got {max_batch_size}"
+        self.max_batch_size = max_batch_size
+        self.max_context_length = max_context_length
+        self.window_size = max_context_length
+        self.buffer_size = 2 * max_context_length
+        self.n_heads = n_heads
+        self.head_dim = head_dim
+
+        # Cache buffers [B, H, 2*window_size, D]
+        # 2× buffer ensures multi-token writes never overwrite data that
+        # earlier queries in the same batch still need (matches ET behavior).
+        cache_shape = (max_batch_size, n_heads, self.buffer_size, head_dim)
+        self.register_buffer(
+            "k_cache", torch.zeros(cache_shape, dtype=dtype, device="cpu")
+        )
+        self.register_buffer(
+            "v_cache", torch.zeros(cache_shape, dtype=dtype, device="cpu")
+        )
+
+    def update(
+        self, input_pos: torch.Tensor | int, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Update cache with new K/V states using ring buffer semantics.
+
+        Args:
+            input_pos: Start position — either a position tensor [S] or an int/SymInt
+            k_val: New key states [B, H, S, D]
+            v_val: New value states [B, H, S, D]
+
+        Returns:
+            Tuple of (k_cache, v_cache) — full ring buffer slices
+        """
+        if isinstance(input_pos, torch.Tensor):
+            start_pos = input_pos[0].item()
+            seq_len = k_val.size(2)
+            torch._check(seq_len == v_val.size(2))
+            torch._check_is_size(start_pos)
+            torch._check(seq_len <= self.window_size)
+        else:
+            start_pos = input_pos
+            seq_len = k_val.size(2)
+
+        # Use MLX custom op for ring buffer cache update (mutates in place)
+        # ring_size enables wrapping: write_pos = start_pos % ring_size
+        torch.ops.mlx.kv_cache_update(
+            self.k_cache, k_val, start_pos, ring_size=self.buffer_size
+        )
+        torch.ops.mlx.kv_cache_update(
+            self.v_cache, v_val, start_pos, ring_size=self.buffer_size
+        )
+
+        return self.k_cache[:, :, :, :], self.v_cache[:, :, :, :]
+
+    def create_sliding_window_mask(self, start_pos: int, seq_len: int) -> torch.Tensor:
+        """
+        Build attention mask for the ring buffer — branchless, no mutable state.
+
+        Reconstructs the slot→position mapping from ``start_pos`` and
+        ``buffer_size`` alone using ``torch.where``, avoiding both Python
+        if/else (which creates torch.export guards) and mutable position-
+        tracking buffers (which require extra kv_cache_update calls and
+        complicate partitioning).
+
+        Returns:
+            Additive float mask [1, 1, seq_len, buffer_size] where 0 = attend,
+            -inf = block.
+        """
+        w = self.window_size
+        b = self.buffer_size
+        end_pos = start_pos + seq_len
+
+        # Slot indices [buffer_size]
+        slots = torch.arange(b, dtype=torch.long)
+
+        last_write_slot = (end_pos - 1) % b
+        current_cycle_base = end_pos - 1 - last_write_slot
+        pos_current = current_cycle_base + slots
+        pos_previous = current_cycle_base - b + slots
+
+        cache_pos = torch.where(slots <= last_write_slot, pos_current, pos_previous)
+
+        # Query positions [seq_len, 1]
+        pos_q = (start_pos + torch.arange(seq_len, dtype=torch.long)).view(-1, 1)
+
+        # Delta from query to each cached position [seq_len, buffer_size]
+        delta = pos_q - cache_pos
+
+        # A slot is attendable if: filled (pos >= 0), causal (delta >= 0),
+        # and within the sliding window (delta < w)
+        attn_mask = (cache_pos >= 0) & (delta >= 0) & (delta < w)
+
+        return torch.where(attn_mask, 0.0, float("-inf")).unsqueeze(0).unsqueeze(0)
+
+
+# =============================================================================
 # HFStaticCache - Standalone HuggingFace-compatible Static Cache
 # =============================================================================
 
@@ -240,11 +367,11 @@ class HFStaticCache(StaticCache):
         self.num_heads = num_heads
         self.head_dim = head_dim
 
-        # Create ETKVCache wrappers for each layer - these use mlx::kv_cache_update
+        # Create KVCache wrappers for each layer - these use mlx::kv_cache_update
         # Named 'kv_cache' to match optimum-executorch's ETCustomStaticCache pattern
         self.kv_cache = nn.ModuleList(
             [
-                ETKVCache(
+                KVCache(
                     max_batch_size=max_batch_size,
                     max_context_length=actual_max_cache_len,
                     n_heads=num_heads,
@@ -292,8 +419,8 @@ class HFStaticCache(StaticCache):
             cache_position, torch.Tensor
         ), "cache_position must be a tensor"
 
-        # Pass cache_position tensor directly to ETKVCache.update()
-        # ETKVCache extracts start_pos internally via input_pos[0].item()
+        # Pass cache_position tensor directly to KVCache.update()
+        # KVCache extracts start_pos internally via input_pos[0].item()
         return self.kv_cache[layer_idx].update(cache_position, key_states, value_states)
 
     def get_seq_length(self, layer_idx: int = 0) -> int:

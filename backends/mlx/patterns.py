@@ -10,23 +10,22 @@
 MLX Pattern Handlers - pattern-based op lowering for fused operations.
 
 This module contains pattern handlers that match multi-node subgraphs and lower
-them to optimized MLX operations. Examples include:
-- SLICE_UPDATE: In-place slice updates for KV cache
-- UPDATE_CACHE: KV cache updates via llama.update_cache custom op
-- SDPA: Scaled Dot-Product Attention with optional GQA
-- QUANTIZED_LINEAR: Fused dequantize + linear for quantized models
-- QUANTIZED_EMBEDDING: Fused dequantize + embedding for quantized models
+them to optimized MLX operations.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import torch
+from executorch.backends.mlx.pattern_utils import (
+    has_single_user,
+    match_target,
+    OpStep,
+    walk_back,
+)
 from executorch.backends.mlx.program_builder import (
     emit_stop_position,
-    get_aten_target_normalized,
     MLXProgramBuilder,
     parse_dequant_node,
     PatternHandler,
@@ -36,13 +35,18 @@ from executorch.backends.mlx.program_builder import (
     torch_dtype_to_scalar_type,
 )
 from executorch.backends.mlx.serialization.mlx_graph_schema import (
+    AddIntNode,
     IdCopyNode,
     IndexUpdateNode,
     IntOrVid,
+    ModIntNode,
     QuantizedGatherNode,
     QuantizedLinearNode,
     SdpaNode,
+    SliceNode,
     SliceUpdateNode,
+    SubtractIntNode,
+    SymSizeNode,
 )
 from torch.export.exported_program import ExportedProgram
 from torch.fx.node import Node
@@ -51,208 +55,6 @@ from torch.fx.node import Node
 # When False, use scale_only=True optimization when zero_point is all zeros,
 # which avoids serializing the biases tensor (C++ runtime computes: biases = -scales * 2^(bits-1)).
 QUANTIZED_SERIALIZE_BIASES = True
-
-
-# =============================================================================
-# Pattern-matching utilities
-# =============================================================================
-
-
-def match_target(node: Node, op) -> bool:
-    """Check if a node's normalized aten target matches the given op."""
-    return node.op == "call_function" and get_aten_target_normalized(node.target) == op
-
-
-def has_single_user(node: Node) -> bool:
-    """Check if a node has exactly one consumer."""
-    return len(node.users) == 1
-
-
-@dataclass
-class OpStep:
-    """One step in a backward walk through the graph."""
-
-    op: Any
-    optional: bool = False
-    args: Optional[Dict[int, Any]] = field(default=None)
-
-
-def walk_back(
-    node: Node,
-    steps: List[OpStep],
-) -> Optional[Tuple[Node, List[Node]]]:
-    """Walk backwards through a chain of single-user ops.
-
-    Starting from *node*, try to match each step against the current node.
-    At every matched step the walk advances to ``cur.args[0]``.  Optional
-    steps are silently skipped when they don't match.
-
-    Returns:
-        ``(base_node, body_nodes)`` if the full chain matches, else ``None``.
-        *base_node* is the input to the first (deepest) op in the chain.
-        *body_nodes* are the matched intermediate nodes (in walk order).
-    """
-    body: List[Node] = []
-    cur = node
-
-    for step in steps:
-        if not isinstance(cur, Node):
-            return None
-
-        if match_target(cur, step.op):
-            if not has_single_user(cur):
-                return None
-            if step.args:
-                for idx, expected in step.args.items():
-                    if len(cur.args) <= idx or cur.args[idx] != expected:
-                        return None
-            body.append(cur)
-            cur = cur.args[0]
-        elif step.optional:
-            continue
-        else:
-            return None
-
-    if not isinstance(cur, Node):
-        return None
-
-    return cur, body
-
-
-@REGISTRY.register_pattern(name="SLICE_UPDATE")
-class SliceUpdateHandler(PatternHandler):
-    """
-    Pattern for in-place slice updates (used for KV cache).
-
-    Matches: slice -> copy -> slice_scatter
-    Where slice and slice_scatter operate on the same buffer.
-    """
-
-    def __init__(
-        self,
-        head: Node,
-        body: List[Node],
-        dst: Node,
-        update: Node,
-        axis: int,
-        start: Any,
-        stop: Any,
-    ):
-        super().__init__(head, body)
-        self.dst = dst
-        self.update = update
-        self.axis = axis
-        self.start = start
-        self.stop = stop
-
-    @classmethod
-    def maybe_create(  # noqa: C901
-        cls, ep: ExportedProgram, head: Node
-    ) -> Optional["SliceUpdateHandler"]:
-        slice_scatter_node = head
-        if not match_target(slice_scatter_node, torch.ops.aten.slice_scatter.default):
-            return None
-
-        # Slice scatter should write to a mutable input/buffer to be a slice update.
-        # NOTE: We also check user_inputs_to_mutate for the case where the mutated
-        # buffer is passed as a user input (after tag_mutated_buffer tags it).
-        if (slice_scatter_node.name not in ep.graph_signature.buffers_to_mutate) and (
-            slice_scatter_node.name not in ep.graph_signature.user_inputs_to_mutate
-        ):
-            return None
-
-        if len(slice_scatter_node.args) != 5:
-            return None
-        ss_dst, ss_src, ss_axis, ss_start, ss_end = slice_scatter_node.args
-
-        copy_node = ss_src
-        if not match_target(copy_node, torch.ops.aten.copy.default):
-            return None
-        if not has_single_user(copy_node):
-            return None
-        if len(copy_node.args) != 2:
-            return None
-        c_dst, c_src = copy_node.args
-
-        slice_node = c_dst
-        if not match_target(slice_node, torch.ops.aten.slice.Tensor):
-            return None
-        if not has_single_user(slice_node):
-            return None
-        if len(slice_node.args) != 4:
-            return None
-        s_src, s_axis, s_start, s_end = slice_node.args
-
-        # Slice should be on a buffer/input to be a slice-update.
-        # After tag_mutated_buffer runs, the buffer may show up in user_inputs too.
-        if (s_src.name not in ep.graph_signature.inputs_to_buffers) and (
-            s_src.name not in ep.graph_signature.user_inputs
-        ):
-            # Partitioned subgraph case: mutation info may be empty but the
-            # buffer is passed as a placeholder input. Check that s_src is a placeholder.
-            if s_src.op != "placeholder":
-                return None
-
-        # We should be slice / slice-scatter the same input/buffer
-        if s_src.name in ep.graph_signature.inputs_to_buffers:
-            buf = ep.graph_signature.inputs_to_buffers[s_src.name]
-            buf_mut = ep.graph_signature.buffers_to_mutate.get(slice_scatter_node.name)
-            if buf_mut is not None and buf != buf_mut:
-                return None
-
-        if s_src.name in ep.graph_signature.user_inputs:
-            # If there's mutation tracking, verify consistency
-            # If not (partitioned subgraph), allow the pattern
-            pass
-
-        if (
-            (s_src != ss_dst)
-            or (s_axis != ss_axis)
-            or (s_start != ss_start)
-            or (s_end != ss_end)
-        ):
-            return None
-
-        head = slice_scatter_node
-        body = [slice_node, copy_node]
-        dst = s_src
-        update = c_src
-        axis = s_axis
-        start = s_start
-        stop = s_end
-        return SliceUpdateHandler(head, body, dst, update, axis, start, stop)
-
-    def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
-        assert n == self.head
-        dst, update, axis, start, stop = P.slot_map(
-            [self.dst, self.update, self.axis, self.start, self.stop]
-        )
-        P.emit(
-            SliceUpdateNode(
-                dst=P.slot_to_tid(dst),
-                update=P.slot_to_tid(update),
-                axis=P.to_int_or_vid(axis),
-                start=P.to_int_or_vid(start),
-                stop=P.to_int_or_vid(stop),
-            )
-        )
-        # The slice_scatter node output is logically the same as the dst buffer
-        # (it's an in-place update). If the node already has a slot assigned
-        # (e.g., it's an output), we need to emit an ID_COPY to map dst -> output slot.
-        existing_slot = P.slot_manager.get_slot(n)
-        if existing_slot is not None and existing_slot != dst:
-            # Node already has a slot (e.g., Output), need to copy dst to it
-            P.emit(
-                IdCopyNode(
-                    x=P.slot_to_tid(dst),
-                    out=P.slot_to_tid(existing_slot),
-                )
-            )
-            return existing_slot
-        else:
-            # No existing slot or same as dst - just set to dst
-            P.set_slot(n, dst)
-            return dst
 
 
 # =============================================================================
@@ -354,16 +156,12 @@ class ETKVCacheUpdateHandler(PatternHandler):
     """
     Pattern for KV cache updates using torch.ops.mlx.kv_cache_update.
 
-    Matches the full chain: auto_functionalized → getitem[1] → alias
-    HEAD = aten.alias.default (the final alias node that becomes output)
+    Matches: auto_functionalized → getitem[1]
+    HEAD = getitem[1] (no alias_copy required)
 
-    Graph structure after run_decompositions({}):
+    Graph structure:
         auto_func = auto_functionalized_v2(mlx.kv_cache_update, new_values=k_val, ...)
-        getitem_1 = getitem(auto_func, 1)    # Updated cache alias
-        alias_2 = alias(getitem_1)           # HEAD - the output alias
-
-    By making alias the HEAD, we emit IdCopyNode directly and avoid
-    the ContiguousNode that _clone_handler would emit.
+        getitem_1 = getitem(auto_func, 1)    # HEAD - updated cache
     """
 
     def __init__(
@@ -373,13 +171,13 @@ class ETKVCacheUpdateHandler(PatternHandler):
         cache: Node,
         update: Node,
         start_pos: Any,
-        getitem_node: Node,
+        ring_size: int = 0,
     ):
         super().__init__(head, body)
-        self.cache = cache  # The cache buffer [B, H, S, D]
-        self.update = update  # The update tensor [B, H, S_step, D]
-        self.start_pos = start_pos  # Start position (int or SymInt)
-        self.getitem_node = getitem_node  # getitem[1] node
+        self.cache = cache
+        self.update = update
+        self.start_pos = start_pos
+        self.ring_size = ring_size
 
     @staticmethod
     def _is_auto_func_et_kv_cache_update(node: Node) -> bool:
@@ -402,39 +200,23 @@ class ETKVCacheUpdateHandler(PatternHandler):
         """
         Match the ET_KV_CACHE_UPDATE pattern.
 
-        Pattern (HEAD = alias):
+        Pattern (HEAD = getitem):
             auto_func = auto_functionalized_v2(mlx.kv_cache_update, ...)
-            getitem_1 = getitem(auto_func, 1)    # Updated cache
-            alias = alias(getitem_1)             # HEAD
+            getitem_1 = getitem(auto_func, 1)    # HEAD
         """
-        # HEAD must be aten.alias.default or aten.alias_copy.default
-        if not match_target(head, torch.ops.aten.alias.default) and not match_target(
-            head, torch.ops.aten.alias_copy.default
-        ):
+
+        # HEAD must be getitem with idx=1
+        if head.op != "call_function" or "getitem" not in str(head.target):
             return None
 
-        alias_node = head
-
-        # alias's input should be a getitem node with idx=1
-        if len(alias_node.args) < 1 or not isinstance(alias_node.args[0], Node):
+        if len(head.args) < 2 or head.args[1] != 1:
             return None
-
-        potential_getitem = alias_node.args[0]
-        if potential_getitem.op != "call_function" or "getitem" not in str(
-            potential_getitem.target
-        ):
-            return None
-
-        if len(potential_getitem.args) < 2 or potential_getitem.args[1] != 1:
-            return None
-
-        getitem_node = potential_getitem
 
         # getitem's source should be auto_functionalized_v2 wrapping mlx.kv_cache_update
-        if len(getitem_node.args) < 1 or not isinstance(getitem_node.args[0], Node):
+        if not isinstance(head.args[0], Node):
             return None
 
-        auto_func_node = getitem_node.args[0]
+        auto_func_node = head.args[0]
         if not cls._is_auto_func_et_kv_cache_update(auto_func_node):
             return None
 
@@ -449,38 +231,42 @@ class ETKVCacheUpdateHandler(PatternHandler):
 
         cache_node = all_bases[0]
 
-        # Build the pattern body: auto_func and getitem nodes
-        body = [auto_func_node, getitem_node]
+        body = [auto_func_node]
 
-        return ETKVCacheUpdateHandler(
+        return cls(
             head=head,
             body=body,
             cache=cache_node,
             update=new_values_node,
             start_pos=start_pos_node,
-            getitem_node=getitem_node,
+            ring_size=kwargs.get("ring_size", 0),
         )
 
-    def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
+    def __call__(self, P: "MLXProgramBuilder", n: Node) -> Slot:
         assert n == self.head
 
-        # Get slots for cache and update
-        # cache is [B, H, S, D] (BHSD layout - mutable buffer)
-        # update is [B, H, S_step, D] (new values to insert)
-        cache_slot = P.slot_map([self.cache])[0]
-        update_slot = P.slot_map([self.update])[0]
+        cache_slot, update_slot, start_slot = P.slot_map(
+            [self.cache, self.update, self.start_pos]
+        )
 
-        # start_pos could be an int, SymInt, or a Node (from item())
-        if isinstance(self.start_pos, Node):
-            start_slot = P.slot_map([self.start_pos])[0]
-        else:
-            start_slot = self.start_pos
-
-        # Get the output slot for this node (the alias HEAD)
         out_slot = P.make_or_get_slot(n)
 
-        # Calculate stop = start + seq_len
-        # update is [B, H, S_step, D], so seq_len is dim 2
+        if self.ring_size > 0:
+            self._emit_ring_buffer(P, cache_slot, update_slot, start_slot)
+        else:
+            self._emit_linear(P, cache_slot, update_slot, start_slot)
+
+        P.emit(
+            IdCopyNode(
+                x=P.slot_to_tid(cache_slot),
+                out=P.slot_to_tid(out_slot),
+            )
+        )
+
+        return out_slot
+
+    def _emit_linear(self, P: "MLXProgramBuilder", cache_slot, update_slot, start_slot):
+        """Emit a single SliceUpdate for linear (non-ring) cache."""
         update_meta = self.update.meta.get("val")
         stop_slot = emit_stop_position(
             P,
@@ -490,9 +276,9 @@ class ETKVCacheUpdateHandler(PatternHandler):
             length_meta=update_meta,
         )
 
+        # This updates cache[:, :, start:stop, :] = update
         # SliceUpdateNode on axis=2
         # cache is [B, H, S, D], update is [B, H, S_step, D]
-        # This updates cache[:, :, start:stop, :] = update
         P.emit(
             SliceUpdateNode(
                 dst=P.slot_to_tid(cache_slot),
@@ -503,15 +289,132 @@ class ETKVCacheUpdateHandler(PatternHandler):
             )
         )
 
-        # Emit IdCopyNode from cache to output (NO ContiguousNode!)
+    def _emit_ring_buffer(
+        self, P: "MLXProgramBuilder", cache_slot, update_slot, start_slot
+    ):
+        """
+        Emit two unconditional SliceUpdates for ring buffer wrapping.
+
+        write_pos    = start_pos % ring_size
+        first_len    = ring_size - write_pos
+        first_chunk  = update[:, :, :first_len, :]      (Slice clamps to seq_len)
+        actual_first = first_chunk.shape[2]              (min(first_len, seq_len))
+        rest_chunk   = update[:, :, actual_first:seq_len, :]
+        overflow     = seq_len - actual_first
+        SliceUpdate(cache, first_chunk, write_pos, write_pos + actual_first)
+        SliceUpdate(cache, rest_chunk,  0, overflow)
+
+        When no wrap: actual_first == seq_len, rest_chunk is zero-length,
+        second SliceUpdate is a no-op (guarded in exec_slice_update).
+        """
+        ring_size = self.ring_size
+
+        # write_pos = start_pos % ring_size
+        _, write_pos_slot = P.slot_manager.make_tmp_value_slot()
         P.emit(
-            IdCopyNode(
-                x=P.slot_to_tid(cache_slot),
-                out=P.slot_to_tid(out_slot),
+            ModIntNode(
+                a=P.to_int_or_vid(start_slot),
+                b=IntOrVid.from_literal(ring_size),
+                out=P.slot_to_vid(write_pos_slot),
             )
         )
 
-        return out_slot
+        # seq_len = update.shape[2]
+        _, seq_len_slot = P.slot_manager.make_tmp_value_slot()
+        P.emit(
+            SymSizeNode(
+                a=P.slot_to_tid(update_slot),
+                dim=2,
+                out=P.slot_to_vid(seq_len_slot),
+            )
+        )
+
+        # first_len = ring_size - write_pos (may be > seq_len)
+        _, first_len_slot = P.slot_manager.make_tmp_value_slot()
+        P.emit(
+            SubtractIntNode(
+                a=IntOrVid.from_literal(ring_size),
+                b=P.to_int_or_vid(write_pos_slot),
+                out=P.slot_to_vid(first_len_slot),
+            )
+        )
+
+        # first_chunk = update[:, :, :first_len, :]  (Slice clamps to seq_len)
+        _, first_chunk_slot = P.make_tmp_slot()
+        P.emit(
+            SliceNode(
+                x=P.slot_to_tid(update_slot),
+                out=P.slot_to_tid(first_chunk_slot),
+                axis=IntOrVid.from_literal(2),
+                start=IntOrVid.from_literal(0),
+                stop=P.to_int_or_vid(first_len_slot),
+            )
+        )
+
+        # actual_first = first_chunk.shape[2]  (= min(first_len, seq_len))
+        _, actual_first_slot = P.slot_manager.make_tmp_value_slot()
+        P.emit(
+            SymSizeNode(
+                a=P.slot_to_tid(first_chunk_slot),
+                dim=2,
+                out=P.slot_to_vid(actual_first_slot),
+            )
+        )
+
+        # rest_chunk = update[:, :, actual_first:seq_len, :]
+        _, rest_chunk_slot = P.make_tmp_slot()
+        P.emit(
+            SliceNode(
+                x=P.slot_to_tid(update_slot),
+                out=P.slot_to_tid(rest_chunk_slot),
+                axis=IntOrVid.from_literal(2),
+                start=P.to_int_or_vid(actual_first_slot),
+                stop=P.to_int_or_vid(seq_len_slot),
+            )
+        )
+
+        # stop1 = write_pos + actual_first
+        _, stop1_slot = P.slot_manager.make_tmp_value_slot()
+        P.emit(
+            AddIntNode(
+                a=P.to_int_or_vid(write_pos_slot),
+                b=P.to_int_or_vid(actual_first_slot),
+                out=P.slot_to_vid(stop1_slot),
+            )
+        )
+
+        # overflow = seq_len - actual_first
+        _, overflow_slot = P.slot_manager.make_tmp_value_slot()
+        P.emit(
+            SubtractIntNode(
+                a=P.to_int_or_vid(seq_len_slot),
+                b=P.to_int_or_vid(actual_first_slot),
+                out=P.slot_to_vid(overflow_slot),
+            )
+        )
+
+        # SliceUpdate 1: cache[:, :, write_pos:stop1, :] = first_chunk
+        P.emit(
+            SliceUpdateNode(
+                dst=P.slot_to_tid(cache_slot),
+                update=P.slot_to_tid(first_chunk_slot),
+                axis=IntOrVid.from_literal(2),
+                start=P.to_int_or_vid(write_pos_slot),
+                stop=P.to_int_or_vid(stop1_slot),
+            )
+        )
+
+        # SliceUpdate 2: cache[:, :, 0:overflow, :] = rest_chunk
+        # Zero-length no-op when no wrap (overflow=0)
+        P.emit(
+            SliceUpdateNode(
+                dst=P.slot_to_tid(cache_slot),
+                update=P.slot_to_tid(rest_chunk_slot),
+                axis=IntOrVid.from_literal(2),
+                start=IntOrVid.from_literal(0),
+                stop=P.to_int_or_vid(overflow_slot),
+            )
+        )
 
 
 # =============================================================================
@@ -567,15 +470,27 @@ class SDPAHandler(PatternHandler):
             base_node is the original [B, n_kv, T, D] tensor.
             body_nodes are the intermediate nodes to absorb.
         """
-        return walk_back(
+        result = walk_back(
             node,
             [
-                OpStep(torch.ops.aten.view.default),
-                OpStep(torch.ops.aten.clone.default, optional=True),
-                OpStep(torch.ops.aten.expand.default),
-                OpStep(torch.ops.aten.unsqueeze.default, args={1: 2}),
+                OpStep(op=torch.ops.aten.view.default, nargs=2),
+                OpStep(op=torch.ops.aten.clone.default, optional=True),
+                OpStep(op=torch.ops.aten.expand.default, nargs=2),
+                OpStep(op=torch.ops.aten.unsqueeze.default, nargs=2),
             ],
         )
+        if result is None:
+            return None
+
+        base, entries = result
+        _view, _clone, _expand, unsqueeze = entries
+
+        # unsqueeze must be on dim=2
+        if unsqueeze.args[1] != 2:
+            return None
+
+        body = [e for e in entries if e is not None]
+        return base, body
 
     @classmethod
     def maybe_create(cls, ep: ExportedProgram, head: Node) -> Optional["SDPAHandler"]:
@@ -691,6 +606,7 @@ class MLXCustomSdpaHandler(PatternHandler):
         key: Node,
         value: Node,
         start_pos: Any,  # int or Node (SymInt)
+        attn_mask: Optional[Node],
         scale: Optional[float],
         is_causal: bool,
     ):
@@ -699,6 +615,7 @@ class MLXCustomSdpaHandler(PatternHandler):
         self.key = key
         self.value = value
         self.start_pos = start_pos
+        self.attn_mask = attn_mask
         self.scale = scale
         self.is_causal = is_causal
 
@@ -733,9 +650,6 @@ class MLXCustomSdpaHandler(PatternHandler):
         is_causal = args[6] if len(args) > 6 else kwargs.get("is_causal", False)
         scale = args[7] if len(args) > 7 else kwargs.get("scale", None)
 
-        # We only support causal attention without explicit mask
-        if attn_mask is not None and not isinstance(attn_mask, type(None)):
-            return None
         if dropout_p != 0.0:
             return None
 
@@ -746,6 +660,7 @@ class MLXCustomSdpaHandler(PatternHandler):
             key=key,
             value=value,
             start_pos=start_pos,
+            attn_mask=attn_mask,
             scale=scale,
             is_causal=is_causal,
         )
@@ -818,7 +733,11 @@ class MLXCustomSdpaHandler(PatternHandler):
                 v=P.slot_to_tid(v_sliced_slot),
                 out=P.slot_to_tid(out_slot),
                 scale=scale,
-                mask=None,
+                mask=(
+                    P.slot_to_tid(P.slot_map([self.attn_mask])[0])
+                    if self.attn_mask is not None
+                    else None
+                ),
                 causal=self.is_causal,
             )
         )

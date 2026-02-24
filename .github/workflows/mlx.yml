@@ -35,6 +35,8 @@ jobs:
         ${CONDA_RUN} cmake --preset mlx-release -DEXECUTORCH_BUILD_TESTS=ON
         echo "::endgroup::"
 
+        ${CONDA_RUN} pip list
+
         echo "::group::Build test runners"
         ${CONDA_RUN} cmake --build cmake-out --target op_test_runner multi_thread_test_runner -j$(( $(sysctl -n hw.ncpu) - 1 ))
         echo "::endgroup::"
@@ -50,6 +52,52 @@ jobs:
           ET_PREDICTIONS_PER_THREAD=100 \
           ./cmake-out/backends/mlx/test/multi_thread_test_runner
         echo "::endgroup::"
+
+  backend-tester:
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [models, operators]
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      job-name: test-mlx-backend-${{ matrix.suite }}
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        echo "::endgroup::"
+
+        ${CONDA_RUN} pip list
+
+        echo "::group::Run backend test suite"
+        ${CONDA_RUN} pytest
+        ${CONDA_RUN} pytest -c /dev/null backends/test/suite/${{ matrix.suite }}/ -m flow_mlx -n auto 2>&1 | tee pytest_output.txt || true
+        echo "::endgroup::"
+
+        # Parse pytest summary and check failure threshold
+        if grep -E "^=+ .* =+$" pytest_output.txt | tail -1 | grep -q "failed"; then
+          FAILED=$(grep -E "^=+ .* =+$" pytest_output.txt | tail -1 | grep -oE "[0-9]+ failed" | grep -oE "[0-9]+")
+        else
+          FAILED=0
+        fi
+
+        if [ "${{ matrix.suite }}" = "operators" ]; then
+          MAX_FAILURES=1
+        else
+          MAX_FAILURES=3
+        fi
+
+        echo "Failed tests: $FAILED (max allowed: $MAX_FAILURES)"
+        if [ "$FAILED" -gt "$MAX_FAILURES" ]; then
+          echo "::error::Too many test failures: $FAILED > $MAX_FAILURES"
+          exit 1
+        fi
 
   test-mlx-parakeet:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
@@ -71,8 +119,10 @@ jobs:
         ${CONDA_RUN} pip install -r examples/models/parakeet/install_requirements.txt
         echo "::endgroup::"
 
-        echo "::group::Export Parakeet model with MLX backend"
-        ${CONDA_RUN} python -m executorch.examples.models.parakeet.export_parakeet_tdt \
+        ${CONDA_RUN} pip list
+
+        echo "::group::Export Parakeet"
+        ${CONDA_RUN} python -m executorch.examples.models.parakeet \
           --backend mlx \
           --dtype bf16 \
           --qlinear_encoder 4w \
@@ -125,11 +175,11 @@ jobs:
         ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         ${CONDA_RUN} pip install "optimum-executorch @ git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}"
-        ${CONDA_RUN} pip install "transformers==4.56.1" "tokenizers>=0.22.2"
         echo "::endgroup::"
 
-        echo "::group::Export Voxtral model with MLX backend"
-        PYTHONPATH="${PWD}:${PYTHONPATH:-}" \
+        ${CONDA_RUN} pip list
+
+        echo "::group::Export Voxtral"
         ${CONDA_RUN} python -m executorch.backends.mlx.examples.voxtral.export_voxtral_hf \
           --output-dir /tmp/voxtral_mlx \
           --dtype bf16 \
@@ -180,8 +230,10 @@ jobs:
         ${CONDA_RUN} pip install transformers soundfile datasets librosa
         echo "::endgroup::"
 
-        echo "::group::Export Whisper model with MLX backend"
-        ${CONDA_RUN} python -m executorch.backends.mlx.examples.whisper.export_whisper \
+        ${CONDA_RUN} pip list
+
+        echo "::group::Export Whisper"
+        ${CONDA_RUN} python -m executorch.backends.mlx.examples.whisper \
           --model-id "openai/whisper-tiny" \
           --output-dir /tmp/whisper_mlx \
           --dtype bf16 \
@@ -221,7 +273,9 @@ jobs:
         ${CONDA_RUN} pip install "transformers>=4.56.1" "tokenizers>=0.22.2"
         echo "::endgroup::"
 
-        echo "::group::Export Llama 1B with MLX backend"
+        ${CONDA_RUN} pip list
+
+        echo "::group::Export Llama 1B"
         ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.export_llama \
           --model-id "unsloth/Llama-3.2-1B-Instruct" \
           --output /tmp/llama_1b.pte \
@@ -263,6 +317,8 @@ jobs:
         echo "::group::Install Llama requirements"
         ${CONDA_RUN} sh examples/models/llama/install_requirements.sh
         echo "::endgroup::"
+
+        ${CONDA_RUN} pip list
 
         echo "::group::Build ExecuTorch with MLX delegate"
         ${CONDA_RUN} cmake --workflow --preset mlx-release
@@ -316,9 +372,10 @@ jobs:
             name: "qwen3-0.6b"
           - id: "unsloth/gemma-3-1b-it"
             name: "gemma3-1b"
+        use-custom: [false, true]
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
-      job-name: test-mlx-llm-${{ matrix.model.name }}
+      job-name: test-mlx-llm-${{ matrix.model.name }}${{ matrix.use-custom && '-custom' || '' }}
       runner: macos-14-xlarge
       python-version: "3.12"
       submodules: recursive
@@ -329,6 +386,12 @@ jobs:
 
         MODEL_ID="${{ matrix.model.id }}"
         MODEL_NAME="${{ matrix.model.name }}"
+        USE_CUSTOM="${{ matrix.use-custom }}"
+
+        CUSTOM_ARGS=""
+        if [ "${USE_CUSTOM}" = "true" ]; then
+          CUSTOM_ARGS="--use-custom-sdpa --use-custom-kv-cache"
+        fi
 
         echo "::group::Install ExecuTorch and configure MLX build"
         ${CONDA_RUN} python install_executorch.py > /dev/null
@@ -340,18 +403,19 @@ jobs:
         ${CONDA_RUN} pip install transformers "optimum-executorch @ git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}"
         echo "::endgroup::"
 
-        echo "::group::Export ${MODEL_NAME} with MLX backend"
-        PYTHONPATH="${PWD}:${PYTHONPATH:-}" \
+        ${CONDA_RUN} pip list
+
+        echo "::group::Export ${MODEL_NAME}"
         ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.export_llm_hf \
           --model-id "${MODEL_ID}" \
           --output /tmp/${MODEL_NAME}.pte \
           --quantize-linear int4 \
-          --quantize-embeddings int4
+          --quantize-embeddings int4 \
+          ${CUSTOM_ARGS}
         echo "::endgroup::"
 
         echo "::group::Run ${MODEL_NAME} inference"
-        OUTPUT=$(PYTHONPATH="${PWD}:${PYTHONPATH:-}" \
-        ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.run_llm_hf \
+        OUTPUT=$(${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.run_llm_hf \
           --pte /tmp/${MODEL_NAME}.pte \
           --model-id "${MODEL_ID}" \
           --prompt "What is the capital of France?" \

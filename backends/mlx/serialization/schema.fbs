@@ -176,6 +176,12 @@ table FloorDivideIntNode {
     out: Vid (required);
 }
 
+table ModIntNode {
+    a: IntOrVid (required);
+    b: IntOrVid (required);
+    out: Vid (required);
+}
+
 table SymSizeNode {
     a: Tid (required);
     dim: int32;
@@ -690,6 +696,12 @@ table FloorDivideNode {
     out: Tid (required);
 }
 
+table RemainderNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
 table PowerNode {
     a: Tid (required);
     b: Tid (required);
@@ -885,7 +897,9 @@ union OpNode {
     MaxNode,
     MinNode,
     ArgminNode,
-    MedianNode
+    MedianNode,
+    ModIntNode,
+    RemainderNode
     // BC: Add new op nodes here (append only)
 }
 

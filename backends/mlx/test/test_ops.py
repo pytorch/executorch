@@ -34,9 +34,6 @@ from executorch.backends.mlx import (  # noqa: F401 - registers mlx ops  # noqa:
     custom_ops,
     ops,
 )
-from executorch.extension.llm.custom_ops import (  # noqa: F401 - registers llama.update_cache
-    custom_ops as llama_ops,
-)
 from torch.export import Dim
 
 from .test_utils import OpTestCase, register_test
@@ -1772,437 +1769,15 @@ class RopeTest(OpTestCase):
 
 
 # =============================================================================
-# SLICE UPDATE OP (Custom Op)
-# =============================================================================
-
-
-class SliceUpdateModel(nn.Module):
-    """Slice update using llama.update_cache custom op."""
-
-    def __init__(
-        self,
-        num_heads: int = 4,
-        head_dim: int = 64,
-        max_seq_len: int = 128,
-        start_pos: int = 0,
-        dynamic_pos: bool = False,
-    ):
-        super().__init__()
-        self.num_heads = num_heads
-        self.head_dim = head_dim
-        self.max_seq_len = max_seq_len
-        self.start_pos = start_pos
-        self.dynamic_pos = dynamic_pos
-
-        self.register_buffer(
-            "k_cache", torch.zeros(1, max_seq_len, num_heads, head_dim)
-        )
-        self.register_buffer(
-            "v_cache", torch.zeros(1, max_seq_len, num_heads, head_dim)
-        )
-
-    def forward(
-        self,
-        k_val: torch.Tensor,
-        v_val: torch.Tensor,
-        start_pos: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        if self.dynamic_pos:
-            pos = start_pos.item()
-        else:
-            pos = self.start_pos
-
-        torch.ops.llama.update_cache(k_val, self.k_cache, pos)
-        torch.ops.llama.update_cache(v_val, self.v_cache, pos)
-
-        return self.k_cache.clone(), self.v_cache.clone()
-
-
-@register_test
-class SliceUpdateTest(OpTestCase):
-    """Test case for slice update operations."""
-
-    name = "slice_update"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(
-        self,
-        num_heads: int = 4,
-        head_dim: int = 64,
-        max_seq_len: int = 128,
-        seq_step: int = 8,
-        start_pos: int = 0,
-        test_start_pos: int = 16,
-        export_seq_step: int = 8,
-        test_seq_step: int = 4,
-        variant: str = "static",
-    ):
-        self.num_heads = num_heads
-        self.head_dim = head_dim
-        self.max_seq_len = max_seq_len
-        self.seq_step = seq_step
-        self.start_pos = start_pos
-        self.test_start_pos = test_start_pos
-        self.export_seq_step = export_seq_step
-        self.test_seq_step = test_seq_step
-        self.variant = variant
-
-        variant_names = {
-            "static": "slice_update",
-            "dynamic_pos": "slice_update_dynamic_pos",
-            "fully_dynamic": "slice_update_fully_dynamic",
-        }
-        self.name = variant_names.get(variant, "slice_update")
-
-        if variant == "fully_dynamic":
-            self.seq_dim = Dim("seq_step", min=1, max=max_seq_len)
-        else:
-            self.seq_dim = None
-
-    @classmethod
-    def get_test_configs(cls) -> List["SliceUpdateTest"]:
-        return [
-            cls(variant="static"),
-            cls(variant="dynamic_pos"),
-            cls(variant="fully_dynamic"),
-        ]
-
-    def _has_dynamic_pos(self) -> bool:
-        return self.variant in ("dynamic_pos", "fully_dynamic")
-
-    def _has_dynamic_seq(self) -> bool:
-        return self.variant == "fully_dynamic"
-
-    def create_model(self) -> nn.Module:
-        return SliceUpdateModel(
-            num_heads=self.num_heads,
-            head_dim=self.head_dim,
-            max_seq_len=self.max_seq_len,
-            start_pos=self.start_pos,
-            dynamic_pos=self._has_dynamic_pos(),
-        )
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        seq_len = self.export_seq_step if self._has_dynamic_seq() else self.seq_step
-        k_val = torch.randn(1, seq_len, self.num_heads, self.head_dim)
-        v_val = torch.randn(1, seq_len, self.num_heads, self.head_dim)
-
-        if self._has_dynamic_pos():
-            start_pos = torch.tensor(0, dtype=torch.int64)
-            return (k_val, v_val, start_pos)
-        return (k_val, v_val)
-
-    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
-        seq_len = self.test_seq_step if self._has_dynamic_seq() else self.seq_step
-        k_val = torch.randn(1, seq_len, self.num_heads, self.head_dim)
-        v_val = torch.randn(1, seq_len, self.num_heads, self.head_dim)
-
-        if self._has_dynamic_pos():
-            start_pos = torch.tensor(self.test_start_pos, dtype=torch.int64)
-            return (k_val, v_val, start_pos)
-        return (k_val, v_val)
-
-    def get_dynamic_shapes(self) -> Optional[Dict]:
-        if self.variant == "fully_dynamic":
-            return {
-                "k_val": {1: self.seq_dim},
-                "v_val": {1: self.seq_dim},
-                "start_pos": None,
-            }
-        return None
-
-
-# =============================================================================
-# KV CACHE OPS (Custom Op)
-# =============================================================================
-
-
-class KVCacheUpdateModel(nn.Module):
-    """KV cache update using llama.update_cache with transpose pattern."""
-
-    def __init__(
-        self,
-        num_heads: int = 4,
-        head_dim: int = 64,
-        max_seq_len: int = 128,
-        start_pos: int = 0,
-    ):
-        super().__init__()
-        self.num_heads = num_heads
-        self.head_dim = head_dim
-        self.max_seq_len = max_seq_len
-        self.start_pos = start_pos
-
-        self.register_buffer(
-            "k_cache", torch.zeros(1, num_heads, max_seq_len, head_dim)
-        )
-        self.register_buffer(
-            "v_cache", torch.zeros(1, num_heads, max_seq_len, head_dim)
-        )
-
-    def forward(
-        self,
-        k_val: torch.Tensor,
-        v_val: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        start_pos = self.start_pos
-
-        k_val_transposed = k_val.transpose(1, 2)
-        v_val_transposed = v_val.transpose(1, 2)
-
-        k_cache_view = self.k_cache.transpose(1, 2)
-        v_cache_view = self.v_cache.transpose(1, 2)
-
-        _ = torch.ops.llama.update_cache(k_val_transposed, k_cache_view, start_pos)
-        _ = torch.ops.llama.update_cache(v_val_transposed, v_cache_view, start_pos)
-
-        return self.k_cache.clone(), self.v_cache.clone()
-
-
-class KVCacheUpdateModelDirect(nn.Module):
-    """KV cache update using llama.update_cache directly without transpose."""
-
-    def __init__(
-        self,
-        num_heads: int = 4,
-        head_dim: int = 64,
-        max_seq_len: int = 128,
-        start_pos: int = 0,
-    ):
-        super().__init__()
-        self.num_heads = num_heads
-        self.head_dim = head_dim
-        self.max_seq_len = max_seq_len
-        self.start_pos = start_pos
-
-        self.register_buffer(
-            "k_cache", torch.zeros(1, max_seq_len, num_heads, head_dim)
-        )
-        self.register_buffer(
-            "v_cache", torch.zeros(1, max_seq_len, num_heads, head_dim)
-        )
-
-    def forward(
-        self,
-        k_val: torch.Tensor,
-        v_val: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        start_pos = self.start_pos
-
-        torch.ops.llama.update_cache(k_val, self.k_cache, start_pos)
-        torch.ops.llama.update_cache(v_val, self.v_cache, start_pos)
-
-        return self.k_cache.clone(), self.v_cache.clone()
-
-
-class KVCacheUpdateModelDynamicPos(nn.Module):
-    """KV cache update with dynamic start_pos input."""
-
-    def __init__(
-        self,
-        num_heads: int = 4,
-        head_dim: int = 64,
-        max_seq_len: int = 128,
-    ):
-        super().__init__()
-        self.num_heads = num_heads
-        self.head_dim = head_dim
-        self.max_seq_len = max_seq_len
-
-        self.register_buffer(
-            "k_cache", torch.zeros(1, max_seq_len, num_heads, head_dim)
-        )
-        self.register_buffer(
-            "v_cache", torch.zeros(1, max_seq_len, num_heads, head_dim)
-        )
-
-    def forward(
-        self,
-        k_val: torch.Tensor,
-        v_val: torch.Tensor,
-        start_pos: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        pos = start_pos.item()
-
-        torch.ops.llama.update_cache(k_val, self.k_cache, pos)
-        torch.ops.llama.update_cache(v_val, self.v_cache, pos)
-
-        return self.k_cache.clone(), self.v_cache.clone()
-
-
-class KVCacheUpdateModelFullyDynamic(nn.Module):
-    """KV cache update with dynamic start_pos and sequence length."""
-
-    def __init__(
-        self,
-        num_heads: int = 4,
-        head_dim: int = 64,
-        max_seq_len: int = 128,
-    ):
-        super().__init__()
-        self.num_heads = num_heads
-        self.head_dim = head_dim
-        self.max_seq_len = max_seq_len
-
-        self.register_buffer(
-            "k_cache", torch.zeros(1, max_seq_len, num_heads, head_dim)
-        )
-        self.register_buffer(
-            "v_cache", torch.zeros(1, max_seq_len, num_heads, head_dim)
-        )
-
-    def forward(
-        self,
-        k_val: torch.Tensor,
-        v_val: torch.Tensor,
-        start_pos: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        pos = start_pos.item()
-
-        torch.ops.llama.update_cache(k_val, self.k_cache, pos)
-        torch.ops.llama.update_cache(v_val, self.v_cache, pos)
-
-        return self.k_cache.clone(), self.v_cache.clone()
-
-
-@register_test
-class KVCacheTest(OpTestCase):
-    """Test case for KV cache update operations."""
-
-    name = "kv_cache"
-    rtol = 1e-5
-    atol = 1e-5
-
-    def __init__(
-        self,
-        num_heads: int = 4,
-        head_dim: int = 64,
-        max_seq_len: int = 128,
-        seq_step: int = 8,
-        start_pos: int = 0,
-        test_start_pos: int = 16,
-        export_seq_step: int = 8,
-        test_seq_step: int = 4,
-        variant: str = "pattern",
-    ):
-        self.num_heads = num_heads
-        self.head_dim = head_dim
-        self.max_seq_len = max_seq_len
-        self.seq_step = seq_step
-        self.start_pos = start_pos
-        self.test_start_pos = test_start_pos
-        self.export_seq_step = export_seq_step
-        self.test_seq_step = test_seq_step
-        self.variant = variant
-
-        variant_names = {
-            "pattern": "kv_cache",
-            "direct": "kv_cache_direct",
-            "dynamic_pos": "kv_cache_dynamic_pos",
-            "fully_dynamic": "kv_cache_fully_dynamic",
-        }
-        self.name = variant_names.get(variant, "kv_cache")
-
-        # Create dynamic dimension for fully_dynamic variant
-        if variant == "fully_dynamic":
-            self.seq_dim = Dim("seq_step", min=1, max=max_seq_len)
-        else:
-            self.seq_dim = None
-
-    @classmethod
-    def get_test_configs(cls) -> List["KVCacheTest"]:
-        # Note: "pattern" variant is covered by KVCachePatternTest
-        return [
-            cls(variant="direct"),
-            cls(variant="dynamic_pos"),
-            cls(variant="fully_dynamic"),
-        ]
-
-    def _has_dynamic_pos(self) -> bool:
-        return self.variant in ("dynamic_pos", "fully_dynamic")
-
-    def _has_dynamic_seq(self) -> bool:
-        return self.variant == "fully_dynamic"
-
-    def create_model(self) -> nn.Module:
-        if self.variant == "direct":
-            return KVCacheUpdateModelDirect(
-                num_heads=self.num_heads,
-                head_dim=self.head_dim,
-                max_seq_len=self.max_seq_len,
-                start_pos=self.start_pos,
-            )
-        elif self.variant == "dynamic_pos":
-            return KVCacheUpdateModelDynamicPos(
-                num_heads=self.num_heads,
-                head_dim=self.head_dim,
-                max_seq_len=self.max_seq_len,
-            )
-        elif self.variant == "fully_dynamic":
-            return KVCacheUpdateModelFullyDynamic(
-                num_heads=self.num_heads,
-                head_dim=self.head_dim,
-                max_seq_len=self.max_seq_len,
-            )
-        return KVCacheUpdateModel(
-            num_heads=self.num_heads,
-            head_dim=self.head_dim,
-            max_seq_len=self.max_seq_len,
-            start_pos=self.start_pos,
-        )
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        if self.variant == "pattern":
-            k_val = torch.randn(1, self.num_heads, self.seq_step, self.head_dim)
-            v_val = torch.randn(1, self.num_heads, self.seq_step, self.head_dim)
-            return (k_val, v_val)
-        else:
-            # direct, dynamic_pos, fully_dynamic use [B, S, H, D] layout
-            seq_len = self.export_seq_step if self._has_dynamic_seq() else self.seq_step
-            k_val = torch.randn(1, seq_len, self.num_heads, self.head_dim)
-            v_val = torch.randn(1, seq_len, self.num_heads, self.head_dim)
-
-            if self._has_dynamic_pos():
-                start_pos = torch.tensor(0, dtype=torch.int64)
-                return (k_val, v_val, start_pos)
-            return (k_val, v_val)
-
-    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
-        if self.variant == "pattern":
-            k_val = torch.randn(1, self.num_heads, self.seq_step, self.head_dim)
-            v_val = torch.randn(1, self.num_heads, self.seq_step, self.head_dim)
-            return (k_val, v_val)
-        else:
-            seq_len = self.test_seq_step if self._has_dynamic_seq() else self.seq_step
-            k_val = torch.randn(1, seq_len, self.num_heads, self.head_dim)
-            v_val = torch.randn(1, seq_len, self.num_heads, self.head_dim)
-
-            if self._has_dynamic_pos():
-                start_pos = torch.tensor(self.test_start_pos, dtype=torch.int64)
-                return (k_val, v_val, start_pos)
-            return (k_val, v_val)
-
-    def get_dynamic_shapes(self) -> Optional[Dict]:
-        if self.variant == "fully_dynamic":
-            return {
-                "k_val": {1: self.seq_dim},
-                "v_val": {1: self.seq_dim},
-                "start_pos": None,
-            }
-        return None
-
-
-# =============================================================================
 # ET KV CACHE OPS (Functional cache update)
 # =============================================================================
 
-from executorch.backends.mlx.examples.cache import ETKVCache
+from executorch.backends.mlx.llm.cache import KVCache
 
 
-class ETKVCacheModel(nn.Module):
+class KVCacheModel(nn.Module):
     """
-    Test model wrapping ETKVCache from cache.py.
+    Test model wrapping KVCache from cache.py.
 
     This tests the ExecutorTorch llama KVCache-compatible interface that uses
     the mlx::kv_cache_update op internally.
@@ -2217,7 +1792,7 @@ class ETKVCacheModel(nn.Module):
         enable_dynamic_shape: bool = True,
     ):
         super().__init__()
-        self.cache = ETKVCache(
+        self.cache = KVCache(
             max_batch_size=max_batch_size,
             max_context_length=max_context_length,
             n_heads=n_heads,
@@ -2231,31 +1806,25 @@ class ETKVCacheModel(nn.Module):
         k_val: torch.Tensor,  # [B, H, S, D]
         v_val: torch.Tensor,  # [B, H, S, D]
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Update cache using the llama KVCache interface."""
-        return self.cache.update(input_pos, k_val, v_val)
+        """Update cache and return full cache tensors."""
+        k_cache, v_cache = self.cache.update(input_pos, k_val, v_val)
+        return k_cache, v_cache
 
 
 @register_test
-class ETKVCacheTest(OpTestCase):
+class KVCacheTest(OpTestCase):
     """
-    Test case for ETKVCache with ExecutorTorch llama KVCache interface.
+    Test case for MLX KVCache with ExecutorTorch llama KVCache interface.
 
-    This verifies that ETKVCache:
-    1. Follows the same interface as examples/models/llama/attention.py KVCache
-    2. Uses mlx::kv_cache_update internally
-    3. Works correctly with dynamic shapes
+    This verifies that KVCache:
+    1. Accepts the ET llama KVCache update interface
+    2. Correctly delegates to mlx::kv_cache_update custom op
+    3. Produces correct outputs for both export and test inputs
     """
 
-    name = "et_kv_cache"
+    name = "kv_cache"
     rtol = 1e-5
     atol = 1e-5
-    expected_node_counts = {
-        "ItemIntNode": 1,
-        "SymSizeNode": 2,
-        "AddIntNode": 2,
-        "SliceUpdateNode": 2,
-        "IdCopyNode": 2,
-    }
 
     def __init__(
         self,
@@ -2274,7 +1843,7 @@ class ETKVCacheTest(OpTestCase):
         self.enable_dynamic_shape = enable_dynamic_shape
 
     @classmethod
-    def get_test_configs(cls) -> List["ETKVCacheTest"]:
+    def get_test_configs(cls) -> List["KVCacheTest"]:
         return [
             cls(),  # default config
             cls(n_heads=8, head_dim=32),  # different head config
@@ -2282,7 +1851,7 @@ class ETKVCacheTest(OpTestCase):
         ]
 
     def create_model(self) -> nn.Module:
-        return ETKVCacheModel(
+        return KVCacheModel(
             max_batch_size=self.max_batch_size,
             max_context_length=self.max_context_length,
             n_heads=self.n_heads,
@@ -2291,7 +1860,6 @@ class ETKVCacheTest(OpTestCase):
         )
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        # Note: ETKVCache.update() takes (input_pos, k_val, v_val) - position first
         input_pos = torch.tensor([0], dtype=torch.int64)
         k_val = torch.randn(
             self.max_batch_size, self.n_heads, self.seq_step, self.head_dim
@@ -2302,6 +1870,7 @@ class ETKVCacheTest(OpTestCase):
         return (input_pos, k_val, v_val)
 
     def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        # Note: KVCache.update() takes (input_pos, k_val, v_val) - position first
         # Test with different position and different seq_step
         test_seq_step = self.seq_step + 4
         input_pos = torch.tensor([16], dtype=torch.int64)
@@ -2323,9 +1892,9 @@ class ETKVCacheTest(OpTestCase):
         }
 
 
-class ETKVCacheIntModel(nn.Module):
+class KVCacheIntModel(nn.Module):
     """
-    Test model that passes int/SymInt (not tensor) to ETKVCache.update().
+    Test model that passes int/SymInt (not tensor) to KVCache.update().
 
     This tests the "int route" where the caller extracts the start position
     from the tensor before calling update, which is the preferred pattern
@@ -2341,7 +1910,7 @@ class ETKVCacheIntModel(nn.Module):
         enable_dynamic_shape: bool = True,
     ):
         super().__init__()
-        self.cache = ETKVCache(
+        self.cache = KVCache(
             max_batch_size=max_batch_size,
             max_context_length=max_context_length,
             n_heads=n_heads,
@@ -2361,15 +1930,15 @@ class ETKVCacheIntModel(nn.Module):
 
 
 @register_test
-class ETKVCacheIntTest(OpTestCase):
+class KVCacheIntTest(OpTestCase):
     """
-    Test case for ETKVCache with int/SymInt input_pos.
+    Test case for MLX KVCache with int/SymInt input_pos.
 
     This verifies the "int route" where the caller extracts the start position
     before calling update, matching the recommended pattern for multi-layer models.
     """
 
-    name = "et_kv_cache_int"
+    name = "kv_cache_int"
     rtol = 1e-5
     atol = 1e-5
 
@@ -2390,14 +1959,14 @@ class ETKVCacheIntTest(OpTestCase):
         self.enable_dynamic_shape = enable_dynamic_shape
 
     @classmethod
-    def get_test_configs(cls) -> List["ETKVCacheIntTest"]:
+    def get_test_configs(cls) -> List["KVCacheIntTest"]:
         return [
             cls(),  # default config
             cls(n_heads=8, head_dim=32),  # different head config
         ]
 
     def create_model(self) -> nn.Module:
-        return ETKVCacheIntModel(
+        return KVCacheIntModel(
             max_batch_size=self.max_batch_size,
             max_context_length=self.max_context_length,
             n_heads=self.n_heads,
@@ -2435,9 +2004,9 @@ class ETKVCacheIntTest(OpTestCase):
         }
 
 
-class ETKVCacheSliceModel(nn.Module):
+class KVCacheSliceModel(nn.Module):
     """
-    Test model that updates ETKVCache then slices the result.
+    Test model that updates KVCache then slices the result.
 
     This tests that operations on the returned cache work correctly,
     matching the pattern used in attention implementations.
@@ -2453,7 +2022,7 @@ class ETKVCacheSliceModel(nn.Module):
     ):
         super().__init__()
         self.max_context_length = max_context_length
-        self.cache = ETKVCache(
+        self.cache = KVCache(
             max_batch_size=max_batch_size,
             max_context_length=max_context_length,
             n_heads=n_heads,
@@ -2484,16 +2053,16 @@ class ETKVCacheSliceModel(nn.Module):
 
 
 @register_test
-class ETKVCacheSliceTest(OpTestCase):
+class KVCacheSliceTest(OpTestCase):
     """
-    Test case for ETKVCache update followed by slicing.
+    Test case for MLX KVCache update followed by slicing.
 
     This verifies that:
     1. The ET llama KVCache-compatible interface works correctly
     2. Subsequent slice operations on the returned cache work correctly
     """
 
-    name = "et_kv_cache_slice"
+    name = "kv_cache_slice"
     rtol = 1e-5
     atol = 1e-5
 
@@ -2514,14 +2083,14 @@ class ETKVCacheSliceTest(OpTestCase):
         self.enable_dynamic_shape = enable_dynamic_shape
 
     @classmethod
-    def get_test_configs(cls) -> List["ETKVCacheSliceTest"]:
+    def get_test_configs(cls) -> List["KVCacheSliceTest"]:
         return [
             cls(),
             cls(n_heads=8, head_dim=32),
         ]
 
     def create_model(self) -> nn.Module:
-        return ETKVCacheSliceModel(
+        return KVCacheSliceModel(
             max_batch_size=self.max_batch_size,
             max_context_length=self.max_context_length,
             n_heads=self.n_heads,
@@ -2556,6 +2125,135 @@ class ETKVCacheSliceTest(OpTestCase):
             "input_pos": None,
             "k_val": {2: seq_dim},
             "v_val": {2: seq_dim},
+        }
+
+
+# =============================================================================
+# RING BUFFER KV CACHE TESTS
+# =============================================================================
+
+
+class RingBufferKVCacheModel(nn.Module):
+    """
+    Test model wrapping RingBufferKVCache from cache.py.
+
+    Updates the ring buffer cache and returns the full cache contents.
+    Uses kv_cache_update with ring_size > 0, which should emit
+    ModIntNode + SubtractIntNode + two SliceUpdateNodes.
+    """
+
+    def __init__(
+        self,
+        max_batch_size: int,
+        max_context_length: int,
+        n_heads: int,
+        head_dim: int,
+    ):
+        super().__init__()
+        from executorch.backends.mlx.llm.cache import RingBufferKVCache
+
+        self.cache = RingBufferKVCache(
+            max_batch_size=max_batch_size,
+            max_context_length=max_context_length,
+            n_heads=n_heads,
+            head_dim=head_dim,
+        )
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        k_val: torch.Tensor,
+        v_val: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        start_pos = input_pos[0].item()
+        torch._check_is_size(start_pos)
+
+        k_cache, v_cache = self.cache.update(start_pos, k_val, v_val)
+        return k_cache, v_cache
+
+
+@register_test
+class RingBufferKVCacheTest(OpTestCase):
+    """
+    Test case for RingBufferKVCache with ring_size > 0.
+
+    Verifies that kv_cache_update with ring_size emits the ring buffer
+    SliceUpdate pattern (ModInt + SubtractInt + 2x Slice + 2x SliceUpdate)
+    and produces correct results.
+    """
+
+    name = "ring_buffer_kv_cache"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        max_batch_size: int = 1,
+        n_heads: int = 4,
+        head_dim: int = 64,
+        max_context_length: int = 64,
+        seq_step: int = 4,
+    ):
+        self.max_batch_size = max_batch_size
+        self.n_heads = n_heads
+        self.head_dim = head_dim
+        self.max_context_length = max_context_length
+        self.seq_step = seq_step
+
+    @classmethod
+    def get_test_configs(cls) -> List["RingBufferKVCacheTest"]:
+        return [
+            cls(),
+            cls(n_heads=8, head_dim=32, max_context_length=32, seq_step=2),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return RingBufferKVCacheModel(
+            max_batch_size=self.max_batch_size,
+            max_context_length=self.max_context_length,
+            n_heads=self.n_heads,
+            head_dim=self.head_dim,
+        )
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        input_pos = torch.tensor([0], dtype=torch.int64)
+        k_val = torch.randn(
+            self.max_batch_size, self.n_heads, self.seq_step, self.head_dim
+        )
+        v_val = torch.randn(
+            self.max_batch_size, self.n_heads, self.seq_step, self.head_dim
+        )
+        return (input_pos, k_val, v_val)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        test_seq_step = self.seq_step + 2
+        input_pos = torch.tensor([8], dtype=torch.int64)
+        k_val = torch.randn(
+            self.max_batch_size, self.n_heads, test_seq_step, self.head_dim
+        )
+        v_val = torch.randn(
+            self.max_batch_size, self.n_heads, test_seq_step, self.head_dim
+        )
+        return (input_pos, k_val, v_val)
+
+    def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
+        seq_dim = Dim("seq_step", min=1, max=self.max_context_length)
+        return {
+            "input_pos": None,
+            "k_val": {2: seq_dim},
+            "v_val": {2: seq_dim},
+        }
+
+    def get_expected_node_counts(self) -> Optional[Dict[str, int]]:
+        return {
+            "ItemIntNode": 1,
+            "ModIntNode": 2,
+            "SymSizeNode": 4,
+            "SubtractIntNode": 4,
+            "AddIntNode": 2,
+            "SliceNode": 4,
+            "SliceUpdateNode": 4,
+            "IdCopyNode": 2,
         }
 
 
@@ -2605,7 +2303,7 @@ class HFStaticCacheModel(nn.Module):
         layer_idx: int = 0,
     ):
         super().__init__()
-        from executorch.backends.mlx.examples.cache import HFStaticCache
+        from executorch.backends.mlx.llm.cache import HFStaticCache
 
         self.cache = HFStaticCache(config)
         self.layer_idx = layer_idx
@@ -2722,7 +2420,7 @@ class HFStaticCacheSliceModel(nn.Module):
         layer_idx: int = 0,
     ):
         super().__init__()
-        from executorch.backends.mlx.examples.cache import HFStaticCache
+        from executorch.backends.mlx.llm.cache import HFStaticCache
 
         self.max_seq_len = config.max_position_embeddings
         self.cache = HFStaticCache(config)
@@ -4086,6 +3784,8 @@ _BINARY_OP_TESTS = [
     {"op_name": "logaddexp",     "op_fn": torch.logaddexp},
     {"op_name": "floor_divide",      "op_fn": torch.floor_divide, "input_fn_a": _input_fn(scale=10), "input_fn_b": _input_fn(abs=True, offset=1)},
     {"op_name": "floor_divide_int",  "op_fn": torch.floor_divide, "dtypes": [torch.int32], "input_fn_a": _int_input_fn(-100, 100), "input_fn_b": _int_input_fn(1, 10)},
+    {"op_name": "remainder",         "op_fn": torch.remainder,    "input_fn_a": _input_fn(scale=10), "input_fn_b": _input_fn(abs=True, offset=1)},
+    {"op_name": "remainder_int",     "op_fn": torch.remainder,    "dtypes": [torch.int32], "input_fn_a": _int_input_fn(-100, 100), "input_fn_b": _int_input_fn(1, 10)},
     {"op_name": "power",         "op_fn": torch.pow,          "input_fn_a": _input_fn(uniform=True, offset=0.5), "input_fn_b": _input_fn(uniform=True, scale=2)},
     # comparison
     {"op_name": "less",          "op_fn": torch.lt, "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.float32, torch.bfloat16]},
@@ -5187,7 +4887,7 @@ class SDPATest(OpTestCase):
 
 class CustomSDPAModel(nn.Module):
     """
-    Test model for mlx::custom_sdpa with ETKVCache.
+    Test model for mlx::custom_sdpa with KVCache.
 
     Simulates a single attention layer: updates the KV cache, then calls
     mlx::custom_sdpa which slices K/V to [0:start_pos+seq_len] and runs SDPA.
@@ -5204,7 +4904,7 @@ class CustomSDPAModel(nn.Module):
         self.n_heads = n_heads
         self.n_kv_heads = n_kv_heads
         self.head_dim = head_dim
-        self.cache = ETKVCache(
+        self.cache = KVCache(
             max_batch_size=1,
             max_context_length=max_context_length,
             n_heads=n_kv_heads,

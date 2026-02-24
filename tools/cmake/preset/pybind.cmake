@@ -41,6 +41,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     )
     if(_metal_compiler_result EQUAL 0)
       set_overridable_option(EXECUTORCH_BUILD_MLX ON)
+      set_overridable_option(ET_MLX_ENABLE_OP_LOGGING ON)
     else()
       message(
         STATUS

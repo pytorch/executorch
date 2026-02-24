@@ -20,7 +20,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 from executorch.backends.mlx.program_builder import (
-    emit_stop_position,
+    emit_lifted_constant,
+    IdType,
     IntOrVid,
     MLXProgramBuilder,
     parse_dequant_node,
@@ -92,6 +93,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     MeanNode,
     MinimumNode,
     MinNode,
+    ModIntNode,
     MultiplyIntNode,
     MultiplyNode,
     NegNode,
@@ -100,6 +102,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     PowerNode,
     ProdNode,
     ReciprocalNode,
+    RemainderNode,
     ReshapeNode,
     RMSNormNode,
     RopeNode,
@@ -110,7 +113,6 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     SinhNode,
     SinNode,
     SliceNode,
-    SliceUpdateNode,
     SoftmaxNode,
     SplitNode,
     SqrtNode,
@@ -345,9 +347,6 @@ def _auto_functionalized_v2_handler(P: MLXProgramBuilder, n: Node):
 
     This handler emits the actual lowering instructions and returns a tuple
     of slots that getitem can index into.
-
-    Currently supported wrapped ops:
-    - llama.update_cache.default
     """
     if len(n.args) < 1:
         raise ValueError(
@@ -355,142 +354,11 @@ def _auto_functionalized_v2_handler(P: MLXProgramBuilder, n: Node):
         )
 
     wrapped_op = n.args[0]
-    wrapped_op_str = str(wrapped_op)
-
-    # Check which op is wrapped
-    if "llama" in wrapped_op_str and "update_cache" in wrapped_op_str:
-        result = _handle_update_cache(P, n)
-        # Register the result tuple with this node so getitem can find it
-        P.slot_manager.set_slot(n, result)
-        return result
 
     # Unknown wrapped op - not supported
     raise NotImplementedError(
-        f"auto_functionalized_v2 wrapping '{wrapped_op}' is not supported. "
-        f"Only llama.update_cache is currently supported."
+        f"auto_functionalized_v2 wrapping '{wrapped_op}' is not supported."
     )
-
-
-def _handle_update_cache(P: MLXProgramBuilder, n: Node) -> Tuple[Slot, Slot]:
-    """
-    Handle auto_functionalized_v2(llama.update_cache, ...).
-
-    Emits SliceUpdateNode and returns tuple of (token_slot, cache_slot).
-
-    This is for the direct case where:
-    - cache is [B, S, H, D]
-    - value (update) is [B, S_step, H, D]
-    - We emit SliceUpdateNode on axis=1 (the S dimension)
-    """
-    kwargs = n.kwargs
-    value_node = kwargs.get("value")
-    start_pos = kwargs.get("start_pos", 0)
-    all_bases = kwargs.get("_all_bases", [])
-
-    if not value_node or not all_bases:
-        raise ValueError("update_cache handler: missing value or _all_bases in kwargs")
-
-    cache_node = all_bases[0]
-
-    return _emit_update_cache(P, value_node, cache_node, start_pos)
-
-
-def _emit_update_cache(
-    P: MLXProgramBuilder,
-    value_node: Node,
-    cache_node: Node,
-    start_pos,
-) -> Tuple[Slot, Slot]:
-    """
-    Shared logic for emitting SliceUpdateNode for KV cache updates.
-
-    Args:
-        P: MLXProgramBuilder
-        value_node: Node for the value tensor [B, S_step, H, D]
-        cache_node: Node for the cache tensor [B, S, H, D]
-        start_pos: Start position (int or Node)
-
-    Returns:
-        Tuple of (token_slot, cache_slot)
-    """
-    # Get slots
-    cache_slot = P.slot_map([cache_node])[0]
-    value_slot = P.slot_map([value_node])[0]
-
-    # Handle start_pos - could be int or Node
-    if isinstance(start_pos, Node):
-        start_slot = P.slot_map([start_pos])[0]
-    else:
-        start_slot = start_pos
-
-    # Calculate stop = start + seq_len
-    # value is [B, S_step, H, D], so seq_len is dim 1
-    value_meta = value_node.meta.get("val")
-    stop_slot = emit_stop_position(
-        P,
-        start=start_slot,
-        length_tensor=value_slot,
-        length_dim=1,  # S_step is dim 1 in [B, S_step, H, D]
-        length_meta=value_meta,
-    )
-
-    # Emit SliceUpdateNode on axis=1
-    # cache is [B, S, H, D], value is [B, S_step, H, D]
-    # This updates cache[:, start:stop, :, :] = value in-place
-    P.emit(
-        SliceUpdateNode(
-            dst=P.slot_to_tid(cache_slot),
-            update=P.slot_to_tid(value_slot),
-            axis=IntOrVid.from_literal(1),  # S dimension in [B, S, H, D]
-            start=P.to_int_or_vid(start_slot),
-            stop=P.to_int_or_vid(stop_slot),
-        )
-    )
-
-    # Return tuple of (token, updated_cache)
-    # - token_slot: create a placeholder (token is not actually used)
-    # - cache_slot: the cache that was updated in-place by SliceUpdateNode
-    _, token_slot = P.make_tmp_slot()
-
-    # The token is a dummy value that's not used. We emit an IdCopyNode
-    # from value to token just to have something valid there.
-    P.emit(
-        IdCopyNode(
-            x=P.slot_to_tid(value_slot),  # Copy from value as a placeholder
-            out=P.slot_to_tid(token_slot),
-        )
-    )
-
-    return (token_slot, cache_slot)
-
-
-# Import custom ops to register llama.update_cache
-try:
-    from executorch.extension.llm.custom_ops import (  # noqa: F401
-        custom_ops as _llama_ops,
-    )
-except ImportError:
-    pass  # Custom ops not available
-
-
-@REGISTRY.register(target=[torch.ops.llama.update_cache.default])
-def _llama_update_cache_handler(P: MLXProgramBuilder, n: Node) -> Slot:
-    """
-    Handle direct llama.update_cache.default calls.
-
-    Args:
-        n.args[0]: value tensor [B, S_step, H, D]
-        n.args[1]: cache tensor [B, S, H, D]
-        n.args[2]: start_pos (scalar)
-
-    Returns dummy token slot.
-    """
-    value_node = n.args[0]
-    cache_node = n.args[1]
-    start_pos = n.args[2]
-
-    token_slot, _ = _emit_update_cache(P, value_node, cache_node, start_pos)
-    return token_slot
 
 
 @REGISTRY.register(target=[torch.ops.aten.linear.default])
@@ -590,7 +458,11 @@ def _mm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
 
 @REGISTRY.register(
-    target=[torch.ops.aten.view.default, torch.ops.aten.view_copy.default]
+    target=[
+        torch.ops.aten.view.default,
+        torch.ops.aten.view_copy.default,
+        torch.ops.aten.reshape.default,
+    ]
 )
 def _view_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     args = P.args(n)
@@ -893,6 +765,24 @@ def _floordiv_scalar_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     out = P.make_or_get_slot(n)
     P.emit(
         FloorDivideIntNode(
+            a=P.to_int_or_vid(a),
+            b=P.to_int_or_vid(b),
+            out=P.slot_to_vid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[operator.mod])
+def _mod_scalar_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle Python operator.mod (%) for scalar arithmetic (symbolic shapes)."""
+    args = P.args(n)
+    require_args(args, 2, 2, "operator.mod")
+    require_kwargs(P.kwargs(n), set(), "operator.mod")
+    a, b = args
+    out = P.make_or_get_slot(n)
+    P.emit(
+        ModIntNode(
             a=P.to_int_or_vid(a),
             b=P.to_int_or_vid(b),
             out=P.slot_to_vid(out),
@@ -2863,10 +2753,10 @@ def _less_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_args(args, 2, 2, "aten.lt")
     require_kwargs(P.kwargs(n), set(), "aten.lt")
     a, b = args[0], args[1]
-    if not isinstance(b, Slot):
+    if not isinstance(b, Slot) or b.id_type != IdType.Tensor:
         input_meta = n.args[0].meta.get("val")
         dtype = input_meta.dtype if input_meta is not None else torch.float32
-        b = P.make_or_get_constant(f"_scalar_{b}", torch.tensor([b], dtype=dtype))
+        b = emit_lifted_constant(P, b, dtype)
     out = P.make_or_get_slot(n)
     P.emit(
         LessNode(
@@ -2885,10 +2775,10 @@ def _less_equal_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_args(args, 2, 2, "aten.le")
     require_kwargs(P.kwargs(n), set(), "aten.le")
     a, b = args[0], args[1]
-    if not isinstance(b, Slot):
+    if not isinstance(b, Slot) or b.id_type != IdType.Tensor:
         input_meta = n.args[0].meta.get("val")
         dtype = input_meta.dtype if input_meta is not None else torch.float32
-        b = P.make_or_get_constant(f"_scalar_{b}", torch.tensor([b], dtype=dtype))
+        b = emit_lifted_constant(P, b, dtype)
     out = P.make_or_get_slot(n)
     P.emit(
         LessEqualNode(
@@ -2907,10 +2797,10 @@ def _greater_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_args(args, 2, 2, "aten.gt")
     require_kwargs(P.kwargs(n), set(), "aten.gt")
     a, b = args[0], args[1]
-    if not isinstance(b, Slot):
+    if not isinstance(b, Slot) or b.id_type != IdType.Tensor:
         input_meta = n.args[0].meta.get("val")
         dtype = input_meta.dtype if input_meta is not None else torch.float32
-        b = P.make_or_get_constant(f"_scalar_{b}", torch.tensor([b], dtype=dtype))
+        b = emit_lifted_constant(P, b, dtype)
     out = P.make_or_get_slot(n)
     P.emit(
         GreaterNode(
@@ -2929,10 +2819,10 @@ def _greater_equal_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_args(args, 2, 2, "aten.ge")
     require_kwargs(P.kwargs(n), set(), "aten.ge")
     a, b = args[0], args[1]
-    if not isinstance(b, Slot):
+    if not isinstance(b, Slot) or b.id_type != IdType.Tensor:
         input_meta = n.args[0].meta.get("val")
         dtype = input_meta.dtype if input_meta is not None else torch.float32
-        b = P.make_or_get_constant(f"_scalar_{b}", torch.tensor([b], dtype=dtype))
+        b = emit_lifted_constant(P, b, dtype)
     out = P.make_or_get_slot(n)
     P.emit(
         GreaterEqualNode(
@@ -2951,10 +2841,10 @@ def _equal_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_args(args, 2, 2, "aten.eq")
     require_kwargs(P.kwargs(n), set(), "aten.eq")
     a, b = args[0], args[1]
-    if not isinstance(b, Slot):
+    if not isinstance(b, Slot) or b.id_type != IdType.Tensor:
         input_meta = n.args[0].meta.get("val")
         dtype = input_meta.dtype if input_meta is not None else torch.float32
-        b = P.make_or_get_constant(f"_scalar_{b}", torch.tensor([b], dtype=dtype))
+        b = emit_lifted_constant(P, b, dtype)
     out = P.make_or_get_slot(n)
     P.emit(
         EqualNode(
@@ -2973,10 +2863,10 @@ def _not_equal_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_args(args, 2, 2, "aten.ne")
     require_kwargs(P.kwargs(n), set(), "aten.ne")
     a, b = args[0], args[1]
-    if not isinstance(b, Slot):
+    if not isinstance(b, Slot) or b.id_type != IdType.Tensor:
         input_meta = n.args[0].meta.get("val")
         dtype = input_meta.dtype if input_meta is not None else torch.float32
-        b = P.make_or_get_constant(f"_scalar_{b}", torch.tensor([b], dtype=dtype))
+        b = emit_lifted_constant(P, b, dtype)
     out = P.make_or_get_slot(n)
     P.emit(
         NotEqualNode(
@@ -3549,6 +3439,30 @@ def _floor_divide_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     out = P.make_or_get_slot(n)
     P.emit(
         FloorDivideNode(a=P.slot_to_tid(a), b=P.slot_to_tid(b), out=P.slot_to_tid(out))
+    )
+    return out
+
+
+@REGISTRY.register(
+    target=[torch.ops.aten.remainder.Tensor, torch.ops.aten.remainder.Scalar]
+)
+def _remainder_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.remainder - element-wise remainder of division."""
+    args = P.args(n)
+    require_args(args, 2, 2, "aten.remainder")
+    require_kwargs(P.kwargs(n), set(), "aten.remainder")
+    a = args[0]
+    b = args[1]
+
+    # Handle scalar divisor by lifting to a 0-D tensor
+    if not isinstance(b, Slot):
+        input_meta = n.args[0].meta.get("val")
+        dtype = input_meta.dtype if input_meta is not None else torch.float32
+        b = emit_lifted_constant(P, b, dtype)
+
+    out = P.make_or_get_slot(n)
+    P.emit(
+        RemainderNode(a=P.slot_to_tid(a), b=P.slot_to_tid(b), out=P.slot_to_tid(out))
     )
     return out
 

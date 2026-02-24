@@ -192,6 +192,23 @@ def emit_stop_position(
             return start + seq_len_concrete
 
 
+def emit_lifted_constant(P: "MLXProgramBuilder", value, dtype: torch.dtype) -> Slot:
+    """Lift a scalar or SymInt into a 0-D tensor via FullNode."""
+
+    from executorch.backends.mlx.serialization.mlx_graph_schema import FullNode
+
+    _, slot = P.make_tmp_slot()
+    P.emit(
+        FullNode(
+            shape=[],
+            v=P.to_float_or_vid(value),
+            scalar_type=torch_dtype_to_scalar_type(dtype),
+            out=P.slot_to_tid(slot),
+        )
+    )
+    return slot
+
+
 def to_mlx_qparams(
     qdata: torch.Tensor,
     scale: torch.Tensor,
