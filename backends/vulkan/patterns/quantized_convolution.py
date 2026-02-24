@@ -215,9 +215,27 @@ def make_q8ta_conv2d_custom_op(
     with graph_module.graph.inserting_before(first_graph_node):
         qweight_tensor_name = utils.get_tensor_name(ep, match.weight_node)
         # Pre-compute the weight sums which are needed to apply activation zero point
-        # when using integer accumulation. For the reshaped 2D weight matrix (IC_per_group * H * W, OC),
-        # sum over dimension 0 to get sums per output channel
-        sum_per_output_channel = weight_tensor.sum(dim=1).to(torch.int32).contiguous()
+        # when using integer accumulation. Sum all weight elements per output channel.
+        if is_depthwise_conv:
+            # weight_tensor shape is (H, W, OC); sum over spatial dims (H, W)
+            sum_per_output_channel = (
+                weight_tensor.sum(dim=(0, 1)).to(torch.int32).contiguous()
+            )
+        else:
+            # weight_tensor shape is (OC, H*W*IC_per_group); sum over dim 1
+            sum_per_output_channel = (
+                weight_tensor.sum(dim=1).to(torch.int32).contiguous()
+            )
+        # Pad weight sums to align OC to multiple of 4, matching the alignment
+        # applied to weight, weight_scales, and bias above. Without this, the
+        # GPU shader would read out-of-bounds when OC is not a multiple of 4.
+        oc = sum_per_output_channel.shape[0]
+        if oc % 4 != 0:
+            num_padding = 4 - (oc % 4)
+            sum_per_output_channel = torch.nn.functional.pad(
+                sum_per_output_channel, (0, num_padding)
+            ).contiguous()
+
         sums_name = qweight_tensor_name + "_sums"
         # Sanitize the name
         sums_name = sums_name.replace(".", "_")
@@ -263,6 +281,7 @@ def make_q8ta_conv2d_custom_op(
                 match.padding,
                 match.dilation,
                 match.groups,
+                "relu" if match.relu_node is not None else "none",
             ),
         )
 

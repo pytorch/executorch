@@ -175,7 +175,9 @@ def test_clamp_u55_INT(test_data):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_clamp_u55_INT_16a8w(test_data):
-    """Test clamp operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test clamp operation with 16A8W quantization on U55 (16-bit activations,
+    8-bit weights)
+    """
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
     pipeline = EthosU55PipelineINT[input_t](
@@ -208,7 +210,9 @@ def test_clamp_u85_INT(test_data):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_clamp_u85_INT_16a8w(test_data):
-    """Test clamp operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test clamp operation with 16A8W quantization on U85 (16-bit activations,
+    8-bit weights)
+    """
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
     pipeline = EthosU85PipelineINT[input_t](
@@ -453,7 +457,9 @@ def test_clamp_u55_INT_tensor(test_data):
 @common.parametrize("test_data", test_data_suite_tensor_INT32)
 @common.XfailIfNoCorstone300
 def test_clamp_u55_INT_16a8w_tensor(test_data):
-    """Test clamp operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test clamp operation with 16A8W quantization on U55 (16-bit activations,
+    8-bit weights)
+    """
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
     pipeline = EthosU55PipelineINT[input_t](
@@ -486,7 +492,9 @@ def test_clamp_u85_INT_tensor(test_data):
 @common.parametrize("test_data", test_data_suite_tensor_INT32)
 @common.XfailIfNoCorstone320
 def test_clamp_u85_INT_16a8w_tensor(test_data):
-    """Test clamp operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test clamp operation with 16A8W quantization on U85 (16-bit activations,
+    8-bit weights)
+    """
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
     pipeline = EthosU85PipelineINT[input_t](

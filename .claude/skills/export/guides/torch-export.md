@@ -1,5 +1,10 @@
 # torch.export.export()
 
+> This guide may lag behind upstream PyTorch. When in doubt, consult the
+> official docs:
+> - [torch.export](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/export.html)
+> - [torch.compiler overview](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/torch.compiler.html)
+
 Captures a PyTorch `nn.Module` into an `ExportedProgram` — a fully traced
 ATen-dialect graph with no Python runtime dependency.
 
@@ -294,13 +299,43 @@ avoid the branch, or use `torch.cond`.
 ### Data-dependent control flow
 
 When a condition involves **unbacked** dynamic shapes (from `.item()`,
-`.nonzero()`, etc.), the tracer has no hint to evaluate it →
+`.nonzero()`, `mark_unbacked`, etc.), the tracer has no hint to evaluate it →
 `GuardOnDataDependentSymNode`.
 
-Two solutions:
+Framework code should no longer throw data-dependent errors (DDEs). PyTorch now
+handles unbacked shapes in operations like `view`, `narrow`, `select`, and
+shape checks by automatically selecting general code paths. If you see a DDE
+pointing to files under `torch/`, it's likely a framework bug. DDEs you
+encounter will typically originate from user code.
 
-**`torch._check`** — assert a fact about the unbacked symbol so the tracer can
-continue on one branch. Creates a runtime assertion in the graph.
+Diagnose in order:
+
+**1. Rewrite to avoid branching.** If there's a general code path that works
+for all shapes, use it instead of branching on unbacked symbols. Utilities for
+this:
+
+- `statically_known_true(expr)` — returns `True` only if provable without
+  adding guards; returns `False` otherwise. Never fails on data dependency.
+  Use for optimizations that don't need recompilation.
+- `guard_or_false(expr)` / `guard_or_true(expr)` — may add guards for backed
+  symbols, but returns `False`/`True` instead of failing for unbacked ones.
+- `hint_int(expr, fallback=None)` — extracts the hint value from the traced
+  input without guarding. Use only for optimization paths, not correctness.
+
+```python
+from torch.fx.experimental.symbolic_shapes import statically_known_true
+
+if statically_known_true(x.numel() > 10):
+    # optimization path
+    ...
+else:
+    # general path (taken when unknown)
+    ...
+```
+
+**2. Assert one path with `torch._check`.** When you know one branch is always
+taken for your model, assert it. Creates a deferred runtime assertion — the
+condition is assumed true at compile time, checked at runtime.
 
 ```python
 nz = x.nonzero()
@@ -309,8 +344,29 @@ if nz.shape[0] > 0:               # tracer now picks True
     return x.sin()
 ```
 
-**`torch.cond`** — trace both branches. The graph contains both subgraphs and
-selects at runtime. Use when you genuinely need both paths.
+`torch._check` semantics:
+- Equality `torch._check(u0 == expr)` replaces all occurrences of `u0` with
+  `expr`, eliminating the unbacked symbol entirely.
+- Boolean conditions refine value ranges and are remembered. E.g.,
+  `torch._check(u0 < 4)` also makes `u0 >= 4` evaluate to `False`.
+- Use `sym_or` / `sym_and` instead of Python `or` / `and` to avoid eager
+  evaluation of unbacked expressions.
+
+**`torch._check_is_size`** — like `torch._check`, but additionally marks the
+unbacked symbol as "size-like." Size-like symbols are assumed to never be 0 or
+1 under `guard_size_oblivious` checks, which eliminates many framework-internal
+guards. Use when passing an unbacked symbol to a function that expects a tensor
+dimension.
+
+**3. If both branches are genuinely needed**, the code is unfixable with
+`torch._check`. Use `torch.cond` or restructure with padding.
+
+### Higher-order control flow operators
+
+These are structured operators that preserve control flow in the exported
+graph instead of specializing it away. All are prototype features.
+
+**`torch.cond`** — if-else. Traces both branches; selects at runtime.
 
 ```python
 return torch.cond(
@@ -321,25 +377,66 @@ return torch.cond(
 )
 ```
 
-`torch.cond` lowers to `torch.ops.higher_order.cond` — a special node with two
-`GraphModule` attributes for the branches. No closures; all captured values
-become explicit operands. No mutations allowed in branches.
+Lowers to `torch.ops.higher_order.cond` — a node with two `GraphModule`
+attributes for the branches. No closures; all captured values become explicit
+operands. No mutations allowed in branches.
 
-**`torch.map`** — trace a loop body over a dynamic number of iterations. Use for
-data-dependent loops where unrolling isn't possible:
+**`torch.while_loop`** — data-dependent loop. Runs `body_fn` while `cond_fn`
+returns `True`.
 
 ```python
-return torch.map(
-    f=lambda x_i: x_i.sin(),
-    xs=(x,),  # map over first dim of each tensor
-)
+from torch._higher_order_ops import while_loop
+
+def cond_fn(iter_count, x):
+    return iter_count.sum() > 0
+
+def body_fn(iter_count, x):
+    return iter_count - 1, x * 2
+
+final_iter, final_x = while_loop(cond_fn, body_fn, (init_iter, init_x))
 ```
 
-**`torch._check_is_size`** — like `torch._check`, but additionally marks the
-unbacked symbol as "size-like." Size-like symbols are assumed to never be 0 or
-1 under `guard_size_oblivious` checks, which eliminates many framework-internal
-guards. Use when passing an unbacked symbol to a function that expects a tensor
-dimension.
+`body_fn` must return tensors with the same metadata (shape, dtype) as inputs.
+No in-place mutations; clone before mutating. No closures.
+
+**`torch.map`** — apply a function over the leading dimension of input tensors.
+
+```python
+from torch._higher_order_ops import map
+
+result = map(lambda x_i: x_i.sin(), xs)  # xs: [N, ...] → result: [N, ...]
+```
+
+Additional non-mapped arguments can be passed as `*args`. Leading dimensions
+of all tensors in `xs` must be consistent and non-zero. No input mutations.
+
+**`torch.scan`** — cumulative operation with carried state. Like a fold that
+also collects intermediate outputs.
+
+```python
+from torch._higher_order_ops import scan
+
+def combine_fn(carry, x):
+    next_carry = carry + x
+    return next_carry, next_carry.clone()  # clone to avoid aliasing
+
+final_carry, cumsum = scan(combine_fn, init=torch.zeros(1), xs=xs)
+```
+
+`combine_fn` must return `(next_carry, output)` where `next_carry` matches
+`init` metadata. No in-place mutations; output cannot alias inputs.
+
+**`torch.associative_scan`** — like `scan` but requires an associative
+`combine_fn`, enabling parallel tree-reduction instead of sequential execution.
+
+```python
+from torch._higher_order_ops.associative_scan import associative_scan
+
+cumsum = associative_scan(lambda x, y: x + y, xs, dim=0, combine_mode="generic")
+```
+
+`combine_fn` must be associative: `f(f(a, b), c) == f(a, f(b, c))`. No
+closures, no mutations, output cannot alias inputs.
 
 ## Module state
 

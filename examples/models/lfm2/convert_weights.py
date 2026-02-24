@@ -1,3 +1,4 @@
+import argparse
 import os
 from typing import Dict
 
@@ -72,3 +73,20 @@ def convert_weights(input_dir: str, output_file: str) -> None:
     print("Saving checkpoint...")
     torch.save(sd, output_file)
     print("Done.")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Convert LFM2 weights to Meta format.")
+    parser.add_argument(
+        "input_dir",
+        type=str,
+        help="Path to directory containing safetensor checkpoint files.",
+    )
+    parser.add_argument("output", type=str, help="Path to the output checkpoint")
+
+    args = parser.parse_args()
+    convert_weights(args.input_dir, args.output)
+
+
+if __name__ == "__main__":
+    main()

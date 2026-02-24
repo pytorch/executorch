@@ -150,7 +150,14 @@ def test_nn_modules_tosa_FP(test_data):
 )
 def test_nn_modules_tosa_INT(test_data):
     module, inputs, kwargs = test_data
-    pipeline = TosaPipelineINT[input_t](module, inputs, "", **kwargs)
+    pipeline = TosaPipelineINT[input_t](
+        module,
+        inputs,
+        "",
+        frobenius_threshold=None,
+        cosine_threshold=None,
+        **kwargs,
+    )
     pipeline.pop_stage("check.aten")
     pipeline.pop_stage("check_count.exir")
     if pipeline.has_stage("check.quant_nodes"):

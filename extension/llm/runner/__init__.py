@@ -24,6 +24,7 @@ try:
         MultimodalInput,
         MultimodalRunner,
         Stats,
+        TextLLMRunner,
     )
 except ImportError:
     raise RuntimeError(
@@ -231,5 +232,6 @@ __all__ = [
     "make_token_input",
     "MultimodalInput",
     "MultimodalRunner",
+    "TextLLMRunner",
     "Stats",
 ]

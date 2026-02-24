@@ -276,7 +276,9 @@ def test_sigmoid_vgf_quant_add_3():
 
 @common.parametrize("test_data", test_data_suite)
 def test_sigmoid_16a8w_tosa_INT(test_data: torch.Tensor):
-    """Test sigmoid operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
+    """Test sigmoid operation with 16A8W quantization (16-bit activations, 8-bit
+    weights)
+    """
     per_channel_quantization = False
 
     pipeline = TosaPipelineINT[input_t1](
@@ -299,7 +301,9 @@ def test_sigmoid_16a8w_tosa_INT(test_data: torch.Tensor):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_sigmoid_16a8w_u55_INT16(test_data: torch.Tensor):
-    """Test sigmoid operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test sigmoid operation with 16A8W quantization on U55 (16-bit
+    activations, 8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU55PipelineINT[input_t1](
@@ -321,7 +325,9 @@ def test_sigmoid_16a8w_u55_INT16(test_data: torch.Tensor):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_sigmoid_16a8w_u85_INT(test_data: torch.Tensor):
-    """Test sigmoid operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test sigmoid operation with 16A8W quantization on U85 (16-bit
+    activations, 8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU85PipelineINT[input_t1](

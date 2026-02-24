@@ -178,6 +178,10 @@ static TestCase create_test_case_from_config(
   test_case.add_input_spec(dilation);
   test_case.add_input_spec(groups);
 
+  // Activation (none = no activation)
+  ValueSpec activation = ValueSpec::make_string("none");
+  test_case.add_input_spec(activation);
+
   // Add memory layout parameter for the quantized tensors
   ValueSpec layout_int(static_cast<int32_t>(int8_memory_layout));
   test_case.add_input_spec(layout_int);
@@ -374,7 +378,23 @@ static std::vector<TestCase> generate_quantized_conv2d_test_cases() {
        Stride(2, 2),
        Padding(2, 2),
        Dilation(1, 1),
-       4}};
+       4},
+      // Deep channels + small spatial (ResNet50 stage 5 bottleneck)
+      {OutInChannels(512, 512),
+       InputSize2D(7, 7),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       1},
+      // Strided 1x1 shortcut (worst-case strided downsample)
+      {OutInChannels(2048, 1024),
+       InputSize2D(14, 14),
+       KernelSize(1, 1),
+       Stride(2, 2),
+       Padding(0, 0),
+       Dilation(1, 1),
+       1}};
 
   // Test with different storage types and memory layouts
   std::vector<utils::StorageType> fp_storage_types = {utils::kTexture3D};
@@ -455,6 +475,8 @@ static void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
   const ValueSpec& padding_spec = test_case.inputs()[idx++];
   const ValueSpec& dilation_spec = test_case.inputs()[idx++];
   const ValueSpec& groups_spec = test_case.inputs()[idx++];
+  const ValueSpec& activation_spec = test_case.inputs()[idx++];
+  (void)activation_spec; // Not used in reference implementation
   const ValueSpec& layout_spec = test_case.inputs()[idx++];
   (void)layout_spec; // Not used in reference implementation
   const ValueSpec& impl_selector_spec = test_case.inputs()[idx++];
