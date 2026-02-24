@@ -262,7 +262,7 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   elif [ "$MODE" = "vr-offline" ]; then
     USE_STREAMING="false"
   elif [ -z "$MODE" ]; then
-  if [ "$DEVICE" = "xnnpack" ] || [ "$DEVICE" = "metal" ]; then
+    if [ "$DEVICE" = "xnnpack" ] || [ "$DEVICE" = "metal" ]; then
       USE_STREAMING="true"
     fi
   fi
