@@ -123,6 +123,12 @@ VkDevice create_logical_device(
     defined(ETVK_INSPECT_PIPELINES)
       VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME,
 #endif /* VK_KHR_pipeline_executable_properties && ETVK_INSPECT_PIPELINES */
+#ifdef VK_KHR_cooperative_matrix
+      VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME,
+#endif /* VK_KHR_cooperative_matrix */
+#ifdef VK_NV_cooperative_matrix2
+      VK_NV_COOPERATIVE_MATRIX_2_EXTENSION_NAME,
+#endif /* VK_NV_cooperative_matrix2 */
   };
 
   std::vector<const char*> enabled_device_extensions;
@@ -178,6 +184,20 @@ VkDevice create_logical_device(
   shader_int_dot_product_features.pNext = extension_list_top;
   extension_list_top = &shader_int_dot_product_features;
 #endif /* VK_KHR_shader_integer_dot_product */
+
+#ifdef VK_KHR_cooperative_matrix
+  VkPhysicalDeviceCooperativeMatrixFeaturesKHR cooperative_matrix_features{
+      physical_device.cooperative_matrix_features};
+  cooperative_matrix_features.pNext = extension_list_top;
+  extension_list_top = &cooperative_matrix_features;
+#endif /* VK_KHR_cooperative_matrix */
+
+#ifdef VK_NV_cooperative_matrix2
+  VkPhysicalDeviceCooperativeMatrix2FeaturesNV cooperative_matrix2_features{
+      physical_device.cooperative_matrix2_features};
+  cooperative_matrix2_features.pNext = extension_list_top;
+  extension_list_top = &cooperative_matrix2_features;
+#endif /* VK_NV_cooperative_matrix2 */
 
   device_create_info.pNext = extension_list_top;
 

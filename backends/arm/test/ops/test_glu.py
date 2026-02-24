@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -64,6 +64,9 @@ def test_glu_tosa_INT(test_data: Tuple):
         (*test_data,),
         aten_op=[],
         exir_op=exir_op,
+        # These tests don't make sense when output is ~= 0
+        frobenius_threshold=1.0 if (test_data[0].max() < 5) else 0.1,
+        cosine_threshold=0.0 if (test_data[0].max() < 5) else 0.9,
     )
     pipeline.run()
 
