@@ -39,6 +39,7 @@ class Quantize(BaseStages.Quantize):
             calibrate=calibrate,
             calibration_samples=calibration_samples,
             is_qat=is_qat,
+            fold_quantize=False,
         )
 
 
