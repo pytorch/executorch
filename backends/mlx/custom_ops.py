@@ -140,7 +140,7 @@ def mlx_custom_sdpa(
     # Constrain symbolic shapes so torch.export can resolve guards.
     # start_pos is data-dependent (from input_pos), so the slice
     # stop_pos > kv_len comparison is unresolvable without these hints.
-    torch._check_is_size(start_pos)
+    torch._check(start_pos >= 0)
     torch._check(stop_pos <= key.shape[2])
 
     # Slice K/V to valid cache entries [0:stop_pos]

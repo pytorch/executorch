@@ -210,8 +210,6 @@ make parakeet-cuda
 make parakeet-mlx
 ```
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 On Windows (PowerShell), use CMake workflow presets directly:
 
 ```powershell

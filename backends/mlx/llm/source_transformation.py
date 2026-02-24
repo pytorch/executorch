@@ -266,7 +266,7 @@ class MLXRope(nn.Module):
             assert input_pos is not None
             if self.params.enable_dynamic_shape:
                 input_pos_item = input_pos[-1].item()
-                torch._check_is_size(input_pos_item)
+                torch._check(input_pos_item >= 0)
                 torch._check(input_pos_item < self.params.max_context_len)
                 freqs_cos = self.freqs_cos.narrow(0, input_pos_item, seq_len)
                 freqs_sin = self.freqs_sin.narrow(0, input_pos_item, seq_len)

@@ -185,8 +185,6 @@ make voxtral-mlx
   --temperature 0
 ```
 
-The `tekken.json` tokenizer can be downloaded from [Voxtral's HuggingFace repo](https://huggingface.co/mistralai/Voxtral-Mini-3B-2507), or found in your HuggingFace cache after export at `~/.cache/huggingface/hub/models--mistralai--Voxtral-Mini-3B-2507/`.
-
 # Running the model
 To run the model, we will use the Voxtral runner, which utilizes ExecuTorch's MultiModal runner API.
 The Voxtral runner will do the following things:

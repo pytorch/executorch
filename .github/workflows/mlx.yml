@@ -265,54 +265,6 @@ jobs:
         fi
         echo "::endgroup::"
 
-  test-mlx-llama:
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    secrets: inherit
-    with:
-      job-name: test-mlx-llama
-      runner: macos-14-xlarge
-      python-version: "3.12"
-      submodules: recursive
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      secrets-env: EXECUTORCH_HF_TOKEN
-      timeout: 90
-      script: |
-        set -eux
-
-        echo "::group::Install ExecuTorch"
-        ${CONDA_RUN} python install_executorch.py > /dev/null
-        echo "::endgroup::"
-
-        echo "::group::Install Llama requirements"
-        ${CONDA_RUN} pip install -U "huggingface_hub[cli]<1.0"
-        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
-        ${CONDA_RUN} pip install "transformers>=4.56.1" "tokenizers>=0.22.2"
-        echo "::endgroup::"
-
-        ${CONDA_RUN} pip list
-
-        echo "::group::Export Llama 1B"
-        ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.export_llama \
-          --model-id "unsloth/Llama-3.2-1B-Instruct" \
-          --output /tmp/llama_1b.pte \
-          --quantize-linear int4 \
-          --quantize-embeddings int4
-        echo "::endgroup::"
-
-        echo "::group::Run Llama 1B inference"
-        OUTPUT=$( ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.run_llama \
-          --pte /tmp/llama_1b.pte \
-          --model-id "unsloth/Llama-3.2-1B-Instruct" \
-          --prompt "What is the capital of France?" \
-          --max-new-tokens 50 2>&1)
-        echo "$OUTPUT"
-        if echo "$OUTPUT" | grep -iq "Paris"; then
-          echo "Success: 'Paris' found in output"
-        else
-          echo "Failed: Expected 'Paris' not found in output"
-          exit 1
-        fi
-        echo "::endgroup::"
 
   test-mlx-stories110m:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main

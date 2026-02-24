@@ -2041,7 +2041,7 @@ class KVCacheSliceModel(nn.Module):
         seq_len = k_val.size(2)
         end_pos = start_pos + seq_len
 
-        torch._check_is_size(start_pos)
+        torch._check(start_pos >= 0)
         torch._check(end_pos <= self.max_context_length)
         torch._check(end_pos >= 0)
 
@@ -2166,7 +2166,7 @@ class RingBufferKVCacheModel(nn.Module):
         v_val: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         start_pos = input_pos[0].item()
-        torch._check_is_size(start_pos)
+        torch._check(start_pos >= 0)
 
         k_cache, v_cache = self.cache.update(start_pos, k_val, v_val)
         return k_cache, v_cache
@@ -2563,7 +2563,7 @@ class DynamicArangeModel(nn.Module):
     def forward(self, pos: torch.Tensor) -> torch.Tensor:
         torch._check(pos.numel() == 1)
         pos_int = pos.item()
-        torch._check_is_size(pos_int)
+        torch._check(pos_int >= 0)
         positions = torch.arange(
             pos_int, pos_int + self.length, device=pos.device, dtype=torch.long
         )

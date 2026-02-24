@@ -1044,21 +1044,15 @@ def _to_edge_and_lower_llama_mlx(
 ) -> LLMEdgeManager:
     """
     Lower Llama model to MLX backend using to_edge_transform_and_lower.
-
-    This uses to_edge_transform_and_lower() which calls ops_to_not_decompose()
-    before decomposition, allowing the MLX partitioner to preserve ops like
-    aten.item that would otherwise be decomposed to unsupported ops.
-
-    Uses a simplified ExecutorchBackendConfig (like MLX test_ops.py) to avoid
-    passes that trace into the delegated module and fail on data-dependent shapes.
     """
     from executorch.exir.capture._config import ExecutorchBackendConfig
 
     logging.info("Lowering model using MLX partitioner")
 
+    from executorch.backends.mlx.partitioner import MLXPartitioner
     from executorch.backends.mlx.passes import get_default_passes
 
-    partitioners = [get_mlx_partitioner()]
+    partitioners = [MLXPartitioner()]
     modelname = f"mlx_{modelname}"
 
     builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
@@ -1096,7 +1090,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
     mps: bool = False,
     coreml: bool = False,
     qnn: bool = False,
-    mlx: bool = False,
     dtype_override: str = "fp32",
     enable_dynamic_shape: bool = True,
     use_kv_cache: bool = False,
@@ -1142,10 +1135,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
         )
         partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"
-
-    if mlx:
-        partitioners.append(get_mlx_partitioner())
-        modelname = f"mlx_{modelname}"
 
     if qnn:
         logging.warning(
@@ -1475,7 +1464,6 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             mps=llm_config.backend.mps.enabled,
             coreml=llm_config.backend.coreml.enabled,
             qnn=llm_config.backend.qnn.enabled,
-            mlx=llm_config.backend.mlx.enabled,
             dtype_override=llm_config.model.dtype_override.value,
             enable_dynamic_shape=llm_config.model.enable_dynamic_shape,
             use_kv_cache=llm_config.model.use_kv_cache,

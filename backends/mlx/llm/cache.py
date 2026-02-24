@@ -131,7 +131,7 @@ class KVCache(nn.Module):
             start_pos = input_pos[0].item()
             seq_len = k_val.size(2)
             torch._check(seq_len == v_val.size(2))
-            torch._check_is_size(start_pos)
+            torch._check(start_pos >= 0)
             torch._check(start_pos + seq_len <= self.max_context_length)
         else:
             start_pos = input_pos
@@ -229,7 +229,7 @@ class RingBufferKVCache(nn.Module):
             start_pos = input_pos[0].item()
             seq_len = k_val.size(2)
             torch._check(seq_len == v_val.size(2))
-            torch._check_is_size(start_pos)
+            torch._check(start_pos >= 0)
             torch._check(seq_len <= self.window_size)
         else:
             start_pos = input_pos

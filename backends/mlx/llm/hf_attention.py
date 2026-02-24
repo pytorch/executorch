@@ -65,7 +65,7 @@ def mlx_sdpa_with_start_pos_forward(
         ), "position_ids must be provided to find start position for causal attention"
         start_pos = position_ids[0][0].item()
         seq_len = query.shape[2]
-        torch._check_is_size(start_pos)
+        torch._check(start_pos >= 0)
         torch._check(start_pos + seq_len <= key.shape[2])
         attn_mask = None
     else:

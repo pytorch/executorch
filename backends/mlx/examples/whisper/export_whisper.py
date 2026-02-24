@@ -311,7 +311,7 @@ class WhisperDecoderWithCache(nn.Module):
         # Get position as SymInt
         torch._check(cache_position.numel() == 1)
         pos_int = cache_position.item()
-        torch._check_is_size(pos_int)
+        torch._check(pos_int >= 0)
         torch._check(pos_int + T <= self.max_decoder_seq_len)
 
         # Token + positional embeddings
