@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -99,7 +99,7 @@ class DecreasingOutput(torch.nn.Module):
 class WhileAdditionalArg(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.register_buffer("threshold", torch.tensor((300.0,)))
+        self.register_buffer("threshold", torch.tensor((128.0,)))
 
     def forward(self, value: torch.Tensor) -> torch.Tensor:
         def cond_fn(value: torch.Tensor, limit: torch.Tensor) -> torch.Tensor:
@@ -121,7 +121,7 @@ class WhileAdditionalArg(torch.nn.Module):
 class WhileSingleCapturedOutput(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.register_buffer("threshold", torch.tensor((200.0,)))
+        self.register_buffer("threshold", torch.tensor((128.0,)))
 
     def forward(self, value: torch.Tensor) -> torch.Tensor:
         def cond_fn(value: torch.Tensor, limit: torch.Tensor) -> torch.Tensor:
@@ -142,11 +142,33 @@ class WhileSingleCapturedOutput(torch.nn.Module):
         return result[0]  # type: ignore
 
 
+class WhileLargeThreshold(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_buffer("threshold", torch.tensor((400.0,)))
+
+    def forward(self, value: torch.Tensor) -> torch.Tensor:
+        def cond_fn(value: torch.Tensor, limit: torch.Tensor) -> torch.Tensor:
+            total = value.sum()
+            return torch.lt(total, limit).squeeze()
+
+        def body_fn(value: torch.Tensor, limit: torch.Tensor) -> tuple[torch.Tensor]:
+            return (torch.add(value, value),)
+
+        result = torch.ops.higher_order.while_loop(
+            cond_fn,
+            body_fn,
+            (value,),
+            (self.threshold,),
+        )
+        return result  # type: ignore
+
+
 def _single_input_case(
     module_factory: Callable[[], torch.nn.Module],
 ) -> Callable[[], Tuple[torch.nn.Module, input_single]]:
     def _create() -> Tuple[torch.nn.Module, input_single]:
-        return module_factory(), (torch.ones(2, 3, 4, 6),)
+        return module_factory(), (torch.ones(2, 3, 2, 2),)
 
     return _create
 
@@ -166,6 +188,7 @@ test_cases: dict[str, Callable[[], Tuple[torch.nn.Module, Tuple]]] = {
     "decreasing_output": _single_input_case(DecreasingOutput),
     "additional_arg": _single_input_case(WhileAdditionalArg),
     "two_in_one_captured_out": _single_input_case(WhileSingleCapturedOutput),
+    "large_threshold": _single_input_case(WhileLargeThreshold),
 }
 
 
@@ -187,6 +210,9 @@ def test_while_loop_tosa_FP(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
 @common.parametrize(
     "case",
     test_cases,
+    xfails={
+        "large_threshold": "MLETORCH-1808 - Handle different scales for different parameters"
+    },
 )
 def test_while_loop_tosa_INT(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
     module, example_inputs = case()

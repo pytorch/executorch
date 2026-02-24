@@ -51,6 +51,7 @@ class WhisperAudioProcessor(nn.Module):
         padding_value: float = 0.0,
         max_audio_len: int = 600,
         stack_output: bool = False,
+        streaming: bool = False,
     ) -> None:
         super().__init__()
         self.feature_size = feature_size
@@ -68,6 +69,13 @@ class WhisperAudioProcessor(nn.Module):
         )
         self.max_audio_len = max_audio_len
         self.stack_output = stack_output
+        self.streaming = streaming
+
+        if self.streaming and self.stack_output:
+            raise ValueError(
+                "--streaming and --stack_output are mutually exclusive. "
+                "stack_output assumes 30-second chunk padding which streaming disables."
+            )
 
     def get_mel_filters(
         self, sr: int, n_fft: int, n_mels: int = 128, dtype: torch.dtype = torch.float32
@@ -130,15 +138,18 @@ class WhisperAudioProcessor(nn.Module):
         Returns:
             torch.Tensor: Output of shape [1, feature_size, nb_max_frames * n_chunks]
             n_chunks is the number of chunks of `sampling_rate` samples in the input waveform.
-            [1, 80, 3000] with default options and 1 chunk
+            [1, 80, 3000] with default options and 1 chunk.
+            In streaming mode, output shape is [1, feature_size, floor(N/hop_length)]
+            with no chunk padding.
         """
-        n_chunks = (waveform.shape[0] - 1) // self.n_samples + 1
-        waveform = F.pad(
-            waveform,
-            (0, self.n_samples * n_chunks - waveform.shape[0]),
-            mode="constant",
-            value=self.padding_value,
-        )
+        if not self.streaming:
+            n_chunks = (waveform.shape[0] - 1) // self.n_samples + 1
+            waveform = F.pad(
+                waveform,
+                (0, self.n_samples * n_chunks - waveform.shape[0]),
+                mode="constant",
+                value=self.padding_value,
+            )
 
         # Ideally we should do:
         # window = torch.hann_window(self.n_fft)
@@ -259,6 +270,11 @@ def main():
         action="store_true",
         help="Whether to stack output along the batch dimension, one per chunk. Used by models such as Voxtral, see https://github.com/huggingface/transformers/blob/main/src/transformers/models/voxtral/processing_voxtral.py#L94 for more information.",
     )
+    parser.add_argument(
+        "--streaming",
+        action="store_true",
+        help="Streaming mode: skip 30-second chunk padding, produce mel frames proportional to input length. For use with real-time audio input.",
+    )
 
     args = parser.parse_args()
 
@@ -270,6 +286,7 @@ def main():
         n_fft=args.n_fft,
         max_audio_len=args.max_audio_len,
         stack_output=args.stack_output,
+        streaming=args.streaming,
     )
 
     export_processor(model, args.output_file)

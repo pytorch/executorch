@@ -62,10 +62,16 @@ def test_silu_tosa_FP_inplace(test_data: input_t):
 @common.parametrize("test_data", Silu.test_data)
 def test_silu_tosa_INT(test_data: input_t):
     silu_data = (test_data(), False)
+
+    # When all inputs are negative the output is very close to zero, making the relative frobenius norm large
+    # also for small quantization errors. Hence we relax the frobenius threshold in that case.
+    if torch.all(silu_data[0] < 0):
+        frobenius_threshold = 0.3
+    else:
+        frobenius_threshold = 0.1
+
     pipeline = TosaPipelineINT[input_t](
-        Silu(),
-        silu_data,
-        [],
+        Silu(), silu_data, [], frobenius_threshold=frobenius_threshold
     )
     pipeline.run()
 
@@ -73,10 +79,16 @@ def test_silu_tosa_INT(test_data: input_t):
 @common.parametrize("test_data", Silu.test_data)
 def test_silu_tosa_INT_inplace(test_data: input_t):
     silu_data = (test_data(), True)
+
+    # When all inputs are negative the output is very close to zero, making the relative frobenius norm large
+    # also for small quantization errors. Hence we relax the frobenius threshold in that case.
+    if torch.all(silu_data[0] < 0):
+        frobenius_threshold = 0.3
+    else:
+        frobenius_threshold = 0.1
+
     pipeline = TosaPipelineINT[input_t](
-        Silu(),
-        silu_data,
-        [],
+        Silu(), silu_data, [], frobenius_threshold=frobenius_threshold
     )
     pipeline.run()
 
