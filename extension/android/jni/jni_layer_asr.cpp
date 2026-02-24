@@ -26,8 +26,8 @@ namespace asr = ::executorch::extension::asr;
 using ::executorch::extension::from_blob;
 using ::executorch::extension::Module;
 using ::executorch::extension::TensorPtr;
+using ::executorch::jni_helper::utf8_check_validity;
 using ::executorch::runtime::Error;
-using executorch::jni_helper::utf8_check_validity;
 
 namespace {
 
