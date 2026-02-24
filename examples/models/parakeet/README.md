@@ -219,15 +219,6 @@ cmake --workflow --preset parakeet-cuda
 Pop-Location
 ```
 
-=======
-Available presets:
-- `parakeet-cpu` - CPU-only build
-- `parakeet-cuda` - CUDA acceleration (Linux/Windows)
-- `parakeet-metal` - Metal acceleration (macOS)
-- `parakeet-mlx` - MLX acceleration (macOS)
->>>>>>> 5ca586a719 (up)
-=======
->>>>>>> accd2938ba (up)
 ### Running
 
 From the executorch root directory:

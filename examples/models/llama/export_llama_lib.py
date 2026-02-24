@@ -1045,15 +1045,12 @@ def _to_edge_and_lower_llama_mlx(
     """
     Lower Llama model to MLX backend using to_edge_transform_and_lower.
     """
-    from executorch.exir.capture._config import ExecutorchBackendConfig
-
     logging.info("Lowering model using MLX partitioner")
 
     from executorch.backends.mlx.partitioner import MLXPartitioner
     from executorch.backends.mlx.passes import get_default_passes
 
     partitioners = [MLXPartitioner()]
-    modelname = f"mlx_{modelname}"
 
     builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
         partitioners,
@@ -1063,20 +1060,7 @@ def _to_edge_and_lower_llama_mlx(
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
 
-    # Use simplified config like MLX test_ops.py to avoid passes that trace
-    # into the delegated module (which contains .item() calls that create
-    # data-dependent shapes)
-    builder.export_program = builder.edge_manager.to_executorch(
-        ExecutorchBackendConfig(extract_delegate_segments=True)
-    )
-    logging.info(
-        "Required memory for activation in bytes: {}".format(
-            builder.export_program._emitter_output.program.execution_plan[
-                0
-            ].non_const_buffer_sizes
-        ),
-    )
-    return builder
+    return builder.to_executorch(passes=additional_passes)
 
 
 def _to_edge_and_lower_llama(  # noqa: C901

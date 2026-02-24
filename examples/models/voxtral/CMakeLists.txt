@@ -106,38 +106,8 @@ endif()
 
 # Link MLX delegate
 if(TARGET mlxdelegate)
-  message(STATUS "Found MLX delegate target")
-  list(APPEND link_libraries mlxdelegate)
+  list(APPEND link_libraries mlxdelegate mlx)
   executorch_target_link_options_shared_lib(mlxdelegate)
-
-  # mlxdelegate depends on mlx library mlx is installed as a static library
-  # alongside mlxdelegate
-  if(TARGET mlx)
-    # Build-time: mlx target is available from FetchContent
-    message(STATUS "Found MLX library target (build-time)")
-    list(APPEND link_libraries mlx)
-  else()
-    # Install-time: find the installed mlx library
-    find_library(
-      MLX_LIBRARY
-      NAMES mlx
-      HINTS "${CMAKE_CURRENT_BINARY_DIR}/../../.." "${CMAKE_FIND_ROOT_PATH}"
-      PATH_SUFFIXES lib REQUIRED
-    )
-    message(STATUS "Found installed MLX library at: ${MLX_LIBRARY}")
-    list(APPEND link_libraries ${MLX_LIBRARY})
-  endif()
-
-  # MLX requires Metal and Foundation frameworks on macOS/iOS
-  if(APPLE)
-    find_library(METAL_FRAMEWORK Metal REQUIRED)
-    find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
-    list(APPEND link_libraries ${METAL_FRAMEWORK} ${FOUNDATION_FRAMEWORK})
-  endif()
-else()
-  message(
-    STATUS "MLX delegate target not found - MLX backend will not be available"
-  )
 endif()
 
 # Add tokenizers
@@ -154,6 +124,11 @@ endif()
 target_include_directories(voxtral_runner PUBLIC ${_common_include_directories})
 target_link_libraries(voxtral_runner PUBLIC ${link_libraries})
 target_compile_options(voxtral_runner PUBLIC ${_common_compile_options})
+
+# Copy MLX metallib for runtime if MLX delegate is enabled
+if(TARGET mlxdelegate)
+  executorch_target_copy_mlx_metallib(voxtral_runner)
+endif()
 
 # On Windows, copy required DLLs to the executable directory
 if(MSVC AND EXECUTORCH_BUILD_CUDA)
