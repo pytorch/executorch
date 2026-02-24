@@ -278,8 +278,7 @@ case "$MODEL_NAME" in
     elif [ "$MODE" = "vr-offline" ]; then
       USE_STREAMING="false"
     elif [ -z "$MODE" ]; then
-      # Auto-detect: XNNPACK uses streaming, others use offline
-      if [ "$DEVICE" = "xnnpack" ]; then
+      if [ "$DEVICE" = "xnnpack" ] || [ "$DEVICE" = "metal" ]; then
         USE_STREAMING="true"
       fi
     fi
