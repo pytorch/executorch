@@ -128,12 +128,8 @@ def _convert_double(val: Double) -> Any:
     result = _flatbuffer_t_class(Double)()
     double_val = val.double_val
     if isinstance(double_val, str):
-        if double_val == "inf":
-            result.doubleVal = float("inf")
-        elif double_val == "-inf":
-            result.doubleVal = float("-inf")
-        else:
-            result.doubleVal = float(double_val)
+        # the string is read as a Union of float and string (see exir/schema.py).
+        result.doubleVal = float(double_val)
     else:
         result.doubleVal = double_val
     return result
