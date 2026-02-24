@@ -546,7 +546,9 @@ class StandardEncoderSDPA(nn.Module):
 
         # Apply SDPA with sliding window mask
         y = F.scaled_dot_product_attention(
-            q, k, v,
+            q,
+            k,
+            v,
             attn_mask=mask,
             is_causal=False,  # We handle masking explicitly via mask parameter
         )  # [B, n_heads, seq_len, head_dim]
@@ -890,7 +892,11 @@ class StreamingAudioEncoderExport(nn.Module):
         # Window size = max_enc_len (encoder sliding window from params.json).
         # Buffer is 2x internally for safe wraparound.
         # Choose cache implementation based on backend
-        cache_class = StandardEncoderRingKVCache if config.use_standard_attention else EncoderRingKVCache
+        cache_class = (
+            StandardEncoderRingKVCache
+            if config.use_standard_attention
+            else EncoderRingKVCache
+        )
         self.kv_caches = nn.ModuleList(
             [
                 cache_class(max_enc_len, config.enc_n_heads, config.enc_head_dim)

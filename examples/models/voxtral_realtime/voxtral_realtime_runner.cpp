@@ -486,8 +486,7 @@ bool StreamingSession::try_process_step() {
   // --- Run streaming encoder ---
   // Conv states are now maintained internally as buffers
   auto enc_result = runner_.model_->execute(
-      "encode_audio_chunk",
-      std::vector<EValue>{*mel_chunk, *enc_pos});
+      "encode_audio_chunk", std::vector<EValue>{*mel_chunk, *enc_pos});
   ET_CHECK_MSG(enc_result.ok(), "encode_audio_chunk failed.");
 
   auto& enc_outputs = enc_result.get();
