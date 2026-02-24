@@ -96,6 +96,10 @@ ET_EXPERIMENTAL std::unordered_set<uint64_t> get_eos_ids(
  * @param temperature Optional temperature parameter for controlling randomness
  * (deprecated)
  * @param method_name Name of the method to execute in the model
+ * @param load_mode Loading strategy for the model file. Defaults to
+ * MmapUseMlockIgnoreErrors which uses mmap to avoid loading the entire
+ * model into RAM and attempts to pin pages with mlock for lower inference
+ * latency, gracefully falling back to standard mmap if mlock is unavailable.
  * @return std::unique_ptr<TextLLMRunner> Initialized TextLLMRunner instance, or
  * nullptr on failure
  */
@@ -104,7 +108,8 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
     std::optional<const std::string> data_path,
     float temperature = -1.0f,
-    const std::string& method_name = "forward");
+    const std::string& method_name = "forward",
+    Module::LoadMode load_mode = Module::LoadMode::MmapUseMlockIgnoreErrors);
 
 /**
  * @brief Creates a TextLLMRunner instance with dependency injection
@@ -120,6 +125,10 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
  * (deprecated)
  * @param event_tracer Optional event tracer for profiling
  * @param method_name Name of the method to execute in the model
+ * @param load_mode Loading strategy for the model file. Defaults to
+ * MmapUseMlockIgnoreErrors which uses mmap to avoid loading the entire
+ * model into RAM and attempts to pin pages with mlock for lower inference
+ * latency, gracefully falling back to standard mmap if mlock is unavailable.
  * @return std::unique_ptr<TextLLMRunner> Initialized TextLLMRunner instance, or
  * nullptr on failure
  */
@@ -129,7 +138,8 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     std::vector<std::string> data_files = {},
     float temperature = -1.0f,
     std::unique_ptr<::executorch::runtime::EventTracer> event_tracer = nullptr,
-    const std::string& method_name = "forward");
+    const std::string& method_name = "forward",
+    Module::LoadMode load_mode = Module::LoadMode::MmapUseMlockIgnoreErrors);
 
 /**
  * @brief Creates a MultimodalRunner instance with dependency injection
