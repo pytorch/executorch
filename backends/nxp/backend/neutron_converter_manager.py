@@ -72,7 +72,19 @@ class NeutronConverterManager:
                 f"Target `{target}` is not a valid target. Must be one of `{valid_targets}`."
             )
 
-    def convert(self, tflite_model: bytes, target: str) -> bytes:
+    def convert(
+        self, tflite_model: bytes, target: str, fetch_constants_to_sram: bool = False
+    ) -> bytes:
+        """
+        Call Neutron Converter.
+
+        :param tflite_model: A generic TFLite model to be converted.
+        :param target: The target platform.
+        :param fetch_constants_to_sram: Add microcode that fetches weights from external memory.
+        This allows running models which do not fit into SRAM. Applies to Neutron-C only (microcontrollers).
+
+        :return: TFLite model with Neutron microcode as bytes.
+        """
         # Neutron converter crashes if we provide invalid target -> verify.
         self.verify_target(target)
 
@@ -82,6 +94,7 @@ class NeutronConverterManager:
         cctx.compilationOpts.excludeGraphPasses = (
             "HoistSliceAboveTranspose,MergeTranspose"
         )
+        cctx.compilationOpts.fetchConstantsToSRAM = fetch_constants_to_sram
 
         # Try to use multiprocessing for isolation, but fall back to direct execution
         # if the environment doesn't support it (e.g., in sandcastle/build environments)

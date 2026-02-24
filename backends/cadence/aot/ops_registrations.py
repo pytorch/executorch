@@ -448,6 +448,13 @@ lib.define(
 )
 
 lib.define(
+    "rope_rotate_stacked_halves(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos) -> (Tensor out)"
+)
+lib.define(
+    "rope_rotate_stacked_halves.out(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
     "quantized_softmax(Tensor input, Tensor mask, int dim, Tensor in_scale, Tensor in_zero_point, Tensor out_scale, Tensor out_zero_point) -> (Tensor out)"
 )
 lib.define(
@@ -2567,6 +2574,33 @@ def rope_meta(
     assert (
         len(input_shape) in (4, 5) and input_shape[0] == 1
     ), f"input shape {input_shape} must be (1, seq, h, hd) or (1, seq, h, hd / 2, 2)"
+    seq = input_shape[1]
+    h = input_shape[2]
+    hd = prod(input_shape) / (seq * h)
+    sin_shape = list(sin_tensor.shape)
+    cos_shape = list(cos_tensor.shape)
+    assert sin_shape == cos_shape, f"{sin_shape=} must be same as {cos_shape}"
+    assert (
+        len(sin_shape) == 2 and sin_shape[-1] == hd // 2
+    ), f"{sin_shape=} must be [seq, hd/2]"
+    if pos is not None:
+        assert (
+            len(pos.shape) == 1 and pos.shape[0] == seq
+        ), f"{pos.shape} must be [{seq}]"
+    return input.new_empty(input.shape, dtype=input.dtype)
+
+
+@register_fake("cadence::rope_rotate_stacked_halves")
+def rope_rotate_stacked_halves_meta(
+    input: torch.Tensor,
+    sin_tensor: torch.Tensor,
+    cos_tensor: torch.Tensor,
+    pos: Optional[torch.Tensor],
+) -> torch.Tensor:
+    input_shape = list(input.shape)
+    assert (
+        len(input_shape) in (4, 5) and input_shape[0] == 1
+    ), f"input shape {input_shape} must be (1, seq, h, hd) or (1, seq, h, 2, hd / 2)"
     seq = input_shape[1]
     h = input_shape[2]
     hd = prod(input_shape) / (seq * h)

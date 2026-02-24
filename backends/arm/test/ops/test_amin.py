@@ -276,7 +276,9 @@ def test_amin_tosa_INT_a16w8(test_data: Amin.input_t):
 @common.parametrize("test_data", Amin.test_data)
 @common.XfailIfNoCorstone320
 def test_amin_u85_INT_a16w8(test_data: Min.input_t):
-    """Test amin with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test amin with 16A8W quantization on U85 (16-bit activations, 8-bit
+    weights)
+    """
     data, dim, keep_dims = test_data()
     pipeline = EthosU85PipelineINT[Amin.input_t](
         Amin(dim, keep_dims),

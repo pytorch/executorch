@@ -19,12 +19,12 @@ input_t1 = Tuple[torch.Tensor]
 
 
 class AliasCopy(torch.nn.Module):
-    """
-    Tests proper handling of alias_copy when used directly.
+    """Tests proper handling of alias_copy when used directly.
 
-    alias_copy can also appear from PyTorch/ExecuTorch optimizations
-    such as `x.transpose(0, 0)`. This is optimized to an alias_copy but
-    not before dq/q operators are added.
+    alias_copy can also appear from PyTorch/ExecuTorch optimizations such as
+    `x.transpose(0, 0)`. This is optimized to an alias_copy but not before dq/q
+    operators are added.
+
     """
 
     aten_op = "torch.ops.aten.alias_copy.default"

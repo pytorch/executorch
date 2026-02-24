@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 def _is_input(node: torch.fx.Node, exported_program: ExportedProgram) -> bool:
-    """
-    Returns True if the node is an input node, i.e. a placeholder or a parameter.
+    """Returns True if the node is an input node, i.e. a placeholder or a
+    parameter.
     """
     return node.op == "placeholder" and not is_param_node(exported_program, node)
 
@@ -42,12 +42,16 @@ def _is_transpose_conv2d_weight(node: torch.fx.Node) -> bool:
 
 
 class ToTosaMemoryFormatPass(ArmPass):
-    """
-    Annotates each node with a tosa_dim_order. tosa_dim_order can be seen as a channels-last dim-order
-    that in most cases will be (0, 2, 3, 1) for nodes with 4D-shapes. The pass also inserts backend.tosa.TRANSPOSE
-    when a transition between 3D and 4D/5D tensors happen.
-    The annotated tosa_dim_order is used to permute the node's shape such that it gives a TOSA-compliant shape.
-    This pass also makes other values aware of spatial dimensions required by future operators by back propogating info as required.
+    """Annotates each node with a tosa_dim_order.
+
+    tosa_dim_order can be seen as a channels-last dim-order that in most cases
+    will be (0, 2, 3, 1) for nodes with 4D-shapes. The pass also inserts
+    backend.tosa.TRANSPOSE when a transition between 3D and 4D/5D tensors
+    happen. The annotated tosa_dim_order is used to permute the node's shape
+    such that it gives a TOSA-compliant shape. This pass also makes other values
+    aware of spatial dimensions required by future operators by back propogating
+    info as required.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -58,8 +62,7 @@ class ToTosaMemoryFormatPass(ArmPass):
 
     @staticmethod
     def _channels_last_order(rank: int, spatial_rank: int) -> tuple[int, ...]:
-        """
-        Compute the permutation of tensor dimensions corresponding to a
+        """Compute the permutation of tensor dimensions corresponding to a
         "channels_last"-style memory layout for an arbitrary tensor rank.
 
         In standard PyTorch convention:
@@ -85,6 +88,7 @@ class ToTosaMemoryFormatPass(ArmPass):
             If `rank <= 2`, the function returns the identity order since there
             are no distinct channel/spatial dimensions.
             In practice only rank 4+ tensors will reach this function as the dim order should be fixed for those.
+
         """
         if rank <= 2:
             return tuple(range(rank))
@@ -96,11 +100,11 @@ class ToTosaMemoryFormatPass(ArmPass):
 
     @staticmethod
     def _channels_last_inverse_order(rank: int, spatial_rank: int) -> tuple[int, ...]:
-        """
-        Return the inverse permutation of `_channels_last_order`.
+        """Return the inverse permutation of `_channels_last_order`.
 
-        This provides the axis order needed to map a tensor from
-        "channels_last" layout back to its original layout.
+        This provides the axis order needed to map a tensor from "channels_last"
+        layout back to its original layout.
+
         """
         order = ToTosaMemoryFormatPass._channels_last_order(rank, spatial_rank)
         inverse = [0] * rank
@@ -109,15 +113,16 @@ class ToTosaMemoryFormatPass(ArmPass):
         return tuple(inverse)
 
     def _initial_spatial_rank(self, node: torch.fx.Node) -> int:
-        """
-        Infer the initial spatial rank based on the current rank, input node spatial
-        ranks and node target. A spatial dimension includes Height, Width or Depth
-        fields. In most operators this will only ever be Height and Width, but for 3D
-        operators such as conv3d this would contain 3 spatial dims.
+        """Infer the initial spatial rank based on the current rank, input node
+        spatial ranks and node target. A spatial dimension includes Height,
+        Width or Depth fields. In most operators this will only ever be Height
+        and Width, but for 3D operators such as conv3d this would contain 3
+        spatial dims.
 
         Spatial rank is the max of any input node spatial ranks and the number of
         trailing spatial dims we need to preserve (rank - 2, capped at 3). This
         decides which axes must stay channels-last when inserting transposes.
+
         """
         tensor = get_first_fake_tensor(node).data
         # Start by assuming 2D when dealing with rank4+ to account for the base case
@@ -150,9 +155,9 @@ class ToTosaMemoryFormatPass(ArmPass):
 
     @staticmethod
     def memory_format_differs(shape, spatial_rank):
-        """
-        Determine whether a tensor shape would be laid out differently in
-        channels-first ((N)NCHW) versus channels-last ((N)NHWC) memory format.
+        """Determine whether a tensor shape would be laid out differently in
+        channels-first ((N)NCHW) versus channels-last ((N)NHWC) memory
+        format.
         """
         if len(shape) <= 2 or spatial_rank <= 0:
             return False
@@ -168,8 +173,7 @@ class ToTosaMemoryFormatPass(ArmPass):
     def is_channel_reshape(
         input_shape, output_shape, input_spatial_rank, output_spatial_rank
     ):
-        """
-        Check whether a reshape touches the logical channel or consolidated
+        """Check whether a reshape touches the logical channel or consolidated
         batch dimensions, which would invalidate dim-order annotations.
         """
 
@@ -202,8 +206,7 @@ class ToTosaMemoryFormatPass(ArmPass):
 
     @staticmethod
     def insert_input_transpose(node, input_node, graph_module):
-        """
-        Ensure an input tensor is converted to channels-last ordering by
+        """Ensure an input tensor is converted to channels-last ordering by
         inserting (or folding) a backend `TRANSPOSE` node.
         """
         if input_node.target == exir_ops.backend.tosa.TRANSPOSE.default:
@@ -240,8 +243,7 @@ class ToTosaMemoryFormatPass(ArmPass):
 
     @staticmethod
     def insert_output_transpose(node, graph_module):
-        """
-        Convert a producer's output to channels-last by appending a backend
+        """Convert a producer's output to channels-last by appending a backend
         `TRANSPOSE` node and rewiring its users.
         """
 
@@ -280,9 +282,9 @@ class ToTosaMemoryFormatPass(ArmPass):
     def _insert_view_transpose(
         input_shape, output_shape, node, input_node, graph_module
     ):
-        """
-        Insert the necessary input/output transposes around reshapes that cross
-        the (N)NCHW -> (N)NHWC boundary or that touch channel dimensions.
+        """Insert the necessary input/output transposes around reshapes that
+        cross the (N)NCHW -> (N)NHWC boundary or that touch channel
+        dimensions.
         """
         nchw_to_nhwc = len(input_shape) < 4 and len(output_shape) >= 4
         nhwc_to_nchw = len(input_shape) >= 4 and len(output_shape) < 4
@@ -310,8 +312,10 @@ class ToTosaMemoryFormatPass(ArmPass):
             ToTosaMemoryFormatPass.insert_output_transpose(node, graph_module)
 
     def insert_tosa_transposes(self, graph_module: torch.fx.GraphModule):
-        """
-        Transposes are needed for operators transforming the input to a different rank, as 4D and 5D-tensors are assumed to be in (N)NHWC-format, whereas all other are in (N)NCHW format.
+        """Transposes are needed for operators transforming the input to a
+        different rank, as 4D and 5D-tensors are assumed to be in (N)NHWC-
+        format, whereas all other are in (N)NCHW format.
+
         This is relevant for the following cases:
         - view:       <4D ->  >=4D
         - view:      >=4D ->   <4D
@@ -321,6 +325,7 @@ class ToTosaMemoryFormatPass(ArmPass):
         - H == W == 1
         - C == 1
         - 1D/2D tensors
+
         """
         for node in graph_module.graph.nodes:
             # call_function and placeholder allowed due to
@@ -383,9 +388,8 @@ class ToTosaMemoryFormatPass(ArmPass):
     def remove_dim_order_kwargs(
         self, graph_module: torch.fx.GraphModule, node: torch.fx.Node
     ):
-        """
-        Drop any user-specified `dim_order` keyword arguments so the pass remains
-        the single source of truth for dim-order annotations.
+        """Drop any user-specified `dim_order` keyword arguments so the pass
+        remains the single source of truth for dim-order annotations.
         """
         if node.op != "call_function":
             return
@@ -439,9 +443,8 @@ class ToTosaMemoryFormatPass(ArmPass):
         return PassResult(graph_module, True)
 
     def _propagate_spatial_ranks(self, nodes):
-        """
-        Propagate `tosa_spatial_rank` metadata backwards so earlier nodes learn
-        about upcoming spatial requirements from future ops.
+        """Propagate `tosa_spatial_rank` metadata backwards so earlier nodes
+        learn about upcoming spatial requirements from future ops.
         """
         changed = True
         while changed:
