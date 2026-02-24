@@ -1054,7 +1054,7 @@ def _to_edge_and_lower_llama_mlx(
 
     builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
         partitioners,
-        passes=get_default_passes(),
+        transform_passes=get_default_passes(),
     )
 
     if verbose:
