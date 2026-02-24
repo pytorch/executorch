@@ -93,17 +93,3 @@ ${CONDA_RUN_CMD} pytest -c /dev/null -n auto backends/test/suite/$SUITE/ -m flow
 # Generate markdown summary.
 ${CONDA_RUN_CMD} python -m executorch.backends.test.suite.generate_markdown_summary_json "$REPORT_FILE" > ${GITHUB_STEP_SUMMARY:-"step_summary.md"} --exit-code $EXIT_CODE
 
-# Package golden artifacts into per-model zips for downstream consumers.
-if [[ -d "${GOLDEN_DIR}/${FLOW}" ]]; then
-    pushd "${GOLDEN_DIR}/${FLOW}"
-    for pte in *.pte; do
-        [[ -f "$pte" ]] || continue
-        model_name="${pte%.pte}"
-        zip -j "${GOLDEN_DIR}/${FLOW}_${model_name}_golden.zip" \
-            "${model_name}.pte" \
-            ${model_name}_input*.bin \
-            ${model_name}_expected_output*.bin \
-            2>/dev/null || true
-    done
-    popd
-fi
