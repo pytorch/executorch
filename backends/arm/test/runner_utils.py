@@ -361,7 +361,6 @@ def run_vkml_emulation_layer(
 
     result = _run_cmd(cmd_line)
 
-    # TODO: MLETORCH-1234: Support VGF e2e tests in VgfPipeline
     # TODO: Add regex to check for error or fault messages in stdout from Emulation Layer
     result_stdout = result.stdout.decode()  # noqa: F841
 

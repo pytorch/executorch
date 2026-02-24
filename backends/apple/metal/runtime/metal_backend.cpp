@@ -14,6 +14,7 @@
 #include <unistd.h>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 
 #include <filesystem>
 #include <fstream>
@@ -315,6 +316,11 @@ class ET_EXPERIMENTAL MetalBackend final
         "Failed to load shared library: %s",
         dlerror());
 
+    ET_LOG(
+        Info,
+        "MetalBackend::init - Loaded shared library: %s",
+        so_path.c_str());
+
     processed->Free();
 
     // Create handle and load function pointers into it
@@ -389,6 +395,23 @@ class ET_EXPERIMENTAL MetalBackend final
 #endif
     ET_LOG(Debug, "MetalBackend execute");
 
+    // Allow overriding the default flush interval (set in ETMetalStream
+    // constructor)
+    static std::once_flag flush_interval_flag;
+    std::call_once(flush_interval_flag, [] {
+      const char* env = std::getenv("ET_METAL_FLUSH_INTERVAL");
+      if (env) {
+        try {
+          int val = std::stoi(env);
+          if (val >= 0) {
+            getCurrentMetalStream()->setFlushInterval(val);
+          }
+        } catch (const std::exception&) {
+          ET_LOG(Error, "Invalid ET_METAL_FLUSH_INTERVAL value: '%s'", env);
+        }
+      }
+    });
+
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
 
     ET_LOG(Debug, "MetalBackend Handle generated");
@@ -418,7 +441,7 @@ class ET_EXPERIMENTAL MetalBackend final
 
     int32_t mps_device_type = aoti_torch_device_type_mps(); // Returns 13
 
-    // NOTE: ExecutorTorch tensors are always on CPU/host memory
+    // NOTE: ExecuTorch tensors are always on CPU/host memory
     // We need to create GPU copies for Metal kernel execution
     std::vector<AOTITensorHandle> gpu_inputs(
         n_inputs); // GPU copies for kernel execution
@@ -427,14 +450,14 @@ class ET_EXPERIMENTAL MetalBackend final
 
     ET_LOG(Debug, "MetalBackend input/output vectors generated");
 
-    // Process input tensors: ExecutorTorch provides CPU tensors, create GPU
+    // Process input tensors: ExecuTorch provides CPU tensors, create GPU
     // copies
     for (int i = 0; i < n_inputs; i++) {
       ET_LOG(Debug, "Processing input %d from args to inputs vector", i);
       ET_LOG(
           Debug, "is %d input a tensor input? %d", i, int(args[i]->isTensor()));
 
-      // Get tensor dimensions and properties from ExecutorTorch CPU tensor
+      // Get tensor dimensions and properties from ExecuTorch CPU tensor
       auto cpu_tensor = &(args[i]->toTensor());
       auto sizes = cpu_tensor->sizes();
       auto scalar_type = cpu_tensor->scalar_type();
@@ -509,10 +532,10 @@ class ET_EXPERIMENTAL MetalBackend final
 
     ET_LOG(Debug, "MetalBackend GPU inputs generated");
 
-    // Process output tensors: create GPU counterparts for ExecutorTorch CPU
+    // Process output tensors: create GPU counterparts for ExecuTorch CPU
     // tensors
     for (int i = 0; i < n_outputs; i++) {
-      // Get output tensor dimensions from ExecutorTorch CPU tensor
+      // Get output tensor dimensions from ExecuTorch CPU tensor
       auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
       auto sizes = cpu_output_tensor->sizes();
       auto scalar_type = cpu_output_tensor->scalar_type();
@@ -618,7 +641,7 @@ class ET_EXPERIMENTAL MetalBackend final
       ET_LOG(Debug, "Copied GPU output %d back to CPU", i);
     }
 
-    // Clean up GPU tensors that we created (ExecutorTorch tensors are always
+    // Clean up GPU tensors that we created (ExecuTorch tensors are always
     // CPU, so all GPU tensors are our copies)
     for (int i = 0; i < n_inputs; i++) {
       // All GPU input tensors were created by us, delete them

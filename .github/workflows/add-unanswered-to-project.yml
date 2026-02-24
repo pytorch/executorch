@@ -43,16 +43,16 @@ jobs:
               "ethansfng", "ThomasJannaud", "nirvanagth", "marcinkwiatkowski", "3l1", "omerjerk", "nitish2112", "yipjustin", 
               "ejnguyen", "andrewor14", "phaiting", "mgiordy", "LeeOHzzZ", "adicatana", "Polyomino", "ezrilow", "navsud", 
               "michaelmaitland", "RahulC7", "seyeong-han", "thdusdl1219", "jaejunku", "felixweilbach", "apullin", "trviv", "junluan01", 
-              "YifanShenSZ", "RdoubleA", "Olivia-liu", "Abhi-hpp", "Vysarat", "azad-meta", "junpi", "pytorchbot", "pytorchmergebot", 
-              "pytorchupdatebot", "facebook-github-bot", "app/dependabot", "Erik-Lundell", "zingo", "AdrianLundell", "oscarandersson8218", 
-              "per", "Sebastian-Larsson", "SaoirseARM", "robell", "mansnils", "martinlsm", "freddan80", "YufengShi-dudu", "tom-arm", 
-              "perheld", "Jerry-Ge", "gggekov", "fumchin", "wwwind", "benkli01", "Tessil", "maddun01", "Michiel-Olieslagers", "armwaheed", 
-              "agrima1304", "emmakujala", "annietllnd", "MatthiasHertel80", "AlexTawseArm", "jmahbs", "morgolock", "Christoffer-JL", 
-              "ArmRyan", "xingguo01", "tgonzalezorlandoarm", "chizkiyahu", "sarah-blades", "haowhsu-quic", "shewu-quic", "winskuo-quic", 
-              "chunit-quic", "DannyYuyang-quic", "chuntl", "thchenqti", "jethroqti", "chenweng-quic", "cymbalrush", "DenisVieriu97", 
-              "billmguo", "StrycekSimon", "jirioc", "robert-kalmar", "skywall", "MartinPavella", "roman-janik-nxp", "novak-vaclav", 
-              "neuropilot-captain", "dijopaul", "cad-rlc", "cad-audio", "ynimmaga", "daniil-lyakhov", "emmanuel-ferdman", "cavusmustafa", 
-              "anzr299", "Jiseong-oh", "alexdean08",
+              "mvartani-meta", "abeakkas", "elpdumont", "corporateshark", "bdemirb", "GeorgeTzoupis", "AdithyaReddy9", "YifanShenSZ", 
+              "RdoubleA", "Olivia-liu", "Abhi-hpp", "Vysarat","azad-meta", "junpi", "pytorchbot", "pytorchmergebot", "pytorchupdatebot", 
+              "facebook-github-bot", "app/dependabot", "Erik-Lundell", "zingo", "AdrianLundell", "oscarandersson8218", "per", 
+              "Sebastian-Larsson", "SaoirseARM", "robell", "mansnils", "martinlsm", "freddan80", "YufengShi-dudu", "tom-arm", "perheld", 
+              "Jerry-Ge", "gggekov", "fumchin", "wwwind", "benkli01", "Tessil", "maddun01", "Michiel-Olieslagers", "armwaheed", "agrima1304", 
+              "emmakujala", "annietllnd", "MatthiasHertel80", "AlexTawseArm", "jmahbs", "morgolock", "Christoffer-JL", "ArmRyan", "xingguo01", 
+              "tgonzalezorlandoarm", "chizkiyahu", "sarah-blades", "haowhsu-quic", "shewu-quic", "winskuo-quic", "chunit-quic", "DannyYuyang-quic", 
+              "chuntl", "thchenqti", "jethroqti", "chenweng-quic", "cymbalrush", "DenisVieriu97", "billmguo", "StrycekSimon", "jirioc", 
+              "robert-kalmar", "skywall", "MartinPavella", "roman-janik-nxp", "novak-vaclav", "neuropilot-captain", "dijopaul", "cad-rlc", 
+              "cad-audio", "ynimmaga", "daniil-lyakhov", "emmanuel-ferdman", "cavusmustafa", "anzr299", "Jiseong-oh", "alexdean08",
               // explicitly include the dependabot bot login seen in PRs
               "dependabot[bot]"
             ]);
@@ -123,7 +123,7 @@ jobs:
             }
 
             try {
-              // Add open issues (not PRs) and exclude by author/bots
+              // Add open issues (not PRs) excluding by author/org/bots
               const issues = await github.paginate(
                 github.rest.issues.listForRepo,
                 {
@@ -134,14 +134,22 @@ jobs:
                 }
               );
               for (const issue of issues) {
-                if (!issue.pull_request && !isBotOrExcluded(issue.user)) {
-                  await addItem(issue.node_id, 'issue', issue.number);
-                } else {
-                  console.log(`Skipping issue #${issue.number} by ${issue.user && issue.user.login}`);
+                if (issue.pull_request) {
+                  console.log(`Skipping PR #${issue.number} (listed in issues)`);
+                  continue;
                 }
+                if (isBotOrExcluded(issue.user)) {
+                  console.log(`Skipping issue #${issue.number} by ${issue.user && issue.user.login} (excluded author/bot)`);
+                  continue;
+                }
+                if (await isMemberOfExcludedOrg(issue.user)) {
+                  console.log(`Skipping issue #${issue.number} by ${issue.user && issue.user.login} (member of excluded org)`);
+                  continue;
+                }
+                await addItem(issue.node_id, 'issue', issue.number);
               }
 
-              // Add open, non-draft PRs (regardless of review state), exclude by author/bots
+              // Add open, non-draft PRs (regardless of review state), excluding by author/org/bots/labels
               const prs = await github.paginate(
                 github.rest.pulls.list,
                 {
@@ -151,11 +159,23 @@ jobs:
                 }
               );
               for (const pr of prs) {
-                if (!pr.draft && !isBotOrExcluded(pr.user)) {
-                  await addItem(pr.node_id, 'pr', pr.number);
-                } else {
-                  console.log(`Skipping PR #${pr.number} by ${pr.user && pr.user.login}`);
+                if (pr.draft) {
+                  console.log(`Skipping PR #${pr.number} (draft)`);
+                  continue;
                 }
+                if (hasExcludedLabel(pr)) {
+                  console.log(`Skipping PR #${pr.number} (has excluded label)`);
+                  continue;
+                }
+                if (isBotOrExcluded(pr.user)) {
+                  console.log(`Skipping PR #${pr.number} by ${pr.user && pr.user.login} (excluded author/bot)`);
+                  continue;
+                }
+                if (await isMemberOfExcludedOrg(pr.user)) {
+                  console.log(`Skipping PR #${pr.number} by ${pr.user && pr.user.login} (member of excluded org)`);
+                  continue;
+                }
+                await addItem(pr.node_id, 'pr', pr.number);
               }
             } catch (error) {
               core.setFailed(`Workflow failed: ${error.message}`);

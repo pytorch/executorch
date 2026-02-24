@@ -108,11 +108,13 @@ compile_spec = VgfCompileSpec()
 quantizer = VgfQuantizer(compile_spec)
 operator_config = get_symmetric_quantization_config(is_per_channel=False)
 
-# Set default quantization config for the layers in the models.
+# Set global (default) quantization config for the layers in the models.
 # Can also be set to `None` to let layers run in FP as default.
 quantizer.set_global(operator_config)
 
-# OPTIONAL: skip quantizing all sigmoid ops (only one for this model); let it run in FP
+# Skip quantizing all sigmoid ops (only one for this model); let it run in FP.
+# This step is optional; selecting which layers to include/exclude for
+# quantization is part of optimizing the model's performance.
 quantizer.set_module_type(torch.nn.Sigmoid, None)
 
 # Post training quantization

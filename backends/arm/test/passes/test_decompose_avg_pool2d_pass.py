@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -20,9 +20,7 @@ class ModuleWithInputs(Protocol):
 
 
 class AvgPool2dWithStride(torch.nn.Module):
-    """
-    avg_pool2d model with explicit stride parameter
-    """
+    """avg_pool2d model with explicit stride parameter."""
 
     def get_inputs(self) -> input_t:
         return (torch.rand(1, 3, 8, 8),)
@@ -32,8 +30,8 @@ class AvgPool2dWithStride(torch.nn.Module):
 
 
 class AvgPool2dWithoutStride(torch.nn.Module):
-    """
-    avg_pool2d model without stride parameter (should default to kernel_size)
+    """avg_pool2d model without stride parameter (should default to
+    kernel_size)
     """
 
     def get_inputs(self) -> input_t:
@@ -44,9 +42,7 @@ class AvgPool2dWithoutStride(torch.nn.Module):
 
 
 class AvgPool2dListKernel(torch.nn.Module):
-    """
-    avg_pool2d model with list kernel_size and no stride
-    """
+    """avg_pool2d model with list kernel_size and no stride."""
 
     def get_inputs(self) -> input_t:
         return (torch.rand(1, 3, 8, 8),)
@@ -64,7 +60,9 @@ modules: Dict[str, ModuleWithInputs] = {
 
 @common.parametrize("module", modules)
 def test_decompose_avg_pool2d_tosa_FP(module: ModuleWithInputs) -> None:
-    """Test that DecomposeAvgPool2d pass works correctly with and without stride parameters."""
+    """Test that DecomposeAvgPool2d pass works correctly with and without stride
+    parameters.
+    """
     nn_module = cast(torch.nn.Module, module)
     pipeline = PassPipeline[input_t](
         nn_module,

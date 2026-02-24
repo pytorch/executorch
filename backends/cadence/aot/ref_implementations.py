@@ -6,11 +6,13 @@
 
 # pyre-strict
 
-from typing import Callable, Protocol, TypeVar
+from pathlib import Path
+from typing import Callable, Optional, Protocol, TypeVar
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from executorch.backends.cadence.aot.utils import is_depthwise_conv
 from executorch.exir.scalar_type import ScalarType
 from torch.library import impl, Library
 
@@ -19,8 +21,6 @@ m = Library("cadence", "IMPL", "CompositeExplicitAutograd")
 try:
     torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib")
 except (OSError, RuntimeError):
-    # Fall back to path-based loading for CMake/OSS builds
-    from pathlib import Path
 
     custom_libs: list[Path] = list(
         Path(__file__)
@@ -1020,11 +1020,13 @@ def quantized_w8a32_gru(
     assert inputs.dtype == torch.float32
     assert hidden.dtype == torch.float32
 
-    if len(hidden.shape) > 2:
-        raise ValueError("Hidden state must be 2D or 1D")
-
-    if len(hidden.shape) == 2 and hidden.shape[0] != 1:
-        raise ValueError("Leading dimension of hidden state must be 1")
+    # Hidden state can be 1D, 2D (1, hidden_dim), or 3D (1, 1, hidden_dim).
+    # All leading dimensions must be 1.
+    for d in range(len(hidden.shape) - 1):
+        if hidden.shape[d] != 1:
+            raise ValueError(
+                f"Leading dimension {d} of hidden state must be 1, got {hidden.shape[d]}"
+            )
 
     original_hidden_shape = hidden.shape
     hidden = hidden.view(-1)
@@ -1060,7 +1062,7 @@ def quantized_w8a32_gru(
 
     assert new_hidden.shape == original_hidden_shape
 
-    new_hidden = new_hidden.view(-1)
+    new_hidden = new_hidden.view(original_hidden_shape)
     return torch.stack([new_hidden, new_hidden], dim=0)
 
 
@@ -1102,18 +1104,29 @@ def quantized_conv2d_nhwc_per_tensor(
     """
 
     # Convert to NCHW format to reuse the existing implementation
-    conv_is_1d = False
+    in_channels = input_tensor.shape[-1]
+    depthwise = is_depthwise_conv(groups, in_channels)
+
     if len(input_tensor.shape) == 3:
-        conv_is_1d = True
+        # 1D conv: input is [N, L, C] -> [N, C, L]
         input_tensor = input_tensor.movedim(-1, 1).contiguous()
-        if len(weight.shape) != 3:
-            raise ValueError("Weight tensor must be 3D if input is 3D")
-        weight = weight.movedim(-1, 1).contiguous()
+        if depthwise:
+            # 1D depthwise: weight is [K, OC] -> [OC, 1, K]
+            weight = weight.permute(1, 0).unsqueeze(1).contiguous()
+        else:
+            # 1D regular: weight is [OC, K, IC] -> [OC, IC, K]
+            weight = weight.movedim(-1, 1).contiguous()
+        conv_is_1d = True
     else:
+        # 2D conv: input is [N, H, W, C] -> [N, C, H, W]
         input_tensor = input_tensor.movedim(-1, -3)
-        if len(weight.shape) != 4:
-            raise ValueError("Weight tensor must be 4D if input is nd > 3")
-        weight = torch.permute(weight, (0, -1, 1, 2)).contiguous()
+        if depthwise:
+            # 2D depthwise: weight is [KH, KW, OC] -> [OC, 1, KH, KW]
+            weight = weight.permute(2, 0, 1).unsqueeze(1).contiguous()
+        else:
+            # 2D regular: weight is [OC, KH, KW, IC] -> [OC, IC, KH, KW]
+            weight = torch.permute(weight, (0, -1, 1, 2)).contiguous()
+        conv_is_1d = False
 
     nchw_out = quantized_conv_per_tensor(
         input_tensor,
@@ -1753,6 +1766,61 @@ def rope(
     return rotated.view(original_shape)
 
 
+@impl_tracked(m, "rope_rotate_stacked_halves")
+def rope_rotate_stacked_halves(
+    input_tensor: torch.Tensor,
+    sin_tensor: torch.Tensor,
+    cos_tensor: torch.Tensor,
+    pos: torch.Tensor | None,
+) -> torch.Tensor:
+    original_shape = input_tensor.shape
+
+    if len(original_shape) not in [4, 5]:
+        raise ValueError(
+            f"Input tensor must be 4D or 5D. Got {len(original_shape)}D tensor"
+        )
+    if original_shape[0] != 1:
+        raise ValueError("Input tensor must have batch size 1")
+    if len(original_shape) == 5:
+        input_tensor = input_tensor.view(
+            input_tensor.shape[0], input_tensor.shape[1], input_tensor.shape[2], -1
+        )
+
+    _, seq, _, hd = input_tensor.shape
+
+    if hd % 2:
+        raise ValueError("Hidden dimension must be divisible by 2")
+
+    if (
+        sin_tensor.size(-1) * 2 != hd
+        or cos_tensor.size(-1) * 2 != hd
+        or sin_tensor.size(0) < seq
+        or cos_tensor.size(0) < seq
+    ):
+        raise ValueError(
+            f"sin_tensor and cos_tensor must have shape <kvseq (> {seq}) x {hd // 2}>. Got {sin_tensor.shape} and {cos_tensor.shape}"
+        )
+
+    if pos is not None:
+        if pos.shape != (seq,):
+            raise ValueError(
+                f"pos must have shape {input_tensor.shape[1]}. Got {pos.shape}"
+            )
+        sin_tensor = sin_tensor[pos]
+        cos_tensor = cos_tensor[pos]
+
+    # seq x 1 x hd
+    sin_tensor = sin_tensor.unsqueeze(1)
+    cos_tensor = cos_tensor.unsqueeze(1)
+
+    # batch x seq x num_heads x hd -> batch x seq x num_heads x 2 x head_dim_by_two
+    x0, x1 = input_tensor[..., 0 : hd // 2], input_tensor[..., hd // 2 :]
+    o0 = x0 * cos_tensor - x1 * sin_tensor
+    o1 = x1 * cos_tensor + x0 * sin_tensor
+    rotated = torch.cat([o0.view(-1, 1), o1.view(-1, 1)], dim=-2)
+    return rotated.view(original_shape)
+
+
 @impl_tracked(m, "im2row")
 def im2row(
     input_tensor: torch.Tensor,
@@ -2208,3 +2276,98 @@ def quantized_softmax(
         out_scale,
         out_zero_point,
     )
+
+
+@impl_tracked(m, "sdpa_bitwise_mask_gen")
+def sdpa_bitwise_mask_gen(mask: torch.Tensor, threshold: float) -> torch.Tensor:
+    """
+    Generate a bit-packed mask tensor for SDPA.
+
+    Notes:
+    - The semantic of "mask" here is inverted relative to PyTorch's typical boolean masks.
+      In PyTorch, a boolean mask generally uses True to indicate positions to keep/attend,
+      and False to indicate positions to mask out. In this function, the convention is
+      reversed: a value of 1 in the packed byte indicates a masked (disallowed) position,
+      while 0 indicates an unmasked (allowed) position.
+      Concretely:
+        * For a bool mask input:
+            True  -> unmasked/allowed  -> stored as bit 0 (we invert with ~)
+            False -> masked/disallowed -> stored as bit 1
+        * For a float mask input with threshold:
+            value < threshold -> masked/disallowed (bit 1)
+            value >= threshold -> unmasked/allowed (bit 0)
+
+    Behavior:
+    - Input mask can be torch.bool or torch.float.
+    - The last dimension must be a multiple of 8 so that each group of 8 elements
+      packs into one byte (little-endian within the byte: the first element maps
+      to the least significant bit).
+    - For bool masks, bits are computed as the inverse of the boolean value to align
+      with the "1 means masked" convention.
+    - For float masks, a comparison against `threshold` is used to determine masked
+      positions (value < threshold -> masked -> bit = 1).
+    """
+
+    assert len(mask.shape) >= 1, "Mask must be at least 1D"
+    assert mask.dtype in [torch.bool, torch.float], "Mask must be bool or float"
+    assert mask.shape[-1] % 8 == 0, "Mask last dim must be a multiple of 8"
+    if mask.dtype == torch.bool:
+        # Pack every 8 boolean elements into a single byte in the output tensor.
+        # Flatten to 1D for straightforward packing
+        original_shape = mask.shape
+        flat = mask.contiguous().view(-1)
+        # Convert boolean to uint8 and group into chunks of 8
+        bits = flat.to(torch.uint8).view(-1, 8)
+
+        # Pack 8 bits into one byte (little-endian within a byte: first element -> LSB)
+        packed = (
+            (~bits[:, 0] & 1) << 0
+            | (~bits[:, 1] & 1) << 1
+            | (~bits[:, 2] & 1) << 2
+            | (~bits[:, 3] & 1) << 3
+            | (~bits[:, 4] & 1) << 4
+            | (~bits[:, 5] & 1) << 5
+            | (~bits[:, 6] & 1) << 6
+            | (~bits[:, 7] & 1) << 7
+        ).to(torch.uint8)
+
+        # Compute packed last dim size
+        last_dim = original_shape[-1]
+        packed_last = last_dim // 8
+        # Reshape packed to match mask shape, with last dim packed to bytes
+        return packed.view(*original_shape[:-1], packed_last)
+    else:
+        assert mask.dtype == torch.float, "Mask must be bool or float"
+        # Pack every 8 boolean elements into a single byte in the output tensor.
+        # Flatten to 1D for straightforward packing
+        original_shape = mask.shape
+        flat = mask.contiguous().view(-1, 8)
+        packed = (
+            (flat[:, 0] < threshold) << 0
+            | (flat[:, 1] < threshold) << 1
+            | (flat[:, 2] < threshold) << 2
+            | (flat[:, 3] < threshold) << 3
+            | (flat[:, 4] < threshold) << 4
+            | (flat[:, 5] < threshold) << 5
+            | (flat[:, 6] < threshold) << 6
+            | (flat[:, 7] < threshold) << 7
+        ).to(torch.uint8)
+
+        # Compute packed last dim size
+        last_dim = original_shape[-1]
+        packed_last = last_dim // 8
+        # Reshape packed to match mask shape, with last dim packed to bytes
+        return packed.view(*original_shape[:-1], packed_last)
+
+
+@impl_tracked(m, "slice_scatter_")
+def slice_scatter_impl(
+    self: torch.Tensor,
+    src: torch.Tensor,
+    dim: int = 0,
+    start: Optional[int] = None,
+    end: Optional[int] = None,
+    step: int = 1,
+) -> torch.Tensor:
+    self[:] = torch.ops.aten.slice_scatter.default(self, src, dim, start, end, step)
+    return self

@@ -6,8 +6,6 @@
 import copy
 
 import logging
-import shutil
-import tempfile
 
 from collections import Counter, defaultdict
 from pprint import pformat
@@ -200,7 +198,20 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
 class ToExecutorch(tester.ToExecutorch):
     def run_artifact(self, inputs):
         with TosaReferenceModelDispatch():
-            return super().run_artifact(inputs)
+            # Check if the model has mutable buffers. These are not delegated to the backend
+            # and are handled by core ExecuTorch as I/O. In other words, the mutable buffer
+            # is outputted and re-inputted into the model. As we are calling the graph module
+            # directly, we need to ensure we handle these extra mutable inputs.
+            if (
+                len(self.artifact.exported_program().graph_signature.buffers_to_mutate)
+                > 0
+            ):
+                buffers = list(self.artifact.exported_program().buffers())
+                buffers.extend(inputs)
+
+                return self.artifact.exported_program().graph_module(*buffers)
+            else:
+                return super().run_artifact(inputs)
 
 
 class RunPasses(tester.RunPasses):
@@ -412,10 +423,6 @@ class ArmTester(Tester):
                 use_portable_ops=self.use_portable_ops,
                 timeout=self.timeout,
             )
-        assert (
-            self.compile_spec.get_intermediate_path() is not None
-        ), "Can't dump serialized file when compile specs do not contain an artifact path."
-
         return super().serialize(serialize_stage)
 
     def is_quantized(self) -> bool:
@@ -992,14 +999,6 @@ class ArmTester(Tester):
                     qtol=0,
                 )
             raise e
-
-    def __del__(self):
-        intermediate_path = self.compile_spec.get_intermediate_path()
-        if not intermediate_path:
-            return
-        if len(tempdir := tempfile.gettempdir()) > 0:
-            if intermediate_path.startswith(tempdir):
-                shutil.rmtree(intermediate_path, ignore_errors=True)
 
     def check_dtype_count(self, dtype_dict: Dict[str, Dict[str, int]]):
         if self.cur in (

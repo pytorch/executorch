@@ -1,4 +1,4 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -17,3 +17,8 @@ class CustomDelegationOptions:
     #  of `num_macs`. The `force_delegate_cat` allows the user to turn off the defensive check if from the model design
     #  it is known this constraint will be satisfied.
     force_delegate_cat: bool = False
+
+    # Proposed partitions which only contain Neutron no-ops are normally not delegated, as the NeutronConverter would
+    #  not create any NeutronGraph that can be called. This is done by the partitioner itself, and is not handled by
+    #  the individual node converters.
+    allow_no_op_partitions: bool = False

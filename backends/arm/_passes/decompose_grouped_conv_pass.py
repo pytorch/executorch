@@ -15,8 +15,7 @@ from executorch.exir.pass_base import ExportPass
 
 
 class DecomposeGroupedConvPass(ArmPass):
-    """
-    Splits a grouped convolution which is not supported by TOSA into multiple
+    """Splits a grouped convolution which is not supported by TOSA into multiple
     convolutions using slice->conv->cat.
 
     Before pass:
@@ -34,6 +33,7 @@ class DecomposeGroupedConvPass(ArmPass):
         x2 = conv(input2, weight2, bias2)
 
         x = cat(x1, x2)
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {Conv1dUnsqueezePass}

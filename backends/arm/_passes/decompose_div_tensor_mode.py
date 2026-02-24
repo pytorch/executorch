@@ -43,12 +43,17 @@ def _get_opset(op):
 
 
 class DecomposeDivTensorModePass(ArmPass):
-    """
-    Rewrites aten.div.Tensor_mode into
+    """Rewrites aten.div.Tensor_mode into.
 
-    rounding_mode=None  -> div(a, b)
-    rounding_mode='floor' -> floor(div(a, b))
-    rounding_mode='trunc' -> where(div(a,b) < 0, ceil(div(a,b)), floor(div(a,b)))
+    Example:
+        rounding_mode=None -> div(a, b)
+        rounding_mode="floor" -> floor(div(a, b))
+        rounding_mode="trunc" -> where(
+            div(a, b) < 0,
+            ceil(div(a, b)),
+            floor(div(a, b)),
+        )
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeDivPass}

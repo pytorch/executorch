@@ -26,6 +26,7 @@
 #include "types.h"
 
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
+#include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/llm/runner/wav_loader.h>
 #include <executorch/extension/llm/tokenizers/third-party/llama.cpp-unicode/include/unicode.h>
@@ -150,7 +151,8 @@ std::vector<Token> greedy_decode_executorch(
     int64_t blank_id,
     int64_t num_rnn_layers = 2,
     int64_t pred_hidden = 640,
-    int64_t max_symbols_per_step = 10) {
+    int64_t max_symbols_per_step = 10,
+    ::executorch::extension::llm::Stats* stats = nullptr) {
   std::vector<Token> hypothesis;
 
   // Shape: [1, T, joint_hidden]
@@ -288,6 +290,9 @@ std::vector<Token> greedy_decode_executorch(
       t += std::max(dur, static_cast<int64_t>(1));
       symbols_on_frame = 0;
     } else {
+      if (hypothesis.empty() && stats) {
+        stats->first_token_ms = ::executorch::extension::llm::time_in_ms();
+      }
       hypothesis.push_back({static_cast<TokenId>(k), t, dur});
 
       std::vector<int64_t> token_data = {k};
@@ -334,6 +339,10 @@ std::vector<Token> greedy_decode_executorch(
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
+  // Initialize stats for benchmarking
+  ::executorch::extension::llm::Stats stats;
+  stats.model_load_start_ms = ::executorch::extension::llm::time_in_ms();
+
   TimestampOutputMode timestamp_mode;
   try {
     timestamp_mode = parse_timestamp_output_mode(FLAGS_timestamps);
@@ -362,6 +371,21 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "Failed to load model.");
     return 1;
   }
+
+  // Load all methods upfront so model_load_time captures the real cost.
+  // With Mmap load mode, model->load() only sets up memory mappings;
+  // the actual data is paged in lazily when methods are first loaded.
+  const std::vector<std::string> required_methods = {
+      "preprocessor", "encoder", "decoder_step", "joint"};
+  for (const auto& method : required_methods) {
+    auto method_load_error = model->load_method(method);
+    if (method_load_error != Error::Ok) {
+      ET_LOG(Error, "Failed to load method: %s", method.c_str());
+      return 1;
+    }
+  }
+  stats.model_load_end_ms = ::executorch::extension::llm::time_in_ms();
+  stats.inference_start_ms = ::executorch::extension::llm::time_in_ms();
 
   // Load audio
   ET_LOG(Info, "Loading audio from: %s", FLAGS_audio_path.c_str());
@@ -412,6 +436,8 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "Encoder forward failed.");
     return 1;
   }
+  stats.prompt_eval_end_ms = ::executorch::extension::llm::time_in_ms();
+
   auto& enc_outputs = enc_result.get();
   auto f_proj = enc_outputs[0].toTensor(); // [B, T, joint_hidden]
   int64_t encoded_len = enc_outputs[1].toTensor().const_data_ptr<int64_t>()[0];
@@ -467,7 +493,14 @@ int main(int argc, char** argv) {
 
   ET_LOG(Info, "Running TDT greedy decode...");
   auto decoded_tokens = greedy_decode_executorch(
-      *model, f_proj, encoded_len, blank_id, num_rnn_layers, pred_hidden);
+      *model,
+      f_proj,
+      encoded_len,
+      blank_id,
+      num_rnn_layers,
+      pred_hidden,
+      10,
+      &stats);
 
   ET_LOG(Info, "Decoded %zu tokens", decoded_tokens.size());
 
@@ -487,6 +520,15 @@ int main(int argc, char** argv) {
   std::string text = parakeet::tokenizer_utils::decode_token_sequence(
       decoded_tokens, *tokenizer);
   std::cout << "Transcribed text: " << text << std::endl;
+
+  // Record inference end time and token counts
+  stats.inference_end_ms = ::executorch::extension::llm::time_in_ms();
+  stats.num_prompt_tokens =
+      encoded_len; // Use encoder output length as "prompt" tokens
+  stats.num_generated_tokens = static_cast<int64_t>(decoded_tokens.size());
+
+  // Print PyTorchObserver stats for benchmarking
+  ::executorch::extension::llm::print_report(stats);
 
 #ifdef ET_BUILD_METAL
   executorch::backends::metal::print_metal_backend_stats();

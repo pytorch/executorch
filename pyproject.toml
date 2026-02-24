@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-  "cmake>=3.29,<4.0.0",  # For building binary targets in the wheel. 4.0.0 breaks third-party CMake build so temporarily pin the version.
+  "cmake>=3.24,<4.0.0",  # For building binary targets in the wheel. 4.0.0 breaks third-party CMake build so temporarily pin the version.
   "packaging>=24.2", # Lower bound required by setuptools
   "pip>=23",  # For building the pip package.
   "pyyaml",  # Imported by the kernel codegen tools.
@@ -113,6 +113,8 @@ license-files = ["LICENSE"]
 [tool.setuptools.package-data]
 # TODO(dbort): Prune /test[s]/ dirs, /third-party/ dirs, yaml files that we
 # don't need.
+# TODO(RobertKalmar): When test[s] dirs pruned the PROJECT_DIR resolution in backends.nxp.tests_models.config.py can
+#  avoid exporting and reading env variable.
 "*" = [
   # Some backends like XNNPACK need their .fbs files.
   "*.fbs",
@@ -132,3 +134,11 @@ first_party_detection = false
 # specified by `requires-python`. TODO: Remove this once we support these older
 # versions of python and can expand the `requires-python` range.
 target-version = ["py38", "py39", "py310", "py311", "py312", "py313"]
+
+[tool.docformatter]
+black = true
+wrap-summaries = 80
+wrap-descriptions = 80
+style = "sphinx"
+close-quotes-on-newline = true
+blank = true

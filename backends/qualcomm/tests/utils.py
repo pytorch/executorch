@@ -184,6 +184,7 @@ class TestQNN(unittest.TestCase):
     dump_intermediate_outputs: bool = False
     inference_speed: float = 0.0
     inference_speed_output_path = "outputs/inference_speed.txt"
+    static_llm_eval_method = ""
 
     @classmethod
     def setUpClass(cls):
@@ -492,7 +493,6 @@ class TestQNN(unittest.TestCase):
                     dump_intermediate_outputs=(
                         True if expected_intermediate_events != -1 else False
                     ),
-                    backend=get_backend_type(self.backend),
                     expected_input_shape=(
                         (tensor.shape for tensor in processed_inputs)
                         if check_io_shape
@@ -509,6 +509,7 @@ class TestQNN(unittest.TestCase):
                     inputs=[processed_inputs],
                     files=op_package_paths,
                     init_env=False,
+                    backends={get_backend_type(self.backend)},
                 )
                 adb.extra_cmds += extra_cmds
                 if save_inference_speed:
@@ -516,7 +517,7 @@ class TestQNN(unittest.TestCase):
                         f" --performance_output_path {self.inference_speed_output_path}"
                     )
                 adb.execute(method_index=method_index, output_callback=output_callback)
-                adb.pull(output_path=tmp_dir, callback=post_process)
+                adb.pull(host_output_path=tmp_dir, callback=post_process)
                 self._assert_outputs_equal(outputs, ref_outputs)
 
                 if expected_profile_events != -1:

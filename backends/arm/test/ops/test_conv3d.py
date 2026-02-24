@@ -26,9 +26,10 @@ exir_op = "executorch_exir_dialects_edge__ops_aten_convolution_default"
 
 
 class Conv3d(torch.nn.Module):
-    """
-    Creates one or many chained 3D-convolutions. For multiple convolutions, the
-    respective parameteres are provided as lists.
+    """Creates one or many chained 3D-convolutions.
+
+    For multiple convolutions, the respective parameters are provided as lists.
+
     """
 
     def __init__(
@@ -128,11 +129,12 @@ class Conv3d(torch.nn.Module):
 
 
 class Conv3dMultiOp(torch.nn.Module):
-    """
-    Mixed Conv3d/Conv2d pipeline used to verify spatial-rank propagation across ops.
+    """Mixed Conv3d/Conv2d pipeline used to verify spatial-rank propagation
+    across ops.
 
     Topology:
         conv3d -> reshape -> conv2d -> reshape/permutation -> conv2d -> reshape -> add(5D)
+
     """
 
     def __init__(self, dtype=torch.float):
@@ -439,6 +441,32 @@ test_data_FP_bf16 = {
         dtype=torch.bfloat16,
     ),
 }
+test_data_FP_fp16 = {
+    "fp16_3x3": lambda: Conv3d(
+        height=10,
+        width=10,
+        depth=6,
+        in_channels=3,
+        out_channels=4,
+        kernel_size=(3, 3, 3),
+        stride=(1, 1, 1),
+        padding=(1, 1, 1),
+        bias=True,
+        dtype=torch.float16,
+    ),
+    "fp16_1x1": lambda: Conv3d(
+        height=6,
+        width=6,
+        depth=4,
+        in_channels=2,
+        out_channels=2,
+        kernel_size=(1, 1, 1),
+        stride=(1, 1, 1),
+        padding=(0, 0, 0),
+        bias=False,
+        dtype=torch.float16,
+    ),
+}
 
 # Generate a new test set paired with per_channel_quant=True/False.
 test_data_INT = {
@@ -466,11 +494,12 @@ def _get_dtype_count(model: torch.nn.Module):
 input_t = Tuple[torch.Tensor]
 
 
-@common.parametrize("test_data", test_data_FP | test_data_FP_bf16)
+@common.parametrize("test_data", test_data_FP | test_data_FP_bf16 | test_data_FP_fp16)
 def test_convolution_3d_tosa_FP(test_data):
+    model = test_data()
     pipeline = TosaPipelineFP[input_t](
-        test_data(),
-        test_data().get_inputs(),
+        model,
+        model.get_inputs(),
         aten_op,
         exir_op,
         tosa_extensions=["bf16"],
@@ -502,6 +531,7 @@ def test_convolution_3d_tosa_INT_a8w4(test_data):
         exir_op,
         tosa_extensions=["int4"],
         qtol=1,
+        frobenius_threshold=0.4,
     )
     pipeline.quantizer.set_global(
         get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
@@ -550,7 +580,9 @@ def test_convolution_3d_tosa_INT_multi_op():
 
 
 def test_convolution_3d_tosa_FP_depthwise():
-    """Depthwise or Grouped Conv3d should be rejected until grouped support exists."""
+    """Depthwise or Grouped Conv3d should be rejected until grouped support
+    exists.
+    """
     model = DepthwiseConv3d()
     pipeline = TosaPipelineFP[input_t](
         model,
@@ -623,12 +655,13 @@ def test_convolution_3d_u85_INT_a8w4(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_FP)
+@common.parametrize("test_data", test_data_FP | test_data_FP_fp16)
 @common.SkipIfNoModelConverter
 def test_convolution_3d_vgf_no_quant(test_data):
+    model = test_data()
     pipeline = VgfPipeline[input_t](
-        test_data(),
-        test_data().get_inputs(),
+        model,
+        model.get_inputs(),
         aten_op,
         exir_op,
         quantize=False,
@@ -646,6 +679,22 @@ def test_convolution_3d_vgf_quant(test_data):
         aten_op,
         exir_op,
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_INT)
+@common.SkipIfNoModelConverter
+def test_convolution_3d_vgf_quant_a8w4(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()
 

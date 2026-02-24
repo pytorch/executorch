@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -27,7 +27,7 @@ class ClampHardswishPass(ExportPass):
         kwargs: Dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        if op == torch.ops.aten.hardswish.default:
+        if op in (torch.ops.aten.hardswish.default, torch.ops.aten.hardswish_.default):
             clamped_args = (args[0], -3)
             clamped_input = super().call_operator(
                 torch.ops.aten.clamp.default, clamped_args, {}, meta

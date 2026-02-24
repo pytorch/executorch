@@ -118,13 +118,13 @@ python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL
 ```
 
 #### LLAMA3.2 1B Instruct
-Default example using kv mode.
+Default example using hybrid mode.
 ```bash
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-1b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1
 ```
 
 #### LLAMA3.2 3B Instruct
-Default example using kv mode.
+Default example using hybrid mode.
 ```bash
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-3b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1
 ```
@@ -162,7 +162,7 @@ python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL
 #### Granite3.3 2B
 Default example using hybrid mode
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model granite_3_3-2b_instruct --prompt "I would like to learn python, could you teach me with a simple example?" --run_lm_eval --task hellaswag --limit 10
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model granite_3_3-2b_instruct --prompt "I would like to learn python, could you teach me with a simple example?" --eval_methods tasks_eval --task hellaswag --limit 10
 ```
 
 #### Phi4-mini-instruct
@@ -382,13 +382,13 @@ We use Smart Mask mechanisms for updating the key-value (KV) cache.
 #### Compile Only
 If you would like to compile the model only, we have provided the flag `--compile_only`. Taking LLAMA3.2 as an example:
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2 --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "what is 1+1" --compile_only
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2 --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "I would like to learn python, could you teach me with a simple example?" --compile_only
 ```
 
 #### Pre Generated PTE
 On the other hand, if you already have a pre-compiled .pte model, you can perform inference by providing the flag `--pre_gen_pte` and specifying the folder that contains the .pte model. Taking LLAMA3.2 as an example:
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2 --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "what is 1+1" --pre_gen_pte ${FOLDER_TO_PRE_GEN_PTE}
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2 --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "I would like to learn python, could you teach me with a simple example?" --pre_gen_pte ${FOLDER_TO_PRE_GEN_PTE}
 ```
 
 #### Lookahead Decoding Mode
@@ -401,30 +401,81 @@ You can choose the lookahead mode to enhance decoding speed. To use this mode, y
 For more details, please refer to the paper ["Break the Sequential Dependency of LLM Inference Using Lookahead Decoding"](https://arxiv.org/abs/2402.02057)
 
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2 --model_mode lookahead --prefill_ar_len 32 --max_seq_len 128 --prompt "what is 1+1" --ngram 3 --window 2 --gcap 2
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2 --model_mode lookahead --prefill_ar_len 32 --max_seq_len 128 --prompt "I would like to learn python, could you teach me with a simple example?" --ngram 3 --window 2 --gcap 2
 ```
 
-#### Perplexity Evaluation
-This script supports perplexity evaluation and is capable of assessing perplexity scores across 3 phases: prepare_pt2e(CPU FP), convert_pt2e(CPU QDQ), QNN on device.
+#### Tasks Evaluation
+This script supports task evaluation and is capable of assessing evaluation scores across 3 phases: prepare_pt2e(CPU FP), convert_pt2e(CPU QDQ), QNN on device.
 
-To evaluate the perplexity across all 3 phases, users should provide the `--run_lm_eval` flag and specify the evaluation task. Please notice when this flag is provided, the `--prompt ${PROMPT}` will be ignored.
+To evaluate the perplexity across all 3 phases, users should provide the `--eval_methods tasks_eval` flag and specify the evaluation task. Please notice when this flag is provided, the `--prompt ${PROMPT}` will be ignored.
 
 For example, using the Qwen model and 1 wikitext sample as the evaluation task, users can assess all 3 phases perplexity score in a single run by including the appropriate configuration:
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --prompt "What is 1+1?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --run_lm_eval --tasks wikitext --limit 1
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --eval_methods tasks_eval --tasks wikitext --limit 1 --verbose
 ```
 
-For the example script above, 1 wikitext sample is used to evaluate all 3 phases. However, there are cases where a user may want to use one sample for quantization calibration and multiple samples for perplexity evaluation. In this case, the process should be split into two runs. In the 1st run, the model is compiled using one sample. In the 2nd run, the user can provide a different configuration for QNN device execution.
+From the example script above, 1 wikitext sample is used to evaluate all 3 phases. However, there are cases where a user may want to use one sample for quantization calibration and multiple samples for perplexity evaluation. In this case, the process should be split into two runs. In the 1st run, the model is compiled using one sample. In the 2nd run, the user can provide a different configuration for QNN device execution.
 Example:
 ```bash
 # 1st run to compile with --limit 1
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --prompt "What is 1+1?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --run_lm_eval --tasks wikitext --limit 1 --compile_only
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --eval_methods tasks_eval --tasks wikitext --limit 1 --compile_only
 ```
 ```bash
 # 2nd run to perform QNN device execution with --limit 3
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --prompt "What is 1+1?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --run_lm_eval --tasks wikitext --limit 3 --pre_gen_pte ${PATH_TO_ARTIFACT_IN_1ST_RUN} --quant_attrs_path ${PATH_TO_ARTIFACT_IN_1ST_RUN}/kv_llama_qnn_quant_attrs.json
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --eval_methods tasks_eval --tasks wikitext --limit 3 --pre_gen_pte ${PATH_TO_ARTIFACT_IN_1ST_RUN} --quant_attrs_path ${PATH_TO_ARTIFACT_IN_1ST_RUN}/kv_llama_qnn_quant_attrs.json
 ```
 
 #### Tasks quantization calibration
 If `--tasks ${TASK}` is not provided, the program will use `--prompt ${PROMPT}` as the dataset for quantization calibration.
-Regardless of whether `--run_lm_eval` is provided, as long as `--tasks ${TASK}` is specified, the specified tasks will be used for model quantization calibration instead of the prompt.
+Regardless of whether `--eval_methods tasks_eval` is provided, as long as `--tasks ${TASK}` is specified, the specified tasks will be used for model quantization calibration instead of the prompt.
+
+#### SQNR Evalution
+To evaluate QNN's output logits against the golden logits from `nn.Module`, users can provide the flag `--sqnr_eval`. Please note that SQNR evaluation will only compare the logits of the user's prompt and will not compare the new tokens generated by the model.
+Example:
+```bash
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --eval_methods sqnr_eval
+```
+
+#### Use attention sink for multi-turn conversations
+Attention sink is a way to evict cache when maximum context length be reached.
+There are two mainly concept for attention sink:
+
+1. **Maintain Attention Sinks**: Always include several initial tokens as attention sinks in the kv cache.
+2. **Redefine Positional Context**: Use positions relative to the cache instead of absolute positions from the original text, enhancing relevance and coherence in generated responses.
+
+<figure>
+    <img src="assets/AttentionSinkFeature.png" alt="Attention Sink Feature">
+    <figcaption>This figure shows how the attention sink operates for the kv cache in LLMs when `max_context_len = 8`, `sink_size = 4`, and `eviction_batch_size = 2`. The yellow blocks represent sink tokens, blue blocks indicate the remaining tokens, and the red blocks show the newly generated token.
+    </figcaption>
+</figure>
+
+This feature supports fluent multi-turn conversations and manages long-context scenarios. To enable it, set `--use_attention_sink <sink_size>,<batch_eviction_size>`.
+
+##### Explanation of Parameters Related to Attention Sink:
+1. **`--max_seq_len`**: Maximum sequence length the model can generate
+2. **`--max_context_len`**: Maximum length of the model's memory/cache, including both prompt tokens and generated tokens
+3. **`<sink_size>`**: Always include `sink_size` initial tokens as attention sinks in the kv cache.
+4. **`<batch_eviction_size>`**: How many tokens to evict from the cache at once when the cache is full. 
+
+Example:
+```bash
+# Compile llama pte file and attention sink evictor pte file with sink_size = 4 and batch_eviction_size = 64
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-1b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 4096 --max_context_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1 --use_attention_sink 4,64 --compile_only
+```
+
+After running this, the `attention_sink_evictor.pte` file will be generated in the artifacts directory. This file is necessary for using the attention sink feature, as it handles removing the `eviction_batch_size` tokens from the kv cache, retaining the first `sink_size` tokens, and re-rotating the remaining tokens in the kv cache.
+
+For multi-turn conversations or scenarios with long context using attention sink, you can set max_seq_len higher than the max_context_len used during compilation:
+```bash
+# Run llama with attention sink in multi-turn conversation scenario
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-1b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 4096 --prompt "I would like to learn python, could you teach me with a simple example?" "Could you give more difficult example in python?" "Could you add a GUI for this game?" "Could you tell me more about tkinter?" "Is possible to deploy on website?" ---pre_gen_pte ${PATH_TO_ARTIFACT_IN_1ST_RUN}  --use_attention_sink 4,64 
+```
+
+If you want to modify `sink_size` or `batch_eviction_size`, or if you have a pre-compiled llm pte file and wish to use the attention sink feature, you can recompile the `attention_sink_evictor.pte` with different attention sink config.
+
+```bash
+# Compile attention sink evictor pte file with sink_size = 4 and batch_eviction_size = 128
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-1b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 4096 --prompt "I would like to learn python, could you teach me with a simple example?" "Could you give more difficult example in python?" "Could you add a GUI for this game?" "Could you tell me more about tkinter?" "Is possible to deploy on website?" ---pre_gen_pte ${PATH_TO_ARTIFACT_IN_1ST_RUN}  --use_attention_sink 4,128 
+```
+
+Please make sure to use the same `--max_context_len`, `--prefill_ar_len`, and `--model_mode`, etc., as those used in the LLM to ensure the kv cache shape is correct.

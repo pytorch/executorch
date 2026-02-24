@@ -18,6 +18,35 @@
 #include <optional>
 #include <exception>
 
+#if (defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000) || \
+    (defined(__IPHONE_OS_VERSION_MAX_ALLOWED) && __IPHONE_OS_VERSION_MAX_ALLOWED >= 180000) || \
+    (defined(__TV_OS_VERSION_MAX_ALLOWED) && __TV_OS_VERSION_MAX_ALLOWED >= 180000) || \
+    (defined(__WATCH_OS_VERSION_MAX_ALLOWED) && __WATCH_OS_VERSION_MAX_ALLOWED >= 110000)
+#define ET_METAL_SDK_HAS_MTL_MATH_COMPILE_OPTIONS 1
+#else
+#define ET_METAL_SDK_HAS_MTL_MATH_COMPILE_OPTIONS 0
+#endif
+
+#if !ET_METAL_SDK_HAS_MTL_MATH_COMPILE_OPTIONS
+// When building with an older SDK, declare newer Metal compile option symbols so we can still
+// use them behind runtime availability checks.
+typedef NS_ENUM(NSInteger, MTLMathMode) {
+    MTLMathModeSafe = 0,
+    MTLMathModeRelaxed = 1,
+    MTLMathModeFast = 2,
+};
+
+typedef NS_ENUM(NSInteger, MTLMathFloatingPointFunctions) {
+    MTLMathFloatingPointFunctionsFast = 0,
+    MTLMathFloatingPointFunctionsPrecise = 1,
+};
+
+@interface MTLCompileOptions ()
+@property(readwrite, nonatomic) MTLMathMode mathMode;
+@property(readwrite, nonatomic) MTLMathFloatingPointFunctions mathFloatingPointFunctions;
+@end
+#endif
+
 namespace executorch {
 namespace backends {
 namespace metal {
@@ -467,6 +496,8 @@ void ETMetalKernelFunction::dispatchSingle(uint64_t length) {
     auto threadGroupSize = MTLSizeMake(actualGroupSize, 1, 1);
 
     [encoder_ dispatchThreads:size threadsPerThreadgroup:threadGroupSize];
+    getCurrentMetalStream()->notifyDispatch();
+    encoder_ = nil; // May be invalidated by flush; re-obtain via startEncoding()
     ET_LOG(Debug, "ETMetalKernelFunction::dispatchSingle: Dispatched with length %llu, group size %llu", length, actualGroupSize);
 
 }
@@ -484,6 +515,8 @@ void ETMetalKernelFunction::dispatchSingleWithGroupSize(uint64_t length, uint64_
     auto threadGroupSize = MTLSizeMake(actualGroupSize, 1, 1);
 
     [encoder_ dispatchThreads:size threadsPerThreadgroup:threadGroupSize];
+    getCurrentMetalStream()->notifyDispatch();
+    encoder_ = nil; // May be invalidated by flush; re-obtain via startEncoding()
     ET_LOG(Debug, "ETMetalKernelFunction::dispatchSingleWithGroupSize: Dispatched with length %llu, group size %llu", length, actualGroupSize);
 
 }
@@ -521,6 +554,8 @@ void ETMetalKernelFunction::dispatchArray(const uint64_t* length, size_t length_
     }
 
     [encoder_ dispatchThreads:size threadsPerThreadgroup:threadGroupSize];
+    getCurrentMetalStream()->notifyDispatch();
+    encoder_ = nil; // May be invalidated by flush; re-obtain via startEncoding()
     ET_LOG(Debug, "ETMetalKernelFunction::dispatchArray: Dispatched %zuD with size [%lu, %lu, %lu], group [%lu, %lu, %lu]",
            length_size, size.width, size.height, size.depth,
            threadGroupSize.width, threadGroupSize.height, threadGroupSize.depth);
@@ -573,6 +608,8 @@ void ETMetalKernelFunction::dispatchArrayWithGroupSize(const uint64_t* length, s
     }
 
     [encoder_ dispatchThreads:size threadsPerThreadgroup:threadGroupSize];
+    getCurrentMetalStream()->notifyDispatch();
+    encoder_ = nil; // May be invalidated by flush; re-obtain via startEncoding()
     ET_LOG(Debug, "ETMetalKernelFunction::dispatchArrayWithGroupSize: Dispatched %zuD with size [%lu, %lu, %lu], group [%lu, %lu, %lu]",
            length_size, size.width, size.height, size.depth,
            threadGroupSize.width, threadGroupSize.height, threadGroupSize.depth);
@@ -607,6 +644,8 @@ void ETMetalKernelFunction::dispatchThreadgroups(uint64_t gridX, uint64_t gridY,
     MTLSize threadsPerThreadgroup = MTLSizeMake(threadsX, threadsY, threadsZ);
 
     [encoder_ dispatchThreadgroups:threadgroupsPerGrid threadsPerThreadgroup:threadsPerThreadgroup];
+    getCurrentMetalStream()->notifyDispatch();
+    encoder_ = nil; // May be invalidated by flush; re-obtain via startEncoding()
 
     ET_LOG(Debug, "ETMetalKernelFunction::dispatchThreadgroups: Dispatched grid [%llu, %llu, %llu] with threadgroup [%llu, %llu, %llu]",
            (unsigned long long)gridX, (unsigned long long)gridY, (unsigned long long)gridZ,
@@ -630,9 +669,49 @@ void ETMetalKernelFunction::runCommandBlock(std::function<void(void)> f) {
 // ETMetalStream Implementation
 // =======================
 
+// Returns the default commitAndContinue flush interval for the given device.
+// The GPU architecture name (e.g. "applegpu_g14g") ends with a chip class:
+//   'p' = iPhone, 'g' = base/Pro, 's' = Max, 'd' = Ultra
+// See also: https://github.com/ml-explore/mlx (Metal backend flush-interval
+// selection uses the same heuristic).
+static int getDefaultFlushInterval(MTLDevice_t device, const char** outArch) {
+    char suffix = 'g';
+    NSString* arch = nil;
+
+    if (@available(macOS 13.0, iOS 16.0, tvOS 16.0, watchOS 9.0, *)) {
+        id architecture = [device architecture];
+        if (architecture != nil) {
+            arch = [architecture name];
+            const char* str = arch ? [arch UTF8String] : nullptr;
+            if (str) {
+                size_t len = strlen(str);
+                if (len > 0) {
+                    suffix = str[len - 1];
+                }
+            }
+        }
+    }
+
+    if (!arch) {
+        arch = @"unknown";
+    }
+    if (outArch) {
+        *outArch = [arch UTF8String];
+    }
+
+    switch (suffix) {
+        case 'p': return 20;  // iPhone
+        case 'g': return 40;  // base/Pro
+        case 's': return 50;  // Max
+        case 'd': return 50;  // Ultra
+        default:  return 40;
+    }
+}
+
 ETMetalStream::ETMetalStream()
     : device_(nil), commandQueue_(nil), commandBuffer_(nil), prevCommandBuffer_(nil),
-      commandEncoder_(nil), serialQueue_(nullptr), enableCommitAndContinue_(true) {
+      commandEncoder_(nil), serialQueue_(nullptr), enableCommitAndContinue_(true),
+      flushInterval_(0), dispatchCount_(0) {
     @autoreleasepool {
         // Create device and command queue
         device_ = MTLCreateSystemDefaultDevice();
@@ -652,7 +731,14 @@ ETMetalStream::ETMetalStream()
         // Create serial queue for thread safety
         serialQueue_ = dispatch_queue_create("metal gpu stream", nullptr);
 
-        ET_LOG(Debug, "ETMetalStream: Created stream with device %p, queue %p", device_, commandQueue_);
+        // Dispatch pipelining: periodically call [commandBuffer commitAndContinue]
+        // every flushInterval_ dispatches so the driver can prepare the next batch
+        // while the GPU executes the current one. Enabled by default for all Apple
+        // Silicon. Set ET_METAL_FLUSH_INTERVAL=0 to disable.
+        const char* archStr = nullptr;
+        flushInterval_ = getDefaultFlushInterval(device_, &archStr);
+        ET_LOG(Info, "ETMetalStream: arch='%s', flush interval=%d",
+               archStr ? archStr : "unknown", flushInterval_);
     }
 }
 
@@ -789,6 +875,29 @@ void ETMetalStream::endKernelCoalescing() {
     }
 }
 
+// Dispatch pipelining
+void ETMetalStream::setFlushInterval(int interval) {
+    flushInterval_ = interval;
+    dispatchCount_ = 0;
+    ET_LOG(Info, "ETMetalStream: flush interval set to %d dispatches", interval);
+}
+
+void ETMetalStream::notifyDispatch() {
+    if (!enableCommitAndContinue_ || flushInterval_ <= 0) {
+        return;
+    }
+    dispatchCount_++;
+    if (dispatchCount_ >= flushInterval_) {
+        dispatchCount_ = 0;
+        // Submit current work to GPU via commitAndContinue. The command buffer
+        // stays alive for further encoding, enabling pipelined execution.
+        endKernelCoalescing();
+        if (commandBuffer_) {
+            [commandBuffer_ commitAndContinue];
+        }
+    }
+}
+
 // Commit methods
 void ETMetalStream::commit() {
     if (!commandBuffer_) {
@@ -801,6 +910,7 @@ void ETMetalStream::commit() {
 
     [commandBuffer_ release];
     commandBuffer_ = nil;
+    dispatchCount_ = 0;
 }
 
 void ETMetalStream::commitAndWait() {
@@ -811,7 +921,8 @@ void ETMetalStream::commitAndWait() {
         prevCommandBuffer_ = nil;
     }
 
-    // Handle current command buffer
+    // Commit the final batch and wait for all work (including prior
+    // commitAndContinue batches) to complete on the GPU.
     if (commandBuffer_) {
         [commandBuffer_ commit];
         [commandBuffer_ waitUntilCompleted];
@@ -819,6 +930,7 @@ void ETMetalStream::commitAndWait() {
         commandBuffer_ = nil;
     }
 
+    dispatchCount_ = 0;
     ET_LOG(Debug, "ETMetalStream::commitAndWait: Committed and waited for completion");
 }
 
@@ -846,6 +958,7 @@ void ETMetalStream::flush() {
             [commandBuffer_ release];
         }
         commandBuffer_ = nil;
+        dispatchCount_ = 0;
 
         ET_LOG(Debug, "ETMetalStream::flush: Flushed command buffer");
     }

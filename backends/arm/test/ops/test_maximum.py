@@ -44,6 +44,13 @@ class Maximum(torch.nn.Module):
         ),
     }
 
+    test_parameters_bf16 = {
+        "bf16_rand": lambda: (
+            torch.randn(1, 3, 4, 4, dtype=torch.bfloat16),
+            torch.randn(1, 3, 4, 4, dtype=torch.bfloat16),
+        ),
+    }
+
     def __init__(self):
         super().__init__()
 
@@ -53,14 +60,13 @@ class Maximum(torch.nn.Module):
 
 @common.parametrize(
     "test_data",
-    Maximum.test_parameters | Maximum.test_parameters_fp16,
+    Maximum.test_parameters
+    | Maximum.test_parameters_fp16
+    | Maximum.test_parameters_bf16,
 )
 def test_maximum_tosa_FP(test_data: Tuple):
     TosaPipelineFP[test_t](
-        Maximum(),
-        test_data(),
-        aten_op,
-        exir_op,
+        Maximum(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
     ).run()
 
 
@@ -133,7 +139,9 @@ def test_maximum_tosa_INT_a16w8(test_data: test_t):
 @common.parametrize("test_data", Maximum.test_parameters)
 @common.XfailIfNoCorstone300
 def test_maximum_u55_INT_a16w8(test_data: test_t):
-    """Test maximum with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test maximum with 16A8W quantization on U55 (16-bit activations, 8-bit
+    weights)
+    """
     pipeline = EthosU55PipelineINT[test_t](
         Maximum(),
         test_data(),
@@ -149,7 +157,9 @@ def test_maximum_u55_INT_a16w8(test_data: test_t):
 @common.parametrize("test_data", Maximum.test_parameters)
 @common.XfailIfNoCorstone320
 def test_maximum_u85_INT_a16w8(test_data: test_t):
-    """Test maximum with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test maximum with 16A8W quantization on U85 (16-bit activations, 8-bit
+    weights)
+    """
     pipeline = EthosU85PipelineINT[test_t](
         Maximum(),
         test_data(),

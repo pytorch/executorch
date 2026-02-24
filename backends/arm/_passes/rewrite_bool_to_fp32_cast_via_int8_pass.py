@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,14 +19,14 @@ from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class RewriteBoolToFp32CastViaInt8Pass(ArmPass):
-    """
-    Legalizes unsupported bool->fp32 to_dim_order_copy casts for the Arm TOSA
+    """Legalizes unsupported bool->fp32 to_dim_order_copy casts for the Arm TOSA
     backend when both integer and float TOSA profiles are enabled.
 
     For the combined INT+FP profile, this pass rewrites a single bool->fp32 cast
-    into a bool->int8 cast followed by an int8->fp32 cast, so that each cast
-    is individually supported by the TOSA INT and FP profiles. For other
-    profiles (INT-only or FP-only) the pass is a no-op.
+    into a bool->int8 cast followed by an int8->fp32 cast, so that each cast is
+    individually supported by the TOSA INT and FP profiles. For other profiles
+    (INT-only or FP-only) the pass is a no-op.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()

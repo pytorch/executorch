@@ -489,4 +489,38 @@ TEST(SlimTensorBasicTest, DataPtrWithOffset) {
   EXPECT_EQ(data, static_cast<char*>(base) + 5 * sizeof(float));
 }
 
+// =============================================================================
+// Dtype and Device Type Validation Tests
+// =============================================================================
+
+TEST(SlimTensorValidationTest, InvalidDtypeUndefined) {
+  std::vector<int64_t> sizes = {2, 3};
+  std::vector<int64_t> strides = {3, 1};
+  size_t nbytes = 6 * sizeof(float);
+  Storage storage = make_cpu_storage(nbytes);
+
+  EXPECT_DEATH(
+      SlimTensor(
+          std::move(storage),
+          makeArrayRef(sizes),
+          makeArrayRef(strides),
+          c10::ScalarType::Undefined),
+      "");
+}
+
+TEST(SlimTensorValidationTest, InvalidDtypeDouble) {
+  std::vector<int64_t> sizes = {2, 3};
+  std::vector<int64_t> strides = {3, 1};
+  size_t nbytes = 6 * sizeof(double);
+  Storage storage = make_cpu_storage(nbytes);
+
+  EXPECT_DEATH(
+      SlimTensor(
+          std::move(storage),
+          makeArrayRef(sizes),
+          makeArrayRef(strides),
+          static_cast<c10::ScalarType>(7)), // Double = 7
+      "");
+}
+
 } // namespace executorch::backends::aoti::slim

@@ -315,7 +315,6 @@ jobs:
           - test_arm_baremetal: test_run_ethos_u85
           - test_arm_baremetal: test_smaller_stories_llama
           - test_arm_baremetal: test_memory_allocation
-          - test_arm_baremetal: test_model_smollm2-135M
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
@@ -662,7 +661,7 @@ jobs:
       contents: read
     strategy:
       matrix:
-        model: [qwen3_4b, phi_4_mini]
+        model: [qwen3_4b, phi_4_mini, lfm2_5_1_2b]
         runner: [linux.2xlarge]
         docker-image: [executorch-ubuntu-22.04-clang12]
         backend: [xnnpack]
@@ -672,6 +671,10 @@ jobs:
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
             backend: torchao
           - model: phi_4_mini
+            runner: linux.arm64.2xlarge
+            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+            backend: torchao
+          - model: lfm2_5_1_2b
             runner: linux.arm64.2xlarge
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
             backend: torchao

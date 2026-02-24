@@ -79,6 +79,16 @@ test_data_tensor_bf16 = {
         torch.randn(2, 3, 4, dtype=torch.bfloat16),
     ),
 }
+test_data_tensor_fp16 = {
+    "eq_tensor_rank2_rand_fp16": lambda: Equal(
+        torch.rand(4, 5, dtype=torch.float16),
+        torch.rand(1, 5, dtype=torch.float16),
+    ),
+    "eq_tensor_rank3_randn_fp16": lambda: Equal(
+        torch.randn(2, 3, 4, dtype=torch.float16),
+        torch.randn(2, 3, 4, dtype=torch.float16),
+    ),
+}
 
 test_data_scalar = {
     "eq_scalar_rank1_ones": lambda: op_eq_scalar_rank1_ones,
@@ -93,9 +103,17 @@ test_data_scalar_bf16 = {
         torch.randn(2, 3, 4, dtype=torch.bfloat16), -0.1
     ),
 }
+test_data_scalar_fp16 = {
+    "eq_scalar_rank2_fp16": lambda: Equal(torch.rand(4, 5, dtype=torch.float16), 0.2),
+    "eq_scalar_rank3_fp16": lambda: Equal(
+        torch.randn(2, 3, 4, dtype=torch.float16), -0.1
+    ),
+}
 
 
-@common.parametrize("test_module", test_data_tensor | test_data_tensor_bf16)
+@common.parametrize(
+    "test_module", test_data_tensor | test_data_tensor_bf16 | test_data_tensor_fp16
+)
 def test_eq_scalar_tosa_FP_tensor(test_module):
     pipeline = TosaPipelineFP[input_t](
         test_module(),
@@ -107,7 +125,9 @@ def test_eq_scalar_tosa_FP_tensor(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_scalar | test_data_scalar_bf16)
+@common.parametrize(
+    "test_module", test_data_scalar | test_data_scalar_bf16 | test_data_scalar_fp16
+)
 def test_eq_scalar_tosa_FP(test_module):
     pipeline = TosaPipelineFP[input_t](
         test_module(),
@@ -126,6 +146,8 @@ def test_eq_scalar_tosa_INT_tensor(test_module):
         test_module().get_inputs(),
         Equal.aten_op_Tensor,
         Equal.exir_op,
+        frobenius_threshold=0.6,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
+        cosine_threshold=0.8,
     )
     pipeline.run()
 
@@ -137,6 +159,8 @@ def test_eq_scalar_tosa_INT(test_module):
         test_module().get_inputs(),
         Equal.aten_op_Tensor,
         Equal.exir_op,
+        frobenius_threshold=0.6,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
+        cosine_threshold=0.8,
     )
     pipeline.run()
 
@@ -221,7 +245,9 @@ def test_eq_scalar_u85_INT(test_module):
 @common.parametrize("test_module", test_data_tensor)
 @common.XfailIfNoCorstone320
 def test_eq_scalar_u85_INT_tensor_16a8w(test_module):
-    """Test eq operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test eq operation with 16A8W quantization on U85 (16-bit activations,
+    8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU85PipelineINT[input_t](
@@ -239,7 +265,9 @@ def test_eq_scalar_u85_INT_tensor_16a8w(test_module):
 @common.parametrize("test_module", test_data_scalar)
 @common.XfailIfNoCorstone320
 def test_eq_scalar_u85_INT_16a8w(test_module):
-    """Test eq operation (scalar) with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test eq operation (scalar) with 16A8W quantization on U85 (16-bit
+    activations, 8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU85PipelineINT[input_t](
@@ -254,7 +282,7 @@ def test_eq_scalar_u85_INT_16a8w(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_tensor)
+@common.parametrize("test_module", test_data_tensor | test_data_tensor_fp16)
 @common.SkipIfNoModelConverter
 def test_eq_scalar_vgf_no_quant_tensor(test_module):
     pipeline = VgfPipeline[input_t](
@@ -267,7 +295,7 @@ def test_eq_scalar_vgf_no_quant_tensor(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_scalar)
+@common.parametrize("test_module", test_data_scalar | test_data_scalar_fp16)
 @common.SkipIfNoModelConverter
 def test_eq_scalar_vgf_no_quant(test_module):
     pipeline = VgfPipeline[input_t](

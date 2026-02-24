@@ -236,6 +236,10 @@ class PyQnnManager {
     return qnn_manager_->InitContext(std::optional{graph_names});
   }
 
+  executorch::runtime::Error InitContextCache() {
+    return qnn_manager_->InitContextCache();
+  }
+
   bool IsNodeSupportedByBackend(
       std::vector<std::shared_ptr<OpWrapper>>& op_wrappers) {
     return qnn_manager_->IsNodeSupportedByBackend(op_wrappers);

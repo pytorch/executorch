@@ -207,6 +207,7 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .def("Init", &PyQnnManager::Init)
       .def("InitBackend", &PyQnnManager::InitBackend)
       .def("InitContext", &PyQnnManager::InitContext)
+      .def("InitContextCache", &PyQnnManager::InitContextCache)
       .def("IsNodeSupportedByBackend", &PyQnnManager::IsNodeSupportedByBackend)
       .def(
           "Compile",

@@ -202,6 +202,14 @@ To learn more, check out these learning paths:
 https://learn.arm.com/learning-paths/embedded-and-microcontrollers/rpi-llama3/
 https://learn.arm.com/learning-paths/embedded-and-microcontrollers/visualizing-ethos-u-performance/
 
+### Project Templates
+
+These project templates provide alternative starting points for ExecuTorch development:
+
+- [CMSIS-Executorch Project Template](https://github.com/Arm-Examples/cmsis-executorch) — Docker-based build environment with Keil Studio/VS Code integration for Arm Ethos-U applications, featuring automated CI/CD and AVH-SSE-300 simulation support.
+
+- [ExecuTorch on Zephyr RTOS with CMSIS](https://github.com/Arm-Examples/cmsis-zephyr-executorch) — Complete example of running ExecuTorch inference on Arm Cortex-M with Ethos-U NPU acceleration using Zephyr RTOS and CMSIS Toolbox.
+
 ## FAQs
 
 If you encountered any bugs or issues following this tutorial please file a bug/issue here on [Github](https://github.com/pytorch/executorch/issues/new).

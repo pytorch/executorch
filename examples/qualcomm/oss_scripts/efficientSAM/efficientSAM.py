@@ -262,9 +262,8 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
         target=args.target,
-        backend=backend,
     )
-    adb.push(inputs=inputs)
+    adb.push(inputs=inputs, backends={backend})
     adb.execute()
 
     # collect output data
@@ -280,7 +279,7 @@ def main(args):
             output = torch.from_numpy(output).reshape(output_shape)
             outputs.append(output)
 
-    adb.pull(output_path=args.artifact, callback=post_process)
+    adb.pull(host_output_path=args.artifact, callback=post_process)
 
     # MIoU analysis
     miou = 0

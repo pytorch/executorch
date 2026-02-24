@@ -37,6 +37,7 @@ class TosaSpecialDtype(Enum):
 
     INT48 = ts.DType.INT48
     INT4 = ts.DType.INT4
+    SHAPE = ts.DType.SHAPE
 
     def get_tosa_dtype(self) -> ts.DType:
         """Return the underlying ``ts.DType`` enumerant.
@@ -127,6 +128,11 @@ def extract_tensor_meta(meta):
         ValueError: If ``meta['val']`` is not a ``FakeTensor``.
 
     """
+    special_dtype = meta.get(TosaSpecialDtype.meta_key())
+    if special_dtype == TosaSpecialDtype.SHAPE:
+        shape_len = len(meta["val"])
+        return (ts.DType.SHAPE, (shape_len,), (0,))
+
     if meta.get("val") is None:
         raise ValueError("Expected node.meta['val'] to be set to a FakeTensor")
     val = meta["val"]
@@ -164,6 +170,7 @@ class TosaArg:
         special (list | None): Captured list when the argument is a sequence.
         number (float | int | None): Captured numeric value when provided.
         multiple_output_name (list[str]): Output node names when node has multiple outputs; empty otherwise.
+
     """
 
     def __process_node(self, argument: torch.fx.Node):

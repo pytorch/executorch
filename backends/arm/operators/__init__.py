@@ -62,6 +62,7 @@ from . import (  # noqa
     op_tosa_rescale,
     op_tosa_resize,
     op_tosa_scatter,
+    op_tosa_shapes,
     op_tosa_table,
     op_tosa_transpose,
     op_tosa_transpose_conv2d,
@@ -69,5 +70,4 @@ from . import (  # noqa
     op_where,
     op_while,
     ops_binary,
-    ops_identity,
 )

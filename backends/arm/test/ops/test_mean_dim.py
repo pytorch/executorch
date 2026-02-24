@@ -227,6 +227,11 @@ class MeanDim(torch.nn.Module):
             (-4, -3, -2, -1),
             False,
         ),
+        "randn_large_axis": lambda: (
+            torch.randn(1, 256, 400),
+            (1, 2),
+            True,
+        ),
         "rank5_01234": lambda: (
             torch.rand(1, 1, 7, 3, 2),
             (-5, -4, -3, -2, -1),
@@ -360,14 +365,12 @@ class MeanDefault(torch.nn.Module):
         return tensor.mean()
 
     test_data_suite: dict[str, Callable[[], mean_input_t]] = {
-        "rank1": lambda: (
-            torch.rand(
-                1,
-            ),
+        "rank_2": lambda: (
+            torch.rand(1, 2),
             False,
         ),
-        "rank2": lambda: (torch.rand(5, 5), True),
-        "rank4": lambda: (torch.rand(5, 1, 10, 1), False),
+        "rank_2_keepdim": lambda: (torch.rand(5, 5), True),
+        "rank_4": lambda: (torch.rand(5, 1, 10, 1), False),
     }
 
 

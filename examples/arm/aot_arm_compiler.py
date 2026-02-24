@@ -73,9 +73,6 @@ from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
 
 
-FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
-logging.basicConfig(level=logging.WARNING, format=FORMAT)
-
 _arm_model_evaluator = None
 
 
@@ -434,18 +431,19 @@ def get_compile_spec(
     quantize: bool = False,
     config: Optional[str] = None,
     debug_mode: Optional[str] = None,
+    direct_drive: bool = False,
 ) -> TosaCompileSpec | EthosUCompileSpec | VgfCompileSpec:
     compile_spec = None
     if target.startswith("TOSA"):
-        try:
-            tosa_spec = TosaSpecification.create_from_string(target)
-        except Exception:
-            tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
+        tosa_spec = TosaSpecification.create_from_string(target)
         compile_spec = TosaCompileSpec(tosa_spec)
     elif "ethos-u" in target:
         extra_flags = ["--verbose-operators", "--verbose-cycle-estimate"]
         if debug_mode is not None:
             extra_flags.append("--enable-debug-db")
+        if direct_drive:
+            extra_flags.append("--separate-io-regions")
+            extra_flags.append("--cop-format=COP2")
         compile_spec = EthosUCompileSpec(
             target,
             system_config=system_config,
@@ -616,17 +614,25 @@ def get_args():
         choices=["json", "tosa"],
         help="Flag to enable ATen-to-TOSA debug mode and dumping of Vela's debug database.",
     )
+    parser.add_argument(
+        "--direct_drive",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Flag for enabling direct drive.",
+    )
     args = parser.parse_args()
 
     if args.evaluate and (
-        args.quantize is None or args.intermediates is None or (not args.delegate)
+        (not args.quantize) or args.intermediates is None or (not args.delegate)
     ):
         raise RuntimeError(
             "--evaluate requires --quantize, --intermediates and --delegate to be enabled."
         )
 
-    if args.debug:
-        logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
+    LOGGING_FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
+    logging_level = logging.DEBUG if args.debug else logging.WARNING
+    logging.basicConfig(level=logging_level, format=LOGGING_FORMAT, force=True)
 
     # if we have custom ops, register them before processing the model
     if args.so_library is not None:
@@ -762,6 +768,7 @@ def to_edge_TOSA_delegate(
         args.quantize,
         args.config,
         args.enable_debug_mode,
+        args.direct_drive,
     )
 
     model_quant = None
@@ -801,6 +808,7 @@ def to_edge_no_delegate(
             args.quantize,
             args.config,
             args.enable_debug_mode,
+            args.direct_drive,
         )
         model, exported_program = quantize_model(
             args, model, example_inputs, compile_spec
@@ -877,7 +885,8 @@ if __name__ == "__main__":  # noqa: C901
             exported_program, args, model, example_inputs
         )
 
-    if args.target != "vgf":
+    # Cortex-m ops are never included in vgf or direct-drive
+    if args.target != "vgf" and not args.direct_drive:
         # Transform so we can use ops from the Cortex M backend
         edge = transform_for_cortex_m_backend(edge, args)
 

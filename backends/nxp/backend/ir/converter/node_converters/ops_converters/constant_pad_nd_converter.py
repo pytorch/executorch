@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,6 +7,8 @@ import copy
 from typing import Collection
 
 import numpy as np
+
+from executorch.backends.nxp.backend.data_format import NXP_NODE_FORMAT
 
 from executorch.backends.nxp.backend.edge_helper import input_rank
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
@@ -27,8 +29,6 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
     pad_v2_options,
 )
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
-
-from executorch.backends.nxp.backend.node_format import NXP_NODE_FORMAT
 from torch.fx import Node
 from torch.nn import Parameter
 

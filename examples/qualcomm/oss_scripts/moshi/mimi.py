@@ -195,7 +195,7 @@ def inference_mimi_encoder(args, encoder_inputs, encoder_pte_filename):
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    adb.pull(output_path=args.artifact)
+    adb.pull(host_output_path=args.artifact)
 
     encoder_predictions = []
     for i in range(len(encoder_inputs)):
@@ -371,7 +371,7 @@ def inference_static_mimi_decoder(
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    adb.pull(output_path=args.artifact)
+    adb.pull(host_output_path=args.artifact)
 
     num_chunks = len(encoded_results)
     shape = num_chunks * pcm_chunk_size

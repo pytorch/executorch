@@ -1,3 +1,5 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
@@ -6,6 +8,31 @@
 
 load("targets.bzl", "define_common_targets")
 
-oncall("executorch")
 
-define_common_targets()
+non_fbcode_target(_kind = define_common_targets,)
+
+# !!!! fbcode/executorch/backends/cortex_m/ops/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("targets.bzl", "define_common_targets")
+
+
+fbcode_target(_kind = runtime.python_library,
+    name = "ops",
+    srcs = [
+        "operators.py",
+    ],
+    deps = [
+        "fbcode//caffe2:torch",
+        "//executorch/backends/cortex_m/passes:passes_utils",
+        "//executorch/backends/cortex_m/quantizer:quantization_configs",
+    ],
+)
+
+fbcode_target(_kind = define_common_targets,)

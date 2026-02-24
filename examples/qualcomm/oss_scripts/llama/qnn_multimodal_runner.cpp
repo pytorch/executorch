@@ -301,6 +301,7 @@ void start_multimodal_runner(
   // Configure generation
   executorch::extension::llm::GenerationConfig config{
       true,
+      false,
       -1,
       false,
       FLAGS_seq_len,
