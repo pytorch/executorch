@@ -18,6 +18,8 @@ from executorch.backends.arm._passes import (
     CastInt64BuffersToInt32Pass,
     CastToInt32Pass,
     ComputeConstantOpsAOTPass,
+    ConstantFoldingPass,
+    ControlFlowConstInlinePass,
     Conv1dUnsqueezePass,
     ConvertELUParamsPass,
     ConvertExpandCopyToRepeatPass,
@@ -77,9 +79,11 @@ from executorch.backends.arm._passes import (
     DecomposeSelectScatterPass,
     DecomposeSignPass,
     DecomposeSinhPass,
+    DecomposeSliceScatterPass,
     DecomposeSoftmaxPass,
     DecomposeSoftmaxUnstablePass,
     DecomposeSqrtPass,
+    DecomposeStridedSliceCopyPass,
     DecomposeSumPass,
     DecomposeTanPass,
     DecomposeTOSAUnsupportedClampPass,
@@ -121,6 +125,7 @@ from executorch.backends.arm._passes import (
     UnsqueezeBeforeRepeatPass,
     UnsqueezeScalarPlaceholdersPass,
 )
+
 from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.pipeline_config import (
@@ -240,6 +245,7 @@ class ArmPassManager(PassManager):
                 DecomposeVarPass(),
                 DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec),
                 ConvertELUParamsPass(),
+                ControlFlowConstInlinePass(),
                 NormalizeWhileInitialArgsPass(use_exir_clone=True),
             ]
         )
@@ -292,6 +298,7 @@ class ArmPassManager(PassManager):
                 DecomposeUnfoldToGatherPass(),
                 DecomposeEmbeddingPass(),
                 DecomposeIndexSelectToGatherPass(),
+                DecomposeStridedSliceCopyPass(),
                 Conv1dUnsqueezePass(),
             ]
         )
@@ -313,6 +320,7 @@ class ArmPassManager(PassManager):
         # Node transformation passes (post scalar-removal)
         self.add_passes(
             [
+                DecomposeSliceScatterPass(),
                 AccumulateIndexPutPass(),
                 RewriteIndexPutPass(),
                 DecomposeRemainderPass(),
@@ -389,11 +397,13 @@ class ArmPassManager(PassManager):
     def transform_for_annotation_pipeline(self, graph_module: GraphModule):
         # Preprocessing passes
         self.add_pass(RemoveGraphAssertsPass(tfa_pass=True))
+        self.add_pass(ConstantFoldingPass())
 
         # Transformation passes (pre scalar -> tensor)
         self.add_passes(
             [
                 DecomposeSelectScatterPass(tfa_pass=True),
+                DecomposeSliceScatterPass(tfa_pass=True),
                 ConvertInt64ConstOpsToInt32Pass(tfa_pass=True),
                 ConvertInt64OutputOpsToInt32Pass(tfa_pass=True),
                 InsertInt32CastsAfterInt64PlaceholdersPass(tfa_pass=True),
@@ -416,6 +426,7 @@ class ArmPassManager(PassManager):
             [
                 ReplaceScalarWithTensorByProfilePass(tfa_pass=True),
                 ScalarsToAttributePass(tfa_pass=True),
+                ControlFlowConstInlinePass(tfa_pass=True),
             ]
         )
 

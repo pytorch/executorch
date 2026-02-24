@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -106,7 +106,13 @@ def test_masked_fill_scalar_tosa_FP(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules)
+@common.parametrize(
+    "test_module",
+    test_modules,
+    xfails={
+        "masked_fill_8_extreme_scalar_inf": "MLETORCH-1812 - Quantization inaccurate on inf-values in masked fill"
+    },
+)
 def test_masked_fill_scalar_tosa_INT(test_module):
     module, inputs = test_module()
     pipeline = TosaPipelineINT[input_t](

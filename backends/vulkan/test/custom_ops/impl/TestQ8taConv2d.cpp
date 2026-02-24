@@ -32,6 +32,7 @@ void test_q8ta_conv2d_dw(
   const ValueRef padding = args.at(idx++);
   const ValueRef dilation = args.at(idx++);
   const ValueRef groups = args.at(idx++);
+  const ValueRef activation = args.at(idx++);
   const ValueRef layout_int = args.at(idx++);
   const ValueRef impl_selector_str = args.at(idx++);
   const ValueRef fp_output = args.at(idx++);
@@ -59,29 +60,43 @@ void test_q8ta_conv2d_dw(
   add_q8ta_quantize_node(
       graph, fp_input, input_scale, input_zp, packed_int8_input);
 
-  // Build args for conv operator
-  std::vector<ValueRef> conv_args = {
-      packed_int8_input,
-      input_scale,
-      input_zp,
-      weight_data,
-      weight_sums_data,
-      weight_scales_data,
-      output_scale,
-      output_zp,
-      bias_data,
-      kernel_size,
-      stride,
-      padding,
-      dilation,
-      groups,
-      packed_int8_output};
-
   if (impl_selector == "legacy_4w4c") {
-    // Use the general quantized conv2d operator for legacy path
+    // Legacy path does not support activation
+    std::vector<ValueRef> conv_args = {
+        packed_int8_input,
+        input_scale,
+        input_zp,
+        weight_data,
+        weight_sums_data,
+        weight_scales_data,
+        output_scale,
+        output_zp,
+        bias_data,
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        groups,
+        packed_int8_output};
     VK_GET_OP_FN("et_vk.conv2d_q8ta_q8csw_q8to.default")(graph, conv_args);
   } else {
-    // Use the dedicated depthwise conv2d operator
+    std::vector<ValueRef> conv_args = {
+        packed_int8_input,
+        input_scale,
+        input_zp,
+        weight_data,
+        weight_sums_data,
+        weight_scales_data,
+        output_scale,
+        output_zp,
+        bias_data,
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        groups,
+        activation,
+        packed_int8_output};
     VK_GET_OP_FN("et_vk.q8ta_conv2d_dw.default")(graph, conv_args);
   }
 
@@ -106,6 +121,7 @@ void test_q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef padding = args.at(idx++);
   const ValueRef dilation = args.at(idx++);
   const ValueRef groups = args.at(idx++);
+  const ValueRef activation = args.at(idx++);
   const ValueRef layout_int = args.at(idx++);
   const ValueRef impl_selector_str = args.at(idx++);
   const ValueRef fp_output = args.at(idx++);
@@ -133,36 +149,50 @@ void test_q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   add_q8ta_quantize_node(
       graph, fp_input, input_scale, input_zp, packed_int8_input);
 
-  // Build args for conv operator
-  std::vector<ValueRef> conv_args = {
-      packed_int8_input,
-      input_scale,
-      input_zp,
-      weight_data,
-      weight_sums_data,
-      weight_scales_data,
-      output_scale,
-      output_zp,
-      bias_data,
-      kernel_size,
-      stride,
-      padding,
-      dilation,
-      groups,
-      packed_int8_output};
-
   if (impl_selector == "legacy_4w4c") {
-    // Use the general quantized conv2d operator for legacy path
+    // Legacy path does not support activation
+    std::vector<ValueRef> conv_args = {
+        packed_int8_input,
+        input_scale,
+        input_zp,
+        weight_data,
+        weight_sums_data,
+        weight_scales_data,
+        output_scale,
+        output_zp,
+        bias_data,
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        groups,
+        packed_int8_output};
     VK_GET_OP_FN("et_vk.conv2d_q8ta_q8csw_q8to.default")(graph, conv_args);
-  } else if (impl_selector == "im2col") {
-    // Use the im2col-based conv2d operator
-    VK_GET_OP_FN("et_vk.q8ta_conv2d_im2col.default")(graph, conv_args);
-  } else if (impl_selector == "general") {
-    // Use the general q8ta_conv2d operator (no im2col dispatch)
-    VK_GET_OP_FN("et_vk.q8ta_conv2d_general.default")(graph, conv_args);
   } else {
-    // Use the new general q8ta_conv2d operator
-    VK_GET_OP_FN("et_vk.q8ta_conv2d.default")(graph, conv_args);
+    std::vector<ValueRef> conv_args = {
+        packed_int8_input,
+        input_scale,
+        input_zp,
+        weight_data,
+        weight_sums_data,
+        weight_scales_data,
+        output_scale,
+        output_zp,
+        bias_data,
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        groups,
+        activation,
+        packed_int8_output};
+    if (impl_selector == "im2col") {
+      VK_GET_OP_FN("et_vk.q8ta_conv2d_im2col.default")(graph, conv_args);
+    } else if (impl_selector == "general") {
+      VK_GET_OP_FN("et_vk.q8ta_conv2d_general.default")(graph, conv_args);
+    } else {
+      VK_GET_OP_FN("et_vk.q8ta_conv2d.default")(graph, conv_args);
+    }
   }
 
   // Dequantize packed int8 output to floating point
@@ -188,6 +218,7 @@ void test_q8ta_conv2d_pw(
   const ValueRef padding = args.at(idx++);
   const ValueRef dilation = args.at(idx++);
   const ValueRef groups = args.at(idx++);
+  const ValueRef activation = args.at(idx++);
   const ValueRef layout_int = args.at(idx++);
   const ValueRef impl_selector_str = args.at(idx++);
   const ValueRef fp_output = args.at(idx++);
@@ -219,27 +250,43 @@ void test_q8ta_conv2d_pw(
   add_q8ta_quantize_node(
       graph, fp_input, input_scale, input_zp, packed_int8_input);
 
-  // Build args for conv operator
-  std::vector<ValueRef> conv_args = {
-      packed_int8_input,
-      input_scale,
-      input_zp,
-      weight_data,
-      weight_sums_data,
-      weight_scales_data,
-      output_scale,
-      output_zp,
-      bias_data,
-      kernel_size,
-      stride,
-      padding,
-      dilation,
-      groups,
-      packed_int8_output};
-
   if (impl_selector == "legacy_4w4c") {
+    // Legacy path does not support activation
+    std::vector<ValueRef> conv_args = {
+        packed_int8_input,
+        input_scale,
+        input_zp,
+        weight_data,
+        weight_sums_data,
+        weight_scales_data,
+        output_scale,
+        output_zp,
+        bias_data,
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        groups,
+        packed_int8_output};
     VK_GET_OP_FN("et_vk.conv2d_q8ta_q8csw_q8to.default")(graph, conv_args);
   } else {
+    std::vector<ValueRef> conv_args = {
+        packed_int8_input,
+        input_scale,
+        input_zp,
+        weight_data,
+        weight_sums_data,
+        weight_scales_data,
+        output_scale,
+        output_zp,
+        bias_data,
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        groups,
+        activation,
+        packed_int8_output};
     VK_GET_OP_FN("et_vk.q8ta_conv2d_pw.default")(graph, conv_args);
   }
 

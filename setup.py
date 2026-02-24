@@ -870,6 +870,13 @@ setup(
             dependent_cmake_flags=[],
         ),
         BuiltFile(
+            src_dir="%CMAKE_CACHE_DIR%/backends/cuda/%BUILD_TYPE%/",
+            src_name="aoti_cuda_shims",
+            dst="executorch/backends/cuda/",
+            is_dynamic_lib=True,
+            dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],
+        ),
+        BuiltFile(
             src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/%BUILD_TYPE%/",
             src_name="qnn_executorch_backend",
             dst="executorch/backends/qualcomm/",

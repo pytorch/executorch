@@ -18,6 +18,35 @@
 #include <optional>
 #include <exception>
 
+#if (defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000) || \
+    (defined(__IPHONE_OS_VERSION_MAX_ALLOWED) && __IPHONE_OS_VERSION_MAX_ALLOWED >= 180000) || \
+    (defined(__TV_OS_VERSION_MAX_ALLOWED) && __TV_OS_VERSION_MAX_ALLOWED >= 180000) || \
+    (defined(__WATCH_OS_VERSION_MAX_ALLOWED) && __WATCH_OS_VERSION_MAX_ALLOWED >= 110000)
+#define ET_METAL_SDK_HAS_MTL_MATH_COMPILE_OPTIONS 1
+#else
+#define ET_METAL_SDK_HAS_MTL_MATH_COMPILE_OPTIONS 0
+#endif
+
+#if !ET_METAL_SDK_HAS_MTL_MATH_COMPILE_OPTIONS
+// When building with an older SDK, declare newer Metal compile option symbols so we can still
+// use them behind runtime availability checks.
+typedef NS_ENUM(NSInteger, MTLMathMode) {
+    MTLMathModeSafe = 0,
+    MTLMathModeRelaxed = 1,
+    MTLMathModeFast = 2,
+};
+
+typedef NS_ENUM(NSInteger, MTLMathFloatingPointFunctions) {
+    MTLMathFloatingPointFunctionsFast = 0,
+    MTLMathFloatingPointFunctionsPrecise = 1,
+};
+
+@interface MTLCompileOptions ()
+@property(readwrite, nonatomic) MTLMathMode mathMode;
+@property(readwrite, nonatomic) MTLMathFloatingPointFunctions mathFloatingPointFunctions;
+@end
+#endif
+
 namespace executorch {
 namespace backends {
 namespace metal {

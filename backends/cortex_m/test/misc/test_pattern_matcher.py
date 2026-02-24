@@ -26,7 +26,7 @@ class _AlwaysPassCheck(PatternCheck):
         return True
 
     @classmethod
-    def check_quantization_config(cls, quantization_config):
+    def check_quantization_config(cls, pattern, quantization_config):
         return True
 
 
@@ -36,7 +36,7 @@ class _AlwaysFailCheck(PatternCheck):
         return False
 
     @classmethod
-    def check_quantization_config(cls, quantization_config):
+    def check_quantization_config(cls, pattern, quantization_config):
         return False
 
 

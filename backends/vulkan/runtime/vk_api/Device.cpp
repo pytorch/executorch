@@ -51,6 +51,14 @@ PhysicalDevice::PhysicalDevice(
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_PROPERTIES_KHR,
           nullptr},
 #endif
+#ifdef VK_KHR_cooperative_matrix
+      cooperative_matrix_features{
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR},
+#endif /* VK_KHR_cooperative_matrix */
+#ifdef VK_NV_cooperative_matrix2
+      cooperative_matrix2_features{
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_2_FEATURES_NV},
+#endif /* VK_NV_cooperative_matrix2 */
       queue_families{},
       num_compute_queues(0),
       api_version_major(0),
@@ -245,6 +253,16 @@ void PhysicalDevice::query_extensions_vk_1_1() {
   shader_int_dot_product_features.pNext = extension_list_top;
   extension_list_top = &shader_int_dot_product_features;
 #endif /* VK_KHR_shader_integer_dot_product */
+
+#ifdef VK_KHR_cooperative_matrix
+  cooperative_matrix_features.pNext = extension_list_top;
+  extension_list_top = &cooperative_matrix_features;
+#endif /* VK_KHR_cooperative_matrix */
+
+#ifdef VK_NV_cooperative_matrix2
+  cooperative_matrix2_features.pNext = extension_list_top;
+  extension_list_top = &cooperative_matrix2_features;
+#endif /* VK_NV_cooperative_matrix2 */
 
   features2.pNext = extension_list_top;
 

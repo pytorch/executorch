@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -45,9 +45,7 @@
 # ~~~
 #
 
-# TODO Lower to 3.24 when XNNPACK dependency is updated to include
-# https://github.com/google/XNNPACK/commit/c690daa67f883e1b627aadf7684c06797e9a0684
-cmake_minimum_required(VERSION 3.29)
+cmake_minimum_required(VERSION 3.24)
 project(executorch)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
@@ -614,8 +612,14 @@ install(FILES tools/cmake/executorch-config.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
 )
 
-if(EXECUTORCH_BUILD_ARM_BAREMETAL)
+if(EXECUTORCH_BUILD_ARM_BAREMETAL
+   OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX
+   OR EXECUTORCH_BUILD_VGF
+)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
+endif()
+
+if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
   list(APPEND _executorch_backends executorch_delegate_ethos_u)
 endif()
 
@@ -669,7 +673,6 @@ endif()
 
 if(EXECUTORCH_BUILD_CORTEX_M)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
-  list(APPEND _executorch_backends coretex_m_backend)
 endif()
 
 # If CUDA, Metal, or pybind will need Torch, find it at root scope first so that
@@ -944,6 +947,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs openvino_backend)
   endif()
 
+  if(EXECUTORCH_BUILD_CUDA)
+    string(APPEND _portable_lib_rpath ":$ORIGIN/../../backends/cuda")
+  endif()
+
   if(EXECUTORCH_BUILD_QNN)
     list(APPEND _dep_libs qnn_executorch_backend)
     string(APPEND _portable_lib_rpath ":$ORIGIN/../../backends/qualcomm")
@@ -1067,7 +1074,6 @@ if(EXECUTORCH_BUILD_VULKAN)
 endif()
 
 if(EXECUTORCH_BUILD_VGF)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
   list(APPEND _executorch_backends vgf_backend)
 endif()
 
@@ -1201,6 +1207,21 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
   target_link_libraries(executor_runner ${_executor_runner_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
+  if(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+    target_sources(
+      executor_runner
+      PRIVATE
+        ${CMAKE_SOURCE_DIR}/examples/arm/executor_runner/ethosu_link_helper.cpp
+    )
+    target_compile_definitions(
+      executor_runner PRIVATE EXECUTORCH_BUILD_ARM_ETHOSU_LINUX=1
+    )
+    # Wrap static linking like the delegate_runner to keep images
+    # self-contained.
+    target_link_options(
+      executor_runner PRIVATE -static-libstdc++ -static-libgcc
+    )
+  endif()
 
   # Automatically set when using `emcmake cmake` for Wasm build.
   if(EMSCRIPTEN)
