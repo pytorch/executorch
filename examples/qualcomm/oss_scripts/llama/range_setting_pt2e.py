@@ -17,7 +17,6 @@ We implement the two main range setting methods:
 
 import torch
 import torch.nn as nn
-from executorch.backends.qualcomm.quantizer.annotators import OP_ANNOTATOR
 from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
     PerChannelParamObserver,
 )
@@ -214,7 +213,7 @@ def make_custom_quantizer(
     )
 
     if linear_only:
-        all_keys = set(OP_ANNOTATOR.keys())
+        all_keys = quantizer.get_supported_ops()
         conv_keys = {
             op
             for op in all_keys
