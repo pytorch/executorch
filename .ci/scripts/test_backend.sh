@@ -85,7 +85,26 @@ else
 fi
 CMAKE_ARGS="$EXTRA_BUILD_ARGS" ${CONDA_RUN_CMD} $SETUP_SCRIPT --build-tool cmake --build-mode Release --editable true
 
+GOLDEN_DIR="${ARTIFACT_DIR}/golden-artifacts"
+export GOLDEN_ARTIFACTS_DIR="${GOLDEN_DIR}"
+
 EXIT_CODE=0
 ${CONDA_RUN_CMD} pytest -c /dev/nul -n auto backends/test/suite/$SUITE/ -m flow_$FLOW --json-report --json-report-file="$REPORT_FILE" || EXIT_CODE=$?
 # Generate markdown summary.
 ${CONDA_RUN_CMD} python -m executorch.backends.test.suite.generate_markdown_summary_json "$REPORT_FILE" > ${GITHUB_STEP_SUMMARY:-"step_summary.md"} --exit-code $EXIT_CODE
+
+# Package golden artifacts into per-model zips for downstream consumers.
+if [[ -d "${GOLDEN_DIR}/${FLOW}" ]]; then
+    pushd "${GOLDEN_DIR}/${FLOW}"
+    # Group files by model name prefix and zip each model's artifacts.
+    for pte in *.pte; do
+        [[ -f "$pte" ]] || continue
+        model_name="${pte%.pte}"
+        zip -j "${GOLDEN_DIR}/${model_name}_golden.zip" \
+            "${model_name}.pte" \
+            ${model_name}_input*.bin \
+            ${model_name}_expected_output*.bin \
+            2>/dev/null || true
+    done
+    popd
+fi
