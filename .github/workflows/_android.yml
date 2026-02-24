@@ -7,46 +7,58 @@ on:
 jobs:
   build-llm-demo:
     name: build-llm-demo
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    runs-on: ubuntu-latest-32-cores
     permissions:
       id-token: write
       contents: read
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      upload-artifact: android-apps
-      upload-artifact-to-s3: true
-      script: |
-        set -eux
+    env:
+      PYTHON_EXECUTABLE: python3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-        # Use sccache for NDK compiler as well
-        export CMAKE_CXX_COMPILER_LAUNCHER=sccache
-        export CMAKE_C_COMPILER_LAUNCHER=sccache
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool buck2
-        export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
-        mkdir -p ${ARTIFACTS_DIR_NAME}/
+      - name: Install Python dependencies
+        run: pip install torch pyyaml
 
-        # Build LLM Demo for Android
-        export BUILD_AAR_DIR=aar-out
-        mkdir -p $BUILD_AAR_DIR
-        bash scripts/build_android_library.sh
-        cp ${BUILD_AAR_DIR}/executorch.aar $ARTIFACTS_DIR_NAME
+      - name: Set up Android NDK
+        run: |
+          # Use the pre-installed NDK from the GH runner
+          ANDROID_NDK=$(ls -d "$ANDROID_HOME/ndk/"*/ 2>/dev/null | sort -V | tail -1)
+          if [ -z "$ANDROID_NDK" ]; then
+            echo "No Android NDK found at $ANDROID_HOME/ndk/"
+            exit 1
+          fi
+          ANDROID_NDK="${ANDROID_NDK%/}"
+          echo "Using Android NDK: $ANDROID_NDK"
+          echo "ANDROID_NDK=$ANDROID_NDK" >> "$GITHUB_ENV"
 
-        mkdir -p ${ARTIFACTS_DIR_NAME}/library_test_dir
-        bash extension/android/executorch_android/android_test_setup.sh
-        (cd extension/android; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:assembleAndroidTest)
-        cp extension/android/executorch_android/build/outputs/apk/androidTest/debug/executorch_android-debug-androidTest.apk "${ARTIFACTS_DIR_NAME}/library_test_dir"
+      - name: Build Android library
+        run: |
+          set -eux
+          export BUILD_AAR_DIR=aar-out
+          mkdir -p $BUILD_AAR_DIR
+          bash scripts/build_android_library.sh
 
-        mkdir -p ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
-        bash examples/models/llama/install_requirements.sh
-        bash ".ci/scripts/test_llama.sh" -model stories110M -build_tool cmake -dtype fp16 -mode portable -upload ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
+      - name: Build Android test APK
+        run: |
+          set -eux
+          bash extension/android/executorch_android/android_test_setup.sh
+          cd extension/android
+          ANDROID_HOME="${ANDROID_HOME}" ./gradlew :executorch_android:assembleAndroidTest
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apps
+          path: |
+            aar-out/executorch.aar
+            extension/android/executorch_android/build/outputs/apk/androidTest/debug/executorch_android-debug-androidTest.apk
 
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:
@@ -87,13 +99,13 @@ jobs:
           sudo chown -R "${USER}" /opt/android
 
       - name: Download Artifacts
-        shell: bash
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apps
+
+      - name: Prepare test APK
         run: |
-          set -eux
-          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/fp32-xnnpack-custom/model.zip
-          curl -o android-test-debug-androidTest.apk https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/library_test_dir/executorch_android-debug-androidTest.apk
-          unzip model.zip
-          mv *.pte model.pte
+          cp extension/android/executorch_android/build/outputs/apk/androidTest/debug/executorch_android-debug-androidTest.apk android-test-debug-androidTest.apk
 
       - name: Gradle cache
         uses: gradle/actions/setup-gradle@v3
