@@ -1,0 +1,5 @@
+cxx_library(
+    name = "re2",
+    exported_deps = ["root//extension/llm/tokenizers/third-party:re2"],
+    visibility = ["PUBLIC"],
+)

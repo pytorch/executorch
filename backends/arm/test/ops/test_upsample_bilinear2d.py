@@ -266,7 +266,9 @@ def test_upsample_bilinear2d_vec_tosa_INT_Upsample(
 def test_upsample_bilinear2d_vec_tosa_INT_a16w8(
     test_data: torch.Tensor,
 ):
-    """Test upsample_bilinear2d vector op with int16 I/O quantization for TOSA INT."""
+    """Test upsample_bilinear2d vector op with int16 I/O quantization for TOSA
+    INT.
+    """
     test_data, size, scale_factor, compare_outputs = test_data
     pipeline = TosaPipelineINT[input_t1](
         Upsample(size, scale_factor),
@@ -394,7 +396,9 @@ def test_upsample_bilinear2d_vec_u85_INT_UpsamplingBilinear2d(
 def test_upsample_bilinear2d_vec_u85_INT_a16w8(
     test_data: input_t1,
 ):
-    """Test upsample_bilinear2d vec op with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test upsample_bilinear2d vec op with 16A8W quantization on U85 (16-bit
+    activations, 8-bit weights)
+    """
     data, size, scale_factor, compare_outputs = test_data
 
     pipeline = EthosU85PipelineINT[input_t1](

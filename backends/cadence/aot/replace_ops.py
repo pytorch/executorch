@@ -26,6 +26,7 @@ from executorch.backends.cadence.aot.pass_utils import (
     register_cadence_pass,
     RemoveOrReplacePassInterface,
 )
+from executorch.backends.cadence.aot.utils import is_depthwise_conv
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
 )
@@ -1138,19 +1139,19 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
 
         # Check if this is a depthwise convolution (groups == input_channels)
         # and weight is 4D with shape [OC, 1, KH, KW]
-        groups = node.args[6]
+        groups = cast(int, node.args[6])
         input_shape = input_node.meta["val"].shape
         weight_shape = weight_node.meta["val"].shape
         input_channels = input_shape[1]  # NCHW format, channels at index 1
-        # Depthwise conv has 4D weight [OC, 1, KH, KW] where the IC dim is 1
-        is_depthwise = groups == input_channels and weight_shape[1] == 1
+        # NCHW: also verify weight IC dim == 1.
+        depthwise = is_depthwise_conv(groups, input_channels) and weight_shape[1] == 1
         is_2d = len(input_shape) == 4
         # Insert transpose operations before the node
         with graph.inserting_before(node):
             # Convert input from NCHW to NHWC
             input_nhwc = self._change_nchw_to_nhwc(graph, input_node)
             # Convert weight from NCHW to the appropriate format
-            if is_depthwise:
+            if depthwise:
                 # For depthwise: [OC, 1, KH, KW] -> [KH, KW, OC] for NNLib
                 weight_nhwc = self._change_depthwise_weight_to_hwc(
                     graph, weight_node, is_2d

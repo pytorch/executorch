@@ -63,7 +63,8 @@ __attribute__((noinline)) void conv2d_nhwc_core_generic(
     int32_t weight_zero_point = 0,
     float bias_scale = 1,
     float out_scale = 1,
-    OT out_zero_point = 0) {
+    OT out_zero_point = 0,
+    bool depthwise_hwc_weight = false) {
   float inv_out_scale = 1. / out_scale;
   bool zero_pad_unit_dilation = d0 == 1 && d1 == 1 && p0 == 0 && p1 == 0;
 
@@ -86,29 +87,23 @@ __attribute__((noinline)) void conv2d_nhwc_core_generic(
           int soc = _g * ocpg;
           // Populate all the output channels in the group
           for (int _oc = soc; _oc < soc + ocpg; ++_oc) {
-            const WT* weight_batch = p_weight + _oc * wh * ww * wc;
-            // We compute one output channel at a time. The computation can be
-            // thought of as a stencil computation: we iterate over an input of
-            // size h x w x icpg, with a stencil of size wh x ww x icpg, to
-            // compute an output channel of size oh x ow x 1.
             float acc = p_bias[_oc];
-            // Below is the stencil computation that performs the hadamard
-            // product+accumulation of each input channel (contributing to
-            // the output channel being computed) with the corresponding
-            // weight channel. If the padding is 0, and dilation is 1, then
-            // we can remove the unnecessary checks, and simplify the code
-            // so that it can be vectorized by Tensilica compiler.x``
             if (zero_pad_unit_dilation) {
               for (int _wh = 0; _wh < wh; ++_wh) {
                 for (int _ww = 0; _ww < ww; ++_ww) {
                   const IT* in_line =
                       in_batch + (_h + _wh) * w * c + (_w + _ww) * c;
-                  const WT* weight_line =
-                      weight_batch + _wh * ww * wc + _ww * wc;
                   for (int _ic = sic; _ic < sic + icpg; ++_ic) {
                     float lhs = in_line[_ic] - in_zero_point;
-                    float rhs = weight_line[_ic - sic] -
-                        (quantized ? weight_zero_point : 0);
+                    float rhs;
+                    if (depthwise_hwc_weight) {
+                      rhs = p_weight[_wh * ww * oc + _ww * oc + _oc];
+                    } else {
+                      const WT* weight_line = p_weight + _oc * wh * ww * wc +
+                          _wh * ww * wc + _ww * wc;
+                      rhs = weight_line[_ic - sic];
+                    }
+                    rhs -= (quantized ? weight_zero_point : 0);
                     acc += lhs * rhs;
                   }
                 }
@@ -119,15 +114,20 @@ __attribute__((noinline)) void conv2d_nhwc_core_generic(
                   if (((_h + d0 * _wh - p0) >= 0) &&
                       ((_h + d0 * _wh - p0) < h) &&
                       ((_w + d1 * _ww - p1) >= 0) &&
-                      ((_w + d1 * _ww - p1 < w))) {
+                      ((_w + d1 * _ww - p1) < w)) {
                     const IT* in_line = in_batch +
                         (_h + d0 * _wh - p0) * w * c + (_w + d1 * _ww - p1) * c;
-                    const WT* weight_line =
-                        weight_batch + _wh * ww * wc + _ww * wc;
                     for (int _ic = sic; _ic < sic + icpg; ++_ic) {
                       float lhs = in_line[_ic] - in_zero_point;
-                      float rhs = weight_line[_ic - sic] -
-                          (quantized ? weight_zero_point : 0);
+                      float rhs;
+                      if (depthwise_hwc_weight) {
+                        rhs = p_weight[_wh * ww * oc + _ww * oc + _oc];
+                      } else {
+                        const WT* weight_line = p_weight + _oc * wh * ww * wc +
+                            _wh * ww * wc + _ww * wc;
+                        rhs = weight_line[_ic - sic];
+                      }
+                      rhs -= (quantized ? weight_zero_point : 0);
                       acc += lhs * rhs;
                     }
                   }
@@ -180,10 +180,28 @@ void xa_opt_quantized_conv2d_nhwc(
     WORD32 input_height = conv1d ? 1 : input.size(1);
     WORD32 input_width = conv1d ? input.size(1) : input.size(2);
     WORD32 input_channels = conv1d ? input.size(2) : input.size(3);
-    WORD32 kernel_height = conv1d ? 1 : weight.size(1);
-    WORD32 kernel_width = conv1d ? weight.size(1) : weight.size(2);
-    WORD32 kernel_channels = conv1d ? weight.size(2) : weight.size(3);
-    WORD32 out_channels = weight.size(0);
+    // Depthwise is defined by in_channels == groups; depthwise weights have one
+    // fewer dim than regular weights because the IC dim (always 1) was
+    // squeezed.
+    bool is_depthwise =
+        !conv1d && input_channels == groups && weight.dim() < input.dim();
+    WORD32 kernel_height;
+    WORD32 kernel_width;
+    WORD32 kernel_channels;
+    WORD32 out_channels;
+    if (is_depthwise) {
+      // Depthwise weight is [KH, KW, OC]
+      kernel_height = weight.size(0);
+      kernel_width = weight.size(1);
+      out_channels = weight.size(2);
+      kernel_channels = 1;
+    } else {
+      // Regular weight is [OC, IC, KH, KW] or for conv1d [OC, K, IC]
+      kernel_height = conv1d ? 1 : weight.size(1);
+      kernel_width = conv1d ? weight.size(1) : weight.size(2);
+      kernel_channels = conv1d ? weight.size(2) : weight.size(3);
+      out_channels = weight.size(0);
+    }
     WORD32 out_height = conv1d ? 1 : out.size(1);
     WORD32 out_width = conv1d ? out.size(1) : out.size(2);
     WORD32 batches = input.size(0);
@@ -364,11 +382,24 @@ void quantized_conv2d_nhwc(
   const int h = conv1d ? 1 : input.size(1);
   const int w = conv1d ? input.size(1) : input.size(2);
   const int c = conv1d ? input.size(2) : input.size(3);
-  // weight = [oc, wh, ww, wc]
-  const int oc = weight.size(0);
-  const int wh = conv1d ? 1 : weight.size(1);
-  const int ww = conv1d ? weight.size(1) : weight.size(2);
-  const int wc = conv1d ? weight.size(2) : weight.size(3);
+  // Depthwise is defined by in_channels == groups; depthwise weights have one
+  // fewer dim than regular weights because the IC dim (always 1) was squeezed.
+  const bool is_depthwise =
+      !conv1d && c == groups && weight.dim() < input.dim();
+  int oc, wh, ww, wc;
+  if (is_depthwise) {
+    // Depthwise weight is [KH, KW, OC]
+    wh = weight.size(0);
+    ww = weight.size(1);
+    oc = weight.size(2);
+    wc = 1;
+  } else {
+    // Regular weight is [OC, WH, WW, WC] or for conv1d [OC, WW, WC]
+    oc = weight.size(0);
+    wh = conv1d ? 1 : weight.size(1);
+    ww = conv1d ? weight.size(1) : weight.size(2);
+    wc = conv1d ? weight.size(2) : weight.size(3);
+  }
   // output = [n, oh, ow, oc]
   const int oh = conv1d ? 1 : out.size(1);
   const int ow = conv1d ? out.size(1) : out.size(2);
@@ -401,7 +432,8 @@ void quantized_conv2d_nhwc(
         weight_zero_point,                                        \
         bias_scale,                                               \
         output_scale,                                             \
-        (ctype)output_zero_point);                                \
+        (ctype)output_zero_point,                                 \
+        is_depthwise);                                            \
     break;                                                        \
   }
   ScalarType dtype = out.scalar_type();

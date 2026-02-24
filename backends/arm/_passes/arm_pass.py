@@ -38,7 +38,9 @@ class ArmPass(ExportPass):
         return not disallow_tfa
 
     def _is_quantized_meta(self, meta: NodeMetadata | dict[str, Any]) -> bool:
-        """Return True when meta indicates fully quantized inputs and outputs."""
+        """Return True when meta indicates fully quantized inputs and
+        outputs.
+        """
         if isinstance(meta, NodeMetadata):
             meta_dict = meta.data
         else:
@@ -107,9 +109,12 @@ class ArmPass(ExportPass):
     def call_shape_operator(
         self, op, args: tuple, kwargs: dict, meta: NodeMetadata, update: bool
     ) -> ProxyValue:
-        """
-        Call operator for shape-producing operators. This function is responsible for marking the output of the operator
-        with the TosaSpecialDtype of SHAPE, so that later passes can identify it as a shape-producing operator and handle it accordingly.
+        """Call operator for shape-producing operators.
+
+        This function is responsible for marking the output of the operator with
+        the TosaSpecialDtype of SHAPE, so that later passes can identify it as a
+        shape-producing operator and handle it accordingly.
+
         """
         # Copy meta and set TosaSpecialDtype to SHAPE
         if not isinstance(meta, NodeMetadata):

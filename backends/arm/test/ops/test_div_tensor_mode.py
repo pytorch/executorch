@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
@@ -19,10 +19,7 @@ input_tt = Tuple[torch.Tensor, torch.Tensor]
 
 
 class DivTensorModeFloat(torch.nn.Module):
-    """
-    torch.div(x, y, rounding_mode=mode) with
-    mode from {None, "floor", "trunc"}.
-    """
+    """torch.div(x, y, rounding_mode=mode) with mode in {None, "floor", "trunc"}."""
 
     aten_ops = ["aten.div.Tensor_mode"]
     aten_ops_int = ["aten.mul.Tensor", "aten.reciprocal.default"]
