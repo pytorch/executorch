@@ -109,7 +109,7 @@ jobs:
         with:
           s3-bucket: gha-artifacts
           s3-prefix: |
-            ${{ github.repository }}/${{ github.run_id }}/artifact/golden-artifacts-${{ inputs.backend }}
+            ${{ github.repository }}/test-backend-artifacts/golden-artifacts-${{ inputs.backend }}
           retention-days: 90
           if-no-files-found: ignore
           path: golden_artifacts_*.zip
