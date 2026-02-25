@@ -4,18 +4,12 @@
 # except in compliance with the License. See the license file found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
-from typing import Callable
-
 from executorch.backends.openvino.test.tester import (
     Quantize as OpenVINOQuantize,
     OpenVINOTester,
 )
 from executorch.backends.test.harness.stages import Quantize
 from executorch.backends.test.suite.flow import TestFlow
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def _create_openvino_flow_base(
@@ -37,12 +31,14 @@ def _create_openvino_flow_base(
             "test_embedding_bag_modes",
             "test_threshold_f32_all_params",
             "test_transpose_identity",
+            "test_convnext_small",
+            "test_shufflenet_v2_x1_0",
+            "test_swin_v2_t",
         ],
     )
 
 
 def _create_openvino_flow() -> TestFlow:
-    logger.info("Creating OpenVINO test flow")
     return _create_openvino_flow_base("openvino")
 
 

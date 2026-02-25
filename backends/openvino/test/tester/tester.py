@@ -5,10 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 from typing import Any, List, Optional, Sequence, Tuple
-import logging
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 import functools
 import executorch
@@ -23,8 +19,6 @@ from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.partitioner import Partitioner
 
-logger.info("26 partition")
-
 
 class Quantize(BaseStages.Quantize):
     def __init__(
@@ -33,7 +27,6 @@ class Quantize(BaseStages.Quantize):
         calibration_samples: Optional[Sequence[Any]] = None,
         is_qat=False,
     ):
-        logger.info("IN OPENVINO QUANTIZE STAGE")
         super().__init__(
             quantizer=OpenVINOQuantizer(),
             calibrate=calibrate,
@@ -50,8 +43,6 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
         edge_compile_config: Optional[EdgeCompileConfig] = None,
         compile_specs: Optional[List[CompileSpec]] = [CompileSpec("device", b"CPU")],
     ):
-        logger.info("IN TO EDGE TRANSFORM AND LOWER ____")
-
         super().__init__(
             default_partitioner_cls=lambda: OpenvinoPartitioner(compile_specs),
             partitioners=partitioners,
@@ -66,9 +57,6 @@ class Partition(BaseStages.Partition):
         partitioner: Optional[Partitioner] = None,
         compile_specs: Optional[List[CompileSpec]] = None,
     ):
-        # If no compile specs provided, default to CPU
-        logger.info("IN PARTITION ____")
-
         super().__init__(
             partitioner=partitioner or OpenvinoPartitioner(compile_specs),
         )
@@ -82,8 +70,6 @@ class OpenVINOTester(TesterBase):
         dynamic_shapes: Optional[Tuple[Any]] = None,
         compile_specs: Optional[List[CompileSpec]] = [CompileSpec("device", b"CPU")],
     ):
-        # Specialize for OpenVINO
-        logger.info("IN TESTER")
         stage_classes = (
             executorch.backends.test.harness.Tester.default_stage_classes()
             | {
@@ -97,8 +83,6 @@ class OpenVINOTester(TesterBase):
                 ),
             }
         )
-
-        logger.info(f"Stage classes: {stage_classes}")
 
         super().__init__(
             module=module,

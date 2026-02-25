@@ -18,11 +18,13 @@ DIV_TENSOR_MODE_OPS = {
 EDGE_OPS = {
     "div": exir_ops.edge.aten.div.Tensor,
     "floor": exir_ops.edge.aten.floor.default,
+    "to_copy": exir_ops.edge.aten._to_copy.default,
 }
 
 ATEN_OPS = {
     "div": torch.ops.aten.div.Tensor,
     "floor": torch.ops.aten.floor.default,
+    "to_copy": torch.ops.aten._to_copy.default,
 }
 
 
@@ -34,6 +36,15 @@ def _get_opset(op):
     raise RuntimeError(f"Unexpected op: {op}")
 
 
+def _node_dtype(node):
+    """Return the dtype of a graph node's output, or None if unknown."""
+    if isinstance(node, torch.fx.Node):
+        val = node.meta.get("val")
+        if val is not None:
+            return val.dtype
+    return None
+
+
 class DecomposeFloorDividePass(ExportPass):
     """Decompose div with rounding_mode='floor' for correct semantics.
 
@@ -41,8 +52,13 @@ class DecomposeFloorDividePass(ExportPass):
     rounding_mode='floor'. OpenVINO implements this with truncation-toward-zero
     semantics instead of PyTorch's floor-toward-negative-infinity.
 
-    This pass replaces div(x, y, rounding_mode='floor') with
-    floor(div(x, y)), ensuring correct results for negative operands.
+    For float inputs, replaces div(x, y, rounding_mode='floor') with
+    floor(div(x, y)).
+
+    For integer inputs, OpenVINO's integer division truncates toward zero, so
+    floor(int_div(x, y)) still gives truncation semantics. Instead we cast to
+    float32, divide, floor, then cast back:
+        _to_copy(floor(div(_to_copy(x, float32), _to_copy(y, float32))), int_dtype)
     """
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -61,9 +77,26 @@ class DecomposeFloorDividePass(ExportPass):
             opset = _get_opset(node.target)
             a, b = node.args[0], node.args[1]
 
+            a_dtype = _node_dtype(a)
+            is_integer = a_dtype is not None and not a_dtype.is_floating_point
+
             with graph.inserting_before(node):
-                div_node = graph.call_function(opset["div"], (a, b))
-                result = graph.call_function(opset["floor"], (div_node,))
+                if is_integer:
+                    a_f = graph.call_function(
+                        opset["to_copy"], (a,), {"dtype": torch.float32}
+                    )
+                    b_f = graph.call_function(
+                        opset["to_copy"], (b,), {"dtype": torch.float32}
+                    )
+                    div_node = graph.call_function(opset["div"], (a_f, b_f))
+                    floored = graph.call_function(opset["floor"], (div_node,))
+                    result = graph.call_function(
+                        opset["to_copy"], (floored,), {"dtype": a_dtype}
+                    )
+                else:
+                    div_node = graph.call_function(opset["div"], (a, b))
+                    result = graph.call_function(opset["floor"], (div_node,))
+
                 node.replace_all_uses_with(result)
             graph.erase_node(node)
 
