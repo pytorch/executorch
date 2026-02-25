@@ -20,6 +20,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.pytorch.executorch.TestFileUtils.getTestFilePath
+import org.pytorch.executorch.TestFileUtils.prepareTestFile
 import org.pytorch.executorch.extension.llm.LlmCallback
 import org.pytorch.executorch.extension.llm.LlmModule
 
@@ -33,19 +34,14 @@ class LlmModuleInstrumentationTest : LlmCallback {
   @Before
   @Throws(IOException::class)
   fun setUp() {
-    // copy zipped test resources to local device
-    val addPteFile = File(getTestFilePath(TEST_FILE_NAME))
-    var inputStream = javaClass.getResourceAsStream(TEST_FILE_NAME)
-    FileUtils.copyInputStreamToFile(inputStream, addPteFile)
-    inputStream.close()
+    val ptePath = prepareTestFile(javaClass, TEST_FILE_NAME)
 
     val tokenizerFile = File(getTestFilePath(TOKENIZER_FILE_NAME))
-    inputStream = javaClass.getResourceAsStream(TOKENIZER_FILE_NAME)
+    val inputStream = javaClass.getResourceAsStream(TOKENIZER_FILE_NAME)
     FileUtils.copyInputStreamToFile(inputStream, tokenizerFile)
     inputStream.close()
 
-    llmModule =
-        LlmModule(getTestFilePath(TEST_FILE_NAME), getTestFilePath(TOKENIZER_FILE_NAME), 0.0f)
+    llmModule = LlmModule(ptePath, tokenizerFile.absolutePath, 0.0f)
   }
 
   @Test

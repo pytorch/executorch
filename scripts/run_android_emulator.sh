@@ -21,6 +21,12 @@ $ADB_PATH devices
 adb uninstall org.pytorch.executorch.test || true
 adb install -t android-test-debug-androidTest.apk
 
+# Push large test assets that are not bundled in the APK
+if [ -d push-artifacts ] && [ "$(ls -A push-artifacts 2>/dev/null)" ]; then
+  adb shell mkdir -p /data/local/tmp/executorch
+  adb push push-artifacts/. /data/local/tmp/executorch/
+fi
+
 adb logcat -c
 adb shell am instrument -w -r \
   org.pytorch.executorch.test/androidx.test.runner.AndroidJUnitRunner >result.txt 2>&1

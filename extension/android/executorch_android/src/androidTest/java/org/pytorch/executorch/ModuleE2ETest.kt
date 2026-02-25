@@ -19,6 +19,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.pytorch.executorch.TestFileUtils.getTestFilePath
+import org.pytorch.executorch.TestFileUtils.prepareTestFile
 
 /** End-to-end tests that verify JNI inference against nightly golden artifacts. */
 @RunWith(AndroidJUnit4::class)
@@ -45,11 +46,8 @@ class ModuleE2ETest {
     val expectedOutput = loadFloatArrayFromResource("/${modelName}_expected_output.bin")
     val inputTensor = Tensor.fromBlob(inputData, inputShape)
 
-    val pteStream = javaClass.getResourceAsStream("/${modelName}.pte")!!
-    val pteFile = File(getTestFilePath("/${modelName}.pte"))
-    FileUtils.copyInputStreamToFile(pteStream, pteFile)
-
-    val module = Module.load(pteFile.absolutePath)
+    val ptePath = prepareTestFile(javaClass, "/${modelName}.pte")
+    val module = Module.load(ptePath)
     val results = module.forward(EValue.from(inputTensor))
     val actualOutput = results[0].toTensor().dataAsFloatArray
 
