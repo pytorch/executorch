@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from __future__ import annotations
+
 import warnings
 from typing import Callable, Dict, Union
 
@@ -36,7 +38,10 @@ from torch.nn import Parameter
 try:
     import tensorflow.lite as tflite
 except ModuleNotFoundError:
-    import tflite_runtime.interpreter as tflite
+    try:
+        import tflite_runtime.interpreter as tflite
+    except ModuleNotFoundError:
+        tflite = None
 
 
 class EdgeProgramExecutor:
@@ -85,7 +90,7 @@ class TFLiteExecutor:
         saved_model_name="model.tflite",
         delegate_path=None,
         num_threads=None,
-        op_resolver_type=tflite.experimental.OpResolverType.AUTO,
+        op_resolver_type=None,
     ):
         """
         Construct TFLiteExecutor used to quickly run inference on TFLite model.
@@ -105,6 +110,8 @@ class TFLiteExecutor:
             https://www.tensorflow.org/api_docs/python/tf/lite/Interpreter for details. Default value is
             tflite.experimental.OpResolverType.AUTO.
         """
+        if op_resolver_type is None:
+            op_resolver_type = tflite.experimental.OpResolverType.AUTO
         assert model_path is not None or model_content is not None
         assert model_path is None or model_content is None
 
@@ -310,8 +317,11 @@ def convert_run_compare(
     tflite_input_preprocess: TFLiteIOPreprocess = TFLiteIOPreprocess(),  # noqa B008
     tflite_output_preprocess: TFLiteIOPreprocess = TFLiteIOPreprocess(),  # noqa B008
     conversion_config: ConversionConfig = ConversionConfig(),  # noqa B008
-    tflite_op_resolver_type=tflite.experimental.OpResolverType.AUTO,
+    tflite_op_resolver_type=None,
 ) -> (TFLiteExecutor, EdgeProgramExecutor):
+
+    if tflite_op_resolver_type is None:
+        tflite_op_resolver_type = tflite.experimental.OpResolverType.AUTO
 
     if tfl_model is None:
         NodeFormatInference(edge_program).identify_node_formats()
