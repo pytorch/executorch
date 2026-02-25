@@ -12,21 +12,19 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.abs
-import org.apache.commons.io.FileUtils
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.pytorch.executorch.TestFileUtils.getTestFilePath
 import org.pytorch.executorch.TestFileUtils.prepareTestFile
 
 /** End-to-end tests that verify JNI inference against nightly golden artifacts. */
 @RunWith(AndroidJUnit4::class)
 class ModuleE2ETest {
 
-  private fun loadFloatArrayFromResource(path: String): FloatArray {
-    val bytes = javaClass.getResourceAsStream(path)!!.use { it.readBytes() }
+  private fun loadFloatArrayFromFile(path: String): FloatArray {
+    val bytes = File(path).readBytes()
     val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
     return FloatArray(bytes.size / 4).also { buffer.asFloatBuffer().get(it) }
   }
@@ -42,8 +40,8 @@ class ModuleE2ETest {
   }
 
   private fun testGoldenModel(modelName: String, inputShape: LongArray) {
-    val inputData = loadFloatArrayFromResource("/${modelName}_input.bin")
-    val expectedOutput = loadFloatArrayFromResource("/${modelName}_expected_output.bin")
+    val inputData = loadFloatArrayFromFile(prepareTestFile(javaClass, "/${modelName}_input.bin"))
+    val expectedOutput = loadFloatArrayFromFile(prepareTestFile(javaClass, "/${modelName}_expected_output.bin"))
     val inputTensor = Tensor.fromBlob(inputData, inputShape)
 
     val ptePath = prepareTestFile(javaClass, "/${modelName}.pte")
@@ -57,12 +55,8 @@ class ModuleE2ETest {
 
   @Test
   fun testXnnpackBackendRequired() {
-    val pteFile = File(getTestFilePath("/mobilenet_v2.pte"))
-    val inputStream = javaClass.getResourceAsStream("/mobilenet_v2.pte")
-    FileUtils.copyInputStreamToFile(inputStream, pteFile)
-    inputStream.close()
-
-    val module = Module.load(pteFile.absolutePath)
+    val ptePath = prepareTestFile(javaClass, "/mobilenet_v2.pte")
+    val module = Module.load(ptePath)
     val expectedBackends = arrayOf("XnnpackBackend")
     assertArrayEquals(expectedBackends, module.getMethodMetadata("forward").backends)
   }

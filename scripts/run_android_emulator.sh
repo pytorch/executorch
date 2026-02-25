@@ -27,6 +27,12 @@ if [ -d push-artifacts ] && [ "$(ls -A push-artifacts 2>/dev/null)" ]; then
   adb push push-artifacts/. /data/local/tmp/executorch/
 fi
 
+# Download and push golden test artifacts (models + input/output bins)
+GOLDEN_URL="https://gha-artifacts.s3.amazonaws.com/pytorch/executorch/test-backend-artifacts/golden-artifacts-xnnpack/golden_artifacts_26022500.zip"
+curl -sL -o /tmp/golden.zip "$GOLDEN_URL"
+unzip -o /tmp/golden.zip -d /tmp/golden/
+adb push /tmp/golden/xnnpack/. /data/local/tmp/executorch/
+
 adb logcat -c
 adb shell am instrument -w -r \
   org.pytorch.executorch.test/androidx.test.runner.AndroidJUnitRunner >result.txt 2>&1

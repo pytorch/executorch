@@ -32,20 +32,5 @@ prepare_tinyllama() {
   curl -C - -Ls "${S3_BASE}/tokenizer.model" --output "${RESOURCES_DIR}/tokenizer.bin"
 }
 
-prepare_golden() {
-  local url="https://gha-artifacts.s3.amazonaws.com/pytorch/executorch/test-backend-artifacts/golden-artifacts-xnnpack/golden_artifacts_26022500.zip"
-  curl -sL -o /tmp/golden.zip "$url"
-  unzip -o /tmp/golden.zip -d /tmp/golden/
-  for model in mobilenet_v2 vit_b_16; do
-    cp /tmp/golden/xnnpack/${model}_input*.bin "${RESOURCES_DIR}/"
-    cp /tmp/golden/xnnpack/${model}_expected_output*.bin "${RESOURCES_DIR}/" 2>/dev/null || echo "Warning: no expected_output files for ${model}"
-  done
-  # mobilenet_v2.pte (~13MB) stays in APK resources
-  cp "/tmp/golden/xnnpack/mobilenet_v2.pte" "${RESOURCES_DIR}/"
-  # vit_b_16.pte (~330MB) is too large for APK; push via adb
-  cp "/tmp/golden/xnnpack/vit_b_16.pte" "${PUSH_ARTIFACTS_DIR}/"
-}
-
 prepare_xor
 prepare_tinyllama
-prepare_golden
