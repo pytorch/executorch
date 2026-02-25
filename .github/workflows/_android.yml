@@ -7,7 +7,7 @@ on:
 jobs:
   build-llm-demo:
     name: build-llm-demo
-    runs-on: ubuntu-latest-32-cores
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
