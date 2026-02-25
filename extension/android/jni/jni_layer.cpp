@@ -31,6 +31,9 @@
 #ifdef ET_USE_THREADPOOL
 #include <cpuinfo.h>
 #include <executorch/extension/threadpool/threadpool.h>
+#ifdef EXECUTORCH_HAS_THREADPOOL_USE_N_THREADS_GUARD
+#include <executorch/extension/threadpool/fb/threadpool_use_n_threads.h>
+#endif
 #endif
 
 #ifdef EXECUTORCH_ANDROID_PROFILING
@@ -246,6 +249,10 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
  private:
   friend HybridBase;
   std::unique_ptr<Module> module_;
+#if defined(ET_USE_THREADPOOL) && \
+    defined(EXECUTORCH_HAS_THREADPOOL_USE_N_THREADS_GUARD)
+  int num_threads_{0};
+#endif
 
  public:
   constexpr static auto kJavaDescriptor = "Lorg/pytorch/executorch/Module;";
@@ -288,14 +295,18 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     // Based on testing, this is almost universally faster than using all
     // cores, as efficiency cores can be quite slow. In extreme cases, using
     // all cores can be 10x slower than using cores/2.
+    int thread_count =
+        numThreads != 0 ? numThreads : cpuinfo_get_processors_count() / 2;
+#ifdef EXECUTORCH_HAS_THREADPOOL_USE_N_THREADS_GUARD
+    num_threads_ = thread_count;
+#else
     auto threadpool = executorch::extension::threadpool::get_threadpool();
     if (threadpool) {
-      int thread_count =
-          numThreads != 0 ? numThreads : cpuinfo_get_processors_count() / 2;
       if (thread_count > 0) {
         threadpool->_unsafe_reset_threadpool(thread_count);
       }
     }
+#endif
 #endif
   }
 
@@ -376,6 +387,12 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         evalues.emplace_back(static_cast<bool>(toBoolMethod(jevalue)));
       }
     }
+
+#if defined(ET_USE_THREADPOOL) && \
+    defined(EXECUTORCH_HAS_THREADPOOL_USE_N_THREADS_GUARD)
+    ::executorch::extension::threadpool::UseNThreadsThreadPoolGuard
+        thread_pool_guard(num_threads_);
+#endif
 
 #ifdef EXECUTORCH_ANDROID_PROFILING
     auto start = std::chrono::high_resolution_clock::now();

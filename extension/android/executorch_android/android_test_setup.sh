@@ -43,16 +43,18 @@ prepare_tinyllama() {
   popd
 }
 
-prepare_vision() {
-  pushd "${BASEDIR}/../../../"
-  python3 -m examples.xnnpack.aot_compiler --model_name "mv2" --delegate
-  python3 -m examples.xnnpack.aot_compiler --model_name "mv3" --delegate
-  python3 -m examples.xnnpack.aot_compiler --model_name "resnet50" --quantize --delegate
-  cp mv2*.pte mv3*.pte resnet50*.pte "${BASEDIR}/src/androidTest/resources/"
-  popd
+prepare_golden() {
+  local url="https://gha-artifacts.s3.amazonaws.com/pytorch/executorch/test-backend-artifacts/golden-artifacts-xnnpack/golden_artifacts_26022500.zip"
+  curl -sL -o /tmp/golden.zip "$url"
+  unzip -o /tmp/golden.zip -d /tmp/golden/
+  for model in mobilenet_v2 vit_b_16; do
+    cp "/tmp/golden/xnnpack/${model}.pte" "${BASEDIR}/src/androidTest/resources/"
+    cp /tmp/golden/xnnpack/${model}_input*.bin "${BASEDIR}/src/androidTest/resources/"
+    cp /tmp/golden/xnnpack/${model}_expected_output*.bin "${BASEDIR}/src/androidTest/resources/" 2>/dev/null || echo "Warning: no expected_output files for ${model}"
+  done
 }
 
 prepare_add
 prepare_xor
 prepare_tinyllama
-prepare_vision
+prepare_golden

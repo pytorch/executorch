@@ -13,7 +13,6 @@ import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
-import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.locks.Lock;
@@ -64,14 +63,12 @@ public class Module {
     mMethodMetadata = populateMethodMeta();
   }
 
-  Map<String, MethodMetadata> populateMethodMeta() {
+  private Map<String, MethodMetadata> populateMethodMeta() {
     String[] methods = getMethods();
     Map<String, MethodMetadata> metadata = new HashMap<String, MethodMetadata>();
-    for (int i = 0; i < methods.length; i++) {
-      String name = methods[i];
-      metadata.put(name, new MethodMetadata().setName(name));
+    for (String name : methods) {
+      metadata.put(name, new MethodMetadata(name, getUsedBackends(name)));
     }
-
     return metadata;
   }
 
@@ -99,10 +96,7 @@ public class Module {
    * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
    */
   public static Module load(final String modelPath, int loadMode, int numThreads) {
-    File modelFile = new File(modelPath);
-    if (!modelFile.canRead() || !modelFile.isFile()) {
-      throw new RuntimeException("Cannot load model path " + modelPath);
-    }
+    ExecuTorchRuntime.validateFilePath(modelPath, "model path");
     return new Module(modelPath, loadMode, numThreads);
   }
 
@@ -200,13 +194,9 @@ public class Module {
    * @return @MethodMetadata for this method
    */
   public MethodMetadata getMethodMetadata(String name) {
-    if (!mMethodMetadata.containsKey(name)) {
-      throw new RuntimeException("method " + name + " does not exist for this module");
-    }
-
     MethodMetadata methodMetadata = mMethodMetadata.get(name);
-    if (methodMetadata != null) {
-      methodMetadata.setBackends(getUsedBackends(name));
+    if (methodMetadata == null) {
+      throw new IllegalArgumentException("method " + name + " does not exist for this module");
     }
     return methodMetadata;
   }
