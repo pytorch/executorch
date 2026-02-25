@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
+import os
 import random
 from collections import Counter, OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -317,11 +319,14 @@ class Tester:
         rtol=1e-03,
         qtol=0,
         statistics_callback: Callable[[ErrorStatistics], None] | None = None,
+        artifact_dir: Optional[str] = None,
+        artifact_name: Optional[str] = None,
     ):
         number_of_runs = 1 if inputs is not None else num_runs
         reference_stage = self.stages[StageType.EXPORT]
 
         stage = stage or self.cur
+        artifacts_saved = False
 
         for _ in range(number_of_runs):
             inputs_to_run = inputs if inputs else next(self.generate_random_inputs())
@@ -346,7 +351,53 @@ class Tester:
                 statistics_callback,
             )
 
+            if artifact_dir and artifact_name and not artifacts_saved:
+                try:
+                    self._dump_golden_artifacts(
+                        artifact_dir,
+                        artifact_name,
+                        inputs_to_run,
+                        reference_output,
+                    )
+                except Exception:
+                    logging.getLogger(__name__).warning(
+                        f"Failed to dump golden artifacts for {artifact_name}",
+                        exc_info=True,
+                    )
+                artifacts_saved = True
+
         return self
+
+    @staticmethod
+    def _dump_golden_artifacts(
+        artifact_dir: str,
+        artifact_name: str,
+        inputs: Tuple[torch.Tensor],
+        reference_output,
+    ):
+        logger = logging.getLogger(__name__)
+        os.makedirs(artifact_dir, exist_ok=True)
+
+        for i, inp in enumerate(inputs):
+            if isinstance(inp, torch.Tensor):
+                suffix = "" if len(inputs) == 1 else f"_{i}"
+                path = os.path.join(artifact_dir, f"{artifact_name}_input{suffix}.bin")
+                inp.contiguous().numpy().tofile(path)
+                logger.info(f"Saved golden input to {path}")
+
+        if isinstance(reference_output, torch.Tensor):
+            reference_output = (reference_output,)
+        elif isinstance(reference_output, OrderedDict):
+            reference_output = tuple(reference_output.values())
+
+        for i, out in enumerate(reference_output):
+            if isinstance(out, torch.Tensor):
+                suffix = "" if len(reference_output) == 1 else f"_{i}"
+                path = os.path.join(
+                    artifact_dir, f"{artifact_name}_expected_output{suffix}.bin"
+                )
+                out.contiguous().numpy().tofile(path)
+                logger.info(f"Saved golden output to {path}")
 
     @staticmethod
     def _assert_outputs_equal(
