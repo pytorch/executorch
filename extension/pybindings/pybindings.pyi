@@ -47,8 +47,8 @@ class ExecuTorchModule:
         inputs: Sequence[Any],  # pyre-ignore[2]: "Any" in parameter type annotations.
         clone_outputs: bool = True,
     ) -> List[Any]: ...
-    # pyre-ignore[3]: "Any" in return type annotations.
-    def plan_execute(self) -> List[Any]: ...
+    # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
+    def plan_execute(self, method_name: str, clone_outputs: bool = True) -> List[Any]: ...
     # Bundled program methods.
     def load_bundled_input(
         self, bundle: BundledModule, method_name: str, testset_idx: int
@@ -115,6 +115,8 @@ class ExecuTorchMethod:
         clone_outputs: bool = True,
     ) -> List[Any]: ...
     def method_meta(self) -> MethodMeta: ...
+    # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
+    def get_attribute(self, name: str) -> Any: ...
 
 @experimental("This API is experimental and subject to change without notice.")
 class BundledModule:
