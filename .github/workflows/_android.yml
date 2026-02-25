@@ -24,7 +24,9 @@ jobs:
           python-version: '3.11'
 
       - name: Install Python dependencies
-        run: pip install torch pyyaml
+        run: |
+          pip install torch torchao pyyaml executorch
+          pip install pytorch-tokenizers hydra-core omegaconf
 
       - name: Set up Android NDK
         run: |

@@ -14,12 +14,6 @@ which "${PYTHON_EXECUTABLE}"
 
 BASEDIR=$(dirname "$(realpath $0)")
 
-prepare_add() {
-  pushd "${BASEDIR}/../../../"
-  python3 -m test.models.export_program --modules "ModuleAdd" --outdir "${BASEDIR}/src/androidTest/resources/"
-  popd
-}
-
 prepare_xor() {
   pushd "${BASEDIR}/../../training/"
   python3 -m examples.XOR.export_model  --outdir "${BASEDIR}/src/androidTest/resources/"
@@ -54,7 +48,6 @@ prepare_golden() {
   done
 }
 
-prepare_add
 prepare_xor
 prepare_tinyllama
 prepare_golden
