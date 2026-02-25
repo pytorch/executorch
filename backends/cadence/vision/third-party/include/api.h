@@ -117,6 +117,18 @@ void vrelU_quantized(
 void rvaddf(float32_t *restrict z, const float32_t *restrict x,
 		            const float32_t *restrict y, int N);
 
+void simd_mean_pool_2x2_to_1x1_float32(float32_t* restrict output, 
+                                       const float32_t* restrict input,
+                                       int N);
+
+int32_t rvdot_zeropt(
+    int32_t init_acc,
+    const int8_t *restrict x,
+    const int8_t *restrict y,
+    int8_t x_zp,
+    int8_t y_zp,
+    int N);
+
 #ifdef __cplusplus
 };
 #endif
