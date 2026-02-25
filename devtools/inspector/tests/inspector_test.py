@@ -682,9 +682,11 @@ class TestInspector(unittest.TestCase):
             aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
             runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
 
-            inspector_instance._get_aot_intermediate_outputs_and_op_names = lambda x: (
-                aot_intermediate_outputs,
-                aot_debug_handle_to_op_name,
+            inspector_instance._get_aot_intermediate_outputs_and_op_names = (
+                lambda x, y: (
+                    aot_intermediate_outputs,
+                    aot_debug_handle_to_op_name,
+                )
             )
             inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
                 lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
@@ -764,9 +766,11 @@ class TestInspector(unittest.TestCase):
             aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
             runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
 
-            inspector_instance._get_aot_intermediate_outputs_and_op_names = lambda x: (
-                aot_intermediate_outputs,
-                aot_debug_handle_to_op_name,
+            inspector_instance._get_aot_intermediate_outputs_and_op_names = (
+                lambda x, y: (
+                    aot_intermediate_outputs,
+                    aot_debug_handle_to_op_name,
+                )
             )
             inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
                 lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
@@ -891,9 +895,11 @@ class TestInspector(unittest.TestCase):
             aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
             runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
 
-            inspector_instance._get_aot_intermediate_outputs_and_op_names = lambda x: (
-                aot_intermediate_outputs,
-                aot_debug_handle_to_op_name,
+            inspector_instance._get_aot_intermediate_outputs_and_op_names = (
+                lambda x, y: (
+                    aot_intermediate_outputs,
+                    aot_debug_handle_to_op_name,
+                )
             )
             inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
                 lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
@@ -901,7 +907,9 @@ class TestInspector(unittest.TestCase):
 
             # --- Test 1: MSE comparator with scaling preprocessing ---
             mse_comparator = MSEComparatorWithScaling(scale_factor=2.0)
-            df_mse = inspector_instance.calculate_numeric_gap(distance=mse_comparator)
+            df_mse = inspector_instance.calculate_numeric_gap(
+                distance=mse_comparator, reference_graph="NOT_USED_NAME"
+            )
 
             # Verify preprocessing was called
             self.assertTrue(mse_comparator.preprocessing_called)
@@ -936,7 +944,9 @@ class TestInspector(unittest.TestCase):
 
             # --- Test 2: SNR comparator with the same scaling preprocessing ---
             snr_comparator = SNRComparatorWithScaling(scale_factor=2.0)
-            df_snr = inspector_instance.calculate_numeric_gap(distance=snr_comparator)
+            df_snr = inspector_instance.calculate_numeric_gap(
+                distance=snr_comparator, reference_graph="NOT_USED_NAME"
+            )
 
             # Verify preprocessing was called
             self.assertTrue(snr_comparator.preprocessing_called)
@@ -1048,9 +1058,11 @@ class TestInspector(unittest.TestCase):
             aot_debug_handle_to_op_name = {(0,): "op_0"}
             runtime_debug_handle_to_op_name = {(0,): "op_0"}
 
-            inspector_instance._get_aot_intermediate_outputs_and_op_names = lambda x: (
-                aot_intermediate_outputs,
-                aot_debug_handle_to_op_name,
+            inspector_instance._get_aot_intermediate_outputs_and_op_names = (
+                lambda x, y: (
+                    aot_intermediate_outputs,
+                    aot_debug_handle_to_op_name,
+                )
             )
             inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
                 lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
@@ -1092,46 +1104,47 @@ class TestInspector(unittest.TestCase):
             self.assertIn("Invalid runtime debug handle", str(context.exception))
 
     def test_calculate_numeric_gap_with_reference_graph_name(self):
-        """Test calculate_numeric_gap with the reference_graph_name parameter."""
+        """Test calculate_numeric_gap with the reference_graph parameter using a custom graph from graph_map."""
         # Create a context manager to patch functions called by Inspector.__init__
         with patch.object(
             _inspector, "parse_etrecord", return_value=None
         ), patch.object(
             _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
         ):
             inspector_instance = Inspector(
-                etdump_path="",
-                etrecord="",
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
             )
 
             # Create mock intermediate outputs
             aot_intermediate_outputs = {
-                (0,): ([torch.tensor([1.0, 2.0, 3.0])], 1),
-                (1,): ([torch.tensor([4.0, 5.0, 6.0])], 1),
+                (0,): torch.tensor([1.0, 2.0, 3.0]),
+                (1,): torch.tensor([4.0, 5.0, 6.0]),
             }
             runtime_intermediate_outputs = {
                 (0,): ([torch.tensor([2.0, 3.0, 4.0])], 1),
                 (1,): ([torch.tensor([5.0, 6.0, 7.0])], 1),
             }
 
-            aot_debug_handle_to_op_name = {(0,): ["op_0"], (1,): ["op_1"]}
-            runtime_debug_handle_to_op_name = {(0,): ["op_0"], (1,): ["op_1"]}
+            aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
+            runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
 
             # Create a mock graph module for the reference graph
             class MockGraphModule:
                 def __init__(self):
-                    self.graph = MockGraph()
+                    self.graph = MagicMock()
+                    self.graph.nodes = []
 
                 def module(self):
                     return self
 
-            class MockGraph:
-                def __init__(self):
-                    self.nodes = []
-
             mock_graph_module = MockGraphModule()
 
-            # Create a real ETRecord and use add_extra_export_modules to add the graph
+            # Create a real ETRecord and set up the graph_map with edge_after_transform
             from executorch.devtools.etrecord import ETRecord
 
             mock_etrecord = ETRecord()
@@ -1139,9 +1152,10 @@ class TestInspector(unittest.TestCase):
             mock_etrecord.exported_program = None
             mock_etrecord.edge_dialect_program = mock_graph_module
 
-            # Simulate what add_extra_export_modules does - it adds "/forward" suffix
-            # So "edge_after_transform" becomes "edge_after_transform/forward"
-            mock_etrecord.graph_map = {"edge_after_transform/forward": mock_graph_module}
+            # The code adds "/forward" suffix when looking up, so we need "edge_after_transform/forward"
+            mock_etrecord.graph_map = {
+                "edge_after_transform/forward": mock_graph_module
+            }
 
             inspector_instance._etrecord = mock_etrecord
 
@@ -1150,7 +1164,8 @@ class TestInspector(unittest.TestCase):
                 lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
             )
 
-            # Mock IntermediateOutputCapturer to return our AOT outputs
+            # Mock IntermediateOutputCapturer and get_aot_debug_handle_to_op_name_mapping
+            # These are called inside _get_aot_intermediate_outputs_and_op_names when using a custom graph
             with patch(
                 "executorch.devtools.inspector._inspector.IntermediateOutputCapturer"
             ) as mock_capturer_class, patch(
@@ -1161,26 +1176,30 @@ class TestInspector(unittest.TestCase):
                 mock_capturer_class.return_value = mock_capturer
                 mock_get_mapping.return_value = aot_debug_handle_to_op_name
 
-                # Test with reference_graph_name parameter (without /forward suffix)
-                # The code should automatically add "/forward" when looking up
+                # Test with reference_graph parameter (without /forward suffix)
+                # The code should automatically add "/forward" when looking up in graph_map
                 df = inspector_instance.calculate_numeric_gap(
                     distance="L1",
-                    reference_graph_name="edge_after_transform",
+                    reference_graph="edge_after_transform",
                 )
 
                 self.assertIsInstance(df, pd.DataFrame)
                 self.assertEqual(len(df), 2)
 
     def test_calculate_numeric_gap_with_invalid_reference_graph_name(self):
-        """Test that calculate_numeric_gap raises ValueError for invalid reference_graph_name."""
+        """Test that calculate_numeric_gap raises ValueError for invalid reference_graph."""
         with patch.object(
             _inspector, "parse_etrecord", return_value=None
         ), patch.object(
             _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
         ):
             inspector_instance = Inspector(
-                etdump_path="",
-                etrecord="",
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
             )
 
             # Create a real ETRecord with empty graph_map
@@ -1192,12 +1211,12 @@ class TestInspector(unittest.TestCase):
 
             inspector_instance._etrecord = mock_etrecord
 
-            # Test with non-existent reference_graph_name
+            # Test with non-existent reference_graph
             # Since "non_existent_graph" has no "/", it will be looked up as "non_existent_graph/forward"
             with self.assertRaises(ValueError) as context:
                 inspector_instance.calculate_numeric_gap(
                     distance="L1",
-                    reference_graph_name="non_existent_graph",
+                    reference_graph="non_existent_graph",
                 )
             self.assertIn("not found", str(context.exception))
             self.assertIn("non_existent_graph/forward", str(context.exception))
@@ -1208,10 +1227,14 @@ class TestInspector(unittest.TestCase):
             _inspector, "parse_etrecord", return_value=None
         ), patch.object(
             _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
         ):
             inspector_instance = Inspector(
-                etdump_path="",
-                etrecord="",
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
             )
 
             # Create mock graph modules
@@ -1247,80 +1270,57 @@ class TestInspector(unittest.TestCase):
                 with self.assertRaises(ValueError) as context:
                     inspector_instance.calculate_numeric_gap(
                         distance="L1",
-                        reference_graph_name="exported_program",
+                        reference_graph="exported_program",
                     )
                 self.assertIn("Cannot use 'exported_program'", str(context.exception))
                 self.assertIn("backpropagation failed", str(context.exception))
 
     def test_calculate_numeric_gap_with_edge_dialect_exported_program_name(self):
-        """Test calculate_numeric_gap with edge_dialect_exported_program reference_graph_name."""
+        """Test calculate_numeric_gap with edge_dialect_exported_program reference_graph parameter."""
         with patch.object(
             _inspector, "parse_etrecord", return_value=None
         ), patch.object(
             _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
         ):
             inspector_instance = Inspector(
-                etdump_path="",
-                etrecord="",
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
             )
 
-            # Create mock intermediate outputs
+            # Create mock intermediate outputs (same structure as test_calculate_numeric_gap)
             aot_intermediate_outputs = {
-                (0,): ([torch.tensor([1.0, 2.0, 3.0])], 1),
+                (0,): torch.tensor([1.0, 2.0, 3.0]),
             }
             runtime_intermediate_outputs = {
                 (0,): ([torch.tensor([2.0, 3.0, 4.0])], 1),
             }
 
-            aot_debug_handle_to_op_name = {(0,): ["op_0"]}
-            runtime_debug_handle_to_op_name = {(0,): ["op_0"]}
+            aot_debug_handle_to_op_name = {(0,): "op_0"}
+            runtime_debug_handle_to_op_name = {(0,): "op_0"}
 
-            # Create mock graph modules
-            class MockGraphModule:
-                def __init__(self):
-                    self.graph = MagicMock()
-                    self.graph.nodes = []
-
-                def module(self):
-                    return self
-
-            mock_edge_dialect_program = MockGraphModule()
-
-            # Create a real ETRecord
-            from executorch.devtools.etrecord import ETRecord
-
-            mock_etrecord = ETRecord()
-            mock_etrecord._representative_inputs = torch.tensor([1.0])
-            mock_etrecord.exported_program = None
-            mock_etrecord.edge_dialect_program = mock_edge_dialect_program
-            mock_etrecord.graph_map = {}
-
-            inspector_instance._etrecord = mock_etrecord
-
-            # Mock the runtime intermediate outputs
+            # Mock the internal methods like test_calculate_numeric_gap does
+            inspector_instance._get_aot_intermediate_outputs_and_op_names = (
+                lambda x, y: (
+                    aot_intermediate_outputs,
+                    aot_debug_handle_to_op_name,
+                )
+            )
             inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
                 lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
             )
 
-            # Mock IntermediateOutputCapturer to return our AOT outputs
-            with patch(
-                "executorch.devtools.inspector._inspector.IntermediateOutputCapturer"
-            ) as mock_capturer_class, patch(
-                "executorch.devtools.inspector._inspector.get_aot_debug_handle_to_op_name_mapping"
-            ) as mock_get_mapping:
-                mock_capturer = MagicMock()
-                mock_capturer.run_and_capture.return_value = aot_intermediate_outputs
-                mock_capturer_class.return_value = mock_capturer
-                mock_get_mapping.return_value = aot_debug_handle_to_op_name
+            # Test with edge_dialect_exported_program parameter
+            df = inspector_instance.calculate_numeric_gap(
+                distance="L1",
+                reference_graph="edge_dialect_exported_program",
+            )
 
-                # Test with edge_dialect_exported_program parameter
-                df = inspector_instance.calculate_numeric_gap(
-                    distance="L1",
-                    reference_graph_name="edge_dialect_exported_program",
-                )
-
-                self.assertIsInstance(df, pd.DataFrame)
-                self.assertEqual(len(df), 1)
+            self.assertIsInstance(df, pd.DataFrame)
+            self.assertEqual(len(df), 1)
 
     @unittest.skipIf(sys.platform.startswith("win"), "Skipping on Windows")
     def test_transformer_block_xnnpack_numeric_gap_within_tolerance(self):

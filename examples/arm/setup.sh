@@ -349,6 +349,7 @@ if [[ $is_script_sourced -eq 0 ]]; then
 
     CMAKE_POLICY_VERSION_MINIMUM=3.5 \
         BUILD_PYBIND=1 \
+        BUILD_TOSA_REFERENCE_MODEL_TESTS=0 \
         pip install --no-dependencies ./reference_model
 
     CMAKE_POLICY_VERSION_MINIMUM=3.5 \
