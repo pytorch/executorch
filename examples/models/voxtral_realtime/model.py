@@ -956,15 +956,15 @@ class StreamingAudioEncoderExport(nn.Module):
         # (1, 128, 2+8=10) -> conv1(k=3, s=1) -> (1, 1280, 8)
         conv1_input = torch.cat([self.conv1_state, mel_chunk], dim=2)
         conv1_out = F.gelu(self.conv1(conv1_input))
-        # Update conv1 state in-place with last 2 frames from input
-        self.conv1_state.copy_(conv1_input[:, :, -2:])
+        # Update conv1 state with last 2 frames from mel_chunk
+        self.conv1_state.copy_(mel_chunk[:, :, -2:])
 
         # Conv2: cat state + conv1_out, raw Conv1d
         # (1, 1280, 2+8=10) -> conv2(k=3, s=2) -> (1, 1280, 4)
         conv2_input = torch.cat([self.conv2_state, conv1_out], dim=2)
         conv2_out = F.gelu(self.conv2(conv2_input))
-        # Update conv2 state in-place with last 2 frames from conv1_out
-        self.conv2_state.copy_(conv2_input[:, :, -2:])
+        # Update conv2 state with last 2 frames from conv1_out
+        self.conv2_state.copy_(conv1_out[:, :, -2:])
 
         x = conv2_out.transpose(1, 2)  # (1, 4, 1280)
 
