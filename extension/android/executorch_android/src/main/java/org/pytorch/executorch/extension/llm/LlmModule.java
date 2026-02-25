@@ -10,7 +10,6 @@ package org.pytorch.executorch.extension.llm;
 
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
-import java.io.File;
 import java.util.List;
 import org.pytorch.executorch.ExecuTorchRuntime;
 import org.pytorch.executorch.annotations.Experimental;
@@ -57,16 +56,9 @@ public class LlmModule {
       List<String> dataFiles,
       int numBos,
       int numEos) {
-    ExecuTorchRuntime runtime = ExecuTorchRuntime.getRuntime();
-
-    File modelFile = new File(modulePath);
-    if (!modelFile.canRead() || !modelFile.isFile()) {
-      throw new RuntimeException("Cannot load model path " + modulePath);
-    }
-    File tokenizerFile = new File(tokenizerPath);
-    if (!tokenizerFile.canRead() || !tokenizerFile.isFile()) {
-      throw new RuntimeException("Cannot load tokenizer path " + tokenizerPath);
-    }
+    ExecuTorchRuntime.getRuntime();
+    ExecuTorchRuntime.validateFilePath(modulePath, "model path");
+    ExecuTorchRuntime.validateFilePath(tokenizerPath, "tokenizer path");
 
     mHybridData =
         initHybrid(modelType, modulePath, tokenizerPath, temperature, dataFiles, numBos, numEos);
