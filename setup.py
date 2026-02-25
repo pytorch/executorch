@@ -706,6 +706,17 @@ class CustomBuild(build):
         ):
             cmake_configuration_args += ["-DEXECUTORCH_BUILD_CUDA=ON"]
 
+        # Check if QNN SDK is available (via QNN_SDK_ROOT env var), and if so,
+        # enable building the Qualcomm backend by default.
+        qnn_sdk_root = os.environ.get("QNN_SDK_ROOT", "").strip()
+        if qnn_sdk_root and install_utils.is_cmake_option_on(
+            cmake_configuration_args, "EXECUTORCH_BUILD_QNN", default=True
+        ):
+            cmake_configuration_args += [
+                "-DEXECUTORCH_BUILD_QNN=ON",
+                f"-DQNN_SDK_ROOT={qnn_sdk_root}",
+            ]
+
         with Buck2EnvironmentFixer():
             # Generate the cmake cache from scratch to ensure that the cache state
             # is predictable.
