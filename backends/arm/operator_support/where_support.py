@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,11 +19,6 @@ from executorch.exir.dialects._ops import ops as exir_ops
 @register_tosa_support_check
 class WhereSupported(SupportedTOSAOperatorCheck):
     targets = [exir_ops.edge.aten.where.self]
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
 
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
@@ -49,11 +44,15 @@ class WhereSupported(SupportedTOSAOperatorCheck):
 
         x_dtype, y_dtype = x.meta["val"].dtype, y.meta["val"].dtype
         if tosa_spec.support_float():
-            if x_dtype in (torch.bool, torch.float16, torch.float32) and y_dtype in (
+            supported_float = [
                 torch.bool,
                 torch.float16,
                 torch.float32,
-            ):
+            ]
+            if tosa_spec.support_extension("bf16"):
+                supported_float.append(torch.bfloat16)
+
+            if x_dtype in supported_float and y_dtype in supported_float:
                 return True
 
         if tosa_spec.support_integer():

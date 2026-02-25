@@ -1,7 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
- * Copyright 2025 Arm Limited and/or its affiliates.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -23,15 +23,15 @@ Tensor& quantized_linear_out(
     const Tensor& weights,
     const torch::executor::optional<Tensor>& bias,
     const torch::executor::optional<Tensor>& kernel_sum,
-    const Scalar& input_offset,
-    const Scalar& filter_offset,
-    const Scalar& output_offset,
-    const IntArrayRef requantize_multipliers,
-    const IntArrayRef requantize_shifts,
-    const Scalar& activation_max,
-    const Scalar& activation_min,
+    const int64_t input_offset,
+    const int64_t filter_offset,
+    const int64_t output_offset,
+    const Int64ArrayRef requantize_multipliers,
+    const Int64ArrayRef requantize_shifts,
+    const int64_t activation_max,
+    const int64_t activation_min,
     Tensor& out) {
-  ET_LOG(Info, "quantized_linear_out: called");
+  ET_LOG(Debug, "quantized_linear_out: called");
 
   const int8_t* input_data = input.const_data_ptr<int8_t>();
   const int8_t* weight_data = weights.const_data_ptr<int8_t>();
@@ -47,11 +47,11 @@ Tensor& quantized_linear_out(
 
   // Setup CMSIS-NN parameters
   cmsis_nn_fc_params fc_params;
-  fc_params.input_offset = static_cast<int32_t>(input_offset.to<int64_t>());
-  fc_params.filter_offset = static_cast<int32_t>(filter_offset.to<int64_t>());
-  fc_params.output_offset = static_cast<int32_t>(output_offset.to<int64_t>());
-  fc_params.activation.min = static_cast<int32_t>(activation_min.to<int64_t>());
-  fc_params.activation.max = static_cast<int32_t>(activation_max.to<int64_t>());
+  fc_params.input_offset = static_cast<int32_t>(input_offset);
+  fc_params.filter_offset = static_cast<int32_t>(filter_offset);
+  fc_params.output_offset = static_cast<int32_t>(output_offset);
+  fc_params.activation.min = static_cast<int32_t>(activation_min);
+  fc_params.activation.max = static_cast<int32_t>(activation_max);
 
   cmsis_nn_per_tensor_quant_params per_tensor_quant_params;
   per_tensor_quant_params.multiplier =
@@ -65,14 +65,14 @@ Tensor& quantized_linear_out(
     batches *= input.size(i);
   }
   ET_LOG(
-      Info,
+      Debug,
       "in features: %d, out_features: %d, batches: %d, kernel_sum_size: %d",
       in_feat,
       out_feat,
       batches,
       kernel_sum.has_value() ? kernel_sum.value().numel() : 0);
   ET_LOG(
-      Info,
+      Debug,
       "kernel_sum[0]: %d, kernel_sum[1]: %d",
       kernel_sum_data != nullptr ? kernel_sum_data[0] : -1,
       kernel_sum_data != nullptr ? kernel_sum_data[1] : -1);

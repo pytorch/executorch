@@ -10,10 +10,7 @@ runtime.python_library(
         "__init__.py",
         "visualization_utils.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//caffe2:torch",
         "//executorch/exir:lib",

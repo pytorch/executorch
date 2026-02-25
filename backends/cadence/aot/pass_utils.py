@@ -8,16 +8,18 @@
 
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Set, Type, Union
+from typing import Callable, List, Optional, Set, Type, TypeVar, Union
 
 import torch
+from beartype.door import die_if_unbearable
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
-
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from executorch.exir.pass_base import ExportPass, PassBase, PassResult
-
 from torch._ops import OpOverloadPacket
 from torch.fx import Node
+from torch.fx.node import Argument
+
+T = TypeVar("T")
 
 
 # Is an overlap in tensor lifetime and storage allowed at the current opt level?
@@ -177,24 +179,50 @@ def nodes_not_adjacent_in_gm(
 def get_arg(
     node: torch.fx.Node,
     kwarg_name: str,
-) -> torch.fx.node.Argument:
+    expected_type: Type[T] = Argument,
+) -> T:
     """
     Get the arg with arg_name of the node, returns default value if not set.
+
+    Args:
+        node: The FX node to extract the argument from
+        kwarg_name: The name of the argument to extract
+        expected_type: Optional type to validate and cast the argument to.
+                      If provided, asserts the argument is an instance of this type.
+
+    Returns:
+        The argument value, optionally type-checked and cast to expected_type
+
+    Example:
+        # Get a node argument with type checking
+        conv_weight_node = get_arg(node, "weight", torch.fx.Node)
+
+        # Get a float argument with type checking
+        eps = get_arg(node, "eps", float)
+
+        # Get an argument without type checking (returns Argument)
+        value = get_arg(node, "some_arg")
     """
     # Try to get the arg from kwargs first since this is faster
     if kwarg_name in node.kwargs:
-        return node.kwargs[kwarg_name]
-
-    # If it's not found in kwargs, try to normalize the args
-    normalized_args = node.normalized_arguments(
-        node.graph.owning_module, normalize_to_only_use_kwargs=True
-    )
-    if not normalized_args:
-        raise RuntimeError(
-            f"get_arg: Node {node} does not support normalization of arguments"
+        value = node.kwargs[kwarg_name]
+    else:
+        # If it's not found in kwargs, try to normalize the args
+        normalized_args = node.normalized_arguments(
+            node.graph.owning_module, normalize_to_only_use_kwargs=True
         )
+        if not normalized_args:
+            raise RuntimeError(
+                f"get_arg: Node {node} does not support normalization of arguments"
+            )
+        value = normalized_args.kwargs[kwarg_name]
 
-    return normalized_args.kwargs[kwarg_name]
+    # Validate type using beartype's runtime type checker when a specific
+    # type is requested (not the default Argument type alias, which contains
+    # recursive forward references that beartype cannot resolve).
+    if expected_type is not Argument:
+        die_if_unbearable(value, expected_type)
+    return value  # type: ignore[return-value]
 
 
 def set_arg(
@@ -264,6 +292,12 @@ class RemoveOrReplacePassInterface(ExportPass):
                 lambda m: isinstance(m, torch.fx.GraphModule), graph_module.modules()
             ):
                 for node in module.graph.find_nodes(op="call_function", target=target):
+                    if len(node.users) == 0:
+                        # It is possible that maybe_remove_or_replace would have removed
+                        # this target by starting from a different target. In this case,
+                        # we should ignore it. If it wasn't erased, it will be handled
+                        # in eliminate_dead_code.
+                        continue
                     changed |= self.maybe_remove_or_replace(node)
 
         if changed:

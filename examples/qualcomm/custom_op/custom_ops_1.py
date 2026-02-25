@@ -261,7 +261,7 @@ def main(args):
         )
         adb.push(inputs=sample_input, files=op_package_paths)
         adb.execute()
-        adb.pull(output_path=args.artifact)
+        adb.pull(host_output_path=args.artifact)
 
     x86_golden = instance(*sample_input)
     device_output = torch.from_numpy(

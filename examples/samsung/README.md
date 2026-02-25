@@ -35,7 +35,7 @@ cp -rf ${EXYNOS_AI_LITECORE_PATH}/python/snc_py_api*.so ${PYTHON_TARGET_DIR}
 
 Take `EXECUTORCH_ROOT` as work directory and here is an example for ic3.
 ```bash
-python -m executorch.examples.samsung.aot_compiler --chipset E9955 -m ic3 --output_dir ic3_artifact
+python -m executorch.examples.samsung.aot_compiler --chipset E9955 (or E9965) -m ic3 --output_dir ic3_artifact
 ```
 
 ## Execution

@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -55,6 +55,23 @@ def test_mv2_tosa_FP():
     pipeline.run()
 
 
+def test_mv2_tosa_FP_bf16():
+    bf16_model = models.mobilenetv2.mobilenet_v2(
+        weights=MobileNet_V2_Weights.DEFAULT
+    ).eval()
+    bf16_model = bf16_model.to(torch.bfloat16)
+    bf16_input = normalize(torch.rand((1, 3, 224, 224))).to(torch.bfloat16)
+    pipeline = TosaPipelineFP[input_t](
+        bf16_model,
+        (bf16_input,),
+        aten_op=[],
+        tosa_extensions=["bf16"],
+        atol=6e-02,
+        rtol=6e-02,
+    )
+    pipeline.run()
+
+
 def test_mv2_tosa_FP_channels_last():
     input_tensor = model_inputs[0].to(memory_format=torch.channels_last)
     pipeline = TosaPipelineFP[input_t](
@@ -63,11 +80,6 @@ def test_mv2_tosa_FP_channels_last():
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
-    )
-    # Changing memory format leads to an unsupported as_strided_copy op being inserted into the graph,
-    # leading to a graph break.
-    pipeline.change_args(
-        "check_count.exir", {"torch.ops.higher_order.executorch_call_delegate": 2}
     )
     pipeline.run()
 
@@ -83,6 +95,8 @@ def test_mv2_tosa_INT(per_channel_quantization):
         per_channel_quantization=per_channel_quantization,
         atol=0.25,
         qtol=1,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -160,13 +174,15 @@ def test_mv2_tosa_INT_FP_partial_quant():
         tosa_extensions=["FP"],
         use_to_edge_transform_and_lower=True,
         atol=0.20,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     _use_partial_quantizer(pipeline)
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_mv2_partial_quant_vgf_quant():
+def test_mv2_vgf_quant_partial_quant():
     pipeline = VgfPipeline[input_t](
         mv2,
         model_inputs,

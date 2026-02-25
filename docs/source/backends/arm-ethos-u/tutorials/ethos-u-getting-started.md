@@ -78,7 +78,7 @@ example_inputs = (torch.ones(1,1,1,1),torch.ones(1,1,1,1))
 model = Add()
 model = model.eval()
 exported_program = torch.export.export(model, example_inputs)
-graph_module = exported_program.graph_module
+graph_module = exported_program.module(check_guards=False)
 
 
 from executorch.backends.arm.ethosu import EthosUCompileSpec
@@ -201,6 +201,14 @@ To learn more, check out these learning paths:
 
 https://learn.arm.com/learning-paths/embedded-and-microcontrollers/rpi-llama3/
 https://learn.arm.com/learning-paths/embedded-and-microcontrollers/visualizing-ethos-u-performance/
+
+### Project Templates
+
+These project templates provide alternative starting points for ExecuTorch development:
+
+- [CMSIS-Executorch Project Template](https://github.com/Arm-Examples/cmsis-executorch) — Docker-based build environment with Keil Studio/VS Code integration for Arm Ethos-U applications, featuring automated CI/CD and AVH-SSE-300 simulation support.
+
+- [ExecuTorch on Zephyr RTOS with CMSIS](https://github.com/Arm-Examples/cmsis-zephyr-executorch) — Complete example of running ExecuTorch inference on Arm Cortex-M with Ethos-U NPU acceleration using Zephyr RTOS and CMSIS Toolbox.
 
 ## FAQs
 

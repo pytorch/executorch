@@ -11,19 +11,17 @@ from executorch.backends.transforms.utils import (
     create_constant_placeholder,
     delete_constant_placeholder,
 )
-
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
-
 from executorch.backends.xnnpack.utils.utils import (
     get_param_tensor,
     get_tensor_name,
     is_param_node,
 )
 from executorch.exir import ExportedProgram
+from executorch.exir.backend.utils import WhyNoPartition
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
 from torch.export.graph_signature import InputKind
-
 from torch.nn.utils.fusion import fuse_conv_bn_weights, fuse_linear_bn_weights
 
 
@@ -81,14 +79,26 @@ class FuseBatchNormPass(XNNPACKPass):
         return PassResult(graph_module, True)
 
     @staticmethod
-    def can_fuse(
+    def can_fuse(  # noqa: C901
         input_node: torch.fx.Node,
         bn: torch.fx.Node,
         program: ExportedProgram,
+        why: WhyNoPartition | None = None,
     ) -> bool:
         """
         Determine whether a BatchNorm node can be fused with the preceding convolution or linear node.
         """
+
+        if input_node.op != "call_function":
+            return False
+
+        if input_node.target not in (
+            exir_ops.edge.aten.convolution.default,
+            exir_ops.edge.aten.linear.default,
+        ):
+            if why:
+                why("Input node must be a convolution or linear op.")
+            return False
 
         is_conv = input_node.target == exir_ops.edge.aten.convolution.default
 
@@ -98,6 +108,8 @@ class FuseBatchNormPass(XNNPACKPass):
         if [
             (user.target == operator.getitem and user.args[1] == 0) for user in bn.users
         ].count(False):
+            if why:
+                why("Batch norm users must only access the output tensor.")
             return False
 
         input_node_weights = input_node.args[1]
@@ -107,11 +119,15 @@ class FuseBatchNormPass(XNNPACKPass):
         if not isinstance(input_node_weights, torch.fx.Node) or not isinstance(
             bn_weights, torch.fx.Node
         ):
+            if why:
+                why("Input node weights must be parameters.")
             return False
 
         if [
             is_param_node(program, node) for node in {input_node_weights, bn_weights}
         ].count(False):
+            if why:
+                why("Node weights must be static.")
             return False
 
         # Check the rank of the convolutution input - only Conv1d and 2d are supported.
@@ -122,6 +138,8 @@ class FuseBatchNormPass(XNNPACKPass):
                 or "val" not in conv_input.meta
                 or len(conv_input.meta["val"].shape) not in (3, 4)
             ):
+                if why:
+                    why("Convolution input must be rank 3 or 4.")
                 return False
 
         return True

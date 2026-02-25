@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -96,6 +97,7 @@ class LLMEdgeManager:
         dynamic_shapes: Optional[Any] = None,
         save_exported_program: bool = False,
         generate_etrecord: bool = False,
+        skip_dim_order: bool = True,
     ):
         # Store necessary constructor arguments.
         self.model = model
@@ -118,6 +120,7 @@ class LLMEdgeManager:
         self.dynamic_shapes = dynamic_shapes
         self.save_exported_program = save_exported_program
         self.generate_etrecord = generate_etrecord
+        self.skip_dim_order = skip_dim_order
 
         # Note: treat this as the source of truth for the result of
         # torch.export'ing a model. If the overall ExportedProgram is needed,
@@ -197,7 +200,7 @@ class LLMEdgeManager:
     def _get_edge_config(self) -> EdgeCompileConfig:
         edge_config = EdgeCompileConfig(
             _check_ir_validity=False,
-            _skip_dim_order=True,
+            _skip_dim_order=self.skip_dim_order,
         )
         return edge_config
 
@@ -448,7 +451,9 @@ class LLMEdgeManager:
         return self
 
     def to_edge_transform_and_lower(
-        self, partitioners: Optional[List[Partitioner]]
+        self,
+        partitioners: Optional[List[Partitioner]],
+        transform_passes: Optional[List] = None,
     ) -> "LLMEdgeManager":
         if partitioners is None:
             logging.info("No partitioner provided, skipping backend lowering...")
@@ -459,6 +464,7 @@ class LLMEdgeManager:
         edge_config = self._get_edge_config()
         self.edge_manager = to_edge_transform_and_lower(
             exported_module,
+            transform_passes=transform_passes,
             partitioner=partitioners,
             compile_config=edge_config,
             constant_methods=self.metadata,

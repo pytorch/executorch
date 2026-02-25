@@ -82,7 +82,7 @@ def define_common_targets():
         srcs = [],
         headers = [],
         define_static_target = True,
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
         deps = [
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
             "//executorch/runtime/backend:interface",

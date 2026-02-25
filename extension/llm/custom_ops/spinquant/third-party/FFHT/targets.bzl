@@ -10,7 +10,7 @@ def define_common_targets():
         name = "dumb_fht",
         srcs = ["dumb_fht.c"],
         exported_headers = ["dumb_fht.h"],
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -21,7 +21,7 @@ def define_common_targets():
             "ovr_config//cpu:x86_64": ["fht_avx.c"],
         }),
         exported_headers = ["fht.h"],
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_binary(

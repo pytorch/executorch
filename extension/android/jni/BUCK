@@ -131,7 +131,7 @@ non_fbcode_target(_kind = runtime.cxx_library,
     deps = [
         "//executorch/runtime/core:core",
     ],
-    visibility = ["@EXECUTORCH_CLIENTS"],
+    visibility = ["PUBLIC"],
 )
 
 runtime.export_file(

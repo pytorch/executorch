@@ -1,0 +1,97 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Macros to generate block store functions for buffers and textures.
+ *
+ * Buffer usage:
+ *   define_store_buffer_fns(t_outp, T)
+ *
+ * Texture usage:
+ *   define_store_texture_fns(t_outp, VEC4_T)
+ *
+ * Both generate functions with the same signature:
+ *   - store_fp_block_to_t_outp(meta, tidx_base, layout, block_outer_dim, block)
+ *
+ * The block_inner_dim is derived from the packed_dim of the hashed_layout.
+ *
+ * Parameters:
+ *   buffer_name/texture_name: The name of the output buffer/texture (e.g., t_outp)
+ *   scalar_type/vec4_type: The type for casting (e.g., float/vec4)
+ */
+
+#ifndef BLOCK_STORE_GLSLH
+#define BLOCK_STORE_GLSLH
+
+//
+// Buffer store functions
+//
+
+#define define_store_buffer_fns(buffer_name, scalar_type)              \
+                                                                       \
+  void store_fp_block_to_##buffer_name(                                \
+      const BufferMetadata meta,                                       \
+      const TensorIndex4D tidx_base,                                   \
+      const int hashed_layout,                                         \
+      const int block_outer_dim,                                       \
+      const mat4 block) {                                              \
+    const int block_inner_dim = get_packed_dim(hashed_layout);         \
+                                                                       \
+    /* Compute base buffer index once and use strides for iteration */ \
+    const uint base_idx =                                              \
+        tensor4d_idx_to_buf_idx(meta, tidx_base, hashed_layout);       \
+    const uint outer_stride = stride_at(meta, block_outer_dim);        \
+    /* Inner stride is 1 since packed_dim == block_inner_dim */        \
+                                                                       \
+    /* Pre-compute bounds for efficient checking */                    \
+    const uint outer_size = size_at(meta, block_outer_dim);            \
+    const uint inner_size = size_at(meta, block_inner_dim);            \
+    const int base_outer_idx = tidx_base.data[block_outer_dim];        \
+    const int base_inner_idx = tidx_base.data[block_inner_dim];        \
+                                                                       \
+    [[unroll]] for (int block_y = 0; block_y < 4; ++block_y) {         \
+      if (base_outer_idx + block_y < int(outer_size)) {                \
+        const uint row_idx = base_idx + block_y * outer_stride;        \
+        [[unroll]] for (int block_x = 0; block_x < 4; ++block_x) {     \
+          if (base_inner_idx + block_x < int(inner_size)) {            \
+            buffer_name[row_idx + block_x] =                           \
+                scalar_type(block[block_y][block_x]);                  \
+          }                                                            \
+        }                                                              \
+      }                                                                \
+    }                                                                  \
+  }
+
+//
+// Texture store functions
+//
+
+#define define_store_texture_fns(texture_name, vec4_type)                     \
+                                                                              \
+  void store_fp_block_to_##texture_name(                                      \
+      const TextureMetadata meta,                                             \
+      const TensorIndex4D tidx_base,                                          \
+      const int hashed_layout,                                                \
+      const int block_outer_dim,                                              \
+      const mat4 block) {                                                     \
+    /* Convert tensor index to texture position */                            \
+    /* Use tensor4d_idx_to_texel_pos_simple to properly map the packed dim */ \
+    ivec3 tex_pos = tensor4d_idx_to_texel_pos_simple(meta, tidx_base);        \
+    const int tex_outer_dim = mod_4(block_outer_dim);                         \
+    const int outer_size = meta.sizes[block_outer_dim];                       \
+    const int base_outer_idx = tidx_base.data[block_outer_dim];               \
+                                                                              \
+    [[unroll]] for (int block_y = 0; block_y < 4; ++block_y) {                \
+      if (base_outer_idx + block_y < outer_size) {                            \
+        imageStore(texture_name, tex_pos, vec4_type(block[block_y]));         \
+      }                                                                       \
+      tex_pos[tex_outer_dim]++;                                               \
+    }                                                                         \
+  }
+
+#endif // BLOCK_STORE_GLSLH

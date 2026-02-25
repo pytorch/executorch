@@ -1,4 +1,5 @@
 load("@fbcode_macros//build_defs:cpp_unittest.bzl", "cpp_unittest")
+load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
 
 oncall("executorch")
 
@@ -19,4 +20,28 @@ cpp_unittest(
         "//executorch/runtime/core/exec_aten:lib",
         "//executorch/extension/tensor:tensor",
     ],
+)
+
+cpp_unittest(
+    name = "test_common_shims_slim",
+    srcs = [
+        "test_common_shims_slim.cpp",
+    ],
+    deps = [
+        "//executorch/backends/aoti:common_shims_slim",
+        "//executorch/backends/aoti/slim/core:slimtensor",
+        "//executorch/backends/aoti/slim/factory:empty",
+        "//executorch/runtime/core:core",
+        "//executorch/runtime/platform:platform",
+    ],
+    external_deps = [
+        ("cuda", None, "cuda-lazy"),
+    ],
+    preprocessor_flags = [
+        "-DCUDA_AVAILABLE=1",
+    ],
+    keep_gpu_sections = True,
+    remote_execution = re_test_utils.remote_execution(
+        platform = "gpu-remote-execution",
+    ),
 )

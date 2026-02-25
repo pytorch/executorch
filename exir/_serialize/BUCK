@@ -1,0 +1,54 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+# TODO(T157145817): Update other flatbuffer serializers to use flatc like
+# _flatbuffer.py does, and remove this.
+fbcode_target(_kind = runtime.cxx_python_extension,
+    name = "_bindings",
+    srcs = [
+        "bindings.cpp",
+    ],
+    visibility = [
+        "//executorch/backends/vulkan/...",
+        "//executorch/backends/xnnpack/...",
+        "//executorch/devtools/bundled_program/...",
+        "//executorch/devtools/etdump/...",
+    ],
+    deps = [
+        "fbsource//third-party/flatbuffers:flatc_library",
+        "fbsource//third-party/pybind11:pybind11",
+    ],
+)
+
+# Use runtime.python_library instead of the one defined in python_library.bzl,
+# so we can have access to EXECUTORCH_CLIENTS list.
+fbcode_target(_kind = runtime.python_library,
+    name = "lib",
+    srcs = [
+        "__init__.py",
+        "_cord.py",
+        "_dataclass.py",
+        "_flatbuffer.py",
+        "_named_data_store.py",
+        "_program.py",
+        "_serialize.py",
+        "data_serializer.py",
+        "padding.py",
+    ],
+    resources = {
+        "//executorch/schema:program.fbs": "program.fbs",
+        "//executorch/schema:scalar_type.fbs": "scalar_type.fbs",
+        "fbsource//third-party/flatbuffers:flatc-host": "flatbuffers-flatc",
+    },
+    # Currently serialization API should only be used in some dedicated targets,
+    # to avoid ODR violation when linking with another Flatbuffers library.
+    # Please ask before changing this.
+    visibility = ["PUBLIC"],
+    deps = [
+        "//executorch/exir:schema",
+        "//executorch/exir:tensor",
+        "//executorch/exir:tensor_layout",
+    ],
+)

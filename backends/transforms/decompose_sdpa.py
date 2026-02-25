@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -49,7 +49,7 @@ class DecomposeScaledDotProductAttention(ExportPass):
         allow_non_fake_inputs: bool,
     ) -> None:
         graph = graph_module.graph
-        input_tensors = (arg.meta["val"] for arg in node.args)
+        input_tensors = (input_node.meta["val"] for input_node in node.all_input_nodes)
         scale = node.kwargs.get("scale", None)
 
         # refer to pytorch/test/test_decomp.py

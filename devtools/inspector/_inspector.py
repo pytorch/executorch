@@ -42,7 +42,6 @@ from executorch.devtools.etdump.schema_flatcc import (
 from executorch.devtools.etrecord import ETRecord, parse_etrecord
 from executorch.devtools.inspector._inspector_utils import (
     calculate_time_scale_factor,
-    compare_intermediate_outputs,
     create_debug_handle_to_op_node_mapping,
     DebugHandle,
     display_or_print_df,
@@ -50,7 +49,6 @@ from executorch.devtools.inspector._inspector_utils import (
     EXCLUDED_COLUMNS_WHEN_PRINTING,
     EXCLUDED_EVENTS_FOR_INTERMEDIATE_OUTPUT,
     EXCLUDED_EVENTS_WHEN_PRINTING,
-    find_op_names,
     find_populated_event,
     FORWARD,
     gen_etdump_object,
@@ -1168,31 +1166,94 @@ class Inspector:
 
     def _get_aot_intermediate_outputs_and_op_names(
         self,
+        reference_graph: Optional[str] = None,
         disable_debug_handle_valdiation: bool = False,
     ) -> Tuple[Dict[DebugHandle, Any], Dict[DebugHandle, List[str]]]:
         """
         Capture intermediate outputs only if _representative_inputs are provided
-        when using bundled program to create the etrecord
+        when using bundled program to create the etrecord.
+
+        Args:
+            reference_graph_name: Name of the graph to use as the reference for intermediate
+                output capture. Must be one of:
+                - "exported_program": Uses the ATen dialect exported program. Requires
+                  successful debug handle backpropagation, otherwise raises an error.
+                - "edge_dialect_exported_program": Uses the Edge dialect program directly.
+                - Any other string: Fetches from graph_map (e.g., "edge_after_transform/forward"
+                  for post-custom-transform graph when transform_passes are applied in
+                  to_edge_transform_and_lower with generate_etrecord=True).
+            disable_debug_handle_valdiation: If True, skip debug handle validation.
+
+        Returns:
+            Tuple of (intermediate_outputs, debug_handle_to_op_names) dictionaries.
+
+        Raises:
+            ValueError: If the specified reference_graph_name is not available or if
+                debug handle backpropagation fails for "exported_program".
         """
-        if self._etrecord._representative_inputs is None:
-            return {}, {}
 
-        export_program = None
-
-        # Will use the exported program to extract intermediate output if and only if exported_program has been provided, and it is one of the ancestors of the edge_dialect_program
-        if self._etrecord.exported_program and propagate_back_debug_handle(
-            self._etrecord.exported_program,
-            self._etrecord.export_graph_id,
-            self._etrecord.edge_dialect_program,
-            disable_debug_handle_valdiation,
-        ):
-            export_program = self._etrecord.exported_program
-        else:
-            log.warning(
-                "Either aten dialect exported program is not in ETRecord, or it is not one of the ancestors of current edge dialect program."
-                "Will fall back to use edge dialect program to extract intermediate output",
-            )
+        # Determine the reference graph to use
+        if reference_graph is None or reference_graph == "exported_program":
+            # Auto-select: try exported_program first, fall back to edge_dialect_exported_program
+            if self._etrecord.exported_program and propagate_back_debug_handle(
+                self._etrecord.exported_program,
+                self._etrecord.export_graph_id,
+                self._etrecord.edge_dialect_program,
+                disable_debug_handle_valdiation,
+            ):
+                reference_graph = "exported_program"
+            elif reference_graph is None:
+                log.warning(
+                    "Either ATen dialect exported program is not in ETRecord, or debug handle "
+                    "backpropagation failed. Falling back to 'edge_dialect_exported_program'."
+                )
+                reference_graph = "edge_dialect_exported_program"
+            else:
+                raise ValueError(
+                    "Cannot use 'exported_program': Debug handle backpropagation failed or exported program is unavailable. "
+                    "Please check if the exported program is available in ETRecord, or try to disable debug handle validation."
+                )
+        if reference_graph == "edge_dialect_exported_program":
+            # Explicitly requested edge_dialect_exported_program
             export_program = self._etrecord.edge_dialect_program
+            log.info(
+                "Using 'edge_dialect_exported_program' (Edge dialect) as reference graph for intermediate output capture"
+            )
+        elif reference_graph == "exported_program":
+            export_program = self._etrecord.exported_program
+            log.info(
+                "Using 'exported_program' (ATen dialect) as reference graph for intermediate output capture"
+            )
+        else:
+            # Try to fetch from graph_map
+            # If no method name is provided (no "/" in the name), try adding "/forward" as default
+            lookup_name = reference_graph
+            if "/" not in reference_graph:
+                lookup_name = f"{reference_graph}/forward"
+                log.info(
+                    f"No method name specified in '{reference_graph}', "
+                    f"using '{lookup_name}' as default"
+                )
+
+            if (
+                self._etrecord.graph_map is not None
+                and lookup_name in self._etrecord.graph_map
+            ):
+                export_program = self._etrecord.graph_map[lookup_name]
+                log.info(
+                    f"Using '{lookup_name}' from graph_map as reference graph for intermediate output capture"
+                )
+            else:
+                available_graphs = (
+                    list(self._etrecord.graph_map.keys())
+                    if self._etrecord.graph_map
+                    else []
+                )
+                raise ValueError(
+                    f"Reference graph '{lookup_name}' not found. "
+                    f"Available options: 'exported_program', 'edge_dialect_exported_program', "
+                    f"or one of the graphs in graph_map: {available_graphs}"
+                )
         graph_module = export_program.module()
         aot_debug_handle_to_op_name = get_aot_debug_handle_to_op_name_mapping(
             graph_module
@@ -1408,11 +1469,11 @@ class Inspector:
         self,
         distance: Union[str, NumericalComparatorBase],
         disable_debug_handle_valdiation: bool = False,
+        reference_graph: Optional[str] = None,
     ):
         """
         Compares logged intermediate outputs from the exported graph (in ETRecord)
         with runtime outputs (in ETDump) using a user-specific numerical comparator.
-        If the exported graph is not supported, the function will fall back to use edge dialect graph.
 
         To use this function, you must first generate the ETRecord with representative inputs,
         and then create the Inspector instance with the ETRecord and ETDump. The Inspector can then
@@ -1421,20 +1482,35 @@ class Inspector:
         Args:
             distance: The metrics the inspector will use for gap calculation. Can be either:
                 - A string: one of "MSE", "L1", or "SNR" for built-in comparators.
-                - A custom NumericalComparatorBase instance: allows you to define custom comparison logic
-                  by subclassing NumericalComparatorBase and implementing the compare() method.
-            disable_debug_handle_validation: Often when aten graph has symbolic shape nodes and inbuilt ops like gt/lt etc.,
+                - A custom NumericalComparatorBase instance: allows you to define custom comparison
+                  logic by subclassing NumericalComparatorBase and implementing the element_compare()
+                  method. Custom comparators can also override the preprocessing() method to apply
+                  transformations (e.g., layout conversion, dequantization) before comparison.
+            disable_debug_handle_valdiation: Often when aten graph has symbolic shape nodes and inbuilt ops like gt/lt etc.,
                 during re-export of such a graph 'from_node' information is lost from node.meta. As a result we loose
                 connection between edge IR nodes and aten nodes for such ops. By default we validate that every edge IR
                 node has corresponding node in aten IR, and when such validation fails numeric debugger falls back to edge
                 IR as reference graph. This flag allows one to override such behavior and make best effort comparison.
+            reference_graph: Name of the graph to use as the golden reference for intermediate output capture.
+                Must be one of:
+                - "exported_program": Uses the ATen dialect exported program. Requires successful debug
+                  handle backpropagation, otherwise raises an error.
+                - "edge_dialect_exported_program": Uses the Edge dialect program directly.
+                - Any other string: Fetches from graph_map (e.g., "edge_after_transform/forward" for
+                  post-custom-transform graph when transform_passes are applied in to_edge_transform_and_lower
+                  with generate_etrecord=True).
+
+                If None (default), automatically selects the best available graph:
+                - Uses "exported_program" if available and debug handle backpropagation succeeds.
+                - Falls back to "edge_dialect_exported_program" otherwise.
 
         Returns:
             pd.DataFrame: A DataFrame listing corresponding operator intermediate outputs from both stages and their computed numerical gaps.
         """
         aot_intermediate_outputs, aot_debug_handle_to_op_names = (
             self._get_aot_intermediate_outputs_and_op_names(
-                disable_debug_handle_valdiation
+                reference_graph,
+                disable_debug_handle_valdiation,
             )
         )
         if len(aot_intermediate_outputs) == 0 or len(aot_debug_handle_to_op_names) == 0:
@@ -1448,48 +1524,27 @@ class Inspector:
         mapping = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
         )
+
+        # Get or create comparator
         if isinstance(distance, NumericalComparatorBase):
             comparator = distance
+            # Inject inspector if not already set
+            if comparator.inspector is None:
+                comparator.inspector = self
         else:
             metric = distance.strip().upper()
             if metric == "MSE":
-                comparator = MSEComparator()
+                comparator = MSEComparator(inspector=self)
             elif metric == "L1":
-                comparator = L1Comparator()
+                comparator = L1Comparator(inspector=self)
             elif metric == "SNR":
-                comparator = SNRComparator()
+                comparator = SNRComparator(inspector=self)
             else:
                 raise ValueError(f"Unsupported distance metric {distance!r}")
 
-        rows = []
-        for (aot_debug_handle, aot_intermediate_output), (
-            runtime_debug_handle,
-            runtime_intermediate_output,
-        ) in mapping.items():
-            if aot_intermediate_output is None or runtime_intermediate_output is None:
-                continue
-            # If aot outputs length is > 1 then comparison fails since we dont really have
-            # any instances where runtime intermediate output is a tuple or list
-            # This does not happen when edge dialect program is reference for comparison
-            # but happens in aten graph where ops like unbind remain undecomposed
-            if (
-                isinstance(aot_intermediate_output, Sequence)
-                and len(aot_intermediate_output) > 1
-            ):
-                continue
-            rows.append(
-                {
-                    "aot_ops": find_op_names(
-                        aot_debug_handle, aot_debug_handle_to_op_names
-                    ),
-                    "aot_intermediate_output": aot_intermediate_output,
-                    "runtime_ops": find_op_names(
-                        runtime_debug_handle, runtime_debug_handle_to_op_names
-                    ),
-                    "runtime_intermediate_output": runtime_intermediate_output,
-                    "gap": compare_intermediate_outputs(
-                        aot_intermediate_output, runtime_intermediate_output, comparator
-                    ),
-                }
-            )
-        return pd.DataFrame(rows)
+        # Delegate to comparator's compare method (includes preprocessing)
+        return comparator.compare(
+            mapping,
+            aot_debug_handle_to_op_names,
+            runtime_debug_handle_to_op_names,
+        )

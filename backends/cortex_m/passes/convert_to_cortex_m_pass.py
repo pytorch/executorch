@@ -151,7 +151,6 @@ class ConvertToCortexMPass(XNNPACKPass):
             groups,
         ) = node.args
 
-        # Extract values
         input_scale = node.meta["input_qparams"][0].scale
         input_zero_point = node.meta["input_qparams"][0].zp
         weight_scales = node.meta["input_qparams"][1].scale
@@ -199,14 +198,16 @@ class ConvertToCortexMPass(XNNPACKPass):
         if use_depthwise_conv:
             # For depthwise: OIHW -> IHWO which gives [1, H, W, C_OUT] for CMSIS-NN
             # PyTorch depthwise weight is [out_ch, 1, H, W], permute to [1, H, W, out_ch]
-            weight_permuted = weight_tensor.permute(1, 2, 3, 0).contiguous(
-                memory_format=torch.channels_last
-            )
+            # The permute achieves the desired logical layout (IHWO). CMSIS-NN expects
+            # weights in physically contiguous memory after the permute (not in channels-last)
+            # so we use contiguous() here.
+            weight_permuted = weight_tensor.permute(1, 2, 3, 0).contiguous()
         else:
             # For regular conv: OIHW -> OHWI
-            weight_permuted = weight_tensor.permute(0, 2, 3, 1).contiguous(
-                memory_format=torch.channels_last
-            )
+            # The permute achieves the desired logical layout (OHWI). CMSIS-NN expects
+            # weights in physically contiguous memory after the permute (not in channels-last)
+            # so we use contiguous() here.
+            weight_permuted = weight_tensor.permute(0, 2, 3, 1).contiguous()
 
         with node.graph.inserting_after(weight):
             weight_nhwc = create_constant_placeholder(
@@ -278,6 +279,99 @@ class ConvertToCortexMPass(XNNPACKPass):
             )
             return exir_ops.edge.cortex_m.quantized_conv2d.default, new_args
 
+    def _get_transpose_conv2d_replacement(self, node) -> tuple:
+        """
+        Transform aten.convolution with transposed=True to cortex_m.quantized_transpose_conv2d
+        """
+        (
+            x,
+            weight,
+            bias,
+            stride,
+            padding,
+            dilation,
+            transposed,
+            output_padding,
+            groups,
+        ) = node.args
+
+        input_scale = node.meta["input_qparams"][0].scale
+        input_zero_point = node.meta["input_qparams"][0].zp
+        weight_scales = node.meta["input_qparams"][1].scale
+
+        # For transposed conv: weight shape is (in_channels, out_channels/groups, H, W)
+        # We need requantization params for each output channel
+        weight_tensor = get_first_fake_tensor(weight)
+        if not isinstance(weight_scales, list):
+            # weight_tensor.shape[1] is out_channels for transposed conv
+            num_output_channels = weight_tensor.shape[1]
+            weight_scales = [weight_scales] * num_output_channels
+
+        output_qparams = node.meta["output_qparams"][0]
+        output_scale = output_qparams.scale
+        output_zero_point = output_qparams.zp
+        output_qmin = output_qparams.qmin
+        output_qmax = output_qparams.qmax
+
+        # Compute per-channel requantization parameters
+        quantized_multipliers = []
+        quantized_shifts = []
+        for weight_scale in weight_scales:
+            quantized_multiplier, quantized_shift = quantize_multiplier_aot(
+                input_scale * weight_scale / output_scale
+            )
+            quantized_multipliers.append(quantized_multiplier)
+            quantized_shifts.append(quantized_shift)
+
+        # CRITICAL: Weight layout transformation for transposed conv
+        # PyTorch ConvTranspose2d: (in_channels, out_channels/groups, H, W)
+        # CMSIS-NN expects: (out_channels, H, W, in_channels) = OHWI
+        # Permutation: (1, 2, 3, 0)
+        weight_tensor = get_param_tensor(self.exported_program, weight)
+        weight_permuted = weight_tensor.permute(1, 2, 3, 0).contiguous()
+
+        with node.graph.inserting_after(weight):
+            weight_nhwc = create_constant_placeholder(
+                self.exported_program,
+                node.graph,
+                node.name + "_weight_nhwc",
+                InputKind.PARAMETER,
+                weight_permuted,
+            )
+
+            quantized_multiplier_tensor = create_constant_placeholder(
+                self.exported_program,
+                node.graph,
+                node.name + "_quantized_multiplier",
+                InputKind.PARAMETER,
+                torch.tensor(quantized_multipliers, dtype=torch.int32),
+            )
+
+            quantized_shift_tensor = create_constant_placeholder(
+                self.exported_program,
+                node.graph,
+                node.name + "_quantized_shift",
+                InputKind.PARAMETER,
+                torch.tensor(quantized_shifts, dtype=torch.int32),
+            )
+
+        new_args = (
+            x,
+            weight_nhwc,
+            bias,
+            stride,
+            padding,
+            output_padding,  # output_padding is NEW for transposed conv
+            dilation,
+            -input_zero_point,
+            output_zero_point,
+            quantized_multiplier_tensor,
+            quantized_shift_tensor,
+            output_qmin,
+            output_qmax,
+        )
+        return exir_ops.edge.cortex_m.quantized_transpose_conv2d.default, new_args
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         modified = False
         for node in graph_module.graph.nodes:
@@ -293,7 +387,12 @@ class ConvertToCortexMPass(XNNPACKPass):
                 case exir_ops.edge.aten.linear.default:
                     op, args = self._get_linear_replacement(node)
                 case exir_ops.edge.aten.convolution.default:
-                    op, args = self._get_convolution_replacement(node)
+                    # Check if it's transposed convolution (arg index 6)
+                    transposed = node.args[6] if len(node.args) > 6 else False
+                    if transposed:
+                        op, args = self._get_transpose_conv2d_replacement(node)
+                    else:
+                        op, args = self._get_convolution_replacement(node)
                 case _:
                     continue
 

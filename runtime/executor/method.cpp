@@ -806,7 +806,8 @@ Result<Method> Method::load(
     const Program* program,
     MemoryManager* memory_manager,
     EventTracer* event_tracer,
-    const NamedDataMap* external_data_map) {
+    const NamedDataMap* external_data_map,
+    const LoadBackendOptionsMap* backend_options) {
   MemoryAllocator* temp_allocator = memory_manager->temp_allocator();
   if (temp_allocator == nullptr) {
     PlatformMemoryAllocator* platform_allocator =
@@ -820,7 +821,7 @@ Result<Method> Method::load(
   }
   Method method(program, memory_manager, event_tracer, temp_allocator);
   ET_LOG(Debug, "Loading method: %s.", s_plan->name()->c_str());
-  Error err = method.init(s_plan, external_data_map);
+  Error err = method.init(s_plan, external_data_map, backend_options);
   if (err != Error::Ok) {
     return err;
   } else {
@@ -831,9 +832,9 @@ Result<Method> Method::load(
 
 Error Method::init(
     executorch_flatbuffer::ExecutionPlan* s_plan,
-    const NamedDataMap* external_data_map) {
-  EXECUTORCH_SCOPE_PROF("Method::init");
-  internal::EventTracerProfileMethodScope event_tracer_profile_scope =
+    const NamedDataMap* external_data_map,
+    const LoadBackendOptionsMap* backend_options) {
+  internal::EventTracerProfileMethodScope event_tracer_scope =
       internal::EventTracerProfileMethodScope(event_tracer_, "Method::init");
   ET_CHECK_OR_RETURN_ERROR(
       // Don't use !initialized() here because we also want to fail on the
@@ -902,11 +903,21 @@ Error Method::init(
 
     for (size_t i = 0; i < n_delegate; ++i) {
       const auto& delegate = *delegates->Get(i);
+
+      // Get per-delegate runtime specs from the LoadBackendOptionsMap if
+      // provided
+      Span<const BackendOption> delegate_runtime_specs;
+      if (backend_options != nullptr && delegate.id() != nullptr) {
+        delegate_runtime_specs =
+            backend_options->get_options(delegate.id()->c_str());
+      }
+
       BackendInitContext backend_init_context(
           method_allocator,
           /*event_tracer=*/event_tracer_,
           /*method_name=*/serialization_plan_->name()->c_str(),
-          /*named_data_map=*/named_data_map);
+          /*named_data_map=*/named_data_map,
+          /*runtime_specs=*/delegate_runtime_specs);
       Error err = BackendDelegate::Init(
           delegate, program_, backend_init_context, &delegates_[i]);
       if (err != Error::Ok) {
@@ -1574,6 +1585,11 @@ Error Method::experimental_step() {
   return step();
 }
 
+bool Method::in_progress() const {
+  return (step_state_.chain_idx != 0 || step_state_.instr_idx != 0) &&
+      step_state_.chain_idx < n_chains_;
+}
+
 Error Method::execute() {
   internal::event_tracer_create_event_block(event_tracer_, "Execute");
   EventTracerEntry event_tracer_entry =
@@ -1584,6 +1600,8 @@ Error Method::execute() {
       initialized(),
       NotSupported,
       "Cannot execute until method has been initialized.");
+  ET_CHECK_OR_RETURN_ERROR(
+      !in_progress(), InvalidState, "Method execution is in progress");
   const size_t n_input = inputs_size();
   for (size_t i = 0; i < n_input; ++i) {
     ET_CHECK_OR_RETURN_ERROR(
@@ -1622,6 +1640,7 @@ Error Method::execute() {
               static_cast<DebugHandle>(step_state_.instr_idx));
       auto status = execute_instruction();
       if (status != Error::Ok) {
+        step_state_ = StepState{0, 0};
         return status;
       }
     }

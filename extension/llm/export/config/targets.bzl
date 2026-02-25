@@ -8,8 +8,5 @@ def define_common_targets():
         ],
         _is_external_target = True,
         base_module = "executorch.extension.llm.export.config",
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )

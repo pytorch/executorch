@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -23,9 +23,7 @@ edge_gelu = (exir_ops.edge.aten.gelu.default,)
 
 
 def _get_gelu_ops(op) -> tuple:
-    """
-    Returns the operators needed to decompose GELU
-    """
+    """Returns the operators needed to decompose GELU."""
 
     if op in edge_gelu:
         return (
@@ -47,10 +45,9 @@ def _get_gelu_ops(op) -> tuple:
 
 
 class DecomposeGeluPass(ArmPass):
-    """
-    This pass decomposes the GELU operator into primitive ops.
-    Aiming to adhere closely to the reference implementations built into
-    ExecuTorch. Including using the same pre-calculated constants.
+    """This pass decomposes the GELU operator into primitive ops. Aiming to
+    adhere closely to the reference implementations built into ExecuTorch.
+    Including using the same pre-calculated constants.
 
     This operator has two formulae depending on the value of the
     approximate argument. Examples below include the added full
@@ -84,6 +81,7 @@ class DecomposeGeluPass(ArmPass):
         %op5 = add(%op4, %FULL_1)
         %op6 = mul(%x, %op5)
         %op7 = mul(%op6, %FULL_0_5)
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
@@ -96,11 +94,7 @@ class DecomposeGeluPass(ArmPass):
     def call_operator(self, op, args, kwargs, meta):
         if op not in torch_gelu + edge_gelu:
             return super().call_operator(op, args, kwargs, meta)
-        is_quantized = (
-            len(meta.data.get("input_qparams", {})) > 0
-            and len(meta.data.get("output_qparams", {})) > 0
-        )
-        if is_quantized:
+        if self._is_quantized_meta(meta):
             # If quantized, node should be replace by table op
             return super().call_operator(op, args, kwargs, meta)
 
@@ -123,7 +117,10 @@ class DecomposeGeluPass(ArmPass):
         if approximate == "none":
             # Constant mirrors ExecuTorch implementation for parity.
             FULL_SQRT1_2 = super().call_operator(
-                full_op, ([1] * len(shape), 0.70710678118654752440), {}, meta
+                full_op,
+                ([1] * len(shape), 0.70710678118654752440),
+                {"dtype": dtype},
+                meta,
             )
 
             op1 = super().call_operator(mul_op, (input, FULL_SQRT1_2), {}, meta)

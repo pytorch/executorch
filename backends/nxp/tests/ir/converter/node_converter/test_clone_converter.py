@@ -2,8 +2,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
-
 import itertools
 import unittest
 
@@ -14,18 +12,41 @@ import torch
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import (
+    PermuteCopyConverter,
+)
+from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference
+from executorch.backends.nxp.edge_passes.move_auxiliary_operator_into_separate_qdq_cluster_pass import (
+    MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass,
+)
+from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
+    NeutronEdgePassManager,
+)
+from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
+    RemoveIOQuantOpsPass,
+)
+from executorch.backends.nxp.neutron_partitioner import QDQClusterRecognizer
+from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
+from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
+from executorch.backends.nxp.tests import executors
 from executorch.backends.nxp.tests.executorch_pipeline import (
+    get_random_calibration_inputs,
+    neutron_target_spec,
     to_edge_program,
+    to_model_input_spec,
     to_quantized_edge_program,
 )
 from executorch.backends.nxp.tests.executors import (
     convert_run_compare,
     graph_contains_any,
     graph_contains_any_of_ops,
+    OverrideTargetSupportCheck,
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
+from executorch.exir import EdgeCompileConfig
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.extension.export_util.utils import export_to_edge
 from parameterized import parameterized
 from torch import nn
 from torch.export import ExportedProgram
@@ -74,6 +95,42 @@ class KWSFinalBlock(torch.nn.Module):
 
     def forward(self, x):
         return self.block(x)
+
+
+class TransposeReshapeModel(nn.Module):
+
+    def __init__(self, new_shape: list[int]):
+        super().__init__()
+        self.new_shape = new_shape
+
+    def forward(self, x):
+        # `x` should be 4D.
+
+        x = torch.add(x, x)
+        x = torch.permute(x, [0, 3, 1, 2])
+        # A `clone(memory_format=contiguous)` will be added here during the lowering to edge dialect.
+        x = torch.reshape(x, self.new_shape)
+
+        return x
+
+
+class PermuteCopyReshapeModel(nn.Module):
+
+    def __init__(self, new_shape: list[int], permutation: list[int]):
+        super().__init__()
+        self.new_shape = new_shape
+        self.permutation = permutation
+
+    def forward(self, x):
+        # `x` should be 4D.
+
+        x = torch.add(x, x)
+        x = torch.permute(x, self.permutation)
+        # A `clone(memory_format=contiguous)` will be added here during the lowering to edge dialect.
+        x = torch.reshape(x, self.new_shape)
+        x = torch.add(x, x)
+
+        return x
 
 
 class TestCloneConverter(unittest.TestCase):
@@ -197,3 +254,91 @@ class TestCloneConverter(unittest.TestCase):
                 input_data=input_data,
                 atol=1.0,
             )
+
+    def test_clone__to_contiguous_format(self):
+        input_shape = (1, 8, 8, 8)
+        new_shape = [1, 32, 2, 8]
+
+        model = TransposeReshapeModel(new_shape).eval()
+
+        calibration_inputs = get_random_calibration_inputs(
+            to_model_input_spec(input_shape)
+        )
+
+        example_input = calibration_inputs[0]
+
+        exir_program_aten = torch.export.export(model, example_input, strict=True)
+
+        exir_program_aten__module_quant = calibrate_and_quantize(
+            exir_program_aten,
+            calibration_inputs,
+            NeutronQuantizer(neutron_target_spec),
+        )
+
+        edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
+        edge_program_manager = export_to_edge(
+            exir_program_aten__module_quant,
+            example_input,
+            edge_compile_config=edge_compile_config,
+        )
+        # Make sure the `aten.clone` was inserted as expected.
+        nodes = list(edge_program_manager.exported_program().graph.nodes)
+        assert nodes[9].target == exir_ops.edge.dim_order_ops._clone_dim_order.default
+        assert nodes[9].kwargs["dim_order"] == [0, 1, 2, 3]
+
+        # Move the `clone` out of the cluster with the `view_copy`.
+        edge_program_manager = edge_program_manager.transform(
+            NeutronEdgePassManager(
+                [MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass()]
+            )
+        )
+
+        # Tag QDQ clusters, so the conversion works correctly.
+        QDQClusterRecognizer().tag_qdq_clusters(
+            list(edge_program_manager.exported_program().graph.nodes)
+        )
+        edge_program_manager.exported_program().graph_module.recompile()
+        edge_program_manager = edge_program_manager.transform(
+            [RemoveIOQuantOpsPass(edge_program_manager=edge_program_manager)]
+        )
+
+        # Identify the node formats.
+        NodeFormatInference(
+            edge_program_manager.exported_program()
+        ).identify_node_formats()
+
+        # Convert to the IR.
+        converted_model, _ = EdgeProgramToIRConverter().convert_program(
+            edge_program_manager.exported_program()
+        )
+
+        # Make sure the IR version produces the same outputs.
+        executors.convert_run_compare(
+            edge_program_manager.exported_program(),
+            np.random.random_integers(0, 255, input_shape).astype("int8"),
+            tfl_model=converted_model,
+        )
+
+    def test_clone__to_contiguous_format__non_delegated_permute_copy(self):
+        input_shape = (2, 4, 6, 8)
+        new_shape = [3, 4, 16, 2]
+        permutation = [3, 2, 1, 0]  # Unsupported by default.
+
+        model = PermuteCopyReshapeModel(new_shape, permutation).eval()
+
+        # Prohibit `permute_copy` delegation in case support for the permutation is added in the future.
+        def _unsupported_target(*_):
+            return False
+
+        with OverrideTargetSupportCheck(
+            PermuteCopyConverter, new_target_support_check=_unsupported_target
+        ):
+            ep = to_quantized_edge_program(model, input_shape).exported_program()
+
+        nodes = list(ep.graph.nodes)
+        assert not graph_contains_any_of_ops(
+            ep.graph, [exir_ops.edge.aten.clone.default]
+        )
+        assert nodes[3].name == "executorch_call_delegate"
+        assert nodes[5].target == exir_ops.edge.aten.permute_copy.default
+        assert nodes[7].name == "executorch_call_delegate_1"

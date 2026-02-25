@@ -1,4 +1,4 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -56,7 +56,7 @@ def _quantize_and_lower_module(
         edge_compile_config=edge_compile_config,
     )
 
-    compile_spec = generate_neutron_compile_spec(target, "SDK_25_09")
+    compile_spec = generate_neutron_compile_spec(target, "SDK_25_12")
     partitioner = NeutronPartitioner(compile_spec, neutron_target_spec)
     return edge_program_manager.to_backend(partitioner)
 
@@ -246,7 +246,15 @@ class TestSplitGroupConvolution(unittest.TestCase):
         graph_module = torch.export.export(module, example_input).module()
         original_module = deepcopy(graph_module)
 
-        modified_module = NeutronAtenPassManager(neutron_target_spec)(
+        neutron_pass_manager = NeutronAtenPassManager(neutron_target_spec)
+        # The pass is removed for testing purposes, keeping the `split` operators and improving clarity
+        neutron_pass_manager.passes = [
+            a_pass
+            for a_pass in neutron_pass_manager.passes
+            if a_pass.__name__ != "DecomposeSplitToSlicesPass"
+        ]
+
+        modified_module = neutron_pass_manager(
             graph_module
         ).graph_module  # Default passes.
 

@@ -158,10 +158,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/runtime/core/exec_aten:lib",
             runtime.external_dep_location("libtorch"),
         ],
-        visibility = [
-            "//executorch/backends/vulkan/test/op_tests/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     define_test_targets(

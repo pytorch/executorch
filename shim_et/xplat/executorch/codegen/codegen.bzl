@@ -573,7 +573,7 @@ def build_portable_lib(
         portable_header_lib = None,
         feature = None,
         expose_operator_symbols = False,
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
         platforms = get_default_executorch_platforms()):
     """
     WARNING: Before using this, please consider using executorch_generated_lib instead. This

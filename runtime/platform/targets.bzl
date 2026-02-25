@@ -81,10 +81,7 @@ def define_common_targets():
             ":compiler",
             ":platform_private",
         ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         # WARNING: using a deprecated API to avoid being built into a shared
         # library. In the case of dynamically loading so library we don't want
         # it to depend on other so libraries because that way we have to
@@ -110,10 +107,7 @@ def define_common_targets():
                 "ovr_config//os:macos": ["-DET_USE_LIBDL"],
             },
         ),
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     # Common compiler directives such as 'unlikely' or 'deprecated'
@@ -122,8 +116,5 @@ def define_common_targets():
         exported_headers = [
             "compiler.h",
         ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )

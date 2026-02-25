@@ -16,14 +16,14 @@ namespace executorch {
 namespace backends {
 namespace metal {
 
-// Common using declarations for ExecutorTorch types
+// Common using declarations for ExecuTorch types
 using executorch::runtime::Error;
 using executorch::runtime::etensor::Tensor;
 
 extern "C" {
 
 // Common AOTI type aliases
-// Note: AOTITensorHandle is aliased to Tensor* for ExecutorTorch compatibility
+// Note: AOTITensorHandle is aliased to Tensor* for ExecuTorch compatibility
 using AOTITensorHandle = Tensor*;
 using AOTIRuntimeError = Error;
 using AOTITorchError = Error;

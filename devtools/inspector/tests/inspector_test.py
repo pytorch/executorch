@@ -17,7 +17,7 @@ from contextlib import redirect_stdout
 
 from typing import Callable, List, Union
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
@@ -682,9 +682,11 @@ class TestInspector(unittest.TestCase):
             aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
             runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
 
-            inspector_instance._get_aot_intermediate_outputs_and_op_names = lambda x: (
-                aot_intermediate_outputs,
-                aot_debug_handle_to_op_name,
+            inspector_instance._get_aot_intermediate_outputs_and_op_names = (
+                lambda x, y: (
+                    aot_intermediate_outputs,
+                    aot_debug_handle_to_op_name,
+                )
             )
             inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
                 lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
@@ -730,7 +732,7 @@ class TestInspector(unittest.TestCase):
 
         # Create a custom comparator that returns the max absolute difference
         class MaxAbsDiffComparator(NumericalComparatorBase):
-            def compare(self, a, b):
+            def element_compare(self, a, b):
                 if isinstance(a, torch.Tensor) and isinstance(b, torch.Tensor):
                     return torch.max(torch.abs(a - b)).item()
                 return abs(a - b)
@@ -764,9 +766,11 @@ class TestInspector(unittest.TestCase):
             aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
             runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
 
-            inspector_instance._get_aot_intermediate_outputs_and_op_names = lambda x: (
-                aot_intermediate_outputs,
-                aot_debug_handle_to_op_name,
+            inspector_instance._get_aot_intermediate_outputs_and_op_names = (
+                lambda x, y: (
+                    aot_intermediate_outputs,
+                    aot_debug_handle_to_op_name,
+                )
             )
             inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
                 lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
@@ -795,9 +799,700 @@ class TestInspector(unittest.TestCase):
             # For (1,): max(|[4.0, 5.0, 6.0] - [3.0, 6.0, 5.0]|) = max([1.0, 1.0, 1.0]) = 1.0
             self.assertEqual(df.iloc[1]["gap"][0], 1.0)
 
-    @unittest.skip("ci config values are not propagated")
+    def test_calculate_numeric_gap_with_custom_comparator_and_preprocessing(self):
+        """Test calculate_numeric_gap with multiple custom comparators sharing the same preprocessing."""
+        from executorch.devtools.inspector.numerical_comparator import (
+            IntermediateOutputMapping,
+            NumericalComparatorBase,
+        )
+        from executorch.devtools.inspector.numerical_comparator.snr_numerical_comparator import (
+            SNRComparator,
+        )
+
+        # Shared preprocessing function that scales runtime tensors by 2x
+        def scale_runtime_tensors(
+            mapping: IntermediateOutputMapping, scale_factor: float = 2.0
+        ) -> IntermediateOutputMapping:
+            """Scale runtime tensors by scale_factor before comparison."""
+            transformed_mapping = {}
+            for (aot_handle, aot_output), (
+                runtime_handle,
+                runtime_output,
+            ) in mapping.items():
+                # Scale the runtime output
+                if isinstance(runtime_output, torch.Tensor):
+                    scaled_runtime_output = runtime_output * scale_factor
+                else:
+                    scaled_runtime_output = runtime_output
+                transformed_mapping[(aot_handle, aot_output)] = (
+                    runtime_handle,
+                    scaled_runtime_output,
+                )
+            return transformed_mapping
+
+        # Create a custom MSE comparator with shared preprocessing
+        class MSEComparatorWithScaling(NumericalComparatorBase):
+            def __init__(self, scale_factor: float = 2.0):
+                super().__init__()
+                self.scale_factor = scale_factor
+                self.preprocessing_called = False
+
+            def preprocessing(
+                self, mapping: IntermediateOutputMapping
+            ) -> IntermediateOutputMapping:
+                """Use the shared preprocessing function."""
+                self.preprocessing_called = True
+                return scale_runtime_tensors(mapping, self.scale_factor)
+
+            def element_compare(self, a, b) -> float:
+                """Compute MSE between two tensors."""
+                if isinstance(a, torch.Tensor) and isinstance(b, torch.Tensor):
+                    return torch.mean(torch.square(a.float() - b.float())).item()
+                return (a - b) ** 2
+
+        # Create an SNR comparator with the same shared preprocessing
+        class SNRComparatorWithScaling(SNRComparator):
+            def __init__(self, scale_factor: float = 2.0):
+                super().__init__()
+                self.scale_factor = scale_factor
+                self.preprocessing_called = False
+
+            def preprocessing(
+                self, mapping: IntermediateOutputMapping
+            ) -> IntermediateOutputMapping:
+                """Use the shared preprocessing function."""
+                self.preprocessing_called = True
+                return scale_runtime_tensors(mapping, self.scale_factor)
+
+        # Create a context manager to patch functions called by Inspector.__init__
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
+        ):
+            inspector_instance = Inspector(
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
+            )
+
+            # AOT outputs: [1.0, 2.0, 3.0] and [4.0, 5.0, 6.0]
+            aot_intermediate_outputs = {
+                (0,): torch.tensor([1.0, 2.0, 3.0]),
+                (1,): torch.tensor([4.0, 5.0, 6.0]),
+            }
+
+            # Runtime outputs: [1.0, 1.0, 1.0] and [2.0, 2.0, 2.0]
+            # After 2x scaling: [2.0, 2.0, 2.0] and [4.0, 4.0, 4.0]
+            runtime_intermediate_outputs = {
+                (0,): ([torch.tensor([1.0, 1.0, 1.0])], 1),
+                (1,): ([torch.tensor([2.0, 2.0, 2.0])], 1),
+            }
+
+            aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
+            runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
+
+            inspector_instance._get_aot_intermediate_outputs_and_op_names = (
+                lambda x, y: (
+                    aot_intermediate_outputs,
+                    aot_debug_handle_to_op_name,
+                )
+            )
+            inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
+                lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
+            )
+
+            # --- Test 1: MSE comparator with scaling preprocessing ---
+            mse_comparator = MSEComparatorWithScaling(scale_factor=2.0)
+            df_mse = inspector_instance.calculate_numeric_gap(
+                distance=mse_comparator, reference_graph="NOT_USED_NAME"
+            )
+
+            # Verify preprocessing was called
+            self.assertTrue(mse_comparator.preprocessing_called)
+
+            # Verify DataFrame structure
+            self.assertIsInstance(df_mse, pd.DataFrame)
+            self.assertEqual(len(df_mse), 2)
+            cols = set(df_mse.columns)
+            expected_cols = {
+                "aot_ops",
+                "aot_intermediate_output",
+                "runtime_ops",
+                "runtime_intermediate_output",
+                "gap",
+            }
+            self.assertEqual(cols, expected_cols)
+
+            # Verify the MSE comparison after preprocessing
+            # For (0,): AOT=[1.0, 2.0, 3.0], Runtime after scaling=[2.0, 2.0, 2.0]
+            #   MSE = mean((1-2)^2 + (2-2)^2 + (3-2)^2) = mean(1 + 0 + 1) = 2/3
+            expected_mse_gap_0 = (1.0 + 0.0 + 1.0) / 3.0
+            self.assertAlmostEqual(
+                df_mse.iloc[0]["gap"][0], expected_mse_gap_0, places=5
+            )
+
+            # For (1,): AOT=[4.0, 5.0, 6.0], Runtime after scaling=[4.0, 4.0, 4.0]
+            #   MSE = mean((4-4)^2 + (5-4)^2 + (6-4)^2) = mean(0 + 1 + 4) = 5/3
+            expected_mse_gap_1 = (0.0 + 1.0 + 4.0) / 3.0
+            self.assertAlmostEqual(
+                df_mse.iloc[1]["gap"][0], expected_mse_gap_1, places=5
+            )
+
+            # --- Test 2: SNR comparator with the same scaling preprocessing ---
+            snr_comparator = SNRComparatorWithScaling(scale_factor=2.0)
+            df_snr = inspector_instance.calculate_numeric_gap(
+                distance=snr_comparator, reference_graph="NOT_USED_NAME"
+            )
+
+            # Verify preprocessing was called
+            self.assertTrue(snr_comparator.preprocessing_called)
+
+            # Verify DataFrame structure
+            self.assertIsInstance(df_snr, pd.DataFrame)
+            self.assertEqual(len(df_snr), 2)
+            self.assertEqual(set(df_snr.columns), expected_cols)
+
+            # Verify the SNR comparison after preprocessing
+            # For (0,): AOT=[1.0, 2.0, 3.0], Runtime after scaling=[2.0, 2.0, 2.0]
+            #   signal_power = mean([1.0^2, 2.0^2, 3.0^2]) = mean([1, 4, 9]) = 14/3
+            #   error = [1.0-2.0, 2.0-2.0, 3.0-2.0] = [-1.0, 0.0, 1.0]
+            #   error_power = mean([1.0, 0.0, 1.0]) = 2/3
+            #   SNR = 10 * log10(14/3 / (2/3)) = 10 * log10(7) ≈ 8.451
+            signal_power_0 = (1.0 + 4.0 + 9.0) / 3.0  # 14/3
+            error_power_0 = (1.0 + 0.0 + 1.0) / 3.0  # 2/3
+            expected_snr_gap_0 = (
+                10 * torch.log10(torch.tensor(signal_power_0 / error_power_0)).item()
+            )
+            self.assertAlmostEqual(
+                df_snr.iloc[0]["gap"][0], expected_snr_gap_0, places=5
+            )
+
+            # For (1,): AOT=[4.0, 5.0, 6.0], Runtime after scaling=[4.0, 4.0, 4.0]
+            #   signal_power = mean([4.0^2, 5.0^2, 6.0^2]) = mean([16, 25, 36]) = 77/3
+            #   error = [4.0-4.0, 5.0-4.0, 6.0-4.0] = [0.0, 1.0, 2.0]
+            #   error_power = mean([0.0, 1.0, 4.0]) = 5/3
+            #   SNR = 10 * log10(77/3 / (5/3)) = 10 * log10(77/5) ≈ 11.875
+            signal_power_1 = (16.0 + 25.0 + 36.0) / 3.0  # 77/3
+            error_power_1 = (0.0 + 1.0 + 4.0) / 3.0  # 5/3
+            expected_snr_gap_1 = (
+                10 * torch.log10(torch.tensor(signal_power_1 / error_power_1)).item()
+            )
+            self.assertAlmostEqual(
+                df_snr.iloc[1]["gap"][0], expected_snr_gap_1, places=5
+            )
+
+    def test_calculate_numeric_gap_with_invalid_preprocessing_output(self):
+        """Test that invalid preprocessing output raises appropriate errors."""
+        from executorch.devtools.inspector.numerical_comparator import (
+            NumericalComparatorBase,
+        )
+
+        # Test 1: preprocessing returns non-dict
+        class NonDictPreprocessingComparator(NumericalComparatorBase):
+            def preprocessing(self, mapping):
+                return "invalid"  # Should return a dict
+
+            def element_compare(self, a, b) -> float:
+                return 0.0
+
+        # Test 2: preprocessing returns dict with invalid key format
+        class InvalidKeyFormatComparator(NumericalComparatorBase):
+            def preprocessing(self, mapping):
+                return {"invalid_key": ((0,), torch.tensor([1.0]))}
+
+            def element_compare(self, a, b) -> float:
+                return 0.0
+
+        # Test 3: preprocessing returns dict with invalid debug handle in key
+        class InvalidKeyDebugHandleComparator(NumericalComparatorBase):
+            def preprocessing(self, mapping):
+                return {
+                    (("not_int",), torch.tensor([1.0])): ((0,), torch.tensor([1.0]))
+                }
+
+            def element_compare(self, a, b) -> float:
+                return 0.0
+
+        # Test 4: preprocessing returns dict with invalid value format
+        class InvalidValueFormatComparator(NumericalComparatorBase):
+            def preprocessing(self, mapping):
+                return {((0,), torch.tensor([1.0])): "invalid_value"}
+
+            def element_compare(self, a, b) -> float:
+                return 0.0
+
+        # Test 5: preprocessing returns dict with invalid debug handle in value
+        class InvalidValueDebugHandleComparator(NumericalComparatorBase):
+            def preprocessing(self, mapping):
+                return {
+                    ((0,), torch.tensor([1.0])): (("not_int",), torch.tensor([1.0]))
+                }
+
+            def element_compare(self, a, b) -> float:
+                return 0.0
+
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
+        ):
+            inspector_instance = Inspector(
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
+            )
+
+            aot_intermediate_outputs = {
+                (0,): torch.tensor([1.0, 2.0, 3.0]),
+            }
+            runtime_intermediate_outputs = {
+                (0,): ([torch.tensor([1.0, 1.0, 1.0])], 1),
+            }
+            aot_debug_handle_to_op_name = {(0,): "op_0"}
+            runtime_debug_handle_to_op_name = {(0,): "op_0"}
+
+            inspector_instance._get_aot_intermediate_outputs_and_op_names = (
+                lambda x, y: (
+                    aot_intermediate_outputs,
+                    aot_debug_handle_to_op_name,
+                )
+            )
+            inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
+                lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
+            )
+
+            # Test 1: Non-dict return type
+            with self.assertRaises(TypeError) as context:
+                inspector_instance.calculate_numeric_gap(
+                    distance=NonDictPreprocessingComparator()
+                )
+            self.assertIn("must return a dict", str(context.exception))
+
+            # Test 2: Invalid key format
+            with self.assertRaises(ValueError) as context:
+                inspector_instance.calculate_numeric_gap(
+                    distance=InvalidKeyFormatComparator()
+                )
+            self.assertIn("Invalid key format", str(context.exception))
+
+            # Test 3: Invalid debug handle in key
+            with self.assertRaises(ValueError) as context:
+                inspector_instance.calculate_numeric_gap(
+                    distance=InvalidKeyDebugHandleComparator()
+                )
+            self.assertIn("Invalid AOT debug handle", str(context.exception))
+
+            # Test 4: Invalid value format
+            with self.assertRaises(ValueError) as context:
+                inspector_instance.calculate_numeric_gap(
+                    distance=InvalidValueFormatComparator()
+                )
+            self.assertIn("Invalid value format", str(context.exception))
+
+            # Test 5: Invalid debug handle in value
+            with self.assertRaises(ValueError) as context:
+                inspector_instance.calculate_numeric_gap(
+                    distance=InvalidValueDebugHandleComparator()
+                )
+            self.assertIn("Invalid runtime debug handle", str(context.exception))
+
+    def test_calculate_numeric_gap_with_reference_graph_name(self):
+        """Test calculate_numeric_gap with the reference_graph parameter using a custom graph from graph_map."""
+        # Create a context manager to patch functions called by Inspector.__init__
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
+        ):
+            inspector_instance = Inspector(
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
+            )
+
+            # Create mock intermediate outputs
+            aot_intermediate_outputs = {
+                (0,): torch.tensor([1.0, 2.0, 3.0]),
+                (1,): torch.tensor([4.0, 5.0, 6.0]),
+            }
+            runtime_intermediate_outputs = {
+                (0,): ([torch.tensor([2.0, 3.0, 4.0])], 1),
+                (1,): ([torch.tensor([5.0, 6.0, 7.0])], 1),
+            }
+
+            aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
+            runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
+
+            # Create a mock graph module for the reference graph
+            class MockGraphModule:
+                def __init__(self):
+                    self.graph = MagicMock()
+                    self.graph.nodes = []
+
+                def module(self):
+                    return self
+
+            mock_graph_module = MockGraphModule()
+
+            # Create a real ETRecord and set up the graph_map with edge_after_transform
+            from executorch.devtools.etrecord import ETRecord
+
+            mock_etrecord = ETRecord()
+            mock_etrecord._representative_inputs = torch.tensor([1.0])
+            mock_etrecord.exported_program = None
+            mock_etrecord.edge_dialect_program = mock_graph_module
+
+            # The code adds "/forward" suffix when looking up, so we need "edge_after_transform/forward"
+            mock_etrecord.graph_map = {
+                "edge_after_transform/forward": mock_graph_module
+            }
+
+            inspector_instance._etrecord = mock_etrecord
+
+            # Mock the runtime intermediate outputs
+            inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
+                lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
+            )
+
+            # Mock IntermediateOutputCapturer and get_aot_debug_handle_to_op_name_mapping
+            # These are called inside _get_aot_intermediate_outputs_and_op_names when using a custom graph
+            with patch(
+                "executorch.devtools.inspector._inspector.IntermediateOutputCapturer"
+            ) as mock_capturer_class, patch(
+                "executorch.devtools.inspector._inspector.get_aot_debug_handle_to_op_name_mapping"
+            ) as mock_get_mapping:
+                mock_capturer = MagicMock()
+                mock_capturer.run_and_capture.return_value = aot_intermediate_outputs
+                mock_capturer_class.return_value = mock_capturer
+                mock_get_mapping.return_value = aot_debug_handle_to_op_name
+
+                # Test with reference_graph parameter (without /forward suffix)
+                # The code should automatically add "/forward" when looking up in graph_map
+                df = inspector_instance.calculate_numeric_gap(
+                    distance="L1",
+                    reference_graph="edge_after_transform",
+                )
+
+                self.assertIsInstance(df, pd.DataFrame)
+                self.assertEqual(len(df), 2)
+
+    def test_calculate_numeric_gap_with_invalid_reference_graph_name(self):
+        """Test that calculate_numeric_gap raises ValueError for invalid reference_graph."""
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
+        ):
+            inspector_instance = Inspector(
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
+            )
+
+            # Create a real ETRecord with empty graph_map
+            from executorch.devtools.etrecord import ETRecord
+
+            mock_etrecord = ETRecord()
+            mock_etrecord._representative_inputs = torch.tensor([1.0])
+            mock_etrecord.graph_map = {}
+
+            inspector_instance._etrecord = mock_etrecord
+
+            # Test with non-existent reference_graph
+            # Since "non_existent_graph" has no "/", it will be looked up as "non_existent_graph/forward"
+            with self.assertRaises(ValueError) as context:
+                inspector_instance.calculate_numeric_gap(
+                    distance="L1",
+                    reference_graph="non_existent_graph",
+                )
+            self.assertIn("not found", str(context.exception))
+            self.assertIn("non_existent_graph/forward", str(context.exception))
+
+    def test_calculate_numeric_gap_with_exported_program_name_backprop_failure(self):
+        """Test that calculate_numeric_gap raises ValueError when exported_program backpropagation fails."""
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
+        ):
+            inspector_instance = Inspector(
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
+            )
+
+            # Create mock graph modules
+            class MockGraphModule:
+                def __init__(self):
+                    self.graph = MagicMock()
+
+                def module(self):
+                    return self
+
+            mock_exported_program = MockGraphModule()
+            mock_edge_dialect_program = MockGraphModule()
+
+            # Create a real ETRecord with exported_program
+            from executorch.devtools.etrecord import ETRecord
+
+            mock_etrecord = ETRecord()
+            mock_etrecord._representative_inputs = torch.tensor([1.0])
+            mock_etrecord.exported_program = mock_exported_program
+            mock_etrecord.edge_dialect_program = mock_edge_dialect_program
+            mock_etrecord.export_graph_id = "graph_id"
+            mock_etrecord.graph_map = {}
+
+            inspector_instance._etrecord = mock_etrecord
+
+            # Mock propagate_back_debug_handle to return False (backpropagation failure)
+            with patch(
+                "executorch.devtools.inspector._inspector.propagate_back_debug_handle"
+            ) as mock_propagate:
+                mock_propagate.return_value = False
+
+                # Test with "exported_program" should raise error when backpropagation fails
+                with self.assertRaises(ValueError) as context:
+                    inspector_instance.calculate_numeric_gap(
+                        distance="L1",
+                        reference_graph="exported_program",
+                    )
+                self.assertIn("Cannot use 'exported_program'", str(context.exception))
+                self.assertIn("backpropagation failed", str(context.exception))
+
+    def test_calculate_numeric_gap_with_edge_dialect_exported_program_name(self):
+        """Test calculate_numeric_gap with edge_dialect_exported_program reference_graph parameter."""
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
+        ):
+            inspector_instance = Inspector(
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
+            )
+
+            # Create mock intermediate outputs (same structure as test_calculate_numeric_gap)
+            aot_intermediate_outputs = {
+                (0,): torch.tensor([1.0, 2.0, 3.0]),
+            }
+            runtime_intermediate_outputs = {
+                (0,): ([torch.tensor([2.0, 3.0, 4.0])], 1),
+            }
+
+            aot_debug_handle_to_op_name = {(0,): "op_0"}
+            runtime_debug_handle_to_op_name = {(0,): "op_0"}
+
+            # Mock the internal methods like test_calculate_numeric_gap does
+            inspector_instance._get_aot_intermediate_outputs_and_op_names = (
+                lambda x, y: (
+                    aot_intermediate_outputs,
+                    aot_debug_handle_to_op_name,
+                )
+            )
+            inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
+                lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
+            )
+
+            # Test with edge_dialect_exported_program parameter
+            df = inspector_instance.calculate_numeric_gap(
+                distance="L1",
+                reference_graph="edge_dialect_exported_program",
+            )
+
+            self.assertIsInstance(df, pd.DataFrame)
+            self.assertEqual(len(df), 1)
+
+    @unittest.skipIf(sys.platform.startswith("win"), "Skipping on Windows")
+    def test_transformer_block_xnnpack_numeric_gap_within_tolerance(self):
+        """
+        Test that the numeric gap between AOT and runtime intermediate outputs
+        for a ViT model lowered to XNNPACK delegate is within acceptable tolerance.
+
+        This test verifies that when a Vision Transformer (ViT) model is exported
+        and lowered to XNNPACK, the intermediate outputs during runtime closely
+        match the expected AOT outputs, with gaps remaining within a small range.
+        """
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
+        )
+        from executorch.backends.xnnpack.utils.configs import (
+            get_xnnpack_edge_compile_config,
+        )
+        from executorch.runtime import Method, Program, Runtime, Verification
+        from torch import nn as nn
+
+        class SingleBlockTransformer(nn.Module):
+            def __init__(
+                self,
+                vocab_size: int,
+                d_model: int = 256,
+                nhead: int = 8,
+                dim_feedforward: int = 1024,
+                max_len: int = 512,
+                dropout: float = 0.1,
+            ):
+                super().__init__()
+                self.d_model = d_model
+
+                self.tok_emb = nn.Embedding(vocab_size, d_model)
+                self.pos_emb = nn.Embedding(max_len, d_model)
+
+                # Single transformer encoder block
+                self.block = nn.TransformerEncoderLayer(
+                    d_model=d_model,
+                    nhead=nhead,
+                    dim_feedforward=dim_feedforward,
+                    dropout=dropout,
+                    batch_first=True,  # input: (B, T, C)
+                    activation="gelu",
+                    norm_first=True,
+                )
+
+                self.ln = nn.LayerNorm(d_model)
+                self.head = nn.Linear(d_model, vocab_size, bias=False)
+
+            def forward(
+                self, input_ids: torch.Tensor, attn_mask: torch.Tensor | None = None
+            ):
+                """
+                input_ids: (B, T) LongTensor
+                attn_mask (optional): (B, T) where 1/True = keep, 0/False = pad
+                """
+                B, T = input_ids.shape
+                pos = torch.arange(T, device=input_ids.device).unsqueeze(0).expand(B, T)
+
+                x = self.tok_emb(input_ids) + self.pos_emb(pos)  # (B, T, d_model)
+
+                # Convert padding mask to TransformerEncoderLayer's expected format:
+                # src_key_padding_mask: (B, T) with True = PAD (masked out)
+                src_key_padding_mask = None
+                if attn_mask is not None:
+                    src_key_padding_mask = ~attn_mask.to(torch.bool)
+
+                x = self.block(
+                    x, src_key_padding_mask=src_key_padding_mask
+                )  # (B, T, d_model)
+                x = self.ln(x)
+                logits = self.head(x)  # (B, T, vocab_size)
+                return logits
+
+        vocab_size = 5000
+        model = SingleBlockTransformer(
+            vocab_size=vocab_size, d_model=256, nhead=8, max_len=128
+        )
+        model_inputs = (
+            torch.randint(0, vocab_size, (1, 32)),
+            torch.ones(1, 32, dtype=torch.bool),
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Export and lower model to XNNPACK delegate
+            aten_model: ExportedProgram = export(model, model_inputs, strict=True)
+            edge_program_manager = to_edge_transform_and_lower(
+                aten_model,
+                partitioner=[XnnpackPartitioner()],
+                compile_config=get_xnnpack_edge_compile_config(),
+                generate_etrecord=True,
+            )
+
+            et_program_manager: ExecutorchProgramManager = (
+                edge_program_manager.to_executorch()
+            )
+
+            pte_path = os.path.join(temp_dir, "model.pte")
+            et_program_manager.save(pte_path)
+
+            # Dump ETRecord containing debug info for export progress
+            etrecord = et_program_manager.get_etrecord()
+
+            # Set the input for numerical discrepancy detection
+            etrecord.update_representative_inputs(model_inputs)
+            etrecord_path = os.path.join(temp_dir, "etrecord.bin")
+            etrecord.save(etrecord_path)
+
+            # Load and run PTE through Runtime API
+            et_runtime: Runtime = Runtime.get()
+            program: Program = et_runtime.load_program(
+                pte_path,
+                verification=Verification.Minimal,
+                enable_etdump=True,
+                debug_buffer_size=1024 * 1024 * 1024,  # 1GB
+            )
+
+            forward: Method = program.load_method("forward")
+            forward.execute(model_inputs)
+
+            # Dump ETDump recording execution data
+            etdump_path = os.path.join(temp_dir, "etdump.etdp")
+            debug_buffer_path = os.path.join(temp_dir, "debug_buffer.bin")
+            program.write_etdump_result_to_file(etdump_path, debug_buffer_path)
+
+            # Check if event tracer actually captured data (requires build-time config)
+            if not os.path.exists(etdump_path):
+                self.skipTest(
+                    "Event tracer not enabled. Run with --config executorch.event_tracer_enabled=true"
+                )
+
+            # Create Inspector and calculate numeric gap
+            inspector = Inspector(
+                etdump_path=etdump_path,
+                etrecord=etrecord_path,
+                debug_buffer_path=debug_buffer_path,
+            )
+
+            df: pd.DataFrame = inspector.calculate_numeric_gap("MSE")
+
+            # Verify we got results
+            self.assertIsNotNone(df)
+            self.assertGreater(len(df), 0)
+
+            # Define tolerance threshold for numeric gap
+            TOLERANCE = 1e-1
+
+            # Check that each gap value is within acceptable tolerance
+            for idx, row in df.iterrows():
+                gap_value = row["gap"]
+                # Handle case where gap might be a list
+                if isinstance(gap_value, list):
+                    gap_value = gap_value[0] if gap_value else 0.0
+
+                runtime_ops = row["runtime_ops"]
+                aot_ops = row["aot_ops"]
+
+                self.assertLessEqual(
+                    gap_value,
+                    TOLERANCE,
+                    f"Gap at index {idx} ( aot_ops: {aot_ops}, runtime_ops: {runtime_ops}) is {gap_value}, "
+                    f"which exceeds tolerance {TOLERANCE}",
+                )
+
+    @unittest.skipIf(sys.platform.startswith("win"), "Skipping on Windows")
     def test_intermediate_tensor_comparison_with_torch_export(self):
-        """Test intermediate tensor comparison using torch.export.export and to_edge_transform_and_lower."""
+        """Test intermediate tensor comparison using torch.export.export and to_edge_transform_and_lower.
+
+        Note: This test requires event tracer to be enabled. Run with:
+            --config executorch.event_tracer_enabled=true
+        """
 
         class SimpleTestModel(torch.nn.Module):
             """A simple test model for demonstration purposes."""
@@ -885,16 +1580,18 @@ class TestInspector(unittest.TestCase):
                 etdump_path, debug_buffer_path
             )
 
-            # Step 6: Use Inspector API to compare intermediate outputs
-            try:
-                inspector = Inspector(
-                    etdump_path=etdump_path,
-                    etrecord=etrecord_path,
-                    debug_buffer_path=debug_buffer_path,
+            # Check if event tracer actually captured data (requires build-time config)
+            if not os.path.exists(etdump_path):
+                self.skipTest(
+                    "Event tracer not enabled. Run with --config executorch.event_tracer_enabled=true"
                 )
-            except FileNotFoundError as e:
-                new_message = f"{e} You likely need to run the test with --config executorch.event_tracer_enabled=true"
-                raise RuntimeError(new_message) from e
+
+            # Step 6: Use Inspector API to compare intermediate outputs
+            inspector = Inspector(
+                etdump_path=etdump_path,
+                etrecord=etrecord_path,
+                debug_buffer_path=debug_buffer_path,
+            )
             self.assertIsNotNone(inspector)
 
             # Calculate numerical gap using SNR metric

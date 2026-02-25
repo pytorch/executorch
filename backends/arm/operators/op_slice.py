@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -56,8 +56,6 @@ def _fixup_end(end, shape, dim):
 class SliceVisitor(NodeVisitor):
     target = "aten.slice_copy.Tensor"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def __init__(self, *args):
         super().__init__(*args)
 
@@ -78,18 +76,21 @@ class SliceVisitor(NodeVisitor):
                 ts.DType.INT8,
                 ts.DType.INT16,
                 ts.DType.INT32,
+                ts.DType.BF16,
+                ts.DType.FP16,
                 ts.DType.FP32,
             ],
-            output.tosa_spec,
+            self.tosa_spec,
         )
 
-        # See slice_copy_support.py
+        # TOSA.SLICE has no stride parameter. Any non-unit-step slice_copy must have been
+        # rewritten earlier (e.g. by DecomposeStridedSliceCopyPass), so only step=1 is legal here.
         if not (len(inputs) == 4 or (len(inputs) == 5 and inputs[4].number == 1)):
             raise ValueError("Unsupported combination of inputs")
 
         # aten.slice_copy supports slicing in 1d at a time.
         # The arguments are the actual input, dimension of slicing, start index, end index and optinal step or stride.
-        input_node, dim, start, end = inputs
+        input_node, dim, start, end = inputs[:4]
 
         # Translate and check parameters in Pytorch dim order.
         shape = input_node.shape

@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -7,7 +7,7 @@
 
 import torch
 
-from executorch.backends.nxp.backend.node_format import NodeFormat, NXP_NODE_FORMAT
+from executorch.backends.nxp.backend.data_format import DataFormat, NXP_NODE_FORMAT
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -89,7 +89,7 @@ class RemoveGetItemPass(ExportPass):
                     # MODIFIED PART START
                     # Make sure to preserve the inferred node format.
                     new_max_wd.meta[NXP_NODE_FORMAT] = node.meta.get(
-                        NXP_NODE_FORMAT, NodeFormat.NONE
+                        NXP_NODE_FORMAT, DataFormat.NONE
                     )
                     # MODIFIED PART END
 

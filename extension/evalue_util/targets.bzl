@@ -14,7 +14,7 @@ def define_common_targets():
             name = "print_evalue" + aten_suffix,
             srcs = ["print_evalue.cpp"],
             exported_headers = ["print_evalue.h"],
-            visibility = ["@EXECUTORCH_CLIENTS"],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 "//executorch/runtime/core:evalue" + aten_suffix,
             ],

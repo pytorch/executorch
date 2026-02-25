@@ -1,0 +1,49 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain xplat-only targets.
+
+load(":targets.bzl", "define_common_targets")
+
+
+non_fbcode_target(_kind = define_common_targets,)
+
+# !!!! fbcode/executorch/extension/training/pybindings/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+
+fbcode_target(_kind = define_common_targets,)
+
+fbcode_target(_kind = runtime.cxx_python_extension,
+    name = "_training_lib",
+    srcs = [
+        "_training_lib.cpp",
+    ],
+    base_module = "executorch.extension.training.pybindings",
+    types = ["_training_lib.pyi"],
+    visibility = ["//executorch/extension/training/..."],
+    deps = [
+        "fbsource//third-party/pybind11:pybind11",
+        "//executorch/extension/aten_util:aten_bridge",
+        "//executorch/extension/training/optimizer:sgd",
+    ],
+    external_deps = ["libtorch_python"],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "_training_module",
+    srcs = [
+        "_training_module.py",
+    ],
+    base_module = "executorch.extension.training.pybindings",
+    visibility = ["//executorch/extension/training/..."],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/extension/pybindings:portable_lib",
+    ],
+)

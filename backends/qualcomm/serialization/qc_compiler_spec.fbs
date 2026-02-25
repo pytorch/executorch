@@ -34,6 +34,7 @@ table HtpInfo {
 enum QcomChipset: int {
   UNKNOWN_SM = 0,
   SA8295 = 39,
+  SA8797 = 72,
   SM8350 = 30,
   SM8450 = 36,
   SM8475 = 42,
@@ -51,6 +52,7 @@ enum QcomChipset: int {
   SA8255 = 52,
   SW6100 = 96,
   QCM6490 = 93,
+  SM8845 = 97,
 }
 
 /// Indicate the information of the specified SoC.
@@ -179,6 +181,11 @@ table QnnExecuTorchHtpBackendOptions {
   /// When multiple graphs appear inside the same context,
   /// weights could be reused across all graphs.
   use_weight_sharing:bool;
+
+  /// Allows user to enable the usage of the System Level Cache Allocator for a given graph. 
+  /// It will help the by reducing overall bandwith on the use case.
+  /// The feature is only supported by specific SOCs.
+  use_slc_allocator:bool;
 }
 
 /// Logging level of the delegate and QNN backend.

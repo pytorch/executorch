@@ -20,6 +20,7 @@ def get_vulkan_preprocessor_flags(no_volk, is_fbcode):
     android_flags = []
 
     debug_mode = read_config("etvk", "debug", "0") == "1"
+    force_no_extensions = read_config("etvk", "force_no_extensions", "0") == "1"
 
     if not no_volk:
         for flags in [default_flags, android_flags]:
@@ -67,6 +68,9 @@ def get_vulkan_preprocessor_flags(no_volk, is_fbcode):
 
         if debug_mode:
             VK_API_PREPROCESSOR_FLAGS += ["-DVULKAN_DEBUG"]
+
+    if force_no_extensions:
+        VK_API_PREPROCESSOR_FLAGS += ["-DETVK_FORCE_NO_EXTENSIONS"]
 
     return VK_API_PREPROCESSOR_FLAGS
 
@@ -158,10 +162,7 @@ def define_common_targets(is_fbcode = False):
     runtime.python_binary(
         name = "gen_vulkan_spv_bin",
         main_module = "runtime.gen_vulkan_spv",
-        visibility = [
-            "//executorch/backends/vulkan/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             ":gen_vulkan_spv_lib",
         ],
@@ -191,7 +192,7 @@ def define_common_targets(is_fbcode = False):
         if no_volk:
             for deps in [default_deps, android_deps]:
                 deps.append("fbsource//third-party/toolchains:vulkan")
-                deps.append("fbsource//third-party/khronos:vulkan-headers")
+                deps.append("fbsource//third-party/khronos/version-selector:vulkan-headers")
         else:
             for deps in [default_deps, android_deps]:
                 deps.append("fbsource//third-party/volk:volk-header")
@@ -208,7 +209,7 @@ def define_common_targets(is_fbcode = False):
             mac_deps = default_deps
             if link_moltenvk:
                 mac_deps = [
-                    "//third-party/khronos:moltenVK_static"
+                    "//third-party/khronos/version-selector:moltenVK_static_unexported"
                 ]
 
             if debug_mode:
@@ -241,10 +242,7 @@ def define_common_targets(is_fbcode = False):
             ]),
             labels = get_labels(no_volk),
             platforms = get_platforms(),
-            visibility = [
-                "//executorch/backends/vulkan/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             fbobjc_frameworks = select({
                 "DEFAULT": [],
                 "ovr_config//os:macos": [
@@ -270,12 +268,7 @@ def define_common_targets(is_fbcode = False):
             ]),
             labels = get_labels(no_volk),
             platforms = get_platforms(),
-            visibility = [
-                "//executorch/backends/...",
-                "//executorch/extension/pybindings/...",
-                "//executorch/test/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 ":vulkan_graph_runtime_shaderlib{}".format(suffix),
                 "//executorch/runtime/backend:interface",
@@ -309,12 +302,7 @@ def define_common_targets(is_fbcode = False):
             ]),
             labels = get_labels(no_volk),
             platforms = get_platforms(),
-            visibility = [
-                "//executorch/backends/...",
-                "//executorch/extension/pybindings/...",
-                "//executorch/test/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 ":vulkan_graph_runtime{}".format(suffix),
                 "//executorch/backends/vulkan/serialization:vk_delegate_schema",
@@ -353,11 +341,7 @@ def define_common_targets(is_fbcode = False):
             srcs = [
                 "custom_ops_lib.py"
             ],
-            visibility = [
-                "//executorch/...",
-                "//executorch/vulkan/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 "//caffe2:torch",
                 "//executorch/backends/vulkan/patterns:vulkan_patterns",
@@ -369,11 +353,7 @@ def define_common_targets(is_fbcode = False):
             srcs = [
                 "op_registry.py",
             ],
-            visibility = [
-                "//executorch/...",
-                "//executorch/vulkan/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 ":custom_ops_lib",
                 ":utils_lib",
@@ -388,11 +368,7 @@ def define_common_targets(is_fbcode = False):
             srcs = [
                 "vulkan_preprocess.py",
             ],
-            visibility = [
-                "//executorch/...",
-                "//executorch/vulkan/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 "//executorch/backends/transforms:addmm_mm_to_linear",
                 "//executorch/backends/transforms:fuse_batch_norm_with_conv",
