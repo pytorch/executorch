@@ -20,10 +20,13 @@
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/platform/log.h>
 
+#include <executorch/extension/android/jni/jni_helper.h>
+
 namespace asr = ::executorch::extension::asr;
 using ::executorch::extension::from_blob;
 using ::executorch::extension::Module;
 using ::executorch::extension::TensorPtr;
+using ::executorch::jni_helper::utf8_check_validity;
 using ::executorch::runtime::Error;
 
 namespace {
@@ -43,37 +46,6 @@ std::string jstringToString(JNIEnv* env, jstring jstr) {
   std::string result(chars);
   env->ReleaseStringUTFChars(jstr, chars);
   return result;
-}
-
-// Helper for UTF-8 validity checking (for streaming tokens)
-bool utf8_check_validity(const char* str, size_t length) {
-  for (size_t i = 0; i < length; ++i) {
-    uint8_t byte = static_cast<uint8_t>(str[i]);
-    if (byte >= 0x80) {
-      if (i + 1 >= length) {
-        return false;
-      }
-      uint8_t next_byte = static_cast<uint8_t>(str[i + 1]);
-      if ((byte & 0xE0) == 0xC0 && (next_byte & 0xC0) == 0x80) {
-        i += 1;
-      } else if (
-          (byte & 0xF0) == 0xE0 && (next_byte & 0xC0) == 0x80 &&
-          (i + 2 < length) &&
-          (static_cast<uint8_t>(str[i + 2]) & 0xC0) == 0x80) {
-        i += 2;
-      } else if (
-          (byte & 0xF8) == 0xF0 && (next_byte & 0xC0) == 0x80 &&
-          (i + 2 < length) &&
-          (static_cast<uint8_t>(str[i + 2]) & 0xC0) == 0x80 &&
-          (i + 3 < length) &&
-          (static_cast<uint8_t>(str[i + 3]) & 0xC0) == 0x80) {
-        i += 3;
-      } else {
-        return false;
-      }
-    }
-  }
-  return true;
 }
 
 // Global cached JNI references for callback (shared across threads)
