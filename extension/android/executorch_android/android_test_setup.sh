@@ -50,7 +50,7 @@ prepare_golden() {
   for model in mobilenet_v2 vit_b_16; do
     cp "/tmp/golden/xnnpack/${model}.pte" "${BASEDIR}/src/androidTest/resources/"
     cp /tmp/golden/xnnpack/${model}_input*.bin "${BASEDIR}/src/androidTest/resources/"
-    cp /tmp/golden/xnnpack/${model}_expected_output*.bin "${BASEDIR}/src/androidTest/resources/"
+    cp /tmp/golden/xnnpack/${model}_expected_output*.bin "${BASEDIR}/src/androidTest/resources/" 2>/dev/null || echo "Warning: no expected_output files for ${model}"
   done
 }
 
