@@ -2024,6 +2024,33 @@ def get_bitwise_and_inputs():
     return test_suite
 
 
+@register_test_suite("aten.index.Tensor")
+def get_index_tensor_inputs():
+    Test = namedtuple("IndexTensorTest", ["self", "indices"])
+
+    test_cases = [
+        # 1D index tensor
+        Test(self=(M1,), indices=[(S,)]),
+        Test(self=(M1,), indices=[(M2,)]),
+        # 2D index tensor
+        Test(self=(L,), indices=[(S, S1)]),
+        Test(self=(L,), indices=[(M1, M2)]),
+        # 3D index tensor
+        Test(self=(M1,), indices=[(XS, S, S1)]),
+    ]
+
+    test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.arg_dtype["indices"] = "at::kInt"
+    test_suite.arg_data_gen_fn["indices"] = "make_casted_randint_tensor"
+    return test_suite
+
+
 @register_test_suite("aten.pow.Tensor_Scalar")
 def get_pow_tensor_scalar_inputs():
     test_suite = VkTestSuite(
