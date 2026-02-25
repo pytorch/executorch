@@ -120,7 +120,7 @@ Result<FileDataLoader> FileDataLoader::from(
   }
   size_t file_size = st.st_size;
   // Copy the filename so we can print better debug messages if reads fail.
-  size_t file_name_len = ::strlen(file_name);
+  size_t file_name_len = ::strlen(file_name) + 1;
   char* file_name_copy =
       (char*)et_aligned_alloc(file_name_len, std::align_val_t(alignment));
 
