@@ -796,7 +796,11 @@ class EncoderRingKVCache(nn.Module):
     def create_causal_mask(
         self, start_pos: torch.Tensor | int, seq_len: int
     ) -> torch.Tensor:
-        device = start_pos.device if isinstance(start_pos, torch.Tensor) else "cpu"
+        device = (
+            start_pos.device
+            if isinstance(start_pos, torch.Tensor)
+            else self.k_cache.device
+        )
         total_written = start_pos + seq_len
         j = torch.arange(self.buf_size, dtype=torch.long, device=device)
         cache_pos = j + ((total_written - 1 - j) // self.buf_size) * self.buf_size
