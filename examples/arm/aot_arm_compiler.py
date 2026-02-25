@@ -934,8 +934,12 @@ if __name__ == "__main__":  # noqa: C901
                     f"When not using --bundleio a .bpte file should not be use as --output {args.output}"
                 )
             output_file_name = args.output
+            output_dir = os.path.dirname(output_file_name)
+            if output_dir:
+                os.makedirs(output_dir, exist_ok=True)
         else:
             # --output is a folder
+            os.makedirs(args.output, exist_ok=True)
             output_file_name = os.path.join(args.output, output_file_name)
 
     if args.bundleio or args.etrecord:
