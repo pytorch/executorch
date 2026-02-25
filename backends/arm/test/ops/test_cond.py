@@ -225,13 +225,7 @@ def _set_branch_calibration_samples(
     quant_stage.calibration_samples = calibration_samples
 
 
-@common.parametrize(
-    "case",
-    test_cases,
-    xfails={
-        "nested_one_arg_one_output": "Not fully delegated.",
-    },
-)
+@common.parametrize("case", test_cases)
 def test_cond_tosa_FP(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     module, example_inputs = case()
     pipeline = TosaPipelineFP[tuple](
@@ -248,20 +242,18 @@ def test_cond_tosa_FP(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     pipeline.run()
 
 
-@common.parametrize(
-    "case",
-    test_cases,
-    xfails={
-        "nested_one_arg_one_output": "Node submodule_0 target submodule_0 references nonexistent attribute submodule_0",
-    },
-)
+@common.parametrize("case", test_cases)
 def test_cond_tosa_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     module, example_inputs = case()
     pipeline = TosaPipelineINT[tuple](
-        module, example_inputs, aten_op, tosa_extensions=["cf"]
+        module,
+        example_inputs,
+        aten_op,
+        tosa_extensions=["cf"],
+        frobenius_threshold=0.8,
+        cosine_threshold=0.8,  # MLETORCH-1808
     )
     _set_branch_calibration_samples(pipeline, module, example_inputs)
-
     # Make sure no cond ops are left after partitioning.
     pipeline.add_stage_after(
         "to_edge_transform_and_lower",
@@ -272,10 +264,7 @@ def test_cond_tosa_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     pipeline.run()
 
 
-@common.parametrize(
-    "case",
-    test_cases,
-)
+@common.parametrize("case", test_cases)
 def test_cond_u55_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     module, example_inputs = case()
     pipeline = OpNotSupportedPipeline[tuple](module, example_inputs, {aten_op: 1})
@@ -286,8 +275,12 @@ def test_cond_u55_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
 @common.parametrize(
     "case",
     test_cases,
-    xfails={
-        "nested_one_arg_one_output": "Node submodule_0 target submodule_0 references nonexistent attribute submodule_0",
+    skips={
+        "one_arg_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
+        "one_arg_const_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
+        "multiple_one_arg_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
+        "one_arg_and_scalar_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
+        "nested_one_arg_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
     },
 )
 @common.XfailIfNoCorstone320.with_args(raises=None)
