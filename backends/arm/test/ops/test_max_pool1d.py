@@ -153,7 +153,8 @@ def test_max_pool2d_vgf_no_quant(test_data: Callable):
 @common.parametrize("test_data", test_data_suite_all)
 @pytest.mark.xfail(reason="MaxPool1D not yet supported", strict=False)
 @common.SkipIfNoModelConverter
-def test_max_pool2d_vgf_quant(test_data: Callable):
+@pytest.mark.xfail(reason="Quantized MaxPool1D not yet supported in VGF", strict=False)
+def test_max_pool2d_vgf_quant_decomposed(test_data: Callable):
     """Test max_pool1d with VGF pipeline (quantized)."""
     test_data, model_params = test_data()
     pipeline = VgfPipeline[input_t1](
