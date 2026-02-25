@@ -14,6 +14,10 @@ from executorch.backends.nxp.edge_passes.neutron_edge_pass import NeutronEdgePas
 from executorch.backends.nxp.edge_passes.remove_as_strided_copy_nodes import (
     RemoveUselessAsStridedCopyNodes,
 )
+
+from executorch.backends.nxp.edge_passes.remove_max_pool_getitem_pass import (
+    RemoveMaxPoolGetItemPass,
+)
 from torch.fx.passes.infra.pass_manager import PassManager
 
 
@@ -25,6 +29,7 @@ class NeutronEdgePassManager(PassManager):
             MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(),
             RemoveUselessAsStridedCopyNodes(),
             ConvertReshapingNodesToViewPass(),
+            RemoveMaxPoolGetItemPass(),
         ]
 
         super().__init__(

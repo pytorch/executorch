@@ -11,14 +11,15 @@ from executorch.backends.nxp.backend.node_format_inference import (
     NodeFormatInference,
     NXP_NODE_FORMAT,
 )
-from executorch.backends.nxp.neutron_pass_manager import NeutronPassManager
+from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
+    NeutronEdgePassManager,
+)
 from executorch.backends.nxp.tests.models import (
     Conv2dModule,
     MaxPool2dModule,
     SoftmaxModule,
 )
-from executorch.backends.xnnpack._passes import RemoveGetItemPass
-from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
+from executorch.exir import EdgeCompileConfig
 
 
 def test_convolution():
@@ -61,25 +62,22 @@ def test_softmax():
         assert expected_mapping[node.name] == node.meta[NXP_NODE_FORMAT]
 
 
-def test_maxpool2d():
+def test_max_pool2d():
     model = MaxPool2dModule()
     example_input = (torch.ones(1, 4, 32, 32),)
 
     exir_program = torch.export.export(model, example_input)
-    edge_program = exir.to_edge(exir_program).exported_program()
 
-    # We need to create custom model verifier with max_pool2d added as exception.
-    # Otherwise, we get violation that this op is not part of ATen Core ops.
-    edge_program._verifiers = [
-        EXIREdgeDialectVerifier(
-            class_only=True,
-            core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
-        )
-    ]
+    # We need to add the  `aten.max_pool2d.default` as an exception, otherwise we would get violation that this op is
+    #  not part of ATen Core ops.
+    exception_list = [torch.ops.aten.max_pool2d.default]
+    epm = exir.to_edge(
+        exir_program,
+        compile_config=EdgeCompileConfig(_core_aten_ops_exception_list=exception_list),
+    )
 
-    # Remove MaxPool-related "getitem" nodes from graph
-    edge_program = NeutronPassManager(edge_program, [RemoveGetItemPass]).transform()
-    NodeFormatInference(edge_program).identify_node_formats()
+    epm = epm.transform(NeutronEdgePassManager())
+    NodeFormatInference(epm.exported_program()).identify_node_formats()
 
     expected_mapping = {
         "x": DataFormat.CHANNELS_FIRST,
@@ -87,5 +85,5 @@ def test_maxpool2d():
         "output": DataFormat.CHANNELS_FIRST,
     }
 
-    for node in edge_program.graph.nodes:
+    for node in epm.exported_program().graph.nodes:
         assert expected_mapping[node.name] == node.meta[NXP_NODE_FORMAT]
