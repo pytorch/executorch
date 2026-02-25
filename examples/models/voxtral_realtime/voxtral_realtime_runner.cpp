@@ -359,9 +359,7 @@ StreamingSession::StreamingSession(
           config.temperature,
           ::executorch::extension::llm::kTopp,
           static_cast<unsigned long long>(std::time(nullptr))),
-      input_embeds_buf_(static_cast<size_t>(runner.dim_)) {
-  // Conv states are now maintained internally as buffers in the encoder
-}
+      input_embeds_buf_(static_cast<size_t>(runner.dim_)) {}
 
 int StreamingSession::feed_audio(const float* data, int64_t num_samples) {
   audio_buf_.insert(audio_buf_.end(), data, data + num_samples);
@@ -484,7 +482,6 @@ bool StreamingSession::try_process_step() {
       ::executorch::aten::ScalarType::Long);
 
   // --- Run streaming encoder ---
-  // Conv states are now maintained internally as buffers
   auto enc_result = runner_.model_->execute(
       "encode_audio_chunk", std::vector<EValue>{*mel_chunk, *enc_pos});
   ET_CHECK_MSG(enc_result.ok(), "encode_audio_chunk failed.");
