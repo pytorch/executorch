@@ -51,10 +51,10 @@ int extract_8bit_from_packed_int_le(const int packed, const int i) {
 
 ivec4 unpack_int8x4(const int packed) {
   return ivec4(
-    extract_8bit_from_packed_int_le(packed, 0),
-    extract_8bit_from_packed_int_le(packed, 1),
-    extract_8bit_from_packed_int_le(packed, 2),
-    extract_8bit_from_packed_int_le(packed, 3));
+    bitfieldExtract(packed, 0, 8),
+    bitfieldExtract(packed, 8, 8),
+    bitfieldExtract(packed, 16, 8),
+    bitfieldExtract(packed, 24, 8));
 }
 
 int pack_4xqint_into_int32(
@@ -88,6 +88,24 @@ int quantize_and_pack(const vec4 vals, const float inv_scale, const int zp) {
   quantized = clamp(quantized, -128, 127);
   return pack_into_int32(quantized);
 }
+
+// Software fallback for dotPacked4x8AccSatEXT when GL_EXT_integer_dot_product
+// is unavailable. Saturation is omitted: for typical neural network inputs,
+// int32 overflow does not occur in practice.
+int dotPacked4x8Acc_fallback(const int a, const int b, const int acc) {
+  const vec4 fa = vec4(unpack_int8x4(a));
+  const vec4 fb = vec4(unpack_int8x4(b));
+  return acc + int(dot(fa, fb));
+}
+
+// Dispatch macro resolved at GLSL compile time by USE_INT8_DOT_PRODUCT_EXT.
+// When USE_INT8_DOT_PRODUCT_EXT == 0, uses the software fallback.
+// All other cases (flag=1 or undefined) use the hardware intrinsic.
+#if defined(USE_INT8_DOT_PRODUCT_EXT) && USE_INT8_DOT_PRODUCT_EXT == 0
+  #define dotPacked4x8AccSat(a, b, acc) dotPacked4x8Acc_fallback(a, b, acc)
+#else
+  #define dotPacked4x8AccSat(a, b, acc) dotPacked4x8AccSatEXT(a, b, acc)
+#endif
 
 #ifdef DEBUG_MODE
 

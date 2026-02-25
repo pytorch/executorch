@@ -12,9 +12,19 @@
 
 namespace vkcompute {
 
-void add_staging_to_int8x4_buffer_node(
+void add_prepack_int8x4_buffer_node(
     ComputeGraph& graph,
     const ValueRef tensor_data,
     const ValueRef tensor);
+
+void add_staging_to_int8x4_buffer_node(
+    ComputeGraph& graph,
+    const ValueRef in_staging,
+    const ValueRef tensor);
+
+void add_int8x4_buffer_to_staging_node(
+    ComputeGraph& graph,
+    const ValueRef tensor,
+    const ValueRef staging_data);
 
 } // namespace vkcompute

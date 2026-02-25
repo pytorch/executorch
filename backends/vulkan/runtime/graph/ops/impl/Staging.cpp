@@ -12,7 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/DynamicDispatchNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taStaging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Int8x4Staging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
@@ -26,6 +26,10 @@ void add_staging_to_tensor_node(
     const ValueRef in_staging,
     const ValueRef out_tensor) {
   VK_CHECK_COND(graph.val_is_staging(in_staging));
+
+  if (graph.dtype_of(out_tensor) == vkapi::kInt8x4) {
+    return add_staging_to_int8x4_buffer_node(graph, in_staging, out_tensor);
+  }
 
   vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
       graph,
@@ -103,6 +107,10 @@ void add_tensor_to_staging_node(
     const ValueRef in_tensor,
     const ValueRef out_staging) {
   VK_CHECK_COND(graph.val_is_staging(out_staging));
+
+  if (graph.dtype_of(in_tensor) == vkapi::kInt8x4) {
+    return add_int8x4_buffer_to_staging_node(graph, in_tensor, out_staging);
+  }
 
   vkapi::ShaderInfo shader = get_tensor_to_nchw_shader(
       graph,
@@ -329,7 +337,7 @@ ValueRef prepack_int4_linear_weight_transposed_interleaved(
 
 void prepack_op(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   if (graph.dtype_of(args[1]) == vkapi::kInt8x4) {
-    return add_staging_to_int8x4_buffer_node(graph, args[0], args[1]);
+    return add_prepack_int8x4_buffer_node(graph, args[0], args[1]);
   }
   return add_prepack_standard_node(graph, args[0], args[1]);
 }

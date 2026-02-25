@@ -474,7 +474,8 @@ class ArmTester(Tester):
         rtol: float = 1e-03,
         qtol: int = 0,
         statistics_callback: Callable[[ErrorStatistics], None] | None = None,
-        # Preserve positional compatibility while keeping new flags keyword-only.
+        artifact_dir: Optional[str] = None,
+        artifact_name: Optional[str] = None,
         *,
         reference_stage_type: StageType | None = None,
         compare_callback: Optional[Callable[..., None]] = None,

@@ -4,14 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-q8ta_conv2d_pw:
+int8x4_buffer_to_nchw:
   parameter_names_with_default_values:
-    DTYPE: float
-    USE_INT8_DOT_PRODUCT_EXT: 1
-  generate_variant_forall:
-    DTYPE:
-      - VALUE: float
+    DTYPE: int
   shader_variants:
-    - NAME: q8ta_conv2d_pw
-    - NAME: q8ta_conv2d_pw_fallback
-      USE_INT8_DOT_PRODUCT_EXT: 0
+    - NAME: int8x4_buffer_to_nchw
