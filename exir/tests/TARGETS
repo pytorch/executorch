@@ -183,6 +183,7 @@ python_unittest(
     ],
     preload_deps = [
         "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
     ],
     # Static listing does not support tests generated with parameterized
     supports_static_listing = False,
@@ -195,6 +196,8 @@ python_unittest(
         "//executorch/exir:pass_manager",
         "//executorch/exir/passes:lib",
         "//executorch/exir/passes:sym_shape_eval_pass",
+        "//executorch/examples/models/llama:custom_kv_cache",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
     ],
 )
 

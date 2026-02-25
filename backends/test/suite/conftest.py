@@ -1,3 +1,4 @@
+import os
 from typing import Any
 
 import pytest
@@ -32,6 +33,13 @@ class TestRunner:
         self._test_base_name = test_base_name
         self._subtest = 0
         self._results = []
+        self._artifact_dir = self._resolve_artifact_dir()
+
+    def _resolve_artifact_dir(self) -> str | None:
+        base = os.environ.get("GOLDEN_ARTIFACTS_DIR")
+        if not base:
+            return None
+        return os.path.join(base, self._flow.name)
 
     def lower_and_run_model(
         self,
@@ -50,6 +58,7 @@ class TestRunner:
             None,
             generate_random_test_inputs=generate_random_test_inputs,
             dynamic_shapes=dynamic_shapes,
+            artifact_dir=self._artifact_dir,
         )
 
         self._subtest += 1

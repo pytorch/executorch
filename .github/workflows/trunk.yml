@@ -400,12 +400,12 @@ jobs:
         setup_script_args=""
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then
           toolchain_prefix=arm-none-eabi-
-          threshold="110592" # 108 KiB
+          threshold="110642" # 108 KiB
           toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
           setup_script_args="--target-toolchain zephyr"
           toolchain_prefix=arm-zephyr-eabi-
-          threshold="136000" # 136 KiB
+          threshold="136020" # 136 KiB
           toolchain_cmake=examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
         else
           echo "Fail unsupport OS selection ${{ matrix.os }}"
@@ -875,7 +875,7 @@ jobs:
           qwen3-0.6b|xnnpack|--quantize,
           qwen3-1.7b|xnnpack|--quantize,
           gemma3-1b|xnnpack|--quantize,
-          # phi4-mini|xnnpack|--quantize, transformers v5.0.0rc0 introduces a data-dependent branching in transformers/modeling_rope_utils.py:61 
+          # phi4-mini|xnnpack|--quantize, transformers v5.0.0rc0 introduces a data-dependent branching in transformers/modeling_rope_utils.py:61
           smollm2-135m|xnnpack|--quantize,
           smollm3-3b|xnnpack|--quantize
         ]

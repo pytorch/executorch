@@ -288,8 +288,9 @@ void add_q8ta_conv2d_node(
       PushConstantDataInfo(&output_zp_val, sizeof(output_zp_val)),
   };
 
-  // Select shader based on layout
-  std::string kernel_name = "q8ta_conv2d";
+  const bool use_hw_dot =
+      graph.context()->adapter_ptr()->supports_int8_dot_product();
+  std::string kernel_name = use_hw_dot ? "q8ta_conv2d" : "q8ta_conv2d_fallback";
   add_dtype_suffix(kernel_name, graph.dtype_of(packed_weight_scales));
 
   // Pass metadata for both output and input tensors

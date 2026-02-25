@@ -150,7 +150,12 @@ EthosULinuxDeviceCache& get_linux_device_cache() {
   return cache;
 }
 
-const char* inference_status_to_string(EthosU::InferenceStatus status) {
+/*
+ * Used for logging when building in Debug mode, but unused building
+ * for Release.
+ */
+[[maybe_unused]] const char* inference_status_to_string(
+    EthosU::InferenceStatus status) {
   switch (status) {
     case EthosU::InferenceStatus::OK:
       return "OK";
@@ -288,11 +293,10 @@ Error invoke_linux_driver(
 
     if (options.enable_cycle_counter) {
       try {
-        uint64_t cycles = inference->getCycleCounter();
         ET_LOG(
             Info,
             "Ethos-U Linux delegate cycle counter: %llu",
-            static_cast<unsigned long long>(cycles));
+            static_cast<unsigned long long>(inference->getCycleCounter()));
       } catch (const std::exception& e) {
         ET_LOG(Debug, "Failed to read Ethos-U cycle counter: %s", e.what());
       }

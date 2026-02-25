@@ -161,9 +161,6 @@ static TestCase create_test_case_from_config(
 // Generate test cases for q8ta_linear operation
 static std::vector<TestCase> generate_q8ta_linear_test_cases() {
   std::vector<TestCase> test_cases;
-  if (!vkcompute::api::context()->adapter_ptr()->supports_int8_dot_product()) {
-    return test_cases;
-  }
 
   std::vector<LinearConfig> configs = {
       // Batch size 1 cases (test both tiled and gemv)
