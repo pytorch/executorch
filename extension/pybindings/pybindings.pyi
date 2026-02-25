@@ -108,6 +108,13 @@ class ExecuTorchMethod:
         inputs: Sequence[Any] = ...,  # pyre-ignore[2]
         clone_outputs: bool = True,
     ) -> List[Any]: ...
+    # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
+    def __call__(
+        self,
+        inputs: Sequence[Any] = ...,  # pyre-ignore[2]
+        clone_outputs: bool = True,
+    ) -> List[Any]: ...
+    def method_meta(self) -> MethodMeta: ...
 
 @experimental("This API is experimental and subject to change without notice.")
 class BundledModule:
