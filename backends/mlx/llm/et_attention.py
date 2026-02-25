@@ -13,7 +13,7 @@ Registers an "mlx" attention type that uses mlx::kv_cache_update and
 mlx::custom_sdpa for efficient execution on Apple Silicon.
 
 Usage:
-    import executorch.backends.mlx.examples.et_attention  # noqa: F401
+    import executorch.backends.mlx.llm.et_attention  # noqa: F401
 
     model_args = ModelArgs(attention_type="mlx", ...)
     transformer = construct_transformer(model_args)

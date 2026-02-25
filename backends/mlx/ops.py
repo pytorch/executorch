@@ -2093,26 +2093,13 @@ def _relu_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_kwargs(P.kwargs(n), set(), "aten.relu")
     (x,) = args  # x is already a Slot
 
-    # Get input dtype
     x_meta = n.args[0].meta.get("val")
     if x_meta is None:
         raise ValueError("Input tensor metadata not found for relu")
     dtype = x_meta.dtype
 
-    _, zero_slot = P.make_tmp_slot()
+    zero_slot = emit_lifted_constant(P, 0.0, dtype)
 
-    # Emit FullNode to create a scalar zero (shape=[])
-    # Maximum will broadcast this scalar to match input shape
-    P.emit(
-        FullNode(
-            shape=[],  # Scalar (will be broadcast in maximum)
-            v=FloatOrVid.from_literal(0.0),
-            scalar_type=torch_dtype_to_scalar_type(dtype),
-            out=P.slot_to_tid(zero_slot),
-        )
-    )
-
-    # Emit MaximumNode(x, scalar_zero)
     out = P.make_or_get_slot(n)
     P.emit(
         MaximumNode(
@@ -2264,26 +2251,12 @@ def _clamp_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
         return out
 
-    # Helper to create a scalar constant slot
-    def make_scalar_slot(val):
-        _, slot = P.make_tmp_slot()
-        P.emit(
-            FullNode(
-                shape=[],  # Scalar
-                v=FloatOrVid.from_literal(float(val)),
-                scalar_type=torch_dtype_to_scalar_type(dtype),
-                out=P.slot_to_tid(slot),
-            )
-        )
-        return slot
-
     current = x
 
     # Apply max constraint first: min(x, max_val)
     if max_val is not None:
-        max_slot = make_scalar_slot(max_val)
+        max_slot = emit_lifted_constant(P, float(max_val), dtype)
         if min_val is not None:
-            # Need a temp slot since we have both constraints
             _, tmp = P.make_tmp_slot()
             P.emit(
                 MinimumNode(
@@ -2294,7 +2267,6 @@ def _clamp_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             )
             current = tmp
         else:
-            # Only max constraint, output directly
             P.emit(
                 MinimumNode(
                     a=P.slot_to_tid(current),
@@ -2306,7 +2278,7 @@ def _clamp_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
     # Apply min constraint: max(current, min_val)
     if min_val is not None:
-        min_slot = make_scalar_slot(min_val)
+        min_slot = emit_lifted_constant(P, float(min_val), dtype)
         P.emit(
             MaximumNode(
                 a=P.slot_to_tid(current),
@@ -2416,16 +2388,7 @@ def _native_batch_norm_legit_no_training_handler(P: MLXProgramBuilder, n: Node) 
     )
 
     # Step 2: var_eps = var + eps
-    # Create eps as a scalar using FullNode (broadcasts correctly with var)
-    _, eps_slot = P.make_tmp_slot()
-    P.emit(
-        FullNode(
-            out=P.slot_to_tid(eps_slot),
-            shape=[],  # 0-D scalar
-            v=FloatOrVid.from_literal(float(eps)),
-            scalar_type=torch_dtype_to_scalar_type(torch.float32),
-        )
-    )
+    eps_slot = emit_lifted_constant(P, float(eps), torch.float32)
     _, tmp_var_eps = P.make_tmp_slot()
     P.emit(
         AddNode(
@@ -2944,12 +2907,7 @@ def _logical_or_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
 @REGISTRY.register(target=[torch.ops.aten.scalar_tensor.default])
 def _scalar_tensor_handler(P: MLXProgramBuilder, n: Node) -> Slot:
-    """Handle aten.scalar_tensor - create a 0-D tensor from a scalar value.
-
-    scalar_tensor(scalar, *, dtype=None, layout=None, device=None, pin_memory=None) -> Tensor
-
-    This is equivalent to torch.full([], scalar, dtype=dtype).
-    """
+    """This is equivalent to torch.full([], scalar, dtype=dtype)."""
     args = P.args(n)
     kwargs = P.kwargs(n)
     require_args(args, 1, 1, "aten.scalar_tensor")
@@ -3438,20 +3396,9 @@ def _pow_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
     # Handle scalar exponent by creating a scalar full tensor that will broadcast
     if not isinstance(b, Slot):
-        # Get dtype from input tensor's meta
         input_meta = n.args[0].meta.get("val")
         dtype = input_meta.dtype if input_meta is not None else torch.float32
-
-        _, b_slot = P.make_tmp_slot()
-        P.emit(
-            FullNode(
-                out=P.slot_to_tid(b_slot),
-                shape=[],  # 0-D scalar - broadcasts correctly
-                v=FloatOrVid.from_literal(float(b)),
-                scalar_type=torch_dtype_to_scalar_type(dtype),
-            )
-        )
-        b = b_slot
+        b = emit_lifted_constant(P, float(b), dtype)
 
     out = P.make_or_get_slot(n)
     P.emit(PowerNode(a=P.slot_to_tid(a), b=P.slot_to_tid(b), out=P.slot_to_tid(out)))

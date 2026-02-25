@@ -227,7 +227,6 @@ class RingBufferKVCache(nn.Module):
             torch._check(seq_len <= self.window_size)
         else:
             start_pos = input_pos
-            seq_len = k_val.size(2)
 
         torch.ops.mlx.kv_cache_update(
             self.k_cache, k_val, start_pos, ring_size=self.buffer_size

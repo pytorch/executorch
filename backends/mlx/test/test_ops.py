@@ -39,11 +39,6 @@ from torch.export import Dim
 from .test_utils import OpTestCase, register_test
 
 
-# =============================================================================
-# ARITHMETIC OPS
-# =============================================================================
-
-
 class AddTensorModel(nn.Module):
     """Add two tensors."""
 
@@ -264,11 +259,6 @@ class DivTest(OpTestCase):
         return (x, y)
 
 
-# =============================================================================
-# ACTIVATION OPS
-# =============================================================================
-
-
 class ClampModel(nn.Module):
     """Model that applies clamp with min and max."""
 
@@ -459,11 +449,6 @@ class LogSoftmaxTest(OpTestCase):
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         x = torch.randn(self.shape)
         return (x,)
-
-
-# =============================================================================
-# SHAPE OPS
-# =============================================================================
 
 
 class SqueezeModel(nn.Module):
@@ -848,11 +833,6 @@ class RepeatTest(OpTestCase):
         return (x,)
 
 
-# =============================================================================
-# TENSOR CONSTRUCTION OPS
-# =============================================================================
-
-
 class CatNModel(nn.Module):
     """Model that concatenates N tensors along a dimension."""
 
@@ -984,11 +964,6 @@ class PadTest(OpTestCase):
         return (x,)
 
 
-# =============================================================================
-# NEURAL NETWORK LAYER OPS
-# =============================================================================
-
-
 class LinearModel(nn.Module):
     """Simple linear layer for testing."""
 
@@ -1089,11 +1064,6 @@ class EmbeddingTest(OpTestCase):
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         x = torch.randint(0, self.num_embeddings, (self.batch_size, self.seq_len))
         return (x,)
-
-
-# =============================================================================
-# POOLING OPS
-# =============================================================================
 
 
 class MaxPool1dModel(nn.Module):
@@ -1612,11 +1582,6 @@ class AvgPool3dTest(OpTestCase):
         )
 
 
-# =============================================================================
-# RMS NORM (torch.nn.functional.rms_norm)
-# =============================================================================
-
-
 class RMSNormModel(nn.Module):
     """Model using torch.nn.functional.rms_norm."""
 
@@ -1666,11 +1631,6 @@ class RMSNormTest(OpTestCase):
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         x = torch.randn(self.batch_size, self.seq_len, self.hidden_dim)
         return (x,)
-
-
-# =============================================================================
-# ROPE OP (Custom Op)
-# =============================================================================
 
 
 class RopeModel(nn.Module):
@@ -1767,10 +1727,6 @@ class RopeTest(OpTestCase):
         pos_tensor = torch.tensor(self.pos, dtype=torch.int64)
         return (q, k, pos_tensor)
 
-
-# =============================================================================
-# ET KV CACHE OPS (Functional cache update)
-# =============================================================================
 
 from executorch.backends.mlx.llm.cache import KVCache
 
@@ -2128,11 +2084,6 @@ class KVCacheSliceTest(OpTestCase):
         }
 
 
-# =============================================================================
-# RING BUFFER KV CACHE TESTS
-# =============================================================================
-
-
 class RingBufferKVCacheModel(nn.Module):
     """
     Test model wrapping RingBufferKVCache from cache.py.
@@ -2255,11 +2206,6 @@ class RingBufferKVCacheTest(OpTestCase):
             "SliceUpdateNode": 4,
             "IdCopyNode": 2,
         }
-
-
-# =============================================================================
-# MLX STATIC CACHE TESTS (HuggingFace-compatible interface)
-# =============================================================================
 
 
 class MockModelConfig:
@@ -2545,11 +2491,6 @@ class HFStaticCacheSliceTest(OpTestCase):
             "v_val": {2: seq_dim},
             "cache_position": None,
         }
-
-
-# =============================================================================
-# ADDITIONAL ARANGE OPS (Dynamic)
-# =============================================================================
 
 
 class DynamicArangeModel(nn.Module):
@@ -2997,11 +2938,6 @@ class Conv3DTest(OpTestCase):
         )
 
 
-# =============================================================================
-# MATRIX MULTIPLICATION OPS
-# =============================================================================
-
-
 class BmmModel(nn.Module):
     """Model that performs batch matrix multiplication."""
 
@@ -3138,11 +3074,6 @@ class AddmmTest(OpTestCase):
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         x = torch.randn(self.batch_size, self.in_features)
         return (x,)
-
-
-# =============================================================================
-# EXPAND AND INDEX OPS
-# =============================================================================
 
 
 class ExpandModel(nn.Module):
@@ -3330,11 +3261,6 @@ class IndexUpdateTest(OpTestCase):
         return (indices, update)
 
 
-# =============================================================================
-# SPLIT OPS
-# =============================================================================
-
-
 class SplitWithSizesModel(nn.Module):
     """Model that splits a tensor into chunks with specified sizes."""
 
@@ -3461,11 +3387,6 @@ class SplitTest(OpTestCase):
         return self.model_cls(**self.model_kwargs)
 
 
-# =============================================================================
-# ARANGE OPS
-# =============================================================================
-
-
 class ArangeModel(nn.Module):
     """Model that creates a tensor using arange and multiplies with input."""
 
@@ -3530,11 +3451,6 @@ class ArangeTest(OpTestCase):
         else:
             x = torch.randn(self.stop, dtype=self.dtype)
         return (x,)
-
-
-# =============================================================================
-# UNARY MATH OPS
-# =============================================================================
 
 
 class UnaryOpModel(nn.Module):
@@ -3698,11 +3614,6 @@ for _entry in _UNARY_OP_TESTS:
     _cls = _make_unary_op_test(**_entry)
     register_test(_cls)
     globals()[_cls.__name__] = _cls
-
-
-# =============================================================================
-# BINARY MATH OPS
-# =============================================================================
 
 
 class BinaryOpModel(nn.Module):
@@ -3906,11 +3817,6 @@ for _entry in _COMPARE_SCALAR_TESTS:
     _cls = _make_compare_scalar_test(**_entry)
     register_test(_cls)
     globals()[_cls.__name__] = _cls
-
-
-# =============================================================================
-# REDUCTION OPS
-# =============================================================================
 
 
 class ReductionOpModel(nn.Module):
@@ -4123,11 +4029,6 @@ class MinGlobalTest(OpTestCase):
         return (torch.randn(self.shape, dtype=self.dtype),)
 
 
-# =============================================================================
-# TRIANGULAR OPS
-# =============================================================================
-
-
 class TriangularModel(nn.Module):
     def __init__(self, mode: str = "tril", diagonal: int = 0):
         super().__init__()
@@ -4191,11 +4092,6 @@ TrilTest = _make_triangular_test("tril")
 TriuTest = _make_triangular_test("triu")
 register_test(TrilTest)
 register_test(TriuTest)
-
-
-# =============================================================================
-# LIKE OPS
-# =============================================================================
 
 
 class ZerosLikeModel(nn.Module):
@@ -4344,11 +4240,6 @@ class FullLikeTest(OpTestCase):
 
     def create_model(self) -> nn.Module:
         return FullLikeModel(fill_value=self.fill_value, dtype=self.fill_dtype)
-
-
-# =============================================================================
-# FULL, ZEROS, ONES OPS
-# =============================================================================
 
 
 class FullModel(nn.Module):
@@ -4505,11 +4396,6 @@ class OnesTest(OpTestCase):
         return OnesModel(self.shape, self.dtype)
 
 
-# =============================================================================
-# TO_DTYPE OP
-# =============================================================================
-
-
 class ToDtypeModel(nn.Module):
     def __init__(self, target_dtype: torch.dtype):
         super().__init__()
@@ -4580,11 +4466,6 @@ class ToDtypeTest(OpTestCase):
 
     def create_model(self) -> nn.Module:
         return ToDtypeModel(self.target_dtype)
-
-
-# =============================================================================
-# BATCH NORM OPS
-# =============================================================================
 
 
 class BatchNormModel(nn.Module):
@@ -4737,12 +4618,6 @@ class BatchNorm1dTest(OpTestCase):
         return BatchNorm1dModel(self.num_features, self.dtype, affine=self.affine)
 
 
-# =============================================================================
-# ATTENTION OPS (RMSNorm, SDPA, RoPE)
-# Note: These tests require additional imports that are loaded conditionally
-# =============================================================================
-
-
 class SDPAModel(nn.Module):
     """Basic scaled dot product attention."""
 
@@ -4880,11 +4755,6 @@ class SDPATest(OpTestCase):
         return (q, k, v)
 
 
-# =============================================================================
-# CUSTOM SDPA OP (mlx::custom_sdpa)
-# =============================================================================
-
-
 class CustomSDPAModel(nn.Module):
     """
     Test model for mlx::custom_sdpa with KVCache.
@@ -5016,12 +4886,6 @@ class CustomSDPATest(OpTestCase):
             "k_val": {2: seq_dim},
             "v_val": {2: seq_dim},
         }
-
-
-# =============================================================================
-# QUANTIZED OPS
-# Note: These require TorchAO to be installed
-# =============================================================================
 
 
 class QuantizedLinearModel(nn.Module):
