@@ -48,7 +48,9 @@ class ExecuTorchModule:
         clone_outputs: bool = True,
     ) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
-    def plan_execute(self, method_name: str, clone_outputs: bool = True) -> List[Any]: ...
+    def plan_execute(
+        self, method_name: str, clone_outputs: bool = True
+    ) -> List[Any]: ...
     # Bundled program methods.
     def load_bundled_input(
         self, bundle: BundledModule, method_name: str, testset_idx: int
