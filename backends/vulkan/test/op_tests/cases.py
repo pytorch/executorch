@@ -2001,6 +2001,29 @@ def get_where_inputs():
     return test_suite
 
 
+@register_test_suite("aten.bitwise_and.Tensor")
+def get_bitwise_and_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((M1, M2), (M1, M2)),
+            ((S, S1, S2), (S, S1, S2)),
+            ((XS, S, S1, S2), (XS, S, S1, S2)),
+            ((1, M1), (1, M1)),
+        ]
+    )
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = [
+        "utils::kBuffer",
+        "utils::kTexture3D",
+    ]
+    test_suite.dtypes = ["at::kBool"]
+    test_suite.data_gen = "make_seq_tensor"
+    return test_suite
+
+
 @register_test_suite("aten.pow.Tensor_Scalar")
 def get_pow_tensor_scalar_inputs():
     test_suite = VkTestSuite(
