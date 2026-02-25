@@ -98,7 +98,9 @@ void add_q8ta_linear_node(
     apply_bias = 0;
   }
 
-  std::string kernel_name = "q8ta_linear";
+  const bool use_hw_dot =
+      graph.context()->adapter_ptr()->supports_int8_dot_product();
+  std::string kernel_name = use_hw_dot ? "q8ta_linear" : "q8ta_linear_fallback";
   add_dtype_suffix(kernel_name, graph.dtype_of(packed_weight_scales));
 
   vkapi::ParamsBindList param_buffers = {
