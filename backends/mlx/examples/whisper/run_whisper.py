@@ -115,9 +115,6 @@ def run_whisper_inference(  # noqa: C901
     )
     decoder_forward = decoder_program.load_method("forward")
 
-    # =========================================================================
-    # Step 1: Run encoder
-    # =========================================================================
     logger.info("Running encoder...")
     overall_start = time.time()
     start_time = time.time()
@@ -129,9 +126,6 @@ def run_whisper_inference(  # noqa: C901
     logger.info(f"Encoder time: {encoder_time:.3f}s")
     logger.info(f"Encoder output shape: {encoder_hidden_states.shape}")
 
-    # =========================================================================
-    # Step 2: Compute cross-attention K/V
-    # =========================================================================
     logger.info("Computing cross-attention K/V...")
     start_time = time.time()
 
@@ -145,9 +139,6 @@ def run_whisper_inference(  # noqa: C901
     logger.info(f"Cross-KV time: {cross_kv_time:.3f}s")
     logger.info(f"Cross K/V: {num_layers} layers, each shape {cross_k_tuple[0].shape}")
 
-    # =========================================================================
-    # Step 3: Setup decoder generation
-    # =========================================================================
     # Get forced decoder IDs for language/task
     forced_decoder_ids = processor.get_decoder_prompt_ids(
         language=language,
@@ -177,9 +168,6 @@ def run_whisper_inference(  # noqa: C901
 
     generated_tokens: List[int] = [sot_id]
 
-    # =========================================================================
-    # Step 4: Token-by-token decoder generation
-    # =========================================================================
     logger.info(f"Generating up to {max_new_tokens} tokens...")
     decode_start = time.time()
 

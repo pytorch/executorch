@@ -30,18 +30,7 @@ def _replace_modules(
     factory: Callable[[nn.Module], nn.Module],
     label: str,
 ) -> nn.Module:
-    """
-    Recursively replace all instances of target_type using factory.
-
-    Args:
-        module: Root module to modify (in place)
-        target_type: Type to match against children
-        factory: Callable that takes the original child and returns a replacement
-        label: Human-readable label for logging (e.g. "RMSNorm → FunctionalRMSNorm")
-
-    Returns:
-        The modified module (same reference, mutated in place)
-    """
+    """Recursively replace all instances of target_type using factory."""
 
     def _recurse(parent: nn.Module) -> int:
         count = 0

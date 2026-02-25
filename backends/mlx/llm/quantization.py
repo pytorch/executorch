@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 
 def add_quantization_args(parser: argparse.ArgumentParser) -> None:
-    """Add common quantization arguments to an argparse parser."""
     parser.add_argument(
         "--quantize-linear",
         type=str,
@@ -58,7 +57,6 @@ def add_quantization_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _default_group_size(dtype_str: str) -> int:
-    """Return the default group size for a given quantization dtype."""
     return 32 if dtype_str == "int4" else 128
 
 

@@ -19,15 +19,10 @@ namespace executorch {
 namespace backends {
 namespace mlx {
 
-// =============================================================================
-// Op implementations
-// =============================================================================
-
 namespace ops {
 
 using namespace ::mlx::core;
 
-// ----- Utility: Infer -1 dimensions in shape -----
 /**
  * Normalize axis to be in range [0, rank) and validate.
  * @param axis The axis value (can be negative)
@@ -96,7 +91,6 @@ inline std::vector<int> infer_shape_with_minus_one(
   return resolved_shape;
 }
 
-// ----- GELU implementation (tanh approximation) -----
 // Formula: 0.5 * x * (1 + tanh(sqrt(2/π) * (x + 0.044715 * x³)))
 inline array gelu_tanh_impl(const array& x, StreamOrDevice s = {}) {
   constexpr float sqrt_2_over_pi = 0.7978845608f;
@@ -113,7 +107,6 @@ inline array gelu_tanh_impl(const array& x, StreamOrDevice s = {}) {
   return out;
 }
 
-// ----- GELU implementation (exact, using erf) -----
 // Formula: 0.5 * x * (1 + erf(x / sqrt(2)))
 inline array gelu_none_impl(const array& x, StreamOrDevice s = {}) {
   constexpr float inv_sqrt_2 = 0.7071067812f;
@@ -127,12 +120,8 @@ inline array gelu_none_impl(const array& x, StreamOrDevice s = {}) {
   return out;
 }
 
-// ----- Noop -----
-inline void exec_noop(const NoopNode&, ExecutionState&, StreamOrDevice) {
-  // Do nothing
-}
+inline void exec_noop(const NoopNode&, ExecutionState&, StreamOrDevice) {}
 
-// ----- Addmm -----
 inline void
 exec_addmm(const AddmmNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& mat1 = st.const_tensor_ref(n.mat1);
@@ -150,7 +139,6 @@ exec_addmm(const AddmmNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, std::move(Y));
 }
 
-// ----- Linear -----
 inline void
 exec_linear(const LinearNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& X = st.const_tensor_ref(n.x);
@@ -169,7 +157,6 @@ exec_linear(const LinearNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, std::move(Y));
 }
 
-// ----- Item Int -----
 inline void
 exec_item_int(const ItemIntNode& n, ExecutionState& st, StreamOrDevice) {
   // Make a non-const copy so non-const item() is called (which does implicit
@@ -180,7 +167,6 @@ exec_item_int(const ItemIntNode& n, ExecutionState& st, StreamOrDevice) {
   st.set_value(n.out, item);
 }
 
-// ----- Expand Dims -----
 inline void exec_expand_dims(
     const ExpandDimsNode& n,
     ExecutionState& st,
@@ -188,14 +174,12 @@ inline void exec_expand_dims(
   st.set_tensor(n.out, expand_dims(st.const_tensor_ref(n.x), n.axis, s));
 }
 
-// ----- Tile -----
 inline void exec_tile(const TileNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   auto reps = resolve_ints(n.reps, st);
   st.set_tensor(n.out, tile(x, reps, s));
 }
 
-// ----- Take Along Axis -----
 inline void exec_take_along_axis(
     const TakeAlongAxisNode& n,
     ExecutionState& st,
@@ -206,7 +190,6 @@ inline void exec_take_along_axis(
           st.const_tensor_ref(n.x), st.const_tensor_ref(n.indices), n.axis, s));
 }
 
-// ----- Take -----
 inline void exec_take(const TakeNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   int axis = normalize_axis(n.axis, x.ndim(), "Take");
@@ -214,7 +197,6 @@ inline void exec_take(const TakeNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, take(x, index, axis, s));
 }
 
-// ----- RMS Norm -----
 inline void
 exec_rms_norm(const RMSNormNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -222,7 +204,6 @@ exec_rms_norm(const RMSNormNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, fast::rms_norm(x, w, n.eps, s));
 }
 
-// ----- Layer Norm -----
 inline void
 exec_layer_norm(const LayerNormNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -238,7 +219,6 @@ exec_layer_norm(const LayerNormNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, fast::layer_norm(x, w, bias, n.eps, s));
 }
 
-// ----- RoPE -----
 inline void exec_rope(const RopeNode& n, ExecutionState& st, StreamOrDevice s) {
   const array& x = st.const_tensor_ref(n.x);
 
@@ -266,7 +246,6 @@ inline void exec_rope(const RopeNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 }
 
-// ----- SDPA -----
 inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
   array Q = st.const_tensor_ref(n.q);
   array K = st.const_tensor_ref(n.k);
@@ -294,13 +273,11 @@ inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, std::move(out));
 }
 
-// ----- Add -----
 inline void exec_add(const AddNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out, add(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
-// ----- Add Scalar -----
 inline void
 exec_add_int(const AddIntNode& n, ExecutionState& st, StreamOrDevice) {
   int32_t a = resolve_int(n.a, st);
@@ -308,7 +285,6 @@ exec_add_int(const AddIntNode& n, ExecutionState& st, StreamOrDevice) {
   st.set_value(n.out, a + b);
 }
 
-// ----- Sub Scalar -----
 inline void exec_subtract_int(
     const SubtractIntNode& n,
     ExecutionState& st,
@@ -318,7 +294,6 @@ inline void exec_subtract_int(
   st.set_value(n.out, a - b);
 }
 
-// ----- Mul Scalar -----
 inline void exec_multiply_int(
     const MultiplyIntNode& n,
     ExecutionState& st,
@@ -328,7 +303,6 @@ inline void exec_multiply_int(
   st.set_value(n.out, a * b);
 }
 
-// ----- Floor Div Scalar -----
 inline void exec_floor_divide_int(
     const FloorDivideIntNode& n,
     ExecutionState& st,
@@ -345,7 +319,6 @@ inline void exec_floor_divide_int(
   st.set_value(n.out, result);
 }
 
-// ----- Mod Scalar -----
 inline void
 exec_mod_int(const ModIntNode& n, ExecutionState& st, StreamOrDevice) {
   int32_t a = resolve_int(n.a, st);
@@ -358,7 +331,6 @@ exec_mod_int(const ModIntNode& n, ExecutionState& st, StreamOrDevice) {
   st.set_value(n.out, result);
 }
 
-// ----- Sym Size -----
 inline void
 exec_sym_size(const SymSizeNode& n, ExecutionState& st, StreamOrDevice) {
   const array& a = st.const_tensor_ref(n.a);
@@ -374,28 +346,24 @@ exec_sym_size(const SymSizeNode& n, ExecutionState& st, StreamOrDevice) {
   st.set_value(n.out, size);
 }
 
-// ----- Multiply -----
 inline void
 exec_multiply(const MultiplyNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out, multiply(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
-// ----- Divide -----
 inline void
 exec_divide(const DivideNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out, divide(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
-// ----- Subtract -----
 inline void
 exec_subtract(const SubtractNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out, subtract(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
-// ----- Conv1D -----
 inline void
 exec_conv1d(const Conv1DNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -404,7 +372,6 @@ exec_conv1d(const Conv1DNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, std::move(out));
 }
 
-// ----- Conv2D -----
 inline void
 exec_conv2d(const Conv2DNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -418,7 +385,6 @@ exec_conv2d(const Conv2DNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, std::move(out));
 }
 
-// ----- Conv3D -----
 inline void
 exec_conv3d(const Conv3DNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -433,7 +399,6 @@ exec_conv3d(const Conv3DNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, std::move(out));
 }
 
-// ----- GELU -----
 inline void exec_gelu(const GeluNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   if (n.approximate == "tanh") {
@@ -444,7 +409,6 @@ inline void exec_gelu(const GeluNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 }
 
-// ----- ARange -----
 inline void
 exec_arange(const ARangeNode& n, ExecutionState& st, StreamOrDevice s) {
   // Get start, stop, step - may be literal int64 or dynamic Vid
@@ -467,26 +431,22 @@ exec_arange(const ARangeNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 }
 
-// ----- SiLU -----
 inline void exec_silu(const SiluNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   st.set_tensor(n.out, multiply(x, sigmoid(x, s), s));
 }
 
-// ----- Sigmoid -----
 inline void
 exec_sigmoid(const SigmoidNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   st.set_tensor(n.out, sigmoid(x, s));
 }
 
-// ----- Tanh -----
 inline void exec_tanh(const TanhNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   st.set_tensor(n.out, tanh(x, s));
 }
 
-// ----- Squeeze -----
 inline void
 exec_squeeze(const SqueezeNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -514,7 +474,6 @@ exec_squeeze(const SqueezeNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 }
 
-// ----- Split -----
 inline void
 exec_split(const SplitNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -564,14 +523,11 @@ exec_split(const SplitNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 }
 
-// ----- Rsqrt -----
 inline void
 exec_rsqrt(const RsqrtNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   st.set_tensor(n.out, rsqrt(x, s));
 }
-
-// ----- Maximum -----
 
 inline void
 exec_maximum(const MaximumNode& n, ExecutionState& st, StreamOrDevice s) {
@@ -579,29 +535,23 @@ exec_maximum(const MaximumNode& n, ExecutionState& st, StreamOrDevice s) {
       n.out, maximum(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
-// ----- Minimum -----
-
 inline void
 exec_minimum(const MinimumNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out, minimum(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
-// ----- Log -----
-
 inline void exec_log(const LogNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   st.set_tensor(n.out, log(x, s));
 }
 
-// ----- Softmax -----
 inline void
 exec_softmax(const SoftmaxNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   st.set_tensor(n.out, softmax(x, n.axis, /*precise=*/false, s));
 }
 
-// ----- BroadcastTo -----
 inline void exec_broadcast_to(
     const BroadcastToNode& n,
     ExecutionState& st,
@@ -630,7 +580,6 @@ inline void exec_broadcast_to(
           x, ::mlx::core::Shape(shape_vec.begin(), shape_vec.end()), s));
 }
 
-// ----- Pad -----
 inline void exec_pad(const PadNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
 
@@ -654,7 +603,6 @@ inline void exec_pad(const PadNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 }
 
-// ----- Where -----
 inline void
 exec_where(const WhereNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& condition = st.const_tensor_ref(n.condition);
@@ -663,20 +611,17 @@ exec_where(const WhereNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, where(condition, x, y, s));
 }
 
-// ----- Reshape -----
 inline void
 exec_reshape(const ReshapeNode& n, ExecutionState& st, StreamOrDevice s) {
   auto new_shape = to_shape(n.shape, st);
   st.set_tensor(n.out, reshape(st.const_tensor_ref(n.x), new_shape, s));
 }
 
-// ----- Transpose -----
 inline void
 exec_transpose(const TransposeNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, transpose(st.const_tensor_ref(n.x), n.perm, s));
 }
 
-// ----- AsStrided -----
 inline void
 exec_as_strided(const AsStridedNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -686,19 +631,16 @@ exec_as_strided(const AsStridedNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, as_strided(x, shape, strides, n.offset, s));
 }
 
-// ----- Contiguous -----
 inline void
 exec_contiguous(const ContiguousNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, contiguous(st.const_tensor_ref(n.x), false, s));
 }
 
-// ----- Id Copy -----
 inline void
 exec_id_copy(const IdCopyNode& n, ExecutionState& st, StreamOrDevice) {
   st.set_tensor(n.out, st.const_tensor_ref(n.x));
 }
 
-// ----- Gather -----
 inline void
 exec_gather(const GatherNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
@@ -706,7 +648,6 @@ exec_gather(const GatherNode& n, ExecutionState& st, StreamOrDevice s) {
       take(st.const_tensor_ref(n.table_), st.const_tensor_ref(n.ids), 0, s));
 }
 
-// ----- Slice -----
 inline void
 exec_slice(const SliceNode& n, ExecutionState& st, StreamOrDevice s) {
   const array& x = st.const_tensor_ref(n.x);
@@ -738,14 +679,12 @@ exec_slice(const SliceNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, slice(x, to_shape(vstart), to_shape(vstop), s));
 }
 
-// ----- AsType -----
 inline void
 exec_astype(const AsTypeNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out, astype(st.const_tensor_ref(n.x), resolve_dtype(n.scalar_type), s));
 }
 
-// ----- Quantized Linear -----
 inline void exec_quantized_linear(
     const QuantizedLinearNode& n,
     ExecutionState& st,
@@ -792,7 +731,6 @@ inline void exec_quantized_linear(
   st.set_tensor(n.out, std::move(Y));
 }
 
-// ----- Concatenate -----
 inline void exec_concatenate(
     const ConcatenateNode& n,
     ExecutionState& st,
@@ -805,7 +743,6 @@ inline void exec_concatenate(
   st.set_tensor(n.out, concatenate(tensors, n.axis, s));
 }
 
-// ----- Full -----
 inline void exec_full(const FullNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out,
@@ -816,7 +753,6 @@ inline void exec_full(const FullNode& n, ExecutionState& st, StreamOrDevice s) {
           s));
 }
 
-// ----- FullLike -----
 inline void
 exec_full_like(const FullLikeNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -826,7 +762,6 @@ exec_full_like(const FullLikeNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, full_like(x, resolve_float(n.v, st), dtype, s));
 }
 
-// ----- Slice Update -----
 inline void exec_slice_update(
     const SliceUpdateNode& n,
     ExecutionState& st,
@@ -866,7 +801,6 @@ inline void exec_slice_update(
   dst = slice_update(dst, upd, to_shape(vstart), to_shape(vstop), s);
 }
 
-// ----- Index Update -----
 // Helper: finds next contiguous run in indices starting at offset
 // Returns (dst_start, dst_stop, upd_start, upd_stop) for the run
 // Returns (0, 0, 0, 0) when no more runs
@@ -975,7 +909,6 @@ inline void exec_index_update(
   }
 }
 
-// ----- Quantized Gather -----
 inline void exec_quantized_gather(
     const QuantizedGatherNode& n,
     ExecutionState& st,
@@ -1014,7 +947,6 @@ inline void exec_quantized_gather(
   st.set_tensor(n.out, std::move(Y));
 }
 
-// ----- Dequantize -----
 inline void
 exec_dequantize(const DequantizeNode& n, ExecutionState& st, StreamOrDevice s) {
   array Wq = st.const_tensor_ref(n.w);
@@ -1043,7 +975,6 @@ exec_dequantize(const DequantizeNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, std::move(Y));
 }
 
-// ----- Comparison Ops -----
 inline void exec_less(const LessNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out, less(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
@@ -1082,7 +1013,6 @@ exec_not_equal(const NotEqualNode& n, ExecutionState& st, StreamOrDevice s) {
       n.out, not_equal(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
-// ----- Logical Ops -----
 inline void exec_logical_not(
     const LogicalNotNode& n,
     ExecutionState& st,
@@ -1105,7 +1035,6 @@ exec_logical_or(const LogicalOrNode& n, ExecutionState& st, StreamOrDevice s) {
       n.out, logical_or(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
-// ----- Tri -----
 inline void exec_tri(const TriNode& n, ExecutionState& st, StreamOrDevice s) {
   int rows = resolve_int(n.n, st);
   int cols = resolve_int(n.m, st);
@@ -1113,179 +1042,141 @@ inline void exec_tri(const TriNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, tri(rows, cols, n.k, dtype, s));
 }
 
-// ----- Tril -----
 inline void exec_tril(const TrilNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   st.set_tensor(n.out, tril(x, n.k, s));
 }
 
-// ----- Triu -----
 inline void exec_triu(const TriuNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   st.set_tensor(n.out, triu(x, n.k, s));
 }
 
-// =============================================================================
-// Math ops - Unary element-wise
-// =============================================================================
-
-// ----- Floor -----
 inline void
 exec_floor(const FloorNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, floor(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Ceil -----
 inline void exec_ceil(const CeilNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, ceil(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Square -----
 inline void
 exec_square(const SquareNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, square(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Exp -----
 inline void exec_exp(const ExpNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, exp(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Sin -----
 inline void exec_sin(const SinNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, sin(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Cos -----
 inline void exec_cos(const CosNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, cos(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Tan -----
 inline void exec_tan(const TanNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, tan(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Arcsin -----
 inline void
 exec_arcsin(const ArcsinNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, arcsin(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Arccos -----
 inline void
 exec_arccos(const ArccosNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, arccos(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Arctan -----
 inline void
 exec_arctan(const ArctanNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, arctan(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Sinh -----
 inline void exec_sinh(const SinhNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, sinh(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Cosh -----
 inline void exec_cosh(const CoshNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, cosh(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Arcsinh -----
 inline void
 exec_arcsinh(const ArcsinhNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, arcsinh(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Arccosh -----
 inline void
 exec_arccosh(const ArccoshNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, arccosh(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Arctanh -----
 inline void
 exec_arctanh(const ArctanhNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, arctanh(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Log2 -----
 inline void exec_log2(const Log2Node& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, log2(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Log10 -----
 inline void
 exec_log10(const Log10Node& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, log10(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Log1p -----
 inline void
 exec_log1p(const Log1pNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, log1p(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Erf -----
 inline void exec_erf(const ErfNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, erf(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Expm1 -----
 inline void
 exec_expm1(const Expm1Node& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, expm1(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Round -----
 inline void
 exec_round(const RoundNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, round(st.const_tensor_ref(n.x), n.decimals, s));
 }
 
-// ----- Reciprocal -----
 inline void
 exec_reciprocal(const ReciprocalNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, reciprocal(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Sqrt -----
 inline void exec_sqrt(const SqrtNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, sqrt(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Abs -----
 inline void exec_abs(const AbsNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, abs(st.const_tensor_ref(n.x), s));
 }
 
-// ----- Neg -----
 inline void exec_neg(const NegNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, negative(st.const_tensor_ref(n.x), s));
 }
 
-// =============================================================================
-// Math ops - Binary element-wise
-// =============================================================================
-
-// ----- Atan2 -----
 inline void
 exec_atan2(const Atan2Node& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out, arctan2(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
-// ----- LogAddExp -----
 inline void
 exec_logaddexp(const LogAddExpNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out, logaddexp(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
-// ----- FloorDivide -----
 inline void exec_floor_divide(
     const FloorDivideNode& n,
     ExecutionState& st,
@@ -1312,25 +1203,18 @@ inline void exec_floor_divide(
   }
 }
 
-// ----- Remainder -----
 inline void
 exec_remainder(const RemainderNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out, remainder(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
-// ----- Power -----
 inline void
 exec_power(const PowerNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out, power(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
-// =============================================================================
-// Math ops - Reduction
-// =============================================================================
-
-// ----- LogSumExp -----
 inline void
 exec_logsumexp(const LogSumExpNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -1338,7 +1222,6 @@ exec_logsumexp(const LogSumExpNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, logsumexp(x, axes, n.keepdims, s));
 }
 
-// ----- Sum -----
 inline void exec_sum(const SumNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   std::vector<int> axes(n.axes.begin(), n.axes.end());
@@ -1349,7 +1232,6 @@ inline void exec_sum(const SumNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 }
 
-// ----- Mean -----
 inline void exec_mean(const MeanNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   std::vector<int> axes(n.axes.begin(), n.axes.end());
@@ -1360,7 +1242,6 @@ inline void exec_mean(const MeanNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 }
 
-// ----- Var -----
 inline void exec_var(const VarNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   std::vector<int> axes(n.axes.begin(), n.axes.end());
@@ -1371,7 +1252,6 @@ inline void exec_var(const VarNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 }
 
-// ----- Std -----
 inline void exec_std(const StdNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   std::vector<int> axes(n.axes.begin(), n.axes.end());
@@ -1382,7 +1262,6 @@ inline void exec_std(const StdNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 }
 
-// ----- Prod -----
 inline void exec_prod(const ProdNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   std::vector<int> axes(n.axes.begin(), n.axes.end());
@@ -1393,7 +1272,6 @@ inline void exec_prod(const ProdNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 }
 
-// ----- Max (amax) -----
 inline void exec_max(const MaxNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   std::vector<int> axes(n.axes.begin(), n.axes.end());
@@ -1404,7 +1282,6 @@ inline void exec_max(const MaxNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 }
 
-// ----- Min (amin) -----
 inline void exec_min(const MinNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   std::vector<int> axes(n.axes.begin(), n.axes.end());
@@ -1415,21 +1292,18 @@ inline void exec_min(const MinNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 }
 
-// ----- Argmax -----
 inline void
 exec_argmax(const ArgmaxNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   st.set_tensor(n.out, argmax(x, n.axis, n.keepdims, s));
 }
 
-// ----- Argmin -----
 inline void
 exec_argmin(const ArgminNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   st.set_tensor(n.out, argmin(x, n.axis, n.keepdims, s));
 }
 
-// ----- Median -----
 inline void
 exec_median(const MedianNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -1442,10 +1316,6 @@ exec_median(const MedianNode& n, ExecutionState& st, StreamOrDevice s) {
 }
 
 } // namespace ops
-
-// =============================================================================
-// Interpreter - dispatch loop
-// =============================================================================
 
 class Interpreter {
  public:

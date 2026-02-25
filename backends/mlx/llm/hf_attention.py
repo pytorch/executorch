@@ -99,12 +99,7 @@ def sdpa_mask_passthrough(
     allow_torch_fix: bool = True,
     **kwargs,
 ) -> Optional[torch.Tensor]:
-    """
-    Returns None — the custom SDPA op handles causal masking internally.
-
-    Returning None avoids materializing a mask tensor during export, which
-    would create a bounded tensor that fails at runtime with longer sequences.
-    """
+    """Returns None — custom SDPA handles causal masking, avoiding bounded mask tensors."""
     return None
 
 
@@ -126,11 +121,6 @@ def register_mlx_attention(name: str = "mlx") -> None:
         raise ImportError(
             "transformers is not installed. Please install it: pip install transformers"
         )
-
-
-# =============================================================================
-# Sliding Window Attention (Ring Buffer)
-# =============================================================================
 
 
 def get_mlx_sliding_window_sdpa(exportable_module) -> Callable:
@@ -219,16 +209,7 @@ def get_mlx_sliding_window_sdpa(exportable_module) -> Callable:
 def register_mlx_sliding_window_attention(
     exportable_module, name: str = "mlx_sliding_window"
 ) -> None:
-    """
-    Register MLX sliding window attention with HuggingFace's attention interfaces.
-
-    Creates a closure that captures the model reference for lazy mask creation,
-    following optimum-executorch's get_custom_sdpa_for_ring_kv_cache pattern.
-
-    Args:
-        exportable_module: The model module containing ring buffer caches.
-        name: Name to register the attention implementation under.
-    """
+    """Register MLX sliding window attention with HuggingFace's attention interfaces."""
     try:
         from transformers.masking_utils import ALL_MASK_ATTENTION_FUNCTIONS
         from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS

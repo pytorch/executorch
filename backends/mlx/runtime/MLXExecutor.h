@@ -72,17 +72,9 @@ constexpr bool isOpLoggingEnabled() {
 // Compile-time constant zero-copy flag
 constexpr bool kEnableConstantZeroCopy = ET_MLX_ENABLE_CONSTANT_ZERO_COPY;
 
-// =============================================================================
-// Type aliases
-// =============================================================================
-
 using Tensor = ::mlx::core::array;
 using Value = std::variant<int32_t, float, bool>;
 using StreamOrDevice = ::mlx::core::StreamOrDevice;
-
-// =============================================================================
-// ConstantData - storage for loaded constants
-// =============================================================================
 
 struct ConstantData {
   std::vector<Tensor> tensors;
@@ -98,11 +90,6 @@ struct ConstantData {
     tensors.push_back(std::move(t));
   }
 };
-
-// =============================================================================
-// MutableBufferData - storage for delegate-owned mutable buffers (e.g., KV
-// cache) These persist across execute() calls, avoiding per-execution copies.
-// =============================================================================
 
 struct MutableBufferData {
   // Maps tensor slot idx to MLX array
@@ -142,16 +129,6 @@ struct MutableBufferData {
     tensors.clear();
   }
 };
-
-// =============================================================================
-// ExecutionState - reusable execution context
-//
-// Design: Separates tensors by lifetime for clarity and shareability:
-// - Constants: stored in ConstantData, accessed via pointer (can be shared)
-// - Mutable buffers: stored in MutableBufferData, accessed via pointer
-// (persistent)
-// - Inputs/outputs/temps: stored in tensors vector (per-execution)
-// =============================================================================
 
 struct ExecutionState {
   const MLXProgram* program{nullptr};
@@ -229,10 +206,6 @@ struct ExecutionState {
       v = std::nullopt;
     }
   }
-
-  // --------------------------
-  // Logging helpers
-  // --------------------------
 
   static inline const char* dtype_str(::mlx::core::Dtype dtype) {
     using namespace ::mlx::core;
@@ -366,10 +339,6 @@ struct ExecutionState {
     }
   }
 
-  // --------------------------
-  // Tensor accessors
-  // --------------------------
-
   inline Tensor& tensor_ref(Tid id) {
     if (isOpLoggingEnabled()) {
       std::cout << "  ref  " << tensor_type_prefix(id) << id.idx << std::flush;
@@ -482,10 +451,6 @@ struct ExecutionState {
     }
   }
 
-  // --------------------------
-  // Value accessors
-  // --------------------------
-
   template <typename T>
   inline T& value_ref(Vid id) {
     if (isOpLoggingEnabled()) {
@@ -554,10 +519,6 @@ struct ExecutionState {
   }
 };
 
-// =============================================================================
-// Dtype conversion
-// =============================================================================
-
 inline ::mlx::core::Dtype resolve_dtype(ScalarType d) {
   using namespace ::mlx::core;
   switch (d) {
@@ -591,10 +552,6 @@ inline ::mlx::core::Dtype resolve_dtype(int8_t d) {
   return resolve_dtype(static_cast<ScalarType>(d));
 }
 
-// =============================================================================
-// Helper to safely clamp int64_t to int32_t range
-// =============================================================================
-
 inline int32_t clamp_to_int32(int64_t val64) {
   // Clamp to int32_t range to avoid overflow
   // INT64_MAX is commonly used to mean "slice to end" or similar semantics
@@ -607,10 +564,6 @@ inline int32_t clamp_to_int32(int64_t val64) {
   return static_cast<int32_t>(val64);
 }
 
-// =============================================================================
-// Helper to resolve int or Vid with overflow protection
-// =============================================================================
-
 inline int32_t resolve_int(
     const std::variant<int64_t, Vid>& v,
     const ExecutionState& st) {
@@ -619,10 +572,6 @@ inline int32_t resolve_int(
   }
   return st.const_value_ref<int32_t>(std::get<Vid>(v));
 }
-
-// =============================================================================
-// Helper to resolve vector of ints or Vids with overflow protection
-// =============================================================================
 
 inline std::vector<int32_t> resolve_ints(
     const std::vector<std::variant<int64_t, Vid>>& v,
@@ -635,10 +584,6 @@ inline std::vector<int32_t> resolve_ints(
   return out;
 }
 
-// =============================================================================
-// Helper to resolve float or Vid
-// =============================================================================
-
 inline float resolve_float(
     const std::variant<double, Vid>& v,
     const ExecutionState& st) {
@@ -650,10 +595,6 @@ inline float resolve_float(
   return std::visit(
       [](auto&& arg) -> float { return static_cast<float>(arg); }, val);
 }
-
-// =============================================================================
-// Helper to convert shape with potential dynamic dims
-// =============================================================================
 
 inline ::mlx::core::Shape to_shape(
     const std::vector<std::variant<int64_t, Vid>>& dims,
@@ -681,10 +622,6 @@ inline ::mlx::core::Shape to_shape(
   }
   return out;
 }
-
-// =============================================================================
-// Constant loading from NamedDataMap
-// =============================================================================
 
 // Load constants from ExecuTorch's NamedDataMap.
 // Constants are stored by name in the .pte file and loaded via the
@@ -780,12 +717,6 @@ inline void load_constants(
   // This trades init time for faster first inference
   eval(store.tensors);
 }
-
-// =============================================================================
-// Mutable buffer initialization
-// Creates MLX arrays for mutable buffers (e.g., KV cache) at init time.
-// These persist in GPU memory across execute() calls.
-// =============================================================================
 
 inline void load_mutable_buffers(
     const MLXProgram& program,

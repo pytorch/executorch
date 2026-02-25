@@ -52,11 +52,6 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Whisper Encoder Wrapper
-# =============================================================================
-
-
 class WhisperEncoderExportable(nn.Module):
     """
     Wrapper around Whisper's encoder for export.
@@ -70,11 +65,6 @@ class WhisperEncoderExportable(nn.Module):
 
     def forward(self, input_features: torch.Tensor) -> torch.Tensor:
         return self.encoder(input_features=input_features).last_hidden_state
-
-
-# =============================================================================
-# Whisper Decoder Self-Attention with KV Cache
-# =============================================================================
 
 
 class WhisperSelfAttentionWithCache(nn.Module):
@@ -147,11 +137,6 @@ class WhisperSelfAttentionWithCache(nn.Module):
         return self.out_proj(attn_out)
 
 
-# =============================================================================
-# Whisper Cross-Attention (no cache update - K/V pre-computed)
-# =============================================================================
-
-
 class WhisperCrossAttention(nn.Module):
     """
     Whisper cross-attention layer.
@@ -190,11 +175,6 @@ class WhisperCrossAttention(nn.Module):
         # Reshape back
         attn_out = attn_out.transpose(1, 2).contiguous().view(B, T, H * D)
         return self.out_proj(attn_out)
-
-
-# =============================================================================
-# Whisper Decoder Layer Wrapper
-# =============================================================================
 
 
 class WhisperDecoderLayerWithCache(nn.Module):
@@ -252,11 +232,6 @@ class WhisperDecoderLayerWithCache(nn.Module):
         hidden_states = residual + hidden_states
 
         return hidden_states
-
-
-# =============================================================================
-# Whisper Decoder Wrapper
-# =============================================================================
 
 
 class WhisperDecoderWithCache(nn.Module):
@@ -335,11 +310,6 @@ class WhisperDecoderWithCache(nn.Module):
         return logits
 
 
-# =============================================================================
-# Cross-KV Projection Module
-# =============================================================================
-
-
 class WhisperCrossKVProjection(nn.Module):
     """
     Compute cross-attention K/V projections from encoder hidden states.
@@ -391,11 +361,6 @@ class WhisperCrossKVProjection(nn.Module):
             v_list.append(v)
 
         return tuple(k_list), tuple(v_list)
-
-
-# =============================================================================
-# Export Functions
-# =============================================================================
 
 
 def export_whisper_to_mlx(
@@ -528,9 +493,6 @@ def export_whisper_to_mlx(
             logger.error("TorchAO not installed. Run: pip install torchao")
             raise
 
-    # =========================================================================
-    # Export Encoder
-    # =========================================================================
     logger.info("Exporting encoder...")
 
     with torch.no_grad():
@@ -541,9 +503,6 @@ def export_whisper_to_mlx(
 
     _save_to_pte(encoder_ep, os.path.join(output_dir, "encoder.pte"), "encoder")
 
-    # =========================================================================
-    # Export Cross-KV Projection
-    # =========================================================================
     logger.info("Exporting cross-KV projection...")
 
     with torch.no_grad():
@@ -561,9 +520,6 @@ def export_whisper_to_mlx(
 
     _save_to_pte(cross_kv_ep, os.path.join(output_dir, "cross_kv.pte"), "cross_kv")
 
-    # =========================================================================
-    # Export Decoder
-    # =========================================================================
     logger.info("Exporting decoder...")
 
     # Example inputs for decoder

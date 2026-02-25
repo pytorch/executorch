@@ -46,53 +46,6 @@ python backends/mlx/serialization/generate.py --flatc /path/to/flatc
 --dry-run         Print what would be generated without writing files
 ```
 
-## Adding a New Op
-
-1. **Edit `schema.fbs`**: Add a new table for your op and include it in the `OpNode` union:
-
-   ```flatbuffers
-   // Add the table definition
-   table MyNewNode {
-       x: Tid (required);
-       out: Tid (required);
-       some_param: int32;
-   }
-
-   // Add to the OpNode union
-   union OpNode {
-       // ... existing ops ...
-       MyNewNode
-   }
-   ```
-
-2. **Regenerate**: Run the generator:
-
-   ```bash
-   python backends/mlx/serialization/generate.py
-   ```
-
-3. **Register the op handler** in `ops.py`:
-
-   ```python
-   from executorch.backends.mlx.serialization.mlx_graph_schema import MyNewNode
-
-   @REGISTRY.register(torch.ops.aten.my_op.default)
-   def handle_my_op(P: MLXProgramBuilder, node: Node) -> MyNewNode:
-       x = P.get_tid(node.args[0])
-       out = P.get_output_tid(node)
-       return MyNewNode(x=x, out=out, some_param=42)
-   ```
-
-4. **Implement the C++ executor** in `MLXInterpreter.h`:
-
-   ```cpp
-   case OpCode::MY_NEW: {
-       auto& op = instr.get<MyNewNode>();
-       // MLX implementation
-       break;
-   }
-   ```
-
 ## File Structure
 
 ```

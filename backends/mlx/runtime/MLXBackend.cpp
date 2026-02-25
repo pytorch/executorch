@@ -239,39 +239,20 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
       Span<EValue*> args) const override {
-    // Async eval pipeline: three-phase execution to reduce lock contention.
-    //
-    // Phase 1 (LOCKED): Bind inputs, run interpreter (builds lazy graph),
-    //   prepare output pipeline (contiguous + astype), and submit all work
-    //   to GPU via async_eval. The lock is held during graph construction
-    //   and command submission because MLX's computation graph and eval_impl
-    //   are not thread-safe.
-    //
-    // Phase 2 (UNLOCKED): GPU executes commands on this handle's dedicated
-    //   Metal command queue. Another thread can acquire the lock and start
-    //   its own Phase 1 (graph construction + submission on a different
-    //   stream), overlapping with this handle's GPU work.
-    //
-    // Phase 3 (UNLOCKED): Wait for GPU completion via Metal shared events
-    //   (thread-safe), then memcpy results to ET output tensors. No MLX
-    //   graph state is accessed.
-
-    std::vector<array> prepared_outputs;
-    // Track output slot info needed for Phase 3
-    struct OutputInfo {
-      size_t arg_idx;
-      size_t prepared_idx;
-    };
-    std::vector<OutputInfo> tensor_output_info;
-    size_t arg_idx = 0;
-
     try {
+      std::vector<array> prepared_outputs;
+      struct OutputInfo {
+        size_t arg_idx;
+        size_t prepared_idx;
+      };
+
+      std::vector<OutputInfo> tensor_output_info;
+      size_t arg_idx = 0;
+
       auto* h = static_cast<MLXHandle*>(handle);
       const auto& program = h->program;
 
-      // ================================================================
-      // Phase 1: Graph construction + async GPU dispatch (LOCKED)
-      // ================================================================
+      // Graph construction + async GPU dispatch (locked)
       {
         std::lock_guard<std::mutex> lock(mlx_global_mutex());
 
@@ -285,7 +266,7 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
           return Error::InvalidArgument;
         }
 
-        // --- Bind inputs ---
+        // Bind inputs
         for (const auto& slot : program.input_map) {
           if (slot.slot_type == SlotType::TensorSlot) {
             const ETTensor& tensor = args[arg_idx++]->toTensor();
@@ -314,10 +295,10 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
           }
         }
 
-        // --- Run the MLX program (builds lazy computation graph) ---
+        // Run the MLX program (builds lazy computation graph)
         h->interpreter.run(program, h->state, h->stream);
 
-        // --- Prepare output pipeline and collect int outputs ---
+        // Prepare output pipeline and collect int outputs
         // Build contiguous + dtype conversion lazily for each tensor output,
         // and extract int outputs (which don't need GPU) while still locked.
         prepared_outputs.reserve(program.num_output_tensors);
@@ -348,7 +329,7 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
           }
         }
 
-        // --- Submit all output work to GPU asynchronously ---
+        // Submit all output work to GPU asynchronously
         // async_eval encodes Metal commands and returns immediately.
         // The GPU will signal events on completion.
         if (!prepared_outputs.empty()) {
@@ -357,18 +338,10 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
 
       } // Lock released — GPU is still executing
 
-      // ================================================================
-      // Phase 2: GPU executes (UNLOCKED)
-      // Another thread can now acquire the lock for its own Phase 1.
-      // ================================================================
-
-      // ================================================================
-      // Phase 3: Wait for GPU + copy results (UNLOCKED)
-      // array::wait() blocks on Metal shared events (thread-safe).
-      // memcpy reads from materialized GPU buffers.
-      // ================================================================
       for (auto& info : tensor_output_info) {
         ETTensor& out_tensor = args[info.arg_idx]->toTensor();
+
+        // write_output waits on arr to be ready
         write_output(prepared_outputs[info.prepared_idx], out_tensor);
       }
 

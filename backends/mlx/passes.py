@@ -40,11 +40,6 @@ def get_default_passes() -> List[ExportPass]:
     ]
 
 
-# =============================================================================
-# RMSNorm Pattern Matching and Fusion
-# =============================================================================
-
-
 @dataclass
 class RMSNormMatch(PatternMatch):
     """
@@ -511,11 +506,6 @@ class RemoveNoOpsPass(ExportPass):
             graph.lint()
 
         return PassResult(graph_module, modified)
-
-
-# =============================================================================
-# Common Subexpression Elimination
-# =============================================================================
 
 
 class CSEPass(ExportPass):

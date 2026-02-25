@@ -20,11 +20,6 @@ import torch
 from torch import Tensor
 
 
-# =============================================================================
-# kv_cache_update: Functional KV cache update for BHSD layout
-# =============================================================================
-
-
 @torch.library.custom_op("mlx::kv_cache_update", mutates_args=("cache",))
 def kv_cache_update(
     cache: Tensor,  # [B, H, S_max, D] - mutated in place
@@ -73,7 +68,6 @@ def kv_cache_update(
         )
         cache[:, :, start_pos:end_pos, :] = new_values
 
-    # Return dummy tensor like llama.update_cache does
     return torch.empty((1,), dtype=new_values.dtype, device=new_values.device)
 
 
@@ -86,11 +80,6 @@ def kv_cache_update_fake(
 ) -> Tensor:
     """Fake implementation for tracing - returns dummy tensor like llama.update_cache."""
     return torch.empty((1,), dtype=new_values.dtype, device="meta")
-
-
-# =============================================================================
-# custom_sdpa: Scaled Dot-Product Attention with KV cache slicing
-# =============================================================================
 
 
 @torch.library.custom_op("mlx::custom_sdpa", mutates_args=())
@@ -192,11 +181,6 @@ def mlx_custom_sdpa_fake(
 ) -> Tensor:
     """Fake implementation for tracing - returns BHSD shape (same as query)."""
     return query.new_empty(query.shape)
-
-
-# =============================================================================
-# rope: Rotary Position Embedding (single tensor)
-# =============================================================================
 
 
 @torch.library.custom_op("mlx::rope", mutates_args=())

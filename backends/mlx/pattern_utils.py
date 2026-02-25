@@ -50,11 +50,6 @@ from torch.fx.node import Node
 WalkBackEntry = Union[Node, None, List[Node]]
 
 
-# =============================================================================
-# Node Matching Utilities
-# =============================================================================
-
-
 def match_target(node: Node, op: Any) -> bool:
     """
     Check if a node's normalized aten target matches the given op.
@@ -70,12 +65,10 @@ def match_target(node: Node, op: Any) -> bool:
 
 
 def has_single_user(node: Node) -> bool:
-    """Check if a node has exactly one consumer."""
     return len(node.users) == 1
 
 
 def has_no_users(node: Node) -> bool:
-    """Check if a node has no consumers (dead code)."""
     return len(node.users) == 0
 
 
@@ -106,11 +99,6 @@ def extract_lifted_tensor_constant(node: Node) -> Optional[float]:
         return float(val.item())
     except (RuntimeError, ValueError):
         return None
-
-
-# =============================================================================
-# Pattern Walking Infrastructure
-# =============================================================================
 
 
 @dataclass
@@ -305,11 +293,6 @@ def walk_back(  # noqa: C901
         return None
 
     return cur, entries
-
-
-# =============================================================================
-# Pattern Match Base Class
-# =============================================================================
 
 
 @dataclass

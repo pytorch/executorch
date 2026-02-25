@@ -16,7 +16,7 @@ This module is responsible for:
 4. Building the final MLXGraph dataclass for serialization
 
 Op handlers are registered in ops.py.
-Pattern handlers are registered in mlx_patterns.py.
+Pattern handlers are registered in patterns.py.
 """
 
 from __future__ import annotations
@@ -62,11 +62,6 @@ from executorch.exir.sym_util import eval_shape_upper_bound
 from torch.export.exported_program import ExportedProgram
 from torch.fx.node import Node
 from torch.utils import _pytree as pytree
-
-
-# =============================================================================
-# Utility functions
-# =============================================================================
 
 
 def get_aten_target(target):
@@ -294,10 +289,6 @@ def parse_dequant_node(
     return qdata, scale, zero_point, group_size, bits, out_dtype, quantized_dim
 
 
-# =============================================================================
-# Type conversions
-# =============================================================================
-
 # Mapping from torch dtype to ET ScalarType int value
 # See executorch/exir/scalar_type.py for ScalarType enum
 _TORCH_DTYPE_TO_SCALAR_TYPE: Dict[torch.dtype, int] = {
@@ -363,11 +354,6 @@ def _check_input_dtypes(node: Node) -> Optional[str]:
                 return f"kwarg '{kwarg_name}' ({kwarg_val.name}) {dtype_error}"
 
     return None
-
-
-# =============================================================================
-# Slot management
-# =============================================================================
 
 
 class IdType(Enum):
@@ -495,7 +481,7 @@ class SlotManager:
         """
         Get or create slots for a node. Always returns a tuple of slots.
 
-        Use this for multi-output ops (e.g., rope returns (q_out, k_out)).
+        Use this for multi-output ops (e.g., topk returns (values, indices)).
         For single-output ops, prefer make_or_get_slot() which returns a single Slot.
         """
         if node.name in self.name_to_slot:
@@ -542,10 +528,6 @@ class SlotManager:
         )
         return slots[0]
 
-
-# =============================================================================
-# Pattern handlers for fused ops
-# =============================================================================
 
 # Handler type: takes (builder, node) and returns optional slot(s)
 # Returns None for no-ops, Slot for single outputs, Tuple[Slot, ...] for multiple outputs
@@ -595,11 +577,6 @@ class PatternHandler:
             P.node_info[n].handler = PatternHandler.deferred_handler
 
 
-# =============================================================================
-# Node info tracking
-# =============================================================================
-
-
 @dataclass
 class NodeInfo:
     handled: bool = False
@@ -608,11 +585,6 @@ class NodeInfo:
     unsupported_reason: Optional[str] = None
     name: Optional[str] = None
     remaining_reads: int = 0
-
-
-# =============================================================================
-# Pattern matching
-# =============================================================================
 
 
 class PatternMatcher:
@@ -659,11 +631,6 @@ class PatternMatcher:
             if handler is not None:
                 logger.debug(f"Pattern {name} matched at node {n.name}")
                 self._matches.append(handler)
-
-
-# =============================================================================
-# Op registry
-# =============================================================================
 
 
 class MLXOpRegistry:
@@ -755,11 +722,6 @@ class MLXOpRegistry:
 REGISTRY = MLXOpRegistry()
 
 
-# =============================================================================
-# MLXProgramBuilder - main class
-# =============================================================================
-
-
 class MLXProgramBuilder:
     """
     Builds an MLXGraph from an ExportedProgram.
@@ -800,16 +762,8 @@ class MLXProgramBuilder:
             return f"{self._named_data_key_prefix}/{name}"
         return name
 
-    # -------------------------------------------------------------------------
-    # Op emission helpers
-    # -------------------------------------------------------------------------
-
     def emit(self, op: OpNodeUnion) -> None:
         self._instrs.append(Instruction(op=op))
-
-    # -------------------------------------------------------------------------
-    # Slot and arg helpers
-    # ---------------------------------------- ---------------------------------
 
     def args(self, node: Node) -> Tuple[Any, ...]:
         return self.slot_map(node.args)
@@ -903,10 +857,6 @@ class MLXProgramBuilder:
 
         raise KeyError(f"Unable to resolve placeholder {placeholder_name}")
 
-    # -------------------------------------------------------------------------
-    # Slot to Tid/Vid conversion
-    # -------------------------------------------------------------------------
-
     def slot_to_tid(self, slot: Slot) -> Tid:
         """Convert a tensor Slot to a Tid, recording it for later remapping."""
         assert slot.id_type == IdType.Tensor
@@ -931,10 +881,6 @@ class MLXProgramBuilder:
         if isinstance(v, Slot):
             return FloatOrVid.from_vid(self.slot_to_vid(v))
         return FloatOrVid.from_literal(float(v))
-
-    # -------------------------------------------------------------------------
-    # Node lifecycle management
-    # -------------------------------------------------------------------------
 
     def _mark_read(self, node: Node):
         assert self.node_info[node].handled, f"Node {node} is not handled"
@@ -1006,10 +952,6 @@ class MLXProgramBuilder:
             nodes = [nodes]
         for node in nodes:
             self._mark_node_unsupported(node, reason)
-
-    # -------------------------------------------------------------------------
-    # I/O slot creation
-    # -------------------------------------------------------------------------
 
     def _make_io_slots(self):  # noqa: C901
         from torch.export.graph_signature import (
@@ -1097,10 +1039,6 @@ class MLXProgramBuilder:
                 for o in outs:
                     if isinstance(o, Node) and o.name in user_outputs:
                         self.make_or_get_slot(o, id_space=IdSpace.Output)
-
-    # -------------------------------------------------------------------------
-    # Build process
-    # -------------------------------------------------------------------------
 
     def _mark_noop(self):
         """Mark noops and dead nodes."""
@@ -1634,10 +1572,6 @@ class MLXProgramBuilder:
                     return self.ep.constants[ispec.target]
         return None
 
-
-# =============================================================================
-# Import op and pattern handlers to register them
-# =============================================================================
 
 # These imports register the handlers with the REGISTRY
 # They must come after REGISTRY is defined

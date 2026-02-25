@@ -35,10 +35,6 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 
-# =============================================================================
-# Configuration
-# =============================================================================
-
 SCRIPT_DIR = Path(__file__).parent
 SCHEMA_FBS = SCRIPT_DIR / "schema.fbs"
 GENERATED_DIR = SCRIPT_DIR / "_generated"
@@ -50,11 +46,6 @@ LOADER_H_TMPL = SCRIPT_DIR / "MLXLoader.h.tmpl"
 LOADER_CPP_TMPL = SCRIPT_DIR / "MLXLoader.cpp.tmpl"
 LOADER_H = RUNTIME_DIR / "MLXLoader.h"
 LOADER_CPP = RUNTIME_DIR / "MLXLoader.cpp"
-
-
-# =============================================================================
-# FBS Parser
-# =============================================================================
 
 
 @dataclass
@@ -71,10 +62,6 @@ class FBSField:
     required: bool
     default: Optional[str]
 
-
-# =============================================================================
-# Shared type constants
-# =============================================================================
 
 # FBS integer types (signed and unsigned)
 FBS_INTEGER_TYPES = frozenset(
@@ -392,11 +379,6 @@ def _generate_dataclass(table: FBSTable) -> List[str]:
     return lines
 
 
-# =============================================================================
-# Python dataclass generation
-# =============================================================================
-
-
 def generate_python_schema(schema: FBSSchema) -> str:  # noqa: C901
     """Generate mlx_graph_schema.py from parsed FBS."""
     lines = _file_header("#")
@@ -549,11 +531,6 @@ def _fbs_default_to_python(default: Optional[str], fbs_type: str) -> Optional[st
 
     # Numeric defaults
     return default
-
-
-# =============================================================================
-# Python serializer generation (existing code, refactored)
-# =============================================================================
 
 
 def generate_python_serializers(schema: FBSSchema) -> str:
@@ -746,10 +723,6 @@ def _generate_op_builder_method(table: FBSTable) -> str:
     return "\n".join(lines)
 
 
-# ---------------------------------------------------------------------------
-# Python builder emitters — data-driven per field kind
-# ---------------------------------------------------------------------------
-
 # Prebuild emitters: return list of lines or None if no prebuild needed.
 # These build offsets/vectors that must be created before FlatBuffer Start().
 
@@ -897,16 +870,10 @@ def _to_pascal_case(name: str) -> str:
     return "".join(p.capitalize() for p in parts)
 
 
-# =============================================================================
-# C++ generation
-# =============================================================================
-
-
 def generate_cpp_loader_h(schema: FBSSchema) -> str:
     """Generate MLXLoader.h from parsed FBS using template."""
     op_nodes = schema.get_op_nodes()
 
-    # --- Dynamic part 1: op node structs ---
     struct_lines = []
     for table in op_nodes:
         struct_lines.append(f"struct {table.name} {{")
@@ -921,19 +888,16 @@ def generate_cpp_loader_h(schema: FBSSchema) -> str:
             struct_lines.append("};")
         struct_lines.append("")
 
-    # --- Dynamic part 2: OpCode enum values ---
     enum_lines = []
     for table in op_nodes:
         enum_lines.append(f"  {_table_name_to_opcode(table.name)},")
 
-    # --- Dynamic part 3: op_name() switch cases ---
     name_lines = []
     for table in op_nodes:
         op_code = _table_name_to_opcode(table.name)
         name_lines.append(f"    case OpCode::{op_code}:")
         name_lines.append(f'      return "{op_code}";')
 
-    # --- Dynamic part 4: NodeVariant type list ---
     variant_lines = []
     for i, table in enumerate(op_nodes):
         comma = "," if i < len(op_nodes) - 1 else ""
@@ -1016,7 +980,6 @@ def generate_cpp_loader_cpp(schema: FBSSchema) -> str:
     """Generate MLXLoader.cpp from parsed FBS using template."""
     op_nodes = schema.get_op_nodes()
 
-    # --- Dynamic part: switch cases for load_instruction ---
     case_lines = []
     for table in op_nodes:
         case_lines.extend(_generate_loader_case(table))
@@ -1078,11 +1041,6 @@ def _generate_loader_case(table: FBSTable) -> List[str]:
     )
 
     return lines
-
-
-# ---------------------------------------------------------------------------
-# C++ loader emitters — data-driven per field kind
-# ---------------------------------------------------------------------------
 
 
 # Maps kinds to their C++ converter function name
@@ -1155,11 +1113,6 @@ def _emit_cpp_load(kind: str, name: str, fb_name: str) -> "List[str] | None":
     return None
 
 
-# =============================================================================
-# FlatBuffer compilation
-# =============================================================================
-
-
 def run_flatc(flatc_path: str = "flatc") -> bool:
     """Run flatc to generate Python and C++ bindings."""
     print(f"Running flatc on {SCHEMA_FBS}...")
@@ -1207,11 +1160,6 @@ def run_flatc(flatc_path: str = "flatc") -> bool:
         success = False
 
     return success
-
-
-# =============================================================================
-# Inspector Generation
-# =============================================================================
 
 
 # Mapping from fine-grained field kinds (from _get_field_kind) to inspector
@@ -1304,11 +1252,6 @@ def generate_inspector(schema: "Schema") -> str:  # noqa: F821
     lines.append("")
 
     return "\n".join(lines)
-
-
-# =============================================================================
-# Main
-# =============================================================================
 
 
 def main():  # noqa: C901

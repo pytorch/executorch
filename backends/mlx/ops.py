@@ -138,11 +138,6 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
 from torch.fx.node import Node
 
 
-# =============================================================================
-# Parameter validation utilities
-# =============================================================================
-
-
 def require_static_int(value: Any, param_name: str, op_name: str) -> None:
     """
     Validate that a parameter is a static integer (not a Slot/SymInt).
@@ -324,11 +319,6 @@ def normalize_reduction_dim(
     return dim, keepdim
 
 
-# =============================================================================
-# Basic ops
-# =============================================================================
-
-
 @REGISTRY.register(target=["NOOP", torch.ops.aten._assert_scalar.default])
 def _noop_handler(P: MLXProgramBuilder, n: Node) -> None:
     """No-op handler for nodes that don't emit any MLX instructions."""
@@ -402,7 +392,6 @@ def _addmm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_kwargs(kwargs, {"beta", "alpha"}, "aten.addmm")
     bias, mat1, mat2 = args[0], args[1], args[2]
 
-    # Get kwargs for beta and alpha (default to 1)
     beta = kwargs.get("beta", 1)
     alpha = kwargs.get("alpha", 1)
 
@@ -2110,7 +2099,6 @@ def _relu_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         raise ValueError("Input tensor metadata not found for relu")
     dtype = x_meta.dtype
 
-    # Create a temporary slot for scalar zero using slot_manager
     _, zero_slot = P.make_tmp_slot()
 
     # Emit FullNode to create a scalar zero (shape=[])
@@ -2541,8 +2529,7 @@ def _full_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     )
     out = P.make_or_get_slot(n)
     shape = args[0]
-    shape = args[0]  # List of int or Slot for dynamic dims
-    fill_value = args[1]  # Scalar
+    fill_value = args[1]
     dtype = n.kwargs.get("dtype")
 
     # Convert shape to IntOrVid (supports both static ints and dynamic Slots)
@@ -2575,9 +2562,7 @@ def _zeros_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     )
     out = P.make_or_get_slot(n)
 
-    # aten.zeros(size, *, dtype=None, ...)
     shape = n.args[0]
-    shape = n.args[0]  # List[int] or may contain Slots for dynamic dims
     dtype = n.kwargs.get("dtype")
 
     # Convert shape to IntOrVid (supports both static ints and dynamic Slots)
@@ -2610,9 +2595,7 @@ def _ones_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     )
     out = P.make_or_get_slot(n)
 
-    # aten.ones(size, *, dtype=None, ...)
     shape = n.args[0]
-    shape = n.args[0]  # List[int] or may contain Slots for dynamic dims
     dtype = n.kwargs.get("dtype")
 
     # Convert shape to IntOrVid (supports both static ints and dynamic Slots)
@@ -2739,11 +2722,6 @@ def _full_like_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
     )
     return out
-
-
-# =============================================================================
-# Comparison Ops
-# =============================================================================
 
 
 @REGISTRY.register(target=[torch.ops.aten.lt.Tensor, torch.ops.aten.lt.Scalar])
@@ -2878,11 +2856,6 @@ def _not_equal_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
-# =============================================================================
-# Logical Ops
-# =============================================================================
-
-
 @REGISTRY.register(target=[torch.ops.aten.logical_not.default])
 def _logical_not_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.logical_not - element-wise logical NOT."""
@@ -3013,11 +2986,6 @@ def _scalar_tensor_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
-# =============================================================================
-# Triangular Matrix Ops
-# =============================================================================
-
-
 @REGISTRY.register(target=[torch.ops.aten.tril.default])
 def _tril_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.tril - extract lower triangular part of matrix.
@@ -3076,11 +3044,6 @@ def _triu_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 # (without needing an input tensor). There's no direct PyTorch aten.tri op - the typical
 # pattern is torch.ones(n, m).tril(k). A fusion pass could optimize this to use TriNode.
 # For now, TriNode can be used directly via the serialization API if needed.
-
-
-# =============================================================================
-# Math Ops - Unary Element-wise
-# =============================================================================
 
 
 @REGISTRY.register(target=[torch.ops.aten.floor.default])
@@ -3398,11 +3361,6 @@ def _neg_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
-# =============================================================================
-# Math Ops - Binary Element-wise
-# =============================================================================
-
-
 @REGISTRY.register(target=[torch.ops.aten.atan2.default])
 def _atan2_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.atan2 - arc tangent of y/x."""
@@ -3484,7 +3442,6 @@ def _pow_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         input_meta = n.args[0].meta.get("val")
         dtype = input_meta.dtype if input_meta is not None else torch.float32
 
-        # Create a scalar (0-D) tensor for the exponent
         _, b_slot = P.make_tmp_slot()
         P.emit(
             FullNode(
@@ -3499,11 +3456,6 @@ def _pow_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     out = P.make_or_get_slot(n)
     P.emit(PowerNode(a=P.slot_to_tid(a), b=P.slot_to_tid(b), out=P.slot_to_tid(out)))
     return out
-
-
-# =============================================================================
-# Math Ops - Reduction
-# =============================================================================
 
 
 @REGISTRY.register(target=[torch.ops.aten.logsumexp.default])
@@ -3790,11 +3742,6 @@ def _argmin_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
-# =============================================================================
-# Pooling ops (MaxPool / AvgPool 1d/2d/3d)
-# =============================================================================
-
-
 def _parse_pool_args(args, ndim, op_name):
     """Parse pooling op arguments, normalizing scalars to lists.
 
@@ -4001,9 +3948,6 @@ def _emit_pool_nd(
     return out
 
 
-# --- MaxPool handlers ---
-
-
 @REGISTRY.register(target=[torch.ops.aten.max_pool2d_with_indices.default])
 def _max_pool2d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.max_pool2d_with_indices.
@@ -4044,9 +3988,6 @@ def _max_pool3d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     _emit_pool_nd(P, n, 3, MaxNode, float("-inf"), kernel_size, stride, padding)
 
 
-# --- AvgPool handlers ---
-
-
 @REGISTRY.register(target=[torch.ops.aten.avg_pool1d.default])
 def _avg_pool1d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.avg_pool1d."""
@@ -4072,11 +4013,6 @@ def _avg_pool3d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     kernel_size, stride, padding = _parse_pool_args(args, 3, "aten.avg_pool3d")
 
     return _emit_pool_nd(P, n, 3, MeanNode, 0.0, kernel_size, stride, padding)
-
-
-# =============================================================================
-# Standalone dequantize (torchao.dequantize_affine)
-# =============================================================================
 
 
 @REGISTRY.register(target=[torch.ops.torchao.dequantize_affine.default])

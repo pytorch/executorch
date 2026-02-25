@@ -57,11 +57,6 @@ def discover_and_import_tests():
     importlib.import_module(".test_ops", package=__package__)
 
 
-# =============================================================================
-# Single Test Runner (for parallel execution)
-# =============================================================================
-
-
 def _run_single_test(
     test_class_name: str,
     config_name: str,
@@ -72,8 +67,8 @@ def _run_single_test(
     """
     Run a single test configuration in a subprocess.
 
-    This function is designed to be called via ProcessPoolExecutor.
-    It recreates the test instance from the class name and kwargs.
+    Called via multiprocessing.Pool.starmap for parallel execution.
+    Recreates the test instance from the class name and kwargs.
 
     Args:
         test_class_name: Name of the test class module.path

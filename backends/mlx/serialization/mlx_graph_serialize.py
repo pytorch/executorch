@@ -48,40 +48,25 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (  # noqa: F4
 )
 from executorch.exir._serialize._program import Cord
 
-# =============================================================================
-# Constants
-# =============================================================================
-
 HEADER_LENGTH = 24
 MAGIC = b"MLX0"
 ALIGNMENT = 16
 
 
-# =============================================================================
-# FlatBuffer Builder Helpers
-# =============================================================================
-
-
 def _padding_required(offset: int, alignment: int) -> int:
-    """Returns padding needed to align offset to alignment boundary."""
     remainder = offset % alignment
     return (alignment - remainder) % alignment
 
 
 def _build_tid(builder: flatbuffers.Builder, tid: Tid) -> int:
-    """Build a Tid struct (inline, returns 0 - structs are written inline)."""
-    # Structs in FlatBuffers are written inline, not as offsets
-    # We'll handle this in the parent table
     return tid.idx
 
 
 def _build_vid(builder: flatbuffers.Builder, vid: Vid) -> int:
-    """Build a Vid struct (inline, returns 0 - structs are written inline)."""
     return vid.idx
 
 
 def _build_int_or_vid(builder: flatbuffers.Builder, iov: IntOrVid) -> int:
-    """Build an IntOrVid table."""
     # Import the MODULE (not class) to access builder functions
     from executorch.backends.mlx.serialization._generated.mlx_delegate import (
         IntOrVid as FBIntOrVidModule,
@@ -100,22 +85,15 @@ def _build_int_or_vid(builder: flatbuffers.Builder, iov: IntOrVid) -> int:
 
 
 def _build_string(builder: flatbuffers.Builder, s: str) -> int:
-    """Build a string and return its offset."""
     return builder.CreateString(s)
 
 
 def _build_int_vector(builder: flatbuffers.Builder, vec: List[int]) -> int:
-    """Build a vector of int32 and return its offset."""
     # FlatBuffers vectors must be created before the table that contains them
     builder.StartVector(4, len(vec), 4)  # elem_size=4, num_elems, alignment
     for v in reversed(vec):
         builder.PrependInt32(v)
     return builder.EndVector()
-
-
-# =============================================================================
-# Serialization Cord Builder
-# =============================================================================
 
 
 class MLXGraphSerializer(GeneratedOpBuilders):
@@ -165,7 +143,6 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         return bytes(result)
 
     def _build_flatbuffer(self) -> bytes:
-        """Build the FlatBuffer portion of the payload."""
         builder = flatbuffers.Builder(4096)
 
         # Build all components bottom-up (FlatBuffers requirement)
@@ -244,7 +221,6 @@ class MLXGraphSerializer(GeneratedOpBuilders):
     def _build_instruction(
         self, builder: flatbuffers.Builder, instr: Instruction
     ) -> int:
-        """Build an Instruction table containing an op."""
         op_offset, op_type = self._build_op_node(builder, instr.op)
 
         from executorch.backends.mlx.serialization._generated.mlx_delegate import (
@@ -275,16 +251,9 @@ class MLXGraphSerializer(GeneratedOpBuilders):
 
         return builder_method(builder, op)
 
-    # =========================================================================
-    # Op Node Builders - From GeneratedOpBuilders mixin
-    # =========================================================================
-    # Individual op builders are inherited from GeneratedOpBuilders.
-    # Only override here if custom behavior is needed.
-
     def _build_offset_vector(
         self, builder: flatbuffers.Builder, offsets: List[int]
     ) -> int:
-        """Build a vector of table offsets."""
         builder.StartVector(4, len(offsets), 4)
         for off in reversed(offsets):
             builder.PrependUOffsetTRelative(off)
@@ -293,7 +262,6 @@ class MLXGraphSerializer(GeneratedOpBuilders):
     def _build_slot_variant_vector(
         self, builder: flatbuffers.Builder, slots: List[SlotVariant]
     ) -> int:
-        """Build a vector of SlotVariant tables."""
         offsets = []
         for slot in slots:
             offsets.append(self._build_slot_variant(builder, slot))
@@ -302,7 +270,6 @@ class MLXGraphSerializer(GeneratedOpBuilders):
     def _build_slot_variant(
         self, builder: flatbuffers.Builder, slot: SlotVariant
     ) -> int:
-        """Build a SlotVariant table."""
         from executorch.backends.mlx.serialization._generated.mlx_delegate import (
             SlotVariant as FBSlotVariantModule,
         )
@@ -313,7 +280,6 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         return FBSlotVariantModule.End(builder)
 
     def _build_named_slot(self, builder: flatbuffers.Builder, ns: NamedSlot) -> int:
-        """Build a NamedSlot table."""
         name_off = builder.CreateString(ns.name)
         slot_off = self._build_slot_variant(builder, ns.slot)
 
@@ -327,7 +293,6 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         return FBNamedSlotModule.End(builder)
 
     def _build_tensor_meta(self, builder: flatbuffers.Builder, tm: TensorMeta) -> int:
-        """Build a TensorMeta table."""
         # Shape is now a vector of IntOrVid tables
         shape_offsets = []
         for dim in tm.shape:
@@ -359,11 +324,6 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         return FBTensorMetaModule.End(builder)
 
 
-# =============================================================================
-# Convenience function
-# =============================================================================
-
-
 def serialize_mlx_graph(graph: MLXGraph, constant_data: bytes = b"") -> bytes:
     """
     Serialize an MLXGraph to bytes.
@@ -377,11 +337,6 @@ def serialize_mlx_graph(graph: MLXGraph, constant_data: bytes = b"") -> bytes:
     """
     serializer = MLXGraphSerializer(graph, constant_data)
     return serializer.serialize()
-
-
-# =============================================================================
-# Deserialization (for debugging / JSON dump)
-# =============================================================================
 
 
 def parse_header(data: bytes) -> Tuple[int, int, int, int]:
@@ -433,7 +388,6 @@ def deserialize_to_json(data: bytes) -> dict:
 
 
 def _fb_to_dict(obj: Any) -> Any:
-    """Recursively convert FlatBuffer object to dict."""
     if obj is None:
         return None
     if isinstance(obj, (int, float, str, bool, bytes)):

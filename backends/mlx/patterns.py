@@ -57,11 +57,6 @@ from torch.fx.node import Node
 QUANTIZED_SERIALIZE_BIASES = True
 
 
-# =============================================================================
-# INDEX_UPDATE pattern
-# =============================================================================
-
-
 @REGISTRY.register_pattern(name="INDEX_UPDATE")
 class IndexUpdateHandler(PatternHandler):
     """
@@ -144,11 +139,6 @@ class IndexUpdateHandler(PatternHandler):
         else:
             P.set_slot(n, dst)
             return dst
-
-
-# =============================================================================
-# ET_KV_CACHE_UPDATE pattern
-# =============================================================================
 
 
 @REGISTRY.register_pattern(name="ET_KV_CACHE_UPDATE")
@@ -417,11 +407,6 @@ class ETKVCacheUpdateHandler(PatternHandler):
         )
 
 
-# =============================================================================
-# SDPA pattern
-# =============================================================================
-
-
 @REGISTRY.register_pattern(name="SDPA")
 class SDPAHandler(PatternHandler):
     """
@@ -571,11 +556,6 @@ class SDPAHandler(PatternHandler):
             )
         )
         return out
-
-
-# =============================================================================
-# MLX_CUSTOM_SDPA pattern (mlx::custom_sdpa)
-# =============================================================================
 
 
 @REGISTRY.register_pattern(name="MLX_CUSTOM_SDPA")
@@ -745,11 +725,6 @@ class MLXCustomSdpaHandler(PatternHandler):
         return out_slot
 
 
-# =============================================================================
-# QUANTIZED_LINEAR pattern
-# =============================================================================
-
-
 @REGISTRY.register_pattern(name="QUANTIZED_LINEAR")
 class QuantizedLinearHandler(PatternHandler):
     """
@@ -865,11 +840,6 @@ class QuantizedLinearHandler(PatternHandler):
             )
         )
         return out
-
-
-# =============================================================================
-# QUANTIZED_EMBEDDING pattern
-# ============================================================================
 
 
 @REGISTRY.register_pattern(name="QUANTIZED_EMBEDDING")

@@ -157,7 +157,7 @@ Test artifacts are saved to `op_tests/<test_name>/`:
 
 ## Test harness
 
-MLX also plugs into the ExeucTorch test harness for even more coverage. To run, use the following command from the ExecuTorch root directory:
+MLX also plugs into the ExecuTorch test harness for even more coverage. To run, use the following command from the ExecuTorch root directory:
 
 ```bash
 pytest -c /dev/null backends/test/suite/operators/ -m flow_mlx

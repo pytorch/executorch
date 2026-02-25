@@ -126,7 +126,7 @@ class KVCache(nn.Module):
         Returns:
             Tuple of (k_cache, v_cache) - slices of the FULL cache buffers
         """
-        # Extract start position as int (SymInt during tracing)
+
         if isinstance(input_pos, torch.Tensor):
             start_pos = input_pos[0].item()
             seq_len = k_val.size(2)
@@ -136,18 +136,12 @@ class KVCache(nn.Module):
         else:
             start_pos = input_pos
 
-        # Use MLX custom op for cache update (mutates in place)
         torch.ops.mlx.kv_cache_update(self.k_cache, k_val, start_pos)
         torch.ops.mlx.kv_cache_update(self.v_cache, v_val, start_pos)
 
         # Return full slices of the cache (creates new tensor nodes in the graph)
         # This avoids the issue where the same tensor is both BUFFER_MUTATION and USER_OUTPUT
         return self.k_cache[:, :, :, :], self.v_cache[:, :, :, :]
-
-
-# =============================================================================
-# RingBufferKVCache - Sliding Window KV Cache
-# =============================================================================
 
 
 class RingBufferKVCache(nn.Module):
@@ -235,8 +229,6 @@ class RingBufferKVCache(nn.Module):
             start_pos = input_pos
             seq_len = k_val.size(2)
 
-        # Use MLX custom op for ring buffer cache update (mutates in place)
-        # ring_size enables wrapping: write_pos = start_pos % ring_size
         torch.ops.mlx.kv_cache_update(
             self.k_cache, k_val, start_pos, ring_size=self.buffer_size
         )
@@ -286,10 +278,6 @@ class RingBufferKVCache(nn.Module):
 
         return torch.where(attn_mask, 0.0, float("-inf")).unsqueeze(0).unsqueeze(0)
 
-
-# =============================================================================
-# HFStaticCache - Standalone HuggingFace-compatible Static Cache
-# =============================================================================
 
 from transformers.cache_utils import StaticCache
 
@@ -424,28 +412,15 @@ class HFStaticCache(StaticCache):
         return self.kv_cache[layer_idx].update(cache_position, key_states, value_states)
 
     def get_seq_length(self, layer_idx: int = 0) -> int:
-        """
-        Get the current sequence length in the cache.
-
-        Note: This is approximate - returns the number of non-zero positions.
-
-        Args:
-            layer_idx: Layer index to check (default: 0)
-
-        Returns:
-            Approximate sequence length
-        """
-        # Check how many positions have been filled by looking for non-zero values
+        """Approximate sequence length (counts non-zero cache positions)."""
         k_cache = self.kv_cache[layer_idx].k_cache
         # Check if any value in the head_dim is non-zero for each position
         return (k_cache[0, 0, :, 0] != 0).sum().item()
 
     def get_max_cache_shape(self, layer_idx: int = 0) -> int:
-        """Get the maximum cache length."""
         return self.max_cache_len
 
     def reset(self):
-        """Reset all cache buffers to zero."""
         for layer_cache in self.kv_cache:
             layer_cache.k_cache.zero_()
             layer_cache.v_cache.zero_()

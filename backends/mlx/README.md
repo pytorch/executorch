@@ -85,7 +85,7 @@ logging from the partitioner and preprocessor — including ops-to-not-decompose
 lists, graph dumps, per-node support decisions, and serialization details:
 
 ```bash
-ET_MLX_DEBUG=1 python -m executorch.backends.mlx.examples.llm.export_llama ...
+ET_MLX_DEBUG=1 python -m executorch.backends.mlx.examples.llm.export_llm_hf ...
 ```
 
 ---
@@ -107,19 +107,29 @@ backends/mlx/
 │   ├── MLXExecutor.h           # ExecutionState, constant loading, helpers
 │   ├── MLXInterpreter.h        # Op dispatch loop + per-op exec_* functions
 │   └── schema_generated.h      # [GENERATED] FlatBuffer C++ bindings (flatc)
+├── llm/                        # LLM infrastructure (KV cache, attention, etc.)
+│   ├── cache.py                # KV cache implementations (ET + HF static cache)
+│   ├── et_attention.py         # ExecuTorch custom SDPA attention
+│   ├── hf_attention.py         # HuggingFace custom SDPA attention
+│   ├── quantization.py         # TorchAO quantization helpers
+│   └── source_transformation.py # Source transforms for MLX export
 ├── ops.py                      # Op handlers  (ATen target → MLX IR node)
 ├── patterns.py                 # Pattern handlers (multi-node fusions)
+├── passes.py                   # Graph passes (RMSNorm fusion, CSE, etc.)
+├── pattern_utils.py            # Pattern matching utilities for passes
 ├── program_builder.py          # MLXProgramBuilder + REGISTRY
 ├── partitioner.py              # Decides which ops to delegate to MLX
 ├── preprocess.py               # BackendDetails.preprocess() entry point
-├── custom_ops.py               # Custom torch ops (rope, etc.)
+├── custom_ops.py               # Custom torch ops (kv_cache_update, custom_sdpa, rope)
+├── _logging.py                 # Debug logging utilities (ET_MLX_DEBUG)
+├── pte_inspector.py            # .pte file inspection/debugging tool
 ├── test/
 │   ├── test_ops.py             # Op test definitions (models + configs)
 │   ├── test_utils.py           # OpTestCase base class + helpers
 │   ├── op_test_runner.cpp      # C++ test runner (loads .pte, runs, compares)
 │   └── run_all_tests.py        # End-to-end: export → C++ run → compare
 └── examples/
-    ├── llm/                    # LLM export + run (Llama, etc.)
+    ├── llm/                    # LLM export + run via HuggingFace
     └── whisper/                # Whisper export + run
 ```
 

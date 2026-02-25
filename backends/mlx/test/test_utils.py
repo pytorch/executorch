@@ -27,10 +27,6 @@ import numpy as np
 import torch
 
 
-# =============================================================================
-# Timeout Support
-# =============================================================================
-
 DEFAULT_TEST_TIMEOUT = 300  # 5 minutes default timeout
 
 
@@ -48,10 +44,6 @@ DTYPE_INT64 = 3
 DTYPE_BFLOAT16 = 4
 DTYPE_BOOL = 5
 
-
-# =============================================================================
-# Tolerance Presets by DType
-# =============================================================================
 
 # Default tolerance presets for different data types.
 # These are based on the precision characteristics of each dtype:
@@ -206,9 +198,6 @@ def save_tensors_to_bin(tensors: List[torch.Tensor], path: Union[str, Path]) -> 
 
 
 def load_tensors_from_bin(path: Union[str, Path]) -> List[torch.Tensor]:
-    """
-    Load a list of tensors from a binary file.
-    """
     path = Path(path)
 
     # Mapping from torch dtype to numpy dtype
@@ -664,10 +653,6 @@ def run_cpp_test_runner(
     return True
 
 
-# =============================================================================
-# Cleanup Utilities
-# =============================================================================
-
 # Files that are generated during tests and can be safely cleaned up
 GENERATED_TEST_FILES = [
     "model.pte",
@@ -756,10 +741,6 @@ def get_test_output_size(test_names: Optional[List[str]] = None) -> int:
 
     return total_size
 
-
-# =============================================================================
-# Test Registry
-# =============================================================================
 
 # Global registry: maps base_name -> (test_class, get_test_configs method)
 # Tests are instantiated lazily when actually run, not at import time
@@ -1063,11 +1044,6 @@ class OpTestCase:
             print(f"✗ FAILED: {message}")
 
         return passed
-
-
-# =============================================================================
-# Common CLI helper for op tests
-# =============================================================================
 
 
 def run_op_test_main(

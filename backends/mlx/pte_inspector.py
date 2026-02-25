@@ -29,14 +29,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
-# =============================================================================
-# PTE File Header Parsing
-# =============================================================================
-
-
 @dataclass
 class PTEHeader:
-    """Extended header from a PTE file."""
 
     magic: bytes
     length: int
@@ -46,7 +40,6 @@ class PTEHeader:
 
     @classmethod
     def from_bytes(cls, data: bytes) -> "PTEHeader":
-        """Parse extended header from raw bytes."""
         if len(data) < 32:
             raise ValueError(f"Not enough data for header: {len(data)} < 32")
 
@@ -79,17 +72,12 @@ class PTEHeader:
         }
 
 
-# =============================================================================
-# MLX Delegate Payload Parsing
-# =============================================================================
-
 MLX_MAGIC = b"MLX0"
 MLX_HEADER_LENGTH = 24
 
 
 @dataclass
 class MLXHeader:
-    """Header from MLX delegate payload."""
 
     magic: bytes
     data_segment_offset: int
@@ -97,7 +85,6 @@ class MLXHeader:
 
     @classmethod
     def from_bytes(cls, data: bytes) -> "MLXHeader":
-        """Parse MLX header from raw bytes."""
         if len(data) < MLX_HEADER_LENGTH:
             raise ValueError(
                 f"Not enough data for MLX header: {len(data)} < {MLX_HEADER_LENGTH}"
@@ -419,7 +406,6 @@ def parse_op_node(  # noqa: C901
 
 
 def parse_mlx_payload(payload: bytes) -> Dict[str, Any]:
-    """Parse a complete MLX delegate payload."""
     header = MLXHeader.from_bytes(payload)
 
     if not header.is_valid():
@@ -447,13 +433,7 @@ def parse_mlx_payload(payload: bytes) -> Dict[str, Any]:
     return result
 
 
-# =============================================================================
-# ExecuTorch Program Parsing
-# =============================================================================
-
-
 def parse_executorch_program(pte_data: bytes) -> Dict[str, Any]:  # noqa: C901
-    """Parse an ExecuTorch .pte file."""
     result: Dict[str, Any] = {}
 
     # Check for flatbuffer magic (first 4 bytes are root offset, next 4 are magic)
@@ -622,7 +602,6 @@ def extract_delegate_payload(  # noqa: C901
 
 
 def show_mlx_summary(pte_data: bytes) -> None:  # noqa: C901
-    """Show summary of all MLX delegates in a PTE file."""
     try:
         from executorch.exir._serialize._flatbuffer import _program_flatbuffer_to_json
 
@@ -813,7 +792,6 @@ def show_mlx_summary(pte_data: bytes) -> None:  # noqa: C901
 
 
 def show_mlx_instructions(pte_data: bytes) -> None:  # noqa: C901
-    """Show detailed instruction-level view of MLX delegates in a PTE file."""
     try:
         from executorch.exir._serialize._flatbuffer import _program_flatbuffer_to_json
 
@@ -955,11 +933,6 @@ def show_mlx_instructions(pte_data: bytes) -> None:  # noqa: C901
 
         traceback.print_exc()
         sys.exit(1)
-
-
-# =============================================================================
-# Main CLI
-# =============================================================================
 
 
 def main():  # noqa: C901
