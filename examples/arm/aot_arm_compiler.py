@@ -26,6 +26,9 @@ from typing import Any, List, Optional, Tuple
 
 import torch
 from examples.devtools.scripts.export_bundled_program import save_bundled_program
+
+from examples.models import MODEL_NAME_TO_MODEL
+from examples.models.model_factory import EagerModelFactory
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.quantizer import (
@@ -62,8 +65,8 @@ from torch.fx import GraphModule
 # Quantize model if required using the standard export quantizaion flow.
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
-from ..models import MODEL_NAME_TO_MODEL
-from ..models.model_factory import EagerModelFactory
+# Maximum number of samples to use for calibration when quantizing.
+CALIBRATION_MAX_SAMPLES = 1000
 
 
 class QuantMode(str, Enum):
@@ -232,12 +235,103 @@ def get_model_and_inputs_from_name(
     )
 
 
+def as_input_tuple(sample: object) -> Tuple[torch.Tensor, ...]:
+    if isinstance(sample, tuple):
+        return sample
+    if isinstance(sample, list):
+        return tuple(sample)
+    if isinstance(sample, torch.Tensor):
+        return (sample,)
+    if isinstance(sample, dict):
+        if "pixel_values" in sample:
+            return (sample["pixel_values"],)
+        raise ValueError("Calibration sample dict must contain 'pixel_values' key.")
+    raise ValueError(
+        "Calibration sample must be a Tensor, tuple, list, or dict with "
+        "'pixel_values'."
+    )
+
+
+def load_calibration_sample(
+    path: str, example_inputs: Tuple[torch.Tensor, ...]
+) -> Tuple[torch.Tensor, ...]:
+    suffix = Path(path).suffix.lower()
+    if suffix in {".pt", ".pth"}:
+        sample = torch.load(path, weights_only=False)  # nosec B614 trusted inputs
+        return as_input_tuple(sample)
+    raise ValueError(f"Unsupported calibration file type: {path}")
+
+
+def load_calibration_samples(
+    calibration_data: str | None,
+    example_inputs: Tuple[torch.Tensor, ...],
+) -> Optional[List[Tuple[torch.Tensor, ...]]]:
+    if calibration_data is None:
+        return None
+
+    path = Path(calibration_data)
+    if path.is_file():
+        return [load_calibration_sample(str(path), example_inputs)]
+
+    if not path.is_dir():
+        raise ValueError(
+            f"Calibration data path '{calibration_data}' is not a file or directory."
+        )
+
+    supported_suffixes = {".pt", ".pth"}
+    candidates = sorted(
+        str(p)
+        for p in path.rglob("*")
+        if p.is_file() and p.suffix.lower() in supported_suffixes
+    )
+    if not candidates:
+        raise ValueError(
+            f"No supported calibration files found in directory '{calibration_data}'."
+        )
+
+    samples: List[Tuple[torch.Tensor, ...]] = []
+    for candidate in candidates[:CALIBRATION_MAX_SAMPLES]:
+        samples.append(load_calibration_sample(candidate, example_inputs))
+
+    return samples
+
+
+def _validate_calibration_sample(
+    calibration_sample: Tuple[torch.Tensor, ...],
+    example_inputs: Tuple[torch.Tensor, ...],
+) -> None:
+    expected_len = len(example_inputs)
+
+    if len(calibration_sample) != expected_len:
+        raise ValueError(
+            "Calibration sample has %d inputs, expected %d."
+            % (len(calibration_sample), expected_len)
+        )
+    for input_idx, (expected, actual) in enumerate(
+        zip(example_inputs, calibration_sample)
+    ):
+        if isinstance(expected, torch.Tensor) and isinstance(actual, torch.Tensor):
+            if expected.shape != actual.shape:
+                raise ValueError(
+                    "Calibration sample input %d shape %s does not match "
+                    "expected shape %s."
+                    % (input_idx, list(actual.shape), list(expected.shape))
+                )
+        elif type(expected) is not type(actual):
+            raise ValueError(
+                "Calibration sample input %d type %s does not match "
+                "expected type %s."
+                % (input_idx, type(actual).__name__, type(expected).__name__)
+            )
+
+
 def quantize(
     model: GraphModule,
     model_name: str,
     compile_specs: ArmCompileSpec,
     example_inputs: Tuple[torch.Tensor],
     quant_mode: QuantMode = QuantMode.INT8,
+    calibration_samples: Optional[List[Tuple[torch.Tensor, ...]]] = None,
 ) -> GraphModule:
     """This is the official recommended flow for quantization in pytorch 2.0
     export.
@@ -264,9 +358,12 @@ def quantize(
     quantizer.set_global(operator_config)
     m = prepare_pt2e(model, quantizer)
 
-    # Calibrate model using example inputs
-    # TODO: Add support for using a calibration dataset
-    m(*example_inputs)
+    if calibration_samples is None:
+        calibration_samples = [example_inputs]
+
+    for sample in calibration_samples:
+        _validate_calibration_sample(sample, example_inputs)
+        m(*sample)
 
     m = convert_pt2e(m)
     logging.debug(f"Quantized model: {m}")
@@ -485,6 +582,17 @@ def _get_args():
         help="Produce a quantized model",
     )
     parser.add_argument(
+        "--calibration_data",
+        required=False,
+        default=None,
+        help=(
+            "Optional calibration data file or directory. If a directory is "
+            "provided, up to 1000 samples are used for calibration. "
+            "Supported files: .pt/.pth. If not provided,"
+            "quantized models are calibrated on their example inputs."
+        ),
+    )
+    parser.add_argument(
         "-s",
         "--so_library",
         required=False,
@@ -556,6 +664,9 @@ def _get_args():
     LOGGING_FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
     logging_level = logging.DEBUG if args.debug else logging.WARNING
     logging.basicConfig(level=logging_level, format=LOGGING_FORMAT, force=True)
+
+    if args.calibration_data is not None and not args.quantize:
+        raise RuntimeError("--calibration_data requires --quantize to be enabled.")
 
     # if we have custom ops, register them before processing the model
     if args.so_library is not None:
@@ -661,7 +772,8 @@ def quantize_model(
     compile_spec,
     model_name: str,
     strict_export: bool,
-    quant_mode: QuantMode = QuantMode.INT8,
+    quant_mode: QuantMode,
+    calibration_samples: Optional[List[Tuple[torch.Tensor, ...]]],
 ) -> Tuple[GraphModule, ExportedProgram]:
     model_quant = quantize(
         model,
@@ -669,6 +781,7 @@ def quantize_model(
         compile_spec,
         example_inputs,
         quant_mode,
+        calibration_samples,
     )
     # Wrap quantized model back into an exported_program
     exported_program = torch.export.export(
@@ -686,6 +799,7 @@ def _to_edge_TOSA_delegate(
     example_inputs: Tuple[torch.Tensor],
     model_name: str,
     strict_export: bool,
+    calibration_samples: Optional[List[Tuple[torch.Tensor, ...]]],
 ):
     model_quant = None
     if quant_mode is not None:
@@ -696,6 +810,7 @@ def _to_edge_TOSA_delegate(
             model_name,
             strict_export,
             quant_mode,
+            calibration_samples,
         )
 
     partitioner = create_partitioner(compile_spec)
@@ -721,6 +836,7 @@ def _to_edge_cortex_m(
     args,
     model: GraphModule,
     example_inputs: Tuple[torch.Tensor],
+    calibration_samples: Optional[List[Tuple[torch.Tensor, ...]]],
 ):
     """Cortex-M/CMSIS-NN compilation path with no delegation."""
     logging.info("Using Cortex-M/CMSIS-NN compilation path (no delegation)")
@@ -749,9 +865,11 @@ def _to_edge_cortex_m(
         quantizer = CortexMQuantizer()
         prepared = prepare_pt2e(model, quantizer)
 
-        # Calibrate model using example inputs
-        # TODO: Add support for using a calibration dataset
-        prepared(*example_inputs)
+        if calibration_samples is None:
+            calibration_samples = [example_inputs]
+
+        for sample in calibration_samples:
+            prepared(*tuple(_to_channels_last(x) for x in sample))
 
         model_quant = convert_pt2e(prepared)
 
@@ -787,6 +905,7 @@ def _to_edge_no_delegate(
     example_inputs: Tuple[torch.Tensor],
     model_name: str,
     strict_export: bool,
+    calibration_samples: Optional[List[Tuple[torch.Tensor, ...]]],
 ):
     model_quant = None
     if quant_mode is not None:
@@ -799,6 +918,7 @@ def _to_edge_no_delegate(
             model_name,
             strict_export,
             quant_mode,
+            calibration_samples,
         )
         model_quant = model
 
@@ -823,6 +943,9 @@ if __name__ == "__main__":  # noqa: C901
     # Pick model from one of the supported lists
     original_model, example_inputs = get_model_and_inputs_from_name(
         args.model_name, args.model_input
+    )
+    calibration_samples = load_calibration_samples(
+        args.calibration_data, example_inputs
     )
     model = original_model.eval()
 
@@ -869,7 +992,11 @@ if __name__ == "__main__":  # noqa: C901
             )
             args.delegate = False
         model_quant, edge = _to_edge_cortex_m(
-            exported_program, args, model, example_inputs
+            exported_program,
+            args,
+            model,
+            example_inputs,
+            calibration_samples,
         )
     elif args.delegate:
         # As we can target multiple output encodings, one must
@@ -882,6 +1009,7 @@ if __name__ == "__main__":  # noqa: C901
             example_inputs,
             args.model_name,
             args.strict_export,
+            calibration_samples,
         )
     else:
         model_quant, edge = _to_edge_no_delegate(
@@ -892,6 +1020,7 @@ if __name__ == "__main__":  # noqa: C901
             example_inputs,
             args.model_name,
             args.strict_export,
+            calibration_samples,
         )
 
     dump_delegation_info(edge, args.intermediates)
