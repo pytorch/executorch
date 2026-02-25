@@ -793,11 +793,16 @@ class EncoderRingKVCache(nn.Module):
         torch.ops.llama.update_cache_with_indices(v_val, self.v_cache, 0, indices)
         return self.k_cache, self.v_cache
 
-    def create_causal_mask(self, start_pos: int, seq_len: int) -> torch.Tensor:
+    def create_causal_mask(
+        self, start_pos: torch.Tensor | int, seq_len: int
+    ) -> torch.Tensor:
+        device = start_pos.device if isinstance(start_pos, torch.Tensor) else "cpu"
         total_written = start_pos + seq_len
-        j = torch.arange(self.buf_size, dtype=torch.long)
+        j = torch.arange(self.buf_size, dtype=torch.long, device=device)
         cache_pos = j + ((total_written - 1 - j) // self.buf_size) * self.buf_size
-        pos_q = (start_pos + torch.arange(seq_len, dtype=torch.long)).view(-1, 1)
+        pos_q = (
+            start_pos + torch.arange(seq_len, dtype=torch.long, device=device)
+        ).view(-1, 1)
         delta = pos_q - cache_pos.unsqueeze(0)
         valid = (cache_pos >= 0) & (delta >= 0) & (delta < self.window_size)
         return torch.where(valid, 0.0, float("-inf"))
