@@ -9,7 +9,7 @@
 #include <executorch/runtime/core/evalue.h>
 
 namespace executorch {
-namespace runtime {   
+namespace runtime {
 template <>
 executorch::aten::ArrayRef<std::optional<executorch::aten::Tensor>>
 BoxedEvalueList<std::optional<executorch::aten::Tensor>>::get() const {
