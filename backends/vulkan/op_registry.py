@@ -167,6 +167,9 @@ def update_features(aten_op):
         # Guard and assert ops
         torch.ops.aten._assert_scalar.default,
         torch.ops.aten.sym_constrain_range_for_size.default,
+        # copy.default is a no-op when src dtype matches dst dtype; removed by
+        # RemoveRedundantOpsTransform before execution.
+        exir_ops.edge.aten.copy.default,
     ]
 )
 def register_ephemeral_ops():
@@ -231,6 +234,19 @@ def register_clamp():
         exir_ops.edge.aten.div.Tensor,
         exir_ops.edge.aten.div.Tensor_mode,
         exir_ops.edge.aten.pow.Tensor_Tensor,
+    ]
+)
+def register_binaryop_cpp_ops():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features(
+    [
         exir_ops.edge.aten.eq.Tensor,
         exir_ops.edge.aten.lt.Tensor,
         exir_ops.edge.aten.le.Tensor,
@@ -238,10 +254,26 @@ def register_clamp():
         exir_ops.edge.aten.ge.Tensor,
     ]
 )
-def register_binaryop_cpp_ops():
+def register_comparison_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_T,
+        outputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+# =============================================================================
+# BinaryOp.cpp (bitwise)
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.bitwise_and.Tensor)
+def register_bitwise_and():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.BOOL_T,
         supports_resize=True,
         supports_highdim=True,
     )
@@ -673,6 +705,7 @@ def register_argreduce_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_TEXTURE,
         inputs_dtypes=utils.FP_T,
+        outputs_dtypes=utils.INT_T,
         supports_resize=True,
         supports_highdim=True,
         are_node_inputs_supported_fn=is_reduce_node_supported,
@@ -1154,6 +1187,58 @@ def register_index_select():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
+    )
+
+
+# =============================================================================
+# Where.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.where.self)
+def register_where():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=[utils.BOOL_T, utils.FP_T, utils.FP_T],
+        outputs_dtypes=utils.FP_T,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
+# IndexTensor.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.index.Tensor)
+def register_index_tensor():
+    def check_index_tensor_node(node: torch.fx.Node) -> bool:
+        self_arg = node.args[0]
+        indices = node.args[1]
+
+        # Only support 1D self tensor
+        if not isinstance(self_arg, torch.fx.Node):
+            return False
+        self_val = self_arg.meta.get("val", None)
+        if self_val is None:
+            return False
+        if len(self_val.size()) != 1:
+            return False
+
+        # Only support exactly one non-None index tensor
+        if not isinstance(indices, (list, tuple)):
+            return False
+        non_none = [idx for idx in indices if idx is not None]
+        if len(non_none) != 1:
+            return False
+
+        return True
+
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_T,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_index_tensor_node,
     )
 
 
