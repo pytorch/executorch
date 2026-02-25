@@ -61,12 +61,6 @@ jobs:
             aar-out/executorch.aar
             extension/android/executorch_android/build/outputs/apk/androidTest/debug/executorch_android-debug-androidTest.apk
 
-      - name: Upload push artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-push-artifacts
-          path: extension/android/executorch_android/build/push-artifacts/
-
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:
     needs: build-android
@@ -90,12 +84,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: android-apps
-
-      - name: Download push artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: android-push-artifacts
-          path: push-artifacts
 
       - name: Prepare test APK
         run: |

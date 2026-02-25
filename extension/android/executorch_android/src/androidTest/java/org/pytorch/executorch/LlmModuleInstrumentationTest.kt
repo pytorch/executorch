@@ -8,10 +8,8 @@
 package org.pytorch.executorch
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import java.io.File
 import java.io.IOException
 import java.net.URISyntaxException
-import org.apache.commons.io.FileUtils
 import org.json.JSONException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -19,7 +17,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.pytorch.executorch.TestFileUtils.getTestFilePath
 import org.pytorch.executorch.TestFileUtils.prepareTestFile
 import org.pytorch.executorch.extension.llm.LlmCallback
 import org.pytorch.executorch.extension.llm.LlmModule
@@ -35,13 +32,8 @@ class LlmModuleInstrumentationTest : LlmCallback {
   @Throws(IOException::class)
   fun setUp() {
     val ptePath = prepareTestFile(javaClass, TEST_FILE_NAME)
-
-    val tokenizerFile = File(getTestFilePath(TOKENIZER_FILE_NAME))
-    val inputStream = javaClass.getResourceAsStream(TOKENIZER_FILE_NAME)
-    FileUtils.copyInputStreamToFile(inputStream, tokenizerFile)
-    inputStream.close()
-
-    llmModule = LlmModule(ptePath, tokenizerFile.absolutePath, 0.0f)
+    val tokenizerPath = prepareTestFile(javaClass, TOKENIZER_FILE_NAME)
+    llmModule = LlmModule(ptePath, tokenizerPath, 0.0f)
   }
 
   @Test

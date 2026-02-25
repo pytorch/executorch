@@ -14,8 +14,7 @@ which "${PYTHON_EXECUTABLE}"
 
 BASEDIR=$(dirname "$(realpath $0)")
 RESOURCES_DIR="${BASEDIR}/src/androidTest/resources"
-PUSH_ARTIFACTS_DIR="${BASEDIR}/build/push-artifacts"
-mkdir -p "${RESOURCES_DIR}" "${PUSH_ARTIFACTS_DIR}"
+mkdir -p "${RESOURCES_DIR}"
 
 prepare_xor() {
   pushd "${BASEDIR}/../../training/"
@@ -25,12 +24,4 @@ prepare_xor() {
   popd
 }
 
-prepare_tinyllama() {
-  local S3_BASE="https://ossci-android.s3.amazonaws.com/executorch/stories/snapshot-20260114"
-  # stories.pte is ~29MB; push via adb instead of bundling in APK
-  curl -C - -Ls "${S3_BASE}/stories110M.pte" --output "${PUSH_ARTIFACTS_DIR}/stories.pte"
-  curl -C - -Ls "${S3_BASE}/tokenizer.model" --output "${RESOURCES_DIR}/tokenizer.bin"
-}
-
 prepare_xor
-prepare_tinyllama
