@@ -13,8 +13,8 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.abs
 import org.apache.commons.io.FileUtils
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -34,8 +34,8 @@ class ModuleE2ETest {
     assertEquals("Output size mismatch", expected.size, actual.size)
     for (i in actual.indices) {
       assertTrue(
-        "Output[$i]: expected=${expected[i]}, actual=${actual[i]}, diff=${abs(actual[i] - expected[i])}",
-        abs(actual[i] - expected[i]) <= atol
+          "Output[$i]: expected=${expected[i]}, actual=${actual[i]}, diff=${abs(actual[i] - expected[i])}",
+          abs(actual[i] - expected[i]) <= atol,
       )
     }
   }
