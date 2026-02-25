@@ -174,6 +174,9 @@ class ArmPassManager(PassManager):
             case SoftmaxDecompositionConfig.UNSTABLE:
                 skip_set.add(DecomposeSoftmaxPass)
                 skip_set.add(DecomposeMaskedFillPass)
+            case SoftmaxDecompositionConfig.STABLE:
+                skip_set.add(DecomposeSoftmaxUnstablePass)
+                skip_set.add(DecomposeMaskedFillPass)
 
         if config.fuse_duplicate_users is FuseDuplicateUsersConfig.DISABLED:
             skip_set.add(FuseDuplicateUsersPass)
@@ -330,7 +333,9 @@ class ArmPassManager(PassManager):
                 DecomposeGluPass(),
                 DecomposeLeakyReLUPass(),
                 DecomposeDivPass(),
-                DecomposeSoftmaxPass(),
+                # _safe_softmax results in a ReduceMax
+                # which is not currently supported by TOSA in U55
+                DecomposeSoftmaxPass(skip_safe_softmax=self.tosa_spec.is_U55_subset),
                 ConvertMinMaxPass(),
                 DecomposeAnyPass(),
                 DecomposeAdaptiveAvgPool2dPass(),
@@ -448,7 +453,10 @@ class ArmPassManager(PassManager):
                 DecomposeSqrtPass(tfa_pass=True),
                 DecomposeAvgPool2dPass(tfa_pass=True),
                 DecomposeSoftmaxUnstablePass(tfa_pass=True),
-                DecomposeSoftmaxPass(tfa_pass=True),
+                DecomposeSoftmaxPass(
+                    skip_safe_softmax=self.tosa_spec.is_U55_subset,
+                    tfa_pass=True,
+                ),
                 ConvertMinMaxPass(tfa_pass=True),
                 AccumulateIndexPutPass(tfa_pass=True),
                 DecomposeMatmulPass(tfa_pass=True),
