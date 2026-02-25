@@ -34,6 +34,9 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
+      - name: Checkout torchao submodule
+        run: git submodule update --init third-party/ao
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -45,6 +48,8 @@ jobs:
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install lintrunner==0.12.7 lintrunner-adapters==0.13.0
           pip install -r requirements-lintrunner.txt
+          USE_CPP=0 pip install --no-build-isolation third-party/ao
+          pip install pytest numpy parameterized
 
       - name: Generate mypy stubs for C++ bindings
         run: |
