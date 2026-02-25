@@ -952,6 +952,12 @@ class StreamingAudioEncoderExport(nn.Module):
         mel_chunk: torch.Tensor,
         enc_input_pos: torch.Tensor,
     ) -> torch.Tensor:
+        # Auto-reset conv states at the start of each new session (enc_input_pos[0] == 0).
+        # Using tensor ops (not .item()) avoids constant-folding during export.
+        is_start = (enc_input_pos[:1] == 0).view(1, 1, 1).to(self.conv1_state.dtype)
+        self.conv1_state.mul_(1.0 - is_start)
+        self.conv2_state.mul_(1.0 - is_start)
+
         # Conv1: cat state + chunk, raw Conv1d (no CausalConv1d padding)
         # (1, 128, 2+8=10) -> conv1(k=3, s=1) -> (1, 1280, 8)
         conv1_input = torch.cat([self.conv1_state, mel_chunk], dim=2)
