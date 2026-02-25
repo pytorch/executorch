@@ -10,8 +10,11 @@
 
 ${define_required_extensions("buffer", DTYPE)}
 
+#define USE_INT8_DOT_PRODUCT_EXT ${USE_INT8_DOT_PRODUCT_EXT}
+
 #extension GL_EXT_control_flow_attributes : require
-#extension GL_EXT_integer_dot_product : require
+$if USE_INT8_DOT_PRODUCT_EXT == 1:
+  #extension GL_EXT_integer_dot_product : require
 
 #define PRECISION ${PRECISION}
 #define VEC4_T ${texel_load_type(DTYPE, "buffer")}
@@ -146,7 +149,7 @@ void main() {
     [[unroll]] for (int m = 0; m < TILE_M; ++m) {
       [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
         [[unroll]] for (int n4i = 0; n4i < 4; ++n4i) {
-          out_accum[m][n4][n4i] = dotPacked4x8AccSatEXT(
+          out_accum[m][n4][n4i] = dotPacked4x8AccSat(
               int8_input_tile[m],
               int8_weight_tile[n4][n4i],
               out_accum[m][n4][n4i]);

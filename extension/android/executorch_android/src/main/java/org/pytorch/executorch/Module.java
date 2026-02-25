@@ -13,7 +13,6 @@ import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
-import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.locks.Lock;
@@ -97,10 +96,7 @@ public class Module {
    * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
    */
   public static Module load(final String modelPath, int loadMode, int numThreads) {
-    File modelFile = new File(modelPath);
-    if (!modelFile.canRead() || !modelFile.isFile()) {
-      throw new RuntimeException("Cannot load model path " + modelPath);
-    }
+    ExecuTorchRuntime.validateFilePath(modelPath, "model path");
     return new Module(modelPath, loadMode, numThreads);
   }
 
