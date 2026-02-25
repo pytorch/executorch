@@ -10,8 +10,11 @@
 
 ${define_required_extensions("buffer", DTYPE)}
 
+#define USE_INT8_DOT_PRODUCT_EXT ${USE_INT8_DOT_PRODUCT_EXT}
+
 #extension GL_EXT_control_flow_attributes : require
-#extension GL_EXT_integer_dot_product : require
+$if USE_INT8_DOT_PRODUCT_EXT == 1:
+  #extension GL_EXT_integer_dot_product : require
 
 #define PRECISION ${PRECISION}
 #define VEC4_T ${texel_load_type(DTYPE, "buffer")}
@@ -177,7 +180,7 @@ void main() {
           // Accumulate using packed int8 dot product for each output channel
           // dotPacked4x8AccSatEXT computes: acc + dot(unpack(a), unpack(b))
           [[unroll]] for (int oc_offset = 0; oc_offset < 4; ++oc_offset) {
-            acc[subtile_w][oc_offset] = dotPacked4x8AccSatEXT(
+            acc[subtile_w][oc_offset] = dotPacked4x8AccSat(
                 packed_input,
                 weight_block[oc_offset],
                 acc[subtile_w][oc_offset]);
