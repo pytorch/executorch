@@ -13,6 +13,7 @@ import logging
 import os
 import sys
 
+from enum import Enum
 from pathlib import Path
 
 # Add Executorch root to path so this script can be run from anywhere
@@ -63,6 +64,11 @@ from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
+
+
+class QuantMode(str, Enum):
+    INT8 = "INT8"
+    A16W8 = "A16W8"
 
 
 def _load_example_inputs(model_input: str | None) -> Any:  # nosec B614
@@ -231,7 +237,7 @@ def quantize(
     model_name: str,
     compile_specs: ArmCompileSpec,
     example_inputs: Tuple[torch.Tensor],
-    is_int16x8: bool = False,
+    quant_mode: QuantMode = QuantMode.INT8,
 ) -> GraphModule:
     """This is the official recommended flow for quantization in pytorch 2.0
     export.
@@ -242,17 +248,18 @@ def quantize(
 
     quantizer = create_quantizer(compile_specs)
 
-    if is_int16x8:
-        if compile_specs.tosa_spec.support_extension("int16"):
-            operator_config = get_symmetric_a16w8_quantization_config(
-                is_per_channel=True
-            )
-        else:
-            raise ValueError(
-                f"Context TOSA spec {compile_specs.tosa_spec} doesn't support int16"
-            )
-    else:
-        operator_config = get_symmetric_quantization_config(is_per_channel=True)
+    match quant_mode:
+        case QuantMode.INT8:
+            operator_config = get_symmetric_quantization_config(is_per_channel=True)
+        case QuantMode.A16W8:
+            if compile_specs.tosa_spec.support_extension("int16"):
+                operator_config = get_symmetric_a16w8_quantization_config(
+                    is_per_channel=True
+                )
+            else:
+                raise ValueError(
+                    f"Context TOSA spec {compile_specs.tosa_spec} doesn't support int16"
+                )
 
     quantizer.set_global(operator_config)
     m = prepare_pt2e(model, quantizer)
@@ -354,7 +361,7 @@ TARGETS = [
 ]
 
 
-def get_compile_spec(args) -> ArmCompileSpec:
+def _get_compile_spec(args) -> ArmCompileSpec:
     compile_spec = None
     if args.target.startswith("TOSA"):
         tosa_spec = TosaSpecification.create_from_string(args.target)
@@ -407,7 +414,7 @@ def dump_delegation_info(edge, intermediate_files_folder: Optional[str] = None):
             file.write(delegation_info_string)
 
 
-def get_args():
+def _get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-m",
@@ -570,7 +577,7 @@ def get_args():
     return args
 
 
-def save_bpte_program(exec_prog, original_model: torch.nn.Module, output_name: str):
+def _save_bpte_program(exec_prog, original_model: torch.nn.Module, output_name: str):
     # Construct MethodTestSuite for Each Method
 
     # Generate Test Suites
@@ -649,42 +656,46 @@ def save_bpte_program(exec_prog, original_model: torch.nn.Module, output_name: s
 
 
 def quantize_model(
-    args,
     model: GraphModule,
     example_inputs: Tuple[torch.Tensor],
     compile_spec,
+    model_name: str,
+    strict_export: bool,
+    quant_mode: QuantMode = QuantMode.INT8,
 ) -> Tuple[GraphModule, ExportedProgram]:
-
-    is_int16x8 = True if args.target == "TOSA-1.0+INT+int16" else False
     model_quant = quantize(
         model,
-        args.model_name,
+        model_name,
         compile_spec,
         example_inputs,
-        is_int16x8,
+        quant_mode,
     )
     # Wrap quantized model back into an exported_program
     exported_program = torch.export.export(
-        model_quant, example_inputs, strict=args.strict_export
+        model_quant, example_inputs, strict=strict_export
     )
 
     return model_quant, exported_program
 
 
-def to_edge_TOSA_delegate(
+def _to_edge_TOSA_delegate(
     exported_program: ExportedProgram,
-    args,
+    compile_spec,
     model: GraphModule,
+    quant_mode: Optional[QuantMode],
     example_inputs: Tuple[torch.Tensor],
+    model_name: str,
+    strict_export: bool,
 ):
-    # As we can target multiple output encodings, one must
-    # be specified.
-    compile_spec = get_compile_spec(args)
-
     model_quant = None
-    if args.quantize:
+    if quant_mode is not None:
         model_quant, exported_program = quantize_model(
-            args, model, example_inputs, compile_spec
+            model,
+            example_inputs,
+            compile_spec,
+            model_name,
+            strict_export,
+            quant_mode,
         )
 
     partitioner = create_partitioner(compile_spec)
@@ -705,7 +716,7 @@ def to_edge_TOSA_delegate(
     return model_quant, edge
 
 
-def to_edge_cortex_m(
+def _to_edge_cortex_m(
     exported_program: ExportedProgram,
     args,
     model: GraphModule,
@@ -768,19 +779,26 @@ def to_edge_cortex_m(
     return model_quant if args.quantize else None, edge
 
 
-def to_edge_no_delegate(
+def _to_edge_no_delegate(
     exported_program: ExportedProgram,
-    args,
+    compile_spec,
     model: GraphModule,
+    quant_mode: Optional[QuantMode],
     example_inputs: Tuple[torch.Tensor],
+    model_name: str,
+    strict_export: bool,
 ):
     model_quant = None
-    if args.quantize:
+    if quant_mode is not None:
         # As we can target multiple output encodings, one must
         # be specified.
-        compile_spec = get_compile_spec(args)
         model, exported_program = quantize_model(
-            args, model, example_inputs, compile_spec
+            model,
+            example_inputs,
+            compile_spec,
+            model_name,
+            strict_export,
+            quant_mode,
         )
         model_quant = model
 
@@ -800,7 +818,7 @@ def to_edge_no_delegate(
 
 
 if __name__ == "__main__":  # noqa: C901
-    args = get_args()
+    args = _get_args()
 
     # Pick model from one of the supported lists
     original_model, example_inputs = get_model_and_inputs_from_name(
@@ -837,6 +855,11 @@ if __name__ == "__main__":  # noqa: C901
 
     # Quantize if required
     model_quant = None
+    if args.quantize:
+        quant_mode = QuantMode.A16W8 if "int16" in args.target else QuantMode.INT8
+    else:
+        quant_mode = None
+
     if args.target == "cortex-m55+int8":
         # Cortex-M path: CMSIS-NN portable kernels, no delegation
         if args.delegate:
@@ -845,16 +868,30 @@ if __name__ == "__main__":  # noqa: C901
                 "(this target does not use delegated ops)."
             )
             args.delegate = False
-        model_quant, edge = to_edge_cortex_m(
+        model_quant, edge = _to_edge_cortex_m(
             exported_program, args, model, example_inputs
         )
     elif args.delegate:
-        model_quant, edge = to_edge_TOSA_delegate(
-            exported_program, args, model, example_inputs
+        # As we can target multiple output encodings, one must
+        # be specified.
+        model_quant, edge = _to_edge_TOSA_delegate(
+            exported_program,
+            _get_compile_spec(args),
+            model,
+            quant_mode,
+            example_inputs,
+            args.model_name,
+            args.strict_export,
         )
     else:
-        model_quant, edge = to_edge_no_delegate(
-            exported_program, args, model, example_inputs
+        model_quant, edge = _to_edge_no_delegate(
+            exported_program,
+            _get_compile_spec(args),
+            model,
+            quant_mode,
+            example_inputs,
+            args.model_name,
+            args.strict_export,
         )
 
     dump_delegation_info(edge, args.intermediates)
@@ -910,7 +947,7 @@ if __name__ == "__main__":  # noqa: C901
     if args.bundleio:
         # Realize the quantization impact on numerics when generating reference output
         reference_model = original_model if not model_quant else model_quant
-        save_bpte_program(exec_prog, reference_model, output_file_name)
+        _save_bpte_program(exec_prog, reference_model, output_file_name)
         print(f"Bundle PTE file saved as {output_file_name}")
     else:
         save_pte_program(exec_prog, output_file_name)
