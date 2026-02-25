@@ -1206,6 +1206,43 @@ def register_where():
 
 
 # =============================================================================
+# IndexTensor.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.index.Tensor)
+def register_index_tensor():
+    def check_index_tensor_node(node: torch.fx.Node) -> bool:
+        self_arg = node.args[0]
+        indices = node.args[1]
+
+        # Only support 1D self tensor
+        if not isinstance(self_arg, torch.fx.Node):
+            return False
+        self_val = self_arg.meta.get("val", None)
+        if self_val is None:
+            return False
+        if len(self_val.size()) != 1:
+            return False
+
+        # Only support exactly one non-None index tensor
+        if not isinstance(indices, (list, tuple)):
+            return False
+        non_none = [idx for idx in indices if idx is not None]
+        if len(non_none) != 1:
+            return False
+
+        return True
+
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_T,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_index_tensor_node,
+    )
+
+
+# =============================================================================
 # Arange.cpp
 # =============================================================================
 
