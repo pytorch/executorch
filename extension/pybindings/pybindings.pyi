@@ -273,7 +273,6 @@ def _load_program(
     debug_buffer_size: int = 0,
     program_verification: Verification = Verification.Minimal,
 ) -> ExecuTorchProgram: ...
-
 @experimental("This API is experimental and subject to change without notice.")
 def _load_program_from_buffer(
     buffer: bytes,
@@ -281,7 +280,6 @@ def _load_program_from_buffer(
     debug_buffer_size: int = 0,
     program_verification: Verification = Verification.Minimal,
 ) -> ExecuTorchProgram: ...
-
 @experimental("This API is experimental and subject to change without notice.")
 def _is_available(backend_name: str) -> bool:
     """
