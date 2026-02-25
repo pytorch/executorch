@@ -7,6 +7,8 @@ import torch
 
 from executorch.backends.nxp.edge_passes.neutron_edge_pass import NeutronEdgePass
 from executorch.backends.nxp.neutron_partitioner import QDQClusterRecognizer
+
+# noinspection PyProtectedMember
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Node
 from torch.fx.passes.infra.pass_base import PassResult
@@ -14,6 +16,7 @@ from torch.fx.passes.infra.pass_base import PassResult
 # Operator aliases for better readability.
 AddMM = exir_ops.edge.aten.addmm.default
 AvgPool2D = exir_ops.edge.aten.avg_pool2d.default
+MaxPool2D = exir_ops.edge.aten.max_pool2d.default
 Conv = exir_ops.edge.aten.convolution.default
 Clone = exir_ops.edge.aten.clone.default
 CloneDimOrder = exir_ops.edge.dim_order_ops._clone_dim_order.default
@@ -114,6 +117,12 @@ class MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
         # AvgPool1D is represented in edge as Unsqueeze -> AvgPool2D -> Squeeze. The reshaping nodes must be moved out
         #  of the cluster. Instead of [Un]squeeze, ViewCopy can be used as well.
         AvgPool2D: [
+            ViewCopy,
+            UnsqueezeCopy,
+        ],
+        # MaxPool1D is represented in edge as Unsqueeze -> MaxPool2D -> Squeeze. The reshaping nodes must be moved out
+        #  of the cluster. Instead of [Un]squeeze, ViewCopy can be used as well.
+        MaxPool2D: [
             ViewCopy,
             UnsqueezeCopy,
         ],
@@ -218,6 +227,12 @@ class MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
         # AvgPool1D is represented in edge as Unsqueeze -> AvgPool2D -> Squeeze. The reshaping nodes must be moved out
         #  of the cluster. Instead of [Un]squeeze, ViewCopy can be used as well.
         AvgPool2D: [
+            ViewCopy,
+            SqueezeCopy,
+        ],
+        # MaxPool1D is represented in edge as Unsqueeze -> MaxPool2D -> Squeeze. The reshaping nodes must be moved out
+        #  of the cluster. Instead of [Un]squeeze, ViewCopy can be used as well.
+        MaxPool2D: [
             ViewCopy,
             SqueezeCopy,
         ],
