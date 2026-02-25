@@ -1,5 +1,3 @@
-cxx_library(
-    name = "re2",
-    exported_deps = ["root//extension/llm/tokenizers/third-party:re2"],
-    visibility = ["PUBLIC"],
-)
+load(":targets.bzl", "define_common_targets")
+
+define_common_targets()
