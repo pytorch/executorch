@@ -24,34 +24,25 @@ BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
 
 case "${IMAGE_NAME}" in
   executorch-ubuntu-22.04-gcc11)
-    LINTRUNNER=""
     GCC_VERSION=11
     ;;
   executorch-ubuntu-22.04-gcc9-nopytorch)
-    LINTRUNNER=""
     GCC_VERSION=9
     SKIP_PYTORCH=yes
     ;;
   executorch-ubuntu-22.04-clang12)
-    LINTRUNNER=""
     CLANG_VERSION=12
     ;;
   executorch-ubuntu-22.04-gcc11-aarch64)
-    LINTRUNNER=""
     GCC_VERSION=11
     ;;
   executorch-ubuntu-22.04-gcc11-aarch64-android)
-    LINTRUNNER=""
     GCC_VERSION=11
     ANDROID_NDK_VERSION=r28c
     ;;
   executorch-ubuntu-22.04-gcc11-aarch64-arm-sdk)
     ARM_SDK=yes
     GCC_VERSION=11
-    ;;
-  executorch-ubuntu-22.04-linter)
-    LINTRUNNER=yes
-    CLANG_VERSION=12
     ;;
   executorch-ubuntu-22.04-arm-sdk)
     ARM_SDK=yes
@@ -71,13 +62,11 @@ case "${IMAGE_NAME}" in
     ANDROID_NDK_VERSION=r28c
     ;;
   executorch-ubuntu-22.04-clang12-android)
-    LINTRUNNER=""
     CLANG_VERSION=12
     # From https://developer.android.com/ndk/downloads
     ANDROID_NDK_VERSION=r28c
     ;;
   executorch-ubuntu-22.04-cuda-windows)
-    LINTRUNNER=""
     GCC_VERSION=11
     CUDA_WINDOWS_CROSS_COMPILE=yes
     CUDA_VERSION=12.8
@@ -90,9 +79,6 @@ esac
 
 TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
 BUILD_DOCS=1
-
-# Copy requirements-lintrunner.txt from root to here
-cp ../../requirements-lintrunner.txt ./
 
 # Copy arm setup script from root to here
 # TODO(huydhn): Figure out a way to rebuild the Docker image automatically
@@ -109,7 +95,6 @@ docker build \
   --build-arg "MINICONDA_VERSION=${MINICONDA_VERSION}" \
   --build-arg "TORCH_VERSION=${TORCH_VERSION}" \
   --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
-  --build-arg "LINTRUNNER=${LINTRUNNER:-}" \
   --build-arg "BUILD_DOCS=${BUILD_DOCS}" \
   --build-arg "ARM_SDK=${ARM_SDK:-}" \
   --build-arg "ZEPHYR_SDK=${ZEPHYR_SDK:-}" \

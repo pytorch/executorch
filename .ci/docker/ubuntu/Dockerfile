@@ -69,13 +69,6 @@ COPY ./common/install_pytorch.sh install_pytorch.sh
 COPY ./common/utils.sh utils.sh
 RUN if [ -z "${SKIP_PYTORCH}" ]; then bash ./install_pytorch.sh; fi && rm install_pytorch.sh utils.sh
 
-ARG LINTRUNNER
-# Install lintrunner if needed
-COPY ./common/install_linter.sh install_linter.sh
-COPY ./common/utils.sh utils.sh
-COPY ./requirements-lintrunner.txt requirements-lintrunner.txt
-RUN if [ -n "${LINTRUNNER}" ]; then bash ./install_linter.sh; fi
-RUN rm install_linter.sh utils.sh requirements-lintrunner.txt
 
 ARG ANDROID_NDK_VERSION
 # Install lintrunner if needed

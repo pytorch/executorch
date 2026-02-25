@@ -6,7 +6,6 @@ on:
     paths:
       - .ci/docker/**
       - .github/workflows/docker-builds.yml
-      - requirements-lintrunner.txt
   push:
     branches:
       - main
@@ -14,7 +13,6 @@ on:
     paths:
       - .ci/docker/**
       - .github/workflows/docker-builds.yml
-      - requirements-lintrunner.txt
   schedule:
     - cron: 1 3 * * 3
 
@@ -36,7 +34,6 @@ jobs:
           executorch-ubuntu-22.04-gcc11,
           executorch-ubuntu-22.04-gcc9-nopytorch,
           executorch-ubuntu-22.04-clang12,
-          executorch-ubuntu-22.04-linter,
           executorch-ubuntu-22.04-arm-sdk,
           executorch-ubuntu-22.04-zephyr-sdk,
           executorch-ubuntu-22.04-qnn-sdk,
