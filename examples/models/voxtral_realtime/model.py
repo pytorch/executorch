@@ -427,11 +427,33 @@ class SDPA(nn.Module):
         return y.view(bsz, seqlen, self.dim).to(dtype=input_dtype)
 
 
-class StandardSDPA(nn.Module):
-    """Standard scaled dot-product attention using F.scaled_dot_product_attention.
+def _build_attn_mask(
+    input_pos: torch.Tensor, max_seq_len: int, device: torch.device
+) -> torch.Tensor:
+    """Build float additive attention mask without bool intermediates.
 
-    Compatible with AOTI/Metal backend. Handles GQA and causal masking using
-    standard PyTorch operations. Works with StaticKVCache that returns [B, H, S, D] layout.
+    Metal AOTI doesn't support bool tensor allocation on MPS, so we use
+    integer arithmetic: clamp(curr_pos - k_pos + 1, 0, 1) gives 1 for
+    valid positions (k <= curr_pos) and 0 for invalid, then convert to
+    additive mask (0.0 = attend, -1e9 = don't attend).
+    """
+    seqlen = input_pos.shape[0]
+    k_pos = torch.arange(max_seq_len, device=device)
+    if seqlen > 1:
+        # Prefill: [seqlen, max_seq_len]
+        diff = input_pos.unsqueeze(1) - k_pos.unsqueeze(0) + 1
+    else:
+        # Decode: [1, max_seq_len]
+        diff = (input_pos[0] - k_pos + 1).unsqueeze(0)
+    valid = torch.clamp(diff, min=0, max=1)
+    return (valid.float() - 1.0) * 1e9
+
+
+class MetalSDPA(nn.Module):
+    """Standard SDPA calling the MPS op directly for native GQA support.
+
+    The Metal SDPA kernel handles GQA natively via gqa_factor = n_heads / n_kv_heads,
+    avoiding the 4x memory bandwidth overhead of repeat_interleave.
     """
 
     def __init__(self, n_heads: int, n_kv_heads: int, head_dim: int):
@@ -449,6 +471,7 @@ class StandardSDPA(nn.Module):
         v: torch.Tensor,
         bsz: int,
         seqlen: int,
+        attn_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -456,52 +479,22 @@ class StandardSDPA(nn.Module):
             q: (B, seq_len, n_heads, head_dim) in [B, S, H, D] layout.
             k, v: (B, n_kv_heads, max_seq_len, head_dim) in [B, H, S, D] layout from StaticKVCache.
             bsz, seqlen: batch size and query sequence length.
+            attn_mask: precomputed float additive mask, or None to compute here.
         Returns:
             output: (B, seq_len, n_heads * head_dim).
         """
-        # Convert q from [B, S, H, D] to [B, H, S, D] for F.scaled_dot_product_attention
         q = q.transpose(1, 2)  # [B, n_heads, seq_len, head_dim]
-        # k, v are already in [B, H, S, D] from StaticKVCache
 
-        # Handle GQA: repeat k/v heads if needed
-        if self.n_heads != self.n_kv_heads:
-            n_rep = self.n_heads // self.n_kv_heads
-            k = k.repeat_interleave(n_rep, dim=1)  # [B, n_heads, max_seq_len, head_dim]
-            v = v.repeat_interleave(n_rep, dim=1)
+        if attn_mask is None:
+            attn_mask = _build_attn_mask(input_pos, k.shape[2], q.device)
 
-        # Create causal attention mask
-        # input_pos contains the positions being attended to, e.g., [0,1,2,3] or [pos]
-        # We need a mask of shape [seqlen, max_seq_len]
-        max_seq_len = k.shape[2]
-
-        if seqlen > 1:
-            # Prefill: create causal mask where position i can attend to positions 0..input_pos[i]
-            # Create position matrix for queries and keys
-            q_pos = input_pos.unsqueeze(1)  # [seqlen, 1]
-            k_pos = torch.arange(max_seq_len, device=q.device).unsqueeze(
-                0
-            )  # [1, max_seq_len]
-            # Causal mask: can attend where k_pos <= q_pos
-            # PyTorch convention: True = attend, False = don't attend
-            attn_mask = k_pos <= q_pos  # [seqlen, max_seq_len], True = can attend
-        else:
-            # Decode: single token can attend to all positions up to current position
-            # Current position is input_pos[0]
-            curr_pos = input_pos[0]  # scalar tensor
-            k_pos = torch.arange(max_seq_len, device=q.device)
-            attn_mask = k_pos <= curr_pos  # [max_seq_len], True = can attend
-            attn_mask = attn_mask.unsqueeze(0)  # [1, max_seq_len] for broadcasting
-
-        # Standard SDPA
-        y = F.scaled_dot_product_attention(
-            q,
-            k,
-            v,
-            attn_mask=attn_mask,
-            is_causal=False,  # We handle causal masking explicitly via attn_mask
+        # Call the MPS SDPA op directly — bypasses CompositeImplicitAutograd
+        # decomposition which would insert repeat_interleave for GQA.
+        # The Metal kernel handles GQA natively via gqa_factor = n_heads / n_kv_heads.
+        y, _ = torch.ops.aten._scaled_dot_product_attention_math_for_mps(
+            q, k, v, attn_mask, 0.0, False, None
         )  # [B, n_heads, seq_len, head_dim]
 
-        # Convert back to [B, S, H, D] and flatten
         y = y.transpose(1, 2).contiguous()  # [B, seq_len, n_heads, head_dim]
         return y.view(bsz, seqlen, self.dim)
 
@@ -528,7 +521,7 @@ class LMAttention(nn.Module):
         # Choose KV cache and SDPA based on backend
         if self.use_standard_attention:
             self.kv_cache = StaticKVCache(max_seq_len, self.n_kv_heads, self.head_dim)
-            self.sdpa = StandardSDPA(self.n_heads, self.n_kv_heads, self.head_dim)
+            self.sdpa = MetalSDPA(self.n_heads, self.n_kv_heads, self.head_dim)
         else:
             self.kv_cache = KVCache(max_seq_len, self.n_kv_heads, self.head_dim)
             self.sdpa = SDPA(self.n_heads, self.head_dim)
@@ -539,6 +532,7 @@ class LMAttention(nn.Module):
         freqs_cos: torch.Tensor,
         freqs_sin: torch.Tensor,
         input_pos: torch.Tensor,
+        attn_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         B, T, _ = x.shape
         q = self.wq(x).view(B, T, self.n_heads, self.head_dim)
@@ -549,7 +543,10 @@ class LMAttention(nn.Module):
 
         k, v = self.kv_cache.update(input_pos, k, v)
 
-        y = self.sdpa(input_pos, q, k, v, B, T)
+        if self.use_standard_attention:
+            y = self.sdpa(input_pos, q, k, v, B, T, attn_mask)
+        else:
+            y = self.sdpa(input_pos, q, k, v, B, T)
 
         return self.wo(y)
 
@@ -595,8 +592,11 @@ class MistralDecoderLayer(nn.Module):
         freqs_sin: torch.Tensor,
         input_pos: torch.Tensor,
         t_cond: torch.Tensor,
+        attn_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        x = x + self.attention(self.attention_norm(x), freqs_cos, freqs_sin, input_pos)
+        x = x + self.attention(
+            self.attention_norm(x), freqs_cos, freqs_sin, input_pos, attn_mask
+        )
         normed = self.ffn_norm(x)
         scale = 1.0 + self.ada_rms_norm_t_cond(t_cond)
         x = x + self.feed_forward(normed * scale)
@@ -631,9 +631,15 @@ class MistralDecoder(nn.Module):
         freqs_cos = self.freqs_cos[input_pos]
         freqs_sin = self.freqs_sin[input_pos]
 
+        # Compute attention mask once for all 26 layers (P3 optimization).
+        attn_mask: torch.Tensor | None = None
+        if self.config.use_standard_attention:
+            max_seq_len = self.freqs_cos.shape[0]
+            attn_mask = _build_attn_mask(input_pos, max_seq_len, input_embeds.device)
+
         x = input_embeds
         for layer in self.layers:
-            x = layer(x, freqs_cos, freqs_sin, input_pos, t_cond)
+            x = layer(x, freqs_cos, freqs_sin, input_pos, t_cond, attn_mask)
 
         return self.output(self.norm(x))
 
