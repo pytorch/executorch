@@ -109,8 +109,8 @@ Error TextLLMRunner::generate(
   // Capture remaining KV cache capacity before prefill (pos_ will change)
   int64_t max_context_len = metadata_.at(kMaxContextLen) - pos_;
 
-  uint64_t cur_token;
-  int num_prompt_tokens;
+  uint64_t cur_token = 0;
+  int num_prompt_tokens = 0;
   std::vector<uint64_t> prompt_tokens;
 
   if (!prompt.empty()) {

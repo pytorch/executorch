@@ -118,6 +118,16 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
       int32_t num_eos = 0) override;
 
   /**
+   * Prefill a text prompt using GenerationConfig.
+   * Deprecated: prefer prefill(prompt, num_bos, num_eos).
+   */
+  ::executorch::runtime::Error prefill(
+      const std::string& prompt,
+      const GenerationConfig& config) {
+    return prefill(prompt, config.num_bos, config.num_eos);
+  }
+
+  /**
    * @brief Warms up the model with a sample prompt
    *
    * This method runs a complete generation cycle without returning results,

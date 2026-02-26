@@ -259,6 +259,10 @@ Error MultimodalRunner::generate(
   // Prefill all inputs
   ET_CHECK_OK_OR_RETURN_ERROR(
       prefill(inputs, config.num_bos, config.num_eos));
+  ET_CHECK_OR_RETURN_ERROR(
+      prefill_next_token_.has_value(),
+      InvalidState,
+      "prefill did not produce a next token");
   uint64_t cur_token = prefill_next_token_.value();
   prefill_next_token_.reset();
 
