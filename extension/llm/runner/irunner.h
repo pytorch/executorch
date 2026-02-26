@@ -149,10 +149,8 @@ class ET_EXPERIMENTAL IRunner {
   /**
    * Convenience overload: prefill a single text prompt.
    */
-  runtime::Error prefill(
-      const std::string& prompt,
-      int32_t num_bos = 0,
-      int32_t num_eos = 0) {
+  runtime::Error
+  prefill(const std::string& prompt, int32_t num_bos = 0, int32_t num_eos = 0) {
     std::vector<MultimodalInput> inputs;
     inputs.emplace_back(MultimodalInput(prompt));
     return prefill(inputs, num_bos, num_eos);

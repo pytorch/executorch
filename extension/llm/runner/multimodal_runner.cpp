@@ -113,8 +113,7 @@ Result<uint64_t> MultimodalRunner::prefill_and_sample(
         }
       }
     }
-    auto prefill_result =
-        multimodal_prefiller_->prefill(input, pos_, bos, eos);
+    auto prefill_result = multimodal_prefiller_->prefill(input, pos_, bos, eos);
     if (!prefill_result.ok()) {
       return prefill_result.error();
     }
