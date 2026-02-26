@@ -4,6 +4,8 @@
 # except in compliance with the License. See the license file found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Callable, Optional
+
 from executorch.backends.openvino.test.tester import (
     Quantize as OpenVINOQuantize,
     OpenVINOTester,
@@ -14,14 +16,14 @@ from executorch.backends.test.suite.flow import TestFlow
 
 def _create_openvino_flow_base(
     name: str,
-    quantize: bool = False,
-    compile_specs: dict | None = None,
+    quantize_stage_factory: Optional[Callable[..., Quantize]] = None,
 ) -> TestFlow:
     return TestFlow(
         name,
         backend="openvino",
         tester_factory=OpenVINOTester,
-        quantize=quantize,
+        quantize=quantize_stage_factory is not None,
+        quantize_stage_factory=quantize_stage_factory,
         skip_patterns=[
             "test_avgpool1d_combinations",
             "test_avgpool3d_combinations",
@@ -49,9 +51,7 @@ def _create_openvino_int8_flow() -> TestFlow:
     """
 
     def create_quantize_stage() -> Quantize:
-        return OpenVINOQuantize(
-            calibrate=True,
-        )
+        return OpenVINOQuantize(calibrate=True)
 
     return _create_openvino_flow_base("openvino_int8", create_quantize_stage)
 
