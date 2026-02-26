@@ -850,13 +850,24 @@ class EncoderRingKVCache(nn.Module):
     Negative results indicate unwritten slots.
     """
 
-    def __init__(self, window_size: int, n_heads: int, head_dim: int):
+    def __init__(
+        self,
+        window_size: int,
+        n_heads: int,
+        head_dim: int,
+        dtype: torch.dtype = torch.float32,
+        device: torch.device | None = None,
+    ):
         super().__init__()
         self.window_size = window_size
         self.buf_size = window_size * 2
         cache_shape = (1, self.buf_size, n_heads, head_dim)
-        self.register_buffer("k_cache", torch.zeros(cache_shape))
-        self.register_buffer("v_cache", torch.zeros(cache_shape))
+        self.register_buffer(
+            "k_cache", torch.zeros(cache_shape, dtype=dtype, device=device)
+        )
+        self.register_buffer(
+            "v_cache", torch.zeros(cache_shape, dtype=dtype, device=device)
+        )
 
     def update(
         self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
@@ -896,13 +907,24 @@ class StandardEncoderRingKVCache(nn.Module):
     matching the encoder's convention. Ring buffer enables unlimited streaming.
     """
 
-    def __init__(self, window_size: int, n_heads: int, head_dim: int):
+    def __init__(
+        self,
+        window_size: int,
+        n_heads: int,
+        head_dim: int,
+        dtype: torch.dtype = torch.float32,
+        device: torch.device | None = None,
+    ):
         super().__init__()
         self.window_size = window_size
         self.buf_size = window_size * 2
         cache_shape = (1, self.buf_size, n_heads, head_dim)
-        self.register_buffer("k_cache", torch.zeros(cache_shape))
-        self.register_buffer("v_cache", torch.zeros(cache_shape))
+        self.register_buffer(
+            "k_cache", torch.zeros(cache_shape, dtype=dtype, device=device)
+        )
+        self.register_buffer(
+            "v_cache", torch.zeros(cache_shape, dtype=dtype, device=device)
+        )
 
     def update(
         self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
@@ -979,14 +1001,31 @@ class StreamingAudioEncoderExport(nn.Module):
         self.head_dim = config.enc_head_dim
         self.bool_mask = config.backend == "cuda"
 
+        # Infer dtype/device from encoder weights so all buffers match at runtime.
+        enc_param = next(model.encoder.parameters())
+
         # Register conv states as buffers (mutable state for streaming)
-        self.register_buffer("conv1_state", torch.zeros(1, config.num_mel_bins, 2))
-        self.register_buffer("conv2_state", torch.zeros(1, config.enc_dim, 2))
+        self.register_buffer(
+            "conv1_state",
+            torch.zeros(
+                1,
+                config.num_mel_bins,
+                2,
+                dtype=enc_param.dtype,
+                device=enc_param.device,
+            ),
+        )
+        self.register_buffer(
+            "conv2_state",
+            torch.zeros(
+                1, config.enc_dim, 2, dtype=enc_param.dtype, device=enc_param.device
+            ),
+        )
 
         # Ring buffer KV caches for unlimited streaming.
         # Window size = max_enc_len (encoder sliding window from params.json).
         # Buffer is 2x internally for safe wraparound.
-        # Choose cache implementation based on backend
+        # Choose cache implementation based on backend.
         cache_class = (
             StandardEncoderRingKVCache
             if config.backend in ("metal", "cuda")
@@ -994,7 +1033,13 @@ class StreamingAudioEncoderExport(nn.Module):
         )
         self.kv_caches = nn.ModuleList(
             [
-                cache_class(max_enc_len, config.enc_n_heads, config.enc_head_dim)
+                cache_class(
+                    max_enc_len,
+                    config.enc_n_heads,
+                    config.enc_head_dim,
+                    dtype=enc_param.dtype,
+                    device=enc_param.device,
+                )
                 for _ in range(config.enc_n_layers)
             ]
         )
