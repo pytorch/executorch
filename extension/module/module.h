@@ -29,6 +29,7 @@ using ET_RUNTIME_NAMESPACE::Method;
 using ET_RUNTIME_NAMESPACE::MethodMeta;
 using ET_RUNTIME_NAMESPACE::NamedDataMap;
 using ET_RUNTIME_NAMESPACE::Program;
+using runtime::LoadBackendOptionsMap;
 
 class ExecuTorchJni;
 
@@ -154,6 +155,22 @@ class Module {
           Program::Verification::Minimal);
 
   /**
+   * Loads the program with per-delegate runtime options.
+   *
+   * @param[in] backend_options A LoadBackendOptionsMap containing per-delegate
+   * load-time configuration options. The caller must ensure this object
+   * outlives any methods loaded with these options.
+   * @param[in] verification The type of verification to do before returning
+   * success.
+   *
+   * @returns An Error to indicate success or failure of the loading process.
+   */
+  ET_NODISCARD virtual runtime::Error load(
+      const LoadBackendOptionsMap& backend_options,
+      const Program::Verification verification =
+          Program::Verification::Minimal);
+
+  /**
    * Checks if the program is loaded.
    *
    * @returns true if the program is loaded, false otherwise.
@@ -207,12 +224,13 @@ class Module {
   runtime::Error load_method(
       const std::string& method_name,
       runtime::HierarchicalAllocator* planned_memory = nullptr,
-      torch::executor::EventTracer* event_tracer = nullptr);
+      torch::executor::EventTracer* event_tracer = nullptr,
+      const LoadBackendOptionsMap* backend_options = nullptr);
 
   ET_DEPRECATED ET_NODISCARD runtime::Error inline load_method(
       const std::string& method_name,
       torch::executor::EventTracer* event_tracer) {
-    return load_method(method_name, nullptr, event_tracer);
+    return load_method(method_name, nullptr, event_tracer, nullptr);
   }
 
   /**
@@ -254,13 +272,15 @@ class Module {
    */
   ET_NODISCARD inline runtime::Error load_forward(
       runtime::HierarchicalAllocator* planned_memory = nullptr,
-      torch::executor::EventTracer* event_tracer = nullptr) {
-    return load_method("forward", planned_memory, event_tracer);
+      torch::executor::EventTracer* event_tracer = nullptr,
+      const LoadBackendOptionsMap* backend_options = nullptr) {
+    return load_method(
+        "forward", planned_memory, event_tracer, backend_options);
   }
 
   ET_DEPRECATED ET_NODISCARD inline runtime::Error load_forward(
       torch::executor::EventTracer* event_tracer) {
-    return load_forward(nullptr, event_tracer);
+    return load_forward(nullptr, event_tracer, nullptr);
   }
 
   /**
@@ -650,6 +670,10 @@ class Module {
   std::vector<std::unique_ptr<NamedDataMap>> named_data_maps_;
   std::unique_ptr<NamedDataMap> merged_data_map_;
   ET_DEPRECATED std::vector<uint8_t> debug_buffer_;
+  const LoadBackendOptionsMap* backend_options_ = nullptr;
+
+  ET_NODISCARD runtime::Error load_internal(
+      const Program::Verification verification);
 
  protected:
   std::unordered_map<std::string, MethodHolder> methods_;
