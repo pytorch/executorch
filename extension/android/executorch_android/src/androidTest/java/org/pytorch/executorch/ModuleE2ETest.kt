@@ -41,7 +41,8 @@ class ModuleE2ETest {
 
   private fun testGoldenModel(modelName: String, inputShape: LongArray) {
     val inputData = loadFloatArrayFromFile(prepareTestFile(javaClass, "/${modelName}_input.bin"))
-    val expectedOutput = loadFloatArrayFromFile(prepareTestFile(javaClass, "/${modelName}_expected_output.bin"))
+    val expectedOutput =
+        loadFloatArrayFromFile(prepareTestFile(javaClass, "/${modelName}_expected_output.bin"))
     val inputTensor = Tensor.fromBlob(inputData, inputShape)
 
     val ptePath = prepareTestFile(javaClass, "/${modelName}.pte")
