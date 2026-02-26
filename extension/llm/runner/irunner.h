@@ -139,7 +139,7 @@ class ET_EXPERIMENTAL IRunner {
    * audio)
    * @param num_bos Number of BOS tokens to prepend during encoding
    * @param num_eos Number of EOS tokens to append during encoding
-   * @return Error::Ok if successful, an error otherwise
+   * @return The next token predicted after prefill, or an error
    */
   virtual runtime::Result<uint64_t> prefill(
       const std::vector<MultimodalInput>& inputs,
