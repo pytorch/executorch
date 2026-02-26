@@ -304,6 +304,7 @@ Error MultimodalRunner::generate(
   auto prefill_result = prefill(inputs, config.num_bos, config.num_eos);
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_result.error());
   uint64_t cur_token = prefill_result.get();
+  prefill_next_token_.reset();
 
   return decode_from_token(cur_token, config, wrapped_callback, stats_callback);
 }

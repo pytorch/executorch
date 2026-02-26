@@ -19,7 +19,6 @@
 #include <unordered_map>
 
 #include <executorch/extension/llm/runner/irunner.h>
-#include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 #include <executorch/extension/llm/runner/text_prefiller.h>
@@ -120,12 +119,10 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
   /**
    * Convenience overload: prefill a single text prompt.
    */
-  ::executorch::runtime::Result<uint64_t>
-  prefill(const std::string& prompt, int32_t num_bos = 0, int32_t num_eos = 0) {
-    std::vector<MultimodalInput> inputs;
-    inputs.emplace_back(MultimodalInput(prompt));
-    return prefill(inputs, num_bos, num_eos);
-  }
+  ::executorch::runtime::Result<uint64_t> prefill(
+      const std::string& prompt,
+      int32_t num_bos = 0,
+      int32_t num_eos = 0);
 
   /**
    * Prefill a text prompt using GenerationConfig.
@@ -133,9 +130,7 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
    */
   ::executorch::runtime::Result<uint64_t> prefill(
       const std::string& prompt,
-      const GenerationConfig& config) {
-    return prefill(prompt, config.num_bos, config.num_eos);
-  }
+      const GenerationConfig& config);
 
   /**
    * @brief Warms up the model with a sample prompt

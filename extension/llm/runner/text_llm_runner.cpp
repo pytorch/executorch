@@ -11,6 +11,7 @@
 // The module takes in a string as input and emits a string as output.
 
 #include <executorch/extension/llm/runner/io_manager/io_manager.h>
+#include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -287,6 +288,21 @@ Result<uint64_t> TextLLMRunner::prefill(
     return Error::InvalidArgument;
   }
   return prefill_next_token_.value();
+}
+
+Result<uint64_t> TextLLMRunner::prefill(
+    const std::string& prompt,
+    int32_t num_bos,
+    int32_t num_eos) {
+  std::vector<MultimodalInput> inputs;
+  inputs.emplace_back(MultimodalInput(prompt));
+  return prefill(inputs, num_bos, num_eos);
+}
+
+Result<uint64_t> TextLLMRunner::prefill(
+    const std::string& prompt,
+    const GenerationConfig& config) {
+  return prefill(prompt, config.num_bos, config.num_eos);
 }
 
 Error TextLLMRunner::warmup(const std::string& prompt, int32_t max_new_tokens) {
