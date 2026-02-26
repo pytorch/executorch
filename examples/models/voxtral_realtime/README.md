@@ -18,7 +18,9 @@ Two modes are supported: **offline** (encode full audio, then decode)
 and **streaming** (process 80ms chunks in real time, including live
 microphone input).
 
-![Streaming on Metal with microphone input](https://github.com/user-attachments/assets/44717dc5-777f-4710-ad55-5ec4fa04b9c4)
+## Demo: streaming on Metal backend with microphone input
+
+https://github.com/user-attachments/assets/44717dc5-777f-4710-ad55-5ec4fa04b9c4
 
 ## Prerequisites
 
