@@ -408,22 +408,20 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Run the main function with parsed arguments
-    # Disable nncf patching as export of the patched model is not supported.
-    with nncf.torch.disable_patching():
-        main(
-            args.suite,
-            args.model,
-            args.input_shape,
-            args.export,
-            args.model_file_name,
-            args.quantize,
-            args.validate,
-            args.dataset,
-            args.device,
-            args.batch_size,
-            args.infer,
-            args.num_iter,
-            args.warmup_iter,
-            args.input_tensor_path,
-            args.output_tensor_path,
-        )
+    main(
+        args.suite,
+        args.model,
+        args.input_shape,
+        args.export,
+        args.model_file_name,
+        args.quantize,
+        args.validate,
+        args.dataset,
+        args.device,
+        args.batch_size,
+        args.infer,
+        args.num_iter,
+        args.warmup_iter,
+        args.input_tensor_path,
+        args.output_tensor_path,
+    )
