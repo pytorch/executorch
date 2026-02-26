@@ -39,15 +39,10 @@ class OpenvinoBackend(BackendDetails):
         Returns:
             PreprocessResult: The result of preprocessing, including the compiled model bytes.
         """
-        transformed_ep = DimOrderOpsRevertPass()(edge_program.graph_module)
-
-        # Update the edge_program with the transformed graph
-        if transformed_ep and transformed_ep.graph_module:
-            edge_program._graph_module = transformed_ep.graph_module
-
-        # Decompose div(rounding_mode='floor') into div + floor for correct
-        # semantics.
-        DecomposeFloorDividePass()(edge_program.graph_module)
+        for pass_cls in [DimOrderOpsRevertPass, DecomposeFloorDividePass]:
+            result = pass_cls()(edge_program.graph_module)
+            if result and result.graph_module:
+                edge_program._graph_module = result.graph_module
 
         input_names = edge_program.graph_signature.user_inputs
         args = []
