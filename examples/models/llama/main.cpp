@@ -192,8 +192,8 @@ int32_t main(int32_t argc, char** argv) {
 
   auto error = runner->generate(prompt, config);
   if (error != executorch::runtime::Error::Ok) {
-    ET_LOG(Error, "Failed to run llama runner");
-    return 1;
+    printf("Failed to run llama runner: %d", static_cast<int>(error));
+    return 130;
   }
 
 #ifdef ET_EVENT_TRACER_ENABLED

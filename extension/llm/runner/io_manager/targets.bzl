@@ -17,3 +17,20 @@ def define_common_targets():
             ],
             visibility = ["PUBLIC"],
         )
+
+        # Attention Sink IOManager for runner-side infinite context
+        runtime.cxx_library(
+            name = "attention_sink_io_manager" + aten_suffix,
+            srcs = [
+                "attention_sink_io_manager.cpp",
+            ],
+            exported_headers = [
+                "attention_sink_io_manager.h",
+            ],
+            exported_deps = [
+                ":io_manager" + aten_suffix,
+                "//executorch/extension/tensor:tensor" + aten_suffix,
+                "//executorch/extension/module:module" + aten_suffix,
+            ],
+            visibility = ["PUBLIC"],
+        )
