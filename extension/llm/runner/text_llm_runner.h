@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -101,16 +102,20 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {}) override;
 
+  using IRunner::prefill; // Bring in string convenience overload
+
   /**
-   * Prefill text inputs, for example to reload chat history.
-   * @param prompt Text prompt to prefill.
-   * @param config Configuration parameters for text generation (e.g.,
-   * max_new_tokens, temperature)
+   * Prefill multimodal inputs into the KV cache without generating.
+   * Text and token inputs are supported; image/audio inputs are skipped.
+   * @param inputs A vector of MultimodalInput objects.
+   * @param num_bos Number of BOS tokens to prepend during text encoding.
+   * @param num_eos Number of EOS tokens to append during text encoding.
    * @return The error code. KV cache position is tracked internally in pos_.
    */
   ::executorch::runtime::Error prefill(
-      const std::string& prompt,
-      const GenerationConfig& config);
+      const std::vector<MultimodalInput>& inputs,
+      int32_t num_bos = 0,
+      int32_t num_eos = 0) override;
 
   /**
    * @brief Warms up the model with a sample prompt
@@ -165,6 +170,9 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
   // temperature.
   // Deprecated, we should rely on the temperature in GenerationConfig instead.
   float temperature_ = -1.0f;
+
+  // Token predicted by the last prefill() call, consumed by generate("").
+  std::optional<uint64_t> prefill_next_token_;
 
   // The position in KV cache of the input, starting from 0.
   int64_t pos_ = 0;

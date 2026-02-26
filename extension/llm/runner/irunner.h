@@ -14,7 +14,9 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
+#include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/runtime/core/error.h>
 
@@ -127,6 +129,34 @@ class ET_EXPERIMENTAL IRunner {
       const GenerationConfig& config,
       std::function<void(const std::string&)> token_callback,
       std::function<void(const Stats&)> stats_callback) = 0;
+
+  /**
+   * Prefill multimodal inputs into the KV cache without generating.
+   *
+   * @param inputs A vector of MultimodalInput objects (text, tokens, images,
+   * audio)
+   * @param num_bos Number of BOS tokens to prepend during encoding
+   * @param num_eos Number of EOS tokens to append during encoding
+   * @return Error::Ok if successful, an error otherwise
+   */
+  virtual runtime::Error prefill(
+      const std::vector<MultimodalInput>& inputs,
+      int32_t num_bos = 0,
+      int32_t num_eos = 0) {
+    return runtime::Error::NotSupported;
+  }
+
+  /**
+   * Convenience overload: prefill a single text prompt.
+   */
+  runtime::Error prefill(
+      const std::string& prompt,
+      int32_t num_bos = 0,
+      int32_t num_eos = 0) {
+    std::vector<MultimodalInput> inputs;
+    inputs.emplace_back(MultimodalInput(prompt));
+    return prefill(inputs, num_bos, num_eos);
+  }
 
   /**
    * Stop the generation process.
