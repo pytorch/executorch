@@ -76,6 +76,8 @@ Error TextLLMRunner::generate(
     const GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
+  // Prepare the inputs.
+  // Use ones-initialized inputs.
   ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
   if (!is_loaded()) {
     stats_->model_load_start_ms = time_in_ms();
@@ -103,6 +105,9 @@ Error TextLLMRunner::generate(
           token_callback(piece);
         }
       };
+
+  // First token time only measures the time it takes to encode the prompt and
+  // return a response token.
 
   stats_->inference_start_ms = time_in_ms();
   shouldStop_ = false;
@@ -139,6 +144,8 @@ Error TextLLMRunner::generate(
       num_prompt_tokens,
       max_context_len);
 
+  // Determine max_new_tokens using the GenerationConfig's resolve method,
+  // then subtract pos_ for max_new_tokens.
   int max_new_tokens =
       config.resolve_max_new_tokens(max_context_len, num_prompt_tokens);
 
@@ -156,6 +163,11 @@ Error TextLLMRunner::generate(
       "Max new tokens %d is less than or equal to 0",
       max_new_tokens);
 
+  // Prefill first
+  // Here feed all tokens to the model and get the next predicted token
+  // after the prompt. After that we will enter generate loop.
+
+  // print prompts
   if (config.echo) {
     wrapped_callback(prompt);
   }
@@ -165,6 +177,7 @@ Error TextLLMRunner::generate(
   stats_->first_token_ms = time_in_ms();
   stats_->prompt_eval_end_ms = time_in_ms();
 
+  // print the first token from prefill. No prev_token so use cur_token for it.
   auto decode_result = tokenizer_->decode(cur_token, cur_token);
   if (!decode_result.ok()) {
     ET_LOG(
@@ -179,10 +192,13 @@ Error TextLLMRunner::generate(
       "RSS after prompt prefill: %f MiB (0 if unsupported)",
       get_rss_bytes() / 1024.0 / 1024.0);
 
+  // start the main loop
   prompt_tokens.push_back(cur_token);
 
+  // Set ignore_eos based on config
   text_token_generator_->set_ignore_eos(config.ignore_eos);
 
+  // Generate max_new_tokens - 1 because prefill already generated 1 token.
   auto generate_result = text_token_generator_->generate(
       prompt_tokens,
       pos_,
@@ -215,6 +231,7 @@ Error TextLLMRunner::generate(
   if (config.warming) {
     ET_LOG(Info, "Warmup run finished!");
   } else {
+    // Do not print report during warmup
     print_report(*stats_);
   }
   if (stats_callback) {
