@@ -16,13 +16,14 @@
 #include <string>
 #include <vector>
 
-#include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/runtime/core/error.h>
 
 namespace executorch {
 namespace extension {
 namespace llm {
+
+class MultimodalInput; // Forward declaration
 
 // Configuration struct for generation parameters, fields should be sorted in
 // alphabetic order
@@ -144,16 +145,6 @@ class ET_EXPERIMENTAL IRunner {
       int32_t num_bos = 0,
       int32_t num_eos = 0) {
     return runtime::Error::NotSupported;
-  }
-
-  /**
-   * Convenience overload: prefill a single text prompt.
-   */
-  runtime::Error
-  prefill(const std::string& prompt, int32_t num_bos = 0, int32_t num_eos = 0) {
-    std::vector<MultimodalInput> inputs;
-    inputs.emplace_back(MultimodalInput(prompt));
-    return prefill(inputs, num_bos, num_eos);
   }
 
   /**

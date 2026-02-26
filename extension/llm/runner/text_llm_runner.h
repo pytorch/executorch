@@ -18,6 +18,7 @@
 #include <unordered_map>
 
 #include <executorch/extension/llm/runner/irunner.h>
+#include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 #include <executorch/extension/llm/runner/text_prefiller.h>
@@ -101,8 +102,6 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {}) override;
 
-  using IRunner::prefill; // Bring in string convenience overload
-
   /**
    * Prefill multimodal inputs into the KV cache without generating.
    * Only text inputs are processed; non-text inputs are skipped.
@@ -115,6 +114,16 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
       const std::vector<MultimodalInput>& inputs,
       int32_t num_bos = 0,
       int32_t num_eos = 0) override;
+
+  /**
+   * Convenience overload: prefill a single text prompt.
+   */
+  ::executorch::runtime::Error
+  prefill(const std::string& prompt, int32_t num_bos = 0, int32_t num_eos = 0) {
+    std::vector<MultimodalInput> inputs;
+    inputs.emplace_back(MultimodalInput(prompt));
+    return prefill(inputs, num_bos, num_eos);
+  }
 
   /**
    * Prefill a text prompt using GenerationConfig.

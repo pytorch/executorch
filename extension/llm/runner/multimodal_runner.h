@@ -138,8 +138,6 @@ class ET_EXPERIMENTAL MultimodalRunner : public IRunner {
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {});
 
-  using IRunner::prefill; // Bring in string convenience overload
-
   /**
    * Prefill multimodal inputs to fill the KV cache, for example to reload
    * chat history. Call generate() with a non-empty prompt afterwards to
@@ -154,6 +152,16 @@ class ET_EXPERIMENTAL MultimodalRunner : public IRunner {
       const std::vector<MultimodalInput>& inputs,
       int32_t num_bos = 0,
       int32_t num_eos = 0) override;
+
+  /**
+   * Convenience overload: prefill a single text prompt.
+   */
+  ::executorch::runtime::Error
+  prefill(const std::string& prompt, int32_t num_bos = 0, int32_t num_eos = 0) {
+    std::vector<MultimodalInput> inputs;
+    inputs.emplace_back(MultimodalInput(prompt));
+    return prefill(inputs, num_bos, num_eos);
+  }
 
   void stop() override {
     text_token_generator_->stop();
