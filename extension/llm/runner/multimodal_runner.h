@@ -108,12 +108,30 @@ class ET_EXPERIMENTAL MultimodalRunner : public IRunner {
   bool is_loaded() const override;
   ::executorch::runtime::Error load() override;
 
+  /**
+   * Generate tokens from a text prompt. Wraps the prompt as a MultimodalInput
+   * and delegates to generate(vector).
+   * @param prompt The text prompt to generate from. Must be non-empty.
+   * @param config Generation configuration parameters.
+   * @param token_callback Callback function called for each generated token.
+   * @param stats_callback Callback function for generation statistics.
+   * @return The error code. KV cache position is tracked internally in pos_.
+   */
   ::executorch::runtime::Error generate(
       const std::string& prompt,
       const GenerationConfig& config,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {}) override;
 
+  /**
+   * Generate tokens from the given multimodal inputs using GenerationConfig.
+   * @param inputs A vector of MultimodalInput objects containing images and
+   * text.
+   * @param config Generation configuration parameters.
+   * @param token_callback Callback function called for each generated token.
+   * @param stats_callback Callback function for generation statistics.
+   * @return The error code. KV cache position is tracked internally in pos_.
+   */
   virtual ::executorch::runtime::Error generate(
       const std::vector<MultimodalInput>& inputs,
       const GenerationConfig& config,
@@ -122,6 +140,16 @@ class ET_EXPERIMENTAL MultimodalRunner : public IRunner {
 
   using IRunner::prefill; // Bring in string convenience overload
 
+  /**
+   * Prefill multimodal inputs to fill the KV cache, for example to reload
+   * chat history. Call generate() with a non-empty prompt afterwards to
+   * start decoding.
+   * @param inputs A vector of MultimodalInput objects containing images and
+   * text.
+   * @param num_bos Number of BOS tokens to prepend during encoding.
+   * @param num_eos Number of EOS tokens to append during encoding.
+   * @return The error code. KV cache position is tracked internally in pos_.
+   */
   ::executorch::runtime::Error prefill(
       const std::vector<MultimodalInput>& inputs,
       int32_t num_bos = 0,
