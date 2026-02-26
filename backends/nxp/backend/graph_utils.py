@@ -36,3 +36,9 @@ def is_op_node(node: Node, target_op) -> bool:
 
 def is_batch_norm(node: Node) -> bool:
     return is_op_node(node, batch_norm_target_ops)
+
+
+def get_output_shape(node: Node) -> torch.Size | None:
+    if node.meta.get("tensor_meta") is not None:
+        return node.meta["tensor_meta"].shape
+    return None

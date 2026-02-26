@@ -45,10 +45,12 @@ from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt
 def test_add_simulated_linear_bn_fusing(input_shape, linear_bias):
     calibration_inputs = get_random_calibration_inputs(to_model_input_spec(input_shape))
     input_sample = calibration_inputs[0]
-    model = models.LinearBNModule(
-        in_features=input_shape[-1],
-        out_features=5,
-        linear_bias=linear_bias,
+    model = models.LinearBatchNormModule(
+        bias=linear_bias,
+        input_rank=len(input_shape),
+        fc_in_features=input_shape[-1],
+        fc_out_features=5,
+        bn_in_features=5,
     )
     model.train()
     raw_output = model(input_sample[0])
@@ -110,10 +112,12 @@ def test_full_linear_bn_fusing(input_shape, linear_bias):
 
     calibration_inputs = get_random_calibration_inputs(to_model_input_spec(input_shape))
     input_sample = calibration_inputs[0]
-    model = models.LinearBNModule(
-        in_features=input_shape[-1],
-        out_features=5,
-        linear_bias=linear_bias,
+    model = models.LinearBatchNormModule(
+        bias=linear_bias,
+        input_rank=len(input_shape),
+        fc_in_features=input_shape[-1],
+        fc_out_features=5,
+        bn_in_features=5,
     )
     model.train()
     raw_output = model(input_sample[0])
@@ -175,11 +179,13 @@ def test_input_output_graph_equivalence(input_shape, linear_bias, bn_eps):
 
     calibration_inputs = get_random_calibration_inputs(to_model_input_spec(input_shape))
     input_sample = calibration_inputs[0]
-    model = models.LinearBNModule(
-        in_features=input_shape[-1],
-        out_features=5,
-        linear_bias=linear_bias,
-        bn_eps=bn_eps,
+    model = models.LinearBatchNormModule(
+        bias=linear_bias,
+        input_rank=len(input_shape),
+        fc_in_features=input_shape[-1],
+        fc_out_features=5,
+        bn_in_features=5,
+        eps=bn_eps,
     )
     model.eval()
 
@@ -216,11 +222,13 @@ def test_linear_bn_full_qat_pipeline_conversion(
             "The graph currently produces Linear layer without quantized bias which is incorrect."
         )
 
-    model = models.LinearBNModule(
-        in_features=input_shape[-1],
-        out_features=5,
-        linear_bias=linear_bias,
-        bn_eps=bn_eps,
+    model = models.LinearBatchNormModule(
+        bias=linear_bias,
+        input_rank=len(input_shape),
+        fc_in_features=input_shape[-1],
+        fc_out_features=5,
+        bn_in_features=5,
+        eps=bn_eps,
     )
     model.eval()
 
@@ -258,3 +266,49 @@ def test_linear_bn_full_qat_pipeline_conversion(
         input_data=input_data,
         atol=0.0,
     )
+
+
+@pytest.mark.parametrize("input_shape", [(2, 3, 5), (2, 3, 5, 5), (2, 3, 3, 5, 5)])
+@pytest.mark.parametrize("linear_bias", [True, False])
+@pytest.mark.parametrize("bn_eps", [1e-5, 1e-6])
+def test_incompatible_linear_bn_not_fused(mocker, input_shape, linear_bias, bn_eps):
+    """
+    Test cases ensuring Linear+BN are not fused when not compatible for fusion.
+    Linear+BN are only fusable when using BatchNorm1d and input has 2 dims (N, L).
+    """
+
+    # TODO: Add pass for quantizing bias node when Linear has bias=False
+    if not linear_bias:
+        pytest.skip(
+            "Linear with bias=False is not yet supported. "
+            "The graph currently produces Linear layer without quantized bias which is incorrect."
+        )
+
+    model = models.LinearBatchNormModule(
+        bias=linear_bias,
+        input_rank=len(input_shape),
+        fc_in_features=input_shape[-1],
+        fc_out_features=5,
+        bn_in_features=input_shape[1],
+        eps=bn_eps,
+    )
+    model.eval()
+    model(torch.randn(input_shape))
+
+    # Run conversion
+    edge_program = to_quantized_edge_program(
+        model, input_shape, use_qat=True, use_neutron_for_format_conversion=False
+    ).exported_program()
+
+    assert graph_contains_any_of_ops(
+        graph=edge_program.graph,
+        ops=[
+            exir_ops.edge.aten.addmm.default,
+            exir_ops.edge.aten.linear.default,
+        ],
+    )
+    assert graph_contains_any_of_ops(
+        graph=edge_program.graph,
+        ops=batch_norm_target_ops,
+    )
+    assert not any("lowered_module" in node.name for node in edge_program.graph.nodes)

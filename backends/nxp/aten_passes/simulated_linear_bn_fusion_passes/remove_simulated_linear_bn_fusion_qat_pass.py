@@ -106,7 +106,7 @@ def _remove_late_bias_pattern(graph_module: GraphModule, bias_node: Node):
         graph_module.graph.erase_node(reshape_node)
 
 
-def _remove_denorm_and_late_bias(graph_module: GraphModule):
+def _remove_denorm_and_late_bias(graph_module: GraphModule) -> bool:
     named_modules = dict(graph_module.named_modules(remove_duplicate=False))
 
     for node in graph_module.graph.nodes:

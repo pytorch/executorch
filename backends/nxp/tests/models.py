@@ -8,7 +8,6 @@ import math
 from typing import Callable, Collection, Union
 
 import torch
-
 from torch import nn
 
 
@@ -457,51 +456,114 @@ class Conv2dReLUMaxPoolModule(torch.nn.Module):
         return self.pool(x)
 
 
-class ConvBNModule(torch.nn.Module):
-    def __init__(self, conv_module, conv_bias, bn_affine):
+class BatchNormModule(torch.nn.Module):
+    def __init__(
+        self, input_rank: int, num_features: int, affine: bool = True, eps: float = 1e-5
+    ):
         super().__init__()
-
-        if conv_module == "conv1d":
-            self.conv = torch.nn.Conv1d(3, 64, 3, padding=1, bias=conv_bias)
-            self.bn = torch.nn.BatchNorm1d(64, affine=bn_affine)
-        elif conv_module == "conv2d":
-            self.conv = torch.nn.Conv2d(3, 64, 3, padding=1, bias=conv_bias)
-            self.bn = torch.nn.BatchNorm2d(64, affine=bn_affine)
-        elif conv_module == "conv1d_t":
-            self.conv = torch.nn.ConvTranspose1d(3, 64, 3, padding=1, bias=conv_bias)
-            self.bn = torch.nn.BatchNorm1d(64, affine=bn_affine)
-        elif conv_module == "conv2d_t":
-            self.conv = torch.nn.ConvTranspose2d(3, 64, 3, padding=1, bias=conv_bias)
-            self.bn = torch.nn.BatchNorm2d(64, affine=bn_affine)
-        else:
-            raise ValueError(f"Unknown conv_module: {conv_module}")
+        match input_rank - 2:
+            case 0 | 1:
+                self.batch_norm = nn.BatchNorm1d(num_features, eps, affine=affine)
+            case 2:
+                self.batch_norm = nn.BatchNorm2d(num_features, eps, affine=affine)
+            case 3:
+                self.batch_norm = nn.BatchNorm3d(num_features, eps, affine=affine)
+            case _:
+                raise ValueError(f"Unsupported rank {input_rank}")
+        self.eval()
 
     def forward(self, x):
-        x = self.conv(x)
-        return self.bn(x)
+        return self.batch_norm(x)
 
 
-class LinearBNModule(torch.nn.Module):
+class ConvBatchNormModule(torch.nn.Module):
     def __init__(
         self,
-        in_features: int,
-        out_features: int,
-        linear_bias: bool,
-        bn_eps: float = 1e-5,
-        act: nn.Module | None = None,
+        bias: bool,
+        input_rank: int,
+        num_features: int,
+        transposed_conv: bool = False,
+        bn_affine: bool = True,
+        eps: float = 1e-5,
     ):
         super().__init__()
 
-        self.linear = torch.nn.Linear(
-            in_features=in_features, out_features=out_features, bias=linear_bias
-        )
-        self.bn = torch.nn.BatchNorm1d(out_features, eps=bn_eps)
-        self.act = act
+        if (input_rank == 2 or input_rank == 3) and not transposed_conv:
+            self.conv = torch.nn.Conv1d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=3,
+                bias=bias,
+            )
+        elif input_rank == 4 and not transposed_conv:
+            self.conv = torch.nn.Conv2d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=3,
+                bias=bias,
+            )
+        elif input_rank == 5 and not transposed_conv:
+            self.conv = torch.nn.Conv3d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=3,
+                bias=bias,
+            )
+        elif (input_rank == 2 or input_rank == 3) and transposed_conv:
+            self.conv = torch.nn.ConvTranspose1d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=3,
+                bias=bias,
+            )
+        elif input_rank == 4 and transposed_conv:
+            self.conv = torch.nn.ConvTranspose2d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=3,
+                bias=bias,
+            )
+        elif input_rank == 5 and transposed_conv:
+            self.conv = torch.nn.ConvTranspose3d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=3,
+                bias=bias,
+            )
+        else:
+            raise ValueError(f"Unsupported rank {input_rank}")
+
+        self.batch_norm = BatchNormModule(input_rank, num_features, bn_affine, eps)
+        self.eval()
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.batch_norm(x)
+
+
+class LinearBatchNormModule(torch.nn.Module):
+    def __init__(
+        self,
+        bias: bool,
+        input_rank: int,
+        fc_in_features: int,
+        fc_out_features: int,
+        bn_in_features: int,
+        bn_affine: bool = True,
+        eps: float = 1e-5,
+    ):
+        super().__init__()
+        self.linear = torch.nn.Linear(fc_in_features, fc_out_features, bias=bias)
+
+        if input_rank == 2:
+            bn_in_features = fc_out_features
+
+        self.batch_norm = BatchNormModule(input_rank, bn_in_features, bn_affine, eps)
+        self.eval()
 
     def forward(self, x):
         x = self.linear(x)
-        x = self.bn(x)
-        return self.act(x) if self.act is not None else x
+        return self.batch_norm(x)
 
 
 class MulTensorModule(torch.nn.Module):
