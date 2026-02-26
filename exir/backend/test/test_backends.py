@@ -36,7 +36,6 @@ from executorch.exir.backend.test.op_partitioner_demo import (
     AddAttributePartitionerDemo,
     AddMulPartitionerDemo,
 )
-
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_control_flow_submodules
@@ -49,12 +48,10 @@ from executorch.exir.schema import (
     DelegateCall,
     Program,
 )
-
 from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 from executorch.extension.pytree import tree_flatten
-
 from functorch.experimental import control_flow
 from torch.ao.quantization import get_default_qconfig_mapping  # @manual
 from torch.ao.quantization.backend_config.executorch import (
@@ -987,9 +984,10 @@ class TestBackends(unittest.TestCase):
             _ = to_backend(ep.exported_program, BadPartitioner())
 
     def test_quantized_with_delegate(self) -> None:
-        torch.ops.load_library(
-            "//executorch/kernels/quantized:custom_ops_generated_lib"
-        )
+        try:
+            import executorch.kernels.quantized  # noqa: F401
+        except ModuleNotFoundError:
+            pass
         qconfig_mapping = get_default_qconfig_mapping("qnnpack")
         in_size = 2
         input_size = 3

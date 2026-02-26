@@ -6,8 +6,12 @@
 
 # pyre-strict
 
-from pathlib import Path
 from typing import Callable, Optional, Protocol, TypeVar
+
+try:
+    import executorch.kernels.quantized  # noqa: F401
+except ModuleNotFoundError:
+    pass
 
 import torch
 import torch.nn as nn
@@ -17,19 +21,6 @@ from executorch.exir.scalar_type import ScalarType
 from torch.library import impl, Library
 
 m = Library("cadence", "IMPL", "CompositeExplicitAutograd")
-
-try:
-    torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib")
-except (OSError, RuntimeError):
-
-    custom_libs: list[Path] = list(
-        Path(__file__)
-        .parent.parent.parent.resolve()
-        .glob("**/kernels/quantized/**/*custom_ops_generated_lib.*")
-    )
-    if custom_libs:
-        torch.ops.load_library(str(custom_libs[0]))
-    del Path
 
 # Registry to track all ops with reference implementations
 _REGISTERED_REF_IMPLEMENTATIONS: set[str] = set()
