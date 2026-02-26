@@ -1110,7 +1110,8 @@ def quantized_conv2d_nhwc_per_tensor(
     if len(input_tensor.shape) == 3:
         # 1D conv: input is [N, L, C] -> [N, C, L]
         input_tensor = input_tensor.movedim(-1, 1).contiguous()
-        if depthwise:
+        if len(weight.shape) == 2:
+            assert depthwise, "1D depthwise conv requires 2D weight tensor"
             # 1D depthwise: weight is [K, OC] -> [OC, 1, K]
             weight = weight.permute(1, 0).unsqueeze(1).contiguous()
         else:
@@ -1120,7 +1121,8 @@ def quantized_conv2d_nhwc_per_tensor(
     else:
         # 2D conv: input is [N, H, W, C] -> [N, C, H, W]
         input_tensor = input_tensor.movedim(-1, -3)
-        if depthwise:
+        if len(weight.shape) == 3:
+            assert depthwise, "2D depthwise conv requires 3D weight tensor"
             # 2D depthwise: weight is [KH, KW, OC] -> [OC, 1, KH, KW]
             weight = weight.permute(2, 0, 1).unsqueeze(1).contiguous()
         else:

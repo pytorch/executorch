@@ -359,15 +359,7 @@ StreamingSession::StreamingSession(
           config.temperature,
           ::executorch::extension::llm::kTopp,
           static_cast<unsigned long long>(std::time(nullptr))),
-      input_embeds_buf_(static_cast<size_t>(runner.dim_)) {
-  // Initialize conv states to zero (matches offline encoder's left-padding).
-  // num_mel_bins=128, conv1_pad_=2 → 128*2 = 256 floats
-  conv1_state_.assign(
-      static_cast<size_t>(runner.num_mel_bins_ * runner.conv1_pad_), 0.0f);
-  // enc_dim_=1280, conv2_pad_=2 → 1280*2 = 2560 floats
-  conv2_state_.assign(
-      static_cast<size_t>(runner.enc_dim_ * runner.conv2_pad_), 0.0f);
-}
+      input_embeds_buf_(static_cast<size_t>(runner.dim_)) {}
 
 int StreamingSession::feed_audio(const float* data, int64_t num_samples) {
   audio_buf_.insert(audio_buf_.end(), data, data + num_samples);
@@ -480,18 +472,6 @@ bool StreamingSession::try_process_step() {
       {1, static_cast<int>(num_mel_bins), static_cast<int>(chunk_mel_len)},
       ::executorch::aten::ScalarType::Float);
 
-  auto conv1_state = from_blob(
-      conv1_state_.data(),
-      {1, static_cast<int>(num_mel_bins), static_cast<int>(runner_.conv1_pad_)},
-      ::executorch::aten::ScalarType::Float);
-
-  auto conv2_state = from_blob(
-      conv2_state_.data(),
-      {1,
-       static_cast<int>(runner_.enc_dim_),
-       static_cast<int>(runner_.conv2_pad_)},
-      ::executorch::aten::ScalarType::Float);
-
   std::vector<int64_t> enc_pos_data(static_cast<size_t>(enc_frames_per_chunk));
   for (int64_t i = 0; i < enc_frames_per_chunk; i++) {
     enc_pos_data[static_cast<size_t>(i)] = enc_frame_pos_ + i;
@@ -503,23 +483,12 @@ bool StreamingSession::try_process_step() {
 
   // --- Run streaming encoder ---
   auto enc_result = runner_.model_->execute(
-      "encode_audio_chunk",
-      std::vector<EValue>{*mel_chunk, *conv1_state, *conv2_state, *enc_pos});
+      "encode_audio_chunk", std::vector<EValue>{*mel_chunk, *enc_pos});
   ET_CHECK_MSG(enc_result.ok(), "encode_audio_chunk failed.");
 
   auto& enc_outputs = enc_result.get();
   auto audio_embeds = enc_outputs[0].toTensor();
-  auto new_conv1 = enc_outputs[1].toTensor();
-  auto new_conv2 = enc_outputs[2].toTensor();
 
-  std::memcpy(
-      conv1_state_.data(),
-      new_conv1.const_data_ptr<float>(),
-      conv1_state_.size() * sizeof(float));
-  std::memcpy(
-      conv2_state_.data(),
-      new_conv2.const_data_ptr<float>(),
-      conv2_state_.size() * sizeof(float));
   enc_frame_pos_ += enc_frames_per_chunk;
   samples_consumed_ += step;
 

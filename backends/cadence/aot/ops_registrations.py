@@ -1179,18 +1179,25 @@ def quantized_conv2d_nhwc_per_tensor_meta(
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
     assert len(in_size) > 2
-    assert len(in_size) < 6
+    assert len(in_size) < 5
 
     # Determine weight layout based on depthwise vs regular conv.
     in_channels = in_size[-1]
-    if is_depthwise_conv(groups, in_channels):
-        *kernel_size, out_channels = weight.shape
-    elif len(in_size) == 3:
-        # 1D conv: weight is [OC, K, IC]
-        out_channels, *kernel_size, _ = weight.shape
+    depthwise = is_depthwise_conv(groups, in_channels)
+    if len(in_size) == 3:
+        if len(weight.shape) == 2:
+            assert depthwise
+            *kernel_size, out_channels = weight.shape
+        else:
+            out_channels, *kernel_size, _ = weight.shape
+    elif len(in_size) == 4:
+        if len(weight.shape) == 3:
+            assert depthwise
+            *kernel_size, out_channels = weight.shape
+        else:
+            out_channels, *kernel_size, _ = weight.shape
     else:
-        # 2D regular conv: weight is [OC, KH, KW, IC]
-        out_channels, *kernel_size, _ = weight.shape
+        raise ValueError("Unsupported input tensor size")
 
     # Compute the output tensor size
     output_size = (
