@@ -384,14 +384,14 @@ public class LlmModule {
    */
   @Experimental
   public long prefillImages(int[] image, int width, int height, int channels) {
-    int nativeResult = appendImagesInput(image, width, height, channels);
+    int nativeResult = prefillImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int appendImagesInput(int[] image, int width, int height, int channels);
+  private native int prefillImagesInput(int[] image, int width, int height, int channels);
 
   /**
    * Prefill a multimodal Module with the given images input.
@@ -406,14 +406,14 @@ public class LlmModule {
    */
   @Experimental
   public long prefillImages(float[] image, int width, int height, int channels) {
-    int nativeResult = appendNormalizedImagesInput(image, width, height, channels);
+    int nativeResult = prefillNormalizedImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int appendNormalizedImagesInput(
+  private native int prefillNormalizedImagesInput(
       float[] image, int width, int height, int channels);
 
   /**
@@ -429,14 +429,14 @@ public class LlmModule {
    */
   @Experimental
   public long prefillAudio(byte[] audio, int batch_size, int n_bins, int n_frames) {
-    int nativeResult = appendAudioInput(audio, batch_size, n_bins, n_frames);
+    int nativeResult = prefillAudioInput(audio, batch_size, n_bins, n_frames);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int appendAudioInput(byte[] audio, int batch_size, int n_bins, int n_frames);
+  private native int prefillAudioInput(byte[] audio, int batch_size, int n_bins, int n_frames);
 
   /**
    * Prefill a multimodal Module with the given audio input.
@@ -451,14 +451,14 @@ public class LlmModule {
    */
   @Experimental
   public long prefillAudio(float[] audio, int batch_size, int n_bins, int n_frames) {
-    int nativeResult = appendAudioInputFloat(audio, batch_size, n_bins, n_frames);
+    int nativeResult = prefillAudioInputFloat(audio, batch_size, n_bins, n_frames);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int appendAudioInputFloat(float[] audio, int batch_size, int n_bins, int n_frames);
+  private native int prefillAudioInputFloat(float[] audio, int batch_size, int n_bins, int n_frames);
 
   /**
    * Prefill a multimodal Module with the given raw audio input.
@@ -473,14 +473,14 @@ public class LlmModule {
    */
   @Experimental
   public long prefillRawAudio(byte[] audio, int batch_size, int n_channels, int n_samples) {
-    int nativeResult = appendRawAudioInput(audio, batch_size, n_channels, n_samples);
+    int nativeResult = prefillRawAudioInput(audio, batch_size, n_channels, n_samples);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int appendRawAudioInput(
+  private native int prefillRawAudioInput(
       byte[] audio, int batch_size, int n_channels, int n_samples);
 
   /**
