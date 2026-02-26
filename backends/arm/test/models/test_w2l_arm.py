@@ -24,6 +24,11 @@ from torchaudio import models  # type: ignore[import-untyped]
 
 input_t = Tuple[torch.Tensor]  # Input x
 
+quant_test_data = {
+    "per_channel_quantization=true": True,
+    "per_channel_quantization=false": False,
+}
+
 
 def get_test_inputs(batch_size, num_features, input_frames):
     return (torch.randn(batch_size, num_features, input_frames),)
@@ -99,14 +104,15 @@ def test_w2l_u55_INT():
 
 @pytest.mark.slow
 @common.XfailIfNoCorstone320
-@pytest.mark.skip(reason="Intermittent timeout issue: MLETORCH-856")
-def test_w2l_u85_INT():
+@common.parametrize("per_channel_quantization", quant_test_data)
+def test_w2l_u85_INT(per_channel_quantization):
     pipeline = EthosU85PipelineINT[input_t](
         TestW2L.create_model(),
         TestW2L.model_example_inputs,
         aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
+        per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
 
