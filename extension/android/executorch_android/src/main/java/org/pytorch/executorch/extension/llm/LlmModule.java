@@ -493,7 +493,7 @@ public class LlmModule {
    */
   @Experimental
   public long prefillPrompt(String prompt) {
-    int nativeResult = appendTextInput(prompt);
+    int nativeResult = prefillTextInput(prompt);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
@@ -501,7 +501,7 @@ public class LlmModule {
   }
 
   // returns status
-  private native int appendTextInput(String prompt);
+  private native int prefillTextInput(String prompt);
 
   /**
    * Reset the context of the LLM. This will clear the KV cache and reset the state of the LLM.

@@ -249,7 +249,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
 
   // Returns status_code
   // Contract is valid within an AAR (JNI + corresponding Java code)
-  jint append_text_input(facebook::jni::alias_ref<jstring> prompt) {
+  jint prefill_text_input(facebook::jni::alias_ref<jstring> prompt) {
     if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM && runner_) {
       executorch::extension::llm::GenerationConfig config;
       auto err = runner_->prefill(prompt->toStdString(), config);
@@ -444,7 +444,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         makeNativeMethod(
             "appendRawAudioInput", ExecuTorchLlmJni::append_raw_audio_input),
         makeNativeMethod(
-            "appendTextInput", ExecuTorchLlmJni::append_text_input),
+            "prefillTextInput", ExecuTorchLlmJni::prefill_text_input),
         makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
     });
   }
