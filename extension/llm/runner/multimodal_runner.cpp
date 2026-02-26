@@ -172,6 +172,7 @@ Error MultimodalRunner::generate(
       "RSS after loading model: %f MiB (0 if unsupported)",
       get_rss_bytes() / 1024.0 / 1024.0);
 
+  // Wrap the token_callback with print function
   std::function<void(const std::string&)> wrapped_callback =
       [token_callback, config](const std::string& piece) {
         if (!config.warming) {
@@ -183,6 +184,7 @@ Error MultimodalRunner::generate(
         }
       };
 
+  // Reset internal state and start inference
   stats_->inference_start_ms = time_in_ms();
 
   // Echo the last text input if enabled
@@ -215,6 +217,7 @@ Error MultimodalRunner::generate(
       "RSS after multimodal input processing: %f MiB (0 if unsupported)",
       get_rss_bytes() / 1024.0 / 1024.0);
 
+  // Resolve max_new_tokens based on config
   int64_t max_context_len = metadata_.at(kMaxContextLen);
   int32_t max_new_tokens = config.resolve_max_new_tokens(max_context_len, pos_);
 
@@ -231,13 +234,16 @@ Error MultimodalRunner::generate(
       "Max new tokens %d is less than or equal to 0",
       max_new_tokens);
 
+  // Set ignore_eos based on config
   text_token_generator_->set_ignore_eos(config.ignore_eos);
 
+  // Generate tokens using the text token generator
   std::vector<uint64_t> prompt_tokens = {cur_token};
   auto generate_result = text_token_generator_->generate(
       /*tokens=*/prompt_tokens,
       /*start_pos=*/pos_,
-      /*max_new_tokens=*/max_new_tokens - 1,
+      /*max_new_tokens=*/max_new_tokens -
+          1, // Subtract 1 because prefill already generated 1 token
       /*temperature=*/config.temperature,
       /*token_callback=*/wrapped_callback);
   if (!generate_result.ok()) {
@@ -246,13 +252,16 @@ Error MultimodalRunner::generate(
   int64_t num_generated_tokens = generate_result.get();
 
   pos_ += num_generated_tokens;
+  // Update stats
   stats_->num_generated_tokens = num_generated_tokens;
+  // Finalize stats and call callback
   stats_->inference_end_ms = time_in_ms();
 
 #ifdef CUDA_AVAILABLE
   cuda_memory_tracker_->log_sample("after_generate");
   stats_->gpu_free_after_generate_bytes =
       cuda_memory_tracker_->last_free_bytes();
+  // update peak in case it changed after generation
   stats_->gpu_peak_usage_mb = cuda_memory_tracker_->peak_usage_mb();
 #endif
 
@@ -263,6 +272,7 @@ Error MultimodalRunner::generate(
   if (config.warming) {
     ET_LOG(Info, "Warmup run finished!");
   } else {
+    // Do not print report during warmup
     print_report(*stats_);
   }
 
