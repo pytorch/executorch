@@ -117,7 +117,6 @@ class OpenvinoPartitioner(Partitioner):
         :param op_types_to_skip: A set of operator types to skip during partitioning.
         :param op_names_to_skip: A set of operator names to skip during partitioning.
         """
-
         self.delegation_spec = DelegationSpec(OpenvinoBackend.__name__, compile_spec)
         self._op_types_to_skip = op_types_to_skip
         self._op_names_to_skip = op_names_to_skip
