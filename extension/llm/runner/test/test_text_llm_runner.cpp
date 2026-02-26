@@ -454,10 +454,9 @@ TEST_F(RunnerTest, PrefillThenGenerateEmpty) {
   config.echo = false;
 
   CallbackCounter counter;
-  Error err = runner.generate(
-      "", config, [&counter](const std::string& token) {
-        counter.callback(token);
-      });
+  Error err = runner.generate("", config, [&counter](const std::string& token) {
+    counter.callback(token);
+  });
 
   EXPECT_EQ(err, Error::Ok);
   // First token from prefill + remaining from decode loop
