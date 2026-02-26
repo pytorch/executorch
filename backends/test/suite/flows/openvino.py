@@ -7,8 +7,8 @@
 from typing import Callable, Optional
 
 from executorch.backends.openvino.test.tester import (
-    Quantize as OpenVINOQuantize,
     OpenVINOTester,
+    Quantize as OpenVINOQuantize,
 )
 from executorch.backends.test.harness.stages import Quantize
 from executorch.backends.test.suite.flow import TestFlow

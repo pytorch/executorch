@@ -10,8 +10,6 @@ set -ex
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-OPENVINO_SETUP_ROOT=$(pwd)
-
 # Download and install OpenVINO from release packages
 OPENVINO_VERSION="2026.0"
 OPENVINO_BUILD="2026.0.0.20965.c6d6a13a886"
@@ -26,4 +24,3 @@ cd backends/openvino
 pip install -r requirements.txt
 cd scripts
 ./openvino_build.sh --enable_python
-cd "${OPENVINO_SETUP_ROOT}"

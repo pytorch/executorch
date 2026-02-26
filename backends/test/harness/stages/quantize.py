@@ -28,7 +28,7 @@ class Quantize(Stage):
         calibration_samples: Optional[Sequence[Any]] = None,
         is_qat: Optional[bool] = False,
         set_global: bool = True,
-        fold_quantize: bool = True
+        fold_quantize: bool = True,
     ):
         self.quantizer = quantizer
         self.quantization_config = quantization_config

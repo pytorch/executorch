@@ -8,14 +8,14 @@
 
 from typing import final, List
 
+from executorch.backends.openvino._passes import DecomposeFloorDividePass
+
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     ExportedProgram,
     PreprocessResult,
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-
-from executorch.backends.openvino._passes import DecomposeFloorDividePass
 from executorch.exir.passes.memory_format_ops_pass import DimOrderOpsRevertPass
 from openvino.frontend.pytorch.torchdynamo.compile import (  # type: ignore[import-untyped]
     openvino_compile,

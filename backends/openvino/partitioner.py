@@ -7,7 +7,6 @@
 # mypy: disable-error-code=import-not-found
 
 from typing import Callable, final, List, Optional, Tuple
-import logging
 
 import torch
 from executorch.backends.openvino.preprocess import OpenvinoBackend
@@ -25,9 +24,6 @@ from openvino.frontend.pytorch.torchdynamo.op_support import (  # type: ignore[i
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class PatternNode:
@@ -113,7 +109,6 @@ class OpenvinoPartitioner(Partitioner):
         compile_spec: List[CompileSpec],
         op_types_to_skip: Optional[set] = None,
         op_names_to_skip: Optional[set] = None,
-        verbose: bool = False,
     ) -> None:
         """
         Initializes the OpenvinoPartitioner class.
@@ -121,11 +116,7 @@ class OpenvinoPartitioner(Partitioner):
         :param compile_spec: A list of compile specifications for OpenVINO.
         :param op_types_to_skip: A set of operator types to skip during partitioning.
         :param op_names_to_skip: A set of operator names to skip during partitioning.
-        :param verbose: if True, print out more information about the partitioner.
-            Default level is INFO. If verbose is True, level is set to DEBUG.
         """
-        if verbose:
-            logger.setLevel(logging.DEBUG)
 
         self.delegation_spec = DelegationSpec(OpenvinoBackend.__name__, compile_spec)
         self._op_types_to_skip = op_types_to_skip

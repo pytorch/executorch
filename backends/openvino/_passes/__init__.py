@@ -5,3 +5,5 @@
 # LICENSE file in the root directory of this source tree.
 
 from .decompose_floor_divide_pass import DecomposeFloorDividePass
+
+__all__ = ["DecomposeFloorDividePass"]
