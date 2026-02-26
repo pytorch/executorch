@@ -25,15 +25,18 @@ function gcc_select_toolchain() {
         toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz"
         toolchain_dir="arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi"
         toolchain_md5_checksum="0601a9588bc5b9c99ad2b56133b7f118"
+        toolchain_archive="${toolchain_dir}.tar.xz"
     elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]] ; then
         if [[ "${OS}" == "Darwin" ]]; then
             toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi.tar.xz"
             toolchain_dir="arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi"
             toolchain_md5_checksum="f1c18320bb3121fa89dca11399273f4e"
+            toolchain_archive="${toolchain_dir}.tar.xz"
         elif [[ "${OS}" == "Linux" ]]; then
             toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi.tar.xz"
             toolchain_dir="arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi"
             toolchain_md5_checksum="303102d97b877ebbeb36b3158994b218"
+            toolchain_archive="${toolchain_dir}.tar.xz"
         fi
     else
         # This should never happen, it should be covered by setup.sh but catch it anyway
@@ -52,10 +55,12 @@ function zephyr_select_toolchain() {
         toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.4/toolchain_linux-x86_64_arm-zephyr-eabi.tar.xz"
         toolchain_dir="arm-zephyr-eabi"
         toolchain_md5_checksum="68ae71edc0106c3093055b97aaa47017"
+        toolchain_archive="${toolchain_dir}.tar.xz"
     elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]] ; then
         toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.4/toolchain_linux-aarch64_arm-zephyr-eabi.tar.xz"
         toolchain_dir="arm-zephyr-eabi"
         toolchain_md5_checksum="d8a6dfd4314d55da713957d0b161d01f"
+        toolchain_archive="${toolchain_dir}.tar.xz"
     else
         # This should never happen, it should be covered by setup.sh but catch it anyway
         log_step "toolchain" "Error: Unsupported architecture ${ARCH}"
@@ -63,9 +68,28 @@ function zephyr_select_toolchain() {
     fi
 }
 
+function musl_select_toolchain() {
+    if [[ "${OS}" != "Linux" ]] ; then
+        log_step "toolchain" "Error: Linux is required for musl toolchain support"
+        exit 1
+    fi
+
+    if [[ "${ARCH}" == "x86_64" ]] ; then
+        toolchain_url="https://musl.cc/aarch64-linux-musl-cross.tgz"
+        toolchain_dir="aarch64-linux-musl-cross"
+        toolchain_md5_checksum="a6bb806af217a91cf575e15163e8b12b"
+        toolchain_archive="${toolchain_dir}.tgz"
+    else
+        log_step "toolchain" "Error: Unsupported architecture ${ARCH} for musl toolchain"
+        exit 1
+    fi
+}
+
 function select_toolchain() {
     if [[ "${target_toolchain}" == "zephyr" ]]; then
         zephyr_select_toolchain
+    elif [[ "${target_toolchain}" == "linux-musl" ]]; then
+        musl_select_toolchain
     else
         gcc_select_toolchain
     fi
@@ -74,20 +98,30 @@ function select_toolchain() {
 
 function setup_toolchain() {
     # Download and install the arm toolchain (default is arm-none-eabi)
-    # setting --target-toolchain to zephyr sets this to arm-zephyr-eabi
+    # setting --target-toolchain to zephyr selects the arm-zephyr-eabi toolchain, and linux-musl selects the musl-based Linux toolchain
     cd "${root_dir}"
-    if [[ ! -e "${toolchain_dir}.tar.xz" ]]; then
+    if [[ -z "${toolchain_archive}" ]]; then
+        log_step "toolchain" "Error: Toolchain archive not set"
+        exit 1
+    fi
+
+    if [[ ! -e "${toolchain_archive}" ]]; then
         log_step "toolchain" "Downloading ${toolchain_dir} toolchain"
-        curl --output "${toolchain_dir}.tar.xz" -L "${toolchain_url}"
-        verify_md5 ${toolchain_md5_checksum} "${toolchain_dir}.tar.xz" || exit 1
+        curl --output "${toolchain_archive}" -L "${toolchain_url}"
+        verify_md5 ${toolchain_md5_checksum} "${toolchain_archive}" || exit 1
     fi
 
     log_step "toolchain" "Installing ${toolchain_dir} toolchain"
     rm -rf "${toolchain_dir}"
-    tar xf "${toolchain_dir}.tar.xz"
+    tar xf "${toolchain_archive}"
 }
 
 function setup_path_toolchain() {
     toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
     append_env_in_setup_path PATH ${toolchain_bin_path}
+
+    if [[ "${target_toolchain}" == "linux-musl" ]]; then
+        local toolchain_root_path="$(cd ${toolchain_dir} && pwd)"
+        set_env_in_setup_path MUSL_TOOLCHAIN_ROOT ${toolchain_root_path}
+    fi
 }

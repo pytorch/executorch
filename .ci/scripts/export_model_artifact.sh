@@ -34,7 +34,7 @@ Arguments:
 
   output_dir   Output directory for artifacts (optional, default: current directory)
 
-  mode         Export mode (optional, default: auto-detect based on model and device)
+  mode         Export mode (optional, default: vr-streaming)
                Supported modes:
                  - vr-streaming: Voxtral Realtime streaming mode
                  - vr-offline: Voxtral Realtime offline mode
@@ -256,16 +256,9 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   fi
 
   # Determine streaming mode based on MODE parameter
-  USE_STREAMING="false"
-  if [ "$MODE" = "vr-streaming" ]; then
-    USE_STREAMING="true"
-  elif [ "$MODE" = "vr-offline" ]; then
+  USE_STREAMING="true"
+  if [ "$MODE" = "vr-offline" ]; then
     USE_STREAMING="false"
-  elif [ -z "$MODE" ]; then
-    # Auto-detect: XNNPACK uses streaming, others use offline
-    if [ "$DEVICE" = "xnnpack" ]; then
-      USE_STREAMING="true"
-    fi
   fi
 
   # Configure export and preprocessor based on streaming mode

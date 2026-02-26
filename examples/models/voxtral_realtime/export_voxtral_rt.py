@@ -260,13 +260,11 @@ def export_streaming(
         )
 
     sample_mel_chunk = torch.randn(1, model.config.num_mel_bins, 8, dtype=param_dtype)
-    sample_conv1_state = torch.zeros(1, model.config.num_mel_bins, 2, dtype=param_dtype)
-    sample_conv2_state = torch.zeros(1, model.config.enc_dim, 2, dtype=param_dtype)
     sample_enc_pos = torch.arange(4, dtype=torch.long)
 
     programs["encode_audio_chunk"] = export(
         streaming_enc,
-        (sample_mel_chunk, sample_conv1_state, sample_conv2_state, sample_enc_pos),
+        (sample_mel_chunk, sample_enc_pos),
         dynamic_shapes=None,
         strict=True,
     )

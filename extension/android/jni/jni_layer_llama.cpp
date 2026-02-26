@@ -214,8 +214,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     };
 
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      std::vector<llm::MultimodalInput> inputs = prefill_inputs_;
-      prefill_inputs_.clear();
+      std::vector<llm::MultimodalInput> inputs = std::move(prefill_inputs_);
       if (!prompt->toStdString().empty()) {
         inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
       }
@@ -263,7 +262,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jint channels) {
     std::vector<llm::Image> images;
     if (image == nullptr) {
-      return static_cast<jint>(Error::EndOfMethod);
+      return static_cast<jint>(Error::InvalidArgument);
     }
     auto image_size = image->size();
     if (image_size != 0) {
@@ -289,7 +288,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jint channels) {
     std::vector<llm::Image> images;
     if (image == nullptr) {
-      return static_cast<jint>(Error::EndOfMethod);
+      return static_cast<jint>(Error::InvalidArgument);
     }
     auto image_size = image->size();
     if (image_size != 0) {
@@ -314,7 +313,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jint n_bins,
       jint n_frames) {
     if (data == nullptr) {
-      return static_cast<jint>(Error::EndOfMethod);
+      return static_cast<jint>(Error::InvalidArgument);
     }
     auto data_size = data->size();
     if (data_size != 0) {
@@ -337,7 +336,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jint n_bins,
       jint n_frames) {
     if (data == nullptr) {
-      return static_cast<jint>(Error::EndOfMethod);
+      return static_cast<jint>(Error::InvalidArgument);
     }
     auto data_size = data->size();
     if (data_size != 0) {
@@ -360,7 +359,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jint n_channels,
       jint n_samples) {
     if (data == nullptr) {
-      return static_cast<jint>(Error::EndOfMethod);
+      return static_cast<jint>(Error::InvalidArgument);
     }
     auto data_size = data->size();
     if (data_size != 0) {

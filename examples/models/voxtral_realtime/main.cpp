@@ -35,6 +35,9 @@
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/llm/runner/wav_loader.h>
 #include <executorch/runtime/platform/log.h>
+#ifdef ET_BUILD_METAL
+#include <executorch/backends/apple/metal/runtime/stats.h>
+#endif
 
 #include "voxtral_realtime_runner.h"
 
@@ -210,6 +213,10 @@ int main(int argc, char** argv) {
   stats.inference_end_ms = ::executorch::extension::llm::time_in_ms();
 
   ::executorch::extension::llm::print_report(stats);
+
+#ifdef ET_BUILD_METAL
+  executorch::backends::metal::print_metal_backend_stats();
+#endif // ET_BUILD_METAL
 
   return 0;
 }
