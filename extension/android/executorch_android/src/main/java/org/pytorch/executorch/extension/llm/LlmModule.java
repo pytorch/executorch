@@ -458,7 +458,8 @@ public class LlmModule {
     return 0;
   }
 
-  private native int prefillAudioInputFloat(float[] audio, int batch_size, int n_bins, int n_frames);
+  private native int prefillAudioInputFloat(
+      float[] audio, int batch_size, int n_bins, int n_frames);
 
   /**
    * Prefill a multimodal Module with the given raw audio input.
