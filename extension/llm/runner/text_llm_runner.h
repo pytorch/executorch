@@ -105,7 +105,7 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
 
   /**
    * Prefill multimodal inputs into the KV cache without generating.
-   * Text and token inputs are supported; image/audio inputs are skipped.
+   * Only text inputs are processed; non-text inputs are skipped.
    * @param inputs A vector of MultimodalInput objects.
    * @param num_bos Number of BOS tokens to prepend during text encoding.
    * @param num_eos Number of EOS tokens to append during text encoding.
