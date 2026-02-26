@@ -119,10 +119,7 @@ Error TextLLMRunner::generate(
 
   if (!prompt.empty()) {
     ::tokenizers::Result<std::vector<uint64_t>> encode_res =
-        tokenizer_->encode(
-            prompt,
-            /*bos=*/config.num_bos,
-            /*eos=*/config.num_eos);
+        tokenizer_->encode(prompt, /*bos=*/config.num_bos, /*eos=*/config.num_eos);
 
     if (!encode_res.ok()) {
       ET_LOG(

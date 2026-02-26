@@ -119,10 +119,8 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
   /**
    * Convenience overload: prefill a single text prompt.
    */
-  ::executorch::runtime::Result<uint64_t> prefill(
-      const std::string& prompt,
-      int32_t num_bos = 0,
-      int32_t num_eos = 0);
+  ::executorch::runtime::Result<uint64_t>
+  prefill(const std::string& prompt, int32_t num_bos = 0, int32_t num_eos = 0);
 
   /**
    * Prefill a text prompt using GenerationConfig.
