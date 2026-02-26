@@ -479,8 +479,8 @@ class MultimodalRunner:
     def prefill(self, inputs: List[MultimodalInput]) -> None:
         """
         Prefill multimodal inputs (e.g., to rebuild KV cache from chat history)
-        without generating tokens. After prefill, call generate("") to start
-        decoding from the prefilled state.
+        without generating tokens. After prefill, call generate() with a
+        non-empty final text input to start decoding.
 
         Args:
             inputs: List of multimodal inputs to prefill
