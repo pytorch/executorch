@@ -72,15 +72,17 @@ class AudioEncoderExport(nn.Module):
 class TextDecoderExport(nn.Module):
     """Wraps LM decoder for export. Time embedding is baked as a constant."""
 
-    def __init__(self, model):
+    def __init__(self, model, top_k: int = 200):
         super().__init__()
         self.decoder = model.decoder
         self.register_buffer("t_cond", model.t_cond)
+        self.top_k = top_k
 
     def forward(
         self, input_embeds: torch.Tensor, cache_position: torch.Tensor
-    ) -> torch.Tensor:
-        return self.decoder(input_embeds, cache_position, self.t_cond)
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        logits = self.decoder(input_embeds, cache_position, self.t_cond)
+        return torch.topk(logits[:, -1, :], k=self.top_k, dim=-1)
 
 
 class TokenEmbeddingExport(nn.Module):
@@ -100,7 +102,7 @@ class TokenEmbeddingExport(nn.Module):
 
 
 def _export_decoder_and_embedding(
-    programs, model, max_seq_len, qlinear, qlinear_group_size, qembedding
+    programs, model, max_seq_len, qlinear, qlinear_group_size, qembedding, top_k=200
 ):
     """Export text_decoder and token_embedding into programs dict."""
     from executorch.extension.llm.export.quantize import quantize_model_
@@ -108,7 +110,7 @@ def _export_decoder_and_embedding(
     param_dtype = torch.float32
 
     print("\nExporting text_decoder...")
-    text_decoder = TextDecoderExport(model)
+    text_decoder = TextDecoderExport(model, top_k=top_k)
     text_decoder.eval()
 
     if qlinear:
@@ -164,6 +166,7 @@ def export_all(
     qlinear_group_size=32,
     qembedding=None,
     backend="xnnpack",
+    top_k=200,
 ):
     """Export all three model components with per-component quantization."""
     from executorch.extension.llm.export.quantize import quantize_model_
@@ -208,7 +211,7 @@ def export_all(
 
     # 2-3. Text decoder + token embedding
     _export_decoder_and_embedding(
-        programs, model, max_seq_len, qlinear, qlinear_group_size, qembedding
+        programs, model, max_seq_len, qlinear, qlinear_group_size, qembedding, top_k
     )
 
     metadata = {
@@ -220,6 +223,7 @@ def export_all(
         "dim": model.config.dim,
         "vocab_size": model.config.vocab_size,
         "max_seq_len": max_seq_len,
+        "top_k": top_k,
     }
 
     return programs, metadata
@@ -235,6 +239,7 @@ def export_streaming(
     qlinear_group_size=32,
     qembedding=None,
     backend="xnnpack",
+    top_k=200,
 ):
     """Export streaming model components with per-component quantization."""
     from executorch.extension.llm.export.quantize import quantize_model_
@@ -274,7 +279,7 @@ def export_streaming(
 
     # 2-3. Text decoder + token embedding
     _export_decoder_and_embedding(
-        programs, model, max_seq_len, qlinear, qlinear_group_size, qembedding
+        programs, model, max_seq_len, qlinear, qlinear_group_size, qembedding, top_k
     )
 
     # Derive STFT overlap from audio parameters.
@@ -313,6 +318,7 @@ def export_streaming(
         "stft_left_overlap": stft_left_overlap,
         "stft_right_lookahead": stft_right_lookahead,
         "mel_skip_frames": mel_skip_frames,
+        "top_k": top_k,
     }
 
     return programs, metadata
@@ -453,6 +459,12 @@ def main():
         help="Quantize embedding layers (8-bit weight-only).",
     )
     parser.add_argument(
+        "--top-k",
+        type=int,
+        default=200,
+        help="Number of top logits to return from text_decoder for sampling (default: 200).",
+    )
+    parser.add_argument(
         "--streaming",
         action="store_true",
         help="Export streaming encoder (encode_audio_chunk) instead of offline encoder.",
@@ -502,10 +514,10 @@ def main():
     }
     if args.streaming:
         programs, metadata = export_streaming(
-            model, args.max_seq_len, args.max_enc_len, **quant_args
+            model, args.max_seq_len, args.max_enc_len, top_k=args.top_k, **quant_args
         )
     else:
-        programs, metadata = export_all(model, args.max_seq_len, **quant_args)
+        programs, metadata = export_all(model, args.max_seq_len, top_k=args.top_k, **quant_args)
 
     # Lower
     et = lower_to_executorch(programs, metadata, backend=args.backend)

@@ -77,6 +77,7 @@ class VoxtralRealtimeRunner {
   int64_t max_seq_len_ = 4096;
   int64_t vocab_size_ = 131072;
   int64_t dim_ = 3072;
+  int64_t top_k_ = 200;
 
   // Streaming metadata (from constant_methods, if present)
   bool is_streaming_ = false;
@@ -152,7 +153,7 @@ class StreamingSession {
   // Process one 80ms step from the audio buffer.
   bool try_process_step();
 
-  // Run one decoder step (token_embed + optional audio_embed -> logits).
+  // Run one decoder step (token_embed + optional audio_embed -> top-k logits).
   bool decode_step(const float* audio_embeds);
 };
 

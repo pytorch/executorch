@@ -46,6 +46,7 @@ VoxtralRealtimeRunner::VoxtralRealtimeRunner(
   auto ms = model_->execute("max_seq_len", empty);
   auto vs = model_->execute("vocab_size", empty);
   auto dm = model_->execute("dim", empty);
+  auto tk = model_->execute("top_k", empty);
 
   if (ms.ok())
     max_seq_len_ = ms.get()[0].toInt();
@@ -53,13 +54,16 @@ VoxtralRealtimeRunner::VoxtralRealtimeRunner(
     vocab_size_ = vs.get()[0].toInt();
   if (dm.ok())
     dim_ = dm.get()[0].toInt();
+  if (tk.ok())
+    top_k_ = tk.get()[0].toInt();
 
   ET_LOG(
       Info,
-      "Model: max_seq_len=%ld, vocab_size=%ld, dim=%ld",
+      "Model: max_seq_len=%ld, vocab_size=%ld, dim=%ld, top_k=%ld",
       static_cast<long>(max_seq_len_),
       static_cast<long>(vocab_size_),
-      static_cast<long>(dim_));
+      static_cast<long>(dim_),
+      static_cast<long>(top_k_));
 
   // Detect streaming model (exported with --streaming flag).
   auto streaming_val = model_->execute("streaming", empty);
@@ -259,9 +263,8 @@ int VoxtralRealtimeRunner::transcribe(
 
   std::vector<float> input_embeds_buf(static_cast<size_t>(dim_));
 
-  // Token sampler with xorshift RNG, seeded from wall clock.
   ::executorch::extension::llm::Sampler sampler(
-      static_cast<int32_t>(vocab_size_),
+      static_cast<int32_t>(top_k_),
       config.temperature,
       ::executorch::extension::llm::kTopp,
       static_cast<unsigned long long>(std::time(nullptr)));
@@ -304,13 +307,11 @@ int VoxtralRealtimeRunner::transcribe(
         "text_decoder", std::vector<EValue>{*input_embeds, *cache_pos});
     ET_CHECK_MSG(dec_result.ok(), "text_decoder failed.");
 
-    auto logits = dec_result.get()[0].toTensor();
-
-    // d. Sample next token from logits. Safe to mutate the output buffer
-    //    since text_decoder overwrites it on the next execute() call.
-    float* logits_data =
-        logits.mutable_data_ptr<float>() + (logits.numel() - vocab_size_);
-    int64_t next_token = static_cast<int64_t>(sampler.sample(logits_data));
+    auto top_k_values = dec_result.get()[0].toTensor();
+    auto top_k_indices = dec_result.get()[1].toTensor();
+    int32_t sampled_idx =
+        sampler.sample(top_k_values.mutable_data_ptr<float>());
+    int64_t next_token = top_k_indices.const_data_ptr<int64_t>()[sampled_idx];
     num_generated++;
 
     // e. Decode token to text and emit via callback.
@@ -355,7 +356,7 @@ StreamingSession::StreamingSession(
       token_cb_(std::move(token_cb)),
       prev_token_(runner.bos_id_),
       sampler_(
-          static_cast<int32_t>(runner.vocab_size_),
+          static_cast<int32_t>(runner.top_k_),
           config.temperature,
           ::executorch::extension::llm::kTopp,
           static_cast<unsigned long long>(std::time(nullptr))),
@@ -532,10 +533,11 @@ bool StreamingSession::decode_step(const float* audio_embeds) {
       "text_decoder", std::vector<EValue>{*input_embeds, *cache_pos});
   ET_CHECK_MSG(dec_result.ok(), "text_decoder failed.");
 
-  auto logits = dec_result.get()[0].toTensor();
-  float* logits_data =
-      logits.mutable_data_ptr<float>() + (logits.numel() - runner_.vocab_size_);
-  int64_t next_token = static_cast<int64_t>(sampler_.sample(logits_data));
+  auto top_k_values = dec_result.get()[0].toTensor();
+  auto top_k_indices = dec_result.get()[1].toTensor();
+  int32_t sampled_idx =
+      sampler_.sample(top_k_values.mutable_data_ptr<float>());
+  int64_t next_token = top_k_indices.const_data_ptr<int64_t>()[sampled_idx];
   num_generated_++;
 
   auto piece = runner_.tokenizer_->decode(
