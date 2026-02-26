@@ -147,9 +147,10 @@ class ET_EXPERIMENTAL MultimodalRunner : public IRunner {
    * text.
    * @param num_bos Number of BOS tokens to prepend during encoding.
    * @param num_eos Number of EOS tokens to append during encoding.
-   * @return The error code. KV cache position is tracked internally in pos_.
+   * @return The next token predicted after prefill, or an error.
+   *         KV cache position is tracked internally in pos_.
    */
-  ::executorch::runtime::Error prefill(
+  ::executorch::runtime::Result<uint64_t> prefill(
       const std::vector<MultimodalInput>& inputs,
       int32_t num_bos = 0,
       int32_t num_eos = 0) override;
@@ -157,7 +158,7 @@ class ET_EXPERIMENTAL MultimodalRunner : public IRunner {
   /**
    * Convenience overload: prefill a single text prompt.
    */
-  ::executorch::runtime::Error
+  ::executorch::runtime::Result<uint64_t>
   prefill(const std::string& prompt, int32_t num_bos = 0, int32_t num_eos = 0) {
     std::vector<MultimodalInput> inputs;
     inputs.emplace_back(MultimodalInput(prompt));
@@ -195,12 +196,6 @@ class ET_EXPERIMENTAL MultimodalRunner : public IRunner {
   // Internal state
   std::optional<uint64_t> prefill_next_token_;
   int64_t pos_;
-
- private:
-  ::executorch::runtime::Result<uint64_t> prefill_and_sample(
-      const std::vector<MultimodalInput>& inputs,
-      int32_t num_bos,
-      int32_t num_eos);
 };
 
 } // namespace llm

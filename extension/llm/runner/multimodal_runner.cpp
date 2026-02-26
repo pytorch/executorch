@@ -85,10 +85,13 @@ Error MultimodalRunner::load() {
     ET_LOG(Info, format, __VA_ARGS__);     \
   }
 
-Result<uint64_t> MultimodalRunner::prefill_and_sample(
+Result<uint64_t> MultimodalRunner::prefill(
     const std::vector<MultimodalInput>& inputs,
     int32_t num_bos,
     int32_t num_eos) {
+  if (!is_loaded()) {
+    ET_CHECK_OK_OR_RETURN_ERROR(load());
+  }
   uint64_t last_token = 0;
   for (size_t i = 0; i < inputs.size(); ++i) {
     const auto& input = inputs[i];
@@ -119,22 +122,8 @@ Result<uint64_t> MultimodalRunner::prefill_and_sample(
     }
     last_token = prefill_result.get();
   }
+  prefill_next_token_ = last_token;
   return last_token;
-}
-
-Error MultimodalRunner::prefill(
-    const std::vector<MultimodalInput>& inputs,
-    int32_t num_bos,
-    int32_t num_eos) {
-  if (!is_loaded()) {
-    ET_CHECK_OK_OR_RETURN_ERROR(load());
-  }
-  auto result = prefill_and_sample(inputs, num_bos, num_eos);
-  if (!result.ok()) {
-    return result.error();
-  }
-  prefill_next_token_ = result.get();
-  return Error::Ok;
 }
 
 Error MultimodalRunner::generate(
@@ -282,8 +271,7 @@ Error MultimodalRunner::generate(
   }
 
   // Prefill all inputs and get the first decode token
-  auto prefill_result =
-      prefill_and_sample(inputs, config.num_bos, config.num_eos);
+  auto prefill_result = prefill(inputs, config.num_bos, config.num_eos);
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_result.error());
   uint64_t cur_token = prefill_result.get();
 

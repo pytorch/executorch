@@ -18,6 +18,7 @@
 
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/result.h>
 
 namespace executorch {
 namespace extension {
@@ -140,7 +141,7 @@ class ET_EXPERIMENTAL IRunner {
    * @param num_eos Number of EOS tokens to append during encoding
    * @return Error::Ok if successful, an error otherwise
    */
-  virtual runtime::Error prefill(
+  virtual runtime::Result<uint64_t> prefill(
       const std::vector<MultimodalInput>& inputs,
       int32_t num_bos = 0,
       int32_t num_eos = 0) {

@@ -257,7 +257,7 @@ Error TextLLMRunner::generate(
   return Error::Ok;
 }
 
-Error TextLLMRunner::prefill(
+Result<uint64_t> TextLLMRunner::prefill(
     const std::vector<MultimodalInput>& inputs,
     int32_t num_bos,
     int32_t num_eos) {
@@ -283,7 +283,10 @@ Error TextLLMRunner::prefill(
     // Skip non-text inputs — text-only runner
   }
 
-  return Error::Ok;
+  if (!prefill_next_token_.has_value()) {
+    return Error::InvalidArgument;
+  }
+  return prefill_next_token_.value();
 }
 
 Error TextLLMRunner::warmup(const std::string& prompt, int32_t max_new_tokens) {
