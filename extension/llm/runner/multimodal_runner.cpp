@@ -85,13 +85,11 @@ Error MultimodalRunner::load() {
     ET_LOG(Info, format, __VA_ARGS__);     \
   }
 
-Error MultimodalRunner::prefill(
+Result<uint64_t> MultimodalRunner::prefill_and_sample(
     const std::vector<MultimodalInput>& inputs,
     int32_t num_bos,
     int32_t num_eos) {
-  if (!is_loaded()) {
-    ET_CHECK_OK_OR_RETURN_ERROR(load());
-  }
+  uint64_t last_token = 0;
   for (size_t i = 0; i < inputs.size(); ++i) {
     const auto& input = inputs[i];
     int32_t bos = 0;
@@ -111,7 +109,7 @@ Error MultimodalRunner::prefill(
           if (!bos_result.ok()) {
             return bos_result.error();
           }
-          prefill_next_token_ = bos_result.get();
+          last_token = bos_result.get();
         }
       }
     }
@@ -120,7 +118,21 @@ Error MultimodalRunner::prefill(
     if (!prefill_result.ok()) {
       return prefill_result.error();
     }
-    prefill_next_token_ = prefill_result.get();
+    last_token = prefill_result.get();
+  }
+  return last_token;
+}
+
+Error MultimodalRunner::prefill(
+    const std::vector<MultimodalInput>& inputs,
+    int32_t num_bos,
+    int32_t num_eos) {
+  if (!is_loaded()) {
+    ET_CHECK_OK_OR_RETURN_ERROR(load());
+  }
+  auto result = prefill_and_sample(inputs, num_bos, num_eos);
+  if (!result.ok()) {
+    return result.error();
   }
   return Error::Ok;
 }
@@ -130,89 +142,11 @@ Error MultimodalRunner::generate(
     const GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
-  if (!prompt.empty()) {
-    std::vector<MultimodalInput> inputs;
-    inputs.emplace_back(MultimodalInput(prompt));
-    return generate(inputs, config, token_callback, stats_callback);
-  }
-
-  // Empty prompt: consume prefill_next_token_ and go straight to decode
   ET_CHECK_OR_RETURN_ERROR(
-      prefill_next_token_.has_value(),
-      InvalidState,
-      "Empty prompt requires a prior prefill() call");
-
-  if (!is_loaded()) {
-    ET_CHECK_OK_OR_RETURN_ERROR(load());
-  }
-
-  std::function<void(const std::string&)> wrapped_callback =
-      [token_callback, config](const std::string& piece) {
-        if (!config.warming) {
-          safe_printf(piece.c_str());
-          fflush(stdout);
-        }
-        if (token_callback) {
-          token_callback(piece);
-        }
-      };
-
-  stats_->inference_start_ms = time_in_ms();
-
-  uint64_t cur_token = prefill_next_token_.value();
-  prefill_next_token_.reset();
-
-  stats_->first_token_ms = time_in_ms();
-  stats_->prompt_eval_end_ms = time_in_ms();
-  stats_->num_prompt_tokens = pos_;
-
-  auto decode_result = tokenizer_->decode(cur_token, cur_token);
-  if (!decode_result.ok()) {
-    ET_LOG(
-        Error,
-        "Tokenizers error code %d",
-        static_cast<uint32_t>(decode_result.error()));
-    return Error::InvalidArgument;
-  }
-  wrapped_callback(std::move(*decode_result));
-
-  int64_t max_context_len = metadata_.at(kMaxContextLen);
-  int32_t max_new_tokens = config.resolve_max_new_tokens(max_context_len, pos_);
-
-  ET_CHECK_OR_RETURN_ERROR(
-      max_new_tokens > 0,
-      InvalidArgument,
-      "Max new tokens %d is less than or equal to 0",
-      max_new_tokens);
-
-  text_token_generator_->set_ignore_eos(config.ignore_eos);
-
-  std::vector<uint64_t> prompt_tokens = {cur_token};
-  auto generate_result = text_token_generator_->generate(
-      prompt_tokens, pos_, max_new_tokens - 1, config.temperature,
-      wrapped_callback);
-  if (!generate_result.ok()) {
-    return generate_result.error();
-  }
-  int64_t num_generated_tokens = generate_result.get();
-
-  pos_ += num_generated_tokens;
-  stats_->num_generated_tokens = num_generated_tokens;
-  stats_->inference_end_ms = time_in_ms();
-
-  if (!config.warming) {
-    printf("\n");
-  }
-  if (config.warming) {
-    ET_LOG(Info, "Warmup run finished!");
-  } else {
-    print_report(*stats_);
-  }
-  if (stats_callback) {
-    stats_callback(*stats_);
-  }
-
-  return Error::Ok;
+      !prompt.empty(), InvalidArgument, "Prompt cannot be empty");
+  std::vector<MultimodalInput> inputs;
+  inputs.emplace_back(MultimodalInput(prompt));
+  return generate(inputs, config, token_callback, stats_callback);
 }
 
 Error MultimodalRunner::generate(
@@ -256,15 +190,11 @@ Error MultimodalRunner::generate(
     wrapped_callback(inputs.back().get_text());
   }
 
-  // Prefill all inputs
-  ET_CHECK_OK_OR_RETURN_ERROR(
-      prefill(inputs, config.num_bos, config.num_eos));
-  ET_CHECK_OR_RETURN_ERROR(
-      prefill_next_token_.has_value(),
-      InvalidState,
-      "prefill did not produce a next token");
-  uint64_t cur_token = prefill_next_token_.value();
-  prefill_next_token_.reset();
+  // Prefill all inputs and get the first decode token
+  auto prefill_result =
+      prefill_and_sample(inputs, config.num_bos, config.num_eos);
+  ET_CHECK_OK_OR_RETURN_ERROR(prefill_result.error());
+  uint64_t cur_token = prefill_result.get();
 
   stats_->first_token_ms = time_in_ms();
   stats_->prompt_eval_end_ms = time_in_ms();

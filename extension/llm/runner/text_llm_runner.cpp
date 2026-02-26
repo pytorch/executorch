@@ -76,6 +76,7 @@ Error TextLLMRunner::generate(
     const GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
+  ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
   if (!is_loaded()) {
     stats_->model_load_start_ms = time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
@@ -106,61 +107,37 @@ Error TextLLMRunner::generate(
   stats_->inference_start_ms = time_in_ms();
   shouldStop_ = false;
 
-  // Capture remaining KV cache capacity before prefill (pos_ will change)
-  int64_t max_context_len = metadata_.at(kMaxContextLen) - pos_;
+  ::tokenizers::Result<std::vector<uint64_t>> encode_res = tokenizer_->encode(
+      prompt,
+      /*bos=*/config.num_bos,
+      /*eos=*/config.num_eos);
 
-  uint64_t cur_token = 0;
-  int num_prompt_tokens = 0;
-  std::vector<uint64_t> prompt_tokens;
-
-  if (!prompt.empty()) {
-    ::tokenizers::Result<std::vector<uint64_t>> encode_res =
-        tokenizer_->encode(
-            prompt,
-            /*bos=*/config.num_bos,
-            /*eos=*/config.num_eos);
-
-    if (!encode_res.ok()) {
-      ET_LOG(
-          Error,
-          "Failed to encode prompt %s. Tokenizers error code %d",
-          prompt.c_str(),
-          static_cast<uint32_t>(encode_res.error()));
-      return Error::InvalidArgument;
-    }
-
-    prompt_tokens = encode_res.get();
-    num_prompt_tokens = prompt_tokens.size();
-
-    ET_CHECK_OR_RETURN_ERROR(
-        num_prompt_tokens >= 1,
-        InvalidArgument,
-        "Expected at least 1 prompt token");
-    ET_CHECK_OR_RETURN_ERROR(
-        num_prompt_tokens < max_context_len,
-        InvalidArgument,
-        "num_prompt_tokens %d >= max_context_len %" PRId64
-        ", Max seq length exceeded - please increase max seq len value in your export script",
-        num_prompt_tokens,
-        max_context_len);
-
-    if (config.echo) {
-      wrapped_callback(prompt);
-    }
-    auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos_);
-    ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
-    cur_token = prefill_res.get();
-    prefill_next_token_.reset();
-  } else {
-    // Empty prompt: consume token from a prior prefill() call
-    ET_CHECK_OR_RETURN_ERROR(
-        prefill_next_token_.has_value(),
-        InvalidState,
-        "Empty prompt requires a prior prefill() call");
-    cur_token = prefill_next_token_.value();
-    prefill_next_token_.reset();
-    num_prompt_tokens = 0;
+  if (!encode_res.ok()) {
+    ET_LOG(
+        Error,
+        "Failed to encode prompt %s. Tokenizers error code %d",
+        prompt.c_str(),
+        static_cast<uint32_t>(encode_res.error()));
+    return Error::InvalidArgument;
   }
+
+  // encode the (string) prompt into tokens sequence
+  std::vector<uint64_t> prompt_tokens = encode_res.get();
+  int num_prompt_tokens = prompt_tokens.size();
+
+  // Reduce max_context_len by pos_
+  int64_t max_context_len = metadata_.at(kMaxContextLen) - pos_;
+  ET_CHECK_OR_RETURN_ERROR(
+      num_prompt_tokens >= 1,
+      InvalidArgument,
+      "Expected at least 1 prompt token");
+  ET_CHECK_OR_RETURN_ERROR(
+      num_prompt_tokens < max_context_len,
+      InvalidArgument,
+      "num_prompt_tokens %d >= max_context_len %" PRId64
+      ", Max seq length exceeded - please increase max seq len value in your export script",
+      num_prompt_tokens,
+      max_context_len);
 
   int max_new_tokens =
       config.resolve_max_new_tokens(max_context_len, num_prompt_tokens);
@@ -168,10 +145,10 @@ Error TextLLMRunner::generate(
   ET_LOG(
       Info,
       "Max new tokens resolved: %d, given pos_ %" PRId64
-      ", num_prompt_tokens %d, max_context_len %" PRId64,
+      ", num_prompt_tokens %zu, max_context_len %" PRId64,
       max_new_tokens,
       pos_,
-      num_prompt_tokens,
+      prompt_tokens.size(),
       max_context_len);
   ET_CHECK_OR_RETURN_ERROR(
       max_new_tokens > 0,
@@ -179,10 +156,15 @@ Error TextLLMRunner::generate(
       "Max new tokens %d is less than or equal to 0",
       max_new_tokens);
 
+  if (config.echo) {
+    wrapped_callback(prompt);
+  }
+  auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos_);
+  ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
+  uint64_t cur_token = prefill_res.get();
   stats_->first_token_ms = time_in_ms();
   stats_->prompt_eval_end_ms = time_in_ms();
 
-  // Decode the first token from prefill
   auto decode_result = tokenizer_->decode(cur_token, cur_token);
   if (!decode_result.ok()) {
     ET_LOG(
@@ -197,7 +179,6 @@ Error TextLLMRunner::generate(
       "RSS after prompt prefill: %f MiB (0 if unsupported)",
       get_rss_bytes() / 1024.0 / 1024.0);
 
-  // Start the main decode loop
   prompt_tokens.push_back(cur_token);
 
   text_token_generator_->set_ignore_eos(config.ignore_eos);
@@ -228,8 +209,7 @@ Error TextLLMRunner::generate(
     RUNNER_ET_LOG(config.warming, "Max new tokens %i reached!", max_new_tokens);
   }
 
-  stats_->num_prompt_tokens =
-      prompt.empty() ? static_cast<int64_t>(pos_) : num_prompt_tokens;
+  stats_->num_prompt_tokens = num_prompt_tokens;
   stats_->num_generated_tokens = num_generated_tokens;
 
   if (config.warming) {
@@ -263,12 +243,10 @@ Error TextLLMRunner::prefill(
       std::vector<uint64_t> tokens = encode_res.get();
       auto prefill_res = text_prefiller_->prefill(tokens, pos_);
       ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
-      prefill_next_token_ = prefill_res.get();
     } else if (input.is_tokens()) {
       std::vector<uint64_t> tokens = input.get_tokens();
       auto prefill_res = text_prefiller_->prefill(tokens, pos_);
       ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
-      prefill_next_token_ = prefill_res.get();
     }
     // Skip image/audio — text-only runner
     num_bos = 0;
@@ -304,7 +282,6 @@ void TextLLMRunner::stop() {
 void TextLLMRunner::reset() {
   stats_->reset();
   pos_ = 0;
-  prefill_next_token_.reset();
 }
 
 } // namespace executorch::extension::llm

@@ -15,7 +15,6 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -135,7 +134,6 @@ class ET_EXPERIMENTAL MultimodalRunner : public IRunner {
   void reset() override {
     pos_ = 0;
     stats_->reset();
-    prefill_next_token_.reset();
   }
 
   ~MultimodalRunner() override = default;
@@ -157,8 +155,13 @@ class ET_EXPERIMENTAL MultimodalRunner : public IRunner {
 #endif
 
   // Internal state
-  std::optional<uint64_t> prefill_next_token_;
   int64_t pos_;
+
+ private:
+  ::executorch::runtime::Result<uint64_t> prefill_and_sample(
+      const std::vector<MultimodalInput>& inputs,
+      int32_t num_bos,
+      int32_t num_eos);
 };
 
 } // namespace llm

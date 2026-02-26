@@ -14,7 +14,6 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -180,9 +179,6 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
   // temperature.
   // Deprecated, we should rely on the temperature in GenerationConfig instead.
   float temperature_ = -1.0f;
-
-  // Token predicted by the last prefill() call, consumed by generate("").
-  std::optional<uint64_t> prefill_next_token_;
 
   // The position in KV cache of the input, starting from 0.
   int64_t pos_ = 0;
