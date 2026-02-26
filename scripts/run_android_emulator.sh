@@ -31,9 +31,19 @@ adb push /tmp/stories.pte /data/local/tmp/executorch/
 adb push /tmp/tokenizer.bin /data/local/tmp/executorch/
 
 GOLDEN_URL="https://gha-artifacts.s3.amazonaws.com/pytorch/executorch/test-backend-artifacts/golden-artifacts-xnnpack/golden_artifacts_26022500.zip"
+GOLDEN_FILES=(
+  mobilenet_v2.pte
+  mobilenet_v2_input.bin
+  mobilenet_v2_expected_output.bin
+  vit_b_16.pte
+  vit_b_16_input.bin
+  vit_b_16_expected_output.bin
+)
 curl -sL -o /tmp/golden.zip "$GOLDEN_URL"
-unzip -o /tmp/golden.zip -d /tmp/golden/
-adb push /tmp/golden/xnnpack/. /data/local/tmp/executorch/
+unzip -o /tmp/golden.zip "${GOLDEN_FILES[@]/#/xnnpack/}" -d /tmp/golden/
+for f in "${GOLDEN_FILES[@]}"; do
+  adb push "/tmp/golden/xnnpack/$f" /data/local/tmp/executorch/
+done
 
 adb logcat -c
 adb shell am instrument -w -r \
