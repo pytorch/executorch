@@ -196,6 +196,13 @@ class ET_EXPERIMENTAL MultimodalRunner : public IRunner {
   // Internal state
   std::optional<uint64_t> prefill_next_token_;
   int64_t pos_;
+
+ private:
+  ::executorch::runtime::Error decode_from_token(
+      uint64_t cur_token,
+      const GenerationConfig& config,
+      std::function<void(const std::string&)> wrapped_callback,
+      std::function<void(const Stats&)> stats_callback);
 };
 
 } // namespace llm
