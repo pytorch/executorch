@@ -252,7 +252,7 @@ def get_model_and_inputs_from_name(
 def quantize(
     model: GraphModule,
     model_name: str,
-    compile_specs: EthosUCompileSpec | VgfCompileSpec | TosaCompileSpec,
+    compile_specs: ArmCompileSpec,
     example_inputs: Tuple[torch.Tensor],
     evaluator_name: str | None,
     evaluator_config: Dict[str, Any] | None,
@@ -425,48 +425,39 @@ def get_calibration_data(
     return example_inputs
 
 
-def get_compile_spec(
-    target: str,
-    intermediates: Optional[str] = None,
-    system_config: Optional[str] = None,
-    memory_mode: Optional[str] = None,
-    quantize: bool = False,
-    config: Optional[str] = None,
-    debug_mode: Optional[str] = None,
-    direct_drive: bool = False,
-) -> TosaCompileSpec | EthosUCompileSpec | VgfCompileSpec:
+def get_compile_spec(args) -> ArmCompileSpec:
     compile_spec = None
-    if target.startswith("TOSA"):
-        tosa_spec = TosaSpecification.create_from_string(target)
+    if args.target.startswith("TOSA"):
+        tosa_spec = TosaSpecification.create_from_string(args.target)
         compile_spec = TosaCompileSpec(tosa_spec)
-    elif "ethos-u" in target:
+    elif "ethos-u" in args.target:
         extra_flags = ["--verbose-operators", "--verbose-cycle-estimate"]
-        if debug_mode is not None:
+        if args.enable_debug_mode is not None:
             extra_flags.append("--enable-debug-db")
-        if direct_drive:
+        if args.direct_drive:
             extra_flags.append("--separate-io-regions")
             extra_flags.append("--cop-format=COP2")
         compile_spec = EthosUCompileSpec(
-            target,
-            system_config=system_config,
-            memory_mode=memory_mode,
+            args.target,
+            system_config=args.system_config,
+            memory_mode=args.memory_mode,
             extra_flags=extra_flags,
-            config_ini=config,
+            config_ini=args.config,
         )
-    elif "vgf" in target:
-        if quantize:
+    elif "vgf" in args.target:
+        if args.quantize:
             tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
         else:
             tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+FP")
         compile_spec = VgfCompileSpec(tosa_spec)
     else:
-        raise RuntimeError(f"Unkown target {target}")
+        raise RuntimeError(f"Unkown target {args.target}")
 
-    if intermediates is not None:
-        compile_spec.dump_intermediate_artifacts_to(intermediates)
+    if args.intermediates is not None:
+        compile_spec.dump_intermediate_artifacts_to(args.intermediates)
 
-    if debug_mode is not None:
-        mode = ArmCompileSpec.DebugMode[debug_mode.upper()]
+    if args.enable_debug_mode is not None:
+        mode = ArmCompileSpec.DebugMode[args.enable_debug_mode.upper()]
         compile_spec.dump_debug_info(mode)
 
     return compile_spec
@@ -762,16 +753,7 @@ def to_edge_TOSA_delegate(
 ):
     # As we can target multiple output encodings, one must
     # be specified.
-    compile_spec = get_compile_spec(
-        args.target,
-        args.intermediates,
-        args.system_config,
-        args.memory_mode,
-        args.quantize,
-        args.config,
-        args.enable_debug_mode,
-        args.direct_drive,
-    )
+    compile_spec = get_compile_spec(args)
 
     model_quant = None
     if args.quantize:
@@ -876,16 +858,7 @@ def to_edge_no_delegate(
     if args.quantize:
         # As we can target multiple output encodings, one must
         # be specified.
-        compile_spec = get_compile_spec(
-            args.target,
-            args.intermediates,
-            args.system_config,
-            args.memory_mode,
-            args.quantize,
-            args.config,
-            args.enable_debug_mode,
-            args.direct_drive,
-        )
+        compile_spec = get_compile_spec(args)
         model, exported_program = quantize_model(
             args, model, example_inputs, compile_spec
         )
