@@ -14,6 +14,7 @@
 #include <unistd.h>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 
 #include <filesystem>
 #include <fstream>
@@ -393,6 +394,23 @@ class ET_EXPERIMENTAL MetalBackend final
     auto execute_start = std::chrono::high_resolution_clock::now();
 #endif
     ET_LOG(Debug, "MetalBackend execute");
+
+    // Allow overriding the default flush interval (set in ETMetalStream
+    // constructor)
+    static std::once_flag flush_interval_flag;
+    std::call_once(flush_interval_flag, [] {
+      const char* env = std::getenv("ET_METAL_FLUSH_INTERVAL");
+      if (env) {
+        try {
+          int val = std::stoi(env);
+          if (val >= 0) {
+            getCurrentMetalStream()->setFlushInterval(val);
+          }
+        } catch (const std::exception&) {
+          ET_LOG(Error, "Invalid ET_METAL_FLUSH_INTERVAL value: '%s'", env);
+        }
+      }
+    });
 
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
 

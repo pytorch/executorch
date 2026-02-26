@@ -919,6 +919,7 @@ jobs:
   test-openvino-linux:
     name: test-openvino-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    if: false # TODO: fix https://github.com/pytorch/executorch/issues/17684
     permissions:
       id-token: write
       contents: read
