@@ -221,40 +221,11 @@ Error MultimodalRunner::generate(
     const GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
+  std::vector<MultimodalInput> inputs;
   if (!prompt.empty()) {
-    std::vector<MultimodalInput> inputs;
     inputs.emplace_back(MultimodalInput(prompt));
-    return generate(inputs, config, token_callback, stats_callback);
   }
-
-  // Empty prompt: consume prefill_next_token_ and go straight to decode
-  ET_CHECK_OR_RETURN_ERROR(
-      prefill_next_token_.has_value(),
-      InvalidState,
-      "Empty prompt requires a prior prefill() call");
-
-  if (!is_loaded()) {
-    ET_CHECK_OK_OR_RETURN_ERROR(load());
-  }
-
-  // Wrap the token_callback with print function
-  std::function<void(const std::string&)> wrapped_callback =
-      [token_callback, config](const std::string& piece) {
-        if (!config.warming) {
-          safe_printf(piece.c_str());
-          fflush(stdout);
-        }
-        if (token_callback) {
-          token_callback(piece);
-        }
-      };
-
-  stats_->inference_start_ms = time_in_ms();
-
-  uint64_t cur_token = prefill_next_token_.value();
-  prefill_next_token_.reset();
-
-  return decode_from_token(cur_token, config, wrapped_callback, stats_callback);
+  return generate(inputs, config, token_callback, stats_callback);
 }
 
 Error MultimodalRunner::generate(
@@ -262,11 +233,6 @@ Error MultimodalRunner::generate(
     const GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
-  if (inputs.empty()) {
-    ET_LOG(Error, "MultimodalInput vector cannot be empty");
-    return Error::InvalidArgument;
-  }
-
   if (!is_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
   }
@@ -295,16 +261,27 @@ Error MultimodalRunner::generate(
   // Reset internal state and start inference
   stats_->inference_start_ms = time_in_ms();
 
-  // Echo the last text input if enabled
-  if (config.echo && inputs.back().is_text()) {
-    wrapped_callback(inputs.back().get_text());
-  }
+  uint64_t cur_token;
+  if (!inputs.empty()) {
+    // Echo the last text input if enabled
+    if (config.echo && inputs.back().is_text()) {
+      wrapped_callback(inputs.back().get_text());
+    }
 
-  // Prefill all inputs and get the first decode token
-  auto prefill_result = prefill(inputs, config.num_bos, config.num_eos);
-  ET_CHECK_OK_OR_RETURN_ERROR(prefill_result.error());
-  uint64_t cur_token = prefill_result.get();
-  prefill_next_token_.reset();
+    // Prefill all inputs and get the first decode token
+    auto prefill_result = prefill(inputs, config.num_bos, config.num_eos);
+    ET_CHECK_OK_OR_RETURN_ERROR(prefill_result.error());
+    cur_token = prefill_result.get();
+    prefill_next_token_.reset();
+  } else {
+    // Empty inputs: consume token from a prior prefill() call
+    ET_CHECK_OR_RETURN_ERROR(
+        prefill_next_token_.has_value(),
+        InvalidState,
+        "Empty inputs requires a prior prefill() call");
+    cur_token = prefill_next_token_.value();
+    prefill_next_token_.reset();
+  }
 
   return decode_from_token(cur_token, config, wrapped_callback, stats_callback);
 }
