@@ -13,7 +13,9 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 
 from torch._ops import OpOverload
 from torch.fx import GraphModule
-from torchao.quantization.pt2e import UniformQuantizationObserverBase
+from torchao.quantization.pt2e import (
+    MovingAverageMinMaxObserver, UniformQuantizationObserverBase
+)
 from torchao.quantization.pt2e.quantizer import Quantizer
 
 from .annotators import OP_ANNOTATOR
@@ -159,7 +161,8 @@ class ModuleQConfig:
     is_qat: bool = False
     is_conv_per_channel: bool = False
     is_linear_per_channel: bool = False
-    act_observer: Optional[UniformQuantizationObserverBase] = None
+    is_embedding_per_channel: bool = False
+    act_observer: Optional[UniformQuantizationObserverBase] = MovingAverageMinMaxObserver
     act_symmetric: bool = False
     eps: Optional[float] = None
 
@@ -179,8 +182,6 @@ class ModuleQConfig:
                 act_observer=self.act_observer,
                 eps=self.eps,
             )
-            if self.act_observer
-            else quant_config_func(act_symmetric=self.act_symmetric, eps=self.eps)
         )
 
         # Assume per_channel_quant/per_block_quant only happen on axis_0 or axis_1, increase the range if there's a need
@@ -196,10 +197,6 @@ class ModuleQConfig:
                         ch_axis=i,
                         eps=self.eps,
                     )
-                    if self.act_observer
-                    else per_channel_quant_config_func(
-                        act_symmetric=self.act_symmetric, ch_axis=i, eps=self.eps
-                    )
                 )
             )
 
@@ -211,6 +208,7 @@ class ModuleQConfig:
             torch.ops.aten.conv_transpose2d.input: 1,
             torch.ops.aten.conv_transpose3d.input: 1,
             torch.ops.aten.linear.default: 0,
+            torch.ops.aten.embedding.default: 0,
         }
 
         self.use_per_channel_weight_quant_ops = {}
@@ -230,6 +228,13 @@ class ModuleQConfig:
             self.use_per_channel_weight_quant_ops.update(
                 {k: self.op_axis_dict[k] for k in linear_ops if k in self.op_axis_dict}
             )
+        if self.is_embedding_per_channel:
+            embedding_ops = [torch.ops.aten.embedding.default]
+            self.use_per_channel_weight_quant_ops.update(
+                {k: self.op_axis_dict[k] for k in embedding_ops if k in self.op_axis_dict}
+            )
+            for pcq_config in self.per_channel_quant_config_list:
+                pcq_config.per_channel_embedding = True
 
         if per_block_quant_config_func:
             self.per_block_quant_config_list = []
@@ -240,10 +245,6 @@ class ModuleQConfig:
                             act_symmetric=self.act_symmetric,
                             act_observer=self.act_observer,
                             ch_axis=i,
-                        )
-                        if self.act_observer
-                        else per_block_quant_config_func(
-                            act_symmetric=self.act_symmetric, ch_axis=i
                         )
                     )
                 )
@@ -423,6 +424,7 @@ class QnnQuantizer(Quantizer):
         is_qat=False,
         is_conv_per_channel=False,
         is_linear_per_channel=False,
+        is_embedding_per_channel=False,
         act_observer=None,
         act_symmetric=False,
         eps=None,
@@ -435,6 +437,7 @@ class QnnQuantizer(Quantizer):
             is_qat (bool, optional): Enables Quantization-Aware Training (QAT) mode. Defaults to Post-Training Quantization (PTQ) mode.
             is_conv_per_channel (bool, optional): Enables per-channel quantization for convolution operations.
             is_linear_per_channel (bool, optional): Enables per-channel quantization for linear (fully connected) operations.
+            is_embedding_per_channel (bool, optional): Enables per-channel quantization for embedding operations.
             act_observer (Optional[UniformQuantizationObserverBase], optional): Custom observer for activation quantization. If not specified, the default observer is determined by `QUANT_CONFIG_DICT`.
             eps (float): Minimum scale for quantization.
 
@@ -444,6 +447,7 @@ class QnnQuantizer(Quantizer):
             is_qat=is_qat,
             is_conv_per_channel=is_conv_per_channel,
             is_linear_per_channel=is_linear_per_channel,
+            is_embedding_per_channel=is_embedding_per_channel,
             act_observer=act_observer,
             act_symmetric=act_symmetric,
             eps=eps,

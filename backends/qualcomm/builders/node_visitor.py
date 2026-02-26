@@ -226,7 +226,10 @@ class NodeVisitor:
         # skip dequantize op, e.g. frozen_param -> dq -> conv2d
         user_0 = self.get_first_user(node)
         # Memory layout of QNN conv weight always ends in Output. Like conv2d is HWIO
-        if user_0.target == exir_ops.edge.aten.convolution.default:
+        if user_0.target in {
+            exir_ops.edge.aten.convolution.default,
+            exir_ops.edge.aten.embedding.default
+        }:
             quant_config[QCOM_AXIS] = node.meta["val"].dim() - 1
         else:
             quant_config[QCOM_AXIS] = quant_attrs[QCOM_AXIS]
@@ -413,7 +416,6 @@ class NodeVisitor:
         quant_encoding: PyQnnManager.Qnn_QuantizationEncoding_t,
         quant_configs: dict,
         dims: torch.Size,
-        tensor: torch.Tensor,
         is_fake_tensor: bool,
         nodes_to_wrappers: Dict[str, Dict[int, PyQnnManager.TensorWrapper]],
         wrapper_idx: int = 0,

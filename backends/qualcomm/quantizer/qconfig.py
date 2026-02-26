@@ -39,6 +39,7 @@ class QuantizationConfig:
     weight: Optional[QuantizationSpec]
     bias: Optional[QuantizationSpec | Callable]
     block_size: Optional[Tuple] = None
+    per_channel_embedding: bool = False
 
 
 def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:

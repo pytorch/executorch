@@ -998,12 +998,24 @@ def annotate_embedding(node: Node, quantization_config: QuantizationConfig) -> N
     if not _is_float_tensor(weight):
         return
 
+    is_pcq_embedding = (
+        node.target == torch.ops.aten.embedding.default and
+        quantization_config.per_channel_embedding
+    )
     input_qspec_map = {}
-    input_qspec_map[weight] = quantization_config.input_activation
-
+    input_qspec_map[weight] = (
+        quantization_config.weight
+        if is_pcq_embedding
+        else quantization_config.input_activation
+    )
+    output_qspec = (
+        quantization_config.input_activation
+        if is_pcq_embedding
+        else SharedQuantizationSpec((weight, node))
+    )
     node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
-        output_qspec=SharedQuantizationSpec((weight, node)),
+        output_qspec=output_qspec,
         _annotated=True,
     )
 

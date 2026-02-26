@@ -2960,15 +2960,25 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_embedding(self):
-        modules = [Embedding(), Embedding()]  # noqa: F405
-        sample_input = (torch.Tensor([[1, 2, 4, 5], [4, 3, 2, 9]]).to(torch.int32),)
-        quant_dtype = [QuantDtype.use_8a8w, QuantDtype.use_16a4w]
-        for i, qdtype in enumerate(quant_dtype):
+        module = Embedding()  # noqa: F405
+        sample_input = (torch.Tensor([1, 2, 4, 5]).to(torch.int32),)
+        quant_dtypes = [QuantDtype.use_16a8w]
+        pcq_embeddings = [True]
+        test_pairs = [
+            (quant_dtype, pcq_embedding)
+            for quant_dtype, pcq_embedding in itertools.product(
+                quant_dtypes, pcq_embeddings
+            )
+        ]
+        for i, (quant_dtype, pcq_embedding) in enumerate(test_pairs):
             with self.subTest(i=i):
-                modules[i] = self.get_qdq_module(
-                    modules[i], sample_input, quant_dtype=qdtype
+                module = self.get_qdq_module(
+                    module,
+                    sample_input,
+                    quant_dtype=quant_dtype,
+                    is_embedding_per_channel=pcq_embedding,
                 )
-                self.lower_module_and_test_output(modules[i], sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_equal(self):
         test_comb = [

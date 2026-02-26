@@ -163,7 +163,7 @@ class QnnExecuTorchHtpBackendOptions:
     pd_session: QnnExecuTorchHtpPdSession = QnnExecuTorchHtpPdSession.kHtpUnsignedPd
     use_conv_hmx: bool = True
     use_dlbc: bool = False
-    use_fold_relu: bool = True
+    use_fold_relu: bool = False
     use_multi_contexts: bool = False
     use_weight_sharing: bool = False
     use_slc_allocator: bool = False
