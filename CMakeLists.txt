@@ -987,10 +987,11 @@ if(EXECUTORCH_BUILD_PYBIND)
       -fexceptions>
   )
 
-  # util lib
+  # util lib PyTorch requires C++20, so util must be compiled with C++20.
   add_library(
     util ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
   )
+  set_target_properties(util PROPERTIES CXX_STANDARD 20)
   target_include_directories(
     util PUBLIC ${_common_include_directories} ${TORCH_INCLUDE_DIRS}
   )
@@ -1002,8 +1003,11 @@ if(EXECUTORCH_BUILD_PYBIND)
   # pybind portable_lib
   pybind11_add_module(portable_lib SHARED extension/pybindings/pybindings.cpp)
   # The actual output file needs a leading underscore so it can coexist with
-  # portable_lib.py in the same python package.
-  set_target_properties(portable_lib PROPERTIES OUTPUT_NAME "_portable_lib")
+  # portable_lib.py in the same python package. PyTorch requires C++20, so
+  # pybindings must be compiled with C++20.
+  set_target_properties(
+    portable_lib PROPERTIES OUTPUT_NAME "_portable_lib" CXX_STANDARD 20
+  )
   target_compile_definitions(
     portable_lib PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=_portable_lib
   )

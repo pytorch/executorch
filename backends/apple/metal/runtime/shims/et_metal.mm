@@ -15,6 +15,10 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
 #include <algorithm>
+#include <climits>
+#include <cstdlib>
+#include <list>
+#include <map>
 #include <optional>
 #include <exception>
 
@@ -77,6 +81,115 @@ void dispatch_sync_with_rethrow(dispatch_queue_t queue, void (^block)()) {
 // Global Metal buffer mapping - accessible for MPS shim
 std::unordered_map<void*, id<MTLBuffer>> ptr_to_mtl_buffer;
 
+// Metal buffer pool with best-fit matching and LRU eviction.
+// On free, buffers are recycled into a sorted pool. On alloc, the smallest
+// buffer >= requested size is returned (if within the headroom bound). When the
+// pool exceeds its max size, least-recently-used buffers are released.
+//
+// The headroom limits internal fragmentation: a cached buffer is only
+// reused if its size is at most min(2x requested, requested + kMaxHeadroom).
+static const size_t kMaxHeadroom = 32768; // 32KB
+
+struct PoolEntry {
+    id<MTLBuffer> buffer;
+    size_t size;
+};
+
+class MetalBufferPool {
+public:
+    explicit MetalBufferPool(size_t max_bytes = 256 * 1024 * 1024)
+        : max_bytes_(max_bytes), cached_bytes_(0) {}
+
+    id<MTLBuffer> reuse(size_t size) {
+        auto it = size_map_.lower_bound(size);
+        // Use saturating arithmetic to avoid size_t overflow.
+        size_t double_size = (size > SIZE_MAX / 2) ? SIZE_MAX : 2 * size;
+        size_t size_plus_headroom = (size > SIZE_MAX - kMaxHeadroom) ? SIZE_MAX : size + kMaxHeadroom;
+        size_t max_acceptable = std::min(double_size, size_plus_headroom);
+        if (it == size_map_.end() || it->first > max_acceptable) {
+            return nil;
+        }
+
+        auto lru_it = it->second;
+        id<MTLBuffer> buffer = lru_it->buffer;
+        cached_bytes_ -= lru_it->size;
+        lru_list_.erase(lru_it);
+        size_map_.erase(it);
+        return buffer;
+    }
+
+    void recycle(id<MTLBuffer> buffer) {
+        size_t size = [buffer length];
+
+        // Don't pool buffers larger than half the max pool size — a single
+        // large buffer would evict all the small frequently-reused buffers.
+        if (size > max_bytes_ / 2) {
+            [buffer release];
+            return;
+        }
+
+        lru_list_.push_front({buffer, size});
+        size_map_.insert({size, lru_list_.begin()});
+        cached_bytes_ += size;
+
+        while (cached_bytes_ > max_bytes_ && !lru_list_.empty()) {
+            evict_oldest();
+        }
+    }
+
+    void clear() {
+        for (auto& entry : lru_list_) {
+            [entry.buffer release];
+        }
+        lru_list_.clear();
+        size_map_.clear();
+        cached_bytes_ = 0;
+    }
+
+private:
+    void evict_oldest() {
+        auto tail = std::prev(lru_list_.end());
+        cached_bytes_ -= tail->size;
+
+        // Find and remove the matching size_map_ entry for this LRU tail.
+        // O(k) where k = number of cached buffers of the same size (typically 1-2).
+        auto range = size_map_.equal_range(tail->size);
+        for (auto it = range.first; it != range.second; ++it) {
+            if (it->second == tail) {
+                size_map_.erase(it);
+                break;
+            }
+        }
+
+        [tail->buffer release];
+        lru_list_.erase(tail);
+    }
+
+    size_t max_bytes_;
+    size_t cached_bytes_;
+    std::list<PoolEntry> lru_list_;       // newest at front, oldest at back
+    std::multimap<size_t, std::list<PoolEntry>::iterator> size_map_;
+};
+
+static constexpr size_t kMaxPoolSizeMB = 16384; // 16 GB upper bound
+
+static MetalBufferPool& get_metal_buffer_pool() {
+    static auto* pool = [] {
+        size_t max_bytes = 256 * 1024 * 1024; // 256 MB default
+        const char* env = std::getenv("ET_METAL_BUFFER_POOL_SIZE_MB");
+        if (env) {
+            char* end = nullptr;
+            long mb = std::strtol(env, &end, 10);
+            if (end != env && *end == '\0' && mb > 0 &&
+                static_cast<unsigned long>(mb) <= kMaxPoolSizeMB) {
+                max_bytes = static_cast<size_t>(mb) * 1024 * 1024;
+            }
+        }
+        return new MetalBufferPool(max_bytes);
+    }();
+    return *pool;
+}
+
 // Global storage to keep shared_ptr alive while raw pointers are used
 static std::unordered_map<ETMetalKernelFunction*, std::shared_ptr<ETMetalKernelFunction>> function_storage;
 static std::unordered_map<ETMetalShaderLibrary*, std::unique_ptr<ETMetalShaderLibrary>> library_storage;
@@ -94,6 +207,23 @@ static thread_local ETMetalStream* currentStream_ = nullptr;
 extern "C" {
 
 void* metal_allocate_buffer(long bytes) {
+    if (bytes <= 0) {
+        ET_LOG(Error, "Invalid Metal buffer allocation size: %ld", bytes);
+        return nullptr;
+    }
+    size_t size = static_cast<size_t>(bytes);
+
+    // Check the buffer pool first (best-fit with bounded headroom)
+    auto& pool = get_metal_buffer_pool();
+    id<MTLBuffer> buffer = pool.reuse(size);
+    if (buffer) {
+        void* ptr = [buffer contents];
+        ptr_to_mtl_buffer[ptr] = buffer;
+        ET_LOG(Debug, "Reused %zu byte Metal buffer from pool (requested %ld)", [buffer length], bytes);
+        return ptr;
+    }
+
+    // Pool miss — allocate a new buffer
     ETMetalStream* stream = getCurrentMetalStream();
     id<MTLDevice> device = stream->device();
     if (!device) {
@@ -102,44 +232,41 @@ void* metal_allocate_buffer(long bytes) {
     }
 
     @autoreleasepool {
-        id<MTLBuffer> buffer = [device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
+        buffer = [device newBufferWithLength:size options:MTLResourceStorageModeShared];
         if (!buffer) {
-            ET_LOG(Error, "Failed to allocate %ld bytes on Metal device", bytes);
+            ET_LOG(Error, "Failed to allocate %zu bytes on Metal device", size);
             return nullptr;
         }
 
         void* ptr = [buffer contents];
         ptr_to_mtl_buffer[ptr] = buffer;
 
-        ET_LOG(Debug, "Allocated %ld bytes on Metal device", bytes);
+        ET_LOG(Debug, "Allocated %zu bytes on Metal device", size);
         return ptr;
     }
 }
 
 void metal_deallocate_buffer(void* ptr) {
-    @autoreleasepool {
-        auto it = ptr_to_mtl_buffer.find(ptr);
-        if (it != ptr_to_mtl_buffer.end()) {
-            id<MTLBuffer> buffer = it->second;
-            [buffer release];
-            ptr_to_mtl_buffer.erase(it);
-            ET_LOG(Debug, "Deallocated Metal buffer for pointer %p", ptr);
-            ptr = nullptr;
-        } else {
-            ET_LOG(Error, "Failed to find Metal buffer for pointer %p", ptr);
-        }
+    if (!ptr) {
+        return;
+    }
+    auto it = ptr_to_mtl_buffer.find(ptr);
+    if (it != ptr_to_mtl_buffer.end()) {
+        id<MTLBuffer> buffer = it->second;
+        ET_LOG(Debug, "Recycling %zu byte Metal buffer to pool (ptr %p)", (size_t)[buffer length], ptr);
+        ptr_to_mtl_buffer.erase(it);
+        get_metal_buffer_pool().recycle(buffer);
+    } else {
+        ET_LOG(Error, "Failed to find Metal buffer for pointer %p", ptr);
     }
 }
 
 void metal_cleanup_resources() {
-    if (!ptr_to_mtl_buffer.empty()) {
-        @autoreleasepool {
-            for (auto& pair : ptr_to_mtl_buffer) {
-                pair.second = nil;
-            }
-            ptr_to_mtl_buffer.clear();
-        }
+    for (auto& pair : ptr_to_mtl_buffer) {
+        [pair.second release];
     }
+    ptr_to_mtl_buffer.clear();
+    get_metal_buffer_pool().clear();
 }
 
 bool metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer) {

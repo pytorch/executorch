@@ -13,7 +13,6 @@ from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, Type
 import nncf  # type: ignore[import-untyped]
 import nncf.common.quantization as quantization  # type: ignore[import-untyped]
 import nncf.experimental.torch.fx as nncf_fx  # type: ignore[import-untyped]
-
 import torch.fx
 from executorch.backends.openvino.quantizer.observers import (
     INT4WeightObserver,
@@ -78,12 +77,12 @@ class OpenVINOQuantizer(Quantizer):
     optimally for the inference via OpenVINO.
     """
 
-    WEIGHTS_ONLY_COMPRESSION_MODES = (
-        QuantizationMode.INT4WO_SYM,
-        QuantizationMode.INT4WO_ASYM,
-        QuantizationMode.INT8WO_SYM,
-        QuantizationMode.INT8WO_ASYM,
-    )
+    WEIGHTS_ONLY_COMPRESSION_MODES = {
+        QuantizationMode.INT4WO_SYM: "int4_sym",
+        QuantizationMode.INT4WO_ASYM: "int4_asym",
+        QuantizationMode.INT8WO_SYM: "int8_sym",
+        QuantizationMode.INT8WO_ASYM: "int8_asym",
+    }
 
     def __init__(
         self,
@@ -116,17 +115,63 @@ class OpenVINOQuantizer(Quantizer):
                 preset=preset, model_type=model_type, **kwargs
             )
         else:
-            compression_mode = mode.value.replace(
-                "wo", ""
-            )  # Mode value has to match NNCF CompressWeightsMode
+            compression_mode = OpenVINOQuantizer.WEIGHTS_ONLY_COMPRESSION_MODES[
+                mode
+            ]  # Mode value has to match NNCF CompressWeightsMode
             weight_compression_configuration = get_weight_compression_configuration(
                 nncf.CompressWeightsMode(compression_mode),
                 **kwargs,
             )
-            subset_size = 1  # Doesn't really matter in this case since it is data-free. Should just be +ve
-            self._algo = nncf.quantization.algorithms.weight_compression.algorithm.WeightCompression(
-                subset_size=subset_size, **weight_compression_configuration
+            weight_compression_configuration["subset_size"] = (
+                1  # Doesn't really matter in this case since it is data-free. Should just be +ve
             )
+
+            self._algo = nncf.quantization.algorithms.weight_compression.algorithm.WeightCompression(
+                **weight_compression_configuration
+            )
+
+    def _require_wc_algo(
+        self,
+    ) -> nncf.quantization.algorithms.weight_compression.algorithm.WeightCompression:
+        if not isinstance(
+            self._algo,
+            nncf.quantization.algorithms.weight_compression.algorithm.WeightCompression,
+        ):
+            raise TypeError(
+                "This method requires WeightCompression algo, but "
+                f"got {type(self._algo).__name__} (mode={self.mode})."
+            )
+        return self._algo
+
+    def _require_ptq_algo(self) -> MinMaxQuantization:
+        if not isinstance(self._algo, MinMaxQuantization):
+            raise TypeError(
+                "This method requires MinMaxQuantization algo, but "
+                f"got {type(self._algo).__name__} (mode={self.mode})."
+            )
+        return self._algo
+
+    def get_weights_compression_config(self) -> Dict[str, Any]:
+        """
+        Returns a dictionary with all_layers, group_size, backup_mode and Quantization mode parameters
+        used by the compress_pt2e weight compression algorithm.
+
+        :return: A dictionary containing:
+            1. mode: Quantization mode. One of INT4 Sym, INT4 Asym, INT8 Sym, INT8 Asym.
+            2. group_size: group size to be used for group-wise compression.
+            3. all_layers: Indicates whether embeddings and last MatMul layers should be compressed to a primary
+                precision. By default, the backup precision is assigned for the embeddings and last MatMul layers.
+            4. backup_mode: Defines a backup mode for mixed-precision weight compression.
+        """
+        algo = self._require_wc_algo()
+        quantizer_initialized_algo_attributes = {
+            "mode": algo.mode,
+            "group_size": algo.group_size,
+            "all_layers": algo.all_layers,
+            "backup_mode": algo.backup_mode,
+        }
+
+        return quantizer_initialized_algo_attributes
 
     def set_ignored_scope(
         self,
@@ -160,8 +205,32 @@ class OpenVINOQuantizer(Quantizer):
     def get_nncf_quantization_setup(
         self, model: torch.fx.GraphModule, nncf_graph: NNCFGraph
     ) -> quantization.quantizer_setup.SingleConfigQuantizerSetup:
-        self._algo._set_backend_entity(model)
-        return self._algo.find_quantization_setup(model, nncf_graph)
+        algo = self._require_ptq_algo()
+        algo._set_backend_entity(model)
+        return algo.find_quantization_setup(model, nncf_graph)
+
+    def get_nncf_weight_compression_parameters(
+        self,
+        model: torch.fx.GraphModule,
+        nncf_graph: NNCFGraph,
+    ) -> Tuple[
+        List[WeightCompressionParameters],
+        List[WeightCompressionParameters],
+        List[WeightCompressionParameters],
+    ]:
+        """
+        Collect weight compression parameters for the given FX model and NNCF graph.
+
+        :param model: FX GraphModule to analyze for weight compression.
+        :param nncf_graph: NNCFGraph representation of the model.
+        :return: A tuple of:
+            - all parameters eligible for weight compression,
+            - ratio-defining parameters used to set primary/backup precisions,
+            - parameters that are not compressible and remain in original precision.
+        """
+        algo = self._require_wc_algo()
+        algo.set_backend_entity(model)
+        return algo.get_weight_compression_parameters(model, nncf_graph)
 
     def _annotate_weight_compression(
         self,
@@ -182,12 +251,17 @@ class OpenVINOQuantizer(Quantizer):
         :param node_vs_torch_annotation: A mapping of FX nodes to quantization annotations.
         :return: Updated mapping of FX nodes with weight compression annotations.
         """
-        self._algo.set_backend_entity(model)
-        all_wc_params, _ = self._algo.get_weight_compression_parameters(
+        all_wc_params, *_ = self.get_nncf_weight_compression_parameters(
             model, nncf_graph
         )
 
         for wc_param in all_wc_params:
+            if not wc_param.compression_config:
+                nncf_logger.debug(
+                    "Skipping weight compression for node '%s' because compression_config is missing.",
+                    getattr(wc_param.node_with_weight, "node_name", "<unknown>"),
+                )
+                continue
             node_with_weight = wc_param.node_with_weight
             target_node = nncf_fx.node_utils.get_graph_node_by_name(
                 graph, node_with_weight.node_name
