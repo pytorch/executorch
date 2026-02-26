@@ -12,7 +12,6 @@ from typing import cast, List, Optional
 
 import executorch
 
-import nncf.torch
 import timm
 import torch
 import torchvision.models as torchvision_models
