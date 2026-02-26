@@ -260,10 +260,10 @@ Error TextLLMRunner::prefill(
       std::vector<uint64_t> tokens = encode_res.get();
       auto prefill_res = text_prefiller_->prefill(tokens, pos_);
       ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
+      num_bos = 0;
+      num_eos = 0;
     }
     // Skip non-text inputs — text-only runner
-    num_bos = 0;
-    num_eos = 0;
   }
 
   return Error::Ok;
