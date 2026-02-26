@@ -378,17 +378,14 @@ public class LlmModule {
    * @param width Input image width
    * @param height Input image height
    * @param channels Input image number of channels
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
-  public long prefillImages(int[] image, int width, int height, int channels) {
+  public void prefillImages(int[] image, int width, int height, int channels) {
     int nativeResult = appendImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
-    return 0;
   }
 
   private native int appendImagesInput(int[] image, int width, int height, int channels);
@@ -400,17 +397,14 @@ public class LlmModule {
    * @param width Input image width
    * @param height Input image height
    * @param channels Input image number of channels
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
-  public long prefillImages(float[] image, int width, int height, int channels) {
+  public void prefillImages(float[] image, int width, int height, int channels) {
     int nativeResult = appendNormalizedImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
-    return 0;
   }
 
   private native int appendNormalizedImagesInput(
@@ -423,17 +417,14 @@ public class LlmModule {
    * @param batch_size Input batch size
    * @param n_bins Input number of bins
    * @param n_frames Input number of frames
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
-  public long prefillAudio(byte[] audio, int batch_size, int n_bins, int n_frames) {
+  public void prefillAudio(byte[] audio, int batch_size, int n_bins, int n_frames) {
     int nativeResult = appendAudioInput(audio, batch_size, n_bins, n_frames);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
-    return 0;
   }
 
   private native int appendAudioInput(byte[] audio, int batch_size, int n_bins, int n_frames);
@@ -445,17 +436,14 @@ public class LlmModule {
    * @param batch_size Input batch size
    * @param n_bins Input number of bins
    * @param n_frames Input number of frames
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
-  public long prefillAudio(float[] audio, int batch_size, int n_bins, int n_frames) {
+  public void prefillAudio(float[] audio, int batch_size, int n_bins, int n_frames) {
     int nativeResult = appendAudioInputFloat(audio, batch_size, n_bins, n_frames);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
-    return 0;
   }
 
   private native int appendAudioInputFloat(float[] audio, int batch_size, int n_bins, int n_frames);
@@ -467,17 +455,14 @@ public class LlmModule {
    * @param batch_size Input batch size
    * @param n_channels Input number of channels
    * @param n_samples Input number of samples
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
-  public long prefillRawAudio(byte[] audio, int batch_size, int n_channels, int n_samples) {
+  public void prefillRawAudio(byte[] audio, int batch_size, int n_channels, int n_samples) {
     int nativeResult = appendRawAudioInput(audio, batch_size, n_channels, n_samples);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
-    return 0;
   }
 
   private native int appendRawAudioInput(
@@ -487,17 +472,14 @@ public class LlmModule {
    * Prefill a multimodal Module with the given text input.
    *
    * @param prompt The text prompt to prefill.
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
-  public long prefillPrompt(String prompt) {
+  public void prefillPrompt(String prompt) {
     int nativeResult = prefillTextInput(prompt);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
-    return 0;
   }
 
   // returns status
