@@ -234,7 +234,8 @@ class PyMultimodalRunner {
     }
     {
       py::gil_scoped_release release;
-      Error error = runner_->prefill(inputs);
+      GenerationConfig config;
+      Error error = runner_->prefill(inputs, config);
       THROW_IF_ERROR(error, "Prefill failed");
     }
   }

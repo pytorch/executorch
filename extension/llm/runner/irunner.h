@@ -14,7 +14,9 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
+#include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/runtime/core/error.h>
 
@@ -134,22 +136,40 @@ class ET_EXPERIMENTAL IRunner {
   virtual void stop() = 0;
 
   /**
-   * Prefill the model with the given prompt without generating tokens.
+   * Prefill the model with the given multimodal inputs without generating
+   * tokens.
    *
-   * This populates the KV cache with the prompt tokens, allowing subsequent
-   * generate() calls to continue from the prefilled state. Useful for
-   * reloading chat history.
+   * This populates the KV cache with the input embeddings, allowing subsequent
+   * generate() calls to continue from the prefilled state. Each runner
+   * decides which modalities to handle: text-only runners process text/tokens
+   * and skip other modalities; multimodal runners process all types.
    *
-   * @param prompt The text to prefill
+   * Can be called multiple times before generate() to incrementally build up
+   * the KV cache with different modalities.
+   *
+   * @param inputs A vector of MultimodalInput objects (text, tokens, images,
+   * audio)
    * @param config Generation configuration (num_bos, num_eos used for
    * encoding)
    * @return Error::Ok if successful, Error::NotSupported if the runner does
    * not support standalone prefill
    */
   virtual runtime::Error prefill(
-      const std::string& prompt,
+      const std::vector<MultimodalInput>& inputs,
       const GenerationConfig& config) {
     return runtime::Error::NotSupported;
+  }
+
+  /**
+   * Convenience overload: prefill with a single text prompt.
+   * Wraps the string as a MultimodalInput and delegates to the vector overload.
+   */
+  runtime::Error prefill(
+      const std::string& prompt,
+      const GenerationConfig& config) {
+    std::vector<MultimodalInput> inputs;
+    inputs.emplace_back(MultimodalInput(prompt));
+    return prefill(inputs, config);
   }
 
   /**

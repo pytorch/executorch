@@ -14,10 +14,12 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
 #include <executorch/extension/llm/runner/irunner.h>
+#include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 #include <executorch/extension/llm/runner/text_prefiller.h>
@@ -101,15 +103,19 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {}) override;
 
+  // Bring the non-virtual string convenience overload into scope
+  using IRunner::prefill;
+
   /**
-   * Prefill text inputs, for example to reload chat history.
-   * @param prompt Text prompt to prefill.
-   * @param config Configuration parameters for text generation (e.g.,
-   * max_new_tokens, temperature)
+   * Prefill with multimodal inputs. Only text and token inputs are processed;
+   * image/audio inputs are silently skipped (use MultimodalRunner for those).
+   * @param inputs A vector of MultimodalInput objects.
+   * @param config Configuration parameters (num_bos, num_eos used for
+   * encoding)
    * @return The error code. KV cache position is tracked internally in pos_.
    */
   ::executorch::runtime::Error prefill(
-      const std::string& prompt,
+      const std::vector<MultimodalInput>& inputs,
       const GenerationConfig& config) override;
 
   /**
@@ -168,6 +174,10 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
 
   // The position in KV cache of the input, starting from 0.
   int64_t pos_ = 0;
+
+  // Token predicted by the last prefill() call, used when generate() is called
+  // with an empty prompt after standalone prefill.
+  std::optional<uint64_t> prefill_next_token_;
 };
 
 } // namespace executorch::extension::llm

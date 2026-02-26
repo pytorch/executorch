@@ -78,10 +78,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   float temperature_ = 0.0f;
   int num_bos_ = 0;
   int num_eos_ = 0;
-  int model_type_category_;
   std::unique_ptr<llm::IRunner> runner_;
-  std::unique_ptr<executorch::extension::llm::MultimodalRunner>
-      multi_modal_runner_;
 
  public:
   constexpr static auto kJavaDescriptor =
@@ -134,10 +131,9 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     }
 #endif
 
-    model_type_category_ = model_type_category;
     std::vector<std::string> data_files_vector;
     if (model_type_category == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      multi_modal_runner_ = llm::create_multimodal_runner(
+      runner_ = llm::create_multimodal_runner(
           model_path->toStdString().c_str(),
           llm::load_tokenizer(tokenizer_path->toStdString()),
           std::nullopt,
@@ -177,15 +173,12 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           tokenizer_path->toStdString().c_str(),
           "",
           "");
-      model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
 #endif
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
     } else if (model_type_category == MODEL_TYPE_MEDIATEK_LLAMA) {
       runner_ = std::make_unique<MTKLlamaRunner>(
           model_path->toStdString().c_str(),
           tokenizer_path->toStdString().c_str());
-      // Interpret the model type as LLM
-      model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
 #endif
     }
   }
@@ -212,61 +205,32 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       callback->onResult(result);
     };
 
-    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      std::vector<llm::MultimodalInput> inputs;
-      if (!prompt->toStdString().empty()) {
-        inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
-      }
-      if (inputs.empty()) {
-        return static_cast<jint>(Error::InvalidArgument);
-      }
-      executorch::extension::llm::GenerationConfig config{
-          .echo = static_cast<bool>(echo),
-          .seq_len = seq_len,
-          .temperature = effective_temperature,
-          .num_bos = num_bos,
-          .num_eos = num_eos,
-      };
-      multi_modal_runner_->generate(
-          std::move(inputs),
-          config,
-          token_callback,
-          [callback](const llm::Stats& result) { callback->onStats(result); });
-    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
-      executorch::extension::llm::GenerationConfig config{
-          .echo = static_cast<bool>(echo),
-          .seq_len = seq_len,
-          .temperature = effective_temperature,
-          .num_bos = num_bos,
-          .num_eos = num_eos,
-      };
-      runner_->generate(
-          prompt->toStdString(),
-          config,
-          token_callback,
-          [callback](const llm::Stats& result) { callback->onStats(result); });
-    }
-    return 0;
+    executorch::extension::llm::GenerationConfig config{
+        .echo = static_cast<bool>(echo),
+        .seq_len = seq_len,
+        .temperature = effective_temperature,
+        .num_bos = num_bos,
+        .num_eos = num_eos,
+    };
+    auto err = runner_->generate(
+        prompt->toStdString(),
+        config,
+        token_callback,
+        [callback](const llm::Stats& result) { callback->onStats(result); });
+    return static_cast<jint>(err);
   }
 
-  // Returns status_code
-  // Contract is valid within an AAR (JNI + corresponding Java code)
   jint prefill_text_input(facebook::jni::alias_ref<jstring> prompt) {
-    if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM && runner_) {
-      executorch::extension::llm::GenerationConfig config;
-      auto err = runner_->prefill(prompt->toStdString(), config);
-      return static_cast<jint>(err);
-    }
-    if (multi_modal_runner_) {
-      std::vector<llm::MultimodalInput> inputs;
-      inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
-      auto err = multi_modal_runner_->prefill(inputs);
-      return static_cast<jint>(err);
-    }
-    return 0;
+    std::vector<llm::MultimodalInput> inputs;
+    inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
+    llm::GenerationConfig config{
+        .num_bos = num_bos_,
+        .num_eos = num_eos_,
+    };
+    auto err = runner_->prefill(inputs, config);
+    return static_cast<jint>(err);
   }
 
-  // Returns status_code
   jint prefill_images_input(
       facebook::jni::alias_ref<jintArray> image,
       jint width,
@@ -286,13 +250,13 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       llm::Image image_runner{std::move(image_data), width, height, channels};
       std::vector<llm::MultimodalInput> inputs;
       inputs.emplace_back(llm::MultimodalInput{std::move(image_runner)});
-      auto err = multi_modal_runner_->prefill(inputs);
+      llm::GenerationConfig config;
+      auto err = runner_->prefill(inputs, config);
       return static_cast<jint>(err);
     }
     return 0;
   }
 
-  // Returns status_code
   jint prefill_normalized_images_input(
       facebook::jni::alias_ref<jfloatArray> image,
       jint width,
@@ -312,13 +276,13 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       llm::Image image_runner{std::move(image_data), width, height, channels};
       std::vector<llm::MultimodalInput> inputs;
       inputs.emplace_back(llm::MultimodalInput{std::move(image_runner)});
-      auto err = multi_modal_runner_->prefill(inputs);
+      llm::GenerationConfig config;
+      auto err = runner_->prefill(inputs, config);
       return static_cast<jint>(err);
     }
     return 0;
   }
 
-  // Returns status_code
   jint prefill_audio_input(
       facebook::jni::alias_ref<jbyteArray> data,
       jint batch_size,
@@ -338,13 +302,13 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       llm::Audio audio{std::move(data_u8), batch_size, n_bins, n_frames};
       std::vector<llm::MultimodalInput> inputs;
       inputs.emplace_back(llm::MultimodalInput{std::move(audio)});
-      auto err = multi_modal_runner_->prefill(inputs);
+      llm::GenerationConfig config;
+      auto err = runner_->prefill(inputs, config);
       return static_cast<jint>(err);
     }
     return 0;
   }
 
-  // Returns status_code
   jint prefill_audio_input_float(
       facebook::jni::alias_ref<jfloatArray> data,
       jint batch_size,
@@ -364,13 +328,13 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       llm::Audio audio{std::move(data_f), batch_size, n_bins, n_frames};
       std::vector<llm::MultimodalInput> inputs;
       inputs.emplace_back(llm::MultimodalInput{std::move(audio)});
-      auto err = multi_modal_runner_->prefill(inputs);
+      llm::GenerationConfig config;
+      auto err = runner_->prefill(inputs, config);
       return static_cast<jint>(err);
     }
     return 0;
   }
 
-  // Returns status_code
   jint prefill_raw_audio_input(
       facebook::jni::alias_ref<jbyteArray> data,
       jint batch_size,
@@ -391,53 +355,30 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           std::move(data_u8), batch_size, n_channels, n_samples};
       std::vector<llm::MultimodalInput> inputs;
       inputs.emplace_back(llm::MultimodalInput{std::move(audio)});
-      auto err = multi_modal_runner_->prefill(inputs);
+      llm::GenerationConfig config;
+      auto err = runner_->prefill(inputs, config);
       return static_cast<jint>(err);
     }
     return 0;
   }
 
   void stop() {
-    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      multi_modal_runner_->stop();
-    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
-      runner_->stop();
-    }
+    runner_->stop();
   }
 
   void reset_context() {
-    if (runner_ != nullptr) {
-      runner_->reset();
-    }
-    if (multi_modal_runner_ != nullptr) {
-      multi_modal_runner_->reset();
-    }
+    runner_->reset();
   }
 
   jint load() {
-    int result = -1;
-    std::stringstream ss;
-
-    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      result = static_cast<jint>(multi_modal_runner_->load());
-      if (result != 0) {
-        ss << "Failed to load multimodal runner: [" << result << "]";
-      }
-    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
-      result = static_cast<jint>(runner_->load());
-      if (result != 0) {
-        ss << "Failed to load llm runner: [" << result << "]";
-      }
-    } else {
-      ss << "Invalid model type category: " << model_type_category_
-         << ". Valid values are: " << MODEL_TYPE_CATEGORY_LLM << " or "
-         << MODEL_TYPE_CATEGORY_MULTIMODAL;
-    }
-    if (result != 0) {
+    auto result = runner_->load();
+    if (result != Error::Ok) {
+      std::stringstream ss;
+      ss << "Failed to load runner: [" << static_cast<int>(result) << "]";
       executorch::jni_helper::throwExecutorchException(
           static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
     }
-    return result; // 0 on success to keep backward compatibility
+    return static_cast<jint>(result);
   }
 
   static void registerNatives() {
