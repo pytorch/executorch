@@ -261,7 +261,7 @@ Error MultimodalRunner::generate(
   // Reset internal state and start inference
   stats_->inference_start_ms = time_in_ms();
 
-  uint64_t cur_token;
+  uint64_t cur_token = 0;
   if (!inputs.empty()) {
     // Echo the last text input if enabled
     if (config.echo && inputs.back().is_text()) {

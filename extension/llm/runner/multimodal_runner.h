@@ -111,8 +111,9 @@ class ET_EXPERIMENTAL MultimodalRunner : public IRunner {
 
   /**
    * Generate tokens from a text prompt. Wraps the prompt as a MultimodalInput
-   * and delegates to generate(vector).
-   * @param prompt The text prompt to generate from. Must be non-empty.
+   * and delegates to generate(vector). Empty prompt is allowed if prefill()
+   * was called beforehand.
+   * @param prompt The text prompt to generate from.
    * @param config Generation configuration parameters.
    * @param token_callback Callback function called for each generated token.
    * @param stats_callback Callback function for generation statistics.
