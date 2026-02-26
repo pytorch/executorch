@@ -101,7 +101,7 @@ def _assert_disallow_flags(
         ), f"Node '{node_name}': expected DISALLOW_TFA_META_KEY={expected_flag}, got {actual_flag}"
 
 
-def test_disallow_tfa_for_skipped_module():
+def test_disallow_tfa_for_skipped_module_no_target():
     """Ensure a softmax skipped for quantization is not decomposed and that its
     node has `disallow_tfa` set.
     """
@@ -133,7 +133,7 @@ def test_disallow_tfa_for_skipped_module():
     )
 
 
-def test_disallow_tfa_for_two_skipped_modules():
+def test_disallow_tfa_for_two_skipped_modules_no_target():
     """Ensure a softmax and linear skipped for quantization are not decomposed
     and have their `disallow_tfa` set.
     """
@@ -156,7 +156,7 @@ def test_disallow_tfa_for_two_skipped_modules():
     )
 
 
-def test_disallow_tfa_with_global_none_and_one_quantized_module():
+def test_disallow_tfa_with_global_none_and_one_quantized_module_no_target():
     """Ensure that with a global None quantization config, only the linear
     module (with its own quantization config) is quantized, and that the
     other nodes have `disallow_tfa` set.
@@ -180,7 +180,7 @@ def test_disallow_tfa_with_global_none_and_one_quantized_module():
     )
 
 
-def test_disallow_tfa_for_submodule_by_name():
+def test_disallow_tfa_for_submodule_by_name_no_target():
     """Ensure submodules can be skipped for quantization by name and have their
     nodes marked as disallowed for TFA.
     """
@@ -203,7 +203,7 @@ def test_disallow_tfa_for_submodule_by_name():
     )
 
 
-def test_disallow_tfa_name_config_contradicts_type_config():
+def test_disallow_tfa_name_config_contradicts_type_config_no_target():
     """Ensure that module name configs take precedence over module type configs
     when they contradict each other.
     """

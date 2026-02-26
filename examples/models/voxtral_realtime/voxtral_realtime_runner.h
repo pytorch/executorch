@@ -39,7 +39,8 @@ class VoxtralRealtimeRunner {
   VoxtralRealtimeRunner(
       const std::string& model_path,
       const std::string& tokenizer_path,
-      const std::string& preprocessor_path = "");
+      const std::string& preprocessor_path = "",
+      bool warmup = true);
 
   // Offline transcription: full encoder first, then step-by-step decode.
   int transcribe(
@@ -135,9 +136,7 @@ class StreamingSession {
   std::vector<float> audio_buf_;
   int64_t samples_consumed_ = 0;
 
-  // Encoder streaming state
-  std::vector<float> conv1_state_;
-  std::vector<float> conv2_state_;
+  // Encoder streaming state (conv states are now internal buffers)
   int64_t enc_frame_pos_ = 0;
 
   // Decoder state

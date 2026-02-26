@@ -99,6 +99,7 @@ EXECUTORCH_DEFINED_MODELS = [
     "static_llama",
     "qwen2_5_0_5b",
     "qwen2_5_1_5b",
+    "qwen2_5_coder_32b",
     "qwen3_0_6b",
     "qwen3_1_7b",
     "qwen3_4b",
@@ -107,11 +108,13 @@ EXECUTORCH_DEFINED_MODELS = [
     "lfm2_350m",  # hybrid
     "lfm2_700m",  # hybrid
     "lfm2_1_2b",  # hybrid
+    "lfm2_5_1_2b",  # hybrid
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 HUGGING_FACE_REPO_IDS = {
     "qwen2_5_0_5b": "Qwen/Qwen2.5-0.5B",
     "qwen2_5_1_5b": "Qwen/Qwen2.5-1.5B",
+    "qwen2_5_coder_32b": "Qwen/Qwen2.5-Coder-32B-Instruct",
     "phi_4_mini": "microsoft/Phi-4-mini-instruct",
     "smollm2": "HuggingFaceTB/SmolLM-135M",
     "qwen3_0_6b": "Qwen/Qwen3-0.6B",
@@ -120,6 +123,7 @@ HUGGING_FACE_REPO_IDS = {
     "lfm2_350m": "LiquidAI/LFM2-350M",
     "lfm2_700m": "LiquidAI/LFM2-700M",
     "lfm2_1_2b": "LiquidAI/LFM2-1.2B",
+    "lfm2_5_1_2b": "LiquidAI/LFM2.5-1.2B-Instruct",
 }
 
 
@@ -243,6 +247,18 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--adapter_config",
         required=False,
         help="Path to the adapter_config.json file. Used if the model has trained LoRA adapters. Must provide adapter_checkpoint.",
+    )
+
+    parser.add_argument(
+        "--openvino_awq",
+        action="store_true",
+        help="Whether to use AWQ from NNCF. Applicable only for the OpenVINO backend.",
+    )
+
+    parser.add_argument(
+        "--openvino_scale_estimation",
+        action="store_true",
+        help="Whether to use Scale Estimation algorithm from NNCF. Applicable only for the OpenVINO backend",
     )
 
     parser.add_argument(
@@ -779,7 +795,7 @@ def get_quantizer_and_quant_params(llm_config):
         )
         quantizers.append(qnn_quantizer)
     if llm_config.backend.openvino.enabled and llm_config.quantization.pt2e_quantize:
-        assert not quantizers, "Should not enable both xnnpack and openvino"
+        assert not quantizers, "Should not enable openvino and other quantizers"
         group_size = llm_config.quantization.group_size
         group_size = group_size if group_size else 128
         ov_quantizer = get_ov_quantizer(
@@ -938,6 +954,8 @@ def _to_edge_and_lower_llama_openvino(
     modelname,
     quantizers,
     additional_passes,
+    awq,
+    scale_estimation,
     openvino_device: str = "CPU",
     verbose: bool = False,
 ) -> LLMEdgeManager:  # noqa: C901
@@ -951,9 +969,14 @@ def _to_edge_and_lower_llama_openvino(
     for partitioner in partitioners:
         logging.info(f"--> {partitioner.__class__.__name__}")
 
-    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
-        partitioners
+    from executorch.backends.openvino.quantizer import apply_nncf_data_aware_compression
+
+    logging.info(f"Applying AWQ = {awq}, Scale Estimation = {scale_estimation}")
+    builder = apply_nncf_data_aware_compression(
+        builder_exported, quantizers[0], awq, scale_estimation
     )
+
+    builder = builder.to_edge_transform_and_lower(partitioners)
 
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
@@ -1167,6 +1190,8 @@ def _get_xnnpack_partitioners(llm_config: LlmConfig) -> Optional[List[Partitione
     """Get XNNPACK partitioners for multimethod_lora export."""
     partitioners = []
 
+    # Order matters here, dynamic quantization should be applied first when
+    # both xnnpack and xnnpack_extended_ops are enabled.
     if llm_config.backend.xnnpack.enabled:
         partitioners.append(
             get_xnnpack_partitioner(dynamic_quant_only_partitioner=True)
@@ -1335,6 +1360,8 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             modelname,
             quantizers,
             additional_passes,
+            awq=llm_config.backend.openvino.openvino_awq,
+            scale_estimation=llm_config.backend.openvino.openvino_scale_estimation,
             openvino_device=llm_config.backend.openvino.device,
             verbose=llm_config.debug.verbose,
         )

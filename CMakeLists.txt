@@ -45,9 +45,7 @@
 # ~~~
 #
 
-# TODO Lower to 3.24 when XNNPACK dependency is updated to include
-# https://github.com/google/XNNPACK/commit/c690daa67f883e1b627aadf7684c06797e9a0684
-cmake_minimum_required(VERSION 3.29)
+cmake_minimum_required(VERSION 3.24)
 project(executorch)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
@@ -581,6 +579,12 @@ install(
   PATTERN "*.h"
 )
 install(
+  DIRECTORY runtime/backend/
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/backend
+  FILES_MATCHING
+  PATTERN "*.h"
+)
+install(
   DIRECTORY runtime/platform/
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/platform
   FILES_MATCHING
@@ -675,7 +679,6 @@ endif()
 
 if(EXECUTORCH_BUILD_CORTEX_M)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
-  list(APPEND _executorch_backends coretex_m_backend)
 endif()
 
 # If CUDA, Metal, or pybind will need Torch, find it at root scope first so that
@@ -950,6 +953,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs openvino_backend)
   endif()
 
+  if(EXECUTORCH_BUILD_CUDA)
+    string(APPEND _portable_lib_rpath ":$ORIGIN/../../backends/cuda")
+  endif()
+
   if(EXECUTORCH_BUILD_QNN)
     list(APPEND _dep_libs qnn_executorch_backend)
     string(APPEND _portable_lib_rpath ":$ORIGIN/../../backends/qualcomm")
@@ -980,10 +987,11 @@ if(EXECUTORCH_BUILD_PYBIND)
       -fexceptions>
   )
 
-  # util lib
+  # util lib PyTorch requires C++20, so util must be compiled with C++20.
   add_library(
     util ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
   )
+  set_target_properties(util PROPERTIES CXX_STANDARD 20)
   target_include_directories(
     util PUBLIC ${_common_include_directories} ${TORCH_INCLUDE_DIRS}
   )
@@ -995,8 +1003,11 @@ if(EXECUTORCH_BUILD_PYBIND)
   # pybind portable_lib
   pybind11_add_module(portable_lib SHARED extension/pybindings/pybindings.cpp)
   # The actual output file needs a leading underscore so it can coexist with
-  # portable_lib.py in the same python package.
-  set_target_properties(portable_lib PROPERTIES OUTPUT_NAME "_portable_lib")
+  # portable_lib.py in the same python package. PyTorch requires C++20, so
+  # pybindings must be compiled with C++20.
+  set_target_properties(
+    portable_lib PROPERTIES OUTPUT_NAME "_portable_lib" CXX_STANDARD 20
+  )
   target_compile_definitions(
     portable_lib PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=_portable_lib
   )

@@ -199,6 +199,7 @@ void add_q8ta_conv2d_pw_node(
     const ValueRef output_zp,
     const ValueRef bias_data,
     const ValueRef packed_bias,
+    const uint32_t activation_type,
     const ValueRef packed_int8_output) {
   // Validate packed dim info for input and output tensors
   // To maximize performance, the input tensor must be in 4W4C layout
@@ -234,7 +235,10 @@ void add_q8ta_conv2d_pw_node(
       PushConstantDataInfo(&output_zp_val, sizeof(output_zp_val)),
   };
 
-  std::string kernel_name = "q8ta_conv2d_pw";
+  const bool use_hw_dot =
+      graph.context()->adapter_ptr()->supports_int8_dot_product();
+  std::string kernel_name =
+      use_hw_dot ? "q8ta_conv2d_pw" : "q8ta_conv2d_pw_fallback";
   add_dtype_suffix(kernel_name, graph.dtype_of(packed_weight_scales));
 
   // Pass metadata for both output and input tensors
@@ -242,9 +246,10 @@ void add_q8ta_conv2d_pw_node(
       graph.buffer_meta_ubo(packed_int8_output),
       graph.buffer_meta_ubo(packed_int8_input)};
 
-  // Build spec constants: apply_bias + layout constants
+  // Build spec constants: apply_bias, activation_type + layout constants
   vkapi::SpecVarList spec_constants = {
       apply_bias,
+      activation_type,
       K4_per_group,
       // Layout specialization constants
       graph.hashed_layout_of(packed_int8_output),
@@ -296,7 +301,11 @@ void q8ta_conv2d_pw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   (void)args.at(idx++); // padding
   (void)args.at(idx++); // dilation
   (void)args.at(idx++); // groups
+  const ValueRef activation_ref = args.at(idx++);
   const ValueRef packed_int8_output = args.at(idx++);
+
+  uint32_t activation_type_val = static_cast<uint32_t>(
+      activation_type_from_string(graph.extract_string(activation_ref)));
 
   QuantizationConfig weight_quant_config(8, kPerChannel, {});
 
@@ -342,6 +351,7 @@ void q8ta_conv2d_pw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       output_zp,
       bias_data,
       packed_bias,
+      activation_type_val,
       packed_int8_output);
 }
 

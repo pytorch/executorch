@@ -66,7 +66,7 @@ def gen_samsung_backend_compile_spec(
     A function to generate an ExecuTorch binary for Samsung Backend.
 
     Attributes:
-        chipset (str): chipset name in SamsungChipset. For example, E9955(E9965) or E9955(e9965) both work.
+        chipset (str): chipset name in SamsungChipset. For example, E9955 or E9965 (case-insensitive).
 
     Returns:
         CompileSpec: key is COMPILE_OPTION_SCHEMA_NAME, value is serialization binary of fb schema

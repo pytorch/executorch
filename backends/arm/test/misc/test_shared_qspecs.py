@@ -582,8 +582,8 @@ test_cases = {
 
 @parametrize("test_case", test_cases)
 def test_shared_qspec_quantizer_no_target(test_case):
-    """
-    Test that ops which does not change dynamic range are able to use int8 portable kernels.
+    """Test that ops which does not change dynamic range are able to use int8
+    portable kernels.
     """
     pipeline = QuantizationPipeline(
         test_case.model,
@@ -615,8 +615,8 @@ float_test_cases = {
 
 @parametrize("test_case", float_test_cases)
 def test_shared_qspec_quantizer_no_qspecs_no_target(test_case):
-    """
-    Test that ops which does not change dynamic range are able to use int8 portable kernels.
+    """Test that ops which does not change dynamic range are able to use int8
+    portable kernels.
     """
     pipeline = QuantizationPipeline(
         test_case.model,

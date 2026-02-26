@@ -12,9 +12,18 @@
 
 namespace vkcompute {
 
-void add_staging_to_int8x4_buffer_node(
+//
+// Unary operations for int8x4 tensors
+//
+
+void add_q8ta_unary_node(
     ComputeGraph& graph,
-    const ValueRef tensor_data,
-    const ValueRef tensor);
+    const ValueRef packed_int8_input,
+    const ValueRef input_scale,
+    const ValueRef input_zp,
+    const ValueRef output_scale,
+    const ValueRef output_zp,
+    const ValueRef packed_int8_output,
+    const std::string& op_name);
 
 } // namespace vkcompute

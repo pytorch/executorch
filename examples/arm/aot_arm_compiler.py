@@ -73,9 +73,6 @@ from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
 
 
-FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
-logging.basicConfig(level=logging.WARNING, format=FORMAT)
-
 _arm_model_evaluator = None
 
 
@@ -438,10 +435,7 @@ def get_compile_spec(
 ) -> TosaCompileSpec | EthosUCompileSpec | VgfCompileSpec:
     compile_spec = None
     if target.startswith("TOSA"):
-        try:
-            tosa_spec = TosaSpecification.create_from_string(target)
-        except Exception:
-            tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
+        tosa_spec = TosaSpecification.create_from_string(target)
         compile_spec = TosaCompileSpec(tosa_spec)
     elif "ethos-u" in target:
         extra_flags = ["--verbose-operators", "--verbose-cycle-estimate"]
@@ -636,8 +630,9 @@ def get_args():
             "--evaluate requires --quantize, --intermediates and --delegate to be enabled."
         )
 
-    if args.debug:
-        logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
+    LOGGING_FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
+    logging_level = logging.DEBUG if args.debug else logging.WARNING
+    logging.basicConfig(level=logging_level, format=LOGGING_FORMAT, force=True)
 
     # if we have custom ops, register them before processing the model
     if args.so_library is not None:

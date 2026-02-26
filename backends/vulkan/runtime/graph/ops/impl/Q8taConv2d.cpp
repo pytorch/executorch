@@ -17,6 +17,15 @@
 
 namespace vkcompute {
 
+ActivationType activation_type_from_string(const std::string& activation) {
+  if (activation == "none") {
+    return ActivationType::kNone;
+  } else if (activation == "relu") {
+    return ActivationType::kRelu;
+  }
+  VK_THROW("Unknown activation type: ", activation);
+}
+
 bool q8ta_conv2d_check_packed_dim_info(const api::PackedDimInfo& info) {
   return info.packed_dim == WHCN::kChannelsDim &&
       info.packed_dim_block_size == 4 &&
@@ -231,6 +240,7 @@ void add_q8ta_conv2d_node(
     const ValueRef padding,
     const ValueRef dilation,
     const ValueRef groups,
+    const uint32_t activation_type,
     const ValueRef packed_int8_output) {
   (void)packed_int8_input_im2col; // Not used in general shader
 
@@ -278,8 +288,9 @@ void add_q8ta_conv2d_node(
       PushConstantDataInfo(&output_zp_val, sizeof(output_zp_val)),
   };
 
-  // Select shader based on layout
-  std::string kernel_name = "q8ta_conv2d";
+  const bool use_hw_dot =
+      graph.context()->adapter_ptr()->supports_int8_dot_product();
+  std::string kernel_name = use_hw_dot ? "q8ta_conv2d" : "q8ta_conv2d_fallback";
   add_dtype_suffix(kernel_name, graph.dtype_of(packed_weight_scales));
 
   // Pass metadata for both output and input tensors
@@ -288,9 +299,10 @@ void add_q8ta_conv2d_node(
       graph.buffer_meta_ubo(packed_int8_input),
       graph.create_params_buffer(conv_params)};
 
-  // Build spec constants: apply_bias + layout constants
+  // Build spec constants: apply_bias, apply_relu + layout constants
   vkapi::SpecVarList spec_constants = {
       apply_bias,
+      activation_type,
       // Layout specialization constants
       graph.hashed_layout_of(packed_int8_input),
       graph.hashed_layout_of(packed_int8_output),
@@ -341,7 +353,11 @@ void q8ta_conv2d_general(
   const ValueRef padding = args.at(idx++);
   const ValueRef dilation = args.at(idx++);
   const ValueRef groups = args.at(idx++);
+  const ValueRef activation = args.at(idx++);
   const ValueRef packed_int8_output = args.at(idx++);
+
+  uint32_t activation_type_val = static_cast<uint32_t>(
+      activation_type_from_string(graph.extract_string(activation)));
 
   QuantizationConfig weight_quant_config(8, kPerChannel, {});
 
@@ -397,11 +413,35 @@ void q8ta_conv2d_general(
       padding,
       dilation,
       groups,
+      activation_type_val,
       packed_int8_output);
 }
 
 void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  q8ta_conv2d_general(graph, args);
+  const ValueRef input = args.at(0);
+  const ValueRef groups_ref = args.at(13);
+  const ValueRef output = args.at(15);
+
+  const int64_t groups = graph.extract_scalar<int64_t>(groups_ref);
+  const int64_t in_channels = graph.size_at<int64_t>(-3, input);
+  const int64_t in_channels_per_group = in_channels / groups;
+
+  const int64_t H_out = graph.size_at<int64_t>(-2, output);
+  const int64_t W_out = graph.size_at<int64_t>(-1, output);
+  const int64_t spatial_out = H_out * W_out;
+
+  // Use im2col when the channel depth is sufficient for tiled GEMM to win, or
+  // when the output spatial area is small enough that the im2col buffer stays
+  // manageable. For large spatial outputs with few channels, the im2col buffer
+  // becomes too large and the general shader is more efficient.
+  const bool use_im2col = groups == 1 && in_channels_per_group % 4 == 0 &&
+      (in_channels_per_group >= 64 || spatial_out <= 4096);
+
+  if (use_im2col) {
+    q8ta_conv2d_im2col(graph, args);
+  } else {
+    q8ta_conv2d_general(graph, args);
+  }
 }
 
 REGISTER_OPERATORS {

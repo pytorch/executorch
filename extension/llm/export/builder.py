@@ -451,7 +451,9 @@ class LLMEdgeManager:
         return self
 
     def to_edge_transform_and_lower(
-        self, partitioners: Optional[List[Partitioner]]
+        self,
+        partitioners: Optional[List[Partitioner]],
+        transform_passes: Optional[List] = None,
     ) -> "LLMEdgeManager":
         if partitioners is None:
             logging.info("No partitioner provided, skipping backend lowering...")
@@ -462,6 +464,7 @@ class LLMEdgeManager:
         edge_config = self._get_edge_config()
         self.edge_manager = to_edge_transform_and_lower(
             exported_module,
+            transform_passes=transform_passes,
             partitioner=partitioners,
             compile_config=edge_config,
             constant_methods=self.metadata,

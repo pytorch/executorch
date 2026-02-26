@@ -47,7 +47,7 @@ from executorch.exir import to_edge_transform_and_lower
 mobilenet_v2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval()
 sample_inputs = (torch.randn(1, 3, 224, 224), )
 
-chipset = "E9955"
+chipset = "E9955"  # or "E9965" for Exynos 2600
 compile_specs = [gen_samsung_backend_compile_spec(chipset)]
 
 et_program = to_edge_transform_and_lower(
