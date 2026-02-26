@@ -41,7 +41,7 @@ quant_test_data = {
 
 
 def _use_partial_quantizer(pipeline):
-    """Set the pipeline's quantizer to only include Conv2d and ReLU6"""
+    """Set the pipeline's quantizer to only include Conv2d and ReLU6."""
     quant_cfg = get_symmetric_quantization_config()
     pipeline.quantizer.set_global(None)
     pipeline.quantizer.set_module_type(torch.nn.Conv2d, quant_cfg)

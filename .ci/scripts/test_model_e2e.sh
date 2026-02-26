@@ -272,16 +272,9 @@ case "$MODEL_NAME" in
   voxtral_realtime)
     RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --preprocessor_path ${MODEL_DIR}/$PREPROCESSOR --audio_path ${MODEL_DIR}/$AUDIO_FILE --temperature 0"
     # Determine streaming mode based on MODE parameter
-    USE_STREAMING="false"
-    if [ "$MODE" = "vr-streaming" ]; then
-      USE_STREAMING="true"
-    elif [ "$MODE" = "vr-offline" ]; then
+    USE_STREAMING="true"
+    if [ "$MODE" = "vr-offline" ]; then
       USE_STREAMING="false"
-    elif [ -z "$MODE" ]; then
-      # Auto-detect: XNNPACK uses streaming, others use offline
-      if [ "$DEVICE" = "xnnpack" ]; then
-        USE_STREAMING="true"
-      fi
     fi
     # Add streaming flag if needed
     if [ "$USE_STREAMING" = "true" ]; then
