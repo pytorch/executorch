@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -170,6 +171,7 @@ class ET_EXPERIMENTAL MultimodalRunner : public IRunner {
   void reset() override {
     pos_ = 0;
     stats_->reset();
+    prefill_next_token_.reset();
   }
 
   ~MultimodalRunner() override = default;
@@ -191,6 +193,7 @@ class ET_EXPERIMENTAL MultimodalRunner : public IRunner {
 #endif
 
   // Internal state
+  std::optional<uint64_t> prefill_next_token_;
   int64_t pos_;
 
  private:
