@@ -71,9 +71,8 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
         target=args.target,
-        backend=backend,
     )
-    adb.push(inputs=inputs)
+    adb.push(inputs=inputs, backends={backend})
     adb.execute()
 
     # collect output data
@@ -93,7 +92,7 @@ def main(args):
                 output = np.fromfile(filename, dtype=np.float32)
                 output_raws.append(output)
 
-    adb.pull(output_path=args.artifact, callback=post_process)
+    adb.pull(host_output_path=args.artifact, callback=post_process)
 
     # top-k analysis
     predictions = []

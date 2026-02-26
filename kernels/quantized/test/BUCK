@@ -1,5 +1,59 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load(":targets.bzl", "define_common_targets")
 
 oncall("executorch")
 
-define_common_targets()
+non_fbcode_target(_kind = define_common_targets,)
+
+# !!!! fbcode/executorch/kernels/quantized/test/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+
+fbcode_target(_kind = define_common_targets,)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_out_variants",
+    srcs = ["test_out_variants.py"],
+    preload_deps = [
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/passes:quant_fusion_pass",
+        "//executorch/kernels/quantized:quantized_ops_lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.cxx_library,
+    name = "quantized_ops_for_test_lib",
+    srcs = [
+        "quantized_ops_aot_register.cpp",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//executorch/extension/aten_util:aten_bridge",
+        "//executorch/kernels/quantized/cpu:op_dequantize",
+        "//executorch/kernels/quantized/cpu:op_quantize",
+        "//executorch/runtime/core/exec_aten:lib",
+    ],
+    external_deps = [
+        "libtorch",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_quant_dequant_per_token",
+    srcs = [
+        "test_quant_dequant_per_token.py",
+    ],
+    preload_deps = [
+        ":quantized_ops_for_test_lib",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)

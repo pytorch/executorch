@@ -1,0 +1,17 @@
+# Quantization
+
+The Arm Ethos-U delegate only supports the execution of quantized models. To quantize a model so that is supported by this delegate, the `EthosUQuantizer` should be used.
+
+Currently, the symmetric `int8` config defined by `executorch.backends.arm.quantizer.arm_quantizer.get_symmetric_quantization_config` is the main config available to use with the Ethos-U quantizer.
+
+### Supported Quantization Schemes
+
+The Arm Ethos-U delegate supports the following quantization schemes:
+
+- 8-bit symmetric weights with 8-bit asymmetric activations (via the PT2E quantization flow).
+- Limited support for 16-bit quantization with 16-bit activations and 8-bit weights (a.k.a 16x8 quantization). This is under development.
+- Partial quantization is *not* supported on the Ethos-U backend. The entire model must be quantized.
+
+### Quantization API
+
+$QUANTIZER

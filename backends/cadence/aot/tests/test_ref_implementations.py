@@ -14,6 +14,7 @@ import executorch.backends.cadence.aot.ref_implementations  # noqa
 import numpy as np
 import torch
 from executorch.backends.cadence.aot.typing_stubs import expand
+from executorch.backends.cadence.aot.utils import is_depthwise_conv
 
 from executorch.exir.scalar_type import ScalarType
 
@@ -942,12 +943,22 @@ class TestRefImplementations(unittest.TestCase):
         assert memory_format in [torch.contiguous_format, torch.channels_last]
 
         if memory_format == torch.channels_last:
+            in_channels = input_tensor.shape[1]  # NCHW still at this point
+            depthwise = is_depthwise_conv(groups, in_channels)
             if input_tensor.ndim == 3:
                 input_tensor = input_tensor.movedim(1, -1)
-                weight = weight.movedim(1, -1)
+                if depthwise:
+                    # [OC, 1, K] -> [K, OC] (squeeze IC, move OC to end)
+                    weight = weight.squeeze(1).movedim(0, -1)
+                else:
+                    weight = weight.movedim(1, -1)
             else:
                 input_tensor = input_tensor.movedim(-3, -1)
-                weight = weight.movedim(-3, -1)
+                if depthwise:
+                    # [OC, 1, KH, KW] -> [KH, KW, OC] (squeeze IC, move OC to end)
+                    weight = weight.squeeze(1).movedim(0, -1)
+                else:
+                    weight = weight.movedim(-3, -1)
 
         convs = [
             (
@@ -2952,7 +2963,7 @@ class TestRefImplementations(unittest.TestCase):
                     b_h_scale,
                 )
             self.assertIn(
-                "Leading dimension of hidden state must be 1", str(context.exception)
+                "Leading dimension 0 of hidden state must be 1", str(context.exception)
             )
             return
 
@@ -2977,8 +2988,8 @@ class TestRefImplementations(unittest.TestCase):
         )
         self.assertEqual(
             output.shape,
-            (2, hidden.shape[-1]),
-            f"Output shape should match {(2, hidden.shape[-1])} in {name}",
+            (2, *hidden.shape),
+            f"Output shape should match {(2, *hidden.shape)} in {name}",
         )
         assert isinstance(output, torch.Tensor)
 
@@ -3148,4 +3159,81 @@ class TestRefImplementations(unittest.TestCase):
             output.shape,
             input_tensor.shape,
             "Output shape should match input shape",
+        )
+
+    @expand(
+        [
+            # Basic 1D slice_scatter tests
+            ("1d_basic", (10,), (3,), 0, 2, 5, 1),
+            ("1d_with_step", (10,), (2,), 0, 0, 6, 3),
+            ("1d_end_slice", (10,), (3,), 0, 7, 10, 1),
+            # 2D slice_scatter tests
+            ("2d_dim0", (4, 5), (2, 5), 0, 1, 3, 1),
+            ("2d_dim1", (4, 5), (4, 2), 1, 2, 4, 1),
+            ("2d_dim1_with_step", (4, 6), (4, 2), 1, 0, 6, 3),
+            # 3D slice_scatter tests
+            ("3d_dim0", (3, 4, 5), (1, 4, 5), 0, 1, 2, 1),
+            ("3d_dim1", (3, 4, 5), (3, 2, 5), 1, 1, 3, 1),
+            ("3d_dim2", (3, 4, 5), (3, 4, 2), 2, 2, 4, 1),
+        ]
+    )
+    def test_slice_scatter_(
+        self,
+        name: str,
+        self_shape: typing.Tuple[int, ...],
+        src_shape: typing.Tuple[int, ...],
+        dim: int,
+        start: int,
+        end: int,
+        step: int,
+    ) -> None:
+        self_tensor = torch.randn(self_shape)
+        src_tensor = torch.randn(src_shape)
+        self_tensor_copy = self_tensor.clone()
+
+        # Call the in-place slice_scatter_ op
+        torch.ops.cadence.slice_scatter_(self_tensor, src_tensor, dim, start, end, step)
+
+        # Compute expected result using aten slice_scatter
+        expected = torch.ops.aten.slice_scatter.default(
+            self_tensor_copy, src_tensor, dim, start, end, step
+        )
+
+        self.assertEqual(
+            self_tensor.shape,
+            expected.shape,
+            f"Shape mismatch in {name}",
+        )
+        self.assertTrue(
+            torch.allclose(self_tensor, expected, rtol=1e-5, atol=1e-5),
+            f"Values don't match in {name}: got {self_tensor}, expected {expected}",
+        )
+
+    def test_slice_scatter_inplace_mutation(self) -> None:
+        self_tensor = torch.zeros(10)
+        src_tensor = torch.ones(3)
+
+        ref = self_tensor
+
+        torch.ops.cadence.slice_scatter_(self_tensor, src_tensor, 0, 2, 5, 1)
+
+        self.assertTrue(ref is self_tensor)
+
+        expected = torch.tensor([0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        self.assertTrue(
+            torch.equal(self_tensor, expected),
+            f"Values don't match: got {self_tensor}, expected {expected}",
+        )
+
+    def test_slice_scatter_with_none_start_end(self) -> None:
+        self_tensor = torch.zeros(10)
+        src_tensor = torch.ones(10)
+
+        # When start=None and end=None, the entire slice should be replaced
+        torch.ops.cadence.slice_scatter_(self_tensor, src_tensor, 0, None, None, 1)
+
+        expected = torch.ones(10)
+        self.assertTrue(
+            torch.equal(self_tensor, expected),
+            f"Values don't match: got {self_tensor}, expected {expected}",
         )

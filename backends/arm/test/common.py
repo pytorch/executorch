@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,7 +6,6 @@
 
 import os
 
-import tempfile
 from datetime import datetime
 
 from pathlib import Path
@@ -95,9 +94,8 @@ def get_u55_compile_spec(
     """Default compile spec for Ethos-U55 tests."""
     if not custom_path:
         custom_path = maybe_get_tosa_collate_path()
-    artifact_path = custom_path or tempfile.mkdtemp(prefix="arm_u55_")
-    if not os.path.exists(artifact_path):
-        os.makedirs(artifact_path, exist_ok=True)
+    if custom_path is not None:
+        os.makedirs(custom_path, exist_ok=True)
 
     # https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela/-/blob/main/OPTIONS.md
     assert macs in [32, 64, 128, 256], "Unsupported MACs value"
@@ -114,7 +112,7 @@ def get_u55_compile_spec(
             extra_flags=extra_flags_list,
             config_ini=config,
         )
-        .dump_intermediate_artifacts_to(artifact_path)
+        .dump_intermediate_artifacts_to(custom_path)
         .dump_debug_info(tosa_debug_mode)
     )
     return compile_spec
@@ -133,9 +131,8 @@ def get_u85_compile_spec(
 
     if not custom_path:
         custom_path = maybe_get_tosa_collate_path()
-    artifact_path = custom_path or tempfile.mkdtemp(prefix="arm_u85_")
-    if not os.path.exists(artifact_path):
-        os.makedirs(artifact_path, exist_ok=True)
+    if custom_path is not None:
+        os.makedirs(custom_path, exist_ok=True)
 
     assert macs in [128, 256, 512, 1024, 2048], "Unsupported MACs value"
 
@@ -152,7 +149,7 @@ def get_u85_compile_spec(
             extra_flags=extra_flags_list,
             config_ini=config,
         )
-        .dump_intermediate_artifacts_to(artifact_path)
+        .dump_intermediate_artifacts_to(custom_path)
         .dump_debug_info(tosa_debug_mode)
     )
     return compile_spec  # type: ignore[return-value]
@@ -178,17 +175,8 @@ def get_vgf_compile_spec(
     if len(profiles) == 0:
         raise ValueError(f"Unsupported vgf compile_spec: {repr(tosa_spec)}")
 
-    if custom_path is None:
-        artifact_path = "arm_vgf_"
-        for profile in profiles:
-            artifact_path = artifact_path + f"_{profile}"
-        artifact_path = tempfile.mkdtemp(artifact_path)
-    else:
-        artifact_path = custom_path
-
-    if not os.path.exists(artifact_path):
-        os.makedirs(artifact_path, exist_ok=True)
-
+    if custom_path is not None:
+        os.makedirs(custom_path, exist_ok=True)
     if compiler_flags is not None:
         compiler_flags_list = compiler_flags.split(" ")
     else:
@@ -196,7 +184,7 @@ def get_vgf_compile_spec(
 
     compile_spec = (
         VgfCompileSpec(tosa_spec, compiler_flags_list)
-        .dump_intermediate_artifacts_to(artifact_path)
+        .dump_intermediate_artifacts_to(custom_path)
         .dump_debug_info(tosa_debug_mode)
     )
 

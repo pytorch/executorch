@@ -43,14 +43,19 @@ The full user-facing API is documented below.
 ```python
 class EthosUCompileSpec(target: str, system_config: str | None = None, memory_mode: str | None = None, extra_flags: list[str] | None = None, config_ini: str | None = 'Arm/vela.ini')
 ```
-Compile spec for Ethos-U NPU.
+Normalise Ethos-U compile configuration and compiler flags.
 
 Args:
-- **target**: Ethos-U accelerator configuration, e.g. ethos-u55-128.
-- **system_config**: System configuration to select from the Vela configuration file.
-- **memory_mode**: Memory mode to select from the Vela configuration file.
-- **extra_flags**: Extra flags for the Vela compiler.
-- **config_ini**: Vela configuration file(s) in Python ConfigParser .ini file format.
+- **target (str)**: Ethos-U accelerator configuration (for example,
+        ``"ethos-u55-128"``).
+- **system_config (str | None)**: System configuration name from the Vela
+        config file. Defaults based on ``target`` when omitted.
+- **memory_mode (str | None)**: Memory mode selection from the Vela config
+        file. Defaults based on ``target`` when omitted.
+- **extra_flags (list[str] | None)**: Additional command-line flags for
+        Vela.
+- **config_ini (str | None)**: Path to a Vela .ini configuration file.
+        Defaults to ``"Arm/vela.ini"``.
 
 ```python
 def EthosUCompileSpec.dump_debug_info(self, debug_mode: executorch.backends.arm.common.arm_compile_spec.ArmCompileSpec.DebugMode | None):
@@ -79,7 +84,35 @@ Returns:
 ```python
 def EthosUCompileSpec.get_output_format() -> str:
 ```
-Returns a constant string that is the output format of the class.
+Return the artifact format emitted by this compile spec.
+
+```python
+def EthosUCompileSpec.get_output_order_workaround(self) -> bool:
+```
+Gets whether the output order workaround is being applied.
+
+```python
+def EthosUCompileSpec.get_pass_pipeline_config(self) -> executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig:
+```
+Returns configuration that controls how the Arm pass pipeline should behave.
+Subclasses may override to tweak defaults for specific targets.
+
+```python
+def EthosUCompileSpec.set_output_order_workaround(self, output_order_workaround: bool):
+```
+Sets whether to apply the output order workaround.
+
+Args:
+- **output_order_workaround**: Boolean indicating whether to apply the workaround.
+
+```python
+def EthosUCompileSpec.set_pass_pipeline_config(self, config: executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig) -> None:
+```
+Sets the configuration that controls how the Arm pass pipeline should behave.
+Subclasses may override to tweak defaults for specific targets.
+
+Args:
+- **config**: The custom ArmPassPipelineConfig to set.
 
 
 
@@ -93,7 +126,7 @@ Since the Ethos-U backend is integer-only, all operators intended be executed on
 [Post Training Quantization (PT2E)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html)  and
 [Quantization-Aware Training (QAT)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_qat.html) quantization.
 
-For more information on quantization, see [Quantization](arm-ethos-u-quantization.md)
+For more information on quantization, see [Quantization](arm-ethos-u-quantization.md) <!-- @lint-ignore -->
 
 ## Runtime Integration
 

@@ -45,10 +45,12 @@ def _get_imagenet_224_transforms():
 def _build_calibration_loader(
     dataset: datasets.ImageFolder, max_items: int
 ) -> DataLoader:
-    """Return a DataLoader over a deterministic, shuffled subset of size <= max_items.
+    """Return a DataLoader over a deterministic, shuffled subset of size <=
+    max_items.
 
     Shuffles with seed: ARM_EVAL_CALIB_SEED (int) or default 1337; then selects first k and
     sorts indices to keep enumeration order stable while content depends on seed.
+
     """
     k = min(max_items, len(dataset))
     seed_env = os.getenv("ARM_EVAL_CALIB_SEED")
@@ -80,6 +82,7 @@ def _load_imagenet_folder(directory: str) -> datasets.ImageFolder:
     """Shared helper to load an ImageNet-layout folder.
 
     Raises FileNotFoundError for a missing directory early to aid debugging.
+
     """
     directory_path = Path(directory)
     if not directory_path.exists():
@@ -89,10 +92,12 @@ def _load_imagenet_folder(directory: str) -> datasets.ImageFolder:
 
 
 class GenericModelEvaluator:
-    """Base evaluator computing quantization error metrics and optional compression ratio.
+    """Base evaluator computing quantization error metrics and optional
+    compression ratio.
 
     Subclasses can extend: provide calibration (get_calibrator) and override evaluate()
     to add domain specific metrics (e.g. top-1 / top-5 accuracy).
+
     """
 
     @staticmethod
@@ -113,6 +118,7 @@ class GenericModelEvaluator:
             log_every: Log running accuracy every N batches.
         Returns:
             (top1_accuracy, topk_accuracy)
+
         """
         # Some exported / quantized models (torchao PT2E) disallow direct eval()/train().
         # Try to switch to eval mode, but degrade gracefully if unsupported.
@@ -188,10 +194,11 @@ class GenericModelEvaluator:
         """Return per-output quantization error statistics.
 
         Metrics (lists per output tensor):
-            max_error
-            max_absolute_error
-            max_percentage_error (safe-divided; zero fp32 elements -> 0%)
-            mean_absolute_error
+            * max_error
+            * max_absolute_error
+            * max_percentage_error (safe-divided; zero fp32 elements -> 0%)
+            * mean_absolute_error
+
         """
         fp32_outputs, _ = tree_flatten(self.fp32_model(*self.example_input))
         quant_outputs, _ = tree_flatten(self.quant_model(*self.example_input))
@@ -252,6 +259,7 @@ class ImageNetEvaluator(GenericModelEvaluator):
 
     Provides dataset loading, calibration loader and a standard `evaluate` that
     computes top-1/top-5 accuracy.
+
     """
 
     REQUIRES_CONFIG = True

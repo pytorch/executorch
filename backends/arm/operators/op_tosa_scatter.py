@@ -24,8 +24,6 @@ from torch.fx import Node
 class ScatterVisitor(NodeVisitor):
     target = "tosa.SCATTER.default"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def define_node(
         self,
         node: Node,
@@ -45,8 +43,9 @@ class ScatterVisitor(NodeVisitor):
                 ts.DType.INT32,
                 ts.DType.FP32,
                 ts.DType.FP16,
+                ts.DType.BF16,
             ],
-            output.tosa_spec,
+            self.tosa_spec,
         )
 
         attr = ts.TosaSerializerAttribute()

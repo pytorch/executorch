@@ -819,7 +819,10 @@ def print_occurrences(edge_program, operator_list: List):
         if utils.is_torch_op_node(node):
             target = node.target
             # Handle auto_functionalized nodes
-            if node.target == torch.ops.higher_order.auto_functionalized:
+            if (
+                node.target == torch.ops.higher_order.auto_functionalized
+                or node.target == torch.ops.higher_order.auto_functionalized_v2
+            ):
                 first_arg = node.args[0]
                 if hasattr(first_arg, "name"):
                     target = first_arg.name()
@@ -907,7 +910,10 @@ def op_ablation_test(  # noqa: C901
         if utils.is_torch_op_node(node):
             target = node.target
             # Handle auto_functionalized nodes
-            if node.target == torch.ops.higher_order.auto_functionalized:
+            if (
+                node.target == torch.ops.higher_order.auto_functionalized
+                or node.target == torch.ops.higher_order.auto_functionalized_v2
+            ):
                 first_arg = node.args[0]
                 if hasattr(first_arg, "name"):
                     target = first_arg.name()

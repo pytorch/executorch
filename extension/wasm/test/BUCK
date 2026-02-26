@@ -1,9 +1,10 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//tools/build_defs:fb_xplat_cxx_binary.bzl", "fb_xplat_cxx_binary")
 
 oncall("executorch")
 
-runtime.genrule(
+non_fbcode_target(_kind = runtime.genrule,
     name = "unittests_full",
     srcs = [
         "unittests.js",
@@ -13,7 +14,7 @@ runtime.genrule(
     cmd = "cat $SRCS > $OUT",
 )
 
-runtime.genrule(
+non_fbcode_target(_kind = runtime.genrule,
     name = "unittests_full_etdump",
     srcs = [
         "unittests.js",
@@ -23,7 +24,7 @@ runtime.genrule(
     cmd = "cat $SRCS > $OUT",
 )
 
-fb_xplat_cxx_binary(
+non_fbcode_target(_kind = fb_xplat_cxx_binary,
     name = "wasm.test.js",
     linker_flags = [
         "-lembind",
@@ -45,7 +46,7 @@ fb_xplat_cxx_binary(
     ],
 )
 
-fb_xplat_cxx_binary(
+non_fbcode_target(_kind = fb_xplat_cxx_binary,
     name = "wasm_etdump.test.js",
     linker_flags = [
         "-lembind",
@@ -65,4 +66,50 @@ fb_xplat_cxx_binary(
         "//xplat/executorch/kernels/portable:generated_lib",
         ":unittests_full_etdump",
     ],
+)
+
+# !!!! fbcode/executorch/extension/wasm/test/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+
+export_genrule_cmd = [
+    "$(exe //executorch/examples/portable/scripts:export)",
+    "--model_name={model_name}",
+    "--output_dir=$OUT",
+]
+
+fbcode_target(_kind = runtime.python_binary,
+    name = "test_model",
+    srcs = [
+        "test_model.py",
+    ],
+    main_module = "executorch.extension.wasm.test.test_model",
+    deps = [
+        "//executorch/extension/export_util:export_util",
+    ],
+)
+
+test_pte_genrule_cmd = [
+    "$(exe :test_model)",
+    "$OUT/test.pte",
+]
+
+models_genrule_cmd = [
+    "mkdir -p $OUT &&",
+    " ".join(export_genrule_cmd).format(model_name="add_mul"),
+    "&&",
+    " ".join(export_genrule_cmd).format(model_name="add"),
+    "&&",
+    " ".join(test_pte_genrule_cmd),
+]
+
+fbcode_target(_kind = runtime.genrule,
+    name = "models",
+    outs = {
+        "add.pte": ["add.pte"],
+        "add_mul.pte": ["add_mul.pte"],
+        "test.pte": ["test.pte"],
+    },
+    cmd = " ".join(models_genrule_cmd),
 )

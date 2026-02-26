@@ -449,13 +449,20 @@ void test_vulkan_sdpa(
   // Run model
   //
 
-#define COPY_INPUT(x) \
-  graph.copy_into_staging(r_##x.staging, x.const_data_ptr(), x.numel());
+#define COPY_INPUT(x)                     \
+  graph.maybe_cast_and_copy_into_staging( \
+      r_##x.staging,                      \
+      x.const_data_ptr(),                 \
+      x.numel(),                          \
+      from_at_scalartype(x.scalar_type()));
 
 #define EXTRACT_TENSOR(x)                             \
   at::Tensor vk_##x = at::zeros_like(x).contiguous(); \
-  graph.copy_from_staging(                            \
-      staging_##x, vk_##x.mutable_data_ptr(), vk_##x.numel());
+  graph.maybe_cast_and_copy_from_staging(             \
+      staging_##x,                                    \
+      vk_##x.mutable_data_ptr(),                      \
+      vk_##x.numel(),                                 \
+      from_at_scalartype(vk_##x.scalar_type()));
 
   torch::manual_seed(0);
 

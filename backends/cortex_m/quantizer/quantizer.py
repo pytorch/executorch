@@ -1,32 +1,39 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import Any, Callable, cast, List, Optional
+import logging
+from typing import List, Optional
 
 import torch
-from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
+
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
-from executorch.backends.cortex_m.passes.passes_utils import (
-    is_channel_broadcast,
-    is_channels_last,
+from executorch.backends.cortex_m.quantizer.node_finders import (
+    GlobalNodeFinder,
+    NodeFinder,
+    NodeTargetNodeFinder,
 )
-from executorch.backends.cortex_m.quantizer.operator_configs import (
-    BINARY_OP_PATTERNS,
-    CONV_OP_PATTERNS,
-    INT8_BINARY_OPS_OPERATOR_CONFIG,
-    INT8_CONV_OPERATOR_CONFIG,
-    INT8_LINEAR_OPERATOR_CONFIG,
-    INT8_SOFTMAX_OPERATOR_CONFIG,
-    SOFTMAX_OP_PATTERNS,
-)
+from executorch.backends.cortex_m.quantizer.pattern_matcher import PatternMatcher
 from executorch.backends.cortex_m.quantizer.quantization_configs import (
+    INT8_PER_CHANNEL_CONFIG,
     INT8_PER_TENSOR_CONFIG,
     QuantizationSpec,
+)
+from executorch.backends.cortex_m.quantizer.quantizer_reporter import (
+    QuantizerInfo,
+    QuantizerReporter,
+    QuantizerReporterUser,
+    SUPPORTED_QCONFIGS,
+)
+from executorch.backends.cortex_m.quantizer.quantizer_support import (
+    __name__ as cortex_m_quantizer_support_module,
+    CONV_OP_PATTERNS,
+    CONV_TRANSPOSE_OP_PATTERNS,
+    CORTEX_M_QUANTIZER_SUPPORT_DICT,
 )
 from torch._ops import OpOverload
 from torch.fx import GraphModule, Node
@@ -38,11 +45,23 @@ from torchao.quantization.pt2e.quantizer import (
 )
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
+logger = logging.getLogger(__name__)
+
+
+def has_float_output(node: Node) -> bool:
+    meta_val = node.meta.get("val", None)
+    if isinstance(meta_val, torch.Tensor):
+        return meta_val.dtype.is_floating_point
+
+    return False
+
 
 def mark_node_as_annotated(
     node: Node,
     input_qspec_map: dict[Node, Optional[QuantizationSpec]],
     output_qspec: Optional[QuantizationSpec],
+    reporter: Optional[QuantizerReporter] = None,
+    quantizer: Optional[Quantizer] = None,
 ) -> None:
     node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(input_qspec_map, output_qspec)
     annotation_info = ArmAnnotationInfo(
@@ -55,127 +74,38 @@ def mark_node_as_annotated(
 
 class CortexMQuantizer(ComposableQuantizer):
 
-    def broadcasting_filter(self, node: Optional[Node]) -> bool:
-        """
-        Filter function to exclude nodes that perform broadcasting.
-        """
-        if node is None:
-            return False
-        if [node.target] not in BINARY_OP_PATTERNS:
-            return False
-
-        if len(node.all_input_nodes) == 2:
-            t1 = get_first_fake_tensor(node.all_input_nodes[0])
-            t2 = get_first_fake_tensor(node.all_input_nodes[1])
-            return t1.shape != t2.shape and not (
-                is_channel_broadcast(t1, t2) and is_channels_last(t1)
-            )
-
-        return False
-
-    def nchw_filter(self, node: Optional[Node]) -> bool:
-        """
-        Filter function to exclude nodes that use NCHW memory format.
-        """
-        if node is None:
-            return False
-        if [node.target] not in CONV_OP_PATTERNS:
-            return False
-
-        tensor = get_first_fake_tensor(node)
-        if tensor is None:
-            return False
-
-        return not is_channels_last(tensor)
-
-    @staticmethod
-    def _resolve_int(value: Any) -> Optional[int]:
-        """Best-effort conversion of FX node arguments to ints."""
-        if isinstance(value, int):
-            return value
-        if hasattr(value, "item"):
-            try:
-                return int(value.item())  # type: ignore[arg-type]
-            except Exception:
-                return None
-        if hasattr(value, "meta"):
-            meta_val = value.meta.get("val")
-            return CortexMQuantizer._resolve_int(meta_val)
-        return None
-
-    def _extract_dim(self, node: Node) -> Optional[int]:
-        """Return the dim argument from a softmax node when statically known."""
-        dim_arg = None
-        if len(node.args) > 1:
-            dim_arg = node.args[1]
-        elif "dim" in node.kwargs:
-            dim_arg = node.kwargs["dim"]
-
-        if dim_arg is None:
-            return -1
-
-        return self._resolve_int(dim_arg)
-
-    def softmax_memory_format_filter(self, node: Optional[Node]) -> bool:
-        """
-        Return true given the tensor must either
-        - be contiguous (default layout) with softmax dim == last logical dim, or
-        - be channels_last with softmax dim == channel dim.
-        Any other combination is skipped so the op stays in ATen form.
-        """
-        if node is None:
-            return False
-        if [node.target] not in SOFTMAX_OP_PATTERNS:
-            return False
-
-        tensor = get_first_fake_tensor(node)
-        if tensor is None:
-            return True
-
-        dim = self._extract_dim(node)
-        if dim is None:
-            return True
-
-        rank = tensor.dim()
-        if rank == 0:
-            return True
-
-        positive_dim = dim if dim >= 0 else dim + rank
-        if positive_dim < 0 or positive_dim >= rank:
-            return True
-
-        is_channels_last = False
-        if rank == 4:
-            is_channels_last = tensor.is_contiguous(memory_format=torch.channels_last)
-
-        if is_channels_last:
-            channel_dim = 1 if rank >= 2 else rank - 1
-            if positive_dim != channel_dim:
-                return True
-        else:
-            if positive_dim != rank - 1:
-                return True
-
-        return False
-
     def __init__(self) -> None:
+        conv_targets = set()
+        for key in CONV_OP_PATTERNS.keys() | CONV_TRANSPOSE_OP_PATTERNS.keys():
+            conv_targets.update(key)
+
+        support_dict_name = (
+            cortex_m_quantizer_support_module + ".CORTEX_M_QUANTIZER_SUPPORT_DICT"
+        )
+        pattern_matcher = PatternMatcher(
+            CORTEX_M_QUANTIZER_SUPPORT_DICT,
+            support_dict_name=support_dict_name,
+        )
         quantizers: List[Quantizer] = [
-            OperatorConfigQuantizer(
-                INT8_BINARY_OPS_OPERATOR_CONFIG, filter_fn=self.broadcasting_filter
+            PatternQuantizer(
+                INT8_PER_CHANNEL_CONFIG,
+                node_finder=NodeTargetNodeFinder(conv_targets),
+                pattern_matcher=pattern_matcher,
             ),
-            OperatorConfigQuantizer(INT8_LINEAR_OPERATOR_CONFIG),
-            OperatorConfigQuantizer(
-                INT8_CONV_OPERATOR_CONFIG, filter_fn=self.nchw_filter
+            PatternQuantizer(
+                INT8_PER_TENSOR_CONFIG,
+                node_finder=GlobalNodeFinder(),
+                pattern_matcher=pattern_matcher,
             ),
-            OperatorConfigQuantizer(
-                INT8_SOFTMAX_OPERATOR_CONFIG,
-                filter_fn=self.softmax_memory_format_filter,
-            ),
-            InputQuantizer(INT8_PER_TENSOR_CONFIG),
-            OutputQuantizer(INT8_PER_TENSOR_CONFIG),
             SharedQspecQuantizer(),
         ]
         super().__init__(quantizers)
+
+    def annotate(self, model):
+        reporter = QuantizerReporter(self.quantizers)
+        model = super().annotate(model)
+        reporter.log_quantizer_report(model)
+        return model
 
     def validate(self, model: GraphModule) -> bool:
         return True
@@ -185,75 +115,41 @@ class CortexMQuantizer(ComposableQuantizer):
         return pass_manager.transform_for_annotation(model)
 
 
-class OperatorConfigQuantizer(Quantizer):
+class PatternQuantizer(Quantizer, QuantizerReporterUser):
     """
     Quantizes a graph according to an OperatorConfig.
 
     Args:
-        operator_config (OperatorConfig): The operator config to use for quantization.
-        filter_fn (Callable): Negative filter function. If it returns True on any node in the pattern, the pattern is
-                              skipped. Used to match for example particular targets or modules.
+        quantization_config (QuantizationConfig): The quantization config to use for annotation.
+        node_finder (NodeFinder): The node finder to use for finding nodes to match patterns.
+        pattern_matcher (PatternMatcher): The pattern matcher to use for finding patterns in the nodes.
     """
 
     def __init__(
         self,
-        operator_config: QuantizationConfig,
-        filter_fn: Callable[[Node], bool] = lambda node: False,
+        quantization_config: QuantizationConfig,
+        node_finder: NodeFinder,
+        pattern_matcher: PatternMatcher,
     ) -> None:
-        self.operator_config = operator_config
-        self.filter_fn = filter_fn
+        super().__init__()
+        self.quantization_config: QuantizationConfig = quantization_config
+        self.node_finder: NodeFinder = node_finder
+        self.pattern_matcher: PatternMatcher = pattern_matcher
 
-    def check_node(self, node: Optional[Node], target: str) -> bool:
-        """
-        Return true if the node is a valid match for the given target.
-        """
-        if node is None:
-            return False
-        if not node.target == target:
-            return False
-        if node.meta.get("quantizer_matched", False):
-            return False
-        if self.filter_fn(node):
-            return False
+    def get_quantizer_info(self):
+        name = self.__class__.__name__
+        targeted_nodes_description = str(self.node_finder)
+        quantization_config_path = SUPPORTED_QCONFIGS.get(
+            self.quantization_config, "CUSTOM_QCONFIG"
+        )
+        support_config_path = self.pattern_matcher.support_dict_name
 
-        return True
-
-    def check_pattern(
-        self, node: Optional[Node], pattern: List[OpOverload]
-    ) -> Optional[List[Node]]:
-        """
-        Returns the matched nodes if the given node matches the given pattern, otherwise None.
-        """
-        match: List[Node] = []
-
-        for pattern_target in pattern:
-            if self.check_node(node, pattern_target):
-                match.append(node)
-                node = list(node.users)[0] if len(node.users) > 0 else None
-            else:
-                return None
-
-        return match
-
-    def match_patterns(
-        self, model: GraphModule, patterns: List[List[str]]
-    ) -> List[List[Node]]:
-        """
-        Match all given patterns in the graph and return list of matches.
-        Each node can only be part of one match, larger patterns are prioritized.
-        Currently only linear patterns (single chain) are supported.
-        """
-        patterns.sort(key=len, reverse=True)
-        matches: List[List[Node]] = []
-        for pattern in patterns:
-            for node in model.graph.nodes:
-                potential_match = self.check_pattern(node, pattern)
-                if potential_match:
-                    matches.append(potential_match)
-                    for node in potential_match:
-                        node.meta["quantizer_matched"] = True
-
-        return matches
+        return QuantizerInfo(
+            name,
+            targeted_nodes_description,
+            quantization_config_path,
+            support_config_path,
+        )
 
     def is_parameter(self, node: Node, model: GraphModule) -> bool:
         """Returns True if the given node is a parameter of the model."""
@@ -272,7 +168,7 @@ class OperatorConfigQuantizer(Quantizer):
         return len(params) == 2 and node == params[1]
 
     def annotate_match(
-        self, match: List[Node], config: QuantizationConfig, model: GraphModule
+        self, match: List[Node], config: QuantizationConfig | None, model: GraphModule
     ) -> None:
         """
         Annotates a matched pattern according to the given quantization config. The
@@ -296,84 +192,50 @@ class OperatorConfigQuantizer(Quantizer):
             ), f"{self.__class__.__name__} expected 0 params, 1 params (weight) or 2 params (weight, bias), but got {len(params)} for node {node}."
 
             for input_node in node.all_input_nodes:
+                # Observers only work on floating point tensors, so make sure to skip other dtypes
+                if not has_float_output(input_node):
+                    continue
                 if self.is_weight(input_node, params, model):
-                    input_qspec_map[input_node] = config.weight if config else None
+                    input_qspec_map[input_node] = (
+                        config.get_weight_qspec(node) if config else None
+                    )
                 elif self.is_bias(input_node, params, model):
                     # Bias qspec is derived from input + weight qspecs
-                    input_qspec_map[input_node] = config.bias(node) if config else None
+                    input_qspec_map[input_node] = (
+                        config.get_bias_qspec(node) if config else None
+                    )
                 elif input_node not in match:
                     input_qspec_map[input_node] = (
-                        config.input_activation if config else None
+                        config.get_input_act_qspec() if config else None
                     )
 
             if all(node not in match for node in node.users) and output_qspec is None:
-                output_qspec = config.output_activation if config else None
+                output_qspec = config.get_output_act_qspec(node) if config else None
 
-            mark_node_as_annotated(node, input_qspec_map, output_qspec)
-
-    def annotate(self, model: GraphModule) -> None:
-        matches = self.match_patterns(model, self.operator_config.operators)
-        for match in matches:
-            self.annotate_match(match, self.operator_config.config, model)
-
-    def validate(self, model: GraphModule) -> bool:
-        return True
-
-
-class InputQuantizer(Quantizer):
-    """
-    Quantizes only the input activations of the graph.
-    """
-
-    def __init__(
-        self,
-        quantization_config: QuantizationConfig,
-        filter_fn: Callable[[Node], bool] = lambda node: False,
-    ) -> None:
-        self.quantization_config = quantization_config
-        self.filter_fn = filter_fn
+            mark_node_as_annotated(
+                node, input_qspec_map, output_qspec, self.reporter, self
+            )
 
     def annotate(self, model: GraphModule) -> None:
-        for node in model.graph.nodes:
-            is_placeholder = node.op == "placeholder"
-            is_filtered = self.filter_fn(node)
-            if is_placeholder and not is_filtered:
-                mark_node_as_annotated(
-                    node, {}, self.quantization_config.output_activation
+        nodes = self.node_finder.find_nodes(model)
+        matches = self.pattern_matcher.find_pattern_matches(
+            nodes, self.quantization_config
+        )
+        for result in matches:
+            if result.accepted:
+                self.annotate_match(result.pattern, self.quantization_config, model)
+                self.report_accept(result.pattern)
+            else:
+                self.report_reject(
+                    result.pattern,
+                    result.message or "Pattern rejected.",
                 )
 
     def validate(self, model: GraphModule) -> bool:
         return True
 
 
-class OutputQuantizer(Quantizer):
-    """
-    Quantizes only the output activations of the graph.
-    """
-
-    def __init__(
-        self,
-        quantization_config: QuantizationConfig,
-        filter_fn: Callable[[Node], bool] = lambda node: False,
-    ) -> None:
-        self.quantization_config = quantization_config
-        self.filter_fn = filter_fn
-
-    def annotate(self, model: GraphModule) -> None:
-        output_node = model.graph.output_node()
-        input_qspec_map = {
-            n: self.quantization_config.input_activation
-            for n in output_node.all_input_nodes
-            if not self.filter_fn(n)
-        }
-        output_qspec = self.quantization_config.output_activation
-        mark_node_as_annotated(output_node, input_qspec_map, output_qspec)
-
-    def validate(self, model: GraphModule) -> bool:
-        return True
-
-
-class SharedQspecQuantizer(Quantizer):
+class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
     """
     Special quantizer for assuring that given ops share the same quantization parameters on all input and outputs,
     i.e. ops which does not change the scale such as clone, min/max, transposes and so on.
@@ -391,7 +253,6 @@ class SharedQspecQuantizer(Quantizer):
         # Min/Max/Mean
         torch.ops.aten.minimum.default,
         torch.ops.aten.maximum.default,
-        torch.ops.aten.avg_pool2d.default,
         # Data shuffling
         torch.ops.aten.permute.default,
         torch.ops.aten.permute_copy.default,
@@ -415,6 +276,9 @@ class SharedQspecQuantizer(Quantizer):
         torch.ops.aten._unsafe_view.default,
         torch.ops.aten.unflatten.int,
         torch.ops.aten.flatten.using_ints,
+        # Padding
+        torch.ops.aten.pad.default,
+        torch.ops.aten.constant_pad_nd.default,
     ]
 
     def __init__(self, targets: Optional[List[OpOverload]] = None) -> None:
@@ -424,8 +288,68 @@ class SharedQspecQuantizer(Quantizer):
         else:
             self.targets = targets
 
+    def get_quantizer_info(self):
+        name = self.__class__.__name__
+        targeted_nodes_description = ""
+        quantization_config_path = "SHARED_QCONFIG"
+        support_config_path = (
+            __name__ + f".{self.__class__.__name__}.SHARED_QSPEC_OPS_DEFAULT"
+        )
+        return QuantizerInfo(
+            name,
+            targeted_nodes_description,
+            quantization_config_path,
+            support_config_path,
+        )
+
     def _is_annotated(self, node: Node) -> bool:
         return Q_ANNOTATION_KEY in node.meta
+
+    def _get_input_nodes_with_float_output(self, node: Node) -> List[Node]:
+        # Observers only work on floating point tensors, so make sure to skip other dtypes
+        return [n for n in node.all_input_nodes if has_float_output(n)]
+
+    def _get_user_nodes_with_float_input(self, node: Node) -> List[Node]:
+        # Observers only work on floating point tensors, so make sure to skip other dtypes
+        return [n for n in node.users.keys() if has_float_output(node)]
+
+    def _get_shared_clique(self, root_node: Node) -> set[Node]:
+        """
+        Finds a cluster of nodes with targets in self.targets, starting in root_node.
+        """
+        shared_nodes = set()
+        bfs_queue = [root_node]
+        adjacent_qspecs = set()
+
+        while bfs_queue:
+            node = bfs_queue.pop(0)
+            shared_nodes.add(node)
+
+            # Neighbours may either be other shared nodes, annotated nodes, or non-annotated (float) nodes.
+            for input_node in self._get_input_nodes_with_float_output(node):
+                if input_node.target in self.targets and input_node not in shared_nodes:
+                    if not self._is_annotated(input_node):
+                        bfs_queue.append(input_node)
+                if self._is_annotated(input_node):
+                    output_qspec = input_node.meta.get(
+                        Q_ANNOTATION_KEY, None
+                    ).output_qspec
+                    adjacent_qspecs.add(output_qspec)
+
+            for output_node in self._get_user_nodes_with_float_input(node):
+                if (
+                    output_node.target in self.targets
+                    and output_node not in shared_nodes
+                ):
+                    if not self._is_annotated(output_node):
+                        bfs_queue.append(output_node)
+                if self._is_annotated(output_node):
+                    input_qspec = output_node.meta.get(
+                        Q_ANNOTATION_KEY, None
+                    ).input_qspec_map[node]
+                    adjacent_qspecs.add(input_qspec)
+
+        return shared_nodes, adjacent_qspecs
 
     def _annotate_shared_cluster(self, root_node: Node) -> None:
         """
@@ -433,66 +357,62 @@ class SharedQspecQuantizer(Quantizer):
         SharedQuantizationSpec.
         """
 
-        shared_nodes = set()
-        leaf_nodes = set()
-        bfs_queue = [root_node]
-
-        while bfs_queue:
-            node = bfs_queue.pop(0)
-
-            if self._is_annotated(node):
-                leaf_nodes.add(node)
-                continue
-            if node.op == "get_attr":
-                continue
-
-            if node.target not in self.targets:
-                raise NotImplementedError(
-                    (
-                        f"{SharedQspecQuantizer.__name__} found unannoted node '{node.name}' in neighbour_nodes "
-                        "which is not in the supported target list. This might be the case either because:\n"
-                        "1) The op should have shared qspec but is not in the target list. "
-                        "In this case, try modifying the list using the targets field in the initializer.\n"
-                        "2) The op should not be quantized, which is not currently supported by the SharedQspecQuantizer."
-                    )
-                )
-
-            shared_nodes.add(node)
-            neighbour_nodes = list(node.all_input_nodes) + list(node.users)
-            for n in neighbour_nodes:
-                if n not in shared_nodes:
-                    bfs_queue.append(n)
+        shared_nodes, adjacent_qspecs = self._get_shared_clique(root_node)
+        node_order = {node: index for index, node in enumerate(root_node.graph.nodes)}
+        ordered_nodes = sorted(shared_nodes, key=lambda node: node_order.get(node, 0))
 
         # The selection of root node for the shared_qspec is important for
         # torchao.quantization.pt2e.prepare._create_obs_or_fq_from_qspec:
         # 1. For regular QuantizationSpecs, it creates a new observer
         # 2. For SharedQuantizationSpecs, it returns the observer created for it's root node
         # 3. It handles nodes in the order they appear in graph.nodes
-        # This means that the root node of the shared group needs to be the first annotated node that appears in graph.nodes.
-        shared_root_node = next(n for n in root_node.graph.nodes if n in leaf_nodes)
-        shared_qspec = SharedQuantizationSpec(shared_root_node)
+        # This means that we need to make sure that the root node of the shared_qspec
+        # has an input node with a quantization spec, so that an observer is created.
 
-        for node in shared_nodes:
-            input_qspec_map: dict[Node, Optional[QuantizationSpec]] = {
-                n: shared_qspec for n in node.all_input_nodes
-            }
-            mark_node_as_annotated(node, input_qspec_map, shared_qspec)
+        if len(adjacent_qspecs) == 1:
+            root_node_first_input = self._get_input_nodes_with_float_output(root_node)[
+                0
+            ]
+
+            # Make all nodes share qspec with the root node's first input
+            shared_qspec = SharedQuantizationSpec((root_node_first_input, root_node))
+            for node in shared_nodes:
+                input_qspec_map: dict[Node, Optional[QuantizationSpec]] = {
+                    n: shared_qspec
+                    for n in self._get_input_nodes_with_float_output(node)
+                }
+                if len(self._get_user_nodes_with_float_input(node)) == 0:
+                    output_qspec = None
+                else:
+                    output_qspec = shared_qspec
+                mark_node_as_annotated(
+                    node, input_qspec_map, output_qspec, self.reporter, self
+                )
+
+            # Force the root qspec to be the adjacent spec
+            root_node.meta[Q_ANNOTATION_KEY].input_qspec_map[
+                root_node_first_input
+            ] = adjacent_qspecs.pop()
+            self.report_accept(ordered_nodes)
+
+        elif len(adjacent_qspecs) == 0:
+            self.report_reject(
+                ordered_nodes,
+                "Couldn't find any adjacent quantization spec to base shared quantization spec on.",
+            )
+            return
+        else:
+            self.report_reject(
+                ordered_nodes,
+                "Found multiple adjacent quantization specs to base shared quantization spec on.",
+            )
+            return
 
     def annotate(self, model: GraphModule) -> None:
         """
-        Annotate shared quantization spec for supported ops, but skip avg_pool2d
-        when both ceil_mode and count_include_pad are True.
+        Annotate shared quantization spec for supported ops.
         """
         for node in model.graph.nodes:
-            # TODO Skip avg_pool2d when ceil_mode=True or count_include_pad=True
-            # CMSIS-NN doesn't directly support this. But, it should be done.
-            if node.target is torch.ops.aten.avg_pool2d.default:
-                ceil_mode = cast(bool, node.args[4]) if len(node.args) > 4 else False
-                count_include_pad = (
-                    cast(bool, node.args[5]) if len(node.args) > 5 else True
-                )
-                if ceil_mode or count_include_pad:
-                    continue
             if node.target in self.targets and not self._is_annotated(node):
                 self._annotate_shared_cluster(node)
 

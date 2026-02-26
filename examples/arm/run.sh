@@ -2,7 +2,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -46,6 +46,7 @@ perf_overlay=false
 visualize_tosa=false
 visualize_pte=false
 model_converter=false
+specify_ethosu_scratch=false
 
 function help() {
     echo "Usage: $(basename $0) [options]"
@@ -73,6 +74,7 @@ function help() {
     echo "  --config=<FILEPATH>                    Ethos-U: System configuration file that specifies system configurations (vela.ini)"
     echo "  --memory_mode=<MODE>                   Ethos-U: Memory mode to select from the Vela configuration file (see vela.ini), e.g. Shared_Sram/Sram_Only. Default: 'Shared_Sram' for Ethos-U55 targets, 'Sram_Only' for Ethos-U85 targets"
     echo "  --pte_placement=<elf|ADDR>             Ethos-U: Control if runtime has PTE baked into the elf or if its placed in memory outside of the elf, defaults to ${pte_placement}"
+    echo "  --specify_ethosu_scratch               Use actual Ethos-U scratch size for given model to size temp allocator"
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
     echo "  --scratch-dir=<FOLDER>                 Path to your Arm scrach dir if you not using default ${arm_scratch_dir}"
     echo "  --qdq_fusion_op                        Enable QDQ fusion op"
@@ -106,6 +108,7 @@ for arg in "$@"; do
       --config=*) config="${arg#*=}";;
       --memory_mode=*) memory_mode="${arg#*=}";;
       --pte_placement=*) pte_placement="${arg#*=}";;
+      --specify_ethosu_scratch) specify_ethosu_scratch=true ;;
       --et_build_root=*) et_build_root="${arg#*=}";;
       --scratch-dir=*) arm_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
       --qdq_fusion_op) qdq_fusion_op=true;;
@@ -212,7 +215,6 @@ function check_setup () {
 
         [[ -f ${et_root_dir}/CMakeLists.txt ]] \
             || { echo "Executorch repo doesn't contain CMakeLists.txt file at root level"; return 1; }
-        
 
     backends/arm/scripts/build_executorch.sh --et_build_root="${et_build_root}" --build_type=$build_type $devtools_flag $et_dump_flag --toolchain="${toolchain}"
     elif [[ ${target} =~ "vgf" ]]; then
@@ -225,21 +227,36 @@ function check_setup () {
     return 0
 }
 
+function get_ethosu_scratch_size() {
+    local pte_path="$1"
+    python3 - "$pte_path" <<'PY'
+from executorch.backends.arm.scripts.get_ethosu_scratch_from_pte import (
+    get_scratch_from_pte,
+)
+import sys
+
+size = get_scratch_from_pte(sys.argv[1])
+if size is None:
+    sys.exit(2)
+print(size)
+PY
+}
+
 #######
 ### Main
 #######
 if ! check_setup; then
     if [ "$scratch_dir_set" = false ] ; then
-	# check setup failed, no scratchdir given as parameter. trying to run setup.sh
-	if ${script_dir}/setup.sh; then
-	    # and recheck setup. If this fails exit.
-	    if ! check_setup; then
-		exit 1
-	    fi
-	else
-	    # setup.sh failed, it should print why
-	    exit 1
-	fi
+        # check setup failed, no scratchdir given as parameter. trying to run setup.sh
+        if ${script_dir}/setup.sh; then
+            # and recheck setup. If this fails exit.
+            if ! check_setup; then
+                exit 1
+            fi
+        else
+            # setup.sh failed, it should print why
+            exit 1
+        fi
     fi
 fi
 
@@ -352,6 +369,15 @@ for i in "${!test_model[@]}"; do
             pte_file_or_mem="${pte_placement}"
             model_data="--data=${pte_file}@${pte_placement}"
             elf_file="${et_build_root}/${target}_${pte_placement}/cmake-out/arm_executor_runner"
+        fi
+
+        if [ "$specify_ethosu_scratch" = true ] && [[ ${target} =~ "ethos-u" ]]; then
+            scratch_size=$(get_ethosu_scratch_size "$pte_file")
+            if [ "$?" -eq 0 ] && [ -n "$scratch_size" ]; then
+                extra_build_flags="${extra_build_flags} -DET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=${scratch_size}"
+            else
+                echo "WARNING: Failed to derive Ethos-U scratch size from ${pte_file}" >&2
+            fi
         fi
 
         set -x

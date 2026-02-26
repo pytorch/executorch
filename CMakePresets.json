@@ -167,7 +167,8 @@
         "llm-release"
       ],
       "cacheVariables": {
-        "EXECUTORCH_BUILD_METAL": "ON"
+        "EXECUTORCH_BUILD_METAL": "ON",
+        "EXECUTORCH_METAL_COLLECT_STATS": "OFF"
       },
       "condition": {
         "lhs": "${hostSystemName}",
@@ -196,9 +197,9 @@
         "EXECUTORCH_BUILD_CUDA": "ON"
       },
       "condition": {
-        "lhs": "${hostSystemName}",
-        "type": "equals",
-        "rhs": "Linux"
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Windows"]
       }
     },
     {
@@ -209,6 +210,26 @@
       ],
       "cacheVariables": {
         "EXECUTORCH_BUILD_METAL": "ON"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "llm-metal-stats",
+      "displayName": "LLM Metal build with stats collection and logging",
+      "inherits": [
+        "llm-release-metal"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL": "ON",
+        "EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL": "ON",
+        "EXECUTORCH_BUILD_EXECUTOR_RUNNER": "ON",
+        "EXECUTORCH_METAL_COLLECT_STATS": "ON",
+        "EXECUTORCH_ENABLE_LOGGING": "ON",
+        "EXECUTORCH_LOG_LEVEL": "Info"
       },
       "condition": {
         "lhs": "${hostSystemName}",
@@ -264,6 +285,20 @@
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/arm_baremetal.cmake",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake"
       }
+    },
+    {
+      "name": "arm-ethosu-linux",
+      "displayName": "Build ExecuTorch for Arm Ethos-U Linux",
+      "inherits": ["common"],
+      "description": "musl declares __assert_fail with int for line; avoid NDEBUG forward-decl mismatch in Release builds",
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_ARM_ETHOSU_LINUX": "ON",
+        "EXECUTORCH_BUILD_EXECUTOR_RUNNER": "ON",
+        "EXECUTORCH_BUILD_KERNELS_QUANTIZED": "ON",
+        "CMAKE_C_FLAGS_RELEASE": "-UNDEBUG",
+        "CMAKE_CXX_FLAGS_RELEASE": "-UNDEBUG",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/arm/ethos-u-setup/aarch64-linux-musl-toolchain.cmake"
+      }
     }
   ],
   "buildPresets": [
@@ -271,6 +306,7 @@
       "name": "llm-release-install",
       "displayName": "Build and install LLM extension release artifacts",
       "configurePreset": "llm-release",
+      "configuration": "Release",
       "targets": [
         "install"
       ],
@@ -280,6 +316,7 @@
       "name": "llm-release-cuda-install",
       "displayName": "Build and install LLM extension release artifacts (CUDA)",
       "configurePreset": "llm-release-cuda",
+      "configuration": "Release",
       "targets": [
         "install"
       ],
@@ -289,6 +326,7 @@
       "name": "llm-release-metal-install",
       "displayName": "Build and install LLM extension release artifacts (Metal)",
       "configurePreset": "llm-release-metal",
+      "configuration": "Release",
       "targets": [
         "install"
       ],
@@ -316,6 +354,15 @@
       "name": "llm-debug-metal-install",
       "displayName": "Build and install LLM extension debug artifacts (Metal)",
       "configurePreset": "llm-debug-metal",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "llm-metal-stats-install",
+      "displayName": "Build and install LLM extension artifacts with Metal stats",
+      "configurePreset": "llm-metal-stats",
       "targets": [
         "install"
       ],
@@ -404,6 +451,20 @@
         {
           "type": "build",
           "name": "llm-debug-metal-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-metal-stats",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with Metal stats and logging",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-metal-stats"
+        },
+        {
+          "type": "build",
+          "name": "llm-metal-stats-install"
         }
       ]
     }

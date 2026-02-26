@@ -49,7 +49,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
 
 from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_config import (
     InternVL3Encoder,
-    LateFusionModalityConfig,
+    MultiModalityConfig,
     SmolVLMEncoder,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
@@ -183,12 +183,12 @@ SUPPORTED_LLM_MODELS: Dict[str, LLMModelConfig] = {}
 
 def register_llm_model(
     name: str,
-    vision_encoder: Optional[LateFusionModalityConfig] = None,
+    vision_encoder: Optional[MultiModalityConfig] = None,
 ):
     def decorator(cls: Type[LLMModelConfig]):
         cls.decoder_model_version = DECODER_MODEL_VERSION[name]
         if vision_encoder is not None and issubclass(
-            vision_encoder, LateFusionModalityConfig
+            vision_encoder, MultiModalityConfig
         ):
             setattr(cls, VISION_ENCODER, vision_encoder)
         SUPPORTED_LLM_MODELS[name.lower()] = cls()

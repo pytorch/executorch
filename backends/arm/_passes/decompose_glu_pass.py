@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -20,7 +20,9 @@ aten_glu = torch.ops.aten.glu.default
 
 
 def get_ops(op):
-    """Returns the appropriate operator functions based on the input operator."""
+    """Returns the appropriate operator functions based on the input
+    operator.
+    """
     if op == edge_glu:
         return (
             exir_ops.edge.aten.mul.Tensor,

@@ -4,6 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# decode qdq file name
+DECODE_QDQ_FILENAME = "decode_qdq.pt2"
+
+# eval methods
+PROMPT_EVAL = "prompt_eval"
+TASKS_EVAL = "tasks_eval"
+SQNR_EVAL = "sqnr_eval"
+
 # filenames for vision model
 VISION_ENCODER_INPUT_FILENAME = "vision_encoder_input"
 
@@ -14,6 +22,7 @@ VISION_ENCODER = "vision_encoder"
 TEXT_ENCODER = "text_encoder"
 TEXT_EMBEDDING = "text_embedding"
 TEXT_DECODER = "text_decoder"
+ATTENTION_SINK_EVICTOR = "attention_sink_evictor"
 
 # Text embedding graph names
 TEXT_EMBEDDING_GRAPH_NAMES = [

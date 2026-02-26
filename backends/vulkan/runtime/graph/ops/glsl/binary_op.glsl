@@ -6,12 +6,16 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#version 450 core
-
-#define PRECISION ${PRECISION}
-
 // Binary comparison ops require that the output is boolean and not the same as input.
 $IS_COMPARISON_OP = (any([name in VARIANT_NAME for name in ["binary_eq",  "binary_lt", "binary_le", "binary_gt", "binary_ge"]]))
+
+#version 450 core
+
+${define_required_extensions(STORAGE, DTYPE)}
+$if IS_COMPARISON_OP:
+  ${define_required_extensions(STORAGE, "uint8")}
+
+#define PRECISION ${PRECISION}
 
 #define NAME ${VARIANT_NAME}
 
@@ -26,11 +30,6 @@ $else:
 #define op(X, Y, A) ${OPERATOR}
 
 ${define_active_storage_type(STORAGE)}
-${define_required_extensions(DTYPE)}
-
-
-$if IS_COMPARISON_OP:
-  ${define_required_extensions("uint8")}
 
 layout(std430) buffer;
 

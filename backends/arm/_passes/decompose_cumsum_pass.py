@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -20,8 +20,7 @@ from torch.export.graph_signature import InputKind
 
 
 class DecomposeCumsumPass(ArmPass):
-    """
-    Decomposes cumsum into a 1D convolution with a kernel of ones.
+    """Decomposes cumsum into a 1D convolution with a kernel of ones.
 
     For example, the cumsum of an input tensor [1, 1] is [1, 1 + 1] = [1, 2].
     To decompose this, take the input tensor and pre-padded with len(input)-1 zeros and
@@ -40,6 +39,7 @@ class DecomposeCumsumPass(ArmPass):
        H = <cumsum dim>
        W = <dims after cumsum dim>
     And the convolution is applied over dimension H.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {RewriteConvPass}

@@ -77,7 +77,7 @@ Quantization can also be done at this stage to reduce model size and runtime. Qu
 
 After successfully generating a .pte file, it is common to use the Python runtime APIs to validate the model on the development platform. This can be used to evaluate model accuracy before running on-device.
 
-For the MobileNet V2 model from torchvision used in this example, image inputs are expected as a normalized, float32 tensor with a dimensions of (batch, channels, height, width). The output is a tensor containing class logits. See [torchvision.models.mobilenet_v2](https://pytorch.org/vision/main/models/generated/torchvision.models.mobilenet_v2.html) for more information on the input and output tensor format for this model.
+For the MobileNet V2 model from torchvision used in this example, image inputs are expected as a normalized, float32 tensor with dimensions of (batch, channels, height, width). The output is a tensor containing class logits. See [torchvision.models.mobilenet_v2](https://pytorch.org/vision/main/models/generated/torchvision.models.mobilenet_v2.html) for more information on the input and output tensor format for this model.
 
 ```python
 import torch
@@ -104,7 +104,7 @@ print(torch.allclose(output[0], eager_reference_output, rtol=1e-3, atol=1e-5))
 
 For complete examples of exporting and running the model, please refer to our [examples GitHub repository](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2/python).
 
-Additionally, for Hugging Face models, the [*huggingface/bptimum-executorch*](https://github.com/huggingface/optimum-executorch) library simplifies running these models end-to-end with ExecuTorch using familiar Hugging Face APIs. Visit the repository for specific examples and supported models.
+Additionally, for Hugging Face models, the [*huggingface/optimum-executorch*](https://github.com/huggingface/optimum-executorch) library simplifies running these models end-to-end with ExecuTorch using familiar Hugging Face APIs. Visit the repository for specific examples and supported models.
 
 <hr/>
 
@@ -156,7 +156,7 @@ For a full example of running a model on Android, see the [DeepLabV3AndroidDemo]
 ### iOS
 
 #### Installation
-ExecuTorch supports both iOS and MacOS via C++, as well as hardware backends for CoreML, MPS, and CPU. The iOS runtime library is provided as a collection of .xcframework targets and are made available as a Swift PM package.
+ExecuTorch supports both iOS and macOS via C++, as well as hardware backends for CoreML, MPS, and CPU. The iOS runtime library is provided as a collection of .xcframework targets and are made available as a Swift PM package.
 
 To get started with Xcode, go to File > Add Package Dependencies. Paste the URL of the ExecuTorch repo into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format “swiftpm-”, (e.g. “swiftpm-0.6.0”).  The ExecuTorch dependency can also be added to the package file manually. See [Using ExecuTorch on iOS](using-executorch-ios.md) for more information.
 
@@ -223,7 +223,7 @@ if (result.ok()) {
 
 For more information on the C++ APIs, see [Running an ExecuTorch Model Using the Module Extension in C++](extension-module.md) and [Managing Tensor Memory in C++](extension-tensor.md).
 
-For complete examples of building and running C++ application, please refer to our [examples GitHub repository](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2/cpp).
+For complete examples of building and running C++ applications, please refer to our [examples GitHub repository](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2/cpp).
 
 <hr/>
 

@@ -33,8 +33,14 @@ list(TRANSFORM _extension_llm_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
 add_library(extension_llm_runner STATIC ${_extension_llm_runner__srcs})
 
+# include sampler
+add_subdirectory(
+  ${EXECUTORCH_ROOT}/extension/llm/sampler
+  ${CMAKE_CURRENT_BINARY_DIR}/../sampler
+)
+
 set(runner_deps executorch_core extension_module extension_tensor
-                tokenizers::tokenizers
+                extension_llm_sampler tokenizers::tokenizers
 )
 
 # depend on arange_utils
@@ -87,13 +93,6 @@ install(
   FILES_MATCHING
   PATTERN "*.h"
 )
-# TODO: remove this once we create a proper CMake setup for sampler.
-install(
-  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../sampler/
-  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/llm/sampler
-  FILES_MATCHING
-  PATTERN "*.h"
-)
 
 if(BUILD_TESTING)
   add_subdirectory(test)
@@ -116,12 +115,12 @@ if(EXECUTORCH_BUILD_PYBIND)
                         portable_lib ${TORCH_PYTHON_LIBRARY} ${TORCH_LIBRARIES}
   )
 
-  # Set properties for the Python extension
   set_target_properties(
     _llm_runner
     PROPERTIES POSITION_INDEPENDENT_CODE ON
                CXX_VISIBILITY_PRESET "hidden"
                INTERPROCEDURAL_OPTIMIZATION TRUE
+               CXX_STANDARD 20
   )
   if(APPLE)
     set(RPATH "@loader_path/../../pybindings")

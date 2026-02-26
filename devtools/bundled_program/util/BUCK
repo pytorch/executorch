@@ -1,4 +1,23 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
 # add this empty BUCK file to unblock landing. Without this, we get land error:
 #   "No build file at xplat/executorch/devtools/bundled_program/util/BUCK when resolving target fbsource//xplat/executorch/devtools/bundled_program/util/BUCK:."
 
-oncall("executorch")
+
+# !!!! fbcode/executorch/devtools/bundled_program/util/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+
+fbcode_target(_kind = runtime.python_library,
+    name = "test_util",
+    srcs = [
+        "test_util.py",
+    ],
+    visibility = ["//executorch/devtools/bundled_program/..."],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/exir:lib",
+    ],
+)

@@ -394,18 +394,11 @@ class TagMemoryMetaPass(ExportPass):
         op_repsets.try_constrain_with_out_repset(out_respset)
 
     def constrain_op_repsets(self, op_repsets: utils.OpRepSets) -> None:
-        # For most ops, constraining the argument repsets will also contrain the output
-        # repset due to OpRepSets maintaining synchronization rules.
         for i in range(len(op_repsets.op_node.args)):
             if utils.is_tensor_arg_node(op_repsets.op_node.args[i]):
                 self.constrain_op_arg_repset(i, op_repsets)
 
-        # However, some operators do not sync input and output representations and also
-        # define ambiguous repsets for the output tensor(s). In those cases we will need
-        # to execute additional logic to constrain the output repsets separately from
-        # the input repsets.
-        if not op_repsets.sync_primary_io_repr and op_repsets.sync_outs_repr:
-            self.constrain_op_out_repset(op_repsets)
+        self.constrain_op_out_repset(op_repsets)
 
     def set_op_node_tensor_reprs(
         self, graph_module: torch.fx.GraphModule, op_node: torch.fx.Node

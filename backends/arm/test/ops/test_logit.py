@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -52,13 +52,18 @@ def test_logit_tosa_FP(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize(
+    "test_data", test_data_suite, xfails={"uniform_valid": "Numerical error in TFA"}
+)
 def test_logit_tosa_INT(test_data: Tuple):
     pipeline = TosaPipelineINT[input_t1](
         Logit(),
         (*test_data,),
         aten_op=[],
         exir_op=exir_op,
+        # Quantization issues when logit(x) -> inf
+        frobenius_threshold=1.0,
+        cosine_threshold=0.8,
     )
     pipeline.run()
 

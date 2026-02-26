@@ -19,6 +19,11 @@ export TMP_DIR=$(mktemp -d)
 export PATH="${TMP_DIR}:$PATH"
 trap 'rm -rfv ${TMP_DIR}' EXIT
 
+# Enable sanitizers for Debug builds
+if [[ "$BUILD_MODE" == "Debug" ]]; then
+    export EXECUTORCH_USE_SANITIZER=ON
+fi
+
 # Setup MacOS dependencies as there is no Docker support on MacOS atm
 # We need the runner to test the built library.
 PYTHON_EXECUTABLE=python \

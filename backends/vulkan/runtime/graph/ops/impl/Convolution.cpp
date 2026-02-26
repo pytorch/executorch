@@ -106,7 +106,7 @@ ValueRef prepack_biases(
       {out_channels}, graph.dtype_of(weight), storage_type, memory_layout);
 
   vkapi::ShaderInfo shader =
-      get_nchw_to_tensor_shader(graph, v, graph.dtype_of(weight));
+      get_nchw_to_tensor_shader(graph, v, graph.get_staging_dtype_for(weight));
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
@@ -170,6 +170,10 @@ vkapi::ShaderInfo get_conv2d_shader(
     kernel_name += "_clamp";
   }
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
+
+  if (prepack_weights) {
+    add_dtype_suffix(kernel_name, graph.get_staging_dtype_for(weight));
+  }
 
   return VK_KERNEL_FROM_STR(kernel_name);
 }

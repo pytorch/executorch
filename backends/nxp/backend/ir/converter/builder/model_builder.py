@@ -7,13 +7,13 @@
 #
 
 from copy import deepcopy
-from itertools import chain
 from typing import List, Optional, Union
 
 import executorch.backends.nxp.backend.ir.converter.conversion.translator as translator
 import executorch.backends.nxp.backend.ir.logger as logger
 import executorch.backends.nxp.backend.ir.tflite_generator.tflite_model as tflite_model
 import numpy as np
+from executorch.backends.nxp.backend.data_format import DataFormat
 from executorch.backends.nxp.backend.edge_helper import is_channels_last_dim_order
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from executorch.backends.nxp.backend.ir.converter.builder import (
@@ -35,7 +35,6 @@ from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import (
 )
 from executorch.backends.nxp.backend.ir.lib.tflite.TensorType import TensorType
 from executorch.backends.nxp.backend.ir.neutron_ir_post_processing import optimizer
-from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     cast_options,
     dequantize_options,
@@ -227,7 +226,7 @@ class ModelBuilder:
         new_tensor.shape = translator.channels_last_shape_to_channels_first(
             t_tensor.shape
         )
-        new_tensor.tensor_format = TensorFormat.CHANNELS_FIRST
+        new_tensor.tensor_format = DataFormat.CHANNELS_FIRST
 
         perm = translator.create_channels_last_to_channels_first_permutation(
             t_tensor.rank
@@ -398,7 +397,7 @@ class ModelBuilder:
                     input_tensor, input_tensor.name + "_channels_first"
                 )
                 new_input.shape = new_input_shape
-                new_input.tensor_format = TensorFormat.CHANNELS_FIRST
+                new_input.tensor_format = DataFormat.CHANNELS_FIRST
 
                 transpose = self._create_transpose_operator(
                     new_input, input_tensor, perm
@@ -484,14 +483,6 @@ class ModelBuilder:
             # It's safe to replace the buffer.
             t.tmp_buffer = empty_buffer
 
-    def replace_io_tensor_format_with_node_format(self):
-        for t in chain(
-            self.get_sub_graph().inputs.tmp_inputs,
-            self.get_sub_graph().outputs.tmp_outputs,
-        ):
-            if isinstance(t.tensor_format, TensorFormat):
-                t.tensor_format = t.tensor_format.to_equal_node_format()
-
     def finish(self) -> tflite_model.Model:
         """Finalize and optimize the converted TFLite model. Then return it.
 
@@ -513,8 +504,6 @@ class ModelBuilder:
         )
 
         self._keep_one_empty_buffer()
-
-        self.replace_io_tensor_format_with_node_format()
 
         # Remove outputs, which are not produced by any node. Otherwise, there would be errors after inference.
         operator_outputs = []
@@ -1584,7 +1573,7 @@ class ModelBuilder:
         transpose_output.shape = tflite_model.Shape(
             translator.apply_permutation_to(transpose_output.shape.vector, perm)
         )
-        transpose_output.tensor_format = TensorFormat.CHANNELS_LAST
+        transpose_output.tensor_format = DataFormat.CHANNELS_LAST
 
         transpose = self._create_transpose_operator(
             transpose_input, transpose_output, perm
