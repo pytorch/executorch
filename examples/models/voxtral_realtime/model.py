@@ -884,47 +884,23 @@ class EncoderRingKVCache(nn.Module):
     def create_causal_mask(
         self, start_pos: torch.Tensor | int, seq_len: int, bool_mask: bool = False
     ) -> torch.Tensor:
-        device = (
-            start_pos.device
-            if isinstance(start_pos, torch.Tensor)
-            else self.k_cache.device
-        )
+        device = self.k_cache.device
         total_written = start_pos + seq_len
         j = torch.arange(self.buf_size, dtype=torch.long, device=device)
         cache_pos = j + ((total_written - 1 - j) // self.buf_size) * self.buf_size
-        pos_q = (
-            start_pos + torch.arange(seq_len, dtype=torch.long, device=device)
-        ).view(-1, 1)
+        q_offsets = torch.arange(seq_len, dtype=torch.long, device=device)
+        pos_q = (start_pos + q_offsets).view(-1, 1)
         delta = pos_q - cache_pos.unsqueeze(0)
         valid = (cache_pos >= 0) & (delta >= 0) & (delta < self.window_size)
         return torch.where(valid, 0.0, float("-inf"))
 
 
-class StandardEncoderRingKVCache(nn.Module):
-    """Export-friendly ring buffer KV cache using index_copy_ for updates.
+class StandardEncoderRingKVCache(EncoderRingKVCache):
+    """EncoderRingKVCache variant that uses index_copy_ instead of
+    torch.ops.llama.update_cache_with_indices for the ring buffer update.
 
-    Compatible with torch.export and AOTI. Uses [B, S, H, D] layout
-    matching the encoder's convention. Ring buffer enables unlimited streaming.
+    Compatible with torch.export and AOTI where the custom llama op is unavailable.
     """
-
-    def __init__(
-        self,
-        window_size: int,
-        n_heads: int,
-        head_dim: int,
-        dtype: torch.dtype = torch.float32,
-        device: torch.device | None = None,
-    ):
-        super().__init__()
-        self.window_size = window_size
-        self.buf_size = window_size * 2
-        cache_shape = (1, self.buf_size, n_heads, head_dim)
-        self.register_buffer(
-            "k_cache", torch.zeros(cache_shape, dtype=dtype, device=device)
-        )
-        self.register_buffer(
-            "v_cache", torch.zeros(cache_shape, dtype=dtype, device=device)
-        )
 
     def update(
         self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
