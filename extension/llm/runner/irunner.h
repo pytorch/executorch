@@ -134,6 +134,25 @@ class ET_EXPERIMENTAL IRunner {
   virtual void stop() = 0;
 
   /**
+   * Prefill the model with the given prompt without generating tokens.
+   *
+   * This populates the KV cache with the prompt tokens, allowing subsequent
+   * generate() calls to continue from the prefilled state. Useful for
+   * reloading chat history.
+   *
+   * @param prompt The text to prefill
+   * @param config Generation configuration (num_bos, num_eos used for
+   * encoding)
+   * @return Error::Ok if successful, Error::NotSupported if the runner does
+   * not support standalone prefill
+   */
+  virtual runtime::Error prefill(
+      const std::string& prompt,
+      const GenerationConfig& config) {
+    return runtime::Error::NotSupported;
+  }
+
+  /**
    * Force remove prefilled tokens and reset KV cache start position
    *
    * This method removes the prefilled tokens from the KV cache and resets the

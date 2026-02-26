@@ -110,7 +110,7 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
    */
   ::executorch::runtime::Error prefill(
       const std::string& prompt,
-      const GenerationConfig& config);
+      const GenerationConfig& config) override;
 
   /**
    * @brief Warms up the model with a sample prompt
