@@ -2,7 +2,7 @@
 
 **ExecuTorch** is PyTorch's unified solution for deploying AI models on-device—from smartphones to microcontrollers—built for privacy, performance, and portability. It powers Meta's on-device AI across **Instagram, WhatsApp, Quest 3, Ray-Ban Meta Smart Glasses**, and [more](https://docs.pytorch.org/executorch/main/success-stories.html).
 
-This folder adds ExecuTorch so it can be build and run in the Zephyr project as a external module. This includes an example under examples/arm/zephyr of running executor runners with Arm&reg; Ethos&trade;-U backend on a Corstone&trade; FVP, targeting the Zephyr RTOS.
+This folder adds ExecuTorch so it can be build and run in the Zephyr project as a external module. This includes an example under zephyr/samples/hello-executorch of running executor runners with Arm&reg; Ethos&trade;-U backend on a Corstone&trade; FVP, targeting the Zephyr RTOS.
 
 # Requirements
 
@@ -113,7 +113,7 @@ export ARMFVP_EXTRA_FLAGS="-C mps3_board.uart0.shutdown_on_eot=1 -C ethosu.num_m
 Prepare the Ethos-U55 PTE model
 <!-- RUN test_ethos-u55_generate_pte -->
 ```
-python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modules/lib/executorch/examples/arm/example_modules/add.py --quantize --delegate -t ethos-u55-128 --output=add_u55_128.pte
+python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --delegate --target=ethos-u55-128 --output=add_u55_128.pte
 ```
 
 `--delegate` tells the aot_arm_compiler to use Ethos-U backend and `-t ethos-u55-128` specify the used Ethos-U variant and numbers of macs used, this must match you hardware or FVP config.
@@ -123,7 +123,7 @@ python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modu
 Run the Ethos-U55 PTE model
 <!-- RUN test_ethos-u55_build_and_run -->
 ```
-west build -b mps3/corstone300/fvp modules/lib/executorch/examples/arm/zephyr -t run -- -DET_PTE_FILE_PATH=add_u55_128.pte
+west build -b mps3/corstone300/fvp modules/lib/executorch/zephyr/samples/hello-executorch -t run -- -DET_PTE_FILE_PATH=add_u55_128.pte
 ```
 
 ### Cortex-M55
@@ -133,7 +133,7 @@ west build -b mps3/corstone300/fvp modules/lib/executorch/examples/arm/zephyr -t
 Prepare the Cortex-M55 PTE model
 <!-- RUN test_cortex-m55_generate_pte -->
 ```
-python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modules/lib/executorch/examples/arm/example_modules/add.py --quantize --target=cortex-m55+int8 --output=add_m55.pte
+python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --target=cortex-m55+int8 --output=add_m55.pte
 ```
 
 `--target=cortex-m55+int8` selects the Cortex-M/CMSIS-NN portable kernel path (no NPU delegation). This produces a `.pte` optimised for Cortex-M55 with INT8 quantisation.
@@ -143,7 +143,7 @@ python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modu
 Run the Cortex-M55 PTE model
 <!-- RUN test_cortex-m55_build_and_run -->
 ```
-west build -b mps3/corstone300/fvp modules/lib/executorch/examples/arm/zephyr -t run -- -DET_PTE_FILE_PATH=add_m55.pte
+west build -b mps3/corstone300/fvp modules/lib/executorch/zephyr/samples/hello-executorch -t run -- -DET_PTE_FILE_PATH=add_m55.pte
 ```
 
 ## Corstone&trade; 320 FVP (Ethos&trade;-U85)
@@ -168,7 +168,7 @@ export ARMFVP_EXTRA_FLAGS="-C mps4_board.uart0.shutdown_on_eot=1 -C mps4_board.s
 Prepare the Ethos-U85 PTE model
 <!-- RUN test_ethos-u85_generate_pte -->
 ```
-python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modules/lib/executorch/examples/arm/example_modules/add.py --quantize --delegate -t ethos-u85-256 --output=add_u85_256.pte
+python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --delegate --target=ethos-u85-256 --output=add_u85_256.pte
 ```
 
 `--delegate` tells the aot_arm_compiler to use Ethos-U backend and `-t ethos-u85-256` specify the used Ethos-U variant and numbers of macs used, this must match you hardware or FVP config.
@@ -178,7 +178,7 @@ python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modu
 Run the Ethos-U85 PTE model
 <!-- RUN test_ethos-u85_build_and_run -->
 ```
-west build -b mps4/corstone320/fvp modules/lib/executorch/examples/arm/zephyr -t run -- -DET_PTE_FILE_PATH=add_u85_256.pte
+west build -b mps4/corstone320/fvp modules/lib/executorch/zephyr/samples/hello-executorch -t run -- -DET_PTE_FILE_PATH=add_u85_256.pte
 ```
 
 ## STM Nucleo n657x0_q
@@ -210,7 +210,7 @@ export PATH=$PATH:~/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin
 
 Prepare the Cortex-M55 PTE model
 ```
-python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modules/lib/executorch/examples/arm/example_modules/add.py --quantize --target=cortex-m55+int8 --output=add_m55.pte
+python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --target=cortex-m55+int8 --output=add_m55.pte
 ```
 
 `--target=cortex-m55+int8` selects the Cortex-M/CMSIS-NN portable kernel path (no NPU delegation).
@@ -219,7 +219,7 @@ python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modu
 
 Run the Cortex-M55 PTE model
 ```
-west build -b nucleo_n657x0_q modules/lib/executorch/examples/arm/zephyr -- -DET_PTE_FILE_PATH=add_m55.pte
+west build -b nucleo_n657x0_q modules/lib/executorch/zephyr/samples/hello-executorch -- -DET_PTE_FILE_PATH=add_m55.pte
 west flash
 ```
 This will run the simple add model on your hardware one and print the output on the serial consol.
