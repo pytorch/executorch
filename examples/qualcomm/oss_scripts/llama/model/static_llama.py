@@ -764,9 +764,7 @@ class LlamaModel(nn.Module):
 
     def get_example_inputs(self):
         dtype = torch.int64 if self.use_i64_token else torch.int32
-        tokens = torch.randint(
-            self.vocab_size, (self.max_batch_size, self.ar_len), dtype=dtype
-        )
+        tokens = torch.ones((self.max_batch_size, self.ar_len), dtype=dtype)
         atten_mask = AttentionMask(
             CausalAttentionMask(self.max_batch_size, self.ar_len, self.max_context_len)
         )
@@ -776,7 +774,7 @@ class LlamaModel(nn.Module):
             for _ in range(self.n_layers):
                 # transpose first to decrease the runtime efforts
                 k_cache.append(
-                    torch.zeros(
+                    torch.ones(
                         self.max_batch_size,
                         self.n_kv_heads,
                         self.head_dim,
@@ -784,7 +782,7 @@ class LlamaModel(nn.Module):
                     )
                 )
                 v_cache.append(
-                    torch.zeros(
+                    torch.ones(
                         self.max_batch_size,
                         self.n_kv_heads,
                         self.max_context_len - self.ar_len,

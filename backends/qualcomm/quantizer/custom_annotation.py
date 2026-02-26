@@ -21,12 +21,11 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Node
-from torchao.quantization.pt2e import FixedQParamsObserver, MinMaxObserver
+from torchao.quantization.pt2e import MinMaxObserver
 from torchao.quantization.pt2e.quantizer import (
     annotate_input_qspec_map,
     annotate_output_qspec,
     QuantizationAnnotation,
-    QuantizationSpec,
     SharedQuantizationSpec,
 )
 
@@ -90,40 +89,6 @@ def annotate_mimi_decoder(gm: torch.fx.GraphModule):
                 _annotated=True,
             )
             break
-
-
-def annotate_prefill_kv_output(gm: torch.fx.GraphModule, kv_quant_attrs: dict):
-    for node in gm.graph.nodes:
-        if node.op == "output":
-            for index, prefill_output in enumerate(node.args[0]):
-                kv_quant_attr = kv_quant_attrs[index]
-                fixed_observer = FixedQParamsObserver.with_args(
-                    scale=kv_quant_attr[0],
-                    zero_point=kv_quant_attr[1],
-                    quant_min=kv_quant_attr[2],
-                    quant_max=kv_quant_attr[3],
-                    dtype=kv_quant_attr[4],
-                    qscheme=torch.torch.per_tensor_affine,
-                )
-
-                fixed_output_spec = QuantizationSpec(
-                    quant_min=kv_quant_attr[2],
-                    quant_max=kv_quant_attr[3],
-                    dtype=kv_quant_attr[4],
-                    ch_axis=0,
-                    observer_or_fake_quant_ctr=fixed_observer,
-                )
-
-                input_qspec_map = {}
-                for input in prefill_output.args:
-                    if isinstance(input, Node):
-                        input_qspec_map[input] = fixed_output_spec
-
-                prefill_output.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
-                    input_qspec_map=input_qspec_map,
-                    output_qspec=fixed_output_spec,
-                    _annotated=True,
-                )
 
 
 def annotate_kv_8bit(  # noqa: C901
