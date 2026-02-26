@@ -28,7 +28,7 @@ def get_test_inputs(dim, lengths, num_examples):
 
 
 class TestConformer:
-    """Tests Torchaudio Conformer"""
+    """Tests Torchaudio Conformer."""
 
     # Adjust nbr below as we increase op support. Note: most of the delegates
     # calls are directly consecutive to each other in the .pte. The reason
