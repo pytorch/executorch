@@ -14,13 +14,17 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/result.h>
 
 namespace executorch {
 namespace extension {
 namespace llm {
+
+class MultimodalInput; // Forward declaration
 
 // Configuration struct for generation parameters, fields should be sorted in
 // alphabetic order
@@ -127,6 +131,22 @@ class ET_EXPERIMENTAL IRunner {
       const GenerationConfig& config,
       std::function<void(const std::string&)> token_callback,
       std::function<void(const Stats&)> stats_callback) = 0;
+
+  /**
+   * Prefill multimodal inputs into the KV cache without generating.
+   *
+   * @param inputs A vector of MultimodalInput objects (text, tokens, images,
+   * audio)
+   * @param num_bos Number of BOS tokens to prepend during encoding
+   * @param num_eos Number of EOS tokens to append during encoding
+   * @return The next token predicted after prefill, or an error
+   */
+  virtual runtime::Result<uint64_t> prefill(
+      const std::vector<MultimodalInput>& inputs,
+      int32_t num_bos = 0,
+      int32_t num_eos = 0) {
+    return runtime::Error::NotSupported;
+  }
 
   /**
    * Stop the generation process.

@@ -66,6 +66,7 @@ class MetalBackend(AotiBackend, BackendDetails):
             "max_autotune": True,
             # "aot_inductor.debug_compile": True,
             # "aot_inductor.force_mmap_weights": False,
+            "padding_stride_threshold": float("inf"),  # avoid padding stride
         }
 
         from torchao.experimental.ops.mps.cshim import torchao_op_c_shim
