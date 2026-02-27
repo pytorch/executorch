@@ -198,12 +198,14 @@ def _load_serialized_model(
 
     return model, example_inputs
 
+
 def _apply_replace_quant_nodes(edge, args):
-    """ Apply the replace_quant_nodes pass to the edge graph module. """
+    """Apply the replace_quant_nodes pass to the edge graph module."""
 
     if args.target != "vgf" and not args.direct_drive:
         edge = edge.transform([ReplaceQuantNodesPass()])
     return edge
+
 
 def get_model_and_inputs_from_name(
     model_name: str, model_input: str | None
