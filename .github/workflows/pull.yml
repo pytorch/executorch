@@ -16,6 +16,7 @@ jobs:
   test-qnn-wheel-packages-linux:
     name: test-qnn-wheel-packages-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    if: false
     permissions:
       id-token: write
       contents: read

@@ -60,6 +60,10 @@ DEFINE_int32(
     80,
     "Mic read chunk size in ms. Multiples of 80 align with the model's "
     "streaming step (80, 160, 320, 640, 960).");
+DEFINE_string(
+    color,
+    "",
+    "Output text color: green or red (default: no color).");
 
 namespace {
 volatile sig_atomic_t g_interrupted = 0;
@@ -105,8 +109,18 @@ int main(int argc, char** argv) {
   stats.num_prompt_tokens = 0;
   bool first_token = true;
 
-  // Set to true for green-colored output.
-  const bool use_color = false;
+  const char* ansi_color = nullptr;
+  if (FLAGS_color == "green") {
+    ansi_color = "\033[32m";
+  } else if (FLAGS_color == "red") {
+    ansi_color = "\033[31m";
+  } else if (!FLAGS_color.empty()) {
+    ET_LOG(
+        Error,
+        "Invalid --color value '%s'. Expected: green, red.",
+        FLAGS_color.c_str());
+    return 1;
+  }
 
   auto token_cb = [&](const std::string& piece) {
     if (first_token) {
@@ -118,11 +132,11 @@ int main(int argc, char** argv) {
       // Uncomment to print special tokens
       // ::executorch::extension::llm::safe_printf(piece.c_str());
     } else {
-      if (use_color) {
-        printf("\033[32m");
+      if (ansi_color) {
+        printf("%s", ansi_color);
       }
       ::executorch::extension::llm::safe_printf(piece.c_str());
-      if (use_color) {
+      if (ansi_color) {
         printf("\033[0m");
       }
     }
