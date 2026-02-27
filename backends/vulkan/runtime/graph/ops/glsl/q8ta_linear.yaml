@@ -11,8 +11,11 @@ q8ta_linear:
     TILE_M4: 1
     TILE_N4: 2
     TILE_K4: 1
+    USE_INT8_DOT_PRODUCT_EXT: 1
   generate_variant_forall:
     DTYPE:
       - VALUE: float
   shader_variants:
     - NAME: q8ta_linear
+    - NAME: q8ta_linear_fallback
+      USE_INT8_DOT_PRODUCT_EXT: 0

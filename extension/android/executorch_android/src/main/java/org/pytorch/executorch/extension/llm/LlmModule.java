@@ -365,7 +365,6 @@ public class LlmModule {
       float temperature,
       int numBos,
       int numEos) {
-    prefillPrompt(prompt);
     if (image != null) {
       prefillImages(image, width, height, channels);
     }

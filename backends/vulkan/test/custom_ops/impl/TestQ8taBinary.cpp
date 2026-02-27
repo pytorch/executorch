@@ -8,9 +8,9 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Int8x4Staging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taBinary.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taQuantizeDequantize.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taStaging.h>
 
 namespace vkcompute {
 
@@ -62,7 +62,7 @@ void q8ta_add_test(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   if (input_b_is_int8) {
     // Input B is a pre-quantized int8 TensorRef; prepack directly into packed
     // int8x4 format
-    add_staging_to_int8x4_buffer_node(graph, input_b, packed_int8_input_b);
+    add_prepack_int8x4_buffer_node(graph, input_b, packed_int8_input_b);
   } else {
     // Input B is a float tensor; quantize at runtime
     add_q8ta_quantize_node(

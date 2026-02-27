@@ -10,9 +10,9 @@ import os
 from typing import Dict
 
 import torch
-from safetensors.torch import load_file
 
-from torchtune.models.convert_weights import get_mapped_key
+from executorch.examples.models.checkpoint import get_mapped_key
+from safetensors.torch import load_file
 
 
 # Weight mappings from Gemma 2's checkpoint to ExecuTorch's transformer parameters.

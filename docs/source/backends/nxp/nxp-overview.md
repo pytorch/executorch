@@ -27,7 +27,7 @@ Among currently supported machine learning models are:
 - eIQ Neutron Converter for MCUXPresso SDK 25.12, what you can download from eIQ PyPI:
 
 ```commandline
-$ pip install --index-url https://eiq.nxp.com/repository neutron_converter_SDK_25_12
+$ pip install --index-url https://eiq.nxp.com/repository eiq_neutron_sdk
 ```
 
 Instead of manually installing requirements, except MCUXpresso IDE and SDK, you can use the setup script: 
