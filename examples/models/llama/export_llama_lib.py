@@ -35,7 +35,6 @@ from executorch.extension.llm.export.config.llm_config import LlmConfig
 from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
     get_ethosu_partitioner,
-    get_mlx_partitioner,
     get_mps_partitioner,
     get_openvino_partitioner,
     get_qnn_partitioner,

@@ -255,27 +255,3 @@ def get_ethosu_partitioner(target: str):
     compile_spec = EthosUCompileSpec(target)
 
     return EthosUPartitioner(compile_spec)
-
-
-def get_mlx_partitioner():
-    """
-    Returns the MLX partitioner for Apple Silicon.
-
-    The MLX partitioner delegates operations to Apple's MLX framework
-    for efficient execution on Apple Silicon (M-series chips).
-
-    Returns:
-        MLXPartitioner: The MLX partitioner instance.
-
-    Raises:
-        ImportError: If the MLX backend is not installed.
-    """
-    try:
-        from executorch.backends.mlx.partitioner import MLXPartitioner
-    except ImportError:
-        raise ImportError(
-            "Please install the MLX backend following the instructions at "
-            "executorch/backends/mlx/README.md"
-        )
-
-    return MLXPartitioner()

@@ -581,11 +581,8 @@ class BackendConfig:
     openvino: OpenvinoConfig = field(default_factory=OpenvinoConfig)
     torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
     tosa: TosaConfig = field(default_factory=TosaConfig)
-<<<<<<< HEAD
     ethosu: EthosUConfig = field(default_factory=EthosUConfig)
-=======
     mlx: MLXConfig = field(default_factory=MLXConfig)
->>>>>>> 31cc2cce25 (up)
 
 
 ################################################################################
