@@ -248,8 +248,8 @@ class RingBufferKVCache(nn.Module):
         complicate partitioning).
 
         Returns:
-            Additive float mask [1, 1, seq_len, buffer_size] where 0 = attend,
-            -inf = block.
+            Additive mask [1, 1, seq_len, buffer_size] in the cache's dtype,
+            where 0 = attend, -inf = block.
         """
         w = self.window_size
         b = self.buffer_size
@@ -275,7 +275,11 @@ class RingBufferKVCache(nn.Module):
         # and within the sliding window (delta < w)
         attn_mask = (cache_pos >= 0) & (delta >= 0) & (delta < w)
 
-        return torch.where(attn_mask, 0.0, float("-inf")).unsqueeze(0).unsqueeze(0)
+        # Use cache dtype (e.g. bf16) to avoid float32 AsTypeNode casts in SDPA
+        dtype = self.k_cache.dtype
+        zero = torch.zeros(1, dtype=dtype)
+        neg_inf = torch.full((1,), float("-inf"), dtype=dtype)
+        return torch.where(attn_mask, zero, neg_inf).unsqueeze(0).unsqueeze(0)
 
 
 from transformers.cache_utils import StaticCache
