@@ -25,6 +25,11 @@ from executorch.backends.nvidia.tensorrt.converter_registry import (
     lookup_converter,
     needs_edge_program,
 )
+from executorch.backends.nvidia.tensorrt.serialization import (
+    serialize_blob,
+    TensorRTBlobMetadata,
+    TensorRTIOBinding,
+)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
@@ -100,6 +105,9 @@ class TensorRTBackend(BackendDetails):
         )
         _mark_network_outputs(network, output_nodes, input_map)
 
+        # Collect I/O bindings from network
+        io_bindings = _collect_io_bindings(network)
+
         # Configure and build engine
         config = _create_builder_config(builder, spec, trt)
         serialized_engine = builder.build_serialized_network(network, config)
@@ -107,7 +115,11 @@ class TensorRTBackend(BackendDetails):
         if serialized_engine is None:
             raise RuntimeError("Failed to build TensorRT engine")
 
-        return PreprocessResult(processed_bytes=bytes(serialized_engine))
+        # Serialize with metadata
+        metadata = TensorRTBlobMetadata(io_bindings=io_bindings)
+        blob = serialize_blob(bytes(serialized_engine), metadata)
+
+        return PreprocessResult(processed_bytes=blob)
 
 
 def _get_input_nodes(
@@ -282,6 +294,65 @@ def _mark_network_outputs(
         if hasattr(output_tensor, "name"):
             output_tensor.name = f"output_{output_node.name}"
         network.mark_output(output_tensor)
+
+
+def _trt_dtype_to_string(dtype: Any) -> str:
+    """Convert TensorRT DataType to string representation."""
+    dtype_name = str(dtype)
+    # dtype looks like "DataType.FLOAT" or "DataType.HALF"
+    if "." in dtype_name:
+        dtype_name = dtype_name.split(".")[-1]
+
+    dtype_map = {
+        "FLOAT": "float32",
+        "HALF": "float16",
+        "INT8": "int8",
+        "INT32": "int32",
+        "INT64": "int64",
+        "BOOL": "bool",
+        "UINT8": "uint8",
+        "FP8": "float8",
+        "BF16": "bfloat16",
+    }
+    return dtype_map.get(dtype_name, "float32")
+
+
+def _collect_io_bindings(network: Any) -> List[TensorRTIOBinding]:
+    """Collect I/O binding information from TensorRT network.
+
+    Args:
+        network: TensorRT network definition.
+
+    Returns:
+        List of TensorRTIOBinding with input/output tensor metadata.
+    """
+    bindings = []
+
+    # Collect inputs
+    for i in range(network.num_inputs):
+        tensor = network.get_input(i)
+        bindings.append(
+            TensorRTIOBinding(
+                name=tensor.name,
+                dtype=_trt_dtype_to_string(tensor.dtype),
+                shape=list(tensor.shape),
+                is_input=True,
+            )
+        )
+
+    # Collect outputs
+    for i in range(network.num_outputs):
+        tensor = network.get_output(i)
+        bindings.append(
+            TensorRTIOBinding(
+                name=tensor.name,
+                dtype=_trt_dtype_to_string(tensor.dtype),
+                shape=list(tensor.shape),
+                is_input=False,
+            )
+        )
+
+    return bindings
 
 
 def _create_builder_config(builder: Any, spec: TensorRTCompileSpec, trt: Any) -> Any:
