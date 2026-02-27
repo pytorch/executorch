@@ -37,6 +37,7 @@ TENSORRT_SUPPORTED_MODELS = {
     "add_mul",
     "linear",
     "mul",
+    "mv3",
     "softmax",
 }
 
