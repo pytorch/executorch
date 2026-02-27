@@ -3,8 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""
-Tests 10 popular nn modules not tested in other ways or training related.
+"""Tests 10 popular nn modules not tested in other ways or training-related.
+
 - Embedding
 - LeakyReLU
 - BatchNorm1d
@@ -15,6 +15,7 @@ Tests 10 popular nn modules not tested in other ways or training related.
 - InstanceNorm2d
 - PReLU
 - Transformer
+
 """
 
 from typing import Callable

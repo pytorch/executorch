@@ -30,8 +30,6 @@ def test_aot_example__mobilenet_v2():
         "--quantize",
         "--target",
         "imxrt700",
-        "--neutron_converter_flavor",
-        "SDK_25_12",
         "--use_random_dataset",  # Avoid downloading the dataset.
     ]
 

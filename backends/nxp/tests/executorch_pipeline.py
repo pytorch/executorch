@@ -38,10 +38,7 @@ from torch import nn
 from torch.export import export
 from torchao.quantization.pt2e.quantizer import Quantizer
 
-neutron_converter_flavor = "SDK_25_12"
-neutron_target_spec = NeutronTargetSpec(
-    target="imxrt700", neutron_converter_flavor=neutron_converter_flavor
-)
+neutron_target_spec = NeutronTargetSpec(target="imxrt700")
 
 
 @dataclass
@@ -92,7 +89,6 @@ def to_quantized_edge_program(
         [tuple[ModelInputSpec, ...]], list[tuple[torch.Tensor, ...]]
     ] = get_random_calibration_inputs,
     target="imxrt700",
-    neutron_converter_flavor=neutron_converter_flavor,
     use_qat=False,
     remove_quant_io_ops=False,
     custom_delegation_options=CustomDelegationOptions(),  # noqa B008
@@ -101,7 +97,7 @@ def to_quantized_edge_program(
     use_quant_state_dict=True,
     fetch_constants_to_sram=False,
 ) -> EdgeProgramManager:
-    _neutron_target_spec = NeutronTargetSpec(target, neutron_converter_flavor)
+    _neutron_target_spec = NeutronTargetSpec(target)
     if get_quantizer_fn is None:
         get_quantizer_fn = partial(
             _get_default_quantizer, _neutron_target_spec, use_qat
@@ -127,7 +123,6 @@ def to_quantized_edge_program(
     compile_spec = generate_neutron_compile_spec(
         target,
         operators_not_to_delegate=operators_not_to_delegate,
-        neutron_converter_flavor=neutron_converter_flavor,
         use_neutron_for_format_conversion=use_neutron_for_format_conversion,
         fetch_constants_to_sram=fetch_constants_to_sram,
     )

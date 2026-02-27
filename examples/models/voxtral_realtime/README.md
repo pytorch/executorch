@@ -18,6 +18,10 @@ Two modes are supported: **offline** (encode full audio, then decode)
 and **streaming** (process 80ms chunks in real time, including live
 microphone input).
 
+## Demo: streaming on Metal backend with microphone input
+
+https://github.com/user-attachments/assets/44717dc5-777f-4710-ad55-5ec4fa04b9c4
+
 ## Prerequisites
 
 - ExecuTorch installed from source (see [building from source](../../../docs/source/using-executorch-building-from-source.md))
@@ -83,17 +87,30 @@ python export_voxtral_rt.py \
 | Backend | Offline | Streaming | Quantization |
 |---------|---------|-----------|--------------|
 | `xnnpack` | ✓ | ✓ | `4w`, `8w`, `8da4w`, `8da8w` |
-| `metal` | ✓ | ✗ | none (fp32) or `fpa4w` (Metal-specific 4-bit) |
+| `metal` | ✓ | ✓ | none (fp32) or `fpa4w` (Metal-specific 4-bit) |
 
-Metal backend provides Apple GPU acceleration. It does not yet support
-streaming mode.
+Metal backend provides Apple GPU acceleration.
 
-#### Metal export example
+#### Metal export examples
+
+Offline:
 
 ```bash
 python export_voxtral_rt.py \
     --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
     --backend metal \
+    --output-dir ./voxtral_rt_exports \
+    --qlinear-encoder fpa4w \
+    --qlinear fpa4w
+```
+
+Streaming:
+
+```bash
+python export_voxtral_rt.py \
+    --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
+    --backend metal \
+    --streaming \
     --output-dir ./voxtral_rt_exports \
     --qlinear-encoder fpa4w \
     --qlinear fpa4w
@@ -211,6 +228,8 @@ Ctrl+C stops recording and flushes remaining text.
 | `--max_new_tokens` | `500` | Maximum tokens to generate |
 | `--streaming` | off | Use streaming transcription (from WAV file) |
 | `--mic` | off | Live microphone mode (reads raw f32le PCM from stdin) |
+| `--mic_chunk_ms` | `80` | Mic read chunk size in ms (multiples of 80 recommended) |
+| `--color` | (none) | Output text color: `green` or `red` |
 
 ## Troubleshooting
 

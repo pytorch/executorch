@@ -151,14 +151,6 @@ if __name__ == "__main__":  # noqa C901
         help="Platform for running the delegated model",
     )
     parser.add_argument(
-        "-c",
-        "--neutron_converter_flavor",
-        required=False,
-        default="SDK_25_12",
-        help="Flavor of installed neutron-converter module. Neutron-converter module named "
-        "'neutron_converter_SDK_25_12' has flavor 'SDK_25_12'.",
-    )
-    parser.add_argument(
         "-q",
         "--quantize",
         action="store_true",
@@ -242,9 +234,7 @@ if __name__ == "__main__":  # noqa C901
     if args.debug:
         logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
 
-    neutron_target_spec = NeutronTargetSpec(
-        target=args.target, neutron_converter_flavor=args.neutron_converter_flavor
-    )
+    neutron_target_spec = NeutronTargetSpec(target=args.target)
 
     # 1. pick model from one of the supported lists
     model, example_inputs, calibration_inputs = get_model_and_inputs_from_name(
@@ -319,7 +309,6 @@ if __name__ == "__main__":  # noqa C901
     compile_spec = generate_neutron_compile_spec(
         args.target,
         operators_not_to_delegate=args.operators_not_to_delegate,
-        neutron_converter_flavor=args.neutron_converter_flavor,
         fetch_constants_to_sram=args.fetch_constants_to_sram,
     )
     partitioners = (
