@@ -217,7 +217,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         .echo = static_cast<bool>(echo),
         .seq_len = seq_len,
         .temperature = effective_temperature,
-        .num_bos = needs_bos_ ? num_bos : 0,
+        .num_bos = needs_bos_ ? num_bos_ : 0,
         .num_eos = num_eos,
     };
     needs_bos_ = false;
@@ -228,6 +228,17 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         [callback](const llm::Stats& result) { callback->onStats(result); });
     return 0;
   }
+
+  // Prefill methods execute immediately (eager), unlike the old append-based
+  // approach that buffered inputs until generate(). Each call forwards directly
+  // to runner_->prefill(), updating the KV cache in place. BOS is added only
+  // on the first prefill (tracked by needs_bos_), using num_bos_ from the
+  // constructor. Subsequent prefill or generate calls pass num_bos=0.
+  //
+  // After prefill, generate() should be called with an empty prompt to decode
+  // from the prefilled state. If generate() receives a non-empty prompt, the
+  // runner will prefill that prompt too (appending to the KV cache) and then
+  // decode — the prompt's echo is handled by generate, not by prior prefills.
 
   // Returns status_code
   // Contract is valid within an AAR (JNI + corresponding Java code)
