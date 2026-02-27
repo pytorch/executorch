@@ -22,10 +22,19 @@ class TensorRTOperatorSupport(OperatorSupportBase):
     3. Its output dtype is in SUPPORTED_DTYPES
     """
 
-    # Operations that have TensorRT converters.
-    # Format: "op_name.overload" (e.g., "add.Tensor")
+    # Operations that have TensorRT converters (sorted alphabetically).
     SUPPORTED_OPS: Set[str] = {
         "add.Tensor",
+        "add_.Tensor",
+        "div.Tensor",
+        "div.Tensor_mode",
+        "mm.default",
+        "mul.Scalar",
+        "mul.Tensor",
+        "mul_.Tensor",
+        "relu.default",
+        "relu_.default",
+        "sub.Tensor",
     }
 
     # Glue operations that don't compute but are needed to keep partitions connected.
@@ -86,8 +95,15 @@ class TensorRTOperatorSupport(OperatorSupportBase):
         if hasattr(target, "_schema"):
             schema = target._schema
             base_name = schema.name.replace("::", ".")
-            if hasattr(schema, "overload_name") and schema.overload_name:
-                return f"{base_name}.{schema.overload_name}"
+            # Note: For the "default" overload, overload_name is an empty string "",
+            # so we need to check for that and use "default" as the overload name.
+            if hasattr(schema, "overload_name"):
+                overload_name = schema.overload_name
+                if overload_name:
+                    return f"{base_name}.{overload_name}"
+                else:
+                    # Empty overload_name means "default" overload
+                    return f"{base_name}.default"
             return base_name
 
         # Callable with module info (e.g., operator.getitem)
