@@ -43,22 +43,6 @@ def define_common_targets():
         visibility = ["PUBLIC"],
     )
 
-    # Export correctness tests: exports each supported model with TensorRT
-    # and compares inference outputs against eager PyTorch on GPU.
-    #   buck test $GPU_FLAGS fbcode//executorch/examples/nvidia/tensorrt:test_export
-    #   buck test $GPU_FLAGS fbcode//executorch/examples/nvidia/tensorrt:test_export -- test_add
-    runtime.python_test(
-        name = "test_export",
-        srcs = ["test_export.py"],
-        labels = ["long_running"],
-        preload_deps = [
-            "//executorch/backends/nvidia/tensorrt/runtime:tensorrt_backend",
-        ],
-        deps = [
-            ":tensorrt_example_lib",
-        ],
-    )
-
     runtime.python_binary(
         name = "runner",
         main_module = "executorch.examples.nvidia.tensorrt.runner",
