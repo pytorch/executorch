@@ -1,0 +1,5 @@
+__version__ = "2.10.0"
+__cuda_version__ = "13.0"
+__tensorrt_version__ = "10.14.1"
+__tensorrt_rtx_version__ = "1.2.0"
+__tensorrt_llm_version__ = "0.17.0.post1"
