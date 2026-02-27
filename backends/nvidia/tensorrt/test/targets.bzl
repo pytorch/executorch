@@ -21,6 +21,16 @@ def define_common_targets():
     )
 
     runtime.python_test(
+        name = "test_compile_spec",
+        srcs = [
+            "test_compile_spec.py",
+        ],
+        deps = [
+            "//executorch/backends/nvidia/tensorrt:compile_spec",
+        ],
+    )
+
+    runtime.python_test(
         name = "test_operator_support",
         srcs = [
             "test_operator_support.py",

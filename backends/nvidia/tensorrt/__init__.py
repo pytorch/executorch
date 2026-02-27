@@ -22,9 +22,11 @@ if platform.machine() == "aarch64" and os.path.exists("/etc/nv_tegra_release"):
         sys.path.append(_system_dist_packages)
 
 from executorch.backends.nvidia.tensorrt.backend import TensorRTBackend
+from executorch.backends.nvidia.tensorrt.compile_spec import TensorRTCompileSpec
 from executorch.backends.nvidia.tensorrt.partitioner import TensorRTPartitioner
 
 __all__ = [
     "TensorRTBackend",
+    "TensorRTCompileSpec",
     "TensorRTPartitioner",
 ]
