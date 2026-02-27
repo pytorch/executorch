@@ -6,6 +6,7 @@
 
 """Converter for element-wise multiplication operations."""
 
+import logging
 from typing import Any, Dict, Optional
 
 import numpy as np
@@ -21,6 +22,9 @@ from executorch.backends.nvidia.tensorrt.converter_utils import (
 )
 
 
+logger: logging.Logger = logging.getLogger(__name__)
+
+
 def _get_elementwise_input(
     network: trt.INetworkDefinition,
     input_map: Dict[torch.fx.Node, Any],
@@ -28,14 +32,32 @@ def _get_elementwise_input(
     name: str,
     dtype: Optional[torch.dtype],
 ) -> trt.ITensor:
-    """Get TensorRT tensor for an elementwise operation input."""
+    """Get TensorRT tensor for an elementwise operation input.
+    
+    Handles:
+    - FX nodes already in input_map
+    - FX nodes that are lifted buffers/parameters (placeholder nodes with b_ or p_ prefix)
+    - Scalar values
+    """
     if isinstance(arg, torch.fx.Node):
-        if arg not in input_map:
-            raise ValueError(
-                f"Input node '{arg.name}' not found in input_map. "
-                f"Available nodes: {list(input_map.keys())}"
-            )
-        return input_map[arg]
+        if arg in input_map:
+            return input_map[arg]
+        
+        # Handle lifted buffers and parameters that aren't in input_map
+        # These are placeholder nodes with names starting with b_ (buffers) or p_ (parameters)
+        # or get_attr nodes. We need to create constants from their metadata values.
+        if arg.op == "placeholder" or arg.op == "get_attr":
+            if "val" in arg.meta and isinstance(arg.meta["val"], torch.Tensor):
+                logger.debug(f"[TensorRT] Creating constant for lifted buffer/parameter: {arg.name}")
+                trt_tensor = get_trt_tensor(network, arg.meta["val"], f"const_{arg.name}", dtype)
+                input_map[arg] = trt_tensor  # Cache for future use
+                return trt_tensor
+        
+        raise ValueError(
+            f"Input node '{arg.name}' not found in input_map and could not be created as constant. "
+            f"Node op: {arg.op}, target: {arg.target}. "
+            f"Available nodes: {list(n.name for n in input_map.keys())}"
+        )
     return get_trt_tensor(network, arg, name, dtype)
 
 

@@ -81,7 +81,16 @@ def convert_eq_scalar(
     # Use shape [1, 1, ...] with same ndim as input for proper broadcasting
     ndim = len(input_shape)
     const_shape = [1] * ndim if ndim > 0 else [1]
-    other_data = np.full(const_shape, other, dtype=np.float32)
+    
+    # Match the dtype of the input tensor for TensorRT compatibility
+    # TensorRT elementwise operations require matching types
+    input_dtype = input_trt.dtype
+    if input_dtype == trt.int64 or input_dtype == trt.int32:
+        np_dtype = np.int64 if input_dtype == trt.int64 else np.int32
+    else:
+        np_dtype = np.float32
+    
+    other_data = np.full(const_shape, other, dtype=np_dtype)
     other_weights = trt.Weights(other_data)
     other_const = network.add_constant(const_shape, other_weights)
     other_const.name = f"eq_const_{node.name}"
@@ -121,8 +130,15 @@ def convert_ne_scalar(
 
     input_trt = input_map[input_node]
 
+    # Match the dtype of the input tensor for TensorRT compatibility
+    input_dtype = input_trt.dtype
+    if input_dtype == trt.int64 or input_dtype == trt.int32:
+        np_dtype = np.int64 if input_dtype == trt.int64 else np.int32
+    else:
+        np_dtype = np.float32
+    
     # Create constant for scalar
-    other_weights = trt.Weights(np.array([other], dtype=np.float32))
+    other_weights = trt.Weights(np.array([other], dtype=np_dtype))
     other_const = network.add_constant([1], other_weights)
     other_const.name = f"ne_const_{node.name}"
 
@@ -165,7 +181,14 @@ def convert_lt_scalar(
 
     input_trt = input_map[input_node]
 
-    other_weights = trt.Weights(np.array([other], dtype=np.float32))
+    # Match the dtype of the input tensor for TensorRT compatibility
+    input_dtype = input_trt.dtype
+    if input_dtype == trt.int64 or input_dtype == trt.int32:
+        np_dtype = np.int64 if input_dtype == trt.int64 else np.int32
+    else:
+        np_dtype = np.float32
+
+    other_weights = trt.Weights(np.array([other], dtype=np_dtype))
     other_const = network.add_constant([1], other_weights)
     other_const.name = f"lt_const_{node.name}"
 
@@ -203,7 +226,14 @@ def convert_gt_scalar(
 
     input_trt = input_map[input_node]
 
-    other_weights = trt.Weights(np.array([other], dtype=np.float32))
+    # Match the dtype of the input tensor for TensorRT compatibility
+    input_dtype = input_trt.dtype
+    if input_dtype == trt.int64 or input_dtype == trt.int32:
+        np_dtype = np.int64 if input_dtype == trt.int64 else np.int32
+    else:
+        np_dtype = np.float32
+
+    other_weights = trt.Weights(np.array([other], dtype=np_dtype))
     other_const = network.add_constant([1], other_weights)
     other_const.name = f"gt_const_{node.name}"
 
@@ -260,10 +290,17 @@ def convert_ge_scalar(
         except (TypeError, ValueError):
             input_shape = [1]
 
+    # Match the dtype of the input tensor for TensorRT compatibility
+    input_dtype = input_trt.dtype
+    if input_dtype == trt.int64 or input_dtype == trt.int32:
+        np_dtype = np.int64 if input_dtype == trt.int64 else np.int32
+    else:
+        np_dtype = np.float32
+
     # Create constant with proper shape for broadcasting
     ndim = len(input_shape)
     const_shape = [1] * ndim if ndim > 0 else [1]
-    other_data = np.full(const_shape, other, dtype=np.float32)
+    other_data = np.full(const_shape, other, dtype=np_dtype)
     other_weights = trt.Weights(other_data)
     other_const = network.add_constant(const_shape, other_weights)
     other_const.name = f"ge_const_{node.name}"
@@ -338,10 +375,17 @@ def convert_le_scalar(
         except (TypeError, ValueError):
             input_shape = [1]
 
+    # Match the dtype of the input tensor for TensorRT compatibility
+    input_dtype = input_trt.dtype
+    if input_dtype == trt.int64 or input_dtype == trt.int32:
+        np_dtype = np.int64 if input_dtype == trt.int64 else np.int32
+    else:
+        np_dtype = np.float32
+
     # Create constant with proper shape for broadcasting
     ndim = len(input_shape)
     const_shape = [1] * ndim if ndim > 0 else [1]
-    other_data = np.full(const_shape, other, dtype=np.float32)
+    other_data = np.full(const_shape, other, dtype=np_dtype)
     other_weights = trt.Weights(other_data)
     other_const = network.add_constant(const_shape, other_weights)
     other_const.name = f"le_const_{node.name}"
@@ -676,6 +720,10 @@ def convert_where(
     Convert PyTorch where to TensorRT select layer.
 
     where.self(Tensor condition, Tensor self, Tensor other) -> Tensor
+    
+    Note: TensorRT select requires the condition to be boolean type.
+    If the condition is not boolean, we convert it by comparing != 0.
+    Also handles broadcasting for scalar inputs.
     """
     try:
         import tensorrt as trt
@@ -695,19 +743,93 @@ def convert_where(
     self_trt = input_map[self_node] if isinstance(self_node, torch.fx.Node) else None
     other_trt = input_map[other_node] if isinstance(other_node, torch.fx.Node) else None
 
-    # Handle scalar inputs
-    import numpy as np
-    if self_trt is None:
-        self_weights = trt.Weights(np.array([self_node], dtype=np.float32))
-        self_const = network.add_constant([1], self_weights)
-        self_const.name = f"where_self_const_{node.name}"
-        self_trt = self_const.get_output(0)
+    # Get condition shape for broadcasting reference
+    cond_shape = get_node_shape(condition_node)
+    if cond_shape is None:
+        try:
+            cond_shape = tuple(condition_trt.shape)
+        except (ValueError, TypeError):
+            cond_shape = None
+    
+    max_ndim = len(cond_shape) if cond_shape else 0
 
-    if other_trt is None:
-        other_weights = trt.Weights(np.array([other_node], dtype=np.float32))
-        other_const = network.add_constant([1], other_weights)
-        other_const.name = f"where_other_const_{node.name}"
-        other_trt = other_const.get_output(0)
+    # Handle scalar and tensor inputs - track shapes for broadcasting
+    import numpy as np
+    
+    def get_input_trt_and_shape(node_or_val, input_trt, name_suffix):
+        """Get TRT tensor and its shape, handling scalars."""
+        if input_trt is not None:
+            # It's already a tensor
+            if isinstance(node_or_val, torch.fx.Node):
+                shape = get_node_shape(node_or_val)
+            else:
+                shape = None
+            if shape is None:
+                try:
+                    shape = tuple(input_trt.shape)
+                except (ValueError, TypeError):
+                    shape = (1,)
+            return input_trt, shape
+        else:
+            # It's a scalar - create constant with shape [1]
+            val = float(node_or_val) if not isinstance(node_or_val, (int, float)) else node_or_val
+            weights = trt.Weights(np.array([val], dtype=np.float32))
+            const = network.add_constant([1], weights)
+            const.name = f"where_{name_suffix}_const_{node.name}"
+            return const.get_output(0), (1,)
+    
+    self_trt, self_shape = get_input_trt_and_shape(self_node, self_trt, "self")
+    other_trt, other_shape = get_input_trt_and_shape(other_node, other_trt, "other")
+    
+    # Update max_ndim based on all inputs
+    max_ndim = max(max_ndim, len(self_shape), len(other_shape))
+    
+    def prepend_ones_to_shape(tensor, tensor_shape, target_ndim, name_suffix):
+        """Prepend 1s to tensor shape for broadcasting."""
+        current_ndim = len(tensor_shape)
+        if current_ndim < target_ndim:
+            diff = target_ndim - current_ndim
+            new_shape = (1,) * diff + tuple(tensor_shape)
+            shuffle = network.add_shuffle(tensor)
+            shuffle.reshape_dims = trt.Dims(new_shape)
+            shuffle.name = f"where_broadcast_{name_suffix}_{node.name}"
+            return shuffle.get_output(0)
+        return tensor
+    
+    # Broadcast all inputs to max_ndim
+    if cond_shape and len(cond_shape) < max_ndim:
+        condition_trt = prepend_ones_to_shape(condition_trt, cond_shape, max_ndim, "cond")
+    self_trt = prepend_ones_to_shape(self_trt, self_shape, max_ndim, "self")
+    other_trt = prepend_ones_to_shape(other_trt, other_shape, max_ndim, "other")
+
+    # TensorRT select requires boolean condition
+    # If condition is not boolean, convert it by comparing != 0
+    # Pattern from TensorRT: cast to float, then compare with 0
+    if condition_trt.dtype != trt.bool:
+        # Cast condition to float32 first
+        cast_layer = network.add_identity(condition_trt)
+        cast_layer.set_output_type(0, trt.float32)
+        cast_layer.name = f"where_cast_cond_{node.name}"
+        float_condition = cast_layer.get_output(0)
+        
+        # Create zero constant for comparison with broadcast-compatible shape
+        zero_shape = [1] * max_ndim if max_ndim > 0 else [1]
+        zero_weights = trt.Weights(np.zeros(zero_shape, dtype=np.float32))
+        zero_const = network.add_constant(zero_shape, zero_weights)
+        zero_const.name = f"where_zero_const_{node.name}"
+        
+        # Compare condition != 0 to get boolean (using EQUAL then NOT)
+        eq_layer = network.add_elementwise(
+            float_condition, 
+            zero_const.get_output(0), 
+            trt.ElementWiseOperation.EQUAL
+        )
+        eq_layer.name = f"where_eq_zero_{node.name}"
+        
+        # NOT the result to get != 0
+        not_layer = network.add_unary(eq_layer.get_output(0), trt.UnaryOperation.NOT)
+        not_layer.name = f"where_not_{node.name}"
+        condition_trt = not_layer.get_output(0)
 
     # TensorRT select: output = condition ? self : other
     layer = network.add_select(condition_trt, self_trt, other_trt)
