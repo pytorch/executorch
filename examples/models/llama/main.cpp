@@ -32,11 +32,6 @@ DEFINE_string(
     "",
     "Data files for the model. If multiple files are provided, they should be comma separated.");
 
-DEFINE_string(
-    data_path,
-    "",
-    "Optional path to model weights (.ptd). If set, do not use --data_paths.");
-
 DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 
 DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
@@ -132,15 +127,6 @@ int32_t main(int32_t argc, char** argv) {
   const char* model_path = FLAGS_model_path.c_str();
 
   std::vector<std::string> data_paths = parseStringList(FLAGS_data_paths);
-  if (!FLAGS_data_path.empty()) {
-    if (!data_paths.empty()) {
-      ET_LOG(
-          Error,
-          "Both --data_path and --data_paths are set. Please use only one.");
-      return 1;
-    }
-    data_paths.push_back(FLAGS_data_path);
-  }
 
   const char* tokenizer_path = FLAGS_tokenizer_path.c_str();
 
