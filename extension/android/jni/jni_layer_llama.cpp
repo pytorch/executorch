@@ -211,16 +211,16 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     };
 
     if (!runner_) {
-      return 0;
+      return static_cast<jint>(Error::InvalidState);
     }
-    needs_bos_ = false;
     executorch::extension::llm::GenerationConfig config{
         .echo = static_cast<bool>(echo),
         .seq_len = seq_len,
         .temperature = effective_temperature,
-        .num_bos = num_bos,
+        .num_bos = needs_bos_ ? num_bos : 0,
         .num_eos = num_eos,
     };
+    needs_bos_ = false;
     runner_->generate(
         prompt->toStdString(),
         config,
