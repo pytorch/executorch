@@ -68,7 +68,8 @@ class MemoryFormatOpsPass(ExportPass):
             if input_tensor is not None:
                 dim_order = [int(d) for d in input_tensor.dim_order()]
             else:
-                # Fallback to contiguous if no input tensor available
+                # Fallback to contiguous if no single input tensor is available
+                # (e.g. list inputs like torch.stack).
                 dim_order = list(range(ndim))
         else:
             # Explicit memory format (contiguous_format, channels_last, etc.)

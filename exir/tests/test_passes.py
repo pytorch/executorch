@@ -2656,6 +2656,7 @@ class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):
 
         self.assertTrue(found_copy, "Should find a _to_dim_order_copy node")
 
+
 class TestCSEPass(unittest.TestCase):
     """Tests for Common Subexpression Elimination pass."""
 
