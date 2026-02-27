@@ -347,19 +347,13 @@ Error platform_execute(
     int output_count,
     Span<executorch::runtime::EValue*> args,
     char* /*ethosu_scratch*/) {
-  std::vector<size_t> input_copy_sizes;
-  std::vector<const char*> linux_input_ptrs;
-  if (input_count > 0) {
-    input_copy_sizes.resize(input_count, 0);
-    linux_input_ptrs.resize(input_count, nullptr);
-  }
+  std::vector<size_t> input_copy_sizes(input_count, 0);
+  std::vector<const char*> linux_input_ptrs(input_count, nullptr);
 
-  std::vector<size_t> output_io_bytes;
-  std::vector<char*> linux_output_ptrs;
-  if (output_count > 0) {
-    output_io_bytes.resize(output_count, 0);
-    linux_output_ptrs.resize(output_count, nullptr);
-  }
+  std::vector<size_t> output_io_bytes(output_count, 0);
+  std::vector<char*> linux_output_ptrs(output_count, nullptr);
+  std::vector<std::vector<char>> output_scratch_buffers(output_count);
+  std::vector<bool> output_needs_adjustment(output_count, false);
 
   for (int i = 0; i < input_count; ++i) {
     auto tensor_in = args[i]->toTensor();
@@ -380,16 +374,12 @@ Error platform_execute(
       const size_t tensor_nbytes = tensor_out.nbytes();
       if (i < static_cast<int>(output_io_bytes.size()) &&
           output_io_bytes[i] != tensor_nbytes) {
-        ET_LOG(
-            Error,
-            "Ethos-U Linux backend output size mismatch for index %d: "
-            "driver IO bytes = %zu, tensor bytes = %zu",
-            i,
-            output_io_bytes[i],
-            tensor_nbytes);
-        return Error::InvalidState;
+        output_scratch_buffers[i].resize(output_io_bytes[i]);
+        linux_output_ptrs[i] = output_scratch_buffers[i].data();
+        output_needs_adjustment[i] = true;
+      } else {
+        linux_output_ptrs[i] = tensor_out.mutable_data_ptr<char>();
       }
-      linux_output_ptrs[i] = tensor_out.mutable_data_ptr<char>();
     }
   }
 
@@ -399,13 +389,37 @@ Error platform_execute(
     return Error::InvalidState;
   }
 
-  return invoke_linux_driver(
+  Error status = invoke_linux_driver(
       handles,
       linux_input_ptrs,
       linux_output_ptrs,
       input_copy_sizes,
       output_io_bytes,
       state->options);
+  if (status != Error::Ok) {
+    return status;
+  }
+
+  if (handles.outputs != nullptr) {
+    for (int i = 0; i < output_count; ++i) {
+      if (!output_needs_adjustment[i]) {
+        continue;
+      }
+      auto tensor_out = args[input_count + i]->toTensor();
+      const size_t tensor_nbytes = tensor_out.nbytes();
+      Error adjust_status = copy_with_layout_adjustment(
+          handles.outputs->io[i],
+          i,
+          output_scratch_buffers[i].data(),
+          tensor_out,
+          tensor_nbytes);
+      if (adjust_status != Error::Ok) {
+        return adjust_status;
+      }
+    }
+  }
+
+  return Error::Ok;
 }
 
 } // namespace arm
