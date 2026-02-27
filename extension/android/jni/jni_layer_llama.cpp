@@ -250,8 +250,14 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   // Returns status_code
   // Contract is valid within an AAR (JNI + corresponding Java code)
   jint prefill_text_input(facebook::jni::alias_ref<jstring> prompt) {
-    if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM && runner_) {
-      executorch::extension::llm::GenerationConfig config;
+    if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
+      if (!runner_) {
+        return static_cast<jint>(Error::InvalidState);
+      }
+      executorch::extension::llm::GenerationConfig config{
+          .num_bos = num_bos_,
+          .num_eos = num_eos_,
+      };
       auto err = runner_->prefill(prompt->toStdString(), config);
       return static_cast<jint>(err);
     }
