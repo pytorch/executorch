@@ -41,9 +41,9 @@ class MemoryFormatOpsPass(ExportPass):
         # new kwargs with dim_order, and no memory_format for the new op
         nkwargs = dict(copy.deepcopy(kwargs))  # orig kwargs are immutable
 
-        # get the target memory format for the EdgeOp
-        # Default to preserve_format: clone() with no memory_format kwarg should
-        # preserve the input's layout, not force contiguous. Issue #16032.
+        # Get the target memory format for the EdgeOp, defaulting to
+        # preserve_format (clone() with no memory_format kwarg preserves
+        # the input's layout instead of forcing contiguous).
         mem_format = nkwargs.pop("memory_format", torch.preserve_format)
 
         # Get input tensor and ndim

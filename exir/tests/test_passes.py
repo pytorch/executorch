@@ -2504,18 +2504,12 @@ class TestPasses(unittest.TestCase):
 class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):
     """
     Tests for MemoryFormatOpsPass preserve_format semantics.
-
-    Issue #16032: clone() with no memory_format kwarg should preserve the input's
-    dim_order, not default to contiguous. This caused runtime assertion failures
-    when cloning channels-last tensors.
     """
 
     def test_clone_no_kwarg_preserves_channels_last_dim_order(self) -> None:
         """
         Verify that clone() on a channels-last input with no memory_format kwarg
         produces a _clone_dim_order node with channels-last dim_order (0,2,3,1).
-
-        This is the core reproduction case for issue #16032.
         """
 
         class ConvClone(torch.nn.Module):
@@ -2528,6 +2522,15 @@ class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):
 
         model = ConvClone().to(memory_format=torch.channels_last)
         x = torch.randn(1, 3, 8, 8).to(memory_format=torch.channels_last)
+
+        # Run the model and verify that the output tensor preserves channels-last
+        # layout when no memory_format kwarg is provided.
+        with torch.no_grad():
+            y = model(x)
+        self.assertTrue(
+            y.is_contiguous(memory_format=torch.channels_last),
+            f"clone() without memory_format kwarg should preserve channels-last layout, got strides {y.stride()}",
+        )
 
         ep = torch.export.export(model, (x,))
         edge = to_edge(ep, compile_config=EdgeCompileConfig(_skip_dim_order=False))
@@ -2565,6 +2568,19 @@ class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):
 
         model = CloneContiguousModel()
         x = torch.randn(1, 3, 8, 8).to(memory_format=torch.channels_last)
+
+        # Run the model and verify that the explicit contiguous_format kwarg
+        # produces a contiguous output layout (not channels-last).
+        with torch.no_grad():
+            y = model(x)
+        self.assertTrue(
+            y.is_contiguous(),
+            f"clone(memory_format=contiguous_format) should produce contiguous layout, got strides {y.stride()}",
+        )
+        self.assertFalse(
+            y.is_contiguous(memory_format=torch.channels_last),
+            "clone(memory_format=contiguous_format) should not preserve channels-last layout",
+        )
 
         ep = torch.export.export(model, (x,))
         edge = to_edge(ep, compile_config=EdgeCompileConfig(_skip_dim_order=False))
@@ -2608,6 +2624,15 @@ class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):
         model = ToCopyModel()
         x = torch.randn(1, 3, 8, 8, dtype=torch.float16).to(
             memory_format=torch.channels_last
+        )
+
+        # Run the model and verify that tensor.to(dtype=...) with no memory_format
+        # kwarg preserves channels-last layout on the output tensor.
+        with torch.no_grad():
+            y = model(x)
+        self.assertTrue(
+            y.is_contiguous(memory_format=torch.channels_last),
+            f"to(dtype=...) without memory_format kwarg should preserve channels-last layout, got strides {y.stride()}",
         )
 
         ep = torch.export.export(model, (x,))
