@@ -24,7 +24,9 @@ class TensorRTOperatorSupport(OperatorSupportBase):
 
     # Operations that have TensorRT converters.
     # Format: "op_name.overload" (e.g., "add.Tensor")
-    SUPPORTED_OPS: Set[str] = set()
+    SUPPORTED_OPS: Set[str] = {
+        "add.Tensor",
+    }
 
     # Glue operations that don't compute but are needed to keep partitions connected.
     # These are always supported regardless of dtype.
