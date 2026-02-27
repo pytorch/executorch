@@ -66,7 +66,7 @@ class MemoryFormatOpsPass(ExportPass):
         if mem_format in (None, torch.preserve_format):
             # preserve_format: inherit dim_order from input tensor
             if input_tensor is not None:
-                dim_order = list(int(d) for d in input_tensor.dim_order())
+                dim_order = [int(d) for d in input_tensor.dim_order()]
             else:
                 # Fallback to contiguous if no input tensor available
                 dim_order = list(range(ndim))

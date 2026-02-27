@@ -2501,6 +2501,7 @@ class TestPasses(unittest.TestCase):
                         f"Constant should be contiguous after pass, got strides {modified_const.stride()}",
                     )
 
+
 class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):
     """
     Tests for MemoryFormatOpsPass preserve_format semantics.
