@@ -41,3 +41,17 @@ def define_common_targets():
             "//executorch/exir:lib",
         ],
     )
+
+    runtime.python_test(
+        name = "test_preprocess",
+        srcs = [
+            "test_preprocess.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//deeplearning/trt/python:py_tensorrt",
+            "//executorch/backends/nvidia/tensorrt:compile_spec",
+            "//executorch/backends/nvidia/tensorrt:tensorrt",
+            "//executorch/exir:lib",
+        ],
+    )
