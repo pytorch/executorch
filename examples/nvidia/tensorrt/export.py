@@ -43,7 +43,10 @@ TENSORRT_SUPPORTED_MODELS = {
     "ic3",
     "linear",
     "mul",
+    "mv2",
     "mv3",
+    "resnet18",
+    "resnet50",
     "softmax",
     "w2l",
 }
