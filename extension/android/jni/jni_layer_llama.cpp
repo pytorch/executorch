@@ -18,6 +18,7 @@
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/extension/llm/runner/multimodal_runner.h>
+#include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
