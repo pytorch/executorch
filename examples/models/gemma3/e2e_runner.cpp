@@ -248,23 +248,19 @@ int32_t main(int32_t argc, char** argv) {
 
   std::string stop_buffer;
   bool stop_triggered = false;
-  auto error = runner->generate(
-      inputs,
-      config,
-      [&](const std::string& piece) {
-        if (stop_sequence.empty() || stop_triggered) {
-          return;
-        }
-        stop_buffer.append(piece);
-        if (stop_buffer.size() > stop_sequence.size() * 4) {
-          stop_buffer.erase(
-              0, stop_buffer.size() - stop_sequence.size() * 2);
-        }
-        if (stop_buffer.find(stop_sequence) != std::string::npos) {
-          stop_triggered = true;
-          runner->stop();
-        }
-      });
+  auto error = runner->generate(inputs, config, [&](const std::string& piece) {
+    if (stop_sequence.empty() || stop_triggered) {
+      return;
+    }
+    stop_buffer.append(piece);
+    if (stop_buffer.size() > stop_sequence.size() * 4) {
+      stop_buffer.erase(0, stop_buffer.size() - stop_sequence.size() * 2);
+    }
+    if (stop_buffer.find(stop_sequence) != std::string::npos) {
+      stop_triggered = true;
+      runner->stop();
+    }
+  });
 
   if (error != ::executorch::runtime::Error::Ok) {
     ET_LOG(Error, "Failed to generate with multimodal runner\n");
