@@ -825,7 +825,7 @@ def to_edge_no_delegate(
     )
 
     # Replace quantized_decomposed::* nodes with cortex_m::* equivalents for
-    # any QDQ ops that remain outside the delegated subgraph.
+    # any remaining QDQ ops in the non-delegated graph.
     edge = _apply_replace_quant_nodes(edge, args)
 
     return model_quant, edge
