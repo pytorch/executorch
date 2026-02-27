@@ -856,7 +856,7 @@ if __name__ == "__main__":  # noqa: C901
             "--enable_qdq_fusion_pass is deprecated and has no effect. "
             "Quantized node replacement is now handled within the "
             "respective compilation paths."
-    )
+        )
 
     model_name = os.path.basename(os.path.splitext(args.model_name)[0])
     if args.intermediates:
