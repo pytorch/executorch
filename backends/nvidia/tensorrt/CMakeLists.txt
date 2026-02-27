@@ -150,4 +150,69 @@ if(EXECUTORCH_BUILD_TENSORRT)
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )
 
+  # TensorRT executor runner binary
+  # This binary links the TensorRT backend with the ExecuTorch runtime
+  # to run exported .pte files on NVIDIA GPUs.
+  #
+  # Build:
+  #   cmake -DEXECUTORCH_BUILD_TENSORRT=ON ...
+  #   cmake --build . --target tensorrt_executor_runner
+  #
+  # Usage:
+  #   ./tensorrt_executor_runner --model_path=model_tensorrt.pte
+  add_executable(
+    tensorrt_executor_runner
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../examples/nvidia/tensorrt/tensorrt_executor_runner.cpp
+  )
+
+  target_include_directories(
+    tensorrt_executor_runner
+    PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
+           $<BUILD_INTERFACE:${TENSORRT_COMMON_INCLUDE_DIRS}>
+  )
+
+  # Note: We need WHOLE_ARCHIVE for tensorrt_backend to ensure static
+  # registration of the backend runs. This is necessary because the backend
+  # registers itself via a global constructor.
+  #
+  # We use target_link_options to ensure the whole-archive flags are placed
+  # correctly around the library in the link command. CMake's target_link_libraries
+  # with string flags may not preserve the correct order.
+  target_link_libraries(
+    tensorrt_executor_runner
+    PRIVATE executorch extension_data_loader extension_runner_util portable_kernels
+  )
+
+  # Apply whole-archive linking for tensorrt_backend via link options
+  # This ensures the static backend registration is included
+  if(APPLE)
+    target_link_options(
+      tensorrt_executor_runner
+      PRIVATE "SHELL:LINKER:-force_load,$<TARGET_FILE:tensorrt_backend>"
+    )
+  else()
+    target_link_options(
+      tensorrt_executor_runner
+      PRIVATE
+        "SHELL:LINKER:--whole-archive $<TARGET_FILE:tensorrt_backend> LINKER:--no-whole-archive"
+    )
+  endif()
+
+  # Add tensorrt_backend's transitive dependencies (CUDA, TensorRT)
+  # We can't use tensorrt_backend directly in target_link_libraries because
+  # it would be linked twice (once via whole-archive, once normally)
+  target_link_libraries(tensorrt_executor_runner PRIVATE CUDA::cudart)
+  if(TENSORRT_LIBRARY)
+    target_link_libraries(tensorrt_executor_runner PRIVATE ${TENSORRT_LIBRARY})
+  elseif(TensorRT_FOUND)
+    target_link_libraries(tensorrt_executor_runner PRIVATE TensorRT::nvinfer)
+  endif()
+
+  # Ensure tensorrt_backend is built before the runner
+  add_dependencies(tensorrt_executor_runner tensorrt_backend)
+
+  target_compile_options(tensorrt_executor_runner PRIVATE -frtti -fexceptions)
+
+  install(TARGETS tensorrt_executor_runner DESTINATION ${CMAKE_INSTALL_BINDIR})
+
 endif()
