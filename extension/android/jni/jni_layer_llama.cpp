@@ -222,12 +222,12 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         .num_eos = num_eos,
     };
     needs_bos_ = false;
-    runner_->generate(
+    auto err = runner_->generate(
         prompt->toStdString(),
         config,
         token_callback,
         [callback](const llm::Stats& result) { callback->onStats(result); });
-    return 0;
+    return static_cast<jint>(err);
   }
 
   // Returns status_code
