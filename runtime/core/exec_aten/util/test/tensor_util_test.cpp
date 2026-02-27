@@ -623,7 +623,7 @@ TEST_F(TensorUtilTest, SameShapesDifferentDimOrder) {
   EXPECT_FALSE(tensors_have_same_dim_order(c, b, a));
 }
 
-// Issue #16032: semantic equivalence tests for tensors_have_same_dim_order.
+// Semantic equivalence tests for tensors_have_same_dim_order.
 // These tests verify that tensors with different dim_order labels but
 // semantically equivalent memory layouts are correctly identified.
 

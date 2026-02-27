@@ -6,7 +6,6 @@
 
 import copy
 import logging
-from typing import List, Optional
 
 import torch
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -41,19 +40,14 @@ class MemoryFormatOpsPass(ExportPass):
         # new kwargs with dim_order, and no memory_format for the new op
         nkwargs = dict(copy.deepcopy(kwargs))  # orig kwargs are immutable
 
-        # Get the target memory format for the EdgeOp. Default to preserve_format:
-        # clone() / to(dtype=...) with no memory_format kwarg should preserve the
-        # input's layout rather than forcing contiguous.
-        mem_format = nkwargs.pop("memory_format", torch.preserve_format)
+        # get the target memory format for the EdgeOp
+        mem_format = nkwargs.pop("memory_format", torch.contiguous_format)
 
-        # Get input tensor and ndim (rank must be specialized at this point).
-        input_tensor: Optional[torch.Tensor] = None
+        # can always get the shape, assuming rank is specialized
         if isinstance(args[0], ProxyValue) and args[0].is_tensor():
-            input_tensor = args[0].to_tensor()
-            ndim = input_tensor.dim()
+            ndim = args[0].to_tensor().dim()
         elif isinstance(args[0], torch.Tensor):
-            input_tensor = args[0]
-            ndim = input_tensor.dim()
+            ndim = args[0].dim()
         elif isinstance(args[0], torch.fx.immutable_collections.immutable_list):
             ndim = len(args[0])
         else:
@@ -61,21 +55,7 @@ class MemoryFormatOpsPass(ExportPass):
                 0
             ), f"Expecting a Tensor, a ProxyValue, or a Sequence, but got {type(args[0])}"
 
-        # Derive dim_order based on memory format.
-        dim_order: List[int]
-        if mem_format in (None, torch.preserve_format):
-            # preserve_format: inherit dim_order from input tensor when available.
-            if input_tensor is not None:
-                dim_order = [int(d) for d in input_tensor.dim_order()]
-            else:
-                # Fallback to contiguous if no single input tensor is available
-                # (e.g. list inputs like torch.stack).
-                dim_order = list(range(ndim))
-        else:
-            # Explicit memory format (contiguous_format, channels_last, etc.).
-            dim_order = get_dim_order(mem_format, ndim)
-
-        nkwargs["dim_order"] = dim_order
+        nkwargs["dim_order"] = get_dim_order(mem_format, ndim)
         logger.debug(
             f"{op.__name__} = rank: {ndim}, memory_format: {mem_format}."
             f" {DimOrderOpsMap[op].__name__} = dim_order: {nkwargs['dim_order']}"
