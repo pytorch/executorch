@@ -35,10 +35,14 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 TENSORRT_SUPPORTED_MODELS = {
     "add",
     "add_mul",
+    "conv1d",
+    "dl3",
+    "edsr",
     "linear",
     "mul",
     "mv3",
     "softmax",
+    "w2l",
 }
 
 
