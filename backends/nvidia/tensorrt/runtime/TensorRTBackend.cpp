@@ -12,6 +12,8 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/platform/log.h>
 
+#include <cuda_runtime.h>
+
 namespace executorch {
 namespace backends {
 namespace tensorrt {
@@ -34,6 +36,34 @@ namespace {
 
 bool is_tensorrt_available() {
   return true;
+}
+
+// Shared CUDA stream for serialized execution across TRT delegates.
+// When multiple TRT delegate subgraphs execute sequentially (the common case),
+// sharing a single stream avoids synchronization overhead between subgraphs.
+cudaStream_t g_shared_stream = nullptr;
+int g_shared_stream_refcount = 0;
+
+cudaStream_t get_or_create_shared_stream() {
+  if (g_shared_stream == nullptr) {
+    cudaError_t err = cudaStreamCreate(&g_shared_stream);
+    if (err != cudaSuccess) {
+      ET_LOG(Error, "Failed to create shared CUDA stream");
+      return nullptr;
+    }
+  }
+  ++g_shared_stream_refcount;
+  return g_shared_stream;
+}
+
+void release_shared_stream() {
+  if (g_shared_stream_refcount > 0) {
+    --g_shared_stream_refcount;
+  }
+  if (g_shared_stream_refcount == 0 && g_shared_stream != nullptr) {
+    cudaStreamDestroy(g_shared_stream);
+    g_shared_stream = nullptr;
+  }
 }
 
 } // namespace
@@ -82,6 +112,14 @@ Result<DelegateHandle*> TensorRTBackend::init(
   }
 
   new (executor) TensorRTExecutor();
+
+  // Share a CUDA stream across all TRT delegate instances for serialized
+  // execution. This avoids synchronization overhead between subgraphs when
+  // they execute sequentially (the common case).
+  cudaStream_t shared = get_or_create_shared_stream();
+  if (shared != nullptr) {
+    executor->set_cuda_stream(shared, false);
+  }
 
   Error err = executor->initialize(blob_data, blob_size);
   if (err != Error::Ok) {
@@ -173,6 +211,7 @@ void TensorRTBackend::destroy(DelegateHandle* handle) const {
   if (handle != nullptr) {
     auto* executor = static_cast<TensorRTExecutor*>(handle);
     executor->~TensorRTExecutor();
+    release_shared_stream();
   }
 }
 
