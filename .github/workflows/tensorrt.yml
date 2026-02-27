@@ -1,0 +1,232 @@
+# Test ExecuTorch TensorRT Backend
+#
+# This workflow tests the TensorRT backend for NVIDIA GPU acceleration.
+# It exports models using the TensorRT partitioner and runs them using
+# both Python and C++ runners.
+#
+# Requirements:
+# - NVIDIA GPU with TensorRT support
+# - TensorRT SDK (pip install tensorrt>=10.3)
+# - CUDA toolkit
+
+name: Test TensorRT Backend
+
+on:
+  pull_request:
+    paths:
+      - backends/nvidia/tensorrt/**
+      - examples/nvidia/tensorrt/**
+      - .github/workflows/tensorrt.yml
+  push:
+    branches:
+      - main
+      - release/*
+    paths:
+      - backends/nvidia/tensorrt/**
+      - examples/nvidia/tensorrt/**
+  workflow_dispatch:
+  schedule:
+    # Run daily at 3 AM UTC (after CUDA workflow at 2 AM)
+    - cron: '0 3 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  # Test that TensorRT backend builds correctly
+  test-tensorrt-build:
+    name: test-tensorrt-build
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 90
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: "12.6"
+      use-custom-docker-registry: false
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch"
+        PYTHON_EXECUTABLE=python ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Build TensorRT Backend"
+        # Build with TensorRT support
+        cmake -S . -B cmake-out \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DEXECUTORCH_BUILD_TENSORRT=ON \
+          -DPYTHON_EXECUTABLE=python
+
+        cmake --build cmake-out --target tensorrt_backend tensorrt_executor_runner -j$(nproc)
+        echo "::endgroup::"
+
+        echo "::group::Verify Build Artifacts"
+        ls -la cmake-out/backends/nvidia/tensorrt/
+        test -f cmake-out/backends/nvidia/tensorrt/libtensorrt_backend.a
+        test -f cmake-out/backends/nvidia/tensorrt/tensorrt_executor_runner
+        echo "Build verification passed!"
+        echo "::endgroup::"
+
+  # Test model export and Python execution
+  test-models-tensorrt-python:
+    name: test-models-tensorrt-python
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [add, mul, linear]
+    with:
+      timeout: 60
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: "12.6"
+      use-custom-docker-registry: false
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch"
+        PYTHON_EXECUTABLE=python ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Install TensorRT Python package"
+        pip install tensorrt
+        echo "::endgroup::"
+
+        echo "::group::Export ${{ matrix.model }} model with TensorRT"
+        python -m executorch.examples.nvidia.tensorrt.export -m ${{ matrix.model }}
+        test -f ${{ matrix.model }}_tensorrt.pte
+        echo "Model exported successfully!"
+        echo "::endgroup::"
+
+        echo "::group::Run ${{ matrix.model }} model with Python runner"
+        python -m executorch.examples.nvidia.tensorrt.runner \
+          --model_path=${{ matrix.model }}_tensorrt.pte
+        echo "Python execution completed!"
+        echo "::endgroup::"
+
+  # Test model export and C++ execution
+  test-models-tensorrt-cpp:
+    name: test-models-tensorrt-cpp
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [add, mul, linear]
+    with:
+      timeout: 60
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: "12.6"
+      use-custom-docker-registry: false
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch"
+        PYTHON_EXECUTABLE=python ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Install TensorRT Python package"
+        pip install tensorrt
+        echo "::endgroup::"
+
+        echo "::group::Build TensorRT Backend and Runner"
+        cmake -S . -B cmake-out \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DEXECUTORCH_BUILD_TENSORRT=ON \
+          -DPYTHON_EXECUTABLE=python
+
+        cmake --build cmake-out --target tensorrt_executor_runner -j$(nproc)
+        echo "::endgroup::"
+
+        echo "::group::Export ${{ matrix.model }} model"
+        python -m executorch.examples.nvidia.tensorrt.export -m ${{ matrix.model }}
+        test -f ${{ matrix.model }}_tensorrt.pte
+        echo "::endgroup::"
+
+        echo "::group::Run ${{ matrix.model }} model with C++ runner"
+        RUNNER_PATH="./cmake-out/backends/nvidia/tensorrt/tensorrt_executor_runner"
+        if [ ! -f "$RUNNER_PATH" ]; then
+          # Fallback: search for the runner binary
+          RUNNER_PATH=$(find ./cmake-out -name tensorrt_executor_runner -type f | head -1)
+        fi
+        $RUNNER_PATH \
+          --model_path=${{ matrix.model }}_tensorrt.pte \
+          --verbose
+        echo "C++ execution completed!"
+        echo "::endgroup::"
+
+  # Run TensorRT backend unit tests
+  unittest-tensorrt:
+    name: unittest-tensorrt
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 60
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: "12.6"
+      use-custom-docker-registry: false
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch"
+        PYTHON_EXECUTABLE=python ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Install TensorRT Python package"
+        pip install tensorrt
+        echo "::endgroup::"
+
+        echo "::group::Run TensorRT Backend Unit Tests"
+        # Run all test_*.py files in the backend test directory.
+        # The -o "addopts=" override prevents pytest.ini from injecting
+        # flags that would run unrelated test suites.
+        python -m pytest backends/nvidia/tensorrt/test/ -v -o "addopts="
+        echo "::endgroup::"
+
+  # Summary job to check all tests passed
+  check-all-tensorrt-tests:
+    needs: [test-tensorrt-build, test-models-tensorrt-python, test-models-tensorrt-cpp, unittest-tensorrt]
+    # All four jobs must succeed for the overall check to pass.
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check if all TensorRT tests succeeded
+        run: |
+          if [[ "${{ needs.test-tensorrt-build.result }}" != "success" ]]; then
+            echo "ERROR: TensorRT build test failed!"
+            exit 1
+          fi
+          if [[ "${{ needs.test-models-tensorrt-python.result }}" != "success" ]]; then
+            echo "ERROR: TensorRT Python model tests failed!"
+            exit 1
+          fi
+          if [[ "${{ needs.test-models-tensorrt-cpp.result }}" != "success" ]]; then
+            echo "ERROR: TensorRT C++ model tests failed!"
+            exit 1
+          fi
+          if [[ "${{ needs.unittest-tensorrt.result }}" != "success" ]]; then
+            echo "ERROR: TensorRT unit tests failed!"
+            exit 1
+          fi
+          echo "SUCCESS: All TensorRT backend tests passed!"
