@@ -372,14 +372,13 @@ public class LlmModule {
   }
 
   /**
-   * Prefill a multimodal Module with the given images input.
+   * Prefill the KV cache with the given image input.
    *
    * @param image Input image as a byte array
    * @param width Input image width
    * @param height Input image height
    * @param channels Input image number of channels
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
+   * @return 0 on success
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
@@ -394,14 +393,13 @@ public class LlmModule {
   private native int prefillImagesInput(int[] image, int width, int height, int channels);
 
   /**
-   * Prefill a multimodal Module with the given images input.
+   * Prefill the KV cache with the given normalized image input.
    *
    * @param image Input normalized image as a float array
    * @param width Input image width
    * @param height Input image height
    * @param channels Input image number of channels
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
+   * @return 0 on success
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
@@ -417,14 +415,13 @@ public class LlmModule {
       float[] image, int width, int height, int channels);
 
   /**
-   * Prefill a multimodal Module with the given audio input.
+   * Prefill the KV cache with the given preprocessed audio input.
    *
    * @param audio Input preprocessed audio as a byte array
    * @param batch_size Input batch size
    * @param n_bins Input number of bins
    * @param n_frames Input number of frames
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
+   * @return 0 on success
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
@@ -439,14 +436,13 @@ public class LlmModule {
   private native int prefillAudioInput(byte[] audio, int batch_size, int n_bins, int n_frames);
 
   /**
-   * Prefill a multimodal Module with the given audio input.
+   * Prefill the KV cache with the given preprocessed audio input.
    *
    * @param audio Input preprocessed audio as a float array
    * @param batch_size Input batch size
    * @param n_bins Input number of bins
    * @param n_frames Input number of frames
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
+   * @return 0 on success
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
@@ -461,14 +457,13 @@ public class LlmModule {
   private native int prefillAudioInputFloat(float[] audio, int batch_size, int n_bins, int n_frames);
 
   /**
-   * Prefill a multimodal Module with the given raw audio input.
+   * Prefill the KV cache with the given raw audio input.
    *
    * @param audio Input raw audio as a byte array
    * @param batch_size Input batch size
    * @param n_channels Input number of channels
    * @param n_samples Input number of samples
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
+   * @return 0 on success
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
@@ -484,11 +479,10 @@ public class LlmModule {
       byte[] audio, int batch_size, int n_channels, int n_samples);
 
   /**
-   * Prefill a multimodal Module with the given text input.
+   * Prefill the KV cache with the given text prompt.
    *
    * @param prompt The text prompt to prefill.
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
+   * @return 0 on success
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
