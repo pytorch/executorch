@@ -433,7 +433,7 @@ class NeutronPartitioner(Partitioner):
 
         graph_module.recompile()
 
-        operators_not_to_delegate = self.delegation_spec[1][4].value.decode().split(",")
+        operators_not_to_delegate = self.delegation_spec[1][3].value.decode().split(",")
         logging.info(f"Operators not to delegate: {operators_not_to_delegate}")
 
         parameters_mapping = EdgeProgramToIRConverter.map_inputs_to_parameters(
