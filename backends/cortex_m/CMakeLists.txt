@@ -23,7 +23,7 @@ include(FetchContent)
 
 # CMSIS-NN configuration with dynamic path detection
 set(CMSIS_NN_VERSION
-    "v7.0.0"
+    "84303a51fd867c7ddbd23068b7ce930af1b6269d"
     CACHE STRING "CMSIS-NN version to download"
 )
 set(CMSIS_NN_LOCAL_PATH
@@ -45,7 +45,6 @@ else()
     cmsis_nn
     GIT_REPOSITORY https://github.com/ARM-software/CMSIS-NN.git
     GIT_TAG ${CMSIS_NN_VERSION}
-    GIT_SHALLOW TRUE
   )
 
   FetchContent_MakeAvailable(cmsis_nn)
