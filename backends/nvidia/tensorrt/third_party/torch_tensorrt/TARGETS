@@ -1,0 +1,30 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Torch-TensorRT v2.10.0 Python sources, extracted from the PyPI wheel.
+# Only the dynamo (torch.compile) compilation path is supported.
+# TorchScript IR and the native C++ runtime are not available.
+#
+# To update: download the wheel from pypi.org, extract torch_tensorrt/ Python
+# files, and patch __init__.py to skip libtorchtrt.so loading.
+
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "torch_tensorrt",
+    srcs = glob(["torch_tensorrt/**/*.py"]),
+    base_module = "",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//deeplearning/trt/python:py_tensorrt",
+        "fbsource//third-party/pypi/dllist:dllist",
+        "fbsource//third-party/pypi/numpy:numpy",
+        "fbsource//third-party/pypi/packaging:packaging",
+    ],
+)
