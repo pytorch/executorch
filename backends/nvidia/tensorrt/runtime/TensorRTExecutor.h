@@ -84,12 +84,13 @@ class TensorRTExecutor {
    * Execute inference with the given input/output buffers.
    *
    * On discrete GPUs: copies inputs to pre-allocated GPU memory, executes,
-   * and copies outputs back.
-   * On unified memory (Jetson): uses buffers directly without copies.
+   * and copies outputs back. Input/output buffers may reside on either CPU
+   * or GPU — the transfer direction is auto-detected via cudaMemcpyDefault.
+   * On unified memory (Jetson): uses managed memory buffers directly.
    *
-   * @param input_buffers Array of pointers to input data buffers.
+   * @param input_buffers Array of pointers to input data buffers (CPU or GPU).
    * @param num_inputs Number of input buffers.
-   * @param output_buffers Array of pointers to output data buffers.
+   * @param output_buffers Array of pointers to output data buffers (CPU or GPU).
    * @param num_outputs Number of output buffers.
    * @return Error::Ok on success.
    */
@@ -140,6 +141,20 @@ class TensorRTExecutor {
     return uses_unified_memory_;
   }
 
+  /**
+   * Set an external CUDA stream for this executor.
+   *
+   * When called before initialize(), the executor uses the provided stream
+   * instead of creating its own. This enables stream sharing across multiple
+   * TRT delegate instances for serialized execution, avoiding synchronization
+   * overhead between subgraphs.
+   *
+   * @param stream External CUDA stream to use.
+   * @param owns_stream If true, the executor will destroy the stream on cleanup.
+   *                    If false, the caller retains ownership.
+   */
+  void set_cuda_stream(::cudaStream_t stream, bool owns_stream = false);
+
  private:
   /**
    * Parse I/O binding metadata from JSON.
@@ -166,6 +181,7 @@ class TensorRTExecutor {
   std::unique_ptr<nvinfer1::ICudaEngine> engine_;
   std::unique_ptr<nvinfer1::IExecutionContext> context_;
   ::cudaStream_t stream_{nullptr};
+  bool owns_stream_{true};
   std::vector<IOBinding> io_bindings_;
   std::vector<GPUBuffer> gpu_buffers_;
   bool uses_unified_memory_{false};

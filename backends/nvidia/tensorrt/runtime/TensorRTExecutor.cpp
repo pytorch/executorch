@@ -66,7 +66,7 @@ size_t get_dtype_size(nvinfer1::DataType dtype) {
 
 TensorRTExecutor::~TensorRTExecutor() {
   free_gpu_buffers();
-  if (stream_) {
+  if (stream_ && owns_stream_) {
     cudaStreamDestroy(stream_);
     stream_ = nullptr;
   }
@@ -80,31 +80,45 @@ TensorRTExecutor::TensorRTExecutor(TensorRTExecutor&& other) noexcept
       engine_(std::move(other.engine_)),
       context_(std::move(other.context_)),
       stream_(other.stream_),
+      owns_stream_(other.owns_stream_),
       io_bindings_(std::move(other.io_bindings_)),
       gpu_buffers_(std::move(other.gpu_buffers_)),
       uses_unified_memory_(other.uses_unified_memory_) {
   other.stream_ = nullptr;
+  other.owns_stream_ = false;
   other.uses_unified_memory_ = false;
 }
 
 TensorRTExecutor& TensorRTExecutor::operator=(TensorRTExecutor&& other) noexcept {
   if (this != &other) {
     free_gpu_buffers();
-    if (stream_) {
+    if (stream_ && owns_stream_) {
       cudaStreamDestroy(stream_);
     }
     runtime_ = std::move(other.runtime_);
     engine_ = std::move(other.engine_);
     context_ = std::move(other.context_);
     stream_ = other.stream_;
+    owns_stream_ = other.owns_stream_;
     io_bindings_ = std::move(other.io_bindings_);
     gpu_buffers_ = std::move(other.gpu_buffers_);
     uses_unified_memory_ = other.uses_unified_memory_;
 
     other.stream_ = nullptr;
+    other.owns_stream_ = false;
     other.uses_unified_memory_ = false;
   }
   return *this;
+}
+
+void TensorRTExecutor::set_cuda_stream(
+    ::cudaStream_t stream,
+    bool owns_stream) {
+  if (stream_ && owns_stream_) {
+    cudaStreamDestroy(stream_);
+  }
+  stream_ = stream;
+  owns_stream_ = owns_stream;
 }
 
 Error TensorRTExecutor::initialize(
@@ -185,14 +199,17 @@ Error TensorRTExecutor::initialize(
     }
   }
 
-  // Create persistent CUDA stream
-  cudaStream_t stream;
-  cuda_err = cudaStreamCreate(&stream);
-  if (cuda_err != cudaSuccess) {
-    ET_LOG(Error, "Failed to create CUDA stream: %s", cudaGetErrorString(cuda_err));
-    return Error::InvalidState;
+  // Create persistent CUDA stream (unless an external stream was already set)
+  if (stream_ == nullptr) {
+    cudaStream_t stream;
+    cuda_err = cudaStreamCreate(&stream);
+    if (cuda_err != cudaSuccess) {
+      ET_LOG(Error, "Failed to create CUDA stream: %s", cudaGetErrorString(cuda_err));
+      return Error::InvalidState;
+    }
+    stream_ = stream;
+    owns_stream_ = true;
   }
-  stream_ = stream;
 
   // Pre-allocate GPU buffers
   // For unified memory (Jetson): use cudaMallocManaged
@@ -340,7 +357,11 @@ Error TensorRTExecutor::execute(
       }
     }
   } else {
-    // Discrete GPU path: use pre-allocated GPU buffers with async copies
+    // Discrete GPU path: use pre-allocated GPU buffers with async copies.
+    // cudaMemcpyDefault auto-detects pointer residency, so this works
+    // correctly whether input/output buffers are on CPU (H2D/D2H) or
+    // already on GPU (D2D), enabling unified backend pipelines where
+    // inter-delegate data stays on the GPU.
     for (const auto& buf : gpu_buffers_) {
       const char* name = engine_->getIOTensorName(buf.tensor_index);
       if (buf.is_input) {
@@ -348,7 +369,7 @@ Error TensorRTExecutor::execute(
             buf.ptr,
             input_buffers[buf.io_index],
             buf.size,
-            cudaMemcpyHostToDevice,
+            cudaMemcpyDefault,
             stream_);
         if (cuda_err != cudaSuccess) {
           ET_LOG(Error, "Failed to copy input to GPU: %s", cudaGetErrorString(cuda_err));
@@ -365,14 +386,14 @@ Error TensorRTExecutor::execute(
       return Error::InvalidState;
     }
 
-    // Copy outputs from GPU to CPU
+    // Copy outputs from GPU
     for (const auto& buf : gpu_buffers_) {
       if (!buf.is_input) {
         cudaError_t cuda_err = cudaMemcpyAsync(
             output_buffers[buf.io_index],
             buf.ptr,
             buf.size,
-            cudaMemcpyDeviceToHost,
+            cudaMemcpyDefault,
             stream_);
         if (cuda_err != cudaSuccess) {
           ET_LOG(Error, "Failed to copy output from GPU: %s", cudaGetErrorString(cuda_err));
