@@ -38,15 +38,20 @@ TENSORRT_SUPPORTED_MODELS = {
     "conv1d",
     "dl3",
     "edsr",
+    # "efficient_sam",  # TODO: diff ~41 — likely bicubic interpolation decomposition or ConvTranspose2d issue
     "emformer_join",
+    # "emformer_predict",  # TODO: passes 1/3 seeds — precision sensitive with randomized inputs
     "emformer_transcribe",
     "ic3",
+    "ic4",
     "linear",
+    # "mobilebert",  # TODO: diff 9.8M — HuggingFace parameter loading issue
     "mul",
     "mv2",
     "mv3",
     "resnet18",
     "resnet50",
+    # "sdpa",  # TODO: decomposed bf16 produces NaN on TRT 10.3; native flash attention (add_flash_attention) available on TRT 10.4+
     "softmax",
     "w2l",
 }

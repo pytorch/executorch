@@ -6,6 +6,7 @@
 
 """Converter for element-wise addition operations."""
 
+import logging
 from typing import Any, Dict, Optional
 
 import tensorrt as trt
@@ -18,6 +19,9 @@ from executorch.backends.nvidia.tensorrt.converter_utils import (
     promote_and_cast_tensors,
     set_layer_name,
 )
+
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 def _get_input_ndim(arg: Any, input_map: Dict[torch.fx.Node, Any]) -> int:
@@ -36,13 +40,18 @@ def _get_input_ndim(arg: Any, input_map: Dict[torch.fx.Node, Any]) -> int:
         # Try to get ndim from node metadata first (most reliable)
         if "val" in arg.meta and hasattr(arg.meta["val"], "shape"):
             return len(arg.meta["val"].shape)
-        # Fall back to TRT tensor shape
+        # Fall back to TRT tensor shape - handle dynamic shapes carefully
         if arg in input_map:
             trt_tensor = input_map[arg]
-            shape = trt_tensor.shape
-            if shape is not None:
-                return len(shape)
-    # For scalars, return 0 (will be broadcast)
+            try:
+                shape = trt_tensor.shape
+                if shape is not None:
+                    ndim = len(shape)
+                    if ndim >= 0:  # Valid shape
+                        return ndim
+            except (ValueError, TypeError):
+                pass  # Dynamic shape, fall through
+    # For scalars or unknown, return 0 (will be broadcast)
     return 0
 
 
@@ -55,6 +64,11 @@ def _get_elementwise_input(
 ) -> trt.ITensor:
     """Get TensorRT tensor for an elementwise operation input.
 
+    Handles:
+    - FX nodes already in input_map
+    - FX nodes that are lifted buffers/parameters (placeholder nodes with b_ or p_ prefix)
+    - Scalar values
+
     Args:
         network: TensorRT network definition.
         input_map: Mapping from FX nodes to TensorRT tensors.
@@ -66,15 +80,27 @@ def _get_elementwise_input(
         TensorRT tensor for the input.
 
     Raises:
-        ValueError: If arg is a Node but not found in input_map.
+        ValueError: If arg is a Node but not found in input_map and cannot be created as constant.
     """
     if isinstance(arg, torch.fx.Node):
-        if arg not in input_map:
-            raise ValueError(
-                f"Input node '{arg.name}' not found in input_map. "
-                f"Available nodes: {list(input_map.keys())}"
-            )
-        return input_map[arg]
+        if arg in input_map:
+            return input_map[arg]
+        
+        # Handle lifted buffers and parameters that aren't in input_map
+        # These are placeholder nodes with names starting with b_ (buffers) or p_ (parameters)
+        # or get_attr nodes. We need to create constants from their metadata values.
+        if arg.op == "placeholder" or arg.op == "get_attr":
+            if "val" in arg.meta and isinstance(arg.meta["val"], torch.Tensor):
+                logger.debug(f"[TensorRT] Creating constant for lifted buffer/parameter: {arg.name}")
+                trt_tensor = get_trt_tensor(network, arg.meta["val"], f"const_{arg.name}", dtype)
+                input_map[arg] = trt_tensor  # Cache for future use
+                return trt_tensor
+        
+        raise ValueError(
+            f"Input node '{arg.name}' not found in input_map and could not be created as constant. "
+            f"Node op: {arg.op}, target: {arg.target}. "
+            f"Available nodes: {list(n.name for n in input_map.keys())}"
+        )
     return get_trt_tensor(network, arg, name, dtype)
 
 
