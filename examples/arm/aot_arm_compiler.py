@@ -199,12 +199,9 @@ def _load_serialized_model(
     return model, example_inputs
 
 
-def _apply_replace_quant_nodes(edge: "EdgeProgramManager", args: argparse.Namespace):
-    """Apply the replace_quant_nodes pass to an EdgeProgramManager.
+def _apply_replace_quant_nodes(edge, args):
+    """Apply the replace_quant_nodes pass to the edge graph module."""
 
-    The `edge` argument is expected to be an EdgeProgramManager instance as
-    returned by `to_edge_transform_and_lower`.
-    """
     if args.target != "vgf" and not args.direct_drive:
         edge = edge.transform([ReplaceQuantNodesPass()])
     return edge
