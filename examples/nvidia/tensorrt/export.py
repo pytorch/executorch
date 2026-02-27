@@ -38,6 +38,7 @@ TENSORRT_SUPPORTED_MODELS = {
     "conv1d",
     "dl3",
     "edsr",
+    "ic3",
     "linear",
     "mul",
     "mv3",
