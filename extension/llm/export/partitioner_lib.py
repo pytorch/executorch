@@ -246,3 +246,12 @@ def get_tosa_partitioner(version: str):
     compile_spec = TosaCompileSpec(version)
 
     return TOSAPartitioner(compile_spec)
+
+
+def get_ethosu_partitioner(target: str):
+    from executorch.backends.arm.ethosu.compile_spec import EthosUCompileSpec
+    from executorch.backends.arm.ethosu.partitioner import EthosUPartitioner
+
+    compile_spec = EthosUCompileSpec(target)
+
+    return EthosUPartitioner(compile_spec)

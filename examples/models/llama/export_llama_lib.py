@@ -34,6 +34,7 @@ from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.export.config.llm_config import LlmConfig
 from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
+    get_ethosu_partitioner,
     get_mps_partitioner,
     get_openvino_partitioner,
     get_qnn_partitioner,
@@ -43,6 +44,7 @@ from executorch.extension.llm.export.partitioner_lib import (
 )
 from executorch.extension.llm.export.quantizer_lib import (
     get_coreml_quantizer,
+    get_ethosu_quantizer,
     get_ov_quantizer,
     get_pt2e_quantization_params,
     get_pt2e_quantizers,
@@ -218,6 +220,7 @@ def build_args_parser() -> argparse.ArgumentParser:
             "coreml_baseline_8a_c4w",
             "vulkan_8w",
             "tosa_8a8w",
+            "ethosu_8a8w",
         ],
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic (for per channel 8 bit weight), xnnpack_dynamic_qc4 (for per channel 4 bit weight), embedding.",
     )
@@ -247,6 +250,18 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--adapter_config",
         required=False,
         help="Path to the adapter_config.json file. Used if the model has trained LoRA adapters. Must provide adapter_checkpoint.",
+    )
+
+    parser.add_argument(
+        "--openvino_awq",
+        action="store_true",
+        help="Whether to use AWQ from NNCF. Applicable only for the OpenVINO backend.",
+    )
+
+    parser.add_argument(
+        "--openvino_scale_estimation",
+        action="store_true",
+        help="Whether to use Scale Estimation algorithm from NNCF. Applicable only for the OpenVINO backend",
     )
 
     parser.add_argument(
@@ -783,7 +798,7 @@ def get_quantizer_and_quant_params(llm_config):
         )
         quantizers.append(qnn_quantizer)
     if llm_config.backend.openvino.enabled and llm_config.quantization.pt2e_quantize:
-        assert not quantizers, "Should not enable both xnnpack and openvino"
+        assert not quantizers, "Should not enable openvino and other quantizers"
         group_size = llm_config.quantization.group_size
         group_size = group_size if group_size else 128
         ov_quantizer = get_ov_quantizer(
@@ -801,6 +816,14 @@ def get_quantizer_and_quant_params(llm_config):
             llm_config.backend.tosa.version, llm_config.quantization.pt2e_quantize.value
         )
         quantizers.append(tosa_quantizer)
+    if llm_config.backend.ethosu.enabled and llm_config.quantization.pt2e_quantize:
+        ethosu_quantizer = get_ethosu_quantizer(
+            llm_config.backend.ethosu.target,
+            llm_config.backend.ethosu.system_config,
+            llm_config.backend.ethosu.memory_mode,
+            llm_config.quantization.pt2e_quantize.value,
+        )
+        quantizers.append(ethosu_quantizer)
     if llm_config.backend.vulkan.enabled and llm_config.quantization.pt2e_quantize:
         assert (
             len(quantizers) == 0
@@ -942,6 +965,8 @@ def _to_edge_and_lower_llama_openvino(
     modelname,
     quantizers,
     additional_passes,
+    awq,
+    scale_estimation,
     openvino_device: str = "CPU",
     verbose: bool = False,
 ) -> LLMEdgeManager:  # noqa: C901
@@ -955,9 +980,14 @@ def _to_edge_and_lower_llama_openvino(
     for partitioner in partitioners:
         logging.info(f"--> {partitioner.__class__.__name__}")
 
-    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
-        partitioners
+    from executorch.backends.openvino.quantizer import apply_nncf_data_aware_compression
+
+    logging.info(f"Applying AWQ = {awq}, Scale Estimation = {scale_estimation}")
+    builder = apply_nncf_data_aware_compression(
+        builder_exported, quantizers[0], awq, scale_estimation
     )
+
+    builder = builder.to_edge_transform_and_lower(partitioners)
 
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
@@ -965,20 +995,27 @@ def _to_edge_and_lower_llama_openvino(
     return builder.to_executorch(passes=additional_passes)
 
 
-def _to_edge_and_lower_llama_tosa(
+def _to_edge_and_lower_llama_arm(
     builder_exported,
     modelname,
     quantizers,
     additional_passes,
-    tosa_spec,
+    llm_config: LlmConfig,
     verbose: bool = False,
 ) -> LLMEdgeManager:
     logging.info("Lowering model using TOSA partitioner")
 
     partitioners = []
-    partitioners.append(get_tosa_partitioner(tosa_spec))
-
-    modelname = f"tosa_{modelname}"
+    if llm_config.backend.ethosu.enabled:
+        partitioners.append(
+            get_ethosu_partitioner(
+                llm_config.backend.ethosu.target,
+            )
+        )
+        modelname = f"ethosu_{modelname}"
+    elif llm_config.backend.tosa.enabled:
+        partitioners.append(get_tosa_partitioner(llm_config.backend.tosa.version))
+        modelname = f"tosa_{modelname}"
 
     builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
         partitioners
@@ -1341,16 +1378,18 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             modelname,
             quantizers,
             additional_passes,
+            awq=llm_config.backend.openvino.openvino_awq,
+            scale_estimation=llm_config.backend.openvino.openvino_scale_estimation,
             openvino_device=llm_config.backend.openvino.device,
             verbose=llm_config.debug.verbose,
         )
-    elif llm_config.backend.tosa.enabled:
-        builder = _to_edge_and_lower_llama_tosa(
+    elif llm_config.backend.tosa.enabled or llm_config.backend.ethosu.enabled:
+        builder = _to_edge_and_lower_llama_arm(
             builder_exported,
             modelname,
             quantizers,
             additional_passes,
-            llm_config.backend.tosa.version,
+            llm_config,
             verbose=llm_config.debug.verbose,
         )
     else:

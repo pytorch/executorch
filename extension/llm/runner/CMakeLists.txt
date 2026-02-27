@@ -115,12 +115,12 @@ if(EXECUTORCH_BUILD_PYBIND)
                         portable_lib ${TORCH_PYTHON_LIBRARY} ${TORCH_LIBRARIES}
   )
 
-  # Set properties for the Python extension
   set_target_properties(
     _llm_runner
     PROPERTIES POSITION_INDEPENDENT_CODE ON
                CXX_VISIBILITY_PRESET "hidden"
                INTERPROCEDURAL_OPTIMIZATION TRUE
+               CXX_STANDARD 20
   )
   if(APPLE)
     set(RPATH "@loader_path/../../pybindings")

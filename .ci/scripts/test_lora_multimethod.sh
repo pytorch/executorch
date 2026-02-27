@@ -12,7 +12,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 cmake_install_executorch_libraries() {
     echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
     rm -rf cmake-out
-    cmake --workflow llm-release
+    cmake --preset llm-release -DEXECUTORCH_ENABLE_LOGGING=ON
+    cmake --build --preset llm-release-install
 }
 
 cmake_build_llama_runner() {

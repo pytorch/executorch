@@ -116,3 +116,11 @@ binary_op:
           - VALUE: half
           - VALUE: float
           - VALUE: int32
+    - NAME: binary_bitwise_and
+      OPERATOR: X & Y
+      generate_variant_forall:
+        STORAGE:
+          - VALUE: buffer
+          - VALUE: texture3d
+        DTYPE:
+          - VALUE: uint8

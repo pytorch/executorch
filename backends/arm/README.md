@@ -76,27 +76,104 @@ The Arm backend can be built using the following command:
 ./install_executorch.sh
 ```
 
-One of the following commands should also be run once to gather the necessary dependencies for your chosen target(s):
+**NOTE:** While developing, it can be convenient to use `./install_executorch.sh --editable`, which creates an editable installation of ExecuTorch.
 
-For the Ethos-U target:
+### Target-specific setup and build
+
+Pick one of the target flows below. Each flow has a one-time setup step and a build command.
+
+### Baremetal (Ethos-U) workflow
+
+Builds ExecuTorch runtime libraries for Cortex-M with Ethos-U acceleration.
+
+Setup:
 
 ```
 ./examples/arm/setup.sh --i-agree-to-the-contained-eula
 ```
 
-For the VGF target:
+Build:
+
+```
+./backends/arm/scripts/build_executorch.sh
+```
+
+### VGF (Vulkan ML extensions) workflow
+
+Setup:
 
 ```
 ./examples/arm/setup.sh --disable-ethos-u-deps --enable-mlsdk-deps
 ```
 
-For both Ethos-U & VGF targets:
+The current flow lowers to TOSA and converts to VGF for use in external projects,
+so the `executor_runner` is not typically used here.
+
+### Direct Drive (experimental, Ethos-U85 on Linux) workflow
+
+Direct Drive enables execution on Ethos-U85 via the Linux driver stack.
+
+Driver stack (Linux) and API:
 
 ```
-./examples/arm/setup.sh --i-agree-to-the-contained-eula --enable-mlsdk-deps
+https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-linux-driver-stack
 ```
 
-**NOTE:** While developing, it can be convenient to use`./install_executorch.sh --editable`, which creates an editable installation of ExecuTorch.
+An FVP with Linux is available for Direct Drive, but it must be built and run
+manually. See:
+
+```
+https://corstone1000.docs.arm.com/en/corstone1000-2025.12/
+```
+
+Setup:
+
+```
+./examples/arm/setup.sh --i-agree-to-the-contained-eula --target-toolchain linux-musl
+source ./examples/arm/arm-scratch/setup_path.sh
+```
+
+Build:
+
+```
+./backends/arm/scripts/build_executorch.sh \
+  --toolchain=aarch64-linux-musl-gcc \
+  --build_type=Debug
+```
+
+Note: setup selects the linux-musl toolchain; build uses the aarch64-linux-musl GCC toolchain name.
+
+If your Yocto image enables the dropbear SSH server, you can copy the
+`executor_runner` binary into the running FVP via scp:
+
+```
+scp -P 2222 arm_test/cmake-out/executor_runner root@127.0.0.1:/tmp/
+```
+
+#### Direct Drive model (PTE) workflow
+
+Create a PTE file:
+
+```
+python3 -m examples.arm.aot_arm_compiler \
+  --model_name examples/arm/example_modules/add.py \
+  --delegate \
+  --quantize \
+  --target ethos-u85-256 \
+  --direct_drive
+```
+
+Copy the `executor_runner` binary and the generated PTE file to the running FVP:
+
+```
+scp -P 2222 arm_test/cmake-out/executor_runner add_arm_delegate_ethos-u85-256.pte root@127.0.0.1:/tmp/
+```
+
+Run the model on the FVP:
+
+```
+ssh -p 2222 root@127.0.0.1 -t "/tmp/executor_runner -model_path /tmp/add_arm_delegate_ethos-u85-256.pte -num_executions 1"
+```
 
 ## Testing
 
