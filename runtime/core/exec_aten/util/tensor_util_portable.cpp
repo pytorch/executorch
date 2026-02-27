@@ -114,7 +114,9 @@ namespace {
 // Helper: check if two tensors have semantically equivalent memory layouts.
 // First tries exact dim_order label match; if labels differ, falls back to
 // stride comparison that ignores size-1 dimensions (PyTorch semantics).
-// Issue #16032: prevents false negatives for memory-compatible tensors.
+// In ExecuTorch, strides are derived from dim_order + sizes at tensor
+// construction (TensorImpl), so this comparison is equivalent to comparing
+// the actual memory layout.
 bool two_tensors_same_dim_order(
     const executorch::aten::Tensor& a,
     const executorch::aten::Tensor& b) {

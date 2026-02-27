@@ -653,6 +653,18 @@ TEST_F(TensorUtilTest, SemanticEquivalenceDegenerateHW1) {
   EXPECT_TRUE(tensors_have_same_dim_order(nchw, nhwc));
 }
 
+TEST_F(TensorUtilTest, SemanticEquivalenceDegenerateC1W1) {
+  using namespace torch::executor;
+  // C=1 and W=1: NCHW [2,1,4,1] and NHWC [2,1,4,1] have different dim_order
+  // labels but are semantically equivalent because the C and W dimensions
+  // both have size 1.
+  std::vector<int32_t> sizes = {2, 1, 4, 1};
+  Tensor nchw = tf_float_.ones(sizes);
+  Tensor nhwc = tf_float_.full_channels_last(sizes, 1.0f);
+
+  EXPECT_TRUE(tensors_have_same_dim_order(nchw, nhwc));
+}
+
 TEST_F(TensorUtilTest, SemanticEquivalenceNonDegenerateFails) {
   using namespace torch::executor;
   // Non-degenerate: NCHW [2,3,4,4] and NHWC [2,3,4,4] have different layouts.
