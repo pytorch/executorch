@@ -18,5 +18,6 @@ def define_common_targets():
             "//caffe2:torch",
             "//executorch/backends/nvidia/tensorrt:backend",
             "//executorch/exir/backend:partitioner",
+            "//executorch/exir/backend:utils",
         ],
     )
