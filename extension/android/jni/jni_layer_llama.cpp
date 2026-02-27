@@ -404,8 +404,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     for (int i = 0; i < data_size; i++) {
       data_u8[i] = data_jbyte[i];
     }
-    llm::RawAudio audio{
-        std::move(data_u8), batch_size, n_channels, n_samples};
+    llm::RawAudio audio{std::move(data_u8), batch_size, n_channels, n_samples};
     std::vector<llm::MultimodalInput> inputs;
     inputs.emplace_back(llm::MultimodalInput{std::move(audio)});
     int32_t bos = needs_bos_ ? num_bos_ : 0;
