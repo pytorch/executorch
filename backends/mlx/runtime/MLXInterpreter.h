@@ -32,11 +32,11 @@ using namespace ::mlx::core;
  * @throws std::out_of_range if axis is out of range
  */
 inline int normalize_axis(int axis, int rank, const char* op_name) {
-  if (axis < 0)
-    axis += rank;
-  if (axis < 0 || axis >= rank) {
+  if (axis < -rank || axis >= rank) {
     throw std::out_of_range(std::string(op_name) + ": axis out of range");
   }
+  if (axis < 0)
+    axis += rank;
   return axis;
 }
 
@@ -72,6 +72,10 @@ inline std::vector<int> infer_shape_with_minus_one(
 
   // Infer the -1 dimension if present
   if (neg_one_idx != -1) {
+    if (known_size == 0) {
+      throw std::runtime_error(
+          "infer_shape: cannot infer -1 dimension when known product is 0");
+    }
     int64_t input_size_i64 = static_cast<int64_t>(input_size);
     if (input_size_i64 % known_size != 0) {
       throw std::runtime_error(
@@ -85,7 +89,8 @@ inline std::vector<int> infer_shape_with_minus_one(
           "infer_shape: inferred dimension exceeds int max");
     }
 
-    resolved_shape[neg_one_idx] = static_cast<int>(inferred_dim);
+    resolved_shape[static_cast<size_t>(neg_one_idx)] =
+        static_cast<int>(inferred_dim);
   }
 
   return resolved_shape;
@@ -159,8 +164,8 @@ exec_linear(const LinearNode& n, ExecutionState& st, StreamOrDevice s) {
 
 inline void
 exec_item_int(const ItemIntNode& n, ExecutionState& st, StreamOrDevice) {
-  // Make a non-const copy so non-const item() is called (which does implicit
-  // eval). The const version of item() throws for unscheduled arrays.
+  // Intentional sync: item() requires a concrete scalar value for SymInt
+  // shape computation, so we must force GPU evaluation here.
   auto x = st.const_tensor_ref(n.x);
   eval(x);
   int item = x.item<int>();
@@ -192,7 +197,7 @@ inline void exec_take_along_axis(
 
 inline void exec_take(const TakeNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
-  int axis = normalize_axis(n.axis, x.ndim(), "Take");
+  int axis = normalize_axis(n.axis, static_cast<int>(x.ndim()), "Take");
   int index = normalize_axis(resolve_int(n.index, st), x.shape(axis), "Take");
   st.set_tensor(n.out, take(x, index, axis, s));
 }
@@ -280,27 +285,42 @@ inline void exec_add(const AddNode& n, ExecutionState& st, StreamOrDevice s) {
 
 inline void
 exec_add_int(const AddIntNode& n, ExecutionState& st, StreamOrDevice) {
-  int32_t a = resolve_int(n.a, st);
-  int32_t b = resolve_int(n.b, st);
-  st.set_value(n.out, a + b);
+  int64_t a = resolve_int(n.a, st);
+  int64_t b = resolve_int(n.b, st);
+  int64_t result = a + b;
+  if (result > std::numeric_limits<int32_t>::max() ||
+      result < std::numeric_limits<int32_t>::min()) {
+    throw std::runtime_error("add_int: overflow");
+  }
+  st.set_value(n.out, static_cast<int32_t>(result));
 }
 
 inline void exec_subtract_int(
     const SubtractIntNode& n,
     ExecutionState& st,
     StreamOrDevice) {
-  int32_t a = resolve_int(n.a, st);
-  int32_t b = resolve_int(n.b, st);
-  st.set_value(n.out, a - b);
+  int64_t a = resolve_int(n.a, st);
+  int64_t b = resolve_int(n.b, st);
+  int64_t result = a - b;
+  if (result > std::numeric_limits<int32_t>::max() ||
+      result < std::numeric_limits<int32_t>::min()) {
+    throw std::runtime_error("subtract_int: overflow");
+  }
+  st.set_value(n.out, static_cast<int32_t>(result));
 }
 
 inline void exec_multiply_int(
     const MultiplyIntNode& n,
     ExecutionState& st,
     StreamOrDevice) {
-  int32_t a = resolve_int(n.a, st);
-  int32_t b = resolve_int(n.b, st);
-  st.set_value(n.out, a * b);
+  int64_t a = resolve_int(n.a, st);
+  int64_t b = resolve_int(n.b, st);
+  int64_t result = a * b;
+  if (result > std::numeric_limits<int32_t>::max() ||
+      result < std::numeric_limits<int32_t>::min()) {
+    throw std::runtime_error("multiply_int: overflow");
+  }
+  st.set_value(n.out, static_cast<int32_t>(result));
 }
 
 inline void exec_floor_divide_int(
@@ -309,6 +329,12 @@ inline void exec_floor_divide_int(
     StreamOrDevice) {
   int32_t a = resolve_int(n.a, st);
   int32_t b = resolve_int(n.b, st);
+  if (b == 0) {
+    throw std::runtime_error("floor_divide_int: division by zero");
+  }
+  if (a == std::numeric_limits<int32_t>::min() && b == -1) {
+    throw std::runtime_error("floor_divide_int: overflow (INT32_MIN / -1)");
+  }
   // Floor division for integers (Python semantics: rounds towards negative
   // infinity)
   int32_t result = a / b;
@@ -323,6 +349,9 @@ inline void
 exec_mod_int(const ModIntNode& n, ExecutionState& st, StreamOrDevice) {
   int32_t a = resolve_int(n.a, st);
   int32_t b = resolve_int(n.b, st);
+  if (b == 0) {
+    throw std::runtime_error("mod_int: division by zero");
+  }
   // Python modulo semantics: result has same sign as divisor
   int32_t result = a % b;
   if ((result != 0) && ((result < 0) != (b < 0))) {
@@ -342,7 +371,7 @@ exec_sym_size(const SymSizeNode& n, ExecutionState& st, StreamOrDevice) {
   if (dim < 0 || dim >= rank) {
     throw std::out_of_range("SYM_SIZE: dim out of range");
   }
-  int32_t size = static_cast<int32_t>(a.shape()[dim]);
+  int32_t size = static_cast<int32_t>(a.shape()[static_cast<size_t>(dim)]);
   st.set_value(n.out, size);
 }
 
@@ -416,17 +445,29 @@ exec_arange(const ARangeNode& n, ExecutionState& st, StreamOrDevice s) {
   int stop_val = resolve_int(n.stop, st);
   int step_val = resolve_int(n.step, st);
 
+  if (step_val == 0) {
+    throw std::runtime_error("arange: step must not be zero");
+  }
+
+  // Bound the output size: numel = ceil((stop - start) / step)
+  int64_t range = static_cast<int64_t>(stop_val) - start_val;
+  int64_t numel = 0;
+  if ((range > 0 && step_val > 0) || (range < 0 && step_val < 0)) {
+    numel = (range / step_val) + (range % step_val != 0 ? 1 : 0);
+  }
+  auto dtype = n.scalar_type.has_value() ? resolve_dtype(n.scalar_type.value())
+                                         : ::mlx::core::int32;
+  check_allocation_bounded(
+      {static_cast<int>(std::min(
+          numel, static_cast<int64_t>(std::numeric_limits<int>::max())))},
+      dtype,
+      "arange");
+
   if (n.scalar_type.has_value()) {
-    st.set_tensor(
-        n.out,
-        arange(
-            start_val,
-            stop_val,
-            step_val,
-            resolve_dtype(n.scalar_type.value()),
-            s));
+    st.set_tensor(n.out, arange(start_val, stop_val, step_val, dtype, s));
   } else {
-    // No dtype specified - use MLX's default (infers from inputs)
+    // No dtype specified - use MLX's default (infers from inputs).
+    // The bounds check above conservatively assumes int32.
     st.set_tensor(n.out, arange(start_val, stop_val, step_val, s));
   }
 }
@@ -488,7 +529,12 @@ exec_split(const SplitNode& n, ExecutionState& st, StreamOrDevice s) {
     // Single value means split_size (chunk size)
     // Compute actual sizes: e.g., dim_size=10, split_size=3 -> [3, 3, 3, 1]
     int split_size = sizes_vec[0];
-    int axis = n.axis < 0 ? n.axis + x.ndim() : n.axis;
+    if (split_size <= 0) {
+      throw std::runtime_error(
+          "split: split_size must be positive, got " +
+          std::to_string(split_size));
+    }
+    int axis = n.axis < 0 ? n.axis + static_cast<int>(x.ndim()) : n.axis;
     int dim_size = x.shape(axis);
 
     std::vector<int> indices;
@@ -508,10 +554,14 @@ exec_split(const SplitNode& n, ExecutionState& st, StreamOrDevice s) {
     // sizes=[10, 20, 30] -> indices=[10, 30] (split at positions 10 and 30)
     std::vector<int> indices;
     indices.reserve(sizes_vec.size() - 1);
-    int cumsum = 0;
+    int64_t cumsum = 0;
     for (size_t i = 0; i < sizes_vec.size() - 1; ++i) {
-      cumsum += sizes_vec[i];
-      indices.push_back(cumsum);
+      cumsum += static_cast<int64_t>(sizes_vec[i]);
+      if (cumsum > std::numeric_limits<int32_t>::max() ||
+          cumsum < std::numeric_limits<int32_t>::min()) {
+        throw std::runtime_error("split: cumulative size overflow");
+      }
+      indices.push_back(static_cast<int>(cumsum));
     }
     auto results = split(x, to_shape(indices), n.axis, s);
     if (results.size() != outs_fb.size()) {
@@ -569,7 +619,8 @@ inline void exec_broadcast_to(
     if (shape_vec[i] == -1) {
       int input_dim = static_cast<int>(i) - offset;
       if (input_dim >= 0 && input_dim < static_cast<int>(x_shape.size())) {
-        shape_vec[i] = static_cast<int>(x_shape[input_dim]);
+        shape_vec[i] =
+            static_cast<int>(x_shape[static_cast<size_t>(input_dim)]);
       }
     }
   }
@@ -586,6 +637,11 @@ inline void exec_pad(const PadNode& n, ExecutionState& st, StreamOrDevice s) {
   // Convert flat pad_width to vector of pairs
   std::vector<std::pair<int, int>> pad_width_pairs;
   auto pad_width_resolved = resolve_ints(n.pad_width, st);
+  if (pad_width_resolved.size() % 2 != 0) {
+    throw std::runtime_error(
+        "pad: pad_width must have even length, got " +
+        std::to_string(pad_width_resolved.size()));
+  }
   for (size_t i = 0; i < pad_width_resolved.size(); i += 2) {
     pad_width_pairs.push_back(
         {pad_width_resolved[i], pad_width_resolved[i + 1]});
@@ -657,15 +713,15 @@ exec_slice(const SliceNode& n, ExecutionState& st, StreamOrDevice s) {
   int start = resolve_int(n.start, st);
   int stop = resolve_int(n.stop, st);
 
-  std::vector<int> vstart(rank, 0);
+  std::vector<int> vstart(static_cast<size_t>(rank), 0);
   std::vector<int> vstop;
-  vstop.reserve(rank);
+  vstop.reserve(static_cast<size_t>(rank));
   auto sh = x.shape();
-  for (int i = 0; i < rank; ++i) {
+  for (size_t i = 0; i < static_cast<size_t>(rank); ++i) {
     vstop.push_back(static_cast<int>(sh[i]));
   }
 
-  const int dim = vstop[axis];
+  const int dim = vstop[static_cast<size_t>(axis)];
   if (start < 0)
     start += dim;
   start = std::max(0, std::min(start, dim));
@@ -673,8 +729,8 @@ exec_slice(const SliceNode& n, ExecutionState& st, StreamOrDevice s) {
     stop += dim;
   stop = std::max(0, std::min(stop, dim));
 
-  vstart[axis] = start;
-  vstop[axis] = stop;
+  vstart[static_cast<size_t>(axis)] = start;
+  vstop[static_cast<size_t>(axis)] = stop;
 
   st.set_tensor(n.out, slice(x, to_shape(vstart), to_shape(vstop), s));
 }
@@ -697,6 +753,12 @@ inline void exec_quantized_linear(
   array X = st.const_tensor_ref(n.x);
   array Wq = st.const_tensor_ref(n.w);
   array Sc = st.const_tensor_ref(n.scales);
+
+  if (n.bits <= 0 || n.bits > 8) {
+    throw std::runtime_error(
+        "exec_quantized_linear: bits must be in [1, 8], got " +
+        std::to_string(n.bits));
+  }
 
   std::optional<array> Qb = std::nullopt;
   if (n.biases) {
@@ -744,13 +806,10 @@ inline void exec_concatenate(
 }
 
 inline void exec_full(const FullNode& n, ExecutionState& st, StreamOrDevice s) {
-  st.set_tensor(
-      n.out,
-      full(
-          to_shape(n.shape, st),
-          resolve_float(n.v, st),
-          resolve_dtype(n.scalar_type),
-          s));
+  auto shape = to_shape(n.shape, st);
+  auto dtype = resolve_dtype(n.scalar_type);
+  check_allocation_bounded(shape, dtype, "full");
+  st.set_tensor(n.out, full(shape, resolve_float(n.v, st), dtype, s));
 }
 
 inline void
@@ -775,15 +834,15 @@ inline void exec_slice_update(
   int start = resolve_int(n.start, st);
   int stop = resolve_int(n.stop, st);
 
-  std::vector<int> vstart(rank, 0);
+  std::vector<int> vstart(static_cast<size_t>(rank), 0);
   std::vector<int> vstop;
-  vstop.reserve(rank);
+  vstop.reserve(static_cast<size_t>(rank));
   auto sh = dst.shape();
-  for (int i = 0; i < rank; ++i) {
+  for (size_t i = 0; i < static_cast<size_t>(rank); ++i) {
     vstop.push_back(static_cast<int>(sh[i]));
   }
 
-  const int dst_dim = vstop[axis];
+  const int dst_dim = vstop[static_cast<size_t>(axis)];
 
   if (start < 0)
     start += dst_dim;
@@ -792,8 +851,8 @@ inline void exec_slice_update(
     stop += dst_dim;
   stop = std::max(0, std::min(stop, dst_dim));
 
-  vstart[axis] = start;
-  vstop[axis] = stop;
+  vstart[static_cast<size_t>(axis)] = start;
+  vstop[static_cast<size_t>(axis)] = stop;
 
   if (start == stop)
     return; // zero-length update, nothing to do
@@ -814,6 +873,7 @@ inline std::tuple<int, int, int, int> next_contiguous_run(
   int upd_start = static_cast<int>(offset);
   size_t len = 1;
   while (offset + len < indices.size() &&
+         len < static_cast<size_t>(std::numeric_limits<int>::max()) &&
          indices[offset + len] == dst_start + static_cast<int>(len)) {
     ++len;
   }
@@ -836,7 +896,8 @@ inline void exec_index_update(
   }
   const int rank = static_cast<int>(dst.ndim());
   int axis = normalize_axis(n.axis, rank, "IndexUpdate");
-  const int dst_dim = static_cast<int>(dst.shape()[axis]);
+  const size_t uaxis = static_cast<size_t>(axis);
+  const int dst_dim = static_cast<int>(dst.shape()[uaxis]);
 
   // Get indices as a vector of ints, handling negative indices
   // Note: PyTorch uses int64 for indices, so we read as int64_t
@@ -859,7 +920,11 @@ inline void exec_index_update(
           " out of range for axis " + std::to_string(axis) + " with size " +
           std::to_string(dst_dim));
     }
-    idx_vec[i] = idx;
+    if (idx > std::numeric_limits<int32_t>::max()) {
+      throw std::out_of_range(
+          "IndexUpdate: index " + std::to_string(idx) + " exceeds int32 range");
+    }
+    idx_vec[i] = static_cast<int>(idx);
   }
 
   if (idx_vec.empty()) {
@@ -867,19 +932,20 @@ inline void exec_index_update(
   }
 
   // Build base start/stop vectors for slice_update
-  std::vector<int> dst_vstart(rank, 0);
+  const size_t urank = static_cast<size_t>(rank);
+  std::vector<int> dst_vstart(urank, 0);
   std::vector<int> dst_vstop;
-  dst_vstop.reserve(rank);
+  dst_vstop.reserve(urank);
   auto sh = dst.shape();
-  for (int i = 0; i < rank; ++i) {
+  for (size_t i = 0; i < urank; ++i) {
     dst_vstop.push_back(static_cast<int>(sh[i]));
   }
 
-  std::vector<int> upd_vstart(rank, 0);
+  std::vector<int> upd_vstart(urank, 0);
   std::vector<int> upd_vstop;
-  upd_vstop.reserve(rank);
+  upd_vstop.reserve(urank);
   auto upd_sh = upd.shape();
-  for (int i = 0; i < rank; ++i) {
+  for (size_t i = 0; i < urank; ++i) {
     upd_vstop.push_back(static_cast<int>(upd_sh[i]));
   }
 
@@ -890,16 +956,16 @@ inline void exec_index_update(
         next_contiguous_run(idx_vec, offset);
 
     // Set axis range for dst
-    dst_vstart[axis] = dst_start;
-    dst_vstop[axis] = dst_stop;
+    dst_vstart[uaxis] = dst_start;
+    dst_vstop[uaxis] = dst_stop;
 
     // Set axis range for upd slice
-    upd_vstart[axis] = upd_start;
-    upd_vstop[axis] = upd_stop;
+    upd_vstart[uaxis] = upd_start;
+    upd_vstop[uaxis] = upd_stop;
 
     // Slice update - skip slicing if using entire update tensor
     array upd_slice =
-        (upd_start == 0 && upd_stop == static_cast<int>(upd_sh[axis]))
+        (upd_start == 0 && upd_stop == static_cast<int>(upd_sh[uaxis]))
         ? upd
         : slice(upd, to_shape(upd_vstart), to_shape(upd_vstop), s);
     dst = slice_update(
@@ -1039,6 +1105,7 @@ inline void exec_tri(const TriNode& n, ExecutionState& st, StreamOrDevice s) {
   int rows = resolve_int(n.n, st);
   int cols = resolve_int(n.m, st);
   auto dtype = resolve_dtype(n.scalar_type);
+  check_allocation_bounded({rows, cols}, dtype, "tri");
   st.set_tensor(n.out, tri(rows, cols, n.k, dtype, s));
 }
 
@@ -1331,7 +1398,13 @@ class Interpreter {
       uint32_t chain_idx,
       ExecutionState& st,
       StreamOrDevice stream = {}) const {
-    const auto& chain = prog.instruction_chains.at(chain_idx);
+    if (chain_idx >= prog.instruction_chains.size()) {
+      throw std::runtime_error(
+          "run_chain: chain_idx " + std::to_string(chain_idx) +
+          " out of range (num_chains=" +
+          std::to_string(prog.instruction_chains.size()) + ")");
+    }
+    const auto& chain = prog.instruction_chains[chain_idx];
     size_t idx = 0;
     for (const auto& instr : chain) {
       st.begin_op(idx, op_name(instr.op));

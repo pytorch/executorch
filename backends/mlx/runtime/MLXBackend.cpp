@@ -72,10 +72,24 @@ array tensor_to_mlx(
 
   ::mlx::core::Shape shape;
   for (int i = 0; i < t.dim(); ++i) {
-    shape.push_back(static_cast<int>(t.size(i)));
+    auto dim_size = t.size(i);
+    if (dim_size > std::numeric_limits<int>::max() ||
+        dim_size < std::numeric_limits<int>::min()) {
+      throw std::runtime_error(
+          "tensor_to_mlx: dimension " + std::to_string(i) + " size " +
+          std::to_string(dim_size) + " exceeds int range");
+    }
+    shape.push_back(static_cast<int>(dim_size));
   }
 
-  void* data_ptr = const_cast<void*>(t.const_data_ptr());
+  // SAFETY: MLX reads this data during async_eval() Metal command encoding,
+  // which completes before the lock is released. The ET tensor must remain
+  // valid until async_eval returns.
+  const void* cptr = t.const_data_ptr();
+  if (!cptr) {
+    throw std::runtime_error("tensor_to_mlx: tensor has null data pointer");
+  }
+  void* data_ptr = const_cast<void*>(cptr);
   auto deleter = [](void*) {};
   return array(data_ptr, shape, dtype, deleter);
 }
@@ -115,8 +129,11 @@ void write_output(array& arr, ETTensor& out) {
   }
 
   if (!shape_matches) {
-    std::vector<executorch::aten::SizesType> new_sizes(
-        mlx_shape.begin(), mlx_shape.end());
+    std::vector<executorch::aten::SizesType> new_sizes;
+    new_sizes.reserve(mlx_shape.size());
+    for (auto d : mlx_shape) {
+      new_sizes.push_back(static_cast<executorch::aten::SizesType>(d));
+    }
     auto err = resize_tensor(
         out,
         ArrayRef<executorch::aten::SizesType>(
@@ -134,7 +151,12 @@ void write_output(array& arr, ETTensor& out) {
         " bytes, output has " + std::to_string(out_nbytes) + " bytes");
   }
 
-  std::memcpy(out.mutable_data_ptr(), arr.data<void>(), out_nbytes);
+  const void* src = arr.data<void>();
+  if (!src) {
+    throw std::runtime_error(
+        "write_output: arr.data<void>() is null after wait()");
+  }
+  std::memcpy(out.mutable_data_ptr(), src, out_nbytes);
 }
 
 } // namespace
@@ -172,7 +194,7 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
   ~MLXBackend() override = default;
 
   bool is_available() const override {
-    return true;
+    return ::mlx::core::metal::is_available();
   }
 
   Result<DelegateHandle*> init(
@@ -189,8 +211,19 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
     try {
       new (handle) MLXHandle();
 
+      if (!processed || !processed->data() || processed->size() == 0) {
+        throw std::runtime_error("init: null or empty delegate payload");
+      }
+
       handle->program = loader::load_program(
           static_cast<const uint8_t*>(processed->data()), processed->size());
+
+      // Validate schema version
+      if (handle->program.version != "1") {
+        throw std::runtime_error(
+            "Unsupported MLX schema version '" + handle->program.version +
+            "' (expected '1'). Rebuild the .pte with a matching SDK version.");
+      }
 
       // Load constants from named_data_map
       // Constants are stored by name in the .pte file and provided by ET at
@@ -214,7 +247,9 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       handle->state.bind(
           handle->program, handle->constants, handle->mutable_buffers);
 
-      // Run init chain if present
+      // Run init chain if present.
+      // SAFETY: The >= 0 check ensures init_chain_idx is non-negative, so the
+      // static_cast<uint32_t> cannot produce UINT32_MAX from a -1 sentinel.
       if (handle->program.init_chain_idx >= 0) {
         handle->interpreter.run_chain(
             handle->program,
@@ -258,8 +293,12 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
 
         h->state.reset();
 
-        const size_t expected_args =
-            program.input_map.size() + program.output_map.size();
+        const size_t n_inputs = program.input_map.size();
+        const size_t n_outputs = program.output_map.size();
+        if (n_inputs > SIZE_MAX - n_outputs) {
+          throw std::runtime_error("execute: input + output count overflow");
+        }
+        const size_t expected_args = n_inputs + n_outputs;
         if (args.size() != expected_args) {
           ET_LOG(
               Error, "Expected %zu args, got %zu", expected_args, args.size());
@@ -268,6 +307,12 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
 
         // Bind inputs
         for (const auto& slot : program.input_map) {
+          if (arg_idx >= args.size()) {
+            throw std::runtime_error(
+                "execute: arg_idx " + std::to_string(arg_idx) +
+                " out of bounds (args.size()=" + std::to_string(args.size()) +
+                ")");
+          }
           if (slot.slot_type == SlotType::TensorSlot) {
             const ETTensor& tensor = args[arg_idx++]->toTensor();
             Tid tid{slot.idx};

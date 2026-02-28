@@ -1014,6 +1014,11 @@ def _generate_loader_case(table: FBSTable) -> List[str]:
         return lines
 
     lines.append(f"      auto fb = fb_instr->op_as_{class_name}();")
+    lines.append("      if (!fb) {{")
+    lines.append(
+        '        throw std::runtime_error("FlatBuffer op_type/payload mismatch for {class_name}");'
+    )
+    lines.append("      }}")
     lines.append(f"      {class_name} node;")
 
     for fld in table.fields:
@@ -1097,7 +1102,7 @@ def _emit_cpp_load(kind: str, name: str, fb_name: str) -> "List[str] | None":
         return [
             f"      if (fb->{fb_name}()) {{",
             f"        for (size_t i = 0; i < fb->{fb_name}()->size(); ++i) {{",
-            f"          node.{name}.push_back(convert_int_or_vid(fb->{fb_name}()->Get(i)));",
+            f"          node.{name}.push_back(convert_int_or_vid(fb->{fb_name}()->Get(static_cast<flatbuffers::uoffset_t>(i))));",
             "        }",
             "      }",
         ]

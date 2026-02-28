@@ -16,20 +16,32 @@ endif()
 
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
-  set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
+  set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
-set(_common_compile_options -Wno-deprecated-declarations)
+set(_common_compile_options -Wall -Werror -Wno-deprecated-declarations)
+
+# Sanitizer flags (asan + ubsan) for security hardening — CI only. Enable via:
+# cmake --preset mlx-release -DEXECUTORCH_MLX_ENABLE_SANITIZERS=ON
+option(EXECUTORCH_MLX_ENABLE_SANITIZERS
+       "Enable ASan + UBSan for MLX delegate and tests" OFF
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  list(APPEND _common_compile_options -fsanitize=address,undefined
+       -fno-omit-frame-pointer
+  )
+  set(_mlx_sanitizer_link_options -fsanitize=address,undefined)
+endif()
 
 # -----------------------------------------------------------------------------
 # Code generation from schema.fbs
 # -----------------------------------------------------------------------------
 #
-# The generate.py script generates all code from schema.fbs: - Python:
-# mlx_graph_schema.py, _generated_serializers.py, _generated/ - C++:
-# MLXLoader.h, MLXLoader.cpp, schema_generated.h
+# The generate.py script generates all code from schema.fbs: Python:
+# mlx_graph_schema.py, _generated_serializers.py, _generated/ C++: MLXLoader.h,
+# MLXLoader.cpp, schema_generated.h
 #
 # We run generate.py at build time so these files don't need to be checked in.
 # -----------------------------------------------------------------------------
@@ -200,25 +212,6 @@ set(MLX_METAL_JIT
     CACHE BOOL "Use JIT compiled Metal kernels"
 )
 
-# Apply JSON patch to prevent conflict with ExecuTorch's nlohmann_json MLX uses
-# FetchContent for json; ExecuTorch already has it as submodule
-execute_process(
-  COMMAND git apply --check ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_json.patch
-  WORKING_DIRECTORY ${MLX_SOURCE_DIR}
-  RESULT_VARIABLE _patch_check_result
-  OUTPUT_QUIET ERROR_QUIET
-)
-if(_patch_check_result EQUAL 0)
-  execute_process(
-    COMMAND git apply ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_json.patch
-    WORKING_DIRECTORY ${MLX_SOURCE_DIR}
-    RESULT_VARIABLE _patch_result
-  )
-  if(_patch_result EQUAL 0)
-    message(STATUS "Applied MLX JSON patch")
-  endif()
-endif()
-
 # Add MLX subdirectory
 message(STATUS "Adding MLX from submodule: ${MLX_SOURCE_DIR}")
 add_subdirectory(${MLX_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/mlx)
@@ -237,7 +230,7 @@ set(_mlx_backend__srcs ${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXLoader.cpp
 add_library(mlxdelegate ${_mlx_backend__srcs})
 
 # Ensure schema is generated before compiling
-add_dependencies(mlxdelegate mlx_schema flatc)
+add_dependencies(mlxdelegate mlx_schema)
 
 # Add logging flag if enabled
 if(ET_MLX_ENABLE_OP_LOGGING)
@@ -247,7 +240,6 @@ endif()
 
 target_include_directories(
   mlxdelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime
-                      ${_mlx_schema__include_dir} ${MLX_SOURCE_DIR}
 )
 
 # Link against MLX and executorch mlx is only available at BUILD_INTERFACE -
@@ -257,7 +249,10 @@ target_link_libraries(
 )
 
 executorch_target_link_options_shared_lib(mlxdelegate)
-target_compile_options(mlxdelegate PUBLIC ${_common_compile_options})
+target_compile_options(mlxdelegate PRIVATE ${_common_compile_options})
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_link_options(mlxdelegate PRIVATE ${_mlx_sanitizer_link_options})
+endif()
 
 install(
   TARGETS mlxdelegate mlx_schema

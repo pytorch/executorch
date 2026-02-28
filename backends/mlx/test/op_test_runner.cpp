@@ -31,8 +31,14 @@
  *     - N bytes: data (size = product of shape * sizeof(dtype))
  */
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wconversion"
+#pragma clang diagnostic ignored "-Wsign-conversion"
+#pragma clang diagnostic ignored "-Wshorten-64-to-32"
+#pragma clang diagnostic ignored "-Wimplicit-float-conversion"
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
+#pragma clang diagnostic pop
 
 #include <cmath>
 #include <cstdint>
@@ -144,12 +150,14 @@ std::vector<TensorData> read_tensors_from_bin(const std::string& path) {
 
     size_t numel = 1;
     for (int32_t s : t.shape) {
-      numel *= s;
+      numel *= static_cast<size_t>(s);
     }
     size_t data_size = numel * dtype_size(t.dtype);
 
     t.data.resize(data_size);
-    file.read(reinterpret_cast<char*>(t.data.data()), data_size);
+    file.read(
+        reinterpret_cast<char*>(t.data.data()),
+        static_cast<std::streamsize>(data_size));
 
     tensors.push_back(std::move(t));
   }
@@ -178,7 +186,9 @@ void write_tensors_to_bin(
     file.write(
         reinterpret_cast<const char*>(t.shape.data()), ndim * sizeof(int32_t));
 
-    file.write(reinterpret_cast<const char*>(t.data.data()), t.data.size());
+    file.write(
+        reinterpret_cast<const char*>(t.data.data()),
+        static_cast<std::streamsize>(t.data.size()));
   }
 }
 
@@ -276,7 +286,6 @@ int main(int argc, char* argv[]) {
     inputs.reserve(input_tensors.size());
 
     for (const auto& t : input_tensors) {
-      auto scalar_type = dtype_to_scalar_type(t.dtype);
       std::vector<exec_aten::SizesType> sizes(t.shape.begin(), t.shape.end());
 
       TensorPtr tensor_ptr;
@@ -347,9 +356,9 @@ int main(int argc, char* argv[]) {
       TensorData t;
       t.dtype = scalar_type_to_dtype(tensor.scalar_type());
 
-      t.shape.resize(tensor.dim());
-      for (int d = 0; d < tensor.dim(); ++d) {
-        t.shape[d] = static_cast<int32_t>(tensor.size(d));
+      t.shape.resize(static_cast<size_t>(tensor.dim()));
+      for (size_t d = 0; d < static_cast<size_t>(tensor.dim()); ++d) {
+        t.shape[d] = static_cast<int32_t>(tensor.size(static_cast<ssize_t>(d)));
       }
 
       size_t data_size = tensor.nbytes();

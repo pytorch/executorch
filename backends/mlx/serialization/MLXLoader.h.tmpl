@@ -160,8 +160,10 @@ struct MLXProgram {
   std::vector<std::optional<TensorMeta>> tensor_meta;
 
   // Helper methods
-  inline uint32_t num_tensors() const {
-    return num_constant_tensors + num_input_tensors + num_output_tensors + num_mutable_buffer_tensors + num_temp_tensors;
+  inline uint64_t num_tensors() const {
+    return static_cast<uint64_t>(num_constant_tensors) +
+           num_input_tensors + num_output_tensors +
+           num_mutable_buffer_tensors + num_temp_tensors;
   }
 
   inline bool is_constant_tensor(Tid id) const {
@@ -195,14 +197,15 @@ inline SlotType convert_slot_type(mlx_delegate::SlotType fb_type) {
     case mlx_delegate::SlotType_BoolValueSlot:
       return SlotType::BoolValueSlot;
     default:
-      return SlotType::TensorSlot;
+      throw std::runtime_error("Unknown SlotType: " +
+          std::to_string(static_cast<int>(fb_type)));
   }
 }
 
 // Convert FlatBuffer Tid
 inline Tid convert_tid(const mlx_delegate::Tid* fb_tid) {
   if (!fb_tid) {
-    return Tid{0};
+    throw std::runtime_error("Null Tid in FlatBuffer");
   }
   return Tid{fb_tid->idx()};
 }
@@ -210,7 +213,7 @@ inline Tid convert_tid(const mlx_delegate::Tid* fb_tid) {
 // Convert FlatBuffer Vid
 inline Vid convert_vid(const mlx_delegate::Vid* fb_vid) {
   if (!fb_vid) {
-    return Vid{0};
+    throw std::runtime_error("Null Vid in FlatBuffer");
   }
   return Vid{fb_vid->idx()};
 }
@@ -219,14 +222,14 @@ inline Vid convert_vid(const mlx_delegate::Vid* fb_vid) {
 inline std::variant<int64_t, Vid> convert_int_or_vid(
     const mlx_delegate::IntOrVid* fb) {
   if (!fb) {
-    return int64_t{0};
+    throw std::runtime_error("Null IntOrVid in FlatBuffer");
   }
   if (!fb->is_vid()) {
     return fb->literal();
   }
   const auto* vid_ptr = fb->vid();
   if (!vid_ptr) {
-    return int64_t{0};
+    throw std::runtime_error("IntOrVid has is_vid=true but vid pointer is null");
   }
   return Vid{vid_ptr->idx()};
 }
@@ -235,14 +238,14 @@ inline std::variant<int64_t, Vid> convert_int_or_vid(
 inline std::variant<double, Vid> convert_float_or_vid(
     const mlx_delegate::FloatOrVid* fb) {
   if (!fb) {
-    return double{0.0};
+    throw std::runtime_error("Null FloatOrVid in FlatBuffer");
   }
   if (!fb->is_vid()) {
     return fb->literal();
   }
   const auto* vid_ptr = fb->vid();
   if (!vid_ptr) {
-    return double{0.0};
+    throw std::runtime_error("FloatOrVid has is_vid=true but vid pointer is null");
   }
   return Vid{vid_ptr->idx()};
 }
@@ -251,15 +254,20 @@ inline std::variant<double, Vid> convert_float_or_vid(
 inline TidOrVid convert_tid_or_vid(
     const mlx_delegate::TidOrVid* fb) {
   if (!fb) {
-    return TidOrVid{Tid{0}, Vid{0}, false};
+    throw std::runtime_error("Null TidOrVid in FlatBuffer");
   }
   TidOrVid result;
   result.is_vid = fb->is_vid();
-  if (fb->tid()) {
-    result.tid = Tid{fb->tid()->idx()};
-  }
-  if (fb->vid()) {
+  if (result.is_vid) {
+    if (!fb->vid()) {
+      throw std::runtime_error("TidOrVid has is_vid=true but vid pointer is null");
+    }
     result.vid = Vid{fb->vid()->idx()};
+  } else {
+    if (!fb->tid()) {
+      throw std::runtime_error("TidOrVid has is_vid=false but tid pointer is null");
+    }
+    result.tid = Tid{fb->tid()->idx()};
   }
   return result;
 }
@@ -267,7 +275,7 @@ inline TidOrVid convert_tid_or_vid(
 // Convert FlatBuffer SlotVariant
 inline SlotVariant convert_slot_variant(const mlx_delegate::SlotVariant* fb) {
   if (!fb) {
-    return SlotVariant{0, SlotType::TensorSlot};
+    throw std::runtime_error("Null SlotVariant in FlatBuffer");
   }
   return SlotVariant{fb->idx(), convert_slot_type(fb->slot_type())};
 }

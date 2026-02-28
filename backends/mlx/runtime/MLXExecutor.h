@@ -54,6 +54,17 @@ namespace executorch {
 namespace backends {
 namespace mlx {
 
+/// Multiply two unsigned values, throw on overflow.
+template <typename T>
+inline T safe_mul(T a, T b, const char* context) {
+  static_assert(std::is_unsigned<T>::value, "safe_mul requires unsigned type");
+  T result;
+  if (__builtin_mul_overflow(a, b, &result)) {
+    throw std::runtime_error(std::string(context) + ": unsigned mul overflow");
+  }
+  return result;
+}
+
 // Runtime check for op logging (only callable when compiled in)
 #if ET_MLX_ENABLE_OP_LOGGING
 inline bool isOpLoggingEnabled() {
@@ -162,17 +173,35 @@ struct ExecutionState {
 
     // Allocate space for inputs, outputs, and temps only (not constants or
     // mutable buffers)
-    size_t num_per_execution_tensors = prog.num_input_tensors +
+    uint64_t num_per_execution_tensors =
+        static_cast<uint64_t>(prog.num_input_tensors) +
         prog.num_output_tensors + prog.num_temp_tensors;
-    tensors.assign(num_per_execution_tensors, std::nullopt);
+    if (num_per_execution_tensors > 1'000'000) {
+      throw std::runtime_error(
+          "bind: num_per_execution_tensors " +
+          std::to_string(num_per_execution_tensors) + " exceeds limit");
+    }
+    tensors.assign(
+        static_cast<size_t>(num_per_execution_tensors), std::nullopt);
+    if (prog.num_values > 1'000'000) {
+      throw std::runtime_error(
+          "bind: num_values " + std::to_string(prog.num_values) +
+          " exceeds limit");
+    }
     values.assign(prog.num_values, std::nullopt);
 
     // Compute tensor ID range boundaries for fast type lookup
     // ID assignment order: Constant -> Input -> Output -> MutableBuffer -> Temp
     num_constants = prog.num_constant_tensors;
-    input_end = num_constants + prog.num_input_tensors;
-    output_end = input_end + prog.num_output_tensors;
-    mutable_buffer_end = output_end + prog.num_mutable_buffer_tensors;
+    uint64_t ie = static_cast<uint64_t>(num_constants) + prog.num_input_tensors;
+    uint64_t oe = ie + prog.num_output_tensors;
+    uint64_t me = oe + prog.num_mutable_buffer_tensors;
+    if (me > std::numeric_limits<uint32_t>::max()) {
+      throw std::runtime_error("bind: tensor ID range overflow");
+    }
+    input_end = static_cast<uint32_t>(ie);
+    output_end = static_cast<uint32_t>(oe);
+    mutable_buffer_end = static_cast<uint32_t>(me);
   }
 
   // Check if a tensor ID is a mutable buffer
@@ -188,10 +217,25 @@ struct ExecutionState {
           "tensor_index: called with constant tensor id " +
           std::to_string(id.idx));
     }
+    if (is_mutable_buffer(id)) {
+      throw std::runtime_error(
+          "tensor_index: called with mutable buffer tensor id " +
+          std::to_string(id.idx));
+    }
     uint32_t idx = id.idx - num_constants;
     // If this ID is after mutable buffer range, subtract mutable buffer count
     if (id.idx >= mutable_buffer_end) {
+      if (idx < program->num_mutable_buffer_tensors) {
+        throw std::runtime_error(
+            "tensor_index: underflow for tensor id " + std::to_string(id.idx));
+      }
       idx -= program->num_mutable_buffer_tensors;
+    }
+    if (idx >= tensors.size()) {
+      throw std::out_of_range(
+          "tensor_index: computed index " + std::to_string(idx) +
+          " out of range (size=" + std::to_string(tensors.size()) +
+          ") for tensor id " + std::to_string(id.idx));
     }
     return idx;
   }
@@ -552,9 +596,38 @@ inline ::mlx::core::Dtype resolve_dtype(int8_t d) {
   return resolve_dtype(static_cast<ScalarType>(d));
 }
 
+// Maximum allocation size for any single tensor created from untrusted data.
+// This bounds GPU memory allocation from malformed payloads.
+constexpr size_t kMaxAllocationBytes =
+    static_cast<size_t>(4) * 1024 * 1024 * 1024; // 4 GB
+
+/// Validate that a tensor with the given shape and dtype does not exceed
+/// kMaxAllocationBytes. Throws std::runtime_error on invalid dimensions
+/// or if the total size exceeds the limit.
+inline void check_allocation_bounded(
+    const ::mlx::core::Shape& shape,
+    ::mlx::core::Dtype dtype,
+    const char* context) {
+  size_t elem_size = ::mlx::core::size_of(dtype);
+  size_t numel = 1;
+  for (auto d : shape) {
+    if (d <= 0) {
+      throw std::runtime_error(
+          std::string(context) + ": invalid dimension " + std::to_string(d));
+    }
+    numel = safe_mul(numel, static_cast<size_t>(d), context);
+  }
+  size_t total_bytes = safe_mul(numel, elem_size, context);
+  if (total_bytes > kMaxAllocationBytes) {
+    throw std::runtime_error(
+        std::string(context) + ": allocation exceeds 4GB limit");
+  }
+}
+
 inline int32_t clamp_to_int32(int64_t val64) {
-  // Clamp to int32_t range to avoid overflow
-  // INT64_MAX is commonly used to mean "slice to end" or similar semantics
+  // INT64_MAX is commonly used as a sentinel for "slice to end".
+  // Non-sentinel large values are silently clamped, which may change
+  // slice semantics — but this matches PyTorch behavior.
   if (val64 >= static_cast<int64_t>(std::numeric_limits<int32_t>::max())) {
     return std::numeric_limits<int32_t>::max();
   } else if (
@@ -618,7 +691,14 @@ inline ::mlx::core::Shape to_shape(
       throw std::runtime_error(
           "to_shape: expected static shape but found dynamic Vid reference");
     }
-    out.push_back(clamp_to_int32(std::get<int64_t>(d)));
+    int64_t dim = std::get<int64_t>(d);
+    if (dim > std::numeric_limits<int32_t>::max() ||
+        dim < std::numeric_limits<int32_t>::min()) {
+      throw std::runtime_error(
+          "to_shape: shape dimension " + std::to_string(dim) +
+          " exceeds int32 range");
+    }
+    out.push_back(static_cast<int32_t>(dim));
   }
   return out;
 }
@@ -651,6 +731,15 @@ inline void load_constants(
   store.tensors.reserve(program.num_constant_tensors);
   constant_buffers.reserve(program.num_constant_tensors);
 
+  // Build tid -> name map for O(1) lookup
+  std::unordered_map<uint32_t, const std::string*> tid_to_name;
+  tid_to_name.reserve(program.named_slots.size());
+  for (const auto& ns : program.named_slots) {
+    if (ns.slot.slot_type == SlotType::TensorSlot) {
+      tid_to_name[ns.slot.idx] = &ns.name;
+    }
+  }
+
   // Load each constant tensor by name
   for (uint32_t tid = 0; tid < program.num_constant_tensors; ++tid) {
     // Get tensor metadata
@@ -660,14 +749,9 @@ inline void load_constants(
           std::to_string(tid));
     }
 
-    // Find the name for this tensor ID from named_slots
-    const std::string* name = nullptr;
-    for (const auto& ns : program.named_slots) {
-      if (ns.slot.slot_type == SlotType::TensorSlot && ns.slot.idx == tid) {
-        name = &ns.name;
-        break;
-      }
-    }
+    // Find the name for this tensor ID
+    auto it = tid_to_name.find(tid);
+    const std::string* name = (it != tid_to_name.end()) ? it->second : nullptr;
     if (!name) {
       throw std::runtime_error(
           "load_constants: no name found for constant tensor " +
@@ -695,7 +779,10 @@ inline void load_constants(
     Shape shape = to_shape(meta.shape);
     Dtype dtype = resolve_dtype(meta.scalar_type);
 
-    // Create MLX array with zero-copy when enabled
+    // Create MLX array with zero-copy when enabled.
+    // SAFETY: Constants are read-only; the program builder ensures no in-place
+    // ops target constant tensors. The const_cast is required by MLX's array
+    // constructor but the data will not be mutated
     void* data_ptr = const_cast<void*>(buffer.data());
 
     if constexpr (kEnableConstantZeroCopy) {
@@ -737,6 +824,11 @@ inline void load_mutable_buffers(
       max_tid = slot.idx;
     }
   }
+  if (max_tid >= 1'000'000) {
+    throw std::runtime_error(
+        "load_mutable_buffers: max_tid " + std::to_string(max_tid) +
+        " exceeds limit");
+  }
   store.resize(max_tid + 1);
 
   for (const auto& slot : program.mutable_buffer_map) {
@@ -773,6 +865,8 @@ inline void load_mutable_buffers(
     const auto& meta = *program.tensor_meta[tid.idx];
     auto shape = to_shape(meta.shape);
     auto dtype = resolve_dtype(meta.scalar_type);
+
+    check_allocation_bounded(shape, dtype, "load_mutable_buffers");
 
     // Initialize mutable buffer to zeros
     // This matches the typical initialization of KV cache buffers
