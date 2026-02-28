@@ -10,6 +10,7 @@ package org.pytorch.executorch.extension.llm;
 
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
+import java.nio.ByteBuffer;
 import java.util.List;
 import org.pytorch.executorch.ExecuTorchRuntime;
 import org.pytorch.executorch.annotations.Experimental;
@@ -383,6 +384,7 @@ public class LlmModule {
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
+  @Deprecated
   public long prefillImages(int[] image, int width, int height, int channels) {
     int nativeResult = appendImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
@@ -391,7 +393,101 @@ public class LlmModule {
     return 0;
   }
 
+  /**
+   * Prefill a multimodal Module with the given image input via a direct ByteBuffer. The buffer data
+   * is accessed directly without JNI array copies, unlike {@link #prefillImages(int[], int, int,
+   * int)}. The ByteBuffer must contain raw uint8 pixel data in CHW format with at least channels *
+   * height * width bytes remaining. Only the first channels * height * width bytes from the
+   * buffer's current position are consumed.
+   *
+   * @param image Input image as a direct ByteBuffer containing uint8 pixel data
+   * @param width Input image width
+   * @param height Input image height
+   * @param channels Input image number of channels
+   * @throws IllegalArgumentException if the ByteBuffer is not direct or has insufficient remaining
+   *     bytes
+   * @throws RuntimeException if the prefill failed
+   */
+  @Experimental
+  public void prefillImages(ByteBuffer image, int width, int height, int channels) {
+    if (!image.isDirect()) {
+      throw new IllegalArgumentException("Input ByteBuffer must be direct.");
+    }
+    long expectedBytes = (long) width * height * channels;
+    if (width <= 0 || height <= 0 || channels <= 0 || image.remaining() < expectedBytes) {
+      throw new IllegalArgumentException(
+          "ByteBuffer remaining ("
+              + image.remaining()
+              + ") must be at least width*height*channels ("
+              + expectedBytes
+              + ").");
+    }
+    // slice() so that getDirectBufferAddress on the native side returns a pointer
+    // starting at the current position, not the base address.
+    int nativeResult = appendImagesInputBuffer(image.slice(), width, height, channels);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+    }
+  }
+
+  /**
+   * Prefill a multimodal Module with the given normalized image input via a direct ByteBuffer. The
+   * buffer data is accessed directly without JNI array copies, unlike {@link
+   * #prefillImages(float[], int, int, int)}. The ByteBuffer must contain normalized float pixel
+   * data in CHW format with at least channels * height * width * 4 bytes remaining. Only the first
+   * channels * height * width floats from the buffer's current position are consumed. The buffer
+   * must use the platform's native byte order (set via {@code
+   * buffer.order(ByteOrder.nativeOrder())}).
+   *
+   * @param image Input normalized image as a direct ByteBuffer containing float pixel data in
+   *     native byte order
+   * @param width Input image width
+   * @param height Input image height
+   * @param channels Input image number of channels
+   * @throws IllegalArgumentException if the ByteBuffer is not direct, has insufficient remaining
+   *     bytes, is not float-aligned, or does not use native byte order
+   * @throws RuntimeException if the prefill failed
+   */
+  @Experimental
+  public void prefillNormalizedImages(ByteBuffer image, int width, int height, int channels) {
+    if (!image.isDirect()) {
+      throw new IllegalArgumentException("Input ByteBuffer must be direct.");
+    }
+    if (image.order() != java.nio.ByteOrder.nativeOrder()) {
+      throw new IllegalArgumentException(
+          "Input ByteBuffer must use native byte order (ByteOrder.nativeOrder()).");
+    }
+    if (image.position() % Float.BYTES != 0) {
+      throw new IllegalArgumentException(
+          "Input ByteBuffer position (" + image.position() + ") must be 4-byte aligned.");
+    }
+    long expectedBytes = (long) width * height * channels * Float.BYTES;
+    if (width <= 0 || height <= 0 || channels <= 0 || image.remaining() < expectedBytes) {
+      throw new IllegalArgumentException(
+          "ByteBuffer remaining ("
+              + image.remaining()
+              + ") must be at least width*height*channels*4 ("
+              + expectedBytes
+              + ").");
+    }
+    if (image.remaining() % Float.BYTES != 0) {
+      throw new IllegalArgumentException(
+          "ByteBuffer remaining (" + image.remaining() + ") must be a multiple of 4 (float size).");
+    }
+    // slice() so that getDirectBufferAddress on the native side returns a pointer
+    // starting at the current position, not the base address.
+    int nativeResult = appendNormalizedImagesInputBuffer(image.slice(), width, height, channels);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+    }
+  }
+
   private native int appendImagesInput(int[] image, int width, int height, int channels);
+
+  private native int appendImagesInputBuffer(ByteBuffer image, int width, int height, int channels);
+
+  private native int appendNormalizedImagesInputBuffer(
+      ByteBuffer image, int width, int height, int channels);
 
   /**
    * Prefill a multimodal Module with the given images input.
@@ -405,6 +501,7 @@ public class LlmModule {
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
+  @Deprecated
   public long prefillImages(float[] image, int width, int height, int channels) {
     int nativeResult = appendNormalizedImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
