@@ -184,7 +184,15 @@ MLXProgram load_program(const void* data, size_t size) {
     check_collection_size(fb_graph->input_map()->size(), "input_map");
     for (size_t i = 0; i < fb_graph->input_map()->size(); ++i) {
       const auto* slot = fb_graph->input_map()->Get(static_cast<flatbuffers::uoffset_t>(i));
-      program.input_map.push_back(convert_slot_variant(slot));
+      auto sv = convert_slot_variant(slot);
+      if (sv.slot_type == SlotType::TensorSlot &&
+          sv.idx >= program.num_tensors()) {
+        throw std::runtime_error(
+            "input_map: slot index " + std::to_string(sv.idx) +
+            " exceeds num_tensors " +
+            std::to_string(program.num_tensors()));
+      }
+      program.input_map.push_back(sv);
     }
   }
 
@@ -192,7 +200,15 @@ MLXProgram load_program(const void* data, size_t size) {
     check_collection_size(fb_graph->output_map()->size(), "output_map");
     for (size_t i = 0; i < fb_graph->output_map()->size(); ++i) {
       const auto* slot = fb_graph->output_map()->Get(static_cast<flatbuffers::uoffset_t>(i));
-      program.output_map.push_back(convert_slot_variant(slot));
+      auto sv = convert_slot_variant(slot);
+      if (sv.slot_type == SlotType::TensorSlot &&
+          sv.idx >= program.num_tensors()) {
+        throw std::runtime_error(
+            "output_map: slot index " + std::to_string(sv.idx) +
+            " exceeds num_tensors " +
+            std::to_string(program.num_tensors()));
+      }
+      program.output_map.push_back(sv);
     }
   }
 
@@ -200,7 +216,15 @@ MLXProgram load_program(const void* data, size_t size) {
     check_collection_size(fb_graph->mutable_buffer_map()->size(), "mutable_buffer_map");
     for (size_t i = 0; i < fb_graph->mutable_buffer_map()->size(); ++i) {
       const auto* slot = fb_graph->mutable_buffer_map()->Get(static_cast<flatbuffers::uoffset_t>(i));
-      program.mutable_buffer_map.push_back(convert_slot_variant(slot));
+      auto sv = convert_slot_variant(slot);
+      if (sv.slot_type == SlotType::TensorSlot &&
+          sv.idx >= program.num_tensors()) {
+        throw std::runtime_error(
+            "mutable_buffer_map: slot index " + std::to_string(sv.idx) +
+            " exceeds num_tensors " +
+            std::to_string(program.num_tensors()));
+      }
+      program.mutable_buffer_map.push_back(sv);
     }
   }
 
