@@ -112,6 +112,26 @@ def export_model(
     return model, example_inputs, exec_prog
 
 
+def export_onnx(
+    model: torch.nn.Module,
+    example_inputs: tuple,
+    model_name: str,
+    output_dir: str,
+    logger: logging.Logger,
+) -> None:
+    """Export model to ONNX format for baseline TRT benchmarking."""
+    import os
+    onnx_path = os.path.join(output_dir, f"{model_name}.onnx")
+    logging.info(f"Exporting {model_name} to ONNX: {onnx_path}")
+    torch.onnx.export(
+        model,
+        example_inputs,
+        onnx_path,
+        opset_version=17,
+    )
+    logger.info(f"ONNX model saved to {onnx_path}")
+
+
 # ---------------------------------------------------------------------------
 # Correctness verification (used by test_export.py via buck test)
 # ---------------------------------------------------------------------------
@@ -246,6 +266,12 @@ def main() -> None:
         help="Disable strict mode for export (default: strict mode enabled)",
     )
     parser.add_argument(
+        "--onnx",
+        action="store_true",
+        default=False,
+        help="Also export models to ONNX format for baseline TRT benchmarking",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -262,7 +288,11 @@ def main() -> None:
     failed = []
     for model_name in models:
         try:
-            export_model(model_name, args.output_dir, args.strict, logger)
+            model, example_inputs, exec_prog = export_model(
+                model_name, args.output_dir, args.strict, logger
+            )
+            if args.onnx:
+                export_onnx(model, example_inputs, model_name, args.output_dir, logger)
         except Exception as e:
             logging.error(f"Failed to export {model_name}: {e}")
             failed.append(model_name)
