@@ -304,6 +304,9 @@ class MultimethodLoraConfig:
     Attributes:
         methods: Dict mapping method names to optional LoRA configs.
             Empty dict disables multimethod_lora export.
+        share_mutable_buffers: Whether to share mutable buffers across methods.
+            If True, sets all mutable buffers to mem_id=2. Mutable buffers with
+            the same FQN (fully qualified name) will have the same offset.
 
     Example:
         MultimethodLoraConfig(methods={
@@ -313,6 +316,7 @@ class MultimethodLoraConfig:
     """
 
     methods: Dict[str, Optional[LoraConfig]] = field(default_factory=dict)
+    share_mutable_buffers: bool = False
 
     @property
     def enabled(self) -> bool:
