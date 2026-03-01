@@ -1015,6 +1015,11 @@
     - arg_meta: null
       kernel_name: torch::executor::var_out
 
+- op: view_as_complex_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::view_as_complex_copy_out
+
 - op: view_as_real_copy.out
   kernels:
     - arg_meta: null
