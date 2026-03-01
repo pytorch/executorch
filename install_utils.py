@@ -42,6 +42,82 @@ def is_cmake_option_on(
     return _normalize_cmake_bool(cmake_define, default)
 
 
+def is_tensorrt_available() -> bool:
+    """Check if TensorRT Python package is installed."""
+    try:
+        import tensorrt  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+def get_tensorrt_include_dir() -> Optional[str]:
+    """Find TensorRT C header directory.
+
+    Checks in order: TENSORRT_HOME/include, system paths, then tries to
+    download headers from NVIDIA GitHub into a local cache when only the
+    pip runtime package is installed.
+    """
+    import os
+    import pathlib
+
+    # 1. Env-provided paths
+    for env_var in ("TENSORRT_HOME", "TENSORRT_DIR"):
+        root = os.environ.get(env_var)
+        if root:
+            inc = os.path.join(root, "include")
+            if os.path.isfile(os.path.join(inc, "NvInfer.h")):
+                return inc
+
+    # 2. Standard system paths
+    for p in (
+        "/usr/include/x86_64-linux-gnu",
+        "/usr/include/aarch64-linux-gnu",
+        "/usr/include",
+    ):
+        if os.path.isfile(os.path.join(p, "NvInfer.h")):
+            return p
+
+    # 3. Download headers from NVIDIA GitHub into a local cache
+    cache_dir = pathlib.Path.home() / ".cache" / "tensorrt" / "include"
+    if (cache_dir / "NvInfer.h").exists():
+        return str(cache_dir)
+
+    try:
+        import urllib.request
+
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        base_url = (
+            "https://raw.githubusercontent.com/NVIDIA/TensorRT/release/10.0/include"
+        )
+        headers = [
+            "NvInfer.h",
+            "NvInferConsistency.h",
+            "NvInferConsistencyImpl.h",
+            "NvInferImpl.h",
+            "NvInferLegacyDims.h",
+            "NvInferPlugin.h",
+            "NvInferPluginUtils.h",
+            "NvInferRuntime.h",
+            "NvInferRuntimeBase.h",
+            "NvInferRuntimeCommon.h",
+            "NvInferRuntimePlugin.h",
+            "NvInferSafeRuntime.h",
+            "NvInferVersion.h",
+        ]
+        for h in headers:
+            dst = cache_dir / h
+            if not dst.exists():
+                urllib.request.urlretrieve(f"{base_url}/{h}", str(dst))
+        if (cache_dir / "NvInfer.h").exists():
+            return str(cache_dir)
+    except Exception:
+        pass
+
+    return None
+
+
 def is_cuda_available() -> bool:
     """
     Check if CUDA is available on the system by attempting to get the CUDA version.

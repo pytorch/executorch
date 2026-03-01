@@ -79,6 +79,34 @@ if(EXECUTORCH_BUILD_TENSORRT)
         ${TENSORRT_ROOT}/lib64
     )
 
+    # Fallback: find TRT from pip-installed tensorrt_libs package
+    if(NOT TENSORRT_LIBRARY AND PYTHON_EXECUTABLE)
+      execute_process(
+        COMMAND ${PYTHON_EXECUTABLE} -c
+          "import tensorrt_libs, os; print(os.path.dirname(tensorrt_libs.__file__))"
+        OUTPUT_VARIABLE _TRT_PIP_LIBS_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE _TRT_PIP_RC
+      )
+      if(_TRT_PIP_RC EQUAL 0 AND _TRT_PIP_LIBS_DIR)
+        message(STATUS "Found pip-installed tensorrt_libs: ${_TRT_PIP_LIBS_DIR}")
+        find_library(
+          TENSORRT_LIBRARY nvinfer
+          PATHS ${_TRT_PIP_LIBS_DIR}
+          NO_DEFAULT_PATH
+        )
+        # pip packages ship versioned .so (e.g. libnvinfer.so.10) without symlink
+        if(NOT TENSORRT_LIBRARY)
+          file(GLOB _TRT_PIP_SO "${_TRT_PIP_LIBS_DIR}/libnvinfer.so*")
+          if(_TRT_PIP_SO)
+            list(GET _TRT_PIP_SO 0 TENSORRT_LIBRARY)
+            message(STATUS "Using versioned TRT lib from pip: ${TENSORRT_LIBRARY}")
+          endif()
+        endif()
+      endif()
+    endif()
+
     if(TENSORRT_INCLUDE_DIR AND TENSORRT_LIBRARY)
       message(STATUS "Found TensorRT include: ${TENSORRT_INCLUDE_DIR}")
       message(STATUS "Found TensorRT library: ${TENSORRT_LIBRARY}")

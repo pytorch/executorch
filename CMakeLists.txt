@@ -989,6 +989,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs vulkan_backend)
   endif()
 
+  if(EXECUTORCH_BUILD_TENSORRT)
+    list(APPEND _dep_libs tensorrt_backend)
+  endif()
+
   # compile options for pybind
   set(_pybind_compile_options
       $<$<CXX_COMPILER_ID:MSVC>:/EHsc

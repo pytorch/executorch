@@ -618,6 +618,10 @@ def convert_lt_tensor(
     except ImportError as e:
         raise ImportError("TensorRT is required") from e
 
+    from executorch.backends.nvidia.tensorrt.converter_utils import (
+        promote_and_cast_tensors,
+    )
+
     args = node.args
     input_node = args[0]
     other_node = args[1]
@@ -629,6 +633,11 @@ def convert_lt_tensor(
 
     input_trt = input_map[input_node]
     other_trt = input_map[other_node]
+
+    # TRT requires matching types for comparison ops
+    input_trt, other_trt = promote_and_cast_tensors(
+        network, input_trt, other_trt, f"lt_{node.name}"
+    )
 
     layer = network.add_elementwise(
         input_trt, other_trt, trt.ElementWiseOperation.LESS
@@ -1183,6 +1192,183 @@ def convert_copy(
     raise ValueError(f"Source node for copy not found in input_map: {node.name}")
 
 
+@converter("aten._to_copy.default")
+def convert_to_copy(
+    node: torch.fx.Node,
+    network: Any,
+    input_map: Dict[torch.fx.Node, Any],
+    edge_program: Optional[Any] = None,
+) -> Any:
+    """Convert aten._to_copy to TRT identity or cast layer.
+
+    _to_copy copies a tensor, optionally changing dtype. In TRT this is either
+    a pass-through (same dtype) or an identity layer with output type set.
+    """
+    try:
+        import tensorrt as trt
+    except ImportError as e:
+        raise ImportError("TensorRT is required") from e
+
+    from executorch.backends.nvidia.tensorrt.converter_utils import (
+        torch_dtype_to_trt,
+    )
+
+    input_node = node.args[0]
+    if not isinstance(input_node, torch.fx.Node):
+        raise ValueError(f"Input to _to_copy must be a node, got {type(input_node)}")
+
+    input_trt = input_map[input_node]
+
+    target_dtype = node.kwargs.get("dtype", None)
+    if target_dtype is not None and target_dtype != input_trt.dtype:
+        layer = network.add_identity(input_trt)
+        if layer is None:
+            raise RuntimeError(f"Failed to create identity layer for {node.name}")
+        layer.set_output_type(0, torch_dtype_to_trt(target_dtype))
+        layer.name = f"to_copy_{node.name}"
+        return layer.get_output(0)
+
+    return input_trt
+
+
+@converter("aten.bitwise_not.default")
+def convert_bitwise_not(
+    node: torch.fx.Node,
+    network: Any,
+    input_map: Dict[torch.fx.Node, Any],
+    edge_program: Optional[Any] = None,
+) -> Any:
+    """Convert aten.bitwise_not to TRT unary NOT."""
+    try:
+        import tensorrt as trt
+    except ImportError as e:
+        raise ImportError("TensorRT is required") from e
+
+    input_node = node.args[0]
+    if not isinstance(input_node, torch.fx.Node):
+        raise ValueError(f"Input to bitwise_not must be a node, got {type(input_node)}")
+
+    input_trt = input_map[input_node]
+    layer = network.add_unary(input_trt, trt.UnaryOperation.NOT)
+    if layer is None:
+        raise RuntimeError(f"Failed to create NOT layer for {node.name}")
+    layer.name = f"bitwise_not_{node.name}"
+    return layer.get_output(0)
+
+
+@converter("aten.logical_and.default")
+def convert_logical_and(
+    node: torch.fx.Node,
+    network: Any,
+    input_map: Dict[torch.fx.Node, Any],
+    edge_program: Optional[Any] = None,
+) -> Any:
+    """Convert aten.logical_and to TRT elementwise AND."""
+    try:
+        import tensorrt as trt
+    except ImportError as e:
+        raise ImportError("TensorRT is required") from e
+
+    lhs_node = node.args[0]
+    rhs_node = node.args[1]
+
+    if not isinstance(lhs_node, torch.fx.Node):
+        raise ValueError(f"LHS of logical_and must be a node, got {type(lhs_node)}")
+    if not isinstance(rhs_node, torch.fx.Node):
+        raise ValueError(f"RHS of logical_and must be a node, got {type(rhs_node)}")
+
+    lhs_trt = input_map[lhs_node]
+    rhs_trt = input_map[rhs_node]
+
+    layer = network.add_elementwise(lhs_trt, rhs_trt, trt.ElementWiseOperation.AND)
+    if layer is None:
+        raise RuntimeError(f"Failed to create AND layer for {node.name}")
+    layer.name = f"logical_and_{node.name}"
+    return layer.get_output(0)
+
+
+@converter("aten.argmax.default")
+def convert_argmax(
+    node: torch.fx.Node,
+    network: Any,
+    input_map: Dict[torch.fx.Node, Any],
+    edge_program: Optional[Any] = None,
+) -> Any:
+    """Convert aten.argmax to TRT TopK with k=1.
+
+    argmax(input, dim=None, keepdim=False) -> indices
+    TRT's TopK layer returns both values and indices; we return only indices.
+    """
+    try:
+        import tensorrt as trt
+    except ImportError as e:
+        raise ImportError("TensorRT is required") from e
+
+    input_node = node.args[0]
+    if not isinstance(input_node, torch.fx.Node):
+        raise ValueError(f"Input to argmax must be a node, got {type(input_node)}")
+
+    input_trt = input_map[input_node]
+    input_shape = input_trt.shape
+    ndim = len(input_shape)
+
+    dim = node.args[1] if len(node.args) > 1 else node.kwargs.get("dim", None)
+    keepdim = node.args[2] if len(node.args) > 2 else node.kwargs.get("keepdim", False)
+
+    if dim is None:
+        # Flatten to [1, N] — TRT TopK requires at least 2D input
+        total = 1
+        for d in input_shape:
+            total *= d
+        shuffle = network.add_shuffle(input_trt)
+        shuffle.reshape_dims = trt.Dims([1, total])
+        shuffle.name = f"argmax_flatten_{node.name}"
+        input_trt = shuffle.get_output(0)
+        reduce_axes = 1 << 1  # reduce over dim 1 (the data dim)
+        squeezed_dim = None
+    else:
+        if dim < 0:
+            dim += ndim
+        # TRT TopK requires at least 2D. If input is 1D, unsqueeze to [1, N].
+        if ndim == 1:
+            shuffle = network.add_shuffle(input_trt)
+            shuffle.reshape_dims = trt.Dims([1, input_shape[0]])
+            shuffle.name = f"argmax_unsqueeze_{node.name}"
+            input_trt = shuffle.get_output(0)
+            reduce_axes = 1 << 1
+            squeezed_dim = dim
+        else:
+            reduce_axes = 1 << dim
+            squeezed_dim = None
+
+    topk_layer = network.add_topk(input_trt, trt.TopKOperation.MAX, 1, reduce_axes)
+    if topk_layer is None:
+        raise RuntimeError(f"Failed to create TopK layer for {node.name}")
+    topk_layer.name = f"argmax_{node.name}"
+
+    # TopK output 1 is the indices tensor
+    indices = topk_layer.get_output(1)
+
+    # Determine output shape
+    if dim is None:
+        # Full reduction — output is scalar, reshape to [1]
+        squeeze = network.add_shuffle(indices)
+        squeeze.reshape_dims = trt.Dims([1])
+        squeeze.name = f"argmax_squeeze_{node.name}"
+        indices = squeeze.get_output(0)
+    elif not keepdim:
+        out_shape = list(input_shape)
+        out_shape.pop(dim)
+        if not out_shape:
+            out_shape = [1]
+        squeeze = network.add_shuffle(indices)
+        squeeze.reshape_dims = trt.Dims(out_shape)
+        squeeze.name = f"argmax_squeeze_{node.name}"
+        indices = squeeze.get_output(0)
+
+    return indices
+
+
 __all__ = [
     "convert_eq_scalar",
     "convert_eq_tensor",
@@ -1197,6 +1383,10 @@ __all__ = [
     "convert_le_scalar",
     "convert_le_tensor",
     "convert_logical_not",
+    "convert_logical_and",
+    "convert_bitwise_not",
+    "convert_to_copy",
+    "convert_argmax",
     "convert_where",
     "convert_any_dim",
     "convert_full_like",

@@ -717,6 +717,24 @@ class CustomBuild(build):
                 f"-DQNN_SDK_ROOT={qnn_sdk_root}",
             ]
 
+        # Check if TensorRT is available, and if so, enable building the
+        # TensorRT backend by default (requires CUDA).
+        if (
+            install_utils.is_cuda_available()
+            and install_utils.is_tensorrt_available()
+            and install_utils.is_cmake_option_on(
+                cmake_configuration_args,
+                "EXECUTORCH_BUILD_TENSORRT",
+                default=True,
+            )
+        ):
+            cmake_configuration_args += ["-DEXECUTORCH_BUILD_TENSORRT=ON"]
+            trt_include = install_utils.get_tensorrt_include_dir()
+            if trt_include:
+                cmake_configuration_args += [
+                    f"-DTENSORRT_INCLUDE_DIR={trt_include}"
+                ]
+
         with Buck2EnvironmentFixer():
             # Generate the cmake cache from scratch to ensure that the cache state
             # is predictable.
@@ -775,6 +793,9 @@ class CustomBuild(build):
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
             cmake_build_args += ["--target", "aoti_cuda_backend"]
             cmake_build_args += ["--target", "aoti_common_shims_slim"]
+
+        if cmake_cache.is_enabled("EXECUTORCH_BUILD_TENSORRT"):
+            cmake_build_args += ["--target", "tensorrt_backend"]
 
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_MODULE"):
             cmake_build_args += ["--target", "extension_module"]

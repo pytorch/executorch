@@ -273,9 +273,14 @@ def _add_network_inputs(
     for input_node in input_nodes:
         shape, dtype = _get_tensor_shape_and_dtype(input_node)
         if shape is None:
-            raise RuntimeError(
-                f"Cannot determine shape for input node: {input_node.name}"
-            )
+            # Symbolic sizes (e.g. sym_size from dynamic shapes) are not tensors.
+            # Treat them as scalar int32 inputs with shape (1,).
+            shape = (1,)
+            dtype = torch.int32
+
+        # TensorRT does not support 0-dim (scalar) tensors. Reshape to (1,).
+        if len(shape) == 0:
+            shape = (1,)
 
         trt_dtype = dtype_converter(dtype if dtype else torch.float32)
         trt_input = network.add_input(
@@ -320,10 +325,15 @@ def _process_graph_nodes(
                 raise RuntimeError(f"No converter registered for operation: {op_name}")
 
             # Check if converter needs edge_program for weight extraction
-            if needs_edge_program(op_name):
-                output_tensor = converter(node, network, input_map, exported_program, ctx)
-            else:
-                output_tensor = converter(node, network, input_map, ctx)
+            try:
+                if needs_edge_program(op_name):
+                    output_tensor = converter(node, network, input_map, exported_program, ctx)
+                else:
+                    output_tensor = converter(node, network, input_map, ctx)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to convert node '{node.name}' (op={op_name}): {e}"
+                ) from e
 
             input_map[node] = output_tensor
 

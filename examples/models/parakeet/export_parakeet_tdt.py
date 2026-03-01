@@ -390,15 +390,21 @@ def export_all(
             qlinear_packing_format=qlinear_encoder_packing_format,
         )
 
+    # TensorRT builds engines for fixed shapes, so skip dynamic shapes for TRT.
+    encoder_dynamic_shapes = (
+        None
+        if backend == "tensorrt"
+        else {
+            # Use Dim.AUTO - explicit bounds fail due to different size guards on different devices
+            "audio_signal": {2: Dim.AUTO},
+            "length": {},
+        }
+    )
     programs["encoder"] = export(
         encoder_with_proj,
         (),
         kwargs={"audio_signal": audio_signal, "length": length},
-        dynamic_shapes={
-            # Use Dim.AUTO - explicit bounds fail due to different size guards on different devices
-            "audio_signal": {2: Dim.AUTO},
-            "length": {},
-        },
+        dynamic_shapes=encoder_dynamic_shapes,
         strict=False,
     )
 
@@ -560,6 +566,20 @@ def _create_cuda_partitioners(programs, is_windows=False):
     return partitioner, updated_programs
 
 
+def _create_tensorrt_partitioners(programs):
+    """Create TensorRT partitioners for all programs except preprocessor."""
+    from executorch.backends.nvidia.tensorrt.partitioner import TensorRTPartitioner
+
+    print("\nLowering to ExecuTorch with TensorRT...")
+    partitioner = {}
+    for key in programs.keys():
+        if key == "preprocessor":
+            partitioner[key] = []
+        else:
+            partitioner[key] = [TensorRTPartitioner()]
+    return partitioner, programs
+
+
 def lower_to_executorch(programs, metadata=None, backend="portable"):
     if backend == "xnnpack":
         partitioner, programs = _create_xnnpack_partitioners(programs)
@@ -569,6 +589,8 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
         partitioner, programs = _create_cuda_partitioners(
             programs, is_windows=(backend == "cuda-windows")
         )
+    elif backend == "tensorrt":
+        partitioner, programs = _create_tensorrt_partitioners(programs)
     else:
         print("\nLowering to ExecuTorch...")
         partitioner = []
@@ -607,7 +629,7 @@ def main():
         "--backend",
         type=str,
         default="xnnpack",
-        choices=["portable", "xnnpack", "metal", "cuda", "cuda-windows"],
+        choices=["portable", "xnnpack", "metal", "cuda", "cuda-windows", "tensorrt"],
         help="Backend for acceleration (default: xnnpack)",
     )
     parser.add_argument(

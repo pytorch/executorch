@@ -293,3 +293,33 @@ nvidia-smi
 # Run with verbose logging
 ./tensorrt_executor_runner --model_path=model.pte --verbose
 ```
+
+## Dynamic Shape Support
+
+The TensorRT backend supports models exported with dynamic shapes (e.g.,
+`Dim.AUTO` in `torch.export`). When the backend detects symbolic dimensions
+in input tensors, it automatically:
+
+1. Uses `-1` for dynamic dimensions in the TRT network definition
+2. Creates an `IOptimizationProfile` with min/opt/max bounds derived from
+   the exported program's `range_constraints`
+3. Builds a single TRT engine that handles variable-length inputs at runtime
+
+**What gets delegated with dynamic shapes:**
+
+Compute-heavy operations (convolution, linear, batch normalization,
+activations, matrix multiplies, LSTM decomposed ops) are delegated to TRT
+and support dynamic input shapes through optimization profiles.
+
+Shape-dependent operations that require symbolic scalar values at build time
+(e.g., `arange` with a dynamic bound, `full` with a dynamic size) are
+automatically excluded from TRT delegation and fall back to portable (CPU)
+execution. This is handled by the partitioner, which detects when scalar
+arguments are symbolic FX Nodes rather than concrete values.
+
+**Example — Parakeet encoder with dynamic time dimension:**
+
+The Parakeet TDT encoder uses `Dim.AUTO` for the mel-spectrogram time
+dimension. With TRT, the encoder's convolutions, batch norms, linear layers,
+and attention are delegated to a single TRT engine with a dynamic time axis.
+Masking and indexing ops that depend on the sequence length run on CPU.

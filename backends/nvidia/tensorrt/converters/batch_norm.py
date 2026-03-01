@@ -164,6 +164,18 @@ def convert_batch_norm(
         convert_batch_norm._weight_storage = []
     convert_batch_norm._weight_storage.extend([fused_scale, fused_shift, power_weights])
 
+    # TRT ScaleMode.CHANNEL requires 4D input (NCHW). If input is 3D (NCW,
+    # from Conv1d), unsqueeze to 4D, apply scale, then squeeze back.
+    input_shape = input_trt.shape
+    is_3d = len(input_shape) == 3
+    if is_3d:
+        shuffle_in = network.add_shuffle(input_trt)
+        shuffle_in.reshape_dims = trt.Dims(
+            [input_shape[0], input_shape[1], input_shape[2], 1]
+        )
+        shuffle_in.name = f"bn_unsqueeze_{node.name}"
+        input_trt = shuffle_in.get_output(0)
+
     scale_layer = network.add_scale(
         input_trt,
         trt.ScaleMode.CHANNEL,
@@ -174,7 +186,17 @@ def convert_batch_norm(
     if scale_layer is None:
         raise RuntimeError(f"Failed to create Scale layer for {node.name}")
     scale_layer.name = f"bn_scale_{node.name}"
-    return scale_layer.get_output(0)
+    output = scale_layer.get_output(0)
+
+    if is_3d:
+        shuffle_out = network.add_shuffle(output)
+        shuffle_out.reshape_dims = trt.Dims(
+            [input_shape[0], input_shape[1], input_shape[2]]
+        )
+        shuffle_out.name = f"bn_squeeze_{node.name}"
+        output = shuffle_out.get_output(0)
+
+    return output
 
 
 def clear_weight_storage() -> None:

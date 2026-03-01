@@ -84,7 +84,12 @@ class TensorRTOperatorSupport(OperatorSupportBase):
         "log.default",
         "log_softmax.int",
         "logical_not.default",
+        "_to_copy.default",
+        "argmax.default",
+        "bitwise_not.default",
+        "logical_and.default",
         "lt.Scalar",
+        "lt.Tensor",
         "max_pool2d.default",
         "max_pool2d_with_indices.default",
         "mean.dim",
@@ -185,11 +190,41 @@ class TensorRTOperatorSupport(OperatorSupportBase):
         if target_name not in self.SUPPORTED_OPS:
             return False
 
+        # Reject nodes with symbolic (dynamic) arguments that TRT can't handle.
+        # Symbolic sizes appear as FX Nodes with no tensor metadata.
+        if self._has_symbolic_args(node):
+            return False
+
         # Check dtype compatibility
         if not self._is_dtype_supported(node):
             return False
 
         return True
+
+    # Operations that require all arguments to be concrete (no symbolic/dynamic values).
+    _CONCRETE_ARGS_OPS: Set[str] = {
+        "arange.start_step",
+        "full.default",
+        "full_like.default",
+    }
+
+    def _has_symbolic_args(self, node: torch.fx.Node) -> bool:
+        """Check if node has arguments that are symbolic FX Nodes rather than concrete values.
+
+        Operations like arange need concrete scalar arguments. If any argument
+        is a graph Node (rather than an int/float literal), the value is dynamic
+        and TRT cannot handle it at engine build time.
+        """
+        op_name = self._get_op_name(node)
+        target_name = self._remove_namespace(op_name)
+        if target_name not in self._CONCRETE_ARGS_OPS:
+            return False
+        for arg in node.args:
+            if isinstance(arg, torch.fx.Node):
+                # This arg is a graph node, meaning its value is computed
+                # dynamically — TRT cannot handle it as a compile-time constant.
+                return True
+        return False
 
     def _get_op_name(self, node: torch.fx.Node) -> str:
         """Extract operation name from node target.
