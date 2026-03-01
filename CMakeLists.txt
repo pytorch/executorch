@@ -709,6 +709,11 @@ if(EXECUTORCH_BUILD_METAL)
   list(APPEND _executorch_backends metal_backend)
 endif()
 
+if(EXECUTORCH_BUILD_TENSORRT)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/nvidia/tensorrt)
+  list(APPEND _executorch_backends tensorrt_backend)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_APPLE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/apple)
 endif()
