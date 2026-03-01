@@ -198,8 +198,28 @@ inline void exec_take_along_axis(
 inline void exec_take(const TakeNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   int axis = normalize_axis(n.axis, static_cast<int>(x.ndim()), "Take");
-  int index = normalize_axis(resolve_int(n.index, st), x.shape(axis), "Take");
-  st.set_tensor(n.out, take(x, index, axis, s));
+  switch (n.index.kind) {
+    case 0: { // literal int
+      int index = normalize_axis(
+          clamp_to_int32(n.index.literal), x.shape(axis), "Take");
+      st.set_tensor(n.out, take(x, index, axis, s));
+      break;
+    }
+    case 1: { // Vid (dynamic int)
+      int index = normalize_axis(
+          st.const_value_ref<int32_t>(n.index.vid), x.shape(axis), "Take");
+      st.set_tensor(n.out, take(x, index, axis, s));
+      break;
+    }
+    case 2: { // Tid (tensor of indices)
+      const auto& indices = st.const_tensor_ref(n.index.tid);
+      st.set_tensor(n.out, take(x, indices, axis, s));
+      break;
+    }
+    default:
+      throw std::runtime_error(
+          "TakeNode: invalid index kind: " + std::to_string(n.index.kind));
+  }
 }
 
 inline void
@@ -425,6 +445,53 @@ exec_conv3d(const Conv3DNode& n, ExecutionState& st, StreamOrDevice s) {
       n.dilation_d, n.dilation_h, n.dilation_w};
 
   auto out = conv3d(x, w, stride, padding, dilation, n.groups, s);
+  st.set_tensor(n.out, std::move(out));
+}
+
+inline void exec_conv_transpose1d(
+    const ConvTranspose1DNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  const auto& w = st.const_tensor_ref(n.w);
+  auto out = conv_transpose1d(
+      x, w, n.stride, n.padding, n.dilation, n.output_padding, n.groups, s);
+  st.set_tensor(n.out, std::move(out));
+}
+
+inline void exec_conv_transpose2d(
+    const ConvTranspose2DNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  const auto& w = st.const_tensor_ref(n.w);
+
+  std::pair<int, int> stride = {n.stride_h, n.stride_w};
+  std::pair<int, int> padding = {n.padding_h, n.padding_w};
+  std::pair<int, int> dilation = {n.dilation_h, n.dilation_w};
+  std::pair<int, int> output_padding = {n.output_padding_h, n.output_padding_w};
+
+  auto out = conv_transpose2d(
+      x, w, stride, padding, dilation, output_padding, n.groups, s);
+  st.set_tensor(n.out, std::move(out));
+}
+
+inline void exec_conv_transpose3d(
+    const ConvTranspose3DNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  const auto& w = st.const_tensor_ref(n.w);
+
+  std::tuple<int, int, int> stride = {n.stride_d, n.stride_h, n.stride_w};
+  std::tuple<int, int, int> padding = {n.padding_d, n.padding_h, n.padding_w};
+  std::tuple<int, int, int> dilation = {
+      n.dilation_d, n.dilation_h, n.dilation_w};
+  std::tuple<int, int, int> output_padding = {
+      n.output_padding_d, n.output_padding_h, n.output_padding_w};
+
+  auto out = conv_transpose3d(
+      x, w, stride, padding, dilation, output_padding, n.groups, s);
   st.set_tensor(n.out, std::move(out));
 }
 
@@ -699,9 +766,40 @@ exec_id_copy(const IdCopyNode& n, ExecutionState& st, StreamOrDevice) {
 
 inline void
 exec_gather(const GatherNode& n, ExecutionState& st, StreamOrDevice s) {
-  st.set_tensor(
-      n.out,
-      take(st.const_tensor_ref(n.table_), st.const_tensor_ref(n.ids), 0, s));
+  const auto& x = st.const_tensor_ref(n.x);
+  const int rank = static_cast<int>(x.ndim());
+
+  if (n.indices.size() != n.axes.size()) {
+    throw std::runtime_error(
+        "GatherNode: indices count (" + std::to_string(n.indices.size()) +
+        ") must match axes count (" + std::to_string(n.axes.size()) + ")");
+  }
+
+  if (static_cast<int>(n.slice_sizes.size()) != rank) {
+    throw std::runtime_error(
+        "GatherNode: slice_sizes length (" +
+        std::to_string(n.slice_sizes.size()) + ") must match input ndim (" +
+        std::to_string(rank) + ")");
+  }
+
+  for (auto axis : n.axes) {
+    if (axis < 0 || axis >= rank) {
+      throw std::runtime_error(
+          "GatherNode: axis " + std::to_string(axis) +
+          " out of range for input with ndim " + std::to_string(rank));
+    }
+  }
+
+  Shape slice_sizes(n.slice_sizes.begin(), n.slice_sizes.end());
+  check_allocation_bounded(slice_sizes, x.dtype(), "gather");
+
+  std::vector<array> indices;
+  indices.reserve(n.indices.size());
+  for (auto tid : n.indices) {
+    indices.push_back(st.const_tensor_ref(tid));
+  }
+
+  st.set_tensor(n.out, gather(x, indices, n.axes, slice_sizes, s));
 }
 
 inline void
@@ -732,7 +830,19 @@ exec_slice(const SliceNode& n, ExecutionState& st, StreamOrDevice s) {
   vstart[static_cast<size_t>(axis)] = start;
   vstop[static_cast<size_t>(axis)] = stop;
 
-  st.set_tensor(n.out, slice(x, to_shape(vstart), to_shape(vstop), s));
+  if (n.step < 1) {
+    throw std::invalid_argument(
+        "Slice: step must be >= 1, got " + std::to_string(n.step));
+  }
+  if (n.step == 1) {
+    st.set_tensor(n.out, slice(x, to_shape(vstart), to_shape(vstop), s));
+  } else {
+    std::vector<int> vstrides(static_cast<size_t>(rank), 1);
+    vstrides[static_cast<size_t>(axis)] = n.step;
+    st.set_tensor(
+        n.out,
+        slice(x, to_shape(vstart), to_shape(vstop), to_shape(vstrides), s));
+  }
 }
 
 inline void
@@ -825,6 +935,8 @@ inline void exec_slice_update(
     const SliceUpdateNode& n,
     ExecutionState& st,
     StreamOrDevice s) {
+  // When out == dst, use direct assignment to preserve MLX buffer donation.
+  const bool in_place = (n.out.idx == n.dst.idx);
   array& dst = st.tensor_ref(n.dst);
   const array& upd = st.const_tensor_ref(n.update);
 
@@ -854,10 +966,44 @@ inline void exec_slice_update(
   vstart[static_cast<size_t>(axis)] = start;
   vstop[static_cast<size_t>(axis)] = stop;
 
-  if (start == stop)
-    return; // zero-length update, nothing to do
+  std::vector<int> vstrides(static_cast<size_t>(rank), 1);
+  if (n.step < 1) {
+    throw std::invalid_argument(
+        "SliceUpdate: step must be >= 1, got " + std::to_string(n.step) + "");
+  }
+  vstrides[static_cast<size_t>(axis)] = n.step;
 
-  dst = slice_update(dst, upd, to_shape(vstart), to_shape(vstop), s);
+  if (in_place) {
+    if (start == stop) {
+      return;
+    }
+    if (n.step == 1) {
+      dst = slice_update(dst, upd, to_shape(vstart), to_shape(vstop), s);
+    } else {
+      dst = slice_update(
+          dst, upd, to_shape(vstart), to_shape(vstop), to_shape(vstrides), s);
+    }
+
+  } else {
+    if (start == stop) {
+      st.set_tensor(n.out, dst);
+      return;
+    }
+    if (n.step == 1) {
+      st.set_tensor(
+          n.out, slice_update(dst, upd, to_shape(vstart), to_shape(vstop), s));
+    } else {
+      st.set_tensor(
+          n.out,
+          slice_update(
+              dst,
+              upd,
+              to_shape(vstart),
+              to_shape(vstop),
+              to_shape(vstrides),
+              s));
+    }
+  }
 }
 
 // Helper: finds next contiguous run in indices starting at offset
@@ -975,44 +1121,6 @@ inline void exec_index_update(
   }
 }
 
-inline void exec_quantized_gather(
-    const QuantizedGatherNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
-  array ids = st.const_tensor_ref(n.ids);
-  array Wq = st.const_tensor_ref(n.table_q);
-  array Sc = st.const_tensor_ref(n.scales);
-
-  std::optional<array> Qb = std::nullopt;
-  if (n.biases) {
-    Qb = st.const_tensor_ref(*n.biases);
-  }
-
-  array Wq_sel = take(Wq, ids, 0, s);
-  array Sc_sel = take(Sc, ids, 0, s);
-  std::optional<array> Qb_sel = std::nullopt;
-  if (Qb) {
-    Qb_sel = take(*Qb, ids, 0, s);
-  }
-
-  array Y = dequantize(
-      Wq_sel,
-      Sc_sel,
-      Qb_sel,
-      n.group_size,
-      n.bits,
-      n.mode,
-      std::nullopt, // dtype - let MLX infer
-      s);
-
-  Dtype out_dtype = resolve_dtype(n.out_scalar_type);
-  if (out_dtype != Y.dtype()) {
-    Y = astype(Y, out_dtype, s);
-  }
-
-  st.set_tensor(n.out, std::move(Y));
-}
-
 inline void
 exec_dequantize(const DequantizeNode& n, ExecutionState& st, StreamOrDevice s) {
   array Wq = st.const_tensor_ref(n.w);
@@ -1083,7 +1191,7 @@ inline void exec_logical_not(
     const LogicalNotNode& n,
     ExecutionState& st,
     StreamOrDevice s) {
-  st.set_tensor(n.out, logical_not(st.const_tensor_ref(n.a), s));
+  st.set_tensor(n.out, logical_not(st.const_tensor_ref(n.x), s));
 }
 
 inline void exec_logical_and(
@@ -1586,10 +1694,6 @@ class Interpreter {
       case OpCode::INDEX_UPDATE:
         ops::exec_index_update(std::get<IndexUpdateNode>(instr.node), st, s);
         break;
-      case OpCode::QUANTIZED_GATHER:
-        ops::exec_quantized_gather(
-            std::get<QuantizedGatherNode>(instr.node), st, s);
-        break;
       case OpCode::DEQUANTIZE:
         ops::exec_dequantize(std::get<DequantizeNode>(instr.node), st, s);
         break;
@@ -1751,6 +1855,18 @@ class Interpreter {
         break;
       case OpCode::MEDIAN:
         ops::exec_median(std::get<MedianNode>(instr.node), st, s);
+        break;
+      case OpCode::CONV_TRANSPOSE1D:
+        ops::exec_conv_transpose1d(
+            std::get<ConvTranspose1DNode>(instr.node), st, s);
+        break;
+      case OpCode::CONV_TRANSPOSE2D:
+        ops::exec_conv_transpose2d(
+            std::get<ConvTranspose2DNode>(instr.node), st, s);
+        break;
+      case OpCode::CONV_TRANSPOSE3D:
+        ops::exec_conv_transpose3d(
+            std::get<ConvTranspose3DNode>(instr.node), st, s);
         break;
       case OpCode::SENTINEL:
         break;

@@ -18,35 +18,36 @@ from __future__ import annotations
 from typing import Any, List, Optional, Tuple
 
 import torch
+from executorch.backends.mlx.builder.op_helpers import (
+    emit_stop_position,
+    parse_dequant_node,
+    to_mlx_qparams,
+    torch_dtype_to_scalar_type,
+)
+from executorch.backends.mlx.builder.op_registry import PatternHandler, REGISTRY
+from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
+from executorch.backends.mlx.builder.slot_manager import Slot
 from executorch.backends.mlx.pattern_utils import (
     has_single_user,
     match_target,
     OpStep,
     walk_back,
 )
-from executorch.backends.mlx.program_builder import (
-    emit_stop_position,
-    MLXProgramBuilder,
-    parse_dequant_node,
-    PatternHandler,
-    REGISTRY,
-    Slot,
-    to_mlx_qparams,
-    torch_dtype_to_scalar_type,
-)
 from executorch.backends.mlx.serialization.mlx_graph_schema import (
     AddIntNode,
+    DequantizeNode,
     IdCopyNode,
     IndexUpdateNode,
     IntOrVid,
+    IntOrVidOrTid,
     ModIntNode,
-    QuantizedGatherNode,
     QuantizedLinearNode,
     SdpaNode,
     SliceNode,
     SliceUpdateNode,
     SubtractIntNode,
     SymSizeNode,
+    TakeNode,
 )
 from torch.export.exported_program import ExportedProgram
 from torch.fx.node import Node
@@ -273,6 +274,7 @@ class ETKVCacheUpdateHandler(PatternHandler):
             SliceUpdateNode(
                 dst=P.slot_to_tid(cache_slot),
                 update=P.slot_to_tid(update_slot),
+                out=P.slot_to_tid(cache_slot),
                 axis=IntOrVid.from_literal(2),  # S dimension in [B, H, S, D]
                 start=P.to_int_or_vid(start_slot),
                 stop=P.to_int_or_vid(stop_slot),
@@ -388,6 +390,7 @@ class ETKVCacheUpdateHandler(PatternHandler):
             SliceUpdateNode(
                 dst=P.slot_to_tid(cache_slot),
                 update=P.slot_to_tid(first_chunk_slot),
+                out=P.slot_to_tid(cache_slot),
                 axis=IntOrVid.from_literal(2),
                 start=P.to_int_or_vid(write_pos_slot),
                 stop=P.to_int_or_vid(stop1_slot),
@@ -400,6 +403,7 @@ class ETKVCacheUpdateHandler(PatternHandler):
             SliceUpdateNode(
                 dst=P.slot_to_tid(cache_slot),
                 update=P.slot_to_tid(rest_chunk_slot),
+                out=P.slot_to_tid(cache_slot),
                 axis=IntOrVid.from_literal(2),
                 start=IntOrVid.from_literal(0),
                 stop=P.to_int_or_vid(overflow_slot),
@@ -919,14 +923,49 @@ class QuantizedEmbeddingHandler(PatternHandler):
         biases = P.make_or_get_constant(f"{zero_point_target}_to_biases", B)
 
         x, scale_slot = P.slot_map([x, self.scale])
+        ids_index = IntOrVidOrTid.from_tid(P.slot_to_tid(x))
+
+        # Gather quantized weights by ids
+        _, wq_sel = P.make_tmp_slot()
+        P.emit(
+            TakeNode(
+                x=P.slot_to_tid(w),
+                index=ids_index,
+                out=P.slot_to_tid(wq_sel),
+                axis=0,
+            )
+        )
+
+        # Gather scales by ids
+        _, sc_sel = P.make_tmp_slot()
+        P.emit(
+            TakeNode(
+                x=P.slot_to_tid(scale_slot),
+                index=ids_index,
+                out=P.slot_to_tid(sc_sel),
+                axis=0,
+            )
+        )
+
+        # Gather biases by ids
+        _, b_sel = P.make_tmp_slot()
+        P.emit(
+            TakeNode(
+                x=P.slot_to_tid(biases),
+                index=ids_index,
+                out=P.slot_to_tid(b_sel),
+                axis=0,
+            )
+        )
+
+        # Dequantize the gathered slices
         out = P.make_or_get_slot(n)
         P.emit(
-            QuantizedGatherNode(
-                table_q=P.slot_to_tid(w),
-                scales=P.slot_to_tid(scale_slot),
-                ids=P.slot_to_tid(x),
+            DequantizeNode(
+                w=P.slot_to_tid(wq_sel),
+                scales=P.slot_to_tid(sc_sel),
                 out=P.slot_to_tid(out),
-                biases=P.slot_to_tid(biases),
+                biases=P.slot_to_tid(b_sel),
                 group_size=self.group_size,
                 bits=self.bits,
                 mode="affine",

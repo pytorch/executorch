@@ -22,7 +22,7 @@ import hashlib
 from typing import ClassVar, final, List
 
 from executorch.backends.mlx._logging import logger
-from executorch.backends.mlx.program_builder import MLXProgramBuilder
+from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.serialization.mlx_graph_serialize import (
     HEADER_LENGTH,
     MAGIC,
@@ -105,10 +105,14 @@ def _format_tensor_meta(meta) -> str:
     """Format a TensorMeta for display."""
     shape_parts = []
     for dim in meta.shape:
-        if dim.is_vid:
-            shape_parts.append(f"v{dim.vid.idx}")
+        if dim.value == -1:
+            # Dynamic dim
+            if dim.max_value == -1:
+                shape_parts.append(f"dyn(min={dim.min_value})")
+            else:
+                shape_parts.append(f"dyn({dim.min_value}..{dim.max_value})")
         else:
-            shape_parts.append(str(dim.literal))
+            shape_parts.append(str(dim.value))
     shape_str = f"[{', '.join(shape_parts)}]"
     dtype_str = f"dtype={meta.scalar_type}" if meta.scalar_type is not None else ""
     dim_order_str = f"dim_order={meta.dim_order}" if meta.dim_order is not None else ""

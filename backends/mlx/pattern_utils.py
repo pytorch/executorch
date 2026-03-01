@@ -37,7 +37,7 @@ Usage in patterns.py:
 from dataclasses import dataclass, field
 from typing import Any, Callable, List, Optional, Set, Tuple, Union
 
-from executorch.backends.mlx.program_builder import get_aten_target_normalized
+from executorch.backends.mlx.builder.op_helpers import get_aten_target_normalized
 from torch.fx import Graph
 from torch.fx.node import Node
 

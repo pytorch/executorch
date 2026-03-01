@@ -35,9 +35,7 @@ namespace {
 [[maybe_unused]] void force_instantiation() {
   using namespace executorch::backends::mlx;
 
-  // Force safe_add / safe_mul template instantiation
-  (void)safe_add<uint64_t>(0, 0, "test");
-  (void)safe_add<uint32_t>(0, 0, "test");
+  // Force safe_mul template instantiation
   (void)safe_mul<size_t>(0, 0, "test");
 
   // Force check_allocation_bounded instantiation

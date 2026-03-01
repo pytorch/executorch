@@ -293,15 +293,11 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         return FBNamedSlotModule.End(builder)
 
     def _build_tensor_meta(self, builder: flatbuffers.Builder, tm: TensorMeta) -> int:
-        # Shape is now a vector of IntOrVid tables
+        # Shape is a vector of ShapeDim tables
         shape_offsets = []
         for dim in tm.shape:
-            shape_offsets.append(_build_int_or_vid(builder, dim))
-        # Build vector of table offsets
-        builder.StartVector(4, len(shape_offsets), 4)
-        for off in reversed(shape_offsets):
-            builder.PrependUOffsetTRelative(off)
-        shape_vec = builder.EndVector()
+            shape_offsets.append(self._build_shape_dim(builder, dim))
+        shape_vec = self._build_offset_vector(builder, shape_offsets)
 
         # Build dim_order vector (uint8)
         dim_order_vec = 0
@@ -322,6 +318,17 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         if dim_order_vec:
             FBTensorMetaModule.AddDimOrder(builder, dim_order_vec)
         return FBTensorMetaModule.End(builder)
+
+    def _build_shape_dim(self, builder: flatbuffers.Builder, dim) -> int:
+        from executorch.backends.mlx.serialization._generated.mlx_delegate import (
+            ShapeDim as FBShapeDimModule,
+        )
+
+        FBShapeDimModule.Start(builder)
+        FBShapeDimModule.AddValue(builder, dim.value)
+        FBShapeDimModule.AddMinValue(builder, dim.min_value)
+        FBShapeDimModule.AddMaxValue(builder, dim.max_value)
+        return FBShapeDimModule.End(builder)
 
 
 def serialize_mlx_graph(graph: MLXGraph, constant_data: bytes = b"") -> bytes:

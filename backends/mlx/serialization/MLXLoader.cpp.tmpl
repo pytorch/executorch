@@ -262,7 +262,38 @@ MLXProgram load_program(const void* data, size_t size) {
                 std::to_string(kTensorDimensionLimit) + ")");
           }
           for (size_t j = 0; j < fb_meta->shape()->size(); ++j) {
-            meta.shape.push_back(convert_int_or_vid(fb_meta->shape()->Get(static_cast<flatbuffers::uoffset_t>(j))));
+            const auto* fb_dim = fb_meta->shape()->Get(static_cast<flatbuffers::uoffset_t>(j));
+            if (!fb_dim) {
+              throw std::runtime_error(
+                  "Null ShapeDim at index " + std::to_string(j) +
+                  " in tensor_meta " + std::to_string(i));
+            }
+            ShapeDim dim;
+            dim.value = fb_dim->value();
+            dim.min_value = fb_dim->min_value();
+            dim.max_value = fb_dim->max_value();
+            if (dim.value < -1) {
+              throw std::runtime_error(
+                  "Invalid ShapeDim value " + std::to_string(dim.value) +
+                  " at index " + std::to_string(j) +
+                  " in tensor_meta " + std::to_string(i));
+            }
+            if (dim.is_dynamic()) {
+              if (dim.min_value < 0) {
+                throw std::runtime_error(
+                    "Invalid ShapeDim min_value " + std::to_string(dim.min_value) +
+                    " at index " + std::to_string(j) +
+                    " in tensor_meta " + std::to_string(i));
+              }
+              if (dim.max_value != -1 && dim.max_value < dim.min_value) {
+                throw std::runtime_error(
+                    "ShapeDim max_value " + std::to_string(dim.max_value) +
+                    " < min_value " + std::to_string(dim.min_value) +
+                    " at index " + std::to_string(j) +
+                    " in tensor_meta " + std::to_string(i));
+              }
+            }
+            meta.shape.push_back(dim);
           }
         }
         auto raw_scalar_type = fb_meta->scalar_type();

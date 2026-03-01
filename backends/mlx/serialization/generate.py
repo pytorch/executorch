@@ -84,7 +84,7 @@ FBS_FLOAT_TYPES = frozenset({"float", "double"})
 FBS_SCALAR_TYPES = FBS_INTEGER_TYPES | FBS_FLOAT_TYPES | frozenset({"bool"})
 
 # Compound "or" types that wrap a literal + Vid
-FBS_COMPOUND_TYPES = frozenset({"IntOrVid", "FloatOrVid", "TidOrVid"})
+FBS_COMPOUND_TYPES = frozenset({"IntOrVid", "FloatOrVid", "VidOrTid", "IntOrVidOrTid"})
 
 # Python type mapping for FBS primitives
 FBS_TO_PYTHON = {
@@ -285,11 +285,12 @@ def _parse_fields(body: str) -> List[FBSField]:
 _COMPOUND_TYPE_CONFIG = {
     "IntOrVid": ("literal", "int", "a literal integer"),
     "FloatOrVid": ("literal", "float", "a literal float"),
-    "TidOrVid": ("tid", "Tid", "a tensor reference"),
+    "VidOrTid": ("tid", "Tid", "a tensor reference"),
+    "IntOrVidOrTid": ("literal", "int", "a literal integer"),
 }
 
 
-def _generate_compound_type(table: FBSTable) -> List[str]:
+def _generate_compound_type(table: FBSTable) -> List[str]:  # noqa: C901
     """Generate a Python dataclass for a compound type (IntOrVid, etc.) from schema."""
     name = table.name
     config = _COMPOUND_TYPE_CONFIG.get(name)
@@ -329,6 +330,10 @@ def _generate_compound_type(table: FBSTable) -> List[str]:
         py_type = _fbs_type_to_python(fld.type_str, truly_required)
         lines.append(f"    {fld.name}: {py_type} = {default}")
 
+    # Check if this is a 3-way discriminator (IntOrVidOrTid uses 'kind')
+    has_kind = any(fld.name == "kind" for fld in table.fields)
+    has_tid = any(fld.name == "tid" for fld in table.fields)
+
     # Factory: from_primary (e.g. from_literal, from_tid)
     lines.append("")
     lines.append("    @classmethod")
@@ -336,14 +341,31 @@ def _generate_compound_type(table: FBSTable) -> List[str]:
         f'    def from_{primary_field}(cls, value: {primary_py_type}) -> "{name}":'
     )
     lines.append(f'        """Create a {name} from {primary_desc}."""')
-    lines.append(f"        return cls({primary_field}=value, is_vid=False)")
+    if has_kind:
+        lines.append(f"        return cls({primary_field}=value, kind=0)")
+    else:
+        lines.append(f"        return cls({primary_field}=value, is_vid=False)")
 
     # Factory: from_vid
     lines.append("")
     lines.append("    @classmethod")
     lines.append(f'    def from_vid(cls, vid: Vid) -> "{name}":')
     lines.append(f'        """Create a {name} from a Vid reference."""')
-    lines.append("        return cls(vid=vid, is_vid=True)")
+    if has_kind:
+        lines.append("        return cls(vid=vid, kind=1)")
+    else:
+        lines.append("        return cls(vid=vid, is_vid=True)")
+
+    # Factory: from_tid (only for types with a tid field)
+    if has_tid:
+        lines.append("")
+        lines.append("    @classmethod")
+        lines.append(f'    def from_tid(cls, tid: Tid) -> "{name}":')
+        lines.append(f'        """Create a {name} from a Tid tensor reference."""')
+        if has_kind:
+            lines.append("        return cls(tid=tid, kind=2)")
+        else:
+            lines.append("        return cls(tid=tid, is_vid=False)")
 
     lines.append("")
     return lines
@@ -431,8 +453,8 @@ def generate_python_schema(schema: FBSSchema) -> str:  # noqa: C901
             lines.extend(_generate_compound_type(table))
             lines.append("")
 
-    # Generate SlotVariant, NamedSlot, TensorMeta (but not Instruction/MLXGraph yet - they reference OpNode)
-    other_tables = ["SlotVariant", "NamedSlot", "TensorMeta"]
+    # Generate ShapeDim, SlotVariant, NamedSlot, TensorMeta (but not Instruction/MLXGraph yet - they reference OpNode)
+    other_tables = ["ShapeDim", "SlotVariant", "NamedSlot", "TensorMeta"]
     for table_name in other_tables:
         table = next((t for t in schema.tables if t.name == table_name), None)
         if table:
@@ -574,7 +596,8 @@ def generate_python_serializers(schema: FBSSchema) -> str:
             f"{op_imports},",
             "    IntOrVid,",
             "    FloatOrVid,",
-            "    TidOrVid,",
+            "    VidOrTid,",
+            "    IntOrVidOrTid,",
             "    Tid,",
             "    Vid,",
             ")",
@@ -616,19 +639,34 @@ def generate_python_serializers(schema: FBSSchema) -> str:
             "            FBFloatOrVidModule.AddVid(builder, CreateVid(builder, fov.vid.idx))",
             "        return FBFloatOrVidModule.End(builder)",
             "",
-            "    def _build_tid_or_vid(self, builder: flatbuffers.Builder, tov: TidOrVid) -> int:",
+            "    def _build_vid_or_tid(self, builder: flatbuffers.Builder, vot: VidOrTid) -> int:",
             '        """Build a TidOrVid table."""',
-            "        from executorch.backends.mlx.serialization._generated.mlx_delegate import TidOrVid as FBTidOrVidModule",
+            "        from executorch.backends.mlx.serialization._generated.mlx_delegate import VidOrTid as FBVidOrTidModule",
             "        from executorch.backends.mlx.serialization._generated.mlx_delegate.Tid import CreateTid",
             "        from executorch.backends.mlx.serialization._generated.mlx_delegate.Vid import CreateVid",
             "",
-            "        FBTidOrVidModule.Start(builder)",
-            "        FBTidOrVidModule.AddIsVid(builder, tov.is_vid)",
-            "        if tov.tid is not None:",
-            "            FBTidOrVidModule.AddTid(builder, CreateTid(builder, tov.tid.idx))",
-            "        if tov.vid is not None:",
-            "            FBTidOrVidModule.AddVid(builder, CreateVid(builder, tov.vid.idx))",
-            "        return FBTidOrVidModule.End(builder)",
+            "        FBVidOrTidModule.Start(builder)",
+            "        FBVidOrTidModule.AddIsVid(builder, vot.is_vid)",
+            "        if vot.tid is not None:",
+            "            FBVidOrTidModule.AddTid(builder, CreateTid(builder, vot.tid.idx))",
+            "        if vot.vid is not None:",
+            "            FBVidOrTidModule.AddVid(builder, CreateVid(builder, vot.vid.idx))",
+            "        return FBVidOrTidModule.End(builder)",
+            "",
+            "    def _build_int_or_vid_or_tid(self, builder: flatbuffers.Builder, ivt: IntOrVidOrTid) -> int:",
+            '        """Build an IntOrVidOrTid table."""',
+            "        from executorch.backends.mlx.serialization._generated.mlx_delegate import IntOrVidOrTid as FBIntOrVidOrTidModule",
+            "        from executorch.backends.mlx.serialization._generated.mlx_delegate.Tid import CreateTid",
+            "        from executorch.backends.mlx.serialization._generated.mlx_delegate.Vid import CreateVid",
+            "",
+            "        FBIntOrVidOrTidModule.Start(builder)",
+            "        FBIntOrVidOrTidModule.AddLiteral(builder, ivt.literal)",
+            "        FBIntOrVidOrTidModule.AddKind(builder, ivt.kind)",
+            "        if ivt.tid is not None:",
+            "            FBIntOrVidOrTidModule.AddTid(builder, CreateTid(builder, ivt.tid.idx))",
+            "        if ivt.vid is not None:",
+            "            FBIntOrVidOrTidModule.AddVid(builder, CreateVid(builder, ivt.vid.idx))",
+            "        return FBIntOrVidOrTidModule.End(builder)",
             "",
             "    def _build_int_or_vid_vector(",
             "        self, builder: flatbuffers.Builder, vec: List[IntOrVid]",
@@ -736,7 +774,8 @@ _PY_PREBUILD_OFFSET = {
     "str": "builder.CreateString(op.{name})",
     "int_or_vid": "self._build_int_or_vid(builder, op.{name})",
     "float_or_vid": "self._build_float_or_vid(builder, op.{name})",
-    "tid_or_vid": "self._build_tid_or_vid(builder, op.{name})",
+    "vid_or_tid": "self._build_vid_or_tid(builder, op.{name})",
+    "int_or_vid_or_tid": "self._build_int_or_vid_or_tid(builder, op.{name})",
     "optional_str": "builder.CreateString(op.{name}) if op.{name} is not None else None",
 }
 
@@ -776,7 +815,7 @@ def _emit_py_add(
     if kind in ("int", "float", "bool"):
         return [f"        {add}(builder, op.{n})"]
     # Pre-built offsets (string, compound types)
-    if kind in ("str", "int_or_vid", "float_or_vid", "tid_or_vid"):
+    if kind in ("str", "int_or_vid", "float_or_vid", "vid_or_tid", "int_or_vid_or_tid"):
         return [f"        {add}(builder, {n}_off)"]
     # Pre-built vectors (required vs optional)
     if kind in ("list_int", "list_int_or_vid", "list_tid"):
@@ -839,8 +878,10 @@ def _get_field_kind(fld: FBSField, table: FBSTable) -> str:  # noqa: C901
         return "int_or_vid"
     if t == "FloatOrVid":
         return "float_or_vid"
-    if t == "TidOrVid":
-        return "tid_or_vid"
+    if t == "VidOrTid":
+        return "vid_or_tid"
+    if t == "IntOrVidOrTid":
+        return "int_or_vid_or_tid"
     if t in FBS_INTEGER_TYPES:
         if fld.default == "null":
             return "optional_int"
@@ -958,6 +999,9 @@ _OPCODE_OVERRIDES = {
     "Conv1D": "CONV1D",
     "Conv2D": "CONV2D",
     "Conv3D": "CONV3D",
+    "ConvTranspose1D": "CONV_TRANSPOSE1D",
+    "ConvTranspose2D": "CONV_TRANSPOSE2D",
+    "ConvTranspose3D": "CONV_TRANSPOSE3D",
 }
 
 
@@ -1054,7 +1098,8 @@ _CPP_CONVERTER = {
     "vid": "convert_vid",
     "int_or_vid": "convert_int_or_vid",
     "float_or_vid": "convert_float_or_vid",
-    "tid_or_vid": "convert_tid_or_vid",
+    "vid_or_tid": "convert_vid_or_tid",
+    "int_or_vid_or_tid": "convert_int_or_vid_or_tid",
 }
 
 
@@ -1167,6 +1212,37 @@ def run_flatc(flatc_path: str = "flatc") -> bool:
     return success
 
 
+_FLATC_IMPORT_PREFIX = "executorch.backends.mlx.serialization._generated."
+
+
+def _fixup_flatc_imports() -> None:
+    """Rewrite bare ``from mlx_delegate.X`` imports in generated FlatBuffer code.
+
+    ``flatc --python`` emits lazy imports like ``from mlx_delegate.Tid import Tid``
+    inside accessor methods.  These only resolve if the ``_generated/`` directory is
+    on ``sys.path``.  We rewrite them to fully-qualified imports so no ``sys.path``
+    manipulation is needed at runtime.
+    """
+    fb_dir = GENERATED_DIR / "mlx_delegate"
+    if not fb_dir.exists():
+        return
+
+    count = 0
+    for py_file in fb_dir.glob("*.py"):
+        content = py_file.read_text()
+        if "from mlx_delegate." not in content:
+            continue
+        new_content = content.replace(
+            "from mlx_delegate.", f"from {_FLATC_IMPORT_PREFIX}mlx_delegate."
+        )
+        if new_content != content:
+            py_file.write_text(new_content)
+            count += 1
+
+    if count:
+        print(f"Fixed bare imports in {count} generated FlatBuffer file(s)")
+
+
 # Mapping from fine-grained field kinds (from _get_field_kind) to inspector
 # display kinds.  The inspector uses coarser categories: optional/required
 # distinctions collapse, and int/float/bool all map to "scalar".
@@ -1177,7 +1253,8 @@ _INSPECTOR_KIND_MAP = {
     "optional_vid": "vid",
     "int_or_vid": "int_or_vid",
     "float_or_vid": "float_or_vid",
-    "tid_or_vid": "tid_or_vid",
+    "vid_or_tid": "vid_or_tid",
+    "int_or_vid_or_tid": "int_or_vid_or_tid",
     "list_int": "int_list",
     "list_int_or_vid": "int_or_vid_list",
     "list_tid": "tid_list",
@@ -1291,6 +1368,7 @@ def main():  # noqa: C901
     # Run flatc
     if not args.skip_flatc:
         run_flatc(args.flatc)
+        _fixup_flatc_imports()
 
     # Generate all code files
     generators = [

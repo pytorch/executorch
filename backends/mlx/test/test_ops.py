@@ -2938,6 +2938,418 @@ class Conv3DTest(OpTestCase):
         )
 
 
+class ConvTranspose1dModel(nn.Module):
+    """Simple model using ConvTranspose1d."""
+
+    def __init__(
+        self,
+        in_channels: int = 16,
+        out_channels: int = 32,
+        kernel_size: int = 3,
+        stride: int = 1,
+        padding: int = 0,
+        output_padding: int = 0,
+        bias: bool = True,
+        groups: int = 1,
+    ):
+        super().__init__()
+        self.conv_transpose = nn.ConvTranspose1d(
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride=stride,
+            padding=padding,
+            output_padding=output_padding,
+            bias=bias,
+            groups=groups,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.conv_transpose(x)
+
+
+@register_test
+class ConvTranspose1dTest(OpTestCase):
+    """Test case for nn.ConvTranspose1d."""
+
+    name = "conv_transpose1d"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        in_channels: int = 16,
+        out_channels: int = 32,
+        kernel_size: int = 3,
+        stride: int = 1,
+        padding: int = 0,
+        output_padding: int = 0,
+        bias: bool = True,
+        groups: int = 1,
+        batch_size: int = 2,
+        seq_len: int = 64,
+    ):
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.output_padding = output_padding
+        self.bias = bias
+        self.groups = groups
+        self.batch_size = batch_size
+        self.seq_len = seq_len
+
+        parts = ["conv_transpose1d"]
+        if stride != 1:
+            parts.append(f"s{stride}")
+        if padding != 0:
+            parts.append(f"p{padding}")
+        if output_padding != 0:
+            parts.append(f"op{output_padding}")
+        if not bias:
+            parts.append("no_bias")
+        if groups != 1:
+            parts.append(f"g{groups}")
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["ConvTranspose1dTest"]:
+        return [
+            cls(),
+            cls(bias=False),
+            cls(stride=2),
+            cls(stride=2, output_padding=1),
+            cls(padding=1),
+            cls(in_channels=8, out_channels=8, groups=8),  # depthwise
+            cls(in_channels=6, out_channels=6, groups=3),  # grouped
+        ]
+
+    def create_model(self) -> nn.Module:
+        return ConvTranspose1dModel(
+            self.in_channels,
+            self.out_channels,
+            self.kernel_size,
+            self.stride,
+            self.padding,
+            self.output_padding,
+            self.bias,
+            self.groups,
+        )
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(self.batch_size, self.in_channels, self.seq_len)
+        return (x,)
+
+
+class ConvTranspose2DModel(nn.Module):
+    """Model that performs 2D transposed convolution."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int,
+        stride: int = 1,
+        padding: int = 0,
+        output_padding: int = 0,
+        bias: bool = True,
+        groups: int = 1,
+    ):
+        super().__init__()
+        self.conv_transpose = nn.ConvTranspose2d(
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride=stride,
+            padding=padding,
+            output_padding=output_padding,
+            bias=bias,
+            groups=groups,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.conv_transpose(x)
+
+
+@register_test
+class ConvTranspose2DTest(OpTestCase):
+    """Test case for nn.ConvTranspose2d."""
+
+    name = "conv_transpose2d"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        in_channels: int = 3,
+        out_channels: int = 16,
+        kernel_size: int = 3,
+        stride: int = 1,
+        padding: int = 0,
+        output_padding: int = 0,
+        input_size: Tuple[int, int] = (32, 32),
+        batch_size: int = 1,
+        bias: bool = True,
+        groups: int = 1,
+    ):
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.output_padding = output_padding
+        self.input_size = input_size
+        self.batch_size = batch_size
+        self.bias = bias
+        self.groups = groups
+
+        parts = [
+            "conv_transpose2d",
+            f"in{in_channels}",
+            f"out{out_channels}",
+            f"k{kernel_size}",
+        ]
+        if stride != 1:
+            parts.append(f"s{stride}")
+        if padding != 0:
+            parts.append(f"p{padding}")
+        if output_padding != 0:
+            parts.append(f"op{output_padding}")
+        parts.append(f"{input_size[0]}x{input_size[1]}")
+        if not bias:
+            parts.append("nobias")
+        if groups != 1:
+            parts.append(f"g{groups}")
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["ConvTranspose2DTest"]:
+        return [
+            cls(in_channels=3, out_channels=16, kernel_size=3, padding=1),
+            cls(in_channels=16, out_channels=32, kernel_size=3, stride=2, padding=1),
+            cls(
+                in_channels=16,
+                out_channels=32,
+                kernel_size=3,
+                stride=2,
+                padding=1,
+                output_padding=1,
+            ),
+            cls(in_channels=64, out_channels=128, kernel_size=1),
+            cls(in_channels=3, out_channels=16, kernel_size=3, padding=1, bias=False),
+            cls(
+                in_channels=8, out_channels=8, kernel_size=3, padding=1, groups=8
+            ),  # depthwise
+            cls(
+                in_channels=6, out_channels=6, kernel_size=3, padding=1, groups=3
+            ),  # grouped
+        ]
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(
+            self.batch_size,
+            self.in_channels,
+            self.input_size[0],
+            self.input_size[1],
+        )
+        return (x,)
+
+    def create_model(self) -> nn.Module:
+        return ConvTranspose2DModel(
+            self.in_channels,
+            self.out_channels,
+            self.kernel_size,
+            self.stride,
+            self.padding,
+            self.output_padding,
+            self.bias,
+            self.groups,
+        )
+
+
+class ConvTranspose3DModel(nn.Module):
+    """Model that performs 3D transposed convolution."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int,
+        stride: int = 1,
+        padding: int = 0,
+        output_padding: int = 0,
+        bias: bool = True,
+    ):
+        super().__init__()
+        self.conv_transpose = nn.ConvTranspose3d(
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride=stride,
+            padding=padding,
+            output_padding=output_padding,
+            bias=bias,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.conv_transpose(x)
+
+
+@register_test
+class ConvTranspose3DTest(OpTestCase):
+    """Test case for nn.ConvTranspose3d."""
+
+    name = "conv_transpose3d"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        in_channels: int = 3,
+        out_channels: int = 16,
+        kernel_size: int = 3,
+        stride: int = 1,
+        padding: int = 0,
+        output_padding: int = 0,
+        input_size: Tuple[int, int, int] = (8, 16, 16),
+        batch_size: int = 1,
+        bias: bool = True,
+    ):
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.output_padding = output_padding
+        self.input_size = input_size
+        self.batch_size = batch_size
+        self.bias = bias
+
+        parts = [
+            "conv_transpose3d",
+            f"in{in_channels}",
+            f"out{out_channels}",
+            f"k{kernel_size}",
+        ]
+        if stride != 1:
+            parts.append(f"s{stride}")
+        if padding != 0:
+            parts.append(f"p{padding}")
+        if output_padding != 0:
+            parts.append(f"op{output_padding}")
+        parts.append(f"{input_size[0]}x{input_size[1]}x{input_size[2]}")
+        if not bias:
+            parts.append("nobias")
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["ConvTranspose3DTest"]:
+        return [
+            cls(in_channels=3, out_channels=16, kernel_size=3, padding=1),
+            cls(in_channels=16, out_channels=32, kernel_size=3, stride=2, padding=1),
+            cls(in_channels=64, out_channels=128, kernel_size=1),
+            cls(in_channels=3, out_channels=16, kernel_size=3, padding=1, bias=False),
+        ]
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(
+            self.batch_size,
+            self.in_channels,
+            self.input_size[0],
+            self.input_size[1],
+            self.input_size[2],
+        )
+        return (x,)
+
+    def create_model(self) -> nn.Module:
+        return ConvTranspose3DModel(
+            self.in_channels,
+            self.out_channels,
+            self.kernel_size,
+            self.stride,
+            self.padding,
+            self.output_padding,
+            self.bias,
+        )
+
+
+class SliceScatterModel(nn.Module):
+    """Model that performs slice_scatter."""
+
+    def __init__(self, dim: int = 0, start: int = 0, end: int = 2, step: int = 1):
+        super().__init__()
+        self.dim = dim
+        self.start = start
+        self.end = end
+        self.step = step
+
+    def forward(self, x: torch.Tensor, src: torch.Tensor) -> torch.Tensor:
+        return x.slice_scatter(
+            src, dim=self.dim, start=self.start, end=self.end, step=self.step
+        )
+
+
+@register_test
+class SliceScatterTest(OpTestCase):
+    """Test case for aten.slice_scatter."""
+
+    name = "slice_scatter"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        input_shape: Tuple[int, ...] = (4, 8),
+        dim: int = 0,
+        start: int = 0,
+        end: int = 2,
+        step: int = 1,
+    ):
+        self.input_shape = input_shape
+        self.dim = dim
+        self.start = start
+        self.end = end
+        self.step = step
+
+        parts = ["slice_scatter", f"d{dim}", f"s{start}", f"e{end}"]
+        if step != 1:
+            parts.append(f"step{step}")
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["SliceScatterTest"]:
+        return [
+            # Basic: replace first 2 rows
+            cls(input_shape=(4, 8), dim=0, start=0, end=2),
+            # Replace middle rows
+            cls(input_shape=(4, 8), dim=0, start=1, end=3),
+            # Along dim=1
+            cls(input_shape=(4, 8), dim=1, start=2, end=6),
+            # With step=2
+            cls(input_shape=(4, 8), dim=0, start=0, end=4, step=2),
+            # 3D tensor
+            cls(input_shape=(2, 4, 8), dim=1, start=0, end=2),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return SliceScatterModel(
+            dim=self.dim,
+            start=self.start,
+            end=self.end,
+            step=self.step,
+        )
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(self.input_shape)
+        # Compute the src shape: same as x but with the slice size along dim
+        src_shape = list(self.input_shape)
+        slice_len = len(range(self.start, self.end, self.step))
+        src_shape[self.dim] = slice_len
+        src = torch.randn(src_shape)
+        return (x, src)
+
+
 class BmmModel(nn.Module):
     """Model that performs batch matrix multiplication."""
 
@@ -3172,6 +3584,69 @@ class IndexTest(OpTestCase):
         x = torch.randn(self.table_size)
         indices = torch.randint(0, self.table_size, (self.num_indices,))
         return (x, indices)
+
+
+class AdvancedIndexModel(nn.Module):
+    """Model that performs advanced (multi-index) tensor indexing.
+
+    Implements x[i0, i1, ...] with multiple index tensors, which maps to
+    aten.index.Tensor with multiple non-None indices.
+    """
+
+    def __init__(self, num_indexed_dims: int):
+        super().__init__()
+        self.num_indexed_dims = num_indexed_dims
+
+    def forward(self, x: torch.Tensor, *indices: torch.Tensor) -> torch.Tensor:
+        idx_list = list(indices)
+        return x[tuple(idx_list)]
+
+
+@register_test
+class AdvancedIndexTest(OpTestCase):
+    """Test case for multi-index tensor indexing (advanced/fancy indexing)."""
+
+    name = "advanced_index"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        input_shape: Tuple[int, ...] = (4, 5, 6),
+        num_indexed_dims: int = 2,
+        num_indices: int = 3,
+    ):
+        self.input_shape = input_shape
+        self.num_indexed_dims = num_indexed_dims
+        self.num_indices = num_indices
+        self.name = (
+            f"advanced_index_{'x'.join(str(s) for s in input_shape)}"
+            f"_dims{num_indexed_dims}_idx{num_indices}"
+        )
+
+    @classmethod
+    def get_test_configs(cls) -> List["AdvancedIndexTest"]:
+        return [
+            # 2D input, index both dims
+            cls(input_shape=(8, 6), num_indexed_dims=2, num_indices=4),
+            # 3D input, index all 3 dims
+            cls(input_shape=(4, 5, 6), num_indexed_dims=3, num_indices=3),
+            # 4D input, index all 4 dims (the original failing case)
+            cls(input_shape=(2, 3, 4, 5), num_indexed_dims=4, num_indices=2),
+            # 3D input, index 2 of 3 dims
+            cls(input_shape=(4, 5, 6), num_indexed_dims=2, num_indices=5),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return AdvancedIndexModel(self.num_indexed_dims)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(self.input_shape)
+        indices = []
+        for dim in range(self.num_indexed_dims):
+            idx = torch.randint(0, self.input_shape[dim], (self.num_indices,))
+            indices.append(idx)
+        return (x, *indices)
 
 
 class IndexUpdateModel(nn.Module):

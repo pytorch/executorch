@@ -682,23 +682,17 @@ inline ::mlx::core::Shape to_shape(const std::vector<int32_t>& dims) {
 
 // Overload for static shapes (used when loading constants where all dims must
 // be literals)
-inline ::mlx::core::Shape to_shape(
-    const std::vector<std::variant<int64_t, Vid>>& dims) {
+// Convert ShapeDim vector to MLX Shape (for constants and mutable buffers).
+// Only static dimensions are allowed — dynamic dims (value == -1) are rejected.
+inline ::mlx::core::Shape to_shape(const std::vector<ShapeDim>& dims) {
   ::mlx::core::Shape out;
   out.reserve(dims.size());
   for (const auto& d : dims) {
-    if (!std::holds_alternative<int64_t>(d)) {
+    if (d.is_dynamic()) {
       throw std::runtime_error(
-          "to_shape: expected static shape but found dynamic Vid reference");
+          "to_shape: expected static shape but found dynamic dimension");
     }
-    int64_t dim = std::get<int64_t>(d);
-    if (dim > std::numeric_limits<int32_t>::max() ||
-        dim < std::numeric_limits<int32_t>::min()) {
-      throw std::runtime_error(
-          "to_shape: shape dimension " + std::to_string(dim) +
-          " exceeds int32 range");
-    }
-    out.push_back(static_cast<int32_t>(dim));
+    out.push_back(d.value);
   }
   return out;
 }

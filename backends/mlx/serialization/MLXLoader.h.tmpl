@@ -38,17 +38,33 @@ struct Vid {
 // Import ScalarType from ExecuTorch
 using ScalarType = ::executorch::runtime::etensor::ScalarType;
 
+struct ShapeDim {
+  int32_t value{-1};       // Static dim (>= 0), or -1 for dynamic
+  int32_t min_value{0};    // Lower bound (when value == -1)
+  int32_t max_value{-1};   // Upper bound (-1 = unbounded, when value == -1)
+
+  bool is_dynamic() const { return value < 0; }
+};
+
 struct TensorMeta {
-  std::vector<std::variant<int64_t, Vid>> shape;
+  std::vector<ShapeDim> shape;
   ScalarType scalar_type{ScalarType::Float};  // ET ScalarType
   std::vector<uint8_t> dim_order;
 };
 
-// TidOrVid: either a tensor (Tid) or a scalar value (Vid)
-struct TidOrVid {
-  Tid tid{};
+// VidOrTid: either a scalar value (Vid) or a tensor (Tid)
+struct VidOrTid {
   Vid vid{};
+  Tid tid{};
   bool is_vid{false};  // false = use tid, true = use vid
+};
+
+// IntOrVidOrTid: a literal int, a runtime Vid, or a tensor (Tid)
+struct IntOrVidOrTid {
+  int64_t literal{0};
+  Vid vid{};
+  Tid tid{};
+  uint8_t kind{0};  // 0 = literal int, 1 = vid, 2 = tid
 };
 
 // =============================================================================
@@ -250,24 +266,61 @@ inline std::variant<double, Vid> convert_float_or_vid(
   return Vid{vid_ptr->idx()};
 }
 
-// Convert FlatBuffer TidOrVid (tensor or scalar value)
-inline TidOrVid convert_tid_or_vid(
-    const mlx_delegate::TidOrVid* fb) {
+// Convert FlatBuffer VidOrTid (scalar value or tensor)
+inline VidOrTid convert_vid_or_tid(
+    const mlx_delegate::VidOrTid* fb) {
   if (!fb) {
-    throw std::runtime_error("Null TidOrVid in FlatBuffer");
+    throw std::runtime_error("Null VidOrTid in FlatBuffer");
   }
-  TidOrVid result;
+  VidOrTid result;
   result.is_vid = fb->is_vid();
   if (result.is_vid) {
     if (!fb->vid()) {
-      throw std::runtime_error("TidOrVid has is_vid=true but vid pointer is null");
+      throw std::runtime_error("VidOrTid has is_vid=true but vid pointer is null");
     }
     result.vid = Vid{fb->vid()->idx()};
   } else {
     if (!fb->tid()) {
-      throw std::runtime_error("TidOrVid has is_vid=false but tid pointer is null");
+      throw std::runtime_error("VidOrTid has is_vid=false but tid pointer is null");
     }
     result.tid = Tid{fb->tid()->idx()};
+  }
+  return result;
+}
+
+// Convert FlatBuffer IntOrVidOrTid (literal int, Vid, or Tid)
+inline IntOrVidOrTid convert_int_or_vid_or_tid(
+    const mlx_delegate::IntOrVidOrTid* fb) {
+  if (!fb) {
+    throw std::runtime_error("Null IntOrVidOrTid in FlatBuffer");
+  }
+  IntOrVidOrTid result;
+  result.kind = fb->kind();
+  switch (result.kind) {
+    case 0:  // literal int
+      result.literal = fb->literal();
+      break;
+    case 1: {  // Vid
+      const auto* vid_ptr = fb->vid();
+      if (!vid_ptr) {
+        throw std::runtime_error(
+            "IntOrVidOrTid has kind=1 (Vid) but vid pointer is null");
+      }
+      result.vid = Vid{vid_ptr->idx()};
+      break;
+    }
+    case 2: {  // Tid
+      const auto* tid_ptr = fb->tid();
+      if (!tid_ptr) {
+        throw std::runtime_error(
+            "IntOrVidOrTid has kind=2 (Tid) but tid pointer is null");
+      }
+      result.tid = Tid{tid_ptr->idx()};
+      break;
+    }
+    default:
+      throw std::runtime_error(
+          "IntOrVidOrTid has invalid kind: " + std::to_string(result.kind));
   }
   return result;
 }

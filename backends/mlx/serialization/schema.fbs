@@ -22,8 +22,6 @@ namespace mlx_delegate;
 // We use ET's ScalarType (int8) directly.
 // See runtime/core/portable_type/scalar_type.h for ScalarType values.
 
-// Tensor slot identifier
-
 // Tensor slot identifier - indexes into tensors array
 struct Tid {
     idx: uint32;
@@ -34,6 +32,10 @@ struct Tid {
 struct Vid {
     idx: uint32;
 }
+
+// NOTE: These compound types use tables with manual discriminators rather than
+// FlatBuffers unions because IntOrVid is used in vectors ([IntOrVid]), and
+// FlatBuffers does not support vectors of unions.
 
 // For fields that can be either a literal int or a runtime Vid
 table IntOrVid {
@@ -50,11 +52,18 @@ table FloatOrVid {
 }
 
 // For fields that can be either a tensor (Tid) or a scalar value (Vid)
-// Used for ops like RoPE where offset can be a scalar position or a tensor of positions
-table TidOrVid {
-    tid: Tid;
+table VidOrTid {
     vid: Vid;
+    tid: Tid;
     is_vid: bool = false;  // false = use tid, true = use vid
+}
+
+// For fields that can be a literal int, a runtime Vid, or a tensor (Tid)
+table IntOrVidOrTid {
+    literal: int64;
+    vid: Vid;
+    tid: Tid;
+    kind: uint8 = 0;  // 0 = literal int, 1 = vid, 2 = tid
 }
 
 // =============================================================================
@@ -106,7 +115,7 @@ table TakeAlongAxisNode {
 table TakeNode {
     x: Tid (required);
     out: Tid (required);
-    index: IntOrVid (required);  // Single index to select (can be dynamic from item())
+    index: IntOrVidOrTid (required);  // Scalar int, dynamic Vid, or tensor of indices
     axis: int32;   // Axis along which to select
 }
 
@@ -129,7 +138,7 @@ table RopeNode {
     x: Tid (required);
     out: Tid (required);
     dims: int32;
-    offset: TidOrVid (required);  // Position offset: scalar (Vid) or tensor of positions (Tid)
+    offset: VidOrTid (required);  // Position offset: scalar (Vid) or tensor of positions (Tid)
     freqs: Tid;  // optional
     traditional: bool = false;
     base: float = 500000.0;  // Llama 3 default
@@ -242,6 +251,51 @@ table Conv3DNode {
     dilation_d: int32 = 1;
     dilation_h: int32 = 1;
     dilation_w: int32 = 1;
+    groups: int32 = 1;
+}
+
+table ConvTranspose1DNode {
+    x: Tid (required);
+    w: Tid (required);
+    out: Tid (required);
+    stride: int32 = 1;
+    padding: int32 = 0;
+    dilation: int32 = 1;
+    output_padding: int32 = 0;
+    groups: int32 = 1;
+}
+
+table ConvTranspose2DNode {
+    x: Tid (required);
+    w: Tid (required);
+    out: Tid (required);
+    stride_h: int32 = 1;
+    stride_w: int32 = 1;
+    padding_h: int32 = 0;
+    padding_w: int32 = 0;
+    dilation_h: int32 = 1;
+    dilation_w: int32 = 1;
+    output_padding_h: int32 = 0;
+    output_padding_w: int32 = 0;
+    groups: int32 = 1;
+}
+
+table ConvTranspose3DNode {
+    x: Tid (required);
+    w: Tid (required);
+    out: Tid (required);
+    stride_d: int32 = 1;
+    stride_h: int32 = 1;
+    stride_w: int32 = 1;
+    padding_d: int32 = 0;
+    padding_h: int32 = 0;
+    padding_w: int32 = 0;
+    dilation_d: int32 = 1;
+    dilation_h: int32 = 1;
+    dilation_w: int32 = 1;
+    output_padding_d: int32 = 0;
+    output_padding_h: int32 = 0;
+    output_padding_w: int32 = 0;
     groups: int32 = 1;
 }
 
@@ -367,9 +421,11 @@ table IdCopyNode {
 }
 
 table GatherNode {
-    table_: Tid (required);  // 'table' is reserved in flatbuffers
-    ids: Tid (required);
+    x: Tid (required);
+    indices: [Tid] (required);   // Index tensors (one per indexed axis)
     out: Tid (required);
+    axes: [int32] (required);    // Which axes to gather along
+    slice_sizes: [int32] (required);  // Size of slice per dimension of x
 }
 
 table SliceNode {
@@ -378,6 +434,7 @@ table SliceNode {
     axis: IntOrVid (required);
     start: IntOrVid (required);
     stop: IntOrVid (required);
+    step: int32 = 1;
 }
 
 table AsTypeNode {
@@ -430,9 +487,11 @@ table ArgmaxNode {
 table SliceUpdateNode {
     dst: Tid (required);
     update: Tid (required);
+    out: Tid (required); // Can be same as dst
     axis: IntOrVid (required);
     start: IntOrVid (required);
     stop: IntOrVid (required);
+    step: int32 = 1;
 }
 
 // Index-based update: copies update tensor into dst at positions specified by 1D indices
@@ -445,17 +504,6 @@ table IndexUpdateNode {
     axis: int32;               // dimension to index along
 }
 
-table QuantizedGatherNode {
-    table_q: Tid (required);
-    scales: Tid (required);
-    ids: Tid (required);
-    out: Tid (required);
-    biases: Tid;  // optional
-    group_size: int32;
-    bits: int32;
-    mode: string (required);
-    out_scalar_type: int8;       // ET ScalarType for output
-}
 
 table DequantizeNode {
     w: Tid (required);           // Quantized matrix to dequantize
@@ -507,7 +555,7 @@ table NotEqualNode {
 
 // Logical ops
 table LogicalNotNode {
-    a: Tid (required);
+    x: Tid (required);
     out: Tid (required);
 }
 
@@ -845,7 +893,6 @@ union OpNode {
     ArgmaxNode,
     SliceUpdateNode,
     IndexUpdateNode,
-    QuantizedGatherNode,
     DequantizeNode,
     LessNode,
     LessEqualNode,
@@ -899,7 +946,10 @@ union OpNode {
     ArgminNode,
     MedianNode,
     ModIntNode,
-    RemainderNode
+    RemainderNode,
+    ConvTranspose1DNode,
+    ConvTranspose2DNode,
+    ConvTranspose3DNode
     // BC: Add new op nodes here (append only)
 }
 
@@ -924,8 +974,15 @@ table InstructionChain {
 // Tensor metadata
 // =============================================================================
 
+// Shape dimension: static value, or dynamic with optional bounds
+table ShapeDim {
+    value: int32 = -1;      // Static dim (>= 0), or -1 for dynamic
+    min_value: int32 = 0;   // Lower bound (only when value == -1)
+    max_value: int32 = -1;  // Upper bound (-1 = unbounded, only when value == -1)
+}
+
 table TensorMeta {
-    shape: [IntOrVid] (required);  // Can be literal ints or Vid refs for dynamic dims
+    shape: [ShapeDim] (required);  // Dimension info with static/dynamic distinction
     scalar_type: int8;             // ET ScalarType value (see runtime/core/portable_type/scalar_type.h)
     dim_order: [uint8];            // Memory layout order (matches TensorLayout.dim_order, DimOrderType = uint8_t)
 }

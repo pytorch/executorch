@@ -55,22 +55,10 @@ class MLXOperatorSupport(OperatorSupportBase):
 
         # Run the builder to determine which nodes are supported
         # The builder populates node_info with supported/unsupported status
-        from executorch.backends.mlx.program_builder import MLXProgramBuilder
+        from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 
         self._builder = MLXProgramBuilder(edge_program)
-        try:
-            # WARNING: build() calls _build_mlx_graph() which evaluates SymInts to
-            # concrete values (via int(shape_dim)), corrupting the shape_env. This
-            # is safe here because this class is only used during partitioning,
-            # AFTER run_decompositions() has already been called. The shape_env
-            # corruption only matters if run_decompositions() is called afterward.
-            # For pre-decomposition support checking (e.g., ops_to_not_decompose()),
-            # use check_support_only() instead.
-            self._builder.build()
-        except ValueError:
-            # Build may fail if some nodes are unsupported, but node_info
-            # will still be populated with support status for each node
-            pass
+        self._builder.check_support_only()
 
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
         if node.op != "call_function":
@@ -117,7 +105,7 @@ class MLXPartitioner(Partitioner):
         to concrete values when converting tensor shapes, which corrupts the
         shape_env and causes dynamic shapes to be lost during decomposition.
         """
-        from executorch.backends.mlx.program_builder import MLXProgramBuilder
+        from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 
         # Check if the graph already contains lowered modules (post-partitioning pass)
         # In this case, we should return empty since partitioning is already done
@@ -129,10 +117,6 @@ class MLXPartitioner(Partitioner):
                 return ([], None)
 
         # Run the builder to determine which nodes are supported
-        # Use check_support_only() instead of build() to avoid corrupting shape_env.
-        # build() calls _build_mlx_graph() which evaluates SymInts to concrete values
-        # (via int(shape_dim)), corrupting the shape_env and causing dynamic shapes
-        # to be lost during subsequent decomposition passes.
         builder = MLXProgramBuilder(ep)
         builder.check_support_only()
 

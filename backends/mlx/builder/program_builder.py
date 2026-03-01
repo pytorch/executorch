@@ -22,34 +22,36 @@ Pattern handlers are registered in patterns.py.
 from __future__ import annotations
 
 import traceback
-import uuid
 from collections import defaultdict
 from dataclasses import dataclass
-from enum import auto, Enum
-from typing import (
-    Any,
-    Callable,
-    DefaultDict,
-    Dict,
-    List,
-    Optional,
-    Set,
-    Tuple,
-    Type,
-    Union,
-)
+from typing import Any, DefaultDict, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 
 from executorch.backends.mlx._logging import logger
+from executorch.backends.mlx.builder.op_helpers import torch_dtype_to_scalar_type
+from executorch.backends.mlx.builder.op_registry import (
+    Handler,
+    PatternHandler,
+    REGISTRY,
+)
+from executorch.backends.mlx.builder.pattern_matcher import PatternMatcher
+from executorch.backends.mlx.builder.slot_manager import (
+    IdSpace,
+    IdType,
+    Slot,
+    SlotManager,
+)
 from executorch.backends.mlx.serialization.mlx_graph_schema import (
     FloatOrVid,
     Instruction,
     InstructionChain,
     IntOrVid,
+    IntOrVidOrTid,
     MLXGraph,
     NamedSlot,
     OpNodeUnion,
+    ShapeDim,
     SlotType,
     SlotVariant,
     TensorMeta,
@@ -57,258 +59,9 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     Vid,
 )
 from executorch.exir._serialize._named_data_store import NamedDataStore
-from executorch.exir.scalar_type import ScalarType
-from executorch.exir.sym_util import eval_shape_upper_bound
 from torch.export.exported_program import ExportedProgram
 from torch.fx.node import Node
 from torch.utils import _pytree as pytree
-
-
-def get_aten_target(target):
-    """
-    Unwrap EdgeOpOverload to get the underlying ATen op.
-
-    In Edge IR, ops are wrapped in EdgeOpOverload. This extracts the
-    underlying ATen op for consistent comparison.
-    """
-    if hasattr(target, "_op") and "EdgeOpOverload" in type(target).__name__:
-        return target._op
-    return target
-
-
-# Mapping from _copy variants to their non-copy equivalents.
-# Edge IR uses _copy variants for certain ops, but for pattern matching
-# we want to compare against the semantic operation.
-_COPY_TO_NON_COPY = {
-    torch.ops.aten.slice_copy.Tensor: torch.ops.aten.slice.Tensor,
-    torch.ops.aten.transpose_copy.int: torch.ops.aten.transpose.int,
-    torch.ops.aten.view_copy.default: torch.ops.aten.view.default,
-    torch.ops.aten.permute_copy.default: torch.ops.aten.permute.default,
-    torch.ops.aten.unsqueeze_copy.default: torch.ops.aten.unsqueeze.default,
-    torch.ops.aten.squeeze_copy.dim: torch.ops.aten.squeeze.dim,
-    torch.ops.aten.squeeze_copy.dims: torch.ops.aten.squeeze.dims,
-    torch.ops.aten.squeeze_copy.default: torch.ops.aten.squeeze.default,
-    torch.ops.aten.expand_copy.default: torch.ops.aten.expand.default,
-    torch.ops.aten.alias_copy.default: torch.ops.aten.alias.default,
-}
-
-
-def get_aten_target_normalized(target):
-    """
-    Get ATen target, mapping _copy variants to their non-copy equivalents.
-
-    Use this for pattern matching where Edge IR uses _copy variants but
-    we want to match the semantic operation.
-
-    E.g., aten.transpose_copy.int -> aten.transpose.int
-    """
-    target = get_aten_target(target)
-    return _COPY_TO_NON_COPY.get(target, target)
-
-
-def emit_stop_position(
-    P: "MLXProgramBuilder",
-    start: "Union[int, Slot]",
-    length_tensor: "Slot",
-    length_dim: int,
-    length_meta: "Optional[torch.Tensor]" = None,
-) -> "Union[int, Slot]":
-    """
-    Emit nodes to compute stop = start + length for slice operations.
-
-    May emit SymSizeNode and/or AddIntNode depending on whether
-    start and length are static or dynamic.
-
-    Args:
-        P: The program builder
-        start: Start position (int or Slot)
-        length_tensor: The tensor slot whose dimension gives the length
-        length_dim: Which dimension of length_tensor contains the length
-        length_meta: Optional tensor metadata for static length extraction
-
-    Returns:
-        stop position as int (if fully static) or Slot (if any dynamic)
-    """
-    from executorch.backends.mlx.serialization.mlx_graph_schema import (
-        AddIntNode,
-        IntOrVid,
-        SymSizeNode,
-    )
-
-    # Check if seq_len is symbolic (dynamic)
-    seq_len_is_symbolic = False
-    seq_len_concrete = None
-
-    if length_meta is not None:
-        seq_len_dim = length_meta.shape[length_dim]
-        if hasattr(seq_len_dim, "node"):
-            seq_len_is_symbolic = True
-        else:
-            seq_len_concrete = int(seq_len_dim)
-
-    if seq_len_is_symbolic or length_meta is None:
-        # Dynamic seq_len: emit SymSizeNode to get length at runtime
-        _, seq_len_slot = P.slot_manager.make_tmp_value_slot()
-        P.emit(
-            SymSizeNode(
-                a=P.slot_to_tid(length_tensor),
-                dim=length_dim,
-                out=P.slot_to_vid(seq_len_slot),
-            )
-        )
-        _, stop_slot = P.slot_manager.make_tmp_value_slot()
-        if isinstance(start, Slot):
-            start_iov = P.to_int_or_vid(start)
-        else:
-            start_iov = IntOrVid.from_literal(int(start))
-        P.emit(
-            AddIntNode(
-                a=start_iov,
-                b=IntOrVid.from_vid(P.slot_to_vid(seq_len_slot)),
-                out=P.slot_to_vid(stop_slot),
-            )
-        )
-        return stop_slot
-    else:
-        # Static seq_len
-        if isinstance(start, Slot):
-            # Dynamic start + static length
-            _, stop_slot = P.slot_manager.make_tmp_value_slot()
-            P.emit(
-                AddIntNode(
-                    a=P.to_int_or_vid(start),
-                    b=IntOrVid.from_literal(seq_len_concrete),
-                    out=P.slot_to_vid(stop_slot),
-                )
-            )
-            return stop_slot
-        else:
-            # Both static - just return the sum
-            return start + seq_len_concrete
-
-
-def emit_lifted_constant(P: "MLXProgramBuilder", value, dtype: torch.dtype) -> Slot:
-    """Lift a scalar or SymInt into a 0-D tensor via FullNode."""
-
-    from executorch.backends.mlx.serialization.mlx_graph_schema import FullNode
-
-    _, slot = P.make_tmp_slot()
-    P.emit(
-        FullNode(
-            shape=[],
-            v=P.to_float_or_vid(value),
-            scalar_type=torch_dtype_to_scalar_type(dtype),
-            out=P.slot_to_tid(slot),
-        )
-    )
-    return slot
-
-
-def to_mlx_qparams(
-    qdata: torch.Tensor,
-    scale: torch.Tensor,
-    zero_point: torch.Tensor,
-    bits: int,
-    compute_biases: bool = True,
-) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-    """
-    Convert TorchAO quantization params to MLX format.
-
-    TorchAO uses: s * (q - z), with q signed
-    MLX uses: S * Q + B, with Q unsigned
-
-    s * (q - z)
-      = s ((q + offset) - (z + offset))
-      = s Q + B,
-    where Q = q + offset, B = -s * (z + offset)
-
-    Args:
-        compute_biases: If False, skip bias computation (for scale_only mode).
-                       Returns (Q, None) in this case. This is valid when
-                       zero_point is all zeros, as the C++ runtime will compute
-                       biases = -scales * 2^(bits-1).
-    """
-    assert qdata.dtype == torch.int8
-    offset = 2 ** (bits - 1)
-    Q = qdata.to(torch.int32) + offset
-
-    # Pack data tightly into uint32
-    assert 32 % bits == 0
-    vals_per_uint32 = 32 // bits
-    assert qdata.shape[1] % vals_per_uint32 == 0
-
-    Q = Q.reshape(-1, vals_per_uint32)
-    shifts = torch.arange(0, 32, bits, dtype=torch.int64)
-
-    # Convert to int64 for shift/packing
-    Q = Q.to(torch.int64)
-    Q = (Q << shifts).sum(dim=-1)
-    Q = Q.to(torch.uint32)
-    Q = Q.reshape(qdata.shape[0], -1)
-
-    if compute_biases:
-        B = -scale * (zero_point.to(scale.dtype) + offset)
-        return Q, B
-    else:
-        return Q, None
-
-
-def parse_dequant_node(
-    node: Node,
-) -> Optional[Tuple[Node, Node, Node, int, int, Optional[torch.dtype], int]]:
-    """Parse a torchao.dequantize_affine node.
-
-    Accepts N-dimensional block_size with a single non-1 element identifying
-    the quantized dimension and group_size. For example:
-      - Linear weights (2D):  block_size=[1, 32]       → quantized_dim=1
-      - Conv2d weights (4D):  block_size=[1, 32, 1, 1] → quantized_dim=1
-
-    Returns (qdata, scale, zero_point, group_size, bits, out_dtype, quantized_dim)
-    or None if unsupported.
-    """
-    qdata, block_size, scale, zero_point, dtype, qmin, qmax = node.args[0:7]
-    out_dtype = (
-        node.args[7] if len(node.args) > 7 else node.kwargs.get("output_dtype", None)
-    )
-    if dtype != torch.int8:
-        return None
-    if len(block_size) < 2:
-        return None
-    non_one = [(i, d) for i, d in enumerate(block_size) if d != 1]
-    if len(non_one) != 1:
-        return None
-    quantized_dim, group_size = non_one[0]
-    if group_size not in [32, 64, 128]:
-        return None
-    if qmin == -8 and qmax == 7:
-        bits = 4
-    elif qmin == -128 and qmax == 127:
-        bits = 8
-    else:
-        return None
-    return qdata, scale, zero_point, group_size, bits, out_dtype, quantized_dim
-
-
-# Mapping from torch dtype to ET ScalarType int value
-# See executorch/exir/scalar_type.py for ScalarType enum
-_TORCH_DTYPE_TO_SCALAR_TYPE: Dict[torch.dtype, int] = {
-    torch.float16: ScalarType.HALF,
-    torch.float32: ScalarType.FLOAT,
-    torch.bfloat16: ScalarType.BFLOAT16,
-    torch.int32: ScalarType.INT,
-    torch.int64: ScalarType.LONG,
-    torch.uint32: ScalarType.UINT32,
-    torch.uint8: ScalarType.BYTE,
-    torch.bool: ScalarType.BOOL,
-    torch.int8: ScalarType.CHAR,
-}
-
-
-def torch_dtype_to_scalar_type(dtype: torch.dtype) -> int:
-    """Convert torch dtype to ET ScalarType int value."""
-    if dtype not in _TORCH_DTYPE_TO_SCALAR_TYPE:
-        raise ValueError(f"Unsupported dtype: {dtype}")
-    return int(_TORCH_DTYPE_TO_SCALAR_TYPE[dtype])
 
 
 def _check_dtype(node: Node) -> Optional[str]:
@@ -323,7 +76,9 @@ def _check_dtype(node: Node) -> Optional[str]:
     """
     fake_val = node.meta.get("val", None)
     if fake_val is not None and hasattr(fake_val, "dtype"):
-        if fake_val.dtype not in _TORCH_DTYPE_TO_SCALAR_TYPE:
+        try:
+            torch_dtype_to_scalar_type(fake_val.dtype)
+        except ValueError:
             return f"has unsupported dtype: {fake_val.dtype}"
     return None
 
@@ -356,227 +111,6 @@ def _check_input_dtypes(node: Node) -> Optional[str]:
     return None
 
 
-class IdType(Enum):
-    Tensor = auto()
-    SymInt = auto()
-    SymBool = auto()
-
-
-class IdSpace(Enum):
-    Constant = auto()
-    Input = auto()
-    Output = auto()
-    MutableBuffer = auto()
-    Temp = auto()
-
-
-@dataclass(frozen=True)
-class Slot:
-    id_type: IdType
-    id_space: IdSpace
-    idx: Optional[int] = None
-
-
-class IdManager:
-    def __init__(self):
-        self.free: list[int] = []
-        self.next_new_id = 0
-
-    def get_id(self):
-        return self.free.pop() if self.free else self._bump()
-
-    def _bump(self):
-        idx = self.next_new_id
-        self.next_new_id += 1
-        return idx
-
-    def return_id(self, idx):
-        if self.free and self.free[-1] == idx:
-            return
-        self.free.append(idx)
-
-
-class SlotManager:
-    def __init__(self):
-        self.tid_managers: Dict[IdSpace, IdManager] = defaultdict(IdManager)
-        self.vid_managers: Dict[IdSpace, IdManager] = defaultdict(IdManager)
-        self.name_to_slot: Dict[str, Slot] = {}
-
-    def set_slot(self, node_or_name: Union[Node, str], slot: Slot):
-        if isinstance(node_or_name, Node):
-            node_or_name = node_or_name.name
-        # Allow setting a slot to the same value (e.g., for in-place ops like SLICE_UPDATE)
-        existing = self.name_to_slot.get(node_or_name)
-        if existing is not None:
-            # If already set to the same slot, it's fine
-            if existing == slot:
-                return
-            raise AssertionError(
-                f"Slot for {node_or_name} already set to {existing}, trying to set to {slot}"
-            )
-        self.name_to_slot[node_or_name] = slot
-
-    def get_slot(
-        self, node_or_name: Union[Node, str]
-    ) -> Optional[Union[Tuple[Slot], Slot]]:
-        if isinstance(node_or_name, Node):
-            node_or_name = node_or_name.name
-        return self.name_to_slot.get(node_or_name, None)
-
-    def _val_to_idtype(self, v) -> IdType:
-        from torch._subclasses.fake_tensor import FakeTensor
-
-        if isinstance(v, FakeTensor):
-            return IdType.Tensor
-        elif isinstance(v, torch.SymInt):
-            return IdType.SymInt
-        elif isinstance(v, torch.SymBool):
-            return IdType.SymBool
-        else:
-            raise NotImplementedError(f"val_to_idtype: {v}")
-
-    def is_alive(self, slot: Slot) -> bool:
-        if slot.id_type == IdType.Tensor:
-            manager = self.tid_managers[slot.id_space]
-        else:
-            manager = self.vid_managers[slot.id_space]
-        idx = slot.idx
-        if idx >= manager.next_new_id:
-            return False
-        if idx in manager.free:
-            return False
-        return True
-
-    def make_constant_slot(self, name: str) -> Slot:
-        assert name not in self.name_to_slot
-        id_space = IdSpace.Constant
-        manager = self.tid_managers[id_space]
-        idx = manager.get_id()
-        slot = Slot(id_type=IdType.Tensor, id_space=id_space, idx=idx)
-        self.name_to_slot[name] = slot
-        return slot
-
-    def make_tmp_slot(self) -> Tuple[str, Slot]:
-        name = f"tmp_{uuid.uuid4().hex}"
-        id_space = IdSpace.Temp
-        manager = self.tid_managers[id_space]
-        idx = manager.get_id()
-        slot = Slot(id_type=IdType.Tensor, id_space=id_space, idx=idx)
-        self.name_to_slot[name] = slot
-        return name, slot
-
-    def make_tmp_value_slot(self) -> Tuple[str, Slot]:
-        """Create a temporary SymInt slot and register it."""
-        name = f"tmp_val_{uuid.uuid4().hex}"
-        id_space = IdSpace.Temp
-        manager = self.vid_managers[id_space]
-        idx = manager.get_id()
-        slot = Slot(id_type=IdType.SymInt, id_space=id_space, idx=idx)
-        self.name_to_slot[name] = slot
-        return name, slot
-
-    def make_or_get_slots(
-        self, node: Node, id_space: IdSpace = IdSpace.Temp
-    ) -> Tuple[Slot, ...]:
-        """
-        Get or create slots for a node. Always returns a tuple of slots.
-
-        Use this for multi-output ops (e.g., topk returns (values, indices)).
-        For single-output ops, prefer make_or_get_slot() which returns a single Slot.
-        """
-        if node.name in self.name_to_slot:
-            slot = self.name_to_slot[node.name]
-            # Normalize to tuple for consistent return type
-            if not isinstance(slot, tuple):
-                return (slot,)
-            return slot
-
-        val = node.meta.get("val", None)
-        assert val is not None, f"Node {node} has no val"
-        if not isinstance(val, (list, tuple)):
-            val = (val,)
-
-        slots = []
-        for v in val:
-            id_type = self._val_to_idtype(v)
-            if id_type == IdType.Tensor:
-                manager = self.tid_managers[id_space]
-            else:
-                manager = self.vid_managers[id_space]
-            idx = manager.get_id()
-            slots.append(Slot(id_type=id_type, id_space=id_space, idx=idx))
-        slots = tuple(slots)
-
-        # Store in the format that matches the node's output structure
-        if len(slots) == 1:
-            self.set_slot(node, slots[0])
-        else:
-            self.set_slot(node, slots)
-        return slots
-
-    def make_or_get_slot(self, node: Node, id_space: IdSpace = IdSpace.Temp) -> Slot:
-        """
-        Get or create a slot for a single-output node. Returns a single Slot.
-
-        Use this for single-output ops (the common case).
-        For multi-output ops, use make_or_get_slots() instead.
-        """
-        slots = self.make_or_get_slots(node, id_space)
-        assert len(slots) == 1, (
-            f"Expected single output for node {node.name}, got {len(slots)}. "
-            f"Use make_or_get_slots() for multi-output ops."
-        )
-        return slots[0]
-
-
-# Handler type: takes (builder, node) and returns optional slot(s)
-# Returns None for no-ops, Slot for single outputs, Tuple[Slot, ...] for multiple outputs
-Handler = Callable[
-    ["MLXProgramBuilder", Node], Optional[Union["Slot", Tuple["Slot", ...]]]
-]
-
-
-class PatternHandler:
-    def __init__(self, head: Node, body: List[Node]) -> None:
-        self.head: Node = head
-        self.body: List[Node] = body
-
-    @classmethod
-    def deferred_handler(cls, P: "MLXProgramBuilder", n: Node) -> None:
-        pass
-
-    @classmethod
-    def maybe_create(
-        cls, ep: ExportedProgram, head: Node
-    ) -> Optional["PatternHandler"]:
-        raise NotImplementedError
-
-    def __call__(self, P: "MLXProgramBuilder", n: Node) -> None:
-        raise NotImplementedError
-
-    def set_handlers(self, P: "MLXProgramBuilder"):
-        if P.node_info[self.head].handler is not None:
-            raise AssertionError(
-                f"Head node {self.head.name} already has handler {P.node_info[self.head].handler}, "
-                f"cannot set pattern {self.__class__.__name__}"
-            )
-        for n in self.body:
-            if P.node_info[n].handler is not None:
-                raise AssertionError(
-                    f"Body node {n.name} already has handler {P.node_info[n].handler}, "
-                    f"cannot set pattern {self.__class__.__name__}"
-                )
-
-        # Set handlers
-        logger.debug(
-            f"Pattern {self.__class__.__name__}: "
-            f"HEAD={self.head.name}, BODY={[n.name for n in self.body]}"
-        )
-        P.node_info[self.head].handler = self
-        for n in self.body:
-            P.node_info[n].handler = PatternHandler.deferred_handler
-
-
 @dataclass
 class NodeInfo:
     handled: bool = False
@@ -585,141 +119,6 @@ class NodeInfo:
     unsupported_reason: Optional[str] = None
     name: Optional[str] = None
     remaining_reads: int = 0
-
-
-class PatternMatcher:
-    """
-    Discovers and applies pattern handlers to an FX graph.
-
-    Pattern handlers match multi-node subgraphs and lower them to optimized
-    MLX operations. This class orchestrates the pattern discovery process:
-
-    1. Iterates through all registered pattern types
-    2. For each pattern, tries to match it against every node in the graph
-    3. When a match is found, assigns handlers to the head and body nodes
-
-    The ordering matters: patterns are matched before dead code elimination
-    because some pattern body nodes (e.g., update_cache) have no users
-    since they mutate in-place, but they're not dead.
-    """
-
-    def __init__(self, ep: ExportedProgram, registry: "MLXOpRegistry"):
-        self.ep = ep
-        self.registry = registry
-        self._matches: List[PatternHandler] = []
-
-    def find_patterns(self) -> List[PatternHandler]:
-        """
-        Find all pattern matches in the graph.
-
-        Returns a list of PatternHandler instances, one for each match found.
-        Patterns are tried in registration order.
-        """
-        self._matches = []
-        for name in self.registry.patterns():
-            self._find_pattern(name)
-        return self._matches
-
-    def _find_pattern(self, name: str) -> None:
-        """Try to match a single pattern type against all nodes."""
-        pattern_cls = self.registry.get_pattern_cls(name)
-        if pattern_cls is None:
-            return
-
-        for n in self.ep.graph.nodes:
-            handler = pattern_cls.maybe_create(self.ep, n)
-            if handler is not None:
-                logger.debug(f"Pattern {name} matched at node {n.name}")
-                self._matches.append(handler)
-
-
-class MLXOpRegistry:
-    """Registry for op handlers and pattern handlers."""
-
-    def __init__(self):
-        self._handlers: Dict[Union[str, Callable], Handler] = {}
-        self._patterns: Dict[str, Type[PatternHandler]] = {}
-
-    def reset(self) -> None:
-        """Reset the registry to empty state. Useful for testing."""
-        self._handlers.clear()
-        self._patterns.clear()
-
-    def register(self, target: Union[str, Callable, list, tuple]):
-        """Decorator to register a handler for one or more op targets."""
-
-        def deco(fn: Handler):
-            targets = target if isinstance(target, (list, tuple)) else [target]
-            for t in targets:
-                if t in self._handlers:
-                    raise ValueError(f"Target {t} already registered")
-                self._handlers[t] = fn
-            return fn
-
-        return deco
-
-    def get_handler(self, node: Node) -> Optional[Handler]:
-        """Get the handler for a node, or None if not registered."""
-        t = node.target
-        if t in self._handlers:
-            return self._handlers[t]
-        # Handle EdgeOpOverload by extracting the underlying ATen op
-        if hasattr(t, "_op") and t._op in self._handlers:
-            return self._handlers[t._op]
-        # Check for string-based targets (e.g., higher_order ops)
-        target_str = str(t)
-        if target_str in self._handlers:
-            return self._handlers[target_str]
-        return None
-
-    def registered_ops(self) -> set:
-        """Return all registered op targets."""
-        return set(self._handlers.keys())
-
-    def unregister(self, target: Union[str, Callable, list, tuple]) -> None:
-        """Remove a handler for one or more op targets.
-
-        This is useful for debugging - allows temporarily disabling specific
-        handlers to test if they are causing issues.
-
-        Args:
-            target: Single target or list of targets to unregister
-        """
-        targets = target if isinstance(target, (list, tuple)) else [target]
-        for t in targets:
-            if t in self._handlers:
-                del self._handlers[t]
-
-    def register_pattern(self, name: str):
-        """Decorator to register a pattern handler class."""
-
-        def deco(cls: Type[PatternHandler]):
-            if not issubclass(cls, PatternHandler):
-                raise TypeError(
-                    "register_pattern must decorate a PatternHandler subclass"
-                )
-            if name in self._patterns:
-                raise ValueError(f"Pattern '{name}' already registered")
-            self._patterns[name] = cls
-            return cls
-
-        return deco
-
-    def get_pattern_cls(self, name: str) -> Optional[Type[PatternHandler]]:
-        """Get a pattern handler class by name."""
-        return self._patterns.get(name)
-
-    def get_noop_handler(self) -> Optional[Handler]:
-        """Get the NOOP handler, if registered."""
-        return self._handlers.get("NOOP")
-
-    def patterns(self):
-        """Return all registered pattern names."""
-        return self._patterns.keys()
-
-
-# Global registry
-REGISTRY = MLXOpRegistry()
 
 
 class MLXProgramBuilder:
@@ -881,6 +280,13 @@ class MLXProgramBuilder:
         if isinstance(v, Slot):
             return FloatOrVid.from_vid(self.slot_to_vid(v))
         return FloatOrVid.from_literal(float(v))
+
+    def to_int_or_vid_or_tid(self, v: Union[int, Slot]) -> IntOrVidOrTid:
+        if isinstance(v, Slot):
+            if v.id_type == IdType.Tensor:
+                return IntOrVidOrTid.from_tid(self.slot_to_tid(v))
+            return IntOrVidOrTid.from_vid(self.slot_to_vid(v))
+        return IntOrVidOrTid.from_literal(int(v))
 
     def _mark_read(self, node: Node):
         assert self.node_info[node].handled, f"Node {node} is not handled"
@@ -1379,43 +785,41 @@ class MLXProgramBuilder:
         """
         Build tensor metadata list with shape/dtype information.
 
-        For dynamic shapes, symbolic dimensions are tracked as IntOrVid references
-        so the runtime can resolve actual sizes dynamically.
+        Static dimensions are stored as ShapeDim(value=N).
+        Dynamic dimensions (SymInt) are stored as ShapeDim(value=-1)
+        with min/max bounds from the shape_env.
+
+        Note: tensor_meta shapes are only consumed by the runtime for
+        constant and mutable buffer allocation (which are always static).
+        Dynamic dim metadata is informational — the runtime resolves
+        dynamic shapes via SymSizeNode at execution time.
         """
-        # Build a mapping from SymInt symbol names to their Slots
-        symint_symbol_to_slot: Dict[str, Slot] = {}
-        for n in self.node_info:
-            val = n.meta.get("val", None)
-            if isinstance(val, torch.SymInt):
-                symbol_name = str(val.node) if hasattr(val, "node") else str(val)
-                slot = self.slot_manager.get_slot(n)
-                if slot is not None and not isinstance(slot, tuple):
-                    symint_symbol_to_slot[symbol_name] = slot
+
+        def _get_dim_bounds(dim: torch.SymInt) -> tuple:
+            """Get (min, max) bounds for a symbolic dimension."""
+            try:
+                node = dim.node
+                shape_env = node.shape_env
+                if shape_env is not None:
+                    expr = node.expr
+                    lower = int(shape_env.bound_sympy(expr).lower)
+                    upper = int(shape_env.bound_sympy(expr).upper)
+                    if upper > 2**30:
+                        return (lower, -1)  # treat as unbounded
+                    return (lower, upper)
+            except Exception:
+                pass
+            return (0, -1)  # unbounded fallback
 
         def to_tensor_meta(t: torch.Tensor) -> TensorMeta:
-            shape: List[IntOrVid] = []
-            for _i, dim in enumerate(t.shape):
+            shape: List[ShapeDim] = []
+            for dim in t.shape:
                 if isinstance(dim, torch.SymInt):
-                    symbol_name = str(dim.node) if hasattr(dim, "node") else str(dim)
-                    if symbol_name in symint_symbol_to_slot:
-                        slot = symint_symbol_to_slot[symbol_name]
-                        vid = Vid(idx=slot_to_vid.get(slot, slot.idx))
-                        shape.append(IntOrVid.from_vid(vid))
-                    else:
-                        # Fall back to upper bound if we can't find the Slot
-                        try:
-                            from torch.utils._sympy.numbers import int_oo
-                        except ImportError:
-                            int_oo = None
-                        upper = eval_shape_upper_bound([dim])[0]
-                        if int_oo is not None and upper is int_oo:
-                            shape.append(IntOrVid.from_literal(int(dim)))
-                        else:
-                            shape.append(IntOrVid.from_literal(upper))
+                    lo, hi = _get_dim_bounds(dim)
+                    shape.append(ShapeDim(value=-1, min_value=lo, max_value=hi))
                 else:
-                    shape.append(IntOrVid.from_literal(int(dim)))
+                    shape.append(ShapeDim(value=int(dim)))
 
-            # Generate standard dim_order (contiguous layout: [0, 1, 2, ...])
             dim_order = list(range(len(t.shape))) if len(t.shape) > 0 else None
 
             return TensorMeta(
@@ -1571,8 +975,3 @@ class MLXProgramBuilder:
                 if ispec.target in self.ep.constants:
                     return self.ep.constants[ispec.target]
         return None
-
-
-# These imports register the handlers with the REGISTRY
-# They must come after REGISTRY is defined
-from executorch.backends.mlx import ops, patterns  # noqa: F401, E402
