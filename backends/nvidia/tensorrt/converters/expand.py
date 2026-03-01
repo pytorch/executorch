@@ -58,35 +58,39 @@ def validate_expand(node: torch.fx.Node) -> bool:
 
 
 def _get_expand_output_shape(
-    input_shape: Tuple[int, ...], expand_shape: List[int]
+    input_shape: Tuple, expand_shape: List
 ) -> Tuple[int, ...]:
     """Calculate the output shape after expand operation.
-    
-    Args:
-        input_shape: Shape of the input tensor
-        expand_shape: Desired expansion shape (-1 means keep original)
-        
-    Returns:
-        Output shape after expansion
+
+    Handles both concrete and symbolic (SymInt / FX Node) dimensions.
+    Symbolic dimensions are resolved to ``-1`` so TRT treats them as dynamic.
     """
-    # Pad input_shape with 1s on the left to match expand_shape length
+    from executorch.backends.nvidia.tensorrt.converter_utils import resolve_sym_dim
+
     input_dims = len(input_shape)
     expand_dims = len(expand_shape)
-    
+
     if expand_dims > input_dims:
         input_shape = (1,) * (expand_dims - input_dims) + tuple(input_shape)
-    
+
     output_shape = []
-    for i, (inp_dim, exp_dim) in enumerate(zip(input_shape, expand_shape)):
-        if exp_dim == -1:
-            output_shape.append(inp_dim)
+    for inp_dim, exp_dim in zip(input_shape, expand_shape):
+        inp_resolved = resolve_sym_dim(inp_dim)
+        exp_resolved = resolve_sym_dim(exp_dim)
+
+        if exp_resolved == -1:
+            # Symbolic expand target → dynamic
+            output_shape.append(-1)
+        elif isinstance(exp_dim, int) and exp_dim == -1:
+            # Explicit -1 means keep original
+            output_shape.append(inp_resolved)
+        elif inp_resolved == 1 or inp_resolved == exp_resolved or inp_resolved == -1:
+            output_shape.append(exp_resolved)
         else:
-            if inp_dim != 1 and inp_dim != exp_dim:
-                raise ValueError(
-                    f"Cannot expand dimension {i} from {inp_dim} to {exp_dim}"
-                )
-            output_shape.append(exp_dim)
-    
+            raise ValueError(
+                f"Cannot expand: input dim {inp_dim} is not 1 and != {exp_dim}"
+            )
+
     return tuple(output_shape)
 
 
@@ -126,35 +130,29 @@ def convert_expand(
     if input_node not in input_map:
         raise ValueError(f"Input node {input_node.name} not found in input_map")
 
+    from executorch.backends.nvidia.tensorrt.converter_utils import resolve_shape
+
     input_trt = input_map[input_node]
-    
-    # Get shape from node metadata for reliability (TRT shapes can be invalid during network building)
-    input_shape = get_node_shape(input_node) or tuple(input_trt.shape)
+
+    # Get shape from node metadata; resolve SymInt → -1 for TRT.
+    raw_input_shape = get_node_shape(input_node) or tuple(input_trt.shape)
+    input_shape = resolve_shape(raw_input_shape)
+
+    # Calculate output shape (already handles FX Node / SymInt args)
+    output_shape = _get_expand_output_shape(raw_input_shape, expand_size)
 
     logger.debug(
-        f"[TensorRT] expand: input_shape={input_shape}, expand_size={expand_size}"
+        f"[TensorRT] expand: input_shape={input_shape}, output_shape={output_shape}"
     )
-
-    # Calculate output shape
-    output_shape = _get_expand_output_shape(input_shape, expand_size)
-    
-    # Check for dynamic dimensions (negative values in input_shape)
-    has_dynamic = any(d < 0 for d in list(input_shape))
-    
-    if has_dynamic:
-        logger.warning(
-            f"[TensorRT] expand with dynamic shapes may have limitations: {input_shape}"
-        )
 
     # First, add leading dimensions if needed
     input_dims = len(input_shape)
     output_dims = len(output_shape)
-    
+
     current_tensor = input_trt
-    
+
     if output_dims > input_dims:
-        # Add leading dimensions using shuffle (reshape)
-        new_shape = (1,) * (output_dims - input_dims) + tuple(input_shape)
+        new_shape = [1] * (output_dims - input_dims) + input_shape
         shuffle = network.add_shuffle(current_tensor)
         if shuffle is None:
             raise RuntimeError(f"Failed to create shuffle layer for node {node.name}")
@@ -163,15 +161,13 @@ def convert_expand(
         current_tensor = shuffle.get_output(0)
         input_shape = new_shape
 
-    # Now broadcast using ISliceLayer with appropriate strides
-    # For dimensions that need broadcasting (input=1, output>1), use stride=0
+    # Broadcast using ISliceLayer: stride=0 for dims that need broadcasting.
     start = [0] * output_dims
     shape = list(output_shape)
     stride = []
-    
-    for i, (inp_dim, out_dim) in enumerate(zip(input_shape, output_shape)):
-        if inp_dim == 1 and out_dim > 1:
-            # This dimension needs broadcasting - use stride 0
+
+    for inp_dim, out_dim in zip(input_shape, output_shape):
+        if inp_dim == 1 and out_dim != 1:
             stride.append(0)
         else:
             stride.append(1)
@@ -246,10 +242,15 @@ def convert_repeat(
     if input_node not in input_map:
         raise ValueError(f"Input node {input_node.name} not found in input_map")
 
+    from executorch.backends.nvidia.tensorrt.converter_utils import (
+        resolve_shape,
+        resolve_sym_dim,
+    )
+
     input_trt = input_map[input_node]
-    
-    # Get shape from node metadata for reliability (TRT shapes can be invalid during network building)
-    input_shape = list(get_node_shape(input_node) or input_trt.shape)
+
+    input_shape = resolve_shape(get_node_shape(input_node) or tuple(input_trt.shape))
+    repeats = [resolve_sym_dim(r) for r in repeats]
 
     logger.debug(f"[TensorRT] repeat: input_shape={input_shape}, repeats={repeats}")
 
@@ -261,7 +262,7 @@ def convert_repeat(
     
     if repeat_dims > input_dims:
         # Add leading dimensions using shuffle
-        new_shape = (1,) * (repeat_dims - input_dims) + tuple(input_shape)
+        new_shape = [1] * (repeat_dims - input_dims) + input_shape
         shuffle = network.add_shuffle(current_tensor)
         if shuffle is None:
             raise RuntimeError(f"Failed to create shuffle layer for node {node.name}")

@@ -98,52 +98,57 @@ def convert_slice(
     else:
         input_trt = input_map[input_node]
     
-    # Get shape from node metadata for reliability (TRT shapes can be invalid during network building)
-    input_shape = list(get_node_shape(input_node) or input_trt.shape)
+    from executorch.backends.nvidia.tensorrt.converter_utils import (
+        resolve_shape,
+        resolve_sym_dim,
+    )
+
+    # Get input shape, resolving SymInt → -1 for TRT.
+    raw_input_shape = get_node_shape(input_node) or tuple(input_trt.shape)
+    input_shape = resolve_shape(raw_input_shape)
     ndim = len(input_shape)
 
-    # Parse arguments with defaults
+    # Parse arguments with defaults.  Resolve FX Nodes / SymInt to -1.
     dim = args[1] if len(args) > 1 else kwargs.get("dim", 0)
-    start = args[2] if len(args) > 2 else kwargs.get("start", None)
-    end = args[3] if len(args) > 3 else kwargs.get("end", None)
+    raw_start = args[2] if len(args) > 2 else kwargs.get("start", None)
+    raw_end = args[3] if len(args) > 3 else kwargs.get("end", None)
     step = args[4] if len(args) > 4 else kwargs.get("step", 1)
+    step = resolve_sym_dim(step) if not isinstance(step, int) else step
 
-    # Handle None values
-    if start is None:
-        start = 0
-    if end is None or end == sys.maxsize:
-        end = input_shape[dim]
-
-    # Handle negative dimension
     dim = _get_positive_dim(dim, ndim)
+    dim_size = input_shape[dim]  # may be -1 if dynamic
+    dim_is_concrete = isinstance(dim_size, int) and dim_size > 0
 
-    # Handle negative indices
-    dim_size = input_shape[dim]
-    if isinstance(start, int) and start < 0:
+    # Resolve start
+    start = resolve_sym_dim(raw_start) if raw_start is not None else 0
+    if isinstance(start, int) and start < 0 and dim_is_concrete:
         start = max(0, dim_size + start)
-    if isinstance(end, int) and end < 0:
-        end = max(0, dim_size + end)
+    if isinstance(start, int) and start >= 0 and dim_is_concrete:
+        start = min(start, dim_size)
+    start = max(start, 0) if isinstance(start, int) else 0
 
-    # Clamp to valid range
-    if isinstance(start, int):
-        start = max(0, min(start, dim_size))
-    if isinstance(end, int):
-        end = max(0, min(end, dim_size))
+    # Use the expected output shape from node metadata (most reliable).
+    output_meta = get_node_shape(node)
+    output_shape = resolve_shape(output_meta) if output_meta else input_shape.copy()
+    if output_meta is None:
+        # Fallback: try to compute slice length
+        end = resolve_sym_dim(raw_end) if raw_end is not None else dim_size
+        if end == sys.maxsize:
+            end = dim_size
+        if isinstance(end, int) and isinstance(start, int) and isinstance(step, int) and dim_is_concrete:
+            if isinstance(end, int) and end < 0:
+                end = max(0, dim_size + end)
+            end = max(0, min(end, dim_size)) if isinstance(end, int) else -1
+            slice_len = max(0, (end - start + step - 1) // step) if step > 0 else 0
+            output_shape[dim] = slice_len
+        else:
+            output_shape[dim] = -1
 
-    # Build start, shape, stride for slice
     start_slice = [0] * ndim
     start_slice[dim] = start
 
-    # Compute output shape
-    output_shape = input_shape.copy()
-    if isinstance(end, int) and isinstance(start, int) and isinstance(step, int):
-        slice_len = max(0, (end - start + step - 1) // step) if step > 0 else 0
-        output_shape[dim] = slice_len
-    else:
-        output_shape[dim] = 0  # Dynamic
-
     stride_slice = [1] * ndim
-    stride_slice[dim] = step
+    stride_slice[dim] = step if isinstance(step, int) else 1
 
     layer = network.add_slice(
         input_trt,
@@ -159,7 +164,7 @@ def convert_slice(
 
     logger.debug(
         f"[TensorRT] Created slice layer: {layer.name}, "
-        f"dim={dim}, start={start}, end={end}, step={step}, output_shape={output_shape}"
+        f"dim={dim}, start={start}, output_shape={output_shape}"
     )
 
     return layer.get_output(0)

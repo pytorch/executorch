@@ -390,25 +390,15 @@ def export_all(
             qlinear_packing_format=qlinear_encoder_packing_format,
         )
 
-    # TensorRT uses static shapes: the C++ runtime supports dynamic shapes
-    # via optimization profiles, but ExecuTorch's memory planner cannot resize
-    # intermediate tensors for portable fallback ops (arange, expand, etc.)
-    # that run between TRT delegate calls. Once ExecuTorch supports dynamic
-    # intermediate buffers, remove this conditional.
-    encoder_dynamic_shapes = (
-        None
-        if backend == "tensorrt"
-        else {
-            # Use Dim.AUTO - explicit bounds fail due to different size guards on different devices
-            "audio_signal": {2: Dim.AUTO},
-            "length": {},
-        }
-    )
     programs["encoder"] = export(
         encoder_with_proj,
         (),
         kwargs={"audio_signal": audio_signal, "length": length},
-        dynamic_shapes=encoder_dynamic_shapes,
+        dynamic_shapes={
+            # Use Dim.AUTO - explicit bounds fail due to different size guards on different devices
+            "audio_signal": {2: Dim.AUTO},
+            "length": {},
+        },
         strict=False,
     )
 

@@ -227,9 +227,12 @@ def _compute_view_output_shape(
     Raises:
         ValueError: If more than one -1 dimension is specified.
     """
-    # Prefer output shape from node metadata (most reliable)
+    from executorch.backends.nvidia.tensorrt.converter_utils import resolve_shape
+
+    # Prefer output shape from node metadata (most reliable).
+    # resolve_shape maps SymInt values to -1 for TRT dynamic dims.
     if "val" in node.meta and hasattr(node.meta["val"], "shape"):
-        return list(node.meta["val"].shape)
+        return resolve_shape(node.meta["val"].shape)
 
     # Fall back to computing shape from target_shape, handling -1
     input_shape = list(get_node_shape(input_node) or input_trt.shape)
@@ -260,8 +263,8 @@ def _compute_view_output_shape(
                 if dim > 0:
                     known_volume *= dim
         else:
-            # Non-integer dimension (e.g., symbolic) - use 0 for TRT dynamic
-            output_shape.append(0)
+            # Non-integer dimension (e.g., FX Node / symbolic) — TRT dynamic
+            output_shape.append(-1)
 
     # Calculate the -1 dimension if present
     if neg_one_idx >= 0:

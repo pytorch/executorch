@@ -18,6 +18,27 @@ import torch
 Shape = Tuple[int, ...]
 
 
+def resolve_sym_dim(val: Any) -> int:
+    """Resolve a potentially symbolic dimension value to an int for TRT.
+
+    Concrete ints pass through unchanged.  FX Nodes and SymInt values
+    (which represent runtime-computed sizes) are mapped to ``-1`` so
+    TRT treats them as dynamic dimensions.
+    """
+    if isinstance(val, int) and not isinstance(val, torch.fx.Node):
+        return val
+    return -1
+
+
+def resolve_shape(shape: Sequence) -> List[int]:
+    """Resolve a shape that may contain symbolic values to TRT-compatible ints.
+
+    Each element is either kept as-is (concrete int) or replaced with
+    ``-1`` (symbolic / FX Node).
+    """
+    return [resolve_sym_dim(s) for s in shape]
+
+
 def has_dynamic_shape(shape: Shape) -> bool:
     """Determine if the given shape has dynamic dimensions.
 

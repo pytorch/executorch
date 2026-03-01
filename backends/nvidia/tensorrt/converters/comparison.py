@@ -1030,14 +1030,16 @@ def convert_full(
 
     args = node.args
 
+    from executorch.backends.nvidia.tensorrt.converter_utils import resolve_shape
+
     size = args[0]
     fill_value = args[1] if len(args) > 1 else 0.0
 
-    # Convert size to list
+    # Convert size to list, resolving symbolic dims.
     if isinstance(size, (list, tuple)):
-        shape = list(size)
+        shape = resolve_shape(size)
     else:
-        shape = [size]
+        shape = [resolve_shape([size])[0]]
 
     # Determine dtype from node metadata or kwargs, defaulting to float32.
     np_dtype = np.float32
@@ -1049,9 +1051,31 @@ def convert_full(
         if hasattr(val, "dtype"):
             np_dtype = _torch_dtype_to_numpy(val.dtype)
 
-    fill_array = np.full(shape, fill_value, dtype=np_dtype)
-    fill_weights = trt.Weights(fill_array)
-    layer = network.add_constant(trt.Dims(shape), fill_weights)
+    has_dynamic = any(d == -1 for d in shape)
+    if has_dynamic:
+        # Use IFillLayer with shape tensor for dynamic shapes.
+        dummy_shape = [0] * len(shape)
+        layer = network.add_fill(dummy_shape, trt.FillOperation.LINSPACE)
+        # Provide shape via shape tensor (input 0)
+        safe_shape = [max(d, 1) for d in shape]
+        shape_const = network.add_constant(
+            [len(safe_shape)],
+            trt.Weights(np.array(safe_shape, dtype=np.int32)))
+        shape_const.name = f"full_shape_{node.name}"
+        layer.set_input(0, shape_const.get_output(0))
+        start_c = network.add_constant(
+            [], trt.Weights(np.array(float(fill_value), dtype=np.float32)))
+        start_c.name = f"full_val_{node.name}"
+        layer.set_input(1, start_c.get_output(0))
+        ndims = len(shape)
+        delta_c = network.add_constant(
+            [ndims], trt.Weights(np.zeros(ndims, dtype=np.float32)))
+        delta_c.name = f"full_delta_{node.name}"
+        layer.set_input(2, delta_c.get_output(0))
+    else:
+        fill_array = np.full(shape, fill_value, dtype=np_dtype)
+        fill_weights = trt.Weights(fill_array)
+        layer = network.add_constant(trt.Dims(shape), fill_weights)
 
     if layer is None:
         raise RuntimeError(f"Failed to create full layer for {node.name}")
@@ -1088,9 +1112,11 @@ def convert_arange(
     input_map: Dict[torch.fx.Node, Any],
     edge_program: Optional[Any] = None,
 ) -> Any:
-    """Convert aten.arange.start_step to a TRT constant.
+    """Convert aten.arange.start_step to a TRT constant or fill layer.
 
-    Computes the range on the host and embeds it as a constant tensor.
+    For concrete args, computes the range on the host. For symbolic args
+    (dynamic shapes), uses the output shape from node metadata with -1
+    and lets TRT infer the length at runtime via IFillLayer LINSPACE.
     """
     try:
         import tensorrt as trt
@@ -1098,14 +1124,71 @@ def convert_arange(
     except ImportError as e:
         raise ImportError("TensorRT and numpy are required") from e
 
+    from executorch.backends.nvidia.tensorrt.converter_utils import (
+        resolve_shape,
+        resolve_sym_dim,
+    )
+
     start = node.args[0]
     end = node.args[1] if len(node.args) > 1 else node.kwargs.get("end")
     step = node.args[2] if len(node.args) > 2 else node.kwargs.get("step", 1)
 
-    values = np.arange(start, end, step, dtype=np.float32)
-    layer = network.add_constant(list(values.shape), trt.Weights(values))
-    layer.name = f"arange_{node.name}"
-    return layer.get_output(0)
+    start_val = resolve_sym_dim(start)
+    end_val = resolve_sym_dim(end)
+
+    # If all args are concrete, compute on host (original fast path).
+    if isinstance(start_val, int) and start_val >= 0 and isinstance(end_val, int) and end_val >= 0:
+        values = np.arange(start_val, end_val, step, dtype=np.float32)
+        layer = network.add_constant(list(values.shape), trt.Weights(values))
+        layer.name = f"arange_{node.name}"
+        return layer.get_output(0)
+
+    # Dynamic path: use TRT IFillLayer with LINSPACE.
+    # Create with dummy shape [0], then set the actual shape via shape tensor.
+    fill_layer = network.add_fill([0], trt.FillOperation.LINSPACE)
+    if fill_layer is None:
+        raise RuntimeError(f"Failed to create fill layer for arange {node.name}")
+
+    # Set output shape as a shape tensor (input 0). If `end` is an FX Node,
+    # get the TRT tensor for it from input_map (it was produced by another op).
+    if isinstance(end, torch.fx.Node) and end in input_map:
+        # end is a TRT tensor — reshape to [1] for shape input
+        end_trt = input_map[end]
+        shape_shuffle = network.add_shuffle(end_trt)
+        shape_shuffle.reshape_dims = trt.Dims([1])
+        shape_shuffle.name = f"arange_shape_{node.name}"
+        fill_layer.set_input(0, shape_shuffle.get_output(0))
+    else:
+        # Fallback: use output metadata shape
+        output_meta = node.meta.get("val", None)
+        if output_meta is not None and hasattr(output_meta, "shape"):
+            out_shape = resolve_shape(output_meta.shape)
+            # Replace -1 with a placeholder; TRT will infer from profile
+            safe_shape = [max(d, 1) for d in out_shape]
+            shape_const = network.add_constant(
+                [len(safe_shape)],
+                trt.Weights(np.array(safe_shape, dtype=np.int32)),
+            )
+            shape_const.name = f"arange_shape_const_{node.name}"
+            fill_layer.set_input(0, shape_const.get_output(0))
+
+    # Set start (scalar, rank 0) and delta (rank 1 for LINSPACE)
+    start_val = float(start) if isinstance(start, (int, float)) else 0.0
+    start_const = network.add_constant(
+        [], trt.Weights(np.array(start_val, dtype=np.float32))
+    )
+    start_const.name = f"arange_start_{node.name}"
+    fill_layer.set_input(1, start_const.get_output(0))
+
+    step_val = float(step) if isinstance(step, (int, float)) else 1.0
+    delta_const = network.add_constant(
+        [1], trt.Weights(np.array([step_val], dtype=np.float32))
+    )
+    delta_const.name = f"arange_delta_{node.name}"
+    fill_layer.set_input(2, delta_const.get_output(0))
+
+    fill_layer.name = f"arange_{node.name}"
+    return fill_layer.get_output(0)
 
 
 @converter("aten.constant_pad_nd.default")

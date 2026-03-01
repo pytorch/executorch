@@ -190,11 +190,6 @@ class TensorRTOperatorSupport(OperatorSupportBase):
         if target_name not in self.SUPPORTED_OPS:
             return False
 
-        # Reject nodes with symbolic (dynamic) scalar arguments that TRT
-        # converters can't evaluate at engine build time.
-        if self._has_symbolic_scalar_args(node):
-            return False
-
         # Check dtype compatibility
         if not self._is_dtype_supported(node):
             return False
