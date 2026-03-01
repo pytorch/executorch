@@ -167,8 +167,8 @@ build_executorch_runner_cmake() {
   local build_type="${1:-Release}"
   local sanitizer_flag=""
 
-  if [[ "${EXECUTORCH_USE_SANITIZER:-OFF}" == "ON" ]]; then
-      sanitizer_flag="-DEXECUTORCH_USE_SANITIZER=ON"
+  if [[ "${EXECUTORCH_USE_SANITIZER:-OFF}" != "OFF" ]]; then
+      sanitizer_flag="-DEXECUTORCH_USE_SANITIZER=${EXECUTORCH_USE_SANITIZER}"
   fi
 
   retry cmake \
