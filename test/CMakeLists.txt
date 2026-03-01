@@ -49,7 +49,7 @@ list(TRANSFORM _size_test__srcs PREPEND "${EXECUTORCH_ROOT}/")
 # TODO(larryliu0820): Add EXECUTORCH_BUILD_EXECUTABLES to not build executable
 # when we cross compile to ios
 add_executable(size_test ${_size_test__srcs})
-target_link_libraries(size_test executorch extension_data_loader)
+target_link_libraries(size_test prim_ops_lib extension_data_loader)
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(size_test)
 endif()
@@ -59,7 +59,7 @@ endif()
 #
 add_executable(size_test_all_ops ${_size_test__srcs})
 target_link_libraries(
-  size_test_all_ops executorch extension_data_loader portable_ops_lib
+  size_test_all_ops prim_ops_lib extension_data_loader portable_ops_lib
   portable_kernels
 )
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -72,7 +72,7 @@ endif()
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   add_executable(size_test_all_optimized_ops ${_size_test__srcs})
   target_link_libraries(
-    size_test_all_optimized_ops executorch extension_data_loader
+    size_test_all_optimized_ops prim_ops_lib extension_data_loader
     optimized_native_cpu_ops_lib
   )
   if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")

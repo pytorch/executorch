@@ -112,7 +112,7 @@ target_compile_options(nxp_executor_runner PRIVATE -DNEUTRON_CMODEL)
 
 target_link_libraries(
   nxp_executor_runner
-  PRIVATE executorch
+  PRIVATE prim_ops_lib
           executorch_kernels
           nd
           gflags::gflags

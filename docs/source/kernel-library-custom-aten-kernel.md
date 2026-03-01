@@ -276,7 +276,7 @@ add_library(custom_op_lib SHARED ${CMAKE_CURRENT_SOURCE_DIR}/custom_op.cpp)
 target_include_directory(custom_op_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Link ExecuTorch library
-target_link_libraries(custom_op_lib PUBLIC executorch)
+target_link_libraries(custom_op_lib PUBLIC prim_ops_lib)
 
 # Define a binary target
 add_executable(custom_op_runner PUBLIC main.cpp)

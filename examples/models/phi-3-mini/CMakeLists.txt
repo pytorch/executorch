@@ -47,6 +47,6 @@ add_executable(phi_3_mini_runner main.cpp)
 target_link_directories(phi_3_mini_runner PUBLIC ${_common_include_directories})
 
 target_link_libraries(
-  phi_3_mini_runner PUBLIC executorch optimized_native_cpu_ops_lib
+  phi_3_mini_runner PUBLIC prim_ops_lib optimized_native_cpu_ops_lib
                            xnnpack_backend gflags extension_llm_runner
 )
