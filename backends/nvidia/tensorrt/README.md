@@ -52,3 +52,17 @@ Download and install from the
 | Linux | x86_64 | pip or NVIDIA installer |
 | Linux (Jetson) | aarch64 | Pre-installed via JetPack |
 | Windows | x86_64 | NVIDIA installer |
+
+## Configuration Options
+
+`TensorRTCompileSpec` supports the following options:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `workspace_size` | int | 1GB | TensorRT builder workspace size |
+| `precision` | TensorRTPrecision | FP32 | Inference precision (FP32, FP16, INT8) |
+| `strict_type_constraints` | bool | False | Enforce strict type constraints |
+| `max_batch_size` | int | 1 | Maximum batch size |
+| `device_id` | int | 0 | CUDA device ID |
+| `dla_core` | int | -1 | DLA core ID (-1 = disabled) |
+| `allow_gpu_fallback` | bool | True | Allow GPU fallback when using DLA |
