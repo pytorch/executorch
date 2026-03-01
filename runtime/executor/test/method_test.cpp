@@ -520,6 +520,38 @@ TEST_F(MethodTest, ExecuteResetsOnError) {
   EXPECT_EQ(err, Error::Ok);
 }
 
+TEST_F(MethodTest, InputDimOrderMismatchTest) {
+  /*
+   * Verify the input tensor dim order is checked against the expected value.
+   */
+
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["cat"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  // Set up io. Input and Output should share the same memory.
+  constexpr int buffer_size = 16;
+  float buffer[buffer_size]; // Initial input is (2,4) we then cat a (1,4) to it
+                             // twice for a final shape of (4,4)
+  for (int i = 0; i < buffer_size; ++i) {
+    buffer[i] = 0.f;
+  }
+  int32_t sizes[2] = {2, 4};
+  uint8_t dim_order[2] = {1, 0};
+  int32_t strides[2] = {1, 4};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      buffer,
+      dim_order,
+      strides);
+
+  auto input_err =
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0);
+  ASSERT_EQ(input_err, Error::InvalidArgument);
+}
+
 /*
  * TODO(T161163608): Test is disabled due to a resize bug in tensor_index_out of
  * the portable op lib
