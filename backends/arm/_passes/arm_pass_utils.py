@@ -204,7 +204,7 @@ def get_first_fake_tensor(node: torch.fx.Node) -> FakeTensor:
 
     """
     if isinstance(
-        node.meta["val"], (Sequence, torch.fx.immutable_collections.immutable_list)
+        node.meta["val"], (list, tuple, torch.fx.immutable_collections.immutable_list)
     ):
         fake_tensor = node.meta["val"][0]
     else:
