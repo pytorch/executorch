@@ -3,9 +3,9 @@ load("@fbsource//tools/build_defs/android:fb_android_library.bzl", "fb_android_l
 
 oncall("executorch")
 
-non_fbcode_target(_kind = fb_android_library,
+non_fbcode_target(
+    _kind = fb_android_library,
     name = "executorch",
-    required_for_source_only_abi = True,
     srcs = [
         "executorch_android/src/main/java/org/pytorch/executorch/DType.java",
         "executorch_android/src/main/java/org/pytorch/executorch/EValue.java",
@@ -18,6 +18,8 @@ non_fbcode_target(_kind = fb_android_library,
     ],
     autoglob = False,
     language = "JAVA",
+    required_for_source_only_abi = True,
+    warnings_as_errors = False,
     deps = [
         "//fbandroid/java/com/facebook/jni:jni",
         "//fbandroid/libraries/soloader/java/com/facebook/soloader/nativeloader:nativeloader",
@@ -26,7 +28,8 @@ non_fbcode_target(_kind = fb_android_library,
     ] if read_config("executorch", "minimal_jni", "false") == "false" else []),
 )
 
-non_fbcode_target(_kind = fb_android_library,
+non_fbcode_target(
+    _kind = fb_android_library,
     name = "executorch_training",
     srcs = [
         "executorch_android/src/main/java/org/pytorch/executorch/training/SGD.java",
@@ -34,6 +37,7 @@ non_fbcode_target(_kind = fb_android_library,
     ],
     autoglob = False,
     language = "JAVA",
+    warnings_as_errors = True,
     deps = [
         ":executorch",
         "//fbandroid/java/com/facebook/jni:jni",
@@ -41,7 +45,8 @@ non_fbcode_target(_kind = fb_android_library,
     ],
 )
 
-non_fbcode_target(_kind = fb_android_library,
+non_fbcode_target(
+    _kind = fb_android_library,
     name = "executorch_llama",
     srcs = [
         "executorch_android/src/main/java/org/pytorch/executorch/extension/llm/LlmCallback.java",
@@ -51,6 +56,7 @@ non_fbcode_target(_kind = fb_android_library,
     ],
     autoglob = False,
     language = "JAVA",
+    warnings_as_errors = True,
     deps = [
         ":executorch",
         "//fbandroid/java/com/facebook/jni:jni",
