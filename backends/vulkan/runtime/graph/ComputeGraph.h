@@ -661,6 +661,9 @@ class ComputeGraph final {
   inline bool device_is_adreno() {
     return context_->adapter_ptr()->device_type() == vkapi::DeviceType::ADRENO;
   }
+  inline bool device_is_powervr() {
+    return context_->adapter_ptr()->device_type() == vkapi::DeviceType::POWERVR;
+  }
   const std::string& device_name() {
     return context()->adapter_ptr()->device_name();
   }
