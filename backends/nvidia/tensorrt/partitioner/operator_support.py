@@ -190,9 +190,9 @@ class TensorRTOperatorSupport(OperatorSupportBase):
         if target_name not in self.SUPPORTED_OPS:
             return False
 
-        # Reject nodes with symbolic (dynamic) arguments that TRT can't handle.
-        # Symbolic sizes appear as FX Nodes with no tensor metadata.
-        if self._has_symbolic_args(node):
+        # Reject nodes with symbolic (dynamic) scalar arguments that TRT
+        # converters can't evaluate at engine build time.
+        if self._has_symbolic_scalar_args(node):
             return False
 
         # Check dtype compatibility
@@ -201,29 +201,32 @@ class TensorRTOperatorSupport(OperatorSupportBase):
 
         return True
 
-    # Operations that require all arguments to be concrete (no symbolic/dynamic values).
-    _CONCRETE_ARGS_OPS: Set[str] = {
-        "arange.start_step",
-        "full.default",
-        "full_like.default",
-    }
-
-    def _has_symbolic_args(self, node: torch.fx.Node) -> bool:
-        """Check if node has arguments that are symbolic FX Nodes rather than concrete values.
-
-        Operations like arange need concrete scalar arguments. If any argument
-        is a graph Node (rather than an int/float literal), the value is dynamic
-        and TRT cannot handle it at engine build time.
-        """
-        op_name = self._get_op_name(node)
-        target_name = self._remove_namespace(op_name)
-        if target_name not in self._CONCRETE_ARGS_OPS:
+    @staticmethod
+    def _is_symbolic_scalar_node(n: torch.fx.Node) -> bool:
+        """Return True if *n* represents a symbolic scalar (SymInt / SymFloat)."""
+        if "val" not in n.meta:
+            return True
+        val = n.meta["val"]
+        if isinstance(val, torch.Tensor) or hasattr(val, "shape"):
             return False
+        return True
+
+    def _has_symbolic_scalar_args(self, node: torch.fx.Node) -> bool:
+        """Check if any non-tensor argument is a symbolic FX Node.
+
+        Tensor arguments (other graph nodes whose ``val`` is a Tensor) are
+        fine — they are actual data flowing through the graph.  Scalar
+        arguments that are FX Nodes represent values computed at runtime
+        (e.g. symbolic sizes from dynamic shapes) that TRT converters
+        cannot evaluate at engine-build time.
+        """
         for arg in node.args:
-            if isinstance(arg, torch.fx.Node):
-                # This arg is a graph node, meaning its value is computed
-                # dynamically — TRT cannot handle it as a compile-time constant.
+            if isinstance(arg, torch.fx.Node) and self._is_symbolic_scalar_node(arg):
                 return True
+            if isinstance(arg, (list, tuple)):
+                for a in arg:
+                    if isinstance(a, torch.fx.Node) and self._is_symbolic_scalar_node(a):
+                        return True
         return False
 
     def _get_op_name(self, node: torch.fx.Node) -> str:

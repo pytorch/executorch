@@ -42,6 +42,7 @@ struct GPUBuffer {
   bool is_input{false};
   int32_t tensor_index{-1};
   size_t io_index{0};  // Index in input_buffers or output_buffers array
+  bool has_dynamic_dims{false};
 };
 
 /**
@@ -96,9 +97,18 @@ class TensorRTExecutor {
    */
   runtime::Error execute(
       void* const* input_buffers,
+      const std::vector<std::vector<int64_t>>& input_shapes,
       size_t num_inputs,
       void* const* output_buffers,
       size_t num_outputs);
+
+  /**
+   * Get the inferred output shape after the last execute() call.
+   * Only meaningful when the engine has dynamic shapes.
+   */
+  const std::vector<int32_t>& get_output_shape(size_t output_index) const {
+    return output_shapes_[output_index];
+  }
 
   /**
    * Get I/O binding information.
@@ -185,6 +195,8 @@ class TensorRTExecutor {
   std::vector<IOBinding> io_bindings_;
   std::vector<GPUBuffer> gpu_buffers_;
   bool uses_unified_memory_{false};
+  bool has_dynamic_shapes_{false};
+  std::vector<std::vector<int32_t>> output_shapes_;
 };
 
 } // namespace tensorrt

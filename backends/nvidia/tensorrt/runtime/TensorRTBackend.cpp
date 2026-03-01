@@ -10,6 +10,7 @@
 #include <executorch/backends/nvidia/tensorrt/runtime/TensorRTBlobHeader.h>
 #include <executorch/backends/nvidia/tensorrt/runtime/TensorRTExecutor.h>
 #include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/log.h>
 
 #include <cuda_runtime.h>
@@ -154,57 +155,68 @@ Error TensorRTBackend::execute(
   size_t num_inputs = executor->get_num_inputs();
   size_t num_outputs = executor->get_num_outputs();
 
-  if (num_inputs + num_outputs == 0) {
-    ET_LOG(Error, "No inputs or outputs found");
-    return Error::InvalidState;
-  }
-
-  std::vector<void*> input_buffers;
-  std::vector<void*> output_buffers;
-  input_buffers.reserve(num_inputs);
-  output_buffers.reserve(num_outputs);
-
-  size_t tensor_idx = 0;
-  for (size_t i = 0; i < args.size(); ++i) {
-    EValue* arg = args[i];
-    if (arg == nullptr || !arg->isTensor()) {
-      continue;
-    }
-
-    ::executorch::aten::Tensor tensor = arg->toTensor();
-    void* data_ptr = tensor.mutable_data_ptr();
-
-    if (tensor_idx < num_inputs) {
-      input_buffers.push_back(data_ptr);
-    } else {
-      output_buffers.push_back(data_ptr);
-    }
-    ++tensor_idx;
-  }
-
-  if (input_buffers.size() != num_inputs) {
+  // ExecuTorch passes [inputs..., outputs...] in args (same as CUDA backend).
+  if (args.size() < num_inputs + num_outputs) {
     ET_LOG(
         Error,
-        "Input buffer count mismatch: expected %zu, got %zu",
-        num_inputs,
-        input_buffers.size());
-      return Error::InvalidArgument;
+        "args size %zu < inputs %zu + outputs %zu",
+        args.size(), num_inputs, num_outputs);
+    return Error::InvalidArgument;
   }
 
-  if (output_buffers.size() != num_outputs) {
-    ET_LOG(
-        Error,
-        "Output buffer count mismatch: expected %zu, got %zu",
-        num_outputs,
-        output_buffers.size());
-      return Error::InvalidArgument;
+  // Extract input pointers and shapes.
+  std::vector<void*> input_buffers(num_inputs);
+  std::vector<std::vector<int64_t>> input_shapes(num_inputs);
+  for (size_t i = 0; i < num_inputs; ++i) {
+    auto& tensor = args[i]->toTensor();
+    input_buffers[i] = tensor.mutable_data_ptr();
+    auto sizes = tensor.sizes();
+    input_shapes[i].assign(sizes.begin(), sizes.end());
   }
 
-  return executor->execute(
+  // Extract output pointers.
+  std::vector<void*> output_buffers(num_outputs);
+  for (size_t i = 0; i < num_outputs; ++i) {
+    output_buffers[i] =
+        args[i + num_inputs]->toTensor().mutable_data_ptr();
+  }
+
+  auto err = executor->execute(
       input_buffers.data(),
-      input_buffers.size(),
+      input_shapes,
+      num_inputs,
       output_buffers.data(),
-      output_buffers.size());
+      num_outputs);
+
+  if (err != Error::Ok) {
+    return err;
+  }
+
+  // For dynamic shapes, resize output tensors to match TRT-inferred shapes.
+  for (size_t i = 0; i < num_outputs; ++i) {
+    const auto& shape = executor->get_output_shape(i);
+    if (!shape.empty()) {
+      auto& tensor = args[i + num_inputs]->toTensor();
+      auto current = tensor.sizes();
+      bool needs_resize = (static_cast<size_t>(current.size()) != shape.size());
+      if (!needs_resize) {
+        for (size_t d = 0; d < shape.size(); ++d) {
+          if (current[d] != shape[d]) { needs_resize = true; break; }
+        }
+      }
+      if (needs_resize) {
+        std::vector<::executorch::aten::SizesType> new_sizes(
+            shape.begin(), shape.end());
+        auto resize_err = executorch::runtime::resize_tensor(
+            tensor, {new_sizes.data(), new_sizes.size()});
+        if (resize_err != Error::Ok) {
+          ET_LOG(Error, "Failed to resize output tensor %zu", i);
+        }
+      }
+    }
+  }
+
+  return Error::Ok;
 }
 
 void TensorRTBackend::destroy(DelegateHandle* handle) const {

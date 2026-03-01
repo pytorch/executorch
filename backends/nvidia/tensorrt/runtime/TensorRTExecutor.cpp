@@ -233,33 +233,75 @@ Error TensorRTExecutor::allocate_gpu_buffers() {
   gpu_buffers_.clear();
   gpu_buffers_.reserve(static_cast<size_t>(num_io_tensors));
 
+  // Detect dynamic shapes (any dim == -1 in the engine).
+  has_dynamic_shapes_ = false;
+  for (int32_t i = 0; i < num_io_tensors; ++i) {
+    const char* name = engine_->getIOTensorName(i);
+    const auto dims = engine_->getTensorShape(name);
+    for (int d = 0; d < dims.nbDims; ++d) {
+      if (dims.d[d] == -1) { has_dynamic_shapes_ = true; break; }
+    }
+    if (has_dynamic_shapes_) break;
+  }
+
+  // For dynamic shapes, temporarily set all inputs to their profile-max
+  // so we can query max output shapes for pre-allocation.
+  if (has_dynamic_shapes_) {
+    for (int32_t i = 0; i < num_io_tensors; ++i) {
+      const char* name = engine_->getIOTensorName(i);
+      if (engine_->getTensorIOMode(name) == nvinfer1::TensorIOMode::kINPUT) {
+        auto max_dims = engine_->getProfileShape(
+            name, 0, nvinfer1::OptProfileSelector::kMAX);
+        context_->setInputShape(name, max_dims);
+      }
+    }
+  }
+
   size_t input_idx = 0;
   size_t output_idx = 0;
+  size_t num_outputs = 0;
 
   for (int32_t i = 0; i < num_io_tensors; ++i) {
     const char* name = engine_->getIOTensorName(i);
     const auto mode = engine_->getTensorIOMode(name);
-    const auto dims = engine_->getTensorShape(name);
     const auto dtype = engine_->getTensorDataType(name);
+    const auto static_dims = engine_->getTensorShape(name);
+
+    bool is_dynamic = false;
+    for (int d = 0; d < static_dims.nbDims; ++d) {
+      if (static_dims.d[d] == -1) { is_dynamic = true; break; }
+    }
+
+    // Determine allocation shape: profile max for dynamic inputs,
+    // context-inferred shape for dynamic outputs, static otherwise.
+    nvinfer1::Dims alloc_dims;
+    if (is_dynamic && mode == nvinfer1::TensorIOMode::kINPUT) {
+      alloc_dims = engine_->getProfileShape(
+          name, 0, nvinfer1::OptProfileSelector::kMAX);
+    } else if (has_dynamic_shapes_ && mode == nvinfer1::TensorIOMode::kOUTPUT) {
+      alloc_dims = context_->getTensorShape(name);
+      is_dynamic = true;
+    } else {
+      alloc_dims = static_dims;
+    }
 
     size_t num_elems = 1;
-    for (int d = 0; d < dims.nbDims; ++d) {
-      num_elems *= static_cast<size_t>(dims.d[d]);
+    for (int d = 0; d < alloc_dims.nbDims; ++d) {
+      num_elems *= static_cast<size_t>(
+          alloc_dims.d[d] > 0 ? alloc_dims.d[d] : 1);
     }
     const size_t buffer_size = num_elems * get_dtype_size(dtype);
 
     void* gpu_buffer = nullptr;
     cudaError_t cuda_err;
     if (uses_unified_memory_) {
-      // Use managed memory for unified memory systems (Jetson)
-      // This memory is accessible from both CPU and GPU
       cuda_err = cudaMallocManaged(&gpu_buffer, buffer_size);
     } else {
-      // Use device memory for discrete GPUs
       cuda_err = cudaMalloc(&gpu_buffer, buffer_size);
     }
     if (cuda_err != cudaSuccess) {
-      ET_LOG(Error, "Failed to allocate GPU memory: %s", cudaGetErrorString(cuda_err));
+      ET_LOG(Error, "Failed to allocate GPU memory: %s",
+             cudaGetErrorString(cuda_err));
       free_gpu_buffers();
       return Error::MemoryAllocationFailed;
     }
@@ -269,18 +311,22 @@ Error TensorRTExecutor::allocate_gpu_buffers() {
     buf.size = buffer_size;
     buf.is_input = (mode == nvinfer1::TensorIOMode::kINPUT);
     buf.tensor_index = i;
-    // Pre-compute the I/O index mapping to avoid runtime allocation
+    buf.has_dynamic_dims = is_dynamic;
     if (buf.is_input) {
       buf.io_index = input_idx++;
     } else {
       buf.io_index = output_idx++;
+      ++num_outputs;
     }
     gpu_buffers_.push_back(buf);
   }
 
-  ET_LOG(Info, "Pre-allocated %zu %s buffers",
+  output_shapes_.resize(num_outputs);
+
+  ET_LOG(Info, "Pre-allocated %zu %s buffers%s",
          gpu_buffers_.size(),
-         uses_unified_memory_ ? "managed memory" : "GPU");
+         uses_unified_memory_ ? "managed memory" : "GPU",
+         has_dynamic_shapes_ ? " (dynamic shapes)" : "");
   return Error::Ok;
 }
 
@@ -296,6 +342,7 @@ void TensorRTExecutor::free_gpu_buffers() {
 
 Error TensorRTExecutor::execute(
     void* const* input_buffers,
+    const std::vector<std::vector<int64_t>>& input_shapes,
     size_t num_inputs,
     void* const* output_buffers,
     size_t num_outputs) {
@@ -304,108 +351,145 @@ Error TensorRTExecutor::execute(
     return Error::InvalidState;
   }
 
-  // Validate buffer counts match expected (pre-computed during init)
+  // Validate buffer counts
   size_t expected_inputs = 0;
   size_t expected_outputs = 0;
   for (const auto& buf : gpu_buffers_) {
-    if (buf.is_input) {
-      ++expected_inputs;
-    } else {
-      ++expected_outputs;
-    }
+    if (buf.is_input) ++expected_inputs;
+    else ++expected_outputs;
   }
   if (num_inputs < expected_inputs) {
-    ET_LOG(Error, "Not enough input buffers: got %zu, expected %zu", num_inputs, expected_inputs);
+    ET_LOG(Error, "Not enough input buffers: got %zu, expected %zu",
+           num_inputs, expected_inputs);
     return Error::InvalidArgument;
   }
   if (num_outputs < expected_outputs) {
-    ET_LOG(Error, "Not enough output buffers: got %zu, expected %zu", num_outputs, expected_outputs);
+    ET_LOG(Error, "Not enough output buffers: got %zu, expected %zu",
+           num_outputs, expected_outputs);
     return Error::InvalidArgument;
   }
 
+  // For dynamic shapes, set actual input shapes on the execution context.
+  if (has_dynamic_shapes_) {
+    for (const auto& buf : gpu_buffers_) {
+      if (!buf.is_input) continue;
+      const char* name = engine_->getIOTensorName(buf.tensor_index);
+      const auto& shape = input_shapes[buf.io_index];
+      nvinfer1::Dims dims;
+      dims.nbDims = static_cast<int>(shape.size());
+      for (int d = 0; d < dims.nbDims; ++d) {
+        dims.d[d] = static_cast<int32_t>(shape[d]);
+      }
+      if (!context_->setInputShape(name, dims)) {
+        ET_LOG(Error, "Failed to set input shape for %s", name);
+        return Error::InvalidArgument;
+      }
+    }
+  }
+
+  // Helper: compute byte size of a tensor from its runtime shape.
+  auto compute_size = [this](const GPUBuffer& buf,
+                             const std::vector<int64_t>& shape) -> size_t {
+    const auto dtype = engine_->getTensorDataType(
+        engine_->getIOTensorName(buf.tensor_index));
+    size_t sz = get_dtype_size(dtype);
+    for (auto d : shape) sz *= static_cast<size_t>(d);
+    return sz;
+  };
+
+  // Helper: get actual output size after shapes are set.
+  auto get_output_copy_size = [this](const GPUBuffer& buf) -> size_t {
+    if (!has_dynamic_shapes_) return buf.size;
+    const char* name = engine_->getIOTensorName(buf.tensor_index);
+    const auto dims = context_->getTensorShape(name);
+    const auto dtype = engine_->getTensorDataType(name);
+    size_t sz = get_dtype_size(dtype);
+    for (int d = 0; d < dims.nbDims; ++d) {
+      sz *= static_cast<size_t>(dims.d[d] > 0 ? dims.d[d] : 1);
+    }
+
+    // Store shape for get_output_shape()
+    output_shapes_[buf.io_index].resize(dims.nbDims);
+    for (int d = 0; d < dims.nbDims; ++d) {
+      output_shapes_[buf.io_index][d] = dims.d[d];
+    }
+    return sz;
+  };
+
   if (uses_unified_memory_) {
-    // Unified memory path (Jetson): use cudaMallocManaged buffers
-    // We must copy data to/from managed memory because ExecuTorch's planned
-    // buffers are not CUDA-accessible. On unified memory systems, memcpy
-    // is very fast as it's just a CPU-side copy within shared physical memory.
     for (const auto& buf : gpu_buffers_) {
       const char* name = engine_->getIOTensorName(buf.tensor_index);
       if (buf.is_input) {
-        std::memcpy(buf.ptr, input_buffers[buf.io_index], buf.size);
+        size_t copy_size = has_dynamic_shapes_
+            ? compute_size(buf, input_shapes[buf.io_index])
+            : buf.size;
+        std::memcpy(buf.ptr, input_buffers[buf.io_index], copy_size);
       }
       context_->setTensorAddress(name, buf.ptr);
     }
 
-    // Execute inference
     bool success = context_->enqueueV3(stream_);
     if (!success) {
       ET_LOG(Error, "TensorRT inference failed");
       return Error::InvalidState;
     }
 
-    // Synchronize before reading outputs
     cudaError_t cuda_err = cudaStreamSynchronize(stream_);
     if (cuda_err != cudaSuccess) {
-      ET_LOG(Error, "CUDA synchronization failed: %s", cudaGetErrorString(cuda_err));
+      ET_LOG(Error, "CUDA synchronization failed: %s",
+             cudaGetErrorString(cuda_err));
       return Error::InvalidState;
     }
 
-    // Copy outputs from managed memory
     for (const auto& buf : gpu_buffers_) {
       if (!buf.is_input) {
-        std::memcpy(output_buffers[buf.io_index], buf.ptr, buf.size);
+        size_t copy_size = get_output_copy_size(buf);
+        std::memcpy(output_buffers[buf.io_index], buf.ptr, copy_size);
       }
     }
   } else {
-    // Discrete GPU path: use pre-allocated GPU buffers with async copies.
-    // cudaMemcpyDefault auto-detects pointer residency, so this works
-    // correctly whether input/output buffers are on CPU (H2D/D2H) or
-    // already on GPU (D2D), enabling unified backend pipelines where
-    // inter-delegate data stays on the GPU.
     for (const auto& buf : gpu_buffers_) {
       const char* name = engine_->getIOTensorName(buf.tensor_index);
       if (buf.is_input) {
-        cudaError_t cuda_err = cudaMemcpyAsync(
-            buf.ptr,
-            input_buffers[buf.io_index],
-            buf.size,
-            cudaMemcpyDefault,
-            stream_);
-        if (cuda_err != cudaSuccess) {
-          ET_LOG(Error, "Failed to copy input to GPU: %s", cudaGetErrorString(cuda_err));
+        size_t copy_size = has_dynamic_shapes_
+            ? compute_size(buf, input_shapes[buf.io_index])
+            : buf.size;
+        cudaError_t err = cudaMemcpyAsync(
+            buf.ptr, input_buffers[buf.io_index],
+            copy_size, cudaMemcpyDefault, stream_);
+        if (err != cudaSuccess) {
+          ET_LOG(Error, "Failed to copy input to GPU: %s",
+                 cudaGetErrorString(err));
           return Error::InvalidState;
         }
       }
       context_->setTensorAddress(name, buf.ptr);
     }
 
-    // Execute inference
     bool success = context_->enqueueV3(stream_);
     if (!success) {
       ET_LOG(Error, "TensorRT inference failed");
       return Error::InvalidState;
     }
 
-    // Copy outputs from GPU
     for (const auto& buf : gpu_buffers_) {
       if (!buf.is_input) {
-        cudaError_t cuda_err = cudaMemcpyAsync(
-            output_buffers[buf.io_index],
-            buf.ptr,
-            buf.size,
-            cudaMemcpyDefault,
-            stream_);
-        if (cuda_err != cudaSuccess) {
-          ET_LOG(Error, "Failed to copy output from GPU: %s", cudaGetErrorString(cuda_err));
+        size_t copy_size = get_output_copy_size(buf);
+        cudaError_t err = cudaMemcpyAsync(
+            output_buffers[buf.io_index], buf.ptr,
+            copy_size, cudaMemcpyDefault, stream_);
+        if (err != cudaSuccess) {
+          ET_LOG(Error, "Failed to copy output from GPU: %s",
+                 cudaGetErrorString(err));
           return Error::InvalidState;
         }
       }
     }
 
-    // Synchronize
     cudaError_t cuda_err = cudaStreamSynchronize(stream_);
     if (cuda_err != cudaSuccess) {
-      ET_LOG(Error, "CUDA synchronization failed: %s", cudaGetErrorString(cuda_err));
+      ET_LOG(Error, "CUDA synchronization failed: %s",
+             cudaGetErrorString(cuda_err));
       return Error::InvalidState;
     }
   }
