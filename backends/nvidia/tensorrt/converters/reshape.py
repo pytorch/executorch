@@ -316,17 +316,54 @@ def convert_view(
 
     input_trt = input_map[input_node]
 
+    import tensorrt as trt
+    import numpy as np
+
     # Get the actual output shape from node metadata if available
-    # This is more reliable than TensorRT's dimension inference
     output_shape = _compute_view_output_shape(node, input_node, input_trt, target_shape)
     logger.debug(f"[TensorRT] view {node.name}: output_shape = {output_shape}")
 
-    # Create shuffle layer for reshape
+    num_dynamic = sum(1 for d in output_shape if d < 0)
+
     layer = network.add_shuffle(input_trt)
     if layer is None:
         raise RuntimeError(f"Failed to create shuffle layer for view {node.name}")
 
-    layer.reshape_dims = trt.Dims(output_shape)
+    if num_dynamic <= 1:
+        # TRT handles at most one -1 in reshape natively.
+        layer.reshape_dims = trt.Dims(output_shape)
+    else:
+        # Multiple dynamic dims: build shape tensor from the target_shape arg.
+        # target_shape may contain FX Nodes (sym_size placeholders) which are
+        # in input_map as TRT tensors.
+        components = []
+        for i, d in enumerate(target_shape):
+            if isinstance(d, int):
+                c = network.add_constant(
+                    [1], trt.Weights(np.array([d], dtype=np.int32))
+                )
+                c.name = f"view_c{i}_{node.name}"
+                components.append(c.get_output(0))
+            elif isinstance(d, torch.fx.Node) and d in input_map:
+                t = input_map[d]
+                shuf = network.add_shuffle(t)
+                shuf.reshape_dims = trt.Dims([1])
+                shuf.name = f"view_sym{i}_{node.name}"
+                cast = network.add_cast(shuf.get_output(0), trt.int32)
+                cast.name = f"view_sym_i32_{i}_{node.name}"
+                components.append(cast.get_output(0))
+            else:
+                c = network.add_constant(
+                    [1], trt.Weights(np.array([-1], dtype=np.int32))
+                )
+                c.name = f"view_unk{i}_{node.name}"
+                components.append(c.get_output(0))
+
+        shape_cat = network.add_concatenation(components)
+        shape_cat.axis = 0
+        shape_cat.name = f"view_outshape_{node.name}"
+        layer.set_input(1, shape_cat.get_output(0))
+
     layer.name = f"view_{node.name}"
 
     return layer.get_output(0)

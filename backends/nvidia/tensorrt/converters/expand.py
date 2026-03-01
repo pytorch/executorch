@@ -161,28 +161,102 @@ def convert_expand(
         current_tensor = shuffle.get_output(0)
         input_shape = new_shape
 
-    # Broadcast using ISliceLayer: stride=0 for dims that need broadcasting.
-    start = [0] * output_dims
-    shape = list(output_shape)
+    import tensorrt as trt
+    import numpy as np
+
+    # Compute strides: 0 = broadcast from 1, 1 = keep.
     stride = []
-
     for inp_dim, out_dim in zip(input_shape, output_shape):
-        if inp_dim == 1 and out_dim != 1:
-            stride.append(0)
-        else:
-            stride.append(1)
+        stride.append(0 if inp_dim == 1 and out_dim != 1 else 1)
 
-    # Use slice layer for broadcasting
-    slice_layer = network.add_slice(
-        current_tensor,
-        start=start,
-        shape=shape,
-        stride=stride,
-    )
+    has_dynamic = any(d < 0 for d in output_shape)
+
+    if not has_dynamic:
+        # Static path — all dims are concrete.
+        slice_layer = network.add_slice(
+            current_tensor,
+            start=[0] * output_dims,
+            shape=list(output_shape),
+            stride=stride,
+        )
+    else:
+        # Dynamic path — build output shape via shape tensor API so TRT
+        # can prove all dims are positive through the optimization profile.
+
+        # Get runtime shape of input as int32.
+        shape_layer = network.add_shape(current_tensor)
+        shape_layer.name = f"expand_shape_{node.name}"
+        shape_i32 = network.add_cast(
+            shape_layer.get_output(0), trt.int32
+        )
+        shape_i32.name = f"expand_shape_i32_{node.name}"
+        shape_trt = shape_i32.get_output(0)
+
+        # Build one [1]-shaped component per output dim.
+        components = []
+        for i, (inp_dim, out_dim) in enumerate(zip(input_shape, output_shape)):
+            if out_dim >= 0:
+                # Concrete dim.
+                c = network.add_constant(
+                    [1], trt.Weights(np.array([out_dim], dtype=np.int32))
+                )
+                c.name = f"expand_c{i}_{node.name}"
+                components.append(c.get_output(0))
+            elif inp_dim == 1:
+                # Broadcast: target size comes from expand_size arg.
+                raw_target = expand_size[i]
+                if isinstance(raw_target, torch.fx.Node) and raw_target in input_map:
+                    t = input_map[raw_target]
+                    shuf = network.add_shuffle(t)
+                    shuf.reshape_dims = trt.Dims([1])
+                    shuf.name = f"expand_tgt{i}_{node.name}"
+                    cast = network.add_cast(shuf.get_output(0), trt.int32)
+                    cast.name = f"expand_tgt_i32_{i}_{node.name}"
+                    components.append(cast.get_output(0))
+                else:
+                    # Fallback: keep input dim.
+                    idx = network.add_constant(
+                        [1], trt.Weights(np.array([i], dtype=np.int32))
+                    )
+                    g = network.add_gather(shape_trt, idx.get_output(0), axis=0)
+                    g.name = f"expand_g{i}_{node.name}"
+                    components.append(g.get_output(0))
+            else:
+                # Dynamic, no broadcast: extract from input shape.
+                idx = network.add_constant(
+                    [1], trt.Weights(np.array([i], dtype=np.int32))
+                )
+                g = network.add_gather(shape_trt, idx.get_output(0), axis=0)
+                g.name = f"expand_g{i}_{node.name}"
+                components.append(g.get_output(0))
+
+        shape_cat = network.add_concatenation(components)
+        shape_cat.axis = 0
+        shape_cat.name = f"expand_outshape_{node.name}"
+
+        stride_c = network.add_constant(
+            [len(stride)], trt.Weights(np.array(stride, dtype=np.int32))
+        )
+        stride_c.name = f"expand_stride_{node.name}"
+        start_c = network.add_constant(
+            [output_dims], trt.Weights(np.zeros(output_dims, dtype=np.int32))
+        )
+        start_c.name = f"expand_start_{node.name}"
+
+        slice_layer = network.add_slice(
+            current_tensor,
+            start=[0] * output_dims,
+            shape=[1] * output_dims,
+            stride=[1] * output_dims,
+        )
+        slice_layer.set_input(1, start_c.get_output(0))
+        slice_layer.set_input(2, shape_cat.get_output(0))
+        slice_layer.set_input(3, stride_c.get_output(0))
+
     if slice_layer is None:
         raise RuntimeError(f"Failed to create slice layer for node {node.name}")
     slice_layer.name = f"expand_slice_{node.name}"
-    
+
     logger.debug(
         f"[TensorRT] Created expand layers: {slice_layer.name}, "
         f"output_shape={output_shape}, stride={stride}"

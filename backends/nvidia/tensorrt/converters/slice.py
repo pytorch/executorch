@@ -144,18 +144,75 @@ def convert_slice(
         else:
             output_shape[dim] = -1
 
+    import numpy as np
+
     start_slice = [0] * ndim
     start_slice[dim] = start
 
     stride_slice = [1] * ndim
     stride_slice[dim] = step if isinstance(step, int) else 1
 
-    layer = network.add_slice(
-        input_trt,
-        start=trt.Dims(start_slice),
-        shape=trt.Dims(output_shape),
-        stride=trt.Dims(stride_slice),
-    )
+    has_dynamic = any(d < 0 for d in output_shape)
+
+    if not has_dynamic:
+        layer = network.add_slice(
+            input_trt,
+            start=trt.Dims(start_slice),
+            shape=trt.Dims(output_shape),
+            stride=trt.Dims(stride_slice),
+        )
+    else:
+        # Dynamic path: build output shape tensor from input runtime shape.
+        shape_layer = network.add_shape(input_trt)
+        shape_layer.name = f"slice_shape_{node.name}"
+        shape_i32 = network.add_cast(shape_layer.get_output(0), trt.int32)
+        shape_i32.name = f"slice_shape_i32_{node.name}"
+        shape_trt = shape_i32.get_output(0)
+
+        # Build output shape: concrete dims from output_shape, dynamic from
+        # input shape (adjusted for the sliced dimension).
+        components = []
+        for i in range(ndim):
+            if output_shape[i] >= 0:
+                c = network.add_constant(
+                    [1], trt.Weights(np.array([output_shape[i]], dtype=np.int32))
+                )
+                c.name = f"slice_c{i}_{node.name}"
+                components.append(c.get_output(0))
+            else:
+                # Dynamic dim: extract from input shape.
+                # For the sliced dim, the output is smaller (start/step applied).
+                # For other dims, it matches the input.
+                idx = network.add_constant(
+                    [1], trt.Weights(np.array([i], dtype=np.int32))
+                )
+                g = network.add_gather(shape_trt, idx.get_output(0), axis=0)
+                g.name = f"slice_g{i}_{node.name}"
+                if i == dim and start > 0:
+                    # Subtract start from the dim size.
+                    start_c = network.add_constant(
+                        [1], trt.Weights(np.array([start], dtype=np.int32))
+                    )
+                    sub = network.add_elementwise(
+                        g.get_output(0), start_c.get_output(0),
+                        trt.ElementWiseOperation.SUB,
+                    )
+                    sub.name = f"slice_sub{i}_{node.name}"
+                    components.append(sub.get_output(0))
+                else:
+                    components.append(g.get_output(0))
+
+        shape_cat = network.add_concatenation(components)
+        shape_cat.axis = 0
+        shape_cat.name = f"slice_outshape_{node.name}"
+
+        layer = network.add_slice(
+            input_trt,
+            start=start_slice,
+            shape=[1] * ndim,
+            stride=stride_slice,
+        )
+        layer.set_input(2, shape_cat.get_output(0))
 
     if layer is None:
         raise RuntimeError(f"Failed to create slice layer for {node.name}")
