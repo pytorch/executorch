@@ -245,7 +245,7 @@ setup_environment() {
         # Check if conda is available
         if command -v conda &> /dev/null; then
             log_info "Creating conda environment..."
-            conda create -yn executorch python=3.10.0
+            conda create -yn executorch python=3.12.0
             eval "$(conda shell.bash hook)"
             conda activate executorch
             log_success "Created and activated conda environment: executorch"
