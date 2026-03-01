@@ -401,6 +401,25 @@ utils::uvec3 conv2d_local_wg_size(
     method = Conv2dMethod::SlidingWindow;
   }
 
+  // PowerVR GPUs may not handle large workgroup sizes well. Use smaller,
+  // more conservative workgroup sizes to avoid potential hardware issues
+  // with the TBDR architecture.
+  if (graph->device_is_powervr()) {
+    if (method == Conv2dMethod::Pointwise) {
+      uint32_t local_wg_size_y = 1;
+      if (global_workgroup_size[1] % 4 == 0) {
+        local_wg_size_y = 4;
+      } else if (global_workgroup_size[1] % 2 == 0) {
+        local_wg_size_y = 2;
+      }
+      return {32 / local_wg_size_y, local_wg_size_y, 1};
+    } else if (method == Conv2dMethod::Depthwise) {
+      return {32, 1, 1};
+    } else {
+      return graph->create_local_wg_size(global_workgroup_size);
+    }
+  }
+
   if (method == Conv2dMethod::Pointwise) {
     uint32_t local_wg_size_y = 1;
     if (global_workgroup_size[1] % 8 == 0) {
@@ -514,30 +533,6 @@ void add_conv2d_node(
       clamp_out,
       stride_equals_dilation,
       stride_1_padding_0);
-
-  utils::uvec3 wg_size = create_conv2d_global_wg_size(
-      graph, method, out, weight_data, stride_equals_dilation);
-
-  utils::uvec3 local_wg_size;
-  if (method == Conv2dMethod::Depthwise || method == Conv2dMethod::Pointwise) {
-    wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1};
-  }
-
-  if (method == Conv2dMethod::Pointwise) {
-    uint32_t local_wg_size_y = 1;
-    if (wg_size[1] % 8 == 0) {
-      local_wg_size_y = 8;
-    } else if (wg_size[1] % 4 == 0) {
-      local_wg_size_y = 4;
-    } else if (wg_size[1] % 2 == 0) {
-      local_wg_size_y = 2;
-    }
-    local_wg_size = {64 / local_wg_size_y, local_wg_size_y, 1};
-  } else if (method == Conv2dMethod::Depthwise) {
-    local_wg_size = {64, 1, 1};
-  } else {
-    local_wg_size = graph.create_local_wg_size(wg_size);
-  }
 
   vkapi::ParamsBindList param_buffers;
   std::vector<PushConstantDataInfo> push_constants;
