@@ -18,6 +18,8 @@
 #include <tuple>
 #include <vector>
 
+#define QNN_CTX_BIN_ALIGNMENT 256
+
 namespace executorch {
 namespace backends {
 namespace qnn {

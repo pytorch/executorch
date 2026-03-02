@@ -248,8 +248,6 @@ target_link_libraries(
           extension_tensor qnn_backend_options
 )
 
-# Add CTX_BIN_ALIGNMENT here so all backend files has access to this macro.
-add_compile_definitions(QNN_CTX_BIN_ALIGNMENT=256)
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)
   # Add macro here so we can dlopen the correct .so library.
   if(DSP_TYPE STREQUAL "3")

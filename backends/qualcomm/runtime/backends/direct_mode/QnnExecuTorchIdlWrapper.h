@@ -9,6 +9,7 @@
 
 #include "HAP_farf.h"
 
+#include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/memory_allocator.h>
