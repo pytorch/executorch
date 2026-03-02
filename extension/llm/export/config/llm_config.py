@@ -348,6 +348,7 @@ class Pt2eQuantize(str, Enum):
     coreml_baseline_8a_c4w = "coreml_baseline_8a_c4w"
     vulkan_8w = "vulkan_8w"
     tosa_8a8w = "tosa_8a8w"
+    ethosu_8a8w = "ethosu_8a8w"
 
 
 class SpinQuant(str, Enum):
@@ -546,6 +547,18 @@ class TosaConfig:
 
 
 @dataclass
+class EthosUConfig:
+    """
+    Configures the Ethos-U backend.
+    """
+
+    enabled: bool = False
+    target: str = "ethos-u85-128"  # Default target, can be overridden.
+    memory_mode: str = "default"
+    system_config: str = "default"
+
+
+@dataclass
 class BackendConfig:
     """
     Configures which backends should be used and how the backends
@@ -560,6 +573,7 @@ class BackendConfig:
     openvino: OpenvinoConfig = field(default_factory=OpenvinoConfig)
     torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
     tosa: TosaConfig = field(default_factory=TosaConfig)
+    ethosu: EthosUConfig = field(default_factory=EthosUConfig)
 
 
 ################################################################################

@@ -21,6 +21,7 @@ Arguments:
                 - mistralai/Voxtral-Mini-3B-2507
                 - openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo})
                 - google/gemma-3-4b-it
+                - Qwen/Qwen3-0.6B
                 - nvidia/parakeet-tdt
                 - mistralai/Voxtral-Mini-4B-Realtime-2602
 
@@ -151,6 +152,18 @@ case "$HF_MODEL" in
     AUDIO_FILE=""
     IMAGE_PATH="docs/source/_static/img/et-logo.png"
     ;;
+  Qwen/Qwen3-0.6B)
+    MODEL_NAME="qwen3"
+    RUNNER_TARGET="llama_main"
+    RUNNER_PATH="llama"
+    EXPECTED_OUTPUT="Paris"
+    PREPROCESSOR=""
+    TOKENIZER_URL="https://huggingface.co/Qwen/Qwen3-0.6B/resolve/main" # @lint-ignore
+    TOKENIZER_FILE=""
+    AUDIO_URL=""
+    AUDIO_FILE=""
+    IMAGE_PATH=""
+    ;;
   nvidia/parakeet-tdt)
     MODEL_NAME="parakeet"
     RUNNER_TARGET="parakeet_runner"
@@ -177,7 +190,7 @@ case "$HF_MODEL" in
     ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, nvidia/parakeet-tdt"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/parakeet-tdt"
     exit 1
     ;;
 esac
@@ -246,9 +259,14 @@ if [ "$(uname -s)" = "Darwin" ] && [ -f "$RUNNER_BIN" ]; then
     install_name_tool -change /opt/llvm-openmp/lib/libomp.dylib @rpath/libomp.dylib "$RUNNER_BIN"
   fi
 fi
-# For CUDA, add data_path argument (Metal embeds data in .pte)
+# For CUDA, add named data argument (Metal embeds data in .pte).
+# Llama runner uses --data_paths, other runners use --data_path.
 if [ "$DEVICE" = "cuda" ]; then
-  RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
+  if [ "$RUNNER_PATH" = "llama" ]; then
+    RUNNER_ARGS="$RUNNER_ARGS --data_paths ${MODEL_DIR}/aoti_cuda_blob.ptd"
+  else
+    RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
+  fi
 fi
 
 # Add model-specific arguments
@@ -261,6 +279,15 @@ case "$MODEL_NAME" in
     ;;
   gemma3)
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/ --image_path $IMAGE_PATH"
+    ;;
+  qwen3)
+    PROMPT_FILE="${MODEL_DIR}/qwen3_prompt.txt"
+    cat > "${PROMPT_FILE}" << 'EOF'
+<|im_start|>user
+What is the capital of France?<|im_end|>
+<|im_start|>assistant
+EOF
+    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/ --prompt_file ${PROMPT_FILE}"
     ;;
   parakeet)
     RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --audio_path ${MODEL_DIR}/$AUDIO_FILE --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE"
