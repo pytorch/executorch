@@ -1548,6 +1548,14 @@ inline void
 exec_repeat(const RepeatNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   int repeats = static_cast<int>(resolve_int(n.repeats, st));
+  if (repeats < 0) {
+    throw std::invalid_argument(
+        "repeat: repeats must be non-negative, got " + std::to_string(repeats));
+  }
+  auto out_shape = x.shape();
+  int axis = n.axis < 0 ? n.axis + static_cast<int>(x.ndim()) : n.axis;
+  out_shape[static_cast<size_t>(axis)] *= repeats;
+  check_allocation_bounded(out_shape, x.dtype(), "repeat");
   st.set_tensor(n.out, repeat(x, repeats, n.axis, s));
 }
 
