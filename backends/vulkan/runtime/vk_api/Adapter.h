@@ -306,6 +306,8 @@ class Adapter final {
       VkSemaphore wait_semaphore = VK_NULL_HANDLE,
       VkSemaphore signal_semaphore = VK_NULL_HANDLE);
 
+  void override_device_name(const std::string& new_name);
+
   std::string stringize() const;
   friend std::ostream& operator<<(std::ostream&, const Adapter&);
 };
