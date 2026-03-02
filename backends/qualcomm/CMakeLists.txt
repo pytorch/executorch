@@ -23,9 +23,19 @@ get_filename_component(
   _common_include_directories "${EXECUTORCH_SOURCE_DIR}/.." ABSOLUTE
 )
 
-# We only download QNN SDK when we build pip wheel for ExecuTorch. Please don't
-# change this code unless you know what you are doing.
-if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+# If QNN_SDK_ROOT was not passed as a CMake variable, fall back to the
+# environment variable.  Prefer downloading the SDK *outside* of CMake (e.g. via
+# backends/qualcomm/scripts/download_qnn_sdk.py) and passing the path in.
+if(NOT DEFINED QNN_SDK_ROOT AND DEFINED ENV{QNN_SDK_ROOT})
+  set(QNN_SDK_ROOT
+      $ENV{QNN_SDK_ROOT}
+      CACHE PATH "Qualcomm SDK root directory" FORCE
+  )
+endif()
+
+# Last-resort fallback: download during cmake configure when building wheels and
+# QNN_SDK_ROOT was not provided externally.
+if(NOT DEFINED QNN_SDK_ROOT AND EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
   set(_qnn_default_sdk_dir "${CMAKE_CURRENT_BINARY_DIR}/sdk/qnn")
 
   if(EXISTS "${_qnn_default_sdk_dir}" AND EXISTS "${_qnn_default_sdk_dir}/lib")
@@ -35,7 +45,7 @@ if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
         CACHE PATH "Qualcomm SDK root directory" FORCE
     )
   else()
-    message(STATUS "Downloading Qualcomm SDK")
+    message(STATUS "Downloading Qualcomm SDK (fallback)")
     execute_process(
       COMMAND
         ${PYTHON_EXECUTABLE}

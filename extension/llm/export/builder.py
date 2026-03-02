@@ -480,6 +480,7 @@ class LLMEdgeManager:
         external_constants_tag: Optional[
             Callable[[torch.fx.Node], Optional[str]]
         ] = None,
+        share_mutable_buffers: bool = False,
     ) -> "LLMEdgeManager":
         """
         Lower the model to executorch and get an ExecutorchProgram.
@@ -510,7 +511,10 @@ class LLMEdgeManager:
                 # QuantFusionPass]]`.
                 passes=to_executorch_passes,
                 do_quant_fusion_and_const_prop=True,
-                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False,
+                    share_mutable_buffers=share_mutable_buffers,
+                ),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
                 external_constants=external_constants_tag,
             )
