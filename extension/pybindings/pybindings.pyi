@@ -47,8 +47,10 @@ class ExecuTorchModule:
         inputs: Sequence[Any],  # pyre-ignore[2]: "Any" in parameter type annotations.
         clone_outputs: bool = True,
     ) -> List[Any]: ...
-    # pyre-ignore[3]: "Any" in return type annotations.
-    def plan_execute(self) -> List[Any]: ...
+    # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
+    def plan_execute(
+        self, method_name: str, clone_outputs: bool = True
+    ) -> List[Any]: ...
     # Bundled program methods.
     def load_bundled_input(
         self, bundle: BundledModule, method_name: str, testset_idx: int
@@ -68,6 +70,54 @@ class ExecuTorchModule:
     ) -> None: ...
     def method_meta(self, method_name: str) -> MethodMeta: ...
     def method_names(self) -> List[str]: ...
+
+@experimental("This API is experimental and subject to change without notice.")
+class ExecuTorchProgram:
+    """ExecuTorchProgram is a Python wrapper around a loaded C++ ExecuTorch program.
+
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+
+    def num_methods(self) -> int: ...
+    def get_method_name(self, method_index: int) -> str: ...
+    def load_method(self, method_name: str) -> ExecuTorchMethod: ...
+    def method_meta(self, method_name: str) -> MethodMeta: ...
+    def has_etdump(self) -> bool: ...
+    def write_etdump_result_to_file(
+        self, path: str, debug_buffer_path: Optional[str] = None
+    ) -> None: ...
+
+@experimental("This API is experimental and subject to change without notice.")
+class ExecuTorchMethod:
+    """ExecuTorchMethod is a Python wrapper around a loaded C++ method.
+
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+
+    # pyre-ignore[2]: "Any" in parameter type annotations.
+    def set_inputs(self, inputs: Sequence[Any]) -> None: ...
+    def execute(self) -> None: ...
+    # pyre-ignore[3]: "Any" in return type annotations.
+    def get_outputs(self, clone_outputs: bool = True) -> List[Any]: ...
+    # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
+    def call(
+        self,
+        inputs: Sequence[Any] = ...,  # pyre-ignore[2]
+        clone_outputs: bool = True,
+    ) -> List[Any]: ...
+    # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
+    def __call__(
+        self,
+        inputs: Sequence[Any] = ...,  # pyre-ignore[2]
+        clone_outputs: bool = True,
+    ) -> List[Any]: ...
+    def method_meta(self) -> MethodMeta: ...
+    # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
+    def get_attribute(self, name: str) -> Any: ...
 
 @experimental("This API is experimental and subject to change without notice.")
 class BundledModule:
@@ -226,6 +276,20 @@ def _load_bundled_program_from_buffer(
     """
     ...
 
+@experimental("This API is experimental and subject to change without notice.")
+def _load_program(
+    path: str,
+    enable_etdump: bool = False,
+    debug_buffer_size: int = 0,
+    program_verification: Verification = Verification.Minimal,
+) -> ExecuTorchProgram: ...
+@experimental("This API is experimental and subject to change without notice.")
+def _load_program_from_buffer(
+    buffer: bytes,
+    enable_etdump: bool = False,
+    debug_buffer_size: int = 0,
+    program_verification: Verification = Verification.Minimal,
+) -> ExecuTorchProgram: ...
 @experimental("This API is experimental and subject to change without notice.")
 def _is_available(backend_name: str) -> bool:
     """
