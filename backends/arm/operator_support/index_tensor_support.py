@@ -4,8 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 """Provide TOSA support checks for ``aten.index.Tensor``.
 
-Reject unsupported patterns such as high-rank index tensors, front-positioned
-slice/ellipsis/None markers, and cases that exceed ``int32`` element limits.
+Reject unsupported patterns such as front-positioned slice/ellipsis/None
+markers and cases that exceed ``int32`` element limits.
 
 """
 
@@ -30,18 +30,12 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
     This support check is intended to prevent the partitioning of
     currently unsupported usages of the index.Tensor operator.
 
-    1. Usages where indexing tensors are of rank 4 or higher.
-        This is due to the AnnotateChannelsLastDimOrder pass and
-        the rarity of such operation.
-        Support is possible but would require further changes to the above
-        pass which can be added at such a time as is necessary.
-
-    2. Usages where slice, ellipsis or None are present before an indexing tensor:
+    1. Usages where slice, ellipsis or None are present before an indexing tensor:
         t[{start}:{end}, indexTensor] - slicing
         t[None, indexTensor] - unsqueeze
         t[..., indexTensor] - ellipsis
 
-    3. Usages where the value tensor contains more than int32.max elements
+    2. Usages where the value tensor contains more than int32.max elements
         This is due to int32 TOSA limitation and the fact that we flatten out
         and accumulate all index tensors.
         As such to avoid overflow we reject lowering of this operator if it is
@@ -115,13 +109,12 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
 
         Enforces the following constraints:
         - No ``None`` (unsqueeze), slice, or ellipsis before an indexing tensor.
-        - Indexing tensors have rank <= 3.
         - The value tensor element count fits in ``int32``.
 
         """
         indices = node.args[1]
         for index in indices:  # type: ignore[union-attr]
-            # Usage 2 guard
+            # Usage 1 guard
             if index is None:
                 self.reporter.report_reject(
                     node,
@@ -132,17 +125,7 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
                 )
                 return False
 
-            # Usage 1 guard
-            index = ensure_type(torch.fx.Node, index)
-            fake_tensor = get_first_fake_tensor(index)
-            if len(fake_tensor.size()) > 3:
-                self.reporter.report_reject(
-                    node,
-                    ("Indexing tensors of rank >= 4 is not supported."),
-                )
-                return False
-
-        # Usage 3 guard
+        # Usage 2 guard
         input_node = ensure_type(torch.fx.Node, node.args[0])
         total_vals = math.prod(get_first_fake_tensor(input_node).shape)
         if total_vals > torch.iinfo(torch.int32).max:
