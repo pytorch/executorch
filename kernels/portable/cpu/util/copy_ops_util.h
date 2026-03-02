@@ -8,6 +8,9 @@
 
 #pragma once
 #include <c10/util/irange.h>
+#include <c10/util/safe_numerics.h>
+
+#include <cinttypes>
 
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -74,6 +77,35 @@ void as_strided_copy(
   if (size.empty()) {
     out_data[0] = in_data[0];
   } else {
+    // If any dimension is 0, the output is empty and no copy occurs.
+    for (size_t i = 0; i < size.size(); i++) {
+      if (size[i] == 0) {
+        return;
+      }
+    }
+    // Validate that strides are non-negative. Negative strides would cause
+    // the bounds check below to compute an incorrect max_index.
+    for (size_t i = 0; i < stride.size(); i++) {
+      ET_CHECK_MSG(
+          stride[i] >= 0,
+          "as_strided_copy: negative strides are not supported");
+    }
+    // Validate that all strided accesses will be within bounds.
+    // The maximum index accessed is: offset + sum((size[i] - 1) * stride[i])
+    int64_t max_index = offset;
+    bool overflow = false;
+    for (size_t i = 0; i < size.size(); i++) {
+      int64_t extent;
+      overflow |= c10::mul_overflows(size[i] - 1, stride[i], &extent);
+      overflow |= c10::add_overflows(max_index, extent, &max_index);
+    }
+    ET_CHECK_MSG(
+        !overflow && offset >= 0 && max_index < in.numel(),
+        "as_strided_copy: access out of bounds (offset=%" PRId64
+        ", max_index=%" PRId64 ", numel=%zd)",
+        offset,
+        max_index,
+        static_cast<size_t>(in.numel()));
     _as_strided_copy<CTYPE>(in_data, out_data, out, size, stride, 0);
   }
 }

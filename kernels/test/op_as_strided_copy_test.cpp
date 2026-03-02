@@ -13,6 +13,9 @@
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 
+#include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
+#include <executorch/test/utils/DeathTest.h>
+
 #include <gtest/gtest.h>
 #include <cmath>
 #include <cstdint>
@@ -204,6 +207,98 @@ TEST_F(OpAsStridedCopyOutTest, InvalidParametersDies) {
   test_as_strided_copy_out_invalid_parameters<ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
+}
+
+TEST_F(OpAsStridedCopyOutTest, StrideDrivenOutOfBoundsDies) {
+  // This test calls as_strided_copy<T>(), bypassing check_as_strided_copy_args
+  // which has its own validation. This is important because internal callers
+  // (like diagonal_copy) may call as_strided_copy directly.
+  TensorFactory<ScalarType::Int> tf;
+
+  // Create a 3x3 input tensor (9 elements total)
+  const std::vector<int32_t> in_sizes = {3, 3};
+  Tensor in = tf.ones(in_sizes);
+
+  // Create output tensor with shape {2, 2}
+  const std::vector<int32_t> out_sizes = {2, 2};
+  Tensor out = tf.zeros(out_sizes);
+
+  // Case 1: offset is within range (0), but stride causes OOB
+  // With size={2, 2}, stride={1, 100}, the maximum index accessed is:
+  // offset + (2-1)*1 + (2-1)*100 = 0 + 1 + 100 = 101, which exceeds numel=9
+  int64_t sizes[2] = {2, 2};
+  int64_t stride_oob[2] = {1, 100};
+
+  // Call as_strided_copy directly, bypassing check_as_strided_copy_args
+  // Use brace-initialization to construct ArrayRef compatible with
+  // torch::executor
+  ET_EXPECT_DEATH(
+      torch::executor::as_strided_copy<int32_t>(
+          in,
+          {sizes, 2},
+          {stride_oob, 2},
+          /*offset=*/0,
+          out),
+      "");
+
+  // Case 2: Valid offset but combined with strides exceeds bounds
+  // offset=5, size={2, 2}, stride={1, 3}
+  // max_index = 5 + (2-1)*1 + (2-1)*3 = 5 + 1 + 3 = 9
+  // This equals numel (9), but the check requires max_index < numel
+  int64_t stride_boundary[2] = {1, 3};
+  ET_EXPECT_DEATH(
+      torch::executor::as_strided_copy<int32_t>(
+          in,
+          {sizes, 2},
+          {stride_boundary, 2},
+          /*offset=*/5,
+          out),
+      "");
+}
+
+TEST_F(OpAsStridedCopyOutTest, StrideDrivenOutOfBoundsPublicApiDies) {
+  // This test verifies that stride-driven out-of-bounds access is rejected
+  // via the public API (as_strided_copy_out), which validates through
+  // check_as_strided_copy_args before calling as_strided_copy.
+  TensorFactory<ScalarType::Int> tf;
+
+  // Create a 3x3 input tensor (9 elements total)
+  const std::vector<int32_t> in_sizes = {3, 3};
+  Tensor in = tf.ones(in_sizes);
+
+  // Create output tensor with shape {2, 2}
+  const std::vector<int32_t> out_sizes = {2, 2};
+  Tensor out = tf.zeros(out_sizes);
+
+  // Case 1: offset is within range (0), but stride causes OOB
+  // With size={2, 2}, stride={1, 100}, the maximum index accessed is:
+  // offset + (2-1)*1 + (2-1)*100 = 0 + 1 + 100 = 101, which exceeds numel=9
+  int64_t sizes[2] = {2, 2};
+  int64_t stride_oob[2] = {1, 100};
+  optional<int64_t> storage_offset = 0;
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_as_strided_copy_out(
+          /*self=*/in,
+          /*size=*/ArrayRef<int64_t>{sizes, 2},
+          /*stride=*/ArrayRef<int64_t>{stride_oob, 2},
+          storage_offset,
+          out));
+
+  // Case 2: Valid offset but combined with strides exceeds bounds
+  // offset=5, size={2, 2}, stride={1, 3}
+  // max_index = 5 + (2-1)*1 + (2-1)*3 = 5 + 1 + 3 = 9
+  // This equals numel (9), but the check requires max_index < numel
+  int64_t stride_boundary[2] = {1, 3};
+  storage_offset = 5;
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_as_strided_copy_out(
+          /*self=*/in,
+          /*size=*/ArrayRef<int64_t>{sizes, 2},
+          /*stride=*/ArrayRef<int64_t>{stride_boundary, 2},
+          storage_offset,
+          out));
 }
 
 TEST_F(OpAsStridedCopyOutTest, MismatchedInputDtypesDies) {
