@@ -139,7 +139,7 @@ backends/mlx/
     └── whisper/                # Whisper export + run
 ```
 
-Files marked **[GENERATED]** are produced by running:
+Files marked **[GENERATED]** are NOT CHECKED IN CODE and are produced by running:
 
 ```bash
 python backends/mlx/serialization/generate.py
