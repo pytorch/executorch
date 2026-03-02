@@ -212,6 +212,13 @@ set(MLX_METAL_JIT
     CACHE BOOL "Use JIT compiled Metal kernels"
 )
 
+# Pre-populate json FetchContent to use ET's copy. MLX unconditionally calls
+# FetchContent_MakeAvailable(json) which would conflict with ET's
+# third-party/json. By pre-populating, CMake skips MLX's download.
+include(FetchContent)
+FetchContent_Declare(json SOURCE_DIR ${EXECUTORCH_ROOT}/third-party/json)
+FetchContent_MakeAvailable(json)
+
 # Add MLX subdirectory
 message(STATUS "Adding MLX from submodule: ${MLX_SOURCE_DIR}")
 add_subdirectory(${MLX_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/mlx)
