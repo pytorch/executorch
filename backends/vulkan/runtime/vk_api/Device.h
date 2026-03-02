@@ -84,6 +84,9 @@ struct PhysicalDevice final {
  private:
   void query_extensions_vk_1_0();
   void query_extensions_vk_1_1();
+
+ public:
+  void override_device_name(const std::string& new_name);
 };
 
 struct DeviceHandle final {
