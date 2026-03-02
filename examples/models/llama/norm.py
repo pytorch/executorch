@@ -9,7 +9,9 @@ from torch import nn
 
 
 class RMSNorm(torch.nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-6):
+    def __init__(
+        self, dim: int, eps: float = 1e-6, add_unit_offset: bool = False
+    ):
         """
         Initialize the RMSNorm normalization layer.
 
@@ -25,6 +27,7 @@ class RMSNorm(torch.nn.Module):
         super().__init__()
         self.dim = dim
         self.eps = eps
+        self.add_unit_offset = add_unit_offset
         self.weight = nn.Parameter(torch.ones(dim))
 
     def _norm(self, x):
@@ -52,4 +55,6 @@ class RMSNorm(torch.nn.Module):
 
         """
         output = self._norm(x.float()).type_as(x)
+        if self.add_unit_offset:
+            return output * (1.0 + self.weight.float()).type_as(x)
         return output * self.weight

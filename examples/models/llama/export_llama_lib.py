@@ -105,6 +105,9 @@ EXECUTORCH_DEFINED_MODELS = [
     "qwen3_0_6b",
     "qwen3_1_7b",
     "qwen3_4b",
+    "qwen3_5_0_8b",
+    "qwen3_5_2b",
+    "qwen3_5_4b",
     "phi_4_mini",
     "smollm2",
     "lfm2_350m",  # hybrid
@@ -122,6 +125,9 @@ HUGGING_FACE_REPO_IDS = {
     "qwen3_0_6b": "Qwen/Qwen3-0.6B",
     "qwen3_1_7b": "Qwen/Qwen3-1.7B",
     "qwen3_4b": "Qwen/Qwen3-4B",
+    "qwen3_5_0_8b": "Qwen/Qwen3.5-0.8B",
+    "qwen3_5_2b": "Qwen/Qwen3.5-2B",
+    "qwen3_5_4b": "Qwen/Qwen3.5-4B",
     "lfm2_350m": "LiquidAI/LFM2-350M",
     "lfm2_700m": "LiquidAI/LFM2-700M",
     "lfm2_1_2b": "LiquidAI/LFM2-1.2B",
@@ -643,6 +649,8 @@ def export_llama(
         repo_id = HUGGING_FACE_REPO_IDS[model_name]
         if model_name.startswith("qwen2_5"):
             from executorch.examples.models.qwen2_5 import convert_weights
+        elif model_name.startswith("qwen3_5"):
+            from executorch.examples.models.qwen3_5 import convert_weights
         elif model_name.startswith("qwen3"):
             from executorch.examples.models.qwen3 import convert_weights
         elif model_name == "phi_4_mini":

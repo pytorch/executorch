@@ -44,6 +44,14 @@ class ModelArgs:
     vocab_size: int = 512  # Arbitrary value, should be defined later by tokenizer.
     hidden_dim: Optional[int] = None
     head_dim: Optional[int] = None  # Optional customized head_dim
+    # Qwen3.5 linear-attention dimensions.
+    linear_conv_kernel_dim: int = 4
+    linear_key_head_dim: Optional[int] = None
+    linear_value_head_dim: Optional[int] = None
+    linear_num_key_heads: Optional[int] = None
+    linear_num_value_heads: Optional[int] = None
+    # Qwen3.5 RMSNorm uses (1 + weight) scaling.
+    rms_norm_add_unit_offset: bool = False
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
     ffn_dim_multiplier: Optional[float] = None
     model_architecture: str = (
@@ -173,6 +181,15 @@ class ModelArgs:
 
         if self.head_dim is None:
             self.head_dim = self.dim // self.n_heads
+
+        if self.linear_key_head_dim is None:
+            self.linear_key_head_dim = self.head_dim
+        if self.linear_value_head_dim is None:
+            self.linear_value_head_dim = self.head_dim
+        if self.linear_num_key_heads is None:
+            self.linear_num_key_heads = self.n_heads
+        if self.linear_num_value_heads is None:
+            self.linear_num_value_heads = self.n_heads
 
         # Convert string act_fn to enum if needed
         if isinstance(self.act_fn, str):
