@@ -183,6 +183,7 @@ runtime.python_test(
     ],
     preload_deps = [
         "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
     ],
     # Static listing does not support tests generated with parameterized
     supports_static_listing = False,
@@ -195,6 +196,8 @@ runtime.python_test(
         "//executorch/exir:pass_manager",
         "//executorch/exir/passes:lib",
         "//executorch/exir/passes:sym_shape_eval_pass",
+        "//executorch/examples/models/llama:custom_kv_cache",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
     ],
 )
 
@@ -221,6 +224,7 @@ python_unittest(
         "//executorch/exir/dialects/edge:lib",
         "//executorch/exir/emit:lib",
         "//executorch/exir/passes:constant_prop_pass",
+        "//executorch/exir/passes:cse_pass",
         "//executorch/exir/passes:debug_handle_generator_pass",
         "//executorch/exir/passes:insert_write_back_for_buffers_pass",
         "//executorch/exir/passes:lib",

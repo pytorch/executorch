@@ -7,97 +7,75 @@
  */
 package org.pytorch.executorch
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
-import java.io.IOException
-import java.net.URISyntaxException
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import kotlin.math.abs
 import org.apache.commons.io.FileUtils
-import org.junit.Assert
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.pytorch.executorch.TensorImageUtils.bitmapToFloat32Tensor
 import org.pytorch.executorch.TestFileUtils.getTestFilePath
 
-/** Unit tests for [Module]. */
+/** End-to-end tests that verify JNI inference against nightly golden artifacts. */
 @RunWith(AndroidJUnit4::class)
 class ModuleE2ETest {
 
-  @Throws(IOException::class, URISyntaxException::class)
-  fun testClassification(filePath: String) {
-    val pteFile = File(getTestFilePath(filePath))
-    val inputStream = javaClass.getResourceAsStream(filePath)
-    FileUtils.copyInputStreamToFile(inputStream, pteFile)
-    inputStream.close()
+  private fun loadFloatArrayFromResource(path: String): FloatArray {
+    val bytes = javaClass.getResourceAsStream(path)!!.use { it.readBytes() }
+    val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+    return FloatArray(bytes.size / 4).also { buffer.asFloatBuffer().get(it) }
+  }
 
-    val imgInputStream = javaClass.getResourceAsStream("/banana.jpeg")
-    var bitmap = BitmapFactory.decodeStream(imgInputStream)
-    bitmap = Bitmap.createScaledBitmap(bitmap!!, 224, 224, true)
-    imgInputStream.close()
+  private fun assertOutputsClose(actual: FloatArray, expected: FloatArray, atol: Float = 1e-3f) {
+    assertEquals("Output size mismatch", expected.size, actual.size)
+    for (i in actual.indices) {
+      assertTrue(
+          "Output[$i]: expected=${expected[i]}, actual=${actual[i]}, diff=${abs(actual[i] - expected[i])}",
+          abs(actual[i] - expected[i]) <= atol,
+      )
+    }
+  }
 
-    val inputTensor =
-        bitmapToFloat32Tensor(
-            bitmap,
-            TensorImageUtils.TORCHVISION_NORM_MEAN_RGB,
-            TensorImageUtils.TORCHVISION_NORM_STD_RGB,
-        )
+  private fun testGoldenModel(modelName: String, inputShape: LongArray) {
+    val inputData = loadFloatArrayFromResource("/${modelName}_input.bin")
+    val expectedOutput = loadFloatArrayFromResource("/${modelName}_expected_output.bin")
+    val inputTensor = Tensor.fromBlob(inputData, inputShape)
 
-    val module = Module.load(getTestFilePath(filePath))
+    val pteStream = javaClass.getResourceAsStream("/${modelName}.pte")!!
+    val pteFile = File(getTestFilePath("/${modelName}.pte"))
+    FileUtils.copyInputStreamToFile(pteStream, pteFile)
 
+    val module = Module.load(pteFile.absolutePath)
     val results = module.forward(EValue.from(inputTensor))
-    Assert.assertTrue(results[0].isTensor)
-    val scores = results[0].toTensor().dataAsFloatArray
+    val actualOutput = results[0].toTensor().dataAsFloatArray
 
-    val bananaClass = 954 // From ImageNet 1K
-    Assert.assertEquals(bananaClass.toLong(), argmax(scores).toLong())
+    assertOutputsClose(actualOutput, expectedOutput)
+    module.destroy()
   }
 
   @Test
-  @Throws(IOException::class, URISyntaxException::class)
   fun testXnnpackBackendRequired() {
-    val pteFile = File(getTestFilePath("/mv3_xnnpack_fp32.pte"))
-    val inputStream = javaClass.getResourceAsStream("/mv3_xnnpack_fp32.pte")
+    val pteFile = File(getTestFilePath("/mobilenet_v2.pte"))
+    val inputStream = javaClass.getResourceAsStream("/mobilenet_v2.pte")
     FileUtils.copyInputStreamToFile(inputStream, pteFile)
     inputStream.close()
 
-    val module = Module.load(getTestFilePath("/mv3_xnnpack_fp32.pte"))
+    val module = Module.load(pteFile.absolutePath)
     val expectedBackends = arrayOf("XnnpackBackend")
     assertArrayEquals(expectedBackends, module.getMethodMetadata("forward").backends)
   }
 
   @Test
-  @Throws(IOException::class, URISyntaxException::class)
-  fun testMv2Fp32() {
-    testClassification("/mv2_xnnpack_fp32.pte")
+  fun testMobilenetV2() {
+    testGoldenModel("mobilenet_v2", longArrayOf(1, 3, 224, 224))
   }
 
   @Test
-  @Throws(IOException::class, URISyntaxException::class)
-  fun testMv3Fp32() {
-    testClassification("/mv3_xnnpack_fp32.pte")
-  }
-
-  @Test
-  @Throws(IOException::class, URISyntaxException::class)
-  fun testResnet50() {
-    testClassification("/resnet50_xnnpack_q8.pte")
-  }
-
-  companion object {
-
-    fun argmax(array: FloatArray): Int {
-      require(array.isNotEmpty()) { "Array cannot be empty" }
-      var maxIndex = 0
-      var maxValue = array[0]
-      for (i in 1 until array.size) {
-        if (array[i] > maxValue) {
-          maxValue = array[i]
-          maxIndex = i
-        }
-      }
-      return maxIndex
-    }
+  fun testVitB16() {
+    testGoldenModel("vit_b_16", longArrayOf(1, 3, 224, 224))
   }
 }

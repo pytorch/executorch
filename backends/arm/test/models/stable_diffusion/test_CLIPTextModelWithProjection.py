@@ -30,9 +30,11 @@ input_t = Tuple[torch.Tensor]
 
 
 class TestCLIPTextModelWithProjection:
-    """
-    Test class of CLIPTextModelWithProjection.
-    CLIPTextModelWithProjection is one of the text_encoder used by Stable Diffusion 3.5 Medium
+    """Test class of CLIPTextModelWithProjection.
+
+    CLIPTextModelWithProjection is one of the text_encoder used by Stable
+    Diffusion 3.5 Medium
+
     """
 
     # Adjust nbr below as we increase op support.

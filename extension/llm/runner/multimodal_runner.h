@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -74,7 +75,7 @@ namespace llm {
  *
  *   runner->generate(inputs, config, token_callback, stats_callback);
  */
-class ET_EXPERIMENTAL MultimodalRunner {
+class ET_EXPERIMENTAL MultimodalRunner : public IRunner {
  public:
   /**
    * @brief Constructor for MultimodalRunner with dependency injection
@@ -105,8 +106,24 @@ class ET_EXPERIMENTAL MultimodalRunner {
       std::unique_ptr<TextTokenGenerator> text_token_generator,
       std::unique_ptr<Stats> stats);
 
-  virtual bool is_loaded();
-  virtual ::executorch::runtime::Error load();
+  bool is_loaded() const override;
+  ::executorch::runtime::Error load() override;
+
+  /**
+   * Generate tokens from a text prompt. Wraps the prompt as a MultimodalInput
+   * and delegates to generate(vector). Empty prompt is allowed if prefill()
+   * was called beforehand.
+   * @param prompt The text prompt to generate from.
+   * @param config Generation configuration parameters.
+   * @param token_callback Callback function called for each generated token.
+   * @param stats_callback Callback function for generation statistics.
+   * @return The error code. KV cache position is tracked internally in pos_.
+   */
+  ::executorch::runtime::Error generate(
+      const std::string& prompt,
+      const GenerationConfig& config,
+      std::function<void(const std::string&)> token_callback = {},
+      std::function<void(const Stats&)> stats_callback = {}) override;
 
   /**
    * Generate tokens from the given multimodal inputs using GenerationConfig.
@@ -124,24 +141,42 @@ class ET_EXPERIMENTAL MultimodalRunner {
       std::function<void(const Stats&)> stats_callback = {});
 
   /**
-   * Prefill multimodal inputs, for example to reload chat history.
+   * Prefill multimodal inputs to fill the KV cache, for example to reload
+   * chat history. Call generate() with a non-empty prompt afterwards to
+   * start decoding.
    * @param inputs A vector of MultimodalInput objects containing images and
    * text.
-   * @return The error code. KV cache position is tracked internally in pos_.
+   * @param num_bos Number of BOS tokens to prepend during encoding.
+   * @param num_eos Number of EOS tokens to append during encoding.
+   * @return The next token predicted after prefill, or an error.
+   *         KV cache position is tracked internally in pos_.
    */
-  virtual ::executorch::runtime::Error prefill(
-      const std::vector<MultimodalInput>& inputs);
+  ::executorch::runtime::Result<uint64_t> prefill(
+      const std::vector<MultimodalInput>& inputs,
+      int32_t num_bos = 0,
+      int32_t num_eos = 0) override;
 
-  inline void stop() {
+  /**
+   * Convenience overload: prefill a single text prompt.
+   */
+  ::executorch::runtime::Result<uint64_t>
+  prefill(const std::string& prompt, int32_t num_bos = 0, int32_t num_eos = 0) {
+    std::vector<MultimodalInput> inputs;
+    inputs.emplace_back(MultimodalInput(prompt));
+    return prefill(inputs, num_bos, num_eos);
+  }
+
+  void stop() override {
     text_token_generator_->stop();
   }
 
-  inline void reset() {
+  void reset() override {
     pos_ = 0;
     stats_->reset();
+    prefill_next_token_.reset();
   }
 
-  virtual ~MultimodalRunner() = default;
+  ~MultimodalRunner() override = default;
 
  protected:
   // Components
@@ -160,7 +195,15 @@ class ET_EXPERIMENTAL MultimodalRunner {
 #endif
 
   // Internal state
+  std::optional<uint64_t> prefill_next_token_;
   int64_t pos_;
+
+ private:
+  ::executorch::runtime::Error decode_from_token(
+      uint64_t cur_token,
+      const GenerationConfig& config,
+      std::function<void(const std::string&)> wrapped_callback,
+      std::function<void(const Stats&)> stats_callback);
 };
 
 } // namespace llm

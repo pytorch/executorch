@@ -3,9 +3,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+"""Tests 10 popular torch ops, not tested in other ways, training related or
+requiring randomness.
 
-"""
-Tests 10 popular torch ops, not tested in other ways, training related or requring randomness.
 - t
 - zeros
 - ones
@@ -16,6 +16,7 @@ Tests 10 popular torch ops, not tested in other ways, training related or requri
 - eye
 - topk
 - sort
+
 """
 
 from typing import Callable

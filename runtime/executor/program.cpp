@@ -14,6 +14,7 @@
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/method.h>
+#include <executorch/runtime/executor/program_validation.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/extended_header.h>
 #include <executorch/schema/program_generated.h>
@@ -150,6 +151,13 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
         ok,
         InvalidProgram,
         "Verification failed; data may be truncated or corrupt");
+    const executorch_flatbuffer::Program* flatbuffer_program =
+        executorch_flatbuffer::GetProgram(program_data->data());
+    Error err = validate_program(flatbuffer_program);
+    ET_CHECK_OR_RETURN_ERROR(
+        err == Error::Ok,
+        InvalidProgram,
+        "Program validation failed: likely a corrupt file");
 #else
     ET_LOG(
         Info, "InternalConsistency verification requested but not available");
@@ -299,7 +307,8 @@ Result<Method> Program::load_method(
     const char* method_name,
     MemoryManager* memory_manager,
     EventTracer* event_tracer,
-    const NamedDataMap* named_data_map) const {
+    const NamedDataMap* named_data_map,
+    const LoadBackendOptionsMap* backend_options) const {
   EXECUTORCH_SCOPE_PROF("Program::load_method");
   internal::event_tracer_create_event_block(event_tracer, "Default");
   internal::EventTracerProfileMethodScope event_tracer_scope =
@@ -317,7 +326,12 @@ Result<Method> Program::load_method(
     return plan.error();
   }
   return Method::load(
-      plan.get(), this, memory_manager, event_tracer, named_data_map);
+      plan.get(),
+      this,
+      memory_manager,
+      event_tracer,
+      named_data_map,
+      backend_options);
 }
 
 Result<MethodMeta> Program::method_meta(const char* method_name) const {

@@ -77,9 +77,15 @@ class RemoveNoopPass(ExportPass):
                 continue
 
             if node.target == torch.ops.aten.slice_copy.Tensor:
-                # Only do this check if all the dims are static.
-                if all(isinstance(dim, int) for dim in orig_tensor.size()):
-                    if orig_tensor.shape == node.meta["val"].shape:
+                output_tensor = node.meta["val"]
+                # Only do this check if all dims are static on both sides.
+                # The output may contain unbacked SymInts (e.g. from
+                # data-dependent slicing with .item()), so we must check
+                # both tensors before comparing shapes.
+                if all(isinstance(dim, int) for dim in orig_tensor.size()) and all(
+                    isinstance(dim, int) for dim in output_tensor.size()
+                ):
+                    if orig_tensor.shape == output_tensor.shape:
                         # If the graph is quantized, we must remove the entire pattern consisting of dq->op->q.
                         # Otherwise, removing only the op will suffice.
                         if node.args[0].target in _DEQUANT_OPS:

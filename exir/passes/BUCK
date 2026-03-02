@@ -419,6 +419,18 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "cse_pass",
+    srcs = [
+        "cse_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects/edge:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "convert_constant_dim_order_pass",
     srcs = [
         "convert_constant_dim_order_pass.py",

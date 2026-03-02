@@ -53,7 +53,7 @@ MultimodalRunner::MultimodalRunner(
 #endif
 }
 
-bool MultimodalRunner::is_loaded() {
+bool MultimodalRunner::is_loaded() const {
   return multimodal_prefiller_->is_method_loaded() &&
       text_token_generator_->is_loaded();
 }
@@ -85,89 +85,57 @@ Error MultimodalRunner::load() {
     ET_LOG(Info, format, __VA_ARGS__);     \
   }
 
-Error MultimodalRunner::prefill(const std::vector<MultimodalInput>& inputs) {
-  if (!is_loaded()) {
-    ET_CHECK_OK_OR_RETURN_ERROR(load());
-  }
-  for (auto& input : inputs) {
-    auto prefill_result = multimodal_prefiller_->prefill(input, pos_);
-    if (!prefill_result.ok()) {
-      return prefill_result.error();
-    }
-  }
-  return Error::Ok;
-}
-
-Error MultimodalRunner::generate(
+Result<uint64_t> MultimodalRunner::prefill(
     const std::vector<MultimodalInput>& inputs,
-    const GenerationConfig& config,
-    std::function<void(const std::string&)> token_callback,
-    std::function<void(const Stats&)> stats_callback) {
-  if (inputs.empty()) {
-    ET_LOG(Error, "MultimodalInput vector cannot be empty");
-    return Error::InvalidArgument;
-  }
-
+    int32_t num_bos,
+    int32_t num_eos) {
   if (!is_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
   }
-
-  if (config.warming) {
-    ET_LOG(Info, "Doing a warmup run...");
-  }
-
-  RUNNER_ET_LOG(
-      config.warming,
-      "RSS after loading model: %f MiB (0 if unsupported)",
-      get_rss_bytes() / 1024.0 / 1024.0);
-
-  // Wrap the token_callback with print function
-  std::function<void(const std::string&)> wrapped_callback =
-      [token_callback, config](const std::string& piece) {
-        if (!config.warming) {
-          safe_printf(piece.c_str());
-          fflush(stdout);
-        }
-        if (token_callback) {
-          token_callback(piece);
-        }
-      };
-
-  // Reset internal state and start inference
-  stats_->inference_start_ms = time_in_ms();
-
-  uint64_t prefill_next_token = 0;
-  // Process multimodal inputs in order
+  uint64_t last_token = 0;
   for (size_t i = 0; i < inputs.size(); ++i) {
-    const MultimodalInput& input = inputs[i];
-    ET_LOG(
-        Info,
-        "Prefilling input %zu/%zu, type: %s",
-        i,
-        inputs.size(),
-        input.type_name());
-    if (config.echo && i == inputs.size() - 1 && input.is_text()) {
-      wrapped_callback(input.get_text());
-    }
+    const auto& input = inputs[i];
     int32_t bos = 0;
     int32_t eos = 0;
-    if (i == 0 && input.is_text()) {
-      bos = config.num_bos;
-      eos = config.num_eos;
+    if (i == 0 && pos_ == 0) {
+      if (input.is_text() || input.is_tokens()) {
+        bos = num_bos;
+        eos = num_eos;
+      } else if (num_bos > 0) {
+        // Non-text first input: prepend BOS via a token input
+        auto it = metadata_.find(kBosId);
+        if (it != metadata_.end()) {
+          std::vector<uint64_t> bos_tokens(
+              num_bos, static_cast<uint64_t>(it->second));
+          MultimodalInput bos_input(std::move(bos_tokens));
+          auto bos_result = multimodal_prefiller_->prefill(bos_input, pos_);
+          if (!bos_result.ok()) {
+            return bos_result.error();
+          }
+          last_token = bos_result.get();
+        }
+      }
     }
     auto prefill_result = multimodal_prefiller_->prefill(input, pos_, bos, eos);
     if (!prefill_result.ok()) {
       return prefill_result.error();
     }
-    prefill_next_token = prefill_result.get();
+    last_token = prefill_result.get();
   }
+  prefill_next_token_ = last_token;
+  return last_token;
+}
 
+Error MultimodalRunner::decode_from_token(
+    uint64_t cur_token,
+    const GenerationConfig& config,
+    std::function<void(const std::string&)> wrapped_callback,
+    std::function<void(const Stats&)> stats_callback) {
   stats_->first_token_ms = time_in_ms();
   stats_->prompt_eval_end_ms = time_in_ms();
   stats_->num_prompt_tokens = pos_;
 
-  auto decode_result =
-      tokenizer_->decode(prefill_next_token, prefill_next_token);
+  auto decode_result = tokenizer_->decode(cur_token, cur_token);
   if (!decode_result.ok()) {
     ET_LOG(
         Error,
@@ -183,8 +151,7 @@ Error MultimodalRunner::generate(
       get_rss_bytes() / 1024.0 / 1024.0);
 
   // Resolve max_new_tokens based on config
-  int64_t max_context_len =
-      metadata_.at(kMaxContextLen) - 0; // No start_pos offset
+  int64_t max_context_len = metadata_.at(kMaxContextLen);
   int32_t max_new_tokens = config.resolve_max_new_tokens(max_context_len, pos_);
 
   ET_LOG(
@@ -204,7 +171,7 @@ Error MultimodalRunner::generate(
   text_token_generator_->set_ignore_eos(config.ignore_eos);
 
   // Generate tokens using the text token generator
-  std::vector<uint64_t> prompt_tokens = {prefill_next_token};
+  std::vector<uint64_t> prompt_tokens = {cur_token};
   auto generate_result = text_token_generator_->generate(
       /*tokens=*/prompt_tokens,
       /*start_pos=*/pos_,
@@ -247,6 +214,76 @@ Error MultimodalRunner::generate(
   }
 
   return Error::Ok;
+}
+
+Error MultimodalRunner::generate(
+    const std::string& prompt,
+    const GenerationConfig& config,
+    std::function<void(const std::string&)> token_callback,
+    std::function<void(const Stats&)> stats_callback) {
+  std::vector<MultimodalInput> inputs;
+  if (!prompt.empty()) {
+    inputs.emplace_back(MultimodalInput(prompt));
+  }
+  return generate(inputs, config, token_callback, stats_callback);
+}
+
+Error MultimodalRunner::generate(
+    const std::vector<MultimodalInput>& inputs,
+    const GenerationConfig& config,
+    std::function<void(const std::string&)> token_callback,
+    std::function<void(const Stats&)> stats_callback) {
+  if (!is_loaded()) {
+    ET_CHECK_OK_OR_RETURN_ERROR(load());
+  }
+
+  if (config.warming) {
+    ET_LOG(Info, "Doing a warmup run...");
+  }
+
+  RUNNER_ET_LOG(
+      config.warming,
+      "RSS after loading model: %f MiB (0 if unsupported)",
+      get_rss_bytes() / 1024.0 / 1024.0);
+
+  // Wrap the token_callback with print function
+  std::function<void(const std::string&)> wrapped_callback =
+      [token_callback, config](const std::string& piece) {
+        if (!config.warming) {
+          safe_printf(piece.c_str());
+          fflush(stdout);
+        }
+        if (token_callback) {
+          token_callback(piece);
+        }
+      };
+
+  // Reset internal state and start inference
+  stats_->inference_start_ms = time_in_ms();
+
+  uint64_t cur_token = 0;
+  if (!inputs.empty()) {
+    // Echo the last text input if enabled
+    if (config.echo && inputs.back().is_text()) {
+      wrapped_callback(inputs.back().get_text());
+    }
+
+    // Prefill all inputs and get the first decode token
+    auto prefill_result = prefill(inputs, config.num_bos, config.num_eos);
+    ET_CHECK_OK_OR_RETURN_ERROR(prefill_result.error());
+    cur_token = prefill_result.get();
+    prefill_next_token_.reset();
+  } else {
+    // Empty inputs: consume token from a prior prefill() call
+    ET_CHECK_OR_RETURN_ERROR(
+        prefill_next_token_.has_value(),
+        InvalidState,
+        "Empty inputs requires a prior prefill() call");
+    cur_token = prefill_next_token_.value();
+    prefill_next_token_.reset();
+  }
+
+  return decode_from_token(cur_token, config, wrapped_callback, stats_callback);
 }
 
 } // namespace executorch::extension::llm

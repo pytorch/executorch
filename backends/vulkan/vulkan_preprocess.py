@@ -164,6 +164,7 @@ class VulkanBackend(BackendDetails):
             [
                 AddmmToLinearTransform(),
                 FuseBatchNormPass(program),
+                AddmmToLinearTransform(),
                 FusePatternsPass(),
                 FuseClampPass(),
                 RemoveRedundantOpsTransform(),
