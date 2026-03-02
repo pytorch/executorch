@@ -37,7 +37,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     AddIntNode,
     DequantizeNode,
     IdCopyNode,
-    IndexUpdateNode,
+    IndexCopyNode,
     IntOrVid,
     IntOrVidOrTid,
     ModIntNode,
@@ -58,13 +58,10 @@ from torch.fx.node import Node
 QUANTIZED_SERIALIZE_BIASES = True
 
 
-@REGISTRY.register_pattern(name="INDEX_UPDATE")
-class IndexUpdateHandler(PatternHandler):
+@REGISTRY.register_pattern(name="INDEX_COPY")
+class IndexCopyHandler(PatternHandler):
     """
     Pattern for index-based updates on mutable buffers.
-
-    Matches: aten.index_copy.default on a mutable buffer
-    Lowers to IndexUpdateNode which performs in-place update.
     """
 
     def __init__(
@@ -85,7 +82,7 @@ class IndexUpdateHandler(PatternHandler):
     @classmethod
     def maybe_create(  # noqa: C901
         cls, ep: ExportedProgram, head: Node
-    ) -> Optional["IndexUpdateHandler"]:
+    ) -> Optional["IndexCopyHandler"]:
         index_copy_node = head
         if not match_target(index_copy_node, torch.ops.aten.index_copy.default):
             return None
@@ -119,10 +116,11 @@ class IndexUpdateHandler(PatternHandler):
         dst, update, indices = P.slot_map([self.dst, self.update, self.indices])
 
         P.emit(
-            IndexUpdateNode(
+            IndexCopyNode(
                 dst=P.slot_to_tid(dst),
                 update=P.slot_to_tid(update),
                 indices=P.slot_to_tid(indices),
+                out=P.slot_to_tid(dst),
                 axis=self.axis,
             )
         )

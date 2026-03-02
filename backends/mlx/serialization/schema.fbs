@@ -367,6 +367,7 @@ table SoftmaxNode {
     x: Tid (required);
     out: Tid (required);
     axis: int32;  // Dimension to compute softmax over
+    precise: bool = false;  // Use precise (slow) implementation
 }
 
 table BroadcastToNode {
@@ -495,12 +496,12 @@ table SliceUpdateNode {
 }
 
 // Index-based update: copies update tensor into dst at positions specified by 1D indices
-// Similar to torch.index_copy but performs in-place update
 // Runtime optimizes these into slice_update calls for contiguous runs
-table IndexUpdateNode {
+table IndexCopyNode {
     dst: Tid (required);       // destination tensor to update
     update: Tid (required);    // source tensor to copy from
     indices: Tid (required);   // 1D tensor of indices along axis
+    out: Tid (required);       // output tensor (can be same as dst)
     axis: int32;               // dimension to index along
 }
 
@@ -591,6 +592,80 @@ table TriuNode {
     out: Tid (required);
     k: int32 = 0;  // Diagonal offset: 0=main, +above, -below
 }
+
+table ClipNode {
+    x: Tid (required);
+    out: Tid (required);
+    a_min: Tid;  // optional lower bound
+    a_max: Tid;  // optional upper bound
+}
+
+table CumsumNode {
+    x: Tid (required);
+    out: Tid (required);
+    axis: int32;
+    reverse: bool = false;
+    inclusive: bool = true;
+}
+
+table StackNode {
+    tensors: [Tid] (required);
+    out: Tid (required);
+    axis: int32 = 0;
+}
+
+table SignNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table AnyNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+}
+
+table AllNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+}
+
+table RepeatNode {
+    x: Tid (required);
+    out: Tid (required);
+    repeats: IntOrVid (required);  // Number of times to repeat each element (can be dynamic)
+    axis: int32;             // Axis along which to repeat
+}
+
+table SortNode {
+    x: Tid (required);
+    out: Tid (required);
+    axis: int32;
+}
+
+table ArgsortNode {
+    x: Tid (required);
+    out: Tid (required);
+    axis: int32;
+}
+
+table PartitionNode {
+    x: Tid (required);
+    out: Tid (required);
+    kth: IntOrVid (required);  // Partition index
+    axis: int32;
+}
+
+table ArgPartitionNode {
+    x: Tid (required);
+    out: Tid (required);
+    kth: IntOrVid (required);  // Partition index
+    axis: int32;
+}
+
 
 // =============================================================================
 // Math ops - Unary element-wise
@@ -892,7 +967,7 @@ union OpNode {
     FullLikeNode,
     ArgmaxNode,
     SliceUpdateNode,
-    IndexUpdateNode,
+    IndexCopyNode,
     DequantizeNode,
     LessNode,
     LessEqualNode,
@@ -949,7 +1024,18 @@ union OpNode {
     RemainderNode,
     ConvTranspose1DNode,
     ConvTranspose2DNode,
-    ConvTranspose3DNode
+    ConvTranspose3DNode,
+    ClipNode,
+    CumsumNode,
+    StackNode,
+    SignNode,
+    AnyNode,
+    AllNode,
+    RepeatNode,
+    SortNode,
+    ArgsortNode,
+    PartitionNode,
+    ArgPartitionNode
     // BC: Add new op nodes here (append only)
 }
 

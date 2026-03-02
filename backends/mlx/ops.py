@@ -33,6 +33,8 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     AddIntNode,
     AddmmNode,
     AddNode,
+    AllNode,
+    AnyNode,
     ARangeNode,
     ArccoshNode,
     ArccosNode,
@@ -42,11 +44,14 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     ArctanNode,
     ArgmaxNode,
     ArgminNode,
+    ArgPartitionNode,
+    ArgsortNode,
     AsStridedNode,
     AsTypeNode,
     Atan2Node,
     BroadcastToNode,
     CeilNode,
+    ClipNode,
     ConcatenateNode,
     ContiguousNode,
     Conv1DNode,
@@ -57,6 +62,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     ConvTranspose3DNode,
     CoshNode,
     CosNode,
+    CumsumNode,
     DequantizeNode,
     DivideNode,
     EqualNode,
@@ -102,26 +108,31 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     NegNode,
     NotEqualNode,
     PadNode,
+    PartitionNode,
     PowerNode,
     ProdNode,
     ReciprocalNode,
     RemainderNode,
+    RepeatNode,
     ReshapeNode,
     RMSNormNode,
     RopeNode,
     RoundNode,
     RsqrtNode,
     SigmoidNode,
+    SignNode,
     SiluNode,
     SinhNode,
     SinNode,
     SliceNode,
     SliceUpdateNode,
     SoftmaxNode,
+    SortNode,
     SplitNode,
     SqrtNode,
     SquareNode,
     SqueezeNode,
+    StackNode,
     StdNode,
     SubtractIntNode,
     SubtractNode,
@@ -296,6 +307,18 @@ def is_static_value(value: Any) -> bool:
     return not isinstance(value, Slot)
 
 
+def used_getitem_indices(n: Node) -> Set[int]:
+    """Return the set of getitem indices actually consumed downstream.
+
+    Only includes indices where the getitem node has at least one user.
+    """
+    return {
+        user.args[1]
+        for user in n.users
+        if user.target == operator.getitem and len(user.users) > 0
+    }
+
+
 def normalize_reduction_dim(
     args: List[Any], start_idx: int = 1
 ) -> Tuple[Optional[List[int]], bool]:
@@ -367,6 +390,7 @@ _UNARY_OPS: List[Tuple[Any, Any, str]] = [
     # Sign / magnitude
     (torch.ops.aten.abs.default, AbsNode, "aten.abs"),
     (torch.ops.aten.neg.default, NegNode, "aten.neg"),
+    (torch.ops.aten.sign.default, SignNode, "aten.sign"),
     # Logical
     (torch.ops.aten.logical_not.default, LogicalNotNode, "aten.logical_not"),
 ]
@@ -551,6 +575,8 @@ _REDUCTION_OPS: List[Tuple[List[Any], Any, str, int]] = [
     ),
     ([torch.ops.aten.amax.default], MaxNode, "aten.amax", 3),
     ([torch.ops.aten.amin.default], MinNode, "aten.amin", 3),
+    ([torch.ops.aten.any.dim, torch.ops.aten.any.default], AnyNode, "aten.any", 3),
+    ([torch.ops.aten.all.dim, torch.ops.aten.all.default], AllNode, "aten.all", 3),
 ]
 
 
@@ -1127,6 +1153,7 @@ def _softmax_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             x=P.slot_to_tid(x),
             out=P.slot_to_tid(out),
             axis=dim,
+            precise=False,
         )
     )
     return out
@@ -1807,13 +1834,12 @@ def _native_layer_norm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     mean and rstd (indices 1 and 2) are needed only for backward.
     """
     # Verify mean/rstd outputs are unused — we only compute the normalized output.
-    for user in n.users:
-        if user.target == operator.getitem and user.args[1] in (1, 2):
-            if len(user.users) > 0:
-                raise ValueError(
-                    f"native_layer_norm output {user.args[1]} (mean/rstd) is used, "
-                    "but only the normalized output (index 0) is supported"
-                )
+    unsupported = used_getitem_indices(n) & {1, 2}
+    if unsupported:
+        raise ValueError(
+            f"native_layer_norm outputs {unsupported} (mean/rstd) are used, "
+            "but only the normalized output (index 0) is supported"
+        )
 
     args = P.args(n)
     require_args(args, 2, 5, "aten.native_layer_norm")
@@ -2641,7 +2667,7 @@ def _constant_pad_nd_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
-@REGISTRY.register(target=[torch.ops.aten.clamp.default])
+@REGISTRY.register(target=[torch.ops.aten.clamp.default, torch.ops.aten.clamp.Tensor])
 def _clamp_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.clamp - clamp values to [min, max] range.
 
@@ -2658,7 +2684,6 @@ def _clamp_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     min_val = args[1] if len(args) > 1 else None
     max_val = args[2] if len(args) > 2 else None
 
-    # Get input dtype for creating scalar constants
     x_meta = n.args[0].meta.get("val")
     if x_meta is None:
         raise ValueError("Input tensor metadata not found for clamp")
@@ -2666,52 +2691,28 @@ def _clamp_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
     out = P.make_or_get_slot(n)
 
-    # If neither min nor max, just copy (shouldn't happen per PyTorch, but handle it)
-    if min_val is None and max_val is None:
-        P.emit(
-            IdCopyNode(
-                x=P.slot_to_tid(x),
-                out=P.slot_to_tid(out),
-            )
-        )
-        return out
-
-    current = x
-
-    # Apply max constraint first: min(x, max_val)
-    if max_val is not None:
-        max_slot = emit_lifted_constant(P, float(max_val), dtype)
-        if min_val is not None:
-            _, tmp = P.make_tmp_slot()
-            P.emit(
-                MinimumNode(
-                    a=P.slot_to_tid(current),
-                    b=P.slot_to_tid(max_slot),
-                    out=P.slot_to_tid(tmp),
-                )
-            )
-            current = tmp
-        else:
-            P.emit(
-                MinimumNode(
-                    a=P.slot_to_tid(current),
-                    b=P.slot_to_tid(max_slot),
-                    out=P.slot_to_tid(out),
-                )
-            )
-            return out
-
-    # Apply min constraint: max(current, min_val)
+    # Lift scalar bounds to 0-D constant tensors
+    a_min_tid = None
+    a_max_tid = None
     if min_val is not None:
-        min_slot = emit_lifted_constant(P, float(min_val), dtype)
-        P.emit(
-            MaximumNode(
-                a=P.slot_to_tid(current),
-                b=P.slot_to_tid(min_slot),
-                out=P.slot_to_tid(out),
-            )
-        )
+        if isinstance(min_val, Slot) and min_val.id_type == IdType.Tensor:
+            a_min_tid = P.slot_to_tid(min_val)
+        else:
+            a_min_tid = P.slot_to_tid(emit_lifted_constant(P, float(min_val), dtype))
+    if max_val is not None:
+        if isinstance(max_val, Slot) and max_val.id_type == IdType.Tensor:
+            a_max_tid = P.slot_to_tid(max_val)
+        else:
+            a_max_tid = P.slot_to_tid(emit_lifted_constant(P, float(max_val), dtype))
 
+    P.emit(
+        ClipNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(out),
+            a_min=a_min_tid,
+            a_max=a_max_tid,
+        )
+    )
     return out
 
 
@@ -3667,3 +3668,279 @@ def _dequantize_affine_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         out = dequant_tmp
 
     return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.cumsum.default])
+def _cumsum_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.cumsum - cumulative sum along an axis."""
+    args = P.args(n)
+    require_args(args, 2, 3, "aten.cumsum")
+    require_kwargs(P.kwargs(n), {"dtype"}, "aten.cumsum")
+    x = args[0]
+    dim = args[1]
+
+    out = P.make_or_get_slot(n)
+    P.emit(
+        CumsumNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(out),
+            axis=dim,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.stack.default])
+def _stack_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.stack - stack tensors along a new axis."""
+    args = P.args(n)
+    require_args(args, 1, 2, "aten.stack")
+    require_kwargs(P.kwargs(n), set(), "aten.stack")
+    tensors_list = args[0]
+    dim = args[1] if len(args) > 1 else 0
+
+    out = P.make_or_get_slot(n)
+    tensor_tids = [P.slot_to_tid(t) for t in tensors_list]
+    P.emit(
+        StackNode(
+            tensors=tensor_tids,
+            out=P.slot_to_tid(out),
+            axis=dim,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.repeat_interleave.self_int])
+def _repeat_interleave_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.repeat_interleave - repeat each element along an axis."""
+    args = P.args(n)
+    require_args(args, 2, 4, "aten.repeat_interleave")
+    require_kwargs(P.kwargs(n), {"output_size"}, "aten.repeat_interleave")
+    x = args[0]
+    repeats = args[1]
+    dim = args[2] if len(args) > 2 else 0
+
+    out = P.make_or_get_slot(n)
+    P.emit(
+        RepeatNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(out),
+            repeats=P.to_int_or_vid(repeats),
+            axis=dim,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.sort.default])
+def _sort_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.sort - sort elements along an axis.
+
+    Returns (values, indices) as a tuple of output slots.
+    """
+    args = P.args(n)
+    require_args(args, 1, 3, "aten.sort")
+    require_kwargs(P.kwargs(n), set(), "aten.sort")
+    x = args[0]
+    dim = args[1] if len(args) > 1 else -1
+
+    # torch.sort returns (values, indices) - 2 outputs
+    output_slots = P.make_or_get_slots(n)
+    values_slot, indices_slot = output_slots
+
+    used = used_getitem_indices(n)
+
+    if 0 in used:
+        P.emit(
+            SortNode(
+                x=P.slot_to_tid(x),
+                out=P.slot_to_tid(values_slot),
+                axis=dim,
+            )
+        )
+    if 1 in used:
+        P.emit(
+            ArgsortNode(
+                x=P.slot_to_tid(x),
+                out=P.slot_to_tid(indices_slot),
+                axis=dim,
+            )
+        )
+
+    return output_slots
+
+
+@REGISTRY.register(target=[torch.ops.aten.argsort.default])
+def _argsort_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.argsort - indices that sort elements along an axis."""
+    args = P.args(n)
+    require_args(args, 1, 3, "aten.argsort")
+    require_kwargs(P.kwargs(n), set(), "aten.argsort")
+    x = args[0]
+    dim = args[1] if len(args) > 1 else -1
+
+    out = P.make_or_get_slot(n)
+    P.emit(
+        ArgsortNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(out),
+            axis=dim,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.topk.default])
+def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.topk - top-k elements along an axis.
+
+    Decomposes into: partition → slice → sort → reverse (for values)
+                     argpartition → slice → gather → argsort → reverse → reorder (for indices)
+
+    torch.topk returns (values, indices) sorted descending.
+    """
+    args = P.args(n)
+    require_args(args, 2, 5, "aten.topk")
+    require_kwargs(P.kwargs(n), set(), "aten.topk")
+    x = args[0]
+    k = args[1]
+    dim = args[2] if len(args) > 2 else -1
+
+    output_slots = P.make_or_get_slots(n)
+    values_slot, indices_slot = output_slots
+
+    used = used_getitem_indices(n)
+
+    # Get dim size from input metadata for forward slice stop
+    x_meta = n.args[0].meta.get("val")
+    if x_meta is None:
+        raise ValueError("Input tensor metadata not found for topk")
+    norm_axis = dim if dim >= 0 else dim + len(x_meta.shape)
+    dim_size = x_meta.shape[norm_axis]
+
+    # Compute -k for partition index and forward slice start
+    if isinstance(k, int):
+        neg_k = P.to_int_or_vid(-k)
+        # Reverse slice: start=k-1, stop=-(k+1) on the k-sized sliced tensor
+        rev_start = P.to_int_or_vid(k - 1)
+        rev_stop = P.to_int_or_vid(-(k + 1))
+    else:
+        # k is dynamic — emit neg_k = k * -1 at runtime
+        _, neg_k_slot = P.make_tmp_value_slot()
+        P.emit(
+            MultiplyIntNode(
+                a=P.to_int_or_vid(k),
+                b=IntOrVid.from_literal(-1),
+                out=P.slot_to_vid(neg_k_slot),
+            )
+        )
+        neg_k = P.to_int_or_vid(neg_k_slot)
+        # rev_start = k - 1
+        _, rev_start_slot = P.make_tmp_value_slot()
+        P.emit(
+            AddIntNode(
+                a=P.to_int_or_vid(k),
+                b=IntOrVid.from_literal(-1),
+                out=P.slot_to_vid(rev_start_slot),
+            )
+        )
+        rev_start = P.to_int_or_vid(rev_start_slot)
+        # rev_stop = -(k + 1) = neg_k - 1
+        _, rev_stop_slot = P.make_tmp_value_slot()
+        P.emit(
+            AddIntNode(
+                a=neg_k,
+                b=IntOrVid.from_literal(-1),
+                out=P.slot_to_vid(rev_stop_slot),
+            )
+        )
+        rev_stop = P.to_int_or_vid(rev_stop_slot)
+
+    stop_val = P.to_int_or_vid(dim_size)
+
+    def emit_partition_and_slice(node_cls):
+        """Emit partition/argpartition → slice last k elements."""
+        _, part_tmp = P.make_tmp_slot()
+        P.emit(
+            node_cls(
+                x=P.slot_to_tid(x),
+                out=P.slot_to_tid(part_tmp),
+                kth=neg_k,
+                axis=dim,
+            )
+        )
+        _, slice_tmp = P.make_tmp_slot()
+        P.emit(
+            SliceNode(
+                x=P.slot_to_tid(part_tmp),
+                out=P.slot_to_tid(slice_tmp),
+                axis=P.to_int_or_vid(dim),
+                start=neg_k,
+                stop=stop_val,
+                step=1,
+            )
+        )
+        return slice_tmp
+
+    def emit_reverse(in_slot, out_slot):
+        """Reverse a tensor along dim using slice with step=-1."""
+        P.emit(
+            SliceNode(
+                x=P.slot_to_tid(in_slot),
+                out=P.slot_to_tid(out_slot),
+                axis=P.to_int_or_vid(dim),
+                start=rev_start,
+                stop=rev_stop,
+                step=-1,
+            )
+        )
+
+    if 0 in used:
+        # partition → slice last k → sort ascending → reverse to descending
+        slice_tmp = emit_partition_and_slice(PartitionNode)
+        _, sort_tmp = P.make_tmp_slot()
+        P.emit(
+            SortNode(
+                x=P.slot_to_tid(slice_tmp),
+                out=P.slot_to_tid(sort_tmp),
+                axis=dim,
+            )
+        )
+        emit_reverse(sort_tmp, values_slot)
+
+    if 1 in used:
+        # argpartition → slice last k → gather values → argsort → reverse → reorder
+        idx_slice_tmp = emit_partition_and_slice(ArgPartitionNode)
+        # Gather original values at the partitioned indices
+        _, gathered_tmp = P.make_tmp_slot()
+        P.emit(
+            TakeAlongAxisNode(
+                x=P.slot_to_tid(x),
+                indices=P.slot_to_tid(idx_slice_tmp),
+                out=P.slot_to_tid(gathered_tmp),
+                axis=dim,
+            )
+        )
+        # Argsort gathered values ascending → reverse → descending order
+        _, order_tmp = P.make_tmp_slot()
+        P.emit(
+            ArgsortNode(
+                x=P.slot_to_tid(gathered_tmp),
+                out=P.slot_to_tid(order_tmp),
+                axis=dim,
+            )
+        )
+        _, rev_order_tmp = P.make_tmp_slot()
+        emit_reverse(order_tmp, rev_order_tmp)
+        # Apply descending order to indices
+        P.emit(
+            TakeAlongAxisNode(
+                x=P.slot_to_tid(idx_slice_tmp),
+                indices=P.slot_to_tid(rev_order_tmp),
+                out=P.slot_to_tid(indices_slot),
+                axis=dim,
+            )
+        )
+
+    return output_slots

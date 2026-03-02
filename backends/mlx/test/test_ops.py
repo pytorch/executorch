@@ -40,9 +40,15 @@ from .test_utils import OpTestCase, register_test
 
 
 class AddTensorModel(nn.Module):
-    """Add two tensors."""
+    """Add two tensors, optionally with alpha."""
+
+    def __init__(self, alpha: Optional[float] = None):
+        super().__init__()
+        self.alpha = alpha
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        if self.alpha is not None:
+            return torch.add(x, y, alpha=self.alpha)
         return x + y
 
 
@@ -69,11 +75,15 @@ class AddTest(OpTestCase):
         self,
         shape: Tuple[int, ...] = (2, 16, 64),
         scalar: Optional[float] = None,
+        alpha: Optional[float] = None,
     ):
         self.shape = shape
         self.scalar = scalar
+        self.alpha = alpha
 
-        if scalar is not None:
+        if alpha is not None:
+            self.name = "add_alpha"
+        elif scalar is not None:
             self.name = "add_scalar"
         else:
             self.name = "add"
@@ -83,13 +93,14 @@ class AddTest(OpTestCase):
         return [
             cls(),  # tensor + tensor
             cls(scalar=2.5),  # tensor + scalar
+            cls(alpha=2.0),  # tensor + alpha * tensor
         ]
 
     def create_model(self) -> nn.Module:
         if self.scalar is not None:
             return AddScalarModel(self.scalar)
         else:
-            return AddTensorModel()
+            return AddTensorModel(self.alpha)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         x = torch.randn(self.shape)
@@ -101,9 +112,15 @@ class AddTest(OpTestCase):
 
 
 class SubModel(nn.Module):
-    """Model that performs element-wise subtraction."""
+    """Model that performs element-wise subtraction, optionally with alpha."""
+
+    def __init__(self, alpha: Optional[float] = None):
+        super().__init__()
+        self.alpha = alpha
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        if self.alpha is not None:
+            return torch.sub(x, y, alpha=self.alpha)
         return torch.sub(x, y)
 
 
@@ -117,11 +134,15 @@ class SubTest(OpTestCase):
         self,
         shape: Tuple[int, ...] = (2, 3, 4),
         scalar_sub: bool = False,
+        alpha: Optional[float] = None,
     ):
         self.shape = shape
         self.scalar_sub = scalar_sub
+        self.alpha = alpha
         shape_str = "x".join(str(s) for s in shape)
-        if scalar_sub:
+        if alpha is not None:
+            self.name = f"sub_{shape_str}_alpha"
+        elif scalar_sub:
             self.name = f"sub_{shape_str}_scalar"
         else:
             self.name = f"sub_{shape_str}"
@@ -135,10 +156,11 @@ class SubTest(OpTestCase):
             cls(shape=(2, 8, 16)),
             cls(shape=(1, 128, 128)),
             cls(shape=(2, 3, 4), scalar_sub=True),
+            cls(shape=(2, 3, 4), alpha=2.0),
         ]
 
     def create_model(self) -> nn.Module:
-        return SubModel()
+        return SubModel(self.alpha)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         x = torch.randn(self.shape)
@@ -5612,3 +5634,441 @@ class DequantizeTest(OpTestCase):
             dtype=self.dtype,
         )
         return (x,)
+
+
+class CumsumModel(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.cumsum(x, dim=self.dim)
+
+
+@register_test
+class CumsumTest(OpTestCase):
+    name = "cumsum"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(self, shape: Tuple[int, ...] = (3, 4), dim: int = 0):
+        self.shape = shape
+        self.dim = dim
+        shape_str = "x".join(str(s) for s in shape)
+        self.name = f"cumsum_dim{dim}_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["CumsumTest"]:
+        return [
+            cls(shape=(8,), dim=0),
+            cls(shape=(3, 4), dim=0),
+            cls(shape=(3, 4), dim=1),
+            cls(shape=(2, 3, 4), dim=-1),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return CumsumModel(self.dim)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(self.shape),)
+
+
+class StackModel(nn.Module):
+    def __init__(self, dim: int = 0, n: int = 3):
+        super().__init__()
+        self.dim = dim
+        self.n = n
+
+    def forward(self, *tensors: torch.Tensor) -> torch.Tensor:
+        return torch.stack(tensors[: self.n], dim=self.dim)
+
+
+@register_test
+class StackTest(OpTestCase):
+    name = "stack"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(self, shape: Tuple[int, ...] = (3, 4), dim: int = 0, n: int = 3):
+        self.shape = shape
+        self.dim = dim
+        self.n = n
+        shape_str = "x".join(str(s) for s in shape)
+        self.name = f"stack_dim{dim}_n{n}_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["StackTest"]:
+        return [
+            cls(shape=(3, 4), dim=0, n=3),
+            cls(shape=(3, 4), dim=1, n=2),
+            cls(shape=(2, 3), dim=-1, n=4),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return StackModel(dim=self.dim, n=self.n)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return tuple(torch.randn(self.shape) for _ in range(self.n))
+
+
+class SignModel(nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.sign(x)
+
+
+@register_test
+class SignTest(OpTestCase):
+    name = "sign"
+    rtol = 0.0
+    atol = 0.0
+
+    def __init__(self, shape: Tuple[int, ...] = (3, 4)):
+        self.shape = shape
+        shape_str = "x".join(str(s) for s in shape)
+        self.name = f"sign_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["SignTest"]:
+        return [
+            cls(shape=(8,)),
+            cls(shape=(3, 4)),
+            cls(shape=(2, 3, 4)),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return SignModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(self.shape),)
+
+
+class AnyModel(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.any(x, dim=self.dim)
+
+
+@register_test
+class AnyTest(OpTestCase):
+    name = "any"
+    rtol = 0.0
+    atol = 0.0
+
+    def __init__(self, shape: Tuple[int, ...] = (3, 4), dim: int = 0):
+        self.shape = shape
+        self.dim = dim
+        shape_str = "x".join(str(s) for s in shape)
+        self.name = f"any_dim{dim}_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["AnyTest"]:
+        return [
+            cls(shape=(4, 6), dim=0),
+            cls(shape=(4, 6), dim=1),
+            cls(shape=(2, 3, 4), dim=-1),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return AnyModel(self.dim)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        # Mix of True/False values
+        return (torch.randint(0, 2, self.shape).bool(),)
+
+
+class AllModel(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.all(x, dim=self.dim)
+
+
+@register_test
+class AllTest(OpTestCase):
+    name = "all"
+    rtol = 0.0
+    atol = 0.0
+
+    def __init__(self, shape: Tuple[int, ...] = (3, 4), dim: int = 0):
+        self.shape = shape
+        self.dim = dim
+        shape_str = "x".join(str(s) for s in shape)
+        self.name = f"all_dim{dim}_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["AllTest"]:
+        return [
+            cls(shape=(4, 6), dim=0),
+            cls(shape=(4, 6), dim=1),
+            cls(shape=(2, 3, 4), dim=-1),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return AllModel(self.dim)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        # Mostly True with some False
+        x = torch.ones(self.shape, dtype=torch.bool)
+        x[0] = False
+        return (x,)
+
+
+class RepeatInterleaveModel(nn.Module):
+    def __init__(self, repeats: int, dim: int):
+        super().__init__()
+        self.repeats = repeats
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.repeat_interleave(self.repeats, dim=self.dim)
+
+
+@register_test
+class RepeatInterleaveTest(OpTestCase):
+    name = "repeat_interleave"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...] = (2, 3, 4),
+        repeats: int = 2,
+        dim: int = 0,
+    ):
+        self.shape = shape
+        self.repeats = repeats
+        self.dim = dim
+        shape_str = "x".join(str(s) for s in shape)
+        self.name = f"repeat_interleave_r{repeats}_dim{dim}_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["RepeatInterleaveTest"]:
+        return [
+            cls(shape=(2, 4), repeats=3, dim=0),
+            cls(shape=(2, 4), repeats=2, dim=1),
+            cls(shape=(1, 8, 4, 16), repeats=4, dim=1),  # GQA-like pattern
+        ]
+
+    def create_model(self) -> nn.Module:
+        return RepeatInterleaveModel(self.repeats, self.dim)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(self.shape),)
+
+
+class SortModel(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Only return sorted values
+        return torch.sort(x, dim=self.dim)[0]
+
+
+class SortIndicesModel(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Only return sort indices
+        return torch.sort(x, dim=self.dim)[1]
+
+
+class SortBothModel(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        values, indices = torch.sort(x, dim=self.dim)
+        return values, indices
+
+
+@register_test
+class SortTest(OpTestCase):
+    name = "sort"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...] = (3, 4),
+        dim: int = -1,
+        output: str = "values",
+    ):
+        self.shape = shape
+        self.dim = dim
+        self.output = output
+        shape_str = "x".join(str(s) for s in shape)
+        self.name = f"sort_{output}_dim{dim}_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["SortTest"]:
+        return [
+            cls(shape=(8,), dim=0, output="values"),
+            cls(shape=(3, 4), dim=-1, output="values"),
+            cls(shape=(3, 4), dim=0, output="indices"),
+            cls(shape=(2, 3, 4), dim=1, output="both"),
+        ]
+
+    def create_model(self) -> nn.Module:
+        if self.output == "values":
+            return SortModel(self.dim)
+        elif self.output == "indices":
+            return SortIndicesModel(self.dim)
+        else:
+            return SortBothModel(self.dim)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(self.shape),)
+
+    def get_expected_node_counts(self) -> Optional[Dict[str, int]]:
+        if self.output == "values":
+            return {"SortNode": 1, "ArgsortNode": 0}
+        elif self.output == "indices":
+            return {"SortNode": 0, "ArgsortNode": 1}
+        else:
+            return {"SortNode": 1, "ArgsortNode": 1}
+
+
+class ArgsortModel(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.argsort(x, dim=self.dim)
+
+
+@register_test
+class ArgsortTest(OpTestCase):
+    name = "argsort"
+    rtol = 0.0
+    atol = 0.0
+
+    def __init__(self, shape: Tuple[int, ...] = (3, 4), dim: int = -1):
+        self.shape = shape
+        self.dim = dim
+        shape_str = "x".join(str(s) for s in shape)
+        self.name = f"argsort_dim{dim}_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["ArgsortTest"]:
+        return [
+            cls(shape=(8,), dim=0),
+            cls(shape=(3, 4), dim=-1),
+            cls(shape=(3, 4), dim=0),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return ArgsortModel(self.dim)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(self.shape),)
+
+
+class TopKValuesModel(nn.Module):
+    def __init__(self, k: int, dim: int):
+        super().__init__()
+        self.k = k
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.topk(x, self.k, dim=self.dim)[0]
+
+
+class TopKIndicesModel(nn.Module):
+    def __init__(self, k: int, dim: int):
+        super().__init__()
+        self.k = k
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.topk(x, self.k, dim=self.dim)[1]
+
+
+class TopKBothModel(nn.Module):
+    def __init__(self, k: int, dim: int):
+        super().__init__()
+        self.k = k
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        values, indices = torch.topk(x, self.k, dim=self.dim)
+        return values, indices
+
+
+class TopKDynamicKModel(nn.Module):
+    """TopK with k derived from a dynamic tensor shape (exercises dynamic k path)."""
+
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor, k_source: torch.Tensor) -> torch.Tensor:
+        k = k_source.shape[0]
+        return torch.topk(x, k, dim=self.dim)[0]
+
+
+@register_test
+class TopKTest(OpTestCase):
+    name = "topk"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...] = (3, 8),
+        k: int = 3,
+        dim: int = -1,
+        output: str = "values",
+    ):
+        self.shape = shape
+        self.k = k
+        self.dim = dim
+        self.output = output
+        shape_str = "x".join(str(s) for s in shape)
+        self.name = f"topk_k{k}_dim{dim}_{output}_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["TopKTest"]:
+        return [
+            # Values only
+            cls(shape=(16,), k=5, dim=0, output="values"),
+            cls(shape=(4, 8), k=3, dim=-1, output="values"),
+            cls(shape=(2, 4, 16), k=4, dim=-1, output="values"),
+            # Indices only
+            cls(shape=(4, 8), k=3, dim=-1, output="indices"),
+            # Both values and indices
+            cls(shape=(4, 8), k=3, dim=-1, output="both"),
+            # Dynamic k
+            cls(shape=(4, 8), k=3, dim=-1, output="dynamic_k"),
+        ]
+
+    def create_model(self) -> nn.Module:
+        if self.output == "values":
+            return TopKValuesModel(self.k, self.dim)
+        elif self.output == "indices":
+            return TopKIndicesModel(self.k, self.dim)
+        elif self.output == "dynamic_k":
+            return TopKDynamicKModel(self.dim)
+        else:
+            return TopKBothModel(self.k, self.dim)
+
+    def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
+        if self.output == "dynamic_k":
+            k_dim = Dim("k", min=1, max=self.shape[self.dim])
+            return {"x": None, "k_source": {0: k_dim}}
+        return None
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if self.output == "dynamic_k":
+            return (torch.randn(self.shape), torch.randn(self.k))
+        return (torch.randn(self.shape),)

@@ -666,7 +666,7 @@ inline void exec_log(const LogNode& n, ExecutionState& st, StreamOrDevice s) {
 inline void
 exec_softmax(const SoftmaxNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
-  st.set_tensor(n.out, softmax(x, n.axis, /*precise=*/false, s));
+  st.set_tensor(n.out, softmax(x, n.axis, n.precise, s));
 }
 
 inline void exec_broadcast_to(
@@ -819,30 +819,18 @@ exec_slice(const SliceNode& n, ExecutionState& st, StreamOrDevice s) {
     vstop.push_back(static_cast<int>(sh[i]));
   }
 
-  const int dim = vstop[static_cast<size_t>(axis)];
-  if (start < 0)
-    start += dim;
-  start = std::max(0, std::min(start, dim));
-  if (stop < 0)
-    stop += dim;
-  stop = std::max(0, std::min(stop, dim));
+  if (n.step == 0) {
+    throw std::invalid_argument("Slice: step must not be 0");
+  }
 
   vstart[static_cast<size_t>(axis)] = start;
   vstop[static_cast<size_t>(axis)] = stop;
 
-  if (n.step < 1) {
-    throw std::invalid_argument(
-        "Slice: step must be >= 1, got " + std::to_string(n.step));
-  }
-  if (n.step == 1) {
-    st.set_tensor(n.out, slice(x, to_shape(vstart), to_shape(vstop), s));
-  } else {
-    std::vector<int> vstrides(static_cast<size_t>(rank), 1);
-    vstrides[static_cast<size_t>(axis)] = n.step;
-    st.set_tensor(
-        n.out,
-        slice(x, to_shape(vstart), to_shape(vstop), to_shape(vstrides), s));
-  }
+  std::vector<int> vstrides(static_cast<size_t>(rank), 1);
+  vstrides[static_cast<size_t>(axis)] = n.step;
+  st.set_tensor(
+      n.out,
+      slice(x, to_shape(vstart), to_shape(vstop), to_shape(vstrides), s));
 }
 
 inline void
@@ -1030,18 +1018,16 @@ inline std::tuple<int, int, int, int> next_contiguous_run(
 
 // Copies update tensor into dst at positions specified by 1D indices along axis
 // Optimizes into slice_update calls for contiguous runs
-inline void exec_index_update(
-    const IndexUpdateNode& n,
-    ExecutionState& st,
-    StreamOrDevice s) {
+inline void
+exec_index_copy(const IndexCopyNode& n, ExecutionState& st, StreamOrDevice s) {
   array& dst = st.tensor_ref(n.dst);
   const array& upd = st.const_tensor_ref(n.update);
   const array& indices = st.const_tensor_ref(n.indices);
   if (indices.ndim() != 1) {
-    throw std::invalid_argument("IndexUpdate: indices must be 1D");
+    throw std::invalid_argument("IndexCopyNode: indices must be 1D");
   }
   const int rank = static_cast<int>(dst.ndim());
-  int axis = normalize_axis(n.axis, rank, "IndexUpdate");
+  int axis = normalize_axis(n.axis, rank, "IndexCopyNode");
   const size_t uaxis = static_cast<size_t>(axis);
   const int dst_dim = static_cast<int>(dst.shape()[uaxis]);
 
@@ -1050,7 +1036,7 @@ inline void exec_index_update(
   eval(indices); // Ensure indices are materialized before accessing data
   if (indices.dtype() != ::mlx::core::int64) {
     throw std::invalid_argument(
-        std::string("IndexUpdate: expected int64 indices, got ") +
+        std::string("IndexCopyNode: expected int64 indices, got ") +
         ExecutionState::dtype_str(indices.dtype()));
   }
   std::vector<int32_t> idx_vec(indices.size());
@@ -1062,18 +1048,24 @@ inline void exec_index_update(
     }
     if (idx < 0 || idx >= dst_dim) {
       throw std::out_of_range(
-          "IndexUpdate: index " + std::to_string(idx_data[i]) +
+          "IndexCopyNode: index " + std::to_string(idx_data[i]) +
           " out of range for axis " + std::to_string(axis) + " with size " +
           std::to_string(dst_dim));
     }
     if (idx > std::numeric_limits<int32_t>::max()) {
       throw std::out_of_range(
-          "IndexUpdate: index " + std::to_string(idx) + " exceeds int32 range");
+          "IndexCopyNode: index " + std::to_string(idx) +
+          " exceeds int32 range");
     }
     idx_vec[i] = static_cast<int>(idx);
   }
 
+  const bool in_place = (n.out.idx == n.dst.idx);
+
   if (idx_vec.empty()) {
+    if (!in_place) {
+      st.set_tensor(n.out, dst);
+    }
     return;
   }
 
@@ -1095,6 +1087,8 @@ inline void exec_index_update(
     upd_vstop.push_back(static_cast<int>(upd_sh[i]));
   }
 
+  array result = dst; // copy of dst to accumulate into
+
   // Process contiguous runs
   size_t offset = 0;
   while (offset < idx_vec.size()) {
@@ -1114,10 +1108,20 @@ inline void exec_index_update(
         (upd_start == 0 && upd_stop == static_cast<int>(upd_sh[uaxis]))
         ? upd
         : slice(upd, to_shape(upd_vstart), to_shape(upd_vstop), s);
-    dst = slice_update(
-        dst, upd_slice, to_shape(dst_vstart), to_shape(dst_vstop), s);
+
+    if (in_place) {
+      dst = slice_update(
+          dst, upd_slice, to_shape(dst_vstart), to_shape(dst_vstop), s);
+    } else {
+      result = slice_update(
+          result, upd_slice, to_shape(dst_vstart), to_shape(dst_vstop), s);
+    }
 
     offset = static_cast<size_t>(upd_stop);
+  }
+
+  if (!in_place) {
+    st.set_tensor(n.out, result);
   }
 }
 
@@ -1490,6 +1494,88 @@ exec_median(const MedianNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 }
 
+inline void exec_clip(const ClipNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  std::optional<array> a_min = n.a_min
+      ? std::optional<array>(st.const_tensor_ref(*n.a_min))
+      : std::nullopt;
+  std::optional<array> a_max = n.a_max
+      ? std::optional<array>(st.const_tensor_ref(*n.a_max))
+      : std::nullopt;
+  st.set_tensor(n.out, clip(x, a_min, a_max, s));
+}
+
+inline void
+exec_cumsum(const CumsumNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  st.set_tensor(n.out, cumsum(x, n.axis, n.reverse, n.inclusive, s));
+}
+
+inline void
+exec_stack(const StackNode& n, ExecutionState& st, StreamOrDevice s) {
+  std::vector<array> tensors;
+  for (auto tid : n.tensors) {
+    tensors.push_back(st.const_tensor_ref(tid));
+  }
+  st.set_tensor(n.out, stack(tensors, n.axis, s));
+}
+
+inline void exec_sign(const SignNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, sign(st.const_tensor_ref(n.x), s));
+}
+
+inline void exec_any(const AnyNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  if (axes.empty()) {
+    st.set_tensor(n.out, any(x, n.keepdims, s));
+  } else {
+    st.set_tensor(n.out, any(x, axes, n.keepdims, s));
+  }
+}
+
+inline void exec_all(const AllNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  if (axes.empty()) {
+    st.set_tensor(n.out, all(x, n.keepdims, s));
+  } else {
+    st.set_tensor(n.out, all(x, axes, n.keepdims, s));
+  }
+}
+
+inline void
+exec_repeat(const RepeatNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  int repeats = static_cast<int>(resolve_int(n.repeats, st));
+  st.set_tensor(n.out, repeat(x, repeats, n.axis, s));
+}
+
+inline void exec_sort(const SortNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, sort(st.const_tensor_ref(n.x), n.axis, s));
+}
+
+inline void
+exec_argsort(const ArgsortNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, argsort(st.const_tensor_ref(n.x), n.axis, s));
+}
+
+inline void
+exec_partition(const PartitionNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  int kth = static_cast<int>(resolve_int(n.kth, st));
+  st.set_tensor(n.out, partition(x, kth, n.axis, s));
+}
+
+inline void exec_argpartition(
+    const ArgPartitionNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  int kth = static_cast<int>(resolve_int(n.kth, st));
+  st.set_tensor(n.out, argpartition(x, kth, n.axis, s));
+}
+
 } // namespace ops
 
 class Interpreter {
@@ -1691,8 +1777,8 @@ class Interpreter {
       case OpCode::SLICE_UPDATE:
         ops::exec_slice_update(std::get<SliceUpdateNode>(instr.node), st, s);
         break;
-      case OpCode::INDEX_UPDATE:
-        ops::exec_index_update(std::get<IndexUpdateNode>(instr.node), st, s);
+      case OpCode::INDEX_COPY:
+        ops::exec_index_copy(std::get<IndexCopyNode>(instr.node), st, s);
         break;
       case OpCode::DEQUANTIZE:
         ops::exec_dequantize(std::get<DequantizeNode>(instr.node), st, s);
@@ -1867,6 +1953,39 @@ class Interpreter {
       case OpCode::CONV_TRANSPOSE3D:
         ops::exec_conv_transpose3d(
             std::get<ConvTranspose3DNode>(instr.node), st, s);
+        break;
+      case OpCode::CLIP:
+        ops::exec_clip(std::get<ClipNode>(instr.node), st, s);
+        break;
+      case OpCode::CUMSUM:
+        ops::exec_cumsum(std::get<CumsumNode>(instr.node), st, s);
+        break;
+      case OpCode::STACK:
+        ops::exec_stack(std::get<StackNode>(instr.node), st, s);
+        break;
+      case OpCode::SIGN:
+        ops::exec_sign(std::get<SignNode>(instr.node), st, s);
+        break;
+      case OpCode::ANY:
+        ops::exec_any(std::get<AnyNode>(instr.node), st, s);
+        break;
+      case OpCode::ALL:
+        ops::exec_all(std::get<AllNode>(instr.node), st, s);
+        break;
+      case OpCode::REPEAT:
+        ops::exec_repeat(std::get<RepeatNode>(instr.node), st, s);
+        break;
+      case OpCode::SORT:
+        ops::exec_sort(std::get<SortNode>(instr.node), st, s);
+        break;
+      case OpCode::ARGSORT:
+        ops::exec_argsort(std::get<ArgsortNode>(instr.node), st, s);
+        break;
+      case OpCode::PARTITION:
+        ops::exec_partition(std::get<PartitionNode>(instr.node), st, s);
+        break;
+      case OpCode::ARG_PARTITION:
+        ops::exec_argpartition(std::get<ArgPartitionNode>(instr.node), st, s);
         break;
       case OpCode::SENTINEL:
         break;
