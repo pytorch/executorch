@@ -132,7 +132,9 @@ PhysicalDevice::PhysicalDevice(
     device_type = DeviceType::SWIFTSHADER;
   } else if (device_name.find("nvidia") != std::string::npos) {
     device_type = DeviceType::NVIDIA;
-  } else if (device_name.find("mali") != std::string::npos) {
+  } else if (
+      device_name.find("mali") != std::string::npos ||
+      device_name.find("immortalis") != std::string::npos) {
     device_type = DeviceType::MALI;
   }
 }
