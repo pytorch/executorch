@@ -138,6 +138,8 @@ jobs:
             name: "whisper-large-v3-turbo"
           - repo: "google"
             name: "gemma-3-4b-it"
+          - repo: "Qwen"
+            name: "Qwen3-0.6B"
           - repo: "nvidia"
             name: "parakeet-tdt"
         quant:
@@ -236,12 +238,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        model: ["gemma3-4b"]
-        quantize: ["", "--quantize"]
+        include:
+          - model: "gemma3-4b"
+            quantize: ""
+            artifact: "google-gemma-3-4b-it-cuda-non-quantized"
+          - model: "gemma3-4b"
+            quantize: "--quantize"
+            artifact: "google-gemma-3-4b-it-cuda-quantized-int4-tile-packed"
+          - model: "qwen3-0.6b"
+            quantize: ""
+            artifact: "Qwen-Qwen3-0.6B-cuda-non-quantized"
+          - model: "qwen3-0.6b"
+            quantize: "--quantize"
+            artifact: "Qwen-Qwen3-0.6B-cuda-quantized-int4-tile-packed"
     with:
       timeout: 120
       secrets-env: EXECUTORCH_HF_TOKEN
-      download-artifact: google-gemma-3-4b-it-cuda-${{ matrix.quantize && 'quantized-int4-tile-packed' || 'non-quantized' }}
+      download-artifact: ${{ matrix.artifact }}
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
       gpu-arch-version: 12.6
@@ -280,7 +293,7 @@ jobs:
         pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
         echo "::endgroup::"
 
-        echo "::group::Test CUDA Multimodal: ${{ matrix.model }} ${{ matrix.quantize }}"
+        echo "::group::Test CUDA Model: ${{ matrix.model }} ${{ matrix.quantize }}"
         python .ci/scripts/test_huggingface_optimum_model.py \
           --model ${{ matrix.model }} \
           --recipe cuda \

@@ -543,6 +543,13 @@ endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable/cpu/util)
 
+# Custom ops AOT needs Torch. Find it at root scope before processing the
+# portable subdirectory so that imported targets (e.g. MKL::MKL) are created at
+# root scope rather than in a child directory scope.
+if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT AND EXECUTORCH_BUILD_PORTABLE_OPS)
+  find_package_torch()
+endif()
+
 if(EXECUTORCH_BUILD_PORTABLE_OPS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
 endif()

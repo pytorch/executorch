@@ -12,15 +12,16 @@ Produces a single .pte with three methods:
   - token_embedding: token_ids (1, seq_len) -> embeds (1, seq_len, 3072)
 
 With --streaming, produces a streaming .pte instead:
-  - encode_audio_chunk: mel_chunk (1,128,8) + conv states + enc_pos -> audio_embeds + new states
+  - encode_audio_chunk: mel_chunk (1,128,8) + enc_pos (4,) -> audio_embeds (1,1,3072)
   - text_decoder:       same as above
   - token_embedding:    same as above
 
 Backend support:
   - XNNPACK (default): Uses custom SDPA op (torch.ops.llama.custom_sdpa) for optimal performance
-  - Metal/AOTI: Automatically switches to standard PyTorch SDPA (F.scaled_dot_product_attention)
-                for text_decoder to avoid AOTI compilation issues. Uses Dim.AUTO for audio encoder
-                dynamic shapes (explicit bounds cause issues with AOTI). All components run on Metal GPU.
+  - Metal/AOTI: Uses MetalSDPA (_scaled_dot_product_attention_math_for_mps) for text_decoder
+                and StandardEncoderSDPA (F.scaled_dot_product_attention) for streaming encoder,
+                avoiding custom_sdpa which is incompatible with AOTI. Uses Dim.AUTO for audio
+                encoder dynamic shapes (explicit bounds cause issues with AOTI).
   - Portable: Uses custom SDPA like XNNPACK
 
 Usage:
@@ -475,12 +476,11 @@ def main():
 
     # Load model
     print("Loading model...")
-    use_standard_attention = args.backend == "metal"
     model = load_model(
         args.model_path,
         max_seq_len=args.max_seq_len,
         n_delay_tokens=args.delay_tokens,
-        use_standard_attention=use_standard_attention,
+        backend=args.backend,
     )
 
     # Untie output/embedding weights before quantization so each layer gets
