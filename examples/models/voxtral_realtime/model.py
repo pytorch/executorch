@@ -50,9 +50,7 @@ class VoxtralRealtimeConfig:
     downsample_factor: int = 4
     # Runtime
     max_seq_len: int = 4096
-    use_standard_attention: bool = (
-        False  # Use standard PyTorch attention instead of custom ops
-    )
+    backend: str = "xnnpack"  # "xnnpack", "metal", or "portable"
 
     @staticmethod
     def from_params_json(path: str) -> "VoxtralRealtimeConfig":
@@ -563,7 +561,7 @@ class LMAttention(nn.Module):
         self.n_kv_heads = config.n_kv_heads
         self.head_dim = config.head_dim
         self.dim = config.dim
-        self.use_standard_attention = config.use_standard_attention
+        self.backend = config.backend
 
         self.wq = nn.Linear(config.dim, self.n_heads * self.head_dim, bias=False)
         self.wk = nn.Linear(config.dim, self.n_kv_heads * self.head_dim, bias=False)
@@ -571,7 +569,7 @@ class LMAttention(nn.Module):
         self.wo = nn.Linear(self.n_heads * self.head_dim, config.dim, bias=False)
 
         # Choose KV cache and SDPA based on backend
-        if self.use_standard_attention:
+        if self.backend == "metal":
             self.kv_cache = StaticKVCache(max_seq_len, self.n_kv_heads, self.head_dim)
             self.sdpa = MetalSDPA(self.n_heads, self.n_kv_heads, self.head_dim)
         else:
@@ -595,7 +593,7 @@ class LMAttention(nn.Module):
 
         k, v = self.kv_cache.update(input_pos, k, v)
 
-        if self.use_standard_attention:
+        if self.backend == "metal":
             y = self.sdpa(input_pos, q, k, v, B, T, attn_mask)
         else:
             y = self.sdpa(input_pos, q, k, v, B, T)
@@ -685,7 +683,7 @@ class MistralDecoder(nn.Module):
 
         # Compute attention mask once for all 26 layers (P3 optimization).
         attn_mask: torch.Tensor | None = None
-        if self.config.use_standard_attention:
+        if self.config.backend == "metal":
             max_seq_len = self.freqs_cos.shape[0]
             attn_mask = _build_attn_mask(input_pos, max_seq_len, input_embeds.device)
 
@@ -909,7 +907,7 @@ class StreamingAudioEncoderExport(nn.Module):
         # Choose cache implementation based on backend
         cache_class = (
             StandardEncoderRingKVCache
-            if config.use_standard_attention
+            if config.backend == "metal"
             else EncoderRingKVCache
         )
         self.kv_caches = nn.ModuleList(
@@ -920,7 +918,7 @@ class StreamingAudioEncoderExport(nn.Module):
         )
 
         # Choose SDPA based on backend
-        if config.use_standard_attention:
+        if config.backend == "metal":
             self.sdpa = StandardEncoderSDPA(config.enc_n_heads, config.enc_head_dim)
         else:
             self.sdpa = SDPA(config.enc_n_heads, config.enc_head_dim)
@@ -1067,7 +1065,7 @@ def load_model(
     max_seq_len: int = 4096,
     n_delay_tokens: int = 6,
     dtype: torch.dtype = torch.float32,
-    use_standard_attention: bool = False,
+    backend: str = "xnnpack",
 ) -> VoxtralRealtimeModel:
     """Load VoxtralRealtimeModel from a Mistral consolidated checkpoint.
 
@@ -1080,20 +1078,25 @@ def load_model(
         max_seq_len: Maximum sequence length for KV cache.
         n_delay_tokens: Transcription delay in tokens (default 6 = 480ms).
         dtype: Weight dtype (default: float32).
-        use_standard_attention: Use standard PyTorch attention instead of custom ops
-            (required for Metal/AOTI backends).
+        backend: Backend for acceleration ("xnnpack", "metal", or "portable").
     """
+    _VALID_BACKENDS = ("xnnpack", "metal", "portable")
+    if backend not in _VALID_BACKENDS:
+        raise ValueError(
+            f"Unknown backend '{backend}'. Must be one of {_VALID_BACKENDS}."
+        )
+
     from safetensors import safe_open
 
     model_dir = Path(model_path)
     config = VoxtralRealtimeConfig.from_params_json(str(model_dir / "params.json"))
     config.max_seq_len = max_seq_len
-    config.use_standard_attention = use_standard_attention
+    config.backend = backend
 
     print(
         f"Building model on meta device (dim={config.dim}, enc_dim={config.enc_dim}, "
         f"layers={config.n_layers}, enc_layers={config.enc_n_layers}, "
-        f"attention={'standard' if use_standard_attention else 'custom'})..."
+        f"backend={backend})..."
     )
     with torch.device("meta"):
         model = VoxtralRealtimeModel(config, max_seq_len)
