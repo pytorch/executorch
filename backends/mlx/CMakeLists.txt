@@ -232,11 +232,6 @@ if(EXISTS "${MLX_JSON_PATCH}" AND EXISTS "${MLX_SOURCE_DIR}")
   endif()
 endif()
 
-# Provide executorch's nlohmann_json so the patched MLX skips its own download
-add_subdirectory(
-  ${EXECUTORCH_ROOT}/third-party/json ${CMAKE_CURRENT_BINARY_DIR}/nlohmann_json
-)
-
 # Add MLX subdirectory
 message(STATUS "Adding MLX from submodule: ${MLX_SOURCE_DIR}")
 add_subdirectory(${MLX_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/mlx)
