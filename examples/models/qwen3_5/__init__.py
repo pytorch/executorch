@@ -1,12 +1,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import TYPE_CHECKING
-
 from executorch.examples.models.qwen3_5.convert_weights import convert_weights
-
-if TYPE_CHECKING:
-    from executorch.examples.models.llama.model import Llama2Model
 
 __all__ = ["Qwen3_5Model", "convert_weights"]
 

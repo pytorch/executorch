@@ -1,5 +1,5 @@
 ## Summary
-[Qwen3.5](https://huggingface.co/collections/Qwen/qwen35-684357f8543f83de2f09f998) support in ExecuTorch is exported through the Llama example pipeline with a hybrid layer layout:
+[Qwen3.5](https://huggingface.co/Qwen/Qwen3.5-4B) support in ExecuTorch is exported through the Llama example pipeline with a hybrid layer layout:
 - `full_attention` layers use gated full attention.
 - `linear_attention` layers use Gated DeltaNet with internal recurrent state.
 

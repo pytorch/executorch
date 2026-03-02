@@ -760,7 +760,9 @@ class AttentionGatedDeltaNet(Attention):
             ),
         )
 
-    def _maybe_reset_state(self, input_pos: Optional[torch.Tensor], batch_size: int) -> None:
+    def _maybe_reset_state(
+        self, input_pos: Optional[torch.Tensor], batch_size: int
+    ) -> None:
         if input_pos is None:
             return
         reset = (input_pos[0] == 0).to(self.conv_state.dtype)
@@ -830,9 +832,9 @@ class AttentionGatedDeltaNet(Attention):
             last_recurrent_state = last_recurrent_state * g_t
             kv_mem = (last_recurrent_state * k_t.unsqueeze(-1)).sum(dim=-2)
             delta = (v_t - kv_mem) * beta_t
-            last_recurrent_state = (
-                last_recurrent_state + k_t.unsqueeze(-1) * delta.unsqueeze(-2)
-            )
+            last_recurrent_state = last_recurrent_state + k_t.unsqueeze(
+                -1
+            ) * delta.unsqueeze(-2)
             core_attn_out[:, :, i] = (last_recurrent_state * q_t.unsqueeze(-1)).sum(
                 dim=-2
             )

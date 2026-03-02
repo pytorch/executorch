@@ -141,8 +141,6 @@ def qwen_3_5_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Ten
             raise ValueError(
                 f"Invalid packed in_proj_qkvz shape for {key}: {tuple(value.shape)}"
             )
-        key_dim = (conv_dim - value_dim) // 2
-
         qkv, z = torch.split(value, [conv_dim, value_dim], dim=0)
         converted_state_dict[f"layers.{layer_id}.attention.in_proj_qkv.weight"] = qkv
         converted_state_dict[f"layers.{layer_id}.attention.in_proj_z.weight"] = z
