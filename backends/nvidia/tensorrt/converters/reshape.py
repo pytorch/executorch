@@ -31,12 +31,14 @@ Notes:
 import logging
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import tensorrt as trt
 import torch
 from executorch.backends.nvidia.tensorrt.converter_registry import converter
 from executorch.backends.nvidia.tensorrt.converter_utils import (
     get_node_shape,
     get_trt_tensor_from_node,
+    resolve_shape,
 )
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -277,7 +279,7 @@ def _compute_view_output_shape(
     return output_shape
 
 
-@converter("aten.view.default", "aten._unsafe_view.default", "aten.view_copy.default", validator_fn=validate_view_reshape)
+@converter("aten.view.default", "aten._unsafe_view.default", "aten.view_copy.default", validator_fn=validate_view_reshape, supports_dynamic_shapes=True)
 def convert_view(
     node: torch.fx.Node,
     network: trt.INetworkDefinition,
@@ -315,9 +317,6 @@ def convert_view(
         )
 
     input_trt = input_map[input_node]
-
-    import tensorrt as trt
-    import numpy as np
 
     # Get the actual output shape from node metadata if available
     output_shape = _compute_view_output_shape(node, input_node, input_trt, target_shape)
@@ -427,7 +426,7 @@ def convert_reshape(
     return layer.get_output(0)
 
 
-@converter("aten.flatten.using_ints", validator_fn=validate_flatten)
+@converter("aten.flatten.using_ints", validator_fn=validate_flatten, supports_dynamic_shapes=True)
 def convert_flatten(
     node: torch.fx.Node,
     network: trt.INetworkDefinition,
@@ -438,6 +437,8 @@ def convert_flatten(
     Convert PyTorch flatten to TensorRT shuffle layer.
 
     Flatten merges dimensions from start_dim to end_dim (inclusive).
+    Supports dynamic shapes via the shape tensor API when multiple
+    dimensions are dynamic.
 
     Args:
         node: FX node representing the flatten operation.
@@ -471,8 +472,8 @@ def convert_flatten(
 
     input_trt = input_map[input_node]
 
-    # Get shape from node metadata for reliability
-    input_shape = tuple(get_node_shape(input_node) or input_trt.shape)
+    # Resolve shape: SymInts become -1 for TRT dynamic dims
+    input_shape = resolve_shape(get_node_shape(input_node) or tuple(input_trt.shape))
     ndim = len(input_shape)
 
     # Handle negative dimensions
@@ -483,34 +484,113 @@ def convert_flatten(
     if start_dim > end_dim:
         raise ValueError(f"start_dim ({start_dim}) must be <= end_dim ({end_dim})")
 
-    # Build the output shape
-    output_shape = []
-    flatten_size = 1
+    # Build output shape: [pre_range..., flattened_dim, post_range...]
+    pre_range = input_shape[:start_dim]
+    flat_range = input_shape[start_dim:end_dim + 1]
+    post_range = input_shape[end_dim + 1:]
 
-    for i, s in enumerate(input_shape):
-        if i < start_dim:
-            output_shape.append(s)
-        elif i <= end_dim:
-            if s == -1:
-                # Dynamic dimension - use 0 for TensorRT inference
-                flatten_size = 0
-            elif flatten_size != 0:
-                flatten_size *= s
-        else:
-            if flatten_size is not None:
-                output_shape.append(flatten_size if flatten_size != 0 else 0)
-                flatten_size = None  # Mark as already added
-            output_shape.append(s)
+    # Compute flattened dim statically if all dims in range are concrete
+    all_flat_concrete = all(d > 0 for d in flat_range)
+    if all_flat_concrete:
+        flat_size = 1
+        for d in flat_range:
+            flat_size *= d
+    else:
+        flat_size = -1  # Dynamic — needs runtime computation
 
-    # Add the flattened dimension if not yet added (end_dim is last dim)
-    if flatten_size is not None:
-        output_shape.append(flatten_size if flatten_size != 0 else 0)
+    output_shape = list(pre_range) + [flat_size] + list(post_range)
+
+    num_dynamic = sum(1 for d in output_shape if d < 0)
 
     layer = network.add_shuffle(input_trt)
     if layer is None:
         raise RuntimeError(f"Failed to create shuffle layer for flatten {node.name}")
 
-    layer.reshape_dims = trt.Dims(output_shape)
+    if num_dynamic <= 1:
+        # TRT handles at most one -1 in reshape natively.
+        layer.reshape_dims = trt.Dims(output_shape)
+    else:
+        # Multiple dynamic dims: build shape tensor.
+        shape_layer = network.add_shape(input_trt)
+        shape_layer.name = f"flatten_shape_{node.name}"
+        shape_i32 = network.add_cast(shape_layer.get_output(0), trt.int32)
+        shape_i32.name = f"flatten_shape_i32_{node.name}"
+        shape_trt = shape_i32.get_output(0)
+
+        components: List[trt.ITensor] = []
+
+        # Pre-range dims: pass through from input
+        for i in range(start_dim):
+            if input_shape[i] >= 0:
+                c = network.add_constant(
+                    [1], trt.Weights(np.array([input_shape[i]], dtype=np.int32))
+                )
+                c.name = f"flatten_pre{i}_{node.name}"
+                components.append(c.get_output(0))
+            else:
+                idx_c = network.add_constant(
+                    [1], trt.Weights(np.array([i], dtype=np.int32))
+                )
+                idx_c.name = f"flatten_preidx{i}_{node.name}"
+                g = network.add_gather(shape_trt, idx_c.get_output(0), axis=0)
+                g.name = f"flatten_preg{i}_{node.name}"
+                components.append(g.get_output(0))
+
+        # Flattened dim: product of dims in [start_dim, end_dim]
+        if all_flat_concrete:
+            c = network.add_constant(
+                [1], trt.Weights(np.array([flat_size], dtype=np.int32))
+            )
+            c.name = f"flatten_flat_{node.name}"
+            components.append(c.get_output(0))
+        else:
+            # Runtime product: gather each dim, multiply together iteratively
+            idx_c = network.add_constant(
+                [1], trt.Weights(np.array([start_dim], dtype=np.int32))
+            )
+            idx_c.name = f"flatten_flatidx{start_dim}_{node.name}"
+            product = network.add_gather(shape_trt, idx_c.get_output(0), axis=0)
+            product.name = f"flatten_flatg{start_dim}_{node.name}"
+            product_out = product.get_output(0)
+
+            for j in range(start_dim + 1, end_dim + 1):
+                idx_c = network.add_constant(
+                    [1], trt.Weights(np.array([j], dtype=np.int32))
+                )
+                idx_c.name = f"flatten_flatidx{j}_{node.name}"
+                g = network.add_gather(shape_trt, idx_c.get_output(0), axis=0)
+                g.name = f"flatten_flatg{j}_{node.name}"
+                mul = network.add_elementwise(
+                    product_out, g.get_output(0),
+                    trt.ElementWiseOperation.PROD,
+                )
+                mul.name = f"flatten_flatmul{j}_{node.name}"
+                product_out = mul.get_output(0)
+
+            components.append(product_out)
+
+        # Post-range dims: pass through from input
+        for i in range(end_dim + 1, ndim):
+            if input_shape[i] >= 0:
+                c = network.add_constant(
+                    [1], trt.Weights(np.array([input_shape[i]], dtype=np.int32))
+                )
+                c.name = f"flatten_post{i}_{node.name}"
+                components.append(c.get_output(0))
+            else:
+                idx_c = network.add_constant(
+                    [1], trt.Weights(np.array([i], dtype=np.int32))
+                )
+                idx_c.name = f"flatten_postidx{i}_{node.name}"
+                g = network.add_gather(shape_trt, idx_c.get_output(0), axis=0)
+                g.name = f"flatten_postg{i}_{node.name}"
+                components.append(g.get_output(0))
+
+        shape_cat = network.add_concatenation(components)
+        shape_cat.axis = 0
+        shape_cat.name = f"flatten_outshape_{node.name}"
+        layer.set_input(1, shape_cat.get_output(0))
+
     layer.name = f"flatten_{node.name}"
 
     logger.debug(
@@ -521,7 +601,7 @@ def convert_flatten(
     return layer.get_output(0)
 
 
-@converter("aten.squeeze.dim", "aten.squeeze.dims", "aten.squeeze_copy.dim", "aten.squeeze_copy.dims", validator_fn=validate_squeeze_unsqueeze)
+@converter("aten.squeeze.dim", "aten.squeeze.dims", "aten.squeeze_copy.dim", "aten.squeeze_copy.dims", validator_fn=validate_squeeze_unsqueeze, supports_dynamic_shapes=True)
 def convert_squeeze(
     node: torch.fx.Node,
     network: trt.INetworkDefinition,
@@ -532,6 +612,8 @@ def convert_squeeze(
     Convert PyTorch squeeze to TensorRT shuffle layer.
 
     Removes dimension of size 1 at the specified position.
+    Supports dynamic shapes via the shape tensor API when multiple
+    dimensions are dynamic.
 
     Args:
         node: FX node representing the squeeze operation.
@@ -558,8 +640,8 @@ def convert_squeeze(
 
     input_trt = get_trt_tensor_from_node(network, input_node, input_map, node.name)
 
-    # Get shape from node metadata for reliability
-    input_shape = tuple(get_node_shape(input_node) or input_trt.shape)
+    # Resolve shape: SymInts become -1 for TRT dynamic dims
+    input_shape = resolve_shape(get_node_shape(input_node) or tuple(input_trt.shape))
     ndim = len(input_shape)
 
     # Handle dims as list (squeeze.dims variant)
@@ -568,8 +650,9 @@ def convert_squeeze(
     else:
         dims_to_squeeze = [_get_positive_dim(dim, ndim)]
 
-    # Build output shape excluding squeezed dimensions
-    output_shape = []
+    # Build output shape excluding squeezed dimensions, tracking kept input indices
+    output_shape: List[int] = []
+    kept_dims: List[int] = []
     for i, s in enumerate(input_shape):
         if i in dims_to_squeeze:
             # Only squeeze if size is 1 or dynamic
@@ -578,15 +661,51 @@ def convert_squeeze(
                     f"[TensorRT] squeeze on dim {i} with size {s} != 1, not squeezing"
                 )
                 output_shape.append(s)
+                kept_dims.append(i)
             # else: skip this dimension (squeeze it)
         else:
             output_shape.append(s)
+            kept_dims.append(i)
+
+    num_dynamic = sum(1 for d in output_shape if d < 0)
 
     layer = network.add_shuffle(input_trt)
     if layer is None:
         raise RuntimeError(f"Failed to create shuffle layer for squeeze {node.name}")
 
-    layer.reshape_dims = trt.Dims(output_shape)
+    if num_dynamic <= 1:
+        # TRT handles at most one -1 in reshape natively.
+        layer.reshape_dims = trt.Dims(output_shape)
+    else:
+        # Multiple dynamic dims: build shape tensor from kept dims of runtime shape.
+        shape_layer = network.add_shape(input_trt)
+        shape_layer.name = f"squeeze_shape_{node.name}"
+        shape_i32 = network.add_cast(shape_layer.get_output(0), trt.int32)
+        shape_i32.name = f"squeeze_shape_i32_{node.name}"
+        shape_trt = shape_i32.get_output(0)
+
+        components: List[trt.ITensor] = []
+        for out_i, inp_i in enumerate(kept_dims):
+            if output_shape[out_i] >= 0:
+                c = network.add_constant(
+                    [1], trt.Weights(np.array([output_shape[out_i]], dtype=np.int32))
+                )
+                c.name = f"squeeze_c{out_i}_{node.name}"
+                components.append(c.get_output(0))
+            else:
+                idx_c = network.add_constant(
+                    [1], trt.Weights(np.array([inp_i], dtype=np.int32))
+                )
+                idx_c.name = f"squeeze_idx{out_i}_{node.name}"
+                g = network.add_gather(shape_trt, idx_c.get_output(0), axis=0)
+                g.name = f"squeeze_g{out_i}_{node.name}"
+                components.append(g.get_output(0))
+
+        shape_cat = network.add_concatenation(components)
+        shape_cat.axis = 0
+        shape_cat.name = f"squeeze_outshape_{node.name}"
+        layer.set_input(1, shape_cat.get_output(0))
+
     layer.name = f"squeeze_{node.name}"
 
     logger.debug(
@@ -597,7 +716,7 @@ def convert_squeeze(
     return layer.get_output(0)
 
 
-@converter("aten.unsqueeze.default", "aten.unsqueeze_copy.default", validator_fn=validate_squeeze_unsqueeze)
+@converter("aten.unsqueeze.default", "aten.unsqueeze_copy.default", validator_fn=validate_squeeze_unsqueeze, supports_dynamic_shapes=True)
 def convert_unsqueeze(
     node: torch.fx.Node,
     network: trt.INetworkDefinition,
@@ -608,6 +727,8 @@ def convert_unsqueeze(
     Convert PyTorch unsqueeze to TensorRT shuffle layer.
 
     Inserts a dimension of size 1 at the specified position.
+    Supports dynamic shapes via the shape tensor API when multiple
+    dimensions are dynamic.
 
     Args:
         node: FX node representing the unsqueeze operation.
@@ -634,8 +755,8 @@ def convert_unsqueeze(
 
     input_trt = get_trt_tensor_from_node(network, input_node, input_map, node.name)
 
-    # Get shape from node metadata for reliability
-    input_shape = list(get_node_shape(input_node) or input_trt.shape)
+    # Resolve shape: SymInts become -1 for TRT dynamic dims
+    input_shape = resolve_shape(get_node_shape(input_node) or tuple(input_trt.shape))
     ndim = len(input_shape)
 
     # Handle negative dimension (for unsqueeze, target ndim is ndim + 1)
@@ -644,11 +765,55 @@ def convert_unsqueeze(
     # Build output shape with new dimension of size 1
     output_shape = input_shape[:dim] + [1] + input_shape[dim:]
 
+    num_dynamic = sum(1 for d in output_shape if d < 0)
+
     layer = network.add_shuffle(input_trt)
     if layer is None:
         raise RuntimeError(f"Failed to create shuffle layer for unsqueeze {node.name}")
 
-    layer.reshape_dims = trt.Dims(output_shape)
+    if num_dynamic <= 1:
+        # TRT handles at most one -1 in reshape natively.
+        layer.reshape_dims = trt.Dims(output_shape)
+    else:
+        # Multiple dynamic dims: build shape tensor from runtime input shape.
+        shape_layer = network.add_shape(input_trt)
+        shape_layer.name = f"unsqueeze_shape_{node.name}"
+        shape_i32 = network.add_cast(shape_layer.get_output(0), trt.int32)
+        shape_i32.name = f"unsqueeze_shape_i32_{node.name}"
+        shape_trt = shape_i32.get_output(0)
+
+        components: List[trt.ITensor] = []
+        input_idx = 0
+        for i in range(len(output_shape)):
+            if i == dim:
+                # Inserted dimension of size 1
+                c = network.add_constant(
+                    [1], trt.Weights(np.array([1], dtype=np.int32))
+                )
+                c.name = f"unsqueeze_one_{node.name}"
+                components.append(c.get_output(0))
+            else:
+                if output_shape[i] >= 0:
+                    c = network.add_constant(
+                        [1], trt.Weights(np.array([output_shape[i]], dtype=np.int32))
+                    )
+                    c.name = f"unsqueeze_c{i}_{node.name}"
+                    components.append(c.get_output(0))
+                else:
+                    idx_c = network.add_constant(
+                        [1], trt.Weights(np.array([input_idx], dtype=np.int32))
+                    )
+                    idx_c.name = f"unsqueeze_idx{i}_{node.name}"
+                    g = network.add_gather(shape_trt, idx_c.get_output(0), axis=0)
+                    g.name = f"unsqueeze_g{i}_{node.name}"
+                    components.append(g.get_output(0))
+                input_idx += 1
+
+        shape_cat = network.add_concatenation(components)
+        shape_cat.axis = 0
+        shape_cat.name = f"unsqueeze_outshape_{node.name}"
+        layer.set_input(1, shape_cat.get_output(0))
+
     layer.name = f"unsqueeze_{node.name}"
 
     logger.debug(
@@ -795,7 +960,7 @@ def convert_transpose(
     return layer.get_output(0)
 
 
-@converter("aten.select.int", "aten.select_copy.int", validator_fn=validate_select)
+@converter("aten.select.int", "aten.select_copy.int", validator_fn=validate_select, supports_dynamic_shapes=True)
 def convert_select(
     node: torch.fx.Node,
     network: trt.INetworkDefinition,
@@ -807,6 +972,8 @@ def convert_select(
 
     Select extracts a slice of size 1 along a dimension and removes that dimension.
     Equivalent to tensor[dim, index].
+    Supports dynamic shapes via the shape tensor API when multiple
+    dimensions are dynamic.
 
     Args:
         node: FX node representing the select operation.
@@ -834,43 +1001,94 @@ def convert_select(
 
     input_trt = get_trt_tensor_from_node(network, input_node, input_map, node.name)
 
-    # Get shape from node metadata for reliability
-    input_shape = list(get_node_shape(input_node) or input_trt.shape)
+    # Resolve shape: SymInts become -1 for TRT dynamic dims
+    input_shape = resolve_shape(get_node_shape(input_node) or tuple(input_trt.shape))
     ndim = len(input_shape)
 
     # Handle negative dimension
     dim = _get_positive_dim(dim, ndim)
 
     # Handle negative index
-    if index < 0:
-        index = input_shape[dim] + index
+    if isinstance(index, int) and index < 0:
+        if input_shape[dim] > 0:
+            index = input_shape[dim] + index
 
     # Build start, shape, stride for slice operation
     start = [0] * ndim
     start[dim] = index
 
     # Shape: same as input except the selected dim has size 1
-    shape = input_shape.copy()
-    shape[dim] = 1
+    slice_shape = list(input_shape)
+    slice_shape[dim] = 1
 
     # Stride: 1 for all dims
     stride = [1] * ndim
 
-    # Create slice layer
-    layer = network.add_slice(
-        input_trt,
-        start=trt.Dims(start),
-        shape=trt.Dims(shape),
-        stride=trt.Dims(stride),
-    )
+    has_dynamic_slice = any(d < 0 for d in slice_shape)
+
+    if not has_dynamic_slice:
+        # Static: all dims concrete
+        layer = network.add_slice(
+            input_trt,
+            start=trt.Dims(start),
+            shape=trt.Dims(slice_shape),
+            stride=trt.Dims(stride),
+        )
+    else:
+        # Dynamic: build shape tensor for slice output size
+        shape_layer = network.add_shape(input_trt)
+        shape_layer.name = f"select_shape_{node.name}"
+        shape_i32 = network.add_cast(shape_layer.get_output(0), trt.int32)
+        shape_i32.name = f"select_shape_i32_{node.name}"
+        shape_trt = shape_i32.get_output(0)
+
+        components: List[trt.ITensor] = []
+        for i in range(ndim):
+            if i == dim:
+                # Selected dim: always size 1
+                c = network.add_constant(
+                    [1], trt.Weights(np.array([1], dtype=np.int32))
+                )
+                c.name = f"select_one_{node.name}"
+                components.append(c.get_output(0))
+            elif slice_shape[i] >= 0:
+                c = network.add_constant(
+                    [1], trt.Weights(np.array([slice_shape[i]], dtype=np.int32))
+                )
+                c.name = f"select_sc{i}_{node.name}"
+                components.append(c.get_output(0))
+            else:
+                idx_c = network.add_constant(
+                    [1], trt.Weights(np.array([i], dtype=np.int32))
+                )
+                idx_c.name = f"select_sidx{i}_{node.name}"
+                g = network.add_gather(shape_trt, idx_c.get_output(0), axis=0)
+                g.name = f"select_sg{i}_{node.name}"
+                components.append(g.get_output(0))
+
+        shape_cat = network.add_concatenation(components)
+        shape_cat.axis = 0
+        shape_cat.name = f"select_slice_shape_{node.name}"
+
+        # Placeholder shape overridden by set_input(2, ...)
+        layer = network.add_slice(
+            input_trt,
+            start=trt.Dims(start),
+            shape=trt.Dims([1] * ndim),
+            stride=trt.Dims(stride),
+        )
+        layer.set_input(2, shape_cat.get_output(0))
+
     if layer is None:
         raise RuntimeError(f"Failed to create slice layer for select {node.name}")
 
     layer.name = f"select_slice_{node.name}"
     slice_output = layer.get_output(0)
 
-    # Now squeeze the dimension to remove the size-1 dim
-    output_shape = input_shape[:dim] + input_shape[dim + 1:]
+    # Squeeze the selected dim: output = slice_shape without dim
+    output_shape = [s for i, s in enumerate(slice_shape) if i != dim]
+
+    num_dynamic = sum(1 for d in output_shape if d < 0)
 
     squeeze_layer = network.add_shuffle(slice_output)
     if squeeze_layer is None:
@@ -878,7 +1096,42 @@ def convert_select(
             f"Failed to create shuffle layer for select squeeze {node.name}"
         )
 
-    squeeze_layer.reshape_dims = trt.Dims(output_shape)
+    if num_dynamic <= 1:
+        squeeze_layer.reshape_dims = trt.Dims(output_shape)
+    else:
+        # Multiple dynamic dims: build shape tensor for squeezed output
+        sq_shape_layer = network.add_shape(slice_output)
+        sq_shape_layer.name = f"select_sqshape_{node.name}"
+        sq_shape_i32 = network.add_cast(sq_shape_layer.get_output(0), trt.int32)
+        sq_shape_i32.name = f"select_sqshape_i32_{node.name}"
+        sq_shape_trt = sq_shape_i32.get_output(0)
+
+        sq_components: List[trt.ITensor] = []
+        out_idx = 0
+        for i in range(ndim):
+            if i == dim:
+                continue  # Skip the squeezed dim
+            if output_shape[out_idx] >= 0:
+                c = network.add_constant(
+                    [1], trt.Weights(np.array([output_shape[out_idx]], dtype=np.int32))
+                )
+                c.name = f"select_sqc{out_idx}_{node.name}"
+                sq_components.append(c.get_output(0))
+            else:
+                idx_c = network.add_constant(
+                    [1], trt.Weights(np.array([i], dtype=np.int32))
+                )
+                idx_c.name = f"select_sqidx{out_idx}_{node.name}"
+                g = network.add_gather(sq_shape_trt, idx_c.get_output(0), axis=0)
+                g.name = f"select_sqg{out_idx}_{node.name}"
+                sq_components.append(g.get_output(0))
+            out_idx += 1
+
+        sq_shape_cat = network.add_concatenation(sq_components)
+        sq_shape_cat.axis = 0
+        sq_shape_cat.name = f"select_sqoutshape_{node.name}"
+        squeeze_layer.set_input(1, sq_shape_cat.get_output(0))
+
     squeeze_layer.name = f"select_squeeze_{node.name}"
 
     logger.debug(

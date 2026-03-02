@@ -117,6 +117,9 @@ class TensorRTBackend(BackendDetails):
 
         # Configure and build engine
         config = _create_builder_config(builder, spec, trt)
+        _add_optimization_profile(
+            builder, config, network, input_nodes, edge_program, trt
+        )
         serialized_engine = builder.build_serialized_network(network, config)
 
         if serialized_engine is None:
@@ -262,12 +265,141 @@ def _get_attr_value(
         return None
 
 
+def _is_symint(val: Any) -> bool:
+    """Check if a value is a SymInt (symbolic integer from dynamic shapes)."""
+    return hasattr(val, "node") and type(val).__name__ == "SymInt"
+
+
+def _get_symbol_name(val: Any) -> Optional[str]:
+    """Extract the symbol name (e.g. 's77') from a SymInt."""
+    if _is_symint(val) and hasattr(val.node, "str"):
+        return val.node.str()
+    return None
+
+
+def _eval_symint_range(
+    val: Any, sym_ranges: Dict[str, Tuple[int, int]]
+) -> Tuple[int, int, int]:
+    """Evaluate a SymInt at min/opt/max bounds of its constituent symbols.
+
+    For a base symbol like ``s77``, returns ``(lower, trace_val, upper)``
+    directly from ``sym_ranges``.  For a derived expression like
+    ``s77 + 3`` or ``s77 // 2``, evaluates the sympy expression at the
+    lower/upper bounds of each free symbol.
+
+    Returns:
+        ``(lo, opt, hi)`` — the min, trace-time, and max values.
+    """
+    opt = int(val)
+    sn = getattr(val, "node", None)
+    if sn is None:
+        logger.debug(f"[TensorRT] _eval_symint_range: no node, returning ({opt}, {opt}, {opt})")
+        return opt, opt, opt
+
+    expr = getattr(sn, "expr", None)
+    if expr is None:
+        logger.debug(f"[TensorRT] _eval_symint_range: no expr, returning ({opt}, {opt}, {opt})")
+        return opt, opt, opt
+
+    free_syms = expr.free_symbols
+    if not free_syms:
+        # Constant expression.
+        return opt, opt, opt
+
+    min_subs = {}
+    max_subs = {}
+    for sym in free_syms:
+        sym_name = str(sym)
+        if sym_name in sym_ranges:
+            lo, hi = sym_ranges[sym_name]
+            min_subs[sym] = lo
+            # hi may be None (unbounded from Dim.AUTO); cap at opt.
+            max_subs[sym] = hi if hi is not None else opt
+        else:
+            # Unknown symbol — pin to trace-time value.
+            logger.debug(f"[TensorRT] _eval_symint_range: symbol '{sym_name}' not in sym_ranges {list(sym_ranges.keys())}")
+            min_subs[sym] = opt
+            max_subs[sym] = opt
+
+    try:
+        v_at_min = int(expr.subs(min_subs))
+        v_at_max = int(expr.subs(max_subs))
+        logger.debug(
+            f"[TensorRT] _eval_symint_range: expr={expr}, "
+            f"min_subs={min_subs}, max_subs={max_subs}, "
+            f"result=({min(v_at_min, v_at_max)}, {opt}, {max(v_at_min, v_at_max)})"
+        )
+        # Expression may not be monotonic, ensure lo <= hi.
+        return min(v_at_min, v_at_max), opt, max(v_at_min, v_at_max)
+    except Exception as e:
+        logger.debug(f"[TensorRT] _eval_symint_range: exception {e}, returning ({opt}, {opt}, {opt})")
+        return opt, opt, opt
+
+
+def _eval_symint_range_from_shape_env(
+    val: Any,
+    opt: int,
+    sym_ranges: Dict[str, Tuple[int, Optional[int]]],
+) -> Tuple[int, Optional[int]]:
+    """Recover dynamic dim range from the SymInt's shape_env.
+
+    After partitioning, SymInt expressions may be concretized (expr has no
+    free symbols), but the shape_env still holds ``var_to_val`` which maps
+    sympy variables to their trace-time values.  We use this to match
+    back to ``sym_ranges`` (from ``range_constraints``).
+
+    For derived expressions where ``opt`` doesn't directly match any
+    variable hint (e.g., ``s18 // 2`` → opt=2500 vs hint=5000), we
+    scale the range proportionally.
+
+    Returns:
+        ``(lo, hi)`` if a matching variable is found, otherwise ``(opt, opt)``.
+    """
+    sn = getattr(val, "node", None)
+    if sn is None:
+        return opt, opt
+
+    shape_env = getattr(sn, "shape_env", None)
+    if shape_env is None:
+        return opt, opt
+
+    var_to_val = getattr(shape_env, "var_to_val", {})
+
+    # Direct match: find a variable whose hint equals opt and whose
+    # name appears in sym_ranges with real bounds.
+    for sym, hint in var_to_val.items():
+        sym_name = str(sym)
+        if int(hint) == opt and sym_name in sym_ranges:
+            lo, hi = sym_ranges[sym_name]
+            if lo != opt or hi != opt:
+                return lo, hi
+
+    # Derived expression match: opt is a scaling of a base variable.
+    # E.g., opt=2500, hint=5000 → ratio = 0.5.
+    for sym, hint in var_to_val.items():
+        hint_val = int(hint)
+        sym_name = str(sym)
+        if hint_val > 0 and opt > 0 and sym_name in sym_ranges:
+            sym_lo, sym_hi = sym_ranges[sym_name]
+            if sym_lo == hint_val and sym_hi == hint_val:
+                continue  # No real range, skip
+            ratio = opt / hint_val
+            lo = max(1, int(sym_lo * ratio))
+            hi = int(sym_hi * ratio) if sym_hi is not None else None
+            return lo, hi
+
+    return opt, opt
+
+
 def _add_network_inputs(
     network: Any,
     input_nodes: List[torch.fx.Node],
     dtype_converter: Any,
 ) -> Dict[torch.fx.Node, Any]:
-    """Add input tensors to TensorRT network."""
+    """Add input tensors to TensorRT network.
+
+    SymInt dimensions are converted to -1 for TRT dynamic shapes.
+    """
     input_map: Dict[torch.fx.Node, Any] = {}
 
     for input_node in input_nodes:
@@ -282,11 +414,14 @@ def _add_network_inputs(
         if len(shape) == 0:
             shape = (1,)
 
+        # Convert SymInt dims to -1 for TRT dynamic shapes.
+        trt_shape = tuple(-1 if _is_symint(s) else int(s) for s in shape)
+
         trt_dtype = dtype_converter(dtype if dtype else torch.float32)
         trt_input = network.add_input(
             name=input_node.name,
             dtype=trt_dtype,
-            shape=shape,
+            shape=trt_shape,
         )
         if trt_input is None:
             raise RuntimeError(f"Failed to add input to network: {input_node.name}")
@@ -294,6 +429,219 @@ def _add_network_inputs(
         input_map[input_node] = trt_input
 
     return input_map
+
+
+def _add_optimization_profile(
+    builder: Any,
+    config: Any,
+    network: Any,
+    input_nodes: List[torch.fx.Node],
+    exported_program: ExportedProgram,
+    trt: Any,
+) -> None:
+    """Create an optimization profile for dynamic inputs.
+
+    Must be called after the network is fully built (all layers added,
+    outputs marked) so TRT can classify inputs as regular vs shape tensors.
+
+    For regular tensor inputs with dynamic dims: ``set_shape(min, opt, max)``.
+    For shape tensor inputs (values affect shapes): ``set_shape_input(min, opt, max)``.
+    """
+    # Check if any network input has dynamic dims or is a shape tensor.
+    has_dynamic = False
+    for i in range(network.num_inputs):
+        inp = network.get_input(i)
+        dims = inp.shape
+        for d in range(dims.__len__()):
+            if dims[d] == -1:
+                has_dynamic = True
+                break
+        if hasattr(inp, "is_shape_tensor") and inp.is_shape_tensor:
+            has_dynamic = True
+        if has_dynamic:
+            break
+
+    if not has_dynamic:
+        return
+
+    # Build symbol → (lower, upper) lookup from range_constraints and
+    # shape_env.  After partitioning, SymInt expressions may be concretized
+    # (expr=5000, free_symbols={}), but the shape_env attached to SymInt
+    # nodes still carries the original variable ranges.  We extract ranges
+    # from both sources and merge them.
+    sym_ranges: Dict[str, Tuple[int, Optional[int]]] = {}
+
+    # Source 1: range_constraints on the exported program.
+    # Dim.AUTO may produce unbounded ranges (int_oo) — handle gracefully.
+    if hasattr(exported_program, "range_constraints"):
+        for sym, vr in exported_program.range_constraints.items():
+            try:
+                lo = int(vr.lower)
+            except Exception:
+                lo = 2  # sympy Infinity fallback
+            try:
+                hi = int(vr.upper)
+            except Exception:
+                hi = None  # mark as unbounded; resolved per-dim below
+            sym_ranges[str(sym)] = (lo, hi)
+
+    # Source 2: shape_env from SymInt metadata on placeholder nodes.
+    # This survives partitioning even when SymInt expressions are concretized.
+    for node in input_nodes:
+        if "val" not in node.meta:
+            continue
+        val = node.meta["val"]
+        shape = getattr(val, "shape", None)
+        if shape is None:
+            continue
+        for s in shape:
+            if not _is_symint(s):
+                continue
+            sn = getattr(s, "node", None)
+            if sn is None:
+                continue
+            shape_env = getattr(sn, "shape_env", None)
+            if shape_env is None:
+                continue
+            var_to_range = getattr(shape_env, "var_to_range", {})
+            for sym, rng in var_to_range.items():
+                sym_name = str(sym)
+                if sym_name in sym_ranges:
+                    continue  # Already have it from range_constraints
+                try:
+                    lo = int(rng.lower)
+                except Exception:
+                    lo = 2
+                try:
+                    hi = int(rng.upper)
+                except Exception:
+                    hi = None
+                sym_ranges[sym_name] = (lo, hi)
+            break  # Only need one shape_env — they're all the same
+
+    logger.debug(f"[TensorRT] sym_ranges = {sym_ranges}")
+
+    # Build node name → FX Node lookup for metadata access.
+    node_lookup: Dict[str, torch.fx.Node] = {}
+    for node in input_nodes:
+        node_lookup[node.name] = node
+
+    profile = builder.create_optimization_profile()
+
+    for i in range(network.num_inputs):
+        inp = network.get_input(i)
+        name = inp.name
+        dims = inp.shape
+        ndims = dims.__len__()
+        is_shape = hasattr(inp, "is_shape_tensor") and inp.is_shape_tensor
+
+        if is_shape:
+            # Shape tensor input: set value ranges.
+            # These are typically scalar int32 values (ndims=1, shape=(1,)).
+            fx_node = node_lookup.get(name)
+            if fx_node is not None:
+                val = fx_node.meta.get("val")
+                if _is_symint(val):
+                    lo, opt, hi = _eval_symint_range(val, sym_ranges)
+                    profile.set_shape_input(name, [lo], [opt], [hi])
+                    continue
+                elif isinstance(val, (int, float)):
+                    v = int(val)
+                    profile.set_shape_input(name, [v], [v], [v])
+                    continue
+
+            # Fallback for shape inputs: use trace-time value if available,
+            # otherwise use a conservative range.
+            opt_val = 1
+            if fx_node is not None:
+                val = fx_node.meta.get("val")
+                if val is not None:
+                    try:
+                        opt_val = int(val)
+                    except (TypeError, ValueError):
+                        pass
+            min_vals = [max(0, opt_val)] * ndims
+            opt_vals = [max(1, opt_val)] * ndims
+            max_vals = [max(1, opt_val)] * ndims
+            profile.set_shape_input(name, min_vals, opt_vals, max_vals)
+        else:
+            # Regular tensor input: set shape ranges.
+            fx_node = node_lookup.get(name)
+
+            # Check if this input has any dynamic dims.
+            has_neg = any(dims[d] == -1 for d in range(ndims))
+            if not has_neg:
+                # Fully static — no profile entry needed for this input.
+                continue
+
+            min_shape = []
+            opt_shape = []
+            max_shape = []
+
+            raw_shape = None
+            if fx_node is not None:
+                raw_shape, _ = _get_tensor_shape_and_dtype(fx_node)
+
+            for d in range(ndims):
+                if dims[d] != -1:
+                    # Static dim.
+                    min_shape.append(dims[d])
+                    opt_shape.append(dims[d])
+                    max_shape.append(dims[d])
+                else:
+                    # Dynamic dim: get range from SymInt metadata.
+                    lo, hi, opt_val = 1, 2**20, 1
+                    if raw_shape is not None and d < len(raw_shape):
+                        s = raw_shape[d]
+                        if _is_symint(s):
+                            opt_val = int(s)
+                            # First try _eval_symint_range which handles
+                            # both base symbols and derived expressions.
+                            lo, _, hi = _eval_symint_range(s, sym_ranges)
+                            # If eval returned (opt, opt, opt) because the
+                            # expr was concretized, try direct symbol name
+                            # lookup as fallback.
+                            if lo == opt_val and hi == opt_val:
+                                sym_name = _get_symbol_name(s)
+                                if sym_name and sym_name in sym_ranges:
+                                    lo, hi = sym_ranges[sym_name]
+                            # Last resort: use shape_env.var_to_val to match
+                            # back to sym_ranges from range_constraints.
+                            if lo == opt_val and hi == opt_val:
+                                lo, hi = _eval_symint_range_from_shape_env(
+                                    s, opt_val, sym_ranges
+                                )
+                        else:
+                            opt_val = int(s)
+                            lo = opt_val
+                            hi = opt_val
+                    # If upper bound is unbounded (Dim.AUTO with no max),
+                    # cap at the trace-time value to avoid OOM during
+                    # TRT tactic search.
+                    if hi is None:
+                        hi = opt_val
+                        logger.warning(
+                            f"[TensorRT] Unbounded dynamic dim {d} for "
+                            f"input '{name}': capping max at trace-time "
+                            f"value {opt_val}"
+                        )
+                    min_shape.append(lo)
+                    opt_shape.append(opt_val)
+                    max_shape.append(hi)
+
+            logger.debug(
+                f"[TensorRT] Profile for '{name}': "
+                f"min={tuple(min_shape)}, opt={tuple(opt_shape)}, "
+                f"max={tuple(max_shape)}"
+            )
+            profile.set_shape(
+                name,
+                tuple(min_shape),
+                tuple(opt_shape),
+                tuple(max_shape),
+            )
+
+    config.add_optimization_profile(profile)
 
 
 def _process_graph_nodes(

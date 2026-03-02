@@ -22,9 +22,180 @@ from torch._export.utils import (
 )
 from torch.export.exported_program import ExportedProgram
 
+import numpy as np
+
 from executorch.backends.nvidia.tensorrt.converter_registry import converter
+from executorch.backends.nvidia.tensorrt.converter_utils import (
+    get_node_shape,
+    resolve_shape,
+)
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+
+def _unsqueeze_3d_to_4d(
+    network: Any, input_trt: Any, name: str, trt: Any,
+    input_node: Any = None,
+) -> Any:
+    """Expand 3D tensor [B, C, W] to 4D [B, C, 1, W] for Conv1d.
+
+    Handles dynamic shapes by using the shape tensor API when the input
+    has multiple dynamic (-1) dimensions.
+    """
+    # Prefer FX metadata shape (preserves concrete batch/channel dims)
+    # over input_trt.shape (which is all -1 after shape-tensor reshapes).
+    if input_node is not None:
+        meta_shape = get_node_shape(input_node)
+        if meta_shape is not None:
+            input_shape = resolve_shape(meta_shape)
+        else:
+            input_shape = tuple(input_trt.shape)
+    else:
+        input_shape = tuple(input_trt.shape)
+    num_dynamic = sum(1 for d in input_shape if d == -1)
+
+    layer = network.add_shuffle(input_trt)
+    layer.name = name
+
+    if num_dynamic <= 1:
+        layer.reshape_dims = trt.Dims(
+            [input_shape[0], input_shape[1], 1, input_shape[2]]
+        )
+    else:
+        # Build shape tensor: [dim0, dim1, 1, dim2]
+        shape_layer = network.add_shape(input_trt)
+        shape_layer.name = f"{name}_shape"
+        shape_i32 = network.add_cast(shape_layer.get_output(0), trt.int32)
+        shape_i32.name = f"{name}_shape_i32"
+        shape_trt = shape_i32.get_output(0)
+
+        components = []
+        for i in range(3):
+            if input_shape[i] >= 0:
+                c = network.add_constant(
+                    [1], trt.Weights(np.array([input_shape[i]], dtype=np.int32))
+                )
+                c.name = f"{name}_c{i}"
+                components.append(c.get_output(0))
+            else:
+                idx_c = network.add_constant(
+                    [1], trt.Weights(np.array([i], dtype=np.int32))
+                )
+                idx_c.name = f"{name}_idx{i}"
+                g = network.add_gather(shape_trt, idx_c.get_output(0), axis=0)
+                g.name = f"{name}_g{i}"
+                components.append(g.get_output(0))
+            # Insert constant 1 after dim1 (between channel and spatial)
+            if i == 1:
+                one = network.add_constant(
+                    [1], trt.Weights(np.array([1], dtype=np.int32))
+                )
+                one.name = f"{name}_one"
+                components.append(one.get_output(0))
+
+        shape_cat = network.add_concatenation(components)
+        shape_cat.axis = 0
+        shape_cat.name = f"{name}_outshape"
+        layer.set_input(1, shape_cat.get_output(0))
+
+    return layer.get_output(0)
+
+
+def _squeeze_4d_to_3d(
+    network: Any, output_trt: Any, name: str, trt: Any,
+    conv_node: Any = None,
+) -> Any:
+    """Squeeze 4D tensor [B, C, 1, W] back to 3D [B, C, W] for Conv1d output.
+
+    Handles dynamic shapes by using the shape tensor API when the output
+    has multiple dynamic (-1) dimensions.
+    """
+    # Use FX metadata if available to get concrete dims
+    if conv_node is not None:
+        meta_shape = get_node_shape(conv_node)
+        if meta_shape is not None:
+            # The conv node's output is 3D [B, C, W].
+            # Return directly using the resolved output shape.
+            resolved = resolve_shape(meta_shape)
+            num_dynamic = sum(1 for d in resolved if d < 0)
+            layer = network.add_shuffle(output_trt)
+            layer.name = name
+            if num_dynamic <= 1:
+                layer.reshape_dims = trt.Dims(resolved)
+            else:
+                shape_layer = network.add_shape(output_trt)
+                shape_layer.name = f"{name}_shape"
+                shape_i32 = network.add_cast(shape_layer.get_output(0), trt.int32)
+                shape_i32.name = f"{name}_shape_i32"
+                shape_trt = shape_i32.get_output(0)
+
+                components = []
+                # Output is 4D [B, C, 1, W], target is 3D [B, C, W]
+                for out_i, in_i in enumerate([0, 1, 3]):
+                    if resolved[out_i] >= 0:
+                        c = network.add_constant(
+                            [1], trt.Weights(np.array([resolved[out_i]], dtype=np.int32))
+                        )
+                        c.name = f"{name}_c{out_i}"
+                        components.append(c.get_output(0))
+                    else:
+                        idx_c = network.add_constant(
+                            [1], trt.Weights(np.array([in_i], dtype=np.int32))
+                        )
+                        idx_c.name = f"{name}_idx{out_i}"
+                        g = network.add_gather(shape_trt, idx_c.get_output(0), axis=0)
+                        g.name = f"{name}_g{out_i}"
+                        components.append(g.get_output(0))
+
+                shape_cat = network.add_concatenation(components)
+                shape_cat.axis = 0
+                shape_cat.name = f"{name}_outshape"
+                layer.set_input(1, shape_cat.get_output(0))
+            return layer.get_output(0)
+
+    output_shape = output_trt.shape
+    if len(output_shape) != 4:
+        return output_trt
+
+    # Build target shape [dim0, dim1, dim3] (skip dim2 which is 1)
+    target = [output_shape[0], output_shape[1], output_shape[3]]
+    num_dynamic = sum(1 for d in target if d == -1)
+
+    layer = network.add_shuffle(output_trt)
+    layer.name = name
+
+    if num_dynamic <= 1:
+        layer.reshape_dims = trt.Dims(target)
+    else:
+        shape_layer = network.add_shape(output_trt)
+        shape_layer.name = f"{name}_shape"
+        shape_i32 = network.add_cast(shape_layer.get_output(0), trt.int32)
+        shape_i32.name = f"{name}_shape_i32"
+        shape_trt = shape_i32.get_output(0)
+
+        components = []
+        for out_i, in_i in enumerate([0, 1, 3]):
+            if output_shape[in_i] >= 0:
+                c = network.add_constant(
+                    [1], trt.Weights(np.array([output_shape[in_i]], dtype=np.int32))
+                )
+                c.name = f"{name}_c{out_i}"
+                components.append(c.get_output(0))
+            else:
+                idx_c = network.add_constant(
+                    [1], trt.Weights(np.array([in_i], dtype=np.int32))
+                )
+                idx_c.name = f"{name}_idx{out_i}"
+                g = network.add_gather(shape_trt, idx_c.get_output(0), axis=0)
+                g.name = f"{name}_g{out_i}"
+                components.append(g.get_output(0))
+
+        shape_cat = network.add_concatenation(components)
+        shape_cat.axis = 0
+        shape_cat.name = f"{name}_outshape"
+        layer.set_input(1, shape_cat.get_output(0))
+
+    return layer.get_output(0)
 
 
 def validate_conv2d(node: torch.fx.Node) -> bool:
@@ -198,13 +369,30 @@ def convert_convolution(
 
     input_trt = input_map[input_node]
 
+    # If the input has all-dynamic TRT dims (from a preceding shape-tensor
+    # reshape) but the FX metadata has concrete dims, restore them via
+    # an identity shuffle.  TRT needs concrete channel dims for conv.
+    trt_shape = input_trt.shape
+    num_neg = sum(1 for d in trt_shape if d == -1)
+    if num_neg > 1:
+        meta_shape = get_node_shape(input_node)
+        if meta_shape is not None:
+            resolved = resolve_shape(meta_shape)
+            resolved_neg = sum(1 for d in resolved if d < 0)
+            if resolved_neg < num_neg and resolved_neg <= 1:
+                restore = network.add_shuffle(input_trt)
+                restore.reshape_dims = trt.Dims(resolved)
+                restore.name = f"conv_restore_{node.name}"
+                input_trt = restore.get_output(0)
+        # else: no metadata available, leave input_trt as-is
+
     exp_prog = edge_program if isinstance(edge_program, ExportedProgram) else None
     weight_tensor = _get_param_tensor(exp_prog, weight_node)
     if weight_tensor is None:
         raise ValueError(f"Could not extract weight tensor for convolution node {node.name}")
 
     weight_np = weight_tensor.detach().cpu().numpy().astype(np.float32)
-    
+
     if not weight_np.flags['C_CONTIGUOUS']:
         weight_np = np.ascontiguousarray(weight_np)
 
@@ -224,13 +412,13 @@ def convert_convolution(
         if is_conv1d:
             kernel_size = weight_np.shape[2]
             input_shape = input_trt.shape
-            
+
             # Expand to 4D for TensorRT
             if len(input_shape) == 3:
-                shuffle_in = network.add_shuffle(input_trt)
-                shuffle_in.reshape_dims = trt.Dims([input_shape[0], input_shape[1], 1, input_shape[2]])
-                shuffle_in.name = f"deconv1d_unsqueeze_{node.name}"
-                input_trt = shuffle_in.get_output(0)
+                input_trt = _unsqueeze_3d_to_4d(
+                    network, input_trt, f"deconv1d_unsqueeze_{node.name}", trt,
+                    input_node=input_node,
+                )
 
             # Reshape weight to 4D: [in_ch, out_ch/groups, 1, kernel_size]
             weight_4d = np.ascontiguousarray(
@@ -263,11 +451,11 @@ def convert_convolution(
 
             # Squeeze back to 3D if needed
             output_shape = output.shape
-            if len(output_shape) == 4 and output_shape[2] == 1:
-                shuffle_out = network.add_shuffle(output)
-                shuffle_out.reshape_dims = trt.Dims([output_shape[0], output_shape[1], output_shape[3]])
-                shuffle_out.name = f"deconv1d_squeeze_{node.name}"
-                output = shuffle_out.get_output(0)
+            if len(output_shape) == 4:
+                output = _squeeze_4d_to_3d(
+                    network, output, f"deconv1d_squeeze_{node.name}", trt,
+                    conv_node=node,
+                )
         else:
             # 2D transposed convolution
             kernel_h = weight_np.shape[2]
@@ -305,10 +493,10 @@ def convert_convolution(
         kernel_size = weight_np.shape[2]
         input_shape = input_trt.shape
         if len(input_shape) == 3:
-            shuffle_in = network.add_shuffle(input_trt)
-            shuffle_in.reshape_dims = trt.Dims([input_shape[0], input_shape[1], 1, input_shape[2]])
-            shuffle_in.name = f"conv1d_unsqueeze_{node.name}"
-            input_trt = shuffle_in.get_output(0)
+            input_trt = _unsqueeze_3d_to_4d(
+                network, input_trt, f"conv1d_unsqueeze_{node.name}", trt,
+                input_node=input_node,
+            )
 
         weight_4d = np.ascontiguousarray(
             weight_np.reshape(out_channels, weight_np.shape[1], 1, kernel_size)
@@ -339,11 +527,11 @@ def convert_convolution(
         output = layer.get_output(0)
 
         output_shape = output.shape
-        if len(output_shape) == 4 and output_shape[2] == 1:
-            shuffle_out = network.add_shuffle(output)
-            shuffle_out.reshape_dims = trt.Dims([output_shape[0], output_shape[1], output_shape[3]])
-            shuffle_out.name = f"conv1d_squeeze_{node.name}"
-            output = shuffle_out.get_output(0)
+        if len(output_shape) == 4:
+            output = _squeeze_4d_to_3d(
+                network, output, f"conv1d_squeeze_{node.name}", trt,
+                conv_node=node,
+            )
     else:
         kernel_h = weight_np.shape[2]
         kernel_w = weight_np.shape[3]

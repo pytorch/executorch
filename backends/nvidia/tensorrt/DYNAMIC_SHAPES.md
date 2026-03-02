@@ -1,119 +1,188 @@
-# Fix expand_copy for TRT dynamic shapes via shape tensor API
+# TRT dynamic shapes — progress & next steps
 
-## Context
+## Completed
 
-The `expand_copy` converter passes `-1` to ISliceLayer's output shape for
-dynamic dims.  TRT rejects this: "inherently negative length — proven upper
-bound is -1."  This blocks 161 expand ops (attention mask broadcasting) from
-TRT delegation, fragmenting the encoder into many small partitions.
+### 1. expand_copy / expand converter (shape tensor API)
 
-**Fix:** compute the output shape dynamically at runtime using TRT's shape
-tensor API (`add_shape` → `add_gather` → `add_concatenation` → `set_input`).
+**Files:** `converters/expand.py`
 
-Steps 1–3 from the previous plan (C++ runtime, `setInputShape`, buffer
-allocation) are already committed.  The remaining blocker is this converter.
+The converter now has a two-path branch: static (all dims concrete) and
+dynamic (any `-1`).  The dynamic path uses `add_shape` → `add_gather` →
+`add_concatenation` → `set_input(2, shape_tensor)` so TRT can prove all
+dims are positive through the optimization profile.  Both `aten.expand.default`
+and `aten.expand_copy.default` are marked `supports_dynamic_shapes=True`.
 
-## File to modify
+### 2. constant_pad_nd converter
 
-[expand.py](backends/nvidia/tensorrt/converters/expand.py) — `convert_expand`
-(lines 97–191)
+**Files:** `converters/comparison.py`
 
-## Implementation
+Same pattern: `add_shape` + `add_elementwise(SUM)` to compute
+`output_shape = input_shape + pad_offset` at runtime.  Marked
+`supports_dynamic_shapes=True`.
 
-Replace the slice-layer block (lines 164–191) with a two-path branch:
+### 3. view / view_copy converter (shape tensor API)
 
-### Static path (no `-1` in output_shape) — keep as-is
+**Files:** `converters/reshape.py`
 
-```python
-if all(d >= 0 for d in output_shape):
-    # ... existing add_slice with trt.Dims(shape) ...
+The multi-dynamic-dim path builds a shape tensor from `target_shape` args,
+resolving FX Nodes through `input_map`.  Marked `supports_dynamic_shapes=True`.
+
+### 4. slice / slice_copy converter
+
+**Files:** `converters/slice.py`
+
+Marked `supports_dynamic_shapes=True` (dynamic path was already committed).
+
+### 5. Partitioner gating
+
+**Files:** `partitioner/operator_support.py`
+
+Two new checks in `is_node_supported`:
+
+- **Symbolic scalar args check:** If any non-tensor arg is a symbolic FX
+  Node and the converter hasn't declared `supports_dynamic_shapes=True`,
+  reject the node.  This prevents static converters from receiving
+  runtime-computed values they can't handle.
+
+- **Stale reshape check (`_is_stale_reshape`):** Rejects view/reshape
+  nodes where the output metadata has SymInt dims but the `target_shape`
+  arg is all concrete ints.  These concrete ints were captured at trace
+  time and won't adapt to different input sizes, causing TRT volume
+  mismatches at non-trace-time profile points.
+
+### 6. Optimization profiles
+
+**Files:** `backend.py`
+
+- `_add_network_inputs` converts SymInt dims to `-1` for TRT.
+- `_eval_symint_range` evaluates derived SymInt expressions (e.g.
+  `s77 + 3`, `s77 // 2`) at min/max bounds via sympy substitution.
+- `_add_optimization_profile` creates a TRT optimization profile from the
+  edge program's `range_constraints`, using `set_shape` for regular
+  tensor inputs and `set_shape_input` for shape tensor inputs.
+- Handles `int_oo` (unbounded ranges from `Dim.AUTO`) gracefully by
+  capping at the trace-time value.
+- Recovers symbol ranges after partitioning via `shape_env.var_to_val`
+  matching, since SymInt expressions get concretized during partitioning.
+- Uses `_eval_symint_range_from_shape_env` to resolve derived expressions
+  (e.g. `s18 // 2`) by proportional scaling of the base symbol range.
+
+### 7. unsqueeze / unsqueeze_copy converter
+
+**Files:** `converters/reshape.py`
+
+Applied `resolve_shape()` to map SymInts to `-1`.  When multiple dynamic
+dims exist, builds a shape tensor via `add_shape` + `add_gather` (for each
+kept input dim) + constant `1` at the inserted position + `add_concatenation`
+→ `set_input(1, shape_tensor)`.  Marked `supports_dynamic_shapes=True`.
+
+### 8. squeeze / squeeze_copy converter
+
+**Files:** `converters/reshape.py`
+
+Same pattern.  Tracks `kept_dims` (input indices not squeezed) and gathers
+only those from the runtime shape.  Marked `supports_dynamic_shapes=True`.
+
+### 9. flatten converter
+
+**Files:** `converters/reshape.py`
+
+Three-segment output shape: pre-range, flattened, post-range.  When the
+flattened range contains dynamic dims, computes the runtime product via
+iterative `add_elementwise(PROD)`.  Marked `supports_dynamic_shapes=True`.
+
+### 10. select / select_copy converter
+
+**Files:** `converters/reshape.py`
+
+Two layers fixed:
+- **Slice layer:** builds shape tensor with `dim` replaced by constant `1`,
+  uses `set_input(2, shape_tensor)`.
+- **Squeeze shuffle:** gathers all dims except `dim` from slice output,
+  uses `set_input(1, shape_tensor)`.
+Marked `supports_dynamic_shapes=True`.
+
+### 11. Conv1d dynamic shape wrappers
+
+**Files:** `converters/conv2d.py`
+
+Conv1d operations require 3D→4D unsqueeze before and 4D→3D squeeze after
+the TRT convolution.  These wrappers now use the shape tensor API when
+the input has multiple dynamic dims.  Also added a shape-restoring
+shuffle before convolution when the FX metadata has more concrete dims
+than the TRT tensor (which happens when preceding shape-tensor-based
+reshapes make all dims appear dynamic in TRT).
+
+### 12. Tests
+
+**Files:** `test/test_expand_dynamic.py`
+
+15 tests covering registry flags for all dynamic-shapes converters,
+partitioner acceptance for expand/unsqueeze/squeeze/select with dynamic
+batch dim, and the attention mask broadcast pattern.
+
+All 41 TRT backend tests pass.
+
+---
+
+## Remaining: Conv1d after shape-tensor reshape
+
+The Conv1d converter uses FX metadata to restore concrete dims before
+calling `add_convolution_nd`, but this only works when `resolve_shape`
+produces ≤1 dynamic dim.  When the Conformer encoder has nodes with
+multiple SymInt dims in their metadata (e.g. after view operations that
+reshape with both batch and sequence as symbolic), the restore fails and
+TRT cannot determine the conv output shape.
+
+The error manifests as:
+```
+ITensor::getDimensions: Error Code 4: Tensor conv1d_..._output has axis 3
+with inherently negative length.  Proven upper bound is -1.
 ```
 
-### Dynamic path (any `-1` in output_shape) — new
+### Root cause
 
-```python
-import tensorrt as trt
-import numpy as np
+When a shape-tensor-based shuffle (`set_input(1, shape_tensor)`) feeds
+into a Conv1d wrapper, TRT reports all output dims as `-1`.  The Conv1d
+unsqueeze creates `[-1, -1, 1, -1]` (three dynamic dims).  TRT then
+cannot prove the spatial output of the conv is non-negative.
 
-# 1. Get input runtime shape as int32 tensor
-shape_layer = network.add_shape(current_tensor)
-shape_layer.name = f"expand_shape_{node.name}"
-shape_i32 = network.add_cast(shape_layer.get_output(0), trt.int32)
-shape_i32.name = f"expand_shape_i32_{node.name}"
+### Possible fixes
 
-# 2. Build output shape tensor, one component per dim
-components = []
-for i, (inp_dim, out_dim) in enumerate(zip(input_shape, output_shape)):
-    if out_dim >= 0:
-        # Concrete dim → constant [out_dim]
-        c = network.add_constant([1], trt.Weights(np.array([out_dim], np.int32)))
-        c.name = f"expand_dim{i}_{node.name}"
-        components.append(c.get_output(0))
-    elif inp_dim == 1:
-        # Broadcasting from 1 → dynamic target.
-        # The target came from expand_size[i] which is an FX Node.
-        # Get the corresponding TRT tensor from input_map.
-        raw_target = expand_size[i]
-        if isinstance(raw_target, torch.fx.Node) and raw_target in input_map:
-            t = input_map[raw_target]
-            shuf = network.add_shuffle(t)
-            shuf.reshape_dims = trt.Dims([1])
-            shuf.name = f"expand_target{i}_{node.name}"
-            cast = network.add_cast(shuf.get_output(0), trt.int32)
-            cast.name = f"expand_target_i32_{i}_{node.name}"
-            components.append(cast.get_output(0))
-        else:
-            # Fallback: extract from input shape (same dim, no broadcast)
-            idx = network.add_constant([1], trt.Weights(np.array([i], np.int32)))
-            g = network.add_gather(shape_i32.get_output(0), idx.get_output(0), axis=0)
-            g.name = f"expand_gather{i}_{node.name}"
-            components.append(g.get_output(0))
-    else:
-        # Dynamic dim, no broadcast → extract from input shape
-        idx = network.add_constant([1], trt.Weights(np.array([i], np.int32)))
-        g = network.add_gather(shape_i32.get_output(0), idx.get_output(0), axis=0)
-        g.name = f"expand_gather{i}_{node.name}"
-        components.append(g.get_output(0))
+1. **Avoid shape tensor API when ≤1 dim is dynamic:** The FX metadata
+   from `get_node_shape` + `resolve_shape` should produce shapes with
+   concrete batch/channel dims.  If the preceding reshape uses the
+   simple `trt.Dims()` path (≤1 dynamic dim), the conv input will have
+   concrete dims.  Investigate why some reshape nodes produce >1 dynamic
+   dim when only the sequence length is truly dynamic.
 
-# 3. Concatenate into 1-D shape tensor
-shape_cat = network.add_concatenation(components)
-shape_cat.axis = 0
-shape_cat.name = f"expand_outshape_{node.name}"
-shape_tensor = shape_cat.get_output(0)
+2. **Add optimization profile before network building:** If TRT had
+   profile ranges available during `add_convolution_nd`, it could prove
+   the spatial dim is positive.  This would require restructuring the
+   build flow (currently profile is set after all layers are added).
 
-# 4. Build stride tensor (0 = broadcast, 1 = keep)
-stride_np = np.array(stride, dtype=np.int32)
-stride_const = network.add_constant([len(stride)], trt.Weights(stride_np))
-stride_const.name = f"expand_stride_{node.name}"
+3. **Explicit output shape:** Use the conv node's FX metadata to compute
+   the expected output shape and apply it via a reshape after the conv.
 
-# 5. Build start tensor (all zeros)
-start_np = np.zeros(output_dims, dtype=np.int32)
-start_const = network.add_constant([output_dims], trt.Weights(start_np))
-start_const.name = f"expand_start_{node.name}"
+### Unused shape inputs
 
-# 6. Create slice layer with set_input overrides
-slice_layer = network.add_slice(
-    current_tensor, start=[0]*output_dims, shape=[1]*output_dims, stride=[1]*output_dims
-)
-slice_layer.set_input(1, start_const.get_output(0))
-slice_layer.set_input(2, shape_tensor)
-slice_layer.set_input(3, stride_const.get_output(0))
-slice_layer.name = f"expand_slice_{node.name}"
-```
+The encoder partition has 5–7 unused scalar inputs (`sym_size`, `add_1`,
+`sub`, etc.) that were pulled in as partition boundary values.  The
+converters use `add_shape` instead.  TRT warns about them but builds
+successfully.  To clean these up:
 
-Key details:
-- `add_shape` returns int64; must cast to int32 for `add_concatenation`
-- `add_gather` with axis=0 extracts a single dim from the shape vector
-- `set_input(2, ...)` overrides the static shape placeholder — TRT can now
-  prove the dims are positive via the optimization profile
+- Option A: post-process the network to remove inputs with zero consumers.
+- Option B: filter them out in `_add_network_inputs` (requires tracking
+  which placeholder nodes are actually referenced by converter code).
+- Low priority — they don't block engine building.
 
-## Verification
+### Verification
 
 ```bash
 python examples/models/parakeet/export_parakeet_tdt.py \
     --backend tensorrt --output-dir ./parakeet_tensorrt
 ```
 
-Expected: export succeeds with dynamic shapes; encoder is a single TRT
-delegate (no expand_copy fallback).  Then test transcription with 7.4s
-audio to verify it produces the same text as eager/CUDA.
+The encoder is a single TRT delegate partition.  Once the conv issue is
+resolved, test transcription with 7.4s audio to verify it produces the
+same text as eager/CUDA.
