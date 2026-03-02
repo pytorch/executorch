@@ -1,0 +1,11 @@
+diff --git a/mlx/backend/metal/device.cpp b/mlx/backend/metal/device.cpp
+--- a/mlx/backend/metal/device.cpp
++++ b/mlx/backend/metal/device.cpp
+@@ -39,6 +39,7 @@ auto load_device() {
+       ?: MTL::CreateSystemDefaultDevice();
+   if (!device) {
+     throw std::runtime_error("Failed to load device");
+   }
++  device->retain();  // Ensure device outlives the array/pool
+   return device;
+ }
