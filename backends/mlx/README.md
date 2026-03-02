@@ -113,15 +113,21 @@ backends/mlx/
 │   ├── hf_attention.py         # HuggingFace custom SDPA attention
 │   ├── quantization.py         # TorchAO quantization helpers
 │   └── source_transformation.py # Source transforms for MLX export
+├── _generated_inspector.py      # [GENERATED] Inspector utilities for .pte debugging
+├── _logging.py                 # Debug logging utilities (ET_MLX_DEBUG)
+├── builder/                    # Core build infrastructure
+│   ├── op_registry.py          # REGISTRY (op handler registration)
+│   ├── op_helpers.py           # Helper utilities for op handlers
+│   ├── pattern_matcher.py      # Pattern matching for multi-node fusions
+│   ├── program_builder.py      # MLXProgramBuilder
+│   └── slot_manager.py         # Tensor/value slot allocation
 ├── ops.py                      # Op handlers  (ATen target → MLX IR node)
 ├── patterns.py                 # Pattern handlers (multi-node fusions)
 ├── passes.py                   # Graph passes (RMSNorm fusion, CSE, etc.)
 ├── pattern_utils.py            # Pattern matching utilities for passes
-├── program_builder.py          # MLXProgramBuilder + REGISTRY
 ├── partitioner.py              # Decides which ops to delegate to MLX
 ├── preprocess.py               # BackendDetails.preprocess() entry point
 ├── custom_ops.py               # Custom torch ops (kv_cache_update, custom_sdpa, rope)
-├── _logging.py                 # Debug logging utilities (ET_MLX_DEBUG)
 ├── pte_inspector.py            # .pte file inspection/debugging tool
 ├── test/
 │   ├── test_ops.py             # Op test definitions (models + configs)
