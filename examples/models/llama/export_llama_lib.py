@@ -137,6 +137,27 @@ HUGGING_FACE_REPO_IDS = {
 }
 
 
+def _get_additional_export_passes(model_class: str) -> List[InitializedMutableBufferPass]:
+    patterns = []
+
+    if model_class in TORCHTUNE_DEFINED_MODELS:
+        patterns.append("kv_cache_pos")
+
+    # Qwen3.5 uses internal mutable buffers for both the hybrid KV path and
+    # DeltaNet recurrent/conv states.
+    if model_class.startswith("qwen3_5"):
+        patterns.extend(
+            [
+                "k_cache",
+                "v_cache",
+                "conv_state",
+                "recurrent_state",
+            ]
+        )
+
+    return [InitializedMutableBufferPass(patterns)] if patterns else []
+
+
 def set_pkg_name(name: str) -> None:
     global pkg_name
     pkg_name = name
@@ -1285,9 +1306,9 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
         "Each method requires separate model instantiation and export."
     )
 
-    additional_passes = []
-    if llm_config.base.model_class.value in TORCHTUNE_DEFINED_MODELS:
-        additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
+    additional_passes = _get_additional_export_passes(
+        llm_config.base.model_class.value
+    )
 
     # Build dict of exported programs
     method_to_program: Dict[str, ExportedProgram] = {}
@@ -1358,9 +1379,9 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
         llm_config
     )
 
-    additional_passes = []
-    if llm_config.base.model_class.value in TORCHTUNE_DEFINED_MODELS:
-        additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
+    additional_passes = _get_additional_export_passes(
+        llm_config.base.model_class.value
+    )
 
     # export_to_edge
     builder_manager = _prepare_for_llama_export(llm_config)

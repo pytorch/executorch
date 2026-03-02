@@ -24,10 +24,12 @@ except ImportError:
     VgfQuantizer = None
 
 from executorch.examples.models.llama.export_llama_lib import (
+    _get_additional_export_passes,
     _export_llama,
     build_args_parser,
     get_quantizer_and_quant_params,
 )
+from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 from executorch.extension.llm.export.config.llm_config import LlmConfig, Pt2eQuantize
 
 UNWANTED_OPS = [
@@ -37,6 +39,24 @@ UNWANTED_OPS = [
 
 
 class ExportLlamaLibTest(unittest.TestCase):
+    def test_qwen3_5_mutable_buffer_passes(self):
+        passes = _get_additional_export_passes("qwen3_5_0_8b")
+        self.assertEqual(len(passes), 1)
+        self.assertIsInstance(passes[0], InitializedMutableBufferPass)
+        self.assertEqual(
+            passes[0].patterns,
+            ["k_cache", "v_cache", "conv_state", "recurrent_state"],
+        )
+
+    def test_torchtune_mutable_buffer_passes(self):
+        passes = _get_additional_export_passes("llama3_2_vision")
+        self.assertEqual(len(passes), 1)
+        self.assertIsInstance(passes[0], InitializedMutableBufferPass)
+        self.assertEqual(passes[0].patterns, ["kv_cache_pos"])
+
+    def test_llama3_has_no_extra_mutable_buffer_passes(self):
+        self.assertEqual(_get_additional_export_passes("llama3"), [])
+
     def test_has_expected_ops_and_op_counts(self):
         """
         Checks the presence of unwanted expensive ops.
