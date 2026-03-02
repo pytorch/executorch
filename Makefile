@@ -22,7 +22,7 @@
 # - silero_vad: Voice activity detection model (CPU)
 # - llama:    Text generation model (CPU)
 # - llava:    Vision + language model (CPU)
-# - gemma3:   Text generation model (CPU, CUDA)
+# - gemma3:   Text generation model (CPU, CUDA, Metal)
 #
 # USAGE:
 # ------
@@ -91,7 +91,7 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral_realtime-cpu voxtral_realtime-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal sortformer-cpu silero-vad-cpu llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral_realtime-cpu voxtral_realtime-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal sortformer-cpu silero-vad-cpu llama-cpu llava-cpu gemma3-cuda gemma3-cpu gemma3-metal clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
@@ -114,6 +114,7 @@ help:
 	@echo "  llava-cpu           - Build Llava runner with CPU backend"
 	@echo "  gemma3-cuda         - Build Gemma3 runner with CUDA backend"
 	@echo "  gemma3-cpu          - Build Gemma3 runner with CPU backend"
+	@echo "  gemma3-metal        - Build Gemma3 runner with Metal backend (macOS only)"
 	@echo "  clean               - Clean build artifacts"
 
 voxtral-cuda:
@@ -288,6 +289,15 @@ gemma3-cpu:
 	cmake --workflow --preset llm-release
 	@echo "==> Building Gemma3 runner (CPU)..."
 	cd examples/models/gemma3 && cmake --workflow --preset gemma3-cpu
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/gemma3/gemma3_e2e_runner"
+
+gemma3-metal:
+	@echo "==> Building and installing ExecuTorch with Metal..."
+	cmake --workflow --preset llm-release-metal
+	@echo "==> Building Gemma3 runner with Metal..."
+	cd examples/models/gemma3 && cmake --workflow --preset gemma3-metal
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/gemma3/gemma3_e2e_runner"

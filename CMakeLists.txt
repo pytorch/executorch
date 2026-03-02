@@ -766,6 +766,12 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
     )
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   endif()
+  # CMake 4.0 deprecated CMP0067 which propagated CMAKE_CXX_STANDARD to
+  # check_cxx_source_compiles(). Without this, abseil's C++17 feature detection
+  # fails on compilers that default to C++14, causing absl::string_view to be
+  # defined as a class instead of a std::string_view alias, which conflicts
+  # with sentencepiece headers.
+  set(ABSL_INTERNAL_AT_LEAST_CXX17 ON CACHE INTERNAL "")
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizers)
   if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
     set(CMAKE_POSITION_INDEPENDENT_CODE
