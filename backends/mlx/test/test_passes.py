@@ -12,7 +12,6 @@ Tests for graph transformation passes in the MLX backend.
 import unittest
 
 import executorch.exir as exir
-
 import torch
 import torch.nn as nn
 from executorch.backends.mlx.partitioner import MLXPartitioner
@@ -22,7 +21,6 @@ from executorch.backends.mlx.passes import (
     CollapseDtypeConversionPass,
     CollapsePermutePass,
     CollapseViewCopyPass,
-    CSEPass,
     FuseRMSNormPass,
     RemoveNoOpsPass,
 )
@@ -30,11 +28,6 @@ from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.partitioner import PartitionResult
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import export
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 class _PreserveOpsPartitioner(MLXPartitioner):
@@ -79,11 +72,6 @@ def _has_op(gm, target):
     return _count_ops(gm, target) > 0
 
 
-# ---------------------------------------------------------------------------
-# _is_pure_dtype_cast
-# ---------------------------------------------------------------------------
-
-
 class TestIsPureDtypeCast(unittest.TestCase):
 
     def test_pure_dtype_only(self):
@@ -125,11 +113,6 @@ class TestIsPureDtypeCast(unittest.TestCase):
 
     def test_empty_kwargs(self):
         self.assertFalse(_is_pure_dtype_cast({}))
-
-
-# ---------------------------------------------------------------------------
-# CanonicalizePermutePass
-# ---------------------------------------------------------------------------
 
 
 class TestCanonicalizePermutePass(unittest.TestCase):
@@ -181,11 +164,6 @@ class TestCanonicalizePermutePass(unittest.TestCase):
         gm = _to_edge_gm(M(), (torch.randn(3, 4),))
         result = CanonicalizePermutePass()(gm)
         self.assertFalse(result.modified)
-
-
-# ---------------------------------------------------------------------------
-# CollapseViewCopyPass
-# ---------------------------------------------------------------------------
 
 
 class TestCollapseViewCopyPass(unittest.TestCase):
@@ -283,11 +261,6 @@ class TestCollapseViewCopyPass(unittest.TestCase):
         self.assertEqual(_count_ops(result.graph_module, target), 0)
 
 
-# ---------------------------------------------------------------------------
-# CollapsePermutePass
-# ---------------------------------------------------------------------------
-
-
 class TestCollapsePermutePass(unittest.TestCase):
 
     def test_inverse_permutations_removed(self):
@@ -352,11 +325,6 @@ class TestCollapsePermutePass(unittest.TestCase):
         self.assertFalse(result.modified)
 
 
-# ---------------------------------------------------------------------------
-# CollapseDtypeConversionPass
-# ---------------------------------------------------------------------------
-
-
 class TestCollapseDtypeConversionPass(unittest.TestCase):
 
     def test_consecutive_casts_collapsed(self):
@@ -390,11 +358,6 @@ class TestCollapseDtypeConversionPass(unittest.TestCase):
         gm = _to_edge_gm(M(), (torch.randn(4, 4),))
         result = CollapseDtypeConversionPass()(gm)
         self.assertFalse(result.modified)
-
-
-# ---------------------------------------------------------------------------
-# RemoveNoOpsPass
-# ---------------------------------------------------------------------------
 
 
 class TestRemoveNoOpsPass(unittest.TestCase):
@@ -573,93 +536,6 @@ class TestRemoveNoOpsPass(unittest.TestCase):
         RemoveNoOpsPass()(gm)
 
 
-# ---------------------------------------------------------------------------
-# CSEPass
-# ---------------------------------------------------------------------------
-
-
-class TestCSEPass(unittest.TestCase):
-
-    def test_duplicate_unary_ops_deduplicated(self):
-        """Two identical neg(x) ops should be merged into one."""
-
-        class M(nn.Module):
-            def forward(self, x):
-                a = torch.neg(x)
-                b = torch.neg(x)
-                return a + b
-
-        gm = _to_edge_gm(M(), (torch.randn(4, 4),))
-        target = exir_ops.edge.aten.neg.default
-        before = _count_ops(gm, target)
-
-        if before < 2:
-            self.skipTest("Export already deduplicated neg ops")
-
-        result = CSEPass()(gm)
-
-        self.assertTrue(result.modified)
-        self.assertEqual(_count_ops(result.graph_module, target), 1)
-
-    def test_different_ops_not_merged(self):
-        """neg(x) and abs(x) should not be merged."""
-
-        class M(nn.Module):
-            def forward(self, x):
-                return torch.neg(x) + torch.abs(x)
-
-        gm = _to_edge_gm(M(), (torch.randn(4, 4),))
-        result = CSEPass()(gm)
-        self.assertFalse(result.modified)
-
-    def test_same_op_different_inputs_not_merged(self):
-        """neg(x) and neg(y) should not be merged."""
-
-        class M(nn.Module):
-            def forward(self, x, y):
-                return torch.neg(x) + torch.neg(y)
-
-        gm = _to_edge_gm(M(), (torch.randn(4, 4), torch.randn(4, 4)))
-        result = CSEPass()(gm)
-        self.assertFalse(result.modified)
-
-    def test_noop_when_no_duplicates(self):
-        class M(nn.Module):
-            def forward(self, x):
-                return x + 1
-
-        gm = _to_edge_gm(M(), (torch.randn(4, 4),))
-        result = CSEPass()(gm)
-        self.assertFalse(result.modified)
-
-    def test_duplicate_chains_deduplicated(self):
-        """Duplicate multi-op chains should be merged via structural hashing."""
-
-        class M(nn.Module):
-            def forward(self, x):
-                a = torch.neg(torch.abs(x))
-                b = torch.neg(torch.abs(x))
-                return a + b
-
-        gm = _to_edge_gm(M(), (torch.randn(4, 4),))
-        neg_target = exir_ops.edge.aten.neg.default
-        abs_target = exir_ops.edge.aten.abs.default
-
-        if _count_ops(gm, neg_target) < 2:
-            self.skipTest("Export already deduplicated chains")
-
-        result = CSEPass()(gm)
-
-        self.assertTrue(result.modified)
-        self.assertEqual(_count_ops(result.graph_module, neg_target), 1)
-        self.assertEqual(_count_ops(result.graph_module, abs_target), 1)
-
-
-# ---------------------------------------------------------------------------
-# FuseRMSNormPass
-# ---------------------------------------------------------------------------
-
-
 class TestFuseRMSNormPass(unittest.TestCase):
 
     def test_rms_norm_fused(self):
@@ -707,11 +583,6 @@ class TestFuseRMSNormPass(unittest.TestCase):
         ep = export(M(), (torch.randn(4, 4),), strict=False)
         result = FuseRMSNormPass()(ep.graph_module)
         self.assertFalse(result.modified)
-
-
-# ---------------------------------------------------------------------------
-# Pass composition
-# ---------------------------------------------------------------------------
 
 
 class TestPassComposition(unittest.TestCase):
