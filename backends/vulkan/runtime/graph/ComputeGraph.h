@@ -661,6 +661,11 @@ class ComputeGraph final {
   inline bool device_is_adreno() {
     return context_->adapter_ptr()->device_type() == vkapi::DeviceType::ADRENO;
   }
+
+  inline bool device_is_mali() {
+    return context_->adapter_ptr()->device_type() == vkapi::DeviceType::MALI;
+  }
+
   const std::string& device_name() {
     return context()->adapter_ptr()->device_name();
   }
