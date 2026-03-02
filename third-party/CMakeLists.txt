@@ -5,9 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
-if(NOT TARGET nlohmann_json)
-  add_subdirectory(json)
-endif()
+add_subdirectory(json)
 add_subdirectory(gflags)
 
 if(EXECUTORCH_BUILD_PYBIND)
