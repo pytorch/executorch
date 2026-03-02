@@ -44,6 +44,7 @@ from executorch.backends.mlx.builder.slot_manager import (
 )
 from executorch.backends.mlx.serialization.mlx_graph_schema import (
     FloatOrVid,
+    IdCopyNode,
     Instruction,
     InstructionChain,
     IntOrVid,
@@ -557,11 +558,51 @@ class MLXProgramBuilder:
         # SymInts and corrupts the shape_env. This method is used for
         # ops_to_not_decompose() where we only need support status.
 
+    def _emit_buffer_mutation_writebacks(self):
+        """Emit copy-back instructions for BUFFER_MUTATION outputs.
+
+        When a model mutates a buffer (e.g., via .copy_() or .mul_()),
+        torch.export functionalizes it: the new value is a computation result,
+        and the output spec marks it as BUFFER_MUTATION with a target buffer.
+
+        This method emits an IdCopyNode for each BUFFER_MUTATION output,
+        copying the computation result back to the mutable buffer slot so
+        the updated value persists across execution calls.
+        """
+        from torch.export.graph_signature import InputKind, OutputKind
+
+        # Map buffer target name -> input placeholder name
+        target_to_placeholder = {}
+        for ispec in self.ep.graph_signature.input_specs:
+            if ispec.kind == InputKind.BUFFER and ispec.target is not None:
+                target_to_placeholder[ispec.target] = ispec.arg.name
+
+        for ospec in self.ep.graph_signature.output_specs:
+            if ospec.kind != OutputKind.BUFFER_MUTATION:
+                continue
+
+            result_slot = self.slot_manager.get_slot(ospec.arg.name)
+            placeholder_name = target_to_placeholder.get(ospec.target)
+            if result_slot is None or placeholder_name is None:
+                continue
+
+            buffer_slot = self.slot_manager.get_slot(placeholder_name)
+            if buffer_slot is None or buffer_slot.id_space != IdSpace.MutableBuffer:
+                continue
+
+            self.emit(
+                IdCopyNode(
+                    x=self.slot_to_tid(result_slot),
+                    out=self.slot_to_tid(buffer_slot),
+                )
+            )
+
     def build(self) -> MLXGraph:
         if self._mlx_graph is not None:
             return self._mlx_graph
 
         self._process_nodes()
+        self._emit_buffer_mutation_writebacks()
         self._verify_build()
         self._mlx_graph = self._build_mlx_graph()
         return self._mlx_graph

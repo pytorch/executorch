@@ -212,25 +212,32 @@ set(MLX_METAL_JIT
     CACHE BOOL "Use JIT compiled Metal kernels"
 )
 
-# Auto-apply json patch so MLX reuses executorch's nlohmann_json instead of
-# downloading its own copy via FetchContent. TODO: upstream a patch to MLX
-set(MLX_JSON_PATCH "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_json.patch")
-if(EXISTS "${MLX_JSON_PATCH}" AND EXISTS "${MLX_SOURCE_DIR}")
-  execute_process(
-    COMMAND git apply --check ${MLX_JSON_PATCH}
-    WORKING_DIRECTORY ${MLX_SOURCE_DIR}
-    RESULT_VARIABLE _mlx_json_patch_check
-    OUTPUT_QUIET ERROR_QUIET
-  )
-  if(_mlx_json_patch_check EQUAL 0)
+# Auto-apply patches to MLX submodule. Each patch is applied idempotently: `git
+# apply --check` tests whether the patch is still applicable (i.e. not yet
+# applied), and only then applies it.
+set(_mlx_patches
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_json.patch"
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_metal_device_retain.patch"
+)
+foreach(_patch IN LISTS _mlx_patches)
+  if(EXISTS "${_patch}" AND EXISTS "${MLX_SOURCE_DIR}")
+    get_filename_component(_patch_name "${_patch}" NAME)
     execute_process(
-      COMMAND git apply ${MLX_JSON_PATCH} WORKING_DIRECTORY ${MLX_SOURCE_DIR}
+      COMMAND git apply --check "${_patch}"
+      WORKING_DIRECTORY ${MLX_SOURCE_DIR}
+      RESULT_VARIABLE _patch_check
+      OUTPUT_QUIET ERROR_QUIET
     )
-    message(STATUS "Applied mlx_json.patch to MLX submodule")
-  else()
-    message(STATUS "mlx_json.patch already applied or not applicable")
+    if(_patch_check EQUAL 0)
+      execute_process(
+        COMMAND git apply "${_patch}" WORKING_DIRECTORY ${MLX_SOURCE_DIR}
+      )
+      message(STATUS "Applied ${_patch_name} to MLX submodule")
+    else()
+      message(STATUS "${_patch_name} already applied or not applicable")
+    endif()
   endif()
-endif()
+endforeach()
 
 # Add MLX subdirectory
 message(STATUS "Adding MLX from submodule: ${MLX_SOURCE_DIR}")

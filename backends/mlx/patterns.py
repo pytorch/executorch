@@ -36,7 +36,6 @@ from executorch.backends.mlx.pattern_utils import (
 from executorch.backends.mlx.serialization.mlx_graph_schema import (
     AddIntNode,
     DequantizeNode,
-    IdCopyNode,
     IndexCopyNode,
     IntOrVid,
     IntOrVidOrTid,
@@ -125,19 +124,8 @@ class IndexCopyHandler(PatternHandler):
             )
         )
 
-        # index_copy returns the updated dst (same buffer, in-place update)
-        existing_slot = P.slot_manager.get_slot(n)
-        if existing_slot is not None and existing_slot != dst:
-            P.emit(
-                IdCopyNode(
-                    x=P.slot_to_tid(dst),
-                    out=P.slot_to_tid(existing_slot),
-                )
-            )
-            return existing_slot
-        else:
-            P.set_slot(n, dst)
-            return dst
+        P.set_slot(n, dst)
+        return dst
 
 
 @REGISTRY.register_pattern(name="ET_KV_CACHE_UPDATE")
@@ -238,21 +226,13 @@ class ETKVCacheUpdateHandler(PatternHandler):
             [self.cache, self.update, self.start_pos]
         )
 
-        out_slot = P.make_or_get_slot(n)
-
         if self.ring_size > 0:
             self._emit_ring_buffer(P, cache_slot, update_slot, start_slot)
         else:
             self._emit_linear(P, cache_slot, update_slot, start_slot)
 
-        P.emit(
-            IdCopyNode(
-                x=P.slot_to_tid(cache_slot),
-                out=P.slot_to_tid(out_slot),
-            )
-        )
-
-        return out_slot
+        P.set_slot(n, cache_slot)
+        return cache_slot
 
     def _emit_linear(self, P: "MLXProgramBuilder", cache_slot, update_slot, start_slot):
         """Emit a single SliceUpdate for linear (non-ring) cache."""
