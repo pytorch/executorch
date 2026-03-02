@@ -51,7 +51,9 @@ class VkMemoryLayout(IntEnum):
     PACKED_INT8_4W4C = 3
     PACKED_INT8_4H4W = 4
     PACKED_INT8_4W = 5
+    PACKED_INT8_4C = 6
     PACKED_INT8_4C1W = 8
+    PACKED_INT8_CONV2D = 9
     DEFAULT_LAYOUT = 255
 
     def __str__(self) -> str:
