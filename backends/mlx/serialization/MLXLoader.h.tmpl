@@ -79,15 +79,12 @@ struct IntOrVidOrTid {
 
 enum class OpCode : uint8_t {
 {{OPCODE_ENUM_VALUES}}
-  SENTINEL
 };
 
 // OpCode to string conversion (for logging)
 inline const char* op_name(OpCode op) {
   switch (op) {
 {{OP_NAME_CASES}}
-    case OpCode::SENTINEL:
-      return "SENTINEL";
   }
   return "UNKNOWN";
 }

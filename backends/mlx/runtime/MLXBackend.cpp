@@ -390,6 +390,8 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
         write_output(prepared_outputs[info.prepared_idx], out_tensor);
       }
 
+      h->state.reset(); // Release temp GPU buffers back to MLX cache
+
       return Error::Ok;
     } catch (const std::exception& e) {
       ET_LOG(Error, "MLX execute failed: %s", e.what());

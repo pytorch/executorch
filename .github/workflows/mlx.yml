@@ -95,7 +95,7 @@ jobs:
         fi
 
         if [ "${{ matrix.suite }}" = "operators" ]; then
-          MAX_FAILURES=1
+          MAX_FAILURES=0
         else
           MAX_FAILURES=3
         fi

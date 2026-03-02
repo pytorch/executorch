@@ -924,6 +924,9 @@ inline void exec_slice_update(
     ExecutionState& st,
     StreamOrDevice s) {
   // When out == dst, use direct assignment to preserve MLX buffer donation.
+  // TODO: I'm not sure if this is needed as a special case since the standard
+  // st.set_tensor does a std::move. Keeping for now, but should investigate and
+  // possibly remove in future.
   const bool in_place = (n.out.idx == n.dst.idx);
   array& dst = st.tensor_ref(n.dst);
   const array& upd = st.const_tensor_ref(n.update);
@@ -1060,6 +1063,10 @@ exec_index_copy(const IndexCopyNode& n, ExecutionState& st, StreamOrDevice s) {
     idx_vec[i] = static_cast<int>(idx);
   }
 
+  // When out == dst, use direct assignment to preserve MLX buffer donation.
+  // TODO: I'm not sure if this is needed as a special case since the standard
+  // st.set_tensor does a std::move. Keeping for now, but should investigate and
+  // possibly remove in future.
   const bool in_place = (n.out.idx == n.dst.idx);
 
   if (idx_vec.empty()) {
@@ -1994,8 +2001,6 @@ class Interpreter {
         break;
       case OpCode::ARG_PARTITION:
         ops::exec_argpartition(std::get<ArgPartitionNode>(instr.node), st, s);
-        break;
-      case OpCode::SENTINEL:
         break;
       default:
         throw std::runtime_error(

@@ -558,6 +558,7 @@ class EthosUConfig:
     system_config: str = "default"
 
 
+@dataclass
 class MLXConfig:
     """
     Configures the MLX backend for Apple Silicon.
