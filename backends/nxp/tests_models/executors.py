@@ -9,7 +9,9 @@ import logging
 import os.path
 import shutil
 import subprocess
+from copy import deepcopy
 from os import mkdir
+from typing import Callable
 
 import numpy as np
 import torch
@@ -56,6 +58,7 @@ def _run_delegated_executorch_program(
     npu_results_dir,
     mocker,
     use_qat: bool = False,
+    train_fn: Callable | None = None,
 ) -> ExportedProgram:
     if len(input_spec) == 1:
         # Single input, use --dataset
@@ -103,6 +106,7 @@ def _run_delegated_executorch_program(
             calibration_dataset_dir,
             delegate_to_npu=True,
             use_qat=use_qat,
+            train_fn=train_fn,
         )
     except RuntimeError as e:
         if "Model converted with neutron-converter has" in str(e):
@@ -130,6 +134,8 @@ def _run_non_delegated_executorch_program(
     testing_dataset_dir,
     input_spec,
     cpu_results_dir,
+    use_qat: bool = False,
+    train_fn: Callable | None = None,
 ) -> ExportedProgram:
     if len(input_spec) == 1:
         # Single input, use --dataset
@@ -156,7 +162,12 @@ def _run_non_delegated_executorch_program(
         --output {cpu_results_dir} --firmware {NSYS_FIRMWARE_PATH} --nsys {NSYS_PATH} --nsys_config {NSYS_CONFIG_PATH}"
 
     non_delegated_program = to_quantized_executorch_program(
-        model, input_spec, calibration_dataset_dir, delegate_to_npu=False
+        model,
+        input_spec,
+        calibration_dataset_dir,
+        delegate_to_npu=False,
+        use_qat=use_qat,
+        train_fn=train_fn,
     )
 
     nodes = list(non_delegated_program.exported_program().graph.nodes)
@@ -326,6 +337,12 @@ def _run_pytorch_program(
     store_results(all_outputs, cpu_results_dir, npu_results_dir)
 
 
+def assert_NSYS():
+    assert os.path.exists(NSYS_PATH)
+    assert os.path.exists(NSYS_CONFIG_PATH)
+    assert os.path.exists(NSYS_FIRMWARE_PATH)
+
+
 def convert_run_compare(
     model: torch.nn.Module,
     input_spec: list[ModelInputSpec] | tuple,
@@ -335,6 +352,7 @@ def convert_run_compare(
     mocker: MockerFixture = None,
     run_cpu_version_in_pytorch: bool = False,
     use_qat: bool = False,
+    train_fn: Callable | None = None,
 ):
     """
     Run provided program twice with neutron-test and check if results correspond. At first,
@@ -350,15 +368,17 @@ def convert_run_compare(
     :param run_cpu_version_in_pytorch: If True, runs CPU version in float32 PyTorch instead of quantized ExecuTorch.
     :param mocker: Mocker instance used by visualizer.
     :param use_qat: If True, applies quantization-aware training before conversion (without the QAT training).
+    :param train_fn: Train/finetune function for QAT training. Is used only when `use_qat=True`.
     """
-    assert os.path.exists(NSYS_PATH)
-    assert os.path.exists(NSYS_CONFIG_PATH)
-    assert os.path.exists(NSYS_FIRMWARE_PATH)
+    assert_NSYS()
 
     if not dataset_creator:
         dataset_creator = RandomDatasetCreator()
     if not output_comparator:
         output_comparator = AllCloseOutputComparator()
+
+    model_to_delegate = model
+    model_to_not_delegate = deepcopy(model)
 
     test_name = _get_caller_name()
     test_dir = os.path.join(OUTPUTS_DIR, test_name)
@@ -379,7 +399,7 @@ def convert_run_compare(
     npu_results_dir = os.path.join(test_dir, "results_npu")
 
     delegated_program = _run_delegated_executorch_program(
-        model,
+        model_to_delegate,
         test_dir,
         test_name,
         calibration_dataset_dir,
@@ -389,13 +409,14 @@ def convert_run_compare(
         npu_results_dir,
         mocker,
         use_qat=use_qat,
+        train_fn=train_fn,
     )
 
     output_spec = _get_program_output_spec(delegated_program)
 
     if run_cpu_version_in_pytorch:
         _run_pytorch_program(
-            model,
+            model_to_not_delegate,
             testing_dataset_dir,
             input_spec,
             output_spec,
@@ -404,13 +425,15 @@ def convert_run_compare(
         )
     else:
         _run_non_delegated_executorch_program(
-            model,
+            model_to_not_delegate,
             test_dir,
             test_name,
             calibration_dataset_dir,
             testing_dataset_dir,
             input_spec,
             cpu_results_dir,
+            use_qat=use_qat,
+            train_fn=train_fn,
         )
 
     output_tensor_spec = _get_program_output_spec(delegated_program)
@@ -422,9 +445,96 @@ def convert_run_compare(
     )
 
 
+def convert_run_compare_ptq_qat(
+    model: torch.nn.Module,
+    input_spec: list[ModelInputSpec] | tuple,
+    dlg_model_verifier: GraphVerifier,
+    train_fn: Callable,
+    dataset_creator=None,
+    output_comparator=None,
+    mocker: MockerFixture = None,
+):
+    """
+    Run provided program twice and compared it's results.
+    The model is once quantized with PTQ and with QAT.
+
+    :param model: Executed PyTorch model.
+    :param input_spec: Model input specification. Can be either tuple - single float32 input model - or list
+        of ModelInputSpec.
+    :param dlg_model_verifier: Graph verifier instance.
+    :param train_fn: Train/finetune function for QAT training.
+    :param dataset_creator: Creator that should fill provided `dataset_dir` with model input samples.
+    :param output_comparator: Comparator of results produced by NPU and CPU runs of the program.
+    :param mocker: Mocker instance used by visualizer.
+    """
+    assert_NSYS()
+
+    if not dataset_creator:
+        dataset_creator = RandomDatasetCreator()
+    if not output_comparator:
+        output_comparator = AllCloseOutputComparator()
+
+    model_ptq = model
+    model_qat = deepcopy(model)
+
+    test_name = _get_caller_name()
+    test_dir = os.path.join(OUTPUTS_DIR, test_name)
+
+    shutil.rmtree(test_dir, ignore_errors=True)
+    mkdir(test_dir)
+
+    dataset_dir = os.path.join(test_dir, "dataset")
+    mkdir(dataset_dir)
+    if isinstance(input_spec, tuple):
+        input_spec = [ModelInputSpec(input_spec)]
+
+    (calibration_dataset_dir, testing_dataset_dir) = dataset_creator.generate_samples(
+        dataset_dir, input_spec
+    )
+
+    ptq_results_dir = os.path.join(test_dir, "results_ptq")
+    qat_results_dir = os.path.join(test_dir, "results_qat")
+
+    delegated_program_ptq = _run_delegated_executorch_program(
+        model_ptq,
+        test_dir,
+        test_name,
+        calibration_dataset_dir,
+        testing_dataset_dir,
+        input_spec,
+        dlg_model_verifier,
+        ptq_results_dir,
+        mocker,
+        use_qat=False,
+    )
+
+    _ = _run_delegated_executorch_program(
+        model_qat,
+        test_dir,
+        test_name,
+        calibration_dataset_dir,
+        testing_dataset_dir,
+        input_spec,
+        dlg_model_verifier,
+        qat_results_dir,
+        mocker,
+        use_qat=True,
+        train_fn=train_fn,
+    )
+
+    output_tensor_spec = _get_program_output_spec(delegated_program_ptq)
+
+    ptq_results_dir = os.path.join(test_dir, "results_ptq")
+    qat_results_dir = os.path.join(test_dir, "results_qat")
+    output_comparator.compare_results(
+        ptq_results_dir, qat_results_dir, output_tensor_spec
+    )
+
+
 def _get_caller_name():
+    test_function_names = ["convert_run_compare", "convert_run_compare_ptq_qat"]
     for idx, frame in enumerate(inspect.stack()):
-        if frame.function == "convert_run_compare":
+        if frame.function in test_function_names:
             # Look one index above to get caller
             return inspect.stack()[idx + 1].function
 
