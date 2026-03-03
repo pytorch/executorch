@@ -88,8 +88,9 @@ python export_voxtral_rt.py \
 |---------|---------|-----------|--------------|
 | `xnnpack` | ✓ | ✓ | `4w`, `8w`, `8da4w`, `8da8w` |
 | `metal` | ✓ | ✓ | none (fp32) or `fpa4w` (Metal-specific 4-bit) |
+| `mlx` | ✓ | ✓ | `4w`, `8w` |
 
-Metal backend provides Apple GPU acceleration.
+Metal and MLX backends provide Apple GPU acceleration.
 
 #### Metal export examples
 
@@ -128,12 +129,48 @@ Alternatively, you can build torchao with Metal support while installing ExecuTo
 EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_executorch.sh
 ```
 
+#### MLX export examples
+
+MLX backend uses the MLX delegate for Apple Silicon GPU acceleration.
+
+Offline:
+
+```bash
+python export_voxtral_rt.py \
+    --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
+    --backend mlx \
+    --output-dir ./voxtral_rt_exports \
+    --qlinear-encoder 4w \
+    --qlinear 4w \
+    --qembedding 8w \
+    --qembedding-group-size 128 \
+    --export-preprocessor
+```
+
+Streaming:
+
+```bash
+python export_voxtral_rt.py \
+    --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
+    --backend mlx \
+    --streaming \
+    --output-dir ./voxtral_rt_exports \
+    --qlinear-encoder 4w \
+    --qlinear 4w \
+    --qembedding 8w \
+    --qembedding-group-size 128 \
+    --export-preprocessor
+```
+
+`--export-preprocessor` bundles the mel preprocessor into the output directory
+using the MLX partitioner, so no separate preprocessor export step is needed.
+
 ### Options
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--model-path` | (required) | Directory with `params.json` + `consolidated.safetensors` |
-| `--backend` | `xnnpack` | `xnnpack`, `metal`, or `portable` |
+| `--backend` | `xnnpack` | `xnnpack`, `metal`, `mlx`, or `portable` |
 | `--output-dir` | `./voxtral_rt_exports` | Output directory |
 | `--max-seq-len` | `4096` | KV cache length |
 | `--delay-tokens` | `6` | Transcription delay in tokens (6 = 480ms) |
@@ -142,6 +179,8 @@ EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_ex
 | `--qlinear-encoder` | (none) | Encoder linear layer quantization (`4w`, `8w`, `8da4w`, `8da8w`, `fpa4w`) |
 | `--qlinear-encoder-group-size` | `32` | Group size for encoder linear quantization |
 | `--qembedding` | (none) | Embedding layer quantization (`8w`) |
+| `--qembedding-group-size` | `0` | Group size for embedding quantization (0 = per-channel) |
+| `--export-preprocessor` | off | Export `preprocessor.pte` alongside the model |
 | `--streaming` | off | Export streaming encoder with KV cache |
 | `--max-enc-len` | `750` | Encoder sliding window size (streaming only) |
 
@@ -172,6 +211,15 @@ make voxtral_realtime-metal
 
 This builds ExecuTorch with Metal backend support. The runner binary is at
 the same path as above. Metal exports can only run on macOS with Apple Silicon.
+
+### MLX (Apple GPU)
+
+```bash
+make voxtral_realtime-mlx
+```
+
+This builds ExecuTorch with MLX backend support. MLX provides GPU acceleration
+on Apple Silicon via the MLX delegate.
 
 ## Run
 

@@ -15,7 +15,7 @@
 # SUPPORTED MODELS:
 # -----------------
 # - voxtral:  Multimodal voice + text model (CPU, CUDA, Metal, MLX)
-# - voxtral_realtime: Realtime speech-to-text model (CPU)
+# - voxtral_realtime: Realtime speech-to-text model (CPU, Metal, MLX)
 # - whisper:  Speech recognition model (CPU, CUDA, Metal)
 # - parakeet: Speech recognition model (CPU, CUDA, Metal, MLX)
 # - sortformer: Speaker diarization model (CPU)
@@ -91,16 +91,17 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cpu voxtral_realtime-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cpu voxtral_realtime-metal voxtral_realtime-mlx whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
 	@echo "  voxtral-cuda        - Build Voxtral runner with CUDA backend"
 	@echo "  voxtral-cpu         - Build Voxtral runner with CPU backend"
 	@echo "  voxtral-metal       - Build Voxtral runner with Metal backend (macOS only)"
-	@echo "  voxtral-mlx         - Build Voxtral runner with MLX backend (macOS only)"
+	@echo "  voxtral-mlx         - Build Voxtral runner with MLX backend"
 	@echo "  voxtral_realtime-cpu - Build Voxtral Realtime runner with CPU backend"
 	@echo "  voxtral_realtime-metal - Build Voxtral Realtime runner with Metal backend (macOS only)"
+	@echo "  voxtral_realtime-mlx - Build Voxtral Realtime runner with MLX backend"
 	@echo "  whisper-cuda        - Build Whisper runner with CUDA backend"
 	@echo "  whisper-cuda-debug  - Build Whisper runner with CUDA backend (debug mode)"
 	@echo "  whisper-cpu         - Build Whisper runner with CPU backend"
@@ -109,7 +110,7 @@ help:
 	@echo "  parakeet-cuda-debug - Build Parakeet runner with CUDA backend (debug mode)"
 	@echo "  parakeet-cpu        - Build Parakeet runner with CPU backend"
 	@echo "  parakeet-metal      - Build Parakeet runner with Metal backend (macOS only)"
-	@echo "  parakeet-mlx        - Build Parakeet runner with MLX backend (macOS only)"
+	@echo "  parakeet-mlx        - Build Parakeet runner with MLX backend"
 	@echo "  sortformer-cpu      - Build Sortformer runner with CPU backend"
 	@echo "  silero-vad-cpu      - Build Silero VAD runner with CPU backend"
 	@echo "  llama-cuda          - Build Llama runner with CUDA backend"
@@ -260,6 +261,15 @@ voxtral_realtime-metal:
 	cmake --workflow --preset llm-metal-stats
 	@echo "==> Building Voxtral Realtime runner with Metal..."
 	cd examples/models/voxtral_realtime && cmake --workflow --preset voxtral-realtime-metal
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner"
+
+voxtral_realtime-mlx:
+	@echo "==> Building and installing ExecuTorch with MLX..."
+	cmake --workflow --preset mlx-release
+	@echo "==> Building Voxtral Realtime runner with MLX..."
+	cd examples/models/voxtral_realtime && cmake --workflow --preset voxtral-realtime-mlx
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner"

@@ -215,10 +215,7 @@ set(MLX_METAL_JIT
 # Auto-apply patches to MLX submodule. Each patch is applied idempotently: `git
 # apply --check` tests whether the patch is still applicable (i.e. not yet
 # applied), and only then applies it.
-set(_mlx_patches
-    "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_json.patch"
-    "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_metal_device_retain.patch"
-)
+set(_mlx_patches "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_json.patch")
 foreach(_patch IN LISTS _mlx_patches)
   if(EXISTS "${_patch}" AND EXISTS "${MLX_SOURCE_DIR}")
     get_filename_component(_patch_name "${_patch}" NAME)

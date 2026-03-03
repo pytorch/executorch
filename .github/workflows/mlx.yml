@@ -11,6 +11,7 @@ on:
       - backends/mlx/**
       - examples/models/parakeet/**
       - examples/models/voxtral/**
+      - examples/models/voxtral_realtime/**
   workflow_dispatch:
 
 concurrency:
@@ -216,6 +217,72 @@ jobs:
           echo "Success: 'poem' found in output"
         else
           echo "Failed: Expected 'poem' not found in output"
+          exit 1
+        fi
+        echo "::endgroup::"
+
+  test-mlx-voxtral-realtime:
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    secrets: inherit
+    with:
+      job-name: test-mlx-voxtral-realtime
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      secrets-env: EXECUTORCH_HF_TOKEN
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        echo "::endgroup::"
+
+        echo "::group::Install Voxtral Realtime requirements"
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]<1.0" safetensors
+        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        echo "::endgroup::"
+
+        ${CONDA_RUN} pip list
+
+        echo "::group::Download model"
+        ${CONDA_RUN} huggingface-cli download mistralai/Voxtral-Mini-4B-Realtime-2602
+        MODEL_PATH=$(${CONDA_RUN} python -c "from huggingface_hub import snapshot_download; print(snapshot_download('mistralai/Voxtral-Mini-4B-Realtime-2602'))")
+        echo "Model path: ${MODEL_PATH}"
+        echo "::endgroup::"
+
+        echo "::group::Export Voxtral Realtime (streaming)"
+        ${CONDA_RUN} python -m executorch.examples.models.voxtral_realtime.export_voxtral_rt \
+          --model-path "${MODEL_PATH}" \
+          --backend mlx \
+          --streaming \
+          --output-dir /tmp/voxtral_rt_mlx \
+          --qlinear-encoder 4w \
+          --qlinear 4w \
+          --qembedding 8w \
+          --qembedding-group-size 128 \
+          --export-preprocessor
+        echo "::endgroup::"
+
+        echo "::group::Build Voxtral Realtime MLX runner"
+        ${CONDA_RUN} make voxtral_realtime-mlx
+        echo "::endgroup::"
+
+        echo "::group::Run Voxtral Realtime MLX runner"
+        curl -L https://dldata-public.s3.us-east-2.amazonaws.com/2086-149220-0033.wav -o /tmp/test_audio.wav
+        OUTPUT=$(./cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
+          --model_path /tmp/voxtral_rt_mlx/model.pte \
+          --tokenizer_path "${MODEL_PATH}/tekken.json" \
+          --preprocessor_path /tmp/voxtral_rt_mlx/preprocessor.pte \
+          --audio_path /tmp/test_audio.wav \
+          --streaming 2>&1)
+        echo "Runner output:"
+        echo "$OUTPUT"
+        if echo "$OUTPUT" | grep -iq "Phoebe"; then
+          echo "Success: 'Phoebe' found in output"
+        else
+          echo "Failed: Expected 'Phoebe' not found in output"
           exit 1
         fi
         echo "::endgroup::"
