@@ -375,6 +375,10 @@ void Adapter::submit_cmd(
   VK_CHECK(vkQueueSubmit(device_queue.handle, 1u, &submit_info, fence));
 }
 
+void Adapter::override_device_name(const std::string& new_name) {
+  physical_device_.override_device_name(new_name);
+}
+
 std::string Adapter::stringize() const {
   std::stringstream ss;
 
