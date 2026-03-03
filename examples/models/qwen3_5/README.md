@@ -1,5 +1,5 @@
 ## Summary
-[Qwen3.5](https://huggingface.co/Qwen/Qwen3.5-4B) support in ExecuTorch is exported through the Llama example pipeline with a hybrid layer layout:
+[Qwen3.5](https://huggingface.co/collections/Qwen/qwen35-684357f8543f83de2f09f998) support in ExecuTorch is exported through the Llama example pipeline with a hybrid layer layout:
 - `full_attention` layers use gated full attention.
 - `linear_attention` layers use Gated DeltaNet with internal recurrent state.
 
@@ -32,10 +32,14 @@ python -m extension.llm.export.export_llm \
 ```
 
 The exporter will download and convert HF weights automatically when `+base.checkpoint` is not provided.
+Install `safetensors` in your environment if it is missing:
+```bash
+python -m pip install safetensors
+```
 
 ## Run (Python Runner)
 ```bash
-python -m examples.models.llama.runner.native \
+python -m executorch.examples.models.llama.runner.native \
   --model qwen3_5_0_8b \
   --pte qwen3_5_0_8b_fp32.pte \
   --tokenizer /path/to/tokenizer.json \
@@ -50,3 +54,6 @@ python -m examples.models.llama.runner.native \
 ## Notes
 - Current path targets CPU/XNNPACK export validation and runner compatibility.
 - `q8da4w` quantization for Qwen3.5 is intentionally deferred to a follow-up.
+- Dynamic-shape export is not enabled yet for Qwen3.5 DeltaNet layers in this path; keep `enable_dynamic_shape=False`.
+- For static-shape exports, `runner.native` falls back to sequential token prefill for multi-token prompts.
+- Default metadata uses Qwen3.5 special token ids: `get_bos_id=248045`, `get_eos_ids=[248046,248044]`.

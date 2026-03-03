@@ -1,5 +1,9 @@
 base:
-  metadata: '{"get_bos_id": 151644, "get_eos_ids":[151645]}'
+  # Qwen3.5 tokenizer special ids:
+  #   <|im_start|> 248045
+  #   <|im_end|>   248046
+  #   <|endoftext|> 248044
+  metadata: '{"get_bos_id": 248045, "get_eos_ids":[248046,248044]}'
 
 model:
   use_kv_cache: True
