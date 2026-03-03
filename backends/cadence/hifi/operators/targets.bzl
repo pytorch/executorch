@@ -64,6 +64,27 @@ def define_common_targets():
         compatible_with = ["ovr_config//cpu:xtensa"],
     )
 
+    # quantized_conv1d operators need shared implementation header
+    runtime.cxx_library(
+        name = "op_quantized_conv1d_ncl_per_tensor_out",
+        srcs = ["op_quantized_conv1d_ncl_per_tensor_out.cpp"],
+        exported_headers = ["operators.h", "quantized_conv1d_impl.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS,
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_conv1d_nlc_per_tensor_out",
+        srcs = ["op_quantized_conv1d_nlc_per_tensor_out.cpp"],
+        exported_headers = ["operators.h", "quantized_conv1d_impl.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS,
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
     runtime.cxx_library(
         name = "op_bitwise_xor",
         srcs = ["op_bitwise_xor.cpp"],
