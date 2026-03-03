@@ -234,9 +234,15 @@ def export_all(
     output: str,
     dtype: DType = DType.fp32,
     quantize: bool = False,
+    max_seq_len: int = MAX_SEQ_LEN,
+    max_context_len: int = MAX_SEQ_LEN,
 ) -> None:
     logging.info(f"Loading {model_dir}...")
-    lfm2_model = Lfm2p5VlModel(model_dir=model_dir)
+    lfm2_model = Lfm2p5VlModel(
+        model_dir=model_dir,
+        max_seq_len=max_seq_len,
+        max_context_len=max_context_len,
+    )
     lfm2 = lfm2_model.get_eager_model()
     if dtype != DType.fp32:
         lfm2 = lfm2.to(dtype.to_torch_dtype())
@@ -272,13 +278,13 @@ def export_all(
             else [XnnpackPartitioner()],
         },
         constant_methods={
-            "get_max_seq_len": MAX_SEQ_LEN,
-            "get_max_context_len": MAX_SEQ_LEN,
-            "get_n_layers": 16,
-            "get_vocab_size": 65536,
-            "use_kv_cache": True,
-            "use_sdpa_with_kv_cache": True,
-            "enable_dynamic_shape": False,
+            "get_max_seq_len": lfm2.text_model_args.max_seq_len,
+            "get_max_context_len": lfm2.text_model_args.max_context_len,
+            "get_n_layers": lfm2.text_model_args.n_layers,
+            "get_vocab_size": lfm2.text_model_args.vocab_size,
+            "use_kv_cache": lfm2.text_model_args.use_kv_cache,
+            "use_sdpa_with_kv_cache": lfm2.text_model_args.use_sdpa_with_kv_cache_op,
+            "enable_dynamic_shape": lfm2.text_model_args.enable_dynamic_shape,
             # EOS = <|im_end|> (token 7). Runner reads this from PTE rather than
             # relying on tokenizer default.
             "get_eos_ids": [7],
@@ -326,6 +332,18 @@ def main():
         help="Quantize decoder (8da4w) and embedding (int8)",
     )
     parser.add_argument(
+        "--max_seq_len",
+        type=int,
+        default=MAX_SEQ_LEN,
+        help=f"Maximum sequence length (default: {MAX_SEQ_LEN})",
+    )
+    parser.add_argument(
+        "--max_context_len",
+        type=int,
+        default=MAX_SEQ_LEN,
+        help=f"Maximum context length (default: {MAX_SEQ_LEN})",
+    )
+    parser.add_argument(
         "--output",
         default=None,
         help="Output PTE path (default: lfm2_5_vl[_fp16][_quantized]_xnnpack.pte)",
@@ -338,7 +356,7 @@ def main():
     )
     output = args.output or f"lfm2_5_vl{suffix}_xnnpack.pte"
 
-    export_all(args.model_dir, output, dtype, args.quantize)
+    export_all(args.model_dir, output, dtype, args.quantize, args.max_seq_len, args.max_context_len)
 
 
 if __name__ == "__main__":
