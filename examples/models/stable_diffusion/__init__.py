@@ -4,6 +4,6 @@
 # except in compliance with the License. See the license file found in the
 # LICENSE file in the root directory of this source tree.
 
-from .model import LCMModelLoader, TextEncoderWrapper, UNetWrapper, VAEDecoder
+from .model import LCMModelLoader, StableDiffusionComponent, TextEncoderWrapper, UNetWrapper, VAEDecoder
 
-__all__ = ["LCMModelLoader", "TextEncoderWrapper", "UNetWrapper", "VAEDecoder"]
+__all__ = ["LCMModelLoader", "StableDiffusionComponent", "TextEncoderWrapper", "UNetWrapper", "VAEDecoder"]

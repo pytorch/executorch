@@ -32,6 +32,7 @@ python export_lcm.py \
     --model_id SimianLuo/LCM_Dreamshaper_v7 \
     --output_dir ./lcm_models \
     --device CPU \
+    --dtype fp16 \
     --quantize
 ```
 
@@ -43,7 +44,6 @@ This will create three files in `./lcm_models/`:
 ### Generate Images
 
 Run inference with the exported model:
-Note: For quantized models, we currently only support running the runtime dtype should be FP32
 
 ```bash
 python openvino_lcm.py \

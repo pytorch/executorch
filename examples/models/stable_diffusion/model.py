@@ -11,6 +11,7 @@ This module provides reusable model wrappers that can be used with any backend
 (OpenVINO, XNNPACK, etc.) for exporting Latent Consistency Models.
 """
 
+from enum import Enum
 import logging
 from typing import Any, Optional
 
@@ -25,6 +26,12 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+class StableDiffusionComponent(Enum):
+    """Maintain Stable Diffusion model components reliably"""
+
+    TEXT_ENCODER = "text_encoder"
+    UNET = "unet"
+    VAE_DECODER = "vae_decoder"
 
 class TextEncoderWrapper(torch.nn.Module):
     """Wrapper for CLIP text encoder that extracts last_hidden_state"""
@@ -150,7 +157,7 @@ class LCMModelLoader:
             raise ValueError("Models not loaded. Call load_models() first.")
         return VAEDecoder(self.vae)
 
-    def get_dummy_inputs(self):
+    def get_dummy_inputs(self) -> dict[StableDiffusionComponent, tuple[Any, ...]]:
         """
         Get dummy inputs for each model component.
 
@@ -187,7 +194,7 @@ class LCMModelLoader:
         vae_input = torch.randn(1, 4, 64, 64, dtype=self.dtype)
 
         return {
-            "text_encoder": (text_encoder_input,),
-            "unet": unet_inputs,
-            "vae_decoder": (vae_input,),
+            StableDiffusionComponent.TEXT_ENCODER: (text_encoder_input,),
+            StableDiffusionComponent.UNET: unet_inputs,
+            StableDiffusionComponent.VAE_DECODER: (vae_input,),
         }
