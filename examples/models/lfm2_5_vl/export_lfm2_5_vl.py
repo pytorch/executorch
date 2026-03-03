@@ -21,6 +21,7 @@ Usage:
 
 import logging
 from argparse import ArgumentParser, BooleanOptionalAction
+from typing import Optional
 
 import torch
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
@@ -236,12 +237,14 @@ def export_all(
     quantize: bool = False,
     max_seq_len: int = MAX_SEQ_LEN,
     max_context_len: int = MAX_SEQ_LEN,
+    params_path: Optional[str] = None,
 ) -> None:
     logging.info(f"Loading {model_dir}...")
     lfm2_model = Lfm2p5VlModel(
         model_dir=model_dir,
         max_seq_len=max_seq_len,
         max_context_len=max_context_len,
+        params_path=params_path,
     )
     lfm2 = lfm2_model.get_eager_model()
     if dtype != DType.fp32:
@@ -344,6 +347,14 @@ def main():
         help=f"Maximum context length (default: {MAX_SEQ_LEN})",
     )
     parser.add_argument(
+        "--params",
+        default=None,
+        help=(
+            "Path to model params JSON (architecture config). "
+            "Defaults to the bundled config/lfm2_5_vl_1_6b_config.json."
+        ),
+    )
+    parser.add_argument(
         "--output",
         default=None,
         help="Output PTE path (default: lfm2_5_vl[_fp16][_quantized]_xnnpack.pte)",
@@ -356,7 +367,15 @@ def main():
     )
     output = args.output or f"lfm2_5_vl{suffix}_xnnpack.pte"
 
-    export_all(args.model_dir, output, dtype, args.quantize, args.max_seq_len, args.max_context_len)
+    export_all(
+        args.model_dir,
+        output,
+        dtype,
+        args.quantize,
+        args.max_seq_len,
+        args.max_context_len,
+        args.params,
+    )
 
 
 if __name__ == "__main__":

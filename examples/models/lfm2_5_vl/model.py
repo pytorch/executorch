@@ -7,9 +7,10 @@
 # An ExecuTorch-friendly implementation of LFM2.5-VL-1.6B.
 # Mirrors examples/models/llava/model.py in structure.
 
+import json
 import math
-import re
-from typing import Any, Dict, Optional, Tuple
+import os
+from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -27,65 +28,34 @@ from transformers import AutoModelForImageTextToText, AutoProcessor
 
 
 MAX_SEQ_LEN = 2048
-IMAGE_SIZE = 512      # 512x512 -> 32x32 patches -> 256 tokens after projector
+IMAGE_SIZE = 512  # 512x512 -> 32x32 patches -> 256 tokens after projector
 PATCH_SIZE = 16
 FIXED_H, FIXED_W = 32, 32
 
-# LFM2.5-VL-1.6B layer pattern: 10 conv + 6 full_attention
-LAYER_TYPES = [
-    "conv", "conv", "full_attention",
-    "conv", "conv", "full_attention",
-    "conv", "conv", "full_attention",
-    "conv", "full_attention",
-    "conv", "full_attention",
-    "conv", "full_attention",
-    "conv",
-]
+# Path to the bundled config for LFM2.5-VL-1.6B, used when no --params is given.
+_DEFAULT_PARAMS = os.path.join(
+    os.path.dirname(__file__), "config", "lfm2_5_vl_1_6b_config.json"
+)
 
 
 class Lfm2p5Vl(torch.nn.Module):
     def __init__(
         self,
         hf_model: AutoModelForImageTextToText,
-        use_sdpa_with_kv_cache_op: bool = True,
-        max_context_len: int = MAX_SEQ_LEN,
-        max_seq_len: int = MAX_SEQ_LEN,
+        params: ModelArgs,
     ):
         super().__init__()
-        self.use_sdpa_with_kv_cache_op = use_sdpa_with_kv_cache_op
         self.model_ = hf_model
-
-        # Build ET text model
-        self.text_model_args = ModelArgs(
-            dim=2048,
-            n_layers=16,
-            n_heads=32,
-            n_kv_heads=8,
-            vocab_size=65536,
-            hidden_dim=8192,
-            ffn_dim_multiplier=1,
-            norm_eps=1e-5,
-            max_batch_size=1,
-            max_seq_len=max_seq_len,
-            max_context_len=max_context_len,
-            use_kv_cache=True,
-            use_sdpa_with_kv_cache_op=use_sdpa_with_kv_cache_op,
-            use_hf_rope=True,
-            # CRITICAL: False avoids .item() in rope.get_freqs which crashes FakeTensor export
-            enable_dynamic_shape=False,
-            rope_theta=1000000.0,
-            use_qk_norm=True,
-            qk_norm_before_rope=True,
-            layer_types=LAYER_TYPES,
-        )
+        self.text_model_args = params
         self.text_model = construct_transformer(self.text_model_args)
 
         # Source transforms must happen before load_state_dict so buffers exist
-        if use_sdpa_with_kv_cache_op:
+        if params.use_sdpa_with_kv_cache_op:
             self.text_model = replace_kv_cache_with_custom_kv_cache(self.text_model)
             self.text_model = replace_sdpa_with_custom_op(self.text_model)
 
-        # Load translated weights (strict=False: KV/conv buffers are runtime state)
+        # Load translated weights from HF model (strict=False: KV/conv buffers
+        # are runtime state initialised as zeros by construct_transformer)
         self.text_model.load_state_dict(
             state_dict=self._translate_weights(),
             strict=False,
@@ -120,56 +90,26 @@ class Lfm2p5Vl(torch.nn.Module):
             _patched_resize
         )
 
-    def _translate_weights(self) -> Dict[str, Any]:
+    def _translate_weights(self):
         """Translate HF LFM2-VL state dict keys to ET construct_transformer format.
 
         Handles all layer types (conv + full_attention) and the critical
         in_proj [3*dim, dim] -> three [dim, dim] split for conv layers.
         """
-        sd = {}
+        from executorch.examples.models.lfm2_5_vl.convert_weights import (
+            lfm2_5_vl_to_meta,
+        )
+
+        # Build a flat state dict with the "model.language_model." prefix that
+        # convert_weights expects (same layout as the HF safetensors file).
+        raw = {}
         for k, v in self.model_.model.language_model.state_dict().items():
-            sd[k] = v
+            raw[f"model.language_model.{k}"] = v
+        # lm_head is a separate top-level module in the VL wrapper
         for k, v in self.model_.lm_head.state_dict().items():
-            sd[f"lm_head.{k}"] = v
+            raw[f"model.language_model.lm_head.{k}"] = v
 
-        # Simple renames (applied via regex on full key)
-        key_map = {
-            r"^embed_tokens\.": "tok_embeddings.",
-            r"^embedding_norm\.": "norm.",
-            r"^lm_head\.": "output.",
-            r"^layers\.([0-9]+)\.operator_norm\.": r"layers.\1.attention_norm.",
-            r"^layers\.([0-9]+)\.self_attn\.q_proj\.": r"layers.\1.attention.wq.",
-            r"^layers\.([0-9]+)\.self_attn\.k_proj\.": r"layers.\1.attention.wk.",
-            r"^layers\.([0-9]+)\.self_attn\.v_proj\.": r"layers.\1.attention.wv.",
-            r"^layers\.([0-9]+)\.self_attn\.out_proj\.": r"layers.\1.attention.wo.",
-            r"^layers\.([0-9]+)\.self_attn\.q_layernorm\.": r"layers.\1.attention.q_norm_fn.",
-            r"^layers\.([0-9]+)\.self_attn\.k_layernorm\.": r"layers.\1.attention.k_norm_fn.",
-        }
-
-        def remap(key: str) -> Optional[str]:
-            for pattern, replacement in key_map.items():
-                new_key = re.sub(pattern, replacement, key)
-                if new_key != key:
-                    return new_key
-            return key
-
-        out = {}
-        for key, val in sd.items():
-            # Handle in_proj: split [3*dim, dim] -> B_proj, C_proj, x_proj each [dim, dim]
-            m = re.match(r"^layers\.([0-9]+)\.conv\.in_proj\.weight$", key)
-            if m:
-                n = m.group(1)
-                B, C, x = torch.chunk(val, 3, dim=0)
-                out[f"layers.{n}.conv.B_proj.weight"] = B
-                out[f"layers.{n}.conv.C_proj.weight"] = C
-                out[f"layers.{n}.conv.x_proj.weight"] = x
-                continue
-
-            new_key = remap(key)
-            if new_key is not None:
-                out[new_key] = val
-
-        return out
+        return lfm2_5_vl_to_meta(raw)
 
     def embed_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
         return self.model_.model.language_model.get_input_embeddings()(tokens)
@@ -186,7 +126,9 @@ class Lfm2p5Vl(torch.nn.Module):
 
         # Extract 16x16 patches in HW-major order -> [1, 1024, PATCH_SIZE*PATCH_SIZE*3]
         x = x.unfold(2, PATCH_SIZE, PATCH_SIZE).unfold(3, PATCH_SIZE, PATCH_SIZE)
-        x = x.permute(0, 2, 3, 4, 5, 1).reshape(1, FIXED_H * FIXED_W, PATCH_SIZE * PATCH_SIZE * 3)
+        x = x.permute(0, 2, 3, 4, 5, 1).reshape(
+            1, FIXED_H * FIXED_W, PATCH_SIZE * PATCH_SIZE * 3
+        )
 
         FULL_MASK = torch.ones(1, FIXED_H * FIXED_W, dtype=torch.int32)
         out = self.model_.model.vision_tower(
@@ -198,7 +140,7 @@ class Lfm2p5Vl(torch.nn.Module):
         feats = out.last_hidden_state  # [1, 1024, vision_hidden_size]
         feats = feats.reshape(feats.shape[0], FIXED_H, FIXED_W, -1)
         projected = self.model_.model.multi_modal_projector(feats)  # [1, 16, 16, 2048]
-        return projected.reshape(1, -1, projected.shape[-1])        # [1, 256, 2048]
+        return projected.reshape(1, -1, projected.shape[-1])  # [1, 256, 2048]
 
     def image_embedding(self, images: torch.Tensor) -> torch.Tensor:
         return self.encode_images(images)
@@ -242,12 +184,33 @@ class Lfm2p5VlModel(EagerModelBase):
         use_sdpa_with_kv_cache_op: bool = True,
         max_seq_len: int = MAX_SEQ_LEN,
         max_context_len: int = MAX_SEQ_LEN,
+        # HF auto-load path (model ID or local dir containing the full VL checkpoint)
         model_dir: str = "LiquidAI/LFM2-VL-1.6B",
+        # Path to params JSON (architecture config). Defaults to bundled
+        # config/lfm2_5_vl_1_6b_config.json if not provided.
+        params_path: Optional[str] = None,
     ):
         self.use_sdpa_with_kv_cache_op = use_sdpa_with_kv_cache_op
         self.max_context_len = max_context_len
         self.max_seq_len = max_seq_len
         self.model_dir = model_dir
+
+        # Load architecture config from JSON (mirrors LLaMA model.py pattern)
+        resolved_params = params_path or _DEFAULT_PARAMS
+        with open(resolved_params, "r") as f:
+            params = json.loads(f.read())
+
+        self.text_model_args = ModelArgs(
+            max_batch_size=1,
+            max_seq_len=max_seq_len,
+            max_context_len=max_context_len,
+            use_kv_cache=True,
+            use_sdpa_with_kv_cache_op=use_sdpa_with_kv_cache_op,
+            # CRITICAL: False avoids .item() in rope.get_freqs which crashes
+            # FakeTensor export via to_edge_transform_and_lower
+            enable_dynamic_shape=False,
+            **params,
+        )
 
         self.hf_model = AutoModelForImageTextToText.from_pretrained(
             model_dir, device_map="cpu", torch_dtype=torch.float32
@@ -270,12 +233,7 @@ class Lfm2p5VlModel(EagerModelBase):
         self.example_image = None
 
     def get_eager_model(self) -> torch.nn.Module:
-        model = Lfm2p5Vl(
-            self.hf_model,
-            self.use_sdpa_with_kv_cache_op,
-            self.max_context_len,
-            self.max_seq_len,
-        )
+        model = Lfm2p5Vl(self.hf_model, self.text_model_args)
         model.to(dtype=torch.float32)
         return model
 
