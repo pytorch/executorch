@@ -61,7 +61,9 @@ class LCMOpenVINOExporter:
         """
         return sd_model_component == StableDiffusionComponent.UNET
 
-    def get_ov_quantizer(self, sd_model_component: StableDiffusionComponent) -> Quantizer:
+    def get_ov_quantizer(
+        self, sd_model_component: StableDiffusionComponent
+    ) -> Quantizer:
         quantization_mode = QuantizationMode.INT8WO_ASYM
         if self.should_quantize_model(sd_model_component):
             # Only Unet model will have both weights and activations quantized.
@@ -82,6 +84,7 @@ class LCMOpenVINOExporter:
         pipeline, calibration_dataset_size: int = 200, num_inference_steps: int = 4
     ) -> list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
         """Collect UNet calibration inputs from prompts."""
+
         class UNetWrapper(torch.nn.Module):
             def __init__(self, model: torch.nn.Module, config):
                 super().__init__()

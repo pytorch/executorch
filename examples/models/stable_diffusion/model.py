@@ -11,8 +11,8 @@ This module provides reusable model wrappers that can be used with any backend
 (OpenVINO, XNNPACK, etc.) for exporting Latent Consistency Models.
 """
 
-from enum import Enum
 import logging
+from enum import Enum
 from typing import Any, Optional
 
 import torch
@@ -26,12 +26,14 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
 class StableDiffusionComponent(Enum):
     """Maintain Stable Diffusion model component names reliably"""
 
     TEXT_ENCODER = "text_encoder"
     UNET = "unet"
     VAE_DECODER = "vae_decoder"
+
 
 class TextEncoderWrapper(torch.nn.Module):
     """Wrapper for CLIP text encoder that extracts last_hidden_state"""
