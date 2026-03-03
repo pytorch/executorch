@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
+
 import numpy as np
 
 from executorch.backends.nxp.backend.edge_helper import try_get_arg
@@ -30,10 +32,7 @@ Dilation = tuple[int, int]
 CeilMode = bool
 
 
-class MaxPool2dConverter(NodeConverter):
-    """Convert 'max_pool2d' operator to TFLite 'MaxPool2D'.
-    NOTE: max_pool2d_with_indices is a different operator and is unsupported.
-    """
+class MaxPool2DWithIndicesConverter(NodeConverter):
 
     @staticmethod
     def _is_supported_in_IR(
@@ -42,7 +41,7 @@ class MaxPool2dConverter(NodeConverter):
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         kernel_size, stride, padding, dilation, ceil_mode = (
-            MaxPool2dConverter._get_node_args(node)
+            MaxPool2DWithIndicesConverter._get_node_args(node)
         )
 
         if dilation != (1, 1):
@@ -56,6 +55,11 @@ class MaxPool2dConverter(NodeConverter):
         if not NodeConverter._has_shared_q_params_if_quantized(node):
             return False
 
+        # The second output cannot be represented in Neutron IR. If it's used, do not delegate.
+        getitem_nodes = list(node.users)
+        if any(n.args[1] == 1 for n in getitem_nodes if n.target == operator.getitem):
+            return False
+
         return True
 
     @staticmethod
@@ -66,10 +70,10 @@ class MaxPool2dConverter(NodeConverter):
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         kernel_size, stride, padding, dilation, ceil_mode = (
-            MaxPool2dConverter._get_node_args(node)
+            MaxPool2DWithIndicesConverter._get_node_args(node)
         )
 
-        output_shape = node.meta["val"].shape
+        output_shape = node.meta["val"][0].shape  # Shape of the main output (index 0)
         if output_shape[0] != 1:
             # /neutron-converter/src/OperatorC/MaxPoolPlugin.cpp?at=NEUTRON_SOFTWARE_2.2.2#106
             return False
@@ -123,9 +127,9 @@ class MaxPool2dConverter(NodeConverter):
     def _get_node_args(
         node: Node,
     ) -> tuple[KernelSize, Stride, Padding, Dilation, CeilMode]:
-        """Extract and return `aten.max_pool2d` arguments from the node.
+        """Extract and return `aten.max_pool2d_with_indices` arguments from the node.
 
-        :param node: The node representing the `aten.max_pool2d` operation.
+        :param node: The node representing the `aten.max_pool2d_with_indices` operation.
         :return: Tuple of (kernel_size, stride, padding, dilation, ceil_mode).
         """
         kernel_size = node.args[1]
@@ -139,16 +143,23 @@ class MaxPool2dConverter(NodeConverter):
         return kernel_size, stride, padding, dilation, ceil_mode
 
     def convert(self, node: Node):
-        """Convert the `aten.max_pool2d.default` operator to Neutron IR `MaxPool2D`.
+        """Convert the `aten.max_pool2d_with_indices.default` operator to Neutron IR `MaxPool2D`.
         The schema is:
-        aten::max_pool2d(
+        aten::max_pool2d_with_indices(
             Tensor self,
             int[2] kernel_size,
-            int[2] stride=[],  # The default value is equal to the kernel_size.
+            int[2] stride=[],   # The default value is equal to the kernel_size.
             int[2] padding=0,
             int[2] dilation=1,
             bool ceil_mode=False
-        ) -> Tensor
+        ) -> (Tensor, Tensor)
+
+        It produces 2 output tensors:
+            1. The first one contains the maximum values selected by the kernel.
+            2. The second one contains the indices of the selected values.
+
+        The second output tensor cannot be represented in Neutron IR. So the operator is only supported when the second
+         output is unused.
         """
         self.assert_convertible(node)
 
@@ -173,5 +184,9 @@ class MaxPool2dConverter(NodeConverter):
                 t_op, 0, explicit_padding, constant_value=constant_value
             )
             ops.add_pre(pad_op)
+
+        # The second output of the operator cannot be represented in NeutronIR. The `_is_supported_in_IR()` method
+        #  ensures the second output is never used in the model, so it can be safely removed here.
+        t_op.tmp_outputs[1:] = []
 
         self.builder.append_operators(ops.flatten())

@@ -108,6 +108,7 @@ def test_conv_fc__lowered_program_and_tflite_output_match(mocker):
     )
     convert_run_compare(
         exported_program,
+        tfl_model=tflite_flatbuffers_model,
         input_data=input_data,
         tflite_input_preprocess=ToNHWCPreprocess(),
     )
