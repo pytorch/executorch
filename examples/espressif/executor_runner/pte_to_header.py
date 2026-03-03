@@ -72,11 +72,12 @@ if __name__ == "__main__":
         attr = "__attribute__((aligned(16))) const unsigned char "
     else:
         attr = f'__attribute__((section("{args.section}"), aligned(16))) const unsigned char '
-
+    if not os.path.exists(args.outdir):
+        os.makedirs(args.outdir)
     with open(args.pte, "rb") as fr, open(outfile, "w") as fw:
         data = fr.read()
         hexstream = binascii.hexlify(data).decode("utf-8")
-
+        
         fw.write(
             "/* Auto-generated model header for ESP32 ExecuTorch runner. */\n"
         )
@@ -90,8 +91,8 @@ if __name__ == "__main__":
             fw.write("0x" + hexstream[i : i + 2] + ", ")
 
         fw.write("\n};\n")
-
+        fw.close()
         print(
             f"Input: {args.pte} with {len(data)} bytes. "
-            f"Output: {outfile} with {fw.tell()} bytes."
+            f"Output: {outfile} with {os.path.getsize(outfile)} bytes."
         )
