@@ -46,6 +46,7 @@ class NeutronCompileSpecBuilder:
         self.operators_not_to_delegate: List[str] = []
         self.use_neutron_for_format_conversion = True
         self.fetch_constants_to_sram = False
+        self.dump_kernel_selection_code = False
 
     def _replace_colons(self, operator: str) -> str:
         """
@@ -60,6 +61,7 @@ class NeutronCompileSpecBuilder:
         operators_not_to_delegate: Optional[List[str]] = None,
         use_neutron_for_format_conversion: bool = True,
         fetch_constants_to_sram: bool = False,
+        dump_kernel_selection_code: bool = False,
     ):
         """
         Generate compile spec for Neutron NPU
@@ -73,6 +75,7 @@ class NeutronCompileSpecBuilder:
                                                 delegated to Neutron.
             fetch_constants_to_sram: If True, the Neutron Converter will insert microinstructions to prefetch weights
                                      from FLASH to SRAM. This should be used when the whole model does not fit into SRAM.
+            dump_kernel_selection_code: Whether Neutron converter dumps kernel selection code.
         """
 
         self.config = NeutronTargetSpec(config)
@@ -92,8 +95,8 @@ class NeutronCompileSpecBuilder:
             ]
 
         self.use_neutron_for_format_conversion = use_neutron_for_format_conversion
-
         self.fetch_constants_to_sram = fetch_constants_to_sram
+        self.dump_kernel_selection_code = dump_kernel_selection_code
 
         return self
 
@@ -118,6 +121,10 @@ class NeutronCompileSpecBuilder:
                     "fetch_constants_to_sram",
                     f"{self.fetch_constants_to_sram}".encode(),
                 ),
+                CompileSpec(
+                    "dump_kernel_selection_code",
+                    f"{self.dump_kernel_selection_code}".encode(),
+                ),
             ]
 
         return self.compile_spec
@@ -130,6 +137,7 @@ def generate_neutron_compile_spec(
     operators_not_to_delegate: Optional[List[str]] = None,
     use_neutron_for_format_conversion: bool = True,
     fetch_constants_to_sram: bool = False,
+    dump_kernel_selection_code: bool = False,
 ) -> List[CompileSpec]:
     return (
         NeutronCompileSpecBuilder()
@@ -139,6 +147,7 @@ def generate_neutron_compile_spec(
             operators_not_to_delegate=operators_not_to_delegate,
             use_neutron_for_format_conversion=use_neutron_for_format_conversion,
             fetch_constants_to_sram=fetch_constants_to_sram,
+            dump_kernel_selection_code=dump_kernel_selection_code,
         )
         .build()
     )
@@ -162,6 +171,7 @@ class NeutronBackend(BackendDetails):
         target = ""
         use_neutron_for_format_conversion = None
         fetch_constants_to_sram = False
+        dump_kernel_selection_code = None
         for spec in compile_spec:
             if spec.key == "output_format":
                 output_format = spec.value.decode()
@@ -173,6 +183,8 @@ class NeutronBackend(BackendDetails):
                 use_neutron_for_format_conversion = spec.value.decode() == "True"
             if spec.key == "fetch_constants_to_sram":
                 fetch_constants_to_sram = spec.value.decode() == "True"
+            if spec.key == "dump_kernel_selection_code":
+                dump_kernel_selection_code = spec.value.decode() == "True"
 
         # Check that the output format is set in the compile spec
         if not output_format:
@@ -201,6 +213,14 @@ class NeutronBackend(BackendDetails):
                 edge_program, [RemoveGetItemPass]
             ).transform()
 
+            # Some of the nodes do not have delegation_tag, find any node with delegation tag.
+            delegation_tag = None
+            for n in edge_program.graph.nodes:
+                if "delegation_tag" in n.meta.keys():
+                    delegation_tag = n.meta["delegation_tag"]
+                    break
+            assert delegation_tag is not None
+
             # Convert the edge program to TFLite.
             conversion_config = ConversionConfig(
                 {"use_neutron_for_format_conversion": use_neutron_for_format_conversion}
@@ -213,21 +233,13 @@ class NeutronBackend(BackendDetails):
                 conversion_config=conversion_config,
             )
 
-            neutron_model = NeutronConverterManager().convert(
-                tflite_model, target, fetch_constants_to_sram
+            neutron_model = NeutronConverterManager(dump_kernel_selection_code).convert(
+                tflite_model, target, delegation_tag, fetch_constants_to_sram
             )
 
             # Dump the tflite file if logging level is enabled
             if logging.root.isEnabledFor(logging.DEBUG):
                 import os
-
-                # Some of the nodes do not have delegation_tag, find any node with delegation tag.
-                delegation_tag = None
-                for n in list(edge_program.graph.nodes):
-                    if "delegation_tag" in n.meta.keys():
-                        delegation_tag = n.meta["delegation_tag"]
-                        break
-                assert delegation_tag is not None
 
                 logging.debug(
                     f"Serializing converted graph with tag {delegation_tag} to {os.getcwd()}"
