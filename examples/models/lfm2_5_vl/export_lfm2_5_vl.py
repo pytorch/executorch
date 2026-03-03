@@ -232,13 +232,14 @@ def export_token_embedding(
 
 def export_all(
     model_dir: str,
-    output: str,
+    output: Optional[str],
     dtype: DType = DType.fp32,
     quantize: bool = False,
     max_seq_len: int = MAX_SEQ_LEN,
     max_context_len: int = MAX_SEQ_LEN,
     params_path: Optional[str] = None,
-) -> None:
+    _return_program: bool = False,
+):
     logging.info(f"Loading {model_dir}...")
     lfm2_model = Lfm2p5VlModel(
         model_dir=model_dir,
@@ -309,8 +310,16 @@ def export_all(
         )
     )
 
+    for execution_plan in et_program._emitter_output.program.execution_plan:
+        logging.info(
+            f"Required memory for activation in bytes: {execution_plan.non_const_buffer_sizes}"
+        )
+
+    if _return_program:
+        return et_program
+
     logging.info(f"Saving {output}...")
-    with open(output, "wb") as f:
+    with open(output, "wb") as f:  # type: ignore[arg-type]
         et_program.write_to_file(f)
     logging.info(f"Saved {output}. Methods: {et_program.methods}")
 
