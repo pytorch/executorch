@@ -72,6 +72,11 @@ table IntOrVidOrTid {
 
 table NoopNode {}
 
+table IdCopyNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
 table AddmmNode {
     mat1: Tid (required);      // First matrix
     mat2: Tid (required);      // Second matrix
@@ -89,6 +94,7 @@ table AddmmNode {
 // Reordering or removing members changes numeric type IDs and breaks existing .pte files.
 union OpNode {
     NoopNode,
+    IdCopyNode,
     AddmmNode
    // BC: Add new op nodes here (append only)
 }

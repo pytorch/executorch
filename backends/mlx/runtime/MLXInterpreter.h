@@ -99,6 +99,11 @@ inline std::vector<int> infer_shape_with_minus_one(
 inline void exec_noop(const NoopNode&, ExecutionState&, StreamOrDevice) {}
 
 inline void
+exec_id_copy(const IdCopyNode& n, ExecutionState& st, StreamOrDevice) {
+  st.set_tensor(n.out, st.const_tensor_ref(n.x));
+}
+
+inline void
 exec_addmm(const AddmmNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& mat1 = st.const_tensor_ref(n.mat1);
   const auto& mat2 = st.const_tensor_ref(n.mat2);
@@ -153,6 +158,9 @@ class Interpreter {
     switch (instr.op) {
       case OpCode::NOOP:
         ops::exec_noop(std::get<NoopNode>(instr.node), st, s);
+        break;
+      case OpCode::ID_COPY:
+        ops::exec_id_copy(std::get<IdCopyNode>(instr.node), st, s);
         break;
       case OpCode::ADDMM:
         ops::exec_addmm(std::get<AddmmNode>(instr.node), st, s);
