@@ -202,8 +202,8 @@ class ET_EXPERIMENTAL MultimodalRunner : public IRunner {
   ::executorch::runtime::Error decode_from_token(
       uint64_t cur_token,
       const GenerationConfig& config,
-      std::function<void(const std::string&)> wrapped_callback,
-      std::function<void(const Stats&)> stats_callback);
+      const std::function<void(const std::string&)>& wrapped_callback,
+      const std::function<void(const Stats&)>& stats_callback);
 };
 
 } // namespace llm
