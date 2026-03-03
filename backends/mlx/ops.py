@@ -219,6 +219,12 @@ def normalize_reduction_dim(
     return dim, keepdim
 
 
+@REGISTRY.register(target=["NOOP", torch.ops.aten._assert_scalar.default])
+def _noop_handler(P: MLXProgramBuilder, n: Node) -> None:
+    """No-op handler for nodes that don't emit any MLX instructions."""
+    return None
+
+
 @REGISTRY.register(target=[torch.ops.aten.addmm.default])
 def _addmm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle addmm: self + (mat1 @ mat2).
