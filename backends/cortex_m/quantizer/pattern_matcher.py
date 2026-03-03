@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from collections import defaultdict
 
 from dataclasses import dataclass
 from typing import Iterator, List, Optional
@@ -38,7 +37,6 @@ class PatternMatcher:
 
     Q_PATTERN_MATCHED_KEY = "quantizer_matched"
     REJECT_PREVIOUSLY_ANNOTATED = "Tried annotating already quantized node."
-    REJECT_FILTERED_OUT = "Node filtered out by global filter."
     REJECT_UNSUPPORTED_PATTERN = (
         "Tried annotating unsupported configuration of operators"
     )
@@ -53,8 +51,9 @@ class PatternMatcher:
         self.support_dict = support_dict
         self.support_dict_name = support_dict_name
 
-        self.patterns_by_first = defaultdict(list)
-        self.max_pattern_len = max(len(pattern) for pattern in support_dict.keys())
+        self.max_pattern_len = max(
+            (len(pattern) for pattern in support_dict.keys()), default=0
+        )
 
     def _validate_match(
         self,
@@ -137,11 +136,11 @@ class PatternMatcher:
 
         return matches
 
-    def _deque_and_get_matches(
+    def _dequeue_and_get_matches(
         self, node_queue: List[Node], quantization_config: QuantizationConfig
     ) -> List[PatternMatchResult]:
         """
-        Deques the longest accepted match starting at the first node of the queue, and returns all potential matches that were checked (rejected ones). If no match is found, simply deques the first node and returns an empty list.
+        Dequeues the longest accepted match starting at the first node of the queue, and returns all potential matches that were checked (rejected ones). If no match is found, simply dequeues the first node and returns an empty list.
         """
         potential_matches = self._get_matches(node_queue, quantization_config)
         accepted_matches = [m for m in potential_matches if m.accepted]
@@ -180,14 +179,14 @@ class PatternMatcher:
             # If there is a fork or gap in the nodes iterator, empty the queue
             if (len(node_users) != 1) or (node_users[0] != next_node):
                 while node_queue:
-                    new_matches = self._deque_and_get_matches(
+                    new_matches = self._dequeue_and_get_matches(
                         node_queue, quantization_config
                     )
                     potential_matches.extend(new_matches)
 
             # When que reach the max length, search for match starting at the front of the queue
             elif len(node_queue) >= self.max_pattern_len:
-                potential_matches = self._deque_and_get_matches(
+                potential_matches = self._dequeue_and_get_matches(
                     node_queue, quantization_config
                 )
 
