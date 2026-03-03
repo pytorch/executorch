@@ -27,7 +27,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 class StableDiffusionComponent(Enum):
-    """Maintain Stable Diffusion model components reliably"""
+    """Maintain Stable Diffusion model component names reliably"""
 
     TEXT_ENCODER = "text_encoder"
     UNET = "unet"
