@@ -28,6 +28,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.convolution_converter import (
     ConvolutionConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.getitem_converter import (
+    GetItemConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.hardtanh_converter import (
     HardTanhConverter,
 )
@@ -101,6 +104,7 @@ __all__ = [
     "CloneConverter",
     "ConstantPadNDConverter",
     "ConvolutionConverter",
+    "GetItemConverter",
     "HardTanhConverter",
     "LeakyReluConverter",
     "MaxPool2dConverter",
