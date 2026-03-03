@@ -27,6 +27,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeFloorDivide,
     DecomposeGlu,
     DecomposeLinalgVectorNorm,
+    DecomposeLogVariants,
     DecomposeMaxPool3d,
     DecomposeMinMaxDim,
     DecomposeReciprocal,
@@ -96,6 +97,7 @@ def get_capture_program_passes():
         (ConvertBmmToMatmul, False),
         (DecomposeAny, True),
         (DecomposeColIm, True),
+        (DecomposeLogVariants, True),
         (DecomposeMaxPool3d, True),
         (DecomposeMinMaxDim, True),
         (ExpandBroadcastTensorShape, True),
@@ -226,6 +228,7 @@ class QnnPassManager(PassManager):
         # TODO: Skip this pass for CPU backend (Dependency: Backend-aware passes manager)
         self.add_pass(DecomposeReciprocal())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
+        self.add_pass(DecomposeLogVariants())
         self.add_pass(ReplaceInfValues())
         self.add_pass(LiftConstantScalarOperands())
         self.add_pass(InsertReshapeForReduceOps())

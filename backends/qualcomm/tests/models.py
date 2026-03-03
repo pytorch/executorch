@@ -1498,6 +1498,30 @@ class LogSoftmax(torch.nn.Module):
         return torch.nn.functional.log_softmax(x, dim=-1)
 
 
+class Log10(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.log10(x)
+
+
+class Log1p(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.log1p(x)
+
+
+class Log2(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.log2(x)
+
+
 class MaxPool2d(torch.nn.Module):
     def __init__(self, kernel_size=3, stride=1, padding=1, ceil_mode=True):
         super().__init__()
