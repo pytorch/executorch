@@ -25,7 +25,10 @@ from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
     RemoveIOQuantOpsPass,
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
-from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
+from executorch.backends.nxp.nxp_backend import (
+    core_aten_ops_exception_list,
+    generate_neutron_compile_spec,
+)
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 from executorch.devtools.visualization.visualization_utils import (
@@ -327,7 +330,9 @@ if __name__ == "__main__":  # noqa C901
         export(module, example_inputs, strict=True),
         transform_passes=NeutronEdgePassManager(),
         partitioner=partitioners,
-        compile_config=EdgeCompileConfig(),
+        compile_config=EdgeCompileConfig(
+            _core_aten_ops_exception_list=core_aten_ops_exception_list,
+        ),
     )
 
     if args.remove_quant_io_ops:
