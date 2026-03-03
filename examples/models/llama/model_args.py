@@ -72,6 +72,7 @@ class ModelArgs:
     num_experts: int = 8  # Number of experts
     num_activated_experts: int = 2  # Number of experts to activate
     attention_type: str = "mha"  # Attention type, registered in attention.py
+    use_q_gate: bool = False  # Use q-gated projection in attention (Qwen3.5 full attention)
     norm_type: str = "rmsnorm"  # Normalization type, registered in norm.py
     act_fn: ActFn = dataclasses.field(default=ActFn.SILU)  # Activation function type
     attention_qkv_bias: bool = False
@@ -155,6 +156,10 @@ class ModelArgs:
     def __post_init__(self):
         if self.n_kv_heads is None:
             self.n_kv_heads = self.n_heads
+
+        # Backward compatibility: qwen3_5_full attention name implies q-gated MHA.
+        if self.attention_type == "qwen3_5_full":
+            self.use_q_gate = True
 
         # rope_theta overrides rope_freq_base since it's the official name.
         if self.rope_theta is not None:

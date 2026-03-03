@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from executorch.examples.models.llama.lora import LoRALinear
 from executorch.examples.models.llama.model_args import ModelArgs
-from executorch.examples.models.llama.norm import RMSNorm
+from executorch.examples.models.llama.norm import RMSNorm, RMSNormGated
 from executorch.examples.models.llama.rope import Rope
 
 
@@ -314,6 +314,7 @@ class RingKVCache(KVCache):
         return self.k_cache, self.v_cache
 
 
+@register_attention("qwen3_5_full")
 @register_attention("mha")
 class AttentionMHA(Attention):
     def __init__(
@@ -347,7 +348,9 @@ class AttentionMHA(Attention):
         self.attention_qkv_bias = args.attention_qkv_bias
         self.use_qk_norm = args.use_qk_norm
         self.qk_norm_before_rope = args.qk_norm_before_rope
+        self.use_q_gate = args.use_q_gate
         self.enable_dynamic_shape = args.enable_dynamic_shape
+        q_out_dim = self.n_heads * self.head_dim * (2 if self.use_q_gate else 1)
 
         if self.use_qk_norm:
             q_norm_dim = self.head_dim
@@ -366,7 +369,7 @@ class AttentionMHA(Attention):
         self.wq = (
             LoRALinear(
                 in_dim=args.dim,
-                out_dim=args.n_heads * args.head_dim,
+                out_dim=q_out_dim,
                 rank=args.r,
                 alpha=args.lora_alpha,
                 dropout=0.0,
@@ -374,7 +377,7 @@ class AttentionMHA(Attention):
             )
             if args.target_modules is not None and "q_proj" in args.target_modules
             else nn.Linear(
-                self.dim, self.n_heads * self.head_dim, bias=self.attention_qkv_bias
+                self.dim, q_out_dim, bias=self.attention_qkv_bias
             )
         )
         self.wk = (
@@ -460,10 +463,17 @@ class AttentionMHA(Attention):
         input_pos = kwargs.get("input_pos")
         bsz, seqlen, _ = x.shape
 
-        # QKV
-        q, k, v = self.wq(x), self.wk(x), self.wv(x)
-        # We need view_copy elimination
-        q = q.view(bsz, seqlen, self.n_local_heads, self.head_dim)
+        if self.use_q_gate:
+            q_and_gate = self.wq(x).view(
+                bsz, seqlen, self.n_local_heads, self.head_dim * 2
+            )
+            q, gate = torch.chunk(q_and_gate, 2, dim=-1)
+            gate = gate.reshape(bsz, seqlen, -1)
+        else:
+            q = self.wq(x).view(bsz, seqlen, self.n_local_heads, self.head_dim)
+            gate = None
+
+        k, v = self.wk(x), self.wv(x)
         k = k.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
         v = v.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
 
@@ -500,6 +510,8 @@ class AttentionMHA(Attention):
                     input_pos[0].item(), seqlen
                 )
             output = self.SDPA(input_pos, q, k, v, bsz, seqlen, attn_mask)
+            if gate is not None:
+                output = output * torch.sigmoid(gate)
             return self.wo(output), None
 
         # grouped multiquery attention: expand out keys and values
@@ -513,6 +525,8 @@ class AttentionMHA(Attention):
         output = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
 
         output = output.transpose(1, 2).reshape(bsz, seqlen, -1)
+        if gate is not None:
+            output = output * torch.sigmoid(gate)
 
         output = self.wo(output)
 
@@ -522,163 +536,6 @@ class AttentionMHA(Attention):
 def _l2norm(x: torch.Tensor, dim: int = -1, eps: float = 1e-6) -> torch.Tensor:
     inv_norm = torch.rsqrt((x * x).sum(dim=dim, keepdim=True) + eps)
     return x * inv_norm
-
-
-class RMSNormGated(nn.Module):
-    def __init__(self, hidden_size: int, eps: float = 1e-6):
-        super().__init__()
-        self.weight = nn.Parameter(torch.ones(hidden_size))
-        self.variance_epsilon = eps
-
-    def forward(self, hidden_states: torch.Tensor, gate: torch.Tensor) -> torch.Tensor:
-        input_dtype = hidden_states.dtype
-        hidden_states = hidden_states.to(torch.float32)
-        variance = hidden_states.pow(2).mean(-1, keepdim=True)
-        hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
-        hidden_states = self.weight * hidden_states.to(input_dtype)
-        hidden_states = hidden_states * F.silu(gate.to(torch.float32))
-        return hidden_states.to(input_dtype)
-
-
-@register_attention("qwen3_5_full")
-class AttentionQwen3_5Full(Attention):
-    """Qwen3.5 full-attention block with q-gating."""
-
-    def __init__(
-        self,
-        args: ModelArgs,
-        layer_id: int,
-        rope: Rope,
-        **_kwargs: Any,
-    ):
-        super().__init__()
-        self.use_kv_cache = args.use_kv_cache
-        self.n_heads = args.n_heads
-        self.n_kv_heads = self.n_heads if args.n_kv_heads is None else args.n_kv_heads
-        assert self.n_heads % self.n_kv_heads == 0
-        self.n_local_heads = self.n_heads
-        self.n_local_kv_heads = self.n_kv_heads
-        self.n_rep = self.n_local_heads // self.n_local_kv_heads
-        self.head_dim = args.head_dim
-        self.max_context_len = args.max_context_len
-        self.dim = args.dim
-        self.attention_qkv_bias = args.attention_qkv_bias
-        self.use_qk_norm = args.use_qk_norm
-        self.qk_norm_before_rope = args.qk_norm_before_rope
-        self.enable_dynamic_shape = args.enable_dynamic_shape
-
-        if self.use_qk_norm:
-            self.q_norm_fn = RMSNorm(
-                self.head_dim,
-                eps=args.norm_eps,
-                add_unit_offset=args.rms_norm_add_unit_offset,
-            )
-            self.k_norm_fn = RMSNorm(
-                self.head_dim,
-                eps=args.norm_eps,
-                add_unit_offset=args.rms_norm_add_unit_offset,
-            )
-
-        self.wq = nn.Linear(
-            self.dim, self.n_heads * self.head_dim * 2, bias=self.attention_qkv_bias
-        )
-        self.wk = nn.Linear(
-            self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
-        )
-        self.wv = nn.Linear(
-            self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
-        )
-        self.wo = nn.Linear(
-            self.n_heads * self.head_dim,
-            self.dim,
-            bias=False,
-        )
-
-        self.layer_id = layer_id
-        self.rope = rope
-
-        causal_mask = torch.tril(
-            torch.ones(
-                self.max_context_len,
-                self.max_context_len,
-                dtype=torch.bool,
-                device="cpu",
-            )
-        )
-        self.register_buffer("mask", causal_mask, persistent=False)
-
-        if self.use_kv_cache:
-            self.kv_cache = KVCache(
-                args.max_batch_size,
-                args.max_context_len,
-                self.n_kv_heads,
-                self.head_dim,
-                args.enable_dynamic_shape,
-            )
-            self.SDPA = SDPA(
-                dim=self.n_local_heads * self.head_dim,
-                head_dim=self.head_dim,
-                n_rep=self.n_rep,
-                max_context_len=self.max_context_len,
-            )
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        freqs_cos: torch.Tensor,
-        freqs_sin: torch.Tensor,
-        **kwargs: ForwardOptions,
-    ) -> Tuple[torch.Tensor, Optional[Any]]:
-        input_pos = kwargs.get("input_pos")
-        bsz, seqlen, _ = x.shape
-
-        # Q and gate are packed in q_proj output.
-        q_and_gate = self.wq(x).view(bsz, seqlen, self.n_local_heads, self.head_dim * 2)
-        q, gate = torch.chunk(q_and_gate, 2, dim=-1)
-        gate = gate.reshape(bsz, seqlen, -1)
-
-        k = self.wk(x).view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
-        v = self.wv(x).view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
-
-        if self.use_qk_norm and self.qk_norm_before_rope:
-            q = self.q_norm_fn(q)
-            k = self.k_norm_fn(k)
-
-        q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
-        q = q.transpose(1, 2)
-        k = k.transpose(1, 2)
-        v = v.transpose(1, 2)
-
-        if self.use_qk_norm and not self.qk_norm_before_rope:
-            q = self.q_norm_fn(q)
-            k = self.k_norm_fn(k)
-
-        if self.use_kv_cache:
-            assert input_pos is not None
-            if self.enable_dynamic_shape:
-                start_pos = input_pos[-1].item()
-                torch._check_is_size(start_pos)
-                torch._check(start_pos < self.max_context_len)
-                seq_length = q.size(2)
-                attn_mask = self.mask.narrow(0, start_pos, seq_length)
-            else:
-                attn_mask = self.mask[input_pos]
-            k, v = self.kv_cache.update(input_pos, k, v)
-            if getattr(self.kv_cache, "is_ring_buffer", False):
-                attn_mask = self.kv_cache.create_causal_mask_for_ring_buffer(
-                    input_pos[0].item(), seqlen
-                )
-            output = self.SDPA(input_pos, q, k, v, bsz, seqlen, attn_mask)
-            output = output * torch.sigmoid(gate)
-            return self.wo(output), None
-
-        k = k.repeat_interleave(self.n_rep, dim=1)
-        v = v.repeat_interleave(self.n_rep, dim=1)
-        mask = self.mask[:seqlen, :seqlen]
-        output = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
-        output = output.transpose(1, 2).reshape(bsz, seqlen, -1)
-        output = output * torch.sigmoid(gate)
-        return self.wo(output), None
 
 
 @register_attention("gated_deltanet")

@@ -27,11 +27,12 @@ class Qwen35AttentionTest(unittest.TestCase):
             use_kv_cache=False,
             use_qk_norm=False,
             qk_norm_before_rope=True,
-            attention_type="qwen3_5_full",
+            attention_type="mha",
+            use_q_gate=True,
             attention_qkv_bias=True,
         )
         rope = Rope(args)
-        attn = ATTENTION_REGISTRY["qwen3_5_full"](args, 0, rope)
+        attn = ATTENTION_REGISTRY["mha"](args, 0, rope)
         self.assertIsNone(attn.wo.bias)
 
     def test_rmsnorm_preserves_input_dtype_without_unit_offset(self):
@@ -56,15 +57,31 @@ class Qwen35AttentionTest(unittest.TestCase):
             partial_rotary_factor=0.5,
             use_qk_norm=True,
             qk_norm_before_rope=True,
-            attention_type="qwen3_5_full",
+            attention_type="mha",
+            use_q_gate=True,
             rms_norm_add_unit_offset=True,
         )
         rope = Rope(args)
-        attn = ATTENTION_REGISTRY["qwen3_5_full"](args, 0, rope)
+        attn = ATTENTION_REGISTRY["mha"](args, 0, rope)
         x = torch.randn(1, 3, args.dim)
         freqs_cos, freqs_sin = rope.get_freqs(None, x.shape[1])
         y, _ = attn(x, freqs_cos, freqs_sin)
         self.assertEqual(y.shape, x.shape)
+
+    def test_qwen35_full_attention_legacy_name_maps_to_gated_mha(self):
+        args = ModelArgs(
+            dim=32,
+            n_layers=1,
+            n_heads=4,
+            n_kv_heads=2,
+            head_dim=8,
+            hidden_dim=64,
+            attention_type="qwen3_5_full",
+        )
+        self.assertTrue(args.use_q_gate)
+        rope = Rope(args)
+        attn = ATTENTION_REGISTRY["qwen3_5_full"](args, 0, rope)
+        self.assertTrue(attn.use_q_gate)
 
     def test_gated_deltanet_resets_state_on_new_sequence(self):
         torch.manual_seed(0)
@@ -78,7 +95,8 @@ class Qwen35AttentionTest(unittest.TestCase):
             max_seq_len=16,
             max_context_len=16,
             use_kv_cache=True,
-            attention_type="qwen3_5_full",
+            attention_type="mha",
+            use_q_gate=True,
             linear_conv_kernel_dim=4,
             linear_key_head_dim=4,
             linear_value_head_dim=4,
