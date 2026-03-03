@@ -384,7 +384,6 @@ public class LlmModule {
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
-  @Deprecated
   public long prefillImages(int[] image, int width, int height, int channels) {
     int nativeResult = appendImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
@@ -501,7 +500,6 @@ public class LlmModule {
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
-  @Deprecated
   public long prefillImages(float[] image, int width, int height, int channels) {
     int nativeResult = appendNormalizedImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
