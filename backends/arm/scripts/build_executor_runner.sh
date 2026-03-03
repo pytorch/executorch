@@ -9,6 +9,9 @@ set -eu
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 et_root_dir=$(realpath ${et_root_dir})
+runner_source_dir=${et_root_dir}/examples/arm/executor_runner
+runner_source_dir=$(realpath ${runner_source_dir})
+preset_file=${et_root_dir}/tools/cmake/preset/arm_baremetal.cmake
 toolchain=arm-none-eabi-gcc
 setup_path_script=${et_root_dir}/examples/arm/arm-scratch/setup_path.sh
 _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
@@ -101,6 +104,9 @@ toolchain_cmake=$(realpath ${toolchain_cmake})
 
 source ${setup_path_script}
 
+[[ -f ${preset_file} ]] \
+    || { echo "Missing ${preset_file}. ${_setup_msg}"; exit 1; }
+
 if [[ ${pte_file} == "semihosting" ]]; then
     pte_data="-DSEMIHOSTING=ON"
 else
@@ -122,13 +128,9 @@ else
     fi
 fi
 ethosu_tools_dir=$(realpath ${ethosu_tools_dir})
-ethos_u_root_dir="$ethosu_tools_dir/ethos-u"
+ethos_u_root_dir="${ethosu_tools_dir}/ethos-u"
 mkdir -p "${ethos_u_root_dir}"
-ethosu_tools_dir=$(realpath ${ethos_u_root_dir})
-
-et_build_dir=${et_build_root}/cmake-out
-mkdir -p ${et_build_dir}
-et_build_dir=$(realpath ${et_build_dir})
+ethos_u_root_dir=$(realpath ${ethos_u_root_dir})
 
 if [[ ${system_config} == "" ]]
 then
@@ -160,8 +162,6 @@ echo "--------------------------------------------------------------------------
 echo "Build Arm ${toolchain/-gcc/} executor_runner for ${target} PTE: ${pte_file} using ${system_config} ${memory_mode} ${extra_build_flags} to '${output_folder}'"
 echo "--------------------------------------------------------------------------------"
 
-cd ${et_root_dir}/examples/arm/executor_runner
-
 if [ "$bundleio" = true ] ; then
     build_bundleio_flags=" -DET_BUNDLE_IO=ON "
 fi
@@ -169,25 +169,30 @@ fi
 if [ "$build_with_etdump" = true ] ; then
     build_with_etdump_flags=" -DEXECUTORCH_ENABLE_EVENT_TRACER=ON -DET_DUMP_INTERMEDIATE_OUTPUTS=ON "
 fi
+devtools_flags=""
+if [ "$bundleio" = true ] || [ "$build_with_etdump" = true ] ; then
+    devtools_flags=" -DEXECUTORCH_BUILD_DEVTOOLS=ON "
+fi
 
-echo "Building with BundleIO/etdump/extra flags: ${build_bundleio_flags} ${build_with_etdump_flags} ${extra_build_flags}"
+echo "Building with BundleIO/etdump/extra flags: ${build_bundleio_flags} ${build_with_etdump_flags} ${devtools_flags} ${extra_build_flags}"
 cmake \
-    -DCMAKE_BUILD_TYPE=${build_type}            \
-    -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}   \
-    -DTARGET_CPU=${target_cpu}                  \
-    -DET_DIR_PATH:PATH=${et_root_dir}           \
-    -DET_BUILD_DIR_PATH:PATH=${et_build_dir}    \
-    -DETHOS_SDK_PATH:PATH=${ethos_u_root_dir}   \
-    -DETHOSU_TARGET_NPU_CONFIG=${target}        \
-    ${pte_data}                                 \
-    ${build_bundleio_flags}                     \
-    ${build_with_etdump_flags}                  \
-    -DPYTHON_EXECUTABLE=$(which python3)        \
-    -DSYSTEM_CONFIG=${system_config}            \
-    -DMEMORY_MODE=${memory_mode}                \
+    -S ${runner_source_dir}                    \
+    -B ${output_folder}                        \
+    -DEXECUTORCH_ROOT=${et_root_dir}           \
+    -DCMAKE_BUILD_TYPE=${build_type}           \
+    -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}  \
+    -DTARGET_CPU=${target_cpu}                 \
+    -DETHOSU_TARGET_NPU_CONFIG=${target}       \
+    -DEXECUTORCH_BUILD_PRESET_FILE=${preset_file} \
+    ${pte_data}                                \
+    ${build_bundleio_flags}                    \
+    ${build_with_etdump_flags}                 \
+    ${devtools_flags}                          \
+    -DSYSTEM_CONFIG=${system_config}           \
+    -DMEMORY_MODE=${memory_mode}               \
     -DEXECUTORCH_SELECT_OPS_LIST="${select_ops_list}" \
-    ${extra_build_flags}                        \
-    -B ${output_folder}
+    -DETHOS_SDK_PATH:PATH=${ethos_u_root_dir}  \
+    ${extra_build_flags}
 
 echo "[${BASH_SOURCE[0]}] Configured CMAKE"
 

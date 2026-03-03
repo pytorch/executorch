@@ -61,17 +61,20 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
 
   add_library(executorch_delegate_ethos_u STATIC ${_arm_backend_sources})
   target_link_libraries(executorch_delegate_ethos_u PUBLIC executorch_core)
+  target_include_directories(
+    executorch_delegate_ethos_u PRIVATE ${_common_include_directories}
+  )
 
   if(EXECUTORCH_BUILD_ARM_BAREMETAL)
     target_sources(
       executorch_delegate_ethos_u
       PRIVATE ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_Cortex_M.cpp
     )
-    set(DRIVER_ETHOSU_INCLUDE_DIR
+    set(_ethosu_core_driver_include
         "${THIRD_PARTY_ROOT}/ethos-u-core-driver/include"
     )
     target_include_directories(
-      executorch_delegate_ethos_u PRIVATE ${DRIVER_ETHOSU_INCLUDE_DIR}
+      executorch_delegate_ethos_u PRIVATE ${_ethosu_core_driver_include}
     )
     target_link_libraries(executorch_delegate_ethos_u PUBLIC ethosu_core_driver)
   elseif(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
@@ -108,7 +111,9 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
     )
   endif()
 
-  install(TARGETS executorch_delegate_ethos_u EXPORT ExecuTorchTargets)
+  if(NOT CMAKE_SKIP_INSTALL_RULES)
+    install(TARGETS executorch_delegate_ethos_u EXPORT ExecuTorchTargets)
+  endif()
 
 endif()
 

@@ -3,8 +3,140 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-cmake_minimum_required(VERSION 3.20)
-project(arm_executor_runner)
+set(_arm_executor_runner_standalone FALSE)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  cmake_minimum_required(VERSION 3.20)
+  project(arm_executor_runner LANGUAGES C CXX)
+  set(_arm_executor_runner_standalone TRUE)
+endif()
+
+if(_arm_executor_runner_standalone)
+  set(ARM_EXECUTOR_RUNNER_STANDALONE
+      ${_arm_executor_runner_standalone}
+      CACHE
+        BOOL
+        "Indicates arm_executor_runner was configured as a standalone project"
+        FORCE
+  )
+endif()
+
+# Derive the ExecuTorch checkout root by walking upward until we find the shared
+# tooling directory rather than assuming a fixed relative depth.
+set(_candidate_executorch_root "${CMAKE_CURRENT_LIST_DIR}")
+set(_default_executorch_root "")
+while(TRUE)
+  if(EXISTS "${_candidate_executorch_root}/tools/cmake/common/preset.cmake")
+    set(_default_executorch_root "${_candidate_executorch_root}")
+    break()
+  endif()
+  get_filename_component(_parent_dir "${_candidate_executorch_root}" DIRECTORY)
+  if(_parent_dir STREQUAL "${_candidate_executorch_root}")
+    break()
+  endif()
+  set(_candidate_executorch_root "${_parent_dir}")
+endwhile()
+
+if(_default_executorch_root STREQUAL "")
+  message(
+    FATAL_ERROR
+      "Unable to locate an ExecuTorch checkout near ${CMAKE_CURRENT_LIST_DIR}. Please rerun CMake with -DEXECUTORCH_ROOT=<path-to-executorch>."
+  )
+endif()
+
+if(NOT DEFINED EXECUTORCH_ROOT)
+  set(EXECUTORCH_ROOT
+      "${_default_executorch_root}"
+      CACHE PATH "Path to an ExecuTorch checkout"
+  )
+endif()
+
+set(ET_DIR_PATH
+    "${EXECUTORCH_ROOT}"
+    CACHE PATH "Kept for backward compatibility; synonym for EXECUTORCH_ROOT"
+)
+
+if(NOT EXISTS "${EXECUTORCH_ROOT}/CMakeLists.txt")
+  if(EXISTS "${_default_executorch_root}/CMakeLists.txt")
+    message(
+      WARNING
+        "EXECUTORCH_ROOT (${EXECUTORCH_ROOT}) does not contain an ExecuTorch CMake project. Falling back to ${_default_executorch_root}."
+    )
+    set(EXECUTORCH_ROOT
+        "${_default_executorch_root}"
+        CACHE PATH "Path to an ExecuTorch checkout" FORCE
+    )
+    set(ET_DIR_PATH
+        "${EXECUTORCH_ROOT}"
+        CACHE PATH
+              "Kept for backward compatibility; synonym for EXECUTORCH_ROOT"
+              FORCE
+    )
+  else()
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_ROOT (${EXECUTORCH_ROOT}) does not contain an ExecuTorch CMake project."
+    )
+  endif()
+endif()
+
+if(_arm_executor_runner_standalone)
+  set(_executorch_preset_cmake
+      "${EXECUTORCH_ROOT}/tools/cmake/common/preset.cmake"
+  )
+  if(EXISTS "${_executorch_preset_cmake}")
+    include("${_executorch_preset_cmake}")
+    if(NOT DEFINED EXECUTORCH_BUILD_PRESET_FILE)
+      set(EXECUTORCH_BUILD_PRESET_FILE
+          "${EXECUTORCH_ROOT}/tools/cmake/preset/arm_baremetal.cmake"
+          CACHE PATH "Preset used when configuring the standalone runner"
+      )
+    endif()
+    load_build_preset()
+  endif()
+  include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+endif()
+
+if(_arm_executor_runner_standalone)
+  option(ARM_EXECUTOR_RUNNER_SKIP_INSTALL_RULES
+         "Skip install() rules for standalone arm_executor_runner builds" ON
+  )
+  if(DEFINED CMAKE_SKIP_INSTALL_RULES)
+    set(_arm_runner_skip_install_rules "${CMAKE_SKIP_INSTALL_RULES}")
+  endif()
+  if(ARM_EXECUTOR_RUNNER_SKIP_INSTALL_RULES)
+    set(CMAKE_SKIP_INSTALL_RULES ON)
+  endif()
+  foreach(
+    _opt
+    EXECUTORCH_BUILD_ARM_BAREMETAL EXECUTORCH_BUILD_CORTEX_M
+    EXECUTORCH_BUILD_KERNELS_QUANTIZED EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
+  )
+    if(NOT DEFINED ${_opt})
+      set(${_opt}
+          ON
+          CACHE BOOL "" FORCE
+      )
+    endif()
+  endforeach()
+  set(EXECUTORCH_SKIP_ARM_EXECUTOR_RUNNER
+      ON
+      CACHE BOOL "" FORCE
+  )
+  # When configured on its own, pull ExecuTorch in-tree so all required targets
+  # (delegates, kernels, runner util, etc.) are built from the same checkout.
+  # The preset above (or manual cache overrides) must configure any top-level
+  # ExecuTorch options a superbuild would normally supply.
+  add_subdirectory(
+    ${EXECUTORCH_ROOT} ${CMAKE_BINARY_DIR}/executorch EXCLUDE_FROM_ALL
+  )
+  if(ARM_EXECUTOR_RUNNER_SKIP_INSTALL_RULES)
+    if(DEFINED _arm_runner_skip_install_rules)
+      set(CMAKE_SKIP_INSTALL_RULES "${_arm_runner_skip_install_rules}")
+    else()
+      unset(CMAKE_SKIP_INSTALL_RULES)
+    endif()
+  endif()
+endif()
 
 option(
   ET_MODEL_PTE_ADDR
@@ -55,12 +187,97 @@ option(
   OFF
 )
 
+if(NOT DEFINED PYTHON_EXECUTABLE)
+  find_package(
+    Python3
+    COMPONENTS Interpreter
+    REQUIRED
+  )
+  set(PYTHON_EXECUTABLE "${Python3_EXECUTABLE}")
+endif()
+
+include(${EXECUTORCH_ROOT}/backends/arm/scripts/corstone_utils.cmake)
+
+# Keep the default scratch location aligned with setup.sh/run.sh so a developer
+# who just ran those scripts does not need to pass any extra CMake flags.
+set(ETHOS_SDK_PATH
+    "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u"
+    CACHE PATH "Path to Ethos-U bare metal driver/env"
+)
+
+# Reuse the in-repo core driver by default so the backend delegate and runner
+# always share the same sources instead of cloning an extra copy under the
+# scratch tree.
+set(_default_core_driver_path
+    "${EXECUTORCH_ROOT}/backends/arm/third-party/ethos-u-core-driver"
+)
+set(_legacy_core_driver_path "${ETHOS_SDK_PATH}/core_software/core_driver")
+if(NOT DEFINED CORE_DRIVER_PATH
+   OR "${CORE_DRIVER_PATH}" STREQUAL ""
+   OR "${CORE_DRIVER_PATH}" STREQUAL "${_legacy_core_driver_path}"
+)
+  set(CORE_DRIVER_PATH
+      "${_default_core_driver_path}"
+      CACHE
+        PATH
+        "Path to the Ethos-U core driver sources used when building Corstone targets"
+        FORCE
+  )
+else()
+  set(CORE_DRIVER_PATH
+      "${CORE_DRIVER_PATH}"
+      CACHE
+        PATH
+        "Path to the Ethos-U core driver sources used when building Corstone targets"
+  )
+endif()
+
+# Detect whether setup.sh already staged the SDK so we can skip the fetch step.
+set(_ethos_u_content_ready FALSE)
+if(EXISTS "${ETHOS_SDK_PATH}/core_platform"
+   AND EXISTS "${ETHOS_SDK_PATH}/core_software"
+)
+  set(_ethos_u_content_ready TRUE)
+endif()
+
+set(_fetch_ethos_u_default ON)
+if(_ethos_u_content_ready)
+  set(_fetch_ethos_u_default OFF)
+endif()
+
 option(FETCH_ETHOS_U_CONTENT
-       "Fetch ethos_u dependencies instead of relying on pre-downloads" ON
+       "Fetch ethos_u dependencies instead of relying on pre-downloads"
+       ${_fetch_ethos_u_default}
+)
+
+if(FETCH_ETHOS_U_CONTENT AND NOT _ethos_u_content_ready)
+  fetch_ethos_u_content(${ETHOS_SDK_PATH} ${EXECUTORCH_ROOT})
+  if(EXISTS "${ETHOS_SDK_PATH}/core_platform"
+     AND EXISTS "${ETHOS_SDK_PATH}/core_software"
+  )
+    set(_ethos_u_content_ready TRUE)
+  else()
+    message(
+      FATAL_ERROR
+        "Failed to fetch Ethos-U content into ${ETHOS_SDK_PATH}. Inspect the fetch logs above."
+    )
+  endif()
+endif()
+
+if(NOT _ethos_u_content_ready)
+  message(
+    FATAL_ERROR
+      "No Ethos-U content found at ${ETHOS_SDK_PATH}. Run examples/arm/setup.sh or enable FETCH_ETHOS_U_CONTENT=ON."
+  )
+endif()
+
+set(ET_PTE_FILE_PATH
+    ""
+    CACHE PATH "Path to ExecuTorch model pte"
 )
 
 if(NOT DEFINED ET_MODEL_PTE_ADDR
-   AND NOT DEFINED ET_PTE_FILE_PATH
+   AND "${ET_PTE_FILE_PATH}" STREQUAL ""
    AND NOT DEFINED SEMIHOSTING
 )
   message(
@@ -72,38 +289,81 @@ if(NOT DEFINED ET_MODEL_PTE_ADDR
   )
 endif()
 
-# Example ExecuTorch demo for bare metal Cortex-M based systems
-set(ET_DIR_PATH
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../.."
-    CACHE PATH "Path to ExecuTorch dir"
-)
-set(ET_BUILD_DIR_PATH
-    "${ET_DIR_PATH}/cmake-out-arm"
-    CACHE PATH "Path to ExecuTorch build/install dir"
-)
-set(ET_INCLUDE_PATH
-    "${ET_DIR_PATH}/.."
-    CACHE PATH "Path to ExecuTorch headers"
-)
-set(ET_PTE_FILE_PATH
-    ""
-    CACHE PATH "Path to ExecuTorch model pte"
-)
-set(ETHOS_SDK_PATH
-    "${ET_DIR_PATH}/examples/arm/arm-scratch/ethos-u"
-    CACHE PATH "Path to Ethos-U bare metal driver/env"
-)
-set(PYTHON_EXECUTABLE
-    "python"
-    CACHE PATH "Define to override python executable used"
+set(_arm_runner_placeholder_pte
+    "${CMAKE_CURRENT_LIST_DIR}/data/placeholder.pte"
 )
 
-# Include corstone help functions
-include(${ET_DIR_PATH}/backends/arm/scripts/corstone_utils.cmake)
+option(ARM_EXECUTOR_RUNNER_ALLOW_PLACEHOLDER_PTE
+       "Stage a placeholder PTE when ET_PTE_FILE_PATH is missing"
+       ${_arm_executor_runner_standalone}
+)
 
-if(FETCH_ETHOS_U_CONTENT)
-  # Download ethos_u dependency if needed.
-  fetch_ethos_u_content(${ETHOS_SDK_PATH} ${ET_DIR_PATH})
+set(_arm_runner_enabled TRUE)
+if(NOT SEMIHOSTING
+   AND NOT ET_MODEL_PTE_ADDR
+   AND "${ET_PTE_FILE_PATH}" STREQUAL ""
+)
+  set(_arm_runner_enabled FALSE)
+endif()
+
+if(NOT SEMIHOSTING
+   AND NOT ET_MODEL_PTE_ADDR
+   AND NOT "${ET_PTE_FILE_PATH}" STREQUAL ""
+)
+  if(NOT EXISTS "${ET_PTE_FILE_PATH}")
+    if(ARM_EXECUTOR_RUNNER_ALLOW_PLACEHOLDER_PTE
+       AND EXISTS "${_arm_runner_placeholder_pte}"
+    )
+      get_filename_component(
+        _arm_runner_pte_dir "${ET_PTE_FILE_PATH}" DIRECTORY
+      )
+      if(_arm_runner_pte_dir)
+        file(MAKE_DIRECTORY "${_arm_runner_pte_dir}")
+      endif()
+      file(COPY_FILE "${_arm_runner_placeholder_pte}" "${ET_PTE_FILE_PATH}"
+           ONLY_IF_DIFFERENT
+      )
+      message(
+        STATUS
+          "arm_executor_runner: staged placeholder model at ${ET_PTE_FILE_PATH}; run.sh will replace it with a real export."
+      )
+    else()
+      message(
+        FATAL_ERROR
+          "ET_PTE_FILE_PATH is set to ${ET_PTE_FILE_PATH}, but no file was found. Provide a valid PTE or enable ARM_EXECUTOR_RUNNER_ALLOW_PLACEHOLDER_PTE=ON."
+      )
+    endif()
+  endif()
+endif()
+
+if(NOT TARGET extension_runner_util)
+  message(
+    FATAL_ERROR
+      "extension_runner_util target missing. Configure ExecuTorch (or the standalone runner) with EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON."
+  )
+endif()
+
+if(NOT TARGET quantized_ops_lib OR NOT TARGET quantized_kernels)
+  message(
+    FATAL_ERROR
+      "quantized kernels not found. Ensure EXECUTORCH_BUILD_KERNELS_QUANTIZED=ON when configuring ExecuTorch."
+  )
+endif()
+
+if(NOT TARGET cortex_m_ops_lib OR NOT TARGET cortex_m_kernels)
+  message(
+    FATAL_ERROR
+      "cortex_m backend not found. Ensure EXECUTORCH_BUILD_CORTEX_M=ON when configuring ExecuTorch."
+  )
+endif()
+
+if(NOT _arm_runner_enabled)
+  add_subdirectory(${ETHOS_SDK_PATH}/core_software/core_driver core_driver_stub)
+  message(
+    STATUS
+      "arm_executor_runner: built ethosu_core_driver for delegate builds but skipped the runner because no PTE file/addr or semihosting mode was configured."
+  )
+  return()
 endif()
 
 # Selects timing adapter values matching system_config. Default is
@@ -153,11 +413,6 @@ message(
 add_corstone_subdirectory(${SYSTEM_CONFIG} ${ETHOS_SDK_PATH})
 configure_timing_adapters(${SYSTEM_CONFIG} ${MEMORY_MODE})
 
-# Dependencies from the ExecuTorch build
-find_package(
-  executorch REQUIRED HINTS "${ET_BUILD_DIR_PATH}/lib/cmake/ExecuTorch"
-)
-
 # Convert pte to header
 if(NOT ${ET_MODEL_PTE_ADDR} AND NOT SEMIHOSTING)
   add_custom_target(
@@ -166,8 +421,8 @@ if(NOT ${ET_MODEL_PTE_ADDR} AND NOT SEMIHOSTING)
 
   add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
-    COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_SOURCE_DIR}/pte_to_header.py --pte
-            ${ET_PTE_FILE_PATH} --outdir ${CMAKE_CURRENT_BINARY_DIR}
+    COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/pte_to_header.py
+            --pte ${ET_PTE_FILE_PATH} --outdir ${CMAKE_CURRENT_BINARY_DIR}
     DEPENDS ${ET_PTE_FILE_PATH}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   )
@@ -198,12 +453,12 @@ endif()
 # Proceed with specific actions if either is found
 if(NOT U55_FOUND EQUAL -1)
   message(STATUS "SYSTEM_CONFIG contains 'U55'.")
-  set(LINK_FILE_IN "${CMAKE_SOURCE_DIR}/Corstone-300.ld")
+  set(LINK_FILE_IN "${CMAKE_CURRENT_SOURCE_DIR}/Corstone-300.ld")
 endif()
 
 if(NOT U85_FOUND EQUAL -1)
   message(STATUS "SYSTEM_CONFIG contains 'U85'.")
-  set(LINK_FILE_IN "${CMAKE_SOURCE_DIR}/Corstone-320.ld")
+  set(LINK_FILE_IN "${CMAKE_CURRENT_SOURCE_DIR}/Corstone-320.ld")
 endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -246,26 +501,31 @@ list(
 # (user-set)SELECT_OPS_MODEL variable. For normal build, use
 # EXECUTORCH_SELECT_OPS_MODEL to include ops automatically. If the pte contains
 # no undelegated ops, use neither.
-execute_process(
-  COMMAND
-    python "${ET_DIR_PATH}/codegen/tools/gen_oplist.py"
-    --model_file_path=${ET_PTE_FILE_PATH}
-    --output_path=${CMAKE_CURRENT_BINARY_DIR}/temp.yaml
-  OUTPUT_VARIABLE CMD_RESULT
+set(FOUND_OPS_IN_FILE FALSE)
+if(NOT SEMIHOSTING
+   AND NOT ET_MODEL_PTE_ADDR
+   AND NOT "${ET_PTE_FILE_PATH}" STREQUAL ""
+   AND EXISTS "${ET_PTE_FILE_PATH}"
 )
+  execute_process(
+    COMMAND
+      ${PYTHON_EXECUTABLE} "${EXECUTORCH_ROOT}/codegen/tools/gen_oplist.py"
+      --model_file_path=${ET_PTE_FILE_PATH}
+      --output_path=${CMAKE_CURRENT_BINARY_DIR}/temp.yaml
+    OUTPUT_VARIABLE CMD_RESULT
+  )
 
-if(CMD_RESULT MATCHES "aten::" OR CMD_RESULT MATCHES "dim_order_ops::")
-  set(FOUND_OPS_IN_FILE "true")
-else()
-  set(FOUND_OPS_IN_FILE "false")
+  if(CMD_RESULT MATCHES "aten::" OR CMD_RESULT MATCHES "dim_order_ops::")
+    set(FOUND_OPS_IN_FILE TRUE)
+  endif()
 endif()
 
-if(${SEMIHOSTING})
+if(SEMIHOSTING)
   set(EXECUTORCH_SELECT_OPS_MODEL "")
   message(
     "gen_oplist: Building with semihosting, no model is used to auto generate ops from will use EXECUTORCH_SELECT_OPS_LIST=${EXECUTORCH_SELECT_OPS_LIST}"
   )
-elseif(${FOUND_OPS_IN_FILE})
+elseif(FOUND_OPS_IN_FILE)
   set(EXECUTORCH_SELECT_OPS_LIST "")
   set(EXECUTORCH_SELECT_OPS_MODEL "${ET_PTE_FILE_PATH}")
   message(
@@ -284,10 +544,6 @@ endif()
 if(NOT ("${EXECUTORCH_SELECT_OPS_LIST}" STREQUAL ""
         AND "${EXECUTORCH_SELECT_OPS_MODEL}" STREQUAL "")
 )
-  set(EXECUTORCH_ROOT ${ET_DIR_PATH})
-  include(${ET_DIR_PATH}/tools/cmake/Utils.cmake)
-  include(${ET_DIR_PATH}/tools/cmake/Codegen.cmake)
-
   gen_selected_ops(
     LIB_NAME
     "arm_portable_ops_lib"
@@ -305,7 +561,7 @@ if(NOT ("${EXECUTORCH_SELECT_OPS_LIST}" STREQUAL ""
 
   generate_bindings_for_kernels(
     LIB_NAME "arm_portable_ops_lib" FUNCTIONS_YAML
-    ${ET_DIR_PATH}/kernels/portable/functions.yaml DTYPE_SELECTIVE_BUILD
+    ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml DTYPE_SELECTIVE_BUILD
     "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
   )
   gen_operators_lib(
@@ -335,9 +591,37 @@ endif()
 # bin size as we link in a number of other symbols
 target_link_libraries(arm_executor_runner PUBLIC ${arm_executor_runner_link})
 
+# Ensure the ELF lands next to the CMake build tree so run.sh (and downstream
+# tooling) can locate it deterministically regardless of multi-config vs
+# single-config generators.
 target_link_options(
   arm_executor_runner PUBLIC LINKER:-Map=arm_executor_runner.map
 )
+set(ARM_EXECUTOR_RUNNER_OUTPUT_DIR
+    ""
+    CACHE PATH "Optional output directory for arm_executor_runner"
+)
+set(_arm_runner_output_dir "")
+if(NOT "${ARM_EXECUTOR_RUNNER_OUTPUT_DIR}" STREQUAL "")
+  set(_arm_runner_output_dir "${ARM_EXECUTOR_RUNNER_OUTPUT_DIR}")
+elseif(_arm_executor_runner_standalone)
+  set(_arm_runner_output_dir "${CMAKE_BINARY_DIR}")
+endif()
+if(_arm_runner_output_dir)
+  set_target_properties(
+    arm_executor_runner PROPERTIES RUNTIME_OUTPUT_DIRECTORY
+                                   ${_arm_runner_output_dir}
+  )
+  if(CMAKE_CONFIGURATION_TYPES)
+    foreach(_cfg ${CMAKE_CONFIGURATION_TYPES})
+      string(TOUPPER ${_cfg} _cfg_upper)
+      set_target_properties(
+        arm_executor_runner PROPERTIES RUNTIME_OUTPUT_DIRECTORY_${_cfg_upper}
+                                       ${_arm_runner_output_dir}/${_cfg}
+      )
+    endforeach()
+  endif()
+endif()
 
 # Sanitizers
 if(CMAKE_BUILD_TYPE MATCHES "UndefinedSanitizer")
@@ -346,7 +630,7 @@ if(CMAKE_BUILD_TYPE MATCHES "UndefinedSanitizer")
   target_link_options(arm_executor_runner PRIVATE ${_et_runner_ubsan_flag})
   if(NOT TARGET executorch_ubsan)
     add_subdirectory(
-      ${ET_DIR_PATH}/examples/arm/ubsan
+      ${EXECUTORCH_ROOT}/examples/arm/ubsan
       ${CMAKE_CURRENT_BINARY_DIR}/ubsan_runtime
     )
   endif()
@@ -362,7 +646,8 @@ if(CMAKE_BUILD_TYPE MATCHES "AddressSanitizer")
   target_link_options(arm_executor_runner PRIVATE ${_et_runner_asan_flags})
   if(NOT TARGET executorch_asan)
     add_subdirectory(
-      ${ET_DIR_PATH}/examples/arm/asan ${CMAKE_CURRENT_BINARY_DIR}/asan_runtime
+      ${EXECUTORCH_ROOT}/examples/arm/asan
+      ${CMAKE_CURRENT_BINARY_DIR}/asan_runtime
     )
   endif()
   target_link_libraries(arm_executor_runner PRIVATE executorch_asan)
@@ -374,7 +659,7 @@ endif()
 # ET headers and generated headers includes
 target_include_directories(
   arm_executor_runner
-  PRIVATE ${ET_INCLUDE_PATH} ${ET_DIR_PATH}/runtime/core/portable_type/c10
+  PRIVATE ${EXECUTORCH_ROOT} ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
           ${CMAKE_CURRENT_BINARY_DIR}
 )
 target_compile_definitions(
