@@ -397,7 +397,7 @@ public class LlmModule {
    * is accessed directly without JNI array copies, unlike {@link #prefillImages(int[], int, int,
    * int)}. The ByteBuffer must contain raw uint8 pixel data in CHW format with at least channels *
    * height * width bytes remaining. Only the first channels * height * width bytes from the
-   * buffer's current position are consumed.
+   * buffer's current position are read; the position of the original ByteBuffer is not modified.
    *
    * @param image Input image as a direct ByteBuffer containing uint8 pixel data
    * @param width Input image width
