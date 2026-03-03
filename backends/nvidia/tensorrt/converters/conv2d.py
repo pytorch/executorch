@@ -54,15 +54,19 @@ def _unsqueeze_3d_to_4d(
         input_shape = tuple(input_trt.shape)
     num_dynamic = sum(1 for d in input_shape if d == -1)
 
+    # Unsqueeze to 4D as [B, C, W, 1] — dynamic W goes into the H
+    # position.  TRT's Cask convolution has an internal consistency bug
+    # with [B, C, 1, W_dynamic] (static H=1, dynamic W) for depthwise
+    # convolutions.  Putting the dynamic dim in H avoids this.
     layer = network.add_shuffle(input_trt)
     layer.name = name
 
     if num_dynamic <= 1:
         layer.reshape_dims = trt.Dims(
-            [input_shape[0], input_shape[1], 1, input_shape[2]]
+            [input_shape[0], input_shape[1], input_shape[2], 1]
         )
     else:
-        # Build shape tensor: [dim0, dim1, 1, dim2]
+        # Build shape tensor: [dim0, dim1, dim2, 1]
         shape_layer = network.add_shape(input_trt)
         shape_layer.name = f"{name}_shape"
         shape_i32 = network.add_cast(shape_layer.get_output(0), trt.int32)
@@ -85,13 +89,12 @@ def _unsqueeze_3d_to_4d(
                 g = network.add_gather(shape_trt, idx_c.get_output(0), axis=0)
                 g.name = f"{name}_g{i}"
                 components.append(g.get_output(0))
-            # Insert constant 1 after dim1 (between channel and spatial)
-            if i == 1:
-                one = network.add_constant(
-                    [1], trt.Weights(np.array([1], dtype=np.int32))
-                )
-                one.name = f"{name}_one"
-                components.append(one.get_output(0))
+        # Append constant 1 as the trailing W dimension.
+        one = network.add_constant(
+            [1], trt.Weights(np.array([1], dtype=np.int32))
+        )
+        one.name = f"{name}_one"
+        components.append(one.get_output(0))
 
         shape_cat = network.add_concatenation(components)
         shape_cat.axis = 0
@@ -105,7 +108,10 @@ def _squeeze_4d_to_3d(
     network: Any, output_trt: Any, name: str, trt: Any,
     conv_node: Any = None,
 ) -> Any:
-    """Squeeze 4D tensor [B, C, 1, W] back to 3D [B, C, W] for Conv1d output.
+    """Squeeze 4D tensor [B, C, W, 1] back to 3D [B, C, W] for Conv1d output.
+
+    The conv1d wrapper uses layout [B, C, W, 1] (dynamic W in H position,
+    static 1 in W position) to avoid Cask consistency issues.
 
     Handles dynamic shapes by using the shape tensor API when the output
     has multiple dynamic (-1) dimensions.
@@ -130,8 +136,9 @@ def _squeeze_4d_to_3d(
                 shape_trt = shape_i32.get_output(0)
 
                 components = []
-                # Output is 4D [B, C, 1, W], target is 3D [B, C, W]
-                for out_i, in_i in enumerate([0, 1, 3]):
+                # Output is 4D [B, C, W, 1], target is 3D [B, C, W]
+                # Gather dims 0, 1, 2 (skip trailing dim 3 which is 1).
+                for out_i, in_i in enumerate([0, 1, 2]):
                     if resolved[out_i] >= 0:
                         c = network.add_constant(
                             [1], trt.Weights(np.array([resolved[out_i]], dtype=np.int32))
@@ -334,7 +341,8 @@ def convert_conv2d(
 
 
 @converter(
-    "aten.convolution.default", validator_fn=validate_convolution, needs_edge_program=True
+    "aten.convolution.default", validator_fn=validate_convolution,
+    needs_edge_program=True, supports_dynamic_shapes=True,
 )
 def convert_convolution(
     node: torch.fx.Node,
@@ -379,12 +387,19 @@ def convert_convolution(
         if meta_shape is not None:
             resolved = resolve_shape(meta_shape)
             resolved_neg = sum(1 for d in resolved if d < 0)
-            if resolved_neg < num_neg and resolved_neg <= 1:
+            if resolved_neg < num_neg:
                 restore = network.add_shuffle(input_trt)
-                restore.reshape_dims = trt.Dims(resolved)
                 restore.name = f"conv_restore_{node.name}"
+                if resolved_neg <= 1:
+                    restore.reshape_dims = trt.Dims(resolved)
+                else:
+                    # Multiple dynamic dims but some concrete (e.g. channels).
+                    # zero_is_placeholder: 0 copies dim from input, else concrete.
+                    restore.zero_is_placeholder = True
+                    restore.reshape_dims = trt.Dims(
+                        [0 if d < 0 else d for d in resolved]
+                    )
                 input_trt = restore.get_output(0)
-        # else: no metadata available, leave input_trt as-is
 
     exp_prog = edge_program if isinstance(edge_program, ExportedProgram) else None
     weight_tensor = _get_param_tensor(exp_prog, weight_node)
@@ -420,23 +435,24 @@ def convert_convolution(
                     input_node=input_node,
                 )
 
-            # Reshape weight to 4D: [in_ch, out_ch/groups, 1, kernel_size]
+            # Reshape weight to 4D: [in_ch, out_ch/groups, kernel_size, 1]
+            # Uses [K, 1] layout to match [B, C, W, 1] unsqueeze.
             weight_4d = np.ascontiguousarray(
-                weight_np.reshape(weight_np.shape[0], weight_np.shape[1], 1, kernel_size)
+                weight_np.reshape(weight_np.shape[0], weight_np.shape[1], kernel_size, 1)
             )
             convert_convolution._weight_storage.append(weight_4d)
 
             layer = network.add_deconvolution_nd(
                 input_trt,
                 out_channels,
-                trt.Dims([1, kernel_size]),
+                trt.Dims([kernel_size, 1]),
                 trt.Weights(weight_4d),
             )
-            layer.stride_nd = trt.Dims([1, stride[0]])
-            layer.padding_nd = trt.Dims([0, padding[0]])
+            layer.stride_nd = trt.Dims([stride[0], 1])
+            layer.padding_nd = trt.Dims([padding[0], 0])
             # Note: TensorRT doesn't support dilation for deconvolution in most versions
             layer.num_groups = groups
-            
+
             if bias_node is not None:
                 bias_tensor = _get_param_tensor(exp_prog, bias_node)
                 if bias_tensor is not None:
@@ -498,20 +514,22 @@ def convert_convolution(
                 input_node=input_node,
             )
 
+        # Reshape 3D weight [out, in, K] to 4D [out, in, K, 1] to match
+        # the [B, C, W, 1] layout (dynamic W in H position).
         weight_4d = np.ascontiguousarray(
-            weight_np.reshape(out_channels, weight_np.shape[1], 1, kernel_size)
+            weight_np.reshape(out_channels, weight_np.shape[1], kernel_size, 1)
         )
         convert_convolution._weight_storage.append(weight_4d)
 
         layer = network.add_convolution_nd(
             input_trt,
             out_channels,
-            trt.Dims([1, kernel_size]),
+            trt.Dims([kernel_size, 1]),
             trt.Weights(weight_4d),
         )
-        layer.stride_nd = trt.Dims([1, stride[0]])
-        layer.padding_nd = trt.Dims([0, padding[0]])
-        layer.dilation_nd = trt.Dims([1, dilation[0]])
+        layer.stride_nd = trt.Dims([stride[0], 1])
+        layer.padding_nd = trt.Dims([padding[0], 0])
+        layer.dilation_nd = trt.Dims([dilation[0], 1])
         layer.num_groups = groups
 
         if bias_node is not None:

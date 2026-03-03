@@ -89,8 +89,7 @@ bool parse_args(int argc, char** argv, RunnerArgs& args) {
     } else if (arg.rfind("--model_path=", 0) == 0) {
       args.model_path = arg.substr(13);
     } else if (arg.rfind("--num_executions=", 0) == 0) {
-      args.num_executions =
-          static_cast<uint32_t>(std::stoul(arg.substr(17)));
+      args.num_executions = static_cast<uint32_t>(std::stoul(arg.substr(17)));
     } else if (arg == "--verbose" || arg == "-v") {
       args.verbose = true;
     } else {
@@ -302,9 +301,7 @@ int main(int argc, char** argv) {
 
     if (status != Error::Ok) {
       ET_LOG(
-          Error,
-          "Execution failed: 0x%" PRIx32,
-          static_cast<uint32_t>(status));
+          Error, "Execution failed: 0x%" PRIx32, static_cast<uint32_t>(status));
       return 1;
     }
   }

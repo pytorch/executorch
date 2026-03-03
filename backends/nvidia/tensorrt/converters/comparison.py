@@ -1006,7 +1006,7 @@ def convert_full_like(
     return layer.get_output(0)
 
 
-@converter("aten.full.default")
+@converter("aten.full.default", supports_dynamic_shapes=True)
 def convert_full(
     node: torch.fx.Node,
     network: Any,
@@ -1017,6 +1017,10 @@ def convert_full(
     Convert PyTorch full to TensorRT.
 
     full.default(int[] size, Scalar fill_value, ...) -> Tensor
+
+    Supports dynamic sizes: when size elements are FX Nodes (shape
+    tensor outputs from sym_size/add/sub/floordiv), they are gathered
+    from input_map and concatenated into a shape tensor for IFillLayer.
     """
     try:
         import tensorrt as trt
@@ -1026,20 +1030,12 @@ def convert_full(
 
     from executorch.backends.nvidia.tensorrt.converter_utils import (
         _torch_dtype_to_numpy,
+        resolve_shape,
     )
 
     args = node.args
-
-    from executorch.backends.nvidia.tensorrt.converter_utils import resolve_shape
-
     size = args[0]
     fill_value = args[1] if len(args) > 1 else 0.0
-
-    # Convert size to list, resolving symbolic dims.
-    if isinstance(size, (list, tuple)):
-        shape = resolve_shape(size)
-    else:
-        shape = [resolve_shape([size])[0]]
 
     # Determine dtype from node metadata or kwargs, defaulting to float32.
     np_dtype = np.float32
@@ -1051,31 +1047,80 @@ def convert_full(
         if hasattr(val, "dtype"):
             np_dtype = _torch_dtype_to_numpy(val.dtype)
 
-    has_dynamic = any(d == -1 for d in shape)
-    if has_dynamic:
-        # Use IFillLayer with shape tensor for dynamic shapes.
-        dummy_shape = [0] * len(shape)
-        layer = network.add_fill(dummy_shape, trt.FillOperation.LINSPACE)
-        # Provide shape via shape tensor (input 0)
-        safe_shape = [max(d, 1) for d in shape]
-        shape_const = network.add_constant(
-            [len(safe_shape)],
-            trt.Weights(np.array(safe_shape, dtype=np.int32)))
-        shape_const.name = f"full_shape_{node.name}"
-        layer.set_input(0, shape_const.get_output(0))
+    # Check if any size element is an FX Node (shape tensor from scalar ops).
+    has_node_sizes = any(isinstance(s, torch.fx.Node) for s in size)
+
+    if has_node_sizes:
+        # Build shape tensor from a mix of FX Nodes and concrete ints.
+        components = []
+        for i, s in enumerate(size):
+            if isinstance(s, torch.fx.Node) and s in input_map:
+                t = input_map[s]
+                shuf = network.add_shuffle(t)
+                shuf.reshape_dims = trt.Dims([1])
+                shuf.name = f"full_dim{i}_{node.name}"
+                cast = network.add_cast(shuf.get_output(0), trt.int32)
+                cast.name = f"full_dim_i32_{i}_{node.name}"
+                components.append(cast.get_output(0))
+            else:
+                c = network.add_constant(
+                    [1], trt.Weights(np.array([int(s)], dtype=np.int32))
+                )
+                c.name = f"full_c{i}_{node.name}"
+                components.append(c.get_output(0))
+
+        shape_cat = network.add_concatenation(components)
+        shape_cat.axis = 0
+        shape_cat.name = f"full_shape_{node.name}"
+        # Clamp each dim to min 1 so TRT can prove output is non-empty.
+        ones_c = network.add_constant(
+            [len(size)], trt.Weights(np.ones(len(size), dtype=np.int32)))
+        ones_c.name = f"full_ones_{node.name}"
+        shape_clamp = network.add_elementwise(
+            shape_cat.get_output(0), ones_c.get_output(0), trt.ElementWiseOperation.MAX)
+        shape_clamp.name = f"full_clamp_{node.name}"
+
+        ndims = len(size)
+        layer = network.add_fill([0] * ndims, trt.FillOperation.LINSPACE)
+        layer.set_input(0, shape_clamp.get_output(0))
         start_c = network.add_constant(
             [], trt.Weights(np.array(float(fill_value), dtype=np.float32)))
         start_c.name = f"full_val_{node.name}"
         layer.set_input(1, start_c.get_output(0))
-        ndims = len(shape)
         delta_c = network.add_constant(
             [ndims], trt.Weights(np.zeros(ndims, dtype=np.float32)))
         delta_c.name = f"full_delta_{node.name}"
         layer.set_input(2, delta_c.get_output(0))
     else:
-        fill_array = np.full(shape, fill_value, dtype=np_dtype)
-        fill_weights = trt.Weights(fill_array)
-        layer = network.add_constant(trt.Dims(shape), fill_weights)
+        # Convert size to list, resolving symbolic dims.
+        if isinstance(size, (list, tuple)):
+            shape = resolve_shape(size)
+        else:
+            shape = [resolve_shape([size])[0]]
+
+        has_dynamic = any(d == -1 for d in shape)
+        if has_dynamic:
+            dummy_shape = [0] * len(shape)
+            layer = network.add_fill(dummy_shape, trt.FillOperation.LINSPACE)
+            safe_shape = [max(d, 1) for d in shape]
+            shape_const = network.add_constant(
+                [len(safe_shape)],
+                trt.Weights(np.array(safe_shape, dtype=np.int32)))
+            shape_const.name = f"full_shape_{node.name}"
+            layer.set_input(0, shape_const.get_output(0))
+            start_c = network.add_constant(
+                [], trt.Weights(np.array(float(fill_value), dtype=np.float32)))
+            start_c.name = f"full_val_{node.name}"
+            layer.set_input(1, start_c.get_output(0))
+            ndims = len(shape)
+            delta_c = network.add_constant(
+                [ndims], trt.Weights(np.zeros(ndims, dtype=np.float32)))
+            delta_c.name = f"full_delta_{node.name}"
+            layer.set_input(2, delta_c.get_output(0))
+        else:
+            fill_array = np.full(shape, fill_value, dtype=np_dtype)
+            fill_weights = trt.Weights(fill_array)
+            layer = network.add_constant(trt.Dims(shape), fill_weights)
 
     if layer is None:
         raise RuntimeError(f"Failed to create full layer for {node.name}")
@@ -1105,7 +1150,7 @@ def convert_scalar_tensor(
     return layer.get_output(0)
 
 
-@converter("aten.arange.start_step")
+@converter("aten.arange.start_step", supports_dynamic_shapes=True)
 def convert_arange(
     node: torch.fx.Node,
     network: Any,
@@ -1152,12 +1197,21 @@ def convert_arange(
     # Set output shape as a shape tensor (input 0). If `end` is an FX Node,
     # get the TRT tensor for it from input_map (it was produced by another op).
     if isinstance(end, torch.fx.Node) and end in input_map:
-        # end is a TRT tensor — reshape to [1] for shape input
+        # end is a TRT tensor — reshape to [1] for shape input.
+        # Clamp to min 1 so TRT can prove the output is non-empty.
         end_trt = input_map[end]
         shape_shuffle = network.add_shuffle(end_trt)
         shape_shuffle.reshape_dims = trt.Dims([1])
         shape_shuffle.name = f"arange_shape_{node.name}"
-        fill_layer.set_input(0, shape_shuffle.get_output(0))
+        cast_i32 = network.add_cast(shape_shuffle.get_output(0), trt.int32)
+        cast_i32.name = f"arange_shape_i32_{node.name}"
+        one_c = network.add_constant([1], trt.Weights(np.array([1], dtype=np.int32)))
+        one_c.name = f"arange_one_{node.name}"
+        clamp = network.add_elementwise(
+            cast_i32.get_output(0), one_c.get_output(0), trt.ElementWiseOperation.MAX
+        )
+        clamp.name = f"arange_clamp_{node.name}"
+        fill_layer.set_input(0, clamp.get_output(0))
     else:
         # Fallback: use output metadata shape
         output_meta = node.meta.get("val", None)
@@ -1191,7 +1245,7 @@ def convert_arange(
     return fill_layer.get_output(0)
 
 
-@converter("aten.constant_pad_nd.default")
+@converter("aten.constant_pad_nd.default", supports_dynamic_shapes=True)
 def convert_constant_pad_nd(
     node: torch.fx.Node,
     network: Any,
@@ -1228,11 +1282,75 @@ def convert_constant_pad_nd(
         left_pad = pad[2 * i]
         right_pad = pad[2 * i + 1]
         start[dim] = -left_pad
-        output_shape[dim] = input_shape[dim] + left_pad + right_pad
+        if input_shape[dim] < 0:
+            # Dynamic dim stays dynamic — don't add padding to the -1 marker.
+            output_shape[dim] = -1
+        else:
+            output_shape[dim] = input_shape[dim] + left_pad + right_pad
 
-    layer = network.add_slice(
-        input_trt, start=start, shape=output_shape, stride=[1] * ndim
-    )
+    has_dynamic = any(d < 0 for d in output_shape)
+
+    if not has_dynamic:
+        # Static path — all dims concrete.
+        layer = network.add_slice(
+            input_trt, start=start, shape=output_shape, stride=[1] * ndim
+        )
+    else:
+        # Dynamic path — build per-dim output shape tensor.
+        # Use constants for concrete dims, gather+add for dynamic dims.
+        # This preserves concrete dim info for downstream ops.
+        shape_layer = network.add_shape(input_trt)
+        shape_layer.name = f"pad_shape_{node.name}"
+        shape_i32 = network.add_cast(shape_layer.get_output(0), trt.int32)
+        shape_i32.name = f"pad_shape_i32_{node.name}"
+        shape_trt = shape_i32.get_output(0)
+
+        # Build per-dim pad offset lookup.
+        total_pad = [0] * ndim
+        for i in range(num_padded_dims):
+            dim = ndim - 1 - i
+            total_pad[dim] = pad[2 * i] + pad[2 * i + 1]
+
+        components = []
+        for d in range(ndim):
+            if output_shape[d] >= 0:
+                # Concrete dim — use constant directly.
+                c = network.add_constant(
+                    [1], trt.Weights(np.array([output_shape[d]], dtype=np.int32))
+                )
+                c.name = f"pad_c{d}_{node.name}"
+                components.append(c.get_output(0))
+            else:
+                # Dynamic dim — gather runtime value and add padding.
+                idx_c = network.add_constant(
+                    [1], trt.Weights(np.array([d], dtype=np.int32))
+                )
+                idx_c.name = f"pad_idx{d}_{node.name}"
+                g = network.add_gather(shape_trt, idx_c.get_output(0), axis=0)
+                g.name = f"pad_g{d}_{node.name}"
+                if total_pad[d] != 0:
+                    pad_c = network.add_constant(
+                        [1], trt.Weights(np.array([total_pad[d]], dtype=np.int32))
+                    )
+                    pad_c.name = f"pad_off{d}_{node.name}"
+                    add_op = network.add_elementwise(
+                        g.get_output(0), pad_c.get_output(0),
+                        trt.ElementWiseOperation.SUM,
+                    )
+                    add_op.name = f"pad_add{d}_{node.name}"
+                    components.append(add_op.get_output(0))
+                else:
+                    components.append(g.get_output(0))
+
+        shape_cat = network.add_concatenation(components)
+        shape_cat.axis = 0
+        shape_cat.name = f"pad_outshape_{node.name}"
+
+        layer = network.add_slice(
+            input_trt, start=start, shape=[1] * ndim, stride=[1] * ndim
+        )
+        layer.set_input(2, shape_cat.get_output(0))
+
     layer.mode = trt.SampleMode.FILL
 
     fill_const = network.add_constant(
@@ -1362,6 +1480,16 @@ def convert_logical_and(
 
     lhs_trt = input_map[lhs_node]
     rhs_trt = input_map[rhs_node]
+
+    # TRT AND requires Bool inputs; cast non-Bool operands.
+    if lhs_trt.dtype != trt.bool:
+        cast_lhs = network.add_cast(lhs_trt, trt.bool)
+        cast_lhs.name = f"logical_and_lhs_bool_{node.name}"
+        lhs_trt = cast_lhs.get_output(0)
+    if rhs_trt.dtype != trt.bool:
+        cast_rhs = network.add_cast(rhs_trt, trt.bool)
+        cast_rhs.name = f"logical_and_rhs_bool_{node.name}"
+        rhs_trt = cast_rhs.get_output(0)
 
     layer = network.add_elementwise(lhs_trt, rhs_trt, trt.ElementWiseOperation.AND)
     if layer is None:

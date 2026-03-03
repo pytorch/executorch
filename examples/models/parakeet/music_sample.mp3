@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="de-DE" data-website-id="1" data-main-object="ir.ui.view(258,)" data-add2cart-redirect="1">
+    <head>
+        <meta charset="utf-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <meta name="generator" content="Odoo"/>
+            
+        <meta property="og:type" content="website"/>
+        <meta property="og:title" content="Page Not Found | ACRYHOLZ"/>
+        <meta property="og:site_name" content="ACRYHOLZ"/>
+        <meta property="og:url" content="https://www.acryholz.de/mp3/Haydn_Cello_Concerto_D-1.mp3"/>
+        <meta property="og:image" content="https://www.acryholz.de/web/image/website/1/logo?unique=a752da7"/>
+            
+        <meta name="twitter:card" content="summary_large_image"/>
+        <meta name="twitter:title" content="Page Not Found | ACRYHOLZ"/>
+        <meta name="twitter:image" content="https://www.acryholz.de/web/image/website/1/logo/300x300?unique=a752da7"/>
+        <meta name="twitter:site" content="@plexiholz1"/>
+        
+        <link rel="alternate" hreflang="en" href="https://www.acryholz.de/en/mp3/Haydn_Cello_Concerto_D-1.mp3"/>
+        <link rel="alternate" hreflang="fr" href="https://www.acryholz.de/fr/mp3/Haydn_Cello_Concerto_D-1.mp3"/>
+        <link rel="alternate" hreflang="de" href="https://www.acryholz.de/mp3/Haydn_Cello_Concerto_D-1.mp3"/>
+        <link rel="alternate" hreflang="it" href="https://www.acryholz.de/it/mp3/Haydn_Cello_Concerto_D-1.mp3"/>
+        <link rel="alternate" hreflang="pl" href="https://www.acryholz.de/pl/mp3/Haydn_Cello_Concerto_D-1.mp3"/>
+        <link rel="alternate" hreflang="es" href="https://www.acryholz.de/es/mp3/Haydn_Cello_Concerto_D-1.mp3"/>
+        <link rel="alternate" hreflang="x-default" href="https://www.acryholz.de/mp3/Haydn_Cello_Concerto_D-1.mp3"/>
+        <link rel="canonical" href="https://www.acryholz.de/mp3/Haydn_Cello_Concerto_D-1.mp3"/>
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin=""/>
+        <title> Page Not Found | ACRYHOLZ </title>
+        <link type="image/x-icon" rel="shortcut icon" href="/web/image/website/1/favicon?unique=a752da7"/>
+        <link rel="preload" href="/web/static/src/libs/fontawesome/fonts/fontawesome-webfont.woff2?v=4.7.0" as="font" crossorigin=""/>
+        <link type="text/css" rel="stylesheet" href="/web/assets/1/bec0165/web.assets_frontend.min.css"/>
+        <script id="web.layout.odooscript" type="text/javascript">
+            var odoo = {
+                csrf_token: "46a9d030ba5e5a0682749be720b8c4157222b3e8o1802407422",
+                debug: "",
+            };
+        </script>
+        <script type="text/javascript">
+            odoo.__session_info__ = {"is_admin": false, "is_system": false, "is_public": true, "is_website_user": true, "user_id": false, "is_frontend": true, "profile_session": null, "profile_collectors": null, "profile_params": null, "show_effect": true, "currencies": {"124": {"symbol": "\u20ac", "position": "after", "digits": [69, 2]}}, "bundle_params": {"lang": "de_DE", "website_id": 1}, "websocket_worker_version": "17.0-3", "translationURL": "/website/translations", "cache_hashes": {"translations": "5009f0118f3c8743db3d31bdab09dd17d5872072"}, "recaptcha_public_key": "6LfFK1grAAAAAIvkkU3XHMPQL1oNhizith7PtgMt", "geoip_country_code": "US", "geoip_phone_code": 1, "lang_url_code": "de", "turnstile_site_key": "0x4AAAAAABgU35o-obMFYD6l"};
+            if (!/(^|;\s)tz=/.test(document.cookie)) {
+                const userTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                document.cookie = `tz=${userTZ}; path=/`;
+            }
+        </script>
+        <script type="text/javascript" defer="defer" src="/web/assets/1/5ad2ade/web.assets_frontend_minimal.min.js" onerror="__odooAssetError=1"></script>
+        <script type="text/javascript" defer="defer" data-src="/web/assets/1/eeacbdb/web.assets_frontend_lazy.min.js" onerror="__odooAssetError=1"></script>
+        
+        <!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-58NDKCSM');</script>
+<!-- End Google Tag Manager -->
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-VV1NL3Q2TW">
+</script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-VV1NL3Q2TW');
+</script>
+<!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-5LDNN722');</script>
+<!-- End Google Tag Manager -->
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-9YJNCY0SMM"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-9YJNCY0SMM');
+</script>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-VV1NL3Q2TW">
+</script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-VV1NL3Q2TW');
+</script>
+
+<!-- ACRYHOLZ: Full AI-Optimized JSON-LD -->
+
+<!-- Organization -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "ACRYHOLZ",
+  "legalName": "ACRYHOLZ",
+  "url": "https://www.acryholz.de",
+  "logo": "https://www.acryholz.de/web/image/website/1/logo",
+  "description": "ACRYHOLZ ist ein deutscher Hersteller von hochwertigem stabilisiertem Holz (Stabwood) mit eigener Acrylharz-Technologie. Wir stabilisieren Holz professionell und bieten eine nachhaltige Alternative zu tropischen Harthölzern für Instrumentenbau, Messergriffe, Schmuck und Design.",
+  "sameAs": [
+    "https://facebook.com/acryholz",
+    "https://instagram.com/acryholz",
+    "https://tiktok.com/@acryholz",
+    "https://youtube.com/@acryholz",
+    "https://www.linkedin.com/in/acryholz",
+    "https://www.ebay.de/str/puqstabwood"
+  ],
+  "brand": {
+    "@type": "Brand",
+    "name": "ACRYHOLZ"
+  }
+}
+</script>
+
+<!-- Product -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "name": "Stabilisiertes Holz",
+  "image": "https://www.acryholz.de/web/image/website/1/product-image",
+  "brand": {
+    "@type": "Brand",
+    "name": "ACRYHOLZ"
+  },
+  "description": "Professionell stabilisiertes Holz aus deutscher Produktion. Perfekt für Messergriffe, Schmuck, Designobjekte und Instrumentenbau.",
+  "url": "https://www.acryholz.de/stabilisiertes-holz",
+  "material": "Holz, Acrylharz",
+  "manufacturer": {
+    "@type": "Organization",
+    "name": "ACRYHOLZ"
+  },
+  "offers": {
+    "@type": "Offer",
+    "priceCurrency": "EUR",
+    "price": 46,
+    "priceValidUntil": "2025-12-31",
+    "priceSpecification": {
+      "@type": "PriceSpecification",
+      "description": "Preis gilt als Basis für Auftragsstabilisierung pro Liter Holzvolumen"
+    },
+    "availability": "http://schema.org/InStock",
+    "shippingDetails": {
+      "@type": "OfferShippingDetails",
+      "deliveryTime": {
+        "@type": "ShippingDeliveryTime",
+        "name": "P5D"
+      },
+      "shippingRate": {
+        "@type": "MonetaryAmount",
+        "value": "5.90",
+        "currency": "EUR"
+      },
+      "shippingDestination": {
+        "@type": "DefinedRegion",
+        "addressCountry": {
+          "@type": "Country",
+          "name": "DE"
+        }
+      }
+    },
+    "hasMerchantReturnPolicy": {
+      "@type": "MerchantReturnPolicy",
+      "name": "30 Tage Rückgaberecht",
+      "returnPolicyCategory": "http://schema.org/MerchantReturnFiniteReturnWindow",
+      "returnFees": "http://schema.org/FreeReturn",
+      "applicableCountry": {
+        "@type": "Country",
+        "name": "DE"
+      },
+      "merchantReturnDays": 30
+    }
+  },
+  "aggregateRating": {
+    "@type": "AggregateRating",
+    "ratingValue": 5.0,
+    "reviewCount": 2544
+  },
+  "review": [
+    {
+      "@type": "Review",
+      "author": {
+        "@type": "Person",
+        "name": "Manfred Grandis"
+      },
+      "datePublished": "2025-06-10",
+      "reviewBody": "Hervorragende Qualität, sehr netter Kontakt. Ich bestelle schon seit einigen Jahren Griffmaterial für meine selbst hergestellten Messer. Die Qualität ist hervorragend - wasserdicht, lebensmittelecht, verzieht sich nicht. Messer mit diesen Griffhölzern sind immer ein Blickfang. Auf jeden Fall sehr empfehlenswert! Frederick ist supernett und antwortet immer gleich. Sonderwünsche werden erfüllt.",
+      "reviewRating": {
+        "@type": "Rating",
+        "ratingValue": 5
+      }
+    },
+    {
+      "@type": "Review",
+      "author": {
+        "@type": "Person",
+        "name": "Martin Ruechel"
+      },
+      "datePublished": "2025-08-15",
+      "reviewBody": "Mein Hobby ist Messerbau und da verwende ich das stabilisierte Holz von ACRYHOLZ. Was soll ich sagen? :-) Einfach geil. Das erste Messer ist schon ein paar Jahre her, Griff sieht immer noch geil aus und das Holz ist sehr schön zu verarbeiten! Ich verwende mittlerweile nur noch dieses Holz, da die Messergriffe deutlich beständiger sind, als mit normalem Holz und die Optik verzaubert.",
+      "reviewRating": {
+        "@type": "Rating",
+        "ratingValue": 5
+      }
+    }
+  ]
+}
+</script>
+
+<!-- FAQ -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Was ist stabilisiertes Holz?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Stabilisiertes Holz von ACRYHOLZ ist natürliches Holz, das durch ein spezielles Vakuum-Druck-Verfahren mit transparentem oder farbigem Acrylharz vollständig durchtränkt wurde. Durch diese Imprägnierung entsteht ein formstabiles, sehr hartes und langlebiges Material, das wasser-, chemikalien- und verzugsresistent sowie lebensmittelecht ist. Das Ergebnis verbindet die natürliche Holzoptik mit den Vorteilen eines widerstandsfähigen, modernen Werkstoffs und eignet sich besonders für hochwertige Messergriffe, Schmuck, Designobjekte und ähnliche Anwendungen."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Wie lange dauert die Auftragsstabilisierung?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Die Auftragsstabilisierung dauert bei ACRYHOLZ ca. 5 Werktage ab Holzeingang."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Welche Holzarten eignen sich?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Besonders geeignet sind Ahorn, Pappel, Birke, Buche, Esche, Kastanie, Linde, Ulme und weitere Weichhölzer."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Bietet ACRYHOLZ Farbstabilisierung an?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Ja – wir bieten Uni-, Bi- und Tri-Color-Stabilisierung im PUQ-Verfahren an."
+      }
+    }
+  ]
+}
+</script>
+
+<!-- AI Platform Optimization -->
+<meta name="ai-description" content="ACRYHOLZ – deutscher Hersteller für stabilisiertes Holz. Nachhaltig, farbstabil, perfekt für Messergriffe, Instrumentenbau und Design.">
+<meta name="ai-keywords" content="stabilisiertes Holz, Stabwood, stabilized wood, Holz stabilisieren lassen, Holzstabilisierung, Holz Stabilisierung, Griffmaterial für Messergriffe, Instrumentenbau, farbiges Holz, nachhaltiges Holz, ACRYHOLZ">
+<meta name="ai-domain" content="materials, woodworking, manufacturing">
+<meta name="ai-primary-topic" content="Hersteller für stabilisiertes Holz">
+<meta name="ai-secondary-topic" content="Auftragsstabilisierung">
+<meta name="ai-author" content="ACRYHOLZ">
+
+<!-- Core SEO -->
+<meta name="description" content="ACRYHOLZ: Stabilisiertes Holz aus Deutschland. 20 Jahre Erfahrung, 2500+ Top-Bewertungen und professionelle Auftragsstabilisierung.">
+
+<meta property="og:site_name" content="ACRYHOLZ">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://www.acryholz.de">
+<meta property="og:title" content="ACRYHOLZ – Stabilisiertes Holz und hochwertiges Griffmaterial aus Deutschland">
+<meta property="og:description" content="ACRYHOLZ – Deutschlands Nr. 1 für stabilisiertes Holz. 20 Jahre Erfahrung, eigene Produktion in Deutschland, über 2500 Trustami-Bewertungen und professionelle Auftragsstabilisierung für Messergriffe, Instrumentenbau und Design.">
+
+<meta name="twitter:card" content="summary_large_image">
+
+<!-- Robots & Crawler -->
+<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+<meta name="googlebot" content="index, follow">
+<meta name="bingbot" content="index, follow">
+
+
+    <!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-VV1NL3Q2TW">
+</script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-VV1NL3Q2TW');
+</script>
+    </head>
+    <body>
+
+
+
+        <div id="wrapwrap" class="   ">
+                <header id="top" data-anchor="true" data-name="Header" class="  " style=" ">
+                    
+    <nav data-name="Navbar" aria-label="Main" class="navbar navbar-expand-lg navbar-light o_colored_level o_cc d-none d-lg-block pt-3 shadow-sm ">
+        
+
+            <div id="o_main_nav" class="container flex-wrap">
+                <div class="o_header_hide_on_scroll d-grid align-items-center w-100 o_grid_header_3_cols pb-3">
+                    <ul class="navbar-nav align-items-center gap-1">
+                        
+        <li class="">
+                <div class="modal fade" id="o_search_modal" aria-hidden="true" tabindex="-1">
+                    <div class="modal-dialog modal-lg pt-5">
+                        <div class="modal-content mt-5">
+    <form method="get" class="o_searchbar_form o_wait_lazy_js s_searchbar_input " action="/website/search" data-snippet="s_searchbar_input">
+            <div role="search" class="input-group input-group-lg">
+        <input type="search" name="search" class="search-query form-control oe_search_box border-0 bg-light border border-end-0 p-3" placeholder="Suchen ..." data-search-type="all" data-limit="5" data-display-image="true" data-display-description="true" data-display-extra-link="true" data-display-detail="true" data-order-by="name asc"/>
+        <button type="submit" aria-label="Suchen" title="Suchen" class="btn oe_search_button border border-start-0 px-4 bg-o-color-4">
+            <i class="oi oi-search"></i>
+        </button>
+    </div>
+
+            <input name="order" type="hidden" class="o_search_order_by" value="name asc"/>
+            
+    
+        </form>
+                        </div>
+                    </div>
+                </div>
+                <a data-bs-target="#o_search_modal" data-bs-toggle="modal" role="button" title="Suchen" class="btn rounded-circle p-1 lh-1 o_navlink_background text-reset o_not_editable">
+                    <i class="oi oi-search fa-stack lh-lg"></i>
+                </a>
+        </li>
+                        
+        <li class="">
+            <div class="o_header_social_links ">
+                <div class="s_social_media o_not_editable oe_unmovable oe_unremovable" data-snippet="s_social_media" data-name="Social Media">
+                    <h5 class="s_social_media_title d-none">Folgen Sie uns</h5>
+<a href="/website/social/instagram" class="s_social_media_instagram o_nav-link_secondary nav-link m-0 p-0 text-decoration-none" target="_blank">
+                        <i class="fa fa-instagram fa-stack p-1 o_editable_media"></i>
+                    </a>
+<a href="/website/social/facebook" class="s_social_media_facebook o_nav-link_secondary nav-link m-0 p-0 text-decoration-none" target="_blank">
+                        <i class="fa fa-facebook fa-stack p-1 o_editable_media"></i>
+                    </a>
+<a href="https://www.youtube.com/@acryholz" class="o_nav-link_secondary nav-link m-0 p-0 text-decoration-none s_social_media_youtube" target="_blank" aria-label="YouTube">
+                        <i class="fa p-1 o_editable_media fa-youtube"></i>
+                    </a>
+<a href="/website/social/linkedin" class="s_social_media_linkedin o_nav-link_secondary nav-link m-0 p-0 text-decoration-none" target="_blank">
+                        <i class="fa fa-linkedin fa-stack p-1 o_editable_media"></i>
+                    </a>
+<a href="/website/social/tiktok" class="o_nav-link_secondary nav-link m-0 p-0 text-decoration-none s_social_media_tiktok" target="_blank" aria-label="TikTok">
+                        <i class="fa fa-stack p-1 o_editable_media fa-tiktok"></i>
+                    </a>
+<a href="/website/social/twitter" class="s_social_media_twitter o_nav-link_secondary nav-link m-0 p-0 text-decoration-none" target="_blank">
+                        <i class="fa fa-twitter fa-stack p-1 o_editable_media"></i>
+                    </a>
+</div>
+            </div>
+        </li>
+                        
+        <li class="">
+                <div data-name="Text" class="s_text_block ">
+                    <a href="tel://+49(177)5177330" class="nav-link o_nav-link_secondary p-2" data-bs-original-title="" title="">
+                        <i class="fa fa-fw fa-phone me-1 fa-1x" contenteditable="false">​</i>
+                        <span class="o_force_ltr"><small>+49 (177) 5177330</small></span>
+                    </a>
+                </div>
+        </li>
+                    </ul>
+                    
+    <a data-name="Navbar Logo" href="/" class="navbar-brand logo mx-auto mw-100">
+            
+            <span role="img" aria-label="Logo of ACRYHOLZ" title="ACRYHOLZ"><img src="/web/image/website/1/logo/ACRYHOLZ?unique=a752da7" class="img img-fluid" width="95" height="40" alt="ACRYHOLZ" loading="lazy"/></span>
+        </a>
+    
+                    <ul class="navbar-nav align-items-center gap-1 flex-wrap justify-content-end ms-auto">
+                        
+        
+            <li class=" divider d-none"></li> 
+            <li class="o_wsale_my_cart  ">
+                <a href="/shop/cart" class="o_navlink_background btn position-relative rounded-circle p-1 text-reset">
+                    <div class="">
+                        <i class="fa fa-shopping-cart fa-stack"></i>
+                        <sup class="my_cart_quantity badge text-bg-primary position-absolute top-0 end-0 mt-n1 me-n1 rounded-pill d-none" data-order-id="">0</sup>
+                    </div>
+                </a>
+            </li>
+        
+            <li class=" o_no_autohide_item">
+                <a href="/web/login" class="o_navlink_background btn rounded-circle text-reset">Anmelden</a>
+            </li>
+                        
+        
+        
+                        
+        <li data-name="Language Selector" class="o_header_language_selector ">
+        
+            <div class="js_language_selector  dropdown d-print-none">
+                <button type="button" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="true" class="btn border-0 dropdown-toggle o_navlink_background rounded-pill py-1 text-reset">
+                    <span class="align-middle small"> Deutsch</span>
+                </button>
+                <div role="menu" class="dropdown-menu dropdown-menu-end">
+                        <a class="dropdown-item js_change_lang " href="/en/mp3/Haydn_Cello_Concerto_D-1.mp3" data-url_code="en" title="English (US)">
+                            <span class="small">English (US)</span>
+                        </a>
+                        <a class="dropdown-item js_change_lang " href="/fr/mp3/Haydn_Cello_Concerto_D-1.mp3" data-url_code="fr" title=" Français">
+                            <span class="small"> Français</span>
+                        </a>
+                        <a class="dropdown-item js_change_lang active" href="/mp3/Haydn_Cello_Concerto_D-1.mp3" data-url_code="de" title=" Deutsch">
+                            <span class="small"> Deutsch</span>
+                        </a>
+                        <a class="dropdown-item js_change_lang " href="/it/mp3/Haydn_Cello_Concerto_D-1.mp3" data-url_code="it" title=" Italiano">
+                            <span class="small"> Italiano</span>
+                        </a>
+                        <a class="dropdown-item js_change_lang " href="/pl/mp3/Haydn_Cello_Concerto_D-1.mp3" data-url_code="pl" title=" Język polski">
+                            <span class="small"> Język polski</span>
+                        </a>
+                        <a class="dropdown-item js_change_lang " href="/es/mp3/Haydn_Cello_Concerto_D-1.mp3" data-url_code="es" title=" Español">
+                            <span class="small"> Español</span>
+                        </a>
+                </div>
+            </div>
+        
+        </li>
+                        
+        <li class="">
+            <div class="oe_structure oe_structure_solo ">
+                <section class="oe_unremovable oe_unmovable s_text_block o_colored_level" data-snippet="s_text_block" data-name="Text" style="background-image: none;">
+                    <div class="container">
+                        <a href="/contactus" class="oe_unremovable btn btn-primary btn_cta w-100" data-bs-original-title="" title="">Kontaktieren Sie uns</a>
+                    </div>
+                </section>
+            </div>
+        </li>
+                    </ul>
+                </div>
+                <div class="d-flex justify-content-center w-100">
+                    
+    <ul id="top_menu" role="menu" class="nav navbar-nav o_menu_loading pb-0">
+        
+
+                        
+    <li role="presentation" class="nav-item">
+        <a role="menuitem" href="/" class="nav-link ">
+            <span>HOME</span>
+        </a>
+    </li>
+    <li role="presentation" class="nav-item">
+        <a role="menuitem" href="/blog" class="nav-link ">
+            <span>BLOG</span>
+        </a>
+    </li>
+    <li role="presentation" class="nav-item">
+        <a role="menuitem" href="/stabilisiertes-holz" class="nav-link ">
+            <span>STABILISIERTES HOLZ</span>
+        </a>
+    </li>
+    <li role="presentation" class="nav-item">
+        <a role="menuitem" href="/holzstabilisierung" class="nav-link ">
+            <span>AUFTRAGSSTABILISIERUNG</span>
+        </a>
+    </li>
+    <li role="presentation" class="nav-item">
+        <a role="menuitem" href="/anwendungsbereiche" class="nav-link ">
+            <span>ANWENDUNGSBEREICHE</span>
+        </a>
+    </li>
+    <li role="presentation" class="nav-item">
+        <a role="menuitem" href="/shop" class="nav-link ">
+            <span>SHOP</span>
+        </a>
+    </li>
+    <li role="presentation" class="nav-item">
+        <a role="menuitem" href="/spotlight" class="nav-link ">
+            <span>SPOTLIGHT</span>
+        </a>
+    </li>
+    <li role="presentation" class="nav-item">
+        <a role="menuitem" href="/contactus" class="nav-link ">
+            <span>KONTAKT</span>
+        </a>
+    </li>
+                    
+    </ul>
+                </div>
+            </div>
+        
+    </nav>
+    <nav data-name="Navbar" aria-label="Mobile" class="navbar  navbar-light o_colored_level o_cc o_header_mobile d-block d-lg-none shadow-sm ">
+        
+
+        <div id="o_main_nav" class="container flex-wrap justify-content-between">
+            
+    <a data-name="Navbar Logo" href="/" class="navbar-brand logo ">
+            
+            <span role="img" aria-label="Logo of ACRYHOLZ" title="ACRYHOLZ"><img src="/web/image/website/1/logo/ACRYHOLZ?unique=a752da7" class="img img-fluid" width="95" height="40" alt="ACRYHOLZ" loading="lazy"/></span>
+        </a>
+    
+            <ul class="o_header_mobile_buttons_wrap navbar-nav flex-row align-items-center gap-2 mb-0">
+        
+            <li class=" divider d-none"></li> 
+            <li class="o_wsale_my_cart  ">
+                <a href="/shop/cart" class="o_navlink_background_hover btn position-relative rounded-circle border-0 p-1 text-reset">
+                    <div class="">
+                        <i class="fa fa-shopping-cart fa-stack"></i>
+                        <sup class="my_cart_quantity badge text-bg-primary position-absolute top-0 end-0 mt-n1 me-n1 rounded-pill d-none" data-order-id="">0</sup>
+                    </div>
+                </a>
+            </li>
+        
+                <li>
+                    <button class="nav-link btn me-auto p-2 o_not_editable" type="button" data-bs-toggle="offcanvas" data-bs-target="#top_menu_collapse_mobile" aria-controls="top_menu_collapse_mobile" aria-expanded="false" aria-label="Navigation an/aus">
+                        <span class="navbar-toggler-icon"></span>
+                    </button>
+                </li>
+            </ul>
+            <div id="top_menu_collapse_mobile" class="offcanvas offcanvas-end o_navbar_mobile">
+                <div class="offcanvas-header justify-content-end o_not_editable">
+                    <button type="button" class="nav-link btn-close" data-bs-dismiss="offcanvas" aria-label="Schließen"></button>
+                </div>
+                <div class="offcanvas-body d-flex flex-column justify-content-between h-100 w-100">
+                    <ul class="navbar-nav">
+                        
+        <li class="">
+    <form method="get" class="o_searchbar_form o_wait_lazy_js s_searchbar_input " action="/website/search" data-snippet="s_searchbar_input">
+            <div role="search" class="input-group mb-3">
+        <input type="search" name="search" class="search-query form-control oe_search_box border-0 bg-light rounded-start-pill text-bg-light ps-3" placeholder="Suchen ..." data-search-type="all" data-limit="0" data-display-image="true" data-display-description="true" data-display-extra-link="true" data-display-detail="true" data-order-by="name asc"/>
+        <button type="submit" aria-label="Suchen" title="Suchen" class="btn oe_search_button rounded-end-pill bg-o-color-3 pe-3">
+            <i class="oi oi-search"></i>
+        </button>
+    </div>
+
+            <input name="order" type="hidden" class="o_search_order_by" value="name asc"/>
+            
+    
+        </form>
+        </li>
+                        
+    <ul id="top_menu" role="menu" class="nav navbar-nav  ">
+        
+
+                            
+    <li role="presentation" class="nav-item">
+        <a role="menuitem" href="/" class="nav-link ">
+            <span>HOME</span>
+        </a>
+    </li>
+    <li role="presentation" class="nav-item">
+        <a role="menuitem" href="/blog" class="nav-link ">
+            <span>BLOG</span>
+        </a>
+    </li>
+    <li role="presentation" class="nav-item">
+        <a role="menuitem" href="/stabilisiertes-holz" class="nav-link ">
+            <span>STABILISIERTES HOLZ</span>
+        </a>
+    </li>
+    <li role="presentation" class="nav-item">
+        <a role="menuitem" href="/holzstabilisierung" class="nav-link ">
+            <span>AUFTRAGSSTABILISIERUNG</span>
+        </a>
+    </li>
+    <li role="presentation" class="nav-item">
+        <a role="menuitem" href="/anwendungsbereiche" class="nav-link ">
+            <span>ANWENDUNGSBEREICHE</span>
+        </a>
+    </li>
+    <li role="presentation" class="nav-item">
+        <a role="menuitem" href="/shop" class="nav-link ">
+            <span>SHOP</span>
+        </a>
+    </li>
+    <li role="presentation" class="nav-item">
+        <a role="menuitem" href="/spotlight" class="nav-link ">
+            <span>SPOTLIGHT</span>
+        </a>
+    </li>
+    <li role="presentation" class="nav-item">
+        <a role="menuitem" href="/contactus" class="nav-link ">
+            <span>KONTAKT</span>
+        </a>
+    </li>
+                        
+    </ul>
+                        
+        <li class="">
+                <div data-name="Text" class="s_text_block mt-2 border-top pt-2 o_border_contrast">
+                    <a href="tel://+49(177)5177330" class="nav-link o_nav-link_secondary p-2" data-bs-original-title="" title="">
+                        <i class="fa fa-fw fa-phone me-1 fa-1x" contenteditable="false">​</i>
+                        <span class="o_force_ltr"><small>+49 (177) 5177330</small></span>
+                    </a>
+                </div>
+        </li>
+                        
+        <li class="">
+            <div class="o_header_social_links mt-2 border-top pt-2 o_border_contrast">
+                <div class="s_social_media o_not_editable oe_unmovable oe_unremovable" data-snippet="s_social_media" data-name="Social Media">
+                    <h5 class="s_social_media_title d-none">Folgen Sie uns</h5>
+<a href="/website/social/instagram" class="s_social_media_instagram o_nav-link_secondary nav-link m-0 p-0 text-decoration-none" target="_blank">
+                        <i class="fa fa-instagram fa-stack p-1 o_editable_media"></i>
+                    </a>
+<a href="/website/social/facebook" class="s_social_media_facebook o_nav-link_secondary nav-link m-0 p-0 text-decoration-none" target="_blank">
+                        <i class="fa fa-facebook fa-stack p-1 o_editable_media"></i>
+                    </a>
+<a href="https://www.youtube.com/@acryholz" class="o_nav-link_secondary nav-link m-0 p-0 text-decoration-none s_social_media_youtube" target="_blank" aria-label="YouTube">
+                        <i class="fa p-1 o_editable_media fa-youtube"></i>
+                    </a>
+<a href="/website/social/linkedin" class="s_social_media_linkedin o_nav-link_secondary nav-link m-0 p-0 text-decoration-none" target="_blank">
+                        <i class="fa fa-linkedin fa-stack p-1 o_editable_media"></i>
+                    </a>
+<a href="/website/social/tiktok" class="o_nav-link_secondary nav-link m-0 p-0 text-decoration-none s_social_media_tiktok" target="_blank" aria-label="TikTok">
+                        <i class="fa fa-stack p-1 o_editable_media fa-tiktok"></i>
+                    </a>
+<a href="/website/social/twitter" class="s_social_media_twitter o_nav-link_secondary nav-link m-0 p-0 text-decoration-none" target="_blank">
+                        <i class="fa fa-twitter fa-stack p-1 o_editable_media"></i>
+                    </a>
+</div>
+            </div>
+        </li>
+                    </ul>
+                    <ul class="navbar-nav gap-2 mt-3 w-100">
+                        
+            <li class=" o_no_autohide_item">
+                <a href="/web/login" class="btn btn-outline-secondary w-100">Anmelden</a>
+            </li>
+                        
+        
+        
+                        
+        <li data-name="Language Selector" class="o_header_language_selector ">
+        
+            <div class="js_language_selector dropup dropdown d-print-none">
+                <button type="button" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="true" class="btn border-0 dropdown-toggle btn-outline-secondary d-flex align-items-center w-100 px-2">
+                    <span class="align-middle me-auto small"> Deutsch</span>
+                </button>
+                <div role="menu" class="dropdown-menu w-100">
+                        <a class="dropdown-item js_change_lang " href="/en/mp3/Haydn_Cello_Concerto_D-1.mp3" data-url_code="en" title="English (US)">
+                            <span class="me-auto small">English (US)</span>
+                        </a>
+                        <a class="dropdown-item js_change_lang " href="/fr/mp3/Haydn_Cello_Concerto_D-1.mp3" data-url_code="fr" title=" Français">
+                            <span class="me-auto small"> Français</span>
+                        </a>
+                        <a class="dropdown-item js_change_lang active" href="/mp3/Haydn_Cello_Concerto_D-1.mp3" data-url_code="de" title=" Deutsch">
+                            <span class="me-auto small"> Deutsch</span>
+                        </a>
+                        <a class="dropdown-item js_change_lang " href="/it/mp3/Haydn_Cello_Concerto_D-1.mp3" data-url_code="it" title=" Italiano">
+                            <span class="me-auto small"> Italiano</span>
+                        </a>
+                        <a class="dropdown-item js_change_lang " href="/pl/mp3/Haydn_Cello_Concerto_D-1.mp3" data-url_code="pl" title=" Język polski">
+                            <span class="me-auto small"> Język polski</span>
+                        </a>
+                        <a class="dropdown-item js_change_lang " href="/es/mp3/Haydn_Cello_Concerto_D-1.mp3" data-url_code="es" title=" Español">
+                            <span class="me-auto small"> Español</span>
+                        </a>
+                </div>
+            </div>
+        
+        </li>
+                        
+        <li class="">
+            <div class="oe_structure oe_structure_solo ">
+                <section class="oe_unremovable oe_unmovable s_text_block o_colored_level" data-snippet="s_text_block" data-name="Text" style="background-image: none;">
+                    <div class="container">
+                        <a href="/contactus" class="oe_unremovable btn btn-primary btn_cta w-100 w-100" data-bs-original-title="" title="">Kontaktieren Sie uns</a>
+                    </div>
+                </section>
+            </div>
+        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    
+    </nav>
+    
+        </header>
+                <main>
+                    
+            <div id="wrap">
+                
+                <div class="oe_structure oe_empty">
+                    <section class="s_text_image pt104 pb104" data-snippet="s_image_text" data-name="Image - Text">
+                        <div class="container">
+                            <div class="row align-items-center">
+                                <div class="col-lg-4 pb32">
+                                    <img class="img img-fluid mx-auto" src="/web_editor/shape/http_routing/404.svg?c2=o-color-2" loading="lazy"/>
+                                </div>
+                                <div class="col-lg-8 text-lg-start text-center my-auto">
+                                    <h1 class="visually-hidden">Fehler 404</h1>
+                                    <h2>Wir konnten die von Ihnen gesuchte Seite nicht finden!</h2>
+                                    <p></p>
+                                    <p><b>Kein Grund zur Panik.</b> Wenn Sie glauben, dass es sich um einen Fehler unsererseits handelt, senden Sie uns bitte eine Nachricht an <a href="/contactus">diese Seite</a>.</p>
+                                </div>
+                                <div class="col-lg-12">
+                                    <div class="s_hr pt32 pb48" data-snippet="s_hr" data-name="Separator">
+                                        <hr class="w-100 mx-auto" style="border-top-width: 1px; border-top-style: solid; border-top-color: var(--400);"/>
+                                    </div>
+                                </div>
+                                <div class="col-lg-12">
+                                    <p class="text-center">Vielleicht haben Sie nach einem dieser <b>meistbesuchten Seiten</b> gesucht?</p>
+                                    <ul class="list-inline text-center">
+                                        <li class="list-inline-item mb-2"><a href="/" class="btn btn-primary">Home</a></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        
+        <div id="o_shared_blocks" class="oe_unremovable"><div class="modal fade" id="o_search_modal" aria-hidden="true" tabindex="-1">
+                    <div class="modal-dialog modal-lg pt-5">
+                        <div class="modal-content mt-5">
+    <form method="get" class="o_searchbar_form o_wait_lazy_js s_searchbar_input" action="/website/search" data-snippet="s_searchbar_input">
+            <div role="search" class="input-group input-group-lg">
+        <input type="search" name="search" data-oe-model="ir.ui.view" data-oe-id="951" data-oe-field="arch" data-oe-xpath="/data/xpath[3]/form/t[1]/div[1]/input[1]" class="search-query form-control oe_search_box border-0 bg-light border border-end-0 p-3" placeholder="Suchen ..." data-search-type="all" data-limit="5" data-display-image="true" data-display-description="true" data-display-extra-link="true" data-display-detail="true" data-order-by="name asc" autocomplete="off"/>
+        <button type="submit" aria-label="Suchen" title="Suchen" class="btn oe_search_button border border-start-0 px-4 bg-o-color-4">
+            <i class="oi oi-search o_editable_media" data-oe-model="ir.ui.view" data-oe-id="951" data-oe-field="arch" data-oe-xpath="/data/xpath[3]/form/t[1]/div[1]/button[1]/i[1]" contenteditable="false"></i>
+        </button>
+    </div>
+
+            <input name="order" type="hidden" class="o_search_order_by" data-oe-model="ir.ui.view" data-oe-id="951" data-oe-field="arch" data-oe-xpath="/data/xpath[3]/form/input[1]" value="name asc"/>
+            
+    
+        </form>
+                        </div>
+                    </div>
+                </div></div>
+                </main>
+                <footer id="bottom" data-anchor="true" data-name="Footer" class="o_footer o_colored_level o_cc ">
+                    <div id="footer" class="oe_structure oe_structure_solo">
+            <section class="s_text_block pt40 pb16" data-snippet="s_text_block" data-name="Text" style="background-image: none;" id="%C3%9Cber-uns" data-anchor="true">
+                <div class="container">
+                    <div class="row">
+                        <div class="col-lg-2 pt24 pb24 o_colored_level">
+                            <p>﻿<a href="/" data-bs-original-title="" title="">﻿Startseite﻿</a>﻿</p><p>﻿<a href="/links">﻿Links﻿</a>﻿</p><p>﻿<a href="/datenschutz" data-bs-original-title="" title="">﻿Datenschutz&nbsp;​﻿</a>﻿</p><p>﻿<a href="/impressum" data-bs-original-title="" title="">﻿Impressum﻿</a>﻿</p><p>﻿<a href="/agb" data-bs-original-title="" title="">﻿AGB&nbsp;﻿</a>﻿</p></div>
+                        <div class="col-lg-5 pt24 pb24 o_colored_level">
+                            <h5 class="mb-3">Über uns</h5>
+                            <p>
+Wir produzieren seit über 20 Jahren einen einzigartigen und vielseitigen Hybrid-Werkstoff aus natürlichem Holz und Acrylglas und bieten damit eine nachhaltige, langlebige und ungiftige Alternative zu tropischen Harthölzern.<br/></p>
+                        </div>
+                        <div id="connect" class="col-lg-4 offset-lg-1 pt24 pb24 o_colored_level">
+                            <h5 class="mb-3">Nehmen Sie Kontakt auf</h5>
+                            <ul class="list-unstyled">
+                                <li><i class="fa fa-comment fa-fw me-2" contenteditable="false">​</i>﻿<a href="/contactus" data-bs-original-title="" title="">﻿Kontaktieren Sie uns﻿</a>﻿</li>
+                                <li><i class="fa fa-envelope fa-fw me-2" contenteditable="false">​</i>﻿<a href="mailto:info@acryholz.de" data-bs-original-title="" title="">﻿info@acryholz.de﻿</a>﻿</li>
+                                <li><i class="fa fa-phone fa-fw me-2" contenteditable="false">​</i><span class="o_force_ltr">﻿<a href="tel://+ 49 (177) 5177330" data-bs-original-title="" title="">﻿+ 49 (177) 5177330﻿</a>﻿</span></li>
+                            </ul>
+                            <div class="s_social_media o_not_editable text-start" data-snippet="s_social_media" data-name="Social Media" contenteditable="false">
+                                <h5 class="s_social_media_title d-none">Folgen Sie uns</h5>
+<a href="/website/social/facebook" class="s_social_media_facebook" target="_blank">
+                                    <i class="fa fa-facebook rounded-circle shadow-sm o_editable_media" contenteditable="false">​</i>
+                                </a>
+<a href="/website/social/linkedin" class="s_social_media_linkedin" target="_blank">
+                                    <i class="fa fa-linkedin rounded-circle shadow-sm o_editable_media" contenteditable="false">​</i>
+                                </a>
+<a href="/website/social/instagram" class="s_social_media_instagram" target="_blank">
+                                    <i class="fa rounded-circle shadow-sm o_editable_media fa-instagram" contenteditable="false">​</i>
+                                </a>
+<a href="/website/social/tiktok" class="s_social_media_tiktok" target="_blank">
+                                    <i class="fa rounded-circle shadow-sm o_editable_media fa-tiktok" contenteditable="false">​</i>
+                                </a>
+</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+        <div id="o_footer_scrolltop_wrapper" class="container h-0 d-flex align-items-center justify-content-center">
+            <a id="o_footer_scrolltop" role="button" href="#top" title="Nach oben scrollen" class="btn btn-primary rounded-circle d-flex align-items-center justify-content-center">
+                <span class="oi fa-1x oi-chevron-up"></span>
+            </a>
+        </div>
+    <div class="o_footer_copyright o_colored_level o_cc" data-name="Copyright">
+                        <div class="container py-3">
+                            <div class="row">
+                                <div class="col-sm text-center text-sm-start text-muted">
+                                    <span class="o_footer_copyright_name me-2">Copyright © ACRYHOLZ</span>
+        
+            <div class="js_language_selector  dropup d-print-none">
+                <button type="button" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="true" class="btn border-0 dropdown-toggle btn-sm btn-outline-secondary">
+                    <span class="align-middle "> Deutsch</span>
+                </button>
+                <div role="menu" class="dropdown-menu ">
+                        <a class="dropdown-item js_change_lang " href="/en/mp3/Haydn_Cello_Concerto_D-1.mp3" data-url_code="en" title="English (US)">
+                            <span class="">English (US)</span>
+                        </a>
+                        <a class="dropdown-item js_change_lang " href="/fr/mp3/Haydn_Cello_Concerto_D-1.mp3" data-url_code="fr" title=" Français">
+                            <span class=""> Français</span>
+                        </a>
+                        <a class="dropdown-item js_change_lang active" href="/mp3/Haydn_Cello_Concerto_D-1.mp3" data-url_code="de" title=" Deutsch">
+                            <span class=""> Deutsch</span>
+                        </a>
+                        <a class="dropdown-item js_change_lang " href="/it/mp3/Haydn_Cello_Concerto_D-1.mp3" data-url_code="it" title=" Italiano">
+                            <span class=""> Italiano</span>
+                        </a>
+                        <a class="dropdown-item js_change_lang " href="/pl/mp3/Haydn_Cello_Concerto_D-1.mp3" data-url_code="pl" title=" Język polski">
+                            <span class=""> Język polski</span>
+                        </a>
+                        <a class="dropdown-item js_change_lang " href="/es/mp3/Haydn_Cello_Concerto_D-1.mp3" data-url_code="es" title=" Español">
+                            <span class=""> Español</span>
+                        </a>
+                </div>
+            </div>
+        
+                                </div>
+                                <div class="col-sm text-center text-sm-end o_not_editable">
+        <div class="o_brand_promotion"><template id="brand_promotion" inherit_id="web.brand_promotion_message" priority="99">
+<xpath expr="//t[@t-raw]" position="replace"></xpath>
+</template>
+        </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </footer>
+        <div id="website_cookies_bar" class="s_popup o_snippet_invisible o_no_save d-none" data-name="Cookies Bar" data-vcss="001" data-invisible="1">
+            <div class="modal s_popup_bottom s_popup_no_backdrop o_cookies_discrete modal_shown" data-show-after="500" data-display="afterDelay" data-consents-duration="999" data-bs-focus="false" data-bs-backdrop="false" data-bs-keyboard="false" tabindex="-1" style="display: none;" aria-hidden="true">
+                <div class="modal-dialog d-flex s_popup_size_full">
+                    <div class="modal-content oe_structure">
+                        
+                        <section class="o_colored_level o_cc o_cc1">
+                            <div class="container">
+                                <div class="row">
+                                    <div class="col-lg-8 pt16">
+                                        <p>
+                                            <span class="pe-1">Wir verwenden Cookies auf dieser Website, um Ihnen ein besseres Nutzererlebnis zu bieten.</span>
+                                            <a href="/cookie-policy" class="o_cookies_bar_text_policy btn btn-link btn-sm px-0">Cookie-Richtlinien</a>
+                                        </p>
+                                    </div>
+                                    <div class="col-lg-4 text-end pt16 pb16">
+                                        <a href="#" id="cookies-consent-essential" role="button" class="js_close_popup btn btn-outline-primary rounded-circle btn-sm px-2">Nur essentielle</a>
+                                        <a href="#" id="cookies-consent-all" role="button" class="js_close_popup btn btn-outline-primary rounded-circle btn-sm">Ich stimme zu</a>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </div>
+        </div>
+            </div>
+        <!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-58NDKCSM"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-5LDNN722"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+<script id='merchantWidgetScript'
+
+        src="https://www.gstatic.com/shopping/merchant/merchantwidget.js"
+
+        defer>
+
+</script>
+        </body>
+</html>

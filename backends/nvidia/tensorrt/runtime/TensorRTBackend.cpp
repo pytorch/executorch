@@ -98,15 +98,13 @@ Result<DelegateHandle*> TensorRTBackend::init(
     return Error::InvalidArgument;
   }
 
-  MemoryAllocator* allocator =
-      context.get_runtime_allocator();
+  MemoryAllocator* allocator = context.get_runtime_allocator();
   if (allocator == nullptr) {
     ET_LOG(Error, "Failed to get runtime allocator");
     return Error::InvalidState;
   }
 
-  TensorRTExecutor* executor =
-      allocator->allocateInstance<TensorRTExecutor>();
+  TensorRTExecutor* executor = allocator->allocateInstance<TensorRTExecutor>();
   if (executor == nullptr) {
     ET_LOG(Error, "Failed to allocate TensorRT executor");
     return Error::MemoryAllocationFailed;
@@ -160,7 +158,9 @@ Error TensorRTBackend::execute(
     ET_LOG(
         Error,
         "args size %zu < inputs %zu + outputs %zu",
-        args.size(), num_inputs, num_outputs);
+        args.size(),
+        num_inputs,
+        num_outputs);
     return Error::InvalidArgument;
   }
 
@@ -177,8 +177,7 @@ Error TensorRTBackend::execute(
   // Extract output pointers.
   std::vector<void*> output_buffers(num_outputs);
   for (size_t i = 0; i < num_outputs; ++i) {
-    output_buffers[i] =
-        args[i + num_inputs]->toTensor().mutable_data_ptr();
+    output_buffers[i] = args[i + num_inputs]->toTensor().mutable_data_ptr();
   }
 
   auto err = executor->execute(
@@ -201,7 +200,10 @@ Error TensorRTBackend::execute(
       bool needs_resize = (static_cast<size_t>(current.size()) != shape.size());
       if (!needs_resize) {
         for (size_t d = 0; d < shape.size(); ++d) {
-          if (current[d] != shape[d]) { needs_resize = true; break; }
+          if (current[d] != shape[d]) {
+            needs_resize = true;
+            break;
+          }
         }
       }
       if (needs_resize) {

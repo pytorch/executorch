@@ -94,7 +94,7 @@ def _get_expand_output_shape(
     return tuple(output_shape)
 
 
-@converter("aten.expand.default", validator_fn=validate_expand)
+@converter("aten.expand.default", validator_fn=validate_expand, supports_dynamic_shapes=True)
 def convert_expand(
     node: torch.fx.Node,
     network: Any,  # trt.INetworkDefinition
@@ -265,7 +265,7 @@ def convert_expand(
     return slice_layer.get_output(0)
 
 
-@converter("aten.expand_copy.default", validator_fn=validate_expand)
+@converter("aten.expand_copy.default", validator_fn=validate_expand, supports_dynamic_shapes=True)
 def convert_expand_copy(
     node: torch.fx.Node,
     network: Any,  # trt.INetworkDefinition
@@ -280,7 +280,7 @@ def convert_expand_copy(
     return convert_expand(node, network, input_map, edge_program)
 
 
-@converter("aten.repeat.default", validator_fn=validate_expand)
+@converter("aten.repeat.default", validator_fn=validate_expand, supports_dynamic_shapes=True)
 def convert_repeat(
     node: torch.fx.Node,
     network: Any,  # trt.INetworkDefinition

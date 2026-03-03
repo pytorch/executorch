@@ -125,64 +125,165 @@ All 41 TRT backend tests pass.
 
 ---
 
-## Remaining: Conv1d after shape-tensor reshape
+## Recently completed: Conv1d & single-partition lowering
 
-The Conv1d converter uses FX metadata to restore concrete dims before
-calling `add_convolution_nd`, but this only works when `resolve_shape`
-produces ≤1 dynamic dim.  When the Conformer encoder has nodes with
-multiple SymInt dims in their metadata (e.g. after view operations that
-reshape with both batch and sequence as symbolic), the restore fails and
-TRT cannot determine the conv output shape.
+### 13. Conv1d after shape-tensor reshape (FIXED)
 
-The error manifests as:
-```
-ITensor::getDimensions: Error Code 4: Tensor conv1d_..._output has axis 3
-with inherently negative length.  Proven upper bound is -1.
-```
+**Files:** `converters/conv2d.py`, `converters/comparison.py`
 
-### Root cause
+Two bugs fixed:
 
-When a shape-tensor-based shuffle (`set_input(1, shape_tensor)`) feeds
-into a Conv1d wrapper, TRT reports all output dims as `-1`.  The Conv1d
-unsqueeze creates `[-1, -1, 1, -1]` (three dynamic dims).  TRT then
-cannot prove the spatial output of the conv is non-negative.
+- **`constant_pad_nd` -1 arithmetic:** The pad converter computed
+  `output_shape[dim] = input_shape[dim] + pad` which produced small
+  positive ints (e.g. 7) when `input_shape[dim]` was -1 (dynamic).
+  Downstream convolutions saw a concrete spatial dim of 7 instead of
+  dynamic.  Fix: keep -1 when input dim is -1 and use per-component
+  shape tensor (constants for concrete dims, gather+add for dynamic).
 
-### Possible fixes
+- **Conv restore with `zero_is_placeholder`:** When the FX metadata has
+  >1 dynamic dim but some concrete dims (e.g. `[-1, 256, -1]`), the
+  restore now uses `zero_is_placeholder=True` with 0 for dynamic dims
+  and concrete values for known dims.  Previously it only worked for ≤1
+  dynamic dim.
 
-1. **Avoid shape tensor API when ≤1 dim is dynamic:** The FX metadata
-   from `get_node_shape` + `resolve_shape` should produce shapes with
-   concrete batch/channel dims.  If the preceding reshape uses the
-   simple `trt.Dims()` path (≤1 dynamic dim), the conv input will have
-   concrete dims.  Investigate why some reshape nodes produce >1 dynamic
-   dim when only the sequence length is truly dynamic.
+Also marked `aten.convolution.default` as `supports_dynamic_shapes=True`.
 
-2. **Add optimization profile before network building:** If TRT had
-   profile ranges available during `add_convolution_nd`, it could prove
-   the spatial dim is positive.  This would require restructuring the
-   build flow (currently profile is set after all layers are added).
+### 14. Stale reshape relaxation
 
-3. **Explicit output shape:** Use the conv node's FX metadata to compute
-   the expected output shape and apply it via a reshape after the conv.
+**Files:** `partitioner/operator_support.py`
 
-### Unused shape inputs
+The `_is_stale_reshape` check rejected 95 `view_copy` nodes that had
+dynamic output dims but all-concrete target shape args.  When ≤1 output
+dim is dynamic, the converter uses `trt.Dims([-1, ...])` with concrete
+values from metadata (not the stale args), so the reshape adapts
+correctly.  Relaxed the check to only reject when >1 dynamic dim AND
+all-concrete target args.
 
-The encoder partition has 5–7 unused scalar inputs (`sym_size`, `add_1`,
-`sub`, etc.) that were pulled in as partition boundary values.  The
-converters use `add_shape` instead.  TRT warns about them but builds
-successfully.  To clean these up:
+### 15. Scalar shape arithmetic converters
 
-- Option A: post-process the network to remove inputs with zero consumers.
-- Option B: filter them out in `_add_network_inputs` (requires tracking
-  which placeholder nodes are actually referenced by converter code).
-- Low priority — they don't block engine building.
+**Files:** `converters/shape_ops.py`, `partitioner/operator_support.py`
 
-### Verification
+New converters for scalar operations that compute derived sequence
+lengths (e.g. `(s18 - 1) // 8 + 1`):
+
+- `aten.sym_size.int` → `add_shape` + `add_gather`
+- `add` / `sub` / `mul` / `floordiv` (operator.*) → `add_elementwise`
+  on int32 shape tensors
+
+These bring the shape computation inside the TRT partition so derived
+dimensions (masks, position encodings) are computed from the same source
+as the encoder's internal sequence length.  All registered with
+`supports_dynamic_shapes=True`.
+
+### 16. Dynamic arange / full / repeat
+
+**Files:** `converters/comparison.py`, `converters/expand.py`
+
+Marked `aten.arange.start_step`, `aten.full.default`, and
+`aten.repeat.default` as `supports_dynamic_shapes=True`.  Updated the
+`full` converter to build a shape tensor from mixed FX Node / concrete
+size args so it handles symbolic sizes from the scalar shape chain.
+
+### 17. Stashed SymInt expressions for exact profile ranges
+
+**Files:** `partitioner/__init__.py`, `backend.py`
+
+After partitioning, partition-boundary placeholder nodes lose their
+symbolic expressions (SymInt expr becomes a constant like 625).  The
+profile code's proportional scaling approximation was off by 1 for
+expressions like `(s18-1)//8+1`: at s18=161 it gave 20 instead of 21.
+
+Fix: the partitioner stashes the original SymInt expressions in
+`node.meta["trt_symint_exprs"]` before partitioning.  The profile code
+checks this stash and evaluates the exact sympy expression at the base
+symbol's min/max bounds via `expr.subs({s18: 161})`.
+
+### 18. Multi-dynamic-dim view converter
+
+**Files:** `converters/reshape.py`
+
+The multi-dynamic-dim path in `convert_view` previously used the
+`target_shape` args directly, which could contain stale trace-time
+concrete ints (e.g. `2*S-1` evaluated to 1249).  Now uses `output_shape`
+from metadata to decide which dims are dynamic, gathers those from input
+runtime shape, and infers remaining unknowns from `input_volume /
+product_of_known_dims`.
+
+### 19. logical_and Bool/Float cast
+
+**Files:** `converters/comparison.py`
+
+TRT's AND requires Bool inputs.  Added casts for non-Bool operands.
+
+### 20. slice_copy with FX Node start/end and dim adjustment (FIXED)
+
+**Files:** `converters/slice.py`
+
+Two issues fixed:
+
+- **FX Node start/end args:** The position encoding slice uses start/end
+  that are FX Nodes from scalar shape ops (`sub`, `sub_1`).  The
+  converter now detects FX Node args, gets their TRT shape tensors from
+  `input_map`, and computes slice size as `end_trt - start_trt` via
+  `add_elementwise(SUB)`.  Sets start and size via `set_input(1, ...)`
+  and `set_input(2, ...)`.
+
+- **Missing `input_dim - start` for non-FX-Node slices:** When the
+  sliced dim is dynamic but start is a concrete int > 0 (e.g.
+  `tensor[:, :, 1:, :]`), the output size is `input_dim - start`.
+  The rewritten dynamic path lost this adjustment.  Restored as
+  `add_elementwise(SUB)` of gathered input dim and start constant.
+
+- **Size clamp:** All dynamic slice output dims are clamped to
+  `max(size, 1)` so TRT can prove the output is non-empty.
+
+### 21. Cask convolution fix: bring arange/full inside the partition
+
+**Root cause:** When arange/full/repeat are partition-boundary inputs
+(outside TRT), their dynamic shapes appear in the optimization profile
+as independent dimensions.  TRT's Cask optimizer entangles these with
+the conv chain's dynamic dims via `BROADCAST_SIZE`, creating a complex
+shape expression that fails `isOpConsistent`.  A single-layer repro of
+the same conv builds fine — the bug is the shape entanglement.
+
+**Fix:** Bring the entire shape computation chain inside the partition:
+- Scalar ops (`sym_size`, `add`, `sub`, `mul`, `floordiv`) as TRT
+  shape tensor operations (`add_elementwise` on int32 scalars).
+- `arange`, `full`, `repeat` with `supports_dynamic_shapes=True` and
+  shape-tensor-driven output sizes.
+
+With everything inside, all dynamic dims derive from `audio_signal`
+through internal TRT computation — no independent profile shapes to
+entangle.
+
+---
+
+## Current state: Parakeet exports successfully (single partition)
 
 ```bash
 python examples/models/parakeet/export_parakeet_tdt.py \
     --backend tensorrt --output-dir ./parakeet_tensorrt
 ```
 
-The encoder is a single TRT delegate partition.  Once the conv issue is
-resolved, test transcription with 7.4s audio to verify it produces the
-same text as eager/CUDA.
+- **0 TRT errors, 0 warnings, 0 rejections**
+- **3 TRT engines** (encoder + other methods), down from 27
+- **2443 MB** saved as `model.pte`
+- Encoder is a single ~4000-node TRT delegate partition
+- 4 user inputs: `audio_signal`, `length`, 2 lifted constants
+
+### Previous Cask bug (resolved)
+
+The Cask `isOpConsistent` assertion on `convolution_default_3` was NOT
+(4000+ nodes) containing depthwise conv2d + dynamic shapes.  It does NOT
+occur when the same conv is in a smaller partition (~200 nodes).  The
+root cause was that arange inputs in the optimization profile created
+`BROADCAST_SIZE` shape expressions that Cask couldn't validate.  Moving
+arange inside the partition eliminated the independent profile shapes.
+
+### Next steps
+
+1. **Test transcription accuracy** with test audio to verify numerics
+   match eager/CUDA.
+
+2. **Remove debug logging:** Verbose TRT logging is enabled by default.
+   Switch back to `trt.Logger.WARNING` for production.

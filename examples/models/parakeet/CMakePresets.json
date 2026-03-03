@@ -44,6 +44,34 @@
             }
         },
         {
+            "name": "parakeet-trt",
+            "displayName": "Parakeet runner (TensorRT)",
+            "inherits": ["parakeet-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_CUDA": "ON",
+                "EXECUTORCH_BUILD_TENSORRT": "ON"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
+        },
+        {
+            "name": "parakeet-trt-debug",
+            "displayName": "Parakeet runner (TensorRT, Debug)",
+            "inherits": ["parakeet-base"],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "EXECUTORCH_BUILD_TENSORRT": "ON"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
+        },
+        {
             "name": "parakeet-metal",
             "displayName": "Parakeet runner (Metal)",
             "inherits": ["parakeet-base"],
@@ -63,28 +91,42 @@
             "displayName": "Build Parakeet runner (CPU)",
             "configurePreset": "parakeet-cpu",
             "configuration": "Release",
-            "targets": ["parakeet_runner"]
+            "targets": ["parakeet_runner", "parakeet_benchmark"]
         },
         {
             "name": "parakeet-cuda",
             "displayName": "Build Parakeet runner (CUDA)",
             "configurePreset": "parakeet-cuda",
             "configuration": "Release",
-            "targets": ["parakeet_runner"]
+            "targets": ["parakeet_runner", "parakeet_benchmark"]
+        },
+        {
+            "name": "parakeet-trt",
+            "displayName": "Build Parakeet runner (TensorRT)",
+            "configurePreset": "parakeet-trt",
+            "configuration": "Release",
+            "targets": ["parakeet_runner", "parakeet_benchmark"]
+        },
+        {
+            "name": "parakeet-trt-debug",
+            "displayName": "Build Parakeet runner (TensorRT, Debug)",
+            "configurePreset": "parakeet-trt-debug",
+            "configuration": "Debug",
+            "targets": ["parakeet_runner", "parakeet_benchmark"]
         },
         {
             "name": "parakeet-cuda-debug",
             "displayName": "Build Parakeet runner (CUDA, Debug)",
             "configurePreset": "parakeet-cuda-debug",
             "configuration": "Debug",
-            "targets": ["parakeet_runner"]
+            "targets": ["parakeet_runner", "parakeet_benchmark"]
         },
         {
             "name": "parakeet-metal",
             "displayName": "Build Parakeet runner (Metal)",
             "configurePreset": "parakeet-metal",
             "configuration": "Release",
-            "targets": ["parakeet_runner"]
+            "targets": ["parakeet_runner", "parakeet_benchmark"]
         }
     ],
     "workflowPresets": [
@@ -127,6 +169,34 @@
                 {
                     "type": "build",
                     "name": "parakeet-cuda-debug"
+                }
+            ]
+        },
+        {
+            "name": "parakeet-trt",
+            "displayName": "Configure and build Parakeet runner (TensorRT)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "parakeet-trt"
+                },
+                {
+                    "type": "build",
+                    "name": "parakeet-trt"
+                }
+            ]
+        },
+        {
+            "name": "parakeet-trt-debug",
+            "displayName": "Configure and build Parakeet runner (TensorRT, Debug)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "parakeet-trt-debug"
+                },
+                {
+                    "type": "build",
+                    "name": "parakeet-trt-debug"
                 }
             ]
         },

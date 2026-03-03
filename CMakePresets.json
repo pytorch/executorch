@@ -161,6 +161,22 @@
       }
     },
     {
+      "name": "llm-release-trt",
+      "displayName": "LLM release build with TensorRT",
+      "inherits": [
+        "llm-release-cuda"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_TENSORRT": "ON",
+        "EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL": "ON"
+      },
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Windows"]
+      }
+    },
+    {
       "name": "llm-release-metal",
       "displayName": "LLM release build with Metal",
       "inherits": [
@@ -195,6 +211,22 @@
       ],
       "cacheVariables": {
         "EXECUTORCH_BUILD_CUDA": "ON"
+      },
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Windows"]
+      }
+    },
+    {
+      "name": "llm-debug-trt",
+      "displayName": "LLM debug build with TensorRT",
+      "inherits": [
+        "llm-debug"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_CUDA": "ON",
+        "EXECUTORCH_BUILD_TENSORRT": "ON"
       },
       "condition": {
         "type": "inList",
@@ -318,6 +350,16 @@
       "jobs": 0
     },
     {
+      "name": "llm-release-trt-install",
+      "displayName": "Build and install LLM extension release artifacts (TensorRT)",
+      "configurePreset": "llm-release-trt",
+      "configuration": "Release",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
       "name": "llm-release-metal-install",
       "displayName": "Build and install LLM extension release artifacts (Metal)",
       "configurePreset": "llm-release-metal",
@@ -340,6 +382,15 @@
       "name": "llm-debug-cuda-install",
       "displayName": "Build and install LLM extension debug artifacts (CUDA)",
       "configurePreset": "llm-debug-cuda",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "llm-debug-trt-install",
+      "displayName": "Build and install LLM extension debug artifacts (TensorRT)",
+      "configurePreset": "llm-debug-trt",
       "targets": [
         "install"
       ],
@@ -394,6 +445,20 @@
       ]
     },
     {
+      "name": "llm-release-trt",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with TensorRT enabled",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-release-trt"
+        },
+        {
+          "type": "build",
+          "name": "llm-release-trt-install"
+        }
+      ]
+    },
+    {
       "name": "llm-release-metal",
       "displayName": "Configure, build and install ExecuTorch LLM extension with Metal enabled",
       "steps": [
@@ -432,6 +497,20 @@
         {
           "type": "build",
           "name": "llm-debug-cuda-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-debug-trt",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with TensorRT enabled (Debug)",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-debug-trt"
+        },
+        {
+          "type": "build",
+          "name": "llm-debug-trt-install"
         }
       ]
     },

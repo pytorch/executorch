@@ -332,18 +332,71 @@ def convert_view(
         # TRT handles at most one -1 in reshape natively.
         layer.reshape_dims = trt.Dims(output_shape)
     else:
-        # Multiple dynamic dims: build shape tensor from the target_shape arg.
-        # target_shape may contain FX Nodes (sym_size placeholders) which are
-        # in input_map as TRT tensors.
+        # Multiple dynamic dims: build shape tensor.
+        # Use output_shape (from metadata) to decide which dims are dynamic.
+        # For dynamic dims, gather from input runtime shape (correct volume)
+        # instead of trusting target_shape args which may have stale
+        # trace-time concrete values (e.g., 2*S-1 evaluated to 1249).
+        #
+        # For concrete dims, use the metadata value (output_shape[i]).
+        # For dynamic dims with an FX Node in target_shape, use that node.
+        # For dynamic dims WITHOUT an FX Node, compute from input shape
+        # and the known concrete dims.
+
+        # We need the input runtime shape to compute unknown dynamic dims.
+        shape_layer = network.add_shape(input_trt)
+        shape_layer.name = f"view_inshape_{node.name}"
+        shape_i32 = network.add_cast(shape_layer.get_output(0), trt.int32)
+        shape_i32.name = f"view_inshape_i32_{node.name}"
+
+        # Compute total input volume as a shape tensor (product of all dims).
+        in_ndim = len(input_trt.shape)
+        idx0 = network.add_constant([1], trt.Weights(np.array([0], dtype=np.int32)))
+        idx0.name = f"view_idx0_{node.name}"
+        vol = network.add_gather(shape_i32.get_output(0), idx0.get_output(0), axis=0)
+        vol.name = f"view_vol0_{node.name}"
+        vol_out = vol.get_output(0)
+        for j in range(1, in_ndim):
+            idx_j = network.add_constant([1], trt.Weights(np.array([j], dtype=np.int32)))
+            idx_j.name = f"view_idx{j}_{node.name}"
+            g = network.add_gather(shape_i32.get_output(0), idx_j.get_output(0), axis=0)
+            g.name = f"view_g{j}_{node.name}"
+            m = network.add_elementwise(vol_out, g.get_output(0), trt.ElementWiseOperation.PROD)
+            m.name = f"view_volmul{j}_{node.name}"
+            vol_out = m.get_output(0)
+
+        # Build components: concrete from metadata, dynamic from target_shape
+        # FX Nodes or inferred from input volume.
         components = []
+        known_vol = None  # product of concrete dims (for inferring unknowns)
+        unknown_indices = []
+
         for i, d in enumerate(target_shape):
-            if isinstance(d, int):
+            if output_shape[i] >= 0:
+                # Concrete dim from metadata (trustworthy).
                 c = network.add_constant(
-                    [1], trt.Weights(np.array([d], dtype=np.int32))
+                    [1], trt.Weights(np.array([output_shape[i]], dtype=np.int32))
                 )
                 c.name = f"view_c{i}_{node.name}"
                 components.append(c.get_output(0))
+                if known_vol is None:
+                    known_vol_c = network.add_constant(
+                        [1], trt.Weights(np.array([output_shape[i]], dtype=np.int32))
+                    )
+                    known_vol_c.name = f"view_kv0_{node.name}"
+                    known_vol = known_vol_c.get_output(0)
+                else:
+                    dim_c = network.add_constant(
+                        [1], trt.Weights(np.array([output_shape[i]], dtype=np.int32))
+                    )
+                    dim_c.name = f"view_kv{i}_{node.name}"
+                    mul_kv = network.add_elementwise(
+                        known_vol, dim_c.get_output(0), trt.ElementWiseOperation.PROD
+                    )
+                    mul_kv.name = f"view_kvmul{i}_{node.name}"
+                    known_vol = mul_kv.get_output(0)
             elif isinstance(d, torch.fx.Node) and d in input_map:
+                # Dynamic dim with symbolic FX Node — use it directly.
                 t = input_map[d]
                 shuf = network.add_shuffle(t)
                 shuf.reshape_dims = trt.Dims([1])
@@ -351,12 +404,39 @@ def convert_view(
                 cast = network.add_cast(shuf.get_output(0), trt.int32)
                 cast.name = f"view_sym_i32_{i}_{node.name}"
                 components.append(cast.get_output(0))
+                unknown_indices.append(i)
             else:
+                # Dynamic dim without FX Node — will infer later.
+                components.append(None)  # placeholder
+                unknown_indices.append(i)
+
+        # Infer remaining unknown dims from input volume / known dims / other unknowns.
+        # If exactly 1 dim is None (placeholder), compute it as vol / (product of others).
+        none_indices = [i for i, c in enumerate(components) if c is None]
+        if len(none_indices) == 1 and known_vol is not None:
+            # Compute product of all known components (including FX Node ones)
+            all_known_vol = known_vol
+            for i, c in enumerate(components):
+                if c is not None and output_shape[i] < 0:
+                    mul_ak = network.add_elementwise(
+                        all_known_vol, c, trt.ElementWiseOperation.PROD
+                    )
+                    mul_ak.name = f"view_akvmul{i}_{node.name}"
+                    all_known_vol = mul_ak.get_output(0)
+            inferred = network.add_elementwise(
+                vol_out, all_known_vol, trt.ElementWiseOperation.FLOOR_DIV
+            )
+            inferred.name = f"view_infer_{node.name}"
+            components[none_indices[0]] = inferred.get_output(0)
+        elif none_indices:
+            # Multiple unknown dims without FX Nodes — use stale values as fallback.
+            for idx in none_indices:
+                fallback_val = int(target_shape[idx]) if isinstance(target_shape[idx], int) else 1
                 c = network.add_constant(
-                    [1], trt.Weights(np.array([-1], dtype=np.int32))
+                    [1], trt.Weights(np.array([fallback_val], dtype=np.int32))
                 )
-                c.name = f"view_unk{i}_{node.name}"
-                components.append(c.get_output(0))
+                c.name = f"view_fallback{idx}_{node.name}"
+                components[idx] = c.get_output(0)
 
         shape_cat = network.add_concatenation(components)
         shape_cat.axis = 0

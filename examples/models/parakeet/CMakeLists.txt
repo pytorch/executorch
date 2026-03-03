@@ -91,6 +91,13 @@ if(EXECUTORCH_BUILD_METAL)
   executorch_target_link_options_shared_lib(metal_backend)
 endif()
 
+# TensorRT backend (needs whole-archive for static registration)
+if(TARGET tensorrt_backend)
+  set(_trt_link TRUE)
+  # Get the nvinfer library from tensorrt_backend's transitive deps
+  get_target_property(_trt_libs tensorrt_backend INTERFACE_LINK_LIBRARIES)
+endif()
+
 add_executable(parakeet_runner main.cpp timestamp_utils.cpp tokenizer_utils.cpp)
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(parakeet_runner)
@@ -104,6 +111,36 @@ target_include_directories(
 )
 target_link_libraries(parakeet_runner PUBLIC ${link_libraries})
 target_compile_options(parakeet_runner PUBLIC ${_common_compile_options})
+if(_trt_link)
+  target_link_options(
+    parakeet_runner
+    PRIVATE
+    "SHELL:LINKER:--whole-archive $<TARGET_FILE:tensorrt_backend> LINKER:--no-whole-archive"
+  )
+  target_link_libraries(parakeet_runner PRIVATE ${_trt_libs})
+endif()
+
+# Benchmark executable (backend-agnostic)
+add_executable(parakeet_benchmark benchmark.cpp tokenizer_utils.cpp)
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  target_link_options_gc_sections(parakeet_benchmark)
+  if(NOT APPLE AND NOT MSVC)
+    target_link_options(parakeet_benchmark PRIVATE "LINKER:-s")
+  endif()
+endif()
+target_include_directories(
+  parakeet_benchmark PUBLIC ${_common_include_directories}
+)
+target_link_libraries(parakeet_benchmark PUBLIC ${link_libraries})
+target_compile_options(parakeet_benchmark PUBLIC ${_common_compile_options})
+if(_trt_link)
+  target_link_options(
+    parakeet_benchmark
+    PRIVATE
+    "SHELL:LINKER:--whole-archive $<TARGET_FILE:tensorrt_backend> LINKER:--no-whole-archive"
+  )
+  target_link_libraries(parakeet_benchmark PRIVATE ${_trt_libs})
+endif()
 
 # On Windows, copy required DLLs to the executable directory
 if(MSVC AND EXECUTORCH_BUILD_CUDA)

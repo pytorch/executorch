@@ -606,7 +606,10 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
     return et_prog.to_executorch(
         config=ExecutorchBackendConfig(
             extract_delegate_segments=True,
-            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+            memory_planning_pass=MemoryPlanningPass(
+                alloc_graph_input=False,
+                alloc_graph_output=False,
+            ),
             do_quant_fusion_and_const_prop=True,
         ),
     )

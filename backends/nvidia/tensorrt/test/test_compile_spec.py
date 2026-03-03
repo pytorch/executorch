@@ -19,7 +19,7 @@ class CompileSpecTest(unittest.TestCase):
         )
 
         spec = TensorRTCompileSpec()
-        self.assertEqual(spec.workspace_size, 1 << 30)  # 1GB
+        self.assertEqual(spec.workspace_size, 4 << 30)  # 4GB
         self.assertEqual(spec.precision, TensorRTPrecision.FP32)
         self.assertFalse(spec.strict_type_constraints)
         self.assertEqual(spec.max_batch_size, 1)

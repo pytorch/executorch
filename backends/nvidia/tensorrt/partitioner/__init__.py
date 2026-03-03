@@ -46,6 +46,36 @@ class TensorRTPartitioner(Partitioner):
         Identifies subgraphs that can be lowered to the TensorRT backend.
         """
 
+        # Save SymInt expressions in node metadata BEFORE partitioning
+        # concretizes them.  After partitioning, partition-boundary
+        # placeholder nodes lose their free symbols (expr becomes a
+        # constant).  By stashing the original expressions in the node
+        # meta, the TRT backend can evaluate exact ranges for derived
+        # dimensions (e.g., (s18-1)//8+1) instead of inaccurate
+        # proportional scaling.  Node meta survives partitioning via
+        # shallow copy.
+        for node in exported_program.graph_module.graph.nodes:
+            if node.op != "call_function":
+                continue
+            val = node.meta.get("val")
+            if val is None:
+                continue
+            exprs: Dict[int, Any] = {}  # dim → sympy expr
+            if hasattr(val, "shape"):
+                for i, s in enumerate(val.shape):
+                    sn = getattr(s, "node", None) if hasattr(s, "node") else None
+                    if sn is not None:
+                        expr = getattr(sn, "expr", None)
+                        if expr is not None and getattr(expr, "free_symbols", set()):
+                            exprs[i] = expr
+            elif hasattr(val, "node"):
+                sn = val.node
+                expr = getattr(sn, "expr", None)
+                if expr is not None and getattr(expr, "free_symbols", set()):
+                    exprs[-1] = expr
+            if exprs:
+                node.meta["trt_symint_exprs"] = exprs
+
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
             TensorRTOperatorSupport(),

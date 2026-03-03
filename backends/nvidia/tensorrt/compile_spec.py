@@ -49,7 +49,7 @@ class TensorRTCompileSpec:
             that cannot run on DLA.
     """
 
-    workspace_size: int = 1 << 30  # 1GB default
+    workspace_size: int = 4 << 30  # 4GB
     precision: TensorRTPrecision = TensorRTPrecision.FP32
     strict_type_constraints: bool = False
     max_batch_size: int = 1

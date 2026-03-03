@@ -8,13 +8,11 @@
 #
 # This CMakeLists.txt includes the TensorRT examples subdirectory.
 #
-# Supported platforms:
-#   - Linux x86_64 with NVIDIA GPU (devgpu, workstations)
-#   - NVIDIA Jetson (Orin Nano, AGX Orin, etc.)
+# Supported platforms: - Linux x86_64 with NVIDIA GPU (devgpu, workstations) -
+# NVIDIA Jetson (Orin Nano, AGX Orin, etc.)
 #
-# Build instructions:
-#   cmake .. -DEXECUTORCH_BUILD_TENSORRT=ON
-#   cmake --build . --target benchmark_runner_tensorrt
+# Build instructions: cmake .. -DEXECUTORCH_BUILD_TENSORRT=ON cmake --build .
+# --target benchmark_runner_tensorrt
 
 cmake_minimum_required(VERSION 3.19)
 

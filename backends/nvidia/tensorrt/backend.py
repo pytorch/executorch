@@ -90,7 +90,7 @@ class TensorRTBackend(BackendDetails):
         output_nodes = _get_output_nodes(graph_module)
 
         # Create TensorRT builder and network
-        trt_logger = trt.Logger(trt.Logger.WARNING)
+        trt_logger = trt.Logger(trt.Logger.VERBOSE)
         builder = trt.Builder(trt_logger)
         network = builder.create_network(
             1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
@@ -163,7 +163,7 @@ def _get_output_nodes(graph_module: torch.fx.GraphModule) -> List[torch.fx.Node]
 def _is_param_or_buffer(
     node: torch.fx.Node, exported_program: ExportedProgram
 ) -> bool:
-    """Check if a placeholder node is a parameter or buffer."""
+    """Check if a placeholder node is a parameter, buffer, or lifted constant."""
     if node.op != "placeholder":
         return False
 
@@ -179,6 +179,20 @@ def _is_param_or_buffer(
         if hasattr(sig, "inputs_to_buffers"):
             if node.name in sig.inputs_to_buffers:
                 return True
+        # Lifted constants (e.g., c_enc_lifted_tensor_0) are constant
+        # data embedded in the ExportedProgram.  They should be baked
+        # into the TRT engine as constants, not passed as runtime inputs.
+        if hasattr(sig, "inputs_to_lifted_tensor_constants"):
+            if node.name in sig.inputs_to_lifted_tensor_constants:
+                return True
+        if hasattr(sig, "inputs_to_lifted_custom_objs"):
+            if node.name in sig.inputs_to_lifted_custom_objs:
+                return True
+
+    # Also check constants dict
+    if hasattr(exported_program, "constants"):
+        if node.name in exported_program.constants:
+            return True
 
     return False
 
@@ -222,7 +236,17 @@ def _add_params_to_input_map(
                 if param_name is not None and hasattr(exported_program, "state_dict"):
                     param_tensor = exported_program.state_dict.get(param_name)
 
-            # If we found a parameter tensor, add it to input_map
+            # Try lifted tensor constants (e.g., c_enc_lifted_tensor_0).
+            # These are constant data embedded in the ExportedProgram that
+            # should be baked into the TRT engine, not passed at runtime.
+            if param_tensor is None and hasattr(exported_program, "graph_signature"):
+                sig = exported_program.graph_signature
+                if hasattr(sig, "inputs_to_lifted_tensor_constants"):
+                    const_fqn = sig.inputs_to_lifted_tensor_constants.get(node.name)
+                    if const_fqn is not None and hasattr(exported_program, "constants"):
+                        param_tensor = exported_program.constants.get(const_fqn)
+
+            # If we found a parameter/buffer/constant tensor, add it
             if param_tensor is not None:
                 if isinstance(param_tensor, torch.nn.Parameter):
                     param_tensor = param_tensor.data
@@ -374,6 +398,13 @@ def _eval_symint_range_from_shape_env(
             if lo != opt or hi != opt:
                 return lo, hi
 
+    # Try to find the original symbolic expression via shape_env.replacements.
+    # After partitioning, sn.expr may be concretized to a constant, but
+    # shape_env.replacements can map variables back to their original
+    # expressions in terms of base symbols.
+    expr = getattr(sn, "expr", None)
+    replacements = getattr(shape_env, "replacements", {})
+
     # Derived expression match: opt is a scaling of a base variable.
     # E.g., opt=2500, hint=5000 → ratio = 0.5.
     for sym, hint in var_to_val.items():
@@ -383,10 +414,39 @@ def _eval_symint_range_from_shape_env(
             sym_lo, sym_hi = sym_ranges[sym_name]
             if sym_lo == hint_val and sym_hi == hint_val:
                 continue  # No real range, skip
-            ratio = opt / hint_val
-            lo = max(1, int(sym_lo * ratio))
-            hi = int(sym_hi * ratio) if sym_hi is not None else None
-            return lo, hi
+
+            # Try exact evaluation: check if sn.expr still has free symbols
+            # (not concretized), or look in shape_env.replacements for the
+            # original expression.
+            eval_expr = None
+            if expr is not None and sym in getattr(expr, "free_symbols", set()):
+                eval_expr = expr
+            else:
+                # Search replacements for an expression involving sym.
+                for repl_sym, repl_expr in replacements.items():
+                    if sym in getattr(repl_expr, "free_symbols", set()):
+                        try:
+                            if int(repl_expr.subs({sym: hint_val})) == opt:
+                                eval_expr = repl_expr
+                                break
+                        except Exception:
+                            continue
+
+            if eval_expr is not None:
+                try:
+                    v_lo = int(eval_expr.subs({sym: sym_lo}))
+                    v_hi = int(eval_expr.subs({sym: sym_hi})) if sym_hi is not None else None
+                    return max(1, min(v_lo, v_hi if v_hi is not None else v_lo)), \
+                           max(v_lo, v_hi) if v_hi is not None else None
+                except Exception:
+                    pass  # Fall through to conservative range
+
+            # Proportional scaling is inaccurate for integer-division
+            # formulas (e.g., (s18-1)//8+1 vs s18//8 differ by 1).
+            # Use min=1 as a safe lower bound — TRT broadcasts correctly
+            # with min=1, and the actual runtime value is always >= 1.
+            hi = int(sym_hi * (opt / hint_val)) if sym_hi is not None else None
+            return 1, hi
 
     return opt, opt
 
@@ -438,6 +498,7 @@ def _add_optimization_profile(
     input_nodes: List[torch.fx.Node],
     exported_program: ExportedProgram,
     trt: Any,
+    symint_exprs: Optional[Dict[str, list]] = None,
 ) -> None:
     """Create an optimization profile for dynamic inputs.
 
@@ -605,6 +666,30 @@ def _add_optimization_profile(
                                 sym_name = _get_symbol_name(s)
                                 if sym_name and sym_name in sym_ranges:
                                     lo, hi = sym_ranges[sym_name]
+                            # Try stashed SymInt expressions from the
+                            # partitioner (saved before concretization).
+                            if lo == opt_val and hi == opt_val:
+                                stashed = (fx_node.meta.get("trt_symint_exprs", {})
+                                           if fx_node is not None else {})
+                                stashed_expr = stashed.get(d)
+                                if stashed_expr is not None:
+                                    try:
+                                        free = stashed_expr.free_symbols
+                                        subs_min = {}
+                                        subs_max = {}
+                                        for sym in free:
+                                            sname = str(sym)
+                                            if sname in sym_ranges:
+                                                slo, shi = sym_ranges[sname]
+                                                subs_min[sym] = slo
+                                                subs_max[sym] = shi if shi is not None else opt_val
+                                        if subs_min:
+                                            v_lo = int(stashed_expr.subs(subs_min))
+                                            v_hi = int(stashed_expr.subs(subs_max))
+                                            lo = max(1, min(v_lo, v_hi))
+                                            hi = max(v_lo, v_hi)
+                                    except Exception:
+                                        pass  # Fall through to shape_env fallback
                             # Last resort: use shape_env.var_to_val to match
                             # back to sym_ranges from range_constraints.
                             if lo == opt_val and hi == opt_val:
@@ -629,7 +714,7 @@ def _add_optimization_profile(
                     opt_shape.append(opt_val)
                     max_shape.append(hi)
 
-            logger.debug(
+            print(
                 f"[TensorRT] Profile for '{name}': "
                 f"min={tuple(min_shape)}, opt={tuple(opt_shape)}, "
                 f"max={tuple(max_shape)}"
@@ -684,6 +769,23 @@ def _process_graph_nodes(
                 ) from e
 
             input_map[node] = output_tensor
+
+            # Log convolution layer details for debugging Cask errors
+            if "convolution" in op_name:
+                in_shape = tuple(input_map[node.args[0]].shape) if isinstance(node.args[0], torch.fx.Node) and node.args[0] in input_map else "?"
+                out_shape = tuple(output_tensor.shape) if hasattr(output_tensor, "shape") else "?"
+                groups = node.args[8] if len(node.args) > 8 else "?"
+                transposed = node.args[6] if len(node.args) > 6 else "?"
+                w_node = node.args[1]
+                w_shape = "?"
+                if isinstance(w_node, torch.fx.Node) and "val" in w_node.meta:
+                    wv = w_node.meta["val"]
+                    if hasattr(wv, "shape"):
+                        w_shape = tuple(wv.shape)
+                logger.warning(
+                    f"[TRT-CONV] {node.name}: in={in_shape}, out={out_shape}, "
+                    f"weight={w_shape}, groups={groups}, transposed={transposed}"
+                )
 
         elif node.op == "get_attr":
             attr_name = node.target
@@ -750,6 +852,11 @@ def _collect_io_bindings(network: Any) -> List[TensorRTIOBinding]:
     # Collect inputs
     for i in range(network.num_inputs):
         tensor = network.get_input(i)
+        is_shape = hasattr(tensor, "is_shape_tensor") and tensor.is_shape_tensor
+        logger.warning(
+            f"[TRT IO] input[{i}]: name={tensor.name}, dtype={tensor.dtype}, "
+            f"shape={get_safe_shape(tensor)}, is_shape_tensor={is_shape}"
+        )
         bindings.append(
             TensorRTIOBinding(
                 name=tensor.name,
@@ -821,6 +928,17 @@ def _create_builder_config(builder: Any, spec: TensorRTCompileSpec, trt: Any) ->
     # deserialized with the simpler deserializeCudaEngine(data, size) API.
     if hasattr(trt.BuilderFlag, "WEIGHT_STREAMING"):
         config.clear_flag(trt.BuilderFlag.WEIGHT_STREAMING)
+
+    # Enable cuDNN as additional tactic source.
+    if hasattr(trt, "TacticSource"):
+        config.set_tactic_sources(
+            1 << int(trt.TacticSource.CUBLAS)
+            | 1 << int(trt.TacticSource.CUBLAS_LT)
+            | 1 << int(trt.TacticSource.CUDNN)
+            | 1 << int(trt.TacticSource.EDGE_MASK_CONVOLUTIONS)
+            | 1 << int(trt.TacticSource.JIT_CONVOLUTIONS)
+        )
+
 
     if spec.precision == TensorRTPrecision.FP16:
         if builder.platform_has_fast_fp16:

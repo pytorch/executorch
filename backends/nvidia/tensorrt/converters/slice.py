@@ -44,7 +44,7 @@ def _get_positive_dim(dim: int, ndim: int) -> int:
     return dim
 
 
-@converter("aten.slice.Tensor", "aten.slice_copy.Tensor")
+@converter("aten.slice.Tensor", "aten.slice_copy.Tensor", supports_dynamic_shapes=True)
 def convert_slice(
     node: torch.fx.Node,
     network: Any,  # trt.INetworkDefinition
@@ -108,7 +108,7 @@ def convert_slice(
     input_shape = resolve_shape(raw_input_shape)
     ndim = len(input_shape)
 
-    # Parse arguments with defaults.  Resolve FX Nodes / SymInt to -1.
+    # Parse arguments with defaults.
     dim = args[1] if len(args) > 1 else kwargs.get("dim", 0)
     raw_start = args[2] if len(args) > 2 else kwargs.get("start", None)
     raw_end = args[3] if len(args) > 3 else kwargs.get("end", None)
@@ -119,13 +119,20 @@ def convert_slice(
     dim_size = input_shape[dim]  # may be -1 if dynamic
     dim_is_concrete = isinstance(dim_size, int) and dim_size > 0
 
-    # Resolve start
-    start = resolve_sym_dim(raw_start) if raw_start is not None else 0
-    if isinstance(start, int) and start < 0 and dim_is_concrete:
-        start = max(0, dim_size + start)
-    if isinstance(start, int) and start >= 0 and dim_is_concrete:
-        start = min(start, dim_size)
-    start = max(start, 0) if isinstance(start, int) else 0
+    # Check if start/end are FX Nodes (dynamic from scalar shape ops).
+    start_is_node = isinstance(raw_start, torch.fx.Node) and raw_start in input_map
+    end_is_node = isinstance(raw_end, torch.fx.Node) and raw_end in input_map
+
+    # Resolve concrete start
+    if start_is_node:
+        start = 0  # placeholder for static path; dynamic path uses shape tensor
+    else:
+        start = resolve_sym_dim(raw_start) if raw_start is not None else 0
+        if isinstance(start, int) and start < 0 and dim_is_concrete:
+            start = max(0, dim_size + start)
+        if isinstance(start, int) and start >= 0 and dim_is_concrete:
+            start = min(start, dim_size)
+        start = max(start, 0) if isinstance(start, int) else 0
 
     # Use the expected output shape from node metadata (most reliable).
     output_meta = get_node_shape(node)
@@ -146,13 +153,15 @@ def convert_slice(
 
     import numpy as np
 
+    # When start or end are FX Nodes, always use the dynamic path so we
+    # can set start/size via shape tensors.
+    has_dynamic = any(d < 0 for d in output_shape) or start_is_node or end_is_node
+
     start_slice = [0] * ndim
     start_slice[dim] = start
 
     stride_slice = [1] * ndim
     stride_slice[dim] = step if isinstance(step, int) else 1
-
-    has_dynamic = any(d < 0 for d in output_shape)
 
     if not has_dynamic:
         layer = network.add_slice(
@@ -162,57 +171,131 @@ def convert_slice(
             stride=trt.Dims(stride_slice),
         )
     else:
-        # Dynamic path: build output shape tensor from input runtime shape.
+        # Dynamic path: build start and output-shape tensors.
         shape_layer = network.add_shape(input_trt)
         shape_layer.name = f"slice_shape_{node.name}"
         shape_i32 = network.add_cast(shape_layer.get_output(0), trt.int32)
         shape_i32.name = f"slice_shape_i32_{node.name}"
         shape_trt = shape_i32.get_output(0)
 
-        # Build output shape: concrete dims from output_shape, dynamic from
-        # input shape (adjusted for the sliced dimension).
-        components = []
+        def _node_to_i32(fx_node, tag):
+            """Convert an FX Node's TRT tensor to a [1]-shaped int32 shape tensor."""
+            t = input_map[fx_node]
+            shuf = network.add_shuffle(t)
+            shuf.reshape_dims = trt.Dims([1])
+            shuf.name = f"slice_{tag}_shuf_{node.name}"
+            cast = network.add_cast(shuf.get_output(0), trt.int32)
+            cast.name = f"slice_{tag}_i32_{node.name}"
+            return cast.get_output(0)
+
+        # --- Build start tensor ---
+        start_components = []
         for i in range(ndim):
-            if output_shape[i] >= 0:
+            if i == dim and start_is_node:
+                start_components.append(_node_to_i32(raw_start, "start"))
+            else:
+                c = network.add_constant(
+                    [1], trt.Weights(np.array([start_slice[i]], dtype=np.int32))
+                )
+                c.name = f"slice_start_c{i}_{node.name}"
+                start_components.append(c.get_output(0))
+        start_cat = network.add_concatenation(start_components)
+        start_cat.axis = 0
+        start_cat.name = f"slice_start_{node.name}"
+
+        # --- Build output size tensor ---
+        # For the sliced dim: size = end - start (from FX Nodes or concrete).
+        # For other dims: use output_shape (concrete) or gather from input.
+        size_components = []
+        for i in range(ndim):
+            if i == dim and (start_is_node or end_is_node):
+                # Compute slice length = end - start using shape tensors.
+                if end_is_node:
+                    end_trt = _node_to_i32(raw_end, "end")
+                else:
+                    end_val = resolve_sym_dim(raw_end) if raw_end is not None else dim_size
+                    if end_val == sys.maxsize or (isinstance(end_val, int) and end_val < 0):
+                        end_val = dim_size if dim_is_concrete else 0
+                    end_c = network.add_constant(
+                        [1], trt.Weights(np.array([int(end_val)], dtype=np.int32))
+                    )
+                    end_c.name = f"slice_end_c_{node.name}"
+                    end_trt = end_c.get_output(0)
+                if start_is_node:
+                    start_trt = _node_to_i32(raw_start, "start2")
+                else:
+                    start_c = network.add_constant(
+                        [1], trt.Weights(np.array([start], dtype=np.int32))
+                    )
+                    start_c.name = f"slice_startv_{node.name}"
+                    start_trt = start_c.get_output(0)
+                size_sub = network.add_elementwise(
+                    end_trt, start_trt, trt.ElementWiseOperation.SUB
+                )
+                size_sub.name = f"slice_size_sub_{node.name}"
+                size_components.append(size_sub.get_output(0))
+            elif output_shape[i] >= 0:
                 c = network.add_constant(
                     [1], trt.Weights(np.array([output_shape[i]], dtype=np.int32))
                 )
                 c.name = f"slice_c{i}_{node.name}"
-                components.append(c.get_output(0))
+                size_components.append(c.get_output(0))
             else:
-                # Dynamic dim: extract from input shape.
-                # For the sliced dim, the output is smaller (start/step applied).
-                # For other dims, it matches the input.
+                # Dynamic dim: gather from input shape.
                 idx = network.add_constant(
                     [1], trt.Weights(np.array([i], dtype=np.int32))
                 )
                 g = network.add_gather(shape_trt, idx.get_output(0), axis=0)
                 g.name = f"slice_g{i}_{node.name}"
-                if i == dim and start > 0:
-                    # Subtract start from the dim size.
+                dim_out = g.get_output(0)
+                # For the sliced dim with concrete start > 0,
+                # output_size = input_dim - start.
+                if i == dim and isinstance(start, int) and start > 0:
                     start_c = network.add_constant(
                         [1], trt.Weights(np.array([start], dtype=np.int32))
                     )
-                    sub = network.add_elementwise(
-                        g.get_output(0), start_c.get_output(0),
+                    start_c.name = f"slice_sub_start_{node.name}"
+                    sub_op = network.add_elementwise(
+                        dim_out, start_c.get_output(0),
                         trt.ElementWiseOperation.SUB,
                     )
-                    sub.name = f"slice_sub{i}_{node.name}"
-                    components.append(sub.get_output(0))
-                else:
-                    components.append(g.get_output(0))
+                    sub_op.name = f"slice_dim_sub_{node.name}"
+                    dim_out = sub_op.get_output(0)
+                size_components.append(dim_out)
 
-        shape_cat = network.add_concatenation(components)
-        shape_cat.axis = 0
-        shape_cat.name = f"slice_outshape_{node.name}"
-
-        layer = network.add_slice(
-            input_trt,
-            start=start_slice,
-            shape=[1] * ndim,
-            stride=stride_slice,
+        size_cat = network.add_concatenation(size_components)
+        size_cat.axis = 0
+        size_cat.name = f"slice_outshape_{node.name}"
+        # Clamp each dim to min 1 so TRT can prove output is non-empty.
+        ones_c = network.add_constant(
+            [ndim], trt.Weights(np.array([1] * ndim, dtype=np.int32))
         )
-        layer.set_input(2, shape_cat.get_output(0))
+        ones_c.name = f"slice_ones_{node.name}"
+        size_clamped = network.add_elementwise(
+            size_cat.get_output(0), ones_c.get_output(0),
+            trt.ElementWiseOperation.MAX,
+        )
+        size_clamped.name = f"slice_clamp_{node.name}"
+
+        # Use concrete start in the constructor when possible, so TRT
+        # can verify bounds statically.  Only use shape tensor start
+        # when start is a dynamic FX Node.
+        if start_is_node:
+            layer = network.add_slice(
+                input_trt,
+                start=[0] * ndim,
+                shape=[1] * ndim,
+                stride=stride_slice,
+            )
+            layer.set_input(1, start_cat.get_output(0))
+        else:
+            layer = network.add_slice(
+                input_trt,
+                start=start_slice,
+                shape=[1] * ndim,
+                stride=stride_slice,
+            )
+        layer.set_input(2, size_clamped.get_output(0))
 
     if layer is None:
         raise RuntimeError(f"Failed to create slice layer for {node.name}")

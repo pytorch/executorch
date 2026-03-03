@@ -21,11 +21,11 @@
  *   benchmark -n 200 -w 5             # 200 iterations, 5 warmup
  */
 
+#include <dirent.h>
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <dirent.h>
 #include <memory>
 #include <string>
 #include <vector>
@@ -245,10 +245,10 @@ BenchmarkResult benchmark_pte(
       if (tmeta.ok()) {
         auto sizes = tmeta.get().sizes();
         auto dtype = tmeta.get().scalar_type();
-        inputs.emplace_back(
-            ones(std::vector<executorch::aten::SizesType>(
-                     sizes.begin(), sizes.end()),
-                 dtype));
+        inputs.emplace_back(ones(
+            std::vector<executorch::aten::SizesType>(
+                sizes.begin(), sizes.end()),
+            dtype));
       }
     }
   }
@@ -287,7 +287,7 @@ BenchmarkResult benchmark_pte(
 }
 
 // ---------------------------------------------------------------------------
-// ONNX benchmark (TensorRT native)
+// ONNX benchmark (TensorRT native, requires nvonnxparser)
 // ---------------------------------------------------------------------------
 
 BenchmarkResult benchmark_onnx(
@@ -306,8 +306,8 @@ BenchmarkResult benchmark_onnx(
     return result;
   }
 
-  auto network = std::unique_ptr<nvinfer1::INetworkDefinition>(
-      builder->createNetworkV2(
+  auto network =
+      std::unique_ptr<nvinfer1::INetworkDefinition>(builder->createNetworkV2(
           1 << static_cast<int>(
               nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH)));
   auto parser = std::unique_ptr<nvonnxparser::IParser>(
@@ -323,10 +323,9 @@ BenchmarkResult benchmark_onnx(
     return result;
   }
 
-  auto config = std::unique_ptr<nvinfer1::IBuilderConfig>(
-      builder->createBuilderConfig());
-  config->setMemoryPoolLimit(
-      nvinfer1::MemoryPoolType::kWORKSPACE, 1ULL << 30);
+  auto config =
+      std::unique_ptr<nvinfer1::IBuilderConfig>(builder->createBuilderConfig());
+  config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kWORKSPACE, 1ULL << 30);
   // Match our backend's precision: strict FP32, no TF32.
   if (config->getFlag(nvinfer1::BuilderFlag::kTF32))
     config->clearFlag(nvinfer1::BuilderFlag::kTF32);
@@ -341,8 +340,8 @@ BenchmarkResult benchmark_onnx(
     return result;
   }
 
-  auto runtime = std::unique_ptr<nvinfer1::IRuntime>(
-      nvinfer1::createInferRuntime(logger));
+  auto runtime =
+      std::unique_ptr<nvinfer1::IRuntime>(nvinfer1::createInferRuntime(logger));
   auto engine = std::unique_ptr<nvinfer1::ICudaEngine>(
       runtime->deserializeCudaEngine(plan->data(), plan->size()));
   if (!engine) {
@@ -494,7 +493,8 @@ int main(int argc, char** argv) {
     }
 
     if (result.success) {
-      printf("  %.3f ms avg (%u iterations)\n", result.avg_ms, result.iterations);
+      printf(
+          "  %.3f ms avg (%u iterations)\n", result.avg_ms, result.iterations);
     } else {
       printf("  FAILED: %s\n", result.error.c_str());
     }

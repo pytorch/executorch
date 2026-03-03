@@ -41,7 +41,7 @@ struct GPUBuffer {
   size_t size{0};
   bool is_input{false};
   int32_t tensor_index{-1};
-  size_t io_index{0};  // Index in input_buffers or output_buffers array
+  size_t io_index{0}; // Index in input_buffers or output_buffers array
   bool has_dynamic_dims{false};
 };
 
@@ -77,9 +77,7 @@ class TensorRTExecutor {
    * @param blob_size Size of the blob in bytes.
    * @return Error::Ok on success.
    */
-  runtime::Error initialize(
-      const void* blob_data,
-      size_t blob_size);
+  runtime::Error initialize(const void* blob_data, size_t blob_size);
 
   /**
    * Execute inference with the given input/output buffers.
@@ -91,7 +89,8 @@ class TensorRTExecutor {
    *
    * @param input_buffers Array of pointers to input data buffers (CPU or GPU).
    * @param num_inputs Number of input buffers.
-   * @param output_buffers Array of pointers to output data buffers (CPU or GPU).
+   * @param output_buffers Array of pointers to output data buffers (CPU or
+   * GPU).
    * @param num_outputs Number of output buffers.
    * @return Error::Ok on success.
    */
@@ -160,8 +159,8 @@ class TensorRTExecutor {
    * overhead between subgraphs.
    *
    * @param stream External CUDA stream to use.
-   * @param owns_stream If true, the executor will destroy the stream on cleanup.
-   *                    If false, the caller retains ownership.
+   * @param owns_stream If true, the executor will destroy the stream on
+   * cleanup. If false, the caller retains ownership.
    */
   void set_cuda_stream(::cudaStream_t stream, bool owns_stream = false);
 

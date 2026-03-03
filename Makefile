@@ -91,7 +91,7 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral_realtime-cpu voxtral_realtime-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral_realtime-cpu voxtral_realtime-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-trt parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
@@ -104,6 +104,8 @@ help:
 	@echo "  whisper-cuda-debug  - Build Whisper runner with CUDA backend (debug mode)"
 	@echo "  whisper-cpu         - Build Whisper runner with CPU backend"
 	@echo "  whisper-metal       - Build Whisper runner with Metal backend (macOS only)"
+	@echo "  parakeet-trt        - Build Parakeet runner with TensorRT backend"
+	@echo "  parakeet-trt-debug  - Build Parakeet runner with TensorRT backend (debug mode)"
 	@echo "  parakeet-cuda       - Build Parakeet runner with CUDA backend"
 	@echo "  parakeet-cuda-debug - Build Parakeet runner with CUDA backend (debug mode)"
 	@echo "  parakeet-cpu        - Build Parakeet runner with CPU backend"
@@ -181,6 +183,26 @@ whisper-metal:
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/whisper/whisper_runner"
 
+parakeet-trt:
+	@echo "==> Building and installing ExecuTorch with TensorRT..."
+	cmake --workflow --preset llm-release-trt
+	@echo "==> Building Parakeet runner with TensorRT..."
+	cd examples/models/parakeet && cmake --workflow --preset parakeet-trt
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
+	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_benchmark"
+
+parakeet-trt-debug:
+	@echo "==> Building and installing ExecuTorch with TensorRT (debug mode)..."
+	cmake --workflow --preset llm-debug-trt
+	@echo "==> Building Parakeet runner with TensorRT (debug mode)..."
+	cd examples/models/parakeet && cmake --workflow --preset parakeet-trt-debug
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
+	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_benchmark"
+	
 parakeet-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
 	cmake --workflow --preset llm-release-cuda

@@ -6,10 +6,15 @@
 
 """Operator support checker for TensorRT backend."""
 
+import logging
 from typing import Set
 
 import torch
+
+logger = logging.getLogger(__name__)
 from torch.fx.passes.operator_support import OperatorSupportBase
+
+from executorch.backends.nvidia.tensorrt import converter_registry
 
 
 class TensorRTOperatorSupport(OperatorSupportBase):
@@ -33,6 +38,8 @@ class TensorRTOperatorSupport(OperatorSupportBase):
         "_unsafe_view.default",
         "abs.default",
         "adaptive_avg_pool2d.default",
+        "add",  # scalar add (operator.add, shape arithmetic)
+        "add.default",  # aten scalar add
         "add.Tensor",
         "add_.Tensor",
         "addmm.default",
@@ -66,6 +73,8 @@ class TensorRTOperatorSupport(OperatorSupportBase):
         "expand.default",
         "expand_copy.default",
         "flatten.using_ints",
+        "floordiv",  # scalar floordiv (operator.floordiv, shape arithmetic)
+        "floordiv.default",
         "floor.default",
         "full.default",
         "full_like.default",
@@ -94,6 +103,8 @@ class TensorRTOperatorSupport(OperatorSupportBase):
         "max_pool2d_with_indices.default",
         "mean.dim",
         "mm.default",
+        "mul",  # scalar mul (operator.mul, shape arithmetic)
+        "mul.default",
         "mul.Scalar",
         "mul.Tensor",
         "mul_.Tensor",
@@ -132,8 +143,11 @@ class TensorRTOperatorSupport(OperatorSupportBase):
         "squeeze_copy.dim",
         "squeeze_copy.dims",
         "stack.default",
+        "sub",  # scalar sub (operator.sub, shape arithmetic)
+        "sub.default",
         "sub.Tensor",
         "sum.dim_IntList",
+        "sym_size.int",  # query tensor dimension (shape arithmetic)
         "tanh.default",
         "transpose.int",
         "unflatten.int",
@@ -188,10 +202,32 @@ class TensorRTOperatorSupport(OperatorSupportBase):
 
         # Check if we have a converter for this op
         if target_name not in self.SUPPORTED_OPS:
+            logger.debug(f"[TRT partitioner] REJECTED {node.name} ({target_name}): no converter")
             return False
 
         # Check dtype compatibility
         if not self._is_dtype_supported(node):
+            logger.debug(f"[TRT partitioner] REJECTED {node.name} ({target_name}): unsupported dtype")
+            return False
+
+        # runtime-computed values (e.g. expand sizes from dynamic shapes)
+        # that static converters cannot handle at engine-build time.
+        if self._has_symbolic_scalar_args(node):
+            # Try both the full op name and the namespace-stripped name
+            # since converters register with "aten." prefix.
+            if not (
+                converter_registry.supports_dynamic_shapes(op_name)
+                or converter_registry.supports_dynamic_shapes(target_name)
+            ):
+                logger.debug(f"[TRT partitioner] REJECTED {node.name} ({target_name}): symbolic scalar args, converter lacks supports_dynamic_shapes")
+                return False
+
+        # Reject view/reshape with dynamic output dims but all-concrete
+        # target shape.  This means the concrete ints were captured at
+        # trace time and won't adapt to different input sizes, causing
+        # volume mismatches in the TRT engine at non-trace-time shapes.
+        if self._is_stale_reshape(node, target_name):
+            logger.debug(f"[TRT partitioner] REJECTED {node.name} ({target_name}): stale reshape")
             return False
 
         return True
@@ -223,6 +259,53 @@ class TensorRTOperatorSupport(OperatorSupportBase):
                     if isinstance(a, torch.fx.Node) and self._is_symbolic_scalar_node(a):
                         return True
         return False
+
+    _RESHAPE_OPS: Set[str] = {
+        "view.default",
+        "view_copy.default",
+        "_unsafe_view.default",
+        "reshape.default",
+    }
+
+    def _is_stale_reshape(self, node: torch.fx.Node, target_name: str) -> bool:
+        """Return True if a view/reshape has dynamic output dims but a
+        fully-concrete target shape AND the converter can't handle it.
+
+        When torch.export traces with dynamic shapes, derived sizes (like
+        ``2 * seq_len - 1``) may be captured as concrete ints in the view
+        target.  At engine build time, TRT bakes those ints into the
+        shape tensor, causing volume mismatches at non-trace-time shapes.
+
+        However, when at most 1 output dim is dynamic, the converter uses
+        ``trt.Dims`` with a single -1 (inferred from input volume) and
+        concrete values from the *metadata* — not from the stale target
+        args — so the reshape adapts correctly at runtime.
+        """
+        if target_name not in self._RESHAPE_OPS:
+            return False
+        if len(node.args) < 2:
+            return False
+
+        # Check if the output shape has any dynamic (symbolic) dims.
+        val = node.meta.get("val")
+        if val is None or not hasattr(val, "shape"):
+            return False
+
+        num_sym = sum(1 for s in val.shape if type(s).__name__ == "SymInt")
+        if num_sym == 0:
+            return False  # No dynamic dims → not stale
+
+        if num_sym <= 1:
+            return False
+
+        # Reject if target_shape is all concrete (stale trace-time values).
+        target_shape = node.args[1]
+        if not isinstance(target_shape, (list, tuple)):
+            return False
+        all_concrete = all(
+            isinstance(d, int) for d in target_shape
+        )
+        return all_concrete
 
     def _get_op_name(self, node: torch.fx.Node) -> str:
         """Extract operation name from node target.
