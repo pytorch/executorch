@@ -495,6 +495,12 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--mlx",
+        action="store_true",
+        help="Delegate to MLX backend (Apple Silicon). Use with --use_kv_cache=True.",
+    )
+
+    parser.add_argument(
         "--expand_rope_table",
         default=False,
         action="store_true",
@@ -764,6 +770,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             coreml=llm_config.backend.coreml.enabled,
             coreml_ios=llm_config.backend.coreml.ios,
             vulkan=llm_config.backend.vulkan.enabled,
+            mlx=llm_config.backend.mlx.enabled,
             use_qat=llm_config.quantization.use_qat,
             use_lora=llm_config.base.use_lora,
             preq_mode=(
@@ -1019,6 +1026,34 @@ def _to_edge_and_lower_llama_arm(
 
     builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
         partitioners
+    )
+
+    if verbose:
+        print_delegation_info(builder.edge_manager.exported_program().graph_module)
+
+    return builder.to_executorch(passes=additional_passes)
+
+
+def _to_edge_and_lower_llama_mlx(
+    builder_exported,
+    modelname,
+    quantizers,
+    additional_passes,
+    verbose: bool = False,
+) -> LLMEdgeManager:
+    """
+    Lower Llama model to MLX backend using to_edge_transform_and_lower.
+    """
+    logging.info("Lowering model using MLX partitioner")
+
+    from executorch.backends.mlx.partitioner import MLXPartitioner
+    from executorch.backends.mlx.passes import get_default_passes
+
+    partitioners = [MLXPartitioner()]
+
+    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
+        partitioners,
+        transform_passes=get_default_passes(),
     )
 
     if verbose:
@@ -1395,6 +1430,14 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             llm_config,
             verbose=llm_config.debug.verbose,
         )
+    elif llm_config.backend.mlx.enabled:
+        builder = _to_edge_and_lower_llama_mlx(
+            builder_exported,
+            modelname,
+            quantizers,
+            additional_passes,
+            verbose=llm_config.debug.verbose,
+        )
     else:
         builder = _to_edge_and_lower_llama(
             builder_exported,
@@ -1572,6 +1615,7 @@ def _get_source_transforms(  # noqa
     coreml: bool = False,
     coreml_ios: int = 15,
     vulkan: bool = False,
+    mlx: bool = False,
     use_qat: bool = False,
     use_lora: int = 0,
     preq_mode: Optional[str] = None,
@@ -1748,6 +1792,19 @@ def _get_source_transforms(  # noqa
             else:
                 transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_kv_cache_with_coreml_kv_cache)
+
+        elif mlx:
+            from executorch.backends.mlx.llm.source_transformation import (
+                replace_et_kv_cache_with_mlx,
+                transform_attention_mha_to_mlx,
+            )
+            from executorch.examples.models.llama.source_transformation.rms_norm import (
+                replace_rms_norm_with_native_rms_norm,
+            )
+
+            transforms.append(transform_attention_mha_to_mlx)
+            transforms.append(replace_et_kv_cache_with_mlx)
+            transforms.append(replace_rms_norm_with_native_rms_norm)
 
     if local_global_attention:
         transforms.append(

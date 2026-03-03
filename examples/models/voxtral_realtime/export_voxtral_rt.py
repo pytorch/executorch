@@ -35,9 +35,7 @@ import os
 
 import torch
 import torch.nn as nn
-
 from executorch.examples.models.voxtral_realtime.model import load_model
-
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -101,7 +99,13 @@ class TokenEmbeddingExport(nn.Module):
 
 
 def _export_decoder_and_embedding(
-    programs, model, max_seq_len, qlinear, qlinear_group_size, qembedding
+    programs,
+    model,
+    max_seq_len,
+    qlinear,
+    qlinear_group_size,
+    qembedding,
+    qembedding_group_size,
 ):
     """Export text_decoder and token_embedding into programs dict."""
     from executorch.extension.llm.export.quantize import quantize_model_
@@ -143,6 +147,7 @@ def _export_decoder_and_embedding(
         quantize_model_(
             tok_emb,
             qembedding_config=qembedding,
+            qembedding_group_size=qembedding_group_size,
         )
 
     tok_seq_dim = Dim("tok_seq_len", min=1, max=max_seq_len)
@@ -164,6 +169,7 @@ def export_all(
     qlinear=None,
     qlinear_group_size=32,
     qembedding=None,
+    qembedding_group_size=0,
     backend="xnnpack",
 ):
     """Export all three model components with per-component quantization."""
@@ -209,7 +215,13 @@ def export_all(
 
     # 2-3. Text decoder + token embedding
     _export_decoder_and_embedding(
-        programs, model, max_seq_len, qlinear, qlinear_group_size, qembedding
+        programs,
+        model,
+        max_seq_len,
+        qlinear,
+        qlinear_group_size,
+        qembedding,
+        qembedding_group_size,
     )
 
     metadata = {
@@ -235,6 +247,7 @@ def export_streaming(
     qlinear=None,
     qlinear_group_size=32,
     qembedding=None,
+    qembedding_group_size=0,
     backend="xnnpack",
 ):
     """Export streaming model components with per-component quantization."""
@@ -275,7 +288,13 @@ def export_streaming(
 
     # 2-3. Text decoder + token embedding
     _export_decoder_and_embedding(
-        programs, model, max_seq_len, qlinear, qlinear_group_size, qembedding
+        programs,
+        model,
+        max_seq_len,
+        qlinear,
+        qlinear_group_size,
+        qembedding,
+        qembedding_group_size,
     )
 
     # Derive STFT overlap from audio parameters.
@@ -332,6 +351,60 @@ def _linear_bias_decomposition(input, weight, bias=None):
     return out
 
 
+def export_preprocessor(output_dir, backend="xnnpack", streaming=False):
+    """Export mel spectrogram preprocessor.
+
+    Uses XNNPACK for all backends except MLX, which uses MLX partitioner.
+    """
+    from executorch.extension.audio.mel_spectrogram import WhisperAudioProcessor
+
+    # Use MLX partitioner for mlx backend, XNNPACK for everything else
+    pp_backend = "mlx" if backend == "mlx" else "xnnpack"
+    print(f"  Using {pp_backend.upper()} partitioner for preprocessor...")
+
+    model = WhisperAudioProcessor(
+        feature_size=128,
+        max_audio_len=300,
+        streaming=streaming,
+    )
+
+    audio_tensor = torch.randn(93680)
+    shapes_collection = torch.export.ShapesCollection()
+    max_n_chunks = int(model.max_audio_len * model.n_samples)
+    shapes_collection[audio_tensor] = {0: Dim.DYNAMIC(max=max_n_chunks)}
+
+    with torch.no_grad(), torch.fx.experimental._config.patch(
+        backed_size_oblivious=True
+    ):
+        ep = export(
+            model, (audio_tensor,), dynamic_shapes=shapes_collection, strict=True
+        )
+
+        if pp_backend == "mlx":
+            from executorch.backends.mlx.partitioner import MLXPartitioner
+
+            partitioner = [MLXPartitioner()]
+        else:
+            from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+                XnnpackPartitioner,
+            )
+
+            partitioner = [XnnpackPartitioner()]
+
+        edge = to_edge_transform_and_lower(
+            ep,
+            partitioner=partitioner,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        exec_prog = edge.to_executorch()
+
+        pp_path = os.path.join(output_dir, "preprocessor.pte")
+        with open(pp_path, "wb") as f:
+            exec_prog.write_to_file(f)
+        size_mb = os.path.getsize(pp_path) / (1024 * 1024)
+        print(f"  Saved preprocessor to {pp_path} ({size_mb:.1f} MB)")
+
+
 def lower_to_executorch(programs, metadata, backend="xnnpack"):
     """Lower exported programs to ExecuTorch."""
     if backend == "xnnpack":
@@ -363,6 +436,11 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
         for key in programs:
             compile_specs = [MetalBackend.generate_method_name_compile_spec(key)]
             partitioner[key] = [MetalPartitioner(compile_specs)]
+    elif backend == "mlx":
+        from executorch.backends.mlx.partitioner import MLXPartitioner
+
+        print("\nLowering to ExecuTorch with MLX...")
+        partitioner = {key: [MLXPartitioner()] for key in programs}
     else:
         print("\nLowering to ExecuTorch (portable)...")
         partitioner = []
@@ -403,7 +481,7 @@ def main():
     parser.add_argument(
         "--backend",
         default="xnnpack",
-        choices=["portable", "xnnpack", "metal"],
+        choices=["portable", "xnnpack", "metal", "mlx"],
         help="Backend for acceleration (default: xnnpack)",
     )
     parser.add_argument(
@@ -454,6 +532,12 @@ def main():
         help="Quantize embedding layers (8-bit weight-only).",
     )
     parser.add_argument(
+        "--qembedding-group-size",
+        type=int,
+        default=0,
+        help="Group size for embedding quantization (default: 0 = per-channel).",
+    )
+    parser.add_argument(
         "--streaming",
         action="store_true",
         help="Export streaming encoder (encode_audio_chunk) instead of offline encoder.",
@@ -463,6 +547,11 @@ def main():
         type=int,
         default=750,
         help="Encoder sliding window size for streaming (default: 750).",
+    )
+    parser.add_argument(
+        "--export-preprocessor",
+        action="store_true",
+        help="Also export preprocessor.pte (uses XNNPACK, or MLX for --backend mlx).",
     )
     args = parser.parse_args()
 
@@ -498,6 +587,7 @@ def main():
         "qlinear": args.qlinear,
         "qlinear_group_size": args.qlinear_group_size,
         "qembedding": args.qembedding,
+        "qembedding_group_size": args.qembedding_group_size,
         "backend": args.backend,
     }
     if args.streaming:
@@ -517,6 +607,11 @@ def main():
         et.write_to_file(f)
     size_mb = os.path.getsize(pte_path) / (1024 * 1024)
     print(f"Saved {size_mb:.1f} MB")
+
+    # Export preprocessor if requested
+    if args.export_preprocessor:
+        print("\nExporting preprocessor...")
+        export_preprocessor(args.output_dir, args.backend, args.streaming)
 
     print("\nDone!")
 
