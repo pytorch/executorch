@@ -37,8 +37,8 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.leaky_relu_converter import (
     LeakyReluConverter,
 )
-from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.max_pool_2d_converter import (
-    MaxPool2dConverter,
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.max_pool2d_with_indices_converter import (
+    MaxPool2DWithIndicesConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.mean_dim_converter import (
     MeanDimConverter,
@@ -107,7 +107,7 @@ __all__ = [
     "GetItemConverter",
     "HardTanhConverter",
     "LeakyReluConverter",
-    "MaxPool2dConverter",
+    "MaxPool2DWithIndicesConverter",
     "MeanDimConverter",
     "MMConverter",
     "MulTensorConverter",

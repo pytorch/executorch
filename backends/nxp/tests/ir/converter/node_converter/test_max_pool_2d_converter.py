@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
+
 import numpy as np
 import pytest
 import torch
@@ -23,7 +25,8 @@ from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 from executorch.exir.dialects._ops import ops as exir_ops
 
 ExecutorchDelegateCall = torch.ops.higher_order.executorch_call_delegate
-MaxPool2D = exir_ops.edge.aten.max_pool2d.default
+GetItem = operator.getitem
+MaxPool2D = exir_ops.edge.aten.max_pool2d_with_indices.default
 Squeeze = exir_ops.edge.aten.squeeze.default
 SqueezeDim = exir_ops.edge.aten.squeeze.dim
 SqueezeDims = exir_ops.edge.aten.squeeze.dims
@@ -88,6 +91,7 @@ class TestMaxPool2DSupported:
 
         # Make sure the tested program contains the `MaxPool`.
         assert graph_contains_any_of_ops(edge_partition.graph, [MaxPool2D])
+        assert graph_contains_any_of_ops(edge_partition.graph, [GetItem])
 
         convert_run_compare(
             edge_partition,
@@ -135,6 +139,7 @@ class TestMaxPool2DUnsupported:
         ).exported_program()
 
         assert graph_contains_any_of_ops(edge_model.graph, [MaxPool2D])
+        assert graph_contains_any_of_ops(edge_model.graph, [GetItem])
         assert not graph_contains_any_of_ops(edge_model.graph, [ExecutorchDelegateCall])
 
     def test_unsupported_dilation(self):
@@ -236,6 +241,7 @@ class TestMaxPool1D:
 
         # Make sure the tested program contains the `MaxPool`.
         assert graph_contains_any_of_ops(edge_partition.graph, [MaxPool2D])
+        assert graph_contains_any_of_ops(edge_partition.graph, [GetItem])
 
         convert_run_compare(
             edge_partition,

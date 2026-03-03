@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
+
 import torch
 
 from executorch.backends.nxp.edge_passes.neutron_edge_pass import NeutronEdgePass
@@ -16,10 +18,11 @@ from torch.fx.passes.infra.pass_base import PassResult
 # Operator aliases for better readability.
 AddMM = exir_ops.edge.aten.addmm.default
 AvgPool2D = exir_ops.edge.aten.avg_pool2d.default
-MaxPool2D = exir_ops.edge.aten.max_pool2d.default
+MaxPool2D = exir_ops.edge.aten.max_pool2d_with_indices.default
 Conv = exir_ops.edge.aten.convolution.default
 Clone = exir_ops.edge.aten.clone.default
 CloneDimOrder = exir_ops.edge.dim_order_ops._clone_dim_order.default
+Getitem = operator.getitem
 HardTanh = exir_ops.edge.aten.hardtanh.default
 MM = exir_ops.edge.aten.mm.default
 Relu = exir_ops.edge.aten.relu.default
@@ -120,7 +123,7 @@ class MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
             ViewCopy,
             UnsqueezeCopy,
         ],
-        # MaxPool1D is represented in edge as Unsqueeze -> MaxPool2D -> Squeeze. The reshaping nodes must be moved out
+        # MaxPool1D is represented in edge as Unsqueeze -> MaxPool2D -> Getitem -> Squeeze. The reshaping nodes must be moved out
         #  of the cluster. Instead of [Un]squeeze, ViewCopy can be used as well.
         MaxPool2D: [
             ViewCopy,
@@ -230,9 +233,9 @@ class MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
             ViewCopy,
             SqueezeCopy,
         ],
-        # MaxPool1D is represented in edge as Unsqueeze -> MaxPool2D -> Squeeze. The reshaping nodes must be moved out
+        # MaxPool1D is represented in edge as Unsqueeze -> MaxPool2D -> Getitem -> Squeeze. The reshaping nodes must be moved out
         #  of the cluster. Instead of [Un]squeeze, ViewCopy can be used as well.
-        MaxPool2D: [
+        Getitem: [
             ViewCopy,
             SqueezeCopy,
         ],
@@ -268,7 +271,14 @@ class MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
                 continue
 
             # Make sure the nodes are part of the same QDQ cluster.
-            cluster = QDQClusterRecognizer().get_qdq_cluster(main_cluster_node)
+            # In the use case where `main_cluster_node` is mapped to a `getitem`, its parent node must be used to
+            #  satisfy the requirements of the `QDQClusterRecognizer`.
+            actual_main_cluster_node = (
+                main_cluster_node
+                if main_cluster_node.target != Getitem
+                else main_cluster_node.args[0]
+            )
+            cluster = QDQClusterRecognizer().get_qdq_cluster(actual_main_cluster_node)
             if any(
                 node_ not in cluster
                 for node_ in [quantize_node, aux_node, main_cluster_node]
