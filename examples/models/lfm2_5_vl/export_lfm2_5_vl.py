@@ -216,7 +216,7 @@ def export_token_embedding(
     example_ids = torch.zeros(1, MAX_SEQ_LEN, dtype=torch.int64)
     with torch.no_grad():
         ep = torch.export.export(
-            embed_module, (example_ids,), dynamic_shapes=dynamic_shapes, strict=True
+            embed_module, (example_ids,), dynamic_shapes=dynamic_shapes, strict=False
         )
     return ep
 
