@@ -11,6 +11,8 @@ This module provides a Python interface to the ExecuTorch multimodal LLM runner,
 enabling processing of mixed inputs (text, images, audio) and text generation.
 """
 
+import torch  # preload libtorch shared libs for _llm_runner
+
 try:
     # Import shared components from the compiled C++ extension
     from executorch.extension.llm.runner._llm_runner import (  # noqa: F401
@@ -35,7 +37,6 @@ except ImportError:
 import logging
 from typing import Callable, List, Optional, Union
 
-import torch
 from transformers.feature_extraction_utils import BatchFeature
 
 

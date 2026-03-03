@@ -75,9 +75,7 @@ def to_quantized_edge_program(
     exir_program_aten = torch.export.export(model, example_input, strict=True)
     module = exir_program_aten.module()
 
-    neutron_target_spec = NeutronTargetSpec(
-        target="imxrt700", neutron_converter_flavor="SDK_25_12"
-    )
+    neutron_target_spec = NeutronTargetSpec(target="imxrt700")
 
     # Quantize model
     quantizer = NeutronQuantizer(
@@ -134,7 +132,7 @@ def to_quantized_edge_program(
         (
             [
                 NeutronPartitioner(
-                    generate_neutron_compile_spec("imxrt700", "SDK_25_12"),
+                    generate_neutron_compile_spec("imxrt700"),
                     neutron_target_spec=neutron_target_spec,
                     post_quantization_state_dict=exir_program_aten_quant.state_dict(),
                 )

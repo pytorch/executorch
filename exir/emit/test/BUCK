@@ -1,4 +1,7 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
 oncall("executorch")
 # add this empty BUCK file to unblock landing. Without this, we get land error:
 #   "No build file at xplat/executorch/exir/tests/BUCK when resolving target fbsource//xplat/executorch/exir/tests:."
@@ -6,10 +9,8 @@ oncall("executorch")
 
 # !!!! fbcode/executorch/exir/emit/test/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
 
-load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
-
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     # @autodeps-skip pybindings don't work well with autodeps
     name = "emit",
     srcs = [
