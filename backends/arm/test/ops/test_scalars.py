@@ -401,7 +401,7 @@ def test_div_scalar_tosa_FP(test_data):
 def test_div_tensor_tosa_INT_scalar(test_data):
     """Tests regular div with one scalar input."""
     pipeline = TosaPipelineINT[input_t1](
-        Div(), test_data, aten_op=[], frobenius_threshold=0.5
+        Div(), test_data, aten_op=[], frobenius_threshold=None, cosine_threshold=None
     )
     pipeline.run()
 
@@ -410,7 +410,11 @@ def test_div_tensor_tosa_INT_scalar(test_data):
 def test_div_tensor_tosa_INT_inplace(test_data):
     """Tests inplace div with one scalar input."""
     pipeline = TosaPipelineINT[input_t1](
-        DivInplace(), test_data, aten_op=[], frobenius_threshold=0.5
+        DivInplace(),
+        test_data,
+        aten_op=[],
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 

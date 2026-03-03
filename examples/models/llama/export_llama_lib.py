@@ -39,6 +39,7 @@ from executorch.extension.llm.export.partitioner_lib import (
     get_openvino_partitioner,
     get_qnn_partitioner,
     get_tosa_partitioner,
+    get_vgf_partitioner,
     get_vulkan_partitioner,
     get_xnnpack_partitioner,
 )
@@ -50,6 +51,7 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_pt2e_quantizers,
     get_qnn_quantizer,
     get_tosa_quantizer,
+    get_vgf_quantizer,
     get_vulkan_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
@@ -824,6 +826,13 @@ def get_quantizer_and_quant_params(llm_config):
             llm_config.quantization.pt2e_quantize.value,
         )
         quantizers.append(ethosu_quantizer)
+    if llm_config.backend.vgf.enabled and llm_config.quantization.pt2e_quantize:
+        vgf_quantizer = get_vgf_quantizer(
+            llm_config.backend.vgf.compile_spec,
+            llm_config.backend.vgf.compiler_flags,
+            llm_config.quantization.pt2e_quantize.value,
+        )
+        quantizers.append(vgf_quantizer)
     if llm_config.backend.vulkan.enabled and llm_config.quantization.pt2e_quantize:
         assert (
             len(quantizers) == 0
@@ -1013,6 +1022,14 @@ def _to_edge_and_lower_llama_arm(
             )
         )
         modelname = f"ethosu_{modelname}"
+    elif llm_config.backend.vgf.enabled:
+        partitioners.append(
+            get_vgf_partitioner(
+                llm_config.backend.vgf.compile_spec,
+                llm_config.backend.vgf.compiler_flags,
+            )
+        )
+        modelname = f"vgf_{modelname}"
     elif llm_config.backend.tosa.enabled:
         partitioners.append(get_tosa_partitioner(llm_config.backend.tosa.version))
         modelname = f"tosa_{modelname}"
@@ -1306,7 +1323,10 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
 
     # Convert to executorch and save
     first_builder.edge_manager = edge_manager
-    first_builder = first_builder.to_executorch(passes=additional_passes)
+    first_builder = first_builder.to_executorch(
+        passes=additional_passes,
+        share_mutable_buffers=llm_config.multimethod_lora.share_mutable_buffers,
+    )
 
     output_file = _get_output_filename(
         llm_config,
@@ -1336,7 +1356,11 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
 
     # export_to_edge
     builder_manager = _prepare_for_llama_export(llm_config)
-    if llm_config.backend.tosa.enabled:
+    if (
+        llm_config.backend.tosa.enabled
+        or llm_config.backend.vgf.enabled
+        or llm_config.backend.ethosu.enabled
+    ):
         builder_manager.skip_dim_order = False
     builder_exported = builder_manager.export()
     builder_exported.run_canonical_optimizations()
@@ -1383,7 +1407,11 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             openvino_device=llm_config.backend.openvino.device,
             verbose=llm_config.debug.verbose,
         )
-    elif llm_config.backend.tosa.enabled or llm_config.backend.ethosu.enabled:
+    elif (
+        llm_config.backend.tosa.enabled
+        or llm_config.backend.ethosu.enabled
+        or llm_config.backend.vgf.enabled
+    ):
         builder = _to_edge_and_lower_llama_arm(
             builder_exported,
             modelname,
