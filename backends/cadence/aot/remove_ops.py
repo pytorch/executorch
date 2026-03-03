@@ -757,8 +757,8 @@ class RemoveCatFromSliceCopyPass(RemoveOrReplacePassInterface):
     def maybe_remove_or_replace(self, node: Node) -> bool:
         cat_node = get_arg(node, "input", Node)
         slice_dim = get_arg(node, "dim", int)
-        start_idx = get_arg(node, "start", int)
-        end_idx = get_arg(node, "end", int)
+        start_idx = get_arg(node, "start", Optional[int])
+        end_idx = get_arg(node, "end", Optional[int])
         step = get_arg(node, "step", int)
 
         if cat_node.target != exir_ops.edge.aten.cat.default or step != 1:
