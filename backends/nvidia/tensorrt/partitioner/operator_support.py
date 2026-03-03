@@ -185,6 +185,7 @@ class TensorRTOperatorSupport(OperatorSupportBase):
     SUPPORTED_DTYPES: Set[torch.dtype] = {
         torch.bool,
         torch.bfloat16,
+        torch.float16,
         torch.float32,
         torch.int64,
     }
@@ -203,6 +204,12 @@ class TensorRTOperatorSupport(OperatorSupportBase):
         # Check if we have a converter for this op
         if target_name not in self.SUPPORTED_OPS:
             logger.debug(f"[TRT partitioner] REJECTED {node.name} ({target_name}): no converter")
+            return False
+
+        # Reject nodes that produce scalar (non-tensor) outputs — the
+        # ExecuTorch emitter requires all delegate outputs to be tensors.
+        if not self._produces_tensor_output(node):
+            logger.debug(f"[TRT partitioner] REJECTED {node.name} ({target_name}): non-tensor output")
             return False
 
         # Check dtype compatibility
@@ -354,6 +361,23 @@ class TensorRTOperatorSupport(OperatorSupportBase):
         if len(parts) > 2:
             parts.pop(0)
         return ".".join(parts)
+
+    @staticmethod
+    def _produces_tensor_output(node: torch.fx.Node) -> bool:
+        """Return True if the node produces tensor output(s).
+
+        The ExecuTorch emitter requires all delegate outputs to be TensorSpecs.
+        Nodes that produce plain scalars (int, float, SymInt) must stay outside
+        the delegate to avoid emitter failures.
+        """
+        if "val" not in node.meta:
+            return True
+        val = node.meta["val"]
+        if isinstance(val, torch.Tensor):
+            return True
+        if isinstance(val, (list, tuple)):
+            return all(isinstance(v, torch.Tensor) for v in val)
+        return False
 
     def _is_dtype_supported(self, node: torch.fx.Node) -> bool:
         """Check if output dtype is supported.

@@ -25,11 +25,24 @@ python export_parakeet_tdt.py --audio /path/to/audio.wav
 | Argument | Description |
 |----------|-------------|
 | `--output-dir` | Output directory for exports (default: `./parakeet_tdt_exports`) |
-| `--backend` | Backend for acceleration: `portable`, `xnnpack`, `metal`, `cuda`, `cuda-windows` (default: `xnnpack`) |
-| `--dtype` | Data type: `fp32`, `bf16`, `fp16` (default: `fp32`). Metal backend supports `fp32` and `bf16` only (no `fp16`). |
+| `--backend` | Backend for acceleration: `portable`, `xnnpack`, `metal`, `cuda`, `cuda-windows`, `tensorrt` (default: `xnnpack`) |
+| `--dtype` | Data type: `fp32`, `bf16`, `fp16` (default: `fp32`). See dtype support table below. |
 | `--audio` | Path to audio file for transcription test |
 
 **Note:** The preprocessor is always lowered with the portable backend regardless of the `--backend` setting.
+
+#### Dtype Support by Backend
+
+| Backend | fp32 | bf16 | fp16 |
+|---------|------|------|------|
+| portable | Yes | - | - |
+| xnnpack | Yes | - | - |
+| metal | Yes | Yes | - |
+| cuda | Yes | Yes | - |
+| cuda-windows | Yes | Yes | - |
+| tensorrt | Yes | - | Yes |
+
+TensorRT bf16 is not yet supported because the TRT converter pipeline converts weight tensors via NumPy (`tensor.numpy()`), which has no bfloat16 dtype. This affects `conv2d`, `linear`, `batch_norm`, `layer_norm`, and `embedding` converters. Supporting bf16 requires either using the pointer-based `trt.Weights(trt.bfloat16, tensor.data_ptr(), count)` API or casting to float32 before numpy conversion across all converters.
 
 ### Quantization
 
@@ -110,6 +123,16 @@ Alternatively, you can build torchao with Metal support while installing ExecuTo
 ```bash
 EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_executorch.sh
 ```
+
+### TensorRT Export (Linux)
+
+```bash
+python export_parakeet_tdt.py --backend tensorrt --dtype fp16 --output-dir ./parakeet_trt
+```
+
+This generates:
+- `model.pte` - The compiled Parakeet TDT model (includes TensorRT engine)
+- `tokenizer.model` - SentencePiece tokenizer
 
 ### Metal Export (macOS)
 

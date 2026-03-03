@@ -63,6 +63,7 @@
             "inherits": ["parakeet-base"],
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
+                "EXECUTORCH_BUILD_CUDA": "ON",
                 "EXECUTORCH_BUILD_TENSORRT": "ON"
             },
             "condition": {

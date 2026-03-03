@@ -222,11 +222,11 @@
       "name": "llm-debug-trt",
       "displayName": "LLM debug build with TensorRT",
       "inherits": [
-        "llm-debug"
+        "llm-debug-cuda"
       ],
       "cacheVariables": {
-        "EXECUTORCH_BUILD_CUDA": "ON",
-        "EXECUTORCH_BUILD_TENSORRT": "ON"
+        "EXECUTORCH_BUILD_TENSORRT": "ON",
+        "EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL": "ON"
       },
       "condition": {
         "type": "inList",

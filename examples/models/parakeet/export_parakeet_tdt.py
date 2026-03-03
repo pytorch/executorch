@@ -349,6 +349,7 @@ def export_all(
     max_mel_frames = int(max_audio_sec / window_stride)
 
     preprocessor_wrapper = PreprocessorWrapper(model.preprocessor)
+    preprocessor_wrapper.float()
     preprocessor_wrapper.eval()
 
     sample_audio = torch.randn(max_audio_samples, dtype=torch.float)
@@ -560,9 +561,19 @@ def _create_cuda_partitioners(programs, is_windows=False):
     return partitioner, updated_programs
 
 
-def _create_tensorrt_partitioners(programs):
+def _create_tensorrt_partitioners(programs, dtype=torch.float32):
     """Create TensorRT partitioners for all programs except preprocessor."""
+    from executorch.backends.nvidia.tensorrt.compile_spec import (
+        TensorRTCompileSpec,
+        TensorRTPrecision,
+    )
     from executorch.backends.nvidia.tensorrt.partitioner import TensorRTPartitioner
+
+    precision = TensorRTPrecision.FP32
+    if dtype == torch.float16:
+        precision = TensorRTPrecision.FP16
+
+    compile_specs = TensorRTCompileSpec(precision=precision).to_compile_specs()
 
     print("\nLowering to ExecuTorch with TensorRT...")
     partitioner = {}
@@ -570,11 +581,11 @@ def _create_tensorrt_partitioners(programs):
         if key == "preprocessor":
             partitioner[key] = []
         else:
-            partitioner[key] = [TensorRTPartitioner()]
+            partitioner[key] = [TensorRTPartitioner(compile_specs=compile_specs)]
     return partitioner, programs
 
 
-def lower_to_executorch(programs, metadata=None, backend="portable"):
+def lower_to_executorch(programs, metadata=None, backend="portable", dtype=torch.float32):
     if backend == "xnnpack":
         partitioner, programs = _create_xnnpack_partitioners(programs)
     elif backend == "metal":
@@ -584,7 +595,7 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
             programs, is_windows=(backend == "cuda-windows")
         )
     elif backend == "tensorrt":
-        partitioner, programs = _create_tensorrt_partitioners(programs)
+        partitioner, programs = _create_tensorrt_partitioners(programs, dtype=dtype)
     else:
         print("\nLowering to ExecuTorch...")
         partitioner = []
@@ -608,7 +619,7 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
             extract_delegate_segments=True,
             memory_planning_pass=MemoryPlanningPass(
                 alloc_graph_input=False,
-                alloc_graph_output=False,
+                alloc_graph_output=True,
             ),
             do_quant_fusion_and_const_prop=True,
         ),
@@ -694,7 +705,7 @@ def main():
     args = parser.parse_args()
 
     # Validate dtype
-    if args.dtype == "fp16":
+    if args.dtype == "fp16" and args.backend != "tensorrt":
         parser.error("fp16 is not yet supported")
 
     # Validate fpa4w quantization requires Metal backend
@@ -720,7 +731,13 @@ def main():
         model = model.to(torch.float16)
 
     print("\nExporting components...")
-    export_dtype = torch.bfloat16 if args.dtype == "bf16" else torch.float
+    export_dtype = (
+        torch.bfloat16
+        if args.dtype == "bf16"
+        else torch.float16
+        if args.dtype == "fp16"
+        else torch.float
+    )
     programs, metadata = export_all(
         model,
         dtype=export_dtype,
@@ -738,7 +755,7 @@ def main():
         qembedding_group_size=args.qembedding_group_size,
     )
 
-    et = lower_to_executorch(programs, metadata=metadata, backend=args.backend)
+    et = lower_to_executorch(programs, metadata=metadata, backend=args.backend, dtype=export_dtype)
 
     pte_path = os.path.join(args.output_dir, "model.pte")
     print(f"\nSaving ExecuTorch program to: {pte_path}")
