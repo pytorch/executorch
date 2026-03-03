@@ -13,6 +13,7 @@ try:
     from executorch.backends.arm.quantizer.arm_quantizer import (
         EthosUQuantizer,
         TOSAQuantizer,
+        VgfQuantizer,
     )
 
     HAS_ARM_BACKEND = True
@@ -20,6 +21,7 @@ except ImportError:
     HAS_ARM_BACKEND = False
     EthosUQuantizer = None
     TOSAQuantizer = None
+    VgfQuantizer = None
 
 from executorch.examples.models.llama.export_llama_lib import (
     _export_llama,
@@ -93,3 +95,19 @@ class ExportLlamaLibTest(unittest.TestCase):
         self.assertIsNone(quant_dtype)
         self.assertEqual(len(quantizers), 1)
         self.assertIsInstance(quantizers[0], EthosUQuantizer)
+
+    @unittest.skipUnless(HAS_ARM_BACKEND, "ARM backend not available")
+    def test_get_quantizer_and_quant_params_returns_vgf_quantizer(self):
+        llm_config = LlmConfig()
+        llm_config.backend.vgf.enabled = True
+        llm_config.backend.vgf.compile_spec = "TOSA-1.0+INT"
+        llm_config.quantization.pt2e_quantize = Pt2eQuantize.vgf_8a8w
+
+        pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(
+            llm_config
+        )
+
+        self.assertIsNone(pt2e_quant_params)
+        self.assertIsNone(quant_dtype)
+        self.assertEqual(len(quantizers), 1)
+        self.assertIsInstance(quantizers[0], VgfQuantizer)
