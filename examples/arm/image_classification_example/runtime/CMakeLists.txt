@@ -95,11 +95,11 @@ target_link_libraries(
          cortex_m_ops_lib
 )
 
-# We need to include whole archive for the EthosUBackend
-target_link_libraries(
-  img_class_example PUBLIC "-Wl,--whole-archive" executorch_delegate_ethos_u
-                           "-Wl,--no-whole-archive"
-)
+# Apply whole-archive helper where available to keep static initializers.
+include(${ET_DIR_PATH}/tools/cmake/Utils.cmake)
+executorch_target_link_options_shared_lib(executorch_delegate_ethos_u)
+
+target_link_libraries(img_class_example PUBLIC executorch_delegate_ethos_u)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(LINK_FILE_EXT ld)

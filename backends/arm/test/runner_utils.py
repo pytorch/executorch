@@ -413,14 +413,24 @@ def run_corstone(
         f.write(executorch_program_manager.buffer)
 
     input_paths = save_inputs_to_file(exported_program, inputs, intermediate_path)
+    # Keep semihosting command line short: the FVP truncates long cmd strings.
+    # Alias generated input files to compact names in the same directory.
+    aliased_input_paths = []
+    for idx, input_path in enumerate(input_paths):
+        short_name = f"i{idx}.bin"
+        short_path = os.path.join(intermediate_path, short_name)
+        if os.path.abspath(input_path) != os.path.abspath(short_path):
+            shutil.copyfile(input_path, short_path)
+        aliased_input_paths.append(short_path)
 
     output_base_name = "out"
 
     cmd_line = "executor_runner -m program.pte -o out"
-    for input_path in input_paths:
-        relative_path = os.path.relpath(
-            Path(input_path).resolve(), start=intermediate_path
-        )
+    for input_path in aliased_input_paths:
+        # Use local basenames to avoid '/var' -> '/private/var' resolve expansion
+        # on macOS, which can produce long '../../..' paths and exceed FVP's
+        # semihosting cmd_line limit.
+        relative_path = Path(input_path).name
         cmd_line += f" -i {relative_path}"
 
     if len(cmd_line) > 256:
