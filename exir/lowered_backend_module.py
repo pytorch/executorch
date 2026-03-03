@@ -373,6 +373,8 @@ def _fixup_output_node(gm: torch.fx.GraphModule) -> None:
                         outputs = [
                             torch.fx.Proxy(outputs)[i].node for i in range(len(val))
                         ]
+                        for i in range(len(outputs)):
+                            outputs[i].meta["val"] = val[i]
             returns, out_spec = pytree.tree_flatten(outputs)
             node.args = (returns,)
             return
