@@ -576,7 +576,7 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
       program_result.ok(),
       "Program loading failed @ %p: 0x%" PRIx32,
       program_data,
-      program_result.error());
+      static_cast<unsigned long>(program_result.error()));
   ctx.program.reset(std::move(program_result.get()));
   Program& program = ctx.program.value();
 
@@ -709,7 +709,7 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
         Info,
         "Loading of method %s failed with status 0x%" PRIx32,
         ctx.method_name,
-        ctx.method->error());
+        static_cast<unsigned long>(ctx.method->error()));
   }
   ctx.method_loaded_memsize =
       ctx.method_allocator->used_size() - method_loaded_membase;
@@ -733,7 +733,7 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
     Error status =
         ::prepare_input_tensors(*ctx.method.value(), ctx.method_allocator.value());
     ET_CHECK_MSG(
-        status == Error::Ok, "Failed to prepare inputs 0x%" PRIx32, status);
+        status == Error::Ok, "Failed to prepare inputs 0x%" PRIx32, static_cast<long unsigned int>(status));
   }
 
 #if defined(ET_LOG_DUMP_INPUT)
@@ -994,7 +994,7 @@ bool run_model(RunnerContext& ctx, const void* model_pte) {
       status == Error::Ok,
       "Execution of method %s failed with status 0x%" PRIx32,
       ctx.method_name,
-      status);
+      static_cast<unsigned long>(status));
 
   ET_LOG(Info, "%d inferences finished", num_inferences);
   print_outputs(ctx);
