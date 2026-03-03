@@ -412,8 +412,16 @@ public class LlmModule {
     if (!image.isDirect()) {
       throw new IllegalArgumentException("Input ByteBuffer must be direct.");
     }
-    long expectedBytes = (long) width * height * channels;
-    if (width <= 0 || height <= 0 || channels <= 0 || image.remaining() < expectedBytes) {
+    long expectedBytes;
+    try {
+      long pixels = Math.multiplyExact((long) width, (long) height);
+      expectedBytes = Math.multiplyExact(pixels, (long) channels);
+    } catch (ArithmeticException ex) {
+      throw new IllegalArgumentException(
+          "width*height*channels is too large and overflows the allowed range.", ex);
+    }
+    if (width <= 0 || height <= 0 || channels <= 0 || expectedBytes > Integer.MAX_VALUE
+        || image.remaining() < expectedBytes) {
       throw new IllegalArgumentException(
           "ByteBuffer remaining ("
               + image.remaining()
