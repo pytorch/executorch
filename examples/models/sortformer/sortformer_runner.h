@@ -53,7 +53,9 @@ using SegmentCallback = std::function<void(const Segment&)>;
 
 class SortformerRunner {
  public:
-  explicit SortformerRunner(const std::string& model_path);
+  explicit SortformerRunner(
+      const std::string& model_path,
+      const char* data_path = nullptr);
 
   struct Result {
     int64_t num_frames;

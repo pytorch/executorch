@@ -92,9 +92,17 @@ void compress_cache(
 // Read model parameters from .pte constant_methods. These are baked into the
 // exported model by export_sortformer.py and describe the preprocessing config
 // and architecture dimensions needed to set up the streaming pipeline.
-SortformerRunner::SortformerRunner(const std::string& model_path) {
+SortformerRunner::SortformerRunner(
+    const std::string& model_path,
+    const char* data_path) {
   ET_LOG(Info, "Loading model from: %s", model_path.c_str());
-  model_ = std::make_unique<Module>(model_path, Module::LoadMode::Mmap);
+  if (data_path != nullptr) {
+    ET_LOG(Info, "Loading data from: %s", data_path);
+    model_ = std::make_unique<Module>(
+        model_path, data_path, Module::LoadMode::Mmap);
+  } else {
+    model_ = std::make_unique<Module>(model_path, Module::LoadMode::Mmap);
+  }
   auto load_error = model_->load();
   if (load_error != Error::Ok) {
     ET_LOG(Error, "Failed to load model.");

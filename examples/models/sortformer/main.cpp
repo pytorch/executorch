@@ -26,6 +26,10 @@
 
 DEFINE_string(model_path, "sortformer.pte", "Path to Sortformer model (.pte).");
 DEFINE_string(audio_path, "", "Path to input audio file (.wav).");
+DEFINE_string(
+    data_path,
+    "",
+    "Path to data file (.ptd) for delegate data (optional, required for CUDA).");
 DEFINE_double(threshold, 0.5, "Speaker activity threshold (0.0 - 1.0).");
 DEFINE_int32(chunk_len, 124, "Streaming chunk length in 80ms frames.");
 DEFINE_int32(fifo_len, 124, "FIFO buffer length in 80ms frames.");
@@ -41,7 +45,8 @@ int main(int argc, char** argv) {
   ::executorch::extension::llm::Stats stats;
   stats.model_load_start_ms = ::executorch::extension::llm::time_in_ms();
 
-  sortformer::SortformerRunner runner(FLAGS_model_path);
+  sortformer::SortformerRunner runner(
+      FLAGS_model_path, FLAGS_data_path.empty() ? nullptr : FLAGS_data_path);
 
   stats.model_load_end_ms = ::executorch::extension::llm::time_in_ms();
   stats.inference_start_ms = ::executorch::extension::llm::time_in_ms();

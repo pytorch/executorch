@@ -6,6 +6,7 @@ as a multi-method .pte with three methods: preprocessor, pre_encode, encode.
 Usage:
     python export_sortformer.py --nemo-path /path/to/model.nemo
     python export_sortformer.py --hf-model nvidia/diar_streaming_sortformer_4spk-v2
+    python export_sortformer.py --backend cuda --output-dir ./sortformer_cuda
 """
 
 import argparse
@@ -296,19 +297,60 @@ def export_all(model, backend: Optional[str] = None):
     return programs, metadata
 
 
+def _create_xnnpack_partitioners(programs):
+    """Create XNNPACK partitioners for all programs except preprocessor."""
+    from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+        XnnpackPartitioner,
+    )
+
+    print("\nLowering to ExecuTorch with XNNPACK...")
+    partitioner = {}
+    for key in programs.keys():
+        if key == "preprocessor":
+            partitioner[key] = []
+        else:
+            partitioner[key] = [XnnpackPartitioner()]
+    return partitioner, programs
+
+
+def _create_cuda_partitioners(programs, is_windows=False):
+    """Create CUDA partitioners for all programs except preprocessor."""
+    from executorch.backends.cuda.cuda_backend import CudaBackend
+    from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+    from executorch.exir.backend.compile_spec_schema import CompileSpec
+    from torch._inductor.decomposition import conv1d_to_conv2d
+
+    print(f"\nLowering to ExecuTorch with CUDA{' (Windows)' if is_windows else ''}...")
+
+    # Run decompositions for non-preprocessor programs
+    updated_programs = {}
+    for key, ep in programs.items():
+        if key != "preprocessor":
+            updated_programs[key] = ep.run_decompositions(
+                {torch.ops.aten.conv1d.default: conv1d_to_conv2d}
+            )
+        else:
+            updated_programs[key] = ep
+
+    partitioner = {}
+    for key in updated_programs.keys():
+        if key == "preprocessor":
+            partitioner[key] = []
+        else:
+            compile_specs = [CudaBackend.generate_method_name_compile_spec(key)]
+            if is_windows:
+                compile_specs.append(CompileSpec("platform", "windows".encode("utf-8")))
+            partitioner[key] = [CudaPartitioner(compile_specs)]
+    return partitioner, updated_programs
+
+
 def lower_to_executorch(programs, metadata=None, backend="portable"):
     if backend == "xnnpack":
-        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-            XnnpackPartitioner,
+        partitioner, programs = _create_xnnpack_partitioners(programs)
+    elif backend in ("cuda", "cuda-windows"):
+        partitioner, programs = _create_cuda_partitioners(
+            programs, is_windows=(backend == "cuda-windows")
         )
-
-        print("\nLowering to ExecuTorch with XNNPACK...")
-        partitioner = {}
-        for key in programs.keys():
-            if key == "preprocessor":
-                partitioner[key] = []
-            else:
-                partitioner[key] = [XnnpackPartitioner()]
     else:
         print("\nLowering to ExecuTorch...")
         partitioner = []
@@ -354,7 +396,7 @@ def main():
         "--backend",
         type=str,
         default="xnnpack",
-        choices=["portable", "xnnpack"],
+        choices=["portable", "xnnpack", "cuda", "cuda-windows"],
         help="Backend for acceleration (default: xnnpack)",
     )
 
@@ -374,6 +416,11 @@ def main():
     with open(pte_path, "wb") as f:
         et.write_to_file(f)
     print(f"Saved {os.path.getsize(pte_path) / (1024 * 1024):.1f} MB")
+
+    # Save .ptd data files (e.g., CUDA delegate data)
+    if et._tensor_data:
+        print(f"\nSaving {len(et._tensor_data)} data file(s)...")
+        et.write_tensor_data_to_file(args.output_dir)
 
     print("\nDone!")
 
