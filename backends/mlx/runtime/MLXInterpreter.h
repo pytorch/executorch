@@ -765,11 +765,6 @@ exec_contiguous(const ContiguousNode& n, ExecutionState& st, StreamOrDevice s) {
 }
 
 inline void
-exec_id_copy(const IdCopyNode& n, ExecutionState& st, StreamOrDevice) {
-  st.set_tensor(n.out, st.const_tensor_ref(n.x));
-}
-
-inline void
 exec_gather(const GatherNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
   const int rank = static_cast<int>(x.ndim());
@@ -1768,9 +1763,6 @@ class Interpreter {
         break;
       case OpCode::CONTIGUOUS:
         ops::exec_contiguous(std::get<ContiguousNode>(instr.node), st, s);
-        break;
-      case OpCode::ID_COPY:
-        ops::exec_id_copy(std::get<IdCopyNode>(instr.node), st, s);
         break;
       case OpCode::GATHER:
         ops::exec_gather(std::get<GatherNode>(instr.node), st, s);
