@@ -55,4 +55,4 @@ class RMSNorm(torch.nn.Module):
         output = self._norm(x.float()).type_as(x)
         if self.add_unit_offset:
             return output * (1.0 + self.weight.float()).type_as(x)
-        return output * self.weight
+        return output * self.weight.type_as(x)

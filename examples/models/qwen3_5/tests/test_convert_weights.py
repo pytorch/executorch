@@ -39,6 +39,31 @@ class Qwen35ConvertWeightsTest(unittest.TestCase):
         self.assertIn("layers.1.attention.out_proj.weight", converted)
         self.assertIn("layers.1.attention.dt_bias", converted)
 
+    def test_raises_on_unexpected_text_key(self):
+        state_dict = {
+            "model.embed_tokens.weight": torch.randn(16, 8),
+            "model.norm.weight": torch.randn(8),
+            "model.layers.0.unknown.weight": torch.randn(8, 8),
+        }
+
+        with self.assertRaisesRegex(
+            ValueError, "Unexpected checkpoint key not mapped for Qwen3.5 export"
+        ):
+            qwen_3_5_to_meta(state_dict)
+
+    def test_ignores_known_non_text_keys(self):
+        state_dict = {
+            "model.embed_tokens.weight": torch.randn(16, 8),
+            "model.norm.weight": torch.randn(8),
+            "mtp.proj.weight": torch.randn(8, 8),
+            "model.visual.patch_embed.weight": torch.randn(8, 8),
+        }
+
+        converted = qwen_3_5_to_meta(state_dict)
+        self.assertIn("tok_embeddings.weight", converted)
+        self.assertIn("output.weight", converted)
+        self.assertNotIn("mtp.proj.weight", converted)
+
 
 if __name__ == "__main__":
     unittest.main()

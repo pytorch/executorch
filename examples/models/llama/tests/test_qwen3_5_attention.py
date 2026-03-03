@@ -9,10 +9,37 @@ import unittest
 import torch
 from executorch.examples.models.llama.attention import ATTENTION_REGISTRY
 from executorch.examples.models.llama.model_args import ModelArgs
+from executorch.examples.models.llama.norm import RMSNorm
 from executorch.examples.models.llama.rope import Rope
 
 
 class Qwen35AttentionTest(unittest.TestCase):
+    def test_qwen35_full_attention_output_proj_is_bias_free(self):
+        args = ModelArgs(
+            dim=32,
+            n_layers=1,
+            n_heads=4,
+            n_kv_heads=2,
+            head_dim=8,
+            hidden_dim=64,
+            max_seq_len=16,
+            max_context_len=16,
+            use_kv_cache=False,
+            use_qk_norm=False,
+            qk_norm_before_rope=True,
+            attention_type="qwen3_5_full",
+            attention_qkv_bias=True,
+        )
+        rope = Rope(args)
+        attn = ATTENTION_REGISTRY["qwen3_5_full"](args, 0, rope)
+        self.assertIsNone(attn.wo.bias)
+
+    def test_rmsnorm_preserves_input_dtype_without_unit_offset(self):
+        norm = RMSNorm(dim=8, add_unit_offset=False)
+        x = torch.randn(2, 3, 8, dtype=torch.bfloat16)
+        y = norm(x)
+        self.assertEqual(y.dtype, x.dtype)
+
     def test_qwen35_full_attention_forward_shape(self):
         torch.manual_seed(0)
         args = ModelArgs(
