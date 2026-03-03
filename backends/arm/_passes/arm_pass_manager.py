@@ -68,6 +68,7 @@ from executorch.backends.arm._passes import (
     DecomposeLogitPass,
     DecomposeMaskedFillPass,
     DecomposeMatmulPass,
+    DecomposeMaxPool1dPass,
     DecomposeMaxPool2dPass,
     DecomposeMeanDimPass,
     DecomposeNotEqualPass,
@@ -161,8 +162,7 @@ class ArmPassManager(PassManager):
         override_config: ArmPassPipelineConfig | None = None,
     ) -> tuple[type, ...]:
         """Configures the pass manager to skip certain passes based on the
-        ArmPassPipelineConfig class found in the compile spec.
-        """
+        ArmPassPipelineConfig class found in the compile spec."""
         skip_set: set[type] = set()
 
         config = override_config or self.compile_spec.get_pass_pipeline_config()
@@ -191,9 +191,8 @@ class ArmPassManager(PassManager):
         """Validates that necessary passes have run before transforming to
         backend.
 
-        Note that this differs from the original validate_constraints function,
-        which only checks the order of passes.
-
+        Note that this differs from the original validate_constraints
+        function, which only checks the order of passes.
         """
         passes_to_run = defaultdict(list)
 
@@ -348,6 +347,7 @@ class ArmPassManager(PassManager):
                 DecomposeCumsumPass(exported_program),
                 DecomposeAsStridedCopyPass(),
                 DecomposeMaxPool2dPass(),
+                DecomposeMaxPool1dPass(),
                 SizeAdjustInputPass(),
                 DecomposeSelectPass(),
                 ConvertSqueezesToViewPass(),
@@ -452,6 +452,7 @@ class ArmPassManager(PassManager):
                 DecomposeLinalgVectorNormPass(tfa_pass=True),
                 DecomposeSqrtPass(tfa_pass=True),
                 DecomposeAvgPool2dPass(tfa_pass=True),
+                DecomposeMaxPool1dPass(tfa_pass=True),
                 DecomposeSoftmaxUnstablePass(tfa_pass=True),
                 DecomposeSoftmaxPass(
                     skip_safe_softmax=self.tosa_spec.is_U55_subset,
