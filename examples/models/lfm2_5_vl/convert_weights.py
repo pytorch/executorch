@@ -70,8 +70,9 @@ def lfm2_5_vl_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Te
 
         try:
             new_key = get_mapped_key(key, _LFM2_5_VL_TO_META)
-        except KeyError:
-            # Fallback: strip "model.language_model." prefix
+        except Exception:
+            # Fallback: strip "model.language_model." prefix.
+            # This covers in_proj (handled below) and any passthrough keys.
             new_key = key.removeprefix("model.language_model.")
 
         # Split conv in_proj: [3*dim, dim] -> B_proj, C_proj, x_proj each [dim, dim]
