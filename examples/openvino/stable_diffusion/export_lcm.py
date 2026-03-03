@@ -10,10 +10,17 @@ import argparse
 import logging
 import os
 
+import datasets  # type: ignore[import-untyped]
+import nncf  # type: ignore[import-untyped]
+
 import torch
 
 from executorch.backends.openvino.partitioner import OpenvinoPartitioner
-from executorch.backends.openvino.quantizer import OpenVINOQuantizer, QuantizationMode, quantize_model
+from executorch.backends.openvino.quantizer import (
+    OpenVINOQuantizer,
+    QuantizationMode,
+    quantize_model,
+)
 from executorch.examples.models.stable_diffusion.model import (  # type: ignore[import-untyped]
     LCMModelLoader,
 )
@@ -21,9 +28,7 @@ from executorch.exir import ExecutorchBackendConfig, to_edge_transform_and_lower
 from executorch.exir.backend.backend_details import CompileSpec
 from torch.export import export
 from torchao.quantization.pt2e.quantizer.quantizer import Quantizer
-import nncf
-import datasets
-from tqdm import tqdm
+from tqdm import tqdm  # type: ignore[import-untyped]
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -36,11 +41,13 @@ class LCMOpenVINOExporter:
     def __init__(
         self,
         model_id: str = "SimianLuo/LCM_Dreamshaper_v7",
-        is_quantization_enabled = False,
+        is_quantization_enabled=False,
         dtype: torch.dtype = torch.float16,
     ):
-        if(is_quantization_enabled):
-            logger.warning("Quantization requires float32, overriding dtype from float16 to float32.")
+        if is_quantization_enabled:
+            logger.warning(
+                "Quantization requires float32, overriding dtype from float16 to float32."
+            )
             dtype = torch.float32
         self.is_quantization_enabled = is_quantization_enabled
         self.model_loader = LCMModelLoader(model_id=model_id, dtype=dtype)
@@ -52,7 +59,7 @@ class LCMOpenVINOExporter:
     def should_quantize_model(self, sd_model_type):
         """
         If this is true, then we should quantize activations and weights. Otherwise, only compress the weights.
-        
+
         :param sd_model_type: the type of model in the stable diffusion pipeline such as Unet, text encoder, VAE etc.
         """
         return sd_model_type == "unet"
@@ -66,7 +73,9 @@ class LCMOpenVINOExporter:
         quantizer = OpenVINOQuantizer(mode=quantization_mode)
         return quantizer
 
-    def get_unet_calibration_dataset(self, calibration_dataset_size=200, num_inference_steps=4):
+    def get_unet_calibration_dataset(
+        self, calibration_dataset_size=200, num_inference_steps=4
+    ):
         class UNetWrapper(torch.nn.Module):
             def __init__(self, model, config):
                 super().__init__()
@@ -83,15 +92,25 @@ class LCMOpenVINOExporter:
 
             def forward(self, *args, **kwargs):
                 """
-                obtain and pass each input individually to ensure the order is maintained 
-                and the right values are being passed according to the expected inputs by 
+                obtain and pass each input individually to ensure the order is maintained
+                and the right values are being passed according to the expected inputs by
                 the OpenVINO LCM runner.
                 """
                 sample = self._pick("sample", args, kwargs, 0)
                 timestep = self._pick("timestep", args, kwargs, 1)
-                encoder_hidden_states = self._pick("encoder_hidden_states", args, kwargs, 2)
-                timestep = timestep.unsqueeze(0) if len(timestep.shape) == 0 and isinstance(timestep, torch.Tensor) else timestep
-                unet_args = (sample, timestep, encoder_hidden_states,)
+                encoder_hidden_states = self._pick(
+                    "encoder_hidden_states", args, kwargs, 2
+                )
+                timestep = (
+                    timestep.unsqueeze(0)
+                    if len(timestep.shape) == 0 and isinstance(timestep, torch.Tensor)
+                    else timestep
+                )
+                unet_args = (
+                    sample,
+                    timestep,
+                    encoder_hidden_states,
+                )
                 self.captured_args.append(unet_args)
                 return self.model(*unet_args)
 
@@ -113,7 +132,9 @@ class LCMOpenVINOExporter:
             if len(prompt.split()) > pipeline.tokenizer.model_max_length:
                 continue
             # Run the pipeline
-            image = pipeline(prompt, num_inference_steps=num_inference_steps, height=512, width=512)
+            pipeline(
+                prompt, num_inference_steps=num_inference_steps, height=512, width=512
+            )
             calibration_data.extend(wrapped_unet.captured_args)
             wrapped_unet.captured_args = []
             pbar.update(len(calibration_data) - pbar.n)
@@ -123,43 +144,65 @@ class LCMOpenVINOExporter:
         return calibration_data
 
     def maybe_quantize_model(self, model, sd_model_type, is_quantization_enabled):
-        if(not is_quantization_enabled):
+        model = (
+            model.module() if isinstance(model, torch.export.ExportedProgram) else model
+        )
+        if not is_quantization_enabled:
             return model
         quantized_model = model
         ov_quantizer = self.get_ov_quantizer(sd_model_type)
         if self.should_quantize_model(sd_model_type):
             # Quantize activations for the Unet Model. Other models are weights-only quantized.
             calibration_dataset = self.get_unet_calibration_dataset()
-            from nncf.quantization.range_estimator import RangeEstimatorParametersSet
-            quantized_model = quantize_model(model, mode=QuantizationMode.INT8_TRANSFORMER, 
-                                             calibration_dataset=calibration_dataset, 
-                                             smooth_quant=True,
-                                             activations_range_estimator_params=RangeEstimatorParametersSet.MINMAX,
-                                             weights_range_estimator_params=RangeEstimatorParametersSet.MINMAX)
+            quantized_model = quantize_model(
+                model,
+                mode=QuantizationMode.INT8_TRANSFORMER,
+                calibration_dataset=calibration_dataset,
+                smooth_quant=True,
+            )
         else:
-            quantized_model = nncf.experimental.torch.fx.compress_pt2e(model, quantizer=ov_quantizer)
+            quantized_model = nncf.experimental.torch.fx.compress_pt2e(
+                model, quantizer=ov_quantizer
+            )
         return quantized_model
+
+    def _export_and_maybe_quantize(
+        self, model, dummy_inputs, sd_model_type, is_quantization_enabled
+    ):
+        exported_program = export(model, dummy_inputs)
+        exported_program_module = self.maybe_quantize_model(
+            exported_program.module(), sd_model_type, is_quantization_enabled
+        )
+        # Re-export the quantized torch.fx.GraphModule to ExportedProgram
+        exported_program = export(exported_program_module, dummy_inputs)
+        return exported_program
 
     def export_text_encoder(self, output_path: str, device: str = "CPU") -> bool:
         """Export CLIP text encoder to PTE file"""
         try:
             logger.info("Exporting text encoder with OpenVINO backend...")
-            
+
             sd_model_type = "text_encoder"
-            is_quantization_enabled = self.is_quantization_enabled
 
             # Get wrapped model and dummy inputs
             text_encoder_wrapper = self.model_loader.get_text_encoder_wrapper()
             dummy_inputs = self.model_loader.get_dummy_inputs()
 
             # Export to ATEN graph
-            exported_program = export(
-                text_encoder_wrapper, dummy_inputs[sd_model_type]
+            exported_program = self._export_and_maybe_quantize(
+                text_encoder_wrapper,
+                dummy_inputs[sd_model_type],
+                sd_model_type,
+                self.is_quantization_enabled,
             )
-            exported_program_module = self.maybe_quantize_model(exported_program.module(), sd_model_type, is_quantization_enabled)
-            # Re-export the quantized torch.fx.GraphModule to ExportedProgram
-            exported_program = export(
-                exported_program_module, dummy_inputs[sd_model_type]
+
+            # Configure OpenVINO compilation
+            compile_spec = [CompileSpec("device", device.encode())]
+            partitioner = OpenvinoPartitioner(compile_spec)
+
+            # Lower to edge dialect and apply OpenVINO backend
+            edge_manager = to_edge_transform_and_lower(
+                exported_program, partitioner=[partitioner]
             )
 
             # Configure OpenVINO compilation
@@ -195,18 +238,17 @@ class LCMOpenVINOExporter:
         try:
             logger.info("Exporting UNet model with OpenVINO backend...")
             sd_model_type = "unet"
-            is_quantization_enabled = self.is_quantization_enabled
-            
+
             # Get wrapped model and dummy inputs
             unet_wrapper = self.model_loader.get_unet_wrapper()
             dummy_inputs = self.model_loader.get_dummy_inputs()
 
             # Export to ATEN graph
-            exported_program = export(unet_wrapper, dummy_inputs[sd_model_type])
-            exported_program_module = self.maybe_quantize_model(exported_program.module(), sd_model_type, is_quantization_enabled)
-            # Re-export the quantized torch.fx.GraphModule to ExportedProgram
-            exported_program = export(
-                exported_program_module, dummy_inputs[sd_model_type]
+            exported_program = self._export_and_maybe_quantize(
+                unet_wrapper,
+                dummy_inputs[sd_model_type],
+                sd_model_type,
+                self.is_quantization_enabled,
             )
 
             # Configure OpenVINO compilation
@@ -242,18 +284,17 @@ class LCMOpenVINOExporter:
         try:
             logger.info("Exporting VAE decoder with OpenVINO backend...")
             sd_model_type = "vae_decoder"
-            is_quantization_enabled = self.is_quantization_enabled
 
             # Get wrapped model and dummy inputs
             vae_decoder = self.model_loader.get_vae_decoder()
             dummy_inputs = self.model_loader.get_dummy_inputs()
 
             # Export to ATEN graph
-            exported_program = export(vae_decoder, dummy_inputs[sd_model_type])
-            exported_program_module = self.maybe_quantize_model(exported_program.module(), sd_model_type, is_quantization_enabled)
-            # Re-export the quantized torch.fx.GraphModule to ExportedProgram
-            exported_program = export(
-                exported_program_module, dummy_inputs[sd_model_type]
+            exported_program = self._export_and_maybe_quantize(
+                vae_decoder,
+                dummy_inputs[sd_model_type],
+                sd_model_type,
+                self.is_quantization_enabled,
             )
 
             # Configure OpenVINO compilation
@@ -374,7 +415,9 @@ def main() -> int:
     logger.info("=" * 60)
     logger.info("LCM Model Export")
     logger.info(f"Model: {args.model_id}")
-    logger.info(f"Device: {args.device} | Dtype: {args.dtype} | Quantize: {args.quantize}")
+    logger.info(
+        f"Device: {args.device} | Dtype: {args.dtype} | Quantize: {args.quantize}"
+    )
     logger.info("=" * 60)
 
     # Map dtype string to torch dtype
@@ -382,7 +425,9 @@ def main() -> int:
     dtype = dtype_map[args.dtype]
 
     # Create exporter and load models
-    exporter = LCMOpenVINOExporter(args.model_id, is_quantization_enabled=args.quantize, dtype=dtype)
+    exporter = LCMOpenVINOExporter(
+        args.model_id, is_quantization_enabled=args.quantize, dtype=dtype
+    )
 
     if not exporter.load_models():
         logger.error("Failed to load models")
