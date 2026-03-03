@@ -157,6 +157,7 @@ class ComputePipeline final {
     VkPipelineLayout pipeline_layout;
     VkShaderModule shader_module;
     SpecVarList specialization_constants;
+    std::string kernel_name;
   };
 
   explicit ComputePipeline(VkDevice device, VkPipeline handle);

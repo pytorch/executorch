@@ -9,6 +9,7 @@
 #include <executorch/backends/vulkan/runtime/vk_api/Pipeline.h>
 
 #include <fstream>
+#include <iostream>
 
 namespace vkcompute {
 namespace vkapi {
@@ -474,64 +475,53 @@ void ComputePipelineCache::create_pipelines(
     return;
   }
 
-  const auto num_pipelines = keys_to_create.size();
-  std::vector<VkPipeline> pipelines(num_pipelines);
+  for (size_t i = 0; i < keys_to_create.size(); ++i) {
+    const auto& key = keys_to_create[i];
 
-  std::vector<std::vector<VkSpecializationMapEntry>> map_entries;
-  map_entries.reserve(num_pipelines);
+    std::vector<VkSpecializationMapEntry> entries =
+        key.specialization_constants.generate_map_entries();
 
-  std::vector<VkSpecializationInfo> specialization_infos;
-  specialization_infos.reserve(num_pipelines);
-
-  std::vector<VkPipelineShaderStageCreateInfo> shader_stage_create_infos;
-  shader_stage_create_infos.reserve(num_pipelines);
-
-  std::vector<VkComputePipelineCreateInfo> create_infos;
-  create_infos.reserve(num_pipelines);
-
-  for (const auto& key : keys_to_create) {
-    map_entries.push_back(key.specialization_constants.generate_map_entries());
-
-    specialization_infos.push_back(VkSpecializationInfo{
+    VkSpecializationInfo specialization_info{
         key.specialization_constants.size(), // mapEntryCount
-        map_entries.back().data(), // pMapEntries
+        entries.data(), // pMapEntries
         key.specialization_constants.data_nbytes(), // dataSize
         key.specialization_constants.data(), // pData
-    });
+    };
 
-    shader_stage_create_infos.push_back(VkPipelineShaderStageCreateInfo{
+    VkPipelineShaderStageCreateInfo shader_stage_create_info{
         VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, // sType
         nullptr, // pNext
         0u, // flags
         VK_SHADER_STAGE_COMPUTE_BIT, // stage
         key.shader_module, // module
         "main", // pName
-        &specialization_infos.back(), // pSpecializationInfo
-    });
+        &specialization_info, // pSpecializationInfo
+    };
 
-    create_infos.push_back(VkComputePipelineCreateInfo{
+    VkComputePipelineCreateInfo create_info{
         VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, // sType
         nullptr, // pNext
         0u, // flags
-        shader_stage_create_infos.back(), // stage
+        shader_stage_create_info, // stage
         key.pipeline_layout, // layout
         VK_NULL_HANDLE, // basePipelineHandle
         0u, // basePipelineIndex
-    });
-  }
+    };
 
-  VK_CHECK(vkCreateComputePipelines(
-      device_,
-      pipeline_cache_,
-      create_infos.size(),
-      create_infos.data(),
-      nullptr,
-      pipelines.data()));
+    std::cout << "[ET-VK] Creating pipeline " << (i + 1) << "/"
+              << keys_to_create.size() << ": " << key.kernel_name << std::endl;
 
-  for (size_t i = 0; i < keys_to_create.size(); ++i) {
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VK_CHECK(vkCreateComputePipelines(
+        device_,
+        pipeline_cache_,
+        1u,
+        &create_info,
+        nullptr,
+        &pipeline));
+
     cache_.insert(
-        {keys_to_create[i],
-         ComputePipelineCache::Value(device_, pipelines[i])});
+        {key, ComputePipelineCache::Value(device_, pipeline)});
   }
 }
 
