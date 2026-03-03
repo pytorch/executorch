@@ -45,7 +45,11 @@ from executorch.examples.models.lfm2_5_vl.model import (
     MAX_SEQ_LEN,
     IMAGE_SIZE,
 )
-from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge_transform_and_lower
+from executorch.exir import (
+    EdgeCompileConfig,
+    ExecutorchBackendConfig,
+    to_edge_transform_and_lower,
+)
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import (
@@ -101,7 +105,9 @@ def export_image_encoder(lfm2) -> torch.export.ExportedProgram:
             return self.lfm2.image_embedding(images)
 
     encoder = ImageEncoder(lfm2)
-    example_pixels = torch.randint(0, 256, (1, 3, IMAGE_SIZE, IMAGE_SIZE), dtype=torch.float32)
+    example_pixels = torch.randint(
+        0, 256, (1, 3, IMAGE_SIZE, IMAGE_SIZE), dtype=torch.float32
+    )
 
     logging.info("Exporting vision encoder...")
     with torch.no_grad():
@@ -125,7 +131,9 @@ def export_text_decoder(
             super().__init__()
             self.text_model = text_model
 
-        def forward(self, embeddings: torch.Tensor, input_pos: torch.Tensor) -> torch.Tensor:
+        def forward(
+            self, embeddings: torch.Tensor, input_pos: torch.Tensor
+        ) -> torch.Tensor:
             return self.text_model(None, {"input_pos": input_pos}, embeddings)
 
     decoder = TextDecoder(lfm2.text_model)
@@ -259,10 +267,18 @@ def export_all(
                     per_op_mode=True,
                 ),
                 XnnpackPartitioner(),
-            ] if quantize else [XnnpackPartitioner()],
+            ]
+            if quantize
+            else [XnnpackPartitioner()],
         },
         constant_methods={
             "get_max_seq_len": MAX_SEQ_LEN,
+            "get_max_context_len": MAX_SEQ_LEN,
+            "get_n_layers": 16,
+            "get_vocab_size": 65536,
+            "use_kv_cache": True,
+            "use_sdpa_with_kv_cache": True,
+            "enable_dynamic_shape": False,
             # EOS = <|im_end|> (token 7). Runner reads this from PTE rather than
             # relying on tokenizer default.
             "get_eos_ids": [7],
@@ -317,7 +333,9 @@ def main():
     args = parser.parse_args()
 
     dtype = DType.fp16 if args.dtype == "fp16" else DType.fp32
-    suffix = ("_fp16" if dtype == DType.fp16 else "") + ("_quantized" if args.quantize else "")
+    suffix = ("_fp16" if dtype == DType.fp16 else "") + (
+        "_quantized" if args.quantize else ""
+    )
     output = args.output or f"lfm2_5_vl{suffix}_xnnpack.pte"
 
     export_all(args.model_dir, output, dtype, args.quantize)
