@@ -75,7 +75,7 @@ if [ -n "${PTE_FILE}" ]; then
     fi
 
     echo "Converting PTE to header: ${PTE_FILE}"
-    HEADER_DIR="${PROJECT_DIR}/build/model"
+    HEADER_DIR="${PROJECT_DIR}"
     mkdir -p "${HEADER_DIR}"
     python3 "${SCRIPT_DIR}/executor_runner/pte_to_header.py" \
         --pte "${PTE_FILE}" \
@@ -91,7 +91,6 @@ if [ "${CLEAN}" = true ]; then
     echo "Cleaning build directory..."
     rm -rf build sdkconfig
 fi
-
 # Set target
 echo "Setting target to ${TARGET}..."
 idf.py set-target "${TARGET}"

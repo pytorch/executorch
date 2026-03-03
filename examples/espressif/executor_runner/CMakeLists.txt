@@ -71,6 +71,14 @@ if(ESP_PLATFORM)
   set(ET_DEBUG_BUFFER_SIZE "65536" CACHE STRING "Size of ETDump debug buffer")
   option(FILESYSTEM_LOAD "Load model from filesystem instead of compiled-in data" OFF)
 
+  # Directory containing the generated model_pte.h header.
+  # By default this is the project source directory (where build.sh places it),
+  # but it can be overridden if you generate the header elsewhere.
+  set(ET_MODEL_HEADER_DIR
+      "${CMAKE_SOURCE_DIR}"
+      CACHE PATH "Directory containing the generated model_pte.h header"
+  )
+
   # Memory pool sizes
   set(ET_ESP_METHOD_ALLOCATOR_POOL_SIZE "" CACHE STRING
       "Method allocator pool size (empty = auto based on PSRAM availability)")
@@ -105,6 +113,7 @@ if(ESP_PLATFORM)
       ${ET_DIR_PATH}/..
       ${ET_DIR_PATH}/runtime/core/portable_type/c10
       ${CMAKE_CURRENT_BINARY_DIR}
+      ${ET_MODEL_HEADER_DIR}
   )
 
   # Link ExecuTorch libraries
