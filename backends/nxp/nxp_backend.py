@@ -13,6 +13,7 @@ import struct
 from typing import final, List, Optional
 
 import numpy as np
+import torch
 
 from executorch.backends.nxp.backend.data_format import DataFormat
 from executorch.backends.nxp.backend.edge_program_converter import (
@@ -30,6 +31,12 @@ from executorch.backends.nxp.neutron_node_extraction import (
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
+
+# Aten dialect operators that are allowed to be in the edge dialect model. These operators are usually created by a
+#  transform pass or by a prevented operator decomposition during lowering to edge.
+core_aten_ops_exception_list = [
+    torch.ops.aten.prelu.default,
+]
 
 
 class NeutronCompileSpecBuilder:
