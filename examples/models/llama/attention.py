@@ -591,7 +591,7 @@ class AttentionQwen3_5Full(Attention):
         self.wo = nn.Linear(
             self.n_heads * self.head_dim,
             self.dim,
-            bias=self.attention_qkv_bias,
+            bias=False,
         )
 
         self.layer_id = layer_id
