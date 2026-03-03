@@ -420,7 +420,10 @@ public class LlmModule {
       throw new IllegalArgumentException(
           "width*height*channels is too large and overflows the allowed range.", ex);
     }
-    if (width <= 0 || height <= 0 || channels <= 0 || expectedBytes > Integer.MAX_VALUE
+    if (width <= 0
+        || height <= 0
+        || channels <= 0
+        || expectedBytes > Integer.MAX_VALUE
         || image.remaining() < expectedBytes) {
       throw new IllegalArgumentException(
           "ByteBuffer remaining ("
@@ -456,7 +459,7 @@ public class LlmModule {
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
-  public void prefillNormalizedImages(ByteBuffer image, int width, int height, int channels) {
+  public void prefillNormalizedImage(ByteBuffer image, int width, int height, int channels) {
     if (!image.isDirect()) {
       throw new IllegalArgumentException("Input ByteBuffer must be direct.");
     }
@@ -468,7 +471,21 @@ public class LlmModule {
       throw new IllegalArgumentException(
           "Input ByteBuffer position (" + image.position() + ") must be 4-byte aligned.");
     }
-    long expectedBytes = (long) width * height * channels * Float.BYTES;
+    final long expectedBytes;
+    try {
+      int wh = Math.multiplyExact(width, height);
+      long whc = Math.multiplyExact((long) wh, (long) channels);
+      long totalBytes = Math.multiplyExact(whc, (long) Float.BYTES);
+      if (totalBytes > Integer.MAX_VALUE) {
+        throw new IllegalArgumentException(
+            "ByteBuffer size (width*height*channels*4) exceeds Integer.MAX_VALUE bytes: "
+                + totalBytes);
+      }
+      expectedBytes = totalBytes;
+    } catch (ArithmeticException e) {
+      throw new IllegalArgumentException(
+          "Overflow while computing width*height*channels*4 for ByteBuffer size.", e);
+    }
     if (width <= 0 || height <= 0 || channels <= 0 || image.remaining() < expectedBytes) {
       throw new IllegalArgumentException(
           "ByteBuffer remaining ("
