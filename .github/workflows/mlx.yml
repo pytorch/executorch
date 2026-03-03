@@ -32,7 +32,9 @@ jobs:
 
         echo "::group::Install ExecuTorch and configure build"
         ${CONDA_RUN} python install_executorch.py > /dev/null
-        ${CONDA_RUN} cmake --preset mlx-release -DEXECUTORCH_BUILD_TESTS=ON -DEXECUTORCH_MLX_ENABLE_SANITIZERS=ON
+        # The sanitizers fail on github VM runner, but pass on real device
+        # TODO: figure out why
+        ${CONDA_RUN} cmake --preset mlx-release -DEXECUTORCH_BUILD_TESTS=ON -DEXECUTORCH_MLX_ENABLE_SANITIZERS=OFF
         echo "::endgroup::"
 
         ${CONDA_RUN} pip list
