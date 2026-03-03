@@ -8,10 +8,8 @@
 package org.pytorch.executorch
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import java.io.File
 import java.io.IOException
 import java.net.URISyntaxException
-import org.apache.commons.io.FileUtils
 import org.json.JSONException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -19,7 +17,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.pytorch.executorch.TestFileUtils.getTestFilePath
+import org.pytorch.executorch.TestFileUtils.prepareTestFile
 import org.pytorch.executorch.extension.llm.LlmCallback
 import org.pytorch.executorch.extension.llm.LlmModule
 
@@ -33,19 +31,9 @@ class LlmModuleInstrumentationTest : LlmCallback {
   @Before
   @Throws(IOException::class)
   fun setUp() {
-    // copy zipped test resources to local device
-    val addPteFile = File(getTestFilePath(TEST_FILE_NAME))
-    var inputStream = javaClass.getResourceAsStream(TEST_FILE_NAME)
-    FileUtils.copyInputStreamToFile(inputStream, addPteFile)
-    inputStream.close()
-
-    val tokenizerFile = File(getTestFilePath(TOKENIZER_FILE_NAME))
-    inputStream = javaClass.getResourceAsStream(TOKENIZER_FILE_NAME)
-    FileUtils.copyInputStreamToFile(inputStream, tokenizerFile)
-    inputStream.close()
-
-    llmModule =
-        LlmModule(getTestFilePath(TEST_FILE_NAME), getTestFilePath(TOKENIZER_FILE_NAME), 0.0f)
+    val ptePath = prepareTestFile(javaClass, TEST_FILE_NAME)
+    val tokenizerPath = prepareTestFile(javaClass, TOKENIZER_FILE_NAME)
+    llmModule = LlmModule(ptePath, tokenizerPath, 0.0f)
   }
 
   @Test
