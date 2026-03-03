@@ -9,6 +9,7 @@ on:
     paths:
       - .github/workflows/mlx.yml
       - backends/mlx/**
+      - extension/llm/export/**
   workflow_dispatch:
 
 permissions: {}
