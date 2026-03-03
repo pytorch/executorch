@@ -184,14 +184,7 @@ def export_text_decoder(
             .export()
         )
 
-    with torch.no_grad():
-        decoder_ep = torch.export.export(
-            manager.pre_autograd_graph_module,
-            manager.example_inputs,
-            dynamic_shapes=manager._get_dynamic_shape(),
-            strict=True,
-        )
-    return decoder_ep
+    return manager.export_program
 
 
 def export_token_embedding(
