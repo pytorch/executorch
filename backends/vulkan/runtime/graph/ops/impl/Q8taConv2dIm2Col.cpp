@@ -127,9 +127,8 @@ void add_q8ta_im2col_node(
       dilation,
       groups);
 
-  // At the moment, the im2col path only supports non-grouped convolutions
-  VK_CHECK_COND(conv_params.groups == 1);
-  // The implementation also requires that input channels is a multiple of 4
+  // The implementation requires that input channels per group is a multiple of
+  // 4
   VK_CHECK_COND(conv_params.in_channels_per_group % 4 == 0);
 
   std::string kernel_name = "q8ta_im2col";
@@ -257,6 +256,8 @@ void q8ta_conv2d_im2col(
       zp);
 
   // Step 2: Perform pointwise convolution on the im2col result
+  const int32_t groups_val = graph.extract_scalar<int32_t>(groups);
+
   add_q8ta_conv2d_pw_node(
       graph,
       packed_int8_im2col,
@@ -270,7 +271,8 @@ void q8ta_conv2d_im2col(
       bias_data,
       packed_bias,
       activation_type_val,
-      packed_int8_output);
+      packed_int8_output,
+      groups_val);
 }
 
 REGISTER_OPERATORS {

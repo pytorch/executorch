@@ -113,7 +113,7 @@ from executorch.backends.arm._passes import (
     RemoveNoopPass,
     ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
-    RewriteBoolBitwiseNotToLogicalNotPass,
+    RewriteBoolBitwiseToLogicalPass,
     RewriteBoolToFp32CastViaInt8Pass,
     RewriteConvPass,
     RewriteIndexPutPass,
@@ -238,7 +238,6 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 FuseQuantizedActivationPass(),
-                RewriteBoolBitwiseNotToLogicalNotPass(),
                 RewriteBoolToFp32CastViaInt8Pass(),
                 CanonicalizeGatherPass(),
                 ConvertToClampPass(),
@@ -326,6 +325,7 @@ class ArmPassManager(PassManager):
                 DecomposeSliceScatterPass(),
                 AccumulateIndexPutPass(),
                 RewriteIndexPutPass(),
+                RewriteBoolBitwiseToLogicalPass(),
                 DecomposeRemainderPass(),
                 DecomposeDivTensorModePass(),
                 FuseBatchNorm2dPass(exported_program),

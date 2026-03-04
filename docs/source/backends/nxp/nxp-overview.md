@@ -11,7 +11,7 @@ For up-to-date status about running ExecuTorch on Neutron backend please visit t
 ## Features
 
 
-ExecuTorch v1.0 supports running machine learning models on selected NXP chips (for now only i.MXRT700).
+ExecuTorch v1.0 supports running machine learning models on selected NXP chips (for now only `i.MXRT700`).
 Among currently supported machine learning models are:
 - Convolution-based neutral networks
 - Full support for MobileNetV2 and CifarNet
@@ -59,6 +59,8 @@ For more finegrained tutorial, visit [this manual page](https://mcuxpresso.nxp.c
 
 **→{doc}`nxp-dim-order` — Dim order support (channels last inputs).**
 
+**→{doc}`nxp-kernel-selection` — Neutron Firmware Kernel Selection support.**
+
 ```{toctree}
 :maxdepth: 2
 :hidden:
@@ -68,4 +70,5 @@ nxp-partitioner
 nxp-quantization
 tutorials/nxp-tutorials
 nxp-dim-order
+nxp-kernel-selection
 ```
