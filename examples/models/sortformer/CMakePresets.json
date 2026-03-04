@@ -24,36 +24,9 @@
                 "EXECUTORCH_BUILD_CUDA": "ON"
             },
             "condition": {
-                "type": "inList",
-                "string": "${hostSystemName}",
-                "list": ["Linux", "Windows"]
-            }
-        },
-        {
-            "name": "sortformer-cuda-debug",
-            "displayName": "Sortformer runner (CUDA, Debug)",
-            "inherits": ["sortformer-base"],
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug",
-                "EXECUTORCH_BUILD_CUDA": "ON"
-            },
-            "condition": {
-                "type": "inList",
-                "string": "${hostSystemName}",
-                "list": ["Linux", "Windows"]
-            }
-        },
-        {
-            "name": "sortformer-metal",
-            "displayName": "Sortformer runner (Metal)",
-            "inherits": ["sortformer-base"],
-            "cacheVariables": {
-                "EXECUTORCH_BUILD_METAL": "ON"
-            },
-            "condition": {
-                "lhs": "${hostSystemName}",
                 "type": "equals",
-                "rhs": "Darwin"
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
             }
         }
     ],
@@ -69,20 +42,6 @@
             "name": "sortformer-cuda",
             "displayName": "Build Sortformer runner (CUDA)",
             "configurePreset": "sortformer-cuda",
-            "configuration": "Release",
-            "targets": ["sortformer_runner"]
-        },
-        {
-            "name": "sortformer-cuda-debug",
-            "displayName": "Build Sortformer runner (CUDA, Debug)",
-            "configurePreset": "sortformer-cuda-debug",
-            "configuration": "Debug",
-            "targets": ["sortformer_runner"]
-        },
-        {
-            "name": "sortformer-metal",
-            "displayName": "Build Sortformer runner (Metal)",
-            "configurePreset": "sortformer-metal",
             "configuration": "Release",
             "targets": ["sortformer_runner"]
         }
@@ -113,34 +72,6 @@
                 {
                     "type": "build",
                     "name": "sortformer-cuda"
-                }
-            ]
-        },
-        {
-            "name": "sortformer-cuda-debug",
-            "displayName": "Configure and build Sortformer runner (CUDA, Debug)",
-            "steps": [
-                {
-                    "type": "configure",
-                    "name": "sortformer-cuda-debug"
-                },
-                {
-                    "type": "build",
-                    "name": "sortformer-cuda-debug"
-                }
-            ]
-        },
-        {
-            "name": "sortformer-metal",
-            "displayName": "Configure and build Sortformer runner (Metal)",
-            "steps": [
-                {
-                    "type": "configure",
-                    "name": "sortformer-metal"
-                },
-                {
-                    "type": "build",
-                    "name": "sortformer-metal"
                 }
             ]
         }

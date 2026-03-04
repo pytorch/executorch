@@ -14,7 +14,6 @@ import os
 from typing import Optional
 
 import torch
-
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -313,24 +312,18 @@ def _create_xnnpack_partitioners(programs):
     return partitioner, programs
 
 
-def _create_cuda_partitioners(programs, is_windows=False):
+def _create_cuda_partitioners(programs):
     """Create CUDA partitioners for all programs except preprocessor."""
     from executorch.backends.cuda.cuda_backend import CudaBackend
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
-    from executorch.exir.backend.compile_spec_schema import CompileSpec
     from torch._inductor.decomposition import conv1d_to_conv2d
 
-    print(f"\nLowering to ExecuTorch with CUDA{' (Windows)' if is_windows else ''}...")
+    print("\nLowering to ExecuTorch with CUDA...")
 
     # Run decompositions for non-preprocessor programs
     updated_programs = {}
     for key, ep in programs.items():
-        if key != "preprocessor":
-            updated_programs[key] = ep.run_decompositions(
-                {torch.ops.aten.conv1d.default: conv1d_to_conv2d}
-            )
-        else:
-            updated_programs[key] = ep
+        updated_programs[key] = ep
 
     partitioner = {}
     for key in updated_programs.keys():
@@ -338,8 +331,6 @@ def _create_cuda_partitioners(programs, is_windows=False):
             partitioner[key] = []
         else:
             compile_specs = [CudaBackend.generate_method_name_compile_spec(key)]
-            if is_windows:
-                compile_specs.append(CompileSpec("platform", "windows".encode("utf-8")))
             partitioner[key] = [CudaPartitioner(compile_specs)]
     return partitioner, updated_programs
 
@@ -347,10 +338,8 @@ def _create_cuda_partitioners(programs, is_windows=False):
 def lower_to_executorch(programs, metadata=None, backend="portable"):
     if backend == "xnnpack":
         partitioner, programs = _create_xnnpack_partitioners(programs)
-    elif backend in ("cuda", "cuda-windows"):
-        partitioner, programs = _create_cuda_partitioners(
-            programs, is_windows=(backend == "cuda-windows")
-        )
+    elif backend == "cuda":
+        partitioner, programs = _create_cuda_partitioners(programs)
     else:
         print("\nLowering to ExecuTorch...")
         partitioner = []
@@ -396,7 +385,7 @@ def main():
         "--backend",
         type=str,
         default="xnnpack",
-        choices=["portable", "xnnpack", "cuda", "cuda-windows"],
+        choices=["portable", "xnnpack", "cuda"],
         help="Backend for acceleration (default: xnnpack)",
     )
 

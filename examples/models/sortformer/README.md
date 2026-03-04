@@ -8,10 +8,10 @@ Speaker diarization answers "who spoke when" — the model outputs per-frame act
 
 ```bash
 # Install Python dependencies
+cd examples/models/sortformer
 pip install -r install_requirements.txt
 
 # Export to .pte
-cd examples/models/sortformer
 python export_sortformer.py --nemo-path /path/to/model.nemo --backend xnnpack
 
 # Build the C++ runner (from repo root)
@@ -50,60 +50,10 @@ python export_sortformer.py --nemo-path /path/to/model.nemo --backend xnnpack
 |----------|-------------|
 | `--nemo-path` | Path to `.nemo` model file |
 | `--hf-model` | HuggingFace model ID (default: `nvidia/diar_streaming_sortformer_4spk-v2`) |
-| `--backend` | `portable`, `xnnpack`, `cuda`, or `cuda-windows` (default: `xnnpack`) |
+| `--backend` | `portable`, `xnnpack`, or `cuda` (default: `xnnpack`) |
 | `--output-dir` | Output directory (default: `./sortformer_exports`) |
 
 Output: `sortformer_exports/sortformer.pte` (~470 MB unquantized). The preprocessor is always lowered with the portable backend regardless of `--backend`.
-
-### CUDA Export (Linux)
-
-```bash
-python export_sortformer.py --backend cuda --output-dir ./sortformer_cuda
-```
-
-This generates:
-- `sortformer.pte` - The compiled Sortformer model
-- `aoti_cuda_blob.ptd` - CUDA kernel blob required at runtime
-
-### CUDA-Windows Export
-
-Before running `cuda-windows` export, make sure these requirements are set up:
-- `x86_64-w64-mingw32-g++` is installed and on `PATH` (mingw-w64 cross-compiler).
-- `WINDOWS_CUDA_HOME` points to the extracted Windows CUDA package directory.
-
-Example setup on Ubuntu:
-
-```bash
-# 1) Install cross-compiler + extraction tools
-sudo apt-get update
-sudo apt-get install -y --no-install-recommends \
-  g++-mingw-w64-x86-64-posix mingw-w64-tools p7zip-full wget
-
-# 2) Verify cross-compiler
-x86_64-w64-mingw32-g++ --version
-
-# 3) Download and extract Windows CUDA installer package
-CUDA_VERSION=12.8.1
-CUDA_DRIVER_VERSION=572.61
-CUDA_INSTALLER="cuda_${CUDA_VERSION}_${CUDA_DRIVER_VERSION}_windows.exe"
-CUDA_URL="https://developer.download.nvidia.com/compute/cuda/${CUDA_VERSION}/local_installers/${CUDA_INSTALLER}"
-
-mkdir -p /opt/cuda-windows
-cd /opt/cuda-windows
-wget -q "${CUDA_URL}" -O "${CUDA_INSTALLER}"
-7z x "${CUDA_INSTALLER}" -oextracted -y
-
-# 4) Point WINDOWS_CUDA_HOME to extracted Windows CUDA payload
-export WINDOWS_CUDA_HOME=/opt/cuda-windows/extracted/cuda_cudart/cudart
-```
-
-```bash
-python export_sortformer.py --backend cuda-windows --output-dir ./sortformer_cuda_windows
-```
-
-This generates:
-- `sortformer.pte` - The compiled Sortformer model
-- `aoti_cuda_blob.ptd` - CUDA kernel blob required at runtime
 
 ## Validate
 
@@ -134,15 +84,6 @@ make sortformer-cuda
 
 Binary: `cmake-out/examples/models/sortformer/sortformer_runner`
 
-On Windows (PowerShell), use CMake workflow presets directly:
-
-```powershell
-cmake --workflow --preset llm-release-cuda
-Push-Location examples/models/sortformer
-cmake --workflow --preset sortformer-cuda
-Pop-Location
-```
-
 ### Running
 
 ```bash
@@ -157,17 +98,6 @@ Pop-Location
     --data_path examples/models/sortformer/sortformer_cuda/aoti_cuda_blob.ptd \
     --audio_path /path/to/audio.wav
 ```
-
-Windows (PowerShell):
-
-```powershell
-.\cmake-out\examples\models\sortformer\Release\sortformer_runner.exe `
-    --model_path C:\path\to\sortformer_cuda_windows\sortformer.pte `
-    --data_path C:\path\to\sortformer_cuda_windows\aoti_cuda_blob.ptd `
-    --audio_path C:\path\to\audio.wav
-```
-
-If your generator is single-config, the runner may be at `.\cmake-out\examples\models\sortformer\sortformer_runner.exe` instead.
 
 ### Arguments
 
