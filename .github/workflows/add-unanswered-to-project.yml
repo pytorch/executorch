@@ -59,7 +59,8 @@ jobs:
 
             // List of organization logins (lowercased) to exclude members of
             const excludedOrgs = new Set([
-              "meta", "facebook", "pytorch", "arm", "apple", "qualcomm", "nxp", "mediatek", "cadence", "intel", "samsung"
+              "meta", "facebook", "pytorch", "arm", "apple", "qualcomm", "nxp", "mediatek", "cadence", "intel", "samsung",
+              "@meta", "@facebook", "@pytorch", "@arm", "@apple", "@qualcomm", "@nxp", "@mediatek", "@cadence", "@intel", "@samsung"
             ]);
 
             // Labels on PRs to exclude from being added to the project
