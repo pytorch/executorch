@@ -356,6 +356,13 @@ if(NOT DEFINED CMAKE_POSITION_INDEPENDENT_CODE
   list(APPEND _common_compile_options $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fPIC>)
 endif()
 
+# Clang and GCC's semantics for -Wshadow differ in handling constructor args
+# with names that match a constructor field. We want Clang's semantics, as this
+# is enforced in certain existing use cases, which have caused reverts.
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  list(APPEND _common_compile_options -Wshadow -Werror=shadow)
+endif()
+
 # Let files say "include <executorch/path/to/header.h>".
 # TODO(#6475): This requires/assumes that the repo lives in a directory named
 # exactly `executorch`. Check the assumption first. Remove this check once we
