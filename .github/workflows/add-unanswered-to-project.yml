@@ -102,6 +102,23 @@ jobs:
               return item.labels.some(l => l && l.name && excludedPrLabels.has(l.name.toLowerCase()));
             }
 
+            async function isMemberOfExcludedCompany(user) {
+              if (!user || !user.login) return false;
+              const login = user.login;
+              if (companyCache.has(login)) return companyCache.get(login);
+              try {
+                const response = await github.rest.users.getByUsername({ username: login });
+                const company = response && response.data && response.data.company ? response.data.company : "";
+                const isMember = company && excludedOrgs.has(company.toLowerCase());
+                companyCache.set(login, isMember);
+                return isMember;
+              } catch (error) {
+                // If checking company fails (rate limit, permissions etc.), assume not a member to avoid false positives.
+                console.log(`Error checking company for ${login}: ${error.message}`);
+                companyCache.set(login, false);
+                return false;
+              }
+            }
             async function addItem(contentId, type, number) {
               try {
                 await github.graphql(`
@@ -146,6 +163,10 @@ jobs:
                   console.log(`Skipping issue #${issue.number} by ${issue.user && issue.user.login} (member of excluded org)`);
                   continue;
                 }
+                if (await isMemberOfExcludedCompany(issue.user)) {
+                  console.log(`Skipping issue #${issue.number} by ${issue.user && issue.user.login} (member of excluded org)`);
+                  continue;
+                }
                 await addItem(issue.node_id, 'issue', issue.number);
               }
 
@@ -172,6 +193,10 @@ jobs:
                   continue;
                 }
                 if (await isMemberOfExcludedOrg(pr.user)) {
+                  console.log(`Skipping PR #${pr.number} by ${pr.user && pr.user.login} (member of excluded org)`);
+                  continue;
+                }
+                if (await isMemberOfExcludedCompany(pr.user)) {
                   console.log(`Skipping PR #${pr.number} by ${pr.user && pr.user.login} (member of excluded org)`);
                   continue;
                 }

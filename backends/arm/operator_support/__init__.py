@@ -6,6 +6,7 @@
 
 from . import (  # noqa
     as_strided_copy_support,
+    bool_bitwise_support,
     clone_dim_order_support,
     control_flow_support,
     convolution_support,
