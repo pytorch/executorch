@@ -166,6 +166,26 @@ inline std::vector<Token> greedy_decode_executorch(
   std::memcpy(
       g_proj_data.data(), g_proj_init.const_data_ptr(), g_proj_num_bytes);
 
+  // Debug: check g_proj_init values from SOS decoder step
+  {
+    const float* gp = reinterpret_cast<const float*>(g_proj_data.data());
+    float gmin = gp[0], gmax = gp[0], gabssum = 0;
+    for (size_t i = 0; i < static_cast<size_t>(g_proj_init.numel()); i++) {
+      gmin = std::min(gmin, gp[i]);
+      gmax = std::max(gmax, gp[i]);
+      gabssum += std::abs(gp[i]);
+    }
+    ET_LOG(
+        Info,
+        "g_proj_init: numel=%ld, min=%.6f, max=%.6f, mean_abs=%.6f, [0]=%.6f, [1]=%.6f",
+        static_cast<long>(g_proj_init.numel()),
+        gmin,
+        gmax,
+        gabssum / g_proj_init.numel(),
+        gp[0],
+        gp[1]);
+  }
+
   int64_t t = 0;
   int64_t symbols_on_frame = 0;
   const uint8_t* f_proj_ptr =
@@ -190,6 +210,21 @@ inline std::vector<Token> greedy_decode_executorch(
         {1, 1, static_cast<::executorch::aten::SizesType>(proj_dim)},
         g_dtype);
 
+    if (t == 0) {
+      const float* fp = reinterpret_cast<const float*>(f_t_data.data());
+      const float* gp = reinterpret_cast<const float*>(g_proj_data.data());
+      float fmin = fp[0], fmax = fp[0];
+      for (size_t i = 0; i < proj_dim; i++) {
+        fmin = std::min(fmin, fp[i]);
+        fmax = std::max(fmax, fp[i]);
+      }
+      ET_LOG(
+          Info,
+          "t=0 joint inputs: f_t[0]=%.6f, f_t[1]=%.6f, min=%.6f, max=%.6f; "
+          "g_proj[0]=%.6f, g_proj[1]=%.6f",
+          fp[0], fp[1], fmin, fmax, gp[0], gp[1]);
+    }
+
     auto joint_result = model.execute(
         "joint", std::vector<::executorch::runtime::EValue>{f_t, g_proj});
     if (!joint_result.ok()) {
@@ -197,9 +232,25 @@ inline std::vector<Token> greedy_decode_executorch(
       return hypothesis;
     }
 
-    int64_t k = joint_result.get()[0].toTensor().const_data_ptr<int64_t>()[0];
-    int64_t dur_idx =
-        joint_result.get()[1].toTensor().const_data_ptr<int64_t>()[0];
+    auto joint_token_tensor = joint_result.get()[0].toTensor();
+    auto joint_dur_tensor = joint_result.get()[1].toTensor();
+    if (t == 0) {
+      ET_LOG(
+          Info,
+          "Joint output[0] dtype: %s, sizes: [%ld], output[1] dtype: %s",
+          ::executorch::runtime::toString(joint_token_tensor.scalar_type()),
+          static_cast<long>(joint_token_tensor.numel()),
+          ::executorch::runtime::toString(joint_dur_tensor.scalar_type()));
+      ET_LOG(
+          Info,
+          "Joint raw bytes as float: %f, as int64: %lld",
+          *reinterpret_cast<const float*>(joint_token_tensor.const_data_ptr()),
+          static_cast<long long>(
+              joint_token_tensor.const_data_ptr<int64_t>()[0]));
+    }
+
+    int64_t k = joint_token_tensor.const_data_ptr<int64_t>()[0];
+    int64_t dur_idx = joint_dur_tensor.const_data_ptr<int64_t>()[0];
     int64_t dur = DURATIONS[dur_idx];
 
     if (k == blank_id) {
