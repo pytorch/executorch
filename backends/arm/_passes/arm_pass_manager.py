@@ -171,6 +171,32 @@ class PassInsertions:
     after_passes: list = field(default_factory=list)
 
 
+_registered_pass_insertions: dict[type, PassInsertions] = {}
+
+
+def register_pass_insertions_before(
+    target_pass_type: type, passes: list[ExportPass]
+) -> None:
+    """Register passes to be inserted before a target pass for all pipelines."""
+    if target_pass_type not in _registered_pass_insertions:
+        _registered_pass_insertions[target_pass_type] = PassInsertions()
+    _registered_pass_insertions[target_pass_type].before_passes.extend(passes)
+
+
+def register_pass_insertions_after(
+    target_pass_type: type, passes: list[ExportPass]
+) -> None:
+    """Register passes to be inserted after a target pass for all pipelines."""
+    if target_pass_type not in _registered_pass_insertions:
+        _registered_pass_insertions[target_pass_type] = PassInsertions()
+    _registered_pass_insertions[target_pass_type].after_passes.extend(passes)
+
+
+def clear_registered_pass_insertions() -> None:
+    """Clear all globally registered pass insertions."""
+    _registered_pass_insertions.clear()
+
+
 class ArmPassManager(PassManager):
     def __init__(self, compile_spec: ArmCompileSpec) -> None:
         self.compile_spec = compile_spec
@@ -319,13 +345,17 @@ class ArmPassManager(PassManager):
         """Hook for subclasses to configure pass insertions. Called at the START
         of pipeline construction, before any passes are added.
 
-        Subclasses should override this to call insert_passes_before/after.
+        Subclasses can override this to call insert_passes_before/after.
 
         Args:
             exported_program: The exported program being transformed
 
         """
-        pass
+        for pass_type, insertions in _registered_pass_insertions.items():
+            if insertions.before_passes:
+                self.insert_passes_before(pass_type, list(insertions.before_passes))
+            if insertions.after_passes:
+                self.insert_passes_after(pass_type, list(insertions.after_passes))
 
     def add_passes(self, passes: Sequence[ExportPass | None]):
         for p in passes:
