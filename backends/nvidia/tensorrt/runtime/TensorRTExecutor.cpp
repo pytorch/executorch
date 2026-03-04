@@ -786,6 +786,16 @@ size_t TensorRTExecutor::get_num_outputs() const {
   return count;
 }
 
+size_t TensorRTExecutor::get_input_dtype_size(size_t input_index) const {
+  for (const auto& buf : gpu_buffers_) {
+    if (buf.is_input && buf.io_index == input_index) {
+      const char* name = engine_->getIOTensorName(buf.tensor_index);
+      return get_dtype_size(engine_->getTensorDataType(name));
+    }
+  }
+  return 0;
+}
+
 size_t TensorRTExecutor::get_output_dtype_size(size_t output_index) const {
   for (const auto& buf : gpu_buffers_) {
     if (!buf.is_input && buf.io_index == output_index) {

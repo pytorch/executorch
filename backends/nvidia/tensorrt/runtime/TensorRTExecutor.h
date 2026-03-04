@@ -154,6 +154,7 @@ class TensorRTExecutor {
    * Get the element size in bytes for a TRT output tensor.
    * Used to detect dtype mismatches (e.g., TRT int32 vs ExecuTorch int64).
    */
+  size_t get_input_dtype_size(size_t input_index) const;
   size_t get_output_dtype_size(size_t output_index) const;
 
   /**

@@ -166,10 +166,12 @@ Error TensorRTBackend::execute(
 
   // Extract input pointers and shapes.
   // Some inputs may be shape tensors (Int EValues carrying dimension values
-  // for dynamic shapes) rather than data tensors.
+  // for dynamic shapes) rather than data tensors. When TRT expects a different
+  // dtype than the ET tensor (e.g., Float vs Half), use a staging buffer.
   std::vector<void*> input_buffers(num_inputs);
   std::vector<std::vector<int64_t>> input_shapes(num_inputs);
   std::vector<int32_t> shape_tensor_vals(num_inputs);
+  std::vector<std::vector<uint8_t>> input_staging(num_inputs);
   for (size_t i = 0; i < num_inputs; ++i) {
     if (executor->is_input_shape_tensor(i)) {
       int64_t val = args[i]->toInt();
@@ -178,9 +180,26 @@ Error TensorRTBackend::execute(
       input_shapes[i] = {1};
     } else {
       auto& tensor = args[i]->toTensor();
-      input_buffers[i] = tensor.mutable_data_ptr();
       auto sizes = tensor.sizes();
       input_shapes[i].assign(sizes.begin(), sizes.end());
+      size_t trt_elem = executor->get_input_dtype_size(i);
+      size_t et_elem = tensor.element_size();
+      if (trt_elem != et_elem) {
+        auto numel = static_cast<size_t>(tensor.numel());
+        input_staging[i].resize(numel * trt_elem);
+        if (et_elem == 2 && trt_elem == 4) {
+          // Half → float32
+          const auto* src =
+              tensor.const_data_ptr<executorch::aten::Half>();
+          float* dst = reinterpret_cast<float*>(input_staging[i].data());
+          for (size_t j = 0; j < numel; ++j) {
+            dst[j] = static_cast<float>(src[j]);
+          }
+        }
+        input_buffers[i] = input_staging[i].data();
+      } else {
+        input_buffers[i] = tensor.mutable_data_ptr();
+      }
     }
   }
 
