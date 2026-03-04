@@ -346,6 +346,22 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                         </tr>
                                         
                                         <tr id="i11" class="rowColor">
+                                            <td class="colFirst"><code>void</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=LlmModule.html#prefillImages(ByteBuffer,int,int,int)>prefillImages</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> image, int width, int height, int channels) </code>
+                                            </th>
+                                            <td class="colLast">Prefill a multimodal Module with the given image input via a direct ByteBuffer.</td>
+                                        </tr>
+                                        
+                                        <tr id="i12" class="altColor">
+                                            <td class="colFirst"><code>void</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=LlmModule.html#prefillNormalizedImage(ByteBuffer,int,int,int)>prefillNormalizedImage</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> image, int width, int height, int channels) </code>
+                                            </th>
+                                            <td class="colLast">Prefill a multimodal Module with the given normalized image input via a direct ByteBuffer.</td>
+                                        </tr>
+                                        
+                                        <tr id="i13" class="rowColor">
                                             <td class="colFirst"><code>long</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#prefillImages(Array,int,int,int)>prefillImages</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;float&gt; image, int width, int height, int channels) </code>
@@ -353,7 +369,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             <td class="colLast">Prefill a multimodal Module with the given images input.</td>
                                         </tr>
                                         
-                                        <tr id="i12" class="altColor">
+                                        <tr id="i14" class="altColor">
                                             <td class="colFirst"><code>long</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#prefillAudio(Array,int,int,int)>prefillAudio</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt; audio, int batch_size, int n_bins, int n_frames) </code>
@@ -361,7 +377,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             <td class="colLast">Prefill a multimodal Module with the given audio input.</td>
                                         </tr>
                                         
-                                        <tr id="i13" class="rowColor">
+                                        <tr id="i15" class="rowColor">
                                             <td class="colFirst"><code>long</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#prefillAudio(Array,int,int,int)>prefillAudio</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;float&gt; audio, int batch_size, int n_bins, int n_frames) </code>
@@ -369,7 +385,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             <td class="colLast">Prefill a multimodal Module with the given audio input.</td>
                                         </tr>
                                         
-                                        <tr id="i14" class="altColor">
+                                        <tr id="i16" class="altColor">
                                             <td class="colFirst"><code>long</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#prefillRawAudio(Array,int,int,int)>prefillRawAudio</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt; audio, int batch_size, int n_channels, int n_samples) </code>
@@ -377,7 +393,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             <td class="colLast">Prefill a multimodal Module with the given raw audio input.</td>
                                         </tr>
                                         
-                                        <tr id="i15" class="rowColor">
+                                        <tr id="i17" class="rowColor">
                                             <td class="colFirst"><code>long</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#prefillPrompt(String)>prefillPrompt</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt) </code>
@@ -385,7 +401,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             <td class="colLast">Prefill a multimodal Module with the given text input.</td>
                                         </tr>
                                         
-                                        <tr id="i16" class="altColor">
+                                        <tr id="i18" class="altColor">
                                             <td class="colFirst"><code>native void</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#resetContext()>resetContext</a>() </code>
@@ -393,7 +409,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             <td class="colLast">Reset the context of the LLM.</td>
                                         </tr>
                                         
-                                        <tr id="i17" class="rowColor">
+                                        <tr id="i19" class="rowColor">
                                             <td class="colFirst"><code>native void</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#stop()>stop</a>() </code>
@@ -401,7 +417,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             <td class="colLast">Stop current generate() before it finishes.</td>
                                         </tr>
                                         
-                                        <tr id="i18" class="altColor">
+                                        <tr id="i20" class="altColor">
                                             <td class="colFirst"><code>native int</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#load()>load</a>() </code>
@@ -944,6 +960,78 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             
                                             
                                             <dd><code>image</code> - Input image as a byte array</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>width</code> - Input image width</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>height</code> - Input image height</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>channels</code> - Input image number of channels</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="prefillImages(ByteBuffer,int,int,int)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>prefillImages</h4>
+                                        <pre class="methodSignature"> void <a href=LlmModule.html#prefillImages(ByteBuffer,int,int,int)>prefillImages</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> image, int width, int height, int channels)</pre>
+                                        <div class="block"><p>Prefill a multimodal Module with the given image input via a direct ByteBuffer. The buffer datais accessed directly without JNI array copies, unlike <a href=LlmModule.html#prefillImages(Array,int,int,int)>prefillImages</a>. The ByteBuffer must contain raw uint8 pixel data in CHW format with at least channels *height * width bytes remaining. Only the first channels * height * width bytes from thebuffer's current position are read; the position of the original ByteBuffer is not modified.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>image</code> - Input image as a direct ByteBuffer containing uint8 pixel data</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>width</code> - Input image width</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>height</code> - Input image height</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>channels</code> - Input image number of channels</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="prefillNormalizedImage(ByteBuffer,int,int,int)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>prefillNormalizedImage</h4>
+                                        <pre class="methodSignature"> void <a href=LlmModule.html#prefillNormalizedImage(ByteBuffer,int,int,int)>prefillNormalizedImage</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> image, int width, int height, int channels)</pre>
+                                        <div class="block"><p>Prefill a multimodal Module with the given normalized image input via a direct ByteBuffer. Thebuffer data is accessed directly without JNI array copies, unlike <a href=LlmModule.html#prefillImages(Array,int,int,int)></a>. The ByteBuffer must contain normalized float pixeldata in CHW format with at least channels * height * width * 4 bytes remaining. Only the firstchannels * height * width floats from the buffer's current position are consumed. The buffermust use the platform's native byte order (set via <code>{@code * buffer.order(ByteOrder.nativeOrder())}</code>).</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>image</code> - Input normalized image as a direct ByteBuffer containing float pixel data innative byte order</dd>
                                             
                                             
                                             
