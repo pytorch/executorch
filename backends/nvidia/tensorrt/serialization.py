@@ -56,6 +56,7 @@ class TensorRTIOBinding:
     dtype: str
     shape: List[int]
     is_input: bool
+    is_shape_tensor: bool = False
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
@@ -69,6 +70,7 @@ class TensorRTIOBinding:
             dtype=data["dtype"],
             shape=data["shape"],
             is_input=data["is_input"],
+            is_shape_tensor=data.get("is_shape_tensor", False),
         )
 
 

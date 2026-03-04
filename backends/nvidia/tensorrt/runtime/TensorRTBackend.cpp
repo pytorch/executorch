@@ -165,19 +165,40 @@ Error TensorRTBackend::execute(
   }
 
   // Extract input pointers and shapes.
+  // Some inputs may be shape tensors (Int EValues carrying dimension values
+  // for dynamic shapes) rather than data tensors.
   std::vector<void*> input_buffers(num_inputs);
   std::vector<std::vector<int64_t>> input_shapes(num_inputs);
+  std::vector<int32_t> shape_tensor_vals(num_inputs);
   for (size_t i = 0; i < num_inputs; ++i) {
-    auto& tensor = args[i]->toTensor();
-    input_buffers[i] = tensor.mutable_data_ptr();
-    auto sizes = tensor.sizes();
-    input_shapes[i].assign(sizes.begin(), sizes.end());
+    if (executor->is_input_shape_tensor(i)) {
+      int64_t val = args[i]->toInt();
+      shape_tensor_vals[i] = static_cast<int32_t>(val);
+      input_buffers[i] = &shape_tensor_vals[i];
+      input_shapes[i] = {1};
+    } else {
+      auto& tensor = args[i]->toTensor();
+      input_buffers[i] = tensor.mutable_data_ptr();
+      auto sizes = tensor.sizes();
+      input_shapes[i].assign(sizes.begin(), sizes.end());
+    }
   }
 
-  // Extract output pointers.
+  // Extract output pointers. When TRT outputs a different dtype than the
+  // ExecuTorch tensor (e.g., float32 vs Half), use a staging buffer to
+  // avoid buffer overflow, then convert after execution.
   std::vector<void*> output_buffers(num_outputs);
+  std::vector<std::vector<uint8_t>> output_staging(num_outputs);
   for (size_t i = 0; i < num_outputs; ++i) {
-    output_buffers[i] = args[i + num_inputs]->toTensor().mutable_data_ptr();
+    auto& tensor = args[i + num_inputs]->toTensor();
+    size_t trt_elem = executor->get_output_dtype_size(i);
+    size_t et_elem = tensor.element_size();
+    if (trt_elem != et_elem) {
+      output_staging[i].resize(static_cast<size_t>(tensor.numel()) * trt_elem);
+      output_buffers[i] = output_staging[i].data();
+    } else {
+      output_buffers[i] = tensor.mutable_data_ptr();
+    }
   }
 
   auto err = executor->execute(
@@ -189,6 +210,45 @@ Error TensorRTBackend::execute(
 
   if (err != Error::Ok) {
     return err;
+  }
+
+  // Convert outputs where TRT dtype differs from ExecuTorch tensor dtype.
+  for (size_t i = 0; i < num_outputs; ++i) {
+    if (output_staging[i].empty()) {
+      continue;
+    }
+    auto& tensor = args[i + num_inputs]->toTensor();
+    size_t trt_elem = executor->get_output_dtype_size(i);
+    size_t et_elem = tensor.element_size();
+    auto numel = static_cast<size_t>(tensor.numel());
+
+    if (trt_elem == 4 && et_elem == 2) {
+      // float32 → Half
+      const float* src = static_cast<const float*>(output_buffers[i]);
+      auto* dst =
+          tensor.mutable_data_ptr<executorch::aten::Half>();
+      for (size_t j = 0; j < numel; ++j) {
+        dst[j] = executorch::aten::Half(src[j]);
+      }
+    } else if (trt_elem == 4 && et_elem == 8) {
+      // int32 → int64
+      const int32_t* src = static_cast<const int32_t*>(output_buffers[i]);
+      int64_t* dst = static_cast<int64_t*>(tensor.mutable_data_ptr());
+      for (size_t j = 0; j < numel; ++j) {
+        dst[j] = static_cast<int64_t>(src[j]);
+      }
+    } else if (trt_elem == 8 && et_elem == 4) {
+      // int64 → int32 (narrowing)
+      const int64_t* src = static_cast<const int64_t*>(output_buffers[i]);
+      int32_t* dst = static_cast<int32_t*>(tensor.mutable_data_ptr());
+      for (size_t j = 0; j < numel; ++j) {
+        dst[j] = static_cast<int32_t>(src[j]);
+      }
+    } else {
+      // Fallback: copy min(trt, et) bytes per element
+      size_t copy_elem = std::min(trt_elem, et_elem);
+      std::memcpy(tensor.mutable_data_ptr(), output_buffers[i], numel * copy_elem);
+    }
   }
 
   // For dynamic shapes, resize output tensors to match TRT-inferred shapes.

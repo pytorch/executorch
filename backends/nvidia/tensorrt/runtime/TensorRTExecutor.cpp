@@ -57,6 +57,8 @@ size_t get_dtype_size(nvinfer1::DataType dtype) {
     case nvinfer1::DataType::kINT8:
     case nvinfer1::DataType::kBOOL:
       return 1;
+    case nvinfer1::DataType::kINT64:
+      return 8;
     default:
       return 4;
   }
@@ -258,12 +260,49 @@ Error TensorRTExecutor::allocate_gpu_buffers() {
       break;
   }
 
+  shape_tensor_host_buffers_.clear();
+
+  // Count shape tensors to pre-allocate host buffers. This avoids vector
+  // reallocation which would invalidate data() pointers stored in GPUBuffer.
+  size_t num_shape_tensors = 0;
+  for (int32_t i = 0; i < num_io_tensors; ++i) {
+    const char* name = engine_->getIOTensorName(i);
+    if (engine_->getTensorLocation(name) == nvinfer1::TensorLocation::kHOST) {
+      ++num_shape_tensors;
+    }
+  }
+  shape_tensor_host_buffers_.reserve(num_shape_tensors);
+
   // For dynamic shapes, temporarily set all inputs to their profile-max
   // so we can query max output shapes for pre-allocation.
   if (has_dynamic_shapes_) {
     for (int32_t i = 0; i < num_io_tensors; ++i) {
       const char* name = engine_->getIOTensorName(i);
-      if (engine_->getTensorIOMode(name) == nvinfer1::TensorIOMode::kINPUT) {
+      if (engine_->getTensorIOMode(name) != nvinfer1::TensorIOMode::kINPUT) {
+        continue;
+      }
+      bool is_shape = (engine_->getTensorLocation(name) ==
+                        nvinfer1::TensorLocation::kHOST);
+      if (is_shape) {
+        // Shape tensor: set via profile tensor values
+        const auto* max_vals = engine_->getProfileTensorValues(
+            name, 0, nvinfer1::OptProfileSelector::kMAX);
+        if (max_vals) {
+          auto dims = engine_->getTensorShape(name);
+          size_t n = 1;
+          for (int d = 0; d < dims.nbDims; ++d) {
+            n *= static_cast<size_t>(dims.d[d] > 0 ? dims.d[d] : 1);
+          }
+          context_->setInputShape(name, dims);
+          // Allocate a temporary host buffer for this shape tensor
+          // so we can call setTensorAddress during pre-allocation inference.
+          std::vector<int32_t> host_buf(n);
+          for (size_t j = 0; j < n; ++j) {
+            host_buf[j] = max_vals[j];
+          }
+          context_->setTensorAddress(name, host_buf.data());
+        }
+      } else {
         auto max_dims = engine_->getProfileShape(
             name, 0, nvinfer1::OptProfileSelector::kMAX);
         context_->setInputShape(name, max_dims);
@@ -280,6 +319,36 @@ Error TensorRTExecutor::allocate_gpu_buffers() {
     const auto mode = engine_->getTensorIOMode(name);
     const auto dtype = engine_->getTensorDataType(name);
     const auto static_dims = engine_->getTensorShape(name);
+    bool is_shape =
+        (engine_->getTensorLocation(name) == nvinfer1::TensorLocation::kHOST);
+
+    if (is_shape) {
+      // Shape tensor: allocate host memory instead of GPU memory.
+      size_t num_elems = 1;
+      for (int d = 0; d < static_dims.nbDims; ++d) {
+        num_elems *=
+            static_cast<size_t>(static_dims.d[d] > 0 ? static_dims.d[d] : 1);
+      }
+
+      shape_tensor_host_buffers_.emplace_back(num_elems, 0);
+      auto& host_buf = shape_tensor_host_buffers_.back();
+
+      GPUBuffer buf;
+      buf.ptr = host_buf.data();
+      buf.size = num_elems * sizeof(int32_t);
+      buf.is_input = (mode == nvinfer1::TensorIOMode::kINPUT);
+      buf.tensor_index = i;
+      buf.has_dynamic_dims = false;
+      buf.is_shape_tensor = true;
+      if (buf.is_input) {
+        buf.io_index = input_idx++;
+      } else {
+        buf.io_index = output_idx++;
+        ++num_outputs;
+      }
+      gpu_buffers_.push_back(buf);
+      continue;
+    }
 
     bool is_dynamic = false;
     for (int d = 0; d < static_dims.nbDims; ++d) {
@@ -331,6 +400,7 @@ Error TensorRTExecutor::allocate_gpu_buffers() {
     buf.is_input = (mode == nvinfer1::TensorIOMode::kINPUT);
     buf.tensor_index = i;
     buf.has_dynamic_dims = is_dynamic;
+    buf.is_shape_tensor = false;
     if (buf.is_input) {
       buf.io_index = input_idx++;
     } else {
@@ -353,12 +423,13 @@ Error TensorRTExecutor::allocate_gpu_buffers() {
 
 void TensorRTExecutor::free_gpu_buffers() {
   for (auto& buf : gpu_buffers_) {
-    if (buf.ptr) {
+    if (buf.ptr && !buf.is_shape_tensor) {
       cudaFree(buf.ptr);
-      buf.ptr = nullptr;
     }
+    buf.ptr = nullptr;
   }
   gpu_buffers_.clear();
+  shape_tensor_host_buffers_.clear();
 }
 
 Error TensorRTExecutor::execute(
@@ -399,11 +470,21 @@ Error TensorRTExecutor::execute(
   }
 
   // For dynamic shapes, set actual input shapes on the execution context.
+  // Shape tensors are handled separately — their int32 values are written
+  // directly to host buffers and their tensor dims set from the static shape.
   if (has_dynamic_shapes_) {
     for (const auto& buf : gpu_buffers_) {
       if (!buf.is_input)
         continue;
       const char* name = engine_->getIOTensorName(buf.tensor_index);
+      if (buf.is_shape_tensor) {
+        // Write int32 value(s) from input_buffers to host buffer
+        std::memcpy(buf.ptr, input_buffers[buf.io_index], buf.size);
+        auto static_dims = engine_->getTensorShape(name);
+        context_->setInputShape(name, static_dims);
+        context_->setTensorAddress(name, buf.ptr);
+        continue;
+      }
       const auto& shape = input_shapes[buf.io_index];
       nvinfer1::Dims dims;
       dims.nbDims = static_cast<int>(shape.size());
@@ -449,8 +530,19 @@ Error TensorRTExecutor::execute(
     return sz;
   };
 
+  // Set tensor addresses for shape tensor outputs before enqueueV3.
+  for (const auto& buf : gpu_buffers_) {
+    if (!buf.is_input && buf.is_shape_tensor) {
+      const char* name = engine_->getIOTensorName(buf.tensor_index);
+      context_->setTensorAddress(name, buf.ptr);
+    }
+  }
+
   if (uses_unified_memory_) {
     for (const auto& buf : gpu_buffers_) {
+      if (buf.is_shape_tensor) {
+        continue;
+      }
       const char* name = engine_->getIOTensorName(buf.tensor_index);
       if (buf.is_input) {
         size_t copy_size = has_dynamic_shapes_
@@ -477,13 +569,28 @@ Error TensorRTExecutor::execute(
     }
 
     for (const auto& buf : gpu_buffers_) {
-      if (!buf.is_input) {
+      if (buf.is_input)
+        continue;
+      if (buf.is_shape_tensor) {
+        // Shape tensor output: copy int32 host values to output buffer.
+        // Output buffer may be int64, so widen each element.
+        size_t n = buf.size / sizeof(int32_t);
+        const int32_t* src = static_cast<const int32_t*>(buf.ptr);
+        int64_t* dst = static_cast<int64_t*>(output_buffers[buf.io_index]);
+        for (size_t j = 0; j < n; ++j) {
+          dst[j] = static_cast<int64_t>(src[j]);
+        }
+      } else {
         size_t copy_size = get_output_copy_size(buf);
         std::memcpy(output_buffers[buf.io_index], buf.ptr, copy_size);
       }
     }
   } else {
     for (const auto& buf : gpu_buffers_) {
+      if (buf.is_shape_tensor) {
+        // Shape tensors already handled in the dynamic shapes block above.
+        continue;
+      }
       const char* name = engine_->getIOTensorName(buf.tensor_index);
       if (buf.is_input) {
         size_t copy_size = has_dynamic_shapes_
@@ -513,7 +620,17 @@ Error TensorRTExecutor::execute(
     }
 
     for (const auto& buf : gpu_buffers_) {
-      if (!buf.is_input) {
+      if (buf.is_input)
+        continue;
+      if (buf.is_shape_tensor) {
+        // Shape tensor output: widen int32 host values to int64 output buffer.
+        size_t n = buf.size / sizeof(int32_t);
+        const int32_t* src = static_cast<const int32_t*>(buf.ptr);
+        int64_t* dst = static_cast<int64_t*>(output_buffers[buf.io_index]);
+        for (size_t j = 0; j < n; ++j) {
+          dst[j] = static_cast<int64_t>(src[j]);
+        }
+      } else {
         size_t copy_size = get_output_copy_size(buf);
         cudaError_t err = cudaMemcpyAsync(
             output_buffers[buf.io_index],
@@ -547,10 +664,96 @@ Error TensorRTExecutor::execute(
 bool TensorRTExecutor::parse_io_bindings(
     const void* json_data,
     size_t json_size) {
-  (void)json_data;
-  (void)json_size;
-  // TODO: Implement JSON parsing for I/O bindings
-  return true;
+  if (json_data == nullptr || json_size == 0) {
+    return false;
+  }
+
+  std::string json(static_cast<const char*>(json_data), json_size);
+  io_bindings_.clear();
+
+  // Minimal JSON parser for the flat io_bindings array.
+  // Format: {"io_bindings":[{"name":"...","dtype":"...","shape":[...],"is_input":bool,"is_shape_tensor":bool},...]}
+  const std::string key = "\"io_bindings\"";
+  auto arr_start = json.find(key);
+  if (arr_start == std::string::npos) {
+    return false;
+  }
+  arr_start = json.find('[', arr_start);
+  if (arr_start == std::string::npos) {
+    return false;
+  }
+
+  // Parse each object in the array
+  size_t pos = arr_start + 1;
+  while (pos < json.size()) {
+    auto obj_start = json.find('{', pos);
+    if (obj_start == std::string::npos)
+      break;
+    auto obj_end = json.find('}', obj_start);
+    if (obj_end == std::string::npos)
+      break;
+
+    std::string obj = json.substr(obj_start, obj_end - obj_start + 1);
+    IOBinding binding;
+
+    // Extract string field
+    auto extract_string = [&](const std::string& field) -> std::string {
+      auto fpos = obj.find("\"" + field + "\"");
+      if (fpos == std::string::npos)
+        return "";
+      auto colon = obj.find(':', fpos);
+      auto qstart = obj.find('"', colon + 1);
+      auto qend = obj.find('"', qstart + 1);
+      return obj.substr(qstart + 1, qend - qstart - 1);
+    };
+
+    // Extract bool field
+    auto extract_bool = [&](const std::string& field,
+                            bool default_val) -> bool {
+      auto fpos = obj.find("\"" + field + "\"");
+      if (fpos == std::string::npos)
+        return default_val;
+      auto colon = obj.find(':', fpos);
+      auto val_start = obj.find_first_not_of(" \t", colon + 1);
+      return obj.substr(val_start, 4) == "true";
+    };
+
+    binding.name = extract_string("name");
+    binding.dtype = extract_string("dtype");
+    binding.is_input = extract_bool("is_input", true);
+    binding.is_shape_tensor = extract_bool("is_shape_tensor", false);
+
+    // Extract shape array
+    auto shape_pos = obj.find("\"shape\"");
+    if (shape_pos != std::string::npos) {
+      auto bracket_start = obj.find('[', shape_pos);
+      auto bracket_end = obj.find(']', bracket_start);
+      if (bracket_start != std::string::npos &&
+          bracket_end != std::string::npos) {
+        std::string shape_str =
+            obj.substr(bracket_start + 1, bracket_end - bracket_start - 1);
+        size_t spos = 0;
+        while (spos < shape_str.size()) {
+          auto next = shape_str.find(',', spos);
+          if (next == std::string::npos)
+            next = shape_str.size();
+          std::string num_str = shape_str.substr(spos, next - spos);
+          // Trim whitespace
+          auto ns = num_str.find_first_not_of(" \t");
+          if (ns != std::string::npos) {
+            binding.shape.push_back(
+                static_cast<int64_t>(std::stoll(num_str.substr(ns))));
+          }
+          spos = next + 1;
+        }
+      }
+    }
+
+    io_bindings_.push_back(std::move(binding));
+    pos = obj_end + 1;
+  }
+
+  return !io_bindings_.empty();
 }
 
 size_t TensorRTExecutor::get_num_inputs() const {
@@ -581,6 +784,25 @@ size_t TensorRTExecutor::get_num_outputs() const {
     }
   }
   return count;
+}
+
+size_t TensorRTExecutor::get_output_dtype_size(size_t output_index) const {
+  for (const auto& buf : gpu_buffers_) {
+    if (!buf.is_input && buf.io_index == output_index) {
+      const char* name = engine_->getIOTensorName(buf.tensor_index);
+      return get_dtype_size(engine_->getTensorDataType(name));
+    }
+  }
+  return 0;
+}
+
+bool TensorRTExecutor::is_input_shape_tensor(size_t input_index) const {
+  for (const auto& buf : gpu_buffers_) {
+    if (buf.is_input && buf.io_index == input_index) {
+      return buf.is_shape_tensor;
+    }
+  }
+  return false;
 }
 
 } // namespace tensorrt

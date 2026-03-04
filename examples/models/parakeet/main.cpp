@@ -207,9 +207,61 @@ int main(int argc, char** argv) {
       static_cast<long>(mel.sizes()[2]),
       static_cast<long long>(mel_len_value));
 
+  // Check expected dtype for encoder input and convert if needed
+  auto encoder_method_meta_result = model->method_meta("encoder");
+  if (!encoder_method_meta_result.ok()) {
+    ET_LOG(Error, "Failed to get encoder method metadata.");
+    return 1;
+  }
+  auto encoder_method_meta = encoder_method_meta_result.get();
+
+  ::executorch::aten::ScalarType expected_dtype =
+      ::executorch::aten::ScalarType::Float;
+  if (encoder_method_meta.num_inputs() > 0) {
+    auto input_meta_result = encoder_method_meta.input_tensor_meta(0);
+    if (input_meta_result.error() == Error::Ok) {
+      expected_dtype = input_meta_result.get().scalar_type();
+    }
+  }
+
+  ::executorch::extension::TensorPtr mel_input;
+  if (mel.scalar_type() != expected_dtype) {
+    auto mel_ptr = ::executorch::extension::clone_tensor_ptr(mel);
+    if (expected_dtype == ::executorch::aten::ScalarType::Half) {
+      ET_LOG(
+          Info,
+          "Converting mel from %s to Half",
+          ::executorch::runtime::toString(mel.scalar_type()));
+      auto convert_result =
+          ::executorch::extension::llm::convert_to_half(mel_ptr);
+      if (!convert_result.ok()) {
+        ET_LOG(Error, "Failed to convert mel to Half.");
+        return 1;
+      }
+      mel_input = std::move(convert_result.get());
+    } else if (expected_dtype == ::executorch::aten::ScalarType::BFloat16) {
+      ET_LOG(
+          Info,
+          "Converting mel from %s to BFloat16",
+          ::executorch::runtime::toString(mel.scalar_type()));
+      auto convert_result =
+          ::executorch::extension::llm::convert_to_bfloat16(mel_ptr);
+      if (!convert_result.ok()) {
+        ET_LOG(Error, "Failed to convert mel to BFloat16.");
+        return 1;
+      }
+      mel_input = std::move(convert_result.get());
+    }
+  }
+
   ET_LOG(Info, "Running encoder...");
-  auto enc_result = model->execute(
-      "encoder", std::vector<::executorch::runtime::EValue>{mel, mel_len});
+  auto enc_result = mel_input
+      ? model->execute(
+            "encoder",
+            std::vector<::executorch::runtime::EValue>{*mel_input, *mel_len})
+      : model->execute(
+            "encoder",
+            std::vector<::executorch::runtime::EValue>{mel, *mel_len});
   if (!enc_result.ok()) {
     ET_LOG(Error, "Encoder forward failed.");
     return 1;

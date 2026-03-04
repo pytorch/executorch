@@ -863,18 +863,21 @@ def _collect_io_bindings(network: Any) -> List[TensorRTIOBinding]:
                 dtype=_trt_dtype_to_string(tensor.dtype),
                 shape=get_safe_shape(tensor),
                 is_input=True,
+                is_shape_tensor=is_shape,
             )
         )
 
     # Collect outputs
     for i in range(network.num_outputs):
         tensor = network.get_output(i)
+        is_shape = hasattr(tensor, "is_shape_tensor") and tensor.is_shape_tensor
         bindings.append(
             TensorRTIOBinding(
                 name=tensor.name,
                 dtype=_trt_dtype_to_string(tensor.dtype),
                 shape=get_safe_shape(tensor),
                 is_input=False,
+                is_shape_tensor=is_shape,
             )
         )
 

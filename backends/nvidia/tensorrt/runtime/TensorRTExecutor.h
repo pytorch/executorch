@@ -31,6 +31,7 @@ struct IOBinding {
   std::string dtype;
   std::vector<int64_t> shape;
   bool is_input;
+  bool is_shape_tensor{false};
 };
 
 /**
@@ -43,6 +44,7 @@ struct GPUBuffer {
   int32_t tensor_index{-1};
   size_t io_index{0}; // Index in input_buffers or output_buffers array
   bool has_dynamic_dims{false};
+  bool is_shape_tensor{false};
 };
 
 /**
@@ -142,6 +144,19 @@ class TensorRTExecutor {
   size_t get_num_outputs() const;
 
   /**
+   * Check if a given input index corresponds to a shape tensor.
+   * Shape tensors carry dimension values for dynamic shapes and
+   * live on host memory rather than device memory.
+   */
+  bool is_input_shape_tensor(size_t input_index) const;
+
+  /**
+   * Get the element size in bytes for a TRT output tensor.
+   * Used to detect dtype mismatches (e.g., TRT int32 vs ExecuTorch int64).
+   */
+  size_t get_output_dtype_size(size_t output_index) const;
+
+  /**
    * Check if running on unified memory system (e.g., Jetson).
    *
    * @return true if CPU and GPU share memory.
@@ -193,6 +208,7 @@ class TensorRTExecutor {
   bool owns_stream_{true};
   std::vector<IOBinding> io_bindings_;
   std::vector<GPUBuffer> gpu_buffers_;
+  std::vector<std::vector<int32_t>> shape_tensor_host_buffers_;
   bool uses_unified_memory_{false};
   bool has_dynamic_shapes_{false};
   std::vector<std::vector<int32_t>> output_shapes_;

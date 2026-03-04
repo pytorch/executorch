@@ -180,6 +180,46 @@ class SerializationTest(unittest.TestCase):
         self.assertEqual(extracted_metadata.io_bindings[0].name, "input")
         self.assertEqual(extracted_metadata.io_bindings[1].name, "output")
 
+    def test_io_binding_shape_tensor_roundtrip(self) -> None:
+        """Test TensorRTIOBinding with is_shape_tensor field."""
+        from executorch.backends.nvidia.tensorrt.serialization import (
+            TensorRTBlobMetadata,
+            TensorRTIOBinding,
+        )
+
+        original = TensorRTBlobMetadata(
+            io_bindings=[
+                TensorRTIOBinding("mel", "float16", [-1, 128, -1], True, False),
+                TensorRTIOBinding("mel_len", "int64", [1], True, False),
+                TensorRTIOBinding("s0", "int32", [1], True, True),
+                TensorRTIOBinding("output", "float16", [-1, -1, 640], False, False),
+            ]
+        )
+
+        json_bytes = original.to_json()
+        restored = TensorRTBlobMetadata.from_json(json_bytes)
+
+        self.assertEqual(len(restored.io_bindings), 4)
+        self.assertFalse(restored.io_bindings[0].is_shape_tensor)
+        self.assertFalse(restored.io_bindings[1].is_shape_tensor)
+        self.assertTrue(restored.io_bindings[2].is_shape_tensor)
+        self.assertFalse(restored.io_bindings[3].is_shape_tensor)
+
+    def test_io_binding_shape_tensor_backward_compat(self) -> None:
+        """Test that old dicts without is_shape_tensor default to False."""
+        from executorch.backends.nvidia.tensorrt.serialization import (
+            TensorRTIOBinding,
+        )
+
+        d = {
+            "name": "input_0",
+            "dtype": "float32",
+            "shape": [1, 3],
+            "is_input": True,
+        }
+        binding = TensorRTIOBinding.from_dict(d)
+        self.assertFalse(binding.is_shape_tensor)
+
     def test_blob_alignment(self) -> None:
         """Test that engine data is 16-byte aligned."""
         from executorch.backends.nvidia.tensorrt.serialization import (
