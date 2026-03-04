@@ -44,8 +44,14 @@ class LCMOpenVINOExporter:
         model_id: str = "SimianLuo/LCM_Dreamshaper_v7",
         is_quantization_enabled: bool = False,
         dtype: torch.dtype = torch.float16,
+        calibration_dataset_name: str = "google-research-datasets/conceptual_captions",
+        calibration_dataset_column: str = "caption",
     ):
+        if is_quantization_enabled:
+            dtype = torch.float32
         self.is_quantization_enabled = is_quantization_enabled
+        self.calibration_dataset_name = calibration_dataset_name
+        self.calibration_dataset_column = calibration_dataset_column
         self.model_loader = LCMModelLoader(model_id=model_id, dtype=dtype)
 
     def load_models(self) -> bool:
@@ -73,15 +79,12 @@ class LCMOpenVINOExporter:
         return quantizer
 
     @staticmethod
-    def _set_pipeline_dtype(pipeline, dtype: torch.dtype) -> None:
-        """Set core pipeline models to a target dtype."""
-        pipeline.text_encoder.to(dtype=dtype)
-        pipeline.unet.to(dtype=dtype)
-        pipeline.vae.to(dtype=dtype)
-
-    @staticmethod
     def get_unet_calibration_dataset(
-        pipeline, calibration_dataset_size: int = 200, num_inference_steps: int = 4
+        pipeline,
+        dataset_name: str,
+        dataset_column: str,
+        calibration_dataset_size: int = 200,
+        num_inference_steps: int = 4,
     ) -> list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
         """Collect UNet calibration inputs from prompts."""
 
@@ -129,7 +132,7 @@ class LCMOpenVINOExporter:
 
             def forward(self, *args, **kwargs):
                 """
-                obtain and pass each input individually to ensure the order is maintained
+                Obtain and pass each input individually to ensure the order is maintained
                 and the right values are being passed according to the expected inputs by
                 the OpenVINO LCM runner.
                 """
@@ -138,18 +141,29 @@ class LCMOpenVINOExporter:
                 return self.model(*args, **kwargs)
 
         calibration_data = []
-        dataset = datasets.load_dataset(
-            "google-research-datasets/conceptual_captions",
-            split="train",
-            trust_remote_code=True,
-        ).shuffle(seed=42)
+        try:
+            dataset = datasets.load_dataset(
+                dataset_name,
+                split="train",
+                trust_remote_code=True,
+            ).shuffle(seed=42)
+        except Exception as error:
+            raise RuntimeError(
+                f"Failed to load calibration dataset '{dataset_name}'"
+            ) from error
         original_unet = pipeline.unet
         wrapped_unet = UNetWrapper(pipeline.unet, pipeline.unet.config)
         pipeline.unet = wrapped_unet
         # Run inference for data collection
         pbar = tqdm(total=calibration_dataset_size)
         for batch in dataset:
-            prompt = batch["caption"]
+            if dataset_column not in batch:
+                raise RuntimeError(
+                    f"Column '{dataset_column}' was not found in dataset '{dataset_name}'"
+                )
+            prompt = batch[dataset_column]
+            if not isinstance(prompt, str):
+                prompt = str(prompt)
             if len(prompt.split()) > pipeline.tokenizer.model_max_length:
                 continue
             # Run the pipeline
@@ -171,20 +185,19 @@ class LCMOpenVINOExporter:
         is_quantization_enabled: bool,
     ) -> torch.fx.GraphModule:
         """Apply model quantization when enabled."""
+        if not is_quantization_enabled:
+            return model
         try:
-            if not is_quantization_enabled:
-                return model
             quantized_model = model
             ov_quantizer = self.get_ov_quantizer(sd_model_component)
-            if self.should_quantize_model(sd_model_component):
+            if sd_model_component == StableDiffusionComponent.UNET:
                 # Quantize activations for the Unet Model. Other models are weights-only quantized.
                 pipeline = self.model_loader.pipeline
-                try:
-                    # We need the models in FP32 to run inference for calibration data collection
-                    self._set_pipeline_dtype(pipeline, torch.float32)
-                    calibration_dataset = self.get_unet_calibration_dataset(pipeline)
-                finally:
-                    self._set_pipeline_dtype(pipeline, self.model_loader.dtype)
+                calibration_dataset = self.get_unet_calibration_dataset(
+                    pipeline,
+                    self.calibration_dataset_name,
+                    self.calibration_dataset_column,
+                )
 
                 quantized_model = quantize_model(
                     model,
@@ -198,11 +211,10 @@ class LCMOpenVINOExporter:
                 )
             return quantized_model
         except Exception as e:
-            logger.error(f"Quantization failed for {sd_model_component}: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return model
+            logger.error(f"Quantization failed for {sd_model_component.value}: {e}")
+            raise RuntimeError(
+                f"Quantization failed for {sd_model_component.value}: {e}"
+            ) from e
 
     def _export_and_maybe_quantize(
         self,
@@ -237,15 +249,6 @@ class LCMOpenVINOExporter:
                 dummy_inputs[sd_model_component],
                 sd_model_component,
                 self.is_quantization_enabled,
-            )
-
-            # Configure OpenVINO compilation
-            compile_spec = [CompileSpec("device", device.encode())]
-            partitioner = OpenvinoPartitioner(compile_spec)
-
-            # Lower to edge dialect and apply OpenVINO backend
-            edge_manager = to_edge_transform_and_lower(
-                exported_program, partitioner=[partitioner]
             )
 
             # Configure OpenVINO compilation
@@ -415,12 +418,6 @@ Examples:
     )
 
     parser.add_argument(
-        "--quantize",
-        action="store_true",
-        help="Whether the Models should be quantized.",
-    )
-
-    parser.add_argument(
         "--output_dir",
         type=str,
         required=True,
@@ -436,9 +433,23 @@ Examples:
 
     parser.add_argument(
         "--dtype",
-        choices=["fp16", "fp32"],
+        choices=["fp16", "fp32", "int8"],
         default="fp16",
-        help="Model data type (default: fp16)",
+        help="Model data type. Use int8 to enable PTQ quantization (default: fp16)",
+    )
+
+    parser.add_argument(
+        "--calibration_dataset_name",
+        type=str,
+        default="google-research-datasets/conceptual_captions",
+        help="HuggingFace dataset name used for UNet calibration when dtype=int8",
+    )
+
+    parser.add_argument(
+        "--calibration_dataset_column",
+        type=str,
+        default="caption",
+        help="Dataset column name used as prompt text for UNet calibration",
     )
 
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
@@ -458,18 +469,21 @@ def main() -> int:
     logger.info("=" * 60)
     logger.info("LCM Model Export")
     logger.info(f"Model: {args.model_id}")
-    logger.info(
-        f"Device: {args.device} | Dtype: {args.dtype} | Quantize: {args.quantize}"
-    )
+    logger.info(f"Device: {args.device} | Dtype: {args.dtype}")
     logger.info("=" * 60)
 
     # Map dtype string to torch dtype
-    dtype_map = {"fp16": torch.float16, "fp32": torch.float32}
+    is_quantization_enabled = args.dtype == "int8"
+    dtype_map = {"fp16": torch.float16, "fp32": torch.float32, "int8": torch.float32}
     dtype = dtype_map[args.dtype]
 
     # Create exporter and load models
     exporter = LCMOpenVINOExporter(
-        args.model_id, is_quantization_enabled=args.quantize, dtype=dtype
+        args.model_id,
+        is_quantization_enabled=is_quantization_enabled,
+        dtype=dtype,
+        calibration_dataset_name=args.calibration_dataset_name,
+        calibration_dataset_column=args.calibration_dataset_column,
     )
 
     if not exporter.load_models():
