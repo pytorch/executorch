@@ -9,7 +9,7 @@ Export LFM2.5-VL-1.6B as a single multi-method PTE for ExecuTorch's
 generic MultimodalRunner (C++ llava_main).
 
 Methods:
-  vision_encoder  : [1, 3, 512, 512] f32 NCHW pixels [0,255] -> [1, 256, 2048] f32/f16
+  vision_encoder  : [1, 3, 512, 512] f32 NCHW pixels [0,255] -> [1, 256, 2048] f32
   token_embedding : [1, seq_len] i64                          -> [1, seq_len, 2048] f32
   text_decoder    : ([1, seq_len, 2048] f32, [seq_len] i64)   -> [1, 65536] f32
 
@@ -28,6 +28,10 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
 )
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    XNNPACKQuantizer,
+    get_symmetric_quantization_config,
+)
 from executorch.examples.models.llama.export_llama_lib import (
     get_quantizer_and_quant_params,
 )
@@ -85,17 +89,20 @@ class Lfm2p5VlEdgeManager(LLMEdgeManager):
 
 
 def export_image_encoder(
-    lfm2, dtype: DType = DType.fp32
+    lfm2, quantize: bool = False
 ) -> torch.export.ExportedProgram:
     """Export vision encoder as 'vision_encoder' method.
 
     Input:  [1, 3, 512, 512] float32 NCHW pixels in [0, 255]
-    Output: [1, 256, 2048]   f32/f16 image embeddings
+    Output: [1, 256, 2048]   float32 image embeddings
 
     Normalize + patch extraction are baked in so the C++ runner only
     needs to resize to 512x512 and pass the raw pixel buffer.
-    Weights are cast to dtype (fp16 halves the ~1.6 GB vision encoder).
-    The input pixel tensor always stays fp32.
+
+    When quantize=True, mirrors LLaVA's export_image_encoder: uses
+    LLMEdgeManager.export().pt2e_quantize() so quantization happens on
+    the pre-autograd graph (aten.linear still intact), then re-exports
+    the quantized graph for to_edge_transform_and_lower.
     """
 
     class ImageEncoder(torch.nn.Module):
@@ -107,18 +114,38 @@ def export_image_encoder(
             return self.lfm2.image_embedding(images)
 
     encoder = ImageEncoder(lfm2)
-    if dtype != DType.fp32:
-        # Cast only the vision parts of the HF model, not text_model (KV cache buffers
-        # must stay in the text decoder's dtype, not the vision encoder's dtype).
-        lfm2.model_.model.vision_tower.to(dtype.to_torch_dtype())
-        lfm2.model_.model.multi_modal_projector.to(dtype.to_torch_dtype())
     example_pixels = torch.randint(
         0, 256, (1, 3, IMAGE_SIZE, IMAGE_SIZE), dtype=torch.float32
     )
 
-    logging.info(f"Exporting vision encoder ({dtype.name})...")
-    with torch.no_grad():
-        ep = torch.export.export(encoder, (example_pixels,), strict=False)
+    if quantize:
+        logging.info("Exporting vision encoder (int8 dynamic quantized)...")
+        quantizer = XNNPACKQuantizer().set_global(
+            get_symmetric_quantization_config()
+        )
+        manager = (
+            Lfm2p5VlEdgeManager(
+                model=encoder,
+                modelname="lfm2_5_vl_image_encoder",
+                max_seq_len=MAX_SEQ_LEN,
+                dtype=DType.fp32,
+                use_kv_cache=False,
+                example_inputs=(example_pixels,),
+            )
+            .export()
+            .pt2e_quantize([quantizer])
+        )
+        with torch.no_grad():
+            ep = torch.export.export(
+                manager.pre_autograd_graph_module,
+                manager.example_inputs,
+                strict=False,
+            )
+    else:
+        logging.info("Exporting vision encoder (fp32)...")
+        with torch.no_grad():
+            ep = torch.export.export(encoder, (example_pixels,), strict=False)
+
     return ep
 
 
@@ -257,10 +284,8 @@ def export_all(
     if dtype != DType.fp32:
         lfm2 = lfm2.to(dtype.to_torch_dtype())
 
-    # Vision encoder: use fp16 when quantizing (halves ~1.6 GB SigLIP2) or when dtype=fp16
-    vision_dtype = DType.fp16 if (quantize or dtype == DType.fp16) else DType.fp32
     logging.info("[1/3] Exporting vision encoder...")
-    vision_ep = export_image_encoder(lfm2, vision_dtype)
+    vision_ep = export_image_encoder(lfm2, quantize)
 
     # Text decoder MUST come before token embedding (see export_token_embedding docstring)
     logging.info("[2/3] Exporting text decoder...")
