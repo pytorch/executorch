@@ -47,6 +47,8 @@ from executorch.devtools import generate_etrecord
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
 
+from executorch.exir.passes.quantize_io_pass import QuantizeInputs, QuantizeOutputs
+
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -859,6 +861,17 @@ def to_edge_cortex_m(
             _check_ir_validity=False,
         ),
     )
+
+    # Strip the float I/O wrapper from the quantized model to produce
+    # fully int8 inputs and outputs. This must run before CortexMPassManager
+    # which renames quantized_decomposed ops to cortex_m variants.
+    if args.quantize:
+        print("Applying passes to create a fully int8 quantized model...")
+
+        edge = edge.transform([
+            QuantizeInputs(edge, [0]),
+            QuantizeOutputs(edge, [0]),
+        ])
 
     pass_manager = CortexMPassManager(edge.exported_program())
     edge._edge_programs["forward"] = pass_manager.transform()
