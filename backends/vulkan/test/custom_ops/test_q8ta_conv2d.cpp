@@ -237,9 +237,9 @@ std::vector<TestCase> generate_quantized_conv2d_easy_cases() {
       test_cases.push_back(create_test_case_from_config(
           config, vkapi::kFloat, fp_storage_type, int8_memory_layout));
 
-      // Test im2col implementation for non-grouped convolutions with input
-      // channels that are a multiple of 4 and stride_w == 1
-      if (config.groups == 1 && config.channels.in % 4 == 0) {
+      // Test im2col implementation when input channels per group is a
+      // multiple of 4
+      if ((config.channels.in / config.groups) % 4 == 0) {
         test_cases.push_back(create_test_case_from_config(
             config,
             vkapi::kFloat,
@@ -378,7 +378,38 @@ static std::vector<TestCase> generate_quantized_conv2d_test_cases() {
        Stride(2, 2),
        Padding(2, 2),
        Dilation(1, 1),
-       4}};
+       4},
+      // SceneX v9 grouped convolutions (large spatial)
+      {OutInChannels(128, 128),
+       InputSize2D(256, 256),
+       KernelSize(5, 5),
+       Stride(2, 2),
+       Padding(2, 2),
+       Dilation(1, 1),
+       4},
+      {OutInChannels(64, 64),
+       InputSize2D(256, 256),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       2},
+      // Deep channels + small spatial (ResNet50 stage 5 bottleneck)
+      {OutInChannels(512, 512),
+       InputSize2D(7, 7),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       1},
+      // Strided 1x1 shortcut (worst-case strided downsample)
+      {OutInChannels(2048, 1024),
+       InputSize2D(14, 14),
+       KernelSize(1, 1),
+       Stride(2, 2),
+       Padding(0, 0),
+       Dilation(1, 1),
+       1}};
 
   // Test with different storage types and memory layouts
   std::vector<utils::StorageType> fp_storage_types = {utils::kTexture3D};
@@ -410,9 +441,11 @@ static std::vector<TestCase> generate_quantized_conv2d_test_cases() {
             int8_memory_layout,
             /*impl_selector=*/"general"));
 
-        // Test im2col implementation for non-grouped convolutions with input
-        // channels that are a multiple of 4 and stride_w == 1
-        if (config.groups == 1 && config.channels.in % 4 == 0) {
+        // Test im2col implementation when input channels per group is a
+        // multiple of 4
+        const int64_t in_channels_per_group =
+            config.channels.in / config.groups;
+        if (in_channels_per_group % 4 == 0) {
           test_cases.push_back(create_test_case_from_config(
               config,
               vkapi::kFloat,

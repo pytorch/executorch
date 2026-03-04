@@ -508,11 +508,20 @@ class EthosU55ViewCheck(OperatorSupportBase):
             return True
 
         shape = list(get_first_fake_tensor(node).shape)
-
+        output_rank = len(shape)
         dtype = _try_determine_dtype(node)
 
-        output_rank = len(shape)
-        input_shape = list(get_first_fake_tensor(node.all_input_nodes[0]).shape)
+        if node.target in (
+            exir_ops.edge.aten.select.int,
+            exir_ops.edge.aten.select_copy.int,
+        ):
+            # For select, the transpose condition should be applied on the output of the slice
+            # which has the same shape as the input except the selected dimension is 1.
+            input_shape = list(get_first_fake_tensor(node.all_input_nodes[0]).shape)
+            dim = typing.cast(int, node.args[1])
+            input_shape[dim] = 1
+        else:
+            input_shape = list(get_first_fake_tensor(node.all_input_nodes[0]).shape)
         input_rank = len(input_shape)
 
         if not self._check_rank_constraints(node, input_shape, shape, dtype):

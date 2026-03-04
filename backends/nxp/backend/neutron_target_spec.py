@@ -98,9 +98,9 @@ class NeutronTargetSpec:
     The functionality for probing the properties of Neutron Target.
     """
 
-    def __init__(self, target: str, neutron_converter_flavor: str):
+    def __init__(self, target: str):
 
-        converter_manager = NeutronConverterManager(neutron_converter_flavor)
+        converter_manager = NeutronConverterManager()
         converter_manager.verify_target(target)
         neutron_converter = converter_manager.get_converter()
         self.neutron_target = neutron_converter.getNeutronTarget(target)

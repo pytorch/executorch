@@ -9,7 +9,7 @@
 
 show_help() {
   cat << EOF
-Usage: export_model_artifact.sh <device> <hf_model> [quant_name] [output_dir]
+Usage: export_model_artifact.sh <device> <hf_model> [quant_name] [output_dir] [mode]
 
 Export a HuggingFace model to CUDA/Metal/XNNPACK format with optional quantization.
 
@@ -34,13 +34,22 @@ Arguments:
 
   output_dir   Output directory for artifacts (optional, default: current directory)
 
+  mode         Export mode (optional, default: vr-streaming)
+               Supported modes:
+                 - vr-streaming: Voxtral Realtime streaming mode
+                 - vr-offline: Voxtral Realtime offline mode
+
 Examples:
   export_model_artifact.sh metal "openai/whisper-small"
   export_model_artifact.sh metal "nvidia/parakeet-tdt" "quantized-int4-metal"
+  export_model_artifact.sh metal "mistralai/Voxtral-Mini-4B-Realtime-2602" "quantized-int4-metal"
+  export_model_artifact.sh metal "mistralai/Voxtral-Mini-4B-Realtime-2602" "non-quantized" "." "vr-streaming"
   export_model_artifact.sh cuda "mistralai/Voxtral-Mini-3B-2507" "quantized-int4-tile-packed"
   export_model_artifact.sh cuda "google/gemma-3-4b-it" "non-quantized" "./output"
   export_model_artifact.sh cuda "nvidia/parakeet-tdt" "non-quantized" "./output"
   export_model_artifact.sh xnnpack "nvidia/parakeet-tdt" "quantized-8da4w" "./output"
+  export_model_artifact.sh xnnpack "mistralai/Voxtral-Mini-4B-Realtime-2602" "quantized-8da4w" "./output"
+  export_model_artifact.sh xnnpack "mistralai/Voxtral-Mini-4B-Realtime-2602" "non-quantized" "./output" "vr-offline"
 EOF
 }
 
@@ -61,6 +70,26 @@ DEVICE="$1"
 HF_MODEL="$2"
 QUANT_NAME="${3:-non-quantized}"
 OUTPUT_DIR="${4:-.}"
+MODE="${5:-}"
+
+# Validate mode if specified
+if [ -n "$MODE" ]; then
+  case "$MODE" in
+    vr-streaming|vr-offline)
+      # Voxtral Realtime modes require Voxtral Realtime model
+      if [ "$HF_MODEL" != "mistralai/Voxtral-Mini-4B-Realtime-2602" ]; then
+        echo "Error: Mode '$MODE' can only be used with Voxtral Realtime model"
+        echo "Provided model: $HF_MODEL"
+        exit 1
+      fi
+      ;;
+    *)
+      echo "Error: Unsupported mode '$MODE'"
+      echo "Supported modes: vr-streaming, vr-offline"
+      exit 1
+      ;;
+  esac
+fi
 
 case "$DEVICE" in
   cuda)
@@ -112,6 +141,14 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  Qwen/Qwen3-0.6B)
+    MODEL_NAME="qwen3"
+    TASK="text-generation"
+    MAX_SEQ_LEN="64"
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   nvidia/parakeet-tdt)
     MODEL_NAME="parakeet"
     TASK=""
@@ -130,7 +167,7 @@ case "$HF_MODEL" in
     ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, nvidia/parakeet-tdt"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/parakeet-tdt"
     exit 1
     ;;
 esac
@@ -210,7 +247,7 @@ if [ "$MODEL_NAME" = "parakeet" ]; then
   exit 0
 fi
 
-# Voxtral Realtime uses a custom export script (streaming mode)
+# Voxtral Realtime uses a custom export script
 if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   pip install safetensors huggingface_hub
 
@@ -220,22 +257,42 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
 
   # Per-component quantization flags
   VR_QUANT_ARGS=""
+  VR_DTYPE_ARGS=""
   if [ "$QUANT_NAME" = "quantized-8da4w" ]; then
     VR_QUANT_ARGS="--qlinear-encoder 8da4w --qlinear 8da4w --qlinear-group-size 32 --qembedding 8w"
+  elif [ "$QUANT_NAME" = "quantized-int4-metal" ]; then
+    VR_QUANT_ARGS="--qlinear-encoder fpa4w --qlinear fpa4w"
+  elif [ "$QUANT_NAME" = "quantized-int4-tile-packed" ]; then
+    VR_QUANT_ARGS="--qlinear-encoder 4w --qlinear-encoder-packing-format tile_packed_to_4d --qlinear 4w --qlinear-packing-format tile_packed_to_4d --qembedding 8w"
+    VR_DTYPE_ARGS="--dtype bf16"
+  fi
+
+  # Determine streaming mode based on MODE parameter
+  USE_STREAMING="true"
+  if [ "$MODE" = "vr-offline" ]; then
+    USE_STREAMING="false"
+  fi
+
+  # Configure export and preprocessor based on streaming mode
+  STREAMING_ARG=""
+  PREPROCESSOR_ARGS="--feature_size 128 --output_file ${OUTPUT_DIR}/preprocessor.pte"
+  if [ "$USE_STREAMING" = "true" ]; then
+    STREAMING_ARG="--streaming"
+    PREPROCESSOR_ARGS="$PREPROCESSOR_ARGS --streaming"
+  else
+    PREPROCESSOR_ARGS="$PREPROCESSOR_ARGS --stack_output --max_audio_len 300"
   fi
 
   python -m executorch.examples.models.voxtral_realtime.export_voxtral_rt \
       --model-path "$LOCAL_MODEL_DIR" \
-      --backend xnnpack \
-      --streaming \
+      --backend "$DEVICE" \
+      ${STREAMING_ARG} \
       --output-dir "${OUTPUT_DIR}" \
-      ${VR_QUANT_ARGS}
+      ${VR_QUANT_ARGS} \
+      ${VR_DTYPE_ARGS}
 
-  # Export streaming preprocessor (no chunk padding)
-  python -m executorch.extension.audio.mel_spectrogram \
-      --feature_size 128 \
-      --streaming \
-      --output_file "${OUTPUT_DIR}/preprocessor.pte"
+  # Export preprocessor
+  python -m executorch.extension.audio.mel_spectrogram ${PREPROCESSOR_ARGS}
 
   test -f "${OUTPUT_DIR}/model.pte"
   test -f "${OUTPUT_DIR}/preprocessor.pte"

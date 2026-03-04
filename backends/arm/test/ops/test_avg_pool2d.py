@@ -35,8 +35,11 @@ class AvgPool2d(torch.nn.modules.AvgPool2d):
 
 
 class BecomesMeanInToEdge(torch.nn.Module):
-    """This averagepool will be converted to mean when lowering to edge. This causes the decompose_meandim  pass to not
-    trigger until the backend pipeline, which requires extra care.
+    """This averagepool will be converted to mean when lowering to edge.
+
+    This causes the decompose_meandim pass to not trigger until the backend
+    pipeline, which requires extra care.
+
     """
 
     def forward(self, x: torch.Tensor):
@@ -119,11 +122,9 @@ test_modules = {
         AvgPool2d(3, (1, 3), 1, count_include_pad=False),
         (torch.rand(1, 16, 54, 54),),
     ),
-    "becomes_mean_rank4": lambda: (BecomesMeanInToEdge(), (torch.rand(1, 2, 8, 8),)),
-    "channels_last_adaptive_avg_pool": lambda: (
-        BecomesMeanInToEdge(),
-        (torch.randn(1, 1280, 7, 7).to(memory_format=torch.channels_last),),
-    ),
+    "becomes_mean_rank3": lambda: (BecomesMeanInToEdge(), (torch.rand(2, 8, 8),)),
+    "becomes_mean_rank4": lambda: (BecomesMeanInToEdge(), (torch.rand(2, 2, 8, 8),)),
+    "becomes_mean_rank5": lambda: (BecomesMeanInToEdge(), (torch.rand(2, 2, 8, 8),)),
 }
 
 test_modules_bf16 = {
@@ -209,7 +210,9 @@ def test_avg_pool2d_u55_INT(test_module):
 @common.parametrize("test_module", test_modules)
 @common.XfailIfNoCorstone300
 def test_avg_pool2d_16a8w_u55_INT(test_module):
-    """Test avg_pool2d with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test avg_pool2d with 16A8W quantization on U55 (16-bit activations, 8-bit
+    weights)
+    """
     model, input_tensor = test_module()
     pipeline = EthosU55PipelineINT[input_t](
         model,
@@ -240,7 +243,9 @@ def test_avg_pool2d_u85_INT(test_module):
 @common.parametrize("test_module", test_modules)
 @common.XfailIfNoCorstone320
 def test_avg_pool2d_16a8w_u85_INT(test_module):
-    """Test avg_pool2d with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test avg_pool2d with 16A8W quantization on U85 (16-bit activations, 8-bit
+    weights)
+    """
     model, input_tensor = test_module()
     pipeline = EthosU85PipelineINT[input_t](
         model,

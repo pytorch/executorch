@@ -151,14 +151,6 @@ if __name__ == "__main__":  # noqa C901
         help="Platform for running the delegated model",
     )
     parser.add_argument(
-        "-c",
-        "--neutron_converter_flavor",
-        required=False,
-        default="SDK_25_12",
-        help="Flavor of installed neutron-converter module. Neutron-converter module named "
-        "'neutron_converter_SDK_25_12' has flavor 'SDK_25_12'.",
-    )
-    parser.add_argument(
         "-q",
         "--quantize",
         action="store_true",
@@ -219,8 +211,17 @@ if __name__ == "__main__":  # noqa C901
         required=False,
         default=False,
         action="store_true",
-        help="The model (including the Neutron backend) will use the channels last dim order, which can result in faster "
-        "inference. The inputs must also be provided in the channels last dim order.",
+        help="The model (including the Neutron backend) will use the channels last dim order, which can result in "
+        "faster inference. The inputs must also be provided in the channels last dim order.",
+    )
+    parser.add_argument(
+        "--dump_kernel_selection_code",
+        required=False,
+        default=False,
+        action="store_true",
+        help="During conversion to Neutron microcode by Neutron Converter, a kernel selection file will be dumped in "
+        "the working directory. This file can be used for reduction of Neutron Firmware size in the built app."
+        "See `docs/source/backends/nxp/nxp-kernel-selection.md` for details.",
     )
     parser.add_argument(
         "--use_random_dataset",
@@ -229,15 +230,20 @@ if __name__ == "__main__":  # noqa C901
         action="store_true",
         help="The calibration and testing datasets will be generated randomly instead of being downloaded.",
     )
+    parser.add_argument(
+        "--fetch_constants_to_sram",
+        required=False,
+        default=False,
+        action="store_true",
+        help="This feature allows running models which do not fit into SRAM by offloading them to an external memory.",
+    )
 
     args = parser.parse_args()
 
     if args.debug:
         logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
 
-    neutron_target_spec = NeutronTargetSpec(
-        target=args.target, neutron_converter_flavor=args.neutron_converter_flavor
-    )
+    neutron_target_spec = NeutronTargetSpec(target=args.target)
 
     # 1. pick model from one of the supported lists
     model, example_inputs, calibration_inputs = get_model_and_inputs_from_name(
@@ -312,7 +318,8 @@ if __name__ == "__main__":  # noqa C901
     compile_spec = generate_neutron_compile_spec(
         args.target,
         operators_not_to_delegate=args.operators_not_to_delegate,
-        neutron_converter_flavor=args.neutron_converter_flavor,
+        fetch_constants_to_sram=args.fetch_constants_to_sram,
+        dump_kernel_selection_code=args.dump_kernel_selection_code,
     )
     partitioners = (
         [

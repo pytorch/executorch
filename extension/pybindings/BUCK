@@ -39,7 +39,6 @@ fbcode_target(_kind = runtime.genrule,
 )
 
 fbcode_target(_kind = executorch_pybindings,
-    compiler_flags = ["-std=c++17"],
     cppdeps = PORTABLE_MODULE_DEPS,
     python_module_name = "core",
     types = ["//executorch/extension/pybindings:pybindings_types_gen[core.pyi]"],
@@ -47,7 +46,6 @@ fbcode_target(_kind = executorch_pybindings,
 )
 
 fbcode_target(_kind = executorch_pybindings,
-    compiler_flags = ["-std=c++17"],
     cppdeps = PORTABLE_MODULE_DEPS + MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB,
     # Give this an underscore prefix because it has a pure python wrapper.
     python_module_name = "_portable_lib",
@@ -56,7 +54,6 @@ fbcode_target(_kind = executorch_pybindings,
 )
 
 fbcode_target(_kind = executorch_pybindings,
-    compiler_flags = ["-std=c++17"],
     cppdeps = ATEN_MODULE_DEPS + MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB,
     python_module_name = "aten_lib",
     types = ["//executorch/extension/pybindings:pybindings_types_gen[aten_lib.pyi]"],

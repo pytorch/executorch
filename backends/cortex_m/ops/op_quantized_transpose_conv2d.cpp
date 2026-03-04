@@ -192,7 +192,7 @@ Tensor& quantized_transpose_conv2d_out(
   const int32_t buffer_bytes = arm_transpose_conv_s8_get_buffer_size(
       &transpose_conv_params, &input_dims, &filter_dims, &output_dims);
   auto buffer_or_error = context.allocate_temp(
-      static_cast<size_t>(buffer_bytes), alignof(int16_t));
+      static_cast<size_t>(buffer_bytes), kCortexMMveAlignment);
   if (!buffer_or_error.ok()) {
     ET_LOG(
         Error,
@@ -209,7 +209,7 @@ Tensor& quantized_transpose_conv2d_out(
       arm_transpose_conv_s8_get_reverse_conv_buffer_size(
           &transpose_conv_params, &input_dims, &filter_dims);
   auto output_buffer_or_error = context.allocate_temp(
-      static_cast<size_t>(output_buffer_bytes), alignof(int16_t));
+      static_cast<size_t>(output_buffer_bytes), kCortexMMveAlignment);
   if (!output_buffer_or_error.ok()) {
     ET_LOG(
         Error,
