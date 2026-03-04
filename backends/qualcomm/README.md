@@ -42,6 +42,7 @@ backends/qualcomm
 |   ├── wrappers # Wrapper of QNN data structures for ease of use.
 |   └── python # Python interface for using QNN libraries.
 ├── builders # Codes for lowering each operators (AoT Part).
+├── custom_op # APIs for using custom ops with QNN backend
 ├── partition # QNN Partitioner (AoT Part).
 ├── _passes # Various private passes helping lower models to QNN backend (AoT Part).
 ├── python # Places to put pybind artifacts for accessing QNN APIs, structures, etc (AoT Part).
