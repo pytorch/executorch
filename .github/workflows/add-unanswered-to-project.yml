@@ -67,6 +67,7 @@ jobs:
             
             // Simple cache for user -> boolean (member of excluded org)
             const orgsCache = new Map();
+            const companyCache = new Map();
 
             async function isMemberOfExcludedOrg(user) {
               if (!user || !user.login) return false;
