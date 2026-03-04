@@ -46,7 +46,12 @@ Args:
 ```python
 def VgfQuantizer.quantize_with_submodules(self, model: 'GraphModule', calibration_samples: 'list[tuple]', is_qat: 'bool' = False):
 ```
-Quantizes a GraphModule in a way such that conditional submodules are handled properly.
+Quantizes a GraphModule in a way such that conditional submodules are
+handled properly.
+
+Note: torchao's prepare_pt2e and convert_pt2e natively handle
+while_loop body_fn submodules, so we only manually process cond
+branches and while_loop cond_fn here.
 
 Args:
 - **model (GraphModule)**: The model to quantize.
