@@ -294,6 +294,14 @@
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/arm_ethosu_linux.cmake",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/arm/ethos-u-setup/aarch64-linux-musl-toolchain.cmake"
       }
+    },
+    {
+      "name": "esp-baremetal",
+      "displayName": "Build ExecuTorch for ESP baremetal",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/esp_baremetal.cmake"
+      }
     }
   ],
   "buildPresets": [
