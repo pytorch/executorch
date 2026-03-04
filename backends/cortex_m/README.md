@@ -16,7 +16,7 @@ To run tests:
 ```
 examples/arm/setup.sh --i-agree-to-the-contained-eula                     # Download needed toolchains and simulators
 examples/arm/arm-scratch/setup_path.sh                                    # Add dependencies to path
-backends/cortex-m/test/setup_testing.sh                                   # Build executor-runner with cortex-m oplib + kernels registred
+backends/cortex-m/test/build_test_runner.sh                               # Build executor-runner with cortex-m oplib + kernels registred
 pytest --config-file=backends/arm/test/pytest.ini backends/cortex-m/test  # Run tests with correct configuration file
 ```
 
