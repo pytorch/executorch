@@ -65,6 +65,37 @@ def quantize(  # noqa C901
         return WeightOnlyInt8QuantHandler(
             model, precision=checkpoint_torch_dtype
         ).quantized_model()
+    elif qmode.startswith("parq"):
+        from torchao.core.config import AOBaseConfig
+        from torchao.prototype.parq.quant import StretchedUnifTorchaoQuantizer
+        from torchao.prototype.parq.quant.quant_api import StretchedIntxWeightOnlyConfig
+        from torchao.prototype.quantization.dynamic_activation_lut import (
+            StretchedAffineQuantizedTensor_to_Int8DynamicActivationLutTensorConfig,
+        )
+        from torchao.quantization import quantize_
+        from torchao.quantization.granularity import PerAxis
+        from torchao.utils import unwrap_tensor_subclass
+
+        bit_width = 2
+        granularity = PerAxis(0)
+        quantizer = StretchedUnifTorchaoQuantizer(bit_width)
+        config = StretchedIntxWeightOnlyConfig(
+            b=bit_width,
+            quant_min=quantizer.quant_min,
+            quant_max=quantizer.quant_max,
+            granularity=granularity,
+        )
+        quantize_(model, config)
+        conversion_config = (
+            StretchedAffineQuantizedTensor_to_Int8DynamicActivationLutTensorConfig(
+                config.b, config.granularity
+            )
+        )
+        quantize_(model, conversion_config, filter_fn=conversion_config.get_filter_fn())
+        model = unwrap_tensor_subclass(model)
+        if verbose:
+            print("quantized model:", model)
+        return model
     elif qmode.startswith("torchao:fpa"):
         pattern = r"torchao:fpa(\d+)w"
         matches = re.findall(pattern, qmode)
