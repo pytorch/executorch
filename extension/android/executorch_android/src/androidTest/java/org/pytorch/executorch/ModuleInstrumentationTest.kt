@@ -170,7 +170,7 @@ class ModuleInstrumentationTest {
   }
 
   companion object {
-    private const val TEST_FILE_NAME = "/ModuleAdd.pte"
+    private const val TEST_FILE_NAME = "/mobilenet_v2.pte"
     private const val MISSING_FILE_NAME = "/missing.pte"
     private const val NON_PTE_FILE_NAME = "/test.txt"
     private const val FORWARD_METHOD = "forward"

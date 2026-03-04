@@ -288,8 +288,9 @@ void add_q8ta_conv2d_node(
       PushConstantDataInfo(&output_zp_val, sizeof(output_zp_val)),
   };
 
-  // Select shader based on layout
-  std::string kernel_name = "q8ta_conv2d";
+  const bool use_hw_dot =
+      graph.context()->adapter_ptr()->supports_int8_dot_product();
+  std::string kernel_name = use_hw_dot ? "q8ta_conv2d" : "q8ta_conv2d_fallback";
   add_dtype_suffix(kernel_name, graph.dtype_of(packed_weight_scales));
 
   // Pass metadata for both output and input tensors
@@ -429,12 +430,21 @@ void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const int64_t W_out = graph.size_at<int64_t>(-1, output);
   const int64_t spatial_out = H_out * W_out;
 
-  // Use im2col when the channel depth is sufficient for tiled GEMM to win, or
-  // when the output spatial area is small enough that the im2col buffer stays
-  // manageable. For large spatial outputs with few channels, the im2col buffer
-  // becomes too large and the general shader is more efficient.
-  const bool use_im2col = groups == 1 && in_channels_per_group % 4 == 0 &&
-      (in_channels_per_group >= 64 || spatial_out <= 4096);
+  // Im2col requires input channels per group to be a multiple of 4
+  const bool im2col_eligible = in_channels_per_group % 4 == 0;
+
+  bool use_im2col = false;
+  if (graph.device_is_mali()) {
+    // On Mali, im2col is faster than the general shader across the board.
+    use_im2col = im2col_eligible;
+  } else {
+    // Default: on Adreno and unknown GPU architectures, im2col is only
+    // beneficial for ungrouped convolutions with sufficient channel depth or
+    // small spatial output. For grouped convolutions, the general shader is
+    // more efficient (0.7-0.95x regression measured on Adreno).
+    use_im2col = im2col_eligible && groups == 1 &&
+        (in_channels_per_group >= 32 || spatial_out <= 4096);
+  }
 
   if (use_im2col) {
     q8ta_conv2d_im2col(graph, args);

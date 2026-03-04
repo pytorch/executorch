@@ -222,6 +222,7 @@ exclude_patterns = [
     'extension/llm/tokenizers',
     'extension/llm/tokenizers/**',
     'examples/cuda',
+    'kernels/portable',
     # File contains @generated
     'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
     'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',
@@ -510,7 +511,6 @@ include_patterns = ['backends/arm/**/*.py']
 exclude_patterns = [
   'third-party/**',
   '**/third-party/**',
-  'backends/arm/test/**',
 ]
 command = [
   'python','-m','lintrunner_adapters','run','docformatter_linter','--config=pyproject.toml','--','@{{PATHSFILE}}'

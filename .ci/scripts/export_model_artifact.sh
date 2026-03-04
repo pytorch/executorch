@@ -34,7 +34,7 @@ Arguments:
 
   output_dir   Output directory for artifacts (optional, default: current directory)
 
-  mode         Export mode (optional, default: auto-detect based on model and device)
+  mode         Export mode (optional, default: vr-streaming)
                Supported modes:
                  - vr-streaming: Voxtral Realtime streaming mode
                  - vr-offline: Voxtral Realtime offline mode
@@ -141,6 +141,14 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  Qwen/Qwen3-0.6B)
+    MODEL_NAME="qwen3"
+    TASK="text-generation"
+    MAX_SEQ_LEN="64"
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   nvidia/parakeet-tdt)
     MODEL_NAME="parakeet"
     TASK=""
@@ -159,7 +167,7 @@ case "$HF_MODEL" in
     ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, nvidia/parakeet-tdt"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/parakeet-tdt"
     exit 1
     ;;
 esac
@@ -249,23 +257,20 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
 
   # Per-component quantization flags
   VR_QUANT_ARGS=""
+  VR_DTYPE_ARGS=""
   if [ "$QUANT_NAME" = "quantized-8da4w" ]; then
     VR_QUANT_ARGS="--qlinear-encoder 8da4w --qlinear 8da4w --qlinear-group-size 32 --qembedding 8w"
   elif [ "$QUANT_NAME" = "quantized-int4-metal" ]; then
     VR_QUANT_ARGS="--qlinear-encoder fpa4w --qlinear fpa4w"
+  elif [ "$QUANT_NAME" = "quantized-int4-tile-packed" ]; then
+    VR_QUANT_ARGS="--qlinear-encoder 4w --qlinear-encoder-packing-format tile_packed_to_4d --qlinear 4w --qlinear-packing-format tile_packed_to_4d --qembedding 8w"
+    VR_DTYPE_ARGS="--dtype bf16"
   fi
 
   # Determine streaming mode based on MODE parameter
-  USE_STREAMING="false"
-  if [ "$MODE" = "vr-streaming" ]; then
-    USE_STREAMING="true"
-  elif [ "$MODE" = "vr-offline" ]; then
+  USE_STREAMING="true"
+  if [ "$MODE" = "vr-offline" ]; then
     USE_STREAMING="false"
-  elif [ -z "$MODE" ]; then
-    # Auto-detect: XNNPACK uses streaming, others use offline
-    if [ "$DEVICE" = "xnnpack" ]; then
-      USE_STREAMING="true"
-    fi
   fi
 
   # Configure export and preprocessor based on streaming mode
@@ -283,7 +288,8 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
       --backend "$DEVICE" \
       ${STREAMING_ARG} \
       --output-dir "${OUTPUT_DIR}" \
-      ${VR_QUANT_ARGS}
+      ${VR_QUANT_ARGS} \
+      ${VR_DTYPE_ARGS}
 
   # Export preprocessor
   python -m executorch.extension.audio.mel_spectrogram ${PREPROCESSOR_ARGS}

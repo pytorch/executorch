@@ -176,6 +176,17 @@ Module::Module(
 }
 
 runtime::Error Module::load(const Program::Verification verification) {
+  return load_internal(verification);
+}
+
+runtime::Error Module::load(
+    const LoadBackendOptionsMap& backend_options,
+    const Program::Verification verification) {
+  backend_options_ = &backend_options;
+  return load_internal(verification);
+}
+
+runtime::Error Module::load_internal(const Program::Verification verification) {
   if (!is_loaded()) {
     if (!data_loader_) {
       auto data_loader_result = make_data_loader(file_path_, load_mode_);
@@ -256,9 +267,14 @@ runtime::Result<std::unordered_set<std::string>> Module::method_names() {
 runtime::Error Module::load_method(
     const std::string& method_name,
     runtime::HierarchicalAllocator* planned_memory,
-    torch::executor::EventTracer* event_tracer) {
+    torch::executor::EventTracer* event_tracer,
+    const LoadBackendOptionsMap* backend_options) {
   if (!is_method_loaded(method_name)) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
+
+    // Use passed backend_options, or fall back to stored one from load()
+    const LoadBackendOptionsMap* effective_backend_options =
+        backend_options ? backend_options : backend_options_;
 
     MethodHolder method_holder;
 
@@ -292,7 +308,8 @@ runtime::Error Module::load_method(
         method_name.c_str(),
         method_holder.memory_manager.get(),
         event_tracer ? event_tracer : this->event_tracer(),
-        merged_data_map_.get());
+        merged_data_map_.get(),
+        effective_backend_options);
     if (!res_method.ok()) {
       return res_method.error();
     }

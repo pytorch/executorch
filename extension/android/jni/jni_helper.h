@@ -9,6 +9,8 @@
 #pragma once
 
 #include <fbjni/fbjni.h>
+#include <cstddef>
+#include <cstdint>
 #include <string>
 
 namespace executorch::jni_helper {
@@ -29,5 +31,10 @@ struct JExecutorchRuntimeException
   static constexpr auto kJavaDescriptor =
       "Lorg/pytorch/executorch/ExecutorchRuntimeException;";
 };
+
+/**
+ * Returns true if the given byte sequence is valid UTF-8.
+ */
+bool utf8_check_validity(const char* str, size_t length);
 
 } // namespace executorch::jni_helper

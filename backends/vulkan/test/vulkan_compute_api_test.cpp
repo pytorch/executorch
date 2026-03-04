@@ -29,6 +29,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/DispatchNode.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Int8x4Staging.h>
+
 using namespace vkcompute;
 using namespace vkcompute::api;
 
@@ -3489,4 +3491,86 @@ void test_dynamic_dispatch(int M, int N) {
 
 TEST(VulkanComputeGraphOpsTest, test_dynamic_dispatch_graph) {
   test_dynamic_dispatch(128, 128);
+}
+
+//
+// Int8x4 Staging Tests
+//
+
+void test_int8x4_staging_round_trip(
+    const std::vector<int64_t>& sizes,
+    const utils::GPUMemoryLayout layout) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const int32_t numel = utils::multiply_integers(sizes);
+
+  // Build graph:
+  // staging_in (kInt8x4) -> [execute: nchw_to_int8x4_buffer] -> tensor
+  // (kInt8x4)
+  //                      -> [execute: int8x4_buffer_to_nchw] -> staging_out
+  ValueRef tensor =
+      graph.add_tensor(sizes, vkapi::kInt8x4, utils::kBuffer, layout);
+
+  ValueRef staging_in = graph.set_input_tensor(tensor);
+  ValueRef staging_out = graph.set_output_tensor(tensor);
+
+  // staging_buffer_numel_of returns padded_numel / 4 (number of int32
+  // elements). Multiply by 4 to get the byte count, which is used to zero-pad
+  // the input.
+  const size_t staging_numel = graph.staging_buffer_numel_of(tensor);
+  // Create NCHW int8 input data zero-padded to the full staging buffer size.
+  std::vector<int8_t> data_in(staging_numel * 4, 0);
+  for (int32_t i = 0; i < numel; ++i) {
+    data_in[i] = static_cast<int8_t>(static_cast<uint8_t>(i * 37 + 13));
+  }
+
+  graph.prepare();
+  // prepack() allocates Vulkan memory for all tensors even when there are no
+  // prepack nodes; it must be called before execute().
+  graph.prepack();
+
+  // Copy NCHW int8 data into the input staging buffer. The staging buffer has
+  // kInt8x4 dtype (staging_numel int32 elements), so reinterpret the int8 data
+  // as int32 for the copy call.
+  graph.maybe_cast_and_copy_into_staging(
+      staging_in,
+      reinterpret_cast<const int32_t*>(data_in.data()),
+      staging_numel,
+      vkapi::kInt8x4);
+
+  graph.execute();
+
+  // Read back packed int32s from staging. The staging dtype is kInt8x4 (4
+  // bytes per element = one packed int32 holding 4 int8 values).
+  std::vector<int32_t> data_out_packed(staging_numel);
+  graph.maybe_cast_and_copy_from_staging(
+      staging_out, data_out_packed.data(), staging_numel, vkapi::kInt8x4);
+
+  // Verify each int8 element matches the round-trip
+  for (int32_t i = 0; i < numel; ++i) {
+    const uint8_t byte = static_cast<uint8_t>(
+        static_cast<uint32_t>(data_out_packed[i / 4]) >> ((i % 4) * 8));
+    const int8_t actual = static_cast<int8_t>(byte);
+    EXPECT_EQ(actual, data_in[i])
+        << "Mismatch at nchw index " << i << " for sizes [" << sizes[0]
+        << (sizes.size() > 1 ? ", " + std::to_string(sizes[1]) : "")
+        << (sizes.size() > 2 ? ", " + std::to_string(sizes[2]) : "")
+        << (sizes.size() > 3 ? ", " + std::to_string(sizes[3]) : "")
+        << "] layout " << layout;
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_int8x4_staging_round_trip) {
+  const std::vector<utils::GPUMemoryLayout> layouts = {
+      utils::kPackedInt8_4C,
+      utils::kPackedInt8_4W,
+      utils::kPackedInt8_4W4C,
+      utils::kPackedInt8_4C1W,
+  };
+  for (const auto& sizes : standard_sizes_to_test) {
+    for (const auto layout : layouts) {
+      test_int8x4_staging_round_trip(sizes, layout);
+    }
+  }
 }

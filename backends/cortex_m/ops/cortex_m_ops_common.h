@@ -33,6 +33,9 @@ using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 #define ARM_NN_Q31_MAX ((int32_t)(0x7FFFFFFFL))
 #define ARM_NN_Q31_MIN ((int32_t)(0x80000000L))
 
+// 16-byte alignment for MVE vector operations.
+constexpr size_t kCortexMMveAlignment = 16;
+
 // Basic tensor type / layout validation and dimension order checking
 inline void validate_cmsis_nn_tensor_requirements(
     const Tensor& input1,

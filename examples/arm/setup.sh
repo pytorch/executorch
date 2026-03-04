@@ -35,6 +35,7 @@ enable_mlsdk_pip_install=1
 toolchain_url=""
 toolchain_dir=""
 toolchain_md5_checksum=""
+toolchain_archive=""
 
 # Load logging helpers early so option parsing can emit status messages.
 source "$et_dir/backends/arm/scripts/utils.sh"
@@ -45,6 +46,7 @@ OPTION_LIST=(
   "--i-agree-to-the-contained-eula (required) Agree to the EULA"
   "--root-dir Path to scratch directory"
   "--enable-baremetal-toolchain Enable baremetal toolchain setup"
+  "--target-toolchain Select toolchain: gnu (default), zephyr, or linux-musl"
   "--enable-fvps Enable FVP setup"
   "--enable-vela Enable VELA setup"
   "--enable-model-converter Enable MLSDK model converter setup"

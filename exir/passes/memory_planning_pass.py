@@ -247,9 +247,8 @@ class MemoryPlanningPass(PassBase):
             graph_signature,
             self.alloc_graph_input,
             self.alloc_graph_output,
-            # If we are sharing the mutable buffers then do not allocate them in
-            # memory planning algo, instead collect all of the specs over all the entry
-            # points and then allocate them directly in the run_multimethod name call
+            # If mutable buffers are shared, then do not allocate them in the
+            # main memory planning algo; they are allocated in run_multimethod.
             self.alloc_mutable_buffers and not self.share_mutable_buffers,
         )
 
@@ -264,7 +263,10 @@ class MemoryPlanningPass(PassBase):
             graph_module,
             self.alloc_graph_input,
             self.alloc_graph_output,
-            self.alloc_mutable_buffers,
+            # If mutable buffers are shared, they are allocated after the
+            # main memory planning algo in run_multimethod, and should be
+            # skipped in the Verifier.
+            self.alloc_mutable_buffers and not self.share_mutable_buffers,
             graph_signature,
         )
 

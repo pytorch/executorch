@@ -301,8 +301,8 @@ def dump_error_output(
     rtol: float = 1e-03,
     qtol: float = 0,
 ) -> None:
-    """
-    Prints Quantization info and error tolerances, and saves the differing tensors to disc.
+    """Prints Quantization info and error tolerances, and saves the differing
+    tensors to disc.
     """
     # Capture assertion error and print more info
     banner = "=" * 40 + "TOSA debug info" + "=" * 40
@@ -336,7 +336,7 @@ def dump_error_output(
 
 
 if __name__ == "__main__":
-    """This is expected to produce the example output of print_diff"""
+    """This is expected to produce the example output of print_diff."""
     torch.manual_seed(0)
     a = torch.rand(3, 3, 2, 2) * 0.01
     b = a.clone().detach()

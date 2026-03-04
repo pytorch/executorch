@@ -10,8 +10,11 @@
 
 ${define_required_extensions("buffer", DTYPE)}
 
+#define USE_INT8_DOT_PRODUCT_EXT ${USE_INT8_DOT_PRODUCT_EXT}
+
 #extension GL_EXT_control_flow_attributes : require
-#extension GL_EXT_integer_dot_product : require
+$if USE_INT8_DOT_PRODUCT_EXT == 1:
+  #extension GL_EXT_integer_dot_product : require
 
 #define PRECISION ${PRECISION}
 #define VEC4_T ${texel_load_type(DTYPE, "buffer")}

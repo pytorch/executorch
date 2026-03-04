@@ -9,6 +9,7 @@ import logging
 import os.path
 import shutil
 import subprocess
+from enum import Enum
 from os import mkdir
 
 import numpy as np
@@ -16,9 +17,7 @@ import torch
 from executorch.backends.nxp.backend.edge_helper import is_channels_last_dim_order
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
-
 from executorch.backends.nxp.tests_models.config_importer import test_config
-
 from executorch.backends.nxp.tests_models.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests_models.graph_verifier import GraphVerifier
 from executorch.backends.nxp.tests_models.model_input_spec import ModelInputSpec
@@ -28,6 +27,7 @@ from executorch.backends.nxp.tests_models.model_output_comparator import (
 from executorch.backends.nxp.tests_models.outputs_dir_importer import outputs_dir
 from executorch.backends.nxp.tests_models.utils import (
     save_pte_program,
+    to_quantized_edge_program,
     to_quantized_executorch_program,
 )
 from executorch.devtools.visualization.visualization_utils import (
@@ -35,6 +35,7 @@ from executorch.devtools.visualization.visualization_utils import (
 )
 from pytest_mock import MockerFixture
 from torch.export import ExportedProgram
+from torch.fx import GraphModule
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,14 @@ NSYS_PATH = test_config.NSYS_PATH
 NSYS_CONFIG_PATH = test_config.NSYS_CONFIG_PATH
 NSYS_FIRMWARE_PATH = test_config.NSYS_FIRMWARE_PATH
 NEUTRON_TEST_PATH = test_config.NEUTRON_TEST_PATH
+
+
+class ReferenceModel(Enum):
+    QUANTIZED_EXECUTORCH_CPP = 0
+    QUANTIZED_EDGE_PYTHON = 1
+    # QUANTIZED_ATEN_PYTHON = 2  # Not implemented.
+    # FLOAT_ATEN_PYTHON = 3  # Not implemented.
+    FLOAT_PYTORCH_PYTHON = 4
 
 
 def _run_delegated_executorch_program(
@@ -266,14 +275,27 @@ def store_results(
             output_array.tofile(bin_file_path)
 
 
-def _run_pytorch_program(
-    model,
+def _run_python_program(
+    model: torch.nn.Module | GraphModule,
     testing_dataset_dir,
     input_spec: list[ModelInputSpec],
     output_spec: list[torch.Tensor],
     cpu_results_dir,
     npu_results_dir,
 ):
+    """Run a model in Python with channels first (contiguous) inputs.
+
+    :param model: Any PyTorch/ExecuTorch model runnable directly in python with channels first (contiguous) inputs.
+    :param testing_dataset_dir: Directory containing testing data. The samples can be channels last (NHWC) or channels
+                                 first (NCHW). The format must match the input_spec.dim_order. The data will be
+                                 converted to channels first if needed.
+    :param input_spec: List of ModelInputSpec defining the shape, type, and dimension order of each input.
+    :param output_spec: List of output tensor specifications.
+    :param cpu_results_dir: Directory where CPU results will be stored. The structure will match the existing structure
+                             of `npu_results_dir`.
+    :param npu_results_dir: Directory where NPU results are already stored, to serve as reference directory structure
+                             for `cpu_results_dir`.
+    """
     all_outputs = []
 
     for input_samples in read_prepared_samples(testing_dataset_dir, input_spec):
@@ -333,7 +355,7 @@ def convert_run_compare(
     dataset_creator=None,
     output_comparator=None,
     mocker: MockerFixture = None,
-    run_cpu_version_in_pytorch: bool = False,
+    reference_model: ReferenceModel = ReferenceModel.QUANTIZED_EXECUTORCH_CPP,
     use_qat: bool = False,
 ):
     """
@@ -347,7 +369,7 @@ def convert_run_compare(
     :param dataset_creator: Creator that should fill provided `dataset_dir` with model input samples.
     :param output_comparator: Comparator of results produced by NPU and CPU runs of the program.
     :param dlg_model_verifier: Graph verifier instance.
-    :param run_cpu_version_in_pytorch: If True, runs CPU version in float32 PyTorch instead of quantized ExecuTorch.
+    :param reference_model: Version of the model which will be run to obtain reference output data.
     :param mocker: Mocker instance used by visualizer.
     :param use_qat: If True, applies quantization-aware training before conversion (without the QAT training).
     """
@@ -393,25 +415,55 @@ def convert_run_compare(
 
     output_spec = _get_program_output_spec(delegated_program)
 
-    if run_cpu_version_in_pytorch:
-        _run_pytorch_program(
-            model,
-            testing_dataset_dir,
-            input_spec,
-            output_spec,
-            cpu_results_dir,
-            npu_results_dir,
-        )
-    else:
-        _run_non_delegated_executorch_program(
-            model,
-            test_dir,
-            test_name,
-            calibration_dataset_dir,
-            testing_dataset_dir,
-            input_spec,
-            cpu_results_dir,
-        )
+    match reference_model:
+        case ReferenceModel.QUANTIZED_EXECUTORCH_CPP:
+            # Lower to quantized executorch program, export to `.pte` file and run in c++ using
+            #  examples/nxp/executor_runner/nxp_executor_runner.cpp
+            _run_non_delegated_executorch_program(
+                model,
+                test_dir,
+                test_name,
+                calibration_dataset_dir,
+                testing_dataset_dir,
+                input_spec,
+                cpu_results_dir,
+            )
+
+        case ReferenceModel.QUANTIZED_EDGE_PYTHON:
+            # Lower to quantized edge program and run in Python.
+            non_delegated_edge_program = (
+                to_quantized_edge_program(
+                    model,
+                    input_spec,
+                    calibration_dataset_dir,
+                    delegate_to_npu=False,
+                    use_qat=use_qat,
+                )
+                .exported_program()
+                .module()
+            )
+            _run_python_program(
+                non_delegated_edge_program,
+                testing_dataset_dir,
+                input_spec,
+                output_spec,
+                cpu_results_dir,
+                npu_results_dir,
+            )
+
+        case ReferenceModel.FLOAT_PYTORCH_PYTHON:
+            # Run the PyTorch nn.Module directly in Python.
+            _run_python_program(
+                model,
+                testing_dataset_dir,
+                input_spec,
+                output_spec,
+                cpu_results_dir,
+                npu_results_dir,
+            )
+
+        case _:
+            raise ValueError(f"Unsupported reference model: `{reference_model}`.")
 
     output_tensor_spec = _get_program_output_spec(delegated_program)
 
