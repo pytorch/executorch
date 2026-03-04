@@ -9,15 +9,10 @@ import unittest
 
 import torch
 from executorch.examples.models.lfm2_5_vl.export_lfm2_5_vl import export_all
-from executorch.examples.models.lfm2_5_vl.model import IMAGE_SIZE, MAX_SEQ_LEN, Lfm2p5VlModel
-
-# import order matters: portable_lib must come first so its static op registry
-# is in place before custom_ops registers against it.
-from executorch.extension.pybindings.portable_lib import (  # noqa # usort: skip
+from executorch.examples.models.lfm2_5_vl.model import IMAGE_SIZE, Lfm2p5VlModel
+from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
-from executorch.extension.llm.custom_ops import custom_ops  # noqa # usort: skip
-from executorch.kernels import quantized  # noqa # usort: skip
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -33,7 +28,9 @@ class TestLfm2p5Vl(unittest.TestCase):
 
     def test_vision_encoder_shape(self):
         """Vision encoder must produce [1, 256, 2048] embeddings."""
-        pixels = torch.randint(0, 256, (1, 3, IMAGE_SIZE, IMAGE_SIZE), dtype=torch.float32)
+        pixels = torch.randint(
+            0, 256, (1, 3, IMAGE_SIZE, IMAGE_SIZE), dtype=torch.float32
+        )
         with torch.no_grad():
             embeds = self.lfm2.image_embedding(pixels)
         self.assertEqual(embeds.shape, (1, 256, 2048))
@@ -73,7 +70,10 @@ class TestLfm2p5Vl(unittest.TestCase):
         before_embeds = module.run_method("token_embedding", (prompt_before,))[0]
         module.run_method(
             "text_decoder",
-            (before_embeds, torch.arange(start_pos, start_pos + before_embeds.shape[1])),
+            (
+                before_embeds,
+                torch.arange(start_pos, start_pos + before_embeds.shape[1]),
+            ),
         )
         start_pos += before_embeds.shape[1]
 
