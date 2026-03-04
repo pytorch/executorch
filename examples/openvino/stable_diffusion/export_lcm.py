@@ -141,16 +141,11 @@ class LCMOpenVINOExporter:
                 return self.model(*args, **kwargs)
 
         calibration_data = []
-        try:
-            dataset = datasets.load_dataset(
-                dataset_name,
-                split="train",
-                trust_remote_code=True,
-            ).shuffle(seed=42)
-        except Exception as error:
-            raise RuntimeError(
-                f"Failed to load calibration dataset '{dataset_name}'"
-            ) from error
+        dataset = datasets.load_dataset(
+            dataset_name,
+            split="train",
+            trust_remote_code=True,
+        ).shuffle(seed=42)
         original_unet = pipeline.unet
         wrapped_unet = UNetWrapper(pipeline.unet, pipeline.unet.config)
         pipeline.unet = wrapped_unet
@@ -188,7 +183,6 @@ class LCMOpenVINOExporter:
         if not is_quantization_enabled:
             return model
         try:
-            quantized_model = model
             ov_quantizer = self.get_ov_quantizer(sd_model_component)
             if sd_model_component == StableDiffusionComponent.UNET:
                 # Quantize activations for the Unet Model. Other models are weights-only quantized.
@@ -212,9 +206,10 @@ class LCMOpenVINOExporter:
             return quantized_model
         except Exception as e:
             logger.error(f"Quantization failed for {sd_model_component.value}: {e}")
-            raise RuntimeError(
-                f"Quantization failed for {sd_model_component.value}: {e}"
-            ) from e
+            import traceback
+
+            traceback.print_exc()
+            return model
 
     def _export_and_maybe_quantize(
         self,
