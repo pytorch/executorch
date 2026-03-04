@@ -24,7 +24,6 @@
 #include "dma.h"
 #include "utils.h"
 #include <xai_cnn_api.h>
-#include <stdio.h>
 #include <string.h>
 
 // conv 7x7j2d1 VQ executor with DMA (per-channel output scaling)
@@ -66,11 +65,8 @@ XAI_ERR_TYPE conv_exec_7x7j2d1VQ(
     
     if (!p_input0 || !p_input1 || !p_coeff || 
         !p_output0 || !p_output1 || !p_bias || !p_outscale) {
-        printf("ERROR: Buffer allocation failed in conv_exec_7x7j2d1VQ\n");
         return (-1);
     }
-    
-    printf("  [7x7j2d1VQ] DRAM usage: dram0=%d, dram1=%d\n", dram0_used, dram1_used);
     
     // ========================================================================
     // SECTION 2: Initialize XAI Tile Descriptors
@@ -329,13 +325,21 @@ XAI_ERR_TYPE conv_exec_7x7j2d1VQ(
             // ================================================================
             // Write Output Tile to System Memory (matches convIdma.c formula)
             // ================================================================
-            dma_2dm(0,
-                    &(p_output1[0]),
-                    &dst[((config->dst_dim2_pitch * config->n_tile_size)*(idx_n)) + ((config->out_dim2_pitch)*(idx_h))],
-                    config->out_dim2_pitch,
-                    config->dst_dim2_pitch,
-                    config->out_dim2_pitch,
-                    current_n_size);
+            // Fix: For the last height tile, only write the valid output rows
+            // to avoid spilling into the next channel's memory.
+            {
+                int current_output_rows = (idx_h < config->height_tiles - 1)
+                    ? config->output_rows
+                    : (config->dst_dim2_size - (config->output_rows * idx_h));
+                int output_row_bytes = config->out_dim1_pitch * current_output_rows;
+                dma_2dm(0,
+                        &(p_output1[0]),
+                        &dst[((config->dst_dim2_pitch * config->n_tile_size)*(idx_n)) + ((config->out_dim1_pitch * config->output_rows)*(idx_h))],
+                        config->out_dim2_pitch,
+                        config->dst_dim2_pitch,
+                        output_row_bytes,
+                        current_n_size);
+            }
 
             // Swap ping-pong buffers for next iteration
             swap_buffers(&(p_output0), &(p_output1));
@@ -381,11 +385,8 @@ XAI_ERR_TYPE conv_exec_7x7j2d1(
     
     if (!p_input0 || !p_input1 || !p_coeff || 
         !p_output0 || !p_output1 || !p_bias) {
-        printf("ERROR: Buffer allocation failed in conv_exec_7x7j2d1\n");
         return (-1);
     }
-    
-    printf("  [7x7j2d1] DRAM usage: dram0=%d, dram1=%d\n", dram0_used, dram1_used);
     
     // ========================================================================
     // SECTION 2: Initialize XAI Tile Descriptors
@@ -419,6 +420,10 @@ XAI_ERR_TYPE conv_exec_7x7j2d1(
             config->src_dim1_size,
             config->in_rows_firstdma,
             config->src_dim3_size);
+    
+    // Wait for all initial DMA transfers to complete
+    idma_hw_wait_all(0);  // coeff + bias on ch0
+    idma_hw_wait_all(1);  // input on ch1
     
     // ========================================================================
     // Configure Input Tile Descriptor
@@ -525,9 +530,6 @@ XAI_ERR_TYPE conv_exec_7x7j2d1(
 
 
     //print config eg . config->accum_shift, config->dilation, config->flags, config->output_scale, config->output_shift, config->relu_max, config->relu_min, config->stride_x, config->stride_y
-    printf("  [7x7j2d1] Convolution parameters: accum_shift=%d, dilation=%d, flags=%d, output_scale=%d, output_shift=%d, relu_max=%d, relu_min=%d, stride_x=%d, stride_y=%d\n",
-            config->accum_shift, config->dilation, config->flags, config->output_scale, config->output_shift, config->relu_max, config->relu_min, config->stride_x, config->stride_y);
-    
     // ========================================================================
     // SECTION 3: Tiled Execution Loop (N-tiles × H-tiles)
     // ========================================================================
@@ -602,6 +604,10 @@ XAI_ERR_TYPE conv_exec_7x7j2d1(
             XAI_TILE3D_SET_DATA_PTR(&tile_output, &(p_output1[0]));
             XAI_TILE3D_SET_DIM2_COORD(&tile_output, (config->out_dim2_size)*(idx_h));
             
+            // Wait for any in-flight DMA to complete before using buffers
+            idma_hw_wait_all(0);  // previous output store / coeff prefetch on ch0
+            idma_hw_wait_all(1);  // input prefetch on ch1
+            
             // ================================================================
             // Perform Edge Extension and Convolution
             // ================================================================
@@ -614,7 +620,6 @@ XAI_ERR_TYPE conv_exec_7x7j2d1(
                                         &(tile_output),
                                         &(params));
             
-            printf("    [7x7j2d1] N-tile %d, H-tile %d: Convolution status = %d\n", idx_n, idx_h, status);
             if (status != XAI_ERR_OK) {
                 return status;
             }
@@ -632,19 +637,30 @@ XAI_ERR_TYPE conv_exec_7x7j2d1(
             // ================================================================
             // Write Output Tile to System Memory (matches convIdma.c formula)
             // ================================================================
-            dma_2dm(0,
-                    &(p_output1[0]),
-                    &dst[((config->dst_dim2_pitch * config->n_tile_size)*(idx_n)) + ((config->out_dim2_pitch)*(idx_h))],
-                    config->out_dim2_pitch,
-                    config->dst_dim2_pitch,
-                    config->out_dim2_pitch,
-                    current_n_size);
+            // Fix: For the last height tile, only write the valid output rows
+            // to avoid spilling into the next channel's memory.
+            {
+                int current_output_rows = (idx_h < config->height_tiles - 1)
+                    ? config->output_rows
+                    : (config->dst_dim2_size - (config->output_rows * idx_h));
+                int output_row_bytes = config->out_dim1_pitch * current_output_rows;
+                dma_2dm(0,
+                        &(p_output1[0]),
+                        &dst[((config->dst_dim2_pitch * config->n_tile_size)*(idx_n)) + ((config->out_dim1_pitch * config->output_rows)*(idx_h))],
+                        config->out_dim2_pitch,
+                        config->dst_dim2_pitch,
+                        output_row_bytes,
+                        current_n_size);
+            }
 
             // Swap ping-pong buffers for next iteration
             swap_buffers(&(p_output0), &(p_output1));
             swap_buffers(&(p_input0), &(p_input1));
         }
     }
+    
+    // Wait for final output DMA to complete before returning
+    idma_hw_wait_all(0);
     
     return XAI_ERR_OK;
 }
@@ -697,8 +713,6 @@ XAI_ERR_TYPE conv_exec_7x7j2d1_cache(
     int8_t* padded_input = get_cache_padded_input();
     
     if (input_buffer_size > (int)get_cache_padded_input_size()) {
-        printf("ERROR: Input buffer size %d exceeds max %d\n", 
-               input_buffer_size, (int)get_cache_padded_input_size());
         return XAI_ERR_DATASIZE;
     }
     
@@ -900,8 +914,6 @@ XAI_ERR_TYPE conv_exec_7x7j2d1VQ_cache(
     int8_t* padded_input = get_cache_padded_input();
     
     if (input_buffer_size > (int)get_cache_padded_input_size()) {
-        printf("ERROR: Input buffer size %d exceeds max %d\n", 
-               input_buffer_size, (int)get_cache_padded_input_size());
         return XAI_ERR_DATASIZE;
     }
     

@@ -83,8 +83,8 @@ Tensor& add_out(
     float32_t* out_buff[2];
 
     // Check if DRAM buffers are available
-    bool dram0_available = (ptr_dram0 != nullptr) && (DRAM0_BUFF_SIZE > 0);
-    bool dram1_available = (ptr_dram1 != nullptr) && (DRAM1_BUFF_SIZE > 0);
+    bool dram0_available = (ptr_dram0 != nullptr) && (IDMA_BUFFER_SIZE_DRAM0 > 0);
+    bool dram1_available = (ptr_dram1 != nullptr) && (IDMA_BUFFER_SIZE_DRAM1 > 0);
     
     // DMA threshold - beneficial for larger tensors
     const size_t DMA_THRESHOLD = 1024;
@@ -95,7 +95,7 @@ Tensor& add_out(
     // Split: 33% input_a, 33% input_b, 33% output per DRAM
     if (use_dma && dram0_available && dram1_available && (numel >= 2)) {
       // Try 128-byte alignment first (optimal for rvaddf SIMD)
-      size_t per_array_128 = (DRAM0_BUFF_SIZE / 3) & ~0x7F;  // 128-byte alignment
+      size_t per_array_128 = (IDMA_BUFFER_SIZE_DRAM0 / 3) & ~0x7F;  // 128-byte alignment
       size_t chunk_elements_128 = per_array_128 / FLT32_SIZE;
       
       // If 128-byte alignment gives us 0 chunks, try 8-byte alignment (minimum for float32)
@@ -103,7 +103,7 @@ Tensor& add_out(
       size_t chunk_elements = chunk_elements_128;
       
       if (chunk_elements == 0) {
-        per_array = (DRAM0_BUFF_SIZE / 3) & ~0x7;  // Fallback to 8-byte alignment
+        per_array = (IDMA_BUFFER_SIZE_DRAM0 / 3) & ~0x7;  // Fallback to 8-byte alignment
         chunk_elements = per_array / FLT32_SIZE;
       }
       
@@ -132,9 +132,9 @@ Tensor& add_out(
     // Strategy 2: Ping-process-pong (1 set of buffers)
     // Use DRAM0 entirely for inputs (50% a, 50% b), DRAM1 for output
     if (use_dma && !ping_pong_process && dram0_available && dram1_available) {
-      size_t inp_per_array = (DRAM0_BUFF_SIZE / 2) & ~0x7;  // Round down to 8-byte boundary
+      size_t inp_per_array = (IDMA_BUFFER_SIZE_DRAM0 / 2) & ~0x7;  // Round down to 8-byte boundary
       size_t inp_capacity = inp_per_array / FLT32_SIZE;
-      size_t out_capacity = DRAM1_BUFF_SIZE / FLT32_SIZE;
+      size_t out_capacity = IDMA_BUFFER_SIZE_DRAM1 / FLT32_SIZE;
       
       if ((inp_capacity > 0) && (out_capacity >= inp_capacity)) {
         inp_a_buff[0] = (float32_t*)ptr_dram0;
@@ -147,81 +147,65 @@ Tensor& add_out(
     }
 
     if (ping_pong_process || ping_process_pong) {
-      /* Initialize DMA Channel 0 - use single channel for all operations like quantize does */
-      idma_init(0, 0, MAX_BLOCK_16, 8, TICK_CYCLES_1, 0, NULL);
-      idma_init_loop(0, buffer_idma_ch_2d, IDMA_2D_DESC, 1, NULL, NULL);
+      /* Initialize DMA Channel 0 (loads) and Channel 1 (stores) */
+      dma_2dm_init(0);
+      dma_2dm_init(1);
 
       if (ping_pong_process) {
         // Ping-pong processing for better throughput
         size_t num_chunks = (numel + chunk_size - 1) / chunk_size;
         if (num_chunks == 0) num_chunks = 1;
 
-        int32_t curr_buf = 0;  // Current buffer being loaded
-        int32_t proc_buf = 0;  // Buffer to process
-        int32_t idx_a_load = 0, idx_b_load = 0, idx_out = 0;
+        int32_t pp_swap = 0;
 
         const float* ptr_a = a_data;
         const float* ptr_b = b_data;
         float* ptr_out = out_data;
-        
-        size_t elements_processed = 0;
 
-        // Load first chunk (both inputs) into buffer 0
+        // Load first chunk (both inputs) into buffer 0 via ch0
         size_t current_chunk = (numel < chunk_size) ? numel : chunk_size;
-        
-        int32_t idx_a_load_prev = 0, idx_b_load_prev = 0;
-        if (current_chunk > 0) {
-          idx_a_load_prev = idma_copy_2d_desc(0, inp_a_buff[0], (void*)ptr_a, FLT32_SIZE * current_chunk, DESC_IDMA_PRIOR_H, 1, 0, 0);
-          idx_b_load_prev = idma_copy_2d_desc(0, inp_b_buff[0], (void*)ptr_b, FLT32_SIZE * current_chunk, DESC_IDMA_PRIOR_H, 1, 0, 0);
-        }
+        dma_1dm(0, (void*)ptr_a, inp_a_buff[pp_swap], FLT32_SIZE * current_chunk);
+        dma_1dm(0, (void*)ptr_b, inp_b_buff[pp_swap], FLT32_SIZE * current_chunk);
 
         size_t remaining = numel - current_chunk;
         ptr_a += current_chunk;
         ptr_b += current_chunk;
 
-        size_t next_chunk = 0;  // Track next chunk size
-
-        // Pipeline pattern: overlap load of next chunk with processing of current chunk
+        // Pipeline: load (ch0) and store (ch1) overlap with processing
         for (size_t i = 0; i < num_chunks - 1; i++) {
-          // STEP 1: Start loading NEXT chunk into alternate buffer
-          next_chunk = (remaining < chunk_size) ? remaining : chunk_size;
-          size_t next_buf = curr_buf ^ 1;  // Alternate buffer
-          idx_a_load = idma_copy_2d_desc(0, inp_a_buff[next_buf], (void*)ptr_a, FLT32_SIZE * next_chunk, DESC_IDMA_PRIOR_H, 1, 0, 0);
-          idx_b_load = idma_copy_2d_desc(0, inp_b_buff[next_buf], (void*)ptr_b, FLT32_SIZE * next_chunk, DESC_IDMA_PRIOR_H, 1, 0, 0);
-          
-          // STEP 2: Wait for current chunk loads (from before loop or previous iteration)
-          idma_desc_done(0, idx_a_load_prev);
-          idma_desc_done(0, idx_b_load_prev);
+          size_t next_chunk = (remaining < chunk_size) ? remaining : chunk_size;
 
-          // STEP 3: Wait for previous store to complete (if any)
-          if (i > 0) {
-            idma_desc_done(0, idx_out);
-          }
+          // Wait for current loads to complete
+          idma_hw_wait_all(0);
 
-          // STEP 4: Process current buffer while next is loading
-          rvaddf(out_buff[curr_buf], inp_a_buff[curr_buf], inp_b_buff[curr_buf], (int)current_chunk);
+          // Start loading next chunk into alternate buffer via ch0
+          dma_1dm(0, (void*)ptr_a, inp_a_buff[pp_swap ^ 1], FLT32_SIZE * next_chunk);
+          dma_1dm(0, (void*)ptr_b, inp_b_buff[pp_swap ^ 1], FLT32_SIZE * next_chunk);
 
-          // STEP 5: Store result (async)
-          idx_out = idma_copy_2d_desc(0, (void*)ptr_out, out_buff[curr_buf], FLT32_SIZE * current_chunk, DESC_IDMA_PRIOR_H, 1, 0, 0);
+          // Process current buffer (ch0 loads next in parallel)
+          rvaddf(out_buff[pp_swap], inp_a_buff[pp_swap], inp_b_buff[pp_swap], (int)current_chunk);
 
-          // Move to next chunk
+          // Wait for previous store to complete before reusing out_buff
+          idma_hw_wait_all(1);
+
+          // Store result via ch1
+          dma_1dm(1, out_buff[pp_swap], (void*)ptr_out, FLT32_SIZE * current_chunk);
+
           ptr_a += next_chunk;
           ptr_b += next_chunk;
           ptr_out += current_chunk;
           remaining -= next_chunk;
           current_chunk = next_chunk;
-          curr_buf = next_buf;  // Toggle for next iteration
-          idx_a_load_prev = idx_a_load;
-          idx_b_load_prev = idx_b_load;
+          pp_swap ^= 1;
         }
         
         // Process last chunk
-        idma_desc_done(0, idx_a_load);  // Wait for last load
-        idma_desc_done(0, idx_b_load);
-        idma_desc_done(0, idx_out);  // Wait for previous store
-        rvaddf(out_buff[curr_buf], inp_a_buff[curr_buf], inp_b_buff[curr_buf], (int)current_chunk);
-        idx_out = idma_copy_2d_desc(0, (void*)ptr_out, out_buff[curr_buf], FLT32_SIZE * current_chunk, DESC_IDMA_PRIOR_H, 1, 0, 0);
-        idma_desc_done(0, idx_out);  // Wait for final store
+        idma_hw_wait_all(0);
+        rvaddf(out_buff[pp_swap], inp_a_buff[pp_swap], inp_b_buff[pp_swap], (int)current_chunk);
+
+        idma_hw_wait_all(1);
+        dma_1dm(1, out_buff[pp_swap], (void*)ptr_out, FLT32_SIZE * current_chunk);
+        idma_hw_wait_all(1);
         
         TIME_END(add_float);
         TIME_DISPLAY(add_float, numel, "elements (DMA ping-pong)");
@@ -236,24 +220,26 @@ Tensor& add_out(
         while (remaining > 0) {
           size_t current_chunk = (remaining < chunk_size) ? remaining : chunk_size;
 
-          // Load both input chunks
-          int32_t idx_a = idma_copy_2d_desc(0, inp_a_buff[0], (void*)ptr_a, FLT32_SIZE * current_chunk, DESC_IDMA_PRIOR_H, 1, 0, 0);
-          int32_t idx_b = idma_copy_2d_desc(0, inp_b_buff[0], (void*)ptr_b, FLT32_SIZE * current_chunk, DESC_IDMA_PRIOR_H, 1, 0, 0);
-          idma_desc_done(0, idx_a);
-          idma_desc_done(0, idx_b);
+          // Load both input chunks via ch0 (overlaps with any pending ch1 store)
+          dma_1dm(0, (void*)ptr_a, inp_a_buff[0], FLT32_SIZE * current_chunk);
+          dma_1dm(0, (void*)ptr_b, inp_b_buff[0], FLT32_SIZE * current_chunk);
+          // Wait for previous store to complete
+          idma_hw_wait_all(1);
+          // Wait for loads to complete
+          idma_hw_wait_all(0);
 
           // Process: out = a + b
           rvaddf(out_buff[0], inp_a_buff[0], inp_b_buff[0], (int)current_chunk);
 
-          // Store result
-          int32_t idx_out = idma_copy_2d_desc(0, (void*)ptr_out, out_buff[0], FLT32_SIZE * current_chunk, DESC_IDMA_PRIOR_H, 1, 0, 0);
-          idma_desc_done(0, idx_out);
+          // Store result via ch1
+          dma_1dm(1, out_buff[0], (void*)ptr_out, FLT32_SIZE * current_chunk);
 
           ptr_a += current_chunk;
           ptr_b += current_chunk;
           ptr_out += current_chunk;
           remaining -= current_chunk;
         }
+        idma_hw_wait_all(1);
         
         TIME_END(add_float);
         TIME_DISPLAY(add_float, numel, "elements (DMA ping-process-pong)");

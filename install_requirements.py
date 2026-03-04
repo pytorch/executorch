@@ -59,7 +59,7 @@ def install_requirements(use_pytorch_nightly):
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
         (
-            f"torch=={TORCH_VERSION}.{NIGHTLY_VERSION}"
+            f"torch==2.11.0.dev20260216+cpu"
             if use_pytorch_nightly
             else "torch"
         ),
@@ -126,12 +126,12 @@ def install_optional_example_requirements(use_pytorch_nightly):
     print("Installing torch domain libraries")
     DOMAIN_LIBRARIES = [
         (
-            f"torchvision==0.25.0.{NIGHTLY_VERSION}"
+            f"torchvision==0.26.0.dev20260216+cpu"
             if use_pytorch_nightly
             else "torchvision"
         ),
         (
-            f"torchaudio==2.10.0.{NIGHTLY_VERSION}"
+            f"torchaudio==2.11.0.dev20260216+cpu"
             if use_pytorch_nightly
             else "torchaudio"
         ),

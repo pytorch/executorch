@@ -114,16 +114,17 @@ typedef struct {
     int output_shift;       // Output quantization shift
     int output_scale;       // Output scale factor
     int flags;              // Convolution flags
-    int input_zero_point;   // Input zero-point for padding fill (set at runtime)
+    int input_zero_point;   // Input zero point for padding fill
     
 } conv_layer_config_t;
 
 // Total number of convolution layers
 #define NUM_CONV_LAYERS 29
 
- #define IDMA_BUFFER_SIZE_DRAM0 (32768) // 32 KB for DRAM0
- #define IDMA_BUFFER_SIZE_DRAM1 (32768) // 32 KB for DRAM1
+ #define IDMA_BUFFER_SIZE_DRAM0 (64000) // 62 KB for DRAM0
+ #define IDMA_BUFFER_SIZE_DRAM1 (64000) // 62 KB for DRAM1
 
+// Layer configuration lookup table
 static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
     {
         .layer_id = 0,
@@ -145,11 +146,11 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .dst_dim1_pitch = 32,
         .dst_dim2_pitch = 1024,
         
-        // Input tile: 64×21 (edges: 3,3,3,3)
+        // Input tile: 64×35 (edges: 3,3,3,3)
         .in_dim1_size = 64,
         .in_dim1_pitch = 70,
-        .in_dim2_size = 21,
-        .in_dim2_pitch = 1470,
+        .in_dim2_size = 35,
+        .in_dim2_pitch = 2450,
         .in_dim1_edge1 = 3,
         .in_dim1_edge2 = 3,
         .in_dim2_edge1 = 3,
@@ -157,13 +158,13 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_dim3_edge1 = 0,
         .in_dim3_edge2 = 0,
         .in_data_offset = 213,
-        .in_rows_firstdma = 18,
+        .in_rows_firstdma = 32,
         
-        // Output tile: 32×8×64
+        // Output tile: 32×15×64
         .out_dim1_size = 32,
         .out_dim1_pitch = 32,
-        .out_dim2_size = 8,
-        .out_dim2_pitch = 256,
+        .out_dim2_size = 15,
+        .out_dim2_pitch = 480,
         .out_dim3_size = 64,
         
         // Coefficients: 7×7×3×64
@@ -182,9 +183,9 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .outscale_dim2_size = 1,
         
         // Buffer sizes (bytes)
-        .input_buffer_size = 4410,
+        .input_buffer_size = 7350,
         .coeff_buffer_size = 9408,
-        .output_buffer_size = 16384,
+        .output_buffer_size = 30720,
         .bias_buffer_size = 256,
         .outscale_buffer_size = 128,
         
@@ -194,16 +195,16 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .coeff_dram = 0,
         .output_ping_dram = 1,
         .output_pong_dram = 1,
-        .bias_dram = 0,
-        .outscale_dram = 0,
+        .bias_dram = 1,
+        .outscale_dram = 1,
         
-        // Tiling: 64 ch/tile × 1 tiles, 8 rows/tile × 4 tiles
+        // Tiling: 64 ch/tile × 1 tiles, 15 rows/tile × 3 tiles
         .n_tile_size = 64,
         .n_tiles = 1,
         .n_tile_size_last = 64,
-        .height_tiles = 4,
-        .output_rows = 8,
-        .input_rows = 21,
+        .height_tiles = 3,
+        .output_rows = 15,
+        .input_rows = 35,
         
         // Conv params: 7×7, stride 2×2, pad 3
         .kernel_w = 7,
@@ -239,11 +240,11 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .dst_dim1_pitch = 16,
         .dst_dim2_pitch = 256,
         
-        // Input tile: 16×4 (edges: 1,1,1,1)
+        // Input tile: 16×18 (edges: 1,1,1,1)
         .in_dim1_size = 16,
         .in_dim1_pitch = 18,
-        .in_dim2_size = 4,
-        .in_dim2_pitch = 72,
+        .in_dim2_size = 18,
+        .in_dim2_pitch = 324,
         .in_dim1_edge1 = 1,
         .in_dim1_edge2 = 1,
         .in_dim2_edge1 = 1,
@@ -251,14 +252,14 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_dim3_edge1 = 0,
         .in_dim3_edge2 = 0,
         .in_data_offset = 19,
-        .in_rows_firstdma = 3,
+        .in_rows_firstdma = 17,
         
-        // Output tile: 16×2×32
+        // Output tile: 16×16×64
         .out_dim1_size = 16,
         .out_dim1_pitch = 16,
-        .out_dim2_size = 2,
-        .out_dim2_pitch = 32,
-        .out_dim3_size = 32,
+        .out_dim2_size = 16,
+        .out_dim2_pitch = 256,
+        .out_dim3_size = 64,
         
         // Coefficients: 3×3×64×64
         .coeff_dim1_size = 3,
@@ -276,28 +277,28 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .outscale_dim2_size = 1,
         
         // Buffer sizes (bytes)
-        .input_buffer_size = 4608,
-        .coeff_buffer_size = 18432,
-        .output_buffer_size = 1024,
+        .input_buffer_size = 20736,
+        .coeff_buffer_size = 36864,
+        .output_buffer_size = 16384,
         .bias_buffer_size = 256,
         .outscale_buffer_size = 128,
         
         // DRAM placement
         .input_ping_dram = 0,
-        .input_pong_dram = 0,
+        .input_pong_dram = 1,
         .coeff_dram = 0,
         .output_ping_dram = 1,
         .output_pong_dram = 1,
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 32 ch/tile × 2 tiles, 2 rows/tile × 8 tiles
-        .n_tile_size = 32,
-        .n_tiles = 2,
-        .n_tile_size_last = 32,
-        .height_tiles = 8,
-        .output_rows = 2,
-        .input_rows = 4,
+        // Tiling: 64 ch/tile × 1 tiles, 16 rows/tile × 1 tiles
+        .n_tile_size = 64,
+        .n_tiles = 1,
+        .n_tile_size_last = 64,
+        .height_tiles = 1,
+        .output_rows = 16,
+        .input_rows = 18,
         
         // Conv params: 3×3, stride 1×1, pad 1
         .kernel_w = 3,
@@ -347,12 +348,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 19,
         .in_rows_firstdma = 4,
         
-        // Output tile: 8×2×32
+        // Output tile: 8×2×64
         .out_dim1_size = 8,
         .out_dim1_pitch = 8,
         .out_dim2_size = 2,
         .out_dim2_pitch = 16,
-        .out_dim3_size = 32,
+        .out_dim3_size = 64,
         
         // Coefficients: 3×3×64×128
         .coeff_dim1_size = 3,
@@ -371,8 +372,8 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 5760,
-        .coeff_buffer_size = 18432,
-        .output_buffer_size = 512,
+        .coeff_buffer_size = 36864,
+        .output_buffer_size = 1024,
         .bias_buffer_size = 512,
         .outscale_buffer_size = 256,
         
@@ -385,10 +386,10 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 32 ch/tile × 4 tiles, 2 rows/tile × 4 tiles
-        .n_tile_size = 32,
-        .n_tiles = 4,
-        .n_tile_size_last = 32,
+        // Tiling: 64 ch/tile × 2 tiles, 2 rows/tile × 4 tiles
+        .n_tile_size = 64,
+        .n_tiles = 2,
+        .n_tile_size_last = 64,
         .height_tiles = 4,
         .output_rows = 2,
         .input_rows = 5,
@@ -441,12 +442,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 11,
         .in_rows_firstdma = 3,
         
-        // Output tile: 8×2×16
+        // Output tile: 8×2×32
         .out_dim1_size = 8,
         .out_dim1_pitch = 8,
         .out_dim2_size = 2,
         .out_dim2_pitch = 16,
-        .out_dim3_size = 16,
+        .out_dim3_size = 32,
         
         // Coefficients: 3×3×128×128
         .coeff_dim1_size = 3,
@@ -465,8 +466,8 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 5120,
-        .coeff_buffer_size = 18432,
-        .output_buffer_size = 256,
+        .coeff_buffer_size = 36864,
+        .output_buffer_size = 512,
         .bias_buffer_size = 512,
         .outscale_buffer_size = 256,
         
@@ -479,10 +480,10 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 16 ch/tile × 8 tiles, 2 rows/tile × 4 tiles
-        .n_tile_size = 16,
-        .n_tiles = 8,
-        .n_tile_size_last = 16,
+        // Tiling: 32 ch/tile × 4 tiles, 2 rows/tile × 4 tiles
+        .n_tile_size = 32,
+        .n_tiles = 4,
+        .n_tile_size_last = 32,
         .height_tiles = 4,
         .output_rows = 2,
         .input_rows = 4,
@@ -567,7 +568,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         // DRAM placement
         .input_ping_dram = 0,
         .input_pong_dram = 0,
-        .coeff_dram = 1,
+        .coeff_dram = 0,
         .output_ping_dram = 1,
         .output_pong_dram = 1,
         .bias_dram = 1,
@@ -629,12 +630,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 11,
         .in_rows_firstdma = 4,
         
-        // Output tile: 4×2×16
+        // Output tile: 4×2×32
         .out_dim1_size = 4,
         .out_dim1_pitch = 4,
         .out_dim2_size = 2,
         .out_dim2_pitch = 8,
-        .out_dim3_size = 16,
+        .out_dim3_size = 32,
         
         // Coefficients: 3×3×128×256
         .coeff_dim1_size = 3,
@@ -653,8 +654,8 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 6400,
-        .coeff_buffer_size = 18432,
-        .output_buffer_size = 128,
+        .coeff_buffer_size = 36864,
+        .output_buffer_size = 256,
         .bias_buffer_size = 1024,
         .outscale_buffer_size = 512,
         
@@ -667,10 +668,10 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 16 ch/tile × 16 tiles, 2 rows/tile × 2 tiles
-        .n_tile_size = 16,
-        .n_tiles = 16,
-        .n_tile_size_last = 16,
+        // Tiling: 32 ch/tile × 8 tiles, 2 rows/tile × 2 tiles
+        .n_tile_size = 32,
+        .n_tiles = 8,
+        .n_tile_size_last = 32,
         .height_tiles = 2,
         .output_rows = 2,
         .input_rows = 5,
@@ -723,12 +724,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 7,
         .in_rows_firstdma = 3,
         
-        // Output tile: 4×2×8
+        // Output tile: 4×2×16
         .out_dim1_size = 4,
         .out_dim1_pitch = 4,
         .out_dim2_size = 2,
         .out_dim2_pitch = 8,
-        .out_dim3_size = 8,
+        .out_dim3_size = 16,
         
         // Coefficients: 3×3×256×256
         .coeff_dim1_size = 3,
@@ -747,8 +748,8 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 6144,
-        .coeff_buffer_size = 18432,
-        .output_buffer_size = 64,
+        .coeff_buffer_size = 36864,
+        .output_buffer_size = 128,
         .bias_buffer_size = 1024,
         .outscale_buffer_size = 512,
         
@@ -761,10 +762,10 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 8 ch/tile × 32 tiles, 2 rows/tile × 2 tiles
-        .n_tile_size = 8,
-        .n_tiles = 32,
-        .n_tile_size_last = 8,
+        // Tiling: 16 ch/tile × 16 tiles, 2 rows/tile × 2 tiles
+        .n_tile_size = 16,
+        .n_tiles = 16,
+        .n_tile_size_last = 16,
         .height_tiles = 2,
         .output_rows = 2,
         .input_rows = 4,
@@ -803,11 +804,11 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .dst_dim1_pitch = 4,
         .dst_dim2_pitch = 16,
         
-        // Input tile: 8×3 (edges: 0,0,0,0)
+        // Input tile: 8×7 (edges: 0,0,0,0)
         .in_dim1_size = 8,
         .in_dim1_pitch = 8,
-        .in_dim2_size = 3,
-        .in_dim2_pitch = 24,
+        .in_dim2_size = 7,
+        .in_dim2_pitch = 56,
         .in_dim1_edge1 = 0,
         .in_dim1_edge2 = 0,
         .in_dim2_edge1 = 0,
@@ -815,14 +816,14 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_dim3_edge1 = 0,
         .in_dim3_edge2 = 0,
         .in_data_offset = 0,
-        .in_rows_firstdma = 3,
+        .in_rows_firstdma = 7,
         
-        // Output tile: 4×2×128
+        // Output tile: 4×4×256
         .out_dim1_size = 4,
         .out_dim1_pitch = 4,
-        .out_dim2_size = 2,
-        .out_dim2_pitch = 8,
-        .out_dim3_size = 128,
+        .out_dim2_size = 4,
+        .out_dim2_pitch = 16,
+        .out_dim3_size = 256,
         
         // Coefficients: 1×1×128×256
         .coeff_dim1_size = 1,
@@ -840,9 +841,9 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .outscale_dim2_size = 1,
         
         // Buffer sizes (bytes)
-        .input_buffer_size = 3072,
-        .coeff_buffer_size = 16384,
-        .output_buffer_size = 1024,
+        .input_buffer_size = 7168,
+        .coeff_buffer_size = 32768,
+        .output_buffer_size = 4096,
         .bias_buffer_size = 1024,
         .outscale_buffer_size = 512,
         
@@ -855,13 +856,13 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 128 ch/tile × 2 tiles, 2 rows/tile × 2 tiles
-        .n_tile_size = 128,
-        .n_tiles = 2,
-        .n_tile_size_last = 128,
-        .height_tiles = 2,
-        .output_rows = 2,
-        .input_rows = 3,
+        // Tiling: 256 ch/tile × 1 tiles, 4 rows/tile × 1 tiles
+        .n_tile_size = 256,
+        .n_tiles = 1,
+        .n_tile_size_last = 256,
+        .height_tiles = 1,
+        .output_rows = 4,
+        .input_rows = 7,
         
         // Conv params: 1×1, stride 2×2, pad 0
         .kernel_w = 1,
@@ -911,12 +912,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 7,
         .in_rows_firstdma = 4,
         
-        // Output tile: 2×2×8
+        // Output tile: 2×2×16
         .out_dim1_size = 2,
         .out_dim1_pitch = 2,
         .out_dim2_size = 2,
         .out_dim2_pitch = 4,
-        .out_dim3_size = 8,
+        .out_dim3_size = 16,
         
         // Coefficients: 3×3×256×512
         .coeff_dim1_size = 3,
@@ -935,24 +936,24 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 7680,
-        .coeff_buffer_size = 18432,
-        .output_buffer_size = 32,
+        .coeff_buffer_size = 36864,
+        .output_buffer_size = 64,
         .bias_buffer_size = 2048,
         .outscale_buffer_size = 1024,
         
         // DRAM placement
         .input_ping_dram = 0,
         .input_pong_dram = 0,
-        .coeff_dram = 1,
+        .coeff_dram = 0,
         .output_ping_dram = 1,
         .output_pong_dram = 1,
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 8 ch/tile × 64 tiles, 2 rows/tile × 1 tiles
-        .n_tile_size = 8,
-        .n_tiles = 64,
-        .n_tile_size_last = 8,
+        // Tiling: 16 ch/tile × 32 tiles, 2 rows/tile × 1 tiles
+        .n_tile_size = 16,
+        .n_tiles = 32,
+        .n_tile_size_last = 16,
         .height_tiles = 1,
         .output_rows = 2,
         .input_rows = 5,
@@ -1005,12 +1006,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 5,
         .in_rows_firstdma = 3,
         
-        // Output tile: 2×2×4
+        // Output tile: 2×2×8
         .out_dim1_size = 2,
         .out_dim1_pitch = 2,
         .out_dim2_size = 2,
         .out_dim2_pitch = 4,
-        .out_dim3_size = 4,
+        .out_dim3_size = 8,
         
         // Coefficients: 3×3×512×512
         .coeff_dim1_size = 3,
@@ -1029,24 +1030,24 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 8192,
-        .coeff_buffer_size = 18432,
-        .output_buffer_size = 16,
+        .coeff_buffer_size = 36864,
+        .output_buffer_size = 32,
         .bias_buffer_size = 2048,
         .outscale_buffer_size = 1024,
         
         // DRAM placement
         .input_ping_dram = 0,
         .input_pong_dram = 0,
-        .coeff_dram = 1,
+        .coeff_dram = 0,
         .output_ping_dram = 1,
         .output_pong_dram = 1,
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 4 ch/tile × 128 tiles, 2 rows/tile × 1 tiles
-        .n_tile_size = 4,
-        .n_tiles = 128,
-        .n_tile_size_last = 4,
+        // Tiling: 8 ch/tile × 64 tiles, 2 rows/tile × 1 tiles
+        .n_tile_size = 8,
+        .n_tiles = 64,
+        .n_tile_size_last = 8,
         .height_tiles = 1,
         .output_rows = 2,
         .input_rows = 4,
@@ -1099,12 +1100,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 0,
         .in_rows_firstdma = 3,
         
-        // Output tile: 2×2×64
+        // Output tile: 2×2×128
         .out_dim1_size = 2,
         .out_dim1_pitch = 2,
         .out_dim2_size = 2,
         .out_dim2_pitch = 4,
-        .out_dim3_size = 64,
+        .out_dim3_size = 128,
         
         // Coefficients: 1×1×256×512
         .coeff_dim1_size = 1,
@@ -1123,8 +1124,8 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 3072,
-        .coeff_buffer_size = 16384,
-        .output_buffer_size = 256,
+        .coeff_buffer_size = 32768,
+        .output_buffer_size = 512,
         .bias_buffer_size = 2048,
         .outscale_buffer_size = 1024,
         
@@ -1137,10 +1138,10 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 64 ch/tile × 8 tiles, 2 rows/tile × 1 tiles
-        .n_tile_size = 64,
-        .n_tiles = 8,
-        .n_tile_size_last = 64,
+        // Tiling: 128 ch/tile × 4 tiles, 2 rows/tile × 1 tiles
+        .n_tile_size = 128,
+        .n_tiles = 4,
+        .n_tile_size_last = 128,
         .height_tiles = 1,
         .output_rows = 2,
         .input_rows = 3,
@@ -1179,11 +1180,11 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .dst_dim1_pitch = 16,
         .dst_dim2_pitch = 256,
         
-        // Input tile: 16×14 (edges: 0,0,0,0)
+        // Input tile: 16×16 (edges: 0,0,0,0)
         .in_dim1_size = 16,
         .in_dim1_pitch = 16,
-        .in_dim2_size = 14,
-        .in_dim2_pitch = 224,
+        .in_dim2_size = 16,
+        .in_dim2_pitch = 256,
         .in_dim1_edge1 = 0,
         .in_dim1_edge2 = 0,
         .in_dim2_edge1 = 0,
@@ -1191,13 +1192,13 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_dim3_edge1 = 0,
         .in_dim3_edge2 = 0,
         .in_data_offset = 0,
-        .in_rows_firstdma = 14,
+        .in_rows_firstdma = 16,
         
-        // Output tile: 16×14×64
+        // Output tile: 16×16×64
         .out_dim1_size = 16,
         .out_dim1_pitch = 16,
-        .out_dim2_size = 14,
-        .out_dim2_pitch = 224,
+        .out_dim2_size = 16,
+        .out_dim2_pitch = 256,
         .out_dim3_size = 64,
         
         // Coefficients: 1×1×64×64
@@ -1216,9 +1217,9 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .outscale_dim2_size = 1,
         
         // Buffer sizes (bytes)
-        .input_buffer_size = 14336,
+        .input_buffer_size = 16384,
         .coeff_buffer_size = 4096,
-        .output_buffer_size = 14336,
+        .output_buffer_size = 16384,
         .bias_buffer_size = 256,
         .outscale_buffer_size = 128,
         
@@ -1231,13 +1232,13 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 64 ch/tile × 1 tiles, 14 rows/tile × 2 tiles
+        // Tiling: 64 ch/tile × 1 tiles, 16 rows/tile × 1 tiles
         .n_tile_size = 64,
         .n_tiles = 1,
         .n_tile_size_last = 64,
-        .height_tiles = 2,
-        .output_rows = 14,
-        .input_rows = 14,
+        .height_tiles = 1,
+        .output_rows = 16,
+        .input_rows = 16,
         
         // Conv params: 1×1, stride 1×1, pad 0
         .kernel_w = 1,
@@ -1273,11 +1274,11 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .dst_dim1_pitch = 16,
         .dst_dim2_pitch = 256,
         
-        // Input tile: 16×4 (edges: 0,0,0,0)
+        // Input tile: 16×7 (edges: 0,0,0,0)
         .in_dim1_size = 16,
         .in_dim1_pitch = 16,
-        .in_dim2_size = 4,
-        .in_dim2_pitch = 64,
+        .in_dim2_size = 7,
+        .in_dim2_pitch = 112,
         .in_dim1_edge1 = 0,
         .in_dim1_edge2 = 0,
         .in_dim2_edge1 = 0,
@@ -1285,13 +1286,13 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_dim3_edge1 = 0,
         .in_dim3_edge2 = 0,
         .in_data_offset = 0,
-        .in_rows_firstdma = 4,
+        .in_rows_firstdma = 7,
         
-        // Output tile: 16×4×256
+        // Output tile: 16×7×256
         .out_dim1_size = 16,
         .out_dim1_pitch = 16,
-        .out_dim2_size = 4,
-        .out_dim2_pitch = 64,
+        .out_dim2_size = 7,
+        .out_dim2_pitch = 112,
         .out_dim3_size = 256,
         
         // Coefficients: 1×1×64×256
@@ -1310,9 +1311,9 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .outscale_dim2_size = 1,
         
         // Buffer sizes (bytes)
-        .input_buffer_size = 4096,
+        .input_buffer_size = 7168,
         .coeff_buffer_size = 16384,
-        .output_buffer_size = 16384,
+        .output_buffer_size = 28672,
         .bias_buffer_size = 1024,
         .outscale_buffer_size = 512,
         
@@ -1322,16 +1323,16 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .coeff_dram = 0,
         .output_ping_dram = 1,
         .output_pong_dram = 1,
-        .bias_dram = 0,
-        .outscale_dram = 0,
+        .bias_dram = 1,
+        .outscale_dram = 1,
         
-        // Tiling: 256 ch/tile × 1 tiles, 4 rows/tile × 4 tiles
+        // Tiling: 256 ch/tile × 1 tiles, 7 rows/tile × 3 tiles
         .n_tile_size = 256,
         .n_tiles = 1,
         .n_tile_size_last = 256,
-        .height_tiles = 4,
-        .output_rows = 4,
-        .input_rows = 4,
+        .height_tiles = 3,
+        .output_rows = 7,
+        .input_rows = 7,
         
         // Conv params: 1×1, stride 1×1, pad 0
         .kernel_w = 1,
@@ -1367,11 +1368,11 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .dst_dim1_pitch = 16,
         .dst_dim2_pitch = 256,
         
-        // Input tile: 16×4 (edges: 0,0,0,0)
+        // Input tile: 16×10 (edges: 0,0,0,0)
         .in_dim1_size = 16,
         .in_dim1_pitch = 16,
-        .in_dim2_size = 4,
-        .in_dim2_pitch = 64,
+        .in_dim2_size = 10,
+        .in_dim2_pitch = 160,
         .in_dim1_edge1 = 0,
         .in_dim1_edge2 = 0,
         .in_dim2_edge1 = 0,
@@ -1379,13 +1380,13 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_dim3_edge1 = 0,
         .in_dim3_edge2 = 0,
         .in_data_offset = 0,
-        .in_rows_firstdma = 4,
+        .in_rows_firstdma = 10,
         
-        // Output tile: 16×4×64
+        // Output tile: 16×10×64
         .out_dim1_size = 16,
         .out_dim1_pitch = 16,
-        .out_dim2_size = 4,
-        .out_dim2_pitch = 64,
+        .out_dim2_size = 10,
+        .out_dim2_pitch = 160,
         .out_dim3_size = 64,
         
         // Coefficients: 1×1×256×64
@@ -1404,28 +1405,28 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .outscale_dim2_size = 1,
         
         // Buffer sizes (bytes)
-        .input_buffer_size = 16384,
+        .input_buffer_size = 40960,
         .coeff_buffer_size = 16384,
-        .output_buffer_size = 4096,
+        .output_buffer_size = 10240,
         .bias_buffer_size = 256,
         .outscale_buffer_size = 128,
         
         // DRAM placement
         .input_ping_dram = 0,
-        .input_pong_dram = 0,
-        .coeff_dram = 1,
+        .input_pong_dram = 1,
+        .coeff_dram = 0,
         .output_ping_dram = 1,
         .output_pong_dram = 1,
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 64 ch/tile × 1 tiles, 4 rows/tile × 4 tiles
+        // Tiling: 64 ch/tile × 1 tiles, 10 rows/tile × 2 tiles
         .n_tile_size = 64,
         .n_tiles = 1,
         .n_tile_size_last = 64,
-        .height_tiles = 4,
-        .output_rows = 4,
-        .input_rows = 4,
+        .height_tiles = 2,
+        .output_rows = 10,
+        .input_rows = 10,
         
         // Conv params: 1×1, stride 1×1, pad 0
         .kernel_w = 1,
@@ -1461,11 +1462,11 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .dst_dim1_pitch = 16,
         .dst_dim2_pitch = 256,
         
-        // Input tile: 16×2 (edges: 0,0,0,0)
+        // Input tile: 16×7 (edges: 0,0,0,0)
         .in_dim1_size = 16,
         .in_dim1_pitch = 16,
-        .in_dim2_size = 2,
-        .in_dim2_pitch = 32,
+        .in_dim2_size = 7,
+        .in_dim2_pitch = 112,
         .in_dim1_edge1 = 0,
         .in_dim1_edge2 = 0,
         .in_dim2_edge1 = 0,
@@ -1473,14 +1474,14 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_dim3_edge1 = 0,
         .in_dim3_edge2 = 0,
         .in_data_offset = 0,
-        .in_rows_firstdma = 2,
+        .in_rows_firstdma = 7,
         
-        // Output tile: 16×2×64
+        // Output tile: 16×7×128
         .out_dim1_size = 16,
         .out_dim1_pitch = 16,
-        .out_dim2_size = 2,
-        .out_dim2_pitch = 32,
-        .out_dim3_size = 64,
+        .out_dim2_size = 7,
+        .out_dim2_pitch = 112,
+        .out_dim3_size = 128,
         
         // Coefficients: 1×1×256×128
         .coeff_dim1_size = 1,
@@ -1498,28 +1499,28 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .outscale_dim2_size = 1,
         
         // Buffer sizes (bytes)
-        .input_buffer_size = 8192,
-        .coeff_buffer_size = 16384,
-        .output_buffer_size = 2048,
+        .input_buffer_size = 28672,
+        .coeff_buffer_size = 32768,
+        .output_buffer_size = 14336,
         .bias_buffer_size = 512,
         .outscale_buffer_size = 256,
         
         // DRAM placement
         .input_ping_dram = 0,
         .input_pong_dram = 0,
-        .coeff_dram = 0,
+        .coeff_dram = 1,
         .output_ping_dram = 1,
         .output_pong_dram = 1,
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 64 ch/tile × 2 tiles, 2 rows/tile × 8 tiles
-        .n_tile_size = 64,
-        .n_tiles = 2,
-        .n_tile_size_last = 64,
-        .height_tiles = 8,
-        .output_rows = 2,
-        .input_rows = 2,
+        // Tiling: 128 ch/tile × 1 tiles, 7 rows/tile × 3 tiles
+        .n_tile_size = 128,
+        .n_tiles = 1,
+        .n_tile_size_last = 128,
+        .height_tiles = 3,
+        .output_rows = 7,
+        .input_rows = 7,
         
         // Conv params: 1×1, stride 1×1, pad 0
         .kernel_w = 1,
@@ -1569,12 +1570,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 19,
         .in_rows_firstdma = 4,
         
-        // Output tile: 8×2×16
+        // Output tile: 8×2×32
         .out_dim1_size = 8,
         .out_dim1_pitch = 8,
         .out_dim2_size = 2,
         .out_dim2_pitch = 16,
-        .out_dim3_size = 16,
+        .out_dim3_size = 32,
         
         // Coefficients: 3×3×128×128
         .coeff_dim1_size = 3,
@@ -1593,24 +1594,24 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 11520,
-        .coeff_buffer_size = 18432,
-        .output_buffer_size = 256,
+        .coeff_buffer_size = 36864,
+        .output_buffer_size = 512,
         .bias_buffer_size = 512,
         .outscale_buffer_size = 256,
         
         // DRAM placement
         .input_ping_dram = 0,
         .input_pong_dram = 0,
-        .coeff_dram = 1,
+        .coeff_dram = 0,
         .output_ping_dram = 1,
         .output_pong_dram = 1,
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 16 ch/tile × 8 tiles, 2 rows/tile × 4 tiles
-        .n_tile_size = 16,
-        .n_tiles = 8,
-        .n_tile_size_last = 16,
+        // Tiling: 32 ch/tile × 4 tiles, 2 rows/tile × 4 tiles
+        .n_tile_size = 32,
+        .n_tiles = 4,
+        .n_tile_size_last = 32,
         .height_tiles = 4,
         .output_rows = 2,
         .input_rows = 5,
@@ -1663,12 +1664,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 0,
         .in_rows_firstdma = 2,
         
-        // Output tile: 8×2×128
+        // Output tile: 8×2×256
         .out_dim1_size = 8,
         .out_dim1_pitch = 8,
         .out_dim2_size = 2,
         .out_dim2_pitch = 16,
-        .out_dim3_size = 128,
+        .out_dim3_size = 256,
         
         // Coefficients: 1×1×128×512
         .coeff_dim1_size = 1,
@@ -1687,8 +1688,8 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 2048,
-        .coeff_buffer_size = 16384,
-        .output_buffer_size = 2048,
+        .coeff_buffer_size = 32768,
+        .output_buffer_size = 4096,
         .bias_buffer_size = 2048,
         .outscale_buffer_size = 1024,
         
@@ -1701,10 +1702,10 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 128 ch/tile × 4 tiles, 2 rows/tile × 4 tiles
-        .n_tile_size = 128,
-        .n_tiles = 4,
-        .n_tile_size_last = 128,
+        // Tiling: 256 ch/tile × 2 tiles, 2 rows/tile × 4 tiles
+        .n_tile_size = 256,
+        .n_tiles = 2,
+        .n_tile_size_last = 256,
         .height_tiles = 4,
         .output_rows = 2,
         .input_rows = 2,
@@ -1757,12 +1758,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 0,
         .in_rows_firstdma = 3,
         
-        // Output tile: 8×2×64
+        // Output tile: 8×2×128
         .out_dim1_size = 8,
         .out_dim1_pitch = 8,
         .out_dim2_size = 2,
         .out_dim2_pitch = 16,
-        .out_dim3_size = 64,
+        .out_dim3_size = 128,
         
         // Coefficients: 1×1×256×512
         .coeff_dim1_size = 1,
@@ -1781,24 +1782,24 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 12288,
-        .coeff_buffer_size = 16384,
-        .output_buffer_size = 1024,
+        .coeff_buffer_size = 32768,
+        .output_buffer_size = 2048,
         .bias_buffer_size = 2048,
         .outscale_buffer_size = 1024,
         
         // DRAM placement
         .input_ping_dram = 0,
         .input_pong_dram = 0,
-        .coeff_dram = 1,
+        .coeff_dram = 0,
         .output_ping_dram = 1,
         .output_pong_dram = 1,
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 64 ch/tile × 8 tiles, 2 rows/tile × 4 tiles
-        .n_tile_size = 64,
-        .n_tiles = 8,
-        .n_tile_size_last = 64,
+        // Tiling: 128 ch/tile × 4 tiles, 2 rows/tile × 4 tiles
+        .n_tile_size = 128,
+        .n_tiles = 4,
+        .n_tile_size_last = 128,
         .height_tiles = 4,
         .output_rows = 2,
         .input_rows = 3,
@@ -1851,12 +1852,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 0,
         .in_rows_firstdma = 2,
         
-        // Output tile: 8×2×32
+        // Output tile: 8×2×64
         .out_dim1_size = 8,
         .out_dim1_pitch = 8,
         .out_dim2_size = 2,
         .out_dim2_pitch = 16,
-        .out_dim3_size = 32,
+        .out_dim3_size = 64,
         
         // Coefficients: 1×1×512×128
         .coeff_dim1_size = 1,
@@ -1875,8 +1876,8 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 8192,
-        .coeff_buffer_size = 16384,
-        .output_buffer_size = 512,
+        .coeff_buffer_size = 32768,
+        .output_buffer_size = 1024,
         .bias_buffer_size = 512,
         .outscale_buffer_size = 256,
         
@@ -1889,10 +1890,10 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 32 ch/tile × 4 tiles, 2 rows/tile × 4 tiles
-        .n_tile_size = 32,
-        .n_tiles = 4,
-        .n_tile_size_last = 32,
+        // Tiling: 64 ch/tile × 2 tiles, 2 rows/tile × 4 tiles
+        .n_tile_size = 64,
+        .n_tiles = 2,
+        .n_tile_size_last = 64,
         .height_tiles = 4,
         .output_rows = 2,
         .input_rows = 2,
@@ -1945,12 +1946,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 0,
         .in_rows_firstdma = 2,
         
-        // Output tile: 8×2×32
+        // Output tile: 8×2×64
         .out_dim1_size = 8,
         .out_dim1_pitch = 8,
         .out_dim2_size = 2,
         .out_dim2_pitch = 16,
-        .out_dim3_size = 32,
+        .out_dim3_size = 64,
         
         // Coefficients: 1×1×512×256
         .coeff_dim1_size = 1,
@@ -1969,8 +1970,8 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 8192,
-        .coeff_buffer_size = 16384,
-        .output_buffer_size = 512,
+        .coeff_buffer_size = 32768,
+        .output_buffer_size = 1024,
         .bias_buffer_size = 1024,
         .outscale_buffer_size = 512,
         
@@ -1983,10 +1984,10 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 32 ch/tile × 8 tiles, 2 rows/tile × 4 tiles
-        .n_tile_size = 32,
-        .n_tiles = 8,
-        .n_tile_size_last = 32,
+        // Tiling: 64 ch/tile × 4 tiles, 2 rows/tile × 4 tiles
+        .n_tile_size = 64,
+        .n_tiles = 4,
+        .n_tile_size_last = 64,
         .height_tiles = 4,
         .output_rows = 2,
         .input_rows = 2,
@@ -2039,12 +2040,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 11,
         .in_rows_firstdma = 4,
         
-        // Output tile: 4×2×8
+        // Output tile: 4×2×16
         .out_dim1_size = 4,
         .out_dim1_pitch = 4,
         .out_dim2_size = 2,
         .out_dim2_pitch = 8,
-        .out_dim3_size = 8,
+        .out_dim3_size = 16,
         
         // Coefficients: 3×3×256×256
         .coeff_dim1_size = 3,
@@ -2063,24 +2064,24 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 12800,
-        .coeff_buffer_size = 18432,
-        .output_buffer_size = 64,
+        .coeff_buffer_size = 36864,
+        .output_buffer_size = 128,
         .bias_buffer_size = 1024,
         .outscale_buffer_size = 512,
         
         // DRAM placement
         .input_ping_dram = 0,
         .input_pong_dram = 0,
-        .coeff_dram = 1,
+        .coeff_dram = 0,
         .output_ping_dram = 1,
         .output_pong_dram = 1,
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 8 ch/tile × 32 tiles, 2 rows/tile × 2 tiles
-        .n_tile_size = 8,
-        .n_tiles = 32,
-        .n_tile_size_last = 8,
+        // Tiling: 16 ch/tile × 16 tiles, 2 rows/tile × 2 tiles
+        .n_tile_size = 16,
+        .n_tiles = 16,
+        .n_tile_size_last = 16,
         .height_tiles = 2,
         .output_rows = 2,
         .input_rows = 5,
@@ -2133,12 +2134,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 0,
         .in_rows_firstdma = 2,
         
-        // Output tile: 4×2×64
+        // Output tile: 4×2×128
         .out_dim1_size = 4,
         .out_dim1_pitch = 4,
         .out_dim2_size = 2,
         .out_dim2_pitch = 8,
-        .out_dim3_size = 64,
+        .out_dim3_size = 128,
         
         // Coefficients: 1×1×256×1024
         .coeff_dim1_size = 1,
@@ -2157,8 +2158,8 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 2048,
-        .coeff_buffer_size = 16384,
-        .output_buffer_size = 512,
+        .coeff_buffer_size = 32768,
+        .output_buffer_size = 1024,
         .bias_buffer_size = 4096,
         .outscale_buffer_size = 2048,
         
@@ -2171,10 +2172,10 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 64 ch/tile × 16 tiles, 2 rows/tile × 2 tiles
-        .n_tile_size = 64,
-        .n_tiles = 16,
-        .n_tile_size_last = 64,
+        // Tiling: 128 ch/tile × 8 tiles, 2 rows/tile × 2 tiles
+        .n_tile_size = 128,
+        .n_tiles = 8,
+        .n_tile_size_last = 128,
         .height_tiles = 2,
         .output_rows = 2,
         .input_rows = 2,
@@ -2227,12 +2228,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 0,
         .in_rows_firstdma = 3,
         
-        // Output tile: 4×2×32
+        // Output tile: 4×2×64
         .out_dim1_size = 4,
         .out_dim1_pitch = 4,
         .out_dim2_size = 2,
         .out_dim2_pitch = 8,
-        .out_dim3_size = 32,
+        .out_dim3_size = 64,
         
         // Coefficients: 1×1×512×1024
         .coeff_dim1_size = 1,
@@ -2251,24 +2252,24 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 12288,
-        .coeff_buffer_size = 16384,
-        .output_buffer_size = 256,
+        .coeff_buffer_size = 32768,
+        .output_buffer_size = 512,
         .bias_buffer_size = 4096,
         .outscale_buffer_size = 2048,
         
         // DRAM placement
         .input_ping_dram = 0,
         .input_pong_dram = 0,
-        .coeff_dram = 1,
+        .coeff_dram = 0,
         .output_ping_dram = 1,
         .output_pong_dram = 1,
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 32 ch/tile × 32 tiles, 2 rows/tile × 2 tiles
-        .n_tile_size = 32,
-        .n_tiles = 32,
-        .n_tile_size_last = 32,
+        // Tiling: 64 ch/tile × 16 tiles, 2 rows/tile × 2 tiles
+        .n_tile_size = 64,
+        .n_tiles = 16,
+        .n_tile_size_last = 64,
         .height_tiles = 2,
         .output_rows = 2,
         .input_rows = 3,
@@ -2321,12 +2322,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 0,
         .in_rows_firstdma = 2,
         
-        // Output tile: 4×2×16
+        // Output tile: 4×2×32
         .out_dim1_size = 4,
         .out_dim1_pitch = 4,
         .out_dim2_size = 2,
         .out_dim2_pitch = 8,
-        .out_dim3_size = 16,
+        .out_dim3_size = 32,
         
         // Coefficients: 1×1×1024×256
         .coeff_dim1_size = 1,
@@ -2345,8 +2346,8 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 8192,
-        .coeff_buffer_size = 16384,
-        .output_buffer_size = 128,
+        .coeff_buffer_size = 32768,
+        .output_buffer_size = 256,
         .bias_buffer_size = 1024,
         .outscale_buffer_size = 512,
         
@@ -2359,10 +2360,10 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 16 ch/tile × 16 tiles, 2 rows/tile × 2 tiles
-        .n_tile_size = 16,
-        .n_tiles = 16,
-        .n_tile_size_last = 16,
+        // Tiling: 32 ch/tile × 8 tiles, 2 rows/tile × 2 tiles
+        .n_tile_size = 32,
+        .n_tiles = 8,
+        .n_tile_size_last = 32,
         .height_tiles = 2,
         .output_rows = 2,
         .input_rows = 2,
@@ -2415,12 +2416,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 0,
         .in_rows_firstdma = 2,
         
-        // Output tile: 4×2×16
+        // Output tile: 4×2×32
         .out_dim1_size = 4,
         .out_dim1_pitch = 4,
         .out_dim2_size = 2,
         .out_dim2_pitch = 8,
-        .out_dim3_size = 16,
+        .out_dim3_size = 32,
         
         // Coefficients: 1×1×1024×512
         .coeff_dim1_size = 1,
@@ -2439,8 +2440,8 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 8192,
-        .coeff_buffer_size = 16384,
-        .output_buffer_size = 128,
+        .coeff_buffer_size = 32768,
+        .output_buffer_size = 256,
         .bias_buffer_size = 2048,
         .outscale_buffer_size = 1024,
         
@@ -2453,10 +2454,10 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 16 ch/tile × 32 tiles, 2 rows/tile × 2 tiles
-        .n_tile_size = 16,
-        .n_tiles = 32,
-        .n_tile_size_last = 16,
+        // Tiling: 32 ch/tile × 16 tiles, 2 rows/tile × 2 tiles
+        .n_tile_size = 32,
+        .n_tiles = 16,
+        .n_tile_size_last = 32,
         .height_tiles = 2,
         .output_rows = 2,
         .input_rows = 2,
@@ -2509,12 +2510,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 7,
         .in_rows_firstdma = 4,
         
-        // Output tile: 2×2×4
+        // Output tile: 2×2×8
         .out_dim1_size = 2,
         .out_dim1_pitch = 2,
         .out_dim2_size = 2,
         .out_dim2_pitch = 4,
-        .out_dim3_size = 4,
+        .out_dim3_size = 8,
         
         // Coefficients: 3×3×512×512
         .coeff_dim1_size = 3,
@@ -2533,8 +2534,8 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 15360,
-        .coeff_buffer_size = 18432,
-        .output_buffer_size = 16,
+        .coeff_buffer_size = 36864,
+        .output_buffer_size = 32,
         .bias_buffer_size = 2048,
         .outscale_buffer_size = 1024,
         
@@ -2547,10 +2548,10 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 4 ch/tile × 128 tiles, 2 rows/tile × 1 tiles
-        .n_tile_size = 4,
-        .n_tiles = 128,
-        .n_tile_size_last = 4,
+        // Tiling: 8 ch/tile × 64 tiles, 2 rows/tile × 1 tiles
+        .n_tile_size = 8,
+        .n_tiles = 64,
+        .n_tile_size_last = 8,
         .height_tiles = 1,
         .output_rows = 2,
         .input_rows = 5,
@@ -2603,12 +2604,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 0,
         .in_rows_firstdma = 2,
         
-        // Output tile: 2×2×32
+        // Output tile: 2×2×64
         .out_dim1_size = 2,
         .out_dim1_pitch = 2,
         .out_dim2_size = 2,
         .out_dim2_pitch = 4,
-        .out_dim3_size = 32,
+        .out_dim3_size = 64,
         
         // Coefficients: 1×1×512×2048
         .coeff_dim1_size = 1,
@@ -2627,8 +2628,8 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 2048,
-        .coeff_buffer_size = 16384,
-        .output_buffer_size = 128,
+        .coeff_buffer_size = 32768,
+        .output_buffer_size = 256,
         .bias_buffer_size = 8192,
         .outscale_buffer_size = 4096,
         
@@ -2641,10 +2642,10 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 32 ch/tile × 64 tiles, 2 rows/tile × 1 tiles
-        .n_tile_size = 32,
-        .n_tiles = 64,
-        .n_tile_size_last = 32,
+        // Tiling: 64 ch/tile × 32 tiles, 2 rows/tile × 1 tiles
+        .n_tile_size = 64,
+        .n_tiles = 32,
+        .n_tile_size_last = 64,
         .height_tiles = 1,
         .output_rows = 2,
         .input_rows = 2,
@@ -2697,12 +2698,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 0,
         .in_rows_firstdma = 3,
         
-        // Output tile: 2×2×16
+        // Output tile: 2×2×32
         .out_dim1_size = 2,
         .out_dim1_pitch = 2,
         .out_dim2_size = 2,
         .out_dim2_pitch = 4,
-        .out_dim3_size = 16,
+        .out_dim3_size = 32,
         
         // Coefficients: 1×1×1024×2048
         .coeff_dim1_size = 1,
@@ -2721,24 +2722,24 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 12288,
-        .coeff_buffer_size = 16384,
-        .output_buffer_size = 64,
+        .coeff_buffer_size = 32768,
+        .output_buffer_size = 128,
         .bias_buffer_size = 8192,
         .outscale_buffer_size = 4096,
         
         // DRAM placement
         .input_ping_dram = 0,
         .input_pong_dram = 0,
-        .coeff_dram = 1,
+        .coeff_dram = 0,
         .output_ping_dram = 1,
         .output_pong_dram = 1,
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 16 ch/tile × 128 tiles, 2 rows/tile × 1 tiles
-        .n_tile_size = 16,
-        .n_tiles = 128,
-        .n_tile_size_last = 16,
+        // Tiling: 32 ch/tile × 64 tiles, 2 rows/tile × 1 tiles
+        .n_tile_size = 32,
+        .n_tiles = 64,
+        .n_tile_size_last = 32,
         .height_tiles = 1,
         .output_rows = 2,
         .input_rows = 3,
@@ -2791,12 +2792,12 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .in_data_offset = 0,
         .in_rows_firstdma = 2,
         
-        // Output tile: 2×2×8
+        // Output tile: 2×2×16
         .out_dim1_size = 2,
         .out_dim1_pitch = 2,
         .out_dim2_size = 2,
         .out_dim2_pitch = 4,
-        .out_dim3_size = 8,
+        .out_dim3_size = 16,
         
         // Coefficients: 1×1×2048×512
         .coeff_dim1_size = 1,
@@ -2815,8 +2816,8 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         
         // Buffer sizes (bytes)
         .input_buffer_size = 8192,
-        .coeff_buffer_size = 16384,
-        .output_buffer_size = 32,
+        .coeff_buffer_size = 32768,
+        .output_buffer_size = 64,
         .bias_buffer_size = 2048,
         .outscale_buffer_size = 1024,
         
@@ -2829,10 +2830,10 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .bias_dram = 1,
         .outscale_dram = 1,
         
-        // Tiling: 8 ch/tile × 64 tiles, 2 rows/tile × 1 tiles
-        .n_tile_size = 8,
-        .n_tiles = 64,
-        .n_tile_size_last = 8,
+        // Tiling: 16 ch/tile × 32 tiles, 2 rows/tile × 1 tiles
+        .n_tile_size = 16,
+        .n_tiles = 32,
+        .n_tile_size_last = 16,
         .height_tiles = 1,
         .output_rows = 2,
         .input_rows = 2,

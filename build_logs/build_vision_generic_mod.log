@@ -1,0 +1,35 @@
+[  4%] Built target flatbuffers_ep
+[  4%] Built target flatcc_ep
+[  7%] Built target common_schema
+[  7%] Built target xai_common
+[  8%] Built target scalar_type_schema
+[ 10%] Built target xa_nnlib
+[ 10%] Built target program_schema
+[ 10%] Built target flat_tensor_schema
+[ 13%] Built target flatccrt
+[ 16%] Built target xai
+[ 16%] Built target cadence_kernels
+[ 17%] Built target gflags_nothreads_static
+[ 22%] Built target executorch_core
+[ 23%] Built target extension_evalue_util
+[ 24%] Built target extension_data_loader
+[ 25%] Built target extension_flat_tensor
+[ 26%] Built target executorch
+[ 26%] Built target extension_runner_util
+[ 31%] Built target kernels_util_all_deps
+[ 32%] Building CXX object backends/cadence/vision/operators/CMakeFiles/custom_ops.dir/quantized_conv2d_nchw_out_per_tensor.cpp.o
+[ 32%] Building CXX object backends/cadence/vision/operators/CMakeFiles/custom_ops.dir/quantize_per_tensor.cpp.o
+[ 33%] Building CXX object backends/cadence/vision/operators/CMakeFiles/custom_ops.dir/dequantize_per_tensor.cpp.o
+[ 33%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/op_softmax.cpp.o
+[ 33%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/op_max_pool2d_with_indices.cpp.o
+[ 33%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/op_add.cpp.o
+[ 34%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/quantized_relu.cpp.o
+[ 82%] Built target portable_kernels
+[ 83%] Built target portable_ops_lib
+[ 84%] Linking CXX static library libcustom_ops.a
+[ 87%] Built target custom_ops
+[ 88%] Linking CXX static library libaten_ops_cadence.a
+[ 98%] Built target aten_ops_cadence
+[ 99%] Built target cadence_ops_lib
+[100%] Linking CXX executable executor_runner
+[100%] Built target executor_runner

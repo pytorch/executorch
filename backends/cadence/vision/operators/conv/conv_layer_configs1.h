@@ -114,6 +114,7 @@ typedef struct {
     int output_shift;       // Output quantization shift
     int output_scale;       // Output scale factor
     int flags;              // Convolution flags
+    int input_zero_point;   // Input zero-point for padding fill (set at runtime)
     
 } conv_layer_config_t;
 

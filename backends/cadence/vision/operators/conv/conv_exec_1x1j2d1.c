@@ -21,7 +21,6 @@
 #include "dma.h"
 #include "utils.h"
 #include <xai_cnn_api.h>
-#include <stdio.h>
 #include <string.h>
 
 // VQ (per-channel output scaling) DMA version
@@ -63,17 +62,8 @@ XAI_ERR_TYPE conv_exec_1x1j2d1VQ(
     
     if (!p_input0 || !p_input1 || !p_coeff || 
         !p_output0 || !p_output1 || !p_bias || !p_outscale) {
-        printf("ERROR: Buffer allocation failed in conv_exec_1x1j2d1\n");
         return (-1);
     }
-    
-    printf("  [1x1j2d1] DRAM usage: dram0=%d, dram1=%d\n", dram0_used, dram1_used);
-    printf("  [1x1j2d1] Buffers: in0=%p, in1=%p, coeff=%p, out0=%p, out1=%p\n", 
-           (void*)p_input0, (void*)p_input1, (void*)p_coeff, (void*)p_output0, (void*)p_output1);
-    printf("  [1x1j2d1] Config: src=%dx%dx%d, dst=%dx%dx%d, n_tiles=%d, h_tiles=%d\n",
-           config->src_dim1_size, config->src_dim2_size, config->src_dim3_size,
-           config->dst_dim1_size, config->dst_dim2_size, config->dst_dim3_size,
-           config->n_tiles, config->height_tiles);
     
     // ========================================================================
     // SECTION 2: Initialize XAI Tile Descriptors
@@ -87,20 +77,15 @@ XAI_ERR_TYPE conv_exec_1x1j2d1VQ(
     xai_cnn_conv_params params;
     
     // Transfer constant data (all buffers are 64-byte aligned by test harness)
-    printf("  [1x1j2d1] DMA coeff %d bytes from %p to %p\n", config->coeff_buffer_size, (void*)coeff_ptr, (void*)p_coeff);
     dma_1dm(0, coeff_ptr, p_coeff, config->coeff_buffer_size);
-    printf("  [1x1j2d1] DMA bias %d bytes\n", config->bias_buffer_size);
     dma_1dm(0, bias_ptr, p_bias, config->bias_buffer_size);
-    printf("  [1x1j2d1] DMA outscale %d bytes\n", config->outscale_buffer_size);
     dma_1dm(0, outScale_ptr, p_outscale, config->outscale_buffer_size);
     
     // Initialize input buffer and load first tile
     // Note: For 1x1 kernel, IN_DATA_OFFSET = 0, no edge padding needed
-    printf("  [1x1j2d1] Fill input buffer %d bytes\n", config->input_buffer_size);
     _proto_FillBuffer_I8(p_input0, config->input_zero_point, config->input_buffer_size);
     
     // First DMA: load IN_ROWS_FIRSTDMA rows at offset 0 (no edge padding)
-    printf("  [1x1j2d1] DMA first input tile: rows=%d, src=%p\n", config->in_rows_firstdma, (void*)src);
     dma_3dm(1,
             (void*)src,
             (void*)&p_input0[config->in_data_offset],  // in_data_offset = 0 for 1x1
@@ -402,8 +387,6 @@ XAI_ERR_TYPE conv_exec_1x1j2d1VQ_cache(
     int8_t* padded_input = get_cache_padded_input();
     
     if (input_buffer_size > (int)get_cache_padded_input_size()) {
-        printf("ERROR: Input buffer size %d exceeds max %d\n", 
-               input_buffer_size, (int)get_cache_padded_input_size());
         return XAI_ERR_DATASIZE;
     }
     
@@ -607,11 +590,8 @@ XAI_ERR_TYPE conv_exec_1x1j2d1(
     
     if (!p_input0 || !p_input1 || !p_coeff || 
         !p_output0 || !p_output1 || !p_bias) {
-        printf("ERROR: Buffer allocation failed in conv_exec_1x1j2d1\n");
         return (-1);
     }
-    
-    printf("  [1x1j2d1] DRAM usage: dram0=%d, dram1=%d\n", dram0_used, dram1_used);
     
     // ========================================================================
     // SECTION 2: Initialize XAI Tile Descriptors
@@ -645,6 +625,10 @@ XAI_ERR_TYPE conv_exec_1x1j2d1(
             config->src_dim1_size,
             config->in_rows_firstdma,
             config->src_dim3_size);
+    
+    // Wait for all initial DMA transfers to complete
+    idma_hw_wait_all(0);  // coeff + bias on ch0
+    idma_hw_wait_all(1);  // input on ch1
     
     // ========================================================================
     // Configure Input Tile Descriptor
@@ -807,6 +791,10 @@ XAI_ERR_TYPE conv_exec_1x1j2d1(
             XAI_TILE3D_SET_DIM2_COORD(&tile_output, (config->output_rows)*(idx_h));
             XAI_TILE3D_SET_DIM2(&tile_output, current_output_rows);
             
+            // Wait for any in-flight DMA to complete before using buffers
+            idma_hw_wait_all(0);  // previous output store / coeff prefetch on ch0
+            idma_hw_wait_all(1);  // input prefetch on ch1
+            
             // ================================================================
             // Perform Convolution (non-VQ API)
             // ================================================================
@@ -845,6 +833,9 @@ XAI_ERR_TYPE conv_exec_1x1j2d1(
             swap_buffers(&(p_input0), &(p_input1));
         }
     }
+    
+    // Wait for final output DMA to complete before returning
+    idma_hw_wait_all(0);
     
     return XAI_ERR_OK;
 }

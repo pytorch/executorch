@@ -28,6 +28,9 @@ Tensor& _softmax_out(
     bool half_to_float,
     Tensor& out) {
   
+  TIME_DECL(softmax);
+  TIME_START(softmax);
+
   (void)ctx;
 
   ET_KERNEL_CHECK(
@@ -67,9 +70,9 @@ Tensor& _softmax_out(
   float32_t *out_buff[2];
 
   if ((d == in.dim() - 1)){
-    if ((4 * FLT32_SIZE * size <= (DRAM0_BUFF_SIZE + DRAM1_BUFF_SIZE)) && (in.dim() != 1)){
+    if ((4 * FLT32_SIZE * size <= (IDMA_BUFFER_SIZE_DRAM0 + IDMA_BUFFER_SIZE_DRAM1)) && (in.dim() != 1)){
       // For ping-pong processing we need to have enough buffer to hold 2 input and 2 output blocks
-      if (2 * FLT32_SIZE * size <= DRAM0_BUFF_SIZE &&  2 * FLT32_SIZE * size <= DRAM1_BUFF_SIZE){
+      if (2 * FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM0 &&  2 * FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM1){
         // Both DRAM0 and DRAM1 can hold 2 input and 2 output blocks
         inp_buff[0] = (float32_t *)ptr_dram0;
         inp_buff[1] = (float32_t *)ptr_dram1;
@@ -77,7 +80,7 @@ Tensor& _softmax_out(
         out_buff[1] = (float32_t *)(ptr_dram1) + size;
         ping_pong_process = true;
       }
-      else if (4 * FLT32_SIZE * size <= DRAM0_BUFF_SIZE){
+      else if (4 * FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM0){
         // DRAM0 can hold 2 input and 2 output blocks
         inp_buff[0] = (float32_t *)ptr_dram0;
         inp_buff[1] = (float32_t *)(ptr_dram0) + size; 
@@ -85,7 +88,7 @@ Tensor& _softmax_out(
         out_buff[1] = (float32_t *)(ptr_dram0) + 3 * size;
         ping_pong_process = true;
       }
-      else if (4 * FLT32_SIZE * size <= DRAM1_BUFF_SIZE){
+      else if (4 * FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM1){
         // DRAM1 can hold 2 input and 2 output blocks
         inp_buff[0] = (float32_t *)ptr_dram1;
         inp_buff[1] = (float32_t *)(ptr_dram1) + size; 
@@ -93,7 +96,7 @@ Tensor& _softmax_out(
         out_buff[1] = (float32_t *)(ptr_dram1) + 3 * size;
         ping_pong_process = true;
       }
-      else if (3 * FLT32_SIZE * size <= DRAM0_BUFF_SIZE && FLT32_SIZE * size <= DRAM1_BUFF_SIZE){
+      else if (3 * FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM0 && FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM1){
         // DRAM0 can hold 2 output and 1 input blocks, DRAM1 can hold 1 input block
         inp_buff[0] = (float32_t *)ptr_dram0;
         inp_buff[1] = (float32_t *)ptr_dram1;
@@ -101,7 +104,7 @@ Tensor& _softmax_out(
         out_buff[1] = (float32_t *)(ptr_dram0) + 2 * size;
         ping_pong_process = true;
       }
-      else if (FLT32_SIZE * size <= DRAM0_BUFF_SIZE && 3 * FLT32_SIZE * size <= DRAM1_BUFF_SIZE){
+      else if (FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM0 && 3 * FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM1){
         // DRAM1 can hold 2 output and 1 input blocks, DRAM0 can hold 1 input block
         inp_buff[0] = (float32_t *)ptr_dram0;
         inp_buff[1] = (float32_t *)ptr_dram1;
@@ -110,21 +113,21 @@ Tensor& _softmax_out(
         ping_pong_process = true;
       }
     }
-    else if (2 * FLT32_SIZE * size <= (DRAM0_BUFF_SIZE + DRAM1_BUFF_SIZE)){
+    else if (2 * FLT32_SIZE * size <= (IDMA_BUFFER_SIZE_DRAM0 + IDMA_BUFFER_SIZE_DRAM1)){
       // For ping-process-pong we need to have enough buffer to hold 1 input and 1 output block
-      if (FLT32_SIZE * size <= DRAM0_BUFF_SIZE && FLT32_SIZE * size <= DRAM1_BUFF_SIZE){
+      if (FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM0 && FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM1){
         // Both DRAM0 and DRAM1 can hold 1 input and 1 output block
         inp_buff[0] = (float32_t *)ptr_dram0;
         out_buff[0] = (float32_t *)ptr_dram1;
         ping_process_pong = true;
       }
-      else if (2 * FLT32_SIZE * size <= DRAM0_BUFF_SIZE){
+      else if (2 * FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM0){
         // DRAM0 can hold 1 input and 1 output block
         inp_buff[0] = (float32_t *)ptr_dram0;
         out_buff[0] = (float32_t *)(ptr_dram0) + size;
         ping_process_pong = true;
       }
-      else if (2 * FLT32_SIZE * size <= DRAM1_BUFF_SIZE){
+      else if (2 * FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM1){
         // DRAM1 can hold 1 input and 1 output block
         inp_buff[0] = (float32_t *)ptr_dram1;
         out_buff[0] = (float32_t *)(ptr_dram1) + size;
@@ -143,8 +146,9 @@ Tensor& _softmax_out(
     const float32_t *ptr_inp = (float32_t *)in.const_data_ptr<float>();
     float32_t *out_data = (float32_t *)out.mutable_data_ptr<float>();
 
-    /* Initialize DMA engines */
+    /* Initialize DMA Channel 0 (loads) and Channel 1 (stores) */
     dma_2dm_init(0);
+    dma_2dm_init(1);
 
     if (ping_pong_process) {
       for (int i = 0; i < in.dim(); i++){
@@ -156,36 +160,44 @@ Tensor& _softmax_out(
       stride = size;
 
       int32_t pp_swap = 0;
-      int32_t idx_in, idx_out = 0;
 
 	    float32_t *ptr_out = out_data;
 	    float32_t *ptr_in = (float32_t *) ptr_inp;
 
-      idx_in = idma_copy_2d_desc(0, inp_buff[pp_swap], ptr_in, 4 * stride, DESC_IDMA_PRIOR_H, 1, 0, 0);
-      pp_swap = pp_swap ^ 1;
+      // Load first chunk via ch0
+      dma_1dm(0, ptr_in, inp_buff[pp_swap], 4 * stride);
 
-      for (int i = 0; i < (outer_size - 1); i++){ 
-          idma_desc_done(0, idx_out);
+      for (int i = 0; i < (outer_size - 1); i++){
+          // Wait for current load to complete
+          idma_hw_wait_all(0);
+
           ptr_in += outer_stride;
-          idx_in = idma_copy_2d_desc(0, inp_buff[pp_swap], ptr_in, 4 * stride, DESC_IDMA_PRIOR_H, 1, 0, 0);
-          pp_swap = pp_swap ^ 1;
+          // Start loading next chunk into alternate buffer via ch0
+          dma_1dm(0, ptr_in, inp_buff[pp_swap ^ 1], 4 * stride);
 
-          idma_desc_done(0, idx_in);
           /* PROCESS CALL */
           vsoftmaxf(out_buff[pp_swap], inp_buff[pp_swap], stride);
 
-          idx_out = idma_copy_2d_desc(0, ptr_out, out_buff[pp_swap], 4 * stride, DESC_IDMA_PRIOR_H, 1, 0, 0);
+          // Wait for previous store to complete before reusing out_buff
+          idma_hw_wait_all(1);
+
+          // Store result via ch1
+          dma_1dm(1, out_buff[pp_swap], ptr_out, 4 * stride);
           ptr_out += outer_stride;
+
+          pp_swap ^= 1;
         }
 
-      pp_swap = pp_swap ^ 1;
-
-      idma_desc_done(0, idx_out);
-      /* PROCESS CALL */
+      // Process last chunk
+      idma_hw_wait_all(0);
       vsoftmaxf(out_buff[pp_swap], inp_buff[pp_swap], stride);
 
-      idx_out = idma_copy_2d_desc(0, ptr_out, out_buff[pp_swap], 4 * stride, DESC_IDMA_PRIOR_H, 1, 0, 0);
-      idma_desc_done(0, idx_out);
+      idma_hw_wait_all(1);
+      dma_1dm(1, out_buff[pp_swap], ptr_out, 4 * stride);
+      idma_hw_wait_all(1);
+
+      TIME_END(softmax);
+      TIME_DISPLAY(softmax, in.numel(), "floats");
 
       return out;
     } else if (ping_process_pong) {
@@ -197,23 +209,29 @@ Tensor& _softmax_out(
       outer_stride = size;
       stride = size;
 
-      int32_t idx_in, idx_out = 0;
-
 	    float32_t *ptr_out = out_data;
 	    float32_t *ptr_in = (float32_t *) ptr_inp;
 
 	    for (int i = 0; i < outer_size; i++){
-        idx_in = idma_copy_2d_desc(0, inp_buff[0], ptr_in, 4 * stride, DESC_IDMA_PRIOR_H, 1, 0, 0);
-        idma_desc_done(0, idx_in);
+        // Start load via ch0 (overlaps with any pending ch1 store)
+        dma_1dm(0, ptr_in, inp_buff[0], 4 * stride);
+        // Wait for previous store to complete
+        idma_hw_wait_all(1);
+        // Wait for load to complete
+        idma_hw_wait_all(0);
 
 		    vsoftmaxf(out_buff[0], inp_buff[0], stride);
 
-        idx_out = idma_copy_2d_desc(0, ptr_out, out_buff[0], 4 * stride, DESC_IDMA_PRIOR_H, 1, 0, 0);        
-        idma_desc_done(0, idx_out);
+        // Store via ch1
+        dma_1dm(1, out_buff[0], ptr_out, 4 * stride);
 
         ptr_in += outer_stride;
 		    ptr_out += outer_stride;
 	    }
+      idma_hw_wait_all(1);
+
+      TIME_END(softmax);
+      TIME_DISPLAY(softmax, in.numel(), "floats");
 
       return out;
     } else {
@@ -285,6 +303,9 @@ Tensor& _softmax_out(
         num_out_dims,
         num_inp_dims);
 
+      TIME_END(softmax);
+      TIME_DISPLAY(softmax, in.numel(), "floats");
+
       return out;
     }
   }
@@ -332,6 +353,9 @@ Tensor& _softmax_out(
             in,
             dim);
       });
+
+  TIME_END(softmax);
+  TIME_DISPLAY(softmax, in.numel(), "floats");
 
   return out;
 }

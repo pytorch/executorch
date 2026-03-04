@@ -24,8 +24,8 @@
 #include "dma.h"
 #include "utils.h"
 #include <xai_cnn_api.h>
-#include <stdio.h>
 #include <string.h>
+#include <xtensa/hal.h>
 
 // VQ (per-channel output scaling) DMA version
 XAI_ERR_TYPE conv_exec_3x3j2d1VQ(
@@ -42,15 +42,17 @@ XAI_ERR_TYPE conv_exec_3x3j2d1VQ(
     int dram0_used = 0;
     int dram1_used = 0;
     
+    // FIX: Allocate coeff FIRST to avoid address-sensitive FOLD16 bug.
+    // See FUNCTIONALITY_FIXES.md §2 for details.
+    int8_t* p_coeff = allocate_dram_buffer(config->coeff_buffer_size, 
+                                             config->coeff_dram, 
+                                             &dram0_used, &dram1_used);
     int8_t* p_input0 = allocate_dram_buffer(config->input_buffer_size, 
                                               config->input_ping_dram, 
                                               &dram0_used, &dram1_used);
     int8_t* p_input1 = allocate_dram_buffer(config->input_buffer_size, 
                                               config->input_pong_dram, 
                                               &dram0_used, &dram1_used);
-    int8_t* p_coeff = allocate_dram_buffer(config->coeff_buffer_size, 
-                                             config->coeff_dram, 
-                                             &dram0_used, &dram1_used);
     int8_t* p_output0 = allocate_dram_buffer(config->output_buffer_size, 
                                                config->output_ping_dram, 
                                                &dram0_used, &dram1_used);
@@ -66,11 +68,8 @@ XAI_ERR_TYPE conv_exec_3x3j2d1VQ(
     
     if (!p_input0 || !p_input1 || !p_coeff || 
         !p_output0 || !p_output1 || !p_bias || !p_outscale) {
-        printf("ERROR: Buffer allocation failed in conv_exec_3x3j2d1\n");
         return (-1);
     }
-    
-    printf("  [3x3j2d1] DRAM usage: dram0=%d, dram1=%d\n", dram0_used, dram1_used);
     
     // ========================================================================
     // SECTION 2: Initialize XAI Tile Descriptors
@@ -293,8 +292,6 @@ XAI_ERR_TYPE conv_exec_3x3j2d1VQ(
 					&(tile_bias), &(tile_outscale),
 					&(tile_output), &(params));
 
-            printf("xaiConvolvedVQ3D_S_3x3j2d1_S8S8IX_MOW_WHD status: %d\n", status);
-
             // ================================================================
             // Prefetch next coefficient tile (if needed)
             // ================================================================
@@ -375,8 +372,6 @@ XAI_ERR_TYPE conv_exec_3x3j2d1VQ_cache(
     int8_t* padded_input = get_cache_padded_input();
     
     if (input_buffer_size > (int)get_cache_padded_input_size()) {
-        printf("ERROR: Input buffer size %d exceeds max %d\n", 
-               input_buffer_size, (int)get_cache_padded_input_size());
         return XAI_ERR_DATASIZE;
     }
     
@@ -559,15 +554,17 @@ XAI_ERR_TYPE conv_exec_3x3j2d1(
     int dram0_used = 0;
     int dram1_used = 0;
     
+    // FIX: Allocate coeff FIRST to avoid address-sensitive FOLD16 bug.
+    // See FUNCTIONALITY_FIXES.md §2 for details.
+    int8_t* p_coeff = allocate_dram_buffer(config->coeff_buffer_size, 
+                                             config->coeff_dram, 
+                                             &dram0_used, &dram1_used);
     int8_t* p_input0 = allocate_dram_buffer(config->input_buffer_size, 
                                               config->input_ping_dram, 
                                               &dram0_used, &dram1_used);
     int8_t* p_input1 = allocate_dram_buffer(config->input_buffer_size, 
                                               config->input_pong_dram, 
                                               &dram0_used, &dram1_used);
-    int8_t* p_coeff = allocate_dram_buffer(config->coeff_buffer_size, 
-                                             config->coeff_dram, 
-                                             &dram0_used, &dram1_used);
     int8_t* p_output0 = allocate_dram_buffer(config->output_buffer_size, 
                                                config->output_ping_dram, 
                                                &dram0_used, &dram1_used);
@@ -580,11 +577,8 @@ XAI_ERR_TYPE conv_exec_3x3j2d1(
     
     if (!p_input0 || !p_input1 || !p_coeff || 
         !p_output0 || !p_output1 || !p_bias) {
-        printf("ERROR: Buffer allocation failed in conv_exec_3x3j2d1\n");
         return (-1);
     }
-    
-    printf("  [3x3j2d1] DRAM usage: dram0=%d, dram1=%d\n", dram0_used, dram1_used);
     
     // ========================================================================
     // SECTION 2: Initialize XAI Tile Descriptors
@@ -618,6 +612,16 @@ XAI_ERR_TYPE conv_exec_3x3j2d1(
             config->src_dim1_size,
             config->in_rows_firstdma,
             config->src_dim3_size);
+    
+    // Wait for all initial DMA transfers to complete
+    idma_hw_wait_all(0);  // coeff + bias on ch0
+    idma_hw_wait_all(1);  // input on ch1
+    
+    // Invalidate cached copies of DMA destination buffers.
+    // iDMA does not maintain cache coherency — see FUNCTIONALITY_FIXES.md §2.
+    xthal_dcache_region_invalidate(p_coeff, config->coeff_buffer_size);
+    xthal_dcache_region_invalidate(p_bias, config->bias_buffer_size);
+    xthal_dcache_region_invalidate(p_input0, config->input_buffer_size);
     
     // ========================================================================
     // Configure Input Tile Descriptor
@@ -784,6 +788,14 @@ XAI_ERR_TYPE conv_exec_3x3j2d1(
             XAI_TILE3D_SET_DIM2_COORD(&tile_output, (config->output_rows)*(idx_h));
             XAI_TILE3D_SET_DIM2(&tile_output, current_output_rows);
             
+            // Wait for any in-flight DMA to complete before using buffers
+            idma_hw_wait_all(0);  // previous output store / coeff prefetch on ch0
+            idma_hw_wait_all(1);  // input prefetch on ch1
+            
+            // Invalidate cached copies of DMA-written input buffer.
+            // iDMA does not maintain cache coherency — see FUNCTIONALITY_FIXES.md §2.
+            xthal_dcache_region_invalidate(p_input0, config->input_buffer_size);
+            
             // ================================================================
             // Perform Edge Extension and Convolution (non-VQ API)
             // ================================================================
@@ -825,6 +837,9 @@ XAI_ERR_TYPE conv_exec_3x3j2d1(
             swap_buffers(&(p_input0), &(p_input1));
         }
     }
+    
+    // Wait for final output DMA to complete before returning
+    idma_hw_wait_all(0);
     
     return XAI_ERR_OK;
 }
@@ -875,8 +890,6 @@ XAI_ERR_TYPE conv_exec_3x3j2d1_cache(
     int8_t* padded_input = get_cache_padded_input();
     
     if (input_buffer_size > (int)get_cache_padded_input_size()) {
-        printf("ERROR: Input buffer size %d exceeds max %d\n", 
-               input_buffer_size, (int)get_cache_padded_input_size());
         return XAI_ERR_DATASIZE;
     }
     

@@ -1,8 +1,8 @@
-# Install script for directory: /home/sraut/ext_main/cad_rlc/executorch/backends/cadence/vision/third-party
+# Install script for directory: /home/kvariar/ExecuTorch/find_stable/executorch/backends/cadence/vision/third-party
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
-  set(CMAKE_INSTALL_PREFIX "/home/sraut/ext_main/cad_rlc/executorch/cmake-out")
+  set(CMAKE_INSTALL_PREFIX "/home/kvariar/ExecuTorch/find_stable/executorch/cmake-out-opt/cmake-out-opt")
 endif()
 string(REGEX REPLACE "/$" "" CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
 
@@ -45,6 +45,6 @@ endif()
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
 if(CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "/home/sraut/ext_main/cad_rlc/executorch/runtime/core/portable_type/c10/install_local_manifest.txt"
+  file(WRITE "/home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/install_local_manifest.txt"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()

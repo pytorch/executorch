@@ -9,7 +9,6 @@
 #include <lib.h>
 #include <cstring>
 #include <tuple>
-#include <iostream>
 
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -34,6 +33,9 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
     bool ceil_mode,
     Tensor& out,
     Tensor& indices) {
+  TIME_DECL(maxpool);
+  TIME_START(maxpool);
+
   std::tuple<Tensor&, Tensor&> ret_val(out, indices);
 
   ET_KERNEL_CHECK(
@@ -54,14 +56,6 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
       ceil_mode,
       output_sizes,
       &output_ndim);
-
-  /*
-  std::cout << "stride=[";
-    std::cout << stride[0];
-    std::cout << ", ";
-    std::cout << stride[1];
-  std::cout << "]\n";
-  */
 
   ET_KERNEL_CHECK(
       ctx,
@@ -125,6 +119,11 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
     maxpool2d_j2x2_f32(ptr_out, padded_data, inp_height, inp_width,
         out_height, out_width, padded_width, padded_height,
         out_pitch_width, out_pitch_height, kernel_height, kernel_width);
+
+    TIME_END(maxpool);
+    TIME_DISPLAY(maxpool, in.numel(), "floats");
+
+    return ret_val;
   }
 
   ScalarType in_type = in.scalar_type();
@@ -151,6 +150,9 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
             out,
             {indices});
       });
+
+  TIME_END(maxpool);
+  TIME_DISPLAY(maxpool, in.numel(), "floats");
 
   return ret_val;
 }
