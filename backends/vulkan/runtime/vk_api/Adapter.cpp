@@ -123,12 +123,6 @@ VkDevice create_logical_device(
     defined(ETVK_INSPECT_PIPELINES)
       VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME,
 #endif /* VK_KHR_pipeline_executable_properties && ETVK_INSPECT_PIPELINES */
-#ifdef VK_KHR_cooperative_matrix
-      VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME,
-#endif /* VK_KHR_cooperative_matrix */
-#ifdef VK_NV_cooperative_matrix2
-      VK_NV_COOPERATIVE_MATRIX_2_EXTENSION_NAME,
-#endif /* VK_NV_cooperative_matrix2 */
   };
 
   std::vector<const char*> enabled_device_extensions;
@@ -185,20 +179,6 @@ VkDevice create_logical_device(
   extension_list_top = &shader_int_dot_product_features;
 #endif /* VK_KHR_shader_integer_dot_product */
 
-#ifdef VK_KHR_cooperative_matrix
-  VkPhysicalDeviceCooperativeMatrixFeaturesKHR cooperative_matrix_features{
-      physical_device.cooperative_matrix_features};
-  cooperative_matrix_features.pNext = extension_list_top;
-  extension_list_top = &cooperative_matrix_features;
-#endif /* VK_KHR_cooperative_matrix */
-
-#ifdef VK_NV_cooperative_matrix2
-  VkPhysicalDeviceCooperativeMatrix2FeaturesNV cooperative_matrix2_features{
-      physical_device.cooperative_matrix2_features};
-  cooperative_matrix2_features.pNext = extension_list_top;
-  extension_list_top = &cooperative_matrix2_features;
-#endif /* VK_NV_cooperative_matrix2 */
-
   device_create_info.pNext = extension_list_top;
 
   VkDevice handle = nullptr;
@@ -215,7 +195,9 @@ VkDevice create_logical_device(
   return handle;
 }
 
-bool test_linear_tiling_3d_image_support(VkDevice device) {
+bool test_linear_tiling_3d_image_support(
+    VkDevice device,
+    VkPhysicalDevice physical_device) {
   // Test creating a 3D image with linear tiling to see if it is supported.
   // According to the Vulkan spec, linear tiling may not be supported for 3D
   // images.
@@ -242,9 +224,15 @@ bool test_linear_tiling_3d_image_support(VkDevice device) {
 
   if (res == VK_SUCCESS) {
     vkDestroyImage(device, image, nullptr);
+
+    VkFormatProperties props;
+    vkGetPhysicalDeviceFormatProperties(
+        physical_device, VK_FORMAT_R32G32B32A32_SFLOAT, &props);
+
+    return props.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
   }
 
-  return res == VK_SUCCESS;
+  return false;
 }
 
 } // namespace
@@ -275,8 +263,9 @@ Adapter::Adapter(
       compute_pipeline_cache_(device_.handle, cache_data_path),
       sampler_cache_(device_.handle),
       vma_(instance_, physical_device_.handle, device_.handle),
-      linear_tiling_3d_enabled_{
-          test_linear_tiling_3d_image_support(device_.handle)},
+      linear_tiling_3d_enabled_{test_linear_tiling_3d_image_support(
+          device_.handle,
+          physical_device_.handle)},
       owns_device_{true} {}
 
 Adapter::Adapter(
@@ -286,7 +275,7 @@ Adapter::Adapter(
     const uint32_t num_queues,
     const std::string& cache_data_path)
     : queue_usage_mutex_{},
-      physical_device_(instance, physical_device),
+      physical_device_(physical_device),
       queues_{},
       queue_usage_{},
       queue_mutexes_{},
@@ -298,8 +287,9 @@ Adapter::Adapter(
       compute_pipeline_cache_(device_.handle, cache_data_path),
       sampler_cache_(device_.handle),
       vma_(instance_, physical_device_.handle, device_.handle),
-      linear_tiling_3d_enabled_{
-          test_linear_tiling_3d_image_support(device_.handle)},
+      linear_tiling_3d_enabled_{test_linear_tiling_3d_image_support(
+          device_.handle,
+          physical_device_.handle)},
       owns_device_{false} {
   std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
   std::vector<std::pair<uint32_t, uint32_t>> queues_to_get;
@@ -373,10 +363,6 @@ void Adapter::submit_cmd(
       queue_mutexes_[device_queue.queue_index % NUM_QUEUE_MUTEXES]);
 
   VK_CHECK(vkQueueSubmit(device_queue.handle, 1u, &submit_info, fence));
-}
-
-void Adapter::override_device_name(const std::string& new_name) {
-  physical_device_.override_device_name(new_name);
 }
 
 std::string Adapter::stringize() const {

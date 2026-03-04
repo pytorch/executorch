@@ -57,6 +57,8 @@ class Allocator final {
   VkPhysicalDevice physical_device_;
   VkDevice device_;
   VmaAllocator allocator_;
+  VmaAllocationCreateFlags allocation_strategy_device_to_host_;
+
 
  public:
   VmaAllocationCreateInfo gpuonly_resource_create_info();
