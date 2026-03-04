@@ -545,3 +545,36 @@ TEST_F(MethodTest, OptionalTensorListDeserialization) {
   EXPECT_EQ(outputs.toTensor().size(2), 10);
 }
 */
+
+TEST_F(MethodTest, UnsetOutputTest) {
+  // Validate that methods with non-memory planned outputs return an error when
+  // the output data pointer is not set. It should not crash.
+
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["cat"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  constexpr int buffer_size = 8;
+  float buffer[buffer_size];
+  for (int i = 0; i < buffer_size; ++i) {
+    buffer[i] = 0.f;
+  }
+  int32_t sizes[2] = {2, 4};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {4, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      buffer,
+      dim_order,
+      strides);
+
+  auto input_err =
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0);
+  ASSERT_EQ(input_err, Error::Ok);
+
+  // Execute the method once. It should return an error (not crash).
+  auto execute_error = method->execute();
+  ASSERT_EQ(execute_error, Error::InvalidState);
+}
