@@ -262,6 +262,7 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
     VR_QUANT_ARGS="--qlinear-encoder 8da4w --qlinear 8da4w --qlinear-group-size 32 --qembedding 8w"
   elif [ "$QUANT_NAME" = "quantized-int4-metal" ]; then
     VR_QUANT_ARGS="--qlinear-encoder fpa4w --qlinear fpa4w"
+    VR_DTYPE_ARGS="--dtype bf16"
   elif [ "$QUANT_NAME" = "quantized-int4-tile-packed" ]; then
     VR_QUANT_ARGS="--qlinear-encoder 4w --qlinear-encoder-packing-format tile_packed_to_4d --qlinear 4w --qlinear-packing-format tile_packed_to_4d --qembedding 8w"
     VR_DTYPE_ARGS="--dtype bf16"

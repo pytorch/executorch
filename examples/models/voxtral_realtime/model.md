@@ -74,13 +74,15 @@ or masked-scatter like the original non-realtime Voxtral).
 
 ## Memory Footprint
 
-Decoder KV cache: 26 layers × 2 (K, V) × 4096 × 8 × 128 × 4 bytes
-≈ 832 MB. Encoder KV caches (streaming): 32 layers × 2 × 1500 × 32 ×
-64 × 4 bytes ≈ 786 MB.
+Decoder KV cache: 26 layers × 2 (K, V) × 4096 × 8 × 128 × bytes_per_elem.
+fp32: ≈ 832 MB, bf16: ≈ 416 MB. Encoder KV caches (streaming):
+32 layers × 2 × 1500 × 32 × 64 × bytes_per_elem. fp32: ≈ 786 MB,
+bf16: ≈ 393 MB.
 
 Runtime memory = model weights (from `.pte`) + KV caches + working
-memory. Weight sizes depend on quantization: ~16 GB (fp32), ~4 GB
-(8w), ~2 GB (4w/8da4w).
+memory. Weight sizes depend on quantization: ~16 GB (fp32), ~8 GB
+(bf16), ~4 GB (8w), ~2 GB (4w/8da4w). Metal and CUDA backends use
+bf16 (`--dtype bf16`) by default when quantization is enabled.
 
 ## Class Hierarchy
 
@@ -274,7 +276,7 @@ enabling streaming of arbitrary length audio.
   5-8, giving query 5 full access to its window.
 - Default `max_enc_len=750` (matching the model's trained
   sliding window). Configurable via `--max-enc-len`.
-- Memory: 32 layers × 2 × 1500 × 32 × 64 × 4 bytes ≈ 786 MB (fp32)
+- Memory: 32 layers × 2 × 1500 × 32 × 64 × bytes_per_elem ≈ 786 MB (fp32), 393 MB (bf16)
 - Duration: unlimited (ring buffer overwrites old entries, RoPE computed on-the-fly)
 
 **Naming note:** `max_enc_len` in `StreamingAudioEncoderExport` (default
@@ -364,7 +366,7 @@ Parakeet pattern), allowing different configs for encoder vs decoder:
 --qlinear 8da4w           # decoder linear layers
 --qembedding 8w           # embedding layer
 
-# Metal
+# Metal (use --dtype bf16 for reduced memory and improved throughput)
 --qlinear-encoder fpa4w   # encoder linear layers
 --qlinear fpa4w           # decoder linear layers
 
@@ -422,7 +424,8 @@ of ~34 GB for the full-size model):
 1. **Meta device construction** — `with torch.device("meta"):` builds the
    model with zero-storage parameter tensors (shape/dtype metadata only).
 2. **safetensors lazy access** — `safe_open` loads tensors on demand, cast
-   to the configured dtype (`--dtype`, default fp32; CUDA uses bf16).
+   to the configured dtype (`--dtype`, default fp32; Metal and CUDA use bf16
+   with quantization).
 3. **`assign=True` state dict loading** — replaces meta tensors by reference
    instead of copying into pre-allocated storage. No duplication.
 4. **Post-load fixups** — re-tie `output.weight = tok_embeddings.weight`
