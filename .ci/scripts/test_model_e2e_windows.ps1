@@ -186,14 +186,17 @@ try {
             -RedirectStandardError $stderrFile
 
         $stdout = if (Test-Path -Path $stdoutFile -PathType Leaf) { Get-Content -Path $stdoutFile -Raw } else { "" }
+        $stderr = if (Test-Path -Path $stderrFile -PathType Leaf) { Get-Content -Path $stderrFile -Raw } else { "" }
         $exitCode = $proc.ExitCode
     }
     finally {
         Remove-Item -Path $stdoutFile -ErrorAction SilentlyContinue
         Remove-Item -Path $stderrFile -ErrorAction SilentlyContinue
     }
-    Write-Host "Runner output:"
+    Write-Host "Runner stdout:"
     Write-Host $stdout
+    Write-Host "Runner stderr:"
+    Write-Host $stderr
 
     if ($exitCode -ne 0) {
         Write-Warning "Runner exited with code $exitCode (may be benign)"

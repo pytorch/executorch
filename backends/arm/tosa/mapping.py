@@ -131,7 +131,7 @@ def extract_tensor_meta(meta):
     special_dtype = meta.get(TosaSpecialDtype.meta_key())
     if special_dtype == TosaSpecialDtype.SHAPE:
         shape_len = len(meta["val"])
-        return (ts.DType.SHAPE, (shape_len,), (0,))
+        return (ts.DType.SHAPE, (shape_len,), meta["tosa_dim_order"])
 
     if meta.get("val") is None:
         raise ValueError("Expected node.meta['val'] to be set to a FakeTensor")

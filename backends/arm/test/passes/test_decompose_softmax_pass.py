@@ -107,8 +107,9 @@ class _DecomposeSoftmaxPassSkipSafe(DecomposeSoftmaxPass):
 
 
 def test_decompose_softmax_tosa_FP_skip_safe_softmax():
-    """Verify skip_safe_softmax=True still decomposes regular softmax
-    using the stable algorithm (with amax and sub)."""
+    """Verify skip_safe_softmax=True still decomposes regular softmax using the
+    stable algorithm (with amax and sub).
+    """
     module = Softmax()
     pipeline = PassPipeline[input_t](
         module,

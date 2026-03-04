@@ -298,6 +298,10 @@ EOF
     ;;
   voxtral_realtime)
     RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --preprocessor_path ${MODEL_DIR}/$PREPROCESSOR --audio_path ${MODEL_DIR}/$AUDIO_FILE --temperature 0"
+    # Add CUDA data path if present
+    if [ "$DEVICE" = "cuda" ] && [ -f "${MODEL_DIR}/aoti_cuda_blob.ptd" ]; then
+      RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
+    fi
     # Determine streaming mode based on MODE parameter
     USE_STREAMING="true"
     if [ "$MODE" = "vr-offline" ]; then

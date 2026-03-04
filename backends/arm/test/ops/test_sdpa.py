@@ -106,9 +106,13 @@ def test_sdpa_vgf_quant(test_case: test_case_t):
 
 @common.parametrize("test_case", test_suite)
 def test_sdpa_u55_INT(test_case: test_case_t):
-    """Verify SDPA compiles on U55. _safe_softmax from SDPA is skipped by
-    DecomposeSoftmaxPass (skip_safe_softmax=True for U55) and runs on CPU,
-    avoiding REDUCE_MAX which fails Vela compilation."""
+    """Verify SDPA compiles on U55.
+
+    _safe_softmax from SDPA is skipped by DecomposeSoftmaxPass
+    (skip_safe_softmax=True for U55) and runs on CPU, avoiding REDUCE_MAX which
+    fails Vela compilation.
+
+    """
     model, test_input = test_case()
     pipeline = EthosU55PipelineINT[input_t](model, test_input, [], [])
     pipeline.pop_stage("check.quant_nodes")
@@ -120,8 +124,12 @@ def test_sdpa_u55_INT(test_case: test_case_t):
 @common.parametrize("test_case", test_suite)
 @common.XfailIfNoCorstone320
 def test_sdpa_u85_INT(test_case: test_case_t):
-    """Verify SDPA compiles on U85. _safe_softmax is decomposed with stable
-    softmax (including amax/REDUCE_MAX) which is supported on U85."""
+    """Verify SDPA compiles on U85.
+
+    _safe_softmax is decomposed with stable softmax (including amax/REDUCE_MAX)
+    which is supported on U85.
+
+    """
     model, test_input = test_case()
     pipeline = EthosU85PipelineINT[input_t](model, test_input, [], [])
     pipeline.pop_stage("check.quant_nodes")

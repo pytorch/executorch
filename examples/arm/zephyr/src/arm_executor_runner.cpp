@@ -58,11 +58,6 @@ using executorch::runtime::Span;
 using executorch::runtime::Tag;
 using executorch::runtime::TensorInfo;
 
-#if defined(CONFIG_ETHOS_U)
-extern "C" executorch::runtime::Error
-executorch_delegate_EthosUBackend_registered(void);
-#endif
-
 /**
  * The method_allocation_pool should be large enough to fit the setup, input
  * used and other data used like the planned memory pool (e.g. memory-planned
@@ -214,14 +209,6 @@ int main(int argc, const char* argv[]) {
   (void)argc;
   (void)argv;
 
-#if defined(CONFIG_ETHOS_U)
-  if (executorch_delegate_EthosUBackend_registered() != Error::Ok) {
-    ET_LOG(
-        Error,
-        "Ethos-U backend registration failed; model execution cannot continue");
-    return 1;
-  }
-#endif
   executorch::runtime::runtime_init();
   std::vector<std::pair<char*, size_t>> input_buffers;
   size_t pte_size = sizeof(model_pte);

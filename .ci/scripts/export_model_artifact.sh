@@ -257,10 +257,14 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
 
   # Per-component quantization flags
   VR_QUANT_ARGS=""
+  VR_DTYPE_ARGS=""
   if [ "$QUANT_NAME" = "quantized-8da4w" ]; then
     VR_QUANT_ARGS="--qlinear-encoder 8da4w --qlinear 8da4w --qlinear-group-size 32 --qembedding 8w"
   elif [ "$QUANT_NAME" = "quantized-int4-metal" ]; then
     VR_QUANT_ARGS="--qlinear-encoder fpa4w --qlinear fpa4w"
+  elif [ "$QUANT_NAME" = "quantized-int4-tile-packed" ]; then
+    VR_QUANT_ARGS="--qlinear-encoder 4w --qlinear-encoder-packing-format tile_packed_to_4d --qlinear 4w --qlinear-packing-format tile_packed_to_4d --qembedding 8w"
+    VR_DTYPE_ARGS="--dtype bf16"
   fi
 
   # Determine streaming mode based on MODE parameter
@@ -284,7 +288,8 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
       --backend "$DEVICE" \
       ${STREAMING_ARG} \
       --output-dir "${OUTPUT_DIR}" \
-      ${VR_QUANT_ARGS}
+      ${VR_QUANT_ARGS} \
+      ${VR_DTYPE_ARGS}
 
   # Export preprocessor
   python -m executorch.extension.audio.mel_spectrogram ${PREPROCESSOR_ARGS}

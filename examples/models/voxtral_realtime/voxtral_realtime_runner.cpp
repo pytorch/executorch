@@ -14,7 +14,6 @@
 
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/util.h>
-#include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/log.h>
@@ -31,11 +30,19 @@ VoxtralRealtimeRunner::VoxtralRealtimeRunner(
     const std::string& model_path,
     const std::string& tokenizer_path,
     const std::string& preprocessor_path,
+    const std::string& data_path,
     bool warmup) {
   // Load the main model (.pte with audio_encoder, text_decoder,
   // token_embedding methods). Mmap avoids copying the file into memory.
+  // For CUDA backend, data_path points to the .ptd file with compiled kernels.
   ET_LOG(Info, "Loading model from: %s", model_path.c_str());
-  model_ = std::make_unique<Module>(model_path, Module::LoadMode::Mmap);
+  if (!data_path.empty()) {
+    ET_LOG(Info, "Loading data from: %s", data_path.c_str());
+    model_ =
+        std::make_unique<Module>(model_path, data_path, Module::LoadMode::Mmap);
+  } else {
+    model_ = std::make_unique<Module>(model_path, Module::LoadMode::Mmap);
+  }
   auto load_error = model_->load();
   ET_CHECK_MSG(load_error == Error::Ok, "Failed to load model.");
 
@@ -54,12 +61,30 @@ VoxtralRealtimeRunner::VoxtralRealtimeRunner(
   if (dm.ok())
     dim_ = dm.get()[0].toInt();
 
+  // Detect model dtype from method metadata (same pattern as ASR runner).
+  // Checks the first input tensor's scalar_type of the audio_encoder or
+  // encode_audio_chunk method. Falls back to Float for old .pte files.
+  for (const char* method : {"audio_encoder", "encode_audio_chunk"}) {
+    auto meta_result = model_->method_meta(method);
+    if (meta_result.ok()) {
+      auto meta = meta_result.get();
+      if (meta.num_inputs() > 0) {
+        auto input_meta = meta.input_tensor_meta(0);
+        if (input_meta.ok()) {
+          model_dtype_ = input_meta.get().scalar_type();
+        }
+      }
+      break;
+    }
+  }
+
   ET_LOG(
       Info,
-      "Model: max_seq_len=%ld, vocab_size=%ld, dim=%ld",
+      "Model: max_seq_len=%ld, vocab_size=%ld, dim=%ld, dtype=%s",
       static_cast<long>(max_seq_len_),
       static_cast<long>(vocab_size_),
-      static_cast<long>(dim_));
+      static_cast<long>(dim_),
+      ::executorch::runtime::toString(model_dtype_));
 
   // Detect streaming model (exported with --streaming flag).
   auto streaming_val = model_->execute("streaming", empty);
@@ -140,7 +165,7 @@ VoxtralRealtimeRunner::VoxtralRealtimeRunner(
       session->feed_audio(dummy_audio.data(), step_samples_);
       session->flush();
     } else {
-      // Preprocessor
+      // Preprocessor (always float32 — runs on CPU)
       auto pp_wav = from_blob(
           dummy_audio.data(),
           {static_cast<int>(step_samples_)},
@@ -150,12 +175,14 @@ VoxtralRealtimeRunner::VoxtralRealtimeRunner(
       ET_CHECK_MSG(pp_r.ok(), "Warmup: preprocessor failed.");
 
       // Audio encoder (8 mel frames = minimum valid input)
-      std::vector<float> dummy_mel(
+      // Create fp32 mel then convert to model dtype if needed.
+      std::vector<float> dummy_mel_fp32(
           static_cast<size_t>(num_mel_bins_ * 8), 0.0f);
-      auto mel_t = from_blob(
-          dummy_mel.data(),
+      auto mel_fp32 = from_blob(
+          dummy_mel_fp32.data(),
           {1, static_cast<int>(num_mel_bins_), 8},
           ::executorch::aten::ScalarType::Float);
+      auto mel_t = convert_to_model_dtype(std::move(mel_fp32));
       auto enc_r =
           model_->execute("audio_encoder", std::vector<EValue>{*mel_t});
       ET_CHECK_MSG(enc_r.ok(), "Warmup: audio_encoder failed.");
@@ -168,13 +195,13 @@ VoxtralRealtimeRunner::VoxtralRealtimeRunner(
           model_->execute("token_embedding", std::vector<EValue>{*tok_t});
       ET_CHECK_MSG(tok_r.ok(), "Warmup: token_embedding failed.");
 
-      // Text decoder
-      std::vector<float> dummy_emb(static_cast<size_t>(dim_), 0.0f);
-      int64_t dummy_pos = 0;
+      // Text decoder — create embeds in model dtype
+      auto tok_embed = tok_r.get()[0].toTensor();
       auto emb_t = from_blob(
-          dummy_emb.data(),
+          tok_embed.mutable_data_ptr(),
           {1, 1, static_cast<int>(dim_)},
-          ::executorch::aten::ScalarType::Float);
+          model_dtype_);
+      int64_t dummy_pos = 0;
       auto pos_t =
           from_blob(&dummy_pos, {1}, ::executorch::aten::ScalarType::Long);
       auto dec_r =
@@ -216,6 +243,51 @@ TensorPtr VoxtralRealtimeRunner::run_preprocessor(
       ::executorch::aten::ScalarType::Float);
 }
 
+// Extract the last vocab_size logits as fp32 for sampling.
+// If the tensor is already fp32, returns a pointer into it directly.
+// Otherwise converts to fp32 into the provided buffer.
+static float* get_logits_fp32(
+    ::executorch::aten::Tensor& logits,
+    int64_t vocab_size,
+    std::vector<float>& buf) {
+  const int64_t offset = logits.numel() - vocab_size;
+  if (logits.scalar_type() == ::executorch::aten::ScalarType::Float) {
+    return logits.mutable_data_ptr<float>() + offset;
+  }
+  // Convert bf16/half logits to fp32
+  buf.resize(static_cast<size_t>(vocab_size));
+  if (logits.scalar_type() == ::executorch::aten::ScalarType::BFloat16) {
+    const auto* src =
+        logits.const_data_ptr<::executorch::aten::BFloat16>() + offset;
+    for (int64_t i = 0; i < vocab_size; i++) {
+      buf[static_cast<size_t>(i)] = static_cast<float>(src[i]);
+    }
+  } else if (logits.scalar_type() == ::executorch::aten::ScalarType::Half) {
+    const auto* src =
+        logits.const_data_ptr<::executorch::aten::Half>() + offset;
+    for (int64_t i = 0; i < vocab_size; i++) {
+      buf[static_cast<size_t>(i)] = static_cast<float>(src[i]);
+    }
+  } else {
+    ET_CHECK_MSG(false, "Unsupported logits dtype for sampling.");
+  }
+  return buf.data();
+}
+
+TensorPtr VoxtralRealtimeRunner::convert_to_model_dtype(TensorPtr tensor) {
+  if (model_dtype_ == ::executorch::aten::ScalarType::Float ||
+      tensor->scalar_type() == model_dtype_) {
+    return tensor;
+  }
+  if (model_dtype_ == ::executorch::aten::ScalarType::BFloat16) {
+    auto result = ::executorch::extension::llm::convert_to_bfloat16(tensor);
+    ET_CHECK_MSG(result.ok(), "Failed to convert tensor to BFloat16.");
+    return std::move(result.get());
+  }
+  ET_CHECK_MSG(false, "Unsupported model dtype conversion.");
+  return tensor; // unreachable
+}
+
 int VoxtralRealtimeRunner::transcribe(
     const float* audio_data,
     int64_t num_samples,
@@ -223,7 +295,10 @@ int VoxtralRealtimeRunner::transcribe(
     TokenCallback token_cb) {
   // --- Step 1: Preprocess raw audio to mel spectrogram ---
   ET_CHECK_MSG(preprocessor_ != nullptr, "No preprocessor provided.");
-  TensorPtr mel = run_preprocessor(audio_data, num_samples);
+  TensorPtr mel_fp32 = run_preprocessor(audio_data, num_samples);
+
+  // Convert mel from fp32 (preprocessor) to model dtype (may be bf16)
+  TensorPtr mel = convert_to_model_dtype(std::move(mel_fp32));
 
   // --- Step 2: Encode mel to audio embeddings ---
   // audio_encoder: (1, 128, T_mel) -> (1, T_audio, 3072)
@@ -257,14 +332,14 @@ int VoxtralRealtimeRunner::transcribe(
   const int64_t max_pos = std::min(
       static_cast<int64_t>(config.max_new_tokens) + t_audio, max_seq_len_);
 
-  std::vector<float> input_embeds_buf(static_cast<size_t>(dim_));
-
-  // Token sampler with xorshift RNG, seeded from wall clock.
   ::executorch::extension::llm::Sampler sampler(
       static_cast<int32_t>(vocab_size_),
       config.temperature,
       ::executorch::extension::llm::kTopp,
       static_cast<unsigned long long>(std::time(nullptr)));
+  std::vector<float> logits_fp32_buf;
+  auto input_embeds = ::executorch::extension::empty(
+      {1, 1, static_cast<int>(dim_)}, model_dtype_);
 
   for (int64_t pos = 0; pos < max_pos; pos++) {
     // a. Look up embedding for the previous token.
@@ -276,26 +351,39 @@ int VoxtralRealtimeRunner::transcribe(
         model_->execute("token_embedding", std::vector<EValue>{*token_tensor});
     ET_CHECK_MSG(tok_result.ok(), "token_embedding failed.");
     auto tok_embed = tok_result.get()[0].toTensor();
-    const float* tok_data = tok_embed.const_data_ptr<float>();
 
     // b. Sum audio + token embeddings (or token-only after audio ends).
+    // Both audio_embeds and tok_embed are in model_dtype_ (fp32 or bf16).
+    // Reuses pre-allocated input_embeds buffer (no per-token allocation).
     if (pos < t_audio) {
-      const float* audio_frame =
-          audio_embeds.const_data_ptr<float>() + pos * dim_;
-      for (int64_t i = 0; i < dim_; i++) {
-        input_embeds_buf[static_cast<size_t>(i)] = audio_frame[i] + tok_data[i];
+      // Element-wise sum: audio_frame[i] + tok_data[i]
+      // Works for any dtype since we operate on raw bytes via BFloat16 type.
+      if (model_dtype_ == ::executorch::aten::ScalarType::BFloat16) {
+        auto* out =
+            input_embeds->mutable_data_ptr<::executorch::aten::BFloat16>();
+        const auto* af =
+            audio_embeds.const_data_ptr<::executorch::aten::BFloat16>() +
+            pos * dim_;
+        const auto* tf =
+            tok_embed.const_data_ptr<::executorch::aten::BFloat16>();
+        for (int64_t i = 0; i < dim_; i++) {
+          out[i] = ::executorch::aten::BFloat16(
+              static_cast<float>(af[i]) + static_cast<float>(tf[i]));
+        }
+      } else {
+        auto* out = input_embeds->mutable_data_ptr<float>();
+        const auto* af = audio_embeds.const_data_ptr<float>() + pos * dim_;
+        const auto* tf = tok_embed.const_data_ptr<float>();
+        for (int64_t i = 0; i < dim_; i++) {
+          out[i] = af[i] + tf[i];
+        }
       }
     } else {
       std::memcpy(
-          input_embeds_buf.data(),
-          tok_data,
-          static_cast<size_t>(dim_) * sizeof(float));
+          input_embeds->mutable_data_ptr(),
+          tok_embed.const_data_ptr(),
+          static_cast<size_t>(dim_) * input_embeds->element_size());
     }
-
-    auto input_embeds = from_blob(
-        input_embeds_buf.data(),
-        {1, 1, static_cast<int>(dim_)},
-        ::executorch::aten::ScalarType::Float);
 
     // c. Run one decoder step. KV cache is updated internally by the model.
     auto cache_pos = from_blob(&pos, {1}, ::executorch::aten::ScalarType::Long);
@@ -306,10 +394,8 @@ int VoxtralRealtimeRunner::transcribe(
 
     auto logits = dec_result.get()[0].toTensor();
 
-    // d. Sample next token from logits. Safe to mutate the output buffer
-    //    since text_decoder overwrites it on the next execute() call.
-    float* logits_data =
-        logits.mutable_data_ptr<float>() + (logits.numel() - vocab_size_);
+    // d. Sample next token (persistent sampler preserves RNG state).
+    float* logits_data = get_logits_fp32(logits, vocab_size_, logits_fp32_buf);
     int64_t next_token = static_cast<int64_t>(sampler.sample(logits_data));
     num_generated++;
 
@@ -359,7 +445,9 @@ StreamingSession::StreamingSession(
           config.temperature,
           ::executorch::extension::llm::kTopp,
           static_cast<unsigned long long>(std::time(nullptr))),
-      input_embeds_buf_(static_cast<size_t>(runner.dim_)) {}
+      input_embeds_(::executorch::extension::empty(
+          {1, 1, static_cast<int>(runner.dim_)},
+          runner.model_dtype_)) {}
 
 int StreamingSession::feed_audio(const float* data, int64_t num_samples) {
   audio_buf_.insert(audio_buf_.end(), data, data + num_samples);
@@ -457,20 +545,23 @@ bool StreamingSession::try_process_step() {
   // These align exactly with the offline mel frames for this step.
   // Output layout is channels-first: (1, 128, T). For each channel,
   // copy 8 contiguous frames starting at offset mel_skip.
-  std::vector<float> mel_chunk_buf(
+  std::vector<float> mel_chunk_fp32(
       static_cast<size_t>(num_mel_bins * chunk_mel_len));
   const float* mel_data = mel.const_data_ptr<float>();
   for (int64_t c = 0; c < num_mel_bins; c++) {
     std::memcpy(
-        mel_chunk_buf.data() + c * chunk_mel_len,
+        mel_chunk_fp32.data() + c * chunk_mel_len,
         mel_data + c * total_mel_frames + mel_skip,
         static_cast<size_t>(chunk_mel_len) * sizeof(float));
   }
 
-  auto mel_chunk = from_blob(
-      mel_chunk_buf.data(),
+  auto mel_chunk_tensor = from_blob(
+      mel_chunk_fp32.data(),
       {1, static_cast<int>(num_mel_bins), static_cast<int>(chunk_mel_len)},
       ::executorch::aten::ScalarType::Float);
+
+  // Convert to model dtype if needed (e.g., fp32 -> bf16 for CUDA)
+  auto mel_chunk = runner_.convert_to_model_dtype(std::move(mel_chunk_tensor));
 
   std::vector<int64_t> enc_pos_data(static_cast<size_t>(enc_frames_per_chunk));
   for (int64_t i = 0; i < enc_frames_per_chunk; i++) {
@@ -487,16 +578,21 @@ bool StreamingSession::try_process_step() {
   ET_CHECK_MSG(enc_result.ok(), "encode_audio_chunk failed.");
 
   auto& enc_outputs = enc_result.get();
-  auto audio_embeds = enc_outputs[0].toTensor();
+  auto audio_embeds_tensor =
+      std::make_shared<::executorch::aten::Tensor>(enc_outputs[0].toTensor());
+  auto audio_embeds_ptr = TensorPtr(audio_embeds_tensor);
 
   enc_frame_pos_ += enc_frames_per_chunk;
   samples_consumed_ += step;
 
   // --- Decode one step ---
-  return decode_step(audio_embeds.const_data_ptr<float>());
+  return decode_step(&audio_embeds_ptr);
 }
 
-bool StreamingSession::decode_step(const float* audio_embeds) {
+bool StreamingSession::decode_step(const TensorPtr* audio_embeds_tensor) {
+  const int64_t dim = runner_.dim_;
+  const auto model_dtype = runner_.model_dtype_;
+
   // Token embedding for previous token.
   int64_t token_id = static_cast<int64_t>(prev_token_);
   auto token_tensor =
@@ -506,35 +602,48 @@ bool StreamingSession::decode_step(const float* audio_embeds) {
       "token_embedding", std::vector<EValue>{*token_tensor});
   ET_CHECK_MSG(tok_result.ok(), "token_embedding failed.");
   auto tok_embed = tok_result.get()[0].toTensor();
-  const float* tok_data = tok_embed.const_data_ptr<float>();
 
-  // Sum audio + token embeddings (or token-only if audio_embeds is null).
-  if (audio_embeds != nullptr) {
-    for (int64_t i = 0; i < runner_.dim_; i++) {
-      input_embeds_buf_[static_cast<size_t>(i)] = audio_embeds[i] + tok_data[i];
+  // Sum audio + token embeddings (or token-only if no audio).
+  // Reuses pre-allocated input_embeds_ buffer (no per-token allocation).
+  if (audio_embeds_tensor != nullptr) {
+    auto& audio_embeds = **audio_embeds_tensor;
+    if (model_dtype == ::executorch::aten::ScalarType::BFloat16) {
+      auto* out =
+          input_embeds_->mutable_data_ptr<::executorch::aten::BFloat16>();
+      const auto* af =
+          audio_embeds.const_data_ptr<::executorch::aten::BFloat16>();
+      const auto* tf = tok_embed.const_data_ptr<::executorch::aten::BFloat16>();
+      for (int64_t i = 0; i < dim; i++) {
+        out[i] = ::executorch::aten::BFloat16(
+            static_cast<float>(af[i]) + static_cast<float>(tf[i]));
+      }
+    } else {
+      auto* out = input_embeds_->mutable_data_ptr<float>();
+      const auto* af = audio_embeds.const_data_ptr<float>();
+      const auto* tf = tok_embed.const_data_ptr<float>();
+      for (int64_t i = 0; i < dim; i++) {
+        out[i] = af[i] + tf[i];
+      }
     }
   } else {
     std::memcpy(
-        input_embeds_buf_.data(),
-        tok_data,
-        static_cast<size_t>(runner_.dim_) * sizeof(float));
+        input_embeds_->mutable_data_ptr(),
+        tok_embed.const_data_ptr(),
+        static_cast<size_t>(dim) * input_embeds_->element_size());
   }
-
-  auto input_embeds = from_blob(
-      input_embeds_buf_.data(),
-      {1, 1, static_cast<int>(runner_.dim_)},
-      ::executorch::aten::ScalarType::Float);
 
   auto cache_pos =
       from_blob(&dec_pos_, {1}, ::executorch::aten::ScalarType::Long);
 
   auto dec_result = runner_.model_->execute(
-      "text_decoder", std::vector<EValue>{*input_embeds, *cache_pos});
+      "text_decoder", std::vector<EValue>{*input_embeds_, *cache_pos});
   ET_CHECK_MSG(dec_result.ok(), "text_decoder failed.");
 
   auto logits = dec_result.get()[0].toTensor();
+
+  // Sample next token (persistent sampler preserves RNG state).
   float* logits_data =
-      logits.mutable_data_ptr<float>() + (logits.numel() - runner_.vocab_size_);
+      get_logits_fp32(logits, runner_.vocab_size_, logits_fp32_buf_);
   int64_t next_token = static_cast<int64_t>(sampler_.sample(logits_data));
   num_generated_++;
 

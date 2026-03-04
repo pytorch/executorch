@@ -20,7 +20,6 @@ The target system must include an Ethos-U NPU.
 
 ```{tip}
 All requirements can be downloaded using `examples/arm/setup.sh --i-agree-to-the-contained-eula` and added to the path using
-set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}")
 `source examples/arm/arm-scratch/setup_path.sh`. Note that this means accepting the End-User License Agreements (EULA:s) required for using the downloaded software.
 ```
 
@@ -68,7 +67,8 @@ Args:
 ```python
 def EthosUCompileSpec.dump_intermediate_artifacts_to(self, output_path: str | None):
 ```
-Sets a path for dumping intermediate results during such as tosa and pte.
+Sets a path for dumping intermediate results during such as tosa and
+pte.
 
 Args:
 - **output_path**: Path to dump intermediate results to.
@@ -76,7 +76,8 @@ Args:
 ```python
 def EthosUCompileSpec.get_intermediate_path(self) -> str | None:
 ```
-Gets the path used for dumping intermediate results such as tosa and pte.
+Gets the path used for dumping intermediate results such as tosa and
+pte.
 
 Returns:
     Path where intermediate results are saved.
@@ -94,7 +95,9 @@ Gets whether the output order workaround is being applied.
 ```python
 def EthosUCompileSpec.get_pass_pipeline_config(self) -> executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig:
 ```
-Returns configuration that controls how the Arm pass pipeline should behave.
+Returns configuration that controls how the Arm pass pipeline should
+behave.
+
 Subclasses may override to tweak defaults for specific targets.
 
 ```python
@@ -108,8 +111,8 @@ Args:
 ```python
 def EthosUCompileSpec.set_pass_pipeline_config(self, config: executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig) -> None:
 ```
-Sets the configuration that controls how the Arm pass pipeline should behave.
-Subclasses may override to tweak defaults for specific targets.
+Sets the configuration that controls how the Arm pass pipeline should
+behave. Subclasses may override to tweak defaults for specific targets.
 
 Args:
 - **config**: The custom ArmPassPipelineConfig to set.
