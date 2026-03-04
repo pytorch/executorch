@@ -32,7 +32,6 @@ _QWEN_3_5_TO_META = {
     "model.layers.{}.linear_attn.in_proj_b.weight": "layers.{}.attention.in_proj_b.weight",
     "model.layers.{}.linear_attn.in_proj_a.weight": "layers.{}.attention.in_proj_a.weight",
     "model.layers.{}.linear_attn.conv1d.weight": "layers.{}.attention.conv1d.weight",
-    "model.layers.{}.linear_attn.conv1d.bias": "layers.{}.attention.conv1d.bias",
     "model.layers.{}.linear_attn.dt_bias": "layers.{}.attention.dt_bias",
     "model.layers.{}.linear_attn.A_log": "layers.{}.attention.A_log",
     "model.layers.{}.linear_attn.norm.weight": "layers.{}.attention.norm.weight",
@@ -53,6 +52,7 @@ _IGNORED_UNMAPPED_SUBSTRINGS = (
 
 _IGNORED_UNMAPPED_SUFFIXES = (
     "rotary_emb.inv_freq",
+    "linear_attn.conv1d.bias",
 )
 
 
@@ -78,13 +78,17 @@ def _load_checkpoint_from_safetensors(input_dir: str) -> Dict:
         weight_map = index["weight_map"]
         checkpoint_shards = sorted(set(weight_map.values()))
 
-        shard_to_weights = {}
-        for shard in checkpoint_shards:
-            shard_to_weights[shard] = load_file(os.path.join(input_dir, shard))
-
         merged_state_dict = {}
+        shard_to_weight_names = {}
         for weight_name, shard in weight_map.items():
-            merged_state_dict[weight_name] = shard_to_weights[shard][weight_name]
+            shard_to_weight_names.setdefault(shard, []).append(weight_name)
+
+        # Load each shard once and copy only the tensor names mapped to that shard.
+        # This avoids holding all shard tensors in memory at the same time.
+        for shard in checkpoint_shards:
+            shard_weights = load_file(os.path.join(input_dir, shard))
+            for weight_name in shard_to_weight_names[shard]:
+                merged_state_dict[weight_name] = shard_weights[weight_name]
         return merged_state_dict
 
     model_path = os.path.join(input_dir, "model.safetensors")
@@ -132,7 +136,9 @@ def qwen_3_5_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Ten
         ):
             if _should_ignore_unmapped_key(key, normalized_key):
                 continue
-            continue
+            raise ValueError(
+                f"Unexpected non-text checkpoint key not mapped for Qwen3.5 export: {key}"
+            )
 
         # Legacy packed tensors (older checkpoints):
         #   in_proj_qkvz -> split into in_proj_qkv and in_proj_z

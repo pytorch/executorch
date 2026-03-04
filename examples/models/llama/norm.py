@@ -17,6 +17,8 @@ class RMSNorm(torch.nn.Module):
         Args:
             dim (int): The dimension of the input tensor.
             eps (float, optional): A small value added to the denominator for numerical stability. Default is 1e-6.
+            add_unit_offset (bool, optional): Whether to scale normalized output by
+                `(1 + weight)` instead of `weight`. Default is False.
 
         Attributes:
             eps (float): A small value added to the denominator for numerical stability.
