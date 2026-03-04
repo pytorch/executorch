@@ -1,0 +1,36 @@
+# ESP-IDF sdkconfig defaults for ESP32-S3 target
+#
+# ESP32-S3 specific optimizations:
+# - Octal PSRAM support (up to 32MB)
+# - Dual-core Xtensa LX7 at 240MHz
+# - Vector extensions for faster computation
+
+# ─── CPU ───
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
+# ─── PSRAM (Octal PSRAM for ESP32-S3) ───
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_CAPS_ALLOC=y
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+
+# ─── Memory ───
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=32768
+
+# ─── Flash ───
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# ─── Optimization ───
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
+# ─── FreeRTOS ───
+CONFIG_FREERTOS_HZ=1000
+
+# ─── Watchdog ───
+CONFIG_ESP_TASK_WDT_EN=n
+
+# ─── Logging ───
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
