@@ -37,6 +37,8 @@ TENSORRT_SUPPORTED_MODELS = {
     "add_mul",
     "conv1d",
     "dl3",
+    "edsr",
+    "ic3",
     "linear",
     "mul",
     "mv3",
