@@ -29,6 +29,7 @@ from executorch.backends.nvidia.tensorrt.converters import pooling  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import reduction  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import relu  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import reshape  # noqa: F401
+from executorch.backends.nvidia.tensorrt.converters import sdpa  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import sub  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import upsample  # noqa: F401
 
