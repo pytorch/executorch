@@ -10,8 +10,8 @@ on:
       - .github/workflows/mlx.yml
       - backends/mlx/**
       - extension/llm/export/**
+      - extension/audio/**
       - examples/models/parakeet/**
-      - examples/models/voxtral/**
       - examples/models/voxtral_realtime/**
   workflow_dispatch:
 
@@ -193,7 +193,7 @@ jobs:
         ${CONDA_RUN} python -m executorch.backends.mlx.examples.voxtral.export_voxtral_hf \
           --output-dir /tmp/voxtral_mlx \
           --dtype bf16 \
-          --quantize-linear int4
+          --qlinear 4w
         echo "::endgroup::"
 
         echo "::group::Build Voxtral MLX runner"
@@ -251,6 +251,14 @@ jobs:
         echo "Model path: ${MODEL_PATH}"
         echo "::endgroup::"
 
+        echo "::group::Export preprocessor"
+        ${CONDA_RUN} python -m executorch.extension.audio.mel_spectrogram \
+          --feature_size 128 \
+          --streaming \
+          --backend mlx \
+          --output_file /tmp/voxtral_rt_mlx/preprocessor.pte
+        echo "::endgroup::"
+
         echo "::group::Export Voxtral Realtime (streaming)"
         ${CONDA_RUN} python -m executorch.examples.models.voxtral_realtime.export_voxtral_rt \
           --model-path "${MODEL_PATH}" \
@@ -260,8 +268,7 @@ jobs:
           --qlinear-encoder 4w \
           --qlinear 4w \
           --qembedding 8w \
-          --qembedding-group-size 128 \
-          --export-preprocessor
+          --qembedding-group-size 128
         echo "::endgroup::"
 
         echo "::group::Build Voxtral Realtime MLX runner"
@@ -317,7 +324,7 @@ jobs:
           --model-id "openai/whisper-tiny" \
           --output-dir /tmp/whisper_mlx \
           --dtype bf16 \
-          --quantize-linear int4
+          --qlinear 4w
         echo "::endgroup::"
 
         echo "::group::Run Whisper inference"
@@ -409,10 +416,11 @@ jobs:
           - id: "unsloth/gemma-3-1b-it"
             name: "gemma3-1b"
         use-custom: [false, true]
+        qconfig: ["4w", "nvfp4"]
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
-      job-name: test-mlx-llm-${{ matrix.model.name }}${{ matrix.use-custom && '-custom' || '' }}
+      job-name: test-mlx-llm-${{ matrix.model.name }}${{ matrix.use-custom && '-custom' || '' }}-${{ matrix.qconfig }}
       runner: macos-14-xlarge
       python-version: "3.12"
       submodules: recursive
@@ -425,6 +433,7 @@ jobs:
         MODEL_ID="${{ matrix.model.id }}"
         MODEL_NAME="${{ matrix.model.name }}"
         USE_CUSTOM="${{ matrix.use-custom }}"
+        QCONFIG="${{ matrix.qconfig }}"
 
         CUSTOM_ARGS=""
         if [ "${USE_CUSTOM}" = "true" ]; then
@@ -449,8 +458,8 @@ jobs:
         ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.export_llm_hf \
           --model-id "${MODEL_ID}" \
           --output /tmp/${MODEL_NAME}.pte \
-          --quantize-linear int4 \
-          --quantize-embeddings int4 \
+          --qlinear ${QCONFIG} \
+          --qembedding ${QCONFIG} \
           ${CUSTOM_ARGS}
         echo "::endgroup::"
 

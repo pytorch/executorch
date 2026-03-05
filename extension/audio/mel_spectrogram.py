@@ -6,11 +6,11 @@
 
 import argparse
 import logging
+import os
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import (
     EdgeCompileConfig,
@@ -188,9 +188,9 @@ class WhisperAudioProcessor(nn.Module):
             return log_spec.unsqueeze(0)
 
 
-def export_processor(model=None, output_file="whisper_preprocess.pte"):
-    if model is None:
-        model = WhisperAudioProcessor()
+def _export_processor_model(
+    model, output_file="whisper_preprocess.pte", backend="xnnpack"
+):
 
     audio_tensor = torch.randn(93680)
     shapes_collection = torch.export.ShapesCollection()
@@ -204,10 +204,17 @@ def export_processor(model=None, output_file="whisper_preprocess.pte"):
         )
         logging.debug(ep)
 
+        if backend == "mlx":
+            from executorch.backends.mlx.partitioner import MLXPartitioner
+
+            partitioner = [MLXPartitioner()]
+        else:
+            partitioner = [XnnpackPartitioner()]
+
         # to edge
         edge: EdgeProgramManager = to_edge_transform_and_lower(
             ep,
-            partitioner=[XnnpackPartitioner()],
+            partitioner=partitioner,
             compile_config=EdgeCompileConfig(
                 _check_ir_validity=False,
             ),
@@ -216,10 +223,26 @@ def export_processor(model=None, output_file="whisper_preprocess.pte"):
 
         # to executorch
         exec_prog = edge.to_executorch()
+        os.makedirs(os.path.dirname(output_file) or ".", exist_ok=True)
         with open(output_file, "wb") as file:
             exec_prog.write_to_file(file)
 
         logging.debug("Done")
+
+
+def export_processor(
+    output_file="whisper_preprocess.pte", backend="xnnpack", **model_kwargs
+):
+    """Export a WhisperAudioProcessor to a .pte file.
+
+    Args:
+        output_file: Output .pte file path.
+        backend: Backend for partitioning ("xnnpack" or "mlx").
+        **model_kwargs: Passed to WhisperAudioProcessor constructor
+            (e.g. feature_size, max_audio_len, stack_output, streaming).
+    """
+    model = WhisperAudioProcessor(**model_kwargs)
+    _export_processor_model(model, output_file, backend)
 
 
 def main():
@@ -276,9 +299,19 @@ def main():
         help="Streaming mode: skip 30-second chunk padding, produce mel frames proportional to input length. For use with real-time audio input.",
     )
 
+    parser.add_argument(
+        "--backend",
+        type=str,
+        default="xnnpack",
+        choices=["xnnpack", "mlx"],
+        help="Backend for partitioning (default: xnnpack)",
+    )
+
     args = parser.parse_args()
 
-    model = WhisperAudioProcessor(
+    export_processor(
+        output_file=args.output_file,
+        backend=args.backend,
         feature_size=args.feature_size,
         sampling_rate=args.sampling_rate,
         hop_length=args.hop_length,
@@ -288,8 +321,6 @@ def main():
         stack_output=args.stack_output,
         streaming=args.streaming,
     )
-
-    export_processor(model, args.output_file)
 
 
 if __name__ == "__main__":

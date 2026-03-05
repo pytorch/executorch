@@ -304,15 +304,15 @@ def export_all(
     backend: Optional[str] = None,
     # Encoder quantization args
     qlinear_encoder: Optional[str] = None,
-    qlinear_encoder_group_size: int = 32,
+    qlinear_encoder_group_size: Optional[int] = None,
     qlinear_encoder_packing_format: Optional[str] = None,
     # Decoder quantization args
     qlinear: Optional[str] = None,
-    qlinear_group_size: int = 32,
+    qlinear_group_size: Optional[int] = None,
     qlinear_packing_format: Optional[str] = None,
     # Embedding quantization args (decoder has the embedding layer)
     qembedding: Optional[str] = None,
-    qembedding_group_size: int = 0,
+    qembedding_group_size: Optional[int] = None,
 ):
     """Export all model components.
 
@@ -636,14 +636,14 @@ def main():
     parser.add_argument(
         "--qlinear",
         type=str,
-        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w", "nvfp4"],
         help="Quantization config for decoder linear layers",
     )
     parser.add_argument(
         "--qlinear_group_size",
         type=int,
-        default=32,
-        help="Group size for decoder linear quantization (default: 32)",
+        default=None,
+        help="Group size for decoder linear quantization",
     )
     parser.add_argument(
         "--qlinear_packing_format",
@@ -656,14 +656,14 @@ def main():
     parser.add_argument(
         "--qlinear_encoder",
         type=str,
-        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w", "nvfp4"],
         help="Quantization config for encoder linear layers",
     )
     parser.add_argument(
         "--qlinear_encoder_group_size",
         type=int,
-        default=32,
-        help="Group size for encoder linear quantization (default: 32)",
+        default=None,
+        help="Group size for encoder linear quantization",
     )
     parser.add_argument(
         "--qlinear_encoder_packing_format",
@@ -676,14 +676,14 @@ def main():
     parser.add_argument(
         "--qembedding",
         type=str,
-        choices=["4w", "8w"],
+        choices=["4w", "8w", "nvfp4"],
         help="Quantization config for decoder embedding layer",
     )
     parser.add_argument(
         "--qembedding_group_size",
         type=int,
-        default=0,
-        help="Group size for embedding quantization (default: 0 = per-axis)",
+        default=None,
+        help="Group size for embedding quantization",
     )
 
     args = parser.parse_args()

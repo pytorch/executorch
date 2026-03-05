@@ -377,60 +377,6 @@ def _linear_bias_decomposition(input, weight, bias=None):
     return out
 
 
-def export_preprocessor(output_dir, backend="xnnpack", streaming=False):
-    """Export mel spectrogram preprocessor.
-
-    Uses XNNPACK for all backends except MLX, which uses MLX partitioner.
-    """
-    from executorch.extension.audio.mel_spectrogram import WhisperAudioProcessor
-
-    # Use MLX partitioner for mlx backend, XNNPACK for everything else
-    pp_backend = "mlx" if backend == "mlx" else "xnnpack"
-    print(f"  Using {pp_backend.upper()} partitioner for preprocessor...")
-
-    model = WhisperAudioProcessor(
-        feature_size=128,
-        max_audio_len=300,
-        streaming=streaming,
-    )
-
-    audio_tensor = torch.randn(93680)
-    shapes_collection = torch.export.ShapesCollection()
-    max_n_chunks = int(model.max_audio_len * model.n_samples)
-    shapes_collection[audio_tensor] = {0: Dim.DYNAMIC(max=max_n_chunks)}
-
-    with torch.no_grad(), torch.fx.experimental._config.patch(
-        backed_size_oblivious=True
-    ):
-        ep = export(
-            model, (audio_tensor,), dynamic_shapes=shapes_collection, strict=True
-        )
-
-        if pp_backend == "mlx":
-            from executorch.backends.mlx.partitioner import MLXPartitioner
-
-            partitioner = [MLXPartitioner()]
-        else:
-            from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-                XnnpackPartitioner,
-            )
-
-            partitioner = [XnnpackPartitioner()]
-
-        edge = to_edge_transform_and_lower(
-            ep,
-            partitioner=partitioner,
-            compile_config=EdgeCompileConfig(_check_ir_validity=False),
-        )
-        exec_prog = edge.to_executorch()
-
-        pp_path = os.path.join(output_dir, "preprocessor.pte")
-        with open(pp_path, "wb") as f:
-            exec_prog.write_to_file(f)
-        size_mb = os.path.getsize(pp_path) / (1024 * 1024)
-        print(f"  Saved preprocessor to {pp_path} ({size_mb:.1f} MB)")
-
-
 def lower_to_executorch(programs, metadata, backend="xnnpack"):
     """Lower exported programs to ExecuTorch."""
     if backend == "xnnpack":
@@ -554,7 +500,7 @@ def main():
     parser.add_argument(
         "--qlinear",
         default=None,
-        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w", "nvfp4"],
         help="Quantize decoder linear layers.",
     )
     parser.add_argument(
@@ -572,7 +518,7 @@ def main():
     parser.add_argument(
         "--qlinear-encoder",
         default=None,
-        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w", "nvfp4"],
         help="Quantize encoder linear layers (separate from decoder).",
     )
     parser.add_argument(
@@ -590,8 +536,8 @@ def main():
     parser.add_argument(
         "--qembedding",
         default=None,
-        choices=["8w"],
-        help="Quantize embedding layers (8-bit weight-only).",
+        choices=["4w", "8w", "nvfp4"],
+        help="Quantize embedding layers.",
     )
     parser.add_argument(
         "--qembedding-group-size",
@@ -615,11 +561,6 @@ def main():
         default="fp32",
         choices=["fp32", "bf16"],
         help="Model dtype (default: fp32).",
-    )
-    parser.add_argument(
-        "--export-preprocessor",
-        action="store_true",
-        help="Also export preprocessor.pte (uses XNNPACK, or MLX for --backend mlx).",
     )
     args = parser.parse_args()
     backend_for_export = "cuda" if args.backend == "cuda-windows" else args.backend
@@ -690,11 +631,6 @@ def main():
     if et._tensor_data:
         et.write_tensor_data_to_file(args.output_dir)
         print(f"Saved tensor data to {args.output_dir}/")
-
-    # Export preprocessor if requested
-    if args.export_preprocessor:
-        print("\nExporting preprocessor...")
-        export_preprocessor(args.output_dir, args.backend, args.streaming)
 
     print("\nDone!")
 

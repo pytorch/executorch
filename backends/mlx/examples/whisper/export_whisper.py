@@ -368,10 +368,10 @@ def export_whisper_to_mlx(
     output_dir: str,
     max_decoder_seq_len: int = 256,
     dtype: str = "bf16",
-    quantize_linear: Optional[str] = None,
-    quantize_embeddings: Optional[str] = None,
-    linear_group_size: Optional[int] = None,
-    embeddings_group_size: Optional[int] = None,
+    qlinear: Optional[str] = None,
+    qembedding: Optional[str] = None,
+    qlinear_group_size: Optional[int] = None,
+    qembedding_group_size: Optional[int] = None,
 ) -> None:
     """
     Export Whisper model components to MLX delegate.
@@ -386,10 +386,10 @@ def export_whisper_to_mlx(
         output_dir: Directory to save .pte files
         max_decoder_seq_len: Maximum decoder sequence length
         dtype: Model dtype ("fp32", "fp16", "bf16")
-        quantize_linear: Quantization method for linear layers ("int4", "int8", or None)
-        quantize_embeddings: Quantization method for embedding layers ("int4", "int8", or None)
-        linear_group_size: Group size for linear quantization. Defaults to 32 for int4, 128 for int8.
-        embeddings_group_size: Group size for embedding quantization. Defaults to 32 for int4, 128 for int8.
+        qlinear: Quantization config for linear layers ("4w", "8w", "nvfp4", or None)
+        qembedding: Quantization config for embedding layers ("4w", "8w", "nvfp4", or None)
+        qlinear_group_size: Group size for linear quantization (default: auto)
+        qembedding_group_size: Group size for embedding quantization (default: auto)
     """
     from transformers import AutoProcessor, WhisperForConditionalGeneration
 
@@ -435,63 +435,44 @@ def export_whisper_to_mlx(
     # Apply quantization if requested
     # Whisper has 3 separate wrappers to quantize, and embed_positions must be
     # excluded from embedding quantization (accessed via indexing).
-    if quantize_linear or quantize_embeddings:
-        from executorch.backends.mlx.llm.quantization import _default_group_size
+    if qlinear or qembedding:
+        from executorch.extension.llm.export.quantize import quantize_model_
 
-        try:
-            from torchao.quantization.granularity import PerGroup
-            from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
-            from torchao.quantization.quantize_.workflows import (
-                IntxChooseQParamsAlgorithm,
+        if qlinear:
+            logger.info(f"Quantizing linear layers with {qlinear}...")
+            for module in [encoder_wrapper, cross_kv_wrapper, decoder_wrapper]:
+                quantize_model_(
+                    module,
+                    qlinear_config=qlinear,
+                    qlinear_group_size=qlinear_group_size,
+                    skip_incompatible_shapes=True,
+                )
+
+        if qembedding:
+            # Custom filter: only embed_tokens, not embed_positions
+            from executorch.extension.llm.export.quantize import (
+                _default_group_size,
+                _make_embedding_config,
+            )
+            from torchao.quantization.quant_api import quantize_
+
+            gs = (
+                qembedding_group_size
+                if qembedding_group_size is not None
+                else _default_group_size(qembedding)
+            )
+            embed_config = _make_embedding_config(qembedding, gs)
+            logger.info(
+                f"Quantizing embedding layers with {qembedding} "
+                f"(group size {gs})..."
+            )
+            quantize_(
+                decoder_wrapper,
+                embed_config,
+                lambda m, fqn: isinstance(m, nn.Embedding) and "embed_tokens" in fqn,
             )
 
-            qparams_algorithm = IntxChooseQParamsAlgorithm.HQQ_SCALE_ONLY
-
-            if quantize_embeddings:
-                embed_dtype = (
-                    torch.int4 if quantize_embeddings == "int4" else torch.int8
-                )
-                embed_gs = embeddings_group_size or _default_group_size(
-                    quantize_embeddings
-                )
-                logger.info(
-                    f"Quantizing embedding layers with {quantize_embeddings} "
-                    f"(group size {embed_gs})..."
-                )
-                quantize_(
-                    decoder_wrapper,
-                    IntxWeightOnlyConfig(
-                        weight_dtype=embed_dtype,
-                        granularity=PerGroup(embed_gs),
-                        intx_choose_qparams_algorithm=qparams_algorithm,
-                    ),
-                    lambda m, fqn: isinstance(m, nn.Embedding)
-                    and "embed_tokens" in fqn,
-                )
-
-            if quantize_linear:
-                linear_dtype = torch.int4 if quantize_linear == "int4" else torch.int8
-                linear_gs = linear_group_size or _default_group_size(quantize_linear)
-                config = IntxWeightOnlyConfig(
-                    weight_dtype=linear_dtype,
-                    granularity=PerGroup(linear_gs),
-                    intx_choose_qparams_algorithm=qparams_algorithm,
-                )
-                logger.info(
-                    f"Quantizing linear layers with {quantize_linear} "
-                    f"(group size {linear_gs})..."
-                )
-                for module in [encoder_wrapper, cross_kv_wrapper, decoder_wrapper]:
-                    quantize_(
-                        module,
-                        config,
-                        filter_fn=lambda m, fqn: isinstance(m, nn.Linear),
-                    )
-
-            logger.info("Applied quantization successfully")
-        except ImportError:
-            logger.error("TorchAO not installed. Run: pip install torchao")
-            raise
+        logger.info("Applied quantization successfully")
 
     logger.info("Exporting encoder...")
 
@@ -561,8 +542,8 @@ def export_whisper_to_mlx(
     metadata = {
         "model_id": model_id,
         "dtype": dtype,
-        "quantize_linear": quantize_linear,
-        "quantize_embeddings": quantize_embeddings,
+        "quantize_linear": qlinear,
+        "quantize_embeddings": qembedding,
         "max_decoder_seq_len": max_decoder_seq_len,
         "encoder_seq_len": encoder_seq_len,
         "num_decoder_layers": decoder_wrapper.num_layers,
@@ -581,12 +562,9 @@ def _save_to_pte(ep, output_path: str, name: str) -> None:
     from executorch.exir import EdgeCompileConfig
     from executorch.exir.capture._config import ExecutorchBackendConfig
 
-    # Allow repeat_interleave and sdpa ops
     edge_config = EdgeCompileConfig(
-        _core_aten_ops_exception_list=[
-            torch.ops.aten.repeat_interleave.self_int,
-            torch.ops.aten.scaled_dot_product_attention.default,
-        ]
+        _check_ir_validity=False,
+        _skip_dim_order=True,
     )
 
     edge_program = exir.to_edge_transform_and_lower(
@@ -628,10 +606,10 @@ def main():
         output_dir=args.output_dir,
         max_decoder_seq_len=args.max_decoder_seq_len,
         dtype=args.dtype,
-        quantize_linear=args.quantize_linear,
-        quantize_embeddings=args.quantize_embeddings,
-        linear_group_size=args.linear_group_size,
-        embeddings_group_size=args.embeddings_group_size,
+        qlinear=args.qlinear,
+        qembedding=args.qembedding,
+        qlinear_group_size=args.qlinear_group_size,
+        qembedding_group_size=args.qembedding_group_size,
     )
 
 

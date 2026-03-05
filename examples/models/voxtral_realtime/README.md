@@ -43,6 +43,16 @@ python -m executorch.extension.audio.mel_spectrogram \
     --output_file ./voxtral_rt_exports/preprocessor.pte
 ```
 
+For MLX backend, use `--backend mlx`:
+
+```bash
+python -m executorch.extension.audio.mel_spectrogram \
+    --feature_size 128 \
+    --max_audio_len 300 \
+    --backend mlx \
+    --output_file ./voxtral_rt_exports/preprocessor.pte
+```
+
 For streaming, use a separate preprocessor with `--streaming` (no audio
 length limit):
 
@@ -50,6 +60,16 @@ length limit):
 python -m executorch.extension.audio.mel_spectrogram \
     --feature_size 128 \
     --streaming \
+    --output_file ./voxtral_streaming_exports/preprocessor.pte
+```
+
+For streaming with MLX backend:
+
+```bash
+python -m executorch.extension.audio.mel_spectrogram \
+    --feature_size 128 \
+    --streaming \
+    --backend mlx \
     --output_file ./voxtral_streaming_exports/preprocessor.pte
 ```
 
@@ -167,8 +187,34 @@ EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_ex
 #### MLX export examples
 
 MLX backend uses the MLX delegate for Apple Silicon GPU acceleration.
+NVFP4 quantizes weights using NVIDIA's FP4 data type.
 
-Offline:
+Offline (NVFP4):
+
+```bash
+python export_voxtral_rt.py \
+    --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
+    --backend mlx \
+    --output-dir ./voxtral_rt_exports \
+    --qlinear-encoder nvfp4 \
+    --qlinear nvfp4 \
+    --qembedding nvfp4
+```
+
+Streaming (NVFP4):
+
+```bash
+python export_voxtral_rt.py \
+    --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
+    --backend mlx \
+    --streaming \
+    --output-dir ./voxtral_rt_exports \
+    --qlinear-encoder nvfp4 \
+    --qlinear nvfp4 \
+    --qembedding nvfp4
+```
+
+Offline (int4 linear + int8 embedding):
 
 ```bash
 python export_voxtral_rt.py \
@@ -178,11 +224,10 @@ python export_voxtral_rt.py \
     --qlinear-encoder 4w \
     --qlinear 4w \
     --qembedding 8w \
-    --qembedding-group-size 128 \
-    --export-preprocessor
+    --qembedding-group-size 128
 ```
 
-Streaming:
+Streaming (int4 linear + int8 embedding):
 
 ```bash
 python export_voxtral_rt.py \
@@ -193,12 +238,8 @@ python export_voxtral_rt.py \
     --qlinear-encoder 4w \
     --qlinear 4w \
     --qembedding 8w \
-    --qembedding-group-size 128 \
-    --export-preprocessor
+    --qembedding-group-size 128
 ```
-
-`--export-preprocessor` bundles the mel preprocessor into the output directory
-using the MLX partitioner, so no separate preprocessor export step is needed.
 
 ### Options
 
@@ -210,15 +251,13 @@ using the MLX partitioner, so no separate preprocessor export step is needed.
 | `--output-dir` | `./voxtral_rt_exports` | Output directory |
 | `--max-seq-len` | `4096` | KV cache length |
 | `--delay-tokens` | `6` | Transcription delay in tokens (6 = 480ms) |
-| `--qlinear` | (none) | Decoder linear layer quantization (`4w`, `8w`, `8da4w`, `8da8w`, `fpa4w`) |
-| `--qlinear-group-size` | `32` | Group size for decoder linear quantization |
-| `--qlinear-packing-format` | (none) | Packing format for decoder 4w quantization (`tile_packed_to_4d` for CUDA) |
-| `--qlinear-encoder` | (none) | Encoder linear layer quantization (`4w`, `8w`, `8da4w`, `8da8w`, `fpa4w`) |
-| `--qlinear-encoder-group-size` | `32` | Group size for encoder linear quantization |
-| `--qlinear-encoder-packing-format` | (none) | Packing format for encoder 4w quantization (`tile_packed_to_4d` for CUDA) |
-| `--qembedding` | (none) | Embedding layer quantization (`8w`) |
-| `--qembedding-group-size` | `0` | Group size for embedding quantization (0 = per-channel) |
-| `--export-preprocessor` | off | Export `preprocessor.pte` alongside the model |
+
+| `--qlinear` | (none) | Decoder linear layer quantization (`4w`, `8w`, `8da4w`, `8da8w`, `fpa4w`, `nvfp4`) |
+| `--qlinear-group-size` | auto | Group size for decoder linear quantization |
+| `--qlinear-encoder` | (none) | Encoder linear layer quantization (`4w`, `8w`, `8da4w`, `8da8w`, `fpa4w`, `nvfp4`) |
+| `--qlinear-encoder-group-size` | auto | Group size for encoder linear quantization |
+| `--qembedding` | (none) | Embedding layer quantization (`4w`, `8w`, `nvfp4`) |
+| `--qembedding-group-size` | auto | Group size for embedding quantization |
 | `--streaming` | off | Export streaming encoder with KV cache |
 | `--max-enc-len` | `750` | Encoder sliding window size (streaming only) |
 

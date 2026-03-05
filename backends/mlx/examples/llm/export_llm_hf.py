@@ -53,11 +53,11 @@ def _export_with_optimum(
     output_path: str,
     max_seq_len: int,
     dtype: str,
-    quantize_linear: Optional[str],
-    quantize_embeddings: Optional[str],
+    qlinear: Optional[str],
+    qembedding: Optional[str],
     no_tie_word_embeddings: bool = False,
-    linear_group_size: Optional[int] = None,
-    embeddings_group_size: Optional[int] = None,
+    qlinear_group_size: Optional[int] = None,
+    qembedding_group_size: Optional[int] = None,
 ) -> None:
     import executorch.exir as exir
     from executorch.backends.mlx import MLXPartitioner
@@ -77,18 +77,18 @@ def _export_with_optimum(
         max_seq_len=max_seq_len,
     )
 
-    from executorch.backends.mlx.llm.quantization import apply_quantization
+    from executorch.backends.mlx.llm.quantization import quantize_model_
 
-    apply_quantization(
+    quantize_model_(
         exportable.model,
-        quantize_linear,
-        quantize_embeddings,
+        qlinear_config=qlinear,
+        qlinear_group_size=qlinear_group_size,
+        qembedding_config=qembedding,
+        qembedding_group_size=qembedding_group_size,
         tie_word_embeddings=getattr(
             exportable.model.config, "tie_word_embeddings", False
         )
         and not no_tie_word_embeddings,
-        linear_group_size=linear_group_size,
-        embeddings_group_size=embeddings_group_size,
     )
 
     logger.info("Exporting model with torch.export...")
@@ -127,13 +127,13 @@ def _export_with_custom_components(
     output_path: str,
     max_seq_len: int,
     dtype: str,
-    quantize_linear: Optional[str],
-    quantize_embeddings: Optional[str],
+    qlinear: Optional[str],
+    qembedding: Optional[str],
     use_custom_sdpa: bool,
     use_custom_kv_cache: bool,
     no_tie_word_embeddings: bool = False,
-    linear_group_size: Optional[int] = None,
-    embeddings_group_size: Optional[int] = None,
+    qlinear_group_size: Optional[int] = None,
+    qembedding_group_size: Optional[int] = None,
 ) -> None:
     """
     Export using direct HF model with custom MLX components.
@@ -266,16 +266,16 @@ def _export_with_custom_components(
             )
             logger.info("  HFStaticCache installed successfully")
 
-    from executorch.backends.mlx.llm.quantization import apply_quantization
+    from executorch.backends.mlx.llm.quantization import quantize_model_
 
-    apply_quantization(
+    quantize_model_(
         exportable.model,
-        quantize_linear,
-        quantize_embeddings,
+        qlinear_config=qlinear,
+        qlinear_group_size=qlinear_group_size,
+        qembedding_config=qembedding,
+        qembedding_group_size=qembedding_group_size,
         tie_word_embeddings=getattr(model.config, "tie_word_embeddings", False)
         and not no_tie_word_embeddings,
-        linear_group_size=linear_group_size,
-        embeddings_group_size=embeddings_group_size,
     )
 
     logger.info("Exporting model with torch.export...")
@@ -344,13 +344,13 @@ def export_llama_hf(
     output_path: str,
     max_seq_len: int = 1024,
     dtype: str = "bf16",
-    quantize_linear: Optional[str] = None,
-    quantize_embeddings: Optional[str] = None,
+    qlinear: Optional[str] = None,
+    qembedding: Optional[str] = None,
     use_custom_sdpa: bool = False,
     use_custom_kv_cache: bool = False,
     no_tie_word_embeddings: bool = False,
-    linear_group_size: Optional[int] = None,
-    embeddings_group_size: Optional[int] = None,
+    qlinear_group_size: Optional[int] = None,
+    qembedding_group_size: Optional[int] = None,
 ) -> None:
     """
     Export a HuggingFace Llama model to ExecuTorch with MLX backend.
@@ -360,8 +360,8 @@ def export_llama_hf(
         output_path: Path to save the .pte file
         max_seq_len: Maximum sequence length for KV cache
         dtype: Model dtype ("fp32", "fp16", "bf16")
-        quantize_linear: Quantization for linear layers ("int4", "int8", or None)
-        quantize_embeddings: Quantization for embeddings ("int4", "int8", or None)
+        qlinear: Quantization for linear layers ("4w", "8w", "nvfp4", or None)
+        qembedding: Quantization for embeddings ("4w", "8w", "nvfp4", or None)
         use_custom_sdpa: Use MLX custom SDPA (mlx::custom_sdpa)
         use_custom_kv_cache: Use MLX custom KV cache (mlx::kv_cache_update)
     """
@@ -375,13 +375,13 @@ def export_llama_hf(
             output_path=output_path,
             max_seq_len=max_seq_len,
             dtype=dtype,
-            quantize_linear=quantize_linear,
-            quantize_embeddings=quantize_embeddings,
+            qlinear=qlinear,
+            qembedding=qembedding,
             use_custom_sdpa=use_custom_sdpa,
             use_custom_kv_cache=use_custom_kv_cache,
             no_tie_word_embeddings=no_tie_word_embeddings,
-            linear_group_size=linear_group_size,
-            embeddings_group_size=embeddings_group_size,
+            qlinear_group_size=qlinear_group_size,
+            qembedding_group_size=qembedding_group_size,
         )
     else:
         logger.info("Using optimum-executorch pipeline (no custom components)")
@@ -390,11 +390,11 @@ def export_llama_hf(
             output_path=output_path,
             max_seq_len=max_seq_len,
             dtype=dtype,
-            quantize_linear=quantize_linear,
-            quantize_embeddings=quantize_embeddings,
+            qlinear=qlinear,
+            qembedding=qembedding,
             no_tie_word_embeddings=no_tie_word_embeddings,
-            linear_group_size=linear_group_size,
-            embeddings_group_size=embeddings_group_size,
+            qlinear_group_size=qlinear_group_size,
+            qembedding_group_size=qembedding_group_size,
         )
 
 
@@ -450,13 +450,13 @@ def main():
         output_path=args.output,
         max_seq_len=args.max_seq_len,
         dtype=args.dtype,
-        quantize_linear=args.quantize_linear,
-        quantize_embeddings=args.quantize_embeddings,
+        qlinear=args.qlinear,
+        qembedding=args.qembedding,
         use_custom_sdpa=args.use_custom_sdpa,
         use_custom_kv_cache=args.use_custom_kv_cache,
         no_tie_word_embeddings=args.no_tie_word_embeddings,
-        linear_group_size=args.linear_group_size,
-        embeddings_group_size=args.embeddings_group_size,
+        qlinear_group_size=args.qlinear_group_size,
+        qembedding_group_size=args.qembedding_group_size,
     )
 
 
