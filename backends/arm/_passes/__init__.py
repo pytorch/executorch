@@ -106,6 +106,9 @@ from .fuse_consecutive_transposes_pass import FuseConsecutiveTransposesPass  # n
 from .fuse_transpose_reshape_transpose_pass import (  # noqa
     FuseTransposeReshapeTransposePass,
 )
+from .fuse_transpose_reshape_linear_pass import (  # noqa
+    FuseTransposeReshapeLinearPass,
+)
 from .fuse_constant_ops_pass import (  # noqa
     ComputeConstantOpsAOTPass,
     FuseConstantArgsPass,

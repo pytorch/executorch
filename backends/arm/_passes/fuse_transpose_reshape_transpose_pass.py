@@ -30,15 +30,14 @@ Inspired by bolt/nn/espresso/transforms/fuse_ops.py:fuse_transpose_reshape_trans
 """
 
 import logging
-from typing import Optional
+from typing import Optional, Set, Type
 
 import executorch.backends.arm.tosa.dialect  # noqa: F401 - loads TOSA dialect
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import PassResult
+from executorch.exir.pass_base import ExportPass, PassResult
 from torch import fx
-from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +134,8 @@ class FuseTransposeReshapeTransposePass(ArmPass):
     And transforms them into a single permute followed by a reshape with
     the combined effect.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def __init__(self) -> None:
         super().__init__()
