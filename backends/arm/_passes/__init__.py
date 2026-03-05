@@ -109,6 +109,7 @@ from .fuse_transpose_reshape_transpose_pass import (  # noqa
 from .fuse_transpose_reshape_linear_pass import (  # noqa
     FuseTransposeReshapeLinearPass,
 )
+from .fuse_transpose_sandwich_pass import FuseTransposeSandwichPass  # noqa
 from .fuse_constant_ops_pass import (  # noqa
     ComputeConstantOpsAOTPass,
     FuseConstantArgsPass,
