@@ -24,6 +24,7 @@ on:
     paths:
       - backends/nvidia/tensorrt/**
       - examples/nvidia/tensorrt/**
+      - .github/workflows/tensorrt.yml
   workflow_dispatch:
   schedule:
     # Run daily at 3 AM UTC (after CUDA workflow at 2 AM)
@@ -83,7 +84,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        model: [add, mul, linear]
+        model: [add, add_mul, conv1d, dl3, edsr, efficient_sam, emformer_join, emformer_transcribe, ic3, ic4, linear, mul, mv2, mv3, resnet18, resnet50, sdpa, softmax, w2l]
     with:
       timeout: 60
       runner: linux.g5.4xlarge.nvidia.gpu
@@ -125,7 +126,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        model: [add, mul, linear]
+        model: [add, add_mul, conv1d, dl3, edsr, efficient_sam, emformer_join, emformer_transcribe, ic3, ic4, linear, mul, mv2, mv3, resnet18, resnet50, sdpa, softmax, w2l]
     with:
       timeout: 60
       runner: linux.g5.4xlarge.nvidia.gpu
@@ -198,16 +199,47 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Run TensorRT Backend Unit Tests"
-        # Run all test_*.py files in the backend test directory.
         # The -o "addopts=" override prevents pytest.ini from injecting
         # flags that would run unrelated test suites.
-        python -m pytest backends/nvidia/tensorrt/test/ -v -o "addopts="
+        python -m pytest backends/nvidia/tensorrt/test/ \
+          -v -o "addopts="
+        echo "::endgroup::"
+
+  # ---- Export correctness tests ----
+  # Exports all supported models and verifies numerical correctness
+  # against eager PyTorch on GPU via the ExportCorrectnessTest class.
+  test-export:
+    name: test-export
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 120
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: "12.6"
+      use-custom-docker-registry: false
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch"
+        PYTHON_EXECUTABLE=python ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Install TensorRT Python package"
+        pip install tensorrt
+        echo "::endgroup::"
+
+        echo "::group::Export all models and verify correctness"
+        python -m pytest examples/nvidia/tensorrt/tests/test_export.py -v -o "addopts="
         echo "::endgroup::"
 
   # Summary job to check all tests passed
   check-all-tensorrt-tests:
-    needs: [test-tensorrt-build, test-models-tensorrt-python, test-models-tensorrt-cpp, unittest-tensorrt]
-    # All four jobs must succeed for the overall check to pass.
+    needs: [test-tensorrt-build, test-models-tensorrt-python, test-models-tensorrt-cpp, unittest-tensorrt, test-export]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -227,6 +259,10 @@ jobs:
           fi
           if [[ "${{ needs.unittest-tensorrt.result }}" != "success" ]]; then
             echo "ERROR: TensorRT unit tests failed!"
+            exit 1
+          fi
+          if [[ "${{ needs.test-export.result }}" != "success" ]]; then
+            echo "ERROR: TensorRT export correctness tests failed!"
             exit 1
           fi
           echo "SUCCESS: All TensorRT backend tests passed!"

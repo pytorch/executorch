@@ -268,3 +268,28 @@ cmake .. -DEXECUTORCH_BUILD_TENSORRT=ON
 
 cmake --build . --target tensorrt_backend tensorrt_executor_runner
 ```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **"No CUDA devices available"**: Ensure CUDA drivers are installed and GPU is accessible.
+
+2. **TensorRT engine build takes long time**: This is expected for complex models. The engine
+   is cached in the `.pte` file, so subsequent runs are fast.
+
+3. **Model has multiple partitions**: Some operations may not be supported. Check the
+   `SUPPORTED_OPS` in `partitioner/operator_support.py`.
+
+### Debugging
+
+```bash
+# Check TensorRT version
+python -c "import tensorrt; print(tensorrt.__version__)"
+
+# Check CUDA
+nvidia-smi
+
+# Run with verbose logging
+./tensorrt_executor_runner --model_path=model.pte --verbose
+```
