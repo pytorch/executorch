@@ -11,16 +11,21 @@ import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
     get_symmetric_a8w4_quantization_config,
+    get_symmetric_quantization_config,
+    TOSAQuantizer,
 )
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
     OpNotSupportedPipeline,
+    QuantizationPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
 )
+from executorch.backends.arm.tosa.specification import TosaSpecification
+from executorch.backends.test.harness.stages.quantize import Quantize
 
 aten_op = "torch.ops.aten.conv_transpose2d.input"
 exir_op = "executorch_exir_dialects_edge__ops_aten_convolution_default"  # No edge transpoe conv
@@ -94,6 +99,21 @@ test_data_INT = {
     for q in [True, False]
 }
 
+test_data_QAT = {
+    "qat_basic": lambda: (
+        TransposeConv2d(
+            in_channels=16,
+            out_channels=4,
+            kernel_size=4,
+            stride=2,
+            padding=1,
+            groups=1,
+        ),
+        True,
+        True,
+    ),
+}
+
 u55_supported_test_data_INT = {
     k: v
     for k, v in test_data_INT.items()
@@ -146,6 +166,29 @@ def test_conv_transpose2d_tosa_INT(test_data):
         per_channel_quantization=per_channel_quantization,
         qtol=1,
         run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_QAT)
+def test_conv_transpose2d_tosa_INT_qat_per_channel_quantization_pipeline(test_data):
+    model, is_per_channel, is_qat = test_data()
+    inputs = model.get_inputs()
+    quantizer = TOSAQuantizer(TosaSpecification.create_from_string("TOSA-1.0+INT"))
+    quantizer.set_global(
+        get_symmetric_quantization_config(
+            is_per_channel=is_per_channel,
+            is_qat=is_qat,
+        )
+    )
+    pipeline = QuantizationPipeline[input_t](model, inputs, quantizer)
+    pipeline.change_args(
+        "quantize",
+        Quantize(
+            quantizer,
+            quantization_config=quantizer.global_config,
+            is_qat=is_qat,
+        ),
     )
     pipeline.run()
 
