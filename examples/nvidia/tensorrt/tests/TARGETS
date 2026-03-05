@@ -1,0 +1,24 @@
+load("@fbcode_macros//build_defs:python_unittest_remote_gpu.bzl", "python_unittest_remote_gpu")
+
+oncall("executorch")
+
+# Export correctness tests: exports each supported model with TensorRT
+# and compares inference outputs against eager PyTorch on GPU.
+#   buck2 test fbcode//executorch/examples/nvidia/tensorrt/tests:test_export
+#   buck2 test fbcode//executorch/examples/nvidia/tensorrt/tests:test_export -- test_mv3
+python_unittest_remote_gpu(
+    name = "test_export",
+    srcs = ["test_export.py"],
+    env = {
+        "HTTPS_PROXY": "http://fwdproxy.any:8080",
+        "HTTP_PROXY": "http://fwdproxy.any:8080",
+    },
+    keep_gpu_sections = True,
+    labels = ["long_running"],
+    preload_deps = [
+        "//executorch/backends/nvidia/tensorrt/runtime:tensorrt_backend",
+    ],
+    deps = [
+        "//executorch/examples/nvidia/tensorrt:tensorrt_example_lib",
+    ],
+)
