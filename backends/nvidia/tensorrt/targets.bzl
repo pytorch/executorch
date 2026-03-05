@@ -15,6 +15,11 @@ def define_common_targets():
         visibility = ["PUBLIC"],
         deps = [
             "//caffe2:torch",
+            "//deeplearning/trt/python:py_tensorrt",
+            "//executorch/backends/nvidia/tensorrt:compile_spec",
+            "//executorch/backends/nvidia/tensorrt:converter_registry",
+            "//executorch/backends/nvidia/tensorrt:converter_utils",
+            "//executorch/backends/nvidia/tensorrt/converters:converters",
             "//executorch/exir/backend:backend_details",
         ],
     )
@@ -27,6 +32,8 @@ def define_common_targets():
         visibility = ["PUBLIC"],
         deps = [
             ":backend",
+            "//executorch/backends/nvidia/tensorrt:compile_spec",
+            "//executorch/backends/nvidia/tensorrt/partitioner:partitioner",
         ],
     )
 
