@@ -9,10 +9,6 @@ on:
     paths:
       - .github/workflows/mlx.yml
       - backends/mlx/**
-      - extension/llm/export/**
-      - extension/audio/**
-      - examples/models/parakeet/**
-      - examples/models/voxtral_realtime/**
   workflow_dispatch:
 
 permissions: {}
