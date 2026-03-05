@@ -5,9 +5,6 @@ oncall("executorch")
 
 define_common_targets()
 
-# GPU-dependent tests: these import TensorRT which requires CUDA to initialize.
-# python_unittest_remote_gpu routes them to GPU-equipped CI workers.
-
 python_unittest_remote_gpu(
     name = "test_converter_registry",
     srcs = [
@@ -29,6 +26,20 @@ python_unittest_remote_gpu(
     deps = [
         "//caffe2:torch",
         "//executorch/backends/nvidia/tensorrt/partitioner:partitioner",
+        "//executorch/exir:lib",
+    ],
+)
+
+python_unittest_remote_gpu(
+    name = "test_preprocess",
+    srcs = [
+        "test_preprocess.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//deeplearning/trt/python:py_tensorrt",
+        "//executorch/backends/nvidia/tensorrt:compile_spec",
+        "//executorch/backends/nvidia/tensorrt:tensorrt",
         "//executorch/exir:lib",
     ],
 )
