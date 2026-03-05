@@ -1486,7 +1486,13 @@ Error Method::execute_instruction() {
       // We know that instr_args_as_FreeCall is non-null because it was checked
       // at init time.
       auto free_call = instruction->instr_args_as_FreeCall();
-      auto t = values_[free_call->value_index()].toTensor();
+      auto value_index = free_call->value_index();
+      ET_CHECK_OR_RETURN_ERROR(
+          values_[value_index].isTensor(),
+          InvalidProgram,
+          "FreeCall value at index %" PRId32 " is not a Tensor",
+          value_index);
+      auto t = values_[value_index].toTensor();
       internal::reset_data_ptr(t);
     } break;
     default:

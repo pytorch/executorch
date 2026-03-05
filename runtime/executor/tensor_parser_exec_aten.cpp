@@ -98,6 +98,11 @@ ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
         "Invalid value index %" PRId32 " for TensorList",
         tensor_index);
 
+    ET_CHECK_OR_RETURN_ERROR(
+        values[static_cast<size_t>(tensor_index)].isTensor(),
+        InvalidProgram,
+        "Expected Tensor at value index %" PRId32 " for TensorList",
+        tensor_index);
     // Placement new as the list elements are not initialized, so calling
     // copy assignment is not defined if it's non trivial.
     new (&tensor_list[output_idx]) executorch::aten::Tensor(
