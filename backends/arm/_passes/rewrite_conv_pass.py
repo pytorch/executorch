@@ -266,10 +266,6 @@ class RewriteConvPass(ArmPass):
                     raise RuntimeError(
                         "Only 2D transpose convolutions are supported in the Arm backend."
                     )
-                if group != 1:
-                    raise RuntimeError(
-                        "Grouped transpose convolutions are not supported in the Arm backend."
-                    )
                 if any(d != 1 for d in dilation_list):
                     raise RuntimeError(
                         "Transpose convolutions with dilation are not supported in the Arm backend."

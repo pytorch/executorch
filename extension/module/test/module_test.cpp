@@ -30,6 +30,7 @@ class ModuleTest : public ::testing::Test {
     add_mul_data_path_ = std::getenv("ET_MODULE_ADD_MUL_DATA_PATH");
     linear_path_ = std::getenv("ET_MODULE_LINEAR_PROGRAM_PATH");
     linear_data_path_ = std::getenv("ET_MODULE_LINEAR_DATA_PATH");
+    shared_state_path_ = std::getenv("ET_MODULE_SHARED_STATE");
   }
 
   static inline std::string model_path_;
@@ -37,6 +38,7 @@ class ModuleTest : public ::testing::Test {
   static inline std::string add_mul_data_path_;
   static inline std::string linear_path_;
   static inline std::string linear_data_path_;
+  static inline std::string shared_state_path_;
 };
 
 TEST_F(ModuleTest, TestLoad) {
@@ -717,4 +719,49 @@ TEST_F(ModuleTest, TestMultipleBackendsInOptionsMap) {
   auto tensor = make_tensor_ptr({2, 2}, {1.f, 2.f, 3.f, 4.f});
   const auto result = module.forward({tensor, tensor, 1.0});
   EXPECT_EQ(result.error(), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestSharedMemoryBuffer) {
+  Module module(
+      shared_state_path_,
+      Module::LoadMode::File,
+      /*event_tracer=*/nullptr,
+      /*memory_allocator=*/nullptr,
+      /*temp_allocator=*/nullptr,
+      /*share_memory_arenas=*/true);
+
+  ASSERT_EQ(module.load_method("forward"), Error::Ok);
+  ASSERT_EQ(module.load_method("get_state"), Error::Ok);
+  ASSERT_EQ(module.load_method("set_state"), Error::Ok);
+
+  auto get_state_initial = module.execute("get_state");
+  ASSERT_EQ(get_state_initial.error(), Error::Ok);
+  EXPECT_TENSOR_CLOSE(
+      get_state_initial.get()[0].toTensor(),
+      *make_tensor_ptr({1}, {0.f}).get());
+  auto tensor = make_tensor_ptr({1}, {2.f});
+  auto forward1 = module.forward(tensor);
+  ASSERT_EQ(forward1.error(), Error::Ok);
+  EXPECT_TENSOR_CLOSE(
+      forward1.get()[0].toTensor(), *make_tensor_ptr({1}, {3.f}).get());
+  auto forward2 = module.forward(tensor);
+  ASSERT_EQ(forward2.error(), Error::Ok);
+  EXPECT_TENSOR_CLOSE(
+      forward2.get()[0].toTensor(), *make_tensor_ptr({1}, {4.f}).get());
+  auto get_state_after_forwards = module.execute("get_state");
+  ASSERT_EQ(get_state_after_forwards.error(), Error::Ok);
+  EXPECT_TENSOR_CLOSE(
+      get_state_after_forwards.get()[0].toTensor(),
+      *make_tensor_ptr({1}, {2.f}).get());
+  auto zero_tensor = make_tensor_ptr({1}, {0.f});
+  ASSERT_EQ(module.execute("set_state", zero_tensor).error(), Error::Ok);
+  auto get_state_after_reset = module.execute("get_state");
+  ASSERT_EQ(get_state_after_reset.error(), Error::Ok);
+  EXPECT_TENSOR_CLOSE(
+      get_state_after_reset.get()[0].toTensor(),
+      *make_tensor_ptr({1}, {0.f}).get());
+  auto forward3 = module.forward(tensor);
+  ASSERT_EQ(forward3.error(), Error::Ok);
+  EXPECT_TENSOR_CLOSE(
+      forward3.get()[0].toTensor(), *make_tensor_ptr({1}, {3.f}).get());
 }

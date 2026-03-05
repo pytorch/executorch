@@ -39,6 +39,7 @@ from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes.cse_pass import CSEPass
 from torch.nn.utils.fusion import fuse_conv_bn_weights
 
 
@@ -1272,6 +1273,25 @@ class FuseFullThenReshapePass(RemoveOrReplacePassInterface):
         node.replace_all_uses_with(new_full_node)
 
         return True
+
+
+class HierarchicalCSEPass(HierarchicalInplacePassInterface):
+    """
+    A hierarchical Common Subexpression Elimination (CSE) pass that recursively
+    processes all submodules in a GraphModule hierarchy.
+
+    This pass applies CSE to the main graph and all nested subgraphs, ensuring
+    that redundant computations are eliminated at all levels of the module hierarchy.
+    """
+
+    @override
+    def _apply_flat_inplace(self, graph_module) -> bool:
+        # Call the CSE pass on the main graph, which performs CSE without recursing.
+        result = CSEPass().call(graph_module)
+        assert (
+            result.graph_module is graph_module
+        ), f"Only in-place modification is allowed, but got {result.graph_module}"
+        return result.modified
 
 
 class CadenceFuseOpsInGraph:

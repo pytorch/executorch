@@ -61,11 +61,11 @@ Tensor& quantized_mul_out(
   // Extract quantization parameters
   int8_t* input1_ptr = input1_int8.data_ptr<int8_t>();
   int8_t* input2_ptr = input2_int8.data_ptr<int8_t>();
-  int32_t zp1 = extractScalarToInt32(input1_zero_point);
-  int32_t zp2 = extractScalarToInt32(input2_zero_point);
-  const int32_t out_zp = extractScalarToInt32(output_zero_point);
-  const int32_t output_mult = extractScalarToInt32(output_multiplier);
-  const int32_t output_shift_val = extractScalarToInt32(output_shift);
+  int32_t zp1 = static_cast<int32_t>(input1_zero_point);
+  int32_t zp2 = static_cast<int32_t>(input2_zero_point);
+  const int32_t out_zp = static_cast<int32_t>(output_zero_point);
+  const int32_t output_mult = static_cast<int32_t>(output_multiplier);
+  const int32_t output_shift_val = static_cast<int32_t>(output_shift);
 
   int32_t muls_per_loop = 0;
 
