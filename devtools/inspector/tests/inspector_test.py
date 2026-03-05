@@ -525,8 +525,14 @@ class TestInspector(unittest.TestCase):
                     aten_model.example_inputs[0]
                 )
 
+                # First resolve the reference graph, then get intermediate outputs
+                reference_graph_module, _ = inspector_instance._resolve_reference_graph(
+                    "edge_dialect_exported_program"
+                )
                 aot_intermediate_outputs, aot_debug_handle_to_op_names = (
-                    inspector_instance._get_aot_intermediate_outputs_and_op_names()
+                    inspector_instance._get_aot_intermediate_outputs_and_op_names(
+                        reference_graph_module
+                    )
                 )
                 self.assertTrue(
                     check_if_intermediate_outputs_match(
@@ -579,8 +585,14 @@ class TestInspector(unittest.TestCase):
                     aten_model.example_inputs[0]
                 )
 
+                # First resolve the reference graph, then get intermediate outputs
+                reference_graph_module, _ = inspector_instance._resolve_reference_graph(
+                    "exported_program"
+                )
                 aot_intermediate_outputs, aot_debug_handle_to_op_names = (
-                    inspector_instance._get_aot_intermediate_outputs_and_op_names()
+                    inspector_instance._get_aot_intermediate_outputs_and_op_names(
+                        reference_graph_module
+                    )
                 )
                 self.assertTrue(
                     check_if_intermediate_outputs_match(
@@ -682,8 +694,16 @@ class TestInspector(unittest.TestCase):
             aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
             runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
 
+            # Create a mock graph module for _resolve_reference_graph
+            mock_graph_module = MagicMock()
+            inspector_instance._resolve_reference_graph = (
+                lambda ref_graph=None, disable_validation=False: (
+                    mock_graph_module,
+                    "exported_program",
+                )
+            )
             inspector_instance._get_aot_intermediate_outputs_and_op_names = (
-                lambda x, y: (
+                lambda reference_graph_module: (
                     aot_intermediate_outputs,
                     aot_debug_handle_to_op_name,
                 )
@@ -691,6 +711,11 @@ class TestInspector(unittest.TestCase):
             inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
                 lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
             )
+            inspector_instance._get_aot_debug_handle_to_stack_traces = (
+                lambda reference_graph_module, resolved_graph_name: {}
+            )
+
+            # --- Test 1: MSE comparator
 
             df = inspector_instance.calculate_numeric_gap(distance="L1")
             self.assertIsInstance(df, pd.DataFrame)
@@ -702,6 +727,7 @@ class TestInspector(unittest.TestCase):
                 "runtime_ops",
                 "runtime_intermediate_output",
                 "gap",
+                "stacktraces",
             }
             self.assertEqual(cols, expected_cols)
             for i, row in df.iterrows():
@@ -723,6 +749,84 @@ class TestInspector(unittest.TestCase):
                 )
                 # gap should equal 3.0
                 self.assertEqual(row["gap"][0], 3.0)
+
+    def test_calculate_numeric_gap_with_stacktraces(self):
+        """Test calculate_numeric_gap includes stacktraces column when stack traces are available."""
+        # Create a context manager to patch functions called by Inspector.__init__
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
+        ):
+            # Call the constructor of Inspector
+            inspector_instance = Inspector(
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
+            )
+
+            aot_intermediate_outputs = {
+                (0,): torch.tensor([1.0, 2.0, 3.0]),
+                (1,): torch.tensor([4.0, 5.0, 6.0]),
+            }
+
+            runtime_intermediate_outputs = {
+                (0,): ([torch.tensor([2.0, 1.0, 4.0])], 1),
+                (1,): ([torch.tensor([3.0, 6.0, 5.0])], 1),
+            }
+
+            aot_debug_handle_to_op_name = {(0,): ["op_0"], (1,): ["op_1"]}
+            runtime_debug_handle_to_op_name = {(0,): ["op_0"], (1,): ["op_1"]}
+            aot_debug_handle_to_stack_traces = {
+                (0,): {"op_0": "File 'test.py', line 10\n    x * y"},
+                (1,): {"op_1": "File 'test.py', line 15\n    x + y"},
+            }
+
+            # Create a mock graph module for _resolve_reference_graph
+            mock_graph_module = MagicMock()
+            inspector_instance._resolve_reference_graph = (
+                lambda ref_graph=None, disable_validation=False: (
+                    mock_graph_module,
+                    "exported_program",
+                )
+            )
+            inspector_instance._get_aot_intermediate_outputs_and_op_names = (
+                lambda reference_graph_module: (
+                    aot_intermediate_outputs,
+                    aot_debug_handle_to_op_name,
+                )
+            )
+            inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
+                lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
+            )
+            inspector_instance._get_aot_debug_handle_to_stack_traces = (
+                lambda reference_graph_module, resolved_graph_name: (
+                    aot_debug_handle_to_stack_traces
+                )
+            )
+
+            df = inspector_instance.calculate_numeric_gap(distance="L1")
+            self.assertIsInstance(df, pd.DataFrame)
+            self.assertEqual(len(df), 2)
+            cols = set(df.columns)
+            expected_cols = {
+                "aot_ops",
+                "aot_intermediate_output",
+                "runtime_ops",
+                "runtime_intermediate_output",
+                "gap",
+                "stacktraces",
+            }
+            self.assertEqual(cols, expected_cols)
+
+            # Verify stacktraces column contains the expected data
+            for i, row in df.iterrows():
+                key = (i,)
+                expected_stack_traces = aot_debug_handle_to_stack_traces[key]
+                self.assertEqual(row["stacktraces"], expected_stack_traces)
 
     def test_calculate_numeric_gap_with_custom_comparator(self):
         """Test calculate_numeric_gap with a custom NumericalComparatorBase implementation."""
@@ -766,14 +870,25 @@ class TestInspector(unittest.TestCase):
             aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
             runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
 
+            # Create a mock graph module for _resolve_reference_graph
+            mock_graph_module = MagicMock()
+            inspector_instance._resolve_reference_graph = (
+                lambda ref_graph=None, disable_validation=False: (
+                    mock_graph_module,
+                    "exported_program",
+                )
+            )
             inspector_instance._get_aot_intermediate_outputs_and_op_names = (
-                lambda x, y: (
+                lambda reference_graph_module: (
                     aot_intermediate_outputs,
                     aot_debug_handle_to_op_name,
                 )
             )
             inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
                 lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
+            )
+            inspector_instance._get_aot_debug_handle_to_stack_traces = (
+                lambda reference_graph_module, resolved_graph_name: {}
             )
 
             # Create custom comparator instance
@@ -790,6 +905,7 @@ class TestInspector(unittest.TestCase):
                 "runtime_ops",
                 "runtime_intermediate_output",
                 "gap",
+                "stacktraces",
             }
             self.assertEqual(cols, expected_cols)
 
@@ -895,14 +1011,27 @@ class TestInspector(unittest.TestCase):
             aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
             runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
 
+            # Create a mock graph module for _resolve_reference_graph
+            mock_graph_module = MagicMock()
+            inspector_instance._resolve_reference_graph = (
+                lambda ref_graph=None, disable_validation=False: (
+                    mock_graph_module,
+                    "exported_program",
+                )
+            )
             inspector_instance._get_aot_intermediate_outputs_and_op_names = (
-                lambda x, y: (
+                lambda reference_graph_module: (
                     aot_intermediate_outputs,
                     aot_debug_handle_to_op_name,
                 )
             )
             inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
                 lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
+            )
+
+            # Test 1: Invalid return type
+            inspector_instance._get_aot_debug_handle_to_stack_traces = (
+                lambda reference_graph_module, resolved_graph_name: {}
             )
 
             # --- Test 1: MSE comparator with scaling preprocessing ---
@@ -924,6 +1053,7 @@ class TestInspector(unittest.TestCase):
                 "runtime_ops",
                 "runtime_intermediate_output",
                 "gap",
+                "stacktraces",
             }
             self.assertEqual(cols, expected_cols)
 
@@ -1058,8 +1188,16 @@ class TestInspector(unittest.TestCase):
             aot_debug_handle_to_op_name = {(0,): "op_0"}
             runtime_debug_handle_to_op_name = {(0,): "op_0"}
 
+            # Create a mock graph module for _resolve_reference_graph
+            mock_graph_module = MagicMock()
+            inspector_instance._resolve_reference_graph = (
+                lambda ref_graph=None, disable_validation=False: (
+                    mock_graph_module,
+                    "exported_program",
+                )
+            )
             inspector_instance._get_aot_intermediate_outputs_and_op_names = (
-                lambda x, y: (
+                lambda reference_graph_module: (
                     aot_intermediate_outputs,
                     aot_debug_handle_to_op_name,
                 )
@@ -1067,8 +1205,11 @@ class TestInspector(unittest.TestCase):
             inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
                 lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
             )
+            inspector_instance._get_aot_debug_handle_to_stack_traces = (
+                lambda reference_graph_module, resolved_graph_name: {}
+            )
 
-            # Test 1: Non-dict return type
+            # Test 1: Invalid return type
             with self.assertRaises(TypeError) as context:
                 inspector_instance.calculate_numeric_gap(
                     distance=NonDictPreprocessingComparator()
@@ -1175,6 +1316,11 @@ class TestInspector(unittest.TestCase):
                 mock_capturer.run_and_capture.return_value = aot_intermediate_outputs
                 mock_capturer_class.return_value = mock_capturer
                 mock_get_mapping.return_value = aot_debug_handle_to_op_name
+
+                # Mock the stack traces method since we don't have a real graph module with stack traces
+                inspector_instance._get_aot_debug_handle_to_stack_traces = (
+                    lambda reference_graph_module, resolved_graph_name: {}
+                )
 
                 # Test with reference_graph parameter (without /forward suffix)
                 # The code should automatically add "/forward" when looking up in graph_map
@@ -1302,15 +1448,25 @@ class TestInspector(unittest.TestCase):
             aot_debug_handle_to_op_name = {(0,): "op_0"}
             runtime_debug_handle_to_op_name = {(0,): "op_0"}
 
-            # Mock the internal methods like test_calculate_numeric_gap does
+            # Create a mock graph module for _resolve_reference_graph
+            mock_graph_module = MagicMock()
+            inspector_instance._resolve_reference_graph = (
+                lambda ref_graph=None, disable_validation=False: (
+                    mock_graph_module,
+                    "exported_program",
+                )
+            )
             inspector_instance._get_aot_intermediate_outputs_and_op_names = (
-                lambda x, y: (
+                lambda reference_graph_module: (
                     aot_intermediate_outputs,
                     aot_debug_handle_to_op_name,
                 )
             )
             inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
                 lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
+            )
+            inspector_instance._get_aot_debug_handle_to_stack_traces = (
+                lambda reference_graph_module, resolved_graph_name: {}
             )
 
             # Test with edge_dialect_exported_program parameter
@@ -1486,6 +1642,31 @@ class TestInspector(unittest.TestCase):
                     f"which exceeds tolerance {TOLERANCE}",
                 )
 
+            # Verify that stacktraces column exists and contains valid data
+            self.assertIn("stacktraces", df.columns)
+            for _, row in df.iterrows():
+                stacktraces = row["stacktraces"]
+                aot_ops = row["aot_ops"]
+                # stacktraces should be a dict
+                self.assertIsInstance(stacktraces, dict)
+                # Each aot_op should have a corresponding entry in stacktraces
+                for op_name in aot_ops:
+                    self.assertIn(
+                        op_name,
+                        stacktraces,
+                        f"Missing stack trace for operator {op_name}",
+                    )
+                    # Stack trace can be None or a string
+                    # (None when model was exported without stack trace preservation)
+                    stack_trace = stacktraces[op_name]
+                    self.assertIsInstance(stack_trace, str)
+                    # Stack traces should contain file information
+                    self.assertIn(
+                        "File",
+                        stack_trace,
+                        f"Stack trace for {op_name} doesn't contain file info",
+                    )
+
     @unittest.skipIf(sys.platform.startswith("win"), "Skipping on Windows")
     def test_intermediate_tensor_comparison_with_torch_export(self):
         """Test intermediate tensor comparison using torch.export.export and to_edge_transform_and_lower.
@@ -1600,6 +1781,30 @@ class TestInspector(unittest.TestCase):
             # Verify that we got some intermediate tensor comparisons
             # The exact number will depend on the model structure and partitioning
             self.assertEqual(len(df), 2)
+
+            # Verify that stacktraces column exists and contains valid data
+            self.assertIn("stacktraces", df.columns)
+            for _, row in df.iterrows():
+                stacktraces = row["stacktraces"]
+                aot_ops = row["aot_ops"]
+                # stacktraces should be a dict
+                self.assertIsInstance(stacktraces, dict)
+                # Each aot_op should have a corresponding entry in stacktraces
+                for op_name in aot_ops:
+                    self.assertIn(
+                        op_name,
+                        stacktraces,
+                        f"Missing stack trace for operator {op_name}",
+                    )
+                    # Stack trace can be None or a string
+                    stack_trace = stacktraces[op_name]
+                    self.assertIsInstance(stack_trace, str)
+                    # Stack traces should contain file information
+                    self.assertIn(
+                        "File",
+                        stack_trace,
+                        f"Stack trace for {op_name} doesn't contain file info",
+                    )
 
     def _gen_random_float_list(self) -> List[float]:
         return [random.uniform(0, 10) for _ in range(RAW_DATA_SIZE)]
