@@ -12,6 +12,7 @@ on:
     paths:
       - .github/workflows/test-backend-cuda.yml
       - .github/workflows/_test_backend.yml
+      - .ci/scripts/generate_test_pass_rate_in_v3_format.py
   workflow_dispatch:
 
 concurrency:
@@ -28,3 +29,62 @@ jobs:
       timeout: 120
       run-linux: true
       runner-linux: linux.g5.4xlarge.nvidia.gpu
+
+  upload-test-results:
+    needs: test-cuda
+    if: always()
+    runs-on: ubuntu-22.04
+    environment: upload-benchmark-results
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Download test report artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-report-*
+          path: downloaded-reports/
+
+      - name: Generate v3 benchmark results
+        shell: bash
+        run: |
+          set -eux
+          mkdir -p benchmark-results/v3
+
+          for SUITE in models operators; do
+            REPORT="downloaded-reports/test-report-cuda-${SUITE}/test-report-cuda-${SUITE}.json"
+            if [ -f "$REPORT" ]; then
+              echo "Processing report for suite: $SUITE"
+              python .ci/scripts/generate_test_pass_rate_in_v3_format.py \
+                --report-json "$REPORT" \
+                --suite "$SUITE" \
+                --flow cuda \
+                --git-sha "${{ github.sha }}" \
+                --workflow-run-id "${{ github.run_id }}" \
+                --workflow-run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+                --runner-name "linux.g5.4xlarge.nvidia.gpu" \
+                --output-v3 "benchmark-results/v3/cuda-test-${SUITE}.json"
+            else
+              echo "Warning: Report not found for suite $SUITE at $REPORT"
+            fi
+          done
+
+          echo "V3 results prepared:"
+          ls -lah benchmark-results/v3/ || echo "No v3 results generated"
+
+      - name: Upload test pass rate to dashboard
+        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@main
+        with:
+          benchmark-results-dir: benchmark-results/v3
+          dry-run: false
+          schema-version: v3
+          github-token: ${{ secrets.GITHUB_TOKEN }}
