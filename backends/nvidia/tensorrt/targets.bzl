@@ -52,3 +52,14 @@ def define_common_targets():
             "//deeplearning/trt/python:py_tensorrt",
         ],
     )
+
+    runtime.python_library(
+        name = "compile_spec",
+        srcs = [
+            "compile_spec.py",
+        ],
+        visibility = ["PUBLIC"],
+        deps = [
+            "//executorch/exir/backend:compile_spec_schema",
+        ],
+    )
