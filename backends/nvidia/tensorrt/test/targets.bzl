@@ -16,3 +16,13 @@ def define_common_targets():
             "//executorch/backends/nvidia/tensorrt:compile_spec",
         ],
     )
+
+    runtime.python_test(
+        name = "test_serialization",
+        srcs = [
+            "test_serialization.py",
+        ],
+        deps = [
+            "//executorch/backends/nvidia/tensorrt:serialization",
+        ],
+    )
