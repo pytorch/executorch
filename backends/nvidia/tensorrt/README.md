@@ -157,6 +157,23 @@ python -m executorch.examples.nvidia.tensorrt.export --model mv3 --output mv3_te
 ./tensorrt_executor_runner --model_path=model_tensorrt.pte
 ```
 
+## Supported Operations
+
+| Category | Operations |
+|----------|-----------|
+| Elementwise | add, sub, mul, div, floor_divide, rsub |
+| Matrix | mm, addmm, bmm, linear |
+| Convolution | conv2d |
+| Normalization | batch_norm, layer_norm |
+| Pooling | avg_pool2d, adaptive_avg_pool2d |
+| Activations | relu, sigmoid, tanh, gelu, silu, hardswish, hardsigmoid, softmax, log_softmax, clamp |
+| Reshape | view, reshape, squeeze, unsqueeze, permute, transpose, flatten, unflatten, contiguous, clone |
+| Reduction | mean, any |
+| Concat/Split | cat, split, chunk, stack |
+| Comparison | eq, ne, lt, le, gt, ge, where, logical_not |
+| Slicing | slice, select, index |
+| Other | embedding, expand, repeat, upsample, pixel_shuffle, scaled_dot_product_attention, full |
+
 ## Jetson Deployment
 
 ### Prerequisites
