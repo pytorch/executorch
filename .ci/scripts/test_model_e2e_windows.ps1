@@ -68,7 +68,7 @@ switch ($HfModel) {
         $runnerTarget = "sortformer_runner"
         $runnerPath = "sortformer"
         $runnerPreset = "sortformer-cuda"
-        $expectedOutput = "segments"
+        $expectedOutput = "Speaker 0"
         $preprocessor = ""
         $tokenizerUrl = ""
         $tokenizerFile = ""
