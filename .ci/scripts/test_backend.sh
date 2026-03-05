@@ -56,6 +56,15 @@ if [[ "$FLOW" == *vulkan* ]]; then
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_VULKAN=ON"
 fi
 
+if [[ "$FLOW" == *cuda* ]]; then
+    # Fix libstdc++ GLIBCXX version for CUDA backend.
+    # The embedded .so files in the CUDA blob require GLIBCXX_3.4.30
+    # which the default conda libstdc++ doesn't have.
+    echo "Installing newer libstdc++ for CUDA backend..."
+    conda install -y -c conda-forge 'libstdcxx-ng>=12'
+    export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
+fi
+
 if [[ "$FLOW" == *arm* ]]; then
 
     # Setup ARM deps.
