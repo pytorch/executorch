@@ -11,6 +11,7 @@ def define_common_targets():
         name = "partitioner",
         srcs = [
             "__init__.py",
+            "operator_support.py",
         ],
         visibility = ["PUBLIC"],
         deps = [
