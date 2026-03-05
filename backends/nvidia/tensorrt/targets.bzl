@@ -29,3 +29,14 @@ def define_common_targets():
             ":backend",
         ],
     )
+
+    runtime.python_library(
+        name = "converter_registry",
+        srcs = [
+            "converter_registry.py",
+        ],
+        visibility = ["PUBLIC"],
+        deps = [
+            "//caffe2:torch",
+        ],
+    )
