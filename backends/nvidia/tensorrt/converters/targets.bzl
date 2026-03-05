@@ -12,9 +12,11 @@ def define_common_targets():
         srcs = [
             "__init__.py",
             "add.py",
+            "addmm.py",
             "div.py",
             "mm.py",
             "mul.py",
+            "permute_copy.py",
             "relu.py",
             "sub.py",
         ],
