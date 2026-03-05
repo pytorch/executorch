@@ -4,6 +4,10 @@ Export and run [nvidia/diar_streaming_sortformer_4spk-v2](https://huggingface.co
 
 Speaker diarization answers "who spoke when" — the model outputs per-frame activity probabilities for up to 4 speakers. This is not ASR; there is no text output.
 
+## Requirements
+
+- Python `>= 3.11` (required for Sortformer export tooling)
+
 ## Quick Start
 
 ```bash
@@ -20,6 +24,26 @@ make sortformer-cpu
 # Run diarization
 ./cmake-out/examples/models/sortformer/sortformer_runner \
     --model_path examples/models/sortformer/sortformer_exports/sortformer.pte \
+    --audio_path /path/to/audio.wav
+```
+
+## CUDA Quick Start
+
+```bash
+# Install Python dependencies
+pip install -r install_requirements.txt
+
+# Export to .pte + .ptd
+cd examples/models/sortformer
+python export_sortformer.py --nemo-path /path/to/model.nemo --backend cuda
+
+# Build the C++ runner (from repo root)
+make sortformer-cuda
+
+# Run diarization
+./cmake-out/examples/models/sortformer/sortformer_runner \
+    --model_path examples/models/sortformer/sortformer_exports/sortformer.pte \
+    --data_path examples/models/sortformer/sortformer_exports/aoti_cuda_blob.ptd \
     --audio_path /path/to/audio.wav
 ```
 
@@ -50,10 +74,14 @@ python export_sortformer.py --nemo-path /path/to/model.nemo --backend xnnpack
 |----------|-------------|
 | `--nemo-path` | Path to `.nemo` model file |
 | `--hf-model` | HuggingFace model ID (default: `nvidia/diar_streaming_sortformer_4spk-v2`) |
-| `--backend` | `portable` or `xnnpack` (default: `xnnpack`) |
+| `--backend` | `portable`, `xnnpack`, `cuda`, or `cuda-windows` (default: `xnnpack`) |
 | `--output-dir` | Output directory (default: `./sortformer_exports`) |
 
-Output: `sortformer_exports/sortformer.pte` (~470 MB unquantized). The preprocessor is always lowered with the portable backend regardless of `--backend`.
+Output:
+- `sortformer_exports/sortformer.pte` (~470 MB unquantized)
+- `sortformer_exports/aoti_cuda_blob.ptd` (when backend is `cuda` or `cuda-windows`)
+
+The preprocessor is always lowered with the portable backend regardless of `--backend`.
 
 ## Validate
 
@@ -76,6 +104,8 @@ From the repository root:
 
 ```bash
 make sortformer-cpu
+# or
+make sortformer-cuda
 ```
 
 Binary: `cmake-out/examples/models/sortformer/sortformer_runner`
@@ -85,6 +115,7 @@ Binary: `cmake-out/examples/models/sortformer/sortformer_runner`
 | Argument | Description |
 |----------|-------------|
 | `--model_path` | Path to `.pte` file (default: `sortformer.pte`) |
+| `--data_path` | Path to `.ptd` file for delegate data (required for CUDA) |
 | `--audio_path` | Path to input WAV file (16kHz mono, required) |
 | `--threshold` | Speaker activity threshold, 0.0–1.0 (default: `0.5`) |
 | `--chunk_len` | Encode chunk size in 80ms frames (default: `124`) |
@@ -135,8 +166,8 @@ The `.pte` contains three methods, split along streaming boundaries so the calle
 | Method | Backend | Input | Output |
 |--------|---------|-------|--------|
 | `preprocessor` | portable | `audio` (N,) float, `length` (1,) int64 | `mel` (1, 128, T) float, `mel_len` (1,) int64 |
-| `pre_encode` | XNNPACK | `chunk` (1, 4000, 128) float, `chunk_len` (1,) int64 | `embs` (1, 500, 512) float, `emb_len` (1,) int64 |
-| `encode` | XNNPACK | `embs` (1, T, 512) float, `emb_len` (1,) int64 | `preds` (1, T, 4) float |
+| `pre_encode` | XNNPACK or CUDA | `chunk` (1, 4000, 128) float, `chunk_len` (1,) int64 | `embs` (1, 500, 512) float, `emb_len` (1,) int64 |
+| `encode` | XNNPACK or CUDA | `embs` (1, T, 512) float, `emb_len` (1,) int64 | `preds` (1, T, 4) float |
 
 - `preprocessor`: dynamic audio length (min=1600, max=1,920,000 samples).
 - `pre_encode`: static shapes (4000 mel frames).
