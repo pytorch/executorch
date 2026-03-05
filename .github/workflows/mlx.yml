@@ -9,6 +9,7 @@ on:
     paths:
       - .github/workflows/mlx.yml
       - backends/mlx/**
+      - extension/llm/export/**
   workflow_dispatch:
 
 permissions: {}
@@ -36,7 +37,7 @@ jobs:
         ${CONDA_RUN} pip list
 
         echo "::group::Build test runners"
-        ${CONDA_RUN} cmake --build cmake-out --target op_test_runner -j$(( $(sysctl -n hw.ncpu) - 1 ))
+        ${CONDA_RUN} cmake --build cmake-out --target op_test_runner multi_thread_test_runner -j$(( $(sysctl -n hw.ncpu) - 1 ))
         echo "::endgroup::"
 
         echo "::group::Run op unit tests"
@@ -49,6 +50,14 @@ jobs:
           backends/mlx/test/test_pattern_utils.py \
           backends/mlx/test/test_partitioner.py \
           -v
+        echo "::endgroup::"
+
+        echo "::group::Run multi-thread stress test"
+        ${CONDA_RUN} python backends/mlx/test/export_multi_thread_test_model.py /tmp/multi_thread_test_model.pte
+        ET_TESTING_MODEL_PATH=/tmp/multi_thread_test_model.pte \
+          ET_TESTING_NUM_THREADS=50 \
+          ET_PREDICTIONS_PER_THREAD=100 \
+          ./cmake-out/backends/mlx/test/multi_thread_test_runner
         echo "::endgroup::"
 
   backend-tester:
