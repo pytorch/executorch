@@ -379,6 +379,8 @@ def _linear_bias_decomposition(input, weight, bias=None):
 
 def lower_to_executorch(programs, metadata, backend="xnnpack"):
     """Lower exported programs to ExecuTorch."""
+    transform_passes = None
+
     if backend == "xnnpack":
         from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
             XnnpackDynamicallyQuantizedPartitioner,
@@ -434,15 +436,18 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
             partitioner[key] = [CudaPartitioner(compile_specs)]
     elif backend == "mlx":
         from executorch.backends.mlx.partitioner import MLXPartitioner
+        from executorch.backends.mlx.passes import get_default_passes
 
         print("\nLowering to ExecuTorch with MLX...")
         partitioner = {key: [MLXPartitioner()] for key in programs}
+        transform_passes = get_default_passes()
     else:
         print("\nLowering to ExecuTorch (portable)...")
         partitioner = []
 
     et_prog = to_edge_transform_and_lower(
         programs,
+        transform_passes=transform_passes,
         partitioner=partitioner,
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False,
