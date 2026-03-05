@@ -4,10 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from copy import copy
 from typing import Tuple
 
-import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -62,9 +60,6 @@ class BitwiseBinary(torch.nn.Module):
 
     test_data = {**test_data_non_bool, **test_data_bool}
 
-    test_data_u85 = copy(test_data)
-    del test_data_u85["zeros"]
-
 
 class BitwiseBinaryScalar(torch.nn.Module):
     test_data_non_bool = {
@@ -94,9 +89,6 @@ class BitwiseBinaryScalar(torch.nn.Module):
     }
 
     test_data = {**test_data_non_bool, **test_data_bool}
-
-    test_data_u85 = copy(test_data)
-    del test_data_u85["zeros"]
 
 
 class And(BitwiseBinary):
@@ -269,7 +261,7 @@ def test_bitwise_and_scalar_u55_INT(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", AndScalar.test_data_u85)
+@common.parametrize("test_data", AndScalar.test_data)
 @common.XfailIfNoCorstone320
 def test_bitwise_and_scalar_u85_INT(test_data: input_t2):
     pipeline = EthosU85PipelineINT[input_t2](
@@ -284,7 +276,7 @@ def test_bitwise_and_scalar_u85_INT(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", And().test_data_u85)
+@common.parametrize("test_data", And().test_data)
 @common.XfailIfNoCorstone320
 def test_bitwise_and_tensor_u85_INT(test_data: input_t2):
     pipeline = EthosU85PipelineINT[input_t2](
@@ -476,7 +468,7 @@ def test_bitwise_xor_scalar_u55_INT(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Xor().test_data_u85)
+@common.parametrize("test_data", Xor().test_data)
 @common.XfailIfNoCorstone320
 def test_bitwise_xor_tensor_u85_INT(test_data: input_t2):
     pipeline = EthosU85PipelineINT[input_t2](
@@ -491,7 +483,7 @@ def test_bitwise_xor_tensor_u85_INT(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", XorScalar.test_data_u85)
+@common.parametrize("test_data", XorScalar.test_data)
 @common.XfailIfNoCorstone320
 def test_bitwise_xor_scalar_u85_INT(test_data: input_t2):
     pipeline = EthosU85PipelineINT[input_t2](
@@ -683,7 +675,7 @@ def test_bitwise_or_scalar_u55_INT(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Or().test_data_u85)
+@common.parametrize("test_data", Or().test_data)
 @common.XfailIfNoCorstone320
 def test_bitwise_or_tensor_u85_INT(test_data: input_t2):
     pipeline = EthosU85PipelineINT[input_t2](
@@ -698,7 +690,7 @@ def test_bitwise_or_tensor_u85_INT(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", OrScalar.test_data_u85)
+@common.parametrize("test_data", OrScalar.test_data)
 @common.XfailIfNoCorstone320
 def test_bitwise_or_scalar_u85_INT(test_data: input_t2):
     pipeline = EthosU85PipelineINT[input_t2](
@@ -775,30 +767,3 @@ def test_bitwise_or_scalar_vgf_quant(test_data: input_t2):
         quantize=True,
     )
     pipeline.run()
-
-
-@pytest.mark.xfail(
-    reason="MLBEDSW-11029: Fatal Python floating point error in Vela for rank 4 bitwse ops with int32 dtype."
-)
-def test_bitwise_or_tensor_u85_INT_zeros():
-    raise RuntimeError(
-        "Dummy test to xfail mark u85 zeros test case since running the actual test causes a fatal crash."
-    )
-
-
-@pytest.mark.xfail(
-    reason="MLBEDSW-11029: Fatal Python floating point error in Vela for rank 4 bitwse ops with int32 dtype."
-)
-def test_bitwise_and_tensor_u85_INT_zeros():
-    raise RuntimeError(
-        "Dummy test to xfail mark u85 zeros test case since running the actual test causes a fatal crash."
-    )
-
-
-@pytest.mark.xfail(
-    reason="MLBEDSW-11029: Fatal Python floating point error in Vela for rank 4 bitwse ops with int32 dtype."
-)
-def test_bitwise_xor_tensor_u85_INT_zeros():
-    raise RuntimeError(
-        "Dummy test to xfail mark u85 zeros test case since running the actual test causes a fatal crash."
-    )
