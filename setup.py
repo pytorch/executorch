@@ -717,6 +717,13 @@ class CustomBuild(build):
                 f"-DQNN_SDK_ROOT={qnn_sdk_root}",
             ]
 
+        # Check if TensorRT is available, and if so, enable building the TRT
+        # backend by default.
+        if install_utils.is_tensorrt_available() and install_utils.is_cmake_option_on(
+            cmake_configuration_args, "EXECUTORCH_BUILD_TENSORRT", default=True
+        ):
+            cmake_configuration_args += ["-DEXECUTORCH_BUILD_TENSORRT=ON"]
+
         with Buck2EnvironmentFixer():
             # Generate the cmake cache from scratch to ensure that the cache state
             # is predictable.
