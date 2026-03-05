@@ -39,9 +39,6 @@ from torchao.utils import TorchAOBaseTensor
 aten = torch.ops.aten
 
 
-from typing import Optional
-
-
 @torch.library.custom_op("torchao::dequantize_nvfp4", mutates_args=())
 def nvfp4_dequantize(
     qdata: Tensor,
