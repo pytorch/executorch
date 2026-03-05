@@ -318,6 +318,8 @@ def dump_error_output(
         output_node = export_stage.artifact.graph_module.graph.output_node()
         qp_input = get_input_quantization_params(export_stage.artifact)
         qp_output = get_output_quantization_params(output_node)
+        scales = {k.name: v.scale for k, v in qp_output.items() if v is not None}
+        logger.error(f"Output Quant scales: {scales}")
         logger.error(f"Input QuantArgs: {qp_input}")
         logger.error(f"Output QuantArgs: {qp_output}")
 
