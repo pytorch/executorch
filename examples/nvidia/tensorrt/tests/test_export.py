@@ -98,3 +98,6 @@ class ExportCorrectnessTest(unittest.TestCase):
 
     def test_softmax(self) -> None:
         _export_and_verify("softmax")
+
+    def test_linear(self) -> None:
+        _export_and_verify("linear")
