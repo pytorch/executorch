@@ -1816,16 +1816,19 @@ ET_NODISCARD Error XNNCompiler::compileModel(
   Result<XNNHeader> header = XNNHeader::Parse(buffer_pointer, num_bytes);
   const uint8_t* flatbuffer_data = nullptr;
   const uint8_t* constant_data = nullptr;
+  size_t flatbuffer_size = 0;
   CompileAllocator compile_allocator;
 
   // Header status can only either be Error::Ok or Error::NotFound
   if (header.ok()) {
     flatbuffer_data = reinterpret_cast<const uint8_t*>(buffer_pointer) +
         header->flatbuffer_offset;
+    flatbuffer_size = header->flatbuffer_size;
     constant_data = reinterpret_cast<const uint8_t*>(buffer_pointer) +
         header->constant_data_offset;
   } else if (header.error() == Error::NotFound) {
     flatbuffer_data = reinterpret_cast<const uint8_t*>(buffer_pointer);
+    flatbuffer_size = num_bytes;
   } else {
     ET_LOG(Error, "XNNHeader may be corrupt");
     return header.error();
@@ -1842,6 +1845,15 @@ ET_NODISCARD Error XNNCompiler::compileModel(
       DelegateInvalidCompatibility,
       "XNNPACK Delegate Serialization Format version identifier '%.4s' != expected XN00 or XN01'",
       flatbuffers::GetBufferIdentifier(flatbuffer_data));
+
+  // Verify the FlatBuffer data integrity before accessing it. Without this,
+  // malformed data could cause out-of-bounds reads when traversing the
+  // FlatBuffer's internal offset tables.
+  flatbuffers::Verifier verifier(flatbuffer_data, flatbuffer_size);
+  ET_CHECK_OR_RETURN_ERROR(
+      verifier.VerifyBuffer<fb_xnnpack::XNNGraph>(nullptr),
+      DelegateInvalidCompatibility,
+      "FlatBuffer verification failed; data may be truncated or corrupt");
 
   auto flatbuffer_graph = fb_xnnpack::GetXNNGraph(flatbuffer_data);
   // initialize xnnpack
