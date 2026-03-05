@@ -15,17 +15,17 @@ from executorch.examples.models.llama.rope import Rope
 
 class Qwen35AttentionTest(unittest.TestCase):
     def _make_args(self, **kwargs) -> ModelArgs:
-        defaults = dict(
-            dim=32,
-            n_layers=1,
-            n_heads=4,
-            n_kv_heads=2,
-            head_dim=8,
-            hidden_dim=64,
-            max_seq_len=16,
-            max_context_len=16,
-            attention_type="mha",
-        )
+        defaults = {
+            "dim": 32,
+            "n_layers": 1,
+            "n_heads": 4,
+            "n_kv_heads": 2,
+            "head_dim": 8,
+            "hidden_dim": 64,
+            "max_seq_len": 16,
+            "max_context_len": 16,
+            "attention_type": "mha",
+        }
         defaults.update(kwargs)
         return ModelArgs(**defaults)
 
