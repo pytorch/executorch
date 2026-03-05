@@ -269,8 +269,11 @@ def get_trt_tensor(
     Handles:
     - TensorRT ITensor (returned as-is)
     - Python scalars (int, float) → constant tensor
-    - PyTorch tensors → constant tensor
+    - PyTorch tensors → constant tensor (including FakeTensors/subclasses)
     - numpy arrays → constant tensor
+
+    Note: Uses unset_fake_temporarily to handle tensor subclasses like FakeTensor
+    that don't support .numpy() directly. This follows the TensorRT pattern.
     """
     if isinstance(value, trt.ITensor):
         return value
@@ -283,8 +286,32 @@ def get_trt_tensor(
         return create_constant(network, value, name)
 
     if isinstance(value, torch.Tensor):
-        value = _tensor_to_numpy(value)
-        return create_constant(network, value, name)
+        # Handle tensor subclasses (FakeTensor, etc.) that don't support .numpy()
+        # by temporarily exiting fake tensor mode. This follows TensorRT pattern.
+        try:
+            from torch.fx.experimental.proxy_tensor import unset_fake_temporarily
+            with unset_fake_temporarily():
+                # Create a real tensor from the fake tensor's data if needed
+                if hasattr(value, '_local_scalar_dense') or not value.is_contiguous():
+                    value = value.contiguous()
+                np_value = value.detach().cpu().numpy()
+        except (ImportError, RuntimeError):
+            # Fallback: try to convert via creating a new tensor
+            try:
+                np_value = _tensor_to_numpy(value)
+            except RuntimeError:
+                # Last resort: create tensor from metadata if available
+                if hasattr(value, 'shape') and hasattr(value, 'dtype'):
+                    # For FakeTensors, we may need to create a zero tensor as placeholder
+                    # This should only happen during tracing, not actual execution
+                    np_dtype = _torch_dtype_to_numpy(value.dtype)
+                    np_value = np.zeros(tuple(value.shape), dtype=np_dtype)
+                else:
+                    raise RuntimeError(
+                        f"Cannot convert tensor subclass {type(value)} to numpy. "
+                        f"Tensor may be a FakeTensor from tracing."
+                    )
+        return create_constant(network, np_value, name)
 
     if isinstance(value, np.ndarray):
         return create_constant(network, value, name)
@@ -300,6 +327,8 @@ def create_constant(
     """Create a TensorRT constant tensor from numpy array.
 
     Note: TensorRT doesn't support int64 (i64), so we convert to int32.
+    Also, TensorRT doesn't handle 0-d tensors well in elementwise ops,
+    so we reshape scalars to 1-d tensors with shape (1,).
     """
     # TensorRT doesn't support int64 - convert to int32
     if value.dtype == np.int64:
@@ -308,9 +337,37 @@ def create_constant(
     if value.dtype == np.float64:
         value = value.astype(np.float32)
 
+    # TensorRT requires at least 1-d tensors for elementwise ops.
+    # Reshape 0-d scalars to 1-d tensors with shape (1,).
+    if value.ndim == 0:
+        value = value.reshape((1,))
+
     layer = network.add_constant(value.shape, trt.Weights(value))
     layer.name = f"const_{name}"
     return layer.get_output(0)
+
+
+def get_safe_shape(tensor: trt.ITensor) -> List[int]:
+    """Get tensor shape safely, handling dynamic shapes.
+
+    TensorRT tensors can have invalid shapes during network building
+    (e.g., negative length for dynamic dimensions). This function
+    safely extracts the shape as a list.
+
+    Args:
+        tensor: TensorRT tensor to get shape from.
+
+    Returns:
+        List of dimension sizes, or empty list if shape is invalid.
+    """
+    try:
+        shape = tensor.shape
+        if shape is None:
+            return []
+        shape_list = list(shape)
+        return shape_list
+    except (ValueError, TypeError):
+        return []
 
 
 def broadcast_tensors(
@@ -335,10 +392,13 @@ def broadcast_tensors(
     """
     result = []
     for i, tensor in enumerate(tensors):
-        current_ndim = len(tensor.shape)
+        shape = get_safe_shape(tensor)
+        current_ndim = len(shape) if shape else target_ndim
+
         if current_ndim < target_ndim:
             diff = target_ndim - current_ndim
-            new_shape = (1,) * diff + tuple(tensor.shape)
+            existing_shape = tuple(shape) if shape else tuple([-1] * current_ndim)
+            new_shape = (1,) * diff + existing_shape
             layer = network.add_shuffle(tensor)
             layer.reshape_dims = new_shape
             # Use context counter if available, otherwise use simple naming

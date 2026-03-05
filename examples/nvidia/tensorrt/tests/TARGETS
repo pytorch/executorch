@@ -49,6 +49,61 @@ manifold_get(
     visibility = ["PUBLIC"],
 )
 
+manifold_get(
+    name = "efficient_sam_weights",
+    out = "efficient_sam_vitt.pt",
+    api_key = "executorch-key",
+    artifact_path = "tree/models/tensorrt/weights/efficient_sam_vitt.pt",
+    bucket_name = "executorch",
+    sha1 = "5087209b2c62c518450344e8447f79ae29e32a21",
+    timeout_msec = 120000,
+    visibility = ["PUBLIC"],
+)
+
+manifold_get(
+    name = "resnet18_weights",
+    out = "resnet18-f37072fd.pth",
+    api_key = "executorch-key",
+    artifact_path = "tree/models/tensorrt/weights/resnet18-f37072fd.pth",
+    bucket_name = "executorch",
+    sha1 = "93e13d94f74fdf476689608f146f47bde96b30b0",
+    timeout_msec = 120000,
+    visibility = ["PUBLIC"],
+)
+
+manifold_get(
+    name = "resnet50_weights",
+    out = "resnet50-0676ba61.pth",
+    api_key = "executorch-key",
+    artifact_path = "tree/models/tensorrt/weights/resnet50-0676ba61.pth",
+    bucket_name = "executorch",
+    sha1 = "6ba9789036078cf8bace8dd75a770f46789c350c",
+    timeout_msec = 120000,
+    visibility = ["PUBLIC"],
+)
+
+manifold_get(
+    name = "mv3_weights",
+    out = "mobilenet_v3_small-047dcff4.pth",
+    api_key = "executorch-key",
+    artifact_path = "tree/models/tensorrt/weights/mobilenet_v3_small-047dcff4.pth",
+    bucket_name = "executorch",
+    sha1 = "af9828929cb043737714380ab5af08b7ef76c5b2",
+    timeout_msec = 120000,
+    visibility = ["PUBLIC"],
+)
+
+manifold_get(
+    name = "emformer_weights",
+    out = "emformer_rnnt_base_librispeech.pt",
+    api_key = "executorch-key",
+    artifact_path = "tree/models/tensorrt/weights/emformer_rnnt_base_librispeech.pt",
+    bucket_name = "executorch",
+    sha1 = "7b2a073aebce641dd9c471f454099f1bcb534208",
+    timeout_msec = 120000,
+    visibility = ["PUBLIC"],
+)
+
 # Export correctness tests: exports each supported model with TensorRT
 # and compares inference outputs against eager PyTorch on GPU.
 #   buck2 test fbcode//executorch/examples/nvidia/tensorrt/tests:test_export
@@ -61,8 +116,13 @@ python_unittest_remote_gpu(
         "HTTP_PROXY": "http://fwdproxy.any:8080",
         "DOG_JPG": "$(location :dog_jpg)",
         "EDSR_WEIGHTS": "$(location :edsr_weights)",
+        "EFFICIENT_SAM_WEIGHTS": "$(location :efficient_sam_weights)",
+        "EMFORMER_WEIGHTS": "$(location :emformer_weights)",
         "IC4_WEIGHTS": "$(location :ic4_weights)",
         "MV2_WEIGHTS": "$(location :mv2_weights)",
+        "MV3_WEIGHTS": "$(location :mv3_weights)",
+        "RESNET18_WEIGHTS": "$(location :resnet18_weights)",
+        "RESNET50_WEIGHTS": "$(location :resnet50_weights)",
     },
     keep_gpu_sections = True,
     labels = ["long_running"],
