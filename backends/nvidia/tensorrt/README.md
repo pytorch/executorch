@@ -238,6 +238,20 @@ The TensorRT delegate uses a custom binary blob format:
 - cuDNN 8.x
 - PyTorch 2.x with CUDA support (for export)
 
+### Correctness Tests
+
+```bash
+# Run all correctness tests
+python -m pytest examples/nvidia/tensorrt/tests/test_export.py -v
+
+# Run a single model's test
+python -m pytest examples/nvidia/tensorrt/tests/test_export.py -v -k test_mv3
+```
+
+Each test exports a model with TensorRT, runs inference via ExecuTorch
+pybindings, and compares outputs against eager PyTorch (atol=1e-3, rtol=1e-3)
+across 3 random seeds.
+
 ## Troubleshooting
 
 | Issue | Fix |
