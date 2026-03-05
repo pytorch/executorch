@@ -97,6 +97,13 @@ ET_NODISCARD Result<BoxedEvalueList<std::optional<T>>> parseListOptionalType(
           InvalidProgram,
           "Invalid value index %" PRId32 " for ListOptional",
           index);
+      ET_CHECK_OR_RETURN_ERROR(
+          values[index].isNone() || values[index].isTensor(),
+          InvalidProgram,
+          "Expected None or Tensor at value index %" PRId32
+          " for ListOptional, got tag %u",
+          index,
+          static_cast<unsigned>(values[index].tag));
       new (&optional_tensor_list[output_idx])
           std::optional<T>(values[index].toOptional<T>());
       evalp_list[output_idx] = &values[static_cast<size_t>(index)];
