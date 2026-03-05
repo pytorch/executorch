@@ -153,7 +153,7 @@ class ModelArgs:
     final_logit_softcapping: Optional[float] = None
     attn_logit_softcapping: Optional[float] = None
 
-    def __post_init__(self):
+    def __post_init__(self):  # noqa: C901
         if self.n_kv_heads is None:
             self.n_kv_heads = self.n_heads
 

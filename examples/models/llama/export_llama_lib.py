@@ -626,7 +626,7 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
         return return_val
 
 
-def export_llama(
+def export_llama(  # noqa: C901
     export_options: Union[argparse.Namespace, LlmConfig, DictConfig],
 ) -> str:
     if isinstance(export_options, argparse.Namespace):

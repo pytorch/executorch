@@ -116,7 +116,9 @@ def load_checkpoint(input_dir: str) -> Dict:
     raise FileNotFoundError(f"Could not find checkpoint in {input_dir}")
 
 
-def qwen_3_5_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+def qwen_3_5_to_meta(  # noqa: C901
+    state_dict: Dict[str, torch.Tensor],
+) -> Dict[str, torch.Tensor]:
     converted_state_dict = {}
     pending_qkvz = {}
     pending_ba = {}
