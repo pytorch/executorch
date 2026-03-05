@@ -97,6 +97,13 @@ struct ConstantData {
     return tensors[id.idx];
   }
 
+  inline void set(Tid id, Tensor t) {
+    if (id.idx >= tensors.size()) {
+      throw std::out_of_range("ConstantData::set: id out of range");
+    }
+    tensors[id.idx] = std::move(t);
+  }
+
   inline void add(Tensor t) {
     tensors.push_back(std::move(t));
   }
@@ -152,6 +159,9 @@ struct ExecutionState {
 
   // Non-constant values (SymInt, etc.)
   std::vector<std::optional<Value>> values;
+
+  // Init chain flag: when true, set_tensor allows writing to constants
+  bool is_init_chain{false};
 
   // Logging context
   size_t current_op_idx{0};
@@ -478,7 +488,15 @@ struct ExecutionState {
       throw std::runtime_error("set_tensor: Program not bound");
     }
     if (id.idx < program->num_constant_tensors) {
-      throw std::runtime_error("set_tensor: cannot write to constant tensor");
+      if (!is_init_chain) {
+        throw std::runtime_error("set_tensor: cannot write to constant tensor");
+      }
+      // Init chain can write over constants
+      if (!constants) {
+        throw std::runtime_error("set_tensor: constants not bound");
+      }
+      const_cast<ConstantData*>(constants)->set(id, std::move(arr));
+      return;
     }
     // Route to mutable buffers or per-execution tensors
     if (is_mutable_buffer(id)) {

@@ -23,6 +23,7 @@ import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
+import executorch.exir as exir
 import numpy as np
 import torch
 
@@ -268,6 +269,7 @@ def export_model_to_pte(
     output_path: Union[str, Path],
     dynamic_shapes: Optional[Dict] = None,
     verbose: bool = False,
+    edge_compile_config: Optional[exir.EdgeCompileConfig] = None,
 ) -> None:
     """
     Export a PyTorch model to a .pte file using the MLX delegate.
@@ -281,7 +283,6 @@ def export_model_to_pte(
             Example: {0: {0: Dim("batch", min=1, max=32)}} for dynamic batch on first input.
         verbose: Whether to print the exported program for debugging.
     """
-    import executorch.exir as exir
     from executorch.backends.mlx import MLXPartitioner
     from executorch.exir.capture._config import ExecutorchBackendConfig
     from torch.export import export
@@ -301,9 +302,11 @@ def export_model_to_pte(
         print(exported_program)
 
     # Lower to edge and delegate to MLX
+    compile_config = edge_compile_config or exir.EdgeCompileConfig()
     edge_program = exir.to_edge_transform_and_lower(
         exported_program,
         partitioner=[MLXPartitioner()],
+        compile_config=compile_config,
     )
 
     # Print edge program if verbose
@@ -865,6 +868,10 @@ class OpTestCase:
         """Return dynamic shapes specification for torch.export, or None for static shapes."""
         return None
 
+    def get_edge_compile_config(self) -> Optional[exir.EdgeCompileConfig]:
+        """Return EdgeCompileConfig for export, or None for default."""
+        return None
+
     def get_test_dir(self) -> Path:
         """Get the directory for this test's files."""
         test_dir = Path(__file__).parent / "op_tests" / self.name
@@ -924,6 +931,7 @@ class OpTestCase:
             pte_path,
             dynamic_shapes=dynamic_shapes,
             verbose=verbose,
+            edge_compile_config=self.get_edge_compile_config(),
         )
 
         # Save test inputs
