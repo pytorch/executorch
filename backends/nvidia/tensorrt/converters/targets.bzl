@@ -12,6 +12,11 @@ def define_common_targets():
         srcs = [
             "__init__.py",
             "add.py",
+            "div.py",
+            "mm.py",
+            "mul.py",
+            "relu.py",
+            "sub.py",
         ],
         visibility = ["PUBLIC"],
         deps = [

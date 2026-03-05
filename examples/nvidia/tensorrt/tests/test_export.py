@@ -95,3 +95,6 @@ class ExportCorrectnessTest(unittest.TestCase):
         exec_prog = edge.to_executorch()
         self.assertIsNotNone(exec_prog)
         logger.info("PASS: add model exported with BF16 precision")
+
+    def test_softmax(self) -> None:
+        _export_and_verify("softmax")
