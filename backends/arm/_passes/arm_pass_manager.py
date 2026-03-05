@@ -117,6 +117,7 @@ from executorch.backends.arm._passes import (
     RewriteBoolToFp32CastViaInt8Pass,
     RewriteConvPass,
     RewriteIndexPutPass,
+    RewriteLeLtToGeGtPass,
     RewriteMatmulPass,
     RewriteUpsamplePass,
     ScalarsToAttributePass,
@@ -310,6 +311,7 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 ReplaceScalarWithTensorByProfilePass(),
+                RewriteLeLtToGeGtPass(),
                 ConvertFullLikeToFullPass(),
                 MatchArgDtypePass(),
                 UnsqueezeScalarPlaceholdersPass(exported_program),

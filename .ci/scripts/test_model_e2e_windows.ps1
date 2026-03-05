@@ -64,8 +64,19 @@ switch ($HfModel) {
         $audioUrl = "https://dldata-public.s3.us-east-2.amazonaws.com/2086-149220-0033.wav"
         $audioFile = "test_audio.wav"
     }
+    "mistralai/Voxtral-Mini-4B-Realtime-2602" {
+        $runnerTarget = "voxtral_realtime_runner"
+        $runnerPath = "voxtral_realtime"
+        $runnerPreset = "voxtral-realtime-cuda"
+        $expectedOutput = "Loading audio from"
+        $preprocessor = "preprocessor.pte"
+        $tokenizerUrl = ""
+        $tokenizerFile = "tekken.json"
+        $audioUrl = "https://github.com/voxserv/audio_quality_testing_samples/raw/refs/heads/master/testaudio/16000/test01_20s.wav"
+        $audioFile = "poem.wav"
+    }
     default {
-        throw "Unsupported model '$HfModel'. Supported: mistralai/Voxtral-Mini-3B-2507, nvidia/parakeet-tdt"
+        throw "Unsupported model '$HfModel'. Supported: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/parakeet-tdt"
     }
 }
 
@@ -171,6 +182,14 @@ try {
                 "--data_path", $cudaBlob
             )
         }
+        "mistralai/Voxtral-Mini-4B-Realtime-2602" {
+            $runnerArgs += @(
+                "--temperature", "0",
+                "--tokenizer_path", (Join-Path -Path $resolvedModelDir -ChildPath $tokenizerFile),
+                "--audio_path", (Join-Path -Path $resolvedModelDir -ChildPath $audioFile),
+                "--preprocessor_path", (Join-Path -Path $resolvedModelDir -ChildPath $preprocessor)
+            )
+        }
     }
 
     $stdoutFile = Join-Path -Path $env:TEMP -ChildPath ("et_runner_stdout_{0}.log" -f ([Guid]::NewGuid().ToString("N")))
@@ -202,10 +221,15 @@ try {
         Write-Warning "Runner exited with code $exitCode (may be benign)"
     }
 
-    if ($expectedOutput -ne "" -and $stdout -notmatch [Regex]::Escape($expectedOutput)) {
-        throw "Expected output '$expectedOutput' not found in runner output"
+    if ($expectedOutput -ne "") {
+        if ($stdout -notmatch [Regex]::Escape($expectedOutput)) {
+            throw "Expected output '$expectedOutput' not found in runner output"
+        }
+        Write-Host "Success: '$expectedOutput' found in output"
     }
-    Write-Host "Success: '$expectedOutput' found in output"
+    else {
+        Write-Host "Success: runner completed"
+    }
     Write-Host "::endgroup::"
 }
 finally {
