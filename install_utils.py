@@ -56,6 +56,35 @@ def is_cuda_available() -> bool:
         return False
 
 
+def is_tensorrt_available() -> bool:
+    """
+    Check if TensorRT is available on the system.
+
+    Returns:
+        True if TensorRT headers or Python package are found, False otherwise.
+    """
+    # Check for TensorRT Python package
+    try:
+        import tensorrt  # noqa: F401
+
+        return True
+    except ImportError:
+        pass
+
+    # Check for TensorRT headers (e.g. JetPack system install without pip package in venv)
+    import os
+
+    for include_dir in [
+        "/usr/include/aarch64-linux-gnu",
+        "/usr/include/x86_64-linux-gnu",
+        "/usr/include",
+    ]:
+        if os.path.exists(os.path.join(include_dir, "NvInfer.h")):
+            return True
+
+    return False
+
+
 @functools.lru_cache(maxsize=1)
 def _get_cuda_version():
     """

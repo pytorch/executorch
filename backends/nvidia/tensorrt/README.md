@@ -106,3 +106,14 @@ The TensorRT delegate uses a custom binary blob format:
 - CUDA Toolkit 11.x or 12.x
 - cuDNN 8.x
 - PyTorch 2.x with CUDA support (for export)
+
+## Build Instructions
+
+```bash
+cd executorch
+mkdir -p cmake-out && cd cmake-out
+
+cmake .. -DEXECUTORCH_BUILD_TENSORRT=ON
+
+cmake --build . --target tensorrt_backend tensorrt_executor_runner
+```
