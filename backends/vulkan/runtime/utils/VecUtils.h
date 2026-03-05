@@ -12,9 +12,10 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
 
+#include <c10/util/safe_numerics.h>
+
 #include <cmath>
 #include <limits>
-#include <numeric>
 #include <type_traits>
 
 namespace vkcompute {
@@ -465,24 +466,8 @@ inline ivec4 make_whcn_ivec4(const std::vector<int64_t>& arr) {
 }
 
 /*
- * Wrapper around std::accumulate that accumulates values of a container of
- * integral types into int64_t. Taken from `multiply_integers` in
- * <c10/util/accumulate.h>
- */
-template <
-    typename C,
-    std::enable_if_t<std::is_integral<typename C::value_type>::value, int> = 0>
-inline int64_t multiply_integers(const C& container) {
-  return std::accumulate(
-      container.begin(),
-      container.end(),
-      static_cast<int64_t>(1),
-      std::multiplies<>());
-}
-
-/*
- * Product of integer elements referred to by iterators; accumulates into the
- * int64_t datatype. Taken from `multiply_integers` in <c10/util/accumulate.h>
+ * Computes the product of integral values referred to by iterators,
+ * accumulating into int64_t with overflow checking. Throws on overflow.
  */
 template <
     typename Iter,
@@ -491,11 +476,24 @@ template <
             typename std::iterator_traits<Iter>::value_type>::value,
         int> = 0>
 inline int64_t multiply_integers(Iter begin, Iter end) {
-  // std::accumulate infers return type from `init` type, so if the `init` type
-  // is not large enough to hold the result, computation can overflow. We use
-  // `int64_t` here to avoid this.
-  return std::accumulate(
-      begin, end, static_cast<int64_t>(1), std::multiplies<>());
+  int64_t result = 1;
+  for (Iter it = begin; it != end; ++it) {
+    VK_CHECK_COND(
+        !c10::mul_overflows(result, static_cast<int64_t>(*it), &result),
+        "Integer overflow in multiply_integers");
+  }
+  return result;
+}
+
+/*
+ * Computes the product of integral values in a container, accumulating into
+ * int64_t with overflow checking. Throws on overflow.
+ */
+template <
+    typename C,
+    std::enable_if_t<std::is_integral<typename C::value_type>::value, int> = 0>
+inline int64_t multiply_integers(const C& container) {
+  return multiply_integers(container.begin(), container.end());
 }
 
 class WorkgroupSize final {
