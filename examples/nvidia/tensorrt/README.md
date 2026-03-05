@@ -44,9 +44,21 @@ on systems with NVIDIA GPUs.
 ### Supported Models
 
 Currently supported models:
-- `add` - Simple element-wise addition
 
-More models will be added as converters are implemented.
+**Toy Models:**
+- `add`, `mul`, `linear`, `add_mul`, `softmax`, `conv1d`
+
+**Vision Models:**
+- `mv2` (MobileNetV2), `mv3` (MobileNetV3), `resnet18`, `resnet50`
+- `ic3` (InceptionV3), `ic4` (InceptionV4), `dl3` (DeepLabV3)
+- `edsr` (Super-resolution), `efficient_sam`
+
+**Audio/NLP Models:**
+- `w2l` (Wav2Letter), `mobilebert`
+- `emformer_join`, `emformer_predict`, `emformer_transcribe`
+
+**Other:**
+- `sdpa` (Scaled Dot-Product Attention)
 
 Run `--help` to see all available options:
 

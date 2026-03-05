@@ -206,18 +206,41 @@ def convert_cat(
 
     # Convert all input nodes to TensorRT tensors
     trt_tensors = []
+    input_nodes = []
     for tensor_node in tensors:
         if not isinstance(tensor_node, torch.fx.Node):
             raise ValueError(f"Input must be node, got {type(tensor_node)}")
         if tensor_node not in input_map:
             raise ValueError(f"Input node {tensor_node.name} not found in input_map")
         trt_tensors.append(input_map[tensor_node])
+        input_nodes.append(tensor_node)
 
     if len(trt_tensors) == 0:
         raise ValueError("cat requires at least one input tensor")
 
-    # Get number of dimensions from first input
-    ndim = len(trt_tensors[0].shape)
+    # Get number of dimensions from node metadata (more reliable for dynamic shapes)
+    # TRT tensor.shape can have invalid length for dynamic shapes during network building
+    ndim = None
+    for input_node in input_nodes:
+        shape = get_node_shape(input_node)
+        if shape is not None:
+            ndim = len(shape)
+            break
+
+    # Fallback to TRT shape if no metadata available
+    if ndim is None:
+        try:
+            trt_shape = trt_tensors[0].shape
+            if trt_shape is not None:
+                ndim = len(trt_shape)
+                if ndim < 0:
+                    ndim = None
+        except (ValueError, TypeError):
+            pass
+
+    if ndim is None:
+        raise ValueError("Cannot determine number of dimensions for cat operation")
+
     cat_dim = _get_positive_dim(cat_dim, ndim)
 
     # Create concatenation layer
@@ -230,9 +253,15 @@ def convert_cat(
 
     output = layer.get_output(0)
 
+    # Safe output shape logging
+    try:
+        out_shape = list(output.shape) if output.shape is not None else "dynamic"
+    except (ValueError, TypeError):
+        out_shape = "dynamic"
+
     logger.debug(
         f"[TensorRT] Created cat layer: {layer.name}, "
-        f"axis={cat_dim}, num_inputs={len(trt_tensors)}, output_shape={list(output.shape)}"
+        f"axis={cat_dim}, num_inputs={len(trt_tensors)}, output_shape={out_shape}"
     )
 
     return output
@@ -275,24 +304,49 @@ def convert_stack(
 
     # Convert all input nodes to TensorRT tensors
     trt_tensors = []
+    input_nodes = []
     for tensor_node in tensors:
         if not isinstance(tensor_node, torch.fx.Node):
             raise ValueError(f"Input must be node, got {type(tensor_node)}")
         if tensor_node not in input_map:
             raise ValueError(f"Input node {tensor_node.name} not found in input_map")
         trt_tensors.append(input_map[tensor_node])
+        input_nodes.append(tensor_node)
 
     if len(trt_tensors) == 0:
         raise ValueError("stack requires at least one input tensor")
 
-    # Get number of dimensions from first input (output will have ndim + 1)
-    ndim = len(trt_tensors[0].shape)
+    # Get number of dimensions from node metadata (output will have ndim + 1)
+    ndim = None
+    input_shape = None
+    for input_node in input_nodes:
+        shape = get_node_shape(input_node)
+        if shape is not None:
+            ndim = len(shape)
+            input_shape = list(shape)
+            break
+
+    # Fallback to TRT shape if no metadata available
+    if ndim is None:
+        try:
+            trt_shape = trt_tensors[0].shape
+            if trt_shape is not None:
+                ndim = len(trt_shape)
+                if ndim >= 0:
+                    input_shape = list(trt_shape)
+                else:
+                    ndim = None
+        except (ValueError, TypeError):
+            pass
+
+    if ndim is None or input_shape is None:
+        raise ValueError("Cannot determine number of dimensions for stack operation")
+
     stack_dim = _get_positive_dim(stack_dim, ndim + 1)
 
     # Unsqueeze each tensor at the stack dimension
     unsqueezed_tensors = []
     for i, trt_tensor in enumerate(trt_tensors):
-        input_shape = list(trt_tensor.shape)
         # Build output shape with new dimension of size 1
         output_shape = input_shape[:stack_dim] + [1] + input_shape[stack_dim:]
 
@@ -317,9 +371,15 @@ def convert_stack(
 
     output = layer.get_output(0)
 
+    # Safe output shape logging
+    try:
+        out_shape = list(output.shape) if output.shape is not None else "dynamic"
+    except (ValueError, TypeError):
+        out_shape = "dynamic"
+
     logger.debug(
         f"[TensorRT] Created stack layer: {layer.name}, "
-        f"dim={stack_dim}, num_inputs={len(trt_tensors)}, output_shape={list(output.shape)}"
+        f"dim={stack_dim}, num_inputs={len(trt_tensors)}, output_shape={out_shape}"
     )
 
     return output
