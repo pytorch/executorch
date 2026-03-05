@@ -746,6 +746,11 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
     graph module in the `ETRecord` object with the name being `the original module name + "/" + the
     name of the entry point`.
 
+    WARNING: This function deserializes reference_outputs and representative_inputs
+    using pickle.loads(), which can execute arbitrary code. Only use this function
+    with ETRecord files from trusted sources. Loading ETRecord files from untrusted
+    sources is a security risk.
+
     Args:
         etrecord_path: Path to the `ETRecord` file.
 
@@ -829,11 +834,17 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
             exported_program = deserialize(serialized_artifact)
         elif entry == ETRecordReservedFileNames.REFERENCE_OUTPUTS:
             # @lint-ignore PYTHONPICKLEISBAD
+            # WARNING: pickle.loads() can execute arbitrary code. This is a known
+            # unsafe deserialization path. Only load ETRecord files from trusted
+            # sources.
             reference_outputs = pickle.loads(
                 etrecord_zip.read(ETRecordReservedFileNames.REFERENCE_OUTPUTS)
             )
         elif entry == ETRecordReservedFileNames.REPRESENTATIVE_INPUTS:
             # @lint-ignore PYTHONPICKLEISBAD
+            # WARNING: pickle.loads() can execute arbitrary code. This is a known
+            # unsafe deserialization path. Only load ETRecord files from trusted
+            # sources.
             representative_inputs = pickle.loads(
                 etrecord_zip.read(ETRecordReservedFileNames.REPRESENTATIVE_INPUTS)
             )
