@@ -171,7 +171,9 @@ def main():
     )
 
     print(f"Suite: {args.suite}")
-    print(f"  Pass: {counts['passes']}, Fail: {counts['fails']}, Skip: {counts['skips']}")
+    print(
+        f"  Pass: {counts['passes']}, Fail: {counts['fails']}, Skip: {counts['skips']}"
+    )
     print(f"  Pass rate: {pass_rate:.2f}%")
 
     records = generate_v3_records(
