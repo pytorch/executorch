@@ -1,0 +1,34 @@
+load(":targets.bzl", "define_common_targets")
+load("@fbcode_macros//build_defs:python_unittest_remote_gpu.bzl", "python_unittest_remote_gpu")
+
+oncall("executorch")
+
+define_common_targets()
+
+# GPU-dependent tests: these import TensorRT which requires CUDA to initialize.
+# python_unittest_remote_gpu routes them to GPU-equipped CI workers.
+
+python_unittest_remote_gpu(
+    name = "test_converter_registry",
+    srcs = [
+        "test_converter_registry.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/nvidia/tensorrt:converter_registry",
+        "//executorch/backends/nvidia/tensorrt:converter_utils",
+        "//executorch/backends/nvidia/tensorrt/converters:converters",
+    ],
+)
+
+python_unittest_remote_gpu(
+    name = "test_operator_support",
+    srcs = [
+        "test_operator_support.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/nvidia/tensorrt/partitioner:partitioner",
+        "//executorch/exir:lib",
+    ],
+)
