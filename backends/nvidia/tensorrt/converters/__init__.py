@@ -11,6 +11,7 @@ from executorch.backends.nvidia.tensorrt.converters import activations  # noqa: 
 from executorch.backends.nvidia.tensorrt.converters import add  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import addmm  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import batch_norm  # noqa: F401
+from executorch.backends.nvidia.tensorrt.converters import bmm  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import clamp  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import concat  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import conv2d  # noqa: F401
