@@ -22,17 +22,13 @@ python examples/models/lfm2_5_vl/export_lfm2_5_vl.py \
     --dtype fp32
 ```
 
-With quantization (8da4w decoder + int8 embedding):
+With quantization (8da4w decoder + int8 embedding + float32 vision encoder):
 
 ```bash
 python examples/models/lfm2_5_vl/export_lfm2_5_vl.py \
     --model_dir LiquidAI/LFM2-VL-1.6B \
     --quantize
 ```
-
-## Runner Compatibility
-
-The exported PTE is compatible with `llava_main` (the ExecuTorch multimodal C++ runner). Method names match `extension/llm/runner/constants.h`.
 
 ### Required runner configuration
 

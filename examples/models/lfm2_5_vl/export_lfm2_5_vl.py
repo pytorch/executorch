@@ -88,9 +88,7 @@ class Lfm2p5VlEdgeManager(LLMEdgeManager):
         return self
 
 
-def export_image_encoder(
-    lfm2, quantize: bool = False
-) -> torch.export.ExportedProgram:
+def export_image_encoder(lfm2, quantize: bool = False) -> torch.export.ExportedProgram:
     """Export vision encoder as 'vision_encoder' method.
 
     Input:  [1, 3, 512, 512] float32 NCHW pixels in [0, 255]
@@ -120,9 +118,7 @@ def export_image_encoder(
 
     if quantize:
         logging.info("Exporting vision encoder (int8 dynamic quantized)...")
-        quantizer = XNNPACKQuantizer().set_global(
-            get_symmetric_quantization_config()
-        )
+        quantizer = XNNPACKQuantizer().set_global(get_symmetric_quantization_config())
         manager = (
             Lfm2p5VlEdgeManager(
                 model=encoder,
@@ -285,7 +281,7 @@ def export_all(
         lfm2 = lfm2.to(dtype.to_torch_dtype())
 
     logging.info("[1/3] Exporting vision encoder...")
-    vision_ep = export_image_encoder(lfm2, quantize)
+    vision_ep = export_image_encoder(lfm2, quantize=False)
 
     # Text decoder MUST come before token embedding (see export_token_embedding docstring)
     logging.info("[2/3] Exporting text decoder...")
