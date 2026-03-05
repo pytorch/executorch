@@ -8,3 +8,8 @@
 
 # Import converters to trigger registration via @converter decorator
 from executorch.backends.nvidia.tensorrt.converters import add  # noqa: F401
+from executorch.backends.nvidia.tensorrt.converters import div  # noqa: F401
+from executorch.backends.nvidia.tensorrt.converters import mm  # noqa: F401
+from executorch.backends.nvidia.tensorrt.converters import mul  # noqa: F401
+from executorch.backends.nvidia.tensorrt.converters import relu  # noqa: F401
+from executorch.backends.nvidia.tensorrt.converters import sub  # noqa: F401
