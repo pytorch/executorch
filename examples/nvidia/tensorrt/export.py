@@ -38,15 +38,18 @@ TENSORRT_SUPPORTED_MODELS = {
     "conv1d",
     "dl3",
     "edsr",
-    # "efficient_sam",  # TODO: diff ~41 — likely bicubic interpolation decomposition or ConvTranspose2d issue
+    "efficient_sam",
     "emformer_join",
     # "emformer_predict",  # TODO: passes 1/3 seeds — precision sensitive with randomized inputs
     "emformer_transcribe",
     "ic3",
     "linear",
     "mul",
+    "mv2",
     "mv3",
     "sdpa",
+    "resnet18",
+    "resnet50",
     "softmax",
     "w2l",
 }
