@@ -121,3 +121,6 @@ class ExportCorrectnessTest(unittest.TestCase):
 
     def test_ic3(self) -> None:
         _export_and_verify("ic3")
+
+    def test_sdpa(self) -> None:
+        _export_and_verify("sdpa")
