@@ -5,6 +5,44 @@ TensorRT is NVIDIA's high-performance deep learning inference optimizer and
 runtime library. The delegate leverages TensorRT to accelerate model execution
 on NVIDIA GPUs.
 
+## Getting Started
+
+### Clone and Install
+
+```bash
+# Clone with submodules
+git clone --recurse-submodules https://github.com/pytorch/executorch.git
+cd executorch
+
+# Create virtual environment and install ExecuTorch
+python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
+./install_executorch.sh --editable
+
+# Install TensorRT (x86_64 only - Jetson has it pre-installed)
+pip install tensorrt>=10.3
+```
+
+> **Note for Jetson users:** TensorRT is pre-installed via JetPack SDK. The
+> ExecuTorch TensorRT backend automatically detects Jetson hardware and uses
+> the system TensorRT installation - no `pip install tensorrt` needed.
+
+### Export and Run Models
+
+```bash
+# Export a single model
+python -m executorch.examples.nvidia.tensorrt.export -m add
+
+# Export all supported models (default when no -m specified)
+python -m executorch.examples.nvidia.tensorrt.export
+
+# Build C++ runner
+cmake -B cmake-out -DEXECUTORCH_BUILD_TENSORRT=ON
+cmake --build cmake-out --target tensorrt_executor_runner -j$(nproc)
+
+# Run inference
+./cmake-out/backends/nvidia/tensorrt/tensorrt_executor_runner --model_path=add_tensorrt.pte
+```
+
 ## Prerequisites
 
 ### TensorRT Installation
@@ -73,6 +111,102 @@ Download and install from the
   compatibility)
 - **Recommended**: TensorRT 10.6 or later for best performance and feature
   support
+
+## Quick Start
+
+### Export a Model
+
+```python
+import torch
+from torch.export import export
+from executorch.exir import to_edge_transform_and_lower
+from executorch.backends.nvidia.tensorrt import TensorRTPartitioner
+
+# Define your model
+class MyModel(torch.nn.Module):
+    def forward(self, x, y):
+        return x + y
+
+model = MyModel()
+example_inputs = (torch.randn(2, 3), torch.randn(2, 3))
+
+# Export and lower to TensorRT
+with torch.no_grad():
+    exported = export(model, example_inputs)
+
+edge_program = to_edge_transform_and_lower(
+    exported,
+    partitioner=[TensorRTPartitioner()],
+)
+
+# Save the .pte file
+exec_prog = edge_program.to_executorch()
+with open("model_tensorrt.pte", "wb") as f:
+    exec_prog.write_to_file(f)
+```
+
+### Using the Export Script
+
+```bash
+python -m executorch.examples.nvidia.tensorrt.export --model mv3 --output mv3_tensorrt.pte
+```
+
+### Run Inference
+
+```bash
+./tensorrt_executor_runner --model_path=model_tensorrt.pte
+```
+
+## Jetson Deployment
+
+### Prerequisites
+
+On your Jetson device:
+- JetPack 5.x or 6.x (includes TensorRT and CUDA)
+- Python 3.8+
+- CMake 3.19+
+
+### Build on Jetson
+
+```bash
+git clone --recurse-submodules https://github.com/pytorch/executorch.git
+cd executorch
+mkdir build && cd build
+
+# JetPack pre-installs TensorRT and CUDA - auto-detected by CMake
+cmake .. -DEXECUTORCH_BUILD_TENSORRT=ON -DCMAKE_BUILD_TYPE=Release
+
+cmake --build . --target tensorrt_backend tensorrt_executor_runner -j$(nproc)
+```
+
+### Export and Run
+
+```bash
+# Export model on Jetson
+python -m executorch.examples.nvidia.tensorrt.export --model mv3 --output mv3_tensorrt.pte
+
+# Run inference
+./tensorrt_executor_runner --model_path=mv3_tensorrt.pte --num_executions=100
+```
+
+### Jetson Notes
+
+1. **Unified Memory**: Jetson uses unified memory (CPU and GPU share memory), so no explicit
+   data transfers are needed.
+
+2. **DLA Support**: For models that support it, you can use NVIDIA's Deep Learning Accelerator:
+   ```python
+   compile_spec = TensorRTCompileSpec(
+       dla_core=0,
+       allow_gpu_fallback=True,
+   )
+   ```
+
+3. **Power Modes**: Set appropriate power mode for your use case:
+   ```bash
+   sudo nvpmodel -m 0  # Max performance
+   sudo jetson_clocks  # Lock clocks for consistent benchmarking
+   ```
 
 ## Blob Format
 
