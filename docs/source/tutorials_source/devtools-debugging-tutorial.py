@@ -213,19 +213,25 @@ Using the ExecuTorch Developer Tools for Numerical Debugging
 # - ``runtime_ops``: The operators executed at runtime (may show DELEGATE_CALL for delegated ops)
 # - ``runtime_intermediate_output``: Intermediate outputs from runtime
 # - ``gap``: The numerical gap (MSE) between eager and runtime outputs
+# - ``stacktraces``: A dictionary mapping each operator name to its source code stack trace
 #
 # Example output:
 #
 # .. code-block:: text
 #
-#    |    | aot_ops                                                         | aot_intermediate_output                            | runtime_ops                                        | runtime_intermediate_output                        | gap                        |
-#    |----|----------------------------------------------------------------|----------------------------------------------------|----------------------------------------------------|----------------------------------------------------| ---------------------------|
-#    | 0  | [conv2d]                                                        | [[[tensor([-0.0130,  0.0075, -0.0334, -0.0122,...  | [DELEGATE_CALL]                                    | [[[tensor([-0.0130,  0.0075, -0.0334, -0.0122,...  | [3.2530690555343034e-15]   |
-#    | 1  | [permute, cat, add, dropout]                                    | [[[tensor(-0.0024), tensor(0.0054), tensor(0.0...  | [DELEGATE_CALL]                                    | [[[tensor(-0.0024), tensor(0.0054), tensor(0.0...  | [3.2488685838924244e-15]   |
+#    |    | aot_ops                                                         | aot_intermediate_output                            | runtime_ops                                        | runtime_intermediate_output                        | gap                        | stacktraces                                        |
+#    |----|----------------------------------------------------------------|----------------------------------------------------|----------------------------------------------------|----------------------------------------------------| ---------------------------|----------------------------------------------------|
+#    | 0  | [conv2d]                                                        | [[[tensor([-0.0130,  0.0075, -0.0334, -0.0122,...  | [DELEGATE_CALL]                                    | [[[tensor([-0.0130,  0.0075, -0.0334, -0.0122,...  | [3.2530690555343034e-15]   | {'conv2d': 'File "model.py", line 10...'}         |
+#    | 1  | [permute, cat, add, dropout]                                    | [[[tensor(-0.0024), tensor(0.0054), tensor(0.0...  | [DELEGATE_CALL]                                    | [[[tensor(-0.0024), tensor(0.0054), tensor(0.0...  | [3.2488685838924244e-15]   | {'permute': 'File "model.py", line 15...', ...}   |
 #    ...
-#    | 4  | [transpose, linear, unflatten, unsqueeze, tran...]              | [[[tensor(0.0045), tensor(-0.0084), tensor(0.0...  | [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...] | [[tensor(0.0045), tensor(-0.0084), tensor(0.00...  | [0.00010033142876115867]   |
+#    | 4  | [transpose, linear, unflatten, unsqueeze, tran...]              | [[[tensor(0.0045), tensor(-0.0084), tensor(0.0...  | [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...] | [[tensor(0.0045), tensor(-0.0084), tensor(0.00...  | [0.00010033142876115867]   | {'transpose': 'File "model.py", line 20...', ...} |
 #    ...
-#    | 59 | [transpose_66, linear_44, unflatten_11, unsque...]              | [[[tensor(-0.3346), tensor(0.1540), tensor(-0....  | [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...] | [[tensor(-0.3346), tensor(0.1540), tensor(-0.0...  | [0.02629170972698486]      |
+#    | 59 | [transpose_66, linear_44, unflatten_11, unsque...]              | [[[tensor(-0.3346), tensor(0.1540), tensor(-0....  | [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...] | [[tensor(-0.3346), tensor(0.1540), tensor(-0.0...  | [0.02629170972698486]      | {'transpose_66': 'File "model.py", line 50...'... |
+#
+# The ``stacktraces`` column is particularly useful for tracing operators back to the
+# original PyTorch source code. Each entry is a dictionary where keys are operator names
+# and values are the corresponding stack traces showing where in the model code each
+# operator was defined.
 #
 
 ######################################################################
@@ -233,7 +239,8 @@ Using the ExecuTorch Developer Tools for Numerical Debugging
 # --------------------------------------------------
 #
 # Once you have the numerical gaps, identify operators with significant
-# discrepancies for further investigation.
+# discrepancies for further investigation. The ``stacktraces`` column helps
+# you trace problematic operators back to the original source code.
 #
 # .. code-block:: python
 #
@@ -249,28 +256,52 @@ Using the ExecuTorch Developer Tools for Numerical Debugging
 #    print(f"\nOperators with MSE > {threshold}:")
 #    print(problematic_ops)
 #
+#    # Use stacktraces to find the source location of problematic operators
+#    for idx, row in problematic_ops.iterrows():
+#        print(f"\n--- Operator {idx} ---")
+#        print(f"Operators: {row['aot_ops']}")
+#        print(f"Gap: {row['gap']}")
+#        print("Stack traces:")
+#        for op_name, trace in row['stacktraces'].items():
+#            if trace:
+#                print(f"  {op_name}:")
+#                # Print first few lines of stack trace
+#                for line in trace.split('\n')[:3]:
+#                    print(f"    {line}")
+#
 # Example output showing problematic operators in a ViT model:
 #
 # .. code-block:: text
 #
 #    Top 5 operators with largest numerical discrepancies:
-#                                                  aot_ops                            aot_intermediate_output                                        runtime_ops                        runtime_intermediate_output                     gap
-#    59  [transpose_66, linear_44, unflatten_11, unsque...  [[[tensor(-0.3346), tensor(0.1540), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.3346), tensor(0.1540), tensor(-0.0...   [0.02629170972698486]
-#    24  [transpose_24, linear_16, unflatten_4, unsquee...  [[[tensor(0.0344), tensor(-0.0583), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0344), tensor(-0.0583), tensor(-0.0...  [0.010045093258604096]
-#    29  [transpose_30, linear_20, unflatten_5, unsquee...  [[[tensor(0.0457), tensor(0.0266), tensor(-0.0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0457), tensor(0.0266), tensor(-0.05...  [0.008497326594593926]
-#    34  [transpose_36, linear_24, unflatten_6, unsquee...  [[[tensor(-0.1336), tensor(-0.0154), tensor(-0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.1336), tensor(-0.0154), tensor(-0....  [0.007672668965640913]
-#    19  [transpose_18, linear_12, unflatten_3, unsquee...  [[[tensor(-0.0801), tensor(0.0458), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.0801), tensor(0.0458), tensor(-0.0...  [0.007446783635888463]
+#                                                  aot_ops                            aot_intermediate_output                                        runtime_ops                        runtime_intermediate_output                     gap                                        stacktraces
+#    59  [transpose_66, linear_44, unflatten_11, unsque...  [[[tensor(-0.3346), tensor(0.1540), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.3346), tensor(0.1540), tensor(-0.0...   [0.02629170972698486]  {'transpose_66': 'File "vit.py", line 125...'}
+#    24  [transpose_24, linear_16, unflatten_4, unsquee...  [[[tensor(0.0344), tensor(-0.0583), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0344), tensor(-0.0583), tensor(-0.0...  [0.010045093258604096]  {'transpose_24': 'File "vit.py", line 125...'}
+#    29  [transpose_30, linear_20, unflatten_5, unsquee...  [[[tensor(0.0457), tensor(0.0266), tensor(-0.0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0457), tensor(0.0266), tensor(-0.05...  [0.008497326594593926]  {'transpose_30': 'File "vit.py", line 125...'}
+#    34  [transpose_36, linear_24, unflatten_6, unsquee...  [[[tensor(-0.1336), tensor(-0.0154), tensor(-0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.1336), tensor(-0.0154), tensor(-0....  [0.007672668965640913]  {'transpose_36': 'File "vit.py", line 125...'}
+#    19  [transpose_18, linear_12, unflatten_3, unsquee...  [[[tensor(-0.0801), tensor(0.0458), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.0801), tensor(0.0458), tensor(-0.0...  [0.007446783635888463]  {'transpose_18': 'File "vit.py", line 125...'}
+#
+#    --- Operator 59 ---
+#    Operators: ['transpose_66', 'linear_44', 'unflatten_11', 'unsqueeze_11', 'transpose_67']
+#    Gap: [0.02629170972698486]
+#    Stack traces:
+#      transpose_66:
+#        File "torchvision/models/vision_transformer.py", line 125, in forward
+#          x = self.self_attention(x)
+#        File "torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
 #
 #    Operators with MSE > 0.0001:
-#                                                  aot_ops                            aot_intermediate_output                                        runtime_ops                        runtime_intermediate_output                       gap
-#    4   [transpose, linear, unflatten, unsqueeze, tran...  [[[tensor(0.0045), tensor(-0.0084), tensor(0.0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0045), tensor(-0.0084), tensor(0.00...  [0.00010033142876115867]
-#    9   [transpose_6, linear_4, unflatten_1, unsqueeze...  [[[tensor(0.0113), tensor(-0.0737), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0113), tensor(-0.0737), tensor(-0.0...   [0.0005611182577030275]
-#    14  [transpose_12, linear_8, unflatten_2, unsqueez...  [[[tensor(-0.0476), tensor(-0.0941), tensor(-0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.0476), tensor(-0.0941), tensor(-0....    [0.004658652508649068]
+#                                                  aot_ops                            aot_intermediate_output                                        runtime_ops                        runtime_intermediate_output                       gap                                        stacktraces
+#    4   [transpose, linear, unflatten, unsqueeze, tran...  [[[tensor(0.0045), tensor(-0.0084), tensor(0.0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0045), tensor(-0.0084), tensor(0.00...  [0.00010033142876115867]  {'transpose': 'File "vit.py", line 125...'}
+#    9   [transpose_6, linear_4, unflatten_1, unsqueeze...  [[[tensor(0.0113), tensor(-0.0737), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0113), tensor(-0.0737), tensor(-0.0...   [0.0005611182577030275]  {'transpose_6': 'File "vit.py", line 125...'}
+#    14  [transpose_12, linear_8, unflatten_2, unsqueez...  [[[tensor(-0.0476), tensor(-0.0941), tensor(-0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.0476), tensor(-0.0941), tensor(-0....    [0.004658652508649068]  {'transpose_12': 'File "vit.py", line 125...'}
 #    ...
 #
 # In this example, we can see that the attention layers (transpose + linear + unflatten patterns)
 # show the largest numerical discrepancies, which is expected behavior for delegated operators
-# using different precision.
+# using different precision. The ``stacktraces`` column shows that these operators originate from
+# ``self.self_attention(x)`` in the ViT model's forward method, helping you identify exactly
+# where in your model code the discrepancies arise.
 
 ######################################################################
 # Pipeline 2: CMake Runtime
