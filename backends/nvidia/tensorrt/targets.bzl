@@ -8,9 +8,24 @@ def define_common_targets():
     """
 
     runtime.python_library(
+        name = "backend",
+        srcs = [
+            "backend.py",
+        ],
+        visibility = ["PUBLIC"],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/backend:backend_details",
+        ],
+    )
+
+    runtime.python_library(
         name = "tensorrt",
         srcs = [
             "__init__.py",
         ],
         visibility = ["PUBLIC"],
+        deps = [
+            ":backend",
+        ],
     )
