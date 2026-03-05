@@ -22,10 +22,18 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 # Mapping from env var to expected cache filename.
-# The test TARGETS provides these via manifold_get + $(location).
+# When set (e.g., by CI), these env vars point to pre-downloaded weight files
+# that get copied into the torch cache to avoid network downloads.
 _WEIGHT_ENV_VARS = {
+    "DOG_JPG": "dog.jpg",
     "EDSR_WEIGHTS": "edsr64_x2.pt",
+    "EFFICIENT_SAM_WEIGHTS": "efficient_sam_vitt.pt",
+    "EMFORMER_WEIGHTS": "emformer_rnnt_base_librispeech.pt",
+    "IC4_WEIGHTS": "inceptionv4-8e4777a0.pth",
+    "MV2_WEIGHTS": "mobilenet_v2-b0353104.pth",
     "MV3_WEIGHTS": "mobilenet_v3_small-047dcff4.pth",
+    "RESNET18_WEIGHTS": "resnet18-f37072fd.pth",
+    "RESNET50_WEIGHTS": "resnet50-0676ba61.pth",
 }
 
 
@@ -41,21 +49,14 @@ def _populate_weight_cache() -> None:
         src = os.environ.get(env_var)
         if src and os.path.isfile(src):
             if env_var == "DOG_JPG":
-                # MV2Model downloads dog.jpg to CWD
                 dst = os.path.join(os.getcwd(), filename)
-            elif env_var.startswith("MOBILEBERT_"):
-                # Pre-populate HuggingFace cache for mobilebert
-                hf_dir = os.path.join(
-                    os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface")),
-                    "hub", "models--google--mobilebert-uncased",
-                    "snapshots", "manifold",
+            elif env_var == "EMFORMER_WEIGHTS":
+                torchaudio_dir = os.path.join(
+                    os.environ.get("TORCH_HOME", os.path.expanduser("~/.cache/torch")),
+                    "hub", "torchaudio", "models",
                 )
-                os.makedirs(hf_dir, exist_ok=True)
-                refs_dir = os.path.join(os.path.dirname(hf_dir), "refs")
-                os.makedirs(refs_dir, exist_ok=True)
-                with open(os.path.join(refs_dir, "main"), "w") as rf:
-                    rf.write("manifold")
-                dst = os.path.join(hf_dir, filename)
+                os.makedirs(torchaudio_dir, exist_ok=True)
+                dst = os.path.join(torchaudio_dir, filename)
             else:
                 dst = os.path.join(cache_dir, filename)
             if not os.path.exists(dst):
@@ -155,3 +156,15 @@ class ExportCorrectnessTest(unittest.TestCase):
 
     def test_resnet50(self) -> None:
         _export_and_verify("resnet50")
+
+    def test_edsr(self) -> None:
+        _export_and_verify("edsr")
+
+    def test_emformer_transcribe(self) -> None:
+        _export_and_verify("emformer_transcribe")
+
+    def test_efficient_sam(self) -> None:
+        _export_and_verify("efficient_sam")
+
+    def test_ic4(self) -> None:
+        _export_and_verify("ic4")

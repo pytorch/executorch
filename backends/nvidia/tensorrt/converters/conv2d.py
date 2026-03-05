@@ -43,9 +43,7 @@ def validate_convolution(node: torch.fx.Node) -> bool:
         return False
     if len(node.args) < 9:
         return False
-    # Transposed convolution not supported
-    if node.args[6]:
-        return False
+    # Both regular and transposed convolutions are now supported
     return True
 
 
@@ -175,7 +173,10 @@ def convert_convolution(
     edge_program: Optional[Union[ExportedProgram, torch.fx.GraphModule]] = None,
     ctx: Any = None,
 ) -> Any:
-    """Convert PyTorch convolution operation to TensorRT convolution layer."""
+    """Convert PyTorch convolution operation to TensorRT convolution layer.
+
+    Supports both regular convolution and transposed convolution (deconvolution).
+    """
     try:
         import tensorrt as trt
         import numpy as np
@@ -190,10 +191,8 @@ def convert_convolution(
     padding = args[4]
     dilation = args[5]
     transposed = args[6]
+    _output_padding = args[7]  # Not applied: TRT handles output size via padding/stride
     groups = args[8]
-
-    if transposed:
-        raise ValueError(f"Transposed convolution not supported for node {node.name}")
 
     if not isinstance(input_node, torch.fx.Node) or input_node not in input_map:
         raise ValueError(f"Input node {input_node} not found in input_map")
@@ -206,12 +205,102 @@ def convert_convolution(
         raise ValueError(f"Could not extract weight tensor for convolution node {node.name}")
 
     weight_np = weight_tensor.detach().cpu().numpy().astype(np.float32)
-    out_channels = weight_np.shape[0]
 
     if not weight_np.flags['C_CONTIGUOUS']:
         weight_np = np.ascontiguousarray(weight_np)
 
+    # Store weight to prevent GC before engine build completes
+    if not hasattr(convert_convolution, '_weight_storage'):
+        convert_convolution._weight_storage = []
+    convert_convolution._weight_storage.append(weight_np)
+
     is_conv1d = len(weight_np.shape) == 3
+
+    if transposed:
+        # Transposed convolution (deconvolution)
+        # For transposed conv, weight shape is [in_channels, out_channels/groups, ...]
+        # (opposite of regular conv which is [out_channels, in_channels/groups, ...])
+        out_channels = weight_np.shape[1] * groups
+
+        if is_conv1d:
+            kernel_size = weight_np.shape[2]
+            input_shape = input_trt.shape
+
+            # Expand to 4D for TensorRT
+            if len(input_shape) == 3:
+                shuffle_in = network.add_shuffle(input_trt)
+                shuffle_in.reshape_dims = trt.Dims([input_shape[0], input_shape[1], 1, input_shape[2]])
+                shuffle_in.name = f"deconv1d_unsqueeze_{node.name}"
+                input_trt = shuffle_in.get_output(0)
+
+            # Reshape weight to 4D: [in_ch, out_ch/groups, 1, kernel_size]
+            weight_4d = np.ascontiguousarray(
+                weight_np.reshape(weight_np.shape[0], weight_np.shape[1], 1, kernel_size)
+            )
+            convert_convolution._weight_storage.append(weight_4d)
+
+            layer = network.add_deconvolution_nd(
+                input_trt,
+                out_channels,
+                trt.Dims([1, kernel_size]),
+                trt.Weights(weight_4d),
+            )
+            layer.stride_nd = trt.Dims([1, stride[0]])
+            layer.padding_nd = trt.Dims([0, padding[0]])
+            # Note: TensorRT doesn't support dilation for deconvolution in most versions
+            layer.num_groups = groups
+
+            if bias_node is not None:
+                bias_tensor = _get_param_tensor(exp_prog, bias_node)
+                if bias_tensor is not None:
+                    bias_np = np.ascontiguousarray(
+                        bias_tensor.detach().cpu().numpy().astype(np.float32)
+                    )
+                    convert_convolution._weight_storage.append(bias_np)
+                    layer.bias = trt.Weights(bias_np)
+
+            layer.name = f"deconv1d_{node.name}"
+            output = layer.get_output(0)
+
+            # Squeeze back to 3D if needed
+            output_shape = output.shape
+            if len(output_shape) == 4 and output_shape[2] == 1:
+                shuffle_out = network.add_shuffle(output)
+                shuffle_out.reshape_dims = trt.Dims([output_shape[0], output_shape[1], output_shape[3]])
+                shuffle_out.name = f"deconv1d_squeeze_{node.name}"
+                output = shuffle_out.get_output(0)
+        else:
+            # 2D transposed convolution
+            kernel_h = weight_np.shape[2]
+            kernel_w = weight_np.shape[3]
+
+            layer = network.add_deconvolution_nd(
+                input_trt,
+                out_channels,
+                trt.Dims([kernel_h, kernel_w]),
+                trt.Weights(weight_np),
+            )
+            layer.stride_nd = trt.Dims(list(stride))
+            layer.padding_nd = trt.Dims(list(padding))
+            layer.num_groups = groups
+
+            if bias_node is not None:
+                bias_tensor = _get_param_tensor(exp_prog, bias_node)
+                if bias_tensor is not None:
+                    bias_np = np.ascontiguousarray(
+                        bias_tensor.detach().cpu().numpy().astype(np.float32)
+                    )
+                    layer.bias = trt.Weights(bias_np)
+                    convert_convolution._weight_storage.append(bias_np)
+
+            layer.name = f"deconvolution_{node.name}"
+            output = layer.get_output(0)
+
+        logger.debug(f"[TensorRT] Created transposed convolution layer: {layer.name}")
+        return output
+
+    # Regular convolution (existing code path)
+    out_channels = weight_np.shape[0]
 
     if is_conv1d:
         kernel_size = weight_np.shape[2]
@@ -225,10 +314,6 @@ def convert_convolution(
         weight_4d = np.ascontiguousarray(
             weight_np.reshape(out_channels, weight_np.shape[1], 1, kernel_size)
         )
-
-        # Store weight to prevent GC before engine build completes
-        if not hasattr(convert_convolution, '_weight_storage'):
-            convert_convolution._weight_storage = []
         convert_convolution._weight_storage.append(weight_4d)
 
         layer = network.add_convolution_nd(
@@ -248,7 +333,6 @@ def convert_convolution(
                 bias_np = np.ascontiguousarray(
                     bias_tensor.detach().cpu().numpy().astype(np.float32)
                 )
-                # Store bias to prevent GC before engine build completes
                 convert_convolution._weight_storage.append(bias_np)
                 layer.bias = trt.Weights(bias_np)
 
@@ -265,10 +349,7 @@ def convert_convolution(
         kernel_h = weight_np.shape[2]
         kernel_w = weight_np.shape[3]
 
-        # Store weight to prevent GC before engine build completes
         weight_np_contiguous = np.ascontiguousarray(weight_np)
-        if not hasattr(convert_convolution, '_weight_storage'):
-            convert_convolution._weight_storage = []
         convert_convolution._weight_storage.append(weight_np_contiguous)
 
         layer = network.add_convolution_nd(

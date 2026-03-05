@@ -43,6 +43,7 @@ TENSORRT_SUPPORTED_MODELS = {
     # "emformer_predict",  # TODO: passes 1/3 seeds — precision sensitive with randomized inputs
     "emformer_transcribe",
     "ic3",
+    "ic4",
     "linear",
     "mul",
     "mv2",
