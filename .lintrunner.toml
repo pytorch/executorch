@@ -265,6 +265,8 @@ exclude_patterns = [
     'kernels/portable/cpu/op_lt.cpp',
     'kernels/portable/cpu/op_ne.cpp',
     'runtime/kernel/thread_parallel_interface.h',
+    # Zephyr sample application can use std::vector in the sample code
+    'zephyr/samples/**',
     'scripts/**',
     'third-party/**',
     'util/**',
