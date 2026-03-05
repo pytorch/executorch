@@ -72,7 +72,9 @@ class ModelArgs:
     num_experts: int = 8  # Number of experts
     num_activated_experts: int = 2  # Number of experts to activate
     attention_type: str = "mha"  # Attention type, registered in attention.py
-    use_q_gate: bool = False  # Use q-gated projection in attention (Qwen3.5 full attention)
+    use_q_gate: bool = (
+        False  # Use q-gated projection in attention (Qwen3.5 full attention)
+    )
     norm_type: str = "rmsnorm"  # Normalization type, registered in norm.py
     act_fn: ActFn = dataclasses.field(default=ActFn.SILU)  # Activation function type
     attention_qkv_bias: bool = False

@@ -375,9 +375,7 @@ class AttentionMHA(Attention):
                 use_bias=args.attention_qkv_bias,
             )
             if args.target_modules is not None and "q_proj" in args.target_modules
-            else nn.Linear(
-                self.dim, q_out_dim, bias=self.attention_qkv_bias
-            )
+            else nn.Linear(self.dim, q_out_dim, bias=self.attention_qkv_bias)
         )
         self.wk = (
             LoRALinear(

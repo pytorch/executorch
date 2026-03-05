@@ -119,7 +119,9 @@ class Qwen35AttentionTest(unittest.TestCase):
         attn(x, dummy_freq, dummy_freq)
         state_after_second = attn.recurrent_state.clone()
 
-        self.assertTrue(torch.allclose(state_after_first, state_after_second, atol=1e-5))
+        self.assertTrue(
+            torch.allclose(state_after_first, state_after_second, atol=1e-5)
+        )
 
 
 if __name__ == "__main__":
