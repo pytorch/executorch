@@ -59,26 +59,6 @@ class LCMOpenVINOExporter:
         return self.model_loader.load_models()
 
     @staticmethod
-    def should_quantize_model(sd_model_component: StableDiffusionComponent) -> bool:
-        """
-        If this is true, then we should quantize activations and weights. Otherwise, only compress the weights.
-
-        :param sd_model_component: the type of model in the stable diffusion pipeline such as Unet, text encoder, VAE etc.
-        """
-        return sd_model_component == StableDiffusionComponent.UNET
-
-    def get_ov_quantizer(
-        self, sd_model_component: StableDiffusionComponent
-    ) -> Quantizer:
-        quantization_mode = QuantizationMode.INT8WO_ASYM
-        if self.should_quantize_model(sd_model_component):
-            # Only Unet model will have both weights and activations quantized.
-            quantization_mode = QuantizationMode.INT8_TRANSFORMER
-
-        quantizer = OpenVINOQuantizer(mode=quantization_mode)
-        return quantizer
-
-    @staticmethod
     def get_unet_calibration_dataset(
         pipeline,
         dataset_name: str,
@@ -183,7 +163,6 @@ class LCMOpenVINOExporter:
         if not is_quantization_enabled:
             return model
         try:
-            ov_quantizer = self.get_ov_quantizer(sd_model_component)
             if sd_model_component == StableDiffusionComponent.UNET:
                 # Quantize activations for the Unet Model. Other models are weights-only quantized.
                 pipeline = self.model_loader.pipeline
@@ -200,6 +179,7 @@ class LCMOpenVINOExporter:
                     smooth_quant=True,
                 )
             else:
+                ov_quantizer = OpenVINOQuantizer(mode=QuantizationMode.INT8WO_ASYM)
                 quantized_model = nncf.experimental.torch.fx.compress_pt2e(
                     model, quantizer=ov_quantizer
                 )
