@@ -52,9 +52,8 @@ class ReplaceInfAndLimitValuesPass(ArmPass):
 
             modified = True
             # 255 here is mainly for attention_mask in Llama for reasonable quant scale
-            tensor[tensor == float("inf")] = 255
-            tensor[tensor == float("-inf")] = -255
-            setattr(graph_module, buf_name, tensor)
+            t = torch.nan_to_num(tensor, posinf=255, neginf=-255)
+            setattr(graph_module, buf_name, t)
 
         for node in graph_module.graph.nodes:
             arg_list = list(node.args)
