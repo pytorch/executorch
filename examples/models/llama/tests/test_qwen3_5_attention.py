@@ -14,8 +14,8 @@ from executorch.examples.models.llama.rope import Rope
 
 
 class Qwen35AttentionTest(unittest.TestCase):
-    def test_qwen35_full_attention_output_proj_is_bias_free(self):
-        args = ModelArgs(
+    def _make_args(self, **kwargs) -> ModelArgs:
+        defaults = dict(
             dim=32,
             n_layers=1,
             n_heads=4,
@@ -24,10 +24,16 @@ class Qwen35AttentionTest(unittest.TestCase):
             hidden_dim=64,
             max_seq_len=16,
             max_context_len=16,
+            attention_type="mha",
+        )
+        defaults.update(kwargs)
+        return ModelArgs(**defaults)
+
+    def test_qwen35_full_attention_output_proj_is_bias_free(self):
+        args = self._make_args(
             use_kv_cache=False,
             use_qk_norm=False,
             qk_norm_before_rope=True,
-            attention_type="mha",
             use_q_gate=True,
             attention_qkv_bias=True,
         )
@@ -43,21 +49,12 @@ class Qwen35AttentionTest(unittest.TestCase):
 
     def test_qwen35_full_attention_forward_shape(self):
         torch.manual_seed(0)
-        args = ModelArgs(
-            dim=32,
-            n_layers=1,
-            n_heads=4,
-            n_kv_heads=2,
-            head_dim=8,
-            hidden_dim=64,
-            max_seq_len=16,
-            max_context_len=16,
+        args = self._make_args(
             use_kv_cache=False,
             use_hf_rope=True,
             partial_rotary_factor=0.5,
             use_qk_norm=True,
             qk_norm_before_rope=True,
-            attention_type="mha",
             use_q_gate=True,
             rms_norm_add_unit_offset=True,
         )
@@ -68,34 +65,10 @@ class Qwen35AttentionTest(unittest.TestCase):
         y, _ = attn(x, freqs_cos, freqs_sin)
         self.assertEqual(y.shape, x.shape)
 
-    def test_qwen35_full_attention_legacy_name_maps_to_gated_mha(self):
-        args = ModelArgs(
-            dim=32,
-            n_layers=1,
-            n_heads=4,
-            n_kv_heads=2,
-            head_dim=8,
-            hidden_dim=64,
-            attention_type="qwen3_5_full",
-        )
-        self.assertTrue(args.use_q_gate)
-        rope = Rope(args)
-        attn = ATTENTION_REGISTRY["qwen3_5_full"](args, 0, rope)
-        self.assertTrue(attn.use_q_gate)
-
     def test_gated_deltanet_resets_state_on_new_sequence(self):
         torch.manual_seed(0)
-        args = ModelArgs(
-            dim=32,
-            n_layers=1,
-            n_heads=4,
-            n_kv_heads=2,
-            head_dim=8,
-            hidden_dim=64,
-            max_seq_len=16,
-            max_context_len=16,
+        args = self._make_args(
             use_kv_cache=True,
-            attention_type="mha",
             use_q_gate=True,
             linear_conv_kernel_dim=4,
             linear_key_head_dim=4,
@@ -125,17 +98,8 @@ class Qwen35AttentionTest(unittest.TestCase):
 
     def test_gated_deltanet_no_input_pos_does_not_leak_state(self):
         torch.manual_seed(0)
-        args = ModelArgs(
-            dim=32,
-            n_layers=1,
-            n_heads=4,
-            n_kv_heads=2,
-            head_dim=8,
-            hidden_dim=64,
-            max_seq_len=16,
-            max_context_len=16,
+        args = self._make_args(
             use_kv_cache=True,
-            attention_type="mha",
             use_q_gate=True,
             linear_conv_kernel_dim=4,
             linear_key_head_dim=4,

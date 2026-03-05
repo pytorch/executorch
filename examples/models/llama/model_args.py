@@ -157,10 +157,6 @@ class ModelArgs:
         if self.n_kv_heads is None:
             self.n_kv_heads = self.n_heads
 
-        # Backward compatibility: qwen3_5_full attention name implies q-gated MHA.
-        if self.attention_type == "qwen3_5_full":
-            self.use_q_gate = True
-
         # rope_theta overrides rope_freq_base since it's the official name.
         if self.rope_theta is not None:
             self.rope_freq_base = self.rope_theta

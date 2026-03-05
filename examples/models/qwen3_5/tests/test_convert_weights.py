@@ -91,33 +91,5 @@ class Qwen35ConvertWeightsTest(unittest.TestCase):
         self.assertIn("layers.1.attention.out_proj.weight", converted)
         self.assertNotIn("layers.1.attention.conv1d.bias", converted)
 
-    def test_splits_legacy_packed_linear_attention_weights(self):
-        qkvz = torch.arange(32 * 8, dtype=torch.float32).reshape(32, 8)
-        ba = torch.arange(4 * 8, dtype=torch.float32).reshape(4, 8)
-        out_proj = torch.randn(8, 8)
-        state_dict = {
-            "model.embed_tokens.weight": torch.randn(16, 8),
-            "model.norm.weight": torch.randn(8),
-            "model.layers.1.linear_attn.out_proj.weight": out_proj,
-            "model.layers.1.linear_attn.in_proj_qkvz.weight": qkvz,
-            "model.layers.1.linear_attn.in_proj_ba.weight": ba,
-        }
-
-        converted = qwen_3_5_to_meta(state_dict)
-
-        self.assertTrue(
-            torch.equal(converted["layers.1.attention.in_proj_qkv.weight"], qkvz[:24])
-        )
-        self.assertTrue(
-            torch.equal(converted["layers.1.attention.in_proj_z.weight"], qkvz[24:])
-        )
-        self.assertTrue(
-            torch.equal(converted["layers.1.attention.in_proj_b.weight"], ba[:2])
-        )
-        self.assertTrue(
-            torch.equal(converted["layers.1.attention.in_proj_a.weight"], ba[2:])
-        )
-
-
 if __name__ == "__main__":
     unittest.main()

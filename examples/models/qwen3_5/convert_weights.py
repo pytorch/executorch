@@ -1,7 +1,6 @@
 import argparse
 import json
 import os
-import re
 from typing import Dict
 
 import torch
@@ -120,8 +119,6 @@ def qwen_3_5_to_meta(  # noqa: C901
     state_dict: Dict[str, torch.Tensor],
 ) -> Dict[str, torch.Tensor]:
     converted_state_dict = {}
-    pending_qkvz = {}
-    pending_ba = {}
 
     for key, value in state_dict.items():
         normalized_key = key
@@ -134,23 +131,16 @@ def qwen_3_5_to_meta(  # noqa: C901
 
         # Ignore non-language-model keys up front.
         if not (
-            normalized_key.startswith("model.") or normalized_key.startswith("lm_head.")
+            normalized_key.startswith("model.layers.")
+            or normalized_key.startswith("model.embed")
+            or normalized_key.startswith("model.norm")
+            or normalized_key.startswith("lm_head")
         ):
             if _should_ignore_unmapped_key(key, normalized_key):
                 continue
             raise ValueError(
                 f"Unexpected non-text checkpoint key not mapped for Qwen3.5 export: {key}"
             )
-
-        # Legacy packed tensors (older checkpoints):
-        #   in_proj_qkvz -> split into in_proj_qkv and in_proj_z
-        #   in_proj_ba   -> split into in_proj_b and in_proj_a
-        if normalized_key.endswith(".linear_attn.in_proj_qkvz.weight"):
-            pending_qkvz[normalized_key] = value
-            continue
-        if normalized_key.endswith(".linear_attn.in_proj_ba.weight"):
-            pending_ba[normalized_key] = value
-            continue
 
         try:
             new_key = get_mapped_key(normalized_key, _QWEN_3_5_TO_META)
@@ -161,44 +151,6 @@ def qwen_3_5_to_meta(  # noqa: C901
                 f"Unexpected checkpoint key not mapped for Qwen3.5 export: {key}"
             ) from err
         converted_state_dict[new_key] = value
-
-    for key, value in pending_qkvz.items():
-        layer_match = re.search(r"model\.layers\.(\d+)\.", key)
-        if layer_match is None:
-            raise ValueError(f"Failed to parse layer id from key: {key}")
-        layer_id = layer_match.group(1)
-        out_proj_key = f"layers.{layer_id}.attention.out_proj.weight"
-        if out_proj_key not in converted_state_dict:
-            raise ValueError(
-                f"Cannot split {key}: missing {out_proj_key} to infer value dimension."
-            )
-
-        value_dim = converted_state_dict[out_proj_key].shape[1]
-        total_dim = value.shape[0]
-        conv_dim = total_dim - value_dim
-        if conv_dim <= 0 or (conv_dim - value_dim) % 2 != 0:
-            raise ValueError(
-                f"Invalid packed in_proj_qkvz shape for {key}: {tuple(value.shape)}"
-            )
-        qkv, z = torch.split(value, [conv_dim, value_dim], dim=0)
-        converted_state_dict[f"layers.{layer_id}.attention.in_proj_qkv.weight"] = qkv
-        converted_state_dict[f"layers.{layer_id}.attention.in_proj_z.weight"] = z
-        print(f"Split legacy packed key {key} -> in_proj_qkv + in_proj_z")
-
-    for key, value in pending_ba.items():
-        layer_match = re.search(r"model\.layers\.(\d+)\.", key)
-        if layer_match is None:
-            raise ValueError(f"Failed to parse layer id from key: {key}")
-        layer_id = layer_match.group(1)
-        if value.shape[0] % 2 != 0:
-            raise ValueError(
-                f"Invalid packed in_proj_ba shape for {key}: {tuple(value.shape)}"
-            )
-        half = value.shape[0] // 2
-        b, a = torch.split(value, [half, half], dim=0)
-        converted_state_dict[f"layers.{layer_id}.attention.in_proj_b.weight"] = b
-        converted_state_dict[f"layers.{layer_id}.attention.in_proj_a.weight"] = a
-        print(f"Split legacy packed key {key} -> in_proj_b + in_proj_a")
 
     # Handle tied embeddings.
     if "lm_head.weight" not in state_dict:

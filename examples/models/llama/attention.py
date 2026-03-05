@@ -314,7 +314,6 @@ class RingKVCache(KVCache):
         return self.k_cache, self.v_cache
 
 
-@register_attention("qwen3_5_full")
 @register_attention("mha")
 class AttentionMHA(Attention):
     def __init__(
