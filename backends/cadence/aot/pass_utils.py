@@ -8,7 +8,7 @@
 
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Set, Type, TypeVar, Union
+from typing import Callable, List, Optional, override, Set, Type, TypeVar, Union
 
 import torch
 from beartype.door import die_if_unbearable
@@ -261,7 +261,39 @@ def none_throws(x: Optional[PassResult]) -> PassResult:
     return x
 
 
-class RemoveOrReplacePassInterface(ExportPass):
+class HierarchicalInplacePassInterface(ExportPass):
+    """A base class for passes that apply in-place modification to the graph module and its submodules.
+    Also calls ExportPass.call() in case the graph module is modified to ensure all nodes have valid `meta['val']`.
+    """
+
+    @abstractmethod
+    def _apply_flat_inplace(self, graph_module) -> bool:
+        """Apply in-place modification to the graph module."""
+        raise NotImplementedError("`_apply_flat_inplace` must be implemented")
+
+    def _apply_hierarchical_inplace(self, graph_module: torch.fx.GraphModule) -> bool:
+        """Apply in-place modification recursively to the graph module and its submodules."""
+
+        modified: bool = False
+        for module in filter(
+            lambda m: isinstance(m, torch.fx.GraphModule), graph_module.modules()
+        ):
+            modified |= self._apply_flat_inplace(module)
+
+        return modified
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        modified = self._apply_hierarchical_inplace(graph_module)
+
+        if modified:
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
+            return super().call(graph_module)
+
+        return PassResult(graph_module, False)
+
+
+class RemoveOrReplacePassInterface(HierarchicalInplacePassInterface):
     @property
     @abstractmethod
     def targets(self) -> list[EdgeOpOverload]:
@@ -278,31 +310,18 @@ class RemoveOrReplacePassInterface(ExportPass):
         """
         raise NotImplementedError("`maybe_remove_or_replace` must be implemented")
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        """
-        For each node in targets, if the node should be removed/replaced,
-        removes/replaces from the graph and returns the modified graph and modified
-        set to True.
-        If no node should be removed/replaced, returns a pass result with the original
-        graph module and False for modified.
-        """
+    @override
+    def _apply_flat_inplace(self, graph_module: torch.fx.GraphModule) -> bool:
         changed = False
         for target in self.targets:
-            for module in filter(
-                lambda m: isinstance(m, torch.fx.GraphModule), graph_module.modules()
+            for node in graph_module.graph.find_nodes(
+                op="call_function", target=target
             ):
-                for node in module.graph.find_nodes(op="call_function", target=target):
-                    if len(node.users) == 0:
-                        # It is possible that maybe_remove_or_replace would have removed
-                        # this target by starting from a different target. In this case,
-                        # we should ignore it. If it wasn't erased, it will be handled
-                        # in eliminate_dead_code.
-                        continue
-                    changed |= self.maybe_remove_or_replace(node)
-
-        if changed:
-            graph_module.graph.eliminate_dead_code()
-            graph_module.recompile()
-            return super().call(graph_module)
-
-        return PassResult(graph_module, False)
+                if len(node.users) == 0:
+                    # It is possible that maybe_remove_or_replace would have removed
+                    # this target by starting from a different target. In this case,
+                    # we should ignore it. If it wasn't erased, it will be handled
+                    # in eliminate_dead_code.
+                    continue
+                changed |= self.maybe_remove_or_replace(node)
+        return changed

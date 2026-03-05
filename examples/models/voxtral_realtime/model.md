@@ -101,8 +101,8 @@ VoxtralRealtimeModel
       attention_norm: RMSNorm
       attention: LMAttention
         wq/wk/wv/wo: Linear (no bias)
-        kv_cache: KVCache (XNNPACK) or StaticKVCache (Metal)
-        sdpa: SDPA (XNNPACK) or MetalSDPA (Metal)
+        kv_cache: KVCache (XNNPACK) or StaticKVCache (Metal/CUDA)
+        sdpa: SDPA (XNNPACK) or MetalSDPA (Metal) or CudaSDPA (CUDA)
       ffn_norm: RMSNorm
       ada_rms_norm_t_cond: Sequential(Linear, GELU, Linear)
       feed_forward: LMMLP (w1/w2/w3)
@@ -115,8 +115,8 @@ StreamingAudioEncoderExport
   layers: 32x CausalEncoderLayer (shared from encoder.layers)
   enc_norm: RMSNorm (shared from encoder.norm)
   adapter: AudioLanguageAdapter (shared from model.adapter)
-  kv_caches: 32x EncoderRingKVCache (XNNPACK) or StandardEncoderRingKVCache (Metal)
-  sdpa: SDPA (XNNPACK) or StandardEncoderSDPA (Metal)
+  kv_caches: 32x EncoderRingKVCache (XNNPACK) or StandardEncoderRingKVCache (Metal/CUDA)
+  sdpa: SDPA (XNNPACK) or StandardEncoderSDPA (Metal/CUDA)
   inv_freq: RoPE inverse frequencies (owned, on-the-fly computation)
 ```
 
@@ -127,7 +127,7 @@ spectrogram at once. No KV cache, no GQA (n_heads == n_kv_heads).
 
 `EncoderAttention` uses `F.scaled_dot_product_attention` with
 `is_causal=True`, transposing to `[B, H, T, D]` internally. No custom
-ops needed — works on all backends (XNNPACK, Metal, Portable).
+ops needed — works on all backends (XNNPACK, Metal, CUDA, Portable).
 
 The offline encoder uses full causal attention (no sliding window).
 The model's `params.json` specifies `sliding_window: 750` but this is
@@ -139,7 +139,7 @@ than 750 encoder frames (~15s), full causal is equivalent.
 The text decoder (`MistralDecoder`) is a 26-layer Mistral decoder with
 GQA (32 query heads, 8 KV heads). Backend selection is controlled by the
 `backend` config field, passed through from the export script's `--backend`
-flag (e.g., `"xnnpack"`, `"metal"`, `"portable"`).
+flag (e.g., `"xnnpack"`, `"metal"`, `"cuda"`, `"portable"`).
 
 ### KV cache
 
@@ -150,7 +150,7 @@ triggers a `requires_grad` bug in `SpecPropPass` during `to_executorch()`.
 The `[B, S, H, D]` layout matches what `update_cache` and `custom_sdpa`
 expect, so there are no transposes between cache update and attention.
 
-**Metal:** `StaticKVCache` with `[B, H, S, D]` layout. Uses `index_copy_`
+**Metal/CUDA:** `StaticKVCache` with `[B, H, S, D]` layout. Uses `index_copy_`
 for cache updates, which is compatible with `torch.export` and AOTI.
 
 ### SDPA
@@ -167,6 +167,12 @@ which handles GQA natively via `gqa_factor`, avoiding the memory bandwidth
 overhead of `repeat_interleave`. Uses explicit additive attention masks.
 AOTInductor has compatibility issues with the `custom_sdpa` custom op.
 
+**CUDA:** `CudaSDPA` uses `F.scaled_dot_product_attention` with
+`repeat_interleave` for GQA expansion (32 query heads / 8 KV heads = 4x).
+Uses boolean attention masks (`True`=attend, `False`=masked) as required
+by the Triton SDPA kernel. The CUDA backend's Triton SDPA replacement
+pass optimizes the attention kernel at compile time.
+
 ### Attention layout
 
 **XNNPACK/Portable:** Q/K/V projections produce `[B, T, H, D]` via
@@ -176,10 +182,9 @@ AOTInductor has compatibility issues with the `custom_sdpa` custom op.
 `RemoveRedundantTransposes` post-export pass that Llama/optimum-executorch
 require when using `[B, H, S, D]` attention with `[B, S, H, D]` cache.
 
-**Metal:** Q/K/V projections still produce `[B, T, H, D]`, but
-`StaticKVCache` stores `[B, H, S, D]` and `MetalSDPA` transposes q to
-`[B, H, T, D]` for `_scaled_dot_product_attention_math_for_mps`, then
-transposes back.
+**Metal/CUDA:** Q/K/V projections still produce `[B, T, H, D]`, but
+`StaticKVCache` stores `[B, H, S, D]` and `MetalSDPA`/`CudaSDPA` transpose q to
+`[B, H, T, D]` for the SDPA kernel, then transpose back.
 
 ### Adaptive RMSNorm
 
@@ -220,10 +225,9 @@ mel_chunk (1, 128, 8) + enc_input_pos (4,)
 **XNNPACK/Portable:** Uses `EncoderRingKVCache` (`update_cache_with_indices`
 custom op) and `SDPA` (`custom_sdpa`).
 
-**Metal:** Uses `StandardEncoderRingKVCache` (`index_copy_`-based ring
+**Metal/CUDA:** Uses `StandardEncoderRingKVCache` (`index_copy_`-based ring
 buffer) and `StandardEncoderSDPA` (`F.scaled_dot_product_attention` with
-explicit sliding window masks) — the same patterns used in the Metal
-text decoder.
+explicit sliding window masks) — AOTI-compatible patterns avoiding custom ops.
 
 ### Streaming decode loop
 
@@ -257,7 +261,7 @@ encoder — verified to within fp32 precision (max diff < 2e-5).
 
 Each of the 32 encoder transformer layers gets its own ring buffer KV
 cache (`EncoderRingKVCache` for XNNPACK/Portable, `StandardEncoderRingKVCache`
-for Metal) that overwrites old entries when the window is exceeded,
+for Metal/CUDA) that overwrites old entries when the window is exceeded,
 enabling streaming of arbitrary length audio.
 
 - Cache shape: `(1, 2*max_enc_len, 32, 64)` per layer. The buffer is 2x the
@@ -283,7 +287,7 @@ for the offline encoder.
 (a custom op that scatter-writes via an indices tensor). Write indices are
 computed analytically: `(arange(seq_len) + start_pos) % buf_size`.
 
-**Metal:** Cache writes use `index_copy_` with wrapped indices
+**Metal/CUDA:** Cache writes use `index_copy_` with wrapped indices
 (`input_pos % buf_size`).
 
 No mutable position state is needed in either variant.
@@ -304,7 +308,10 @@ is computed from these positions each step:
 
 ```python
 valid = (cache_pos >= 0) & (delta >= 0) & (delta < window_size)
+# Metal: float additive mask
 mask = torch.where(valid, 0.0, float("-inf"))
+# CUDA: boolean mask (bool_mask=True returns valid directly)
+mask = valid
 ```
 
 The mask is identical for all 32 layers (same `input_pos`), so it
@@ -360,6 +367,10 @@ Parakeet pattern), allowing different configs for encoder vs decoder:
 # Metal
 --qlinear-encoder fpa4w   # encoder linear layers
 --qlinear fpa4w           # decoder linear layers
+
+# CUDA
+--qlinear-encoder 4w --qlinear-encoder-packing-format tile_packed_to_4d
+--qlinear 4w --qlinear-packing-format tile_packed_to_4d
 ```
 
 The streaming encoder references the same module objects that
@@ -411,7 +422,7 @@ of ~34 GB for the full-size model):
 1. **Meta device construction** — `with torch.device("meta"):` builds the
    model with zero-storage parameter tensors (shape/dtype metadata only).
 2. **safetensors lazy access** — `safe_open` loads tensors on demand, cast
-   to float32 (the default; bf16 is rejected by the XNNPACK partitioner).
+   to the configured dtype (`--dtype`, default fp32; CUDA uses bf16).
 3. **`assign=True` state dict loading** — replaces meta tensors by reference
    instead of copying into pre-allocated storage. No duplication.
 4. **Post-load fixups** — re-tie `output.weight = tok_embeddings.weight`
@@ -430,7 +441,7 @@ of ~34 GB for the full-size model):
 | `layers.*` | `decoder.layers.*` |
 | `norm.weight` | `decoder.norm.weight` |
 
-Weights are cast to float32 during loading. `decoder.output.weight` is
+Weights are cast to the configured dtype during loading. `decoder.output.weight` is
 not in the checkpoint — it is created by tying to
 `decoder.tok_embeddings.weight` in `VoxtralRealtimeModel.__init__`.
 During export with quantization, the tie is broken (the `if args.qlinear
