@@ -40,3 +40,15 @@ def define_common_targets():
             "//caffe2:torch",
         ],
     )
+
+    runtime.python_library(
+        name = "converter_utils",
+        srcs = [
+            "converter_utils.py",
+        ],
+        visibility = ["PUBLIC"],
+        deps = [
+            "//caffe2:torch",
+            "//deeplearning/trt/python:py_tensorrt",
+        ],
+    )
