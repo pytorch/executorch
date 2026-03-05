@@ -1006,7 +1006,7 @@ _OPCODE_OVERRIDES = {
 
 
 def _table_name_to_opcode(name: str) -> str:
-    """Convert table name like 'LinearNode' to opcode like 'LINEAR'.
+    """Convert table name like 'AddNode' to opcode like 'ADD'.
 
     Uses regex-based camelCase → UPPER_SNAKE_CASE conversion with a small
     override dict for names whose conventional opcode doesn't follow the

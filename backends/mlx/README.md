@@ -193,7 +193,7 @@ ExportedProgram (subgraph)
 
 ## How to Add a New Op
 
-This section walks through adding a new op end-to-end, using **`aten.linear`**
+This section walks through adding a new op end-to-end, using **`aten.addmm`**
 as an example.
 
 ### Step 1: Add the Node to `schema.fbs`
@@ -201,15 +201,15 @@ as an example.
 Add a new table in the "Op nodes" section and add it to the `OpNode` union:
 
 ```fbs
-table LinearNode {
-    x: Tid (required);
-    weight: Tid (required);
+table AddmmNode {
+    mat1: Tid (required);
+    mat2: Tid (required);
     out: Tid (required);
     bias: Tid;  // optional
 }
 ```
 
-Then add `LinearNode` to the `union OpNode { ... }` list.
+Then add `AddmmNode` to the `union OpNode { ... }` list.
 
 ### Step 2: Run the Code Generator
 
@@ -219,34 +219,40 @@ python backends/mlx/serialization/generate.py
 
 This regenerates:
 
-- `mlx_graph_schema.py` — adds `LinearNode` Python dataclass
-- `_generated_serializers.py` — adds `_build_LinearNode` serializer
-- `runtime/MLXLoader.h` — adds `LinearNode` C++ struct, `OpCode::LINEAR`, loader
-- `runtime/MLXLoader.cpp` — adds FlatBuffer → `LinearNode` deserialization
+- `mlx_graph_schema.py` — adds `AddmmNode` Python dataclass
+- `_generated_serializers.py` — adds `_build_AddmmNode` serializer
+- `runtime/MLXLoader.h` — adds `AddmmNode` C++ struct, `OpCode::ADDMM`, loader
+- `runtime/MLXLoader.cpp` — adds FlatBuffer → `AddmmNode` deserialization
 - `runtime/schema_generated.h` — FlatBuffer C++ bindings
 
 ### Step 3: Add the Python Op Handler (`ops.py`)
 
 Register a handler that converts the ATen op to your new node. Make sure to
-import `LinearNode` from `mlx_graph_schema`:
+import `AddmmNode` from `mlx_graph_schema`:
 
 ```python
-from executorch.backends.mlx.serialization.mlx_graph_schema import LinearNode
+from executorch.backends.mlx.serialization.mlx_graph_schema import AddmmNode
 
-@REGISTRY.register(target=[torch.ops.aten.linear.default])
-def _linear_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+@REGISTRY.register(target=[torch.ops.aten.addmm.default])
+def _addmm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     args = P.args(n)
-    require_args(args, 2, 3, "aten.linear")
-    require_kwargs(P.kwargs(n), set(), "aten.linear")
-    x, w = args[0], args[1]
-    b = args[2] if len(args) > 2 else None
+    kwargs = P.kwargs(n)
+    require_args(args, 3, 3, "aten.addmm")
+    require_kwargs(kwargs, {"beta", "alpha"}, "aten.addmm")
+    bias, mat1, mat2 = args[0], args[1], args[2]
+
+    beta = kwargs.get("beta", 1)
+    alpha = kwargs.get("alpha", 1)
+
     out = P.make_or_get_slot(n)
     P.emit(
-        LinearNode(
-            x=P.slot_to_tid(x),
-            weight=P.slot_to_tid(w),
+        AddmmNode(
+            mat1=P.slot_to_tid(mat1),
+            mat2=P.slot_to_tid(mat2),
             out=P.slot_to_tid(out),
-            bias=P.slot_to_tid(b) if b else None,
+            bias=P.slot_to_tid(bias),
+            alpha=float(alpha),
+            beta=float(beta),
         )
     )
     return out
@@ -263,21 +269,28 @@ Key APIs:
 Add an `exec_*` function in the `ops` namespace:
 
 ```cpp
-inline void exec_linear(const LinearNode& n, ExecutionState& st, StreamOrDevice s) {
-    const auto& X = st.const_tensor_ref(n.x);
-    auto W = transpose(st.const_tensor_ref(n.weight), {1, 0}, s);
-    array Y = n.bias
-        ? addmm(st.const_tensor_ref(*n.bias), X, W, 1.0f, 1.0f, s)
-        : matmul(X, W, s);
+inline void exec_addmm(const AddmmNode& n, ExecutionState& st, StreamOrDevice s) {
+    const auto& mat1 = st.const_tensor_ref(n.mat1);
+    const auto& mat2 = st.const_tensor_ref(n.mat2);
+
+    array Y = n.bias ? addmm(
+                           st.const_tensor_ref(*n.bias),
+                           mat1,
+                           mat2,
+                           /*alpha=*/n.alpha,
+                           /*beta=*/n.beta,
+                           s)
+                     : matmul(mat1, mat2, s);
+
     st.set_tensor(n.out, std::move(Y));
 }
 ```
 
-Then add the dispatch case in `Interpreter::execute_instruction()`:
+Then add the dispatch case in `Interpreter::dispatch()`:
 
 ```cpp
-case OpCode::LINEAR:
-    ops::exec_linear(std::get<LinearNode>(instr.node), st, s);
+case OpCode::ADDMM:
+    ops::exec_addmm(std::get<AddmmNode>(instr.node), st, s);
     break;
 ```
 
@@ -290,34 +303,60 @@ Each test follows a standard pattern:
 3. **Decorate with `@register_test`** to register it with the test runner.
 
 ```python
-class LinearModel(nn.Module):
-    def __init__(self, in_features=64, out_features=128, bias=True):
+class AddmmModel(nn.Module):
+    """Model that performs addmm: bias + (mat1 @ mat2)."""
+
+    def __init__(self, in_features, out_features, bias=True, alpha=1.0, beta=1.0):
         super().__init__()
-        self.linear = nn.Linear(in_features, out_features, bias=bias)
+        self.weight = nn.Parameter(torch.randn(out_features, in_features))
+        if bias:
+            self.bias = nn.Parameter(torch.randn(out_features))
+        else:
+            self.bias = None
+        self.alpha = alpha
+        self.beta = beta
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.linear(x)
+        if self.bias is not None:
+            return torch.addmm(
+                self.bias, x, self.weight.t(), beta=self.beta, alpha=self.alpha
+            )
+        else:
+            return torch.mm(x, self.weight.t())
 
 @register_test
-class LinearTest(OpTestCase):
-    name = "linear"
+class AddmmTest(OpTestCase):
+    name = "addmm"
     rtol = 1e-4
     atol = 1e-4
 
-    def __init__(self, in_features=64, out_features=128, bias=True):
+    def __init__(self, batch_size=2, in_features=64, out_features=32,
+                 bias=True, alpha=1.0, beta=1.0):
+        self.batch_size = batch_size
         self.in_features = in_features
         self.out_features = out_features
         self.bias = bias
+        self.alpha = alpha
+        self.beta = beta
+        self.name = f"addmm_{in_features}x{out_features}"
 
     @classmethod
     def get_test_configs(cls):
-        return [cls(), cls(bias=False)]
+        return [
+            cls(batch_size=2, in_features=64, out_features=32),
+            cls(batch_size=2, in_features=64, out_features=32, bias=False),
+            cls(batch_size=4, in_features=128, out_features=64),
+            cls(batch_size=2, in_features=64, out_features=32, alpha=2.0, beta=0.5),
+        ]
 
     def create_model(self):
-        return LinearModel(self.in_features, self.out_features, bias=self.bias)
+        return AddmmModel(
+            self.in_features, self.out_features,
+            bias=self.bias, alpha=self.alpha, beta=self.beta,
+        )
 
     def create_inputs(self):
-        return (torch.randn(2, 16, self.in_features),)
+        return (torch.randn(self.batch_size, self.in_features),)
 ```
 
 ### Step 6: Run Tests
@@ -327,7 +366,7 @@ outputs against PyTorch reference. Since adding a new op always involves C++
 changes, use `--rebuild` to recompile the runtime:
 
 ```bash
-python -m executorch.backends.mlx.test.run_all_tests --rebuild linear
+python -m executorch.backends.mlx.test.run_all_tests --rebuild addmm
 ```
 
 Run all tests in parallel:
@@ -356,7 +395,7 @@ architecture, prerequisites, and the `OpTestCase` API.
 - [ ] Run `python backends/mlx/serialization/generate.py`
 - [ ] Add `@REGISTRY.register` handler in `ops.py` (and import the new node class)
 - [ ] Add `exec_*` function in `runtime/MLXInterpreter.h`
-- [ ] Add `case OpCode::*` in `Interpreter::execute_instruction()`
+- [ ] Add `case OpCode::*` in `Interpreter::dispatch()`
 - [ ] Add test model + `OpTestCase` in `test/test_ops.py`
 - [ ] Run `python -m executorch.backends.mlx.test.run_all_tests --rebuild <test_name>`
 
