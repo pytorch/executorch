@@ -3,7 +3,7 @@ from typing import Dict
 
 import torch
 
-from torchtune.models.convert_weights import get_mapped_key
+from executorch.examples.models.checkpoint import get_mapped_key
 
 from torchtune.training import FullModelHFCheckpointer
 

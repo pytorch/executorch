@@ -71,7 +71,7 @@ class ConvertToCortexMPass(XNNPACKPass):
 
     def _get_linear_replacement(self, node):
         """
-         Let
+        Let
         - yi be the output activations (y1, ... yn)
         - xj be the input activations (x1, ... xm)
         - wij be the weights (w11, ... wnm)

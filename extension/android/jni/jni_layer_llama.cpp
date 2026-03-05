@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -280,6 +281,49 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     return 0;
   }
 
+  jint append_images_input_buffer(
+      facebook::jni::alias_ref<facebook::jni::JByteBuffer> image,
+      jint width,
+      jint height,
+      jint channels) {
+    if (image == nullptr || width <= 0 || height <= 0 || channels <= 0) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    auto* data = image->getDirectBytes();
+    auto size = image->getDirectSize();
+    size_t expected = static_cast<size_t>(width) * height * channels;
+    if (data == nullptr || size < expected) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    std::vector<uint8_t> image_data(data, data + expected);
+    llm::Image image_runner{std::move(image_data), width, height, channels};
+    prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(image_runner)});
+    return 0;
+  }
+
+  jint append_normalized_images_input_buffer(
+      facebook::jni::alias_ref<facebook::jni::JByteBuffer> image,
+      jint width,
+      jint height,
+      jint channels) {
+    if (image == nullptr || width <= 0 || height <= 0 || channels <= 0) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    auto* data = image->getDirectBytes();
+    auto size = image->getDirectSize();
+    size_t expected_bytes =
+        static_cast<size_t>(width) * height * channels * sizeof(float);
+    if (data == nullptr || size < expected_bytes || size % sizeof(float) != 0) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    size_t num_floats = static_cast<size_t>(width) * height * channels;
+    std::vector<float> image_data(num_floats);
+    std::memcpy(image_data.data(), data, expected_bytes);
+    llm::Image image_runner{std::move(image_data), width, height, channels};
+    prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(image_runner)});
+    return 0;
+  }
+
   // Returns status_code
   jint append_normalized_images_input(
       facebook::jni::alias_ref<jfloatArray> image,
@@ -428,8 +472,14 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         makeNativeMethod(
             "appendImagesInput", ExecuTorchLlmJni::append_images_input),
         makeNativeMethod(
+            "appendImagesInputBuffer",
+            ExecuTorchLlmJni::append_images_input_buffer),
+        makeNativeMethod(
             "appendNormalizedImagesInput",
             ExecuTorchLlmJni::append_normalized_images_input),
+        makeNativeMethod(
+            "appendNormalizedImagesInputBuffer",
+            ExecuTorchLlmJni::append_normalized_images_input_buffer),
         makeNativeMethod(
             "appendAudioInput", ExecuTorchLlmJni::append_audio_input),
         makeNativeMethod(

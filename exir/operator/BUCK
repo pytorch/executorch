@@ -38,7 +38,7 @@ fbcode_target(_kind = runtime.python_library,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_operator",
     srcs = [
         "test/test_operator.py",

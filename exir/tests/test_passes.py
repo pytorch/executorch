@@ -53,6 +53,7 @@ from executorch.exir.passes import (
     ToOutVarPass,
 )
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
+from executorch.exir.passes.cse_pass import CSEPass
 from executorch.exir.passes.debug_handle_generator_pass import (
     DebugHandleGeneratorPass,
     generate_missing_debug_handles,
@@ -2499,3 +2500,93 @@ class TestPasses(unittest.TestCase):
                         modified_const.is_contiguous(),
                         f"Constant should be contiguous after pass, got strides {modified_const.stride()}",
                     )
+
+
+class TestCSEPass(unittest.TestCase):
+    """Tests for Common Subexpression Elimination pass."""
+
+    @staticmethod
+    def _to_edge_gm(module, example_inputs):
+        ep = torch.export.export(module, example_inputs, strict=False)
+        edge = to_edge(ep)
+        return edge.exported_program().graph_module
+
+    @staticmethod
+    def _count_ops(gm, target):
+        return sum(
+            1 for n in gm.graph.nodes if n.op == "call_function" and n.target == target
+        )
+
+    def test_duplicate_unary_ops_deduplicated(self):
+        """Two identical neg(x) ops should be merged into one."""
+
+        class M(torch.nn.Module):
+            def forward(self, x):
+                a = torch.neg(x)
+                b = torch.neg(x)
+                return a + b
+
+        gm = self._to_edge_gm(M(), (torch.randn(4, 4),))
+        target = exir_ops.edge.aten.neg.default
+        before = self._count_ops(gm, target)
+
+        if before < 2:
+            self.skipTest("Export already deduplicated neg ops")
+
+        result = CSEPass()(gm)
+
+        self.assertTrue(result.modified)
+        self.assertEqual(self._count_ops(result.graph_module, target), 1)
+
+    def test_different_ops_not_merged(self):
+        """neg(x) and abs(x) should not be merged."""
+
+        class M(torch.nn.Module):
+            def forward(self, x):
+                return torch.neg(x) + torch.abs(x)
+
+        gm = self._to_edge_gm(M(), (torch.randn(4, 4),))
+        result = CSEPass()(gm)
+        self.assertFalse(result.modified)
+
+    def test_same_op_different_inputs_not_merged(self):
+        """neg(x) and neg(y) should not be merged."""
+
+        class M(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.neg(x) + torch.neg(y)
+
+        gm = self._to_edge_gm(M(), (torch.randn(4, 4), torch.randn(4, 4)))
+        result = CSEPass()(gm)
+        self.assertFalse(result.modified)
+
+    def test_noop_when_no_duplicates(self):
+        class M(torch.nn.Module):
+            def forward(self, x):
+                return x + 1
+
+        gm = self._to_edge_gm(M(), (torch.randn(4, 4),))
+        result = CSEPass()(gm)
+        self.assertFalse(result.modified)
+
+    def test_duplicate_chains_deduplicated(self):
+        """Duplicate multi-op chains should be merged via structural hashing."""
+
+        class M(torch.nn.Module):
+            def forward(self, x):
+                a = torch.neg(torch.abs(x))
+                b = torch.neg(torch.abs(x))
+                return a + b
+
+        gm = self._to_edge_gm(M(), (torch.randn(4, 4),))
+        neg_target = exir_ops.edge.aten.neg.default
+        abs_target = exir_ops.edge.aten.abs.default
+
+        if self._count_ops(gm, neg_target) < 2:
+            self.skipTest("Export already deduplicated chains")
+
+        result = CSEPass()(gm)
+
+        self.assertTrue(result.modified)
+        self.assertEqual(self._count_ops(result.graph_module, neg_target), 1)
+        self.assertEqual(self._count_ops(result.graph_module, abs_target), 1)

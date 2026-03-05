@@ -12,10 +12,8 @@
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-#include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
-#include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
 #include <limits>
@@ -27,7 +25,6 @@ extern "C" {
 
 using Tensor = torch::executor::Tensor;
 using ScalarType = executorch::aten::ScalarType;
-using Scalar = torch::executor::Scalar;
 using Error = executorch::runtime::Error;
 using Int64ArrayRef = executorch::aten::ArrayRef<int64_t>;
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
@@ -35,6 +32,9 @@ using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 // From arm_nn_math_types.h
 #define ARM_NN_Q31_MAX ((int32_t)(0x7FFFFFFFL))
 #define ARM_NN_Q31_MIN ((int32_t)(0x80000000L))
+
+// 16-byte alignment for MVE vector operations.
+constexpr size_t kCortexMMveAlignment = 16;
 
 // Basic tensor type / layout validation and dimension order checking
 inline void validate_cmsis_nn_tensor_requirements(
@@ -387,20 +387,4 @@ inline Error resize_to_broadcast_target_size(
 
   return executorch::runtime::resize_tensor(
       output, {expected_output_size, expected_output_dim});
-}
-
-/**
- * Convert Scalar to CMSIS-NN int32 format
- * For multipliers, zero_points, etc. from quantize_multiplier_aot
- */
-inline int32_t extractScalarToInt32(const Scalar& scalar_value) {
-  return static_cast<int32_t>(scalar_value.to<int64_t>());
-}
-
-/**
- * Convert Scalar to CMSIS-NN int format
- * For shift values from quantize_multiplier_aot
- */
-inline int extractScalarToInt(const Scalar& scalar_value) {
-  return static_cast<int>(scalar_value.to<int64_t>());
 }

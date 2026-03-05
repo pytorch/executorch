@@ -43,23 +43,25 @@ jobs:
               "ethansfng", "ThomasJannaud", "nirvanagth", "marcinkwiatkowski", "3l1", "omerjerk", "nitish2112", "yipjustin", 
               "ejnguyen", "andrewor14", "phaiting", "mgiordy", "LeeOHzzZ", "adicatana", "Polyomino", "ezrilow", "navsud", 
               "michaelmaitland", "RahulC7", "seyeong-han", "thdusdl1219", "jaejunku", "felixweilbach", "apullin", "trviv", "junluan01", 
-              "mvartani-meta", "abeakkas", "elpdumont", "corporateshark", "bdemirb", "GeorgeTzoupis", "AdithyaReddy9", "YifanShenSZ", 
-              "RdoubleA", "Olivia-liu", "Abhi-hpp", "Vysarat","azad-meta", "junpi", "pytorchbot", "pytorchmergebot", "pytorchupdatebot", 
+              "mvartani-meta", "abeakkas", "elpdumont", "corporateshark", "bdemirb", "GeorgeTzoupis", "AdithyaReddy9", "drinkmorewaterr", 
+              "YifanShenSZ", "RdoubleA", "Olivia-liu", "Abhi-hpp", "Vysarat","azad-meta", "junpi", "pytorchbot", "pytorchmergebot", "pytorchupdatebot", 
               "facebook-github-bot", "app/dependabot", "Erik-Lundell", "zingo", "AdrianLundell", "oscarandersson8218", "per", 
               "Sebastian-Larsson", "SaoirseARM", "robell", "mansnils", "martinlsm", "freddan80", "YufengShi-dudu", "tom-arm", "perheld", 
               "Jerry-Ge", "gggekov", "fumchin", "wwwind", "benkli01", "Tessil", "maddun01", "Michiel-Olieslagers", "armwaheed", "agrima1304", 
               "emmakujala", "annietllnd", "MatthiasHertel80", "AlexTawseArm", "jmahbs", "morgolock", "Christoffer-JL", "ArmRyan", "xingguo01", 
-              "tgonzalezorlandoarm", "chizkiyahu", "sarah-blades", "haowhsu-quic", "shewu-quic", "winskuo-quic", "chunit-quic", "DannyYuyang-quic", 
-              "chuntl", "thchenqti", "jethroqti", "chenweng-quic", "cymbalrush", "DenisVieriu97", "billmguo", "StrycekSimon", "jirioc", 
-              "robert-kalmar", "skywall", "MartinPavella", "roman-janik-nxp", "novak-vaclav", "neuropilot-captain", "dijopaul", "cad-rlc", 
-              "cad-audio", "ynimmaga", "daniil-lyakhov", "emmanuel-ferdman", "cavusmustafa", "anzr299", "Jiseong-oh", "alexdean08",
+              "tgonzalezorlandoarm", "chizkiyahu", "sarah-blades", "itsMarco-G", "usamahz", "haowhsu-quic", "shewu-quic", "winskuo-quic", 
+              "chunit-quic", "DannyYuyang-quic", "chuntl", "thchenqti", "jethroqti", "chenweng-quic", "cymbalrush", "DenisVieriu97", "billmguo", 
+              "StrycekSimon", "jirioc", "robert-kalmar", "skywall", "MartinPavella", "roman-janik-nxp", "novak-vaclav", "neuropilot-captain", 
+              "dijopaul", "cad-rlc", "cad-audio", "ynimmaga", "daniil-lyakhov", "emmanuel-ferdman", "cavusmustafa", "anzr299", "suryasidd", 
+              "Jiseong-oh", "alexdean08",
               // explicitly include the dependabot bot login seen in PRs
               "dependabot[bot]"
             ]);
 
             // List of organization logins (lowercased) to exclude members of
             const excludedOrgs = new Set([
-              "meta", "facebook", "pytorch", "arm", "apple", "qualcomm", "nxp", "mediatek", "cadence", "intel", "samsung"
+              "meta", "facebook", "pytorch", "arm", "apple", "qualcomm", "nxp", "mediatek", "cadence", "intel", "samsung",
+              "@meta", "@facebook", "@pytorch", "@arm", "@apple", "@qualcomm", "@nxp", "@mediatek", "@cadence", "@intel", "@samsung"
             ]);
 
             // Labels on PRs to exclude from being added to the project
@@ -67,6 +69,7 @@ jobs:
             
             // Simple cache for user -> boolean (member of excluded org)
             const orgsCache = new Map();
+            const companyCache = new Map();
 
             async function isMemberOfExcludedOrg(user) {
               if (!user || !user.login) return false;
@@ -102,6 +105,23 @@ jobs:
               return item.labels.some(l => l && l.name && excludedPrLabels.has(l.name.toLowerCase()));
             }
 
+            async function isMemberOfExcludedCompany(user) {
+              if (!user || !user.login) return false;
+              const login = user.login;
+              if (companyCache.has(login)) return companyCache.get(login);
+              try {
+                const response = await github.rest.users.getByUsername({ username: login });
+                const company = response && response.data && response.data.company ? response.data.company : "";
+                const isMember = company && excludedOrgs.has(company.toLowerCase());
+                companyCache.set(login, isMember);
+                return isMember;
+              } catch (error) {
+                // If checking company fails (rate limit, permissions etc.), assume not a member to avoid false positives.
+                console.log(`Error checking company for ${login}: ${error.message}`);
+                companyCache.set(login, false);
+                return false;
+              }
+            }
             async function addItem(contentId, type, number) {
               try {
                 await github.graphql(`
@@ -146,6 +166,10 @@ jobs:
                   console.log(`Skipping issue #${issue.number} by ${issue.user && issue.user.login} (member of excluded org)`);
                   continue;
                 }
+                if (await isMemberOfExcludedCompany(issue.user)) {
+                  console.log(`Skipping issue #${issue.number} by ${issue.user && issue.user.login} (member of excluded org)`);
+                  continue;
+                }
                 await addItem(issue.node_id, 'issue', issue.number);
               }
 
@@ -172,6 +196,10 @@ jobs:
                   continue;
                 }
                 if (await isMemberOfExcludedOrg(pr.user)) {
+                  console.log(`Skipping PR #${pr.number} by ${pr.user && pr.user.login} (member of excluded org)`);
+                  continue;
+                }
+                if (await isMemberOfExcludedCompany(pr.user)) {
                   console.log(`Skipping PR #${pr.number} by ${pr.user && pr.user.login} (member of excluded org)`);
                   continue;
                 }

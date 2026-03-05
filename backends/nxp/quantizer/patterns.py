@@ -324,7 +324,16 @@ class SubTensorPattern(QuantizationPattern):
         )
 
 
-class AvgPoolPattern(SharedSpecPattern):
+class AvgPool1DPattern(SharedSpecPattern):
+    """
+    Quantizer for AvgPool1D operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.avg_pool1d.default]
+
+
+class AvgPool2DPattern(SharedSpecPattern):
     """
     Quantizer for AvgPool2D operator.
     """

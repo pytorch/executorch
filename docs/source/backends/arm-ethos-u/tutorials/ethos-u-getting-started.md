@@ -95,7 +95,6 @@ compile_spec = EthosUCompileSpec(
             target="ethos-u55-128",
             system_config="Ethos_U55_High_End_Embedded",
             memory_mode="Shared_Sram",
-            extra_flags=["--output-format=raw", "--debug-force-regor"]
         )
 
 # Create and configure quantizer to use a symmetric quantization config globally on all nodes
@@ -201,14 +200,6 @@ To learn more, check out these learning paths:
 
 https://learn.arm.com/learning-paths/embedded-and-microcontrollers/rpi-llama3/
 https://learn.arm.com/learning-paths/embedded-and-microcontrollers/visualizing-ethos-u-performance/
-
-### Project Templates
-
-These project templates provide alternative starting points for ExecuTorch development:
-
-- [CMSIS-Executorch Project Template](https://github.com/Arm-Examples/cmsis-executorch) — Docker-based build environment with Keil Studio/VS Code integration for Arm Ethos-U applications, featuring automated CI/CD and AVH-SSE-300 simulation support.
-
-- [ExecuTorch on Zephyr RTOS with CMSIS](https://github.com/Arm-Examples/cmsis-zephyr-executorch) — Complete example of running ExecuTorch inference on Arm Cortex-M with Ethos-U NPU acceleration using Zephyr RTOS and CMSIS Toolbox.
 
 ## FAQs
 
