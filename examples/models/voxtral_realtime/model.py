@@ -694,7 +694,7 @@ class MLXEncoderRingKVCache(nn.Module):
         v_val = v_val.transpose(1, 2)
         return self.ring_cache.update(input_pos, k_val, v_val)
 
-    def create_causal_mask(self, start_pos: int, seq_len: int) -> torch.Tensor:
+    def create_causal_mask(self, start_pos, seq_len, bool_mask=False) -> torch.Tensor:
         return self.ring_cache.create_sliding_window_mask(start_pos, seq_len)
 
 
