@@ -173,6 +173,29 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
       program_data->data(),
       kMinimumAlignment);
 
+  // Validate the FlatBuffer root table offset before accessing the root table.
+  // A malicious PTE file could set this offset to point outside the buffer,
+  // causing OOB heap reads. This runs regardless of verification mode.
+  {
+    const uint8_t* data =
+        reinterpret_cast<const uint8_t*>(program_data->data());
+    size_t size = program_data->size();
+    ET_CHECK_OR_RETURN_ERROR(
+        size >= sizeof(flatbuffers::uoffset_t),
+        InvalidProgram,
+        "Program data size %zu too small for FlatBuffer root offset",
+        size);
+    flatbuffers::uoffset_t root_offset =
+        flatbuffers::ReadScalar<flatbuffers::uoffset_t>(data);
+    ET_CHECK_OR_RETURN_ERROR(
+        root_offset <= size - sizeof(flatbuffers::uoffset_t) &&
+            root_offset + sizeof(flatbuffers::soffset_t) <= size,
+        InvalidProgram,
+        "FlatBuffer root table offset %u out of bounds for program data size %zu",
+        static_cast<unsigned>(root_offset),
+        size);
+  }
+
   // Get the pointer to the root flatbuffer table.
   const executorch_flatbuffer::Program* flatbuffer_program =
       executorch_flatbuffer::GetProgram(program_data->data());
