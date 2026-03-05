@@ -321,11 +321,11 @@ def parse_dequant_node(
     quantized_dim, group_size = non_one[0]
     if group_size not in [32, 64, 128]:
         return None
-    if qmin == -8 and qmax == 7:
-        bits = 4
-    elif qmin == -128 and qmax == 127:
-        bits = 8
-    else:
+
+    # TODO: MLX supports 3, 5, and 7, but we need to figure out the
+    # packing story in to_mlx_qparams to use them
+    bits = (qmax - qmin + 1).bit_length() - 1
+    if bits not in [2, 4, 8]:
         return None
     return qdata, scale, zero_point, group_size, bits, out_dtype, quantized_dim
 

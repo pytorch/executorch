@@ -86,13 +86,6 @@ table AddmmNode {
     beta: float = 1.0;         // Scalar multiplier for bias
 }
 
-table LinearNode {
-    x: Tid (required);
-    weight: Tid (required);
-    out: Tid (required);
-    bias: Tid;  // optional
-}
-
 table ItemIntNode {
     x: Tid (required);
     out: Vid (required);
@@ -916,7 +909,6 @@ union OpNode {
     NoopNode,
     IdCopyNode,
     AddmmNode,
-    LinearNode,
     ItemIntNode,
     ExpandDimsNode,
     TileNode,

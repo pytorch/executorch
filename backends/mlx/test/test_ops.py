@@ -5385,19 +5385,6 @@ class CustomSDPATest(OpTestCase):
         }
 
 
-class QuantizedLinearModel(nn.Module):
-    """Simple linear layer that will be quantized."""
-
-    def __init__(
-        self, in_features: int = 64, out_features: int = 128, bias: bool = True
-    ):
-        super().__init__()
-        self.linear = nn.Linear(in_features, out_features, bias=bias)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.linear(x)
-
-
 @register_test
 class QuantizedLinearTest(OpTestCase):
     """Test case for TorchAO int4 quantized nn.Linear."""
@@ -5408,13 +5395,14 @@ class QuantizedLinearTest(OpTestCase):
 
     def __init__(
         self,
-        in_features: int = 64,
+        in_features: int = 128,
         out_features: int = 128,
         batch_size: int = 2,
         seq_len: int = 16,
         bias: bool = True,
         group_size: int = 32,
         dtype: torch.dtype = torch.bfloat16,
+        qdtype: torch.dtype = torch.int4,
     ):
         self.in_features = in_features
         self.out_features = out_features
@@ -5423,8 +5411,9 @@ class QuantizedLinearTest(OpTestCase):
         self.bias = bias
         self.group_size = group_size
         self.dtype = dtype
+        self.qdtype = qdtype
 
-        parts = ["quantized_linear", f"g{group_size}"]
+        parts = ["quantized_linear", f"{qdtype}", f"g{group_size}"]
         if not bias:
             parts.append("no_bias")
         self.name = "_".join(parts)
@@ -5434,26 +5423,25 @@ class QuantizedLinearTest(OpTestCase):
         return [
             cls(),
             cls(bias=False),
+            cls(group_size=64),
+            cls(group_size=128),
+            cls(qdtype=torch.int2),
+            cls(qdtype=torch.int8),
         ]
 
     def create_model(self) -> nn.Module:
-        model = QuantizedLinearModel(
-            self.in_features, self.out_features, bias=self.bias
-        )
+        model = LinearModel(self.in_features, self.out_features, bias=self.bias)
         model = model.to(self.dtype)
 
-        try:
-            from torchao.quantization.granularity import PerGroup
-            from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+        from torchao.quantization.granularity import PerGroup
+        from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
 
-            quantize_(
-                model,
-                IntxWeightOnlyConfig(
-                    weight_dtype=torch.int4, granularity=PerGroup(self.group_size)
-                ),
-            )
-        except ImportError:
-            raise RuntimeError("TorchAO not installed. Run: pip install torchao")
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(
+                weight_dtype=self.qdtype, granularity=PerGroup(self.group_size)
+            ),
+        )
 
         return model
 
@@ -5462,21 +5450,6 @@ class QuantizedLinearTest(OpTestCase):
             self.batch_size, self.seq_len, self.in_features, dtype=self.dtype
         )
         return (x,)
-
-
-class QuantizedEmbeddingModel(nn.Module):
-    """Simple embedding layer that will be quantized."""
-
-    def __init__(
-        self,
-        num_embeddings: int = 1000,
-        embedding_dim: int = 64,
-    ):
-        super().__init__()
-        self.embedding = nn.Embedding(num_embeddings, embedding_dim)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.embedding(x)
 
 
 @register_test
@@ -5490,11 +5463,12 @@ class QuantizedEmbeddingTest(OpTestCase):
     def __init__(
         self,
         num_embeddings: int = 1000,
-        embedding_dim: int = 64,
+        embedding_dim: int = 128,
         batch_size: int = 2,
         seq_len: int = 16,
         group_size: int = 32,
         dtype: torch.dtype = torch.bfloat16,
+        qdtype: torch.dtype = torch.int4,
     ):
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
@@ -5502,36 +5476,38 @@ class QuantizedEmbeddingTest(OpTestCase):
         self.seq_len = seq_len
         self.group_size = group_size
         self.dtype = dtype
+        self.qdtype = qdtype
 
-        parts = ["quantized_embedding", f"g{group_size}"]
+        parts = ["quantized_embedding", f"{qdtype}", f"g{group_size}"]
         self.name = "_".join(parts)
 
     @classmethod
     def get_test_configs(cls) -> List["QuantizedEmbeddingTest"]:
         return [
             cls(),
+            cls(group_size=64),
+            cls(group_size=128),
+            cls(qdtype=torch.int2),
+            cls(qdtype=torch.int8),
         ]
 
     def create_model(self) -> nn.Module:
-        model = QuantizedEmbeddingModel(self.num_embeddings, self.embedding_dim)
+        model = EmbeddingModel(self.num_embeddings, self.embedding_dim)
         model = model.to(self.dtype)
 
-        try:
-            from torchao.quantization.granularity import PerGroup
-            from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+        from torchao.quantization.granularity import PerGroup
+        from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
 
-            def embedding_filter(module: nn.Module, fqn: str) -> bool:
-                return isinstance(module, nn.Embedding)
+        def embedding_filter(module: nn.Module, fqn: str) -> bool:
+            return isinstance(module, nn.Embedding)
 
-            quantize_(
-                model,
-                IntxWeightOnlyConfig(
-                    weight_dtype=torch.int4, granularity=PerGroup(self.group_size)
-                ),
-                embedding_filter,
-            )
-        except ImportError:
-            raise RuntimeError("TorchAO not installed. Run: pip install torchao")
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(
+                weight_dtype=torch.int4, granularity=PerGroup(self.group_size)
+            ),
+            embedding_filter,
+        )
 
         return model
 

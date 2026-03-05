@@ -150,24 +150,6 @@ exec_addmm(const AddmmNode& n, ExecutionState& st, StreamOrDevice s) {
 }
 
 inline void
-exec_linear(const LinearNode& n, ExecutionState& st, StreamOrDevice s) {
-  const auto& X = st.const_tensor_ref(n.x);
-  auto W = st.const_tensor_ref(n.weight);
-  W = transpose(W, {1, 0}, s);
-
-  array Y = n.bias ? addmm(
-                         st.const_tensor_ref(*n.bias),
-                         X,
-                         W,
-                         /*alpha=*/1.0f,
-                         /*beta=*/1.0f,
-                         s)
-                   : matmul(X, W, s);
-
-  st.set_tensor(n.out, std::move(Y));
-}
-
-inline void
 exec_item_int(const ItemIntNode& n, ExecutionState& st, StreamOrDevice) {
   // Intentional sync: item() requires a concrete scalar value for SymInt
   // shape computation, so we must force GPU evaluation here.
@@ -1600,9 +1582,6 @@ class Interpreter {
         break;
       case OpCode::ADDMM:
         ops::exec_addmm(std::get<AddmmNode>(instr.node), st, s);
-        break;
-      case OpCode::LINEAR:
-        ops::exec_linear(std::get<LinearNode>(instr.node), st, s);
         break;
       case OpCode::ITEM_INT:
         ops::exec_item_int(std::get<ItemIntNode>(instr.node), st, s);
