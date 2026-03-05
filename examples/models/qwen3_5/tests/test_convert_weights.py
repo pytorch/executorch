@@ -64,18 +64,20 @@ class Qwen35ConvertWeightsTest(unittest.TestCase):
         self.assertIn("output.weight", converted)
         self.assertNotIn("mtp.proj.weight", converted)
 
-    def test_raises_on_unexpected_non_text_key(self):
+    def test_maps_multimodal_language_model_keys(self):
         state_dict = {
-            "model.embed_tokens.weight": torch.randn(16, 8),
-            "model.norm.weight": torch.randn(8),
-            "vision_tower.blocks.0.weight": torch.randn(8, 8),
+            "model.language_model.embed_tokens.weight": torch.randn(16, 8),
+            "model.language_model.norm.weight": torch.randn(8),
+            "model.language_model.layers.0.self_attn.q_proj.weight": torch.randn(
+                16, 8
+            ),
         }
 
-        with self.assertRaisesRegex(
-            ValueError,
-            "Unexpected non-text checkpoint key not mapped for Qwen3.5 export",
-        ):
-            qwen_3_5_to_meta(state_dict)
+        converted = qwen_3_5_to_meta(state_dict)
+        self.assertIn("tok_embeddings.weight", converted)
+        self.assertIn("norm.weight", converted)
+        self.assertIn("layers.0.attention.wq.weight", converted)
+        self.assertIn("output.weight", converted)
 
     def test_ignores_linear_attention_conv1d_bias(self):
         state_dict = {
@@ -90,6 +92,18 @@ class Qwen35ConvertWeightsTest(unittest.TestCase):
         self.assertIn("layers.1.attention.conv1d.weight", converted)
         self.assertIn("layers.1.attention.out_proj.weight", converted)
         self.assertNotIn("layers.1.attention.conv1d.bias", converted)
+
+    def test_ignores_rotary_emb_inv_freq(self):
+        state_dict = {
+            "model.embed_tokens.weight": torch.randn(16, 8),
+            "model.norm.weight": torch.randn(8),
+            "model.layers.0.self_attn.rotary_emb.inv_freq": torch.randn(4),
+        }
+
+        converted = qwen_3_5_to_meta(state_dict)
+        self.assertIn("tok_embeddings.weight", converted)
+        self.assertIn("output.weight", converted)
+        self.assertNotIn("model.layers.0.self_attn.rotary_emb.inv_freq", converted)
 
 if __name__ == "__main__":
     unittest.main()
