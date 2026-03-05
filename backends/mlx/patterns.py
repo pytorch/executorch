@@ -19,8 +19,10 @@ from typing import Any, List, Optional, Tuple
 
 import torch
 from executorch.backends.mlx.builder.op_helpers import (
+    emit_quantized_biases,
     emit_stop_position,
     parse_dequant_node,
+    parse_dequant_nvfp4_node,
     to_mlx_qparams,
     torch_dtype_to_scalar_type,
 )
@@ -35,12 +37,15 @@ from executorch.backends.mlx.pattern_utils import (
 )
 from executorch.backends.mlx.serialization.mlx_graph_schema import (
     AddIntNode,
+    AddNode,
+    AsTypeNode,
     DequantizeNode,
     IndexCopyNode,
     IntOrVid,
     IntOrVidOrTid,
     ModIntNode,
-    QuantizedLinearNode,
+    MultiplyNode,
+    QuantizedMatmulNode,
     SdpaNode,
     SliceNode,
     SliceUpdateNode,
@@ -50,11 +55,6 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
 )
 from torch.export.exported_program import ExportedProgram
 from torch.fx.node import Node
-
-# When True, always serialize the biases tensor for quantized ops (existing behavior).
-# When False, use scale_only=True optimization when zero_point is all zeros,
-# which avoids serializing the biases tensor (C++ runtime computes: biases = -scales * 2^(bits-1)).
-QUANTIZED_SERIALIZE_BIASES = True
 
 
 @REGISTRY.register_pattern(name="INDEX_COPY")
@@ -526,6 +526,7 @@ class SDPAHandler(PatternHandler):
 
         q, k, v, attn_mask = P.slot_map([q, k, v, attn_mask])
         out = P.make_or_get_slot(n)
+
         P.emit(
             SdpaNode(
                 q=P.slot_to_tid(q),
@@ -537,6 +538,122 @@ class SDPAHandler(PatternHandler):
                 causal=is_causal,
             )
         )
+        return out
+
+
+@REGISTRY.register_pattern(name="NVFP4_QUANTIZED_EMBEDDING")
+class NVFP4QuantizedEmbeddingHandler(PatternHandler):
+    """Fuse dequantize_nvfp4 + embedding into gather + DequantizeNode(mode="nvfp4").
+
+    Matches:
+        embedding(dequantize_nvfp4(qdata, scale, per_tensor_scale, ...), indices)
+
+    Emits:
+        TakeNode(qdata) → TakeNode(scales) → DequantizeNode(mode="nvfp4")
+        [→ MultiplyNode(per_tensor_scale)] [→ AsTypeNode]
+    """
+
+    def __init__(self, head, body, qdata, scale, per_tensor_scale, output_dtype):
+        super().__init__(head, body)
+        self.qdata = qdata
+        self.scale = scale
+        self.per_tensor_scale = per_tensor_scale
+        self.output_dtype = output_dtype
+
+    @classmethod
+    def maybe_create(cls, ep, head):
+        if not match_target(head, torch.ops.aten.embedding.default):
+            return None
+
+        w, x = head.args[0:2]
+        if not isinstance(w, Node):
+            return None
+        if not has_single_user(w):
+            return None
+        parsed = parse_dequant_nvfp4_node(w)
+        if parsed is None:
+            return None
+        qdata, scale, per_tensor_scale, output_dtype = parsed
+        return cls(head, [w], qdata, scale, per_tensor_scale, output_dtype)
+
+    def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
+        assert n == self.head
+        w_node, x_node = n.args[0:2]
+
+        has_per_tensor_scale = True
+        _, per_tensor_scale_value = P.get_placeholder_target_and_tensor(
+            self.per_tensor_scale
+        )
+        from torch._subclasses.fake_tensor import FakeTensor
+
+        if not isinstance(per_tensor_scale_value, FakeTensor):
+            if per_tensor_scale_value.item() == 1.0:
+                has_per_tensor_scale = False
+
+        x_dtype = x_node.meta["val"].dtype
+        needs_cast = self.output_dtype != x_dtype
+
+        x, scales_slot, per_tensor_scale, qdata_slot = P.slot_map(
+            [x_node, self.scale, self.per_tensor_scale, self.qdata]
+        )
+
+        ids_index = IntOrVidOrTid.from_tid(P.slot_to_tid(x))
+
+        # Gather quantized weights by indices
+        _, wq_sel = P.make_tmp_slot()
+        P.emit(
+            TakeNode(
+                x=P.slot_to_tid(qdata_slot),
+                index=ids_index,
+                out=P.slot_to_tid(wq_sel),
+                axis=0,
+            )
+        )
+
+        # Gather scales by indices
+        _, sc_sel = P.make_tmp_slot()
+        P.emit(
+            TakeNode(
+                x=P.slot_to_tid(scales_slot),
+                index=ids_index,
+                out=P.slot_to_tid(sc_sel),
+                axis=0,
+            )
+        )
+
+        # Dequantize the gathered slices
+        out = P.make_or_get_slot(n)
+        P.emit(
+            DequantizeNode(
+                w=P.slot_to_tid(wq_sel),
+                scales=P.slot_to_tid(sc_sel),
+                out=P.slot_to_tid(out),
+                biases=None,
+                group_size=16,
+                bits=4,
+                mode="nvfp4",
+                dtype=torch_dtype_to_scalar_type(self.output_dtype),
+            )
+        )
+
+        if has_per_tensor_scale:
+            P.emit(
+                MultiplyNode(
+                    a=P.slot_to_tid(out),
+                    b=P.slot_to_tid(per_tensor_scale),
+                    out=P.slot_to_tid(out),
+                )
+            )
+
+        if needs_cast:
+            P.emit(
+                AsTypeNode(
+                    x=P.slot_to_tid(out),
+                    out=P.slot_to_tid(out),
+                    scalar_type=torch_dtype_to_scalar_type(self.output_dtype),
+                )
+            )
+
         return out
 
 
@@ -769,8 +886,8 @@ class QuantizedLinearHandler(PatternHandler):
     def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
         assert n == self.head
 
-        x, w = n.args[0:2]
-        b = n.args[2] if len(n.args) > 2 else None
+        x_node, w_node = n.args[0:2]
+        b_node = n.args[2] if len(n.args) > 2 else None
 
         qdata_target, qdata = P.get_placeholder_target_and_tensor(self.qdata)
         zero_point_target, zero_point = P.get_placeholder_target_and_tensor(
@@ -778,49 +895,51 @@ class QuantizedLinearHandler(PatternHandler):
         )
         _, scale = P.get_placeholder_target_and_tensor(self.scale)
 
-        out_scalar_type = torch_dtype_to_scalar_type(self.out_dtype)
+        x_slot, scale_slot, b_slot = P.slot_map([x_node, self.scale, b_node])
 
-        # Check if we can use scale_only optimization:
-        # When zero_point is all zeros, biases = -scales * 2^(bits-1)
-        # which can be computed at runtime instead of serialized.
-        # Note: During partitioning, tensors are FakeTensors so we skip the check.
-        # The optimization is only applied during preprocess when we have real tensors.
-        use_scale_only = False
-        if not QUANTIZED_SERIALIZE_BIASES:
-            from torch._subclasses.fake_tensor import FakeTensor
-
-            if not isinstance(zero_point, FakeTensor):
-                if torch.sum(torch.abs(zero_point)).item() == 0:
-                    use_scale_only = True
-
-        Q, B = to_mlx_qparams(
-            qdata, scale, zero_point, self.bits, compute_biases=not use_scale_only
-        )
+        Q, B = to_mlx_qparams(qdata, scale, zero_point, self.bits)
         w = P.make_or_get_constant(f"{qdata_target}_to_packed", Q)
+        biases = emit_quantized_biases(
+            P, zero_point_target, scale, zero_point, self.bits, B, scale_slot
+        )
 
-        if use_scale_only:
-            biases_tid = None
-        else:
-            biases = P.make_or_get_constant(f"{zero_point_target}_to_biases", B)
-            biases_tid = P.slot_to_tid(biases)
-
-        x, scale_slot, b = P.slot_map([x, self.scale, b])
         out = P.make_or_get_slot(n)
+        has_bias = b_node is not None
+        x_dtype = x_node.meta["val"].dtype
+        needs_cast = self.out_dtype != x_dtype
+
         P.emit(
-            QuantizedLinearNode(
-                x=P.slot_to_tid(x),
+            QuantizedMatmulNode(
+                x=P.slot_to_tid(x_slot),
                 w=P.slot_to_tid(w),
                 scales=P.slot_to_tid(scale_slot),
                 out=P.slot_to_tid(out),
-                biases=biases_tid,
-                bias=P.slot_to_tid(b) if b else None,
+                biases=P.slot_to_tid(biases),
                 group_size=self.group_size,
                 bits=self.bits,
                 mode="affine",
-                out_scalar_type=out_scalar_type,
-                scale_only=use_scale_only,
+                transpose=True,
             )
         )
+
+        if has_bias:
+            P.emit(
+                AddNode(
+                    a=P.slot_to_tid(out),
+                    b=P.slot_to_tid(b_slot),
+                    out=P.slot_to_tid(out),
+                )
+            )
+
+        if needs_cast:
+            P.emit(
+                AsTypeNode(
+                    x=P.slot_to_tid(out),
+                    out=P.slot_to_tid(out),
+                    scalar_type=torch_dtype_to_scalar_type(self.out_dtype),
+                )
+            )
+
         return out
 
 
@@ -898,9 +1017,11 @@ class QuantizedEmbeddingHandler(PatternHandler):
         out_scalar_type = torch_dtype_to_scalar_type(self.out_dtype)
 
         w = P.make_or_get_constant(f"{qdata_target}_to_packed", Q)
-        biases = P.make_or_get_constant(f"{zero_point_target}_to_biases", B)
 
         x, scale_slot = P.slot_map([x, self.scale])
+        biases = emit_quantized_biases(
+            P, zero_point_target, scale, zero_point, self.bits, B, scale_slot
+        )
         ids_index = IntOrVidOrTid.from_tid(P.slot_to_tid(x))
 
         # Gather quantized weights by ids
@@ -947,7 +1068,108 @@ class QuantizedEmbeddingHandler(PatternHandler):
                 group_size=self.group_size,
                 bits=self.bits,
                 mode="affine",
-                out_scalar_type=out_scalar_type,
+                dtype=out_scalar_type,
             )
         )
+        return out
+
+
+@REGISTRY.register_pattern(name="NVFP4_QUANTIZED_LINEAR")
+class NVFP4QuantizedLinearHandler(PatternHandler):
+    """Fuse dequantize_nvfp4 + linear into QuantizedMatmulNode(mode="nvfp4").
+
+    Matches:
+        linear(x, dequantize_nvfp4(qdata, scale, block_size, [per_tensor_scale]), bias)
+
+    Emits:
+        QuantizedMatmulNode [→ MultiplyNode(per_tensor_scale)] [→ AddNode(bias)]
+    """
+
+    def __init__(self, head, body, qdata, scale, per_tensor_scale, output_dtype):
+        super().__init__(head, body)
+        self.qdata = qdata
+        self.scale = scale
+        self.per_tensor_scale = per_tensor_scale
+        self.output_dtype = output_dtype
+
+    @classmethod
+    def maybe_create(cls, ep, head):
+        if not match_target(head, torch.ops.aten.linear.default):
+            return None
+        x, dequant = head.args[0:2]
+        if not isinstance(dequant, Node):
+            return None
+        if not has_single_user(dequant):
+            return None
+        parsed = parse_dequant_nvfp4_node(dequant)
+        if parsed is None:
+            return None
+        qdata, scale, per_tensor_scale, output_dtype = parsed
+        return cls(head, [dequant], qdata, scale, per_tensor_scale, output_dtype)
+
+    def __call__(self, P, n):
+        assert n == self.head
+
+        x_node, w_node = n.args[0:2]
+        b_node = n.args[2] if len(n.args) > 2 else None
+
+        needs_cast = x_node.meta["val"].dtype != self.output_dtype
+        has_bias = b_node is not None
+        has_per_tensor_scale = True
+
+        _, per_tensor_scale_value = P.get_placeholder_target_and_tensor(
+            self.per_tensor_scale
+        )
+        from torch._subclasses.fake_tensor import FakeTensor
+
+        if not isinstance(per_tensor_scale_value, FakeTensor):
+            if per_tensor_scale_value.item() == 1.0:
+                has_per_tensor_scale = False
+
+        x, w, scales, bias, per_tensor_scale = P.slot_map(
+            [x_node, self.qdata, self.scale, b_node, self.per_tensor_scale]
+        )
+
+        out = P.make_or_get_slot(n)
+        P.emit(
+            QuantizedMatmulNode(
+                x=P.slot_to_tid(x),
+                w=P.slot_to_tid(w),
+                scales=P.slot_to_tid(scales),
+                out=P.slot_to_tid(out),
+                biases=None,
+                group_size=16,
+                bits=4,
+                mode="nvfp4",
+                transpose=True,
+            )
+        )
+
+        if has_per_tensor_scale:
+            P.emit(
+                MultiplyNode(
+                    a=P.slot_to_tid(out),
+                    b=P.slot_to_tid(per_tensor_scale),
+                    out=P.slot_to_tid(out),
+                )
+            )
+
+        if has_bias:
+            P.emit(
+                AddNode(
+                    a=P.slot_to_tid(out),
+                    b=P.slot_to_tid(bias),
+                    out=P.slot_to_tid(out),
+                )
+            )
+
+        if needs_cast:
+            P.emit(
+                AsTypeNode(
+                    x=P.slot_to_tid(out),
+                    out=P.slot_to_tid(out),
+                    scalar_type=torch_dtype_to_scalar_type(self.output_dtype),
+                )
+            )
+
         return out

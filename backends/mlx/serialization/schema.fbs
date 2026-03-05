@@ -444,18 +444,16 @@ table AsTypeNode {
     scalar_type: int8;           // ET ScalarType
 }
 
-table QuantizedLinearNode {
+table QuantizedMatmulNode {
     x: Tid (required);
     w: Tid (required);
     scales: Tid (required);
     out: Tid (required);
-    biases: Tid;  // optional - quantization biases (required if scale_only=false)
-    bias: Tid;    // optional - neural network bias
+    biases: Tid;              // optional - required for affine mode, null for nvfp4
     group_size: int32;
     bits: int32;
     mode: string (required);
-    out_scalar_type: int8;       // ET ScalarType for output
-    scale_only: bool = false;  // if true, compute biases = -scales * 2^(bits-1); if false, biases tensor required
+    transpose: bool = true;
 }
 
 table ConcatenateNode {
@@ -514,7 +512,8 @@ table DequantizeNode {
     group_size: int32;
     bits: int32;
     mode: string (required);     // Quantization mode (e.g. "affine")
-    out_scalar_type: int8;       // ET ScalarType for output dtype
+    global_scale: Tid;           // optional - global scale for nvfp4
+    dtype: int8 = null;          // ET ScalarType for output dtype
 }
 
 // Comparison ops (return bool arrays)
@@ -961,7 +960,6 @@ union OpNode {
     GatherNode,
     SliceNode,
     AsTypeNode,
-    QuantizedLinearNode,
     ConcatenateNode,
     FullNode,
     FullLikeNode,
@@ -1035,9 +1033,9 @@ union OpNode {
     SortNode,
     ArgsortNode,
     PartitionNode,
-    ArgPartitionNode
+    ArgPartitionNode,
+    QuantizedMatmulNode
     // BC: Add new op nodes here (append only)
->>>>>>> 7e54fa1e87 (up)
 }
 
 // =============================================================================

@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 import torch
 from executorch.backends.mlx.builder.op_helpers import (
     emit_lifted_constant,
+    emit_quantized_biases,
     parse_dequant_node,
     to_mlx_qparams,
     torch_dtype_to_scalar_type,
@@ -3646,8 +3647,10 @@ def _dequantize_affine_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         B = B.reshape(*leading_dims, B.shape[-1])
 
     w = P.make_or_get_constant(f"{qdata_target}_to_packed", Q)
-    biases = P.make_or_get_constant(f"{zero_point_target}_to_biases", B)
     scale_const = P.make_or_get_constant(f"{scale_target}_scale", scale_nd)
+    biases = emit_quantized_biases(
+        P, zero_point_target, scale, zero_point, bits, B, scale_const
+    )
 
     if needs_permute:
         _, dequant_tmp = P.make_tmp_slot()

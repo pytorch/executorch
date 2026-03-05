@@ -839,54 +839,21 @@ exec_astype(const AsTypeNode& n, ExecutionState& st, StreamOrDevice s) {
       n.out, astype(st.const_tensor_ref(n.x), resolve_dtype(n.scalar_type), s));
 }
 
-inline void exec_quantized_linear(
-    const QuantizedLinearNode& n,
+inline void exec_quantized_matmul(
+    const QuantizedMatmulNode& n,
     ExecutionState& st,
     StreamOrDevice s) {
-  // scale_only means biases should be computed, not provided
-  assert(
-      !(n.scale_only && n.biases) &&
-      "scale_only=true but biases tensor also provided");
-
   array X = st.const_tensor_ref(n.x);
   array Wq = st.const_tensor_ref(n.w);
   array Sc = st.const_tensor_ref(n.scales);
 
-  if (n.bits <= 0 || n.bits > 8) {
-    throw std::runtime_error(
-        "exec_quantized_linear: bits must be in [1, 8], got " +
-        std::to_string(n.bits));
-  }
-
   std::optional<array> Qb = std::nullopt;
-  if (n.biases) {
+  if (n.biases.has_value()) {
     Qb = st.const_tensor_ref(*n.biases);
-  } else if (n.scale_only) {
-    // Compute biases from scales: B = -scales * 2^(bits-1)
-    float offset = static_cast<float>(1 << (n.bits - 1));
-    Qb = multiply(Sc, array(-offset, Sc.dtype()), s);
   }
 
   array Y = quantized_matmul(
-      X,
-      Wq,
-      Sc,
-      Qb,
-      /*transpose=*/true,
-      n.group_size,
-      n.bits,
-      n.mode,
-      s);
-
-  if (n.bias) {
-    const auto& b = st.const_tensor_ref(*n.bias);
-    Y = add(Y, b, s);
-  }
-
-  Dtype out_dtype = resolve_dtype(n.out_scalar_type);
-  if (out_dtype != Y.dtype()) {
-    Y = astype(Y, out_dtype, s);
-  }
+      X, Wq, Sc, Qb, n.transpose, n.group_size, n.bits, n.mode, s);
 
   st.set_tensor(n.out, std::move(Y));
 }
@@ -1142,20 +1109,18 @@ exec_dequantize(const DequantizeNode& n, ExecutionState& st, StreamOrDevice s) {
     Qb = st.const_tensor_ref(*n.biases);
   }
 
-  array Y = dequantize(
-      Wq,
-      Sc,
-      Qb,
-      n.group_size,
-      n.bits,
-      n.mode,
-      std::nullopt, // dtype - let MLX infer
-      s);
-
-  Dtype out_dtype = resolve_dtype(n.out_scalar_type);
-  if (out_dtype != Y.dtype()) {
-    Y = astype(Y, out_dtype, s);
+  std::optional<array> global_scale = std::nullopt;
+  if (n.global_scale) {
+    global_scale = st.const_tensor_ref(*n.global_scale);
   }
+
+  std::optional<Dtype> dtype = std::nullopt;
+  if (n.dtype) {
+    dtype = resolve_dtype(*n.dtype);
+  }
+
+  array Y = dequantize(
+      Wq, Sc, Qb, n.group_size, n.bits, n.mode, global_scale, dtype, s);
 
   st.set_tensor(n.out, std::move(Y));
 }
@@ -1773,10 +1738,6 @@ class Interpreter {
       case OpCode::ASTYPE:
         ops::exec_astype(std::get<AsTypeNode>(instr.node), st, s);
         break;
-      case OpCode::QUANTIZED_LINEAR:
-        ops::exec_quantized_linear(
-            std::get<QuantizedLinearNode>(instr.node), st, s);
-        break;
       case OpCode::CONCATENATE:
         ops::exec_concatenate(std::get<ConcatenateNode>(instr.node), st, s);
         break;
@@ -2001,6 +1962,10 @@ class Interpreter {
         break;
       case OpCode::ARG_PARTITION:
         ops::exec_argpartition(std::get<ArgPartitionNode>(instr.node), st, s);
+        break;
+      case OpCode::QUANTIZED_MATMUL:
+        ops::exec_quantized_matmul(
+            std::get<QuantizedMatmulNode>(instr.node), st, s);
         break;
       default:
         throw std::runtime_error(

@@ -5433,6 +5433,7 @@ class QuantizedLinearTest(OpTestCase):
     def get_test_configs(cls) -> List["QuantizedLinearTest"]:
         return [
             cls(),
+            cls(bias=False),
         ]
 
     def create_model(self) -> nn.Module:
@@ -6072,3 +6073,92 @@ class TopKTest(OpTestCase):
         if self.output == "dynamic_k":
             return (torch.randn(self.shape), torch.randn(self.k))
         return (torch.randn(self.shape),)
+
+
+class NVFP4QuantizedLinearModel(nn.Module):
+    """Simple linear layer that will be quantized with NVFP4."""
+
+    def __init__(
+        self, in_features: int = 64, out_features: int = 128, bias: bool = True
+    ):
+        super().__init__()
+        self.linear = nn.Linear(in_features, out_features, bias=bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.linear(x)
+
+
+@register_test
+class NVFP4QuantizedLinearTest(OpTestCase):
+    """Test case for NVFP4 quantized nn.Linear."""
+
+    name = "nvfp4_quantized_linear"
+    rtol = 0.1
+    atol = 0.1
+
+    def __init__(
+        self,
+        in_features: int = 64,
+        out_features: int = 128,
+        batch_size: int = 2,
+        seq_len: int = 16,
+        bias: bool = True,
+        use_per_tensor_scale: bool = True,
+        dtype: torch.dtype = torch.float32,
+    ):
+        self.in_features = in_features
+        self.out_features = out_features
+        self.batch_size = batch_size
+        self.seq_len = seq_len
+        self.bias = bias
+        self.use_per_tensor_scale = use_per_tensor_scale
+        self.dtype = dtype
+
+        parts = ["nvfp4_quantized_linear"]
+        if not bias:
+            parts.append("no_bias")
+        if not use_per_tensor_scale:
+            parts.append("no_pts")
+        if dtype != torch.float32:
+            parts.append(str(dtype).split(".")[-1])
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["NVFP4QuantizedLinearTest"]:
+        return [
+            cls(),
+            cls(bias=False),
+            cls(use_per_tensor_scale=False),
+            cls(bias=False, use_per_tensor_scale=False),
+            cls(dtype=torch.bfloat16),
+            cls(bias=False, dtype=torch.bfloat16),
+            cls(use_per_tensor_scale=False, dtype=torch.bfloat16),
+            cls(bias=False, use_per_tensor_scale=False, dtype=torch.bfloat16),
+        ]
+
+    def get_edge_compile_config(self):
+        from executorch.exir import EdgeCompileConfig
+
+        return EdgeCompileConfig(_check_ir_validity=False)
+
+    def create_model(self) -> nn.Module:
+        model = NVFP4QuantizedLinearModel(
+            self.in_features, self.out_features, bias=self.bias
+        )
+        model = model.to(self.dtype)
+
+        from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Config
+        from torchao.quantization import quantize_
+
+        quantize_(
+            model,
+            ExportableNVFP4Config(use_per_tensor_scale=self.use_per_tensor_scale),
+        )
+
+        return model
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(
+            self.batch_size, self.seq_len, self.in_features, dtype=self.dtype
+        )
+        return (x,)
