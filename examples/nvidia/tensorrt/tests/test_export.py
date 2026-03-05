@@ -115,3 +115,6 @@ class ExportCorrectnessTest(unittest.TestCase):
 
     def test_w2l(self) -> None:
         _export_and_verify("w2l")
+
+    def test_ic3(self) -> None:
+        _export_and_verify("ic3")

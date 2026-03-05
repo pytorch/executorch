@@ -19,10 +19,12 @@ from executorch.backends.nvidia.tensorrt.converters import div  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import embedding  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import expand  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import getitem  # noqa: F401
+from executorch.backends.nvidia.tensorrt.converters import layer_norm  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import linear  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import mm  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import mul  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import permute_copy  # noqa: F401
+from executorch.backends.nvidia.tensorrt.converters import pixel_shuffle  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import pooling  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import reduction  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import relu  # noqa: F401
