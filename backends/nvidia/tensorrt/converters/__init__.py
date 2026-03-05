@@ -16,6 +16,8 @@ from executorch.backends.nvidia.tensorrt.converters import concat  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import conv2d  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import dim_order_ops  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import div  # noqa: F401
+from executorch.backends.nvidia.tensorrt.converters import embedding  # noqa: F401
+from executorch.backends.nvidia.tensorrt.converters import expand  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import getitem  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import linear  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import mm  # noqa: F401
@@ -26,6 +28,7 @@ from executorch.backends.nvidia.tensorrt.converters import reduction  # noqa: F4
 from executorch.backends.nvidia.tensorrt.converters import relu  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import reshape  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import sub  # noqa: F401
+from executorch.backends.nvidia.tensorrt.converters import upsample  # noqa: F401
 
 
 def clear_converter_weight_storage() -> None:
