@@ -206,6 +206,16 @@ endif()
 if(EXECUTORCH_OPTIMIZE_SIZE)
   # -Os: Optimize for size.
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Os")
+  if(NOT WIN32 AND NOT MSVC)
+    # Suppress .eh_frame generation to reduce binary size. Safe because
+    # ExecuTorch builds with -fno-exceptions.
+    set(CMAKE_CXX_FLAGS_RELEASE
+        "${CMAKE_CXX_FLAGS_RELEASE} -fno-asynchronous-unwind-tables -fno-unwind-tables"
+    )
+    set(CMAKE_C_FLAGS_RELEASE
+        "${CMAKE_C_FLAGS_RELEASE} -fno-asynchronous-unwind-tables -fno-unwind-tables"
+    )
+  endif()
 else()
   # -O2: Moderate opt.
   set(CMAKE_CXX_FLAGS_RELEASE "-O2 ${CMAKE_CXX_FLAGS_RELEASE}")
