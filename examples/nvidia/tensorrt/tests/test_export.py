@@ -23,12 +23,9 @@ logging.basicConfig(level=logging.INFO)
 
 # Mapping from env var to expected cache filename.
 # The test TARGETS provides these via manifold_get + $(location).
-# Entries are added as models are enabled in later commits.
 _WEIGHT_ENV_VARS = {
-    "DOG_JPG": "dog.jpg",
     "EDSR_WEIGHTS": "edsr64_x2.pt",
-    "IC4_WEIGHTS": "inceptionv4-8e4777a0.pth",
-    "MV2_WEIGHTS": "mobilenet_v2-b0353104.pth",
+    "MV3_WEIGHTS": "mobilenet_v3_small-047dcff4.pth",
 }
 
 
