@@ -1,6 +1,20 @@
 load("@fbcode_macros//build_defs:python_unittest_remote_gpu.bzl", "python_unittest_remote_gpu")
+load("@fbsource//tools/build_defs:manifold.bzl", "manifold_get")
 
 oncall("executorch")
+
+# Model weights cached on Manifold to avoid network downloads on CI GPU workers.
+# Upload new weights: manifold put <local_file> executorch/tree/models/tensorrt/weights/<filename>
+manifold_get(
+    name = "edsr_weights",
+    out = "edsr64_x2.pt",
+    api_key = "executorch-key",
+    artifact_path = "tree/models/tensorrt/weights/edsr64_x2.pt",
+    bucket_name = "executorch",
+    sha1 = "4b67b9f0cbe94e244fc59ca94893a349b63efb8c",
+    timeout_msec = 120000,
+    visibility = ["PUBLIC"],
+)
 
 # Export correctness tests: exports each supported model with TensorRT
 # and compares inference outputs against eager PyTorch on GPU.
@@ -12,6 +26,7 @@ python_unittest_remote_gpu(
     env = {
         "HTTPS_PROXY": "http://fwdproxy.any:8080",
         "HTTP_PROXY": "http://fwdproxy.any:8080",
+        "EDSR_WEIGHTS": "$(location :edsr_weights)",
     },
     keep_gpu_sections = True,
     labels = ["long_running"],
