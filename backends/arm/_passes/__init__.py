@@ -102,6 +102,10 @@ from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     QuantizeClampArgumentsPass,
 )
 from .fuse_batch_norm2d_pass import FuseBatchNorm2dPass  # noqa
+from .fuse_consecutive_transposes_pass import FuseConsecutiveTransposesPass  # noqa
+from .fuse_transpose_reshape_transpose_pass import (  # noqa
+    FuseTransposeReshapeTransposePass,
+)
 from .fuse_constant_ops_pass import (  # noqa
     ComputeConstantOpsAOTPass,
     FuseConstantArgsPass,
