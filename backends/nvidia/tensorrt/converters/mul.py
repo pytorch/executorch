@@ -1,0 +1,140 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+"""Converter for element-wise multiplication operations."""
+
+from typing import Any, Dict, Optional
+
+import numpy as np
+import tensorrt as trt
+import torch
+from executorch.backends.nvidia.tensorrt.converter_registry import converter
+from executorch.backends.nvidia.tensorrt.converter_utils import (
+    broadcast_tensors,
+    get_node_dtype,
+    get_trt_tensor,
+    promote_and_cast_tensors,
+    set_layer_name,
+)
+
+
+def _get_elementwise_input(
+    network: trt.INetworkDefinition,
+    input_map: Dict[torch.fx.Node, Any],
+    arg: Any,
+    name: str,
+    dtype: Optional[torch.dtype],
+) -> trt.ITensor:
+    """Get TensorRT tensor for an elementwise operation input."""
+    if isinstance(arg, torch.fx.Node):
+        if arg not in input_map:
+            raise ValueError(
+                f"Input node '{arg.name}' not found in input_map. "
+                f"Available nodes: {list(input_map.keys())}"
+            )
+        return input_map[arg]
+    return get_trt_tensor(network, arg, name, dtype)
+
+
+def _get_input_ndim(arg: Any, input_map: Dict[torch.fx.Node, Any]) -> int:
+    """Get the number of dimensions for an elementwise input argument."""
+    if isinstance(arg, torch.fx.Node):
+        if "val" in arg.meta and hasattr(arg.meta["val"], "shape"):
+            return len(arg.meta["val"].shape)
+        if arg in input_map:
+            trt_tensor = input_map[arg]
+            shape = trt_tensor.shape
+            if shape is not None:
+                return len(shape)
+    return 0
+
+
+@converter("aten.mul.Tensor", "aten.mul_.Tensor")
+def convert_mul(
+    node: torch.fx.Node,
+    network: trt.INetworkDefinition,
+    input_map: Dict[torch.fx.Node, Any],
+    edge_program: Optional[Any] = None,
+) -> trt.ITensor:
+    """Convert aten.mul.Tensor to TensorRT ElementWise PROD.
+
+    Handles tensor * tensor, tensor * scalar, and scalar * tensor cases.
+    Includes type promotion for mixed-type operands.
+    """
+    lhs_arg = node.args[0]
+    rhs_arg = node.args[1]
+
+    dtype = get_node_dtype(node)
+
+    lhs = _get_elementwise_input(network, input_map, lhs_arg, f"mul_lhs_{node.name}", dtype)
+    rhs = _get_elementwise_input(network, input_map, rhs_arg, f"mul_rhs_{node.name}", dtype)
+
+    # Type promotion: ensure both operands have compatible types
+    lhs, rhs = promote_and_cast_tensors(network, lhs, rhs, f"mul_{node.name}")
+
+    # Get target ndim for broadcasting
+    lhs_ndim = _get_input_ndim(lhs_arg, input_map)
+    rhs_ndim = _get_input_ndim(rhs_arg, input_map)
+    target_ndim = max(lhs_ndim, rhs_ndim)
+
+    if target_ndim == 0 and "val" in node.meta and hasattr(node.meta["val"], "shape"):
+        target_ndim = len(node.meta["val"].shape)
+    if target_ndim == 0:
+        target_ndim = 1
+
+    lhs, rhs = broadcast_tensors(network, [lhs, rhs], target_ndim, f"mul_{node.name}")
+
+    layer = network.add_elementwise(lhs, rhs, trt.ElementWiseOperation.PROD)
+    if layer is None:
+        raise RuntimeError(f"Failed to create elementwise PROD layer for {node.name}")
+    set_layer_name(layer, node, "mul")
+
+    return layer.get_output(0)
+
+
+@converter("aten.mul.Scalar")
+def convert_mul_scalar(
+    node: torch.fx.Node,
+    network: trt.INetworkDefinition,
+    input_map: Dict[torch.fx.Node, Any],
+    edge_program: Optional[Any] = None,
+) -> trt.ITensor:
+    """Convert aten.mul.Scalar to TensorRT ElementWise PROD.
+
+    Handles tensor * scalar multiplication.
+    """
+    input_arg = node.args[0]
+    scalar_arg = node.args[1]
+
+    if not isinstance(input_arg, torch.fx.Node):
+        raise ValueError(f"Input to mul.Scalar must be a node, got {type(input_arg)}")
+
+    input_tensor = input_map[input_arg]
+
+    # Create scalar constant tensor with same shape as input
+    scalar_value = float(scalar_arg) if isinstance(scalar_arg, (int, float)) else scalar_arg
+    scalar_np = np.array([scalar_value], dtype=np.float32)
+    scalar_const = network.add_constant((1,), trt.Weights(scalar_np))
+    scalar_const.name = f"const_scalar_{node.name}"
+    scalar_trt = scalar_const.get_output(0)
+
+    # Type promotion between input tensor and scalar
+    input_tensor, scalar_trt = promote_and_cast_tensors(
+        network, input_tensor, scalar_trt, f"mul_scalar_{node.name}"
+    )
+
+    # Broadcast scalar to match input dimensions
+    target_ndim = len(input_tensor.shape)
+    (scalar_trt,) = broadcast_tensors(
+        network, [scalar_trt], target_ndim, f"mul_scalar_{node.name}"
+    )
+
+    layer = network.add_elementwise(input_tensor, scalar_trt, trt.ElementWiseOperation.PROD)
+    if layer is None:
+        raise RuntimeError(f"Failed to create elementwise PROD layer for {node.name}")
+    set_layer_name(layer, node, "mul_scalar")
+
+    return layer.get_output(0)
