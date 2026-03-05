@@ -68,9 +68,7 @@ class Qwen35ConvertWeightsTest(unittest.TestCase):
         state_dict = {
             "model.language_model.embed_tokens.weight": torch.randn(16, 8),
             "model.language_model.norm.weight": torch.randn(8),
-            "model.language_model.layers.0.self_attn.q_proj.weight": torch.randn(
-                16, 8
-            ),
+            "model.language_model.layers.0.self_attn.q_proj.weight": torch.randn(16, 8),
         }
 
         converted = qwen_3_5_to_meta(state_dict)
@@ -104,6 +102,7 @@ class Qwen35ConvertWeightsTest(unittest.TestCase):
         self.assertIn("tok_embeddings.weight", converted)
         self.assertIn("output.weight", converted)
         self.assertNotIn("model.layers.0.self_attn.rotary_emb.inv_freq", converted)
+
 
 if __name__ == "__main__":
     unittest.main()
