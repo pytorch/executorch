@@ -92,6 +92,12 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
       // is positive (0-value may indicate no segments)
       if ((segment_data_size == 0 && segment_base_offset == 0) ||
           segment_data_size > 0) {
+        ET_CHECK_OR_RETURN_ERROR(
+            segment_base_offset <= SIZE_MAX - segment_data_size,
+            InvalidProgram,
+            "segment_base_offset %zu + segment_data_size %zu overflows",
+            segment_base_offset,
+            segment_data_size);
         size_t expected = segment_base_offset == 0
             ? program_size
             : segment_base_offset + segment_data_size;
@@ -395,7 +401,7 @@ Result<const void*> Program::get_constant_buffer_data(
 
     size_t size = constant_segment_data_.size();
     ET_CHECK_OR_RETURN_ERROR(
-        offset + nbytes <= size,
+        offset <= size && nbytes <= size - offset,
         InvalidArgument,
         "Constant segment offset %" PRIu64
         " + size_bytes %zu invalid for program constant segment size %zu",
