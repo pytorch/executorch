@@ -123,6 +123,40 @@ class Qwen35AttentionTest(unittest.TestCase):
         state_after_reset = attn.recurrent_state.clone()
         self.assertTrue(torch.allclose(state_after_first, state_after_reset, atol=1e-5))
 
+    def test_gated_deltanet_no_input_pos_does_not_leak_state(self):
+        torch.manual_seed(0)
+        args = ModelArgs(
+            dim=32,
+            n_layers=1,
+            n_heads=4,
+            n_kv_heads=2,
+            head_dim=8,
+            hidden_dim=64,
+            max_seq_len=16,
+            max_context_len=16,
+            use_kv_cache=True,
+            attention_type="mha",
+            use_q_gate=True,
+            linear_conv_kernel_dim=4,
+            linear_key_head_dim=4,
+            linear_value_head_dim=4,
+            linear_num_key_heads=2,
+            linear_num_value_heads=4,
+        )
+        rope = Rope(args)
+        attn = ATTENTION_REGISTRY["gated_deltanet"](args, 0, rope)
+
+        x = torch.randn(1, 1, args.dim)
+        dummy_freq = torch.zeros(1, 1)
+
+        attn(x, dummy_freq, dummy_freq)
+        state_after_first = attn.recurrent_state.clone()
+
+        attn(x, dummy_freq, dummy_freq)
+        state_after_second = attn.recurrent_state.clone()
+
+        self.assertTrue(torch.allclose(state_after_first, state_after_second, atol=1e-5))
+
 
 if __name__ == "__main__":
     unittest.main()

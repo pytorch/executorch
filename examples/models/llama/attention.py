@@ -621,6 +621,8 @@ class AttentionGatedDeltaNet(Attention):
         self, input_pos: Optional[torch.Tensor], batch_size: int
     ) -> None:
         if input_pos is None:
+            self.conv_state[:batch_size].zero_()
+            self.recurrent_state[:batch_size].zero_()
             return
         reset = (input_pos[0] == 0).to(self.conv_state.dtype)
         keep = 1.0 - reset
