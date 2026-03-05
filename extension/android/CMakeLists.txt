@@ -226,6 +226,25 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
   endif()
 endif()
 
+if(EXECUTORCH_BUILD_GEMMA3N_JNI)
+  # Gemma3N runner sources compiled directly into the JNI library
+  target_sources(
+    executorch_jni
+    PRIVATE
+      jni/fb/jni_layer_gemma3n.cpp # @oss-disable
+      ${EXECUTORCH_ROOT}/examples/models/fb/gemma3n/runner/speech_encoder.cpp # @oss-disable
+      ${EXECUTORCH_ROOT}/examples/models/fb/gemma3n/runner/text_decoder_runner.cpp # @oss-disable
+      ${EXECUTORCH_ROOT}/examples/models/fb/gemma3n/runner/gemma3n_runner.cpp # @oss-disable
+  )
+  target_include_directories(
+    executorch_jni
+    PRIVATE ${EXECUTORCH_ROOT}/.. # @oss-disable
+  )
+  target_compile_definitions(
+    executorch_jni PRIVATE ENABLE_XNNPACK_SHARED_WORKSPACE # @oss-disable
+  )
+endif()
+
 target_include_directories(
   executorch_jni
   PRIVATE
