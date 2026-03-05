@@ -113,6 +113,9 @@ from .fuse_transpose_sandwich_pass import FuseTransposeSandwichPass  # noqa
 from .propagate_transposes_through_rescale_pass import (  # noqa
     PropagateTransposesThroughRescalePass,
 )
+from .propagate_transposes_through_concat_pass import (  # noqa
+    PropagateTransposesThroughConcatPass,
+)
 from .fuse_constant_ops_pass import (  # noqa
     ComputeConstantOpsAOTPass,
     FuseConstantArgsPass,
