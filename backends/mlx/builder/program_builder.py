@@ -27,7 +27,6 @@ from dataclasses import dataclass
 from typing import Any, DefaultDict, Dict, List, Optional, Set, Tuple, Union
 
 import torch
-
 from executorch.backends.mlx._logging import logger
 from executorch.backends.mlx.builder.op_helpers import torch_dtype_to_scalar_type
 from executorch.backends.mlx.builder.op_registry import (
@@ -132,7 +131,9 @@ class MLXProgramBuilder:
 
     def __init__(self, ep: ExportedProgram, named_data_key_prefix: str = ""):
         self.ep: ExportedProgram = ep
-        self._instrs: List[Instruction] = []
+        self._chains: List[List[Instruction]] = [[]]  # chain 0 = main
+        self._current_chain: int = 0
+        self.init_chain_idx: int = -1
         self.extra_constants: Dict[str, torch.Tensor] = {}
         self.slot_manager = SlotManager()
         self.node_info: DefaultDict[Node, NodeInfo] = defaultdict(NodeInfo)
@@ -163,7 +164,13 @@ class MLXProgramBuilder:
         return name
 
     def emit(self, op: OpNodeUnion) -> None:
-        self._instrs.append(Instruction(op=op))
+        self._chains[self._current_chain].append(Instruction(op=op))
+
+    def emit_init(self, op: OpNodeUnion) -> None:
+        if self.init_chain_idx == -1:
+            self.init_chain_idx = len(self._chains)
+            self._chains.append([])
+        self._chains[self.init_chain_idx].append(Instruction(op=op))
 
     def args(self, node: Node) -> Tuple[Any, ...]:
         return self.slot_map(node.args)
@@ -934,9 +941,11 @@ class MLXProgramBuilder:
             num_mutable_buffer_tensors=num_tensors[IdSpace.MutableBuffer],
             num_temp_tensors=num_temp_tensors,
             num_values=num_values_count,
-            instruction_chains=[InstructionChain(instructions=self._instrs)],
+            instruction_chains=[
+                InstructionChain(instructions=chain) for chain in self._chains
+            ],
             main_chain_idx=0,
-            init_chain_idx=-1,
+            init_chain_idx=self.init_chain_idx,
             input_map=input_map,
             output_map=output_map,
             mutable_buffer_map=mutable_buffer_map,

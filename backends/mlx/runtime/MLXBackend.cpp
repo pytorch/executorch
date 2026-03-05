@@ -219,10 +219,24 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
           static_cast<const uint8_t*>(processed->data()), processed->size());
 
       // Validate schema version
-      if (handle->program.version != "1") {
+      int schema_version = 1;
+      if (!handle->program.version.empty()) {
+        try {
+          schema_version = std::stoi(handle->program.version);
+        } catch (...) {
+          throw std::runtime_error(
+              "Invalid MLX schema version '" + handle->program.version +
+              "' (expected integer)");
+        }
+      }
+      constexpr int kMaxSupportedVersion = 1;
+      if (schema_version > kMaxSupportedVersion) {
         throw std::runtime_error(
-            "Unsupported MLX schema version '" + handle->program.version +
-            "' (expected '1'). Rebuild the .pte with a matching SDK version.");
+            "This .pte requires ExecuTorch MLX runtime version " +
+            std::to_string(schema_version) +
+            " but this runtime only supports up to version " +
+            std::to_string(kMaxSupportedVersion) +
+            ". Upgrade ExecuTorch to a newer version.");
       }
 
       // Load constants from named_data_map
@@ -251,11 +265,17 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       // SAFETY: The >= 0 check ensures init_chain_idx is non-negative, so the
       // static_cast<uint32_t> cannot produce UINT32_MAX from a -1 sentinel.
       if (handle->program.init_chain_idx >= 0) {
+        handle->state.is_init_chain = true;
         handle->interpreter.run_chain(
             handle->program,
             static_cast<uint32_t>(handle->program.init_chain_idx),
             handle->state,
             handle->stream);
+        handle->state.is_init_chain = false;
+
+        // Evaluate any constants written by the init chain so the first
+        // execute() doesn't pay the cost of materializing them.
+        eval(handle->constants.tensors);
       }
 
     } catch (const std::exception& e) {
