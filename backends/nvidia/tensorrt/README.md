@@ -10,21 +10,35 @@ on NVIDIA GPUs.
 ### Clone and Install
 
 ```bash
-# Clone with submodules
 git clone --recurse-submodules https://github.com/pytorch/executorch.git
 cd executorch
 
-# Create virtual environment and install ExecuTorch
 python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
+
+# Install ExecuTorch (auto-detects TensorRT and links it into pybindings)
 ./install_executorch.sh --editable
 
-# Install TensorRT (x86_64 only - Jetson has it pre-installed)
+# Install TensorRT (x86_64 only — Jetson has it pre-installed via JetPack)
 pip install tensorrt>=10.3
 ```
 
 > **Note for Jetson users:** TensorRT is pre-installed via JetPack SDK. The
-> ExecuTorch TensorRT backend automatically detects Jetson hardware and uses
-> the system TensorRT installation - no `pip install tensorrt` needed.
+> backend automatically detects Jetson hardware and uses the system TensorRT
+> and other system/user-installed packages (e.g. `onnx`) — no additional
+> `pip install` needed.
+
+### Build C++ Components
+
+```bash
+cmake -B cmake-out \
+  -DEXECUTORCH_BUILD_TENSORRT=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
+  -DCMAKE_BUILD_TYPE=Release
+
+cmake --build cmake-out --target tensorrt_executor_runner benchmark -j$(nproc)
+```
 
 ### Export and Run Models
 
@@ -32,16 +46,52 @@ pip install tensorrt>=10.3
 # Export a single model
 python -m executorch.examples.nvidia.tensorrt.export -m add
 
-# Export all supported models (default when no -m specified)
+# Export all supported models
 python -m executorch.examples.nvidia.tensorrt.export
 
-# Build C++ runner
-cmake -B cmake-out -DEXECUTORCH_BUILD_TENSORRT=ON
-cmake --build cmake-out --target tensorrt_executor_runner -j$(nproc)
+# Export with ONNX baseline (for benchmarking)
+python -m executorch.examples.nvidia.tensorrt.export --onnx
 
-# Run inference
+# Run inference with the C++ runner
 ./cmake-out/backends/nvidia/tensorrt/tensorrt_executor_runner --model_path=add_tensorrt.pte
 ```
+
+> **Jetson memory tip:** On memory-constrained devices (e.g., Orin Nano 8GB),
+> export models one at a time to avoid OOM during TRT engine building:
+> ```bash
+> for m in add mv3 resnet18; do
+>     python -m executorch.examples.nvidia.tensorrt.export -m "$m" --onnx
+> done
+> ```
+
+### Correctness Tests
+
+```bash
+# Run all correctness tests
+python -m pytest examples/nvidia/tensorrt/tests/test_export.py -v
+
+# Run a single model's test
+python -m pytest examples/nvidia/tensorrt/tests/test_export.py -v -k test_mv3
+```
+
+Each test exports a model with TensorRT, runs inference via ExecuTorch
+pybindings, and compares outputs against eager PyTorch (atol=1e-3, rtol=1e-3)
+across 3 random seeds.
+
+### Benchmark
+
+```bash
+# Benchmark all exported models in the current directory
+./cmake-out/examples/nvidia/tensorrt/benchmark
+
+# Benchmark with options
+./cmake-out/examples/nvidia/tensorrt/benchmark -d DIR -m MODEL -n 100 -w 5
+```
+
+The benchmark reports three formats per model:
+- **pte** — ExecuTorch end-to-end (includes framework overhead)
+- **pte-raw** — Raw TRT engine execution extracted from the .pte
+- **onnx-trt** — ONNX → TRT engine (baseline, when .onnx files are present)
 
 ## Prerequisites
 
@@ -70,11 +120,6 @@ pip install tensorrt>=10.3
 ```
 
 Alternatively, download and install from the
-[NVIDIA TensorRT Download Page](https://developer.nvidia.com/tensorrt).
-
-#### Windows x86_64
-
-Download and install from the
 [NVIDIA TensorRT Download Page](https://developer.nvidia.com/tensorrt).
 
 ### Additional Requirements
@@ -145,18 +190,6 @@ with open("model_tensorrt.pte", "wb") as f:
     exec_prog.write_to_file(f)
 ```
 
-### Using the Export Script
-
-```bash
-python -m executorch.examples.nvidia.tensorrt.export --model mv3 --output mv3_tensorrt.pte
-```
-
-### Run Inference
-
-```bash
-./tensorrt_executor_runner --model_path=model_tensorrt.pte
-```
-
 ## Supported Operations
 
 | Category | Operations |
@@ -176,54 +209,29 @@ python -m executorch.examples.nvidia.tensorrt.export --model mv3 --output mv3_te
 
 ## Jetson Deployment
 
-### Prerequisites
-
-On your Jetson device:
-- JetPack 5.x or 6.x (includes TensorRT and CUDA)
-- Python 3.8+
-- CMake 3.19+
-
-### Build on Jetson
+### Performance Tuning
 
 ```bash
-git clone --recurse-submodules https://github.com/pytorch/executorch.git
-cd executorch
-mkdir build && cd build
-
-# JetPack pre-installs TensorRT and CUDA - auto-detected by CMake
-cmake .. -DEXECUTORCH_BUILD_TENSORRT=ON -DCMAKE_BUILD_TYPE=Release
-
-cmake --build . --target tensorrt_backend tensorrt_executor_runner -j$(nproc)
+sudo nvpmodel -m 0    # Max performance mode
+sudo jetson_clocks     # Lock clocks for consistent benchmarking
 ```
 
-### Export and Run
+### DLA Support
 
+For models that support it, you can use NVIDIA's Deep Learning Accelerator:
+```python
+compile_spec = TensorRTCompileSpec(
+    dla_core=0,
+    allow_gpu_fallback=True,
+)
+```
+
+### Memory Management
+
+On memory-constrained Jetson devices, free RAM before export:
 ```bash
-# Export model on Jetson
-python -m executorch.examples.nvidia.tensorrt.export --model mv3 --output mv3_tensorrt.pte
-
-# Run inference
-./tensorrt_executor_runner --model_path=mv3_tensorrt.pte --num_executions=100
+sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches && echo 1 > /proc/sys/vm/compact_memory'
 ```
-
-### Jetson Notes
-
-1. **Unified Memory**: Jetson uses unified memory (CPU and GPU share memory), so no explicit
-   data transfers are needed.
-
-2. **DLA Support**: For models that support it, you can use NVIDIA's Deep Learning Accelerator:
-   ```python
-   compile_spec = TensorRTCompileSpec(
-       dla_core=0,
-       allow_gpu_fallback=True,
-   )
-   ```
-
-3. **Power Modes**: Set appropriate power mode for your use case:
-   ```bash
-   sudo nvpmodel -m 0  # Max performance
-   sudo jetson_clocks  # Lock clocks for consistent benchmarking
-   ```
 
 ## Blob Format
 
@@ -258,38 +266,12 @@ The TensorRT delegate uses a custom binary blob format:
 - cuDNN 8.x
 - PyTorch 2.x with CUDA support (for export)
 
-## Build Instructions
-
-```bash
-cd executorch
-mkdir -p cmake-out && cd cmake-out
-
-cmake .. -DEXECUTORCH_BUILD_TENSORRT=ON
-
-cmake --build . --target tensorrt_backend tensorrt_executor_runner
-```
-
 ## Troubleshooting
 
-### Common Issues
-
-1. **"No CUDA devices available"**: Ensure CUDA drivers are installed and GPU is accessible.
-
-2. **TensorRT engine build takes long time**: This is expected for complex models. The engine
-   is cached in the `.pte` file, so subsequent runs are fast.
-
-3. **Model has multiple partitions**: Some operations may not be supported. Check the
-   `SUPPORTED_OPS` in `partitioner/operator_support.py`.
-
-### Debugging
-
-```bash
-# Check TensorRT version
-python -c "import tensorrt; print(tensorrt.__version__)"
-
-# Check CUDA
-nvidia-smi
-
-# Run with verbose logging
-./tensorrt_executor_runner --model_path=model.pte --verbose
-```
+| Issue | Fix |
+|-------|-----|
+| `Backend TensorRTBackend is not registered` | Ensure TensorRT is installed, then re-run `./install_executorch.sh --editable` |
+| `ModuleNotFoundError: tensorrt` | On x86_64: `pip install tensorrt>=10.3`. On Jetson: auto-detected |
+| CMake can't find TensorRT | Set `-DTENSORRT_HOME=/path/to/tensorrt` |
+| OOM during TRT engine building | Export models one at a time; free memory first |
+| `extension_module not found` | Add `-DEXECUTORCH_BUILD_EXTENSION_MODULE=ON` to cmake |
