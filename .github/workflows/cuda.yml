@@ -129,29 +129,50 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        model:
-          - repo: "mistralai"
-            name: "Voxtral-Mini-3B-2507"
-          - repo: "openai"
-            name: "whisper-small"
-          - repo: "openai"
-            name: "whisper-large-v3-turbo"
-          - repo: "google"
-            name: "gemma-3-4b-it"
-          - repo: "Qwen"
-            name: "Qwen3-0.6B"
-          - repo: "nvidia"
-            name: "parakeet-tdt"
-        quant:
-          - "non-quantized"
-          - "quantized-int4-tile-packed"
-          - "quantized-int4-weight-only"
-        exclude:
-          # TODO: enable int4-weight-only on gemma3.
-          - model:
-              repo: "google"
+          model:
+            - repo: "mistralai"
+              name: "Voxtral-Mini-3B-2507"
+            - repo: "openai"
+              name: "whisper-small"
+            - repo: "openai"
+              name: "whisper-large-v3-turbo"
+            - repo: "google"
               name: "gemma-3-4b-it"
-            quant: "quantized-int4-weight-only"
+            - repo: "Qwen"
+              name: "Qwen3-0.6B"
+            - repo: "nvidia"
+              name: "parakeet-tdt"
+            - repo: "nvidia"
+              name: "diar_streaming_sortformer_4spk-v2"
+            - repo: "nvidia"
+              name: "diar_streaming_sortformer_4spk-v2.1"
+          quant:
+            - "non-quantized"
+            - "quantized-int4-tile-packed"
+            - "quantized-int4-weight-only"
+          exclude:
+            # TODO: enable int4-weight-only on gemma3.
+            - model:
+                repo: "google"
+                name: "gemma-3-4b-it"
+              quant: "quantized-int4-weight-only"
+            # Sortformer only supports non-quantized
+            - model:
+                repo: "nvidia"
+                name: "diar_streaming_sortformer_4spk-v2"
+              quant: "quantized-int4-tile-packed"
+            - model:
+                repo: "nvidia"
+                name: "diar_streaming_sortformer_4spk-v2"
+              quant: "quantized-int4-weight-only"
+            - model:
+                repo: "nvidia"
+                name: "diar_streaming_sortformer_4spk-v2.1"
+              quant: "quantized-int4-tile-packed"
+            - model:
+                repo: "nvidia"
+                name: "diar_streaming_sortformer_4spk-v2.1"
+              quant: "quantized-int4-weight-only"
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
@@ -204,6 +225,10 @@ jobs:
             name: "gemma-3-4b-it"
           - repo: "nvidia"
             name: "parakeet-tdt"
+          - repo: "nvidia"
+            name: "diar_streaming_sortformer_4spk-v2"
+          - repo: "nvidia"
+            name: "diar_streaming_sortformer_4spk-v2.1"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -213,6 +238,23 @@ jobs:
           - model:
               repo: "google"
               name: "gemma-3-4b-it"
+            quant: "quantized-int4-weight-only"
+          # Sortformer only supports non-quantized
+          - model:
+              repo: "nvidia"
+              name: "diar_streaming_sortformer_4spk-v2"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "nvidia"
+              name: "diar_streaming_sortformer_4spk-v2"
+            quant: "quantized-int4-weight-only"
+          - model:
+              repo: "nvidia"
+              name: "diar_streaming_sortformer_4spk-v2.1"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "nvidia"
+              name: "diar_streaming_sortformer_4spk-v2.1"
             quant: "quantized-int4-weight-only"
     with:
       timeout: 90

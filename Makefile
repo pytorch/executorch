@@ -91,7 +91,7 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral_realtime-cpu voxtral_realtime-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral_realtime-cpu voxtral_realtime-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal sortformer-cpu sortformer-cuda sortformer-cuda-debug silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
@@ -109,6 +109,8 @@ help:
 	@echo "  parakeet-cpu        - Build Parakeet runner with CPU backend"
 	@echo "  parakeet-metal      - Build Parakeet runner with Metal backend (macOS only)"
 	@echo "  sortformer-cpu      - Build Sortformer runner with CPU backend"
+	@echo "  sortformer-cuda     - Build Sortformer runner with CUDA backend"
+	@echo "  sortformer-cuda-debug - Build Sortformer runner with CUDA backend (debug mode)"
 	@echo "  silero-vad-cpu      - Build Silero VAD runner with CPU backend"
 	@echo "  llama-cuda          - Build Llama runner with CUDA backend"
 	@echo "  llama-cuda-debug    - Build Llama runner with CUDA backend (debug mode)"
@@ -222,6 +224,24 @@ sortformer-cpu:
 	cmake --workflow --preset llm-release
 	@echo "==> Building Sortformer runner (CPU)..."
 	cd examples/models/sortformer && cmake --workflow --preset sortformer-cpu
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/sortformer/sortformer_runner"
+
+sortformer-cuda:
+	@echo "==> Building and installing ExecuTorch..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Building Sortformer runner (CUDA)..."
+	cd examples/models/sortformer && cmake --workflow --preset sortformer-cuda
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/sortformer/sortformer_runner"
+
+sortformer-cuda-debug:
+	@echo "==> Building and installing ExecuTorch with CUDA (debug mode)..."
+	cmake --workflow --preset llm-debug-cuda
+	@echo "==> Building Sortformer runner with CUDA (debug mode)..."
+	cd examples/models/sortformer && cmake --workflow --preset sortformer-cuda-debug
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/sortformer/sortformer_runner"

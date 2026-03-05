@@ -176,6 +176,18 @@ case "$HF_MODEL" in
     AUDIO_FILE="test_audio.wav"
     IMAGE_PATH=""
     ;;
+  nvidia/diar_streaming_sortformer_4spk-v2|nvidia/diar_streaming_sortformer_4spk-v2.1)
+    MODEL_NAME="sortformer"
+    RUNNER_TARGET="sortformer_runner"
+    RUNNER_PATH="sortformer"
+    EXPECTED_OUTPUT="speaker_"
+    PREPROCESSOR=""
+    TOKENIZER_URL=""
+    TOKENIZER_FILE=""
+    AUDIO_URL="https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/ES2004a/audio/ES2004a.Mix-Headset.wav"
+    AUDIO_FILE="ES2004a.Mix-Headset.wav"
+    IMAGE_PATH=""
+    ;;
   mistralai/Voxtral-Mini-4B-Realtime-2602)
     MODEL_NAME="voxtral_realtime"
     RUNNER_TARGET="voxtral_realtime_runner"
@@ -203,8 +215,8 @@ echo "::endgroup::"
 echo "::group::Prepare $MODEL_NAME Artifacts"
 
 
-# Download tokenizer files (skip for parakeet and voxtral_realtime which bundle tokenizer in export)
-if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ]; then
+# Download tokenizer files (skip for parakeet, sortformer, and voxtral_realtime which don't need tokenizers or bundle them)
+if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "sortformer" ] && [ "$MODEL_NAME" != "voxtral_realtime" ]; then
   if [ "$TOKENIZER_FILE" != "" ]; then
     curl -L $TOKENIZER_URL/$TOKENIZER_FILE -o $MODEL_DIR/$TOKENIZER_FILE
   else
@@ -292,6 +304,14 @@ EOF
   parakeet)
     RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --audio_path ${MODEL_DIR}/$AUDIO_FILE --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE"
     # For CUDA, add data_path argument (Metal embeds data in .pte)
+    if [ "$DEVICE" = "cuda" ]; then
+      RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
+    fi
+    ;;
+  sortformer)
+    # Sortformer uses downloaded audio file
+    RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --audio_path ${MODEL_DIR}/$AUDIO_FILE"
+    # For CUDA, add data_path argument
     if [ "$DEVICE" = "cuda" ]; then
       RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
     fi

@@ -157,6 +157,14 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  nvidia/diar_streaming_sortformer_4spk-v2|nvidia/diar_streaming_sortformer_4spk-v2.1)
+    MODEL_NAME="sortformer"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   mistralai/Voxtral-Mini-4B-Realtime-2602)
     MODEL_NAME="voxtral_realtime"
     TASK=""
@@ -242,6 +250,28 @@ if [ "$MODEL_NAME" = "parakeet" ]; then
     test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
   fi
   test -f "${OUTPUT_DIR}/tokenizer.model"
+  ls -al "${OUTPUT_DIR}"
+  echo "::endgroup::"
+  exit 0
+fi
+
+# Sortformer uses a custom export script
+if [ "$MODEL_NAME" = "sortformer" ]; then
+  pip install -r examples/models/sortformer/install_requirements.txt
+
+  python examples/models/sortformer/export_sortformer.py \
+      --hf-model "${HF_MODEL}" \
+      --backend "$DEVICE" \
+      --output-dir "${OUTPUT_DIR}"
+
+  # Rename sortformer.pte to model.pte for consistency
+  mv "${OUTPUT_DIR}/sortformer.pte" "${OUTPUT_DIR}/model.pte"
+
+  test -f "${OUTPUT_DIR}/model.pte"
+  # CUDA saves named data to separate .ptd file
+  if [ "$DEVICE" = "cuda" ]; then
+    test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  fi
   ls -al "${OUTPUT_DIR}"
   echo "::endgroup::"
   exit 0

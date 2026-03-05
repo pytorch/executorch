@@ -46,7 +46,8 @@ int main(int argc, char** argv) {
   stats.model_load_start_ms = ::executorch::extension::llm::time_in_ms();
 
   sortformer::SortformerRunner runner(
-      FLAGS_model_path, FLAGS_data_path.empty() ? nullptr : FLAGS_data_path);
+      FLAGS_model_path,
+      FLAGS_data_path.empty() ? nullptr : FLAGS_data_path.c_str());
 
   stats.model_load_end_ms = ::executorch::extension::llm::time_in_ms();
   stats.inference_start_ms = ::executorch::extension::llm::time_in_ms();

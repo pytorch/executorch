@@ -28,6 +28,20 @@
                 "lhs": "${hostSystemName}",
                 "rhs": "Linux"
             }
+        },
+        {
+            "name": "sortformer-cuda-debug",
+            "displayName": "Sortformer runner (CUDA Debug)",
+            "inherits": ["sortformer-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_CUDA": "ON",
+                "CMAKE_BUILD_TYPE": "Debug"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
         }
     ],
     "buildPresets": [
@@ -43,6 +57,12 @@
             "displayName": "Build Sortformer runner (CUDA)",
             "configurePreset": "sortformer-cuda",
             "configuration": "Release",
+            "targets": ["sortformer_runner"]
+        },
+        {
+            "name": "sortformer-cuda-debug",
+            "displayName": "Build Sortformer runner (CUDA Debug)",
+            "configurePreset": "sortformer-cuda-debug",
             "targets": ["sortformer_runner"]
         }
     ],
@@ -72,6 +92,20 @@
                 {
                     "type": "build",
                     "name": "sortformer-cuda"
+                }
+            ]
+        },
+        {
+            "name": "sortformer-cuda-debug",
+            "displayName": "Configure and build Sortformer runner (CUDA Debug)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "sortformer-cuda-debug"
+                },
+                {
+                    "type": "build",
+                    "name": "sortformer-cuda-debug"
                 }
             ]
         }

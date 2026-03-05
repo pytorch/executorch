@@ -316,7 +316,6 @@ def _create_cuda_partitioners(programs):
     """Create CUDA partitioners for all programs except preprocessor."""
     from executorch.backends.cuda.cuda_backend import CudaBackend
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
-    from torch._inductor.decomposition import conv1d_to_conv2d
 
     print("\nLowering to ExecuTorch with CUDA...")
 
