@@ -144,7 +144,7 @@ Result<FreeableBuffer> FileDataLoader::load(
       InvalidState,
       "Uninitialized");
   ET_CHECK_OR_RETURN_ERROR(
-      offset + size <= file_size_,
+      offset <= file_size_ && size <= file_size_ - offset,
       InvalidArgument,
       "File %s: offset %zu + size %zu > file_size_ %zu",
       file_name_,
@@ -205,7 +205,7 @@ ET_NODISCARD Error FileDataLoader::load_into(
       InvalidState,
       "Uninitialized");
   ET_CHECK_OR_RETURN_ERROR(
-      offset + size <= file_size_,
+      offset <= file_size_ && size <= file_size_ - offset,
       InvalidArgument,
       "File %s: offset %zu + size %zu > file_size_ %zu",
       file_name_,

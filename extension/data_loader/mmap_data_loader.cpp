@@ -160,7 +160,7 @@ Error MmapDataLoader::validate_input(size_t offset, size_t size) const {
       InvalidState,
       "Uninitialized");
   ET_CHECK_OR_RETURN_ERROR(
-      offset + size <= file_size_,
+      offset <= file_size_ && size <= file_size_ - offset,
       InvalidArgument,
       "File %s: offset %zu + size %zu > file_size_ %zu",
       file_name_,

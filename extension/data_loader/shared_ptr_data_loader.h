@@ -34,7 +34,7 @@ class SharedPtrDataLoader final : public executorch::runtime::DataLoader {
       size_t size,
       ET_UNUSED const DataLoader::SegmentInfo& segment_info) const override {
     ET_CHECK_OR_RETURN_ERROR(
-        offset + size <= size_,
+        offset <= size_ && size <= size_ - offset,
         InvalidArgument,
         "offset %zu + size %zu > size_ %zu",
         offset,
