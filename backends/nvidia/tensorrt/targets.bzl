@@ -19,6 +19,7 @@ def define_common_targets():
             "//executorch/backends/nvidia/tensorrt:compile_spec",
             "//executorch/backends/nvidia/tensorrt:converter_registry",
             "//executorch/backends/nvidia/tensorrt:converter_utils",
+            "//executorch/backends/nvidia/tensorrt:serialization",
             "//executorch/backends/nvidia/tensorrt/converters:converters",
             "//executorch/exir/backend:backend_details",
         ],
