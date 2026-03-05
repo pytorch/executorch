@@ -85,9 +85,15 @@ if(ESP_PLATFORM)
   set(ET_ESP_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE "" CACHE STRING
       "Scratch temp allocator pool size (empty = auto based on PSRAM availability)")
 
-  # Find pre-built ExecuTorch libraries
+  # Find pre-built ExecuTorch libraries.
+  # TARGETS_GLOBAL is needed because ESP-IDF's project.cmake resolves link
+  # dependencies from the top-level project scope, but find_package runs
+  # inside this component's directory scope. Without GLOBAL, the imported
+  # targets (executorch, portable_kernels, etc.) are invisible at the
+  # project level and you get "No target executorch" errors.
+  set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL TRUE)
   find_package(
-    executorch HINTS "${ET_BUILD_DIR_PATH}/lib/cmake/ExecuTorch"
+    executorch REQUIRED HINTS "${ET_BUILD_DIR_PATH}/lib/cmake/ExecuTorch"
   )
 
   # Convert pte to header if not using filesystem loading
