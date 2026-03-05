@@ -40,11 +40,7 @@ def _populate_weight_cache() -> None:
     for env_var, filename in _WEIGHT_ENV_VARS.items():
         src = os.environ.get(env_var)
         if src and os.path.isfile(src):
-            # dog.jpg goes to CWD (mv2 model downloads it there)
-            if filename == "dog.jpg":
-                dst = os.path.join(os.getcwd(), filename)
-            else:
-                dst = os.path.join(cache_dir, filename)
+            dst = os.path.join(cache_dir, filename)
             if not os.path.exists(dst):
                 shutil.copy2(src, dst)
                 logger.info(f"Cached {filename} from {src}")
@@ -124,3 +120,24 @@ class ExportCorrectnessTest(unittest.TestCase):
 
     def test_sdpa(self) -> None:
         _export_and_verify("sdpa")
+
+    def test_emformer_join(self) -> None:
+        _export_and_verify("emformer_join")
+
+    def test_emformer_transcribe(self) -> None:
+        _export_and_verify("emformer_transcribe")
+
+    def test_softmax(self) -> None:
+        _export_and_verify("softmax")
+
+    def test_mv3(self) -> None:
+        _export_and_verify("mv3")
+
+    def test_ic3(self) -> None:
+        _export_and_verify("ic3")
+
+    def test_resnet18(self) -> None:
+        _export_and_verify("resnet18")
+
+    def test_resnet50(self) -> None:
+        _export_and_verify("resnet50")
