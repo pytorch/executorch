@@ -24,7 +24,9 @@ logging.basicConfig(level=logging.INFO)
 # Mapping from env var to expected cache filename.
 # The test TARGETS provides these via manifold_get + $(location).
 # Entries are added as models are enabled in later commits.
-_WEIGHT_ENV_VARS = {}
+_WEIGHT_ENV_VARS = {
+    "EDSR_WEIGHTS": "edsr64_x2.pt",
+}
 
 
 def _populate_weight_cache() -> None:
@@ -104,3 +106,12 @@ class ExportCorrectnessTest(unittest.TestCase):
 
     def test_linear(self) -> None:
         _export_and_verify("linear")
+    def test_conv1d(self) -> None:
+        _export_and_verify("conv1d")
+
+    def test_dl3(self) -> None:
+        _export_and_verify("dl3")
+
+
+    def test_w2l(self) -> None:
+        _export_and_verify("w2l")
