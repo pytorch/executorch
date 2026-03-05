@@ -599,11 +599,8 @@ class BackendConfig:
     torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
     tosa: TosaConfig = field(default_factory=TosaConfig)
     ethosu: EthosUConfig = field(default_factory=EthosUConfig)
-<<<<<<< HEAD
     vgf: VgfConfig = field(default_factory=VgfConfig)
-=======
     mlx: MLXConfig = field(default_factory=MLXConfig)
->>>>>>> d44535c8a5 (up)
 
 
 ################################################################################
