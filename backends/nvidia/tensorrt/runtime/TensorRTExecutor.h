@@ -149,6 +149,7 @@ class TensorRTExecutor {
    * live on host memory rather than device memory.
    */
   bool is_input_shape_tensor(size_t input_index) const;
+  bool is_output_shape_tensor(size_t output_index) const;
 
   /**
    * Get the element size in bytes for a TRT output tensor.

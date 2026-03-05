@@ -173,7 +173,11 @@ Error TensorRTBackend::execute(
   std::vector<int32_t> shape_tensor_vals(num_inputs);
   std::vector<std::vector<uint8_t>> input_staging(num_inputs);
   for (size_t i = 0; i < num_inputs; ++i) {
-    if (executor->is_input_shape_tensor(i)) {
+    if (executor->is_input_shape_tensor(i) || args[i]->isInt()) {
+      // Int EValues carry scalar dimension values for dynamic shapes.
+      // TRT shape tensors expect host memory (handled by executor).
+      // Non-shape-tensor int inputs are "unused" by TRT but still need
+      // a valid buffer pointer — a host int32 works fine.
       int64_t val = args[i]->toInt();
       shape_tensor_vals[i] = static_cast<int32_t>(val);
       input_buffers[i] = &shape_tensor_vals[i];
@@ -206,9 +210,16 @@ Error TensorRTBackend::execute(
   // Extract output pointers. When TRT outputs a different dtype than the
   // ExecuTorch tensor (e.g., float32 vs Half), use a staging buffer to
   // avoid buffer overflow, then convert after execution.
+  // Shape tensor outputs carry dimension values on the host and are handled
+  // internally by the executor — provide a dummy pointer for them.
   std::vector<void*> output_buffers(num_outputs);
   std::vector<std::vector<uint8_t>> output_staging(num_outputs);
+  std::vector<int64_t> output_shape_tensor_vals(num_outputs);
   for (size_t i = 0; i < num_outputs; ++i) {
+    if (executor->is_output_shape_tensor(i)) {
+      output_buffers[i] = &output_shape_tensor_vals[i];
+      continue;
+    }
     auto& tensor = args[i + num_inputs]->toTensor();
     size_t trt_elem = executor->get_output_dtype_size(i);
     size_t et_elem = tensor.element_size();
@@ -233,7 +244,7 @@ Error TensorRTBackend::execute(
 
   // Convert outputs where TRT dtype differs from ExecuTorch tensor dtype.
   for (size_t i = 0; i < num_outputs; ++i) {
-    if (output_staging[i].empty()) {
+    if (executor->is_output_shape_tensor(i) || output_staging[i].empty()) {
       continue;
     }
     auto& tensor = args[i + num_inputs]->toTensor();
@@ -272,6 +283,9 @@ Error TensorRTBackend::execute(
 
   // For dynamic shapes, resize output tensors to match TRT-inferred shapes.
   for (size_t i = 0; i < num_outputs; ++i) {
+    if (executor->is_output_shape_tensor(i)) {
+      continue;
+    }
     const auto& shape = executor->get_output_shape(i);
     if (!shape.empty()) {
       auto& tensor = args[i + num_inputs]->toTensor();

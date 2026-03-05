@@ -815,6 +815,15 @@ bool TensorRTExecutor::is_input_shape_tensor(size_t input_index) const {
   return false;
 }
 
+bool TensorRTExecutor::is_output_shape_tensor(size_t output_index) const {
+  for (const auto& buf : gpu_buffers_) {
+    if (!buf.is_input && buf.io_index == output_index) {
+      return buf.is_shape_tensor;
+    }
+  }
+  return false;
+}
+
 } // namespace tensorrt
 } // namespace backends
 } // namespace executorch

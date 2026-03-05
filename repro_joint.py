@@ -11,7 +11,7 @@ from examples.models.parakeet.export_parakeet_tdt import (
 )
 
 PTE_PATH = "/home/dev/models/parakeet_trt_fp32/model.pte"
-AUDIO_PATH = "/home/dev/models/parakeet_trt/output30s.wav"
+AUDIO_PATH = "/home/dev/models/parakeet_trt_fp32/output30.wav"
 
 print("Loading NeMo model...")
 model = load_model()
