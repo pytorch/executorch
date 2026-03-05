@@ -169,6 +169,7 @@ Result<Tensor> parseTensor(
       program,
       tensor_impl->nbytes(),
       memory_manager->planned_memory(),
+      memory_manager->method_allocator(),
       named_data_map,
       external_constants);
   if (!data_ptr.ok()) {

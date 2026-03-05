@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/executor/memory_manager.h>
@@ -356,9 +357,10 @@ Result<MethodMeta> Program::method_meta(const char* method_name) const {
   return MethodMeta(plan.get());
 }
 
-Result<const void*> Program::get_constant_buffer_data(
+Result<void*> Program::get_constant_buffer_data(
     size_t buffer_index,
-    size_t nbytes) const {
+    size_t nbytes,
+    MemoryAllocator* method_allocator) const {
   auto internal_program =
       static_cast<const executorch_flatbuffer::Program*>(internal_program_);
 
@@ -397,12 +399,16 @@ Result<const void*> Program::get_constant_buffer_data(
         nbytes,
         size);
 
-    // Offset is wrt the beginning of the constant segment.
-    return static_cast<const void*>(
-        static_cast<const unsigned char*>(constant_segment_data_.data()) +
-        offset);
+    // Offset is wrt the beginning of the constant segment. The segment buffer
+    // is Program-owned (not part of the FlatBuffer), so it is safe to return
+    // a mutable pointer into it.
+    return static_cast<unsigned char*>(
+               const_cast<void*>(constant_segment_data_.data())) +
+        offset;
   } else {
     // Otherwise, the constant data is stored inside Program.constant_buffer.
+    // That memory is part of the FlatBuffer and must not be mutated, so we
+    // defensively copy it into method_allocator before returning.
     const auto* constant_buffer_ptr = internal_program->constant_buffer();
     size_t num_elems =
         constant_buffer_ptr == nullptr ? 0 : constant_buffer_ptr->size();
@@ -427,7 +433,18 @@ Result<const void*> Program::get_constant_buffer_data(
         nbytes,
         static_cast<size_t>(storage_size));
 
-    return storage->data();
+    ET_CHECK_OR_RETURN_ERROR(
+        method_allocator != nullptr,
+        InvalidArgument,
+        "method_allocator is required to copy inline constant buffer data");
+    void* copy = method_allocator->allocate(nbytes);
+    ET_CHECK_OR_RETURN_ERROR(
+        copy != nullptr,
+        MemoryAllocationFailed,
+        "Failed to allocate %zu bytes for inline constant tensor copy",
+        nbytes);
+    std::memcpy(copy, storage->data(), nbytes);
+    return copy;
   }
 }
 

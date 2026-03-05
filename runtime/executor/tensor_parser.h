@@ -122,6 +122,8 @@ ET_NODISCARD Result<BoxedEvalueList<std::optional<T>>> parseListOptionalType(
  * @param[in] program The Program to use for constant buffer data.
  * @param[in] nbytes The amount of memory to get from the allocator.
  * @param[in] allocator The source of memory for non-constant tensors.
+ * @param[in] method_allocator The allocator used for defensive copies of
+ *     constant data stored inline in the FlatBuffer (deprecated path).
  * @param[in] named_data_map An optional map of {name, blob} used to resolve
  *     data that is mutable and external to the PTE, if any.
  * @param[in] external_constants An optional span containing tensor fqn to
@@ -137,6 +139,7 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
     const Program* program,
     size_t nbytes,
     HierarchicalAllocator* allocator,
+    MemoryAllocator* method_allocator,
     const NamedDataMap* named_data_map = nullptr,
     Span<NamedData> external_constants = {});
 

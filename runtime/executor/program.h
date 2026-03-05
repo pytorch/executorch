@@ -101,12 +101,24 @@ class Program final {
 
   /**
    * Get the constant buffer inside Program with index buffer_idx.
+   *
+   * The returned pointer is always safe to mutate. When constants are stored
+   * inline in the FlatBuffer (deprecated path), a defensive copy is made into
+   * `method_allocator` so that mutation does not corrupt FlatBuffer memory.
+   * When constants live in a separate segment, the segment buffer is already
+   * Program-owned and the pointer is returned directly.
+   *
    * @param[in] buffer_idx the index of the buffer in the constant_buffer.
    * @param[in] nbytes the number of bytes to read from the buffer.
+   * @param[in] method_allocator allocator used for defensive copies of inline
+   *     constant data. May be null only if the Program is known to use the
+   *     segregated-segment path.
    * @return The buffer with corresponding index.
    */
-  Result<const void*> get_constant_buffer_data(size_t buffer_idx, size_t nbytes)
-      const;
+  Result<void*> get_constant_buffer_data(
+      size_t buffer_idx,
+      size_t nbytes,
+      MemoryAllocator* method_allocator) const;
 
   /**
    * Get the named data map from the program.

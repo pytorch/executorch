@@ -28,6 +28,7 @@ using namespace ::testing;
 using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
+using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
 using torch::executor::util::BufferDataLoader;
@@ -113,11 +114,13 @@ class ProgramTestFriend final {
       const Program* program) {
     return program->internal_program_;
   }
-  static Result<const void*> get_constant_buffer_data(
+  static Result<void*> get_constant_buffer_data(
       const Program* program,
       size_t buffer_index,
-      size_t nbytes) {
-    return program->get_constant_buffer_data(buffer_index, nbytes);
+      size_t nbytes,
+      MemoryAllocator* method_allocator = nullptr) {
+    return program->get_constant_buffer_data(
+        buffer_index, nbytes, method_allocator);
   }
 };
 } // namespace testing
@@ -844,7 +847,7 @@ TEST_F(ProgramTest, GetConstantBufferDataRejectsOversizedRequest) {
   ASSERT_EQ(program.error(), Error::Ok);
 
   // Request way more bytes than any buffer could contain
-  Result<const void*> data = ProgramTestFriend::get_constant_buffer_data(
+  Result<void*> data = ProgramTestFriend::get_constant_buffer_data(
       &program.get(), /*buffer_index=*/0, /*nbytes=*/SIZE_MAX);
 
   EXPECT_EQ(data.error(), Error::InvalidArgument);

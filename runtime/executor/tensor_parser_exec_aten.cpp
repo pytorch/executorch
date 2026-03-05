@@ -164,6 +164,7 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
     const Program* program,
     size_t nbytes,
     HierarchicalAllocator* allocator,
+    MemoryAllocator* method_allocator,
     const NamedDataMap* named_data_map,
     Span<NamedData> external_constants) {
   auto data_buffer_idx = s_tensor->data_buffer_idx();
@@ -223,17 +224,12 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
       return planned_ptr;
     }
 
-    // Constant, stored in PTE file.
+    // Constant, stored in PTE file. get_constant_buffer_data copies inline
+    // FlatBuffer data into method_allocator so the returned pointer is always
+    // safe to mutate; segregated-segment data is returned in place.
   } else if (data_buffer_idx > 0 && allocation_info == nullptr) {
-    auto const_data =
-        program->get_constant_buffer_data(data_buffer_idx, nbytes);
-    if (!const_data.ok()) {
-      return const_data.error();
-    }
-
-    // The const_cast is 'ok' here because the program and runtime should
-    // guarantee that this data is never modified.
-    return const_cast<void*>(const_data.get());
+    return program->get_constant_buffer_data(
+        data_buffer_idx, nbytes, method_allocator);
 
     // Memory Planned, with initial state
   } else if (data_buffer_idx > 0 && allocation_info != nullptr) {
