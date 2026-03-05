@@ -11,11 +11,12 @@ Speaker diarization answers "who spoke when" — the model outputs per-frame act
 ## Quick Start
 
 ```bash
+cd examples/models/sortformer
+
 # Install Python dependencies
 pip install -r install_requirements.txt
 
 # Export to .pte
-cd examples/models/sortformer
 python export_sortformer.py --nemo-path /path/to/model.nemo --backend xnnpack
 
 # Build the C++ runner (from repo root)
@@ -30,11 +31,12 @@ make sortformer-cpu
 ## CUDA Quick Start
 
 ```bash
+cd examples/models/sortformer
+
 # Install Python dependencies
 pip install -r install_requirements.txt
 
 # Export to .pte + .ptd
-cd examples/models/sortformer
 python export_sortformer.py --nemo-path /path/to/model.nemo --backend cuda
 
 # Build the C++ runner (from repo root)
