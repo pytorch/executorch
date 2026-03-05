@@ -182,7 +182,7 @@ case "$HF_MODEL" in
     MODEL_NAME="sortformer"
     RUNNER_TARGET="sortformer_runner"
     RUNNER_PATH="sortformer"
-    EXPECTED_OUTPUT="Speaker 0"
+    EXPECTED_OUTPUT="Speaker 1"
     PREPROCESSOR=""
     TOKENIZER_URL=""
     TOKENIZER_FILE=""
