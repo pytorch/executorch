@@ -28,12 +28,14 @@ from executorch.backends.nvidia.tensorrt.converters import mul  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import permute_copy  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import pixel_shuffle  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import pooling  # noqa: F401
+from executorch.backends.nvidia.tensorrt.converters import power  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import reduction  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import relu  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import reshape  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import sdpa  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import slice  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import sub  # noqa: F401
+from executorch.backends.nvidia.tensorrt.converters import unary  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import upsample  # noqa: F401
 
 
