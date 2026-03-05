@@ -25,7 +25,10 @@ logging.basicConfig(level=logging.INFO)
 # The test TARGETS provides these via manifold_get + $(location).
 # Entries are added as models are enabled in later commits.
 _WEIGHT_ENV_VARS = {
+    "DOG_JPG": "dog.jpg",
     "EDSR_WEIGHTS": "edsr64_x2.pt",
+    "IC4_WEIGHTS": "inceptionv4-8e4777a0.pth",
+    "MV2_WEIGHTS": "mobilenet_v2-b0353104.pth",
 }
 
 
@@ -40,7 +43,24 @@ def _populate_weight_cache() -> None:
     for env_var, filename in _WEIGHT_ENV_VARS.items():
         src = os.environ.get(env_var)
         if src and os.path.isfile(src):
-            dst = os.path.join(cache_dir, filename)
+            if env_var == "DOG_JPG":
+                # MV2Model downloads dog.jpg to CWD
+                dst = os.path.join(os.getcwd(), filename)
+            elif env_var.startswith("MOBILEBERT_"):
+                # Pre-populate HuggingFace cache for mobilebert
+                hf_dir = os.path.join(
+                    os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface")),
+                    "hub", "models--google--mobilebert-uncased",
+                    "snapshots", "manifold",
+                )
+                os.makedirs(hf_dir, exist_ok=True)
+                refs_dir = os.path.join(os.path.dirname(hf_dir), "refs")
+                os.makedirs(refs_dir, exist_ok=True)
+                with open(os.path.join(refs_dir, "main"), "w") as rf:
+                    rf.write("manifold")
+                dst = os.path.join(hf_dir, filename)
+            else:
+                dst = os.path.join(cache_dir, filename)
             if not os.path.exists(dst):
                 shutil.copy2(src, dst)
                 logger.info(f"Cached {filename} from {src}")
@@ -129,3 +149,12 @@ class ExportCorrectnessTest(unittest.TestCase):
 
     def test_ic3(self) -> None:
         _export_and_verify("ic3")
+
+    def test_mv2(self) -> None:
+        _export_and_verify("mv2")
+
+    def test_resnet18(self) -> None:
+        _export_and_verify("resnet18")
+
+    def test_resnet50(self) -> None:
+        _export_and_verify("resnet50")

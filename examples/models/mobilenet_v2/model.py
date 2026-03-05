@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import os
 
 import torch
 
@@ -36,10 +37,11 @@ class MV2Model(EagerModelBase):
                 "https://github.com/pytorch/hub/raw/master/images/dog.jpg",
                 "dog.jpg",
             )
-            try:
-                urllib.URLopener().retrieve(url, filename)
-            except:
-                urllib.request.urlretrieve(url, filename)
+            if not os.path.exists(filename):
+                try:
+                    urllib.URLopener().retrieve(url, filename)
+                except Exception:
+                    urllib.request.urlretrieve(url, filename)
             from PIL import Image
             from torchvision import transforms
 
