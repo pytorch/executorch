@@ -123,11 +123,15 @@ if(EXECUTORCH_BUILD_PYBIND)
                CXX_STANDARD 20
   )
   if(APPLE)
-    set(RPATH "@loader_path/../../pybindings")
+    set(RPATH
+        "@loader_path/../../pybindings;@loader_path/../../../../torch/lib"
+    )
   else()
-    set(RPATH "$ORIGIN/../../pybindings")
+    set(RPATH "$ORIGIN/../../pybindings:$ORIGIN/../../../../torch/lib")
   endif()
-  set_target_properties(_llm_runner PROPERTIES INSTALL_RPATH ${RPATH})
+  set_target_properties(
+    _llm_runner PROPERTIES BUILD_RPATH "${RPATH}" INSTALL_RPATH "${RPATH}"
+  )
   # Add include directories
   target_include_directories(
     _llm_runner PRIVATE ${_common_include_directories} ${TORCH_INCLUDE_DIRS}

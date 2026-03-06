@@ -61,6 +61,10 @@ DEFINE_int32(
     "Mic read chunk size in ms. Multiples of 80 align with the model's "
     "streaming step (80, 160, 320, 640, 960).");
 DEFINE_string(
+    data_path,
+    "",
+    "Path to data file (.ptd) for delegate data (required for CUDA).");
+DEFINE_string(
     color,
     "",
     "Output text color: green or red (default: no color).");
@@ -97,7 +101,10 @@ int main(int argc, char** argv) {
   stats.model_load_start_ms = ::executorch::extension::llm::time_in_ms();
 
   voxtral_realtime::VoxtralRealtimeRunner runner(
-      FLAGS_model_path, FLAGS_tokenizer_path, FLAGS_preprocessor_path);
+      FLAGS_model_path,
+      FLAGS_tokenizer_path,
+      FLAGS_preprocessor_path,
+      FLAGS_data_path);
 
   stats.model_load_end_ms = ::executorch::extension::llm::time_in_ms();
   stats.inference_start_ms = ::executorch::extension::llm::time_in_ms();

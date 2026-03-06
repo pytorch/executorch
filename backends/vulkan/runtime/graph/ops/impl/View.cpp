@@ -127,6 +127,35 @@ void add_view_copy_buffer_node(
       resize_fn));
 }
 
+void add_view_copy_convert_texture_node(
+    ComputeGraph& graph,
+    ValueRef in,
+    ValueRef out,
+    const std::vector<ValueRef>& resize_args,
+    const ExecuteNode::ResizeFunction& resize_fn) {
+  std::string kernel_name = "view_convert_texture";
+  add_dtype_suffix(kernel_name, graph.dtype_of(in));
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
+      // Inputs and Outputs
+      {{out, vkapi::kWrite}, {in, vkapi::kRead}},
+      // Parameter Buffers
+      {},
+      // Push Constants
+      {{graph.sizes_pc_of(out)}},
+      // Specialization Constants
+      {graph.packed_dim_of(out)},
+      // Resize Args
+      resize_args,
+      // Resizing Logic
+      resize_fn));
+}
+
 void add_view_copy_convert_buffer_node(
     ComputeGraph& graph,
     ValueRef in,

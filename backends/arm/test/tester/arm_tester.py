@@ -482,10 +482,10 @@ class ArmTester(Tester):
         error_callbacks: Optional[Sequence[Callable[..., None]]] = None,
         run_eager_mode: bool = False,
     ):
-        """
-        Compares the run_artifact output of 'stage' with the output of a reference stage.
-        If the model is quantized, the reference stage is the Quantize stage output.
-        Otherwise, the reference stage is the initial pytorch module.
+        """Compares the run_artifact output of 'stage' with the output of a
+        reference stage. If the model is quantized, the reference stage is the
+        Quantize stage output. Otherwise, the reference stage is the initial
+        pytorch module.
 
         Asserts that the outputs are equal (within tolerances).
         Returns self to allow the function to be run in a test chain.
@@ -495,6 +495,7 @@ class ArmTester(Tester):
                 The default is the latest run stage.
             inputs (Optional[Tuple[torch.Tensor]]): Allows you to input custom input data.
                 The default is random data.
+
         """
 
         # backward-compatible ordering (accept inputs as the first positional argument)
@@ -730,8 +731,7 @@ class ArmTester(Tester):
         input_qspecs: Optional[Dict[QuantizationSpec | None, int]] = None,
         output_qspecs: Optional[Dict[QuantizationSpec | None, int]] = None,
     ):
-        """
-        Check the quantization annotations in the graph of a quantized model.
+        """Check the quantization annotations in the graph of a quantized model.
 
         Args:
             quantization_annotations: A dictionary mapping operator names to a dictionary of
@@ -743,6 +743,7 @@ class ArmTester(Tester):
                 If None, the check is skipped.
 
         Returns self for daisy-chaining.
+
         """
         if not self.is_quantized():
             raise RuntimeError(
@@ -783,13 +784,13 @@ class ArmTester(Tester):
         print_table: bool = True,
         include_dtypes: bool = True,
     ):
-        """Dump the distribution of operators in the current stage.
-        In the partition stage, additional information is included such as the number of
-        delegates and the distribution of TOSA operators.
-        Set parameter print_table to False to dump in a parseable format.
-
+        """Dump the distribution of operators in the current stage. In the
+        partition stage, additional information is included such as the number
+        of delegates and the distribution of TOSA operators. Set parameter
+        print_table to False to dump in a parseable format.
 
         Returns self for daisy-chaining.
+
         """
         line = "#" * 10
         to_print = f"\n{line} {self.cur} Operator Distribution {line}\n"
@@ -868,10 +869,12 @@ class ArmTester(Tester):
     def dump_dtype_distribution(
         self, path_to_dump: Optional[str] = None, print_table: bool = True
     ):
-        """Dump a the distributions of dtypes of nodes and placeholders in the current stage.
-        Set parameter print_table to False to dump in a parseable format.
+        """Dump a the distributions of dtypes of nodes and placeholders in the
+        current stage. Set parameter print_table to False to dump in a parseable
+        format.
 
         Returns self for daisy-chaining.
+
         """
 
         line = "#" * 10
@@ -915,11 +918,12 @@ class ArmTester(Tester):
         """Run transform_for_annotation_pipeline on exported program to ensure
         passes do not break the initial model before quantization.
 
-        There are caveats to this however. As we register buffers to the graph modules
-        the resulting exported graph can fail. Use this only to compare numerical correctness
-        in eager mode.
+        There are caveats to this however. As we register buffers to the graph
+        modules the resulting exported graph can fail. Use this only to compare
+        numerical correctness in eager mode.
 
         Returns exported program with passes applied.
+
         """
 
         if stage is None:
@@ -995,9 +999,9 @@ class ArmTester(Tester):
                     stage_output,
                     reference_output,
                     quantization_scale=quantization_scale,
-                    atol=1e-03,
-                    rtol=1e-03,
-                    qtol=0,
+                    atol=atol,
+                    rtol=rtol,
+                    qtol=qtol,
                 )
             raise e
 
@@ -1038,7 +1042,10 @@ def _get_dtype_distribution(
     graph: Graph, tosa_spec: TosaSpecification
 ) -> tuple[Counter[str], Counter[str]]:
     """Counts the occurences of placeholder and call_function dtypes in a graph.
-    The result is a tuple of Counters (placeholder_distribution, call_function_distribution)
+
+    The result is a tuple of Counters (placeholder_distribution,
+    call_function_distribution)
+
     """
     placeholder_dtypes: list[str] = []
     call_function_dtypes: list[str] = []
@@ -1054,7 +1061,9 @@ def _get_dtype_distribution(
 
 def _get_operator_distribution(graph: Graph) -> List[Tuple[str, int]]:
     """Counts the occurences of operator names in a graph.
+
     The result is a sorted list [('operator name':'number of nodes')]
+
     """
     return sorted(
         Counter(
@@ -1069,7 +1078,9 @@ def _get_operator_distribution(graph: Graph) -> List[Tuple[str, int]]:
 
 def _get_operator_dtype_distribution(graph: Graph) -> List[Tuple[Tuple[str, str], int]]:
     """Counts the occurences of operator names and dtype pairs in a graph.
+
     The result is a sorted list[(('operator name','dtype'),'number of nodes')]
+
     """
     target_dtype_pairs = []
     for node in graph.nodes:
@@ -1104,7 +1115,9 @@ def _get_tosa_operator_distribution(
 ) -> list[Tuple[str, int]] | list[Tuple[Tuple[str, str], int]]:
     """Counts the occurences of operator names of all lowered modules containing
     a TOSA flatbuffer.
+
     The result is a string with the operator distribution or an error message.
+
     """
     id = 0
     unknown_dtype_str = "UNKNOWN"

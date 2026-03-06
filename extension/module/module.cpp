@@ -80,7 +80,8 @@ Module::Module(
     const LoadMode load_mode,
     std::unique_ptr<runtime::EventTracer> event_tracer,
     std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
-    std::unique_ptr<runtime::MemoryAllocator> temp_allocator)
+    std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
+    bool share_memory_arenas)
     : file_path_(file_path),
       load_mode_(load_mode),
       memory_allocator_(
@@ -89,7 +90,8 @@ Module::Module(
       temp_allocator_(
           temp_allocator ? std::move(temp_allocator)
                          : std::make_unique<MallocMemoryAllocator>()),
-      event_tracer_(std::move(event_tracer)) {
+      event_tracer_(std::move(event_tracer)),
+      share_memory_arenas_(share_memory_arenas) {
   runtime::runtime_init();
 }
 
@@ -99,7 +101,8 @@ Module::Module(
     const LoadMode load_mode,
     std::unique_ptr<runtime::EventTracer> event_tracer,
     std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
-    std::unique_ptr<runtime::MemoryAllocator> temp_allocator)
+    std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
+    bool share_memory_arenas)
     : file_path_(file_path),
       load_mode_(load_mode),
       memory_allocator_(
@@ -108,7 +111,8 @@ Module::Module(
       temp_allocator_(
           temp_allocator ? std::move(temp_allocator)
                          : std::make_unique<MallocMemoryAllocator>()),
-      event_tracer_(std::move(event_tracer)) {
+      event_tracer_(std::move(event_tracer)),
+      share_memory_arenas_(share_memory_arenas) {
   if (!data_map_path.empty()) {
     data_files_.push_back(data_map_path);
   }
@@ -121,7 +125,8 @@ Module::Module(
     const LoadMode load_mode,
     std::unique_ptr<runtime::EventTracer> event_tracer,
     std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
-    std::unique_ptr<runtime::MemoryAllocator> temp_allocator)
+    std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
+    bool share_memory_arenas)
     : file_path_(file_path),
       data_files_(std::move(data_files)),
       load_mode_(load_mode),
@@ -131,7 +136,8 @@ Module::Module(
       temp_allocator_(
           temp_allocator ? std::move(temp_allocator)
                          : std::make_unique<MallocMemoryAllocator>()),
-      event_tracer_(std::move(event_tracer)) {
+      event_tracer_(std::move(event_tracer)),
+      share_memory_arenas_(share_memory_arenas) {
   runtime::runtime_init();
 }
 
@@ -140,7 +146,8 @@ Module::Module(
     std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
     std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
     std::unique_ptr<runtime::EventTracer> event_tracer,
-    std::unique_ptr<runtime::DataLoader> data_map_loader)
+    std::unique_ptr<runtime::DataLoader> data_map_loader,
+    bool share_memory_arenas)
     : data_loader_(std::move(data_loader)),
       memory_allocator_(
           memory_allocator ? std::move(memory_allocator)
@@ -148,7 +155,8 @@ Module::Module(
       temp_allocator_(
           temp_allocator ? std::move(temp_allocator)
                          : std::make_unique<MallocMemoryAllocator>()),
-      event_tracer_(std::move(event_tracer)) {
+      event_tracer_(std::move(event_tracer)),
+      share_memory_arenas_(share_memory_arenas) {
   if (data_map_loader) {
     data_map_loaders_.push_back(std::move(data_map_loader));
   }
@@ -160,7 +168,8 @@ Module::Module(
     std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
     std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
     std::unique_ptr<runtime::EventTracer> event_tracer,
-    std::unique_ptr<runtime::DataLoader> data_map_loader)
+    std::unique_ptr<runtime::DataLoader> data_map_loader,
+    bool share_memory_arenas)
     : program_(std::move(program)),
       memory_allocator_(
           memory_allocator ? std::move(memory_allocator)
@@ -168,7 +177,8 @@ Module::Module(
       temp_allocator_(
           temp_allocator ? std::move(temp_allocator)
                          : std::make_unique<MallocMemoryAllocator>()),
-      event_tracer_(std::move(event_tracer)) {
+      event_tracer_(std::move(event_tracer)),
+      share_memory_arenas_(share_memory_arenas) {
   if (data_map_loader) {
     data_map_loaders_.push_back(std::move(data_map_loader));
   }
@@ -264,6 +274,82 @@ runtime::Result<std::unordered_set<std::string>> Module::method_names() {
   return result;
 }
 
+std::unique_ptr<Module::PlannedMemory> Module::make_planned_memory(
+    const std::vector<size_t>& buffer_sizes) {
+  auto planned = std::make_unique<PlannedMemory>();
+  planned->planned_buffers.reserve(buffer_sizes.size());
+  planned->planned_spans.reserve(buffer_sizes.size());
+  for (size_t size : buffer_sizes) {
+    planned->planned_buffers.emplace_back(size);
+    planned->planned_spans.emplace_back(
+        planned->planned_buffers.back().data(), size);
+  }
+  planned->planned_memory =
+      std::make_unique<runtime::HierarchicalAllocator>(runtime::Span(
+          planned->planned_spans.data(), planned->planned_spans.size()));
+  return planned;
+}
+
+std::unique_ptr<Module::PlannedMemory>
+Module::make_planned_memory_with_shared_arenas(
+    const std::vector<size_t>& buffer_sizes,
+    std::vector<std::vector<uint8_t>>& shared_arenas) {
+  auto planned = std::make_unique<PlannedMemory>();
+  planned->planned_buffers.reserve(buffer_sizes.size());
+  planned->planned_spans.reserve(buffer_sizes.size());
+  for (size_t i = 0; i < buffer_sizes.size(); i++) {
+    if (i < shared_arenas.size()) {
+      planned->planned_buffers.emplace_back();
+      planned->planned_spans.emplace_back(
+          shared_arenas[i].data(), shared_arenas[i].size());
+    } else {
+      planned->planned_buffers.emplace_back(buffer_sizes[i]);
+      planned->planned_spans.emplace_back(
+          planned->planned_buffers.back().data(), buffer_sizes[i]);
+    }
+  }
+  planned->planned_memory =
+      std::make_unique<runtime::HierarchicalAllocator>(runtime::Span(
+          planned->planned_spans.data(), planned->planned_spans.size()));
+  return planned;
+}
+
+runtime::Result<std::vector<size_t>> Module::get_mem_planned_buffer_sizes(
+    const std::string& method_name) {
+  auto meta_res = program_->method_meta(method_name.c_str());
+  ET_CHECK_OK_OR_RETURN_ERROR(meta_res.error());
+  auto meta = meta_res.get();
+  std::vector<size_t> sizes;
+  sizes.reserve(meta.num_memory_planned_buffers());
+  for (size_t i = 0; i < meta.num_memory_planned_buffers(); i++) {
+    auto size = meta.memory_planned_buffer_size(i);
+    ET_CHECK_OK_OR_RETURN_ERROR(size.error());
+    sizes.push_back(size.get());
+  }
+  return sizes;
+}
+
+runtime::Result<std::vector<size_t>>
+Module::get_max_mem_planned_buffer_sizes() {
+  std::vector<size_t> result;
+  auto method_names_res = method_names();
+  ET_CHECK_OK_OR_RETURN_ERROR(method_names_res.error());
+  for (const auto& name : method_names_res.get()) {
+    auto sizes_res = get_mem_planned_buffer_sizes(name);
+    ET_CHECK_OK_OR_RETURN_ERROR(sizes_res.error());
+    auto& sizes = sizes_res.get();
+    if (sizes.size() > result.size()) {
+      result.resize(sizes.size(), 0);
+    }
+    for (size_t i = 0; i < sizes.size(); i++) {
+      if (sizes[i] > result[i]) {
+        result[i] = sizes[i];
+      }
+    }
+  }
+  return result;
+}
+
 runtime::Error Module::load_method(
     const std::string& method_name,
     runtime::HierarchicalAllocator* planned_memory,
@@ -279,29 +365,30 @@ runtime::Error Module::load_method(
     MethodHolder method_holder;
 
     if (!planned_memory) {
-      auto method_metadata_result = program_->method_meta(method_name.c_str());
-      if (!method_metadata_result.ok()) {
-        return method_metadata_result.error();
+      if (!share_memory_arenas_) {
+        auto sizes_res = get_mem_planned_buffer_sizes(method_name);
+        ET_CHECK_OK_OR_RETURN_ERROR(sizes_res.error());
+        method_holder.planned_memory = make_planned_memory(sizes_res.get());
+      } else {
+        auto sizes_res = get_mem_planned_buffer_sizes(method_name);
+        ET_CHECK_OK_OR_RETURN_ERROR(sizes_res.error());
+        auto& sizes = sizes_res.get();
+        if (shared_arenas_.empty()) {
+          auto max_res = get_max_mem_planned_buffer_sizes();
+          ET_CHECK_OK_OR_RETURN_ERROR(max_res.error());
+          auto& max_sizes = max_res.get();
+          // Only share for mem_id=1,2.
+          size_t shared = (max_sizes.size() > 2) ? 2 : max_sizes.size();
+          for (size_t i = 0; i < shared; i++) {
+            shared_arenas_.emplace_back(max_sizes[i]);
+          }
+        }
+        method_holder.planned_memory =
+            make_planned_memory_with_shared_arenas(sizes, shared_arenas_);
       }
-      const auto method_metadata = std::move(*method_metadata_result);
-      const auto planned_buffers_count =
-          method_metadata.num_memory_planned_buffers();
-      method_holder.planned_buffers.reserve(planned_buffers_count);
-      method_holder.planned_spans.reserve(planned_buffers_count);
-
-      for (auto index = 0; index < planned_buffers_count; ++index) {
-        const auto buffer_size =
-            method_metadata.memory_planned_buffer_size(index).get();
-        method_holder.planned_buffers.emplace_back(buffer_size);
-        method_holder.planned_spans.emplace_back(
-            method_holder.planned_buffers.back().data(), buffer_size);
-      }
-      method_holder.planned_memory =
-          std::make_unique<runtime::HierarchicalAllocator>(runtime::Span(
-              method_holder.planned_spans.data(),
-              method_holder.planned_spans.size()));
-      planned_memory = method_holder.planned_memory.get();
+      planned_memory = method_holder.planned_memory->planned_memory.get();
     }
+
     method_holder.memory_manager = std::make_unique<runtime::MemoryManager>(
         memory_allocator_.get(), planned_memory, temp_allocator_.get());
     auto res_method = program_->load_method(

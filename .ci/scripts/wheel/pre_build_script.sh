@@ -44,3 +44,16 @@ fi
 # able to see the installed torch package.
 
 "${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh" --example
+
+# Download Qualcomm QNN SDK on Linux x86_64 so the wheel build can include the
+# QNN backend.  The SDK is large, so we download it here (outside CMake) rather
+# than during cmake configure.
+if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+  echo "Downloading Qualcomm QNN SDK..."
+  QNN_SDK_ROOT=$(python3 \
+    "${GITHUB_WORKSPACE}/${REPOSITORY}/backends/qualcomm/scripts/download_qnn_sdk.py" \
+    --print-sdk-path)
+  export QNN_SDK_ROOT
+  echo "QNN_SDK_ROOT=${QNN_SDK_ROOT}" >> "${GITHUB_ENV}"
+  echo "QNN SDK downloaded to ${QNN_SDK_ROOT}"
+fi

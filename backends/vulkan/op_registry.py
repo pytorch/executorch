@@ -307,8 +307,8 @@ def register_to_copy():
 
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
-        inputs_dtypes=utils.FP_T,
-        outputs_dtypes=utils.FP_T,
+        inputs_dtypes=utils.FP_INT_T,
+        outputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
         are_node_inputs_supported_fn=check_to_copy_node,
     )
@@ -839,7 +839,7 @@ def register_q8ta_conv_pw_op():
 def register_q8ta_conv2d_ops():
     return OpFeatures(
         inputs_storage=[
-            utils.PACKED_INT8_4C1W_BUFFER,  # input
+            utils.PACKED_INT8_CONV2D_BUFFER,  # input
             utils.NO_STORAGE,  # input_scale (non tensor)
             utils.NO_STORAGE,  # input_zero_point (non tensor)
             utils.NO_STORAGE,  # weight (prepacked)

@@ -15,6 +15,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     is_param_node,
 )
 from executorch.backends.arm.constants import NCHW_ORDER, NNCHW_ORDER, NNNCHW_ORDER
+from executorch.backends.arm.tosa.dialect.shape import is_shape_op_node
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -404,6 +405,41 @@ class ToTosaMemoryFormatPass(ArmPass):
 
         node.kwargs = kwargs
 
+    def _propagate_dim_order_to_shape_args(self, node: torch.fx.Node) -> None:
+        for arg in node.all_input_nodes:
+            if is_shape_op_node(arg):
+                # Shape nodes may get its dim_order from multiple users. Keep track of old dim_order to make sure all
+                # users agree on the same dim_order, otherwise we may end up with non-deterministic dim_orders for
+                # shape nodes depending on the order of user traversal.
+                old_dim_order = arg.meta.get("tosa_dim_order", None) is not None
+                dim_order = node.meta["tosa_dim_order"]
+                if len(dim_order) != len(arg.meta["val"]):
+                    dim_order = tuple(range(len(arg.meta["val"])))
+                if old_dim_order and arg.meta["tosa_dim_order"] != dim_order:
+                    raise RuntimeError(
+                        f"Conflicting dim orders {arg.meta['tosa_dim_order']} and {dim_order} for shape node {arg.name}"
+                    )
+                arg.meta["tosa_dim_order"] = dim_order
+                self._propagate_dim_order_to_shape_args(arg)
+
+    def _annotate_shape_nodes(self, graph_module: torch.fx.GraphModule) -> None:
+        for node in graph_module.graph.nodes:
+            if not self._is_ok_for_annotation(node):
+                continue
+            self._propagate_dim_order_to_shape_args(node)
+
+    def _is_ok_for_annotation(self, node: torch.fx.Node) -> bool:
+        if "val" not in node.meta:
+            return False
+        # Shape-only nodes which produce SymInt[] rather than real tensors are annotated separately by propagating dim order from their users.
+        # We must therefore annotate all valid nodes before propagating dim order upwards in graph.
+        if is_shape_op_node(node):
+            return False
+        # For some models, the symbolic value is passed to the graph, skip it
+        if isinstance(node.meta["val"], torch.SymInt):
+            return False
+        return True
+
     def call(self, graph_module: torch.fx.GraphModule):
         """
         Entry point for the pass: annotate spatial ranks, compute dim orders,
@@ -411,7 +447,7 @@ class ToTosaMemoryFormatPass(ArmPass):
         """
         nodes = list(graph_module.graph.nodes)
         for node in nodes:
-            if "val" not in node.meta:
+            if not self._is_ok_for_annotation(node):
                 continue
             node.meta["tosa_spatial_rank"] = self._initial_spatial_rank(node)
             self.remove_dim_order_kwargs(graph_module, node)
@@ -419,7 +455,7 @@ class ToTosaMemoryFormatPass(ArmPass):
         self._propagate_spatial_ranks(nodes)
 
         for node in nodes:
-            if "val" not in node.meta:
+            if not self._is_ok_for_annotation(node):
                 continue
             node_data = get_first_fake_tensor(node).data
             spatial_rank = node.meta["tosa_spatial_rank"]
@@ -437,6 +473,9 @@ class ToTosaMemoryFormatPass(ArmPass):
         # Insert TOSA transposes to convert between (N)NCHW and (N)NHWC format.
         # See insert_tosa_transposes for insertion conditions.
         self.insert_tosa_transposes(graph_module)
+        # Special handling is needed for shape nodes as they don't have real tensors or real dim orders, but the order
+        # still needs to be propagated to them so that they can be serialized with the correct order and shapes.
+        self._annotate_shape_nodes(graph_module)
         graph_module.recompile()
         graph_module = super().call(graph_module).graph_module
 
@@ -450,7 +489,7 @@ class ToTosaMemoryFormatPass(ArmPass):
         while changed:
             changed = False
             for node in reversed(nodes):
-                if "val" not in node.meta:
+                if not self._is_ok_for_annotation(node):
                     continue
                 tensor = get_first_fake_tensor(node)
                 limit = max(tensor.dim() - 2, 0)

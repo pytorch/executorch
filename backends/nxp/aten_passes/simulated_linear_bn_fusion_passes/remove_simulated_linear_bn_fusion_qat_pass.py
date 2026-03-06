@@ -25,6 +25,41 @@ _is_linear = partial(is_op_node, target_op=torch.ops.aten.linear.default)
 _is_reshape = partial(is_op_node, target_op=torch.ops.aten.reshape)
 _is_zeros_like = partial(is_op_node, target_op=torch.ops.aten.zeros_like)
 
+_CONV_TARGETS = {
+    torch.ops.aten.conv1d.default,
+    torch.ops.aten.conv1d.padding,
+    torch.ops.aten.conv2d.default,
+    torch.ops.aten.conv2d.padding,
+    torch.ops.aten.conv_transpose1d.default,
+    torch.ops.aten.conv_transpose2d.input,
+}
+
+
+def _feeds_into_linear(node: Node) -> bool:
+    """
+    BFS from node to check if it eventually feeds into a linear op (not conv).
+    This is required because:
+    - Linear-BN fusion (added by AddSimulatedLinearBatchNormFusionQATPass, NXP-specific)
+    - Conv-BN QAT fusion (added by TorchAO's _fuse_conv_bn_qat inside prepare_qat_pt2e)
+    are structurally identical. Without this check, we would incorrectly remove
+    Conv-BN scale factor chains, breaking Conv-BN QAT fusion when TorchAO's _fold_conv_bn_qat
+    is called during convert_pt2e.
+    """
+    visited = set()
+    queue = list(node.users.keys())
+    while queue:
+        n = queue.pop(0)
+        if n in visited:
+            continue
+        visited.add(n)
+        if n.op == "call_function":
+            if n.target == torch.ops.aten.linear.default:
+                return True
+            if n.target in _CONV_TARGETS:
+                return False
+        queue.extend(n.users.keys())
+    return True
+
 
 def _is_denorm_pattern(node: Node) -> bool:
     if not _is_div(node):
@@ -56,6 +91,10 @@ def _remove_pattern_from_graph(graph_module: GraphModule, pattern: GraphModule):
     for match in matches:
         last_pattern_node = match.anchors[0]
         last_matched_subgraph_node = match.nodes_map[last_pattern_node]
+
+        if not _feeds_into_linear(last_matched_subgraph_node):
+            continue
+
         weight = match.placeholder_nodes[0]
 
         last_matched_subgraph_node.replace_all_uses_with(weight)

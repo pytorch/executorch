@@ -800,3 +800,24 @@ class SqueezeAddModel(torch.nn.Module):
             return torch.squeeze(x + y)
         else:
             return torch.squeeze(x + y, self.dim)
+
+
+class StaticDivLinearModel(torch.nn.Module):
+    def __init__(self, in_channels=8, out_channels=8, divisor=1):
+        super().__init__()
+        self.linear = torch.nn.Linear(in_channels, out_channels)
+        self.divisor = divisor
+
+    def forward(self, x):
+        x = self.linear(x)
+        return x / self.divisor
+
+
+class NonstaticDivLinearModel(torch.nn.Module):
+    def __init__(self, in_channels=8, out_channels=8):
+        super().__init__()
+        self.linear = torch.nn.Linear(in_channels, out_channels)
+
+    def forward(self, x, divisor):
+        x = self.linear(x)
+        return x / divisor

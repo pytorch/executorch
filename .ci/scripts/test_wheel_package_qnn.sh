@@ -86,6 +86,14 @@ EOF
 # ----------------------------
 echo "=== Building Wheel Package ==="
 source .ci/scripts/utils.sh
+
+# Ensure QNN SDK is available so setup.py auto-detects it.
+source backends/qualcomm/scripts/install_qnn_sdk.sh
+install_qnn
+
+# Make QNN SDK libraries available for runtime loading (e.g. libQnnHtp.so)
+export LD_LIBRARY_PATH="${QNN_SDK_ROOT}/lib/x86_64-linux-clang/:${LD_LIBRARY_PATH:-}"
+
 install_executorch
 EXECUTORCH_BUILDING_WHEEL=1 python setup.py bdist_wheel
 unset EXECUTORCH_BUILDING_WHEEL
