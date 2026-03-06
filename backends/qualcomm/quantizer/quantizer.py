@@ -425,7 +425,7 @@ class QnnQuantizer(Quantizer):
         op = node.target
         if isinstance(op, str):
             return
-        config = self.default_quant_config
+        config = self._get_submodule_qconfig(node)
         if block_size := self.block_size_map.get(node.name):
             ch_axis = config.op_axis_dict.get(node.target, 0)
             assert (

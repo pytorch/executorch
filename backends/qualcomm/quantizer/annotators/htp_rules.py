@@ -81,7 +81,7 @@ def register_annotator(aten_ops: List[OpOverload], qnn_op: Optional[str]):
                 validate_fn=validate_fn,
             )
             _RULES[rule.aten_op] = rule
-        return rule
+        return op_def
 
     return _wrap
 

@@ -69,7 +69,7 @@ class NormalizedConstraints:
 
 class ConstraintCache:
     def __init__(self):
-        self._store: Dict[str, NormalizedConstraints] = {}
+        self._store: Dict[str, List[NormalizedConstraints]] = {}
 
     def get(self, key: str) -> Optional[NormalizedConstraints]:
         return self._store.get(key)
@@ -368,19 +368,34 @@ def validate_against_backend_constraints(  # noqa: C901
                     input_node, resolved_input_qspec
                 )
                 if encoding_type in quant_constraint.encoding_types:
-                    if quant_constraint.is_symmetric is not None:
-                        valid &= _check_symmetric(resolved_input_qspec)
-                    if quant_constraint.is_math_invariant is not None:
-                        valid &= _check_math_invariant(input_qspec)
+                    if quant_constraint.is_symmetric and not _check_symmetric(
+                        resolved_input_qspec
+                    ):
+                        logging.warning(
+                            f"Input node ({input_node.name}) of node ({node.name}) failed to meet symmetric constraint"
+                        )
+                        valid = False
+
+                    if (
+                        quant_constraint.is_math_invariant
+                        and not _check_math_invariant(input_qspec)
+                    ):
+                        logging.warning(
+                            f"Input node ({input_node.name}) of node ({node.name}) failed to meet math invariant constraint"
+                        )
+                        valid = False
                     if (
                         quant_constraint.scale is not None
                         and quant_constraint.offset is not None
+                    ) and not _check_scale_and_offset(
+                        resolved_input_qspec,
+                        quant_constraint.scale,
+                        quant_constraint.offset,
                     ):
-                        valid &= _check_scale_and_offset(
-                            resolved_input_qspec,
-                            quant_constraint.scale,
-                            quant_constraint.offset,
+                        logging.warning(
+                            f"Input node ({input_node.name}) of node ({node.name}) failed to meet scale ({quant_constraint.scale}) and offset ({quant_constraint.offset}) constraint"
                         )
+                        valid = False
                     break
 
             if not valid:
@@ -396,19 +411,33 @@ def validate_against_backend_constraints(  # noqa: C901
         for quant_constraint in nc.outputs[0].constraints:
             encoding_type = _qspec_port_encoding_type(node, resolved_output_qspec)
             if encoding_type in quant_constraint.encoding_types:
-                if quant_constraint.is_symmetric is not None:
-                    valid &= _check_symmetric(resolved_output_qspec)
-                if quant_constraint.is_math_invariant is not None:
-                    valid &= _check_math_invariant(output_qspec)
+                if quant_constraint.is_symmetric is not None and not _check_symmetric(
+                    resolved_output_qspec
+                ):
+                    logging.warning(
+                        f"Node ({node.name}) failed to meet symmetric constraint"
+                    )
+                    valid = False
+                if (
+                    quant_constraint.is_math_invariant is not None
+                    and not _check_math_invariant(output_qspec)
+                ):
+                    logging.warning(
+                        f"Node ({node.name}) failed to meet math invariant constraint"
+                    )
+                    valid = False
                 if (
                     quant_constraint.scale is not None
                     and quant_constraint.offset is not None
+                ) and not _check_scale_and_offset(
+                    resolved_output_qspec,
+                    quant_constraint.scale,
+                    quant_constraint.offset,
                 ):
-                    valid &= _check_scale_and_offset(
-                        resolved_output_qspec,
-                        quant_constraint.scale,
-                        quant_constraint.offset,
+                    logging.warning(
+                        f"Node ({node.name}) failed to meet scale ({quant_constraint.scale}) and offset ({quant_constraint.offset}) constraint"
                     )
+                    valid = False
 
         if not valid:
             logging.warning(
