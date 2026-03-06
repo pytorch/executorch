@@ -85,3 +85,10 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/qaihub_scripts/llama)
 
 # build qaihub_stable_diffusion_runner
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/qaihub_scripts/stable_diffusion)
+
+# direct-mode qnn_executor_direct_runner is build with ndk toolchain, paired
+# with libraries built with hexagon toolchain, communicate through self-defined
+# fastrpc protocol.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64" AND DEFINED ENV{HEXAGON_SDK_ROOT})
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/direct_executor_runner)
+endif()

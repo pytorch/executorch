@@ -64,6 +64,17 @@ switch ($HfModel) {
         $audioUrl = "https://dldata-public.s3.us-east-2.amazonaws.com/2086-149220-0033.wav"
         $audioFile = "test_audio.wav"
     }
+    "nvidia/diar_streaming_sortformer_4spk-v2" {
+        $runnerTarget = "sortformer_runner"
+        $runnerPath = "sortformer"
+        $runnerPreset = "sortformer-cuda"
+        $expectedOutput = "Speaker 1"
+        $preprocessor = ""
+        $tokenizerUrl = ""
+        $tokenizerFile = ""
+        $audioUrl = "https://github.com/voxserv/audio_quality_testing_samples/raw/refs/heads/master/testaudio/16000/test01_20s.wav"
+        $audioFile = "poem.wav"
+    }
     "mistralai/Voxtral-Mini-4B-Realtime-2602" {
         $runnerTarget = "voxtral_realtime_runner"
         $runnerPath = "voxtral_realtime"
@@ -76,7 +87,7 @@ switch ($HfModel) {
         $audioFile = "poem.wav"
     }
     default {
-        throw "Unsupported model '$HfModel'. Supported: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/parakeet-tdt"
+        throw "Unsupported model '$HfModel'. Supported: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt"
     }
 }
 
@@ -179,6 +190,13 @@ try {
                 "--model_path", $modelPte,
                 "--audio_path", (Join-Path -Path $resolvedModelDir -ChildPath $audioFile),
                 "--tokenizer_path", (Join-Path -Path $resolvedModelDir -ChildPath $tokenizerFile),
+                "--data_path", $cudaBlob
+            )
+        }
+        "nvidia/diar_streaming_sortformer_4spk-v2" {
+            $runnerArgs = @(
+                "--model_path", $modelPte,
+                "--audio_path", (Join-Path -Path $resolvedModelDir -ChildPath $audioFile),
                 "--data_path", $cudaBlob
             )
         }

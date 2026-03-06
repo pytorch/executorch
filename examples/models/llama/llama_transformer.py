@@ -105,8 +105,16 @@ class TransformerBlock(nn.Module):
         if isinstance(self.attention, AttentionSkip):
             self.attention_norm = nn.Identity()
         else:
-            self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
+            self.attention_norm = RMSNorm(
+                args.dim,
+                eps=args.norm_eps,
+                add_unit_offset=args.rms_norm_add_unit_offset,
+            )
+        self.ffn_norm = RMSNorm(
+            args.dim,
+            eps=args.norm_eps,
+            add_unit_offset=args.rms_norm_add_unit_offset,
+        )
 
     @classmethod
     def from_type(cls, layer_id, args, rope) -> "TransformerBlock":
@@ -164,7 +172,11 @@ class Transformer(nn.Module):
         )
         self.layers = layers
         self.rope = rope
-        self.norm = RMSNorm(params.dim, eps=params.norm_eps)
+        self.norm = RMSNorm(
+            params.dim,
+            eps=params.norm_eps,
+            add_unit_offset=params.rms_norm_add_unit_offset,
+        )
         self.output = (
             nn.Linear(params.dim, params.vocab_size, bias=False)
             if self.apply_output
@@ -277,6 +289,21 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
             and model_args.layer_types[layer_id] == "skip_attention"
         ):
             attention = AttentionSkip()
+            transformer_block = TransformerBlock(model_args, attention)
+            layers.append(transformer_block)
+        elif (
+            model_args.layer_types
+            and model_args.layer_types[layer_id] == "linear_attention"
+        ):
+            linear_cls = ATTENTION_REGISTRY.get("gated_deltanet")
+            if linear_cls is None:
+                raise ValueError(
+                    "Unknown attention type: gated_deltanet. "
+                    f"Available: {list(ATTENTION_REGISTRY.keys())}"
+                )
+            attention = linear_cls(
+                model_args, layer_id, rope, **model_args.attention_kwargs
+            )
             transformer_block = TransformerBlock(model_args, attention)
             layers.append(transformer_block)
         else:
