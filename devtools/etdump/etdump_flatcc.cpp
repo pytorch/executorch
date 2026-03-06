@@ -714,6 +714,14 @@ Result<long> ETDumpGen::write_tensor_or_return_error(Tensor tensor) {
     return static_cast<size_t>(-1);
   }
 
+  // A tensor with nbytes > 0 but null data pointer indicates a corrupt PTE
+  // or a bug in the system. This should not happen in normal operation.
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor.const_data_ptr() != nullptr,
+      InvalidState,
+      "Tensor has nbytes=%zu but null data pointer. This indicates a corrupt program or internal error.",
+      tensor.nbytes());
+
   if (!data_sink_) {
     return Error::InvalidArgument;
   }

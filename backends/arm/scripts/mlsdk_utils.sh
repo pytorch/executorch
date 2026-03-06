@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -221,12 +221,55 @@ function setup_path_emulation_layer_from_pip() {
 
     local output
     if ! output=$(emulation_layer 2>/dev/null); then
-        echo "[mlsdk_utils] Failed to query emulation_layer environment; skipping"
-        return
+        output=""
     fi
 
     local exports
     exports=$(echo "$output" | grep '^export ' || true)
+
+    if [[ -z "${exports}" ]] || echo "$output" | grep -q "Unsupported platform"; then
+        local py="python3"
+        if ! command -v "${py}" >/dev/null 2>&1; then
+            py="python"
+        fi
+
+        local pkg_dir=""
+        if command -v "${py}" >/dev/null 2>&1; then
+            pkg_dir=$("${py}" - <<'PY'
+import importlib.util
+import os
+import sys
+
+spec = importlib.util.find_spec("emulation_layer")
+if spec is None:
+    print("")
+    sys.exit(0)
+if spec.submodule_search_locations:
+    print(list(spec.submodule_search_locations)[0])
+elif spec.origin:
+    print(os.path.dirname(spec.origin))
+else:
+    print("")
+PY
+)
+        fi
+
+        if [[ -n "${pkg_dir}" && -d "${pkg_dir}/deploy" ]]; then
+            local deploy_dir="${pkg_dir}/deploy"
+            prepend_env_in_setup_path LD_LIBRARY_PATH "${deploy_dir}/lib"
+            prepend_env_in_setup_path DYLD_LIBRARY_PATH "${deploy_dir}/lib"
+            prepend_env_in_setup_path VK_LAYER_PATH "${deploy_dir}/share/vulkan/explicit_layer.d"
+            prepend_env_in_setup_path VK_ADD_LAYER_PATH "${deploy_dir}/share/vulkan/explicit_layer.d"
+            prepend_env_in_setup_path VK_INSTANCE_LAYERS VK_LAYER_ML_Tensor_Emulation
+            prepend_env_in_setup_path VK_INSTANCE_LAYERS VK_LAYER_ML_Graph_Emulation
+            return
+        fi
+    fi
+
+    if [[ -z "${exports}" ]]; then
+        echo "[mlsdk_utils] Failed to query emulation_layer environment; skipping"
+        return
+    fi
 
     local ld_line
     ld_line=$(echo "$exports" | grep 'LD_LIBRARY_PATH=' || true)
@@ -235,6 +278,16 @@ function setup_path_emulation_layer_from_pip() {
         ld_value=${ld_value%%:\$LD_LIBRARY_PATH*}
         if [[ -n "${ld_value}" ]]; then
             prepend_env_in_setup_path LD_LIBRARY_PATH "${ld_value}"
+        fi
+    fi
+
+    local dyld_line
+    dyld_line=$(echo "$exports" | grep 'DYLD_LIBRARY_PATH=' || true)
+    if [[ -n "${dyld_line}" ]]; then
+        local dyld_value=${dyld_line#export DYLD_LIBRARY_PATH=}
+        dyld_value=${dyld_value%%:\$DYLD_LIBRARY_PATH*}
+        if [[ -n "${dyld_value}" ]]; then
+            prepend_env_in_setup_path DYLD_LIBRARY_PATH "${dyld_value}"
         fi
     fi
 
