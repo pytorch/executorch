@@ -32,6 +32,7 @@ from typing import Any, Dict, Optional
 
 import torch
 from executorch.backends.nvidia.tensorrt.converter_registry import converter
+from executorch.backends.nvidia.tensorrt.converter_utils import get_node_shape
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -489,8 +490,8 @@ def convert_log_softmax(
 
     input_trt = input_map[input_node]
 
-    # Handle negative dimension
-    input_shape = input_trt.shape
+    # Handle negative dimension using TRT tensor shape.
+    input_shape = tuple(input_trt.shape)
     ndim = len(input_shape)
     if dim < 0:
         dim = ndim + dim
