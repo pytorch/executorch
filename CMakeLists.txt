@@ -221,15 +221,18 @@ endif()
 
 add_subdirectory(third-party)
 
-# Suppress .eh_frame generation to reduce binary size. Safe because ExecuTorch
-# builds with -fno-exceptions. Placed after add_subdirectory(third-party) to
-# avoid leaking into third-party configure checks (e.g. gflags).
+# Size-optimized builds disable exceptions, RTTI, and unwind tables.
+# ExecuTorch's runtime uses Result<T>/Error instead of exceptions, so
+# -fno-exceptions is safe. Suppressing .eh_frame via -fno-unwind-tables
+# is safe because exceptions are disabled. Placed after
+# add_subdirectory(third-party) to avoid leaking into third-party
+# configure checks (e.g. gflags).
 if(EXECUTORCH_OPTIMIZE_SIZE
    AND NOT WIN32
    AND NOT MSVC
 )
   set(CMAKE_CXX_FLAGS_RELEASE
-      "${CMAKE_CXX_FLAGS_RELEASE} -fno-asynchronous-unwind-tables -fno-unwind-tables"
+      "${CMAKE_CXX_FLAGS_RELEASE} -fno-exceptions -fno-rtti -fno-asynchronous-unwind-tables -fno-unwind-tables"
   )
   set(CMAKE_C_FLAGS_RELEASE
       "${CMAKE_C_FLAGS_RELEASE} -fno-asynchronous-unwind-tables -fno-unwind-tables"
