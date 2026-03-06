@@ -38,6 +38,10 @@ TENSORRT_SUPPORTED_MODELS = {
     "conv1d",
     "dl3",
     "edsr",
+    # "efficient_sam",  # TODO: diff ~41 — likely bicubic interpolation decomposition or ConvTranspose2d issue
+    "emformer_join",
+    # "emformer_predict",  # TODO: passes 1/3 seeds — precision sensitive with randomized inputs
+    "emformer_transcribe",
     "ic3",
     "ic4",
     "linear",
@@ -126,6 +130,7 @@ def _verify_correctness(
     )
 
     et_module = _load_for_executorch_from_buffer(pte_bytes)
+
 
     for seed in _TEST_SEEDS:
         inputs = _randomise_inputs(example_inputs, seed)
