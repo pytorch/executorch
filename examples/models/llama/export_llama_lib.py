@@ -137,7 +137,9 @@ HUGGING_FACE_REPO_IDS = {
 }
 
 
-def _get_additional_export_passes(model_class: str) -> List[InitializedMutableBufferPass]:
+def _get_additional_export_passes(
+    model_class: str,
+) -> List[InitializedMutableBufferPass]:
     patterns = []
 
     if model_class in TORCHTUNE_DEFINED_MODELS:
@@ -1306,9 +1308,7 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
         "Each method requires separate model instantiation and export."
     )
 
-    additional_passes = _get_additional_export_passes(
-        llm_config.base.model_class.value
-    )
+    additional_passes = _get_additional_export_passes(llm_config.base.model_class.value)
 
     # Build dict of exported programs
     method_to_program: Dict[str, ExportedProgram] = {}
@@ -1379,9 +1379,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
         llm_config
     )
 
-    additional_passes = _get_additional_export_passes(
-        llm_config.base.model_class.value
-    )
+    additional_passes = _get_additional_export_passes(llm_config.base.model_class.value)
 
     # export_to_edge
     builder_manager = _prepare_for_llama_export(llm_config)
