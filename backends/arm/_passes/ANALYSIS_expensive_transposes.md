@@ -148,11 +148,161 @@ The `_get_shape_indices` function returns `None` for such reshapes, so the fusio
 
 ## Next Steps
 
-1. [ ] Read `ToTosaMemoryFormatPass` to understand transpose insertion logic
+1. [x] Read `ToTosaMemoryFormatPass` to understand transpose insertion logic
 2. [ ] Identify where reshapes are created in the model
 3. [ ] Investigate if `Transpose → Reshape → Transpose` can be mathematically fused
 4. [ ] Check if the model can use NHWC-compatible reshape shapes
 5. [ ] Consider creating `FuseTransposeThroughReshapePass` if mathematically feasible
+
+---
+
+## 🚀 New Strategy: Compile-Time Transpose Folding for Static Tensors
+
+### Critical Finding: FuseConstantArgsPass SKIPS Transposes
+
+The `FuseConstantArgsPass` (lines 142-148 in `fuse_constant_ops_pass.py`) **explicitly SKIPS** `TRANSPOSE.default` operations:
+
+```python
+if node.target in [
+    exir_ops.backend.tosa.MATMUL.default,
+    exir_ops.backend.tosa.RESCALE.default,
+    exir_ops.backend.tosa.RESIZE.default,
+    exir_ops.backend.tosa.TABLE.default,
+    exir_ops.backend.tosa.TRANSPOSE.default,  # <-- SKIPPED!
+]:
+    continue
+```
+
+This means that even when a transpose operates on a static tensor (weight/constant), it is NOT folded at compile time.
+
+### Why Transposes Are Currently Not Folded
+
+The comment history doesn't explain why transposes were excluded. Possible reasons:
+1. **Concern about tensor size increase** - But transposes preserve tensor size
+2. **Special handling needed for shape metadata** - Transposing changes `tosa_dim_order`
+3. **Simply not implemented yet**
+
+### Proposed Solution: FoldConstantTransposePass
+
+Create a new pass that specifically folds transposes on constant/static tensors at compile time.
+
+#### How It Would Work
+
+1. **Identify transpose nodes** on static tensors (parameters, buffers, lifted tensor constants)
+2. **Actually permute the tensor data** at compile time using `tensor.permute(order).contiguous()`
+3. **Create a new constant placeholder** with the permuted data
+4. **Remove the transpose node** and rewire users to the new constant
+
+#### Pattern Before:
+```
+static_weight (placeholder) -> TRANSPOSE [0,2,3,1] -> Conv2D
+```
+
+#### Pattern After:
+```
+static_weight_nhwc (placeholder, data already permuted) -> Conv2D
+```
+
+### Example Implementation (Conceptual)
+
+```python
+class FoldConstantTransposePass(ArmPass):
+    """Folds transposes on static tensors at compile time."""
+    
+    def __init__(self, exported_program: ExportedProgram, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.exported_program = exported_program
+
+    def call(self, graph_module):
+        modified = False
+        for node in list(graph_module.graph.nodes):
+            if node.target != exir_ops.backend.tosa.TRANSPOSE.default:
+                continue
+            
+            input_node = node.all_input_nodes[0]
+            if not is_param_node(self.exported_program, input_node):
+                continue  # Not a static tensor
+            
+            # Get the static tensor data
+            tensor = get_param_tensor(self.exported_program, input_node)
+            perm = node.args[1]  # Permutation order
+            
+            # Actually permute the data at compile time
+            permuted_tensor = tensor.permute(perm).contiguous()
+            
+            # Create new constant placeholder with permuted data
+            with graph_module.graph.inserting_before(input_node):
+                const_node = create_constant_placeholder(
+                    self.exported_program,
+                    graph=graph_module.graph,
+                    kind=get_constant_placeholder_kind(self.exported_program, input_node),
+                    name=f"{input_node.name}_permuted",
+                    data=permuted_tensor,
+                    persistent_buffer=is_persistent_buffer(self.exported_program, input_node),
+                )
+            
+            # Update metadata
+            const_node.meta["tosa_dim_order"] = node.meta.get("tosa_dim_order", tuple(range(len(perm))))
+            
+            # Rewire users and remove transpose
+            node.replace_all_uses_with(const_node)
+            modified = True
+        
+        if modified:
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
+        return PassResult(graph_module, modified)
+```
+
+### Impact Analysis
+
+#### Transposes That Could Be Folded:
+- Weight transposes for Conv2D (NCHW→NHWC)
+- Constant tensor transposes for MatMul
+- Lifted tensor constants used in reshape patterns
+
+#### Transposes That CANNOT Be Folded:
+- Transposes on dynamic activations (runtime data)
+- Transposes on model inputs
+
+### Precedent: RewriteConvPass._reshape_weights()
+
+The ARM backend already has precedent for compile-time weight reordering in `RewriteConvPass._reshape_weights()` (lines 115-161):
+
+```python
+def _reshape_weights(self, weight_node: torch.fx.Node, in_channels: int) -> None:
+    weight_tensor = get_param_tensor(self.exported_program, weight_node)
+    
+    reshaped_weight_tensor = (
+        weight_tensor.permute(HWCM_ORDER)
+        .reshape(...)
+        .permute(NHWC_INVERSE_ORDER)
+    )
+    
+    # Update state_dict with permuted tensor
+    self.exported_program.state_dict[param_name] = reshaped_weight_tensor
+```
+
+### Questions to Investigate
+
+1. **Why was TRANSPOSE.default excluded from FuseConstantArgsPass?**
+   - Search for git history or comments
+   
+2. **Does folding transposes break any downstream passes?**
+   - `ToTosaMemoryFormatPass` annotations
+   - TOSA serialization
+   
+3. **Are there edge cases?**
+   - Transpose Conv2D weights (special handling at line 430)
+   - Multi-user constant nodes
+
+### Next Steps for Implementation
+
+1. [ ] Search for why transposes were excluded from FuseConstantArgsPass
+2. [ ] Create FoldConstantTransposePass
+3. [ ] Add to pass pipeline AFTER FuseConstantArgsPass
+4. [ ] Test on Control Ceres model to measure impact
+5. [ ] Measure Vela cycle reduction
 
 ## Related Files
 
@@ -160,6 +310,8 @@ The `_get_shape_indices` function returns `None` for such reshapes, so the fusio
 - `/data/users/eliamesefe/fbsource/fbcode/executorch/backends/arm/_passes/arm_pass_manager.py`
 - `/data/users/eliamesefe/fbsource/fbcode/executorch/backends/arm/_passes/fuse_transpose_sandwich_pass.py`
 - `/data/users/eliamesefe/fbsource/fbcode/executorch/backends/arm/_passes/propagate_transposes_through_rescale_pass.py`
+- `/data/users/eliamesefe/fbsource/fbcode/executorch/backends/arm/_passes/fuse_constant_ops_pass.py` (FuseConstantArgsPass)
+- `/data/users/eliamesefe/fbsource/fbcode/executorch/backends/arm/_passes/rewrite_conv_pass.py` (_reshape_weights precedent)
 
 ---
 
