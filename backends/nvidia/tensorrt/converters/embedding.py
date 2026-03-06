@@ -15,7 +15,6 @@ TensorRT implements embeddings via IGatherLayer which indexes into a tensor.
 import logging
 from typing import Any, Dict, Optional
 
-import numpy as np
 import torch
 from executorch.backends.nvidia.tensorrt.converter_registry import converter
 from executorch.backends.nvidia.tensorrt.converter_utils import create_constant
@@ -127,6 +126,14 @@ def convert_embedding(
         raise ValueError(f"Indices node {indices_node.name} not found in input_map")
 
     indices_trt = input_map[indices_node]
+
+    # TensorRT gather requires int32 or int64 indices
+    # Cast indices to int32 if they are not already integer type
+    if indices_trt.dtype not in (trt.int32, trt.int64):
+        logger.debug(f"[TensorRT] Casting embedding indices from {indices_trt.dtype} to int32")
+        cast_layer = network.add_cast(indices_trt, trt.int32)
+        cast_layer.name = f"embedding_indices_cast_{node.name}"
+        indices_trt = cast_layer.get_output(0)
 
     weight_shape = weight_trt.shape
     indices_shape = indices_trt.shape
