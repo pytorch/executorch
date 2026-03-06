@@ -417,3 +417,42 @@ TEST_F(EValueTest, toListOptionalTensorNullPointerCheck) {
   EXPECT_TRUE(e.isListOptionalTensor());
   ET_EXPECT_DEATH({ e.toListOptionalTensor(); }, "pointer is null");
 }
+
+TEST_F(EValueTest, TryToTensorSuccess) {
+  TensorFactory<ScalarType::Float> tf;
+  EValue e(tf.ones({3, 2}));
+  auto result = e.tryToTensor();
+  EXPECT_TRUE(result.ok());
+  EXPECT_EQ(result->dim(), 2);
+  EXPECT_EQ(result->numel(), 6);
+}
+
+TEST_F(EValueTest, TryToTensorTypeMismatch) {
+  EValue e(static_cast<int64_t>(42));
+  auto result = e.tryToTensor();
+  EXPECT_FALSE(result.ok());
+  EXPECT_EQ(result.error(), executorch::runtime::Error::InvalidType);
+}
+
+TEST_F(EValueTest, TryToOptionalTensorSuccess) {
+  TensorFactory<ScalarType::Float> tf;
+  EValue e(tf.ones({3, 2}));
+  auto result = e.tryToOptional<executorch::aten::Tensor>();
+  EXPECT_TRUE(result.ok());
+  EXPECT_TRUE(result->has_value());
+  EXPECT_EQ(result->value().dim(), 2);
+}
+
+TEST_F(EValueTest, TryToOptionalTensorNone) {
+  EValue e;
+  auto result = e.tryToOptional<executorch::aten::Tensor>();
+  EXPECT_TRUE(result.ok());
+  EXPECT_FALSE(result->has_value());
+}
+
+TEST_F(EValueTest, TryToOptionalTensorTypeMismatch) {
+  EValue e(static_cast<int64_t>(42));
+  auto result = e.tryToOptional<executorch::aten::Tensor>();
+  EXPECT_FALSE(result.ok());
+  EXPECT_EQ(result.error(), executorch::runtime::Error::InvalidType);
+}
