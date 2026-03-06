@@ -807,6 +807,12 @@ if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_CPUINFO)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/threadpool)
 endif()
 
+# TensorRT examples (runner, benchmark) need extension_module and extension_tensor,
+# so they must be included after those targets are defined above.
+if(EXECUTORCH_BUILD_TENSORRT)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/nvidia)
+endif()
+
 if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
   if(NOT TARGET cpuinfo)
     message(
