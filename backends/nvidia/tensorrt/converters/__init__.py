@@ -13,6 +13,7 @@ from executorch.backends.nvidia.tensorrt.converters import addmm  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import batch_norm  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import bmm  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import clamp  # noqa: F401
+from executorch.backends.nvidia.tensorrt.converters import comparison  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import concat  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import conv2d  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import dim_order_ops  # noqa: F401
@@ -31,6 +32,7 @@ from executorch.backends.nvidia.tensorrt.converters import reduction  # noqa: F4
 from executorch.backends.nvidia.tensorrt.converters import relu  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import reshape  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import sdpa  # noqa: F401
+from executorch.backends.nvidia.tensorrt.converters import slice  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import sub  # noqa: F401
 from executorch.backends.nvidia.tensorrt.converters import upsample  # noqa: F401
 
