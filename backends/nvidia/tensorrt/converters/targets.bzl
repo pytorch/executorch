@@ -11,9 +11,11 @@ def define_common_targets():
         name = "converters",
         srcs = [
             "__init__.py",
+            "add.py",
         ],
         visibility = ["PUBLIC"],
         deps = [
             "//executorch/backends/nvidia/tensorrt:converter_registry",
+            "//executorch/backends/nvidia/tensorrt:converter_utils",
         ],
     )
