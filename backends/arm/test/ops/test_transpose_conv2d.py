@@ -11,16 +11,21 @@ import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
     get_symmetric_a8w4_quantization_config,
+    get_symmetric_quantization_config,
+    TOSAQuantizer,
 )
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
     OpNotSupportedPipeline,
+    QuantizationPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
 )
+from executorch.backends.arm.tosa.specification import TosaSpecification
+from executorch.backends.test.harness.stages.quantize import Quantize
 
 aten_op = "torch.ops.aten.conv_transpose2d.input"
 exir_op = "executorch_exir_dialects_edge__ops_aten_convolution_default"  # No edge transpoe conv
@@ -67,6 +72,14 @@ test_data_FP = {
         stride=(1, 2),
         padding=1,
     ),
+    "grouped": lambda: TransposeConv2d(
+        in_channels=4,
+        out_channels=6,
+        kernel_size=3,
+        stride=1,
+        padding=1,
+        groups=2,
+    ),
     "no_bias": lambda: TransposeConv2d(
         in_channels=3,
         out_channels=5,
@@ -93,17 +106,45 @@ test_data_INT = {
     for (k, v) in test_data_FP.items()
     for q in [True, False]
 }
+_grouped_per_channel_xfails = {
+    k: "per-channel quantization for grouped transpose conv is not supported yet."
+    for k in test_data_INT
+    if k.startswith("grouped,") and k.endswith("per_channel_quant=True")
+}
+
+test_data_QAT = {
+    "qat_basic": lambda: (
+        TransposeConv2d(
+            in_channels=16,
+            out_channels=4,
+            kernel_size=4,
+            stride=2,
+            padding=1,
+            groups=1,
+        ),
+        True,
+        True,
+    ),
+}
 
 u55_supported_test_data_INT = {
     k: v
     for k, v in test_data_INT.items()
-    if not (k.startswith("nonsquare_kernel,") or k.startswith("non_equal_strides,"))
+    if not (
+        k.startswith("nonsquare_kernel,")
+        or k.startswith("non_equal_strides,")
+        or k.startswith("grouped,")
+    )
 }
 
 reject_suite = {
     k: v
     for k, v in test_data_INT.items()
-    if k.startswith("nonsquare_kernel,") or k.startswith("non_equal_strides,")
+    if (
+        k.startswith("nonsquare_kernel,")
+        or k.startswith("non_equal_strides,")
+        or k.startswith("grouped,")
+    )
 }
 test_data_INT16 = {
     "basic": test_data_FP["basic"],
@@ -135,7 +176,7 @@ def test_conv_transpose2d_tosa_FP(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_INT)
+@common.parametrize("test_data", test_data_INT, xfails=_grouped_per_channel_xfails)
 def test_conv_transpose2d_tosa_INT(test_data):
     model, per_channel_quantization = test_data()
     pipeline = TosaPipelineINT[input_t](
@@ -146,6 +187,29 @@ def test_conv_transpose2d_tosa_INT(test_data):
         per_channel_quantization=per_channel_quantization,
         qtol=1,
         run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_QAT)
+def test_conv_transpose2d_tosa_INT_qat_per_channel_quantization_pipeline(test_data):
+    model, is_per_channel, is_qat = test_data()
+    inputs = model.get_inputs()
+    quantizer = TOSAQuantizer(TosaSpecification.create_from_string("TOSA-1.0+INT"))
+    quantizer.set_global(
+        get_symmetric_quantization_config(
+            is_per_channel=is_per_channel,
+            is_qat=is_qat,
+        )
+    )
+    pipeline = QuantizationPipeline[input_t](model, inputs, quantizer)
+    pipeline.change_args(
+        "quantize",
+        Quantize(
+            quantizer,
+            quantization_config=quantizer.global_config,
+            is_qat=is_qat,
+        ),
     )
     pipeline.run()
 
@@ -217,7 +281,7 @@ def test_conv_transpose2d_vgf_no_quant(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_INT)
+@common.parametrize("test_data", test_data_INT, xfails=_grouped_per_channel_xfails)
 @common.SkipIfNoModelConverter
 def test_conv_transpose2d_vgf_quant(test_data):
     model, per_channel_quantization = test_data()
@@ -250,7 +314,7 @@ def test_conv_transpose2d_vgf_quant_a8w4(test_data):
 
 @common.parametrize("test_data", test_data_INT16)
 @common.SkipIfNoModelConverter
-def test_conv_transpose2d_vgf_INT_int16(test_data):
+def test_conv_transpose2d_vgf_quant_a16w8(test_data):
     model = test_data()
     per_channel_quantization = False
     pipeline = VgfPipeline[input_t](
@@ -270,7 +334,7 @@ def test_conv_transpose2d_vgf_INT_int16(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_INT)
+@common.parametrize("test_data", test_data_INT, xfails=_grouped_per_channel_xfails)
 @common.XfailIfNoCorstone320
 def test_conv_transpose2d_u85_INT(test_data):
     model, per_channel_quantization = test_data()
@@ -284,7 +348,9 @@ def test_conv_transpose2d_u85_INT(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", u55_supported_test_data_INT)
+@common.parametrize(
+    "test_data", u55_supported_test_data_INT, xfails=_grouped_per_channel_xfails
+)
 @common.XfailIfNoCorstone300
 def test_conv_transpose2d_u55_INT(test_data):
     model, per_channel_quantization = test_data()
@@ -298,7 +364,14 @@ def test_conv_transpose2d_u55_INT(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", reject_suite)
+_u55_grouped_not_delegated_xfails = {
+    k: "grouped transpose conv quantization mismatch on U55 not-delegated path."
+    for k in reject_suite
+    if k.startswith("grouped,")
+}
+
+
+@common.parametrize("test_data", reject_suite, xfails=_u55_grouped_not_delegated_xfails)
 def test_conv_transpose2d_u55_INT_not_delegated(test_data):
     model, per_channel_quantization = test_data()
     OpNotSupportedPipeline(
