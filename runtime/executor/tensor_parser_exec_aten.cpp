@@ -159,6 +159,11 @@ NamedData* get_data_by_key(const char* key, Span<NamedData> entries) {
   return nullptr;
 }
 
+// Suppress a GCC 11 false positive -Wstringop-overread triggered by
+// flatbuffers' GetPointer inlining into string_view construction.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overread"
+
 ET_NODISCARD Result<void*> getTensorDataPtr(
     const executorch_flatbuffer::Tensor* s_tensor,
     const Program* program,
@@ -258,6 +263,8 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
     return nullptr;
   }
 }
+
+#pragma GCC diagnostic pop
 
 } // namespace deserialization
 } // namespace ET_RUNTIME_NAMESPACE
