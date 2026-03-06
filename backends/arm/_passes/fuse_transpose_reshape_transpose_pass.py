@@ -48,6 +48,13 @@ _PERMUTE_TARGETS = (
     exir_ops.backend.tosa.TRANSPOSE.default,
 )
 
+# Supported reshape/view targets (both ATen and Edge dialects)
+_RESHAPE_TARGETS = (
+    torch.ops.aten.view_copy.default,
+    torch.ops.aten._unsafe_view.default,
+    exir_ops.edge.aten.view_copy.default,
+)
+
 
 def _get_permute_dims(node: fx.Node) -> Optional[list[int]]:
     """Extract the permutation dimensions from a permute node."""
@@ -61,10 +68,7 @@ def _get_permute_dims(node: fx.Node) -> Optional[list[int]]:
 
 def _get_reshape_shape(node: fx.Node) -> Optional[list[int]]:
     """Extract the shape from a view/reshape node."""
-    if node.target not in (
-        torch.ops.aten.view_copy.default,
-        torch.ops.aten._unsafe_view.default,
-    ):
+    if node.target not in _RESHAPE_TARGETS:
         return None
     shape = node.args[1]
     if isinstance(shape, (list, tuple)):
@@ -214,8 +218,10 @@ class FuseTransposeReshapeTransposePass(ArmPass):
 
             shape_indices = _get_shape_indices(transposed1_shape, reshape_shape)
             if shape_indices is None:
-                logger.debug(
-                    "Cannot compute shape indices for reshape, skipping fusion"
+                logger.warning(
+                    f"FuseTransposeReshapeTransposePass: Cannot compute shape indices for "
+                    f"reshape {reshape.name}: transposed1_shape={transposed1_shape}, "
+                    f"reshape_shape={reshape_shape}"
                 )
                 continue
 
@@ -250,7 +256,6 @@ class FuseTransposeReshapeTransposePass(ArmPass):
                     (input_node, new_transpose_axes),
                 )
 
-                permute_output_shape = [input_shape[i] for i in new_transpose_axes]
                 if input_val is not None:
                     new_permute.meta["val"] = input_val.permute(new_transpose_axes)
 
