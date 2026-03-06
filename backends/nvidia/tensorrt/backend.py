@@ -224,18 +224,8 @@ def _add_params_to_input_map(
                 if isinstance(param_tensor, torch.nn.Parameter):
                     param_tensor = param_tensor.data
                 if isinstance(param_tensor, torch.Tensor):
-                    # Convert int64/int32 tensors to float32 for TensorRT compatibility
-                    # These are often used in elementwise operations with float tensors
-                    # (e.g., batch norm statistics in MobileNetV3)
-                    original_dtype = param_tensor.dtype
-                    if param_tensor.dtype in (torch.int32, torch.int64):
-                        param_tensor = param_tensor.float()
-                        logger.debug(
-                            f"Converting param {node.name} from {original_dtype} to float32 "
-                            f"for TensorRT compatibility"
-                        )
-                    elif param_tensor.dtype == torch.float64:
-                        param_tensor = param_tensor.float()
+                    # get_trt_tensor handles dtype conversion (int64→int32, float64→float32)
+                    # via create_constant in converter_utils.py
                     input_map[node] = get_trt_tensor_fn(
                         network, param_tensor, f"param_{node.name}"
                     )
@@ -394,6 +384,9 @@ def _collect_io_bindings(network: Any) -> List[TensorRTIOBinding]:
     Returns:
         List of TensorRTIOBinding with input/output tensor metadata.
     """
+    # Import here to avoid circular imports at module level
+    from executorch.backends.nvidia.tensorrt.converter_utils import get_safe_shape
+
     bindings = []
 
     # Collect inputs
@@ -403,7 +396,7 @@ def _collect_io_bindings(network: Any) -> List[TensorRTIOBinding]:
             TensorRTIOBinding(
                 name=tensor.name,
                 dtype=_trt_dtype_to_string(tensor.dtype),
-                shape=list(tensor.shape),
+                shape=get_safe_shape(tensor),
                 is_input=True,
             )
         )
@@ -415,7 +408,7 @@ def _collect_io_bindings(network: Any) -> List[TensorRTIOBinding]:
             TensorRTIOBinding(
                 name=tensor.name,
                 dtype=_trt_dtype_to_string(tensor.dtype),
-                shape=list(tensor.shape),
+                shape=get_safe_shape(tensor),
                 is_input=False,
             )
         )

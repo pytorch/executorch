@@ -37,7 +37,7 @@ cmake -B cmake-out \
   -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
   -DCMAKE_BUILD_TYPE=Release
 
-cmake --build cmake-out --target tensorrt_executor_runner -j$(nproc)
+cmake --build cmake-out --target tensorrt_executor_runner benchmark -j$(nproc)
 ```
 
 ### Export and Run Models
@@ -48,6 +48,9 @@ python -m executorch.examples.nvidia.tensorrt.export -m add
 
 # Export all supported models
 python -m executorch.examples.nvidia.tensorrt.export
+
+# Export with ONNX baseline (for benchmarking)
+python -m executorch.examples.nvidia.tensorrt.export --onnx
 
 # Run inference with the C++ runner
 ./cmake-out/backends/nvidia/tensorrt/tensorrt_executor_runner --model_path=add_tensorrt.pte
@@ -110,7 +113,7 @@ Alternatively, download and install from the
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `workspace_size` | int | 1GB | TensorRT builder workspace size |
-| `precision` | TensorRTPrecision | FP32 | Inference precision (FP32, FP16, INT8) |
+| `precision` | TensorRTPrecision | FP32 | Inference precision (FP32, FP16, BF16, INT8) |
 | `strict_type_constraints` | bool | False | Enforce strict type constraints |
 | `max_batch_size` | int | 1 | Maximum batch size |
 | `device_id` | int | 0 | CUDA device ID |
@@ -158,15 +161,9 @@ with open("model_tensorrt.pte", "wb") as f:
 ## Supported Operations
 
 | Category | Operations |
-|----------|-----------|
-| Elementwise | add, sub, mul, div, mm, relu |
-| Reshape | view, reshape, squeeze, unsqueeze, permute, contiguous, clone |
-
-## Supported Operations
-
-| Category | Operations |
-|----------|-----------|
-| Elementwise | add, sub, mul, div, floor_divide, rsub |
+|----------|------------|
+| Elementwise | add, sub, mul, div, floor_divide, rsub, pow, abs, ceil, sqrt |
+| Unary Math | cos, sin, exp, erf, log |
 | Matrix | mm, addmm, bmm, linear |
 | Convolution | conv2d |
 | Normalization | batch_norm, layer_norm |
@@ -176,8 +173,9 @@ with open("model_tensorrt.pte", "wb") as f:
 | Reduction | mean, any |
 | Concat/Split | cat, split, chunk, stack |
 | Comparison | eq, ne, lt, le, gt, ge, where, logical_not |
-| Slicing | slice, select, index |
-| Other | embedding, expand, repeat, upsample, pixel_shuffle, scaled_dot_product_attention, full |
+| Slicing | slice, select, index, arange |
+| Padding | constant_pad_nd |
+| Other | embedding, expand, repeat, upsample, pixel_shuffle, scaled_dot_product_attention, full, dropout |
 
 ## Jetson Deployment
 
@@ -251,6 +249,21 @@ python -m pytest examples/nvidia/tensorrt/tests/test_export.py -v -k test_mv3
 Each test exports a model with TensorRT, runs inference via ExecuTorch
 pybindings, and compares outputs against eager PyTorch (atol=1e-3, rtol=1e-3)
 across 3 random seeds.
+
+### Benchmark
+
+```bash
+# Benchmark all exported models in the current directory
+./cmake-out/examples/nvidia/tensorrt/benchmark
+
+# Benchmark with options
+./cmake-out/examples/nvidia/tensorrt/benchmark -d DIR -m MODEL -n 100 -w 5
+```
+
+The benchmark reports three formats per model:
+- **pte** — ExecuTorch end-to-end (includes framework overhead)
+- **pte-raw** — Raw TRT engine execution extracted from the .pte
+- **onnx-trt** — ONNX → TRT engine (baseline, when .onnx files are present)
 
 ## Troubleshooting
 

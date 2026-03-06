@@ -25,9 +25,12 @@ logging.basicConfig(level=logging.INFO)
 # When set (e.g., by CI), these env vars point to pre-downloaded weight files
 # that get copied into the torch cache to avoid network downloads.
 _WEIGHT_ENV_VARS = {
+    "DOG_JPG": "dog.jpg",
     "EDSR_WEIGHTS": "edsr64_x2.pt",
     "EFFICIENT_SAM_WEIGHTS": "efficient_sam_vitt.pt",
     "EMFORMER_WEIGHTS": "emformer_rnnt_base_librispeech.pt",
+    "IC4_WEIGHTS": "inceptionv4-8e4777a0.pth",
+    "MV2_WEIGHTS": "mobilenet_v2-b0353104.pth",
     "MV3_WEIGHTS": "mobilenet_v3_small-047dcff4.pth",
     "MV3_WEIGHTS": "mobilenet_v3_small-047dcff4.pth",
     "RESNET18_WEIGHTS": "resnet18-f37072fd.pth",
