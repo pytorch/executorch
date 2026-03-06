@@ -16,6 +16,11 @@ import executorch.exir as exir
 
 # Import passes
 import executorch.exir.memory_planning  # noqa
+
+try:
+    import executorch.kernels.portable  # noqa: F401
+except ModuleNotFoundError:
+    pass
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (

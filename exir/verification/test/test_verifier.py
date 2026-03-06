@@ -20,7 +20,7 @@ from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib  # noq
 from torch.export import export
 from torch.export.experimental import _export_forward_backward
 
-from ..verifier import EXIREdgeDialectVerifier
+from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 
 
 class TestEdgeDialectVerifier(unittest.TestCase):
