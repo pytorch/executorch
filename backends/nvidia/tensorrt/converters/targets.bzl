@@ -15,6 +15,7 @@ def define_common_targets():
             "add.py",
             "addmm.py",
             "batch_norm.py",
+            "bmm.py",
             "clamp.py",
             "concat.py",
             "conv2d.py",
