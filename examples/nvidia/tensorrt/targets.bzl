@@ -1,4 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_oss_build_kwargs", "runtime")
+load("@fbcode_macros//build_defs:cpp_binary.bzl", "cpp_binary")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -39,6 +40,7 @@ def define_common_targets():
         ],
         deps = [
             ":tensorrt_example_lib",
+            "fbsource//third-party/onnx:onnx_py",  # @manual for --onnx flag
         ],
         visibility = ["PUBLIC"],
     )
@@ -64,5 +66,26 @@ def define_common_targets():
             "//executorch/runtime/executor:program",
             "//executorch/backends/nvidia/tensorrt/runtime:tensorrt_backend",
             "//executorch/kernels/portable:generated_lib",
+        ],
+    )
+
+    # Benchmarks .pte files (ExecuTorch Module API) and .onnx files (TRT native).
+    #   benchmark                       # all models in current dir
+    #   benchmark -m mv3                # mv3 .pte and .onnx in current dir
+    #   benchmark -d /tmp/trt -n 200    # all models in /tmp/trt, 200 iterations
+    cpp_binary(
+        name = "benchmark",
+        srcs = ["benchmark.cpp"],
+        compiler_flags = ["-Wno-global-constructors"],
+        deps = [
+            "//executorch/extension/module:module",
+            "//executorch/extension/tensor:tensor",
+            "//executorch/kernels/portable:generated_lib",
+            "//executorch/backends/nvidia/tensorrt/runtime:tensorrt_backend",
+            "fbsource//third-party/TensorRT:nvinfer-lazy",
+            "fbsource//third-party/TensorRT:nvonnxparser-lazy",
+        ],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
         ],
     )

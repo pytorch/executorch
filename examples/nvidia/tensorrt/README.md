@@ -18,8 +18,8 @@ Export a supported model to ExecuTorch format with TensorRT delegation:
 # Export the add model
 python -m executorch.examples.nvidia.tensorrt.export -m add
 
-# Export with validation test
-python -m executorch.examples.nvidia.tensorrt.export -m add --test
+# Export all supported models to a directory
+python -m executorch.examples.nvidia.tensorrt.export -o /tmp/trt
 
 # Export to a specific directory
 python -m executorch.examples.nvidia.tensorrt.export -m add -o ./output
@@ -59,6 +59,8 @@ python -m executorch.examples.nvidia.tensorrt.export --help
 
 - `export.py` - Main export script for converting models to TensorRT format
 - `runner.py` - Python utilities for running and testing exported models
+- `benchmark.py` - Python benchmark export script
+- `benchmark.cpp` - C++ benchmark runner for performance measurement
 - `tensorrt_executor_runner.cpp` - C++ executor runner for TensorRT models
 - `__init__.py` - Package initialization
 
@@ -85,13 +87,31 @@ python -m executorch.examples.nvidia.tensorrt.export -m add
 --help               Show help message
 ```
 
-### Validation Testing
+## Benchmarking
 
-The `--test` flag runs the exported model through the ExecuTorch runtime
-and compares outputs against the PyTorch reference model:
+Export models then benchmark with the C++ runner:
 
 ```bash
-python -m executorch.examples.nvidia.tensorrt.export -m add --test
+# Step 1: Export models
+python -m executorch.examples.nvidia.tensorrt.export -o /tmp/trt
+
+# Step 2: Benchmark all exported models
+./cmake-out/examples/nvidia/tensorrt/benchmark -d /tmp/trt
+
+# Benchmark a specific model
+./cmake-out/examples/nvidia/tensorrt/benchmark -d /tmp/trt -m mv3
+
+# Benchmark with custom iterations
+./cmake-out/examples/nvidia/tensorrt/benchmark -d /tmp/trt -n 200 -w 5
+```
+
+**Benchmark Options:**
+```
+-d, --model_dir DIR    Directory with .pte files (default: current dir)
+-m, --model_name NAME  Run only NAME_tensorrt.pte from the directory
+-n, --num_executions N Number of timed iterations (default: 100)
+-w, --warmup N         Number of warmup runs (default: 3)
+-v, --verbose          Enable verbose logging
 ```
 
 ## Adding New Models
@@ -109,7 +129,10 @@ To add support for a new model:
 examples/nvidia/tensorrt/
 ├── export.py                    # CLI export script using MODEL_NAME_TO_MODEL registry
 ├── runner.py                    # Python runtime utilities for testing
+├── benchmark.cpp                # C++ benchmark runner binary
 ├── tensorrt_executor_runner.cpp # C++ executor runner binary
+├── tests/                      # Correctness tests
+│   └── test_export.py           # Export + inference verification
 ├── __init__.py                  # Package exports
 └── README.md                    # This file
 ```
