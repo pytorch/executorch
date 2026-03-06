@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,10 +12,6 @@ import unittest
 from typing import Callable
 
 import torch
-from executorch.backends.cadence.aot.graph_builder import (
-    GraphBuilder,
-    single_op_builder,
-)
 from executorch.backends.cadence.aot.quantizer import quantizer as quantizer_module
 from executorch.backends.cadence.aot.quantizer.patterns import AddmmPattern
 from executorch.backends.cadence.aot.quantizer.quantizer import (
@@ -35,6 +32,7 @@ from executorch.backends.cadence.aot.quantizer.quantizer import (
     qconfig_A8W8,
     qconfig_A8W8sym,
 )
+from executorch.backends.test.graph_builder import GraphBuilder, single_op_builder
 from executorch.exir.pass_base import NodeMetadata
 from parameterized import parameterized
 from torch._ops import OpOverload
