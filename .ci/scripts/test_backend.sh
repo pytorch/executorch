@@ -56,6 +56,25 @@ if [[ "$FLOW" == *vulkan* ]]; then
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_VULKAN=ON"
 fi
 
+if [[ "$FLOW" == *cuda* ]]; then
+    # Fix libstdc++ GLIBCXX version for CUDA backend.
+    # The embedded .so files in the CUDA blob require GLIBCXX_3.4.30
+    # which the default conda libstdc++ doesn't have.
+    echo "Installing newer libstdc++ for CUDA backend..."
+    conda install -y -c conda-forge 'libstdcxx-ng>=12'
+    export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
+
+    # CUDA backend uses the generic PyTorch test-infra Docker image (not the
+    # custom executorch image), so PyTorch is NOT pre-installed from a pinned
+    # commit.  Install executorch with nightly PyTorch (which auto-detects
+    # CUDA via nvcc) and then build the runner manually.
+    echo "Installing ExecuTorch with nightly PyTorch (CUDA-enabled)..."
+    ./install_executorch.sh --editable
+    CMAKE_ARGS="$EXTRA_BUILD_ARGS" source .ci/scripts/utils.sh
+    build_executorch_runner cmake Release
+    CUDA_SETUP_DONE=1
+fi
+
 if [[ "$FLOW" == *arm* ]]; then
 
     # Setup ARM deps.
@@ -78,12 +97,14 @@ if [[ "$FLOW" == *arm* ]]; then
     fi
 fi
 
-if [[ $IS_MACOS -eq 1 ]]; then
-    SETUP_SCRIPT=.ci/scripts/setup-macos.sh
-else
-    SETUP_SCRIPT=.ci/scripts/setup-linux.sh
+if [[ "${CUDA_SETUP_DONE:-0}" != "1" ]]; then
+    if [[ $IS_MACOS -eq 1 ]]; then
+        SETUP_SCRIPT=.ci/scripts/setup-macos.sh
+    else
+        SETUP_SCRIPT=.ci/scripts/setup-linux.sh
+    fi
+    CMAKE_ARGS="$EXTRA_BUILD_ARGS" ${CONDA_RUN_CMD} $SETUP_SCRIPT --build-tool cmake --build-mode Release --editable true
 fi
-CMAKE_ARGS="$EXTRA_BUILD_ARGS" ${CONDA_RUN_CMD} $SETUP_SCRIPT --build-tool cmake --build-mode Release --editable true
 
 GOLDEN_DIR="${ARTIFACT_DIR}/golden-artifacts"
 export GOLDEN_ARTIFACTS_DIR="${GOLDEN_DIR}"
