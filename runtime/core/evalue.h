@@ -8,6 +8,7 @@
 
 #pragma once
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/tag.h>
 #include <executorch/runtime/platform/assert.h>
 
@@ -291,6 +292,13 @@ struct EValue {
     return payload.as_tensor;
   }
 
+  Result<executorch::aten::Tensor> tryToTensor() const {
+    if (!isTensor()) {
+      return Error::InvalidType;
+    }
+    return payload.as_tensor;
+  }
+
   /****** String Type ******/
   /*implicit*/ EValue(executorch::aten::ArrayRef<char>* s) : tag(Tag::String) {
     ET_CHECK_MSG(s != nullptr, "ArrayRef<char> pointer cannot be null");
@@ -458,6 +466,20 @@ struct EValue {
       return executorch::aten::nullopt;
     }
     return this->to<T>();
+  }
+
+  template <typename T>
+  inline Result<std::optional<T>> tryToOptional() const {
+    static_assert(
+        std::is_same<T, executorch::aten::Tensor>::value,
+        "tryToOptional only supports Tensor");
+    if (this->isNone()) {
+      return std::optional<T>(executorch::aten::nullopt);
+    }
+    if (!this->isTensor()) {
+      return Error::InvalidType;
+    }
+    return std::optional<T>(this->payload.as_tensor);
   }
 
  private:
