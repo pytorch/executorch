@@ -999,9 +999,9 @@ class ArmTester(Tester):
                     stage_output,
                     reference_output,
                     quantization_scale=quantization_scale,
-                    atol=1e-03,
-                    rtol=1e-03,
-                    qtol=0,
+                    atol=atol,
+                    rtol=rtol,
+                    qtol=qtol,
                 )
             raise e
 
