@@ -75,7 +75,6 @@ class EthosUCompileSpec(ArmCompileSpec):
                 f"--accelerator-config={target}",
                 f"--config={config_ini}",
                 "--output-format=raw",
-                "--debug-force-regor",
                 f"--system-config={system_config}",
                 f"--memory-mode={memory_mode}",
             ]
