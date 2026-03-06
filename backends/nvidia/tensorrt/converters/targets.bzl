@@ -33,6 +33,7 @@ def define_common_targets():
             "reduction.py",
             "relu.py",
             "reshape.py",
+            "sdpa.py",
             "sub.py",
             "upsample.py",
         ],
