@@ -88,6 +88,7 @@ class TensorRTPartitioner(Partitioner):
         # handles directly.
         ops_not_decompose = [
             torch.ops.aten.pixel_shuffle.default,
+            torch.ops.aten.upsample_bicubic2d.vec,
         ]
 
         return (ops_not_decompose, None)

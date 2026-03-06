@@ -20,6 +20,8 @@ def define_common_targets():
             "conv2d.py",
             "dim_order_ops.py",
             "div.py",
+            "embedding.py",
+            "expand.py",
             "getitem.py",
             "linear.py",
             "mm.py",
@@ -30,6 +32,7 @@ def define_common_targets():
             "relu.py",
             "reshape.py",
             "sub.py",
+            "upsample.py",
         ],
         visibility = ["PUBLIC"],
         deps = [
