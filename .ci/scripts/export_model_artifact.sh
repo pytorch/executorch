@@ -22,6 +22,7 @@ Arguments:
                  - mistralai/Voxtral-Mini-4B-Realtime-2602
                  - openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo})
                  - google/gemma-3-4b-it
+                 - nvidia/diar_streaming_sortformer_4spk-v2
                  - nvidia/parakeet-tdt
 
   quant_name   Quantization type (optional, default: non-quantized)
@@ -45,6 +46,7 @@ Examples:
   export_model_artifact.sh metal "mistralai/Voxtral-Mini-4B-Realtime-2602" "quantized-int4-metal"
   export_model_artifact.sh metal "mistralai/Voxtral-Mini-4B-Realtime-2602" "non-quantized" "." "vr-streaming"
   export_model_artifact.sh cuda "mistralai/Voxtral-Mini-3B-2507" "quantized-int4-tile-packed"
+  export_model_artifact.sh cuda-windows "nvidia/diar_streaming_sortformer_4spk-v2" "non-quantized" "./output"
   export_model_artifact.sh cuda "google/gemma-3-4b-it" "non-quantized" "./output"
   export_model_artifact.sh cuda "nvidia/parakeet-tdt" "non-quantized" "./output"
   export_model_artifact.sh xnnpack "nvidia/parakeet-tdt" "quantized-8da4w" "./output"
@@ -157,6 +159,14 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  nvidia/diar_streaming_sortformer_4spk-v2)
+    MODEL_NAME="sortformer"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   mistralai/Voxtral-Mini-4B-Realtime-2602)
     MODEL_NAME="voxtral_realtime"
     TASK=""
@@ -167,7 +177,7 @@ case "$HF_MODEL" in
     ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/parakeet-tdt"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt"
     exit 1
     ;;
 esac
@@ -242,6 +252,42 @@ if [ "$MODEL_NAME" = "parakeet" ]; then
     test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
   fi
   test -f "${OUTPUT_DIR}/tokenizer.model"
+  ls -al "${OUTPUT_DIR}"
+  echo "::endgroup::"
+  exit 0
+fi
+
+# Sortformer uses a custom export script
+if [ "$MODEL_NAME" = "sortformer" ]; then
+  if [ "$QUANT_NAME" != "non-quantized" ]; then
+    echo "Error: Sortformer currently supports only non-quantized export"
+    exit 1
+  fi
+
+  pip install -r examples/models/sortformer/install_requirements.txt
+
+  SORTFORMER_BACKEND="$DEVICE"
+  if [ "$DEVICE" = "cuda-windows" ]; then
+    SORTFORMER_BACKEND="cuda-windows"
+  elif [ "$DEVICE" = "cuda" ]; then
+    SORTFORMER_BACKEND="cuda"
+  elif [ "$DEVICE" = "xnnpack" ]; then
+    SORTFORMER_BACKEND="xnnpack"
+  else
+    SORTFORMER_BACKEND="portable"
+  fi
+
+  python -m executorch.examples.models.sortformer.export_sortformer \
+      --hf-model "${HF_MODEL}" \
+      --backend "${SORTFORMER_BACKEND}" \
+      --output-dir "${OUTPUT_DIR}"
+
+  test -f "${OUTPUT_DIR}/sortformer.pte"
+  mv "${OUTPUT_DIR}/sortformer.pte" "${OUTPUT_DIR}/model.pte"
+  # CUDA saves named data to separate .ptd file, XNNPACK/portable do not.
+  if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
+    test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  fi
   ls -al "${OUTPUT_DIR}"
   echo "::endgroup::"
   exit 0
