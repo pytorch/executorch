@@ -6,4 +6,13 @@ def define_common_targets():
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
-    pass
+
+    runtime.python_test(
+        name = "test_compile_spec",
+        srcs = [
+            "test_compile_spec.py",
+        ],
+        deps = [
+            "//executorch/backends/nvidia/tensorrt:compile_spec",
+        ],
+    )
