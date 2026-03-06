@@ -4,6 +4,25 @@
 #include "xa_nnlib_err_chk.h"
 #include "xa_nnlib_kernels_api.h"
 
+// HiFi1 compatibility: AE_MOVAB is not available on HiFi1
+#ifndef AE_MOVAB
+static inline unsigned char AE_MOVAB(xtbool b) {
+  return b ? 1 : 0;
+}
+#endif
+
+#ifndef AE_MOVAB2
+static inline unsigned char AE_MOVAB2(xtbool2 b2) {
+  ae_int32x2 d0 = 0;
+  ae_int32x2 d1 = 1;
+  AE_MOVT32X2(d0, d1, b2);
+  unsigned int low, high;
+  low = AE_MOVAD32_L(d0);
+  high = AE_MOVAD32_H(d0);
+  return (unsigned char)((high << 1) | low);
+}
+#endif
+
 
 #if !HAVE_VFPU
 DISCARD_FUN_FOR_NONVOID_RETURN(
