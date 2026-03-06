@@ -12,6 +12,8 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/platform/log.h>
 
+#include <cuda_runtime.h> // @nolint
+
 namespace executorch {
 namespace backends {
 namespace tensorrt {
@@ -34,6 +36,39 @@ namespace {
 
 bool is_tensorrt_available() {
   return true;
+}
+
+// Shared CUDA stream for serialized execution across TRT delegates.
+// When multiple TRT delegate subgraphs execute sequentially (the common case),
+// sharing a single stream avoids synchronization overhead between subgraphs.
+//
+// Thread safety: ExecuTorch's backend init/execute/destroy lifecycle is
+// single-threaded per program instance, so no synchronization is needed.
+// If concurrent multi-program support is added in the future, these globals
+// should be protected with a mutex or made per-program.
+cudaStream_t g_shared_stream = nullptr; // NOLINT(facebook-avoid-non-const-global-variables)
+int g_shared_stream_refcount = 0; // NOLINT(facebook-avoid-non-const-global-variables)
+
+cudaStream_t get_or_create_shared_stream() { // NOLINT(facebook-hte-NullableReturn)
+  if (g_shared_stream == nullptr) {
+    cudaError_t err = cudaStreamCreate(&g_shared_stream);
+    if (err != cudaSuccess) {
+      ET_LOG(Error, "Failed to create shared CUDA stream");
+      return nullptr;
+    }
+  }
+  ++g_shared_stream_refcount;
+  return g_shared_stream;
+}
+
+void release_shared_stream() {
+  if (g_shared_stream_refcount > 0) {
+    --g_shared_stream_refcount;
+  }
+  if (g_shared_stream_refcount == 0 && g_shared_stream != nullptr) {
+    cudaStreamDestroy(g_shared_stream);
+    g_shared_stream = nullptr;
+  }
 }
 
 } // namespace
@@ -83,10 +118,22 @@ Result<DelegateHandle*> TensorRTBackend::init(
 
   new (executor) TensorRTExecutor();
 
+  // Share a CUDA stream across all TRT delegate instances for serialized
+  // execution. This avoids synchronization overhead between subgraphs when
+  // they execute sequentially (the common case).
+  cudaStream_t shared = get_or_create_shared_stream();
+  if (shared != nullptr) {
+    executor->set_cuda_stream(shared, false);
+  }
+
   Error err = executor->initialize(blob_data, blob_size);
   if (err != Error::Ok) {
     ET_LOG(Error, "Failed to initialize TensorRT executor");
+    bool uses_shared = !executor->owns_stream();
     executor->~TensorRTExecutor();
+    if (uses_shared) {
+      release_shared_stream();
+    }
     return err;
   }
 
@@ -172,7 +219,11 @@ Error TensorRTBackend::execute(
 void TensorRTBackend::destroy(DelegateHandle* handle) const {
   if (handle != nullptr) {
     auto* executor = static_cast<TensorRTExecutor*>(handle);
+    bool uses_shared = !executor->owns_stream();
     executor->~TensorRTExecutor();
+    if (uses_shared) {
+      release_shared_stream();
+    }
   }
 }
 
