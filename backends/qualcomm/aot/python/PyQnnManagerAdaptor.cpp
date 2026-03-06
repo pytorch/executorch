@@ -147,6 +147,10 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(
       copy_data);
 }
 
+int GetQNNCtxBinAlignment() {
+  return QNN_CTX_BIN_ALIGNMENT;
+}
+
 std::string GetQnnSdkBuildId(std::string library_path) {
   QnnImplementation qnn_loaded_backend = QnnImplementation(library_path);
   ET_CHECK_MSG(
@@ -191,6 +195,7 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
   using namespace qnn_delegate;
   PYBIND11_NUMPY_DTYPE(PyQnnTensorWrapper::EncodingData, scale, offset);
 
+  m.def("GetQNNCtxBinAlignment", &GetQNNCtxBinAlignment);
   m.def("GetQnnSdkBuildId", &GetQnnSdkBuildId);
   m.def("StripProtocol", &StripProtocol);
   py::class_<QnnExecuTorchContextBinary>(m, "QnnExecuTorchContextBinary")
