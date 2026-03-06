@@ -309,6 +309,23 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
                 partitioner[key] = []
             else:
                 partitioner[key] = [XnnpackPartitioner()]
+    elif backend in ("cuda", "cuda-windows"):
+        from executorch.backends.cuda.cuda_backend import CudaBackend
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+        print(
+            f"\nLowering to ExecuTorch with CUDA{' (Windows)' if backend == 'cuda-windows' else ''}..."
+        )
+        partitioner = {}
+        for key in programs.keys():
+            if key == "preprocessor":
+                partitioner[key] = []
+                continue
+            compile_specs = [CudaBackend.generate_method_name_compile_spec(key)]
+            if backend == "cuda-windows":
+                compile_specs.append(CompileSpec("platform", b"windows"))
+            partitioner[key] = [CudaPartitioner(compile_specs)]
     else:
         print("\nLowering to ExecuTorch...")
         partitioner = []
@@ -354,7 +371,7 @@ def main():
         "--backend",
         type=str,
         default="xnnpack",
-        choices=["portable", "xnnpack"],
+        choices=["portable", "xnnpack", "cuda", "cuda-windows"],
         help="Backend for acceleration (default: xnnpack)",
     )
 
@@ -373,6 +390,15 @@ def main():
     print(f"\nSaving ExecuTorch program to: {pte_path}")
     with open(pte_path, "wb") as f:
         et.write_to_file(f)
+
+    if args.backend in ("cuda", "cuda-windows"):
+        cuda_blob_path = os.path.join(args.output_dir, "aoti_cuda_blob.ptd")
+        print(f"Writing CUDA named-data blob to: {cuda_blob_path}")
+        et.write_tensor_data_to_file(args.output_dir)
+        if not os.path.isfile(cuda_blob_path):
+            raise FileNotFoundError(
+                f"Expected CUDA named-data blob at {cuda_blob_path}, but it was not created."
+            )
     print(f"Saved {os.path.getsize(pte_path) / (1024 * 1024):.1f} MB")
 
     print("\nDone!")

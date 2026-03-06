@@ -54,6 +54,16 @@ fbcode_target(_kind = python_pytest,
     ]
 )
 
+fbcode_target(_kind = runtime.python_library,
+    name = "use_qat",
+    srcs = [
+        "use_qat.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/pytest:pytest",
+    ],
+)
+
 fbcode_target(_kind = python_pytest,
     name = "test_batch_norm_fusion",
     srcs = [
@@ -66,5 +76,36 @@ fbcode_target(_kind = python_pytest,
         ":models",
         "fbsource//third-party/pypi/pytest:pytest",
         "fbsource//third-party/pypi/numpy:numpy",
+    ],
+)
+
+fbcode_target(_kind = python_pytest,
+    name = "test_qdq_clustering_conv",
+    srcs = [
+        "test_qdq_clustering_conv.py",
+    ],
+    deps = [
+        ":executorch_pipeline",
+        ":models",
+    ],
+)
+
+fbcode_target(_kind = python_pytest,
+    name = "test_integration",
+    srcs = [
+        "test_integration.py",
+    ],
+    preload_deps = [
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+    ],
+    deps = [
+        ":executorch_pipeline",
+        ":models",
+        ":use_qat",
+        "//executorch/devtools/backend_debug:delegation_info",
+        "//executorch/extension/pybindings:portable_lib",
+        "//executorch/examples/nxp/experimental/cifar_net:cifar_net",
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+        "//executorch/kernels/quantized:quantized_ops_lib",
     ],
 )

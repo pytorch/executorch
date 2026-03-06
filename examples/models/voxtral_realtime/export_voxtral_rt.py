@@ -404,12 +404,15 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
         for key in programs:
             compile_specs = [MetalBackend.generate_method_name_compile_spec(key)]
             partitioner[key] = [MetalPartitioner(compile_specs)]
-    elif backend == "cuda":
+    elif backend in ("cuda", "cuda-windows"):
         from executorch.backends.cuda.cuda_backend import CudaBackend
         from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
         from torch._inductor.decomposition import conv1d_to_conv2d
 
-        print("\nLowering to ExecuTorch with CUDA...")
+        print(
+            f"\nLowering to ExecuTorch with CUDA{' (Windows)' if backend == 'cuda-windows' else ''}..."
+        )
 
         # Run conv1d decomposition for CUDA backend
         updated_programs = {}
@@ -422,6 +425,8 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
         partitioner = {}
         for key in programs:
             compile_specs = [CudaBackend.generate_method_name_compile_spec(key)]
+            if backend == "cuda-windows":
+                compile_specs.append(CompileSpec("platform", b"windows"))
             partitioner[key] = [CudaPartitioner(compile_specs)]
     else:
         print("\nLowering to ExecuTorch (portable)...")
@@ -463,7 +468,7 @@ def main():
     parser.add_argument(
         "--backend",
         default="xnnpack",
-        choices=["portable", "xnnpack", "metal", "cuda"],
+        choices=["portable", "xnnpack", "metal", "cuda", "cuda-windows"],
         help="Backend for acceleration (default: xnnpack)",
     )
     parser.add_argument(
@@ -543,11 +548,12 @@ def main():
         help="Model dtype (default: fp32).",
     )
     args = parser.parse_args()
+    backend_for_export = "cuda" if args.backend == "cuda-windows" else args.backend
 
     # Validate fpa4w quantization requires Metal backend
-    if args.qlinear == "fpa4w" and args.backend != "metal":
+    if args.qlinear == "fpa4w" and backend_for_export != "metal":
         parser.error("--qlinear=fpa4w can only be used with --backend=metal")
-    if args.qlinear_encoder == "fpa4w" and args.backend != "metal":
+    if args.qlinear_encoder == "fpa4w" and backend_for_export != "metal":
         parser.error("--qlinear-encoder=fpa4w can only be used with --backend=metal")
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -560,11 +566,11 @@ def main():
         max_seq_len=args.max_seq_len,
         n_delay_tokens=args.delay_tokens,
         dtype=model_dtype,
-        backend=args.backend,
+        backend=backend_for_export,
     )
 
     # Move to CUDA for CUDA backend export (AOTInductor needs CUDA tensors)
-    if args.backend == "cuda":
+    if backend_for_export == "cuda":
         print("Moving model to CUDA...")
         model.cuda()
 
@@ -585,7 +591,7 @@ def main():
         "qlinear_group_size": args.qlinear_group_size,
         "qlinear_packing_format": args.qlinear_packing_format,
         "qembedding": args.qembedding,
-        "backend": args.backend,
+        "backend": backend_for_export,
     }
     if args.streaming:
         programs, metadata = export_streaming(

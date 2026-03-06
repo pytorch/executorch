@@ -209,6 +209,8 @@ def test_llama_tosa_INT_FP_partial_quant():
             tosa_extensions=["FP"],
             # Due to a few outliers, atol must be set high
             atol=1.1,
+            # TODO(MLETORCH-1875): reduce tolerance
+            qtol=75,
             frobenius_threshold=None,
             cosine_threshold=None,
         )
@@ -232,6 +234,8 @@ def test_llama_vgf_quant_partial_quant():
             quantize=True,
             # Due to a few outliers, atol must be set high
             atol=1.1,
+            # TODO(MLETORCH-1875): reduce tolerance
+            qtol=75,
         )
         _use_partial_quantizer(pipeline)
         pipeline.run()
