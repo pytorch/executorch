@@ -66,3 +66,43 @@ Download and install from the
 | `device_id` | int | 0 | CUDA device ID |
 | `dla_core` | int | -1 | DLA core ID (-1 = disabled) |
 | `allow_gpu_fallback` | bool | True | Allow GPU fallback when using DLA |
+
+## Version Compatibility
+
+- **Minimum TensorRT version**: 10.3 (required for serialization format
+  compatibility)
+- **Recommended**: TensorRT 10.6 or later for best performance and feature
+  support
+
+## Blob Format
+
+The TensorRT delegate uses a custom binary blob format:
+
+```
+┌─────────────────────────────────────┐
+│ Header (32 bytes)                   │
+│  - magic: "TR01" (4 bytes)          │
+│  - metadata_offset (4 bytes)        │
+│  - metadata_size (4 bytes)          │
+│  - engine_offset (4 bytes)          │
+│  - engine_size (8 bytes)            │
+│  - reserved (8 bytes)               │
+├─────────────────────────────────────┤
+│ Metadata JSON (variable)            │
+│  - I/O binding information          │
+│  - Tensor names, dtypes, shapes     │
+├─────────────────────────────────────┤
+│ Padding (16-byte alignment)         │
+├─────────────────────────────────────┤
+│ TensorRT Engine (variable)          │
+│  - Serialized TensorRT engine       │
+└─────────────────────────────────────┘
+```
+
+## Requirements
+
+- NVIDIA GPU with CUDA Compute Capability 5.0+
+- **TensorRT 10.3+** (required for serialization compatibility)
+- CUDA Toolkit 11.x or 12.x
+- cuDNN 8.x
+- PyTorch 2.x with CUDA support (for export)
