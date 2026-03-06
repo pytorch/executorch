@@ -70,3 +70,11 @@ def define_common_targets():
             "//executorch/exir/backend:compile_spec_schema",
         ],
     )
+
+    runtime.python_library(
+        name = "serialization",
+        srcs = [
+            "serialization.py",
+        ],
+        visibility = ["PUBLIC"],
+    )
