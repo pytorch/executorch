@@ -139,6 +139,8 @@ jobs:
             name: "Voxtral-Mini-3B-2507"
           - repo: "mistralai"
             name: "Voxtral-Mini-4B-Realtime-2602"
+          - repo: "nvidia"
+            name: "diar_streaming_sortformer_4spk-v2"
           - repo: "openai"
             name: "whisper-small"
           - repo: "openai"
@@ -167,6 +169,15 @@ jobs:
           - model:
               repo: "mistralai"
               name: "Voxtral-Mini-4B-Realtime-2602"
+            quant: "quantized-int4-weight-only"
+          # Sortformer currently supports only non-quantized export
+          - model:
+              repo: "nvidia"
+              name: "diar_streaming_sortformer_4spk-v2"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "nvidia"
+              name: "diar_streaming_sortformer_4spk-v2"
             quant: "quantized-int4-weight-only"
     with:
       timeout: 90
@@ -214,6 +225,8 @@ jobs:
             name: "Voxtral-Mini-3B-2507"
           - repo: "mistralai"
             name: "Voxtral-Mini-4B-Realtime-2602"
+          - repo: "nvidia"
+            name: "diar_streaming_sortformer_4spk-v2"
           - repo: "openai"
             name: "whisper-small"
           - repo: "openai"
@@ -240,6 +253,15 @@ jobs:
           - model:
               repo: "mistralai"
               name: "Voxtral-Mini-4B-Realtime-2602"
+            quant: "quantized-int4-weight-only"
+          # Sortformer currently supports only non-quantized export
+          - model:
+              repo: "nvidia"
+              name: "diar_streaming_sortformer_4spk-v2"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "nvidia"
+              name: "diar_streaming_sortformer_4spk-v2"
             quant: "quantized-int4-weight-only"
     with:
       timeout: 90
