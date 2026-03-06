@@ -30,6 +30,9 @@ from executorch.backends.nvidia.tensorrt.serialization import (
     TensorRTBlobMetadata,
     TensorRTIOBinding,
 )
+from executorch.backends.nvidia.tensorrt.converters import (
+    clear_converter_weight_storage,
+)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
@@ -100,6 +103,10 @@ class TensorRTBackend(BackendDetails):
 
         # Build the network
         input_map = _add_network_inputs(network, input_nodes, torch_dtype_to_trt)
+        # Add params/buffers as constant tensors
+        _add_params_to_input_map(
+            graph_module, edge_program, network, input_map, get_trt_tensor
+        )
         _process_graph_nodes(
             graph_module, edge_program, network, input_map, get_trt_tensor, get_op_name, ctx
         )
@@ -171,6 +178,67 @@ def _is_param_or_buffer(
                 return True
 
     return False
+
+
+def _add_params_to_input_map(
+    graph_module: torch.fx.GraphModule,
+    exported_program: ExportedProgram,
+    network: Any,
+    input_map: Dict[torch.fx.Node, Any],
+    get_trt_tensor_fn: Any,
+) -> None:
+    """Add parameters and buffers as constant TensorRT tensors to input_map.
+
+    In ExecuTorch's edge dialect, parameters are often "lifted" as placeholder
+    inputs rather than get_attr nodes. This function identifies these placeholder
+    nodes that represent parameters/buffers and adds them to input_map as
+    TensorRT constant tensors.
+    """
+    for node in graph_module.graph.nodes:
+        if node.op == "placeholder":
+            # Skip if already in input_map (it's a real input, not a param)
+            if node in input_map:
+                continue
+
+            param_tensor = None
+
+            # Try to get from state_dict first
+            if hasattr(exported_program, "state_dict"):
+                if node.name in exported_program.state_dict:
+                    param_tensor = exported_program.state_dict[node.name]
+
+            # Try to get from graph_signature mapping
+            if param_tensor is None and hasattr(exported_program, "graph_signature"):
+                sig = exported_program.graph_signature
+                param_name = None
+                if hasattr(sig, "inputs_to_parameters"):
+                    param_name = sig.inputs_to_parameters.get(node.name)
+                if param_name is None and hasattr(sig, "inputs_to_buffers"):
+                    param_name = sig.inputs_to_buffers.get(node.name)
+
+                if param_name is not None and hasattr(exported_program, "state_dict"):
+                    param_tensor = exported_program.state_dict.get(param_name)
+
+            # If we found a parameter tensor, add it to input_map
+            if param_tensor is not None:
+                if isinstance(param_tensor, torch.nn.Parameter):
+                    param_tensor = param_tensor.data
+                if isinstance(param_tensor, torch.Tensor):
+                    # Convert int64/int32 tensors to float32 for TensorRT compatibility
+                    # These are often used in elementwise operations with float tensors
+                    # (e.g., batch norm statistics in MobileNetV3)
+                    original_dtype = param_tensor.dtype
+                    if param_tensor.dtype in (torch.int32, torch.int64):
+                        param_tensor = param_tensor.float()
+                        logger.debug(
+                            f"Converting param {node.name} from {original_dtype} to float32 "
+                            f"for TensorRT compatibility"
+                        )
+                    elif param_tensor.dtype == torch.float64:
+                        param_tensor = param_tensor.float()
+                    input_map[node] = get_trt_tensor_fn(
+                        network, param_tensor, f"param_{node.name}"
+                    )
 
 
 def _get_tensor_shape_and_dtype(
