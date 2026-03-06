@@ -23,6 +23,9 @@ class SimpleNodeVisitorConfig:
     num_inputs: int | List[int]
     input_dtypes: List[Any]
     attr_kwargs: dict[str, Any] | None = None
+    output_dtypes: List[Any] | None = None
+    same_dtype_with_output: bool = True
+    dtype_check_inputs_only: bool = False
 
 
 class SimpleNodeVisitor(NodeVisitor):
@@ -51,6 +54,9 @@ class SimpleNodeVisitor(NodeVisitor):
             output=output,
             num_inputs=cfg.num_inputs,
             input_dtypes=cfg.input_dtypes,
+            output_dtypes=cfg.output_dtypes,
+            same_dtype_with_output=cfg.same_dtype_with_output,
+            dtype_check_inputs_only=cfg.dtype_check_inputs_only,
         )
 
         self.serialize(
