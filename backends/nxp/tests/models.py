@@ -821,3 +821,27 @@ class NonstaticDivLinearModel(torch.nn.Module):
     def forward(self, x, divisor):
         x = self.linear(x)
         return x / divisor
+
+
+class BatchMatMulModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.bmm(x, y)
+
+
+class BatchMatMulConvModel(torch.nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv = Conv1dModule(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            stride=1,
+            padding=1,
+            kernel_size=3,
+        )
+
+    def forward(self, x, y):
+        x = self.conv(x)
+        return torch.bmm(x, y)
