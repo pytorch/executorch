@@ -11,6 +11,7 @@ from typing import cast, Optional, Set, Type
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
+    create_node,
     get_param_tensor,
     is_param_node,
     set_node_arg,
@@ -347,11 +348,14 @@ class FoldAndAnnotateQParamsPass(ArmPass):
 
 
 class QuantizeClampArgumentsPass(ArmPass):
-    """This pass makes sure that the arguments to clamp.default are quantized
-    correctly.
+    """This pass quantizes the scalar min/max arguments of clamp.default and
+    inserts a RESCALE when the input and output quantization parameters differ.
 
-    More specifically, this pass:
-        - Makes sure the min and max values to clamp.default are quantized, if it's a quantized operator.
+    When clamp has independent input/output quantization (different scales),
+    a RESCALE is inserted before the clamp to convert the input from the
+    input domain to the output domain. The min/max bounds are quantized
+    using the output quantization parameters, ensuring they are precise
+    even when the clamp range is much narrower than the input range.
 
     """
 
@@ -359,41 +363,59 @@ class QuantizeClampArgumentsPass(ArmPass):
 
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False
-        # Loop over the graph nodes and find full.default nodes.
         for n in graph_module.graph.nodes:
             n = cast(Node, n)
-            if n.target not in {
-                exir_ops.edge.aten.clamp.default,
-            }:
+            if n.target != exir_ops.edge.aten.clamp.default:
                 continue
 
             try:
+                input_qparams = get_input_qparams(n)
                 output_qparams = get_output_qparams(n)
             except ValueError:
                 continue
-            if len(output_qparams) == 0:
+            if len(input_qparams) == 0 or len(output_qparams) == 0:
                 continue
 
-            # Qparams are stored per user index; use the first entry.
-            qargs = next(iter(output_qparams.values()))
+            input_qargs = next(iter(input_qparams.values()))
+            output_qargs = next(iter(output_qparams.values()))
 
-            if n.target == exir_ops.edge.aten.clamp.default:
-                # Quantize the min and max arguments of clamp, if they are not None
-                min_val = n.args[1]
-                max_val = None if len(n.args) <= 2 else n.args[2]
+            if input_qargs != output_qargs:
+                input_node = n.args[0]
+                with graph_module.graph.inserting_before(n):
+                    rescale_node = create_node(
+                        graph_module.graph,
+                        exir_ops.backend.tosa.RESCALE.default,
+                        (
+                            input_node,
+                            output_qargs.dtype,
+                            [
+                                input_qargs.get_scale_per_tensor()
+                                / output_qargs.get_scale_per_tensor()
+                            ],
+                            input_qargs.get_zp_per_tensor(),
+                            output_qargs.get_zp_per_tensor(),
+                        ),
+                        from_node=n,
+                    )
+                n.replace_input_with(input_node, rescale_node)
+                n.meta["input_qparams"] = {0: output_qargs}
 
-                if min_val is not None:
-                    quantized_min_val = qargs.quantize_value(min_val).item()
-                    n.update_arg(1, quantized_min_val)
+            qargs = output_qargs
 
-                if max_val is not None:
-                    quantized_max_val = qargs.quantize_value(max_val).item()
-                    n.update_arg(2, quantized_max_val)
+            min_val = n.args[1]
+            max_val = None if len(n.args) <= 2 else n.args[2]
 
-                modified = True
+            if min_val is not None:
+                quantized_min_val = qargs.quantize_value(min_val).item()
+                n.update_arg(1, quantized_min_val)
+
+            if max_val is not None:
+                quantized_max_val = qargs.quantize_value(max_val).item()
+                n.update_arg(2, quantized_max_val)
+
+            modified = True
 
         if modified:
-            # Retrace to refresh fake tensor metadata after updating clamp min/max.
             graph_module = super().call(graph_module).graph_module
             graph_module.recompile()
 
