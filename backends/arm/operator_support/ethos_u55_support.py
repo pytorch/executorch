@@ -86,7 +86,11 @@ class EthosU55DtypeSupport(OperatorSupportBase):
         exir_ops.edge.aten.permute_copy.default,
     ]
 
-    target_ops_i8_i16 = (*TableOps.included_ops(), exir_ops.edge.aten.amax.default)
+    target_ops_i8_i16 = (
+        *TableOps.included_ops(),
+        exir_ops.edge.aten.amax.default,
+        exir_ops.edge.aten.amin.default,
+    )
 
     def is_node_supported(  # noqa: C901
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node

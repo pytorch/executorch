@@ -99,34 +99,52 @@ for COMMIT in ${COMMITS}; do
     # most of the time.
     echo -e "${INFO} License check"
 
+    # Check only files with content changes.
+    # Skip pure moves/renames (R100) where file content is unchanged.
+    license_files=()
+    while IFS=$'\t' read -r status path1 path2; do
+        case "$status" in
+            A|M)
+                license_files+=("$path1")
+                ;;
+            R100)
+                ;;
+            R*)
+                license_files+=("$path2")
+                ;;
+        esac
+    done < <(git diff-tree --no-commit-id --name-status --diff-filter=AMR -r -M ${COMMIT})
+
     current_year=$(date +%Y)
     failed_license_check=false
-    for commited_file in $commit_files; do
+    for committed_file in "${license_files[@]}"; do
         # Skip files with certain extensions
-        case "$commited_file" in
-            *.md|*.md.in|*.json|*.yml|*.yaml|*.cmake|.gitignore)
-                echo -e "${INFO} Skipping license check for ${commited_file} (excluded extension)"
+        case "$committed_file" in
+            *.md|*.md.in|*.json|*.yml|*.yaml|*.cmake|*.patch|.gitignore)
+                echo -e "${INFO} Skipping license check for ${committed_file} (excluded extension)"
                 continue
                 ;;
         esac
 
-        file_header=$(head "$commited_file")
+        file_header=$(head "$committed_file")
         if ! echo "$file_header" | grep -qi "Arm"; then
-            echo -e "${WARNING} No Arm copyright header in ${commited_file}"\
+            echo -e "${WARNING} No Arm copyright header in ${committed_file}"\
             " (skipping license year check)"
             continue
         fi
 
         if ! echo "$file_header" | grep -q "$current_year Arm"; then
-            echo -e "${ERROR} Header in $commited_file did not contain"\
+            echo -e "${ERROR} Header in $committed_file did not contain"\
             "'$current_year Arm'"
             failed_license_check=true
         else
-            echo -e "${SUCCESS} $commited_file passed license check"
+            echo -e "${SUCCESS} $committed_file passed license check"
         fi
     done
 
-    if [[ $failed_license_check == true ]]; then
+    if [[ ${#license_files[@]} -eq 0 ]]; then
+        echo -e "${INFO} No files with content changes to check"
+    elif [[ $failed_license_check == true ]]; then
         FAILED=1
     else
         echo -e "${SUCCESS} All files passed license check"
@@ -181,8 +199,8 @@ for COMMIT in ${COMMITS}; do
 
     # Determine whether all modifications are under backends/arm or examples/arm
     only_arm_changes=true
-    for commited_file in $commit_files; do
-        if [[ $commited_file != backends/arm/* && $commited_file != examples/arm/* ]]; then
+    for committed_file in $commit_files; do
+        if [[ $committed_file != backends/arm/* && $committed_file != examples/arm/* ]]; then
             only_arm_changes=false
             break
         fi
