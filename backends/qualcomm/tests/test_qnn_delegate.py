@@ -8600,6 +8600,8 @@ def setup_environment():
     TestQNN.target = args.target
     TestQNN.backend = args.backend
     TestQNN.static_llm_eval_method = args.static_llm_eval_method
+    TestQNN.direct_build_folder = args.direct_build_folder
+
     return sys.argv[:1] + ns_args
 
 

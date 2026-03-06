@@ -85,6 +85,8 @@ jobs:
         fi
 
         export EXECUTORCH_PROJ_ROOT=$(realpath $(pwd))
+        ZEPHYR_README_PATH="zephyr/README.md"
+        ZEPHYR_SAMPLES_README_PATH="zephyr/samples/hello-executorch/README.md"
 
         # Source utility scripts
         . .ci/scripts/utils.sh
@@ -93,9 +95,9 @@ jobs:
         # check that zephyr/README.md and zephyr/executorch.yaml are in sync
         verify_zephyr_readme
 
-        # Based on instruction in zephyr/README.md
+        # Based on instructions in zephyr/README.md and zephyr/samples/hello-executorch/README.md
 
-        run_command_block_from_zephyr_readme "<!-- RUN install_reqs -->"
+        run_command_block_from_readme "${ZEPHYR_README_PATH}" "<!-- RUN install_reqs -->"
 
         # Make sure to backup the zephyr_scratch folder if it exists to allow for local
         # testing that does not lose code/data
@@ -128,11 +130,11 @@ jobs:
 
         cd ${ZEPHYR_PROJ_ROOT}
 
-        run_command_block_from_zephyr_readme "<!-- RUN west_init -->"
+        run_command_block_from_readme "${ZEPHYR_README_PATH}" "<!-- RUN west_init -->"
 
         cp ${EXECUTORCH_PROJ_ROOT}/zephyr/executorch.yaml zephyr/submanifests/
 
-        run_command_block_from_zephyr_readme "<!-- RUN west_config -->"
+        run_command_block_from_readme "${ZEPHYR_README_PATH}" "<!-- RUN west_config -->"
 
         # Switch to executorch in this PR e.g. replace modules/lib/executorch with the root folder of this repo
         # instead of doing a re-checkout and figure out the correct commit hash etc
@@ -148,9 +150,9 @@ jobs:
           git config --global user.email "github_executorch@arm.com"
         fi
 
-        run_command_block_from_zephyr_readme "<!-- RUN install_executorch -->"
+        run_command_block_from_readme "${ZEPHYR_README_PATH}" "<!-- RUN install_executorch -->"
 
-        run_command_block_from_zephyr_readme "<!-- RUN install_arm_tools -->"
+        run_command_block_from_readme "${ZEPHYR_README_PATH}" "<!-- RUN install_arm_tools -->"
 
         for TARGET in "${TARGETS[@]}"; do
           TARGET="$(echo "$TARGET" | xargs)" # trim whitespace
@@ -168,13 +170,13 @@ jobs:
           fi
 
           echo "---- ${TARGET} Board ${BOARD} FVP setup ----"
-          run_command_block_from_zephyr_readme "<!-- RUN setup_${BOARD}_fvp -->"
+          run_command_block_from_readme "${ZEPHYR_SAMPLES_README_PATH}" "<!-- RUN setup_${BOARD}_fvp -->"
 
           echo "---- ${TARGET} Create PTE ----"
-          run_command_block_from_zephyr_readme "<!-- RUN test_${TARGET}_generate_pte -->"
+          run_command_block_from_readme "${ZEPHYR_SAMPLES_README_PATH}" "<!-- RUN test_${TARGET}_generate_pte -->"
 
           echo "---- ${TARGET} Build and run ----"
-          run_command_block_from_zephyr_readme "<!-- RUN test_${TARGET}_build_and_run -->"
+          run_command_block_from_readme "${ZEPHYR_SAMPLES_README_PATH}" "<!-- RUN test_${TARGET}_build_and_run -->"
         done
 
   test-models-linux-aarch64:
