@@ -12,7 +12,6 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
-#include <executorch/extension/tensor/tensor.h>
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
@@ -427,11 +426,17 @@ Error QnnManager::Execute(
           QNN_TENSOR_VER_PTR(output_tensor)->dimensions +
               QNN_TENSOR_VER_PTR(output_tensor)->rank);
 
-      auto dump_tensor = executorch::extension::from_blob(
-          QNN_TENSOR_VER_PTR(output_tensor)->clientBuf.data,
-          sizes,
+      std::vector<executorch::aten::StridesType> stride_size(sizes.size(), 0);
+      // Avoid using from_blob as it significantly increases shared library
+      // size.
+      executorch::aten::TensorImpl tensor_impl(
           qnn_dtype_to_scalar_type_[QNN_TENSOR_VER_PTR(output_tensor)
-                                        ->dataType]);
+                                        ->dataType],
+          sizes.size(),
+          sizes.data(),
+          QNN_TENSOR_VER_PTR(output_tensor)->clientBuf.data,
+          nullptr,
+          stride_size.data());
 
       executorch::runtime::event_tracer_log_output_delegate<
           executorch::aten::Tensor>(
@@ -439,7 +444,7 @@ Error QnnManager::Execute(
           QNN_TENSOR_VER_PTR(output_tensor)->name,
           /*delegate_debug_id=*/
           static_cast<executorch::runtime::DebugHandle>(-1),
-          *dump_tensor);
+          executorch::aten::Tensor(&tensor_impl));
     }
   }
 
@@ -547,7 +552,7 @@ Error QnnManager::CompileDlc() {
 
     // Mapping memory address for the input and output of mutable buffer
     std::unordered_map<int, const void*> mutable_buffer_id_to_memory_map;
-    for (int i = 0; i < graphInfo.numInputTensors; ++i) {
+    for (uint32_t i = 0; i < graphInfo.numInputTensors; ++i) {
       auto tw = CreateTensorWrapper(graphInfo.inputTensors[i]);
       tw->UpdateQnnTensorMeta(graphInfo.inputTensors[i]);
 
@@ -560,7 +565,7 @@ Error QnnManager::CompileDlc() {
       }
       graph_inputs.push_back(tw);
     }
-    for (int i = 0; i < graphInfo.numOutputTensors; ++i) {
+    for (uint32_t i = 0; i < graphInfo.numOutputTensors; ++i) {
       auto tw = CreateTensorWrapper(graphInfo.outputTensors[i]);
       tw->UpdateQnnTensorMeta(graphInfo.outputTensors[i]);
       int mutable_buffer_id = ExtractMutableBufferNumber(tw->GetName());

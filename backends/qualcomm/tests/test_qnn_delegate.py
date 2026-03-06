@@ -29,6 +29,7 @@ from executorch.backends.qualcomm._passes.utils import (
 from executorch.backends.qualcomm.debugger.utils import generate_optrace
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
+    QnnExecuTorchHtpPerformanceMode,
 )
 from executorch.backends.qualcomm.tests.utils import (
     convert_pt2e,
@@ -4847,6 +4848,33 @@ class TestQNNFloatingPointUtils(TestQNN):
             saver=False,
         )
 
+    def test_qnn_backend_compile_time_option_htp_performance(self):
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=True,
+            htp_performance_mode=QnnExecuTorchHtpPerformanceMode.kHtpHighPowerSaver,
+        )
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+
+        def output_callback(log_msg):
+            msg = log_msg.stdout
+            # Refer to HtpDevice.cpp for the following values
+            min_voltage = "coreVoltageCornerMin 80"
+            self.assertTrue(min_voltage in msg, f"Expecting '{min_voltage} ' in log")
+
+        runtime_extra_commands = " --log_level 4"
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            extra_cmds=runtime_extra_commands,
+            output_callback=partial(output_callback),
+            save_inference_speed=True,
+        )
+
     def test_qnn_backend_dump_intermediate_outputs_topk(self):
         TestQNN.dump_intermediate_outputs = True
         backend_options = generate_htp_compiler_spec(use_fp16=True)
@@ -5434,6 +5462,34 @@ class TestQNNQuantizedUtils(TestQNN):
             backend_options=backend_options,
             debug=False,
             saver=False,
+        )
+
+    def test_qnn_backend_compile_time_option_htp_performance(self):
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=False,
+            htp_performance_mode=QnnExecuTorchHtpPerformanceMode.kHtpHighPowerSaver,
+        )
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+
+        def output_callback(log_msg):
+            msg = log_msg.stdout
+            # Refer to HtpDevice.cpp for the following values
+            min_voltage = "coreVoltageCornerMin 80"
+            self.assertTrue(min_voltage in msg, f"Expecting '{min_voltage} ' in log")
+
+        runtime_extra_commands = " --log_level 4"
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            extra_cmds=runtime_extra_commands,
+            output_callback=partial(output_callback),
+            save_inference_speed=True,
         )
 
     def test_qnn_backend_dump_intermediate_outputs_simple_model(self):

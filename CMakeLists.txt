@@ -50,6 +50,17 @@ project(executorch)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
+# Hexagon toolchain with release build complains about code in third party
+# libraries.
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon AND ${CMAKE_BUILD_TYPE} STREQUAL
+                                                 "Release"
+)
+  add_compile_options(
+    -Wno-error=format -Wno-error=implicit-int-conversion
+    -Wno-error=unused-variable -Wno-error=unused-function
+  )
+endif()
+
 # --- ExecuTorch Version ---
 # Parse version from version.txt (single source of truth)
 file(READ "${EXECUTORCH_ROOT}/version.txt" ET_VERSION_STRING)
