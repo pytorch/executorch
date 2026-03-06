@@ -1,9 +1,10 @@
-# The following file contains all models that have been confirmed to be functional and tested for the Arm backend:
+# The following file contains all models that have been confirmed to be functional and tested for the Arm backend :
 - Conformer
 - Deit Tiny
 - DeepLab v3 (DL3)
 - Inception v3 (IC3)
 - Llama
+- Gemma3n
 - Long Short-Term Memory (LSTM)
 - MobileNet v2 (MV2)
 - MobileNet v3 (MV3)

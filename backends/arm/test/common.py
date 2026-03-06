@@ -86,7 +86,7 @@ def get_u55_compile_spec(
     macs: int = 128,
     system_config: str = "Ethos_U55_High_End_Embedded",
     memory_mode: str = "Shared_Sram",
-    extra_flags: str = "--debug-force-regor --output-format=raw --arena-cache-size=2097152",
+    extra_flags: str = "--arena-cache-size=2097152",
     custom_path: Optional[str] = None,
     config: Optional[str] = None,
     tosa_debug_mode: EthosUCompileSpec.DebugMode | None = None,
