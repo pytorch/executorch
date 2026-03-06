@@ -36,6 +36,26 @@ on:
         required: false
         type: string
         default: linux.4xlarge.memory
+      docker-image:
+        description: 'Docker image for Linux jobs'
+        required: false
+        type: string
+        default: ci-image:executorch-ubuntu-22.04-clang12
+      use-custom-docker-registry:
+        description: 'Whether to use a custom Docker registry (set false for CUDA to use default PyTorch test-infra images)'
+        required: false
+        type: boolean
+        default: true
+      gpu-arch-type:
+        description: 'GPU architecture type (e.g. cuda)'
+        required: false
+        type: string
+        default: ''
+      gpu-arch-version:
+        description: 'GPU architecture version (e.g. 12.6)'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   test-backend-linux:
@@ -50,7 +70,10 @@ jobs:
     with:
       ref: ${{ inputs.ref }}
       runner: ${{ inputs.runner-linux }}
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      docker-image: ${{ inputs.docker-image }}
+      use-custom-docker-registry: ${{ inputs.use-custom-docker-registry }}
+      gpu-arch-type: ${{ inputs.gpu-arch-type }}
+      gpu-arch-version: ${{ inputs.gpu-arch-version }}
       submodules: recursive
       timeout: ${{ inputs.timeout }}
       upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
