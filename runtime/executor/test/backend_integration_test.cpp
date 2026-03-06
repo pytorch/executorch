@@ -10,11 +10,14 @@
 #include <cstring>
 #include <functional>
 #include <optional>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/runner_util/inputs.h>
+#include <executorch/runtime/backend/backend_cache.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
@@ -29,6 +32,7 @@
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
+using executorch::runtime::BackendCache;
 using executorch::runtime::BackendExecutionContext;
 using executorch::runtime::BackendInitContext;
 using executorch::runtime::BackendInterface;
@@ -59,6 +63,8 @@ class StubBackend final : public BackendInterface {
       BackendInitContext&)>;
   using ExecuteFn = std::function<
       Error(BackendExecutionContext&, DelegateHandle*, Span<EValue*>)>;
+  using InitFromCacheFn = std::function<
+      Result<DelegateHandle*>(ArrayRef<CompileSpec>, BackendInitContext&)>;
   using DestroyFn = std::function<void(DelegateHandle*)>;
 
   // Default name that this backend is registered as.
@@ -89,6 +95,19 @@ class StubBackend final : public BackendInterface {
     }
     // Return a benign value otherwise.
     return nullptr;
+  }
+
+  void install_init_from_cache(InitFromCacheFn fn) {
+    init_from_cache_fn_ = fn;
+  }
+
+  Result<DelegateHandle*> init_from_cache(
+      BackendInitContext& context,
+      ArrayRef<CompileSpec> compile_specs) const override {
+    if (init_from_cache_fn_) {
+      return init_from_cache_fn_.value()(compile_specs, context);
+    }
+    return Error::NotSupported;
   }
 
   void install_execute(ExecuteFn fn) {
@@ -122,6 +141,7 @@ class StubBackend final : public BackendInterface {
   void reset() {
     is_available_fn_.reset();
     init_fn_.reset();
+    init_from_cache_fn_.reset();
     execute_fn_.reset();
     destroy_fn_.reset();
   }
@@ -154,6 +174,7 @@ class StubBackend final : public BackendInterface {
 
   std::optional<IsAvailableFn> is_available_fn_;
   std::optional<InitFn> init_fn_;
+  std::optional<InitFromCacheFn> init_from_cache_fn_;
   std::optional<ExecuteFn> execute_fn_;
   std::optional<DestroyFn> destroy_fn_;
 };
@@ -272,6 +293,58 @@ class DataLoaderSpy final : public DataLoader {
   DataLoader* delegate_;
 
   mutable std::vector<Operation> operations_;
+};
+
+/**
+ * In-memory BackendCache for testing the cache-first init flow.
+ */
+class InMemoryBackendCache : public BackendCache {
+ public:
+  Result<FreeableBuffer> load(
+      const char* backend_id,
+      size_t delegate_index,
+      const char* key,
+      size_t /*alignment*/) const override {
+    auto composite = make_key(backend_id, delegate_index, key);
+    auto it = store_.find(composite);
+    if (it == store_.end()) {
+      return Error::NotFound;
+    }
+    const auto& blob = it->second;
+    return FreeableBuffer(blob.data(), blob.size(), /*free_fn=*/nullptr);
+  }
+
+  Error save(
+      const char* backend_id,
+      size_t delegate_index,
+      const char* key,
+      const void* data,
+      size_t size) override {
+    auto composite = make_key(backend_id, delegate_index, key);
+    auto* bytes = static_cast<const uint8_t*>(data);
+    store_[composite] = std::vector<uint8_t>(bytes, bytes + size);
+    return Error::Ok;
+  }
+
+  Error remove(const char* backend_id, size_t delegate_index, const char* key)
+      override {
+    auto composite = make_key(backend_id, delegate_index, key);
+    auto it = store_.find(composite);
+    if (it == store_.end()) {
+      return Error::NotFound;
+    }
+    store_.erase(it);
+    return Error::Ok;
+  }
+
+ private:
+  static std::string
+  make_key(const char* backend_id, size_t delegate_index, const char* key) {
+    return std::string(backend_id) + "/" + std::to_string(delegate_index) +
+        "/" + key;
+  }
+
+  mutable std::unordered_map<std::string, std::vector<uint8_t>> store_;
 };
 
 constexpr size_t kDefaultNonConstMemBytes = 32 * 1024;
@@ -788,6 +861,203 @@ TEST_P(BackendIntegrationTest, NoRuntimeSpecsWhenBackendNotInMap) {
   // (because StubBackend wasn't in the map)
   EXPECT_TRUE(init_called);
   EXPECT_EQ(received_specs_size, 0);
+}
+
+TEST_P(BackendIntegrationTest, CacheHitSkipsInit) {
+  // Provide a cache and an init_from_cache that succeeds. init() should
+  // never be called and the processed data segment should not be loaded.
+  InMemoryBackendCache cache;
+  bool init_from_cache_called = false;
+  bool init_called = false;
+
+  StubBackend::singleton().install_init_from_cache(
+      [&](ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED BackendInitContext& context) -> Result<DelegateHandle*> {
+        init_from_cache_called = true;
+        return nullptr;
+      });
+
+  StubBackend::singleton().install_init(
+      [&](FreeableBuffer* processed,
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED BackendInitContext& context) -> Result<DelegateHandle*> {
+        init_called = true;
+        return nullptr;
+      });
+
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+  DataLoaderSpy spy_loader(&loader.get());
+
+  Result<Program> program = Program::load(&spy_loader);
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = program->load_method(
+      "forward",
+      &mmm.get(),
+      /*event_tracer=*/nullptr,
+      /*named_data_map=*/nullptr,
+      /*backend_options=*/nullptr,
+      /*backend_cache=*/&cache);
+  EXPECT_TRUE(method.ok());
+
+  EXPECT_TRUE(init_from_cache_called);
+  EXPECT_FALSE(init_called);
+
+  // When using segments, the backend processed data segment should not have
+  // been loaded since the cache hit avoided it.
+  if (using_segments()) {
+    EXPECT_FALSE(spy_loader.UsedLoad(
+        DataLoader::SegmentInfo::Type::Backend, "StubBackend"));
+  }
+}
+
+TEST_P(BackendIntegrationTest, CacheMissFallsThrough) {
+  // init_from_cache returns NotSupported → normal init() path is taken.
+  InMemoryBackendCache cache;
+  bool init_from_cache_called = false;
+  bool init_called = false;
+  const void* processed_data = nullptr;
+
+  StubBackend::singleton().install_init_from_cache(
+      [&](ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED BackendInitContext& context) -> Result<DelegateHandle*> {
+        init_from_cache_called = true;
+        return Error::NotSupported;
+      });
+
+  StubBackend::singleton().install_init(
+      [&](FreeableBuffer* processed,
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED BackendInitContext& context) -> Result<DelegateHandle*> {
+        init_called = true;
+        processed_data = processed->data();
+        processed->Free();
+        return nullptr;
+      });
+
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = program->load_method(
+      "forward",
+      &mmm.get(),
+      /*event_tracer=*/nullptr,
+      /*named_data_map=*/nullptr,
+      /*backend_options=*/nullptr,
+      /*backend_cache=*/&cache);
+  EXPECT_TRUE(method.ok());
+
+  EXPECT_TRUE(init_from_cache_called);
+  EXPECT_TRUE(init_called);
+  EXPECT_NE(processed_data, nullptr);
+}
+
+TEST_P(BackendIntegrationTest, CacheErrorFailsLoad) {
+  // init_from_cache returns an error other than NotSupported → load_method
+  // should propagate the error.
+  InMemoryBackendCache cache;
+
+  StubBackend::singleton().install_init_from_cache(
+      [&](ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED BackendInitContext& context) -> Result<DelegateHandle*> {
+        return Error::InvalidState;
+      });
+
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = program->load_method(
+      "forward",
+      &mmm.get(),
+      /*event_tracer=*/nullptr,
+      /*named_data_map=*/nullptr,
+      /*backend_options=*/nullptr,
+      /*backend_cache=*/&cache);
+  EXPECT_EQ(method.error(), Error::InvalidState);
+}
+
+TEST_P(BackendIntegrationTest, NoCacheSkipsInitFromCache) {
+  // No BackendCache provided → init_from_cache is never called,
+  // init() proceeds normally.
+  bool init_from_cache_called = false;
+  bool init_called = false;
+
+  StubBackend::singleton().install_init_from_cache(
+      [&](ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED BackendInitContext& context) -> Result<DelegateHandle*> {
+        init_from_cache_called = true;
+        return Error::NotSupported;
+      });
+
+  StubBackend::singleton().install_init(
+      [&](FreeableBuffer* processed,
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED BackendInitContext& context) -> Result<DelegateHandle*> {
+        init_called = true;
+        processed->Free();
+        return nullptr;
+      });
+
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  // No backend_cache parameter — uses the default nullptr.
+  Result<Method> method = program->load_method("forward", &mmm.get());
+  EXPECT_TRUE(method.ok());
+
+  EXPECT_FALSE(init_from_cache_called);
+  EXPECT_TRUE(init_called);
+}
+
+TEST_P(BackendIntegrationTest, CacheAvailableInContext) {
+  // When a BackendCache is provided, context.get_cache() returns a non-null
+  // DelegateBackendCache* during init().
+  InMemoryBackendCache cache;
+  bool init_called = false;
+  executorch::runtime::DelegateBackendCache* observed_cache = nullptr;
+
+  StubBackend::singleton().install_init(
+      [&](FreeableBuffer* processed,
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          BackendInitContext& context) -> Result<DelegateHandle*> {
+        init_called = true;
+        observed_cache = context.get_cache();
+        processed->Free();
+        return nullptr;
+      });
+
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = program->load_method(
+      "forward",
+      &mmm.get(),
+      /*event_tracer=*/nullptr,
+      /*named_data_map=*/nullptr,
+      /*backend_options=*/nullptr,
+      /*backend_cache=*/&cache);
+  EXPECT_TRUE(method.ok());
+
+  EXPECT_TRUE(init_called);
+  EXPECT_NE(observed_cache, nullptr);
 }
 
 // TODO: Add more tests for the runtime-to-backend interface. E.g.:

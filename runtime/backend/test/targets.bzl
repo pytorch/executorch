@@ -42,3 +42,12 @@ def define_common_targets():
             "//executorch/runtime/backend:interface",
         ],
     )
+
+    runtime.cxx_test(
+        name = "backend_cache_test",
+        srcs = ["backend_cache_test.cpp"],
+        deps = [
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/backend:interface",
+        ],
+    )

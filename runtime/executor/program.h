@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <optional>
 
+#include <executorch/runtime/backend/backend_cache.h>
 #include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/core/error.h>
@@ -151,7 +152,8 @@ class Program final {
       MemoryManager* memory_manager,
       EventTracer* event_tracer = nullptr,
       const NamedDataMap* named_data_map = nullptr,
-      const LoadBackendOptionsMap* backend_options = nullptr) const;
+      const LoadBackendOptionsMap* backend_options = nullptr,
+      BackendCache* backend_cache = nullptr) const;
 
   /**
    * Gathers metadata for the named method.
