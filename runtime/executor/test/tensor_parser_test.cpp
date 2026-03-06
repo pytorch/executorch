@@ -250,8 +250,8 @@ struct FlatVectorInt32 {
 };
 } // namespace
 
-// TOB-EXECUTORCH-8: parseTensorList should return an error when the EValue
-// at the given index is not a Tensor, instead of aborting.
+// parseTensorList should return an error when the EValue at the given index
+// is not a Tensor, instead of aborting.
 TEST_F(TensorParserTest, ParseTensorListRejectsNonTensorEValue) {
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
 
@@ -265,11 +265,11 @@ TEST_F(TensorParserTest, ParseTensorListRejectsNonTensorEValue) {
   auto* indices = FlatVectorInt32::create(vec_buf, {0});
 
   auto result = parseTensorList(indices, values, 2, &mmm.get());
-  EXPECT_NE(result.error(), Error::Ok);
+  EXPECT_EQ(result.error(), Error::InvalidType);
 }
 
-// TOB-EXECUTORCH-6: parseListOptionalType should return an error when the
-// EValue at the given index is neither None nor the expected type.
+// parseListOptionalType should return an error when the EValue at the given
+// index is neither None nor the expected type.
 TEST_F(TensorParserTest, ParseListOptionalTypeRejectsWrongType) {
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
 
@@ -282,7 +282,6 @@ TEST_F(TensorParserTest, ParseListOptionalTypeRejectsWrongType) {
   std::vector<uint8_t> vec_buf;
   auto* indices = FlatVectorInt32::create(vec_buf, {0});
 
-  auto result =
-      parseListOptionalType<Tensor>(indices, values, 2, &mmm.get());
-  EXPECT_NE(result.error(), Error::Ok);
+  auto result = parseListOptionalType<Tensor>(indices, values, 2, &mmm.get());
+  EXPECT_EQ(result.error(), Error::InvalidType);
 }
