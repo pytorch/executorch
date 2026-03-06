@@ -223,10 +223,9 @@ add_subdirectory(third-party)
 
 # Size-optimized builds disable exceptions, RTTI, and unwind tables.
 # ExecuTorch's runtime uses Result<T>/Error instead of exceptions, so
-# -fno-exceptions is safe. Suppressing .eh_frame via -fno-unwind-tables
-# is safe because exceptions are disabled. Placed after
-# add_subdirectory(third-party) to avoid leaking into third-party
-# configure checks (e.g. gflags).
+# -fno-exceptions is safe. Suppressing .eh_frame via -fno-unwind-tables is safe
+# because exceptions are disabled. Placed after add_subdirectory(third-party) to
+# avoid leaking into third-party configure checks (e.g. gflags).
 if(EXECUTORCH_OPTIMIZE_SIZE
    AND NOT WIN32
    AND NOT MSVC
