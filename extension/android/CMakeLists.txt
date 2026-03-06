@@ -228,8 +228,8 @@ endif()
 
 # Hook for extended build targets (e.g., internal or partner-specific JNI
 # extensions). This is a no-op when extended_targets/ does not exist.
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/extended_targets/CMakeLists.txt")
-  include("${CMAKE_CURRENT_SOURCE_DIR}/extended_targets/CMakeLists.txt")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fb/extended_targets/CMakeLists.txt")
+  include("${CMAKE_CURRENT_SOURCE_DIR}/fb/extended_targets/CMakeLists.txt")
 endif()
 
 target_include_directories(
