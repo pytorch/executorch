@@ -5,6 +5,62 @@ TensorRT is NVIDIA's high-performance deep learning inference optimizer and
 runtime library. The delegate leverages TensorRT to accelerate model execution
 on NVIDIA GPUs.
 
+## Getting Started
+
+### Clone and Install
+
+```bash
+git clone --recurse-submodules https://github.com/pytorch/executorch.git
+cd executorch
+
+python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
+
+# Install TensorRT (x86_64 only — Jetson has it pre-installed via JetPack)
+pip install tensorrt>=10.3
+
+# Install ExecuTorch (auto-detects TensorRT and links it into pybindings)
+./install_executorch.sh --editable
+```
+
+> **Note for Jetson users:** TensorRT is pre-installed via JetPack SDK. The
+> backend automatically detects Jetson hardware and uses the system TensorRT
+> and other system/user-installed packages (e.g. `onnx`) — no additional
+> `pip install` needed.
+
+### Build C++ Components
+
+```bash
+cmake -B cmake-out \
+  -DEXECUTORCH_BUILD_TENSORRT=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
+  -DCMAKE_BUILD_TYPE=Release
+
+cmake --build cmake-out --target tensorrt_executor_runner -j$(nproc)
+```
+
+### Export and Run Models
+
+```bash
+# Export a single model
+python -m executorch.examples.nvidia.tensorrt.export -m add
+
+# Export all supported models
+python -m executorch.examples.nvidia.tensorrt.export
+
+# Run inference with the C++ runner
+./cmake-out/backends/nvidia/tensorrt/tensorrt_executor_runner --model_path=add_tensorrt.pte
+```
+
+> **Jetson memory tip:** On memory-constrained devices (e.g., Orin Nano 8GB),
+> export models one at a time to avoid OOM during TRT engine building:
+> ```bash
+> for m in add mv3 resnet18; do
+>     python -m executorch.examples.nvidia.tensorrt.export -m "$m"
+> done
+> ```
+
 ## Prerequisites
 
 ### TensorRT Installation
@@ -34,11 +90,6 @@ pip install tensorrt>=10.3
 Alternatively, download and install from the
 [NVIDIA TensorRT Download Page](https://developer.nvidia.com/tensorrt).
 
-#### Windows x86_64
-
-Download and install from the
-[NVIDIA TensorRT Download Page](https://developer.nvidia.com/tensorrt).
-
 ### Additional Requirements
 
 - **CUDA Toolkit**: TensorRT requires a compatible CUDA installation
@@ -48,10 +99,9 @@ Download and install from the
 ## Supported Platforms
 
 | Platform | Architecture | TensorRT Source |
-|----------|-------------|-----------------|
+|----------|-------------|------------------|
 | Linux | x86_64 | pip or NVIDIA installer |
 | Linux (Jetson) | aarch64 | Pre-installed via JetPack |
-| Windows | x86_64 | NVIDIA installer |
 
 ## Configuration Options
 
@@ -73,6 +123,70 @@ Download and install from the
   compatibility)
 - **Recommended**: TensorRT 10.6 or later for best performance and feature
   support
+
+## Python API
+
+```python
+import torch
+from torch.export import export
+from executorch.exir import to_edge_transform_and_lower
+from executorch.backends.nvidia.tensorrt import TensorRTPartitioner
+
+# Define your model
+class MyModel(torch.nn.Module):
+    def forward(self, x, y):
+        return x + y
+
+model = MyModel()
+example_inputs = (torch.randn(2, 3), torch.randn(2, 3))
+
+# Export and lower to TensorRT
+with torch.no_grad():
+    exported = export(model, example_inputs)
+
+edge_program = to_edge_transform_and_lower(
+    exported,
+    partitioner=[TensorRTPartitioner()],
+)
+
+# Save the .pte file
+exec_prog = edge_program.to_executorch()
+with open("model_tensorrt.pte", "wb") as f:
+    exec_prog.write_to_file(f)
+```
+
+## Supported Operations
+
+| Category | Operations |
+|----------|-----------|
+| Elementwise | add, sub, mul, div, mm, relu |
+| Reshape | view, reshape, squeeze, unsqueeze, permute, contiguous, clone |
+
+## Jetson Deployment
+
+### Performance Tuning
+
+```bash
+sudo nvpmodel -m 0    # Max performance mode
+sudo jetson_clocks     # Lock clocks for consistent benchmarking
+```
+
+### DLA Support
+
+For models that support it, you can use NVIDIA's Deep Learning Accelerator:
+```python
+compile_spec = TensorRTCompileSpec(
+    dla_core=0,
+    allow_gpu_fallback=True,
+)
+```
+
+### Memory Management
+
+On memory-constrained Jetson devices, free RAM before export:
+```bash
+sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches && echo 1 > /proc/sys/vm/compact_memory'
+```
 
 ## Blob Format
 
@@ -107,13 +221,12 @@ The TensorRT delegate uses a custom binary blob format:
 - cuDNN 8.x
 - PyTorch 2.x with CUDA support (for export)
 
-## Build Instructions
+## Troubleshooting
 
-```bash
-cd executorch
-mkdir -p cmake-out && cd cmake-out
-
-cmake .. -DEXECUTORCH_BUILD_TENSORRT=ON
-
-cmake --build . --target tensorrt_backend tensorrt_executor_runner
-```
+| Issue | Fix |
+|-------|-----|
+| `Backend TensorRTBackend is not registered` | Ensure TensorRT is installed, then re-run `./install_executorch.sh --editable` |
+| `ModuleNotFoundError: tensorrt` | On x86_64: `pip install tensorrt>=10.3`. On Jetson: auto-detected |
+| CMake can't find TensorRT | Set `-DTENSORRT_HOME=/path/to/tensorrt` |
+| OOM during TRT engine building | Export models one at a time; free memory first |
+| `extension_module not found` | Add `-DEXECUTORCH_BUILD_EXTENSION_MODULE=ON` to cmake |
