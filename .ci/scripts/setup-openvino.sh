@@ -11,8 +11,8 @@ set -ex
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
 # Download and install OpenVINO from release packages
-OPENVINO_VERSION="2025.3"
-OPENVINO_BUILD="2025.3.0.19807.44526285f24"
+OPENVINO_VERSION="2026.0"
+OPENVINO_BUILD="2026.0.0.20965.c6d6a13a886"
 OPENVINO_URL="https://storage.openvinotoolkit.org/repositories/openvino/packages/${OPENVINO_VERSION}/linux/openvino_toolkit_ubuntu22_${OPENVINO_BUILD}_x86_64.tgz"
 
 curl -Lo /tmp/openvino_toolkit.tgz --retry 3 --fail ${OPENVINO_URL}
