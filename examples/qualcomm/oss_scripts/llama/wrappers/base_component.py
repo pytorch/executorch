@@ -39,37 +39,6 @@ class Mode(Enum):
     DECODE = 2
 
 
-def is_node_src_start_with_name(node: torch.fx.Node, prefix: str) -> bool:
-    """
-    Return True if any NodeSource in node.meta['from_node']
-    has a `name` starting with `prefix`.
-    """
-
-    def has_source_name_prefix(
-        node_src: torch.fx.traceback.NodeSource, prefix: str
-    ) -> bool:
-
-        name = getattr(node_src, "name", None)
-        if isinstance(name, str) and name.startswith(prefix):
-            return True
-
-        children = getattr(node_src, "from_node", None)
-        if not children:
-            return False
-
-        for src in children:
-            if has_source_name_prefix(src, prefix):
-                return True
-
-        return False
-
-    node_srcs = node.meta.get("from_node", None)
-    if not node_srcs:
-        return False
-
-    return any(has_source_name_prefix(node_src, prefix) for node_src in node_srcs)
-
-
 def log_info(func):
     class TimeIt:
         def __init__(self, event):
