@@ -1049,7 +1049,9 @@ class StreamingAudioEncoderExport(nn.Module):
     ) -> torch.Tensor:
         # Auto-reset conv states at the start of each new session (enc_input_pos[0] == 0).
         # Using tensor ops (not .item()) avoids constant-folding during export.
-        is_start = (enc_input_pos[:1] == 0).view(1, 1, 1).to(self.conv1_state.dtype)
+        # .float() instead of .to(conv1_state.dtype) — Metal shader codegen
+        # doesn't support implicit float-to-bfloat literal conversion.
+        is_start = (enc_input_pos[:1] == 0).view(1, 1, 1).float()
         self.conv1_state.mul_(1.0 - is_start)
         self.conv2_state.mul_(1.0 - is_start)
 
