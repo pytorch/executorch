@@ -25,6 +25,16 @@ python export_lcm.py \
     --device CPU \
     --dtype fp16
 ```
+
+To quantize the Unet with 8a8w and weights-only 16a8w quantize other models
+```bash
+python export_lcm.py \
+    --model_id SimianLuo/LCM_Dreamshaper_v7 \
+    --output_dir ./lcm_models \
+    --device CPU \
+    --dtype int8
+```
+
 This will create three files in `./lcm_models/`:
 - `text_encoder.pte`
 - `unet.pte`
@@ -33,6 +43,7 @@ This will create three files in `./lcm_models/`:
 ### Generate Images
 
 Run inference with the exported model:
+Note: For quantized models, pass `--dtype int8`
 
 ```bash
 python openvino_lcm.py \
