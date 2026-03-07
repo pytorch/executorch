@@ -79,6 +79,7 @@ def get_passes_dependency_for_capture_program():
         RecomposePixelUnshuffle,
         RecomposeRmsNorm,
         RemoveRedundancy,
+        ResolveDebugHandle,
         TagQuantIO,
     )
 
@@ -110,6 +111,9 @@ def get_passes_dependency_for_capture_program():
         RecomposePixelUnshuffle: [RemoveRedundancy],
         RecomposeRmsNorm: [RemoveRedundancy],
         TagQuantIO: [LayoutTransform],
+        ResolveDebugHandle: [
+            TagQuantIO
+        ],  # IMPORTANT: Please always ensure ResolveDebugHandle is the last executed pass.
     }
 
 
