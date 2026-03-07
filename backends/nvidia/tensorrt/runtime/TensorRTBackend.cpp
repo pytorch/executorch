@@ -150,38 +150,38 @@ Error TensorRTBackend::execute(
     return Error::InvalidState;
   }
 
-  size_t num_inputs = executor->get_num_inputs();
+  size_t num_engine_inputs = executor->get_num_inputs();
   size_t num_outputs = executor->get_num_outputs();
 
-  // ExecuTorch passes [inputs..., outputs...] in args (same as CUDA backend).
-  if (args.size() < num_inputs + num_outputs) {
-    ET_LOG(
-        Error,
-        "args size %zu < inputs %zu + outputs %zu",
-        args.size(),
-        num_inputs,
-        num_outputs);
-    return Error::InvalidArgument;
-  }
+  // ExecuTorch passes [inputs..., outputs...] in args. The delegate may
+  // receive more input args than the TRT engine expects because SymInt
+  // placeholder args (Int EValues for dynamic shape dimensions) are passed
+  // by the framework but not consumed by the engine. Count ALL input args
+  // (tensors + SymInts) to find where outputs start.
+  size_t num_all_input_args = args.size() - num_outputs;
 
-  // Extract input pointers and shapes.
-  // Some inputs may be shape tensors (Int EValues carrying dimension values
-  // for dynamic shapes) rather than data tensors. When TRT expects a different
-  // dtype than the ET tensor (e.g., Float vs Half), use a staging buffer.
-  std::vector<void*> input_buffers(num_inputs);
-  std::vector<std::vector<int64_t>> input_shapes(num_inputs);
-  std::vector<int32_t> shape_tensor_vals(num_inputs);
-  std::vector<std::vector<uint8_t>> input_staging(num_inputs);
-  for (size_t i = 0; i < num_inputs; ++i) {
-    if (executor->is_input_shape_tensor(i) || args[i]->isInt()) {
-      // Int EValues carry scalar dimension values for dynamic shapes.
-      // TRT shape tensors expect host memory (handled by executor).
-      // Non-shape-tensor int inputs are "unused" by TRT but still need
-      // a valid buffer pointer — a host int32 works fine.
-      int64_t val = args[i]->toInt();
-      shape_tensor_vals[i] = static_cast<int32_t>(val);
-      input_buffers[i] = &shape_tensor_vals[i];
-      input_shapes[i] = {1};
+  // Extract input pointers and shapes, skipping Int EValues (SymInts).
+  // Only tensor args are passed to the TRT executor.
+  std::vector<void*> input_buffers(num_engine_inputs);
+  std::vector<std::vector<int64_t>> input_shapes(num_engine_inputs);
+  std::vector<int32_t> shape_tensor_vals(num_engine_inputs);
+  std::vector<std::vector<uint8_t>> input_staging(num_engine_inputs);
+  size_t engine_input_idx = 0;
+  for (size_t i = 0; i < num_all_input_args; ++i) {
+    if (args[i]->isInt()) {
+      // SymInt placeholder — skip, not a TRT engine input.
+      continue;
+    }
+    if (engine_input_idx >= num_engine_inputs) {
+      break;
+    }
+    size_t idx = engine_input_idx;
+    if (executor->is_input_shape_tensor(idx)) {
+      // Shape tensor input in the engine — read int value.
+      int64_t val = args[i]->isInt() ? args[i]->toInt() : 0;
+      shape_tensor_vals[idx] = static_cast<int32_t>(val);
+      input_buffers[idx] = &shape_tensor_vals[idx];
+      input_shapes[idx] = {1};
     } else {
       auto& tensor = args[i]->toTensor();
       auto sizes = tensor.sizes();
@@ -202,9 +202,10 @@ Error TensorRTBackend::execute(
         }
         input_buffers[i] = input_staging[i].data();
       } else {
-        input_buffers[i] = tensor.mutable_data_ptr();
+        input_buffers[idx] = tensor.mutable_data_ptr();
       }
     }
+    ++engine_input_idx;
   }
 
   // Extract output pointers. When TRT outputs a different dtype than the
@@ -220,7 +221,7 @@ Error TensorRTBackend::execute(
       output_buffers[i] = &output_shape_tensor_vals[i];
       continue;
     }
-    auto& tensor = args[i + num_inputs]->toTensor();
+    auto& tensor = args[i + num_all_input_args]->toTensor();
     size_t trt_elem = executor->get_output_dtype_size(i);
     size_t et_elem = tensor.element_size();
     if (trt_elem != et_elem) {
@@ -234,7 +235,7 @@ Error TensorRTBackend::execute(
   auto err = executor->execute(
       input_buffers.data(),
       input_shapes,
-      num_inputs,
+      num_engine_inputs,
       output_buffers.data(),
       num_outputs);
 
@@ -247,7 +248,7 @@ Error TensorRTBackend::execute(
     if (executor->is_output_shape_tensor(i) || output_staging[i].empty()) {
       continue;
     }
-    auto& tensor = args[i + num_inputs]->toTensor();
+    auto& tensor = args[i + num_all_input_args]->toTensor();
     size_t trt_elem = executor->get_output_dtype_size(i);
     size_t et_elem = tensor.element_size();
     auto numel = static_cast<size_t>(tensor.numel());
@@ -288,7 +289,7 @@ Error TensorRTBackend::execute(
     }
     const auto& shape = executor->get_output_shape(i);
     if (!shape.empty()) {
-      auto& tensor = args[i + num_inputs]->toTensor();
+      auto& tensor = args[i + num_all_input_args]->toTensor();
       auto current = tensor.sizes();
       bool needs_resize = (static_cast<size_t>(current.size()) != shape.size());
       if (!needs_resize) {

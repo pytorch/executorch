@@ -1270,7 +1270,9 @@ def convert_constant_pad_nd(
         raise ValueError(f"Input must be a node, got {type(input_node)}")
 
     input_trt = input_map[input_node]
-    input_shape = list(input_trt.shape)
+    from executorch.backends.nvidia.tensorrt.converter_utils import get_safe_shape, get_node_shape
+    raw_shape = get_node_shape(input_node)
+    input_shape = list(raw_shape) if raw_shape else get_safe_shape(input_trt)
     ndim = len(input_shape)
     num_padded_dims = len(pad) // 2
 

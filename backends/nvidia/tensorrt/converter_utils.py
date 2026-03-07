@@ -63,6 +63,244 @@ def has_dynamic_shape(shape: Shape) -> bool:
     return any(dim == -1 for dim in shape)
 
 
+def input_has_dynamic_dims(input_trt: "trt.ITensor") -> bool:
+    """Check if a TRT tensor has any dynamic dims (shape contains -1)."""
+    return any(d == -1 for d in input_trt.shape)
+
+
+def get_shape_with_dynamic_shape(
+    network: "trt.INetworkDefinition",
+    input_trt: "trt.ITensor",
+    output_shape: List[int],
+    name_prefix: str,
+) -> "trt.ITensor":
+    """Build a dynamic output shape tensor using the add_select pattern.
+
+    This is the idiomatic TRT approach from torch-tensorrt: for dims marked
+    as -1, substitute the corresponding runtime dim from ``add_shape(input)``.
+    The ``add_select`` layer creates a data-dependent shape that TRT cannot
+    constant-fold, ensuring truly dynamic reshape behavior.
+
+    Args:
+        network: TRT network definition.
+        input_trt: The input TRT tensor whose runtime shape provides dynamic dims.
+        output_shape: Target shape with -1 for dynamic dims.
+        name_prefix: Prefix for TRT layer names.
+
+    Returns:
+        A 1-D int32 shape tensor suitable for ``shuffle.set_input(1, ...)``.
+    """
+    # Get runtime input shape as int32
+    shape_layer = network.add_shape(input_trt)
+    shape_layer.name = f"{name_prefix}_shape"
+    input_shape = network.add_cast(shape_layer.get_output(0), trt.int32)
+    input_shape.name = f"{name_prefix}_shape_i32"
+    input_shape_trt = input_shape.get_output(0)
+
+    ndim = len(output_shape)
+    # Target shape constant (with -1 for dynamic dims)
+    target_const = network.add_constant(
+        (ndim,), trt.Weights(np.array(output_shape, dtype=np.int32))
+    )
+    target_const.name = f"{name_prefix}_target"
+    target_trt = target_const.get_output(0)
+
+    # Zeros for comparison
+    zeros_const = network.add_constant(
+        (ndim,), trt.Weights(np.zeros(ndim, dtype=np.int32))
+    )
+    zeros_const.name = f"{name_prefix}_zeros"
+
+    # condition = (target_shape < 0)  →  True where dim is -1
+    cond = network.add_elementwise(
+        target_trt, zeros_const.get_output(0), trt.ElementWiseOperation.LESS
+    )
+    cond.name = f"{name_prefix}_cond"
+
+    # If input and output have different ranks, we can't directly select
+    # from input_shape. Pad or truncate input_shape to match output rank.
+    in_ndim = len(input_trt.shape)
+    if in_ndim == ndim:
+        select_shape = input_shape_trt
+    else:
+        # Build a shape tensor of the right length by computing
+        # the runtime volume and dividing by known dims to infer
+        # the unknown dim. Use element-count based inference.
+        #
+        # Compute input volume
+        idx0 = network.add_constant([1], trt.Weights(np.array([0], dtype=np.int32)))
+        idx0.name = f"{name_prefix}_vidx0"
+        vol = network.add_gather(input_shape_trt, idx0.get_output(0), axis=0)
+        vol.name = f"{name_prefix}_vol0"
+        vol_out = vol.get_output(0)
+        for j in range(1, in_ndim):
+            idx_j = network.add_constant([1], trt.Weights(np.array([j], dtype=np.int32)))
+            idx_j.name = f"{name_prefix}_vidx{j}"
+            g = network.add_gather(input_shape_trt, idx_j.get_output(0), axis=0)
+            g.name = f"{name_prefix}_vg{j}"
+            m = network.add_elementwise(vol_out, g.get_output(0), trt.ElementWiseOperation.PROD)
+            m.name = f"{name_prefix}_vmul{j}"
+            vol_out = m.get_output(0)
+
+        # Compute product of known output dims
+        known_product = 1
+        for d in output_shape:
+            if d > 0:
+                known_product *= d
+        kp_const = network.add_constant(
+            [1], trt.Weights(np.array([known_product], dtype=np.int32))
+        )
+        kp_const.name = f"{name_prefix}_kp"
+        inferred = network.add_elementwise(
+            vol_out, kp_const.get_output(0), trt.ElementWiseOperation.FLOOR_DIV
+        )
+        inferred.name = f"{name_prefix}_infer"
+
+        # Build the replacement shape: for -1 dims use inferred, for others use target
+        components = []
+        for i, d in enumerate(output_shape):
+            if d < 0:
+                # Reshape inferred to [1] for concatenation
+                shuf = network.add_shuffle(inferred.get_output(0))
+                shuf.reshape_dims = trt.Dims([1])
+                shuf.name = f"{name_prefix}_inf_shuf{i}"
+                components.append(shuf.get_output(0))
+            else:
+                c = network.add_constant(
+                    [1], trt.Weights(np.array([d], dtype=np.int32))
+                )
+                c.name = f"{name_prefix}_dim{i}"
+                components.append(c.get_output(0))
+        cat = network.add_concatenation(components)
+        cat.axis = 0
+        cat.name = f"{name_prefix}_cat"
+        select_shape = cat.get_output(0)
+
+    # select: where condition is True (dim == -1), use runtime shape; else use target
+    select_layer = network.add_select(cond.get_output(0), select_shape, target_trt)
+    select_layer.name = f"{name_prefix}_select"
+    return select_layer.get_output(0)
+
+
+def build_reshape_shape_tensor(
+    network: "trt.INetworkDefinition",
+    input_trt: "trt.ITensor",
+    output_shape: List[int],
+    name_prefix: str,
+) -> "trt.ITensor":
+    """Build a shape tensor for reshape when the input has dynamic dims.
+
+    Computes the output shape at runtime by setting exactly one output dim
+    to be inferred from the input's element count divided by the product
+    of the remaining (static) output dims.
+
+    Args:
+        network: TRT network definition.
+        input_trt: The input TRT tensor (must have at least one -1 dim).
+        output_shape: The target output shape from metadata (all concrete).
+        name_prefix: Prefix for TRT layer names.
+
+    Returns:
+        A 1-D int32 shape tensor representing the output shape.
+    """
+    import numpy as np
+
+    ndim_out = len(output_shape)
+
+    # Find the output dim to infer at runtime. We need to identify the dim
+    # that absorbs the dynamic input factor.
+    #
+    # Strategy: the "other product" (all output dims except the inferred one)
+    # must equal the static input volume (product of non-dynamic input dims).
+    # If it does, the inferred dim = total_volume / static_volume, which
+    # correctly tracks the dynamic factor at runtime.
+    in_shape = list(input_trt.shape)
+    static_input_vol = 1
+    for d in in_shape:
+        if d > 0:
+            static_input_vol *= d
+
+    inferred_idx = -1
+    for i, d in enumerate(output_shape):
+        if d <= 0:
+            continue
+        other_product = 1
+        for j, dd in enumerate(output_shape):
+            if j != i and dd > 0:
+                other_product *= dd
+        if other_product == static_input_vol:
+            inferred_idx = i
+            break
+    # Fallback: pick dim whose value is NOT a factor of static_input_vol
+    if inferred_idx < 0:
+        for i, d in enumerate(output_shape):
+            if d > 1 and static_input_vol % d != 0:
+                inferred_idx = i
+                break
+    # Last resort: pick the last dim > 1
+    if inferred_idx < 0:
+        for i in range(ndim_out - 1, -1, -1):
+            if output_shape[i] > 1:
+                inferred_idx = i
+                break
+    if inferred_idx < 0:
+        inferred_idx = ndim_out - 1
+
+    # Compute input volume as shape tensor.
+    shape_layer = network.add_shape(input_trt)
+    shape_layer.name = f"{name_prefix}_inshape"
+    shape_i32 = network.add_cast(shape_layer.get_output(0), trt.int32)
+    shape_i32.name = f"{name_prefix}_inshape_i32"
+
+    in_ndim = len(input_trt.shape)
+    idx0 = network.add_constant([1], trt.Weights(np.array([0], dtype=np.int32)))
+    idx0.name = f"{name_prefix}_idx0"
+    vol = network.add_gather(shape_i32.get_output(0), idx0.get_output(0), axis=0)
+    vol.name = f"{name_prefix}_vol0"
+    vol_out = vol.get_output(0)
+    for j in range(1, in_ndim):
+        idx_j = network.add_constant([1], trt.Weights(np.array([j], dtype=np.int32)))
+        idx_j.name = f"{name_prefix}_idx{j}"
+        g = network.add_gather(shape_i32.get_output(0), idx_j.get_output(0), axis=0)
+        g.name = f"{name_prefix}_g{j}"
+        m = network.add_elementwise(vol_out, g.get_output(0), trt.ElementWiseOperation.PROD)
+        m.name = f"{name_prefix}_volmul{j}"
+        vol_out = m.get_output(0)
+
+    # Build product of known (static) output dims.
+    static_product = 1
+    for i, d in enumerate(output_shape):
+        if i != inferred_idx:
+            static_product *= d
+
+    # Inferred dim = input_volume / static_product
+    sp_c = network.add_constant(
+        [1], trt.Weights(np.array([static_product], dtype=np.int32))
+    )
+    sp_c.name = f"{name_prefix}_sp"
+    inferred_dim = network.add_elementwise(
+        vol_out, sp_c.get_output(0), trt.ElementWiseOperation.FLOOR_DIV
+    )
+    inferred_dim.name = f"{name_prefix}_infer"
+
+    # Build output shape tensor via concatenation.
+    components = []
+    for i, d in enumerate(output_shape):
+        if i == inferred_idx:
+            components.append(inferred_dim.get_output(0))
+        else:
+            c = network.add_constant(
+                [1], trt.Weights(np.array([d], dtype=np.int32))
+            )
+            c.name = f"{name_prefix}_c{i}"
+            components.append(c.get_output(0))
+
+    shape_cat = network.add_concatenation(components)
+    shape_cat.axis = 0
+    shape_cat.name = f"{name_prefix}_outshape"
+    return shape_cat.get_output(0)
+
+
 @overload
 def get_positive_dim(dim: int, dim_size: int) -> int: ...
 

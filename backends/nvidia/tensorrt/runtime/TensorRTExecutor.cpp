@@ -293,14 +293,16 @@ Error TensorRTExecutor::allocate_gpu_buffers() {
           for (int d = 0; d < dims.nbDims; ++d) {
             n *= static_cast<size_t>(dims.d[d] > 0 ? dims.d[d] : 1);
           }
-          context_->setInputShape(name, dims);
-          // Allocate a temporary host buffer for this shape tensor
-          // so we can call setTensorAddress during pre-allocation inference.
+          // Set max profile values as the initial shape tensor content
+          // so TRT can infer max output buffer sizes for pre-allocation.
           std::vector<int32_t> host_buf(n);
           for (size_t j = 0; j < n; ++j) {
             host_buf[j] = max_vals[j];
           }
           context_->setTensorAddress(name, host_buf.data());
+          // setInputShape for shape tensors takes the TENSOR's own
+          // dimensions (e.g., (1,) for a scalar), not the values.
+          context_->setInputShape(name, dims);
         }
       } else {
         auto max_dims = engine_->getProfileShape(
@@ -478,11 +480,18 @@ Error TensorRTExecutor::execute(
         continue;
       const char* name = engine_->getIOTensorName(buf.tensor_index);
       if (buf.is_shape_tensor) {
-        // Write int32 value(s) from input_buffers to host buffer
+        // Write int32 value(s) from input_buffers to host buffer.
+        // The values are communicated to TRT via the host memory
+        // pointed to by setTensorAddress.
         std::memcpy(buf.ptr, input_buffers[buf.io_index], buf.size);
-        auto static_dims = engine_->getTensorShape(name);
-        context_->setInputShape(name, static_dims);
         context_->setTensorAddress(name, buf.ptr);
+        // For shape tensors, setInputShape must pass the TENSOR's own
+        // dimensions (e.g., (1,) for a scalar shape tensor), NOT the
+        // values. TRT reads values from the host buffer at the address
+        // set above. Passing values as dims causes "Static dimension
+        // mismatch" errors.
+        auto tensor_dims = engine_->getTensorShape(name);
+        context_->setInputShape(name, tensor_dims);
         continue;
       }
       const auto& shape = input_shapes[buf.io_index];

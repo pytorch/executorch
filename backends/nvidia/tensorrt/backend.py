@@ -89,6 +89,12 @@ class TensorRTBackend(BackendDetails):
         input_nodes = _get_input_nodes(graph_module, edge_program)
         output_nodes = _get_output_nodes(graph_module)
 
+        # Pre-compute shape tensor ranges BEFORE network build, which
+        # concretizes SymInt expressions.
+        precomputed_shape_ranges = _precompute_shape_tensor_ranges(
+            input_nodes, edge_program
+        )
+
         # Create TensorRT builder and network
         trt_logger = trt.Logger(trt.Logger.VERBOSE)
         builder = trt.Builder(trt_logger)
@@ -118,7 +124,8 @@ class TensorRTBackend(BackendDetails):
         # Configure and build engine
         config = _create_builder_config(builder, spec, trt)
         _add_optimization_profile(
-            builder, config, network, input_nodes, edge_program, trt
+            builder, config, network, input_nodes, edge_program, trt,
+            precomputed_shape_ranges=precomputed_shape_ranges,
         )
         serialized_engine = builder.build_serialized_network(network, config)
 
@@ -337,7 +344,9 @@ def _eval_symint_range(
         if sym_name in sym_ranges:
             lo, hi = sym_ranges[sym_name]
             min_subs[sym] = lo
-            # hi may be None (unbounded from Dim.AUTO); cap at opt.
+            # hi may be None (unbounded from Dim.AUTO); cap at opt
+            # since the trace-time value represents the model's max
+            # capacity (e.g., encoder.max_audio_length).
             max_subs[sym] = hi if hi is not None else opt
         else:
             # Unknown symbol — pin to trace-time value.
@@ -462,13 +471,17 @@ def _add_network_inputs(
     """
     input_map: Dict[torch.fx.Node, Any] = {}
 
+    # Collect SymInt placeholders to resolve after tensor inputs are added.
+    symint_nodes = []
+
     for input_node in input_nodes:
         shape, dtype = _get_tensor_shape_and_dtype(input_node)
         if shape is None:
-            # Symbolic sizes (e.g. sym_size from dynamic shapes) are not tensors.
-            # Treat them as scalar int32 inputs with shape (1,).
-            shape = (1,)
-            dtype = torch.int32
+            # Symbolic sizes (e.g. sym_size from dynamic shapes) are not
+            # tensors. Don't add as TRT network inputs — we'll compute
+            # them from tensor input shapes using TRT's shape API.
+            symint_nodes.append(input_node)
+            continue
 
         # TensorRT does not support 0-dim (scalar) tensors. Reshape to (1,).
         if len(shape) == 0:
@@ -488,7 +501,232 @@ def _add_network_inputs(
 
         input_map[input_node] = trt_input
 
+    # Resolve SymInt placeholders by computing them from tensor input
+    # shapes using TRT's shape API. This makes the values dynamic at
+    # runtime, tracking the actual input size.
+    #
+    # Strategy: find which tensor input has a dynamic dim whose SymInt
+    # expression matches the base symbol, then build TRT arithmetic
+    # to evaluate each derived SymInt expression at runtime.
+    import numpy as np
+    import tensorrt as trt_mod
+    import sympy
+
+    # Build a mapping from base symbol name to (trt_tensor, dim_index)
+    # so we can extract the runtime dim value via add_shape + add_gather.
+    sym_to_trt_dim: Dict[str, Any] = {}  # symbol_name -> TRT ITensor (scalar int32)
+    for input_node in input_nodes:
+        shape, _ = _get_tensor_shape_and_dtype(input_node)
+        if shape is None or input_node not in input_map:
+            continue
+        for dim_idx, s in enumerate(shape):
+            if _is_symint(s):
+                sn = getattr(s, "node", None)
+                expr = getattr(sn, "expr", None) if sn else None
+                if expr is not None and len(expr.free_symbols) == 1:
+                    sym_name = str(list(expr.free_symbols)[0])
+                    if sym_name not in sym_to_trt_dim:
+                        trt_tensor = input_map[input_node]
+                        shape_layer = network.add_shape(trt_tensor)
+                        shape_layer.name = f"symint_shape_{input_node.name}"
+                        shape_i32 = network.add_cast(
+                            shape_layer.get_output(0), trt_mod.int32
+                        )
+                        shape_i32.name = f"symint_shape_i32_{input_node.name}"
+                        idx_c = network.add_constant(
+                            [1], trt_mod.Weights(np.array([dim_idx], dtype=np.int32))
+                        )
+                        idx_c.name = f"symint_idx_{sym_name}"
+                        gather = network.add_gather(
+                            shape_i32.get_output(0), idx_c.get_output(0), axis=0
+                        )
+                        gather.name = f"symint_gather_{sym_name}"
+                        sym_to_trt_dim[sym_name] = gather.get_output(0)
+
+    # Import torch's FloorDiv which is different from sympy.floor
+    try:
+        from torch.utils._sympy.functions import FloorDiv as TorchFloorDiv
+    except ImportError:
+        TorchFloorDiv = None
+
+    def _symint_expr_to_trt(expr, sym_to_trt, network, name_prefix):
+        """Convert a sympy expression to TRT tensor arithmetic.
+
+        Handles: Integer, Symbol, Add, Mul, FloorDiv (torch's custom class),
+        floor(x/n) → floor_div.
+        """
+        # torch uses FloorDiv(a, b) for a // b
+        if TorchFloorDiv is not None and isinstance(expr, TorchFloorDiv):
+            lhs = _symint_expr_to_trt(expr.args[0], sym_to_trt, network, f"{name_prefix}_fdl")
+            rhs = _symint_expr_to_trt(expr.args[1], sym_to_trt, network, f"{name_prefix}_fdr")
+            if lhs is not None and rhs is not None:
+                op = network.add_elementwise(lhs, rhs, trt_mod.ElementWiseOperation.FLOOR_DIV)
+                op.name = f"{name_prefix}_fdiv"
+                return op.get_output(0)
+            return None
+        if expr.is_Integer or expr.is_Number:
+            c = network.add_constant(
+                [1], trt_mod.Weights(np.array([int(expr)], dtype=np.int32))
+            )
+            c.name = f"{name_prefix}_c{int(expr)}"
+            return c.get_output(0)
+        if expr.is_Symbol:
+            sym_name = str(expr)
+            return sym_to_trt.get(sym_name)
+        if expr.is_Rational and not expr.is_Integer:
+            # Rational like 1/8 — can't represent as int directly.
+            # Only appears inside floor() where we handle it specially.
+            return None
+        # floor(numerator / denominator) → FLOOR_DIV(numerator, denominator)
+        if expr.func == sympy.floor:
+            inner = expr.args[0]
+            # Try to decompose inner into numerator/denominator
+            numer, denom = inner.as_numer_denom()
+            if denom != 1:
+                lhs = _symint_expr_to_trt(numer, sym_to_trt, network, f"{name_prefix}_fn")
+                rhs = _symint_expr_to_trt(denom, sym_to_trt, network, f"{name_prefix}_fd")
+                if lhs is not None and rhs is not None:
+                    op = network.add_elementwise(lhs, rhs, trt_mod.ElementWiseOperation.FLOOR_DIV)
+                    op.name = f"{name_prefix}_fdiv"
+                    return op.get_output(0)
+            # Fallback: convert inner directly (int32 truncates)
+            return _symint_expr_to_trt(inner, sym_to_trt, network, f"{name_prefix}_fl")
+        if expr.is_Add:
+            parts = list(expr.args)
+            result = _symint_expr_to_trt(parts[0], sym_to_trt, network, f"{name_prefix}_a0")
+            for j, p in enumerate(parts[1:], 1):
+                rhs = _symint_expr_to_trt(p, sym_to_trt, network, f"{name_prefix}_a{j}")
+                if result is None or rhs is None:
+                    return None
+                op = network.add_elementwise(result, rhs, trt_mod.ElementWiseOperation.SUM)
+                op.name = f"{name_prefix}_sum{j}"
+                result = op.get_output(0)
+            return result
+        if expr.is_Mul:
+            parts = list(expr.args)
+            result = _symint_expr_to_trt(parts[0], sym_to_trt, network, f"{name_prefix}_m0")
+            for j, p in enumerate(parts[1:], 1):
+                rhs = _symint_expr_to_trt(p, sym_to_trt, network, f"{name_prefix}_m{j}")
+                if result is None or rhs is None:
+                    return None
+                op = network.add_elementwise(result, rhs, trt_mod.ElementWiseOperation.PROD)
+                op.name = f"{name_prefix}_prod{j}"
+                result = op.get_output(0)
+            return result
+        return None
+
+    for sym_node in symint_nodes:
+        val = sym_node.meta.get("val")
+        if val is None:
+            continue
+        sn = getattr(val, "node", None)
+        expr = getattr(sn, "expr", None) if sn else None
+
+        trt_val = None
+        if expr is not None and expr.free_symbols:
+            trt_val = _symint_expr_to_trt(
+                expr, sym_to_trt_dim, network, f"symint_{sym_node.name}"
+            )
+
+        if trt_val is None:
+            # Fallback: use trace-time constant value
+            int_val = int(val)
+            c = network.add_constant(
+                [1], trt_mod.Weights(np.array([int_val], dtype=np.int32))
+            )
+            c.name = f"symint_const_{sym_node.name}"
+            trt_val = c.get_output(0)
+
+        input_map[sym_node] = trt_val
+
     return input_map
+
+
+def _precompute_shape_tensor_ranges(
+    input_nodes: List[torch.fx.Node],
+    exported_program: ExportedProgram,
+) -> Dict[str, Tuple[int, int, int]]:
+    """Pre-compute shape tensor value ranges before network build concretizes SymInts.
+
+    Returns:
+        Dict mapping node name to (min, opt, max) tuples.
+    """
+    # Build sym_ranges from range_constraints.
+    sym_ranges: Dict[str, Tuple[int, Optional[int]]] = {}
+    if hasattr(exported_program, "range_constraints"):
+        for sym, vr in exported_program.range_constraints.items():
+            try:
+                lo = int(vr.lower)
+            except Exception:
+                lo = 2
+            try:
+                hi = int(vr.upper)
+            except Exception:
+                hi = None
+            sym_ranges[str(sym)] = (lo, hi)
+
+    # First pass: compute ranges for all shape tensors.
+    result = {}
+    for node in input_nodes:
+        val = node.meta.get("val")
+        if val is None or hasattr(val, "shape"):
+            continue
+        if not _is_symint(val):
+            continue
+        opt = int(val)
+        lo, _, hi = _eval_symint_range(val, sym_ranges)
+        # If range is degenerate (concretized expression), recover the
+        # range from shape_env. The SymInt node still carries a shape_env
+        # with var_to_val (base variable → trace value) and var_to_range
+        # (base variable → [lo, hi]). We find which base variable this
+        # SymInt derives from by matching its trace value, then scale
+        # the range proportionally.
+        if lo == opt and hi == opt:
+            sn = getattr(val, "node", None)
+            shape_env = getattr(sn, "shape_env", None) if sn else None
+            recovered = False
+            if shape_env:
+                var_to_val = getattr(shape_env, "var_to_val",
+                             getattr(shape_env, "backed_var_to_val", {}))
+                var_to_range = getattr(shape_env, "var_to_range", {})
+                for base_sym, base_hint in var_to_val.items():
+                    base_hint_val = int(base_hint)
+                    base_name = str(base_sym)
+                    if base_name not in {str(s) for s in var_to_range}:
+                        continue
+                    base_rng = var_to_range.get(base_sym)
+                    if base_rng is None:
+                        continue
+                    try:
+                        base_lo = int(base_rng.lower)
+                        base_hi = int(base_rng.upper)
+                    except (OverflowError, ValueError):
+                        base_hi = base_hint_val
+                        base_lo = max(2, base_hint_val // 10)
+                    if base_lo == base_hi:
+                        continue
+                    # Try to recover the expression via replacements
+                    replacements = getattr(shape_env, "replacements", {})
+                    for repl_sym, repl_expr in replacements.items():
+                        if base_sym not in getattr(repl_expr, "free_symbols", set()):
+                            continue
+                        try:
+                            if int(repl_expr.subs({base_sym: base_hint_val})) == opt:
+                                v_lo = int(repl_expr.subs({base_sym: base_lo}))
+                                v_hi = int(repl_expr.subs({base_sym: base_hi}))
+                                lo = max(1, min(v_lo, v_hi))
+                                hi = max(v_lo, v_hi)
+                                recovered = True
+                                break
+                        except Exception:
+                            continue
+                    if recovered:
+                        break
+            if not recovered:
+                lo = max(1, opt // 2)
+                hi = opt * 2
+        result[node.name] = (lo, opt, hi)
+    return result
 
 
 def _add_optimization_profile(
@@ -499,6 +737,7 @@ def _add_optimization_profile(
     exported_program: ExportedProgram,
     trt: Any,
     symint_exprs: Optional[Dict[str, list]] = None,
+    precomputed_shape_ranges: Optional[Dict[str, Tuple[int, int, int]]] = None,
 ) -> None:
     """Create an optimization profile for dynamic inputs.
 
@@ -600,10 +839,25 @@ def _add_optimization_profile(
             # Shape tensor input: set value ranges.
             # These are typically scalar int32 values (ndims=1, shape=(1,)).
             fx_node = node_lookup.get(name)
+            # Use precomputed ranges (captured before network build
+            # concretized the SymInt expressions).
+            if precomputed_shape_ranges and name in precomputed_shape_ranges:
+                lo, opt, hi = precomputed_shape_ranges[name]
+                print(
+                    f"[TensorRT] Shape input '{name}': "
+                    f"min=[{lo}], opt=[{opt}], max=[{hi}] (precomputed)"
+                )
+                profile.set_shape_input(name, [lo], [opt], [hi])
+                continue
             if fx_node is not None:
                 val = fx_node.meta.get("val")
                 if _is_symint(val):
                     lo, opt, hi = _eval_symint_range(val, sym_ranges)
+                    print(
+                        f"[TensorRT] Shape input '{name}': "
+                        f"min=[{lo}], opt=[{opt}], max=[{hi}] "
+                        f"(expr={val})"
+                    )
                     profile.set_shape_input(name, [lo], [opt], [hi])
                     continue
                 elif isinstance(val, (int, float)):
@@ -611,8 +865,10 @@ def _add_optimization_profile(
                     profile.set_shape_input(name, [v], [v], [v])
                     continue
 
-            # Fallback for shape inputs: use trace-time value if available,
-            # otherwise use a conservative range.
+            # Fallback for shape inputs: use trace-time value if available.
+            # After partitioning, SymInt expressions are concretized and we
+            # lose the original range info. Use min=0 to allow any runtime
+            # value up to the trace-time max.
             opt_val = 1
             if fx_node is not None:
                 val = fx_node.meta.get("val")
@@ -621,7 +877,7 @@ def _add_optimization_profile(
                         opt_val = int(val)
                     except (TypeError, ValueError):
                         pass
-            min_vals = [max(0, opt_val)] * ndims
+            min_vals = [0] * ndims
             opt_vals = [max(1, opt_val)] * ndims
             max_vals = [max(1, opt_val)] * ndims
             profile.set_shape_input(name, min_vals, opt_vals, max_vals)
@@ -701,17 +957,24 @@ def _add_optimization_profile(
                             lo = opt_val
                             hi = opt_val
                     # If upper bound is unbounded (Dim.AUTO with no max),
-                    # cap at the trace-time value to avoid OOM during
-                    # TRT tactic search.
+                    # use 2x trace-time value as max. This ensures
+                    # opt < max so TRT builds a dynamic engine instead
+                    # of constant-folding shapes.
                     if hi is None:
-                        hi = opt_val
+                        hi = opt_val * 2
                         logger.warning(
                             f"[TensorRT] Unbounded dynamic dim {d} for "
-                            f"input '{name}': capping max at trace-time "
-                            f"value {opt_val}"
+                            f"input '{name}': setting max to {hi} "
+                            f"(2x trace-time value {opt_val})"
                         )
                     min_shape.append(lo)
-                    opt_shape.append(opt_val)
+                    # When opt == max, TRT constant-folds shape arithmetic
+                    # and builds a static engine. Use mid-range as opt so
+                    # TRT builds a truly dynamic engine.
+                    if opt_val == hi and lo < hi:
+                        opt_shape.append((lo + hi) // 2)
+                    else:
+                        opt_shape.append(opt_val)
                     max_shape.append(hi)
 
             print(
@@ -749,8 +1012,48 @@ def _process_graph_nodes(
         get_op_name_fn: Function to extract operation name from nodes.
         ctx: Optional ConversionContext for unique layer naming.
     """
+    import operator
+    import numpy as np
+    import tensorrt as trt_mod
+
+    # Python arithmetic ops used for SymInt computations (add, sub, mul, floordiv).
+    _SYMINT_OPS = {
+        operator.add: trt_mod.ElementWiseOperation.SUM,
+        operator.sub: trt_mod.ElementWiseOperation.SUB,
+        operator.mul: trt_mod.ElementWiseOperation.PROD,
+        operator.floordiv: trt_mod.ElementWiseOperation.FLOOR_DIV,
+    }
+
+    def _to_trt_scalar(val, name):
+        """Convert a Python int or FX Node to a [1]-shaped int32 TRT tensor."""
+        if isinstance(val, torch.fx.Node) and val in input_map:
+            t = input_map[val]
+            if hasattr(t, 'dtype') and t.dtype != trt_mod.int32:
+                cast = network.add_cast(t, trt_mod.int32)
+                cast.name = f"{name}_cast"
+                return cast.get_output(0)
+            return t
+        if isinstance(val, int):
+            c = network.add_constant(
+                [1], trt_mod.Weights(np.array([val], dtype=np.int32))
+            )
+            c.name = name
+            return c.get_output(0)
+        return None
+
     for node in graph_module.graph.nodes:
         if node.op == "call_function":
+            # Handle Python arithmetic on SymInt values (operator.add, etc.)
+            if node.target in _SYMINT_OPS:
+                trt_op = _SYMINT_OPS[node.target]
+                lhs = _to_trt_scalar(node.args[0], f"symop_lhs_{node.name}")
+                rhs = _to_trt_scalar(node.args[1], f"symop_rhs_{node.name}")
+                if lhs is not None and rhs is not None:
+                    ew = network.add_elementwise(lhs, rhs, trt_op)
+                    ew.name = f"symop_{node.name}"
+                    input_map[node] = ew.get_output(0)
+                    continue
+
             op_name = get_op_name_fn(node)
 
             converter = lookup_converter(op_name)
@@ -956,7 +1259,10 @@ def _create_builder_config(builder: Any, spec: TensorRTCompileSpec, trt: Any) ->
             logger.warning("INT8 not supported on this platform, using FP32")
 
     if spec.strict_type_constraints:
-        config.set_flag(trt.BuilderFlag.STRICT_TYPES)
+        if hasattr(trt.BuilderFlag, "OBEY_PRECISION_CONSTRAINTS"):
+            config.set_flag(trt.BuilderFlag.OBEY_PRECISION_CONSTRAINTS)
+        elif hasattr(trt.BuilderFlag, "STRICT_TYPES"):
+            config.set_flag(trt.BuilderFlag.STRICT_TYPES)
 
     if spec.dla_core >= 0:
         config.default_device_type = trt.DeviceType.DLA

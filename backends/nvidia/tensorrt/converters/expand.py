@@ -21,7 +21,10 @@ import numpy as np
 import tensorrt as trt
 import torch
 from executorch.backends.nvidia.tensorrt.converter_registry import converter
-from executorch.backends.nvidia.tensorrt.converter_utils import get_node_shape
+from executorch.backends.nvidia.tensorrt.converter_utils import (
+    get_node_shape,
+    input_has_dynamic_dims,
+)
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -141,6 +144,14 @@ def convert_expand(
     # Calculate output shape (already handles FX Node / SymInt args)
     output_shape = _get_expand_output_shape(raw_input_shape, expand_size)
 
+    # Force dynamic (-1) for dims where expand_size is an FX Node (shape tensor),
+    # since concretized SymInts report concrete values in metadata.
+    for i, es in enumerate(expand_size):
+        if isinstance(es, torch.fx.Node) and es in input_map and i < len(output_shape):
+            output_shape = list(output_shape)
+            output_shape[i] = -1
+    output_shape = tuple(output_shape)
+
     logger.debug(
         f"[TensorRT] expand: input_shape={input_shape}, output_shape={output_shape}"
     )
@@ -169,7 +180,7 @@ def convert_expand(
     for inp_dim, out_dim in zip(input_shape, output_shape):
         stride.append(0 if inp_dim == 1 and out_dim != 1 else 1)
 
-    has_dynamic = any(d < 0 for d in output_shape)
+    has_dynamic = any(d < 0 for d in output_shape) or input_has_dynamic_dims(current_tensor)
 
     if not has_dynamic:
         # Static path — all dims are concrete.
@@ -193,10 +204,23 @@ def convert_expand(
         shape_trt = shape_i32.get_output(0)
 
         # Build one [1]-shaped component per output dim.
+        # Check TRT tensor shape for actual dynamic dims (-1).
+        trt_shape = current_tensor.shape
         components = []
         for i, (inp_dim, out_dim) in enumerate(zip(input_shape, output_shape)):
-            if out_dim >= 0:
-                # Concrete dim.
+            if out_dim >= 0 and stride[i] != 0 and i < len(trt_shape) and trt_shape[i] == -1:
+                # Non-broadcast dim that's dynamic in the TRT tensor —
+                # gather from runtime input shape instead of baking
+                # the trace-time constant.
+                idx = network.add_constant(
+                    [1], trt.Weights(np.array([i], dtype=np.int32))
+                )
+                idx.name = f"expand_dynidx{i}_{node.name}"
+                g = network.add_gather(shape_trt, idx.get_output(0), axis=0)
+                g.name = f"expand_dyng{i}_{node.name}"
+                components.append(g.get_output(0))
+            elif out_dim >= 0:
+                # Concrete dim (static or broadcast target).
                 c = network.add_constant(
                     [1], trt.Weights(np.array([out_dim], dtype=np.int32))
                 )

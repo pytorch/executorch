@@ -36,8 +36,11 @@ import tensorrt as trt
 import torch
 from executorch.backends.nvidia.tensorrt.converter_registry import converter
 from executorch.backends.nvidia.tensorrt.converter_utils import (
+    build_reshape_shape_tensor,
     get_node_shape,
+    get_shape_with_dynamic_shape,
     get_trt_tensor_from_node,
+    input_has_dynamic_dims,
     resolve_shape,
 )
 
@@ -320,6 +323,13 @@ def convert_view(
 
     # Get the actual output shape from node metadata if available
     output_shape = _compute_view_output_shape(node, input_node, input_trt, target_shape)
+
+    # If target_shape contains FX Nodes (shape tensor inputs for dynamic dims),
+    # force those dimensions to -1 even if metadata reports concrete values
+    # (which happens when SymInt expressions are concretized).
+    for i, d in enumerate(target_shape):
+        if isinstance(d, torch.fx.Node) and d in input_map and i < len(output_shape):
+            output_shape[i] = -1
     logger.debug(f"[TensorRT] view {node.name}: output_shape = {output_shape}")
 
     num_dynamic = sum(1 for d in output_shape if d < 0)
@@ -328,120 +338,38 @@ def convert_view(
     if layer is None:
         raise RuntimeError(f"Failed to create shuffle layer for view {node.name}")
 
-    if num_dynamic <= 1:
-        # TRT handles at most one -1 in reshape natively.
+    # Following torch-tensorrt's reshape pattern: if all shape dims are
+    # plain ints, use reshape_dims directly. Otherwise, convert each dim
+    # to a [1]-shaped int32 TRT tensor, concatenate, and use set_input(1).
+    all_int = all(isinstance(d, int) for d in target_shape)
+
+    if all_int and num_dynamic == 0 and not input_has_dynamic_dims(input_trt):
+        layer.reshape_dims = trt.Dims(output_shape)
+    elif all_int and num_dynamic <= 1:
         layer.reshape_dims = trt.Dims(output_shape)
     else:
-        # Multiple dynamic dims: build shape tensor.
-        # Use output_shape (from metadata) to decide which dims are dynamic.
-        # For dynamic dims, gather from input runtime shape (correct volume)
-        # instead of trusting target_shape args which may have stale
-        # trace-time concrete values (e.g., 2*S-1 evaluated to 1249).
-        #
-        # For concrete dims, use the metadata value (output_shape[i]).
-        # For dynamic dims with an FX Node in target_shape, use that node.
-        # For dynamic dims WITHOUT an FX Node, compute from input shape
-        # and the known concrete dims.
-
-        # We need the input runtime shape to compute unknown dynamic dims.
-        shape_layer = network.add_shape(input_trt)
-        shape_layer.name = f"view_inshape_{node.name}"
-        shape_i32 = network.add_cast(shape_layer.get_output(0), trt.int32)
-        shape_i32.name = f"view_inshape_i32_{node.name}"
-
-        # Compute total input volume as a shape tensor (product of all dims).
-        in_ndim = len(input_trt.shape)
-        idx0 = network.add_constant([1], trt.Weights(np.array([0], dtype=np.int32)))
-        idx0.name = f"view_idx0_{node.name}"
-        vol = network.add_gather(shape_i32.get_output(0), idx0.get_output(0), axis=0)
-        vol.name = f"view_vol0_{node.name}"
-        vol_out = vol.get_output(0)
-        for j in range(1, in_ndim):
-            idx_j = network.add_constant([1], trt.Weights(np.array([j], dtype=np.int32)))
-            idx_j.name = f"view_idx{j}_{node.name}"
-            g = network.add_gather(shape_i32.get_output(0), idx_j.get_output(0), axis=0)
-            g.name = f"view_g{j}_{node.name}"
-            m = network.add_elementwise(vol_out, g.get_output(0), trt.ElementWiseOperation.PROD)
-            m.name = f"view_volmul{j}_{node.name}"
-            vol_out = m.get_output(0)
-
-        # Build components: concrete from metadata, dynamic from target_shape
-        # FX Nodes or inferred from input volume.
-        components = []
-        known_vol = None  # product of concrete dims (for inferring unknowns)
-        unknown_indices = []
-
+        # Convert each dim to a TRT tensor (like torch-tensorrt's reshape)
+        trt_dims = []
         for i, d in enumerate(target_shape):
-            if output_shape[i] >= 0:
-                # Concrete dim from metadata (trustworthy).
-                c = network.add_constant(
-                    [1], trt.Weights(np.array([output_shape[i]], dtype=np.int32))
-                )
-                c.name = f"view_c{i}_{node.name}"
-                components.append(c.get_output(0))
-                if known_vol is None:
-                    known_vol_c = network.add_constant(
-                        [1], trt.Weights(np.array([output_shape[i]], dtype=np.int32))
-                    )
-                    known_vol_c.name = f"view_kv0_{node.name}"
-                    known_vol = known_vol_c.get_output(0)
-                else:
-                    dim_c = network.add_constant(
-                        [1], trt.Weights(np.array([output_shape[i]], dtype=np.int32))
-                    )
-                    dim_c.name = f"view_kv{i}_{node.name}"
-                    mul_kv = network.add_elementwise(
-                        known_vol, dim_c.get_output(0), trt.ElementWiseOperation.PROD
-                    )
-                    mul_kv.name = f"view_kvmul{i}_{node.name}"
-                    known_vol = mul_kv.get_output(0)
-            elif isinstance(d, torch.fx.Node) and d in input_map:
-                # Dynamic dim with symbolic FX Node — use it directly.
+            if isinstance(d, torch.fx.Node) and d in input_map:
                 t = input_map[d]
                 shuf = network.add_shuffle(t)
                 shuf.reshape_dims = trt.Dims([1])
                 shuf.name = f"view_sym{i}_{node.name}"
                 cast = network.add_cast(shuf.get_output(0), trt.int32)
-                cast.name = f"view_sym_i32_{i}_{node.name}"
-                components.append(cast.get_output(0))
-                unknown_indices.append(i)
+                cast.name = f"view_cast{i}_{node.name}"
+                trt_dims.append(cast.get_output(0))
             else:
-                # Dynamic dim without FX Node — will infer later.
-                components.append(None)  # placeholder
-                unknown_indices.append(i)
-
-        # Infer remaining unknown dims from input volume / known dims / other unknowns.
-        # If exactly 1 dim is None (placeholder), compute it as vol / (product of others).
-        none_indices = [i for i, c in enumerate(components) if c is None]
-        if len(none_indices) == 1 and known_vol is not None:
-            # Compute product of all known components (including FX Node ones)
-            all_known_vol = known_vol
-            for i, c in enumerate(components):
-                if c is not None and output_shape[i] < 0:
-                    mul_ak = network.add_elementwise(
-                        all_known_vol, c, trt.ElementWiseOperation.PROD
-                    )
-                    mul_ak.name = f"view_akvmul{i}_{node.name}"
-                    all_known_vol = mul_ak.get_output(0)
-            inferred = network.add_elementwise(
-                vol_out, all_known_vol, trt.ElementWiseOperation.FLOOR_DIV
-            )
-            inferred.name = f"view_infer_{node.name}"
-            components[none_indices[0]] = inferred.get_output(0)
-        elif none_indices:
-            # Multiple unknown dims without FX Nodes — use stale values as fallback.
-            for idx in none_indices:
-                fallback_val = int(target_shape[idx]) if isinstance(target_shape[idx], int) else 1
+                val = int(d) if isinstance(d, int) else output_shape[i]
                 c = network.add_constant(
-                    [1], trt.Weights(np.array([fallback_val], dtype=np.int32))
+                    [1], trt.Weights(np.array([val], dtype=np.int32))
                 )
-                c.name = f"view_fallback{idx}_{node.name}"
-                components[idx] = c.get_output(0)
-
-        shape_cat = network.add_concatenation(components)
-        shape_cat.axis = 0
-        shape_cat.name = f"view_outshape_{node.name}"
-        layer.set_input(1, shape_cat.get_output(0))
+                c.name = f"view_d{i}_{node.name}"
+                trt_dims.append(c.get_output(0))
+        shape_layer = network.add_concatenation(trt_dims)
+        shape_layer.axis = 0
+        shape_layer.name = f"view_shape_{node.name}"
+        layer.set_input(1, shape_layer.get_output(0))
 
     layer.name = f"view_{node.name}"
 
@@ -499,7 +427,34 @@ def convert_reshape(
     if layer is None:
         raise RuntimeError(f"Failed to create shuffle layer for reshape {node.name}")
 
-    layer.reshape_dims = trt.Dims(output_shape)
+    all_int = all(isinstance(d, int) for d in target_shape)
+    num_dynamic = sum(1 for d in output_shape if d < 0)
+
+    if all_int and num_dynamic <= 1:
+        layer.reshape_dims = trt.Dims(output_shape)
+    else:
+        trt_dims = []
+        for i, d in enumerate(target_shape):
+            if isinstance(d, torch.fx.Node) and d in input_map:
+                t = input_map[d]
+                shuf = network.add_shuffle(t)
+                shuf.reshape_dims = trt.Dims([1])
+                shuf.name = f"resh_sym{i}_{node.name}"
+                cast = network.add_cast(shuf.get_output(0), trt.int32)
+                cast.name = f"resh_cast{i}_{node.name}"
+                trt_dims.append(cast.get_output(0))
+            else:
+                val = int(d) if isinstance(d, int) else output_shape[i]
+                c = network.add_constant(
+                    [1], trt.Weights(np.array([val], dtype=np.int32))
+                )
+                c.name = f"resh_d{i}_{node.name}"
+                trt_dims.append(c.get_output(0))
+        shape_layer = network.add_concatenation(trt_dims)
+        shape_layer.axis = 0
+        shape_layer.name = f"resh_shape_{node.name}"
+        layer.set_input(1, shape_layer.get_output(0))
+
     layer.name = f"reshape_{node.name}"
     logger.debug(f"[TensorRT] Created reshape layer: {layer.name}, shape={output_shape}")
 
@@ -586,7 +541,9 @@ def convert_flatten(
     if layer is None:
         raise RuntimeError(f"Failed to create shuffle layer for flatten {node.name}")
 
-    if num_dynamic <= 1:
+    if num_dynamic <= 1 and not input_has_dynamic_dims(input_trt):
+        layer.reshape_dims = trt.Dims(output_shape)
+    elif num_dynamic <= 1:
         # TRT handles at most one -1 in reshape natively.
         layer.reshape_dims = trt.Dims(output_shape)
     else:
@@ -753,7 +710,9 @@ def convert_squeeze(
     if layer is None:
         raise RuntimeError(f"Failed to create shuffle layer for squeeze {node.name}")
 
-    if num_dynamic <= 1:
+    if num_dynamic <= 1 and not input_has_dynamic_dims(input_trt):
+        layer.reshape_dims = trt.Dims(output_shape)
+    elif num_dynamic <= 1:
         # TRT handles at most one -1 in reshape natively.
         layer.reshape_dims = trt.Dims(output_shape)
     else:
@@ -851,7 +810,9 @@ def convert_unsqueeze(
     if layer is None:
         raise RuntimeError(f"Failed to create shuffle layer for unsqueeze {node.name}")
 
-    if num_dynamic <= 1:
+    if num_dynamic <= 1 and not input_has_dynamic_dims(input_trt):
+        layer.reshape_dims = trt.Dims(output_shape)
+    elif num_dynamic <= 1:
         # TRT handles at most one -1 in reshape natively.
         layer.reshape_dims = trt.Dims(output_shape)
     else:

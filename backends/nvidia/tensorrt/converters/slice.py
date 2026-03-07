@@ -30,8 +30,10 @@ from typing import Any, Dict, Optional
 import torch
 from executorch.backends.nvidia.tensorrt.converter_registry import converter
 from executorch.backends.nvidia.tensorrt.converter_utils import (
+    build_reshape_shape_tensor,
     get_node_shape,
     get_trt_tensor,
+    input_has_dynamic_dims,
 )
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -104,7 +106,13 @@ def convert_slice(
     )
 
     # Get input shape, resolving SymInt → -1 for TRT.
-    raw_input_shape = get_node_shape(input_node) or tuple(input_trt.shape)
+    raw_input_shape = get_node_shape(input_node)
+    if raw_input_shape is None:
+        try:
+            raw_input_shape = tuple(input_trt.shape)
+        except ValueError:
+            from executorch.backends.nvidia.tensorrt.converter_utils import get_safe_shape
+            raw_input_shape = tuple(get_safe_shape(input_trt))
     input_shape = resolve_shape(raw_input_shape)
     ndim = len(input_shape)
 
@@ -154,8 +162,16 @@ def convert_slice(
     import numpy as np
 
     # When start or end are FX Nodes, always use the dynamic path so we
-    # can set start/size via shape tensors.
-    has_dynamic = any(d < 0 for d in output_shape) or start_is_node or end_is_node
+    # can set start/size via shape tensors. Force the sliced dim to -1
+    # since concretized SymInts report concrete values in metadata.
+    if start_is_node or end_is_node:
+        output_shape[dim] = -1
+    has_dynamic = (
+        any(d < 0 for d in output_shape)
+        or start_is_node
+        or end_is_node
+        or input_has_dynamic_dims(input_trt)
+    )
 
     start_slice = [0] * ndim
     start_slice[dim] = start
@@ -234,7 +250,7 @@ def convert_slice(
                 )
                 size_sub.name = f"slice_size_sub_{node.name}"
                 size_components.append(size_sub.get_output(0))
-            elif output_shape[i] >= 0:
+            elif output_shape[i] >= 0 and not (i < len(input_trt.shape) and input_trt.shape[i] == -1):
                 c = network.add_constant(
                     [1], trt.Weights(np.array([output_shape[i]], dtype=np.int32))
                 )
@@ -710,7 +726,16 @@ def convert_unflatten(
     if layer is None:
         raise RuntimeError(f"Failed to create shuffle layer for unflatten {node.name}")
 
-    layer.reshape_dims = trt.Dims(output_shape)
+    from executorch.backends.nvidia.tensorrt.converter_utils import resolve_shape
+    resolved_output = resolve_shape(output_shape)
+    num_dynamic = sum(1 for d in resolved_output if d < 0)
+    if num_dynamic == 0 and input_has_dynamic_dims(input_trt):
+        shape_tensor = build_reshape_shape_tensor(
+            network, input_trt, resolved_output, f"unflatten_dyn_{node.name}"
+        )
+        layer.set_input(1, shape_tensor)
+    else:
+        layer.reshape_dims = trt.Dims(resolved_output)
     layer.name = f"unflatten_{node.name}"
 
     logger.debug(
