@@ -2377,18 +2377,13 @@ def _convolution_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                              transposed, output_padding, groups)
 
     This op appears when PyTorch doesn't decompose to specific conv ops
-    (e.g. grouped conv_transpose).
+    (e.g. grouped conv_transpose, or vision models).
     """
     raw_args = n.args
     x_node, w_node = raw_args[0], raw_args[1]
     bias_node = raw_args[2] if len(raw_args) > 2 else None
     transposed = raw_args[6] if len(raw_args) > 6 else False
     groups = raw_args[8] if len(raw_args) > 8 else 1
-
-    if not transposed:
-        raise ValueError(
-            "aten.convolution with transposed=False: use aten.conv{1,2,3}d instead"
-        )
 
     x_meta = x_node.meta.get("val")
     if x_meta is None:
@@ -2402,19 +2397,35 @@ def _convolution_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         raw_args[7] if len(raw_args) > 7 else 0, ndim, 0
     )
 
-    return _emit_conv_transpose(
-        P,
-        n,
-        x_node,
-        w_node,
-        bias_node,
-        stride,
-        padding,
-        dilation,
-        output_padding,
-        groups,
-        ndim,
-    )
+    if transposed:
+        # Transposed convolution (conv_transpose)
+        return _emit_conv_transpose(
+            P,
+            n,
+            x_node,
+            w_node,
+            bias_node,
+            stride,
+            padding,
+            dilation,
+            output_padding,
+            groups,
+            ndim,
+        )
+    else:
+        # Normal convolution - dispatch to conv handler
+        return _emit_conv(
+            P,
+            n,
+            x_node,
+            w_node,
+            bias_node,
+            stride,
+            padding,
+            dilation,
+            groups,
+            ndim,
+        )
 
 
 @REGISTRY.register(target=[torch.ops.aten.conv_transpose1d.default])

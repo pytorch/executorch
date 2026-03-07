@@ -15,7 +15,7 @@ PRESETS_RELATIVE_OUT_DIR=("ios" "simulator" "macos")
 SOURCE_ROOT_DIR=$(git rev-parse --show-toplevel)
 OUTPUT_DIR="${SOURCE_ROOT_DIR}/cmake-out"
 
-BUCK2=$(python3 "$SOURCE_ROOT_DIR/tools/cmake/resolve_buck.py" --cache_dir="$SOURCE_ROOT_DIR/buck2-bin")
+BUCK2=$(python "$SOURCE_ROOT_DIR/tools/cmake/resolve_buck.py" --cache_dir="$SOURCE_ROOT_DIR/buck2-bin")
 if [[ "$BUCK2" == "buck2" ]]; then
   BUCK2=$(command -v buck2)
 fi
@@ -103,6 +103,12 @@ FRAMEWORK_BACKEND_MPS="backend_mps:\
 libmpsdelegate.a,\
 :"
 
+FRAMEWORK_BACKEND_MLX="backend_mlx:\
+libmlxdelegate.a,\
+libmlx.a,\
+:"
+# Note: mlx.metallib resource is handled separately after XCFramework creation
+
 FRAMEWORK_BACKEND_XNNPACK="backend_xnnpack:\
 libXNNPACK.a,\
 libkleidiai.a,\
@@ -138,8 +144,10 @@ usage() {
   echo "Options:"
   echo "  --Debug              Build Debug version."
   echo "  --Release            Build Release version."
+  echo "  --ios-only           Only build iOS (skip macOS and simulator)."
   echo "  --coreml             Only build the Core ML backend."
   echo "  --llm                Only build the LLM custom kernels."
+  echo "  --mlx                Only build the MLX backend."
   echo "  --mps                Only build the Metal Performance Shaders backend."
   echo "  --optimized          Only build the Optimized kernels."
   echo "  --quantized          Only build the Quantized kernels."
@@ -150,6 +158,8 @@ usage() {
 }
 
 CMAKE_OPTIONS_OVERRIDE=()
+IOS_ONLY=false
+
 set_cmake_options_override() {
   local option_name="$1"
 
@@ -158,6 +168,7 @@ set_cmake_options_override() {
     CMAKE_OPTIONS_OVERRIDE=(
       "-DEXECUTORCH_BUILD_COREML=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_LLM=OFF"
+      "-DEXECUTORCH_BUILD_MLX=OFF"
       "-DEXECUTORCH_BUILD_MPS=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=OFF"
@@ -177,18 +188,20 @@ set_cmake_options_override() {
 for arg in "$@"; do
   case $arg in
       -h|--help) usage ;;
-      --Release)
+      --Release|--release)
         if [[ ! " ${MODES[*]:-} " =~ \bRelease\b ]]; then
           MODES+=("Release")
         fi
         ;;
-      --Debug)
+      --Debug|--debug)
         if [[ ! " ${MODES[*]:-} " =~ \bDebug\b ]]; then
           MODES+=("Debug")
         fi
         ;;
+      --ios-only) IOS_ONLY=true ;;
       --coreml) set_cmake_options_override "EXECUTORCH_BUILD_COREML";;
       --llm) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_LLM" ;;
+      --mlx) set_cmake_options_override "EXECUTORCH_BUILD_MLX" ;;
       --mps) set_cmake_options_override "EXECUTORCH_BUILD_MPS" ;;
       --optimized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" ;;
       --quantized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_QUANTIZED" ;;
@@ -204,6 +217,13 @@ done
 # If no modes are specified, default to both Release and Debug
 if [[ ${#MODES[@]} -eq 0 ]]; then
   MODES=("Release" "Debug")
+fi
+
+# Filter presets based on --ios-only flag
+if [[ "$IOS_ONLY" == "true" ]]; then
+  echo "iOS-only build: skipping macOS and simulator"
+  PRESETS=("ios")
+  PRESETS_RELATIVE_OUT_DIR=("ios")
 fi
 
 echo "Building libraries"
@@ -314,6 +334,7 @@ for mode in "${MODES[@]}"; do
   append_framework_flag "" "$FRAMEWORK_EXECUTORCH_LLM" "$mode"
   append_framework_flag "" "$FRAMEWORK_THREADPOOL" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_COREML" "$FRAMEWORK_BACKEND_COREML" "$mode"
+  append_framework_flag "EXECUTORCH_BUILD_MLX" "$FRAMEWORK_BACKEND_MLX" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_MPS" "$FRAMEWORK_BACKEND_MPS" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_XNNPACK" "$FRAMEWORK_BACKEND_XNNPACK" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_LLM" "$FRAMEWORK_KERNELS_LLM" "$mode"
@@ -323,6 +344,51 @@ for mode in "${MODES[@]}"; do
 
   cd "${OUTPUT_DIR}"
   "$SOURCE_ROOT_DIR"/scripts/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"
+
+  # Bundle mlx.metallib into the MLX XCFramework Resources folder (macOS only)
+  # For iOS, metallib is embedded in the static library (MLX_EMBED_METALLIB=ON)
+  # For macOS, we still need to copy it since embedding is not enabled
+  for cmake_option in "${CMAKE_OPTIONS_OVERRIDE[@]:-}"; do
+    if [[ "$cmake_option" =~ "-DEXECUTORCH_BUILD_MLX=OFF" ]]; then
+      echo "Skipping mlx.metallib bundling (MLX disabled)"
+      continue 2
+    fi
+  done
+
+  xcframework_name="backend_mlx"
+  if [[ "$mode" != "Release" ]]; then
+    xcframework_name="backend_mlx_$(echo "$mode" | tr '[:upper:]' '[:lower:]')"
+  fi
+
+  if [[ -d "${OUTPUT_DIR}/${xcframework_name}.xcframework" ]]; then
+    echo "Bundling mlx.metallib into ${xcframework_name}.xcframework (macOS slices only)"
+    for slice_dir in "${OUTPUT_DIR}/${xcframework_name}.xcframework"/*; do
+      if [[ -d "$slice_dir" && ! "$slice_dir" =~ Info.plist ]]; then
+        slice_name=$(basename "$slice_dir")
+
+        # Skip iOS slices - metallib is embedded in the static library
+        if [[ "$slice_name" =~ ^ios ]]; then
+          echo "  Skipping $slice_name (metallib embedded in library)"
+          continue
+        fi
+
+        # For macOS slices, copy the metallib
+        metallib_found=false
+        metallib_path="${OUTPUT_DIR}/macos/backends/mlx/mlx/mlx/backend/metal/kernels/mlx.metallib"
+
+        if [[ -f "$metallib_path" ]]; then
+          mkdir -p "$slice_dir/Resources"
+          cp "$metallib_path" "$slice_dir/Resources/mlx.metallib"
+          echo "  Copied mlx.metallib to $slice_dir/Resources/"
+          metallib_found=true
+        fi
+
+        if [[ "$metallib_found" == "false" ]]; then
+          echo "  Warning: mlx.metallib not found for slice $slice_name"
+        fi
+      fi
+    done
+  fi
 done
 
 echo "Cleaning up"

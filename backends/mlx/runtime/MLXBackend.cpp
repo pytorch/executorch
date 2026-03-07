@@ -13,7 +13,14 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+
+// Suppress warnings from ExecuTorch headers that trigger -Wshorten-64-to-32
+// These are in core runtime headers and cannot be fixed in MLX backend
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wshorten-64-to-32"
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#pragma clang diagnostic pop
+
 #include <executorch/runtime/core/named_data_map.h>
 
 #include <mlx/mlx.h>

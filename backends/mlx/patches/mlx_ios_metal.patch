@@ -1,0 +1,196 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 041a476c..afaf7658 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -55,7 +55,7 @@ message(
+     "Building MLX for ${CMAKE_SYSTEM_PROCESSOR} processor on ${CMAKE_SYSTEM_NAME}"
+ )
+ 
+-if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
++if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin" OR ${CMAKE_SYSTEM_NAME} MATCHES "iOS")
+   if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
+     if(NOT MLX_ENABLE_X64_MAC)
+       message(
+@@ -190,17 +190,31 @@ if(MLX_BUILD_METAL)
+   set(METAL_CPP_URL
+       https://developer.apple.com/metal/cpp/files/metal-cpp_26.zip)
+ 
+-  if(NOT CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL "")
++  if(NOT CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL "" AND NOT ${CMAKE_SYSTEM_NAME} MATCHES "iOS")
+     if(${CMAKE_OSX_DEPLOYMENT_TARGET} LESS 14.0)
+       message(FATAL_ERROR "MLX requires macOS >= 14.0")
+     endif()
+     set(XCRUN_FLAGS "-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+   endif()
+-  execute_process(
+-    COMMAND
+-      zsh "-c"
+-      "echo \"__METAL_VERSION__\" | xcrun -sdk macosx metal ${XCRUN_FLAGS} -E -x metal -P - | tail -1 | tr -d '\n'"
+-    OUTPUT_VARIABLE MLX_METAL_VERSION COMMAND_ERROR_IS_FATAL ANY)
++  # Detect Metal version - use appropriate SDK for the target platform
++  if(${CMAKE_SYSTEM_NAME} MATCHES "iOS")
++    if(DEPLOYMENT_TARGET)
++      set(METAL_VERSION_FLAGS "-mios-version-min=${DEPLOYMENT_TARGET}")
++    else()
++      set(METAL_VERSION_FLAGS "-mios-version-min=17.0")
++    endif()
++    execute_process(
++      COMMAND
++        zsh "-c"
++        "echo \"__METAL_VERSION__\" | xcrun -sdk iphoneos metal ${METAL_VERSION_FLAGS} -E -x metal -P - | tail -1 | tr -d '\n'"
++      OUTPUT_VARIABLE MLX_METAL_VERSION COMMAND_ERROR_IS_FATAL ANY)
++  else()
++    execute_process(
++      COMMAND
++        zsh "-c"
++        "echo \"__METAL_VERSION__\" | xcrun -sdk macosx metal ${XCRUN_FLAGS} -E -x metal -P - | tail -1 | tr -d '\n'"
++      OUTPUT_VARIABLE MLX_METAL_VERSION COMMAND_ERROR_IS_FATAL ANY)
++  endif()
+   FetchContent_Declare(metal_cpp URL ${METAL_CPP_URL})
+   FetchContent_MakeAvailable(metal_cpp)
+   target_include_directories(
+@@ -309,13 +323,19 @@ else()
+   set(MLX_BUILD_ACCELERATE OFF)
+ endif()
+ 
+-message(STATUS "Downloading json")
+-FetchContent_Declare(
+-  json
+-  URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
+-FetchContent_MakeAvailable(json)
+-target_include_directories(
+-  mlx PRIVATE $<BUILD_INTERFACE:${json_SOURCE_DIR}/single_include/nlohmann>)
++# Only fetch json if nlohmann_json target doesn't already exist
++# (ExecuTorch provides its own copy)
++if(NOT TARGET nlohmann_json)
++  message(STATUS "Downloading json")
++  FetchContent_Declare(
++    json
++    URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
++  FetchContent_MakeAvailable(json)
++  target_include_directories(
++    mlx PRIVATE $<BUILD_INTERFACE:${json_SOURCE_DIR}/single_include/nlohmann>)
++else()
++  message(STATUS "Using existing nlohmann_json target")
++endif()
+ 
+ add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/mlx)
+ 
+diff --git a/mlx/backend/metal/device.cpp b/mlx/backend/metal/device.cpp
+index 15824d6c..babc14bb 100644
+--- a/mlx/backend/metal/device.cpp
++++ b/mlx/backend/metal/device.cpp
+@@ -13,6 +13,11 @@
+ #include "mlx/backend/metal/utils.h"
+ #include "mlx/utils.h"
+ 
++#if defined(MLX_EMBED_METALLIB)
++#include "mlx_metallib_embedded.h"
++#include <dispatch/dispatch.h>
++#endif
++
+ namespace mlx::core::metal {
+ 
+ namespace {
+@@ -134,6 +139,26 @@ std::pair<MTL::Library*, NS::Error*> load_swiftpm_library(
+ }
+ 
+ MTL::Library* load_default_library(MTL::Device* device) {
++#if defined(MLX_EMBED_METALLIB)
++  // Try embedded metallib first (for iOS static xcframework distribution)
++  {
++    dispatch_data_t data = dispatch_data_create(
++        mlx_metallib,
++        mlx_metallib_len,
++        nullptr,
++        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
++    
++    NS::Error* error = nullptr;
++    MTL::Library* lib = device->newLibrary(data, &error);
++    dispatch_release(data);
++    
++    if (lib) {
++      return lib;
++    }
++    // Fall through to file-based search if embedded load fails
++  }
++#endif
++
+   NS::Error* error[5];
+   MTL::Library* lib;
+   // First try the colocated mlx.metallib
+diff --git a/mlx/backend/metal/kernels/CMakeLists.txt b/mlx/backend/metal/kernels/CMakeLists.txt
+index 8d3d8a19..e6dd17cd 100644
+--- a/mlx/backend/metal/kernels/CMakeLists.txt
++++ b/mlx/backend/metal/kernels/CMakeLists.txt
+@@ -9,6 +9,19 @@ set(BASE_HEADERS
+     logging.h
+     utils.h)
+ 
++# Determine SDK and deployment target flags for Metal compilation
++if(${CMAKE_SYSTEM_NAME} MATCHES "iOS")
++  set(METAL_SDK "iphoneos")
++  if(DEPLOYMENT_TARGET)
++    set(METAL_TARGET_FLAGS "-mios-version-min=${DEPLOYMENT_TARGET}")
++  else()
++    set(METAL_TARGET_FLAGS "-mios-version-min=17.0")
++  endif()
++else()
++  set(METAL_SDK "macosx")
++  set(METAL_TARGET_FLAGS "")
++endif()
++
+ function(build_kernel_base TARGET SRCFILE DEPS)
+   set(METAL_FLAGS
+       -x
+@@ -24,12 +37,14 @@ function(build_kernel_base TARGET SRCFILE DEPS)
+   if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND MLX_METAL_VERSION GREATER_EQUAL 320)
+     set(METAL_FLAGS ${METAL_FLAGS} -fmetal-enable-logging)
+   endif()
+-  if(NOT CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL "")
++  if(NOT CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL "" AND NOT ${CMAKE_SYSTEM_NAME} MATCHES "iOS")
+     set(METAL_FLAGS ${METAL_FLAGS}
+                     "-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
++  elseif(METAL_TARGET_FLAGS)
++    set(METAL_FLAGS ${METAL_FLAGS} ${METAL_TARGET_FLAGS})
+   endif()
+   add_custom_command(
+-    COMMAND xcrun -sdk macosx metal ${METAL_FLAGS} -c ${SRCFILE}
++    COMMAND xcrun -sdk ${METAL_SDK} metal ${METAL_FLAGS} -c ${SRCFILE}
+             -I${PROJECT_SOURCE_DIR} -o ${TARGET}.air
+     DEPENDS ${SRCFILE} ${DEPS} ${BASE_HEADERS}
+     OUTPUT ${TARGET}.air
+@@ -176,7 +191,7 @@ endif()
+ 
+ add_custom_command(
+   OUTPUT ${MLX_METAL_PATH}/mlx.metallib
+-  COMMAND xcrun -sdk macosx metallib ${KERNEL_AIR} -o
++  COMMAND xcrun -sdk ${METAL_SDK} metallib ${KERNEL_AIR} -o
+           ${MLX_METAL_PATH}/mlx.metallib
+   DEPENDS ${KERNEL_AIR}
+   COMMENT "Building mlx.metallib"
+@@ -184,6 +199,24 @@ add_custom_command(
+ 
+ add_custom_target(mlx-metallib DEPENDS ${MLX_METAL_PATH}/mlx.metallib)
+ 
++# Generate embedded metallib header for iOS builds (no runtime file search needed)
++if(MLX_EMBED_METALLIB)
++  add_custom_command(
++    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/mlx_metallib_embedded.h
++    COMMAND xxd -i mlx.metallib > ${CMAKE_CURRENT_BINARY_DIR}/mlx_metallib_embedded.h
++    WORKING_DIRECTORY ${MLX_METAL_PATH}
++    DEPENDS mlx-metallib
++    COMMENT "Generating embedded metallib header for iOS"
++    VERBATIM)
++
++  add_custom_target(mlx-metallib-embedded 
++    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/mlx_metallib_embedded.h)
++
++  add_dependencies(mlx mlx-metallib-embedded)
++  target_include_directories(mlx PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
++  target_compile_definitions(mlx PRIVATE MLX_EMBED_METALLIB=1)
++endif()
++
+ add_dependencies(mlx mlx-metallib)
+ 
+ # Install metallib

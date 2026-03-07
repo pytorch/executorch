@@ -25,7 +25,9 @@ def _make_granularity(group_size: int):
     return PerAxis(0) if group_size == 0 else PerGroup(group_size)
 
 
-def _make_linear_config(config_name: str, group_size: int, packing_format=None):
+def _make_linear_config(
+    config_name: str, group_size: int, packing_format=None, use_per_tensor_scale=False
+):
     """Build a TorchAO config for linear layer quantization."""
     from torchao.quantization.quant_api import (
         Int4WeightOnlyConfig,
@@ -39,7 +41,7 @@ def _make_linear_config(config_name: str, group_size: int, packing_format=None):
         from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Config
 
         assert group_size == 16, "NVFP4 requires group_size=16"
-        return ExportableNVFP4Config(use_per_tensor_scale=False)
+        return ExportableNVFP4Config(use_per_tensor_scale=use_per_tensor_scale)
     elif config_name == "4w":
         if packing_format:
             return Int4WeightOnlyConfig(
@@ -180,6 +182,7 @@ def quantize_model_(
     qembedding_group_size: Optional[int] = None,
     tie_word_embeddings: bool = False,
     skip_incompatible_shapes: bool = False,
+    nvfp4_per_tensor_scale: bool = False,
 ) -> None:
     """Quantize linear and embedding layers in a module in-place.
 
@@ -204,6 +207,8 @@ def quantize_model_(
             after quantization.
         skip_incompatible_shapes: If True, silently skip layers with
             incompatible weight shapes. If False (default), raise RuntimeError.
+        nvfp4_per_tensor_scale: If True, enable per-tensor scale for NVFP4
+            quantization which improves accuracy.
     """
     if not qlinear_config and not qembedding_config:
         return
@@ -256,7 +261,10 @@ def quantize_model_(
     # Quantize linear layers
     if qlinear_config:
         config = _make_linear_config(
-            qlinear_config, qlinear_group_size, qlinear_packing_format
+            qlinear_config,
+            qlinear_group_size,
+            qlinear_packing_format,
+            use_per_tensor_scale=nvfp4_per_tensor_scale,
         )
         print(
             f"  Applying {qlinear_config} linear quantization "
