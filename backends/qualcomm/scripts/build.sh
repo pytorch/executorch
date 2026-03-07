@@ -18,10 +18,6 @@ fi
 
 SCRIPT_DIR="$( cd "$(dirname "$0")" ; pwd -P)"
 
-if [ -z "$PYTHON_EXECUTABLE" ]; then
-  PYTHON_EXECUTABLE="python3"
-fi
-
 # If QNN_SDK_ROOT is set, pass it to cmake. Otherwise cmake will
 # auto-download the SDK via download_qnn_sdk.py during configure.
 if [[ -n ${QNN_SDK_ROOT} ]]; then
@@ -67,6 +63,11 @@ BUILD_JOB_NUMBER="16"
 
 # Default to use CDSP for now
 DSP_TYPE=3
+
+if [ -z PYTHON_EXECUTABLE ]; then
+  PYTHON_EXECUTABLE="python3"
+fi
+
 if [ -z BUCK2 ]; then
   BUCK2="buck2"
 fi
