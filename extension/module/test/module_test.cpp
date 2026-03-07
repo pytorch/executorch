@@ -722,6 +722,10 @@ TEST_F(ModuleTest, TestMultipleBackendsInOptionsMap) {
 }
 
 TEST_F(ModuleTest, TestSharedMemoryBuffer) {
+#ifdef USE_ATEN_LIB
+  GTEST_SKIP()
+      << "dim_order_ops::_to_dim_order_copy.out not available in ATen mode";
+#endif
   Module module(
       shared_state_path_,
       Module::LoadMode::File,
