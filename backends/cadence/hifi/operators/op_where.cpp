@@ -114,49 +114,17 @@ Tensor& where_self_out(
       for (int i = 0; i < cond.dim(); i++)
         con_shape[i + off_c] = cond.size(i);
 
-      if (con_shape[0] != out_shape[0] || con_shape[1] != out_shape[1] ||
-          con_shape[2] != out_shape[2] || con_shape[3] != out_shape[3]) {
-        void* p_scratch = (void*)kernels::allocate_temp_memory(
-            ctx,
-            (out_shape[0] * out_shape[1] * out_shape[2] * out_shape[3]) *
-                sizeof(int));
-
-        ET_KERNEL_CHECK(ctx, p_scratch != nullptr, MemoryAllocationFailed, out);
-
-        const unsigned char* p_brd_cond = (const unsigned char*)p_scratch;
-        xa_nn_broadcast_8_8(
-            (WORD8* __restrict__)p_brd_cond,
+        xa_nn_elm_select_broadcast_4D_32x32_32(
+            (WORD32 *)out_data,
             out_shape,
-            (const WORD8* __restrict__)con,
-            con_shape,
-            4);
-
-        for (int i = 0; i < 4; i++) {
-          con_shape[i] = out_shape[i];
-        }
-        xa_nn_elm_where_broadcast_4D_f32xf32_f32(
-            out_data,
-            out_shape,
-            a_data,
+            (WORD32 *)a_data,
             inp1_shape,
-            b_data,
-            inp2_shape,
-            p_brd_cond,
-            con_shape);
-
-      } else {
-        xa_nn_elm_where_broadcast_4D_f32xf32_f32(
-            out_data,
-            out_shape,
-            a_data,
-            inp1_shape,
-            b_data,
+            (WORD32 *)b_data,
             inp2_shape,
             con,
             con_shape);
-      }
     } else {
-      xa_nn_elm_where_f32xf32_f32(out_data, a_data, b_data, con, out.numel());
+      xa_nn_elm_select_32x32_32((WORD32 *)out_data, (WORD32 *)a_data, (WORD32 *)b_data, con, out.numel());
     }
     return out;
   }
