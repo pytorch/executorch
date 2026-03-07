@@ -88,12 +88,7 @@ def vela_compile(
             args.append("--verbose-all")
         vela.main(" ".join(args).split(" "))
 
-        if any("ethos-u85" in arg for arg in args) or any(
-            "debug-force-regor" in arg for arg in args
-        ):
-            np_path = os.path.join(dir, "output", "out_vela.npz")
-        else:
-            np_path = os.path.join(dir, "output", "out_sg0_vela.npz")
+        np_path = os.path.join(dir, "output", "out_vela.npz")
 
         blocks = b""
         with np.load(np_path, allow_pickle=False) as data:

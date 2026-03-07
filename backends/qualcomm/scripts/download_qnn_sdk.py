@@ -191,11 +191,57 @@ def _atomic_download(url: str, dest: pathlib.Path, label: str = ""):
 ####################
 
 
+def _stream_to_file(
+    session: requests.Session,
+    url: str,
+    archive_path: pathlib.Path,
+    attempt: int,
+    max_retries: int,
+) -> bool:
+    """Single download attempt with resume support. Returns True on success."""
+    downloaded = archive_path.stat().st_size if archive_path.exists() else 0
+    headers = {"Range": f"bytes={downloaded}-"} if downloaded > 0 else {}
+
+    with session.get(url, stream=True, headers=headers) as r:
+        if r.status_code == 200 and downloaded > 0:
+            downloaded = 0  # Server doesn't support Range — restart
+        r.raise_for_status()
+
+        total = downloaded + int(r.headers.get("content-length", 0))
+        mode = "ab" if downloaded > 0 else "wb"
+
+        if attempt > 1:
+            dl_mb = downloaded // (1024 * 1024)
+            total_mb = total // (1024 * 1024)
+            logger.info(
+                f"[QNN] Resuming download from {dl_mb}/{total_mb} MB "
+                f"(attempt {attempt}/{max_retries})..."
+            )
+
+        with open(archive_path, mode) as f:
+            for chunk in r.iter_content(1024 * 1024):
+                if not chunk:
+                    continue
+                f.write(chunk)
+                downloaded += len(chunk)
+                if total:
+                    pct = downloaded * 100 / total
+                    dl_mb = downloaded // (1024 * 1024)
+                    total_mb = total // (1024 * 1024)
+                    _progress(
+                        f"\r[QNN] Downloading: {dl_mb}/{total_mb} MB ({pct:.0f}%)"
+                    )
+        if total:
+            _progress_newline()
+
+    logger.info("[QNN] Download complete.")
+    return True
+
+
 def _download_archive(
     url: str, archive_path: pathlib.Path, max_retries: int = 3
 ) -> bool:
     """Streaming download with retry + resume on mid-stream failures."""
-
     logger.debug("Archive will be saved to: %s", archive_path)
 
     session = requests.Session()
@@ -207,52 +253,10 @@ def _download_archive(
     )
     session.mount("https://", HTTPAdapter(max_retries=retries))
 
-    chunk_size = 1024 * 1024  # 1MB
-
     for attempt in range(1, max_retries + 1):
-        # Resume from where we left off if the file already exists (partial)
-        downloaded = (
-            archive_path.stat().st_size if archive_path.exists() else 0
-        )
-        headers = {"Range": f"bytes={downloaded}-"} if downloaded > 0 else {}
-
         try:
-            with session.get(url, stream=True, headers=headers) as r:
-                # 206 = partial content (resume), 200 = full response
-                if r.status_code == 200 and downloaded > 0:
-                    # Server doesn't support Range — restart from scratch
-                    downloaded = 0
-                r.raise_for_status()
-
-                total = downloaded + int(r.headers.get("content-length", 0))
-                mode = "ab" if downloaded > 0 else "wb"
-
-                if attempt > 1:
-                    dl_mb = downloaded // (1024 * 1024)
-                    total_mb = total // (1024 * 1024)
-                    logger.info(
-                        f"[QNN] Resuming download from {dl_mb}/{total_mb} MB "
-                        f"(attempt {attempt}/{max_retries})..."
-                    )
-
-                with open(archive_path, mode) as f:
-                    for chunk in r.iter_content(chunk_size):
-                        if chunk:
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            if total:
-                                pct = downloaded * 100 / total
-                                dl_mb = downloaded // (1024 * 1024)
-                                total_mb = total // (1024 * 1024)
-                                _progress(
-                                    f"\r[QNN] Downloading: {dl_mb}/{total_mb} MB ({pct:.0f}%)"
-                                )
-                if total:
-                    _progress_newline()
-
-            logger.info("[QNN] Download complete.")
-            break  # Success
-
+            if _stream_to_file(session, url, archive_path, attempt, max_retries):
+                break
         except (
             requests.exceptions.ChunkedEncodingError,
             requests.exceptions.ConnectionError,
@@ -267,7 +271,6 @@ def _download_archive(
             else:
                 logger.error(f"[QNN] Download failed after {max_retries} attempts: {e}")
                 return False
-
         except Exception as e:
             _progress_newline()
             logger.error(f"[QNN] Download error: {e}")
@@ -303,7 +306,9 @@ def _verify_extraction(dst_folder: pathlib.Path):
         logger.error("[QNN] Error: SDK directory was not created!")
 
 
-def _download_qnn_sdk(dst_folder: Optional[pathlib.Path] = None) -> Optional[pathlib.Path]:
+def _download_qnn_sdk(
+    dst_folder: Optional[pathlib.Path] = None,
+) -> Optional[pathlib.Path]:
     """
     Download and extract the Qualcomm SDK into dst_folder.
     Only runs on Linux x86 platforms.
@@ -450,9 +455,7 @@ def _stage_prebuilt_glibc():
             pct = min(downloaded * 100 / total_size, 100)
             dl_mb = downloaded // (1024 * 1024)
             total_mb = total_size // (1024 * 1024)
-            _progress(
-                f"\r[QNN] Downloading glibc: {dl_mb}/{total_mb} MB ({pct:.0f}%)"
-            )
+            _progress(f"\r[QNN] Downloading glibc: {dl_mb}/{total_mb} MB ({pct:.0f}%)")
 
     try:
         urllib.request.urlretrieve(rpm_url, rpm_path, reporthook=_reporthook)

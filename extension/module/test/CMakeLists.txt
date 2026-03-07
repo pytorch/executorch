@@ -25,8 +25,9 @@ add_custom_command(
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedState.pte"
   COMMAND ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
-          "ModuleAdd" --outdir "${CMAKE_CURRENT_BINARY_DIR}"
+          "ModuleAdd,ModuleSharedState" --outdir "${CMAKE_CURRENT_BINARY_DIR}"
   COMMAND
     ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
     "ModuleAddMul,ModuleLinear" --external-constants --outdir
@@ -41,6 +42,7 @@ add_custom_target(
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedState.pte"
 )
 
 set(test_env
@@ -49,6 +51,7 @@ set(test_env
     "ET_MODULE_ADD_MUL_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
     "ET_MODULE_LINEAR_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
     "ET_MODULE_LINEAR_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
+    "ET_MODULE_SHARED_STATE=${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedState.pte"
 )
 
 et_cxx_test(
