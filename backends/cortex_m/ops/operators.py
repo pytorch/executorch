@@ -1110,16 +1110,16 @@ def quantized_avg_pool2d_meta(
     multiplier: int,
     shift: int,
 ) -> torch.Tensor:
-    kernel = _ensure_tuple2(kernel_size)
-    stride_vals = _ensure_tuple2(stride)
-    padding_vals = _ensure_tuple2(padding)
-    dilation_vals = (1, 1)
-
-    output_shape = _compute_max_pool2d_output_shape(
-        input.shape, kernel, stride_vals, padding_vals, dilation_vals
+    output = F.avg_pool2d(
+        input.to(torch.float),
+        kernel_size,
+        stride=stride,
+        padding=padding,
+        ceil_mode=False,
+        count_include_pad=False,
     )
     return torch.empty(
-        output_shape,
+        output.shape,
         dtype=torch.int8,
         device=input.device,
         memory_format=torch.channels_last,
@@ -1136,21 +1136,20 @@ def quantized_avg_pool2d_impl(
     multiplier: int,
     shift: int,
 ) -> torch.Tensor:
-
     dequant_input = dequantize_per_tensor_cmsis(input, zero_point, multiplier, shift)
 
     kernel = _ensure_tuple2(kernel_size)
     stride_vals = _ensure_tuple2(stride)
     padding_vals = _ensure_tuple2(padding)
 
-    # TODO: implement count_include_pad=True, ceil_mode=True, dilation != 1.
+    # TODO: implement dilation != 1.
     result = F.avg_pool2d(
         dequant_input,
         kernel,
         stride=stride_vals,
         padding=padding_vals,
-        count_include_pad=False,
         ceil_mode=False,
+        count_include_pad=False,
     )
     result = quantize_per_tensor_cmsis(result, zero_point, multiplier, shift)
     output = torch.clamp(result, -128, 127)
