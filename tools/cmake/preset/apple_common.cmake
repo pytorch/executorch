@@ -18,6 +18,7 @@ add_compile_options(
 set_overridable_option(BUILD_TESTING OFF)
 set_overridable_option(EXECUTORCH_BUILD_XNNPACK ON)
 set_overridable_option(EXECUTORCH_BUILD_COREML ON)
+set_overridable_option(EXECUTORCH_BUILD_MLX ON)
 set_overridable_option(EXECUTORCH_BUILD_MPS ON)
 set_overridable_option(EXECUTORCH_XNNPACK_ENABLE_WEIGHT_CACHE ON)
 set_overridable_option(EXECUTORCH_XNNPACK_SHARED_WORKSPACE ON)

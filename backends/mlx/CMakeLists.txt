@@ -212,10 +212,24 @@ set(MLX_METAL_JIT
     CACHE BOOL "Use JIT compiled Metal kernels"
 )
 
+# For iOS builds, embed the metallib in the library so apps don't need to
+# bundle it separately. This avoids the runtime "metallib not found" issue
+# with static xcframeworks.
+if(CMAKE_SYSTEM_NAME MATCHES "iOS")
+  set(MLX_EMBED_METALLIB
+      ON
+      CACHE BOOL "Embed metallib in static library for iOS" FORCE
+  )
+  message(STATUS "iOS build: embedding metallib in static library")
+endif()
+
 # Auto-apply patches to MLX submodule. Each patch is applied idempotently: `git
 # apply --check` tests whether the patch is still applicable (i.e. not yet
 # applied), and only then applies it.
-set(_mlx_patches "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_json.patch")
+# Note: mlx_ios_metal.patch includes the json changes from mlx_json.patch
+set(_mlx_patches
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_ios_metal.patch"
+)
 foreach(_patch IN LISTS _mlx_patches)
   if(EXISTS "${_patch}" AND EXISTS "${MLX_SOURCE_DIR}")
     get_filename_component(_patch_name "${_patch}" NAME)

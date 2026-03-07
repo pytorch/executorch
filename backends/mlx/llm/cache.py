@@ -326,14 +326,20 @@ class HFStaticCache(StaticCache):
             device: Device for cache tensors (default: None = CPU)
             dtype: Data type for cache tensors (default: torch.float32)
         """
+        # Handle nested configs (e.g., Gemma3 has text_config)
+        if hasattr(config, "text_config"):
+            text_config = config.text_config
+        else:
+            text_config = config
+
         # Resolve dimensions from config BEFORE calling parent
-        num_layers = config.num_hidden_layers
-        num_heads = getattr(config, "num_key_value_heads", config.num_attention_heads)
+        num_layers = text_config.num_hidden_layers
+        num_heads = getattr(text_config, "num_key_value_heads", text_config.num_attention_heads)
         head_dim = getattr(
-            config, "head_dim", config.hidden_size // config.num_attention_heads
+            text_config, "head_dim", text_config.hidden_size // text_config.num_attention_heads
         )
         actual_max_cache_len = max_cache_len or getattr(
-            config, "max_position_embeddings", 2048
+            text_config, "max_position_embeddings", 2048
         )
 
         # Initialize parent StaticCache with required arguments

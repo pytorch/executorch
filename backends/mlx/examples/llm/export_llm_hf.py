@@ -58,6 +58,8 @@ def _export_with_optimum(
     no_tie_word_embeddings: bool = False,
     qlinear_group_size: Optional[int] = None,
     qembedding_group_size: Optional[int] = None,
+    multimodal_only: bool = False,
+    nvfp4_per_tensor_scale: bool = False,
 ) -> None:
     import executorch.exir as exir
     from executorch.backends.mlx import MLXPartitioner
@@ -89,19 +91,173 @@ def _export_with_optimum(
             exportable.model.config, "tie_word_embeddings", False
         )
         and not no_tie_word_embeddings,
+        skip_incompatible_shapes=True,  # Skip vision tower layers with odd shapes
+        nvfp4_per_tensor_scale=nvfp4_per_tensor_scale,
     )
 
     logger.info("Exporting model with torch.export...")
     exported_progs = exportable.export()
+
+    if len(exported_progs) == 1:
+        exported_progs = {"forward": next(iter(exported_progs.values()))}
+
+    # Skip forward if --multimodal-only is set
+    if multimodal_only and "forward" in exported_progs:
+        logger.info("Removing 'forward' export (--multimodal-only)")
+        del exported_progs["forward"]
+
+    # Add multimodal export methods (token_embedding and text_decoder)
+    # for compatibility with MultimodalRunner
+    logger.info("Adding multimodal export methods...")
+    model = exportable.model
+    max_cache_len = exportable.metadata.get("get_max_seq_len", max_seq_len)
+
+    torch_dtype_map = {
+        "float32": torch.float32,
+        "float16": torch.float16,
+        "bfloat16": torch.bfloat16,
+    }
+    torch_dtype = torch_dtype_map.get(dtype_str, torch.bfloat16)
+
+    seq_length = 3
+    example_input_ids = torch.zeros((1, seq_length), dtype=torch.long)
+    example_cache_position = torch.arange(seq_length, dtype=torch.long)
+    seq_len_dim = torch.export.Dim("seq_length_dim", max=max_cache_len - 1)
+
+    with torch.no_grad():
+        # Export token_embedding method
+        logger.info("  Exporting 'token_embedding' method...")
+        token_embedding_layer = model.get_input_embeddings()
+        token_embedding_dynamic_shapes = ({1: seq_len_dim},)
+        token_embedding_ep = torch.export.export(
+            token_embedding_layer,
+            args=(example_input_ids,),
+            dynamic_shapes=token_embedding_dynamic_shapes,
+            strict=True,
+        )
+        exported_progs["token_embedding"] = token_embedding_ep
+        logger.info("    token_embedding export completed")
+
+        # Export text_decoder method
+        logger.info("  Exporting 'text_decoder' method...")
+        # Handle nested configs (e.g., Gemma3 has text_config)
+        if hasattr(model.config, "text_config"):
+            hidden_size = model.config.text_config.hidden_size
+        else:
+            hidden_size = model.config.hidden_size
+        example_inputs_embeds = torch.zeros(
+            (1, seq_length, hidden_size), dtype=torch_dtype
+        )
+        text_decoder_dynamic_shapes = {
+            "inputs_embeds": {1: seq_len_dim},
+            "cache_position": {0: seq_len_dim},
+        }
+
+        class TextDecoderWrapper(torch.nn.Module):
+            def __init__(self, exportable_module):
+                super().__init__()
+                self.exportable = exportable_module
+
+            def forward(self, inputs_embeds, cache_position):
+                if hasattr(self.exportable, "cache"):
+                    cache = self.exportable.cache
+                elif hasattr(self.exportable, "static_cache"):
+                    cache = self.exportable.static_cache
+                else:
+                    cache = None
+
+                outputs = self.exportable.model(
+                    inputs_embeds=inputs_embeds,
+                    cache_position=cache_position,
+                    past_key_values=cache,
+                    use_cache=True,
+                )
+                return outputs.logits
+
+        text_decoder_wrapper = TextDecoderWrapper(exportable)
+        text_decoder_ep = torch.export.export(
+            text_decoder_wrapper,
+            args=(),
+            kwargs={
+                "inputs_embeds": example_inputs_embeds,
+                "cache_position": example_cache_position,
+            },
+            dynamic_shapes=text_decoder_dynamic_shapes,
+            strict=True,
+        )
+        exported_progs["text_decoder"] = text_decoder_ep
+        logger.info("    text_decoder export completed")
+
+        # Export vision_encoder method (for multimodal models with vision tower)
+        if hasattr(model, "get_image_features") or hasattr(model, "vision_tower"):
+            logger.info("  Exporting 'vision_encoder' method...")
+
+            class VisionEncoderWrapper(torch.nn.Module):
+                def __init__(self, model):
+                    super().__init__()
+                    self.model = model
+
+                def forward(self, input_features):
+                    image_embeds = self.model.get_image_features(input_features)
+                    if isinstance(image_embeds, list):
+                        image_embeds = torch.stack(image_embeds)
+                    return image_embeds
+
+            vision_encoder = VisionEncoderWrapper(model)
+
+            try:
+                from transformers import AutoProcessor
+
+                processor = AutoProcessor.from_pretrained(model_id)
+                sample_conversation = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "url": "https://llava-vl.github.io/static/images/view.jpg",
+                            },
+                        ],
+                    },
+                ]
+                processed_inputs = processor.apply_chat_template(
+                    sample_conversation,
+                    add_generation_prompt=True,
+                    tokenize=True,
+                    return_dict=True,
+                    return_tensors="pt",
+                )
+                if "pixel_values" in processed_inputs:
+                    example_pixel_values = processed_inputs["pixel_values"].to(
+                        dtype=torch_dtype
+                    )
+                    logger.info(
+                        f"    Using pixel_values shape: {example_pixel_values.shape}"
+                    )
+
+                    vision_encoder_ep = torch.export.export(
+                        vision_encoder,
+                        args=(),
+                        kwargs={"input_features": example_pixel_values},
+                        dynamic_shapes=None,
+                        strict=True,
+                    )
+                    exported_progs["vision_encoder"] = vision_encoder_ep
+                    logger.info("    vision_encoder export completed")
+                else:
+                    logger.warning(
+                        "    Skipping vision_encoder: processor didn't return pixel_values"
+                    )
+            except Exception as e:
+                logger.warning(f"    Skipping vision_encoder export: {e}")
+        else:
+            logger.info("  Skipping vision_encoder: model has no vision tower")
 
     logger.info("Delegating to MLX backend...")
     edge_config = EdgeCompileConfig(
         _check_ir_validity=False,
         _skip_dim_order=True,
     )
-
-    if len(exported_progs) == 1:
-        exported_progs = {"forward": next(iter(exported_progs.values()))}
 
     edge_program = exir.to_edge_transform_and_lower(
         exported_progs,
@@ -134,6 +290,8 @@ def _export_with_custom_components(
     no_tie_word_embeddings: bool = False,
     qlinear_group_size: Optional[int] = None,
     qembedding_group_size: Optional[int] = None,
+    multimodal_only: bool = False,
+    nvfp4_per_tensor_scale: bool = False,
 ) -> None:
     """
     Export using direct HF model with custom MLX components.
@@ -276,6 +434,8 @@ def _export_with_custom_components(
         qembedding_group_size=qembedding_group_size,
         tie_word_embeddings=getattr(model.config, "tie_word_embeddings", False)
         and not no_tie_word_embeddings,
+        skip_incompatible_shapes=True,  # Skip vision tower layers with odd shapes
+        nvfp4_per_tensor_scale=nvfp4_per_tensor_scale,
     )
 
     logger.info("Exporting model with torch.export...")
@@ -289,21 +449,163 @@ def _export_with_custom_components(
         "cache_position": {0: seq_len_dim},
     }
 
+    exported_programs = {}
+
     with torch.no_grad():
-        exported_program = torch.export.export(
-            exportable,
-            args=(),
-            kwargs={
-                "input_ids": example_input_ids,
-                "cache_position": example_cache_position,
-            },
-            dynamic_shapes=dynamic_shapes,
+        # 1. Export "forward" method (BC for TextLLMRunner - takes input_ids)
+        # Skip if --multimodal-only is set (reduces model size ~2x)
+        if not multimodal_only:
+            logger.info("Exporting 'forward' method (input_ids -> logits)...")
+            forward_ep = torch.export.export(
+                exportable,
+                args=(),
+                kwargs={
+                    "input_ids": example_input_ids,
+                    "cache_position": example_cache_position,
+                },
+                dynamic_shapes=dynamic_shapes,
+                strict=True,
+            )
+            exported_programs["forward"] = forward_ep
+            logger.info("  forward export completed")
+        else:
+            logger.info("Skipping 'forward' export (--multimodal-only)")
+
+        # 2. Export "token_embedding" method (for MultimodalRunner)
+        logger.info("Exporting 'token_embedding' method (input_ids -> embeddings)...")
+        token_embedding_layer = model.get_input_embeddings()
+        token_embedding_dynamic_shapes = ({1: seq_len_dim},)
+        token_embedding_ep = torch.export.export(
+            token_embedding_layer,
+            args=(example_input_ids,),
+            dynamic_shapes=token_embedding_dynamic_shapes,
             strict=True,
         )
+        exported_programs["token_embedding"] = token_embedding_ep
+        logger.info("  token_embedding export completed")
+
+        # 3. Export "text_decoder" method (for MultimodalRunner - takes inputs_embeds)
+        logger.info("Exporting 'text_decoder' method (inputs_embeds -> logits)...")
+        # Handle nested configs (e.g., Gemma3 has text_config)
+        if hasattr(model.config, "text_config"):
+            hidden_size = model.config.text_config.hidden_size
+        else:
+            hidden_size = model.config.hidden_size
+        example_inputs_embeds = torch.zeros(
+            (1, seq_length, hidden_size), dtype=torch_dtype
+        )
+        text_decoder_dynamic_shapes = {
+            "inputs_embeds": {1: seq_len_dim},
+            "cache_position": {0: seq_len_dim},
+        }
+
+        # Create a wrapper that takes inputs_embeds instead of input_ids
+        class TextDecoderWrapper(torch.nn.Module):
+            def __init__(self, exportable_module):
+                super().__init__()
+                self.exportable = exportable_module
+
+            def forward(self, inputs_embeds, cache_position):
+                # Get the cache from the exportable module
+                if hasattr(self.exportable, "cache"):
+                    cache = self.exportable.cache
+                elif hasattr(self.exportable, "static_cache"):
+                    cache = self.exportable.static_cache
+                else:
+                    cache = None
+
+                # Call model with inputs_embeds instead of input_ids
+                outputs = self.exportable.model(
+                    inputs_embeds=inputs_embeds,
+                    cache_position=cache_position,
+                    past_key_values=cache,
+                    use_cache=True,
+                )
+                return outputs.logits
+
+        text_decoder_wrapper = TextDecoderWrapper(exportable)
+        text_decoder_ep = torch.export.export(
+            text_decoder_wrapper,
+            args=(),
+            kwargs={
+                "inputs_embeds": example_inputs_embeds,
+                "cache_position": example_cache_position,
+            },
+            dynamic_shapes=text_decoder_dynamic_shapes,
+            strict=True,
+        )
+        exported_programs["text_decoder"] = text_decoder_ep
+        logger.info("  text_decoder export completed")
+
+        # 4. Export "vision_encoder" method (for multimodal models with vision tower)
+        if hasattr(model, "get_image_features") or hasattr(model, "vision_tower"):
+            logger.info("Exporting 'vision_encoder' method (pixel_values -> image_embeds)...")
+
+            class VisionEncoderWrapper(torch.nn.Module):
+                def __init__(self, model):
+                    super().__init__()
+                    self.model = model
+
+                def forward(self, input_features):
+                    image_embeds = self.model.get_image_features(input_features)
+                    if isinstance(image_embeds, list):
+                        image_embeds = torch.stack(image_embeds)
+                    return image_embeds
+
+            vision_encoder = VisionEncoderWrapper(model)
+
+            # Get example input from processor
+            try:
+                from transformers import AutoProcessor
+
+                processor = AutoProcessor.from_pretrained(model_id)
+                sample_conversation = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "url": "https://llava-vl.github.io/static/images/view.jpg",
+                            },
+                        ],
+                    },
+                ]
+                processed_inputs = processor.apply_chat_template(
+                    sample_conversation,
+                    add_generation_prompt=True,
+                    tokenize=True,
+                    return_dict=True,
+                    return_tensors="pt",
+                )
+                if "pixel_values" in processed_inputs:
+                    example_pixel_values = processed_inputs["pixel_values"].to(
+                        dtype=torch_dtype
+                    )
+                    logger.info(
+                        f"    Using pixel_values shape: {example_pixel_values.shape}"
+                    )
+
+                    vision_encoder_ep = torch.export.export(
+                        vision_encoder,
+                        args=(),
+                        kwargs={"input_features": example_pixel_values},
+                        dynamic_shapes=None,  # No dynamic shapes for now
+                        strict=True,
+                    )
+                    exported_programs["vision_encoder"] = vision_encoder_ep
+                    logger.info("  vision_encoder export completed")
+                else:
+                    logger.warning(
+                        "  Skipping vision_encoder: processor didn't return pixel_values"
+                    )
+            except Exception as e:
+                logger.warning(f"  Skipping vision_encoder export: {e}")
+        else:
+            logger.info("  Skipping vision_encoder: model has no vision tower")
 
     logger.info("Export completed successfully")
-    for sym, constraint in exported_program.range_constraints.items():
-        logger.info(f"  Range constraint: {sym}: {constraint}")
+    for name, ep in exported_programs.items():
+        logger.info(f"  {name}: {len(ep.range_constraints)} range constraints")
 
     logger.info("Delegating to MLX backend...")
     edge_config = EdgeCompileConfig(
@@ -311,11 +613,22 @@ def _export_with_custom_components(
         _skip_dim_order=True,
     )
 
+    # Build metadata methods for the etLLM app
+    metadata = {
+        "get_max_seq_len": effective_cache_len,
+        "get_max_context_len": effective_cache_len,
+        "use_kv_cache": True,
+        "use_sdpa_with_kv_cache": use_custom_sdpa,
+        "enable_dynamic_shape": True,
+    }
+    logger.info(f"Exporting with metadata: {metadata}")
+
     edge_program = exir.to_edge_transform_and_lower(
-        {"forward": exported_program},
+        exported_programs,
         transform_passes=get_default_passes(),
         partitioner=[MLXPartitioner()],
         compile_config=edge_config,
+        constant_methods=metadata,
     )
 
     logger.info("Exporting to ExecuTorch...")
@@ -351,6 +664,8 @@ def export_llama_hf(
     no_tie_word_embeddings: bool = False,
     qlinear_group_size: Optional[int] = None,
     qembedding_group_size: Optional[int] = None,
+    multimodal_only: bool = False,
+    nvfp4_per_tensor_scale: bool = False,
 ) -> None:
     """
     Export a HuggingFace Llama model to ExecuTorch with MLX backend.
@@ -382,6 +697,8 @@ def export_llama_hf(
             no_tie_word_embeddings=no_tie_word_embeddings,
             qlinear_group_size=qlinear_group_size,
             qembedding_group_size=qembedding_group_size,
+            multimodal_only=multimodal_only,
+            nvfp4_per_tensor_scale=nvfp4_per_tensor_scale,
         )
     else:
         logger.info("Using optimum-executorch pipeline (no custom components)")
@@ -395,6 +712,8 @@ def export_llama_hf(
             no_tie_word_embeddings=no_tie_word_embeddings,
             qlinear_group_size=qlinear_group_size,
             qembedding_group_size=qembedding_group_size,
+            multimodal_only=multimodal_only,
+            nvfp4_per_tensor_scale=nvfp4_per_tensor_scale,
         )
 
 
@@ -442,6 +761,12 @@ def main():
         default=False,
         help="Use MLX custom KV cache (mlx::kv_cache_update)",
     )
+    parser.add_argument(
+        "--multimodal-only",
+        action="store_true",
+        default=False,
+        help="Skip 'forward' export for multimodal models (reduces size ~2x)",
+    )
 
     args = parser.parse_args()
 
@@ -457,6 +782,8 @@ def main():
         no_tie_word_embeddings=args.no_tie_word_embeddings,
         qlinear_group_size=args.qlinear_group_size,
         qembedding_group_size=args.qembedding_group_size,
+        multimodal_only=args.multimodal_only,
+        nvfp4_per_tensor_scale=getattr(args, "nvfp4_per_tensor_scale", False),
     )
 
 

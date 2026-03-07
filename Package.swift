@@ -52,6 +52,13 @@ let products = deliverables([
       "sqlite3",
     ],
   ],
+  "backend_mlx": [
+    "frameworks": [
+      "Metal",
+      "MetalPerformanceShaders",
+    ],
+    "forceLoad": true,
+  ],
   "backend_mps": [
     "frameworks": [
       "Metal",
@@ -113,15 +120,20 @@ for (key, value) in products {
     name: key,
     path: "cmake-out/\(key).xcframework"
   ))
+  let forceLoad = value["forceLoad"] as? Bool ?? false
+  var linkerSettings: [LinkerSetting] =
+      (value["frameworks"] as? [String] ?? []).map { .linkedFramework($0) } +
+      (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
+  if forceLoad {
+    linkerSettings.append(.unsafeFlags(["-all_load"]))
+  }
   let target: Target = .target(
     name: "\(key)\(dependencies_suffix)",
     dependencies: ([key] + (value["targets"] as? [String] ?? []).map {
       key.hasSuffix(debug_suffix) ? $0 + debug_suffix : $0
     }).map { .target(name: $0) },
     path: ".Package.swift/\(key)",
-    linkerSettings:
-      (value["frameworks"] as? [String] ?? []).map { .linkedFramework($0) } +
-      (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
+    linkerSettings: linkerSettings
   )
   packageTargets.append(target)
 }

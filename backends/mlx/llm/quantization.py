@@ -55,3 +55,9 @@ def add_quantization_args(parser: argparse.ArgumentParser) -> None:
         help="Disable tying lm_head weights to embedding after quantization, "
         "even if the model config has tie_word_embeddings=True",
     )
+    parser.add_argument(
+        "--nvfp4-per-tensor-scale",
+        action="store_true",
+        default=False,
+        help="Enable per-tensor scale for NVFP4 quantization (improves accuracy)",
+    )
