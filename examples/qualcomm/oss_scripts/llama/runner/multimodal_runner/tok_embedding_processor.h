@@ -9,18 +9,18 @@
 #pragma once
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/cache_utils.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/imem_alloc.h>
-#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/embedding_runner.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/tok_embedding_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/utils.h>
 #include <memory>
 #include <string>
 
 namespace example {
 /**
- * @class EmbeddingProcessor
+ * @class TokenEmbeddingProcessor
  * @brief Class for processing prompts to generate embeddings using embedding
  * runner.
  */
-class EmbeddingProcessor {
+class TokenEmbeddingProcessor {
  public:
   struct Metadata {
     int32_t context_len;
@@ -30,8 +30,8 @@ class EmbeddingProcessor {
     int32_t embedding_dim;
   };
 
-  EmbeddingProcessor(
-      EmbeddingRunner* embedding_runner,
+  TokenEmbeddingProcessor(
+      TokenEmbeddingRunner* token_tok_embedding_runner,
       const std::string& method_name,
       Metadata metadata);
 
@@ -75,7 +75,7 @@ class EmbeddingProcessor {
       const std::vector<uint64_t>& prompt_tokens,
       int64_t prompt_pos);
 
-  EmbeddingRunner* embedding_runner_;
+  TokenEmbeddingRunner* tok_embedding_runner_;
   std::string method_name_;
 
   // metadata
@@ -86,9 +86,6 @@ class EmbeddingProcessor {
   TensorStruct<float> embeddings_;
   TensorStruct<float> prompt_embeddings_;
   std::vector<float> prompt_embeddings_buffer_;
-  std::vector<executorch::aten::TensorImpl::SizesType> prompt_embeddings_sizes_;
-  std::vector<executorch::aten::TensorImpl::DimOrderType>
-      prompt_embeddings_dim_order_;
 
   std::vector<executorch::runtime::EValue> inputs_;
   std::vector<executorch::aten::Tensor> input_tensors_;
