@@ -410,6 +410,7 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
   const size_t n_value = flatbuffer_values->size();
   values_ = memory_manager_->method_allocator()->allocateList<EValue>(n_value);
   if (values_ == nullptr) {
+    ET_LOG(Error, "Failed to allocate values array of size %zu", n_value);
     return Error::MemoryAllocationFailed;
   }
   const size_t n_input = inputs_size();
@@ -417,6 +418,7 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
     input_set_ =
         memory_manager_->method_allocator()->allocateList<bool>(n_input);
     if (input_set_ == nullptr) {
+      ET_LOG(Error, "Failed to allocate input_set array of size %zu", n_input);
       return Error::MemoryAllocationFailed;
     }
     for (size_t i = 0; i < n_input; ++i) {
@@ -440,6 +442,10 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
         memory_manager_->method_allocator()->allocateList<NamedData>(
             max_external_constants.get());
     if (external_constants_ == nullptr) {
+      ET_LOG(
+          Error,
+          "Failed to allocate external_constants array of size %zu",
+          max_external_constants.get());
       return Error::MemoryAllocationFailed;
     }
     Error err = parse_external_constants(external_data_map);
@@ -814,6 +820,7 @@ Result<Method> Method::load(
         memory_manager->method_allocator()
             ->allocateInstance<PlatformMemoryAllocator>();
     if (platform_allocator == nullptr) {
+      ET_LOG(Error, "Failed to allocate PlatformMemoryAllocator");
       return Error::MemoryAllocationFailed;
     }
     new (platform_allocator) PlatformMemoryAllocator();
@@ -863,6 +870,7 @@ Error Method::init(
     size_t n_delegate = delegates->size();
     delegates_ = method_allocator->allocateList<BackendDelegate>(n_delegate);
     if (delegates_ == nullptr) {
+      ET_LOG(Error, "Failed to allocate delegates array of size %zu", n_delegate);
       return Error::MemoryAllocationFailed;
     }
 
@@ -886,6 +894,7 @@ Error Method::init(
       merged_data_map_ =
           method_allocator->allocateInstance<internal::MergedDataMap>();
       if (merged_data_map_ == nullptr) {
+        ET_LOG(Error, "Failed to allocate MergedDataMap");
         return Error::MemoryAllocationFailed;
       }
       new (merged_data_map_) internal::MergedDataMap(std::move(merged.get()));
@@ -938,6 +947,7 @@ Error Method::init(
     n_chains_ = chains->size();
     chains_ = method_allocator->allocateList<Chain>(n_chains_);
     if (chains_ == nullptr) {
+      ET_LOG(Error, "Failed to allocate chains array of size %zu", n_chains_);
       return Error::MemoryAllocationFailed;
     }
 
@@ -957,11 +967,16 @@ Error Method::init(
       auto chain_instruction_kernels =
           method_allocator->allocateList<OpFunction>(num_instructions);
       if (chain_instruction_kernels == nullptr) {
+        ET_LOG(Error, "Failed to allocate instruction kernels for chain %zu", i);
         return Error::MemoryAllocationFailed;
       }
       auto chain_instruction_arg_lists =
           method_allocator->allocateList<InstructionArgs>(num_instructions);
       if (chain_instruction_arg_lists == nullptr) {
+        ET_LOG(
+            Error,
+            "Failed to allocate instruction arg lists for chain %zu",
+            i);
         return Error::MemoryAllocationFailed;
       }
 

@@ -22,11 +22,13 @@ namespace runtime {
 ET_NODISCARD Error
 validate_tensor(const executorch_flatbuffer::Tensor* tensor) {
   if (tensor == nullptr) {
+    ET_LOG(Error, "Tensor is null");
     return Error::InvalidProgram;
   }
 
   const auto* sizes = tensor->sizes();
   if (sizes == nullptr) {
+    ET_LOG(Error, "Tensor has null sizes");
     return Error::InvalidProgram;
   }
 
@@ -58,6 +60,7 @@ validate_tensor(const executorch_flatbuffer::Tensor* tensor) {
   auto scalar_type =
       static_cast<executorch::aten::ScalarType>(tensor->scalar_type());
   if (!executorch::runtime::isValid(scalar_type)) {
+    ET_LOG(Error, "Invalid ScalarType %d", static_cast<int>(scalar_type));
     return Error::InvalidProgram;
   }
 
@@ -81,6 +84,7 @@ validate_tensor(const executorch_flatbuffer::Tensor* tensor) {
 ET_NODISCARD Error
 validate_program(const executorch_flatbuffer::Program* program) {
   if (program == nullptr) {
+    ET_LOG(Error, "Program is null");
     return Error::InvalidProgram;
   }
 
