@@ -433,6 +433,10 @@ _one_to_one = [
     torch.ops.aten.acos.default,
     torch.ops.aten.cumsum.default,
     torch.ops.aten.tan.default,
+    # Clamp modifies the value range (enforces min/max bounds), so it needs
+    # independent input/output quantization to properly track the clamped range.
+    torch.ops.aten.clamp.default,
+    torch.ops.aten.clamp.Tensor,
 ]
 
 _one_to_one_shared_input_qspec = [
@@ -480,8 +484,6 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.pad.default,
     torch.ops.aten.amax.default,
     torch.ops.aten.amin.default,
-    torch.ops.aten.clamp.default,
-    torch.ops.aten.clamp.Tensor,
     torch.ops.aten.unflatten.int,
     torch.ops.aten.gather.default,
     torch.ops.aten.unfold_copy.default,

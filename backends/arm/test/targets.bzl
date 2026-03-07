@@ -36,6 +36,7 @@ def define_arm_tests():
     # Quantization
     test_files += [
         "quantizer/test_generic_annotater.py",
+        "quantizer/test_clamp_quantization.py",
     ]
 
     # Misc tests
