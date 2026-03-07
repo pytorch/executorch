@@ -425,7 +425,7 @@ class TextDecoder(Component):
         }
 
         freq_op = {
-            exir_ops.edge.aten.select.int,
+            exir_ops.edge.aten.select_copy.int,
         }
         quant_io_type = None
 
