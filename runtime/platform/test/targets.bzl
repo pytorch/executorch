@@ -19,9 +19,9 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
-        name = "platform_death_test",
+        name = "platform_autoinit_test",
         srcs = [
-            "executor_pal_death_test.cpp",
+            "executor_pal_autoinit_test.cpp",
         ],
         deps = [
             "//executorch/runtime/core:core",
