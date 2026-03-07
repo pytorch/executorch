@@ -89,6 +89,7 @@ python export_voxtral_rt.py \
 | `xnnpack` | ✓ | ✓ | `4w`, `8w`, `8da4w`, `8da8w` |
 | `metal` | ✓ | ✓ | none (fp32) or `fpa4w` (Metal-specific 4-bit) |
 | `cuda` | ✓ | ✓ | `4w`, `8w` |
+| `cuda-windows` | ✓ | ✓ | `4w`, `8w` |
 
 Metal backend provides Apple GPU acceleration. CUDA backend provides NVIDIA GPU
 acceleration via AOTInductor.
@@ -163,6 +164,38 @@ Alternatively, you can build torchao with Metal support while installing ExecuTo
 EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_executorch.sh
 ```
 
+### CUDA-Windows Export
+
+Before running `cuda-windows` export, make sure these requirements are set up:
+- `x86_64-w64-mingw32-g++` is installed and on `PATH` (mingw-w64 cross-compiler).
+- `WINDOWS_CUDA_HOME` points to the extracted Windows CUDA package directory.
+
+Example setup on Ubuntu (refer to [Parakeet README](../../parakeet/README.md) for detailed extraction steps):
+
+```bash
+# Ensure the WINDOWS_CUDA_HOME environment variable is set
+export WINDOWS_CUDA_HOME=/opt/cuda-windows/extracted/cuda_cudart/cudart
+```
+
+Export the model for Windows CUDA (example with int4 quantization):
+
+```bash
+python export_voxtral_rt.py \
+    --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
+    --backend cuda-windows \
+    --dtype bf16 \
+    --output-dir ./voxtral_rt_exports \
+    --qlinear-encoder 4w \
+    --qlinear-encoder-packing-format tile_packed_to_4d \
+    --qlinear 4w \
+    --qlinear-packing-format tile_packed_to_4d \
+    --qembedding 8w
+```
+
+This generates:
+- `model.pte`
+- `aoti_cuda_blob.ptd`
+
 ### Options
 
 | Flag | Default | Description |
@@ -220,6 +253,18 @@ make voxtral_realtime-metal
 This builds ExecuTorch with Metal backend support. The runner binary is at
 the same path as above. Metal exports can only run on macOS with Apple Silicon.
 
+### CUDA-Windows
+
+On Windows (PowerShell), use CMake workflow presets directly from the executorch root directory. Note that if you exported the model with 4-bit quantization, you may need to specify your GPU's compute capability (e.g., `80;86;89;90;120` for Ampere, Lovelace, Hopper, and Blackwell) to avoid "invalid device function" errors at runtime, as the `int4mm` kernels require SM 80 or newer.
+
+```powershell
+$env:CMAKE_CUDA_ARCHITECTURES="80;86;89;90;120"
+cmake --workflow --preset llm-release-cuda
+Push-Location examples/models/voxtral_realtime
+cmake --workflow --preset voxtral-realtime-cuda
+Pop-Location
+```
+
 ## Run
 
 The runner requires:
@@ -229,22 +274,24 @@ The runner requires:
 - A 16kHz mono WAV audio file (or live audio via `--mic`)
 - For CUDA: `aoti_cuda_blob.ptd` — delegate data file (pass via `--data_path`)
 
-```bash
-cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
-    --model_path voxtral_rt_exports/model.pte \
-    --tokenizer_path ~/models/Voxtral-Mini-4B-Realtime-2602/tekken.json \
-    --preprocessor_path voxtral_rt_exports/preprocessor.pte \
+### Windows (PowerShell)
+
+```powershell
+.\cmake-out\examples\models\voxtral_realtime\Release\voxtral_realtime_runner.exe `
+    --model_path voxtral_rt_exports\model.pte `
+    --tokenizer_path C:\path\to\tekken.json `
+    --preprocessor_path voxtral_rt_exports\preprocessor.pte `
     --audio_path input.wav
 ```
 
 For CUDA, include the `.ptd` data file:
 
-```bash
-cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
-    --model_path voxtral_rt_exports/model.pte \
-    --data_path voxtral_rt_exports/aoti_cuda_blob.ptd \
-    --tokenizer_path ~/models/Voxtral-Mini-4B-Realtime-2602/tekken.json \
-    --preprocessor_path voxtral_rt_exports/preprocessor.pte \
+```powershell
+.\cmake-out\examples\models\voxtral_realtime\Release\voxtral_realtime_runner.exe `
+    --model_path voxtral_rt_exports\model.pte `
+    --data_path voxtral_rt_exports\aoti_cuda_blob.ptd `
+    --tokenizer_path C:\path\to\tekken.json `
+    --preprocessor_path voxtral_rt_exports\preprocessor.pte `
     --audio_path input.wav
 ```
 
@@ -252,12 +299,12 @@ For streaming, add `--streaming`. This requires a model exported with
 `--streaming`. The runner processes audio in 80ms steps, computing mel
 and running the encoder+decoder incrementally.
 
-```bash
-cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
-    --model_path voxtral_rt_exports/model.pte \
-    --tokenizer_path ~/models/Voxtral-Mini-4B-Realtime-2602/tekken.json \
-    --preprocessor_path voxtral_rt_exports/preprocessor.pte \
-    --audio_path input.wav \
+```powershell
+.\cmake-out\examples\models\voxtral_realtime\Release\voxtral_realtime_runner.exe `
+    --model_path voxtral_rt_exports\model.pte `
+    --tokenizer_path C:\path\to\tekken.json `
+    --preprocessor_path voxtral_rt_exports\preprocessor.pte `
+    --audio_path input.wav `
     --streaming
 ```
 
@@ -276,6 +323,17 @@ ffmpeg -f avfoundation -i ":0" -ar 16000 -ac 1 -f f32le -nostats -loglevel error
 ```
 
 Ctrl+C stops recording and flushes remaining text.
+
+**Windows (PowerShell):**
+
+```powershell
+.\cmake-out\examples\models\voxtral_realtime\Release\voxtral_realtime_runner.exe `
+  --model_path C:\path\to\voxtral_rt_exports\model.pte `
+  --data_path C:\path\to\voxtral_rt_exports\aoti_cuda_blob.ptd `
+  --tokenizer_path C:\path\to\tekken.json `
+  --preprocessor_path C:\path\to\voxtral_rt_exports\preprocessor.pte `
+  --audio_path C:\path\to\input.wav
+```
 
 **CUDA:** Add `--data_path voxtral_rt_exports/aoti_cuda_blob.ptd` to all
 run commands above when using the CUDA backend.
