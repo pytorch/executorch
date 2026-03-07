@@ -26,15 +26,19 @@ if not logger.handlers:
 
 PKG_ROOT = pathlib.Path(__file__).parent.parent
 
+# Output stream for progress messages. Defaults to stdout, but redirected to
+# stderr when --print-sdk-path is used (so stdout only contains the path).
+_output_stream = sys.stdout
+
 
 def _progress(msg: str) -> None:
     """Print a progress line with carriage return (no newline). Not suited for logging."""
-    print(msg, end="", flush=True)
+    print(msg, end="", flush=True, file=_output_stream)
 
 
 def _progress_newline() -> None:
     """End a progress line."""
-    print(flush=True)
+    print(flush=True, file=_output_stream)
 
 
 ##########################
@@ -760,6 +764,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Ensure the SDK and runtime libraries are staged and loaded.",
     )
     args = parser.parse_args(argv)
+
+    # When --print-sdk-path is used, stdout must contain ONLY the SDK path.
+    # Redirect all logger and progress output to stderr.
+    if args.print_sdk_path:
+        global _output_stream
+        _output_stream = sys.stderr
+        for handler in logger.handlers:
+            handler.stream = sys.stderr
 
     logging.basicConfig(level=logging.INFO)
 
