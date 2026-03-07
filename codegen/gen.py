@@ -309,8 +309,8 @@ Kernel(
         internal::EventTracerProfileOpScope event_tracer_op_scope(context.internal_event_tracer(), "native_call_{f.func.name}");
         EXECUTORCH_SCOPE_PROF("native_call_{f.func.name}");
         {ret_prefix}{kernel_call}(context, {args_str});
-        {event_tracer_output_logging}
         {return_assignment}
+        {event_tracer_output_logging}
 {exception_boundary_end}
     }}
 ),

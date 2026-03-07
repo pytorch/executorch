@@ -289,12 +289,6 @@ def test_cond_u55_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     xfails={
         "nested_one_arg_one_output": "Node submodule_0 target submodule_0 references nonexistent attribute submodule_0",
     },
-    skips={
-        "one_arg_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
-        "one_arg_const_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
-        "multiple_one_arg_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
-        "one_arg_and_scalar_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
-    },
 )
 @common.XfailIfNoCorstone320.with_args(raises=None)
 def test_cond_u85_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
