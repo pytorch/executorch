@@ -8,6 +8,10 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <memory>
 #include "QnnInterface.h"
+#ifdef __hexagon__
+#include "HAP_farf.h"
+#endif
+
 namespace executorch {
 namespace backends {
 namespace qnn {
@@ -25,6 +29,7 @@ struct DlCloser {
 Error QnnImplementation::InitBackend(
     void* const lib_handle,
     const QnnSaver_Config_t** saver_config) {
+#ifndef __hexagon__
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   // saver_config must be set before backend initialization
   auto saver_initialize =
@@ -39,6 +44,7 @@ Error QnnImplementation::InitBackend(
       return Error::Internal;
     }
   }
+#endif
   return Error::Ok;
 }
 
@@ -50,6 +56,13 @@ const QnnInterface_t* QnnImplementation::StartBackend(
     const std::string& lib_path,
     const QnnSaver_Config_t** saver_config) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
+
+#ifdef __hexagon__
+  FARF(RUNTIME_HIGH, "Opening lib_path %s", lib_path.c_str());
+  std::unique_ptr<void, DlCloser> lib_handle(
+      dlopen(lib_path.c_str(), RTLD_NOW | RTLD_GLOBAL));
+  FARF(RUNTIME_HIGH, "Done loading lib_path %s", lib_path.c_str());
+#else
   // If the library is already loaded, return the handle.
   std::unique_ptr<void, DlCloser> lib_handle(
       dlopen(lib_path.c_str(), RTLD_NOW | RTLD_NOLOAD));
@@ -64,6 +77,7 @@ const QnnInterface_t* QnnImplementation::StartBackend(
         dlerror());
     return nullptr;
   }
+#endif
 
   // load get_provider function
   auto get_providers = loadQnnFunction<QnnInterfaceGetProvidersFn*>(
