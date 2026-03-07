@@ -192,9 +192,15 @@ class SliceTensorModule(torch.nn.Module):
 
 
 class SliceTensorConvModule(torch.nn.Module):
-    def __init__(self, dims, starts, ends):
+    def __init__(self, dims, starts, ends, in_channels, out_channels):
         super().__init__()
-        self.conv = Conv2dModule(in_channels=4, out_channels=8, kernel_size=3, stride=1)
+        self.conv = Conv2dModule(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+        )
         self.slice = SliceTensorModule(dims, starts, ends)
 
     def forward(self, x):
