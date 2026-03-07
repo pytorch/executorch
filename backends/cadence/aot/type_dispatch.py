@@ -177,12 +177,6 @@ class CompileTimeTypeDispatchPass(ExportPass):
                 typed_op_name = f"{base_name}_depthwise_{type_suffix}"
             elif is_dilated:
                 typed_op_name = f"{base_name}_dilated_{type_suffix}"
-            elif is_1d and groups == 1:
-                if "nchw" in base_name:
-                    layout_suffix = "ncl"
-                else:
-                    layout_suffix = "nlc"
-                typed_op_name = f"quantized_conv1d_{layout_suffix}_{type_suffix}"
 
         typed_op = getattr(
             getattr(exir_ops.edge.cadence, typed_op_name), config.variant
