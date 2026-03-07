@@ -39,6 +39,7 @@ def define_common_targets():
                 "interface.cpp",
             ],
             exported_headers = [
+                "backend_cache.h",
                 "backend_execution_context.h",
                 "backend_init_context.h",
                 "backend_option_context.h",

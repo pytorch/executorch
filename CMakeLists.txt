@@ -780,6 +780,17 @@ if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   list(APPEND _executorch_extensions extension_module_static)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_BACKEND_CACHE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/backend_cache)
+  install(
+    DIRECTORY extension/backend_cache/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/backend_cache
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
+  list(APPEND _executorch_extensions extension_backend_cache)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/named_data_map)
   list(APPEND _executorch_extensions extension_named_data_map)
