@@ -54,6 +54,9 @@ from .decompose_groupnorm_pass import DecomposeGroupNormPass  # noqa
 from .decompose_index_select_to_gather_pass import (  # noqa
     DecomposeIndexSelectToGatherPass,
 )
+from .decompose_index_tensor_to_gather_pass import (  # noqa
+    DecomposeIndexTensorToGatherPass,
+)
 from .decompose_int16_activation_conv_pass import (  # noqa
     DecomposeConvWithInt16ActivationPass,
 )
