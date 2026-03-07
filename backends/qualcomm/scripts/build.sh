@@ -16,21 +16,36 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
     exit 1
 fi
 
-if [[ -z ${QNN_SDK_ROOT} ]]; then
-    echo "Please export QNN_SDK_ROOT=/path/to/qnn_sdk"
-    exit -1
+SCRIPT_DIR="$( cd "$(dirname "$0")" ; pwd -P)"
+
+if [ -z "$PYTHON_EXECUTABLE" ]; then
+  PYTHON_EXECUTABLE="python3"
 fi
 
+# If QNN_SDK_ROOT is set, pass it to cmake. Otherwise cmake will
+# auto-download the SDK via download_qnn_sdk.py during configure.
+if [[ -n ${QNN_SDK_ROOT} ]]; then
+    QNN_SDK_CMAKE_FLAG="-DQNN_SDK_ROOT=${QNN_SDK_ROOT}"
+
+    # Ensure LD_LIBRARY_PATH includes QNN SDK libs
+    QNN_LIB_DIR="${QNN_SDK_ROOT}/lib/x86_64-linux-clang"
+    if [[ -d "${QNN_LIB_DIR}" ]] && [[ ":${LD_LIBRARY_PATH:-}:" != *":${QNN_LIB_DIR}:"* ]]; then
+        export LD_LIBRARY_PATH="${QNN_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+    fi
+else
+    QNN_SDK_CMAKE_FLAG=""
+    echo "[QNN] QNN_SDK_ROOT not set. SDK will be auto-downloaded during cmake configure."
+fi
 
 set -o xtrace
 
 usage() {
   echo "Usage: Build the aarch64 version of executor runner or the python interface of Qnn Manager"
-  echo "First, you need to set the environment variable for QNN_SDK_ROOT"
-  echo ", and if you want to build the android version of executor runner"
-  echo ", you need to export ANDROID_NDK_ROOT=/path/to/android_ndkXX"
-  echo "(or export TOOLCHAIN_ROOT_HOST=/path/to/sysroots/xx_host, "
-  echo "TOOLCHAIN_ROOT_TARGET=/path/to/sysroots/xx_target for linux embedded with --enable_linux_embedded)"
+  echo ""
+  echo "QNN SDK and Android NDK will be auto-downloaded if not set."
+  echo "To use a custom SDK, export QNN_SDK_ROOT=/path/to/qnn_sdk"
+  echo "To use a custom NDK, export ANDROID_NDK_ROOT=/path/to/android_ndkXX"
+  echo ""
   echo "e.g.: executorch$ ./backends/qualcomm/scripts/build.sh --skip_x86_64"
   exit 1
 }
@@ -47,10 +62,6 @@ CMAKE_OE_LINUX="build-oe-linux"
 CLEAN="true"
 BUILD_TYPE="RelWithDebInfo"
 BUILD_JOB_NUMBER="16"
-
-if [ -z PYTHON_EXECUTABLE ]; then
-  PYTHON_EXECUTABLE="python3"
-fi
 
 if [ -z BUCK2 ]; then
   BUCK2="buck2"
@@ -79,8 +90,14 @@ PRJ_ROOT="$( cd "$(dirname "$0")/../../.." ; pwd -P)"
 
 if [ "$BUILD_ANDROID" = true ]; then
     if [[ -z ${ANDROID_NDK_ROOT} ]]; then
-        echo "Please export ANDROID_NDK_ROOT=/path/to/android_ndkXX"
-        exit -1
+        echo "[QNN] ANDROID_NDK_ROOT not set. Auto-downloading Android NDK..."
+        source "${SCRIPT_DIR}/install_qnn_sdk.sh"
+        setup_android_ndk
+        if [[ -z ${ANDROID_NDK_ROOT} ]]; then
+            echo "[QNN] Error: Failed to download Android NDK."
+            echo "[QNN] Set ANDROID_NDK_ROOT manually."
+            exit 1
+        fi
     fi
 
     BUILD_ROOT=$PRJ_ROOT/$CMAKE_ANDROID
@@ -106,7 +123,7 @@ if [ "$BUILD_ANDROID" = true ]; then
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
         -DEXECUTORCH_ENABLE_LOGGING=ON \
-        -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
+        ${QNN_SDK_CMAKE_FLAG} \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
         -DANDROID_ABI='arm64-v8a' \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
@@ -191,7 +208,7 @@ if [ "$BUILD_OE_LINUX" = true ]; then
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
         -DEXECUTORCH_ENABLE_LOGGING=ON \
-        -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
+        ${QNN_SDK_CMAKE_FLAG} \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
         -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
         -B$BUILD_ROOT
@@ -252,7 +269,7 @@ if [ "$BUILD_X86_64" = true ]; then
     cmake \
         -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
         -DCMAKE_INSTALL_PREFIX=$BUILD_ROOT \
-        -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
+        ${QNN_SDK_CMAKE_FLAG} \
         -DEXECUTORCH_BUILD_QNN=ON \
         -DEXECUTORCH_BUILD_DEVTOOLS=ON \
         -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
