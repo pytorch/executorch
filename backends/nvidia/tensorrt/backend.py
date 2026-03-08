@@ -1050,14 +1050,10 @@ def _add_optimization_profile(
                             f"input '{name}': setting max to {hi} "
                             f"(2x trace-time value {opt_val})"
                         )
+                    # Use opt as min to verify network works, then relax
+                    lo = opt_val
                     min_shape.append(lo)
-                    # When opt == max, TRT constant-folds shape arithmetic
-                    # and builds a static engine. Use mid-range as opt so
-                    # TRT builds a truly dynamic engine.
-                    if opt_val == hi and lo < hi:
-                        opt_shape.append((lo + hi) // 2)
-                    else:
-                        opt_shape.append(opt_val)
+                    opt_shape.append(opt_val)
                     max_shape.append(hi)
 
             print(
