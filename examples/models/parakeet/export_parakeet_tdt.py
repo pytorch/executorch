@@ -396,7 +396,6 @@ def export_all(
         (),
         kwargs={"audio_signal": audio_signal, "length": length},
         dynamic_shapes={
-            # Use Dim.AUTO - explicit bounds fail due to different size guards on different devices
             "audio_signal": {2: Dim.AUTO},
             "length": {},
         },
