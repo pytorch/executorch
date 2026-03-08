@@ -37,13 +37,21 @@ def _unsqueeze_3d_to_4d(
     network: Any, input_trt: Any, name: str, trt: Any,
     input_node: Any = None,
 ) -> Any:
-    """Expand 3D tensor [B, C, W] to 4D [B, C, 1, W] for Conv1d.
+    """Expand 3D tensor [B, C, W] to 4D [B, C, W, 1] for Conv1d.
 
-    Handles dynamic shapes by using the shape tensor API when the input
-    has multiple dynamic (-1) dimensions.
+    Uses TRT's native add_unsqueeze (TRT 10.7+) for proper dynamic shape
+    handling, falling back to shuffle for older versions.
     """
-    # Prefer FX metadata shape (preserves concrete batch/channel dims)
-    # over input_trt.shape (which is all -1 after shape-tensor reshapes).
+    # TRT 10.7+ has native unsqueeze layer that handles dynamic shapes
+    if hasattr(network, 'add_unsqueeze'):
+        import numpy as np
+        axes = network.add_constant([1], trt.Weights(np.array([3], dtype=np.int32)))
+        axes.name = f"{name}_axes"
+        layer = network.add_unsqueeze(input_trt, axes.get_output(0))
+        layer.name = name
+        return layer.get_output(0)
+
+    # Fallback for older TRT: use shuffle
     if input_node is not None:
         meta_shape = get_node_shape(input_node)
         if meta_shape is not None:
@@ -54,10 +62,6 @@ def _unsqueeze_3d_to_4d(
         input_shape = tuple(input_trt.shape)
     num_dynamic = sum(1 for d in input_shape if d == -1)
 
-    # Unsqueeze to 4D as [B, C, W, 1] — dynamic W goes into the H
-    # position.  TRT's Cask convolution has an internal consistency bug
-    # with [B, C, 1, W_dynamic] (static H=1, dynamic W) for depthwise
-    # convolutions.  Putting the dynamic dim in H avoids this.
     layer = network.add_shuffle(input_trt)
     layer.name = name
 
@@ -66,7 +70,6 @@ def _unsqueeze_3d_to_4d(
             [input_shape[0], input_shape[1], input_shape[2], 1]
         )
     else:
-        # Build shape tensor: [dim0, dim1, dim2, 1]
         shape_layer = network.add_shape(input_trt)
         shape_layer.name = f"{name}_shape"
         shape_i32 = network.add_cast(shape_layer.get_output(0), trt.int32)
@@ -110,13 +113,25 @@ def _squeeze_4d_to_3d(
 ) -> Any:
     """Squeeze 4D tensor [B, C, W, 1] back to 3D [B, C, W] for Conv1d output.
 
+    Uses TRT's native add_squeeze (TRT 10.7+) for proper dynamic shape
+    handling, falling back to shuffle for older versions.
+
     The conv1d wrapper uses layout [B, C, W, 1] (dynamic W in H position,
     static 1 in W position) to avoid Cask consistency issues.
 
     Handles dynamic shapes by using the shape tensor API when the output
     has multiple dynamic (-1) dimensions.
     """
-    # Use FX metadata if available to get concrete dims
+    # TRT 10.7+ has native squeeze layer that handles dynamic shapes
+    if hasattr(network, 'add_squeeze'):
+        import numpy as np
+        axes = network.add_constant([1], trt.Weights(np.array([3], dtype=np.int32)))
+        axes.name = f"{name}_axes"
+        layer = network.add_squeeze(output_trt, axes.get_output(0))
+        layer.name = name
+        return layer.get_output(0)
+
+    # Fallback for older TRT: use shuffle
     if conv_node is not None:
         meta_shape = get_node_shape(conv_node)
         if meta_shape is not None:

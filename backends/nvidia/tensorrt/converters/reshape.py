@@ -348,8 +348,10 @@ def convert_view(
     elif all_int and num_dynamic <= 1:
         layer.reshape_dims = trt.Dims(output_shape)
     else:
-        # Convert each dim to a TRT tensor (like torch-tensorrt's reshape)
+        # Convert each dim to a TRT tensor (like torch-tensorrt's reshape).
+        # For -1 dims: compute from input_volume / product_of_other_dims.
         trt_dims = []
+        neg1_idx = -1
         for i, d in enumerate(target_shape):
             if isinstance(d, torch.fx.Node) and d in input_map:
                 t = input_map[d]
@@ -359,6 +361,9 @@ def convert_view(
                 cast = network.add_cast(shuf.get_output(0), trt.int32)
                 cast.name = f"view_cast{i}_{node.name}"
                 trt_dims.append(cast.get_output(0))
+            elif isinstance(d, int) and d == -1:
+                neg1_idx = i
+                trt_dims.append(None)  # placeholder, filled below
             else:
                 val = int(d) if isinstance(d, int) else output_shape[i]
                 c = network.add_constant(
@@ -366,6 +371,56 @@ def convert_view(
                 )
                 c.name = f"view_d{i}_{node.name}"
                 trt_dims.append(c.get_output(0))
+
+        # Compute -1 dim: input_volume / product_of_known_dims
+        if neg1_idx >= 0:
+            # Get input volume as shape tensor
+            shape_l = network.add_shape(input_trt)
+            shape_l.name = f"view_inshape_{node.name}"
+            shape_i32 = network.add_cast(shape_l.get_output(0), trt.int32)
+            shape_i32.name = f"view_inshape_i32_{node.name}"
+            in_ndim = len(input_trt.shape)
+            idx0 = network.add_constant([1], trt.Weights(np.array([0], dtype=np.int32)))
+            idx0.name = f"view_vidx0_{node.name}"
+            vol = network.add_gather(shape_i32.get_output(0), idx0.get_output(0), axis=0)
+            vol.name = f"view_vol0_{node.name}"
+            vol_out = vol.get_output(0)
+            for j in range(1, in_ndim):
+                idx_j = network.add_constant([1], trt.Weights(np.array([j], dtype=np.int32)))
+                idx_j.name = f"view_vidx{j}_{node.name}"
+                g = network.add_gather(shape_i32.get_output(0), idx_j.get_output(0), axis=0)
+                g.name = f"view_vg{j}_{node.name}"
+                m = network.add_elementwise(vol_out, g.get_output(0), trt.ElementWiseOperation.PROD)
+                m.name = f"view_vmul{j}_{node.name}"
+                vol_out = m.get_output(0)
+
+            # Product of known dims (all except -1)
+            known_prod = None
+            for i, t in enumerate(trt_dims):
+                if i == neg1_idx or t is None:
+                    continue
+                if known_prod is None:
+                    known_prod = t
+                else:
+                    m = network.add_elementwise(known_prod, t, trt.ElementWiseOperation.PROD)
+                    m.name = f"view_kp{i}_{node.name}"
+                    known_prod = m.get_output(0)
+
+            if known_prod is not None:
+                inferred = network.add_elementwise(vol_out, known_prod, trt.ElementWiseOperation.FLOOR_DIV)
+                inferred.name = f"view_infer_{node.name}"
+                # Reshape to [1] for concat
+                shuf_inf = network.add_shuffle(inferred.get_output(0))
+                shuf_inf.reshape_dims = trt.Dims([1])
+                shuf_inf.name = f"view_infer_shuf_{node.name}"
+                trt_dims[neg1_idx] = shuf_inf.get_output(0)
+            else:
+                # All other dims are -1 or FX nodes — use vol directly
+                shuf_v = network.add_shuffle(vol_out)
+                shuf_v.reshape_dims = trt.Dims([1])
+                shuf_v.name = f"view_vol_shuf_{node.name}"
+                trt_dims[neg1_idx] = shuf_v.get_output(0)
+
         shape_layer = network.add_concatenation(trt_dims)
         shape_layer.axis = 0
         shape_layer.name = f"view_shape_{node.name}"

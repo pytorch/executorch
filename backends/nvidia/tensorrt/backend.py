@@ -1050,8 +1050,9 @@ def _add_optimization_profile(
                             f"input '{name}': setting max to {hi} "
                             f"(2x trace-time value {opt_val})"
                         )
-                    # Use opt as min to verify network works, then relax
-                    lo = opt_val
+                    # Clamp min to narrow range for Cask conv compatibility.
+                    # TODO: Make this configurable or auto-detect from model.
+                    lo = max(lo, opt_val - 200)
                     min_shape.append(lo)
                     opt_shape.append(opt_val)
                     max_shape.append(hi)
