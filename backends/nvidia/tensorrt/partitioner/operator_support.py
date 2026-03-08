@@ -206,11 +206,17 @@ class TensorRTOperatorSupport(OperatorSupportBase):
             logger.debug(f"[TRT partitioner] REJECTED {node.name} ({target_name}): no converter")
             return False
 
-        # Reject nodes that produce scalar (non-tensor) outputs — the
-        # ExecuTorch emitter requires all delegate outputs to be tensors.
+        # Reject nodes that produce scalar (non-tensor) outputs IF they
+        # are graph outputs. Intermediate scalar nodes (like sym_size,
+        # operator.add for shape arithmetic) are fine — TRT handles
+        # them as shape tensors internally. Only graph outputs must be
+        # tensors for the ExecuTorch emitter.
         if not self._produces_tensor_output(node):
-            logger.debug(f"[TRT partitioner] REJECTED {node.name} ({target_name}): non-tensor output")
-            return False
+            # Check if any user is a graph output
+            is_output = any(u.op == "output" for u in node.users)
+            if is_output:
+                logger.debug(f"[TRT partitioner] REJECTED {node.name} ({target_name}): non-tensor graph output")
+                return False
 
         # Check dtype compatibility
         if not self._is_dtype_supported(node):
