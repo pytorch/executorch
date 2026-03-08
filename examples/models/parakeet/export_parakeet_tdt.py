@@ -391,16 +391,34 @@ def export_all(
             qlinear_packing_format=qlinear_encoder_packing_format,
         )
 
-    programs["encoder"] = export(
-        encoder_with_proj,
-        (),
-        kwargs={"audio_signal": audio_signal, "length": length},
-        dynamic_shapes={
-            "audio_signal": {2: Dim.AUTO},
-            "length": {},
-        },
-        strict=False,
-    )
+    if backend == "tensorrt":
+        # TensorRT needs explicit Dim bounds for proper optimization profiles.
+        # Regular export() fails with ConstraintViolationError because the
+        # conformer's attention creates modular arithmetic guards that the
+        # symbolic solver can't prove (they're trivially true but unprovable).
+        # draft_export converts these into runtime assertions.
+        mel_dim = Dim("mel_frames", min=9, max=max_mel_frames)
+        programs["encoder"] = torch.export.draft_export(
+            encoder_with_proj,
+            (),
+            kwargs={"audio_signal": audio_signal, "length": length},
+            dynamic_shapes={
+                "audio_signal": {2: mel_dim},
+                "length": {},
+            },
+            strict=False,
+        )
+    else:
+        programs["encoder"] = export(
+            encoder_with_proj,
+            (),
+            kwargs={"audio_signal": audio_signal, "length": length},
+            dynamic_shapes={
+                "audio_signal": {2: Dim.AUTO},
+                "length": {},
+            },
+            strict=False,
+        )
 
     num_layers = model.decoder.pred_rnn_layers
     pred_hidden = model.decoder.pred_hidden
