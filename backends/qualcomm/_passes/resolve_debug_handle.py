@@ -12,8 +12,11 @@ from executorch.exir.pass_base import ExportPass, PassResult
 
 class ResolveDebugHandle(ExportPass):
     """
-    Caution: This pass is executed as the last of the edge_passes.
-    For any passes executed during qnn_preprocess, users will need to handle debug_handle ID themselves.
+    Caution:
+        1. This pass is executed as the last of the edge_passes.
+        For any passes executed during qnn_preprocess, users will need to handle debug_handle ID themselves.
+        2. Current pass and QNN does not support op cond.
+
 
     Description: During passes transformation, some passes might be copying some node's meta when creating a new node,
     which means multiple nodes might be sharing the same debug_handle ID while it shouldn't for QNN's scenario.
@@ -28,7 +31,6 @@ class ResolveDebugHandle(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule):
         handle_counter = 1
         visited = set()
-        # TODO: Migrate to bfs tracing if torch.cond is introduced to QNN.
         for node in graph_module.graph.nodes:
             # Assume node is traversed in topological order, adding a check here to be safe.
             # For ops like topk, getitem node shares same handle as topk node. This should align with original ExecuTorch behavior.
