@@ -234,11 +234,27 @@ select inputs have truly data-dependent values (not just shape-dependent).
 Since all our shape values derive from `add_shape()` which TRT evaluates
 at build time from the profile, the select is also folded.
 
-**Conclusion**: True different-shape dynamic support requires TRT to NOT
-constant-fold shape computations. This may need TRT-level changes or a
-fundamentally different approach (e.g., multiple engines for different
-shape ranges, or using TRT's native dynamic shape support without the
-ExecuTorch delegate boundary's SymInt mechanism).
+### Latest progress: shape arithmetic now INSIDE TRT partition
+
+Fixed the `TensorRTPartitioner` to keep `sym_size.int`, `operator.add`,
+`operator.floordiv` etc. inside the TRT partition instead of extracting
+them as SymInt placeholder inputs. The partitioner's `_produces_tensor_output`
+check was rejecting these ops because they produce SymInt outputs, but
+they're intermediate nodes consumed by tensor ops.
+
+With this fix, the TRT network has 11868 layers (up from ~5000) because
+the shape arithmetic (`add_shape → gather → floor_div → sum`) is now
+inside the network, connected to the actual `audio_signal` tensor input.
+
+**Static profile (min=opt=max=5000)**: Builds and runs, but static.
+
+**Dynamic profile (min < opt)**: Fails with `Cask convolution isConsistent`
+error. Even min=2500, opt=5000 triggers this. This is a TRT limitation
+with convolutions that need to handle a wide range of spatial sizes with
+dynamic shape tensors in the same network. Investigation needed:
+- May need conv1d→conv2d decomposition (like the CUDA backend uses)
+- May need to restrict the dynamic range to a narrower band
+- May be related to how our conv converter interacts with dynamic shapes
 
 ### Changed files
 - `TensorRTExecutor.cpp`: Fixed `setInputShape` for shape tensors
