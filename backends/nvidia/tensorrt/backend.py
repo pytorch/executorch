@@ -95,6 +95,35 @@ class TensorRTBackend(BackendDetails):
             input_nodes, edge_program
         )
 
+        # Capture SymInt symbolic expressions BEFORE concretization.
+        # The partitioner and network building concretize SymInts,
+        # so we grab the sympy expressions now while they still have
+        # free symbols.
+        symint_expressions = {}  # node_name → sympy expr
+        sym_source_dims = {}  # sym_name → (tensor_node_name, dim_idx)
+        for node in input_nodes:
+            shape, _ = _get_tensor_shape_and_dtype(node)
+            if shape is not None:
+                for dim_idx, s in enumerate(shape):
+                    if _is_symint(s):
+                        sn = getattr(s, "node", None)
+                        expr = getattr(sn, "expr", None) if sn else None
+                        logger.warning(f"[TRT] pre-capture: {node.name}[{dim_idx}] is_symint, expr={expr}, free={expr.free_symbols if expr else None}")
+                        if expr is not None:
+                            for sym in expr.free_symbols:
+                                sym_name = str(sym)
+                                if sym_name not in sym_source_dims:
+                                    sym_source_dims[sym_name] = (node.name, dim_idx)
+            else:
+                val = node.meta.get("val")
+                if val is not None and _is_symint(val):
+                    sn = getattr(val, "node", None)
+                    expr = getattr(sn, "expr", None) if sn else None
+                    logger.warning(f"[TRT] pre-capture: {node.name} symint val, expr={expr}, free={expr.free_symbols if expr else None}")
+                    if expr is not None and expr.free_symbols:
+                        symint_expressions[node.name] = expr
+        logger.warning(f"[TRT] pre-capture results: sym_source_dims={sym_source_dims}, symint_expressions={{k: str(v) for k,v in symint_expressions.items()}}")
+
         # Create TensorRT builder and network
         trt_logger = trt.Logger(trt.Logger.VERBOSE)
         builder = trt.Builder(trt_logger)
@@ -108,7 +137,11 @@ class TensorRTBackend(BackendDetails):
         ctx = ConversionContext(net=network)
 
         # Build the network
-        input_map = _add_network_inputs(network, input_nodes, torch_dtype_to_trt)
+        input_map = _add_network_inputs(
+            network, input_nodes, torch_dtype_to_trt,
+            symint_expressions=symint_expressions,
+            sym_source_dims=sym_source_dims,
+        )
         # Add params/buffers as constant tensors
         _add_params_to_input_map(
             graph_module, edge_program, network, input_map, get_trt_tensor
@@ -464,10 +497,14 @@ def _add_network_inputs(
     network: Any,
     input_nodes: List[torch.fx.Node],
     dtype_converter: Any,
+    symint_expressions: Optional[Dict[str, Any]] = None,
+    sym_source_dims: Optional[Dict[str, Tuple[str, int]]] = None,
 ) -> Dict[torch.fx.Node, Any]:
     """Add input tensors to TensorRT network.
 
     SymInt dimensions are converted to -1 for TRT dynamic shapes.
+    SymInt placeholders are resolved to TRT arithmetic from the pre-captured
+    symbolic expressions (before concretization).
     """
     input_map: Dict[torch.fx.Node, Any] = {}
 
@@ -512,36 +549,57 @@ def _add_network_inputs(
     import tensorrt as trt_mod
     import sympy
 
-    # Build a mapping from base symbol name to (trt_tensor, dim_index)
-    # so we can extract the runtime dim value via add_shape + add_gather.
-    sym_to_trt_dim: Dict[str, Any] = {}  # symbol_name -> TRT ITensor (scalar int32)
+    # Build TRT shape tensor for each dynamic dim of tensor inputs.
+    # Even though SymInt expressions are concretized, _is_symint() still
+    # returns True, telling us WHICH dims are dynamic.
+    # We create add_shape + add_gather for each dynamic dim, keyed by
+    # the trace-time value (since the symbol name is lost).
+    dynamic_dim_trt: Dict[int, Any] = {}  # trace_value → TRT ITensor
+    dynamic_dim_source: Dict[int, Tuple[str, int]] = {}  # trace_value → (node_name, dim_idx)
     for input_node in input_nodes:
         shape, _ = _get_tensor_shape_and_dtype(input_node)
         if shape is None or input_node not in input_map:
             continue
         for dim_idx, s in enumerate(shape):
             if _is_symint(s):
-                sn = getattr(s, "node", None)
-                expr = getattr(sn, "expr", None) if sn else None
-                if expr is not None and len(expr.free_symbols) == 1:
-                    sym_name = str(list(expr.free_symbols)[0])
-                    if sym_name not in sym_to_trt_dim:
-                        trt_tensor = input_map[input_node]
-                        shape_layer = network.add_shape(trt_tensor)
-                        shape_layer.name = f"symint_shape_{input_node.name}"
-                        shape_i32 = network.add_cast(
-                            shape_layer.get_output(0), trt_mod.int32
-                        )
-                        shape_i32.name = f"symint_shape_i32_{input_node.name}"
-                        idx_c = network.add_constant(
-                            [1], trt_mod.Weights(np.array([dim_idx], dtype=np.int32))
-                        )
-                        idx_c.name = f"symint_idx_{sym_name}"
-                        gather = network.add_gather(
-                            shape_i32.get_output(0), idx_c.get_output(0), axis=0
-                        )
-                        gather.name = f"symint_gather_{sym_name}"
-                        sym_to_trt_dim[sym_name] = gather.get_output(0)
+                trace_val = int(s)
+                if trace_val not in dynamic_dim_trt:
+                    trt_tensor = input_map[input_node]
+                    shape_layer = network.add_shape(trt_tensor)
+                    shape_layer.name = f"symint_shape_{input_node.name}_{dim_idx}"
+                    shape_i32 = network.add_cast(
+                        shape_layer.get_output(0), trt_mod.int32
+                    )
+                    shape_i32.name = f"symint_shape_i32_{input_node.name}_{dim_idx}"
+                    idx_c = network.add_constant(
+                        [1], trt_mod.Weights(np.array([dim_idx], dtype=np.int32))
+                    )
+                    idx_c.name = f"symint_idx_{input_node.name}_{dim_idx}"
+                    gather = network.add_gather(
+                        shape_i32.get_output(0), idx_c.get_output(0), axis=0
+                    )
+                    gather.name = f"symint_gather_{input_node.name}_{dim_idx}"
+                    dynamic_dim_trt[trace_val] = gather.get_output(0)
+                    dynamic_dim_source[trace_val] = (input_node.name, dim_idx)
+                    logger.warning(f"[TRT] dynamic_dim: trace_val={trace_val} → add_shape({input_node.name})[{dim_idx}]")
+
+    # Also use pre-captured sym_source_dims if available
+    sym_to_trt_dim: Dict[str, Any] = {}
+    if sym_source_dims:
+        node_name_to_trt = {n.name: input_map[n] for n in input_nodes if n in input_map}
+        for sym_name, (tensor_node_name, dim_idx) in sym_source_dims.items():
+            if tensor_node_name in node_name_to_trt:
+                # Reuse the dynamic_dim_trt if same source
+                trt_tensor = node_name_to_trt[tensor_node_name]
+                shape_layer = network.add_shape(trt_tensor)
+                shape_layer.name = f"symint_shape2_{tensor_node_name}"
+                shape_i32 = network.add_cast(shape_layer.get_output(0), trt_mod.int32)
+                shape_i32.name = f"symint_shape2_i32_{tensor_node_name}"
+                idx_c = network.add_constant([1], trt_mod.Weights(np.array([dim_idx], dtype=np.int32)))
+                idx_c.name = f"symint_idx2_{sym_name}"
+                gather = network.add_gather(shape_i32.get_output(0), idx_c.get_output(0), axis=0)
+                gather.name = f"symint_gather2_{sym_name}"
+                sym_to_trt_dim[sym_name] = gather.get_output(0)
 
     # Import torch's FloorDiv which is different from sympy.floor
     try:
@@ -619,23 +677,48 @@ def _add_network_inputs(
         val = sym_node.meta.get("val")
         if val is None:
             continue
-        sn = getattr(val, "node", None)
-        expr = getattr(sn, "expr", None) if sn else None
+
+        # Use pre-captured expression (before concretization) if available
+        expr = symint_expressions.get(sym_node.name) if symint_expressions else None
+        if expr is None:
+            sn = getattr(val, "node", None)
+            expr = getattr(sn, "expr", None) if sn else None
+
+        trace_val = int(val)
+        logger.warning(f"[TRT] Processing SymInt '{sym_node.name}': trace_val={trace_val}, expr={expr}, free={getattr(expr, 'free_symbols', None)}, dynamic_dims={list(dynamic_dim_trt.keys())}")
 
         trt_val = None
-        if expr is not None and expr.free_symbols:
+        # First try: match trace value directly to a dynamic dim
+        if trace_val in dynamic_dim_trt:
+            trt_val = dynamic_dim_trt[trace_val]
+            logger.warning(f"[TRT] SymInt '{sym_node.name}' → direct match to dynamic dim (trace_val={trace_val})")
+
+        # Second try: use pre-captured symbolic expression
+        if trt_val is None and expr is not None and expr.free_symbols:
             trt_val = _symint_expr_to_trt(
                 expr, sym_to_trt_dim, network, f"symint_{sym_node.name}"
             )
+            if trt_val is not None:
+                logger.warning(
+                    f"[TRT] SymInt '{sym_node.name}' → dynamic TRT: "
+                    f"name={trt_val.name}, shape={tuple(trt_val.shape)}"
+                )
+            else:
+                logger.warning(
+                    f"[TRT] SymInt '{sym_node.name}' → _symint_expr_to_trt FAILED "
+                    f"for expr={expr}, free={expr.free_symbols}"
+                )
 
         if trt_val is None:
-            # Fallback: use trace-time constant value
             int_val = int(val)
             c = network.add_constant(
                 [1], trt_mod.Weights(np.array([int_val], dtype=np.int32))
             )
             c.name = f"symint_const_{sym_node.name}"
             trt_val = c.get_output(0)
+            logger.warning(
+                f"[TRT] SymInt '{sym_node.name}' → constant {int_val}"
+            )
 
         input_map[sym_node] = trt_val
 
