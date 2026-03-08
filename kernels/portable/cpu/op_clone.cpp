@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <cstring>
-
+#include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
+#include <executorch/runtime/platform/assert.h>
 
 namespace torch {
 namespace executor {
@@ -21,7 +21,7 @@ using Tensor = executorch::aten::Tensor;
 Tensor& clone_out(
     KernelRuntimeContext& context,
     const Tensor& self,
-    std::optional<executorch::aten::MemoryFormat> memory_format,
+    std::optional<exec_aten::MemoryFormat> memory_format,
     Tensor& out) {
   (void)context;
 
@@ -31,13 +31,20 @@ Tensor& clone_out(
       InvalidArgument,
       out);
 
-  // The input and out shall share same dtype and size
   ET_KERNEL_CHECK(
       context,
       tensors_have_same_shape_and_dtype(self, out),
       InvalidArgument,
       out);
 
+  if (!tensors_have_same_dim_order(self, out)) {
+    ET_LOG(
+        Error,
+        "op_clone.out: dim_order mismatch: self.dtype=%d out.dtype=%d. "
+        "See github.com/pytorch/executorch/issues/16032",
+        (int)self.scalar_type(),
+        (int)out.scalar_type());
+  }
   ET_KERNEL_CHECK(
       context, tensors_have_same_dim_order(self, out), InvalidArgument, out);
 
@@ -51,9 +58,6 @@ Tensor& clone_out(
       out);
 
   if (self.nbytes() > 0) {
-    // Note that this check is important. It's valid for a tensor with numel 0
-    // to have a null data pointer, but in some environments it's invalid to
-    // pass a null pointer to memcpy() even when the size is zero.
     memcpy(out.mutable_data_ptr(), self.const_data_ptr(), self.nbytes());
   }
   return out;

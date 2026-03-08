@@ -183,64 +183,63 @@ class TestTensor(unittest.TestCase):
         # shape = (4)
         strides = (1,)
         dim_order = dim_order_from_stride(strides)
-        print(dim_order)
-        self.assertEqual((0,), dim_order)
+        self.assertEqual([0], dim_order)
 
         # Test contiguous, a.k.a NCHW format
         # shape = (2, 3, 4)
         strides = (3 * 4, 4, 1)
         dim_order = dim_order_from_stride(strides)
-        self.assertEqual((0, 1, 2), dim_order)
+        self.assertEqual([0, 1, 2], dim_order)
 
         # shape = (2, 3, 4, 5)
         strides = (3 * 4 * 5, 4 * 5, 5, 1)
         dim_order = dim_order_from_stride(strides)
-        self.assertEqual((0, 1, 2, 3), dim_order)
+        self.assertEqual([0, 1, 2, 3], dim_order)
 
         # shape = (2, 3, 4, 5, 6)
         strides = (3 * 4 * 5 * 6, 4 * 5 * 6, 5 * 6, 6, 1)
         dim_order = dim_order_from_stride(strides)
-        self.assertEqual((0, 1, 2, 3, 4), dim_order)
+        self.assertEqual([0, 1, 2, 3, 4], dim_order)
 
         # Test channels last format
         # shape = (2, 3, 4)
         strides = (3 * 4, 1, 3)
         dim_order = dim_order_from_stride(strides)
-        self.assertEqual((0, 2, 1), dim_order)
+        self.assertEqual([0, 2, 1], dim_order)
 
         # shape = (2, 3, 4, 5)
         strides = (3 * 4 * 5, 1, 5 * 3, 3)
         dim_order = dim_order_from_stride(strides)
-        self.assertEqual((0, 2, 3, 1), dim_order)
+        self.assertEqual([0, 2, 3, 1], dim_order)
 
         # shape = (2, 3, 4, 5, 6)
         strides = (3 * 4 * 5 * 6, 1, 5 * 6 * 3, 6 * 3, 3)
         dim_order = dim_order_from_stride(strides)
-        self.assertEqual((0, 2, 3, 4, 1), dim_order)
+        self.assertEqual([0, 2, 3, 4, 1], dim_order)
 
         # test ambiguous strides
         # shape = (1, 3, 3, 1)
         strides = (9, 3, 1, 1)
         dim_order = dim_order_from_stride(strides)
-        self.assertEqual((0, 1, 2, 3), dim_order)
+        self.assertEqual([0, 1, 2, 3], dim_order)
 
         # test ambiguous strides
         # shape = (1, 3, 1, 1)
         strides = (3, 1, 3, 3)
         dim_order = dim_order_from_stride(strides)
-        self.assertEqual((0, 2, 3, 1), dim_order)
+        self.assertEqual([0, 2, 3, 1], dim_order)
 
         # test ambiguous strides
         # shape = (1, 3, 1, 1)
         strides = (3, 1, 1, 1)
         dim_order = dim_order_from_stride(strides)
-        self.assertEqual((0, 1, 2, 3), dim_order)
+        self.assertEqual([0, 1, 2, 3], dim_order)
 
         # test ambiguous strides
         # shape = (1, 1, 1, 1)
         strides = (1, 1, 1, 1)
         dim_order = dim_order_from_stride(strides)
-        self.assertEqual((0, 1, 2, 3), dim_order)
+        self.assertEqual([0, 1, 2, 3], dim_order)
 
         # test 0 in strides
         # dim[2] is broadcasting dim

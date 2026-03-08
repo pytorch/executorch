@@ -283,7 +283,6 @@ class ReplaceViewCopyWithViewPass(PassBase):
                     # Create spec for the node.
                     # _ViewSpec gives a view into its base spec for non-size
                     # related information.
-
                     # the shape is not the same as node.args[1] because node.args[1]
                     # can have an inferred sizes (-1).
                     shape = node.meta["val"].shape

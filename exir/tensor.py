@@ -50,23 +50,17 @@ def contiguous_stride_from_shape(shape: torch.Size) -> Tuple[int]:
     return tuple(reversed(strides))
 
 
-def dim_order_from_stride(stride: Tuple[int]) -> Tuple[bytes]:
-    """
-    Dimension order represents how dimensions are laid out in memory,
-    starting from the outer-most to the inner-most dimension.
-    Thus, the conversion from strides is done by sorting the strides
-    from larger to smaller since the dimension with the largest stride
-    is the outer-most and the dimension with the smallest stride is the inner-most.
-    For example, tensor with sizes = (3, 5, 2) and strides = (5, 1, 15), implies
-    dimension order of (2, 0, 1). Dimension order of (2, 0, 1) can be obtained
-    by sorting strides from large to smaller.
+# Memory formats used for ambiguity resolution (PyTorch dim_order API).
+# Reference: pytorch/pytorch #146086, executorch issue #6330.
+_STANDARD_MEMORY_FORMATS = [
+    torch.contiguous_format,
+    torch.channels_last,
+    torch.channels_last_3d,
+]
 
-    When strides do not convey dimension order unambiguously, dimension order
-    returned is dependent on stability of sort. In python same key elements are kept
-    in original order. Thus when strides = (4, 3, 1, 1) returned value is (0, 1, 2, 3)
-    Another example is: sizes = (1, 3, 1, 1) with strides = (3, 1, 3, 3), returned
-    value is (0, 2, 3, 1)
-    """
+
+def _dim_order_from_stride_only(stride: Tuple[int, ...]) -> List[int]:
+    """Stride-only path: sort dims by descending stride; ties broken by dim index."""
     from torch.fx.experimental.symbolic_shapes import (
         guard_or_false,
         guard_size_oblivious,
@@ -97,7 +91,32 @@ def dim_order_from_stride(stride: Tuple[int]) -> Tuple[bytes]:
     sorted_dims = [
         i[0] for i in sorted(enumerate(stride), key=lambda x: K(x[1]), reverse=True)
     ]
-    return tuple(typing.cast(Tuple[bytes], sorted_dims))
+    return list(sorted_dims)
+
+
+def dim_order_from_stride(fake_tensor_or_stride: Union[torch.Tensor, Tuple[int, ...]]) -> List[int]:
+    """
+    Derive dim_order using PyTorch's ambiguity-aware API when given a tensor.
+    Falls back to canonical stride-sort when given strides or when the tensor
+    is genuinely ambiguous (C=1, H=W=1) or when ambiguity_check is unavailable.
+
+    TypeError -> ambiguity_check kwarg not yet in this PyTorch build.
+    RuntimeError -> tensor is genuinely ambiguous (C=1 etc.).
+    Both fall back to canonical stride-sort (ties broken by dim index).
+
+    When given a stride tuple (e.g. from TensorSpec.__init__), uses stride-sort only.
+    Reference: pytorch/pytorch #146086, executorch issue #6330, #16032.
+    """
+    if isinstance(fake_tensor_or_stride, torch.Tensor):
+        t = fake_tensor_or_stride
+        if t.ndim == 0:
+            return []
+        try:
+            return list(t.dim_order(ambiguity_check=_STANDARD_MEMORY_FORMATS))
+        except (TypeError, RuntimeError):
+            return _dim_order_from_stride_only(t.stride())
+    else:
+        return _dim_order_from_stride_only(fake_tensor_or_stride)
 
 
 def stride_from_dim_order(sizes: List[int], dim_order: List[int]) -> List[int]:
@@ -202,7 +221,7 @@ class TensorSpec:
             is_sparse=tensor.is_sparse,
         )
         spec.stride = tensor.stride()
-        spec.dim_order = dim_order_from_stride(spec.stride)
+        spec.dim_order = dim_order_from_stride(tensor)
         spec.requires_grad = tensor.requires_grad
         spec.storage = tensor.untyped_storage() if const else None
 
