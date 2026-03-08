@@ -114,17 +114,22 @@ Tensor& where_self_out(
       for (int i = 0; i < cond.dim(); i++)
         con_shape[i + off_c] = cond.size(i);
 
-        xa_nn_elm_select_broadcast_4D_32x32_32(
-            (WORD32 *)out_data,
-            out_shape,
-            (WORD32 *)a_data,
-            inp1_shape,
-            (WORD32 *)b_data,
-            inp2_shape,
-            con,
-            con_shape);
+      xa_nn_elm_select_broadcast_4D_32x32_32(
+          (WORD32*)out_data,
+          out_shape,
+          (WORD32*)a_data,
+          inp1_shape,
+          (WORD32*)b_data,
+          inp2_shape,
+          con,
+          con_shape);
     } else {
-      xa_nn_elm_select_32x32_32((WORD32 *)out_data, (WORD32 *)a_data, (WORD32 *)b_data, con, out.numel());
+      xa_nn_elm_select_32x32_32(
+          (WORD32*)out_data,
+          (WORD32*)a_data,
+          (WORD32*)b_data,
+          con,
+          out.numel());
     }
     return out;
   }
