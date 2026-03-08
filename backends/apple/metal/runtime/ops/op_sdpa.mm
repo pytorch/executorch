@@ -40,7 +40,7 @@ template <typename T, int D, int V = D>
     constant uint3& qkv_head_strides [[buffer(6)]],
     constant uint3& qkv_seq_strides [[buffer(7)]],
     constant float& scale [[buffer(8)]],
-    const device T* mask [[buffer(9)]],  // Changed from bool* to T* for floating point masks
+    const device T* mask [[buffer(9)]],  // Must match Q/K/V dtype
     constant uint3& mask_strides [[buffer(10)]],
     constant bool& has_mask [[buffer(11)]],
     constant uint3& qkv_batch_strides [[buffer(12)]],  // NEW: batch strides for Q, K, V
@@ -537,6 +537,20 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
       uint mask_q_seq_stride = 0;
       if (has_mask_val) {
         auto* mask_tensor = reinterpret_cast<Tensor*>(*attn_mask);
+
+        // Mask dtype must match Q/K/V dtype — the Metal kernel reads mask
+        // as device T* where T is the Q/K/V element type.
+        auto mask_dtype = static_cast<int32_t>(mask_tensor->scalar_type());
+        if (mask_dtype != dtype) {
+          ET_LOG(Error,
+                 "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: "
+                 "mask dtype (%d) must match Q/K/V dtype (%d)",
+                 mask_dtype, dtype);
+          throw std::runtime_error(
+              "SDPA mask dtype must match Q/K/V dtype. "
+              "Cast the mask to the model dtype before passing to SDPA.");
+        }
+
         int nd = mask_tensor->dim();
         mask_kv_seq_stride = (nd >= 1 && mask_tensor->sizes()[nd - 1] > 1) ? static_cast<uint>(mask_tensor->strides()[nd - 1]) : 0;
         mask_q_seq_stride = (nd >= 2 && mask_tensor->sizes()[nd - 2] > 1) ? static_cast<uint>(mask_tensor->strides()[nd - 2]) : 0;
