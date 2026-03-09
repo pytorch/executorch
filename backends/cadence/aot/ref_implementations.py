@@ -29,7 +29,6 @@ except (OSError, RuntimeError):
     )
     if custom_libs:
         torch.ops.load_library(str(custom_libs[0]))
-    del Path
 
 # Registry to track all ops with reference implementations
 _REGISTERED_REF_IMPLEMENTATIONS: set[str] = set()

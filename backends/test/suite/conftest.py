@@ -3,9 +3,24 @@ from typing import Any
 
 import pytest
 import torch
-from executorch.backends.test.suite.flow import all_flows
+from executorch.backends.test.suite.flow import all_flows, TestFlow
 from executorch.backends.test.suite.reporting import _sum_op_counts
 from executorch.backends.test.suite.runner import run_test
+
+
+def pytest_collection_modifyitems(config, items):
+    for item in items:
+        callspec = getattr(item, "callspec", None)
+        if callspec is None:
+            continue
+        flow = callspec.params.get("test_runner")
+        if not isinstance(flow, TestFlow):
+            continue
+        test_name = item.originalname or item.name
+        if flow.should_skip_test(test_name):
+            item.add_marker(
+                pytest.mark.skip(reason=f"Skipped by {flow.name} skip_patterns")
+            )
 
 
 def pytest_configure(config):

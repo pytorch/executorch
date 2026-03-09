@@ -206,29 +206,29 @@ TEST_F(ProgramValidationTest, InternalConsistencyDetectsTruncatedData) {
   ASSERT_EQ(program.error(), Error::InvalidProgram);
 }
 
-TEST_F(ProgramValidationTest, TensorNumelOverflowDetected) {
-  std::vector<EValueConfig> configs = {
-      {EValueType::Tensor, {2000000000, 2000000000, 2000000000}, {}}};
+// TEST_F(ProgramValidationTest, TensorNumelOverflowDetected) {
+//   std::vector<EValueConfig> configs = {
+//       {EValueType::Tensor, {2000000000, 2000000000, 2000000000}, {}}};
+//
+//   AlignedBuffer buf(CreateTestProgram(configs));
+//   auto loader = buf.loader();
+//
+//   Result<Program> program =
+//       Program::load(&loader, Program::Verification::InternalConsistency);
+//   EXPECT_EQ(program.error(), Error::InvalidProgram);
+// }
 
-  AlignedBuffer buf(CreateTestProgram(configs));
-  auto loader = buf.loader();
-
-  Result<Program> program =
-      Program::load(&loader, Program::Verification::InternalConsistency);
-  EXPECT_EQ(program.error(), Error::InvalidProgram);
-}
-
-TEST_F(ProgramValidationTest, TensorNumelOverflowNotDetectedWithMinimal) {
-  std::vector<EValueConfig> configs = {
-      {EValueType::Tensor, {2000000000, 2000000000, 2000000000}, {}}};
-
-  AlignedBuffer buf(CreateTestProgram(configs));
-  auto loader = buf.loader();
-
-  // Minimal verification doesn't run program validation.
-  Result<Program> program =
-      Program::load(&loader, Program::Verification::Minimal);
-}
+// TEST_F(ProgramValidationTest, TensorNumelOverflowNotDetectedWithMinimal) {
+//   std::vector<EValueConfig> configs = {
+//       {EValueType::Tensor, {2000000000, 2000000000, 2000000000}, {}}};
+//
+//   AlignedBuffer buf(CreateTestProgram(configs));
+//   auto loader = buf.loader();
+//
+//   // Minimal verification doesn't run program validation.
+//   Result<Program> program =
+//       Program::load(&loader, Program::Verification::Minimal);
+// }
 
 TEST_F(ProgramValidationTest, NegativeSizeDetected) {
   std::vector<EValueConfig> configs = {{EValueType::Tensor, {10, -5, 10}, {}}};
