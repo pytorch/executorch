@@ -119,6 +119,7 @@ class NeutronConverterManager:
                 f"Multiprocessing not available ({e}), running neutron converter directly"
             )
             model_converted = neutron_converter.convertModel(list(tflite_model), cctx)
-        self._rename_partition_kernel_selection_file(delegation_tag)
+        if self.dump_kernel_selection_code:
+            self._rename_partition_kernel_selection_file(delegation_tag)
 
         return bytes(model_converted)
