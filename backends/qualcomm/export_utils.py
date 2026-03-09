@@ -352,9 +352,11 @@ class SimpleADB:
             )
             output_callback(result)
         else:
-            subprocess.run(
+            result = subprocess.run(
                 cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
             )
+        if result.returncode != 0:
+            raise RuntimeError(f"adb command failed: {cmds}")
 
     def push(  # noqa: C901
         self,
@@ -417,6 +419,7 @@ class SimpleADB:
         custom_runner_cmd=None,
         method_index=0,
         output_callback: Optional[Callable[[str], None]] = None,
+        iteration=1,
     ):
         self._adb(["shell", f"mkdir -p {self.output_folder}"])
         # run the delegation
@@ -436,6 +439,7 @@ class SimpleADB:
                             else ""
                         ),
                         f"--method_index {method_index}",
+                        f"--iteration {iteration}",
                     ]
                 )
                 + self.extra_cmds
@@ -687,7 +691,7 @@ def setup_common_args_and_variables():
         "-H",
         "--host",
         help="hostname where android device is connected.",
-        default=None,
+        default="localhost",
         type=str,
     )
 
