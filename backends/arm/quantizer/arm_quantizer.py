@@ -682,7 +682,7 @@ class TOSAQuantizer(Quantizer):
                 needed.
             is_qat (bool): Whether to do quantization aware training or not.
             fold_quantize (bool): Enables or disables constant folding when quantization
-            is completed.
+                is completed.
 
         Returns:
             GraphModule: The quantized model.

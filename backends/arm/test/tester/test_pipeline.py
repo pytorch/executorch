@@ -625,7 +625,7 @@ class EthosUPipelineINTBase(BasePipeline, Generic[T]):
         rtol: float = 1e-03,
         qtol: int = 1,
         epsilon: float = 2**-12,
-        fold_quantze: bool = True,
+        fold_quantize: bool = True,
     ):
         super().__init__(
             module,
@@ -649,7 +649,7 @@ class EthosUPipelineINTBase(BasePipeline, Generic[T]):
         if symmetric_io_quantization:
             quantizer.set_io(quantization_config)
         quant_stage = Quantize(
-            quantizer, quantization_config, fold_quantize=fold_quantze
+            quantizer, quantization_config, fold_quantize=fold_quantize
         )
 
         self.add_stage(self.tester.quantize, quant_stage, pos=0)
@@ -747,7 +747,7 @@ class EthosU55PipelineINT(EthosUPipelineINTBase, Generic[T]):
             rtol=rtol,
             qtol=qtol,
             epsilon=epsilon,
-            fold_quantze=fold_quantize,
+            fold_quantize=fold_quantize,
         )
 
 
@@ -806,7 +806,7 @@ class EthosU85PipelineINT(EthosUPipelineINTBase, Generic[T]):
             rtol=rtol,
             qtol=qtol,
             epsilon=epsilon,
-            fold_quantze=fold_quantize,
+            fold_quantize=fold_quantize,
         )
 
 
