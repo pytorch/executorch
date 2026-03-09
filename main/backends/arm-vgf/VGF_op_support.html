@@ -9,7 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>Troubleshooting &#8212; ExecuTorch main documentation</title>
+    <title>EdgeIR Operator support for the VGF backend &#8212; ExecuTorch main documentation</title>
   
   
   
@@ -49,19 +49,19 @@
     <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
     <script src="../../_static/copybutton.js?v=f281be69"></script>
     <script src="../../_static/design-tabs.js?v=f930bc37"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'backends/xnnpack/xnnpack-troubleshooting';</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'backends/arm-vgf/VGF_op_support';</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
         DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'main';
         DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
         </script>
-    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/backends/xnnpack/xnnpack-troubleshooting.html" />
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/backends/arm-vgf/VGF_op_support.html" />
     <link rel="icon" href="../../_static/executorch-chip-logo.svg"/>
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" />
-    <link rel="next" title="Architecture and Internals" href="xnnpack-arch-internals.html" />
-    <link rel="prev" title="Quantization" href="xnnpack-quantization.html" />
+    <link rel="next" title="Building and Running ExecuTorch with OpenVINO Backend" href="../../build-run-openvino.html" />
+    <link rel="prev" title="Arm VGF Troubleshooting" href="arm-vgf-troubleshooting.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -616,7 +616,7 @@ document.write(`
           <ul class="dropdown-menu" id="dropdown-4">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="xnnpack-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../xnnpack/xnnpack-overview.html">
                   XNNPACK Backend
                 </a>
               </li>
@@ -664,7 +664,7 @@ document.write(`
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="../arm-vgf/arm-vgf-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="arm-vgf-overview.html">
                   Arm VGF Backend
                 </a>
               </li>
@@ -1268,7 +1268,7 @@ document.write(`
           <ul class="dropdown-menu" id="dropdown-4">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="xnnpack-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../xnnpack/xnnpack-overview.html">
                   XNNPACK Backend
                 </a>
               </li>
@@ -1316,7 +1316,7 @@ document.write(`
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="../arm-vgf/arm-vgf-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="arm-vgf-overview.html">
                   Arm VGF Backend
                 </a>
               </li>
@@ -1737,12 +1737,12 @@ document.write(`
   <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
   <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Backend Overview</span></p>
 <ul class="current nav bd-sidenav">
-<li class="toctree-l1 current active has-children"><a class="reference internal" href="xnnpack-overview.html">XNNPACK Backend</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l2"><a class="reference internal" href="xnnpack-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../xnnpack/xnnpack-overview.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../xnnpack/xnnpack-partitioner.html">Partitioner API</a></li>
 
-<li class="toctree-l2"><a class="reference internal" href="xnnpack-quantization.html">Quantization</a></li>
-<li class="toctree-l2 current active"><a class="current reference internal" href="#">Troubleshooting</a></li>
-<li class="toctree-l2"><a class="reference internal" href="xnnpack-arch-internals.html">Architecture and Internals</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../xnnpack/xnnpack-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../xnnpack/xnnpack-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../xnnpack/xnnpack-arch-internals.html">Architecture and Internals</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../cuda/cuda-overview.html">CUDA Backend</a></li>
@@ -1780,15 +1780,15 @@ document.write(`
 <li class="toctree-l2"><a class="reference internal" href="../arm-ethos-u/U85_op_support.html">EdgeIR Operator support for the U85 backend</a></li>
 </ul>
 </details></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../arm-vgf/arm-vgf-overview.html">Arm VGF Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../arm-vgf/arm-vgf-partitioner.html">Partitioner API</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../arm-vgf/arm-vgf-quantization.html">Quantization</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../arm-vgf/arm-vgf-troubleshooting.html">Arm VGF Troubleshooting</a></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../arm-vgf/tutorials/arm-vgf-tutorials.html">Arm VGF Backend Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="../arm-vgf/tutorials/vgf-getting-started.html">Getting Started Tutorial</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="arm-vgf-overview.html">Arm VGF Backend</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="arm-vgf-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="arm-vgf-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="arm-vgf-troubleshooting.html">Arm VGF Troubleshooting</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="tutorials/arm-vgf-tutorials.html">Arm VGF Backend Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="tutorials/vgf-getting-started.html">Getting Started Tutorial</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2"><a class="reference internal" href="../arm-vgf/VGF_op_support.html">EdgeIR Operator support for the VGF backend</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">EdgeIR Operator support for the VGF backend</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../../build-run-openvino.html">Building and Running ExecuTorch with OpenVINO Backend</a></li>
@@ -1852,9 +1852,9 @@ document.write(`
     <li class="breadcrumb-item"><a href="../../backends-section.html" class="nav-link">Backends</a></li>
     
     
-    <li class="breadcrumb-item"><a href="xnnpack-overview.html" class="nav-link">XNNPACK Backend</a></li>
+    <li class="breadcrumb-item"><a href="arm-vgf-overview.html" class="nav-link">Arm VGF Backend</a></li>
     
-    <li class="breadcrumb-item active" aria-current="page">Troubleshooting</li>
+    <li class="breadcrumb-item active" aria-current="page">EdgeIR...</li>
   </ul>
 </nav>
 </div>
@@ -1902,13 +1902,13 @@ document.write(`
     </div>
     
     <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <link itemprop="item" href="xnnpack-overview.html">
-      <meta itemprop="name" content="XNNPACK Backend">
+      <link itemprop="item" href="arm-vgf-overview.html">
+      <meta itemprop="name" content="Arm VGF Backend">
       <meta itemprop="position" content="2">
     </div>
     
     <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <meta itemprop="name" content="Troubleshooting">
+      <meta itemprop="name" content="EdgeIR Operator support for the VGF backend">
       <meta itemprop="position" content="3">
     </div>
   </div>
@@ -1922,69 +1922,591 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="troubleshooting">
-<h1>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Link to this heading">#</a></h1>
-<p>This page describes common issues that you may encounter when using the XNNPACK backend and how to debug and resolve them.</p>
-<section id="xnnpack-backend-not-found">
-<h2>XNNPACK Backend Not Found<a class="headerlink" href="#xnnpack-backend-not-found" title="Link to this heading">#</a></h2>
-<p>This error indicates the XNNPACK backend is not registered with the runtime. This can happen because the backend was not compiled or linked, or because the registration code was optimized out.</p>
-<p>The XNNPACK backend is built by default for Python, Android, iOS, and in most CMake presets.</p>
-<ul class="simple">
-<li><p>Set the <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_XNNPACK=ON</span></code> CMake option option when building from source.</p>
-<ul>
-<li><p>Either by passing the option during CMake configuration or setting it inside the user CMake logic before including ExecuTorch.</p></li>
-<li><p>See <a class="reference internal" href="../../using-executorch-building-from-source.html"><span class="doc std std-doc">Building from Source</span></a>.</p></li>
-</ul>
-</li>
-<li><p>On iOS, link the <code class="docutils literal notranslate"><span class="pre">backend_xnnpack</span></code> <a class="reference internal" href="../../using-executorch-ios.html"><span class="doc std std-doc">framework</span></a>.</p></li>
-<li><p>If the backend is still not found, link with <code class="docutils literal notranslate"><span class="pre">WHOLE_ARCHIVE</span></code>.</p>
-<ul>
-<li><p>Pass <code class="docutils literal notranslate"><span class="pre">&quot;LINK_LIBRARY:WHOLE_ARCHIVE,xnnpack_backend&gt;&quot;</span></code> to <code class="docutils literal notranslate"><span class="pre">target_link_libraries</span></code> in CMake.</p></li>
-</ul>
-</li>
-</ul>
-</section>
-<section id="slow-performance">
-<h2>Slow Performance<a class="headerlink" href="#slow-performance" title="Link to this heading">#</a></h2>
-<ul class="simple">
-<li><p>Try reducing the thread count using <a class="reference internal" href="../../using-executorch-faqs.html#inference-is-slow-performance-troubleshooting"><span class="std std-ref">_unsafe_reset_threadpool</span></a>.</p>
-<ul>
-<li><p>Small models may benefit from using fewer threads than default.</p></li>
-<li><p>Try values between 1 and 4 threads and measure performance on your model.</p></li>
-</ul>
-</li>
-<li><p>Use <a class="reference internal" href="../../tutorials/devtools-integration-tutorial.html"><span class="doc std std-doc">op-level profiling</span></a> to understand which operators are taking the most time. <!-- @lint-ignore linter doesn't like this link for some reason --></p>
-<ul>
-<li><p>The XNNPACK backend provides operator-level timing for delegated operators.</p></li>
-</ul>
-</li>
-<li><p>See general performance troubleshooting tips in <a class="reference internal" href="../../using-executorch-faqs.html#inference-is-slow-performance-troubleshooting"><span class="std std-ref">Performance Troubleshooting</span></a>.</p></li>
-</ul>
-</section>
-<section id="debugging-why-nodes-are-not-partitioned">
-<h2>Debugging Why Nodes Are Not Partitioned<a class="headerlink" href="#debugging-why-nodes-are-not-partitioned" title="Link to this heading">#</a></h2>
-<ul class="simple">
-<li><p>To debug cases where operators are not delegated to XNNPACK,
-you can enable internal debug logs before <strong>to_edge_transform_and_lower</strong> from the partitioner. This will print diagnostic messages explaining why specific nodes fail
-to partition.</p></li>
-</ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>
-<span class="c1"># caption: Enable internal partition debug logging</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
-
-<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;executorch.backends.xnnpack.partition&quot;</span><span class="p">)</span>
-<span class="n">logger</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">)</span>
-
-<span class="k">if</span> <span class="ow">not</span> <span class="n">logger</span><span class="o">.</span><span class="n">handlers</span><span class="p">:</span>
-    <span class="n">ch</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">StreamHandler</span><span class="p">()</span>
-    <span class="n">ch</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">)</span>
-    <span class="n">formatter</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span><span class="s2">&quot;[</span><span class="si">%(levelname)s</span><span class="s2">] </span><span class="si">%(name)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="n">ch</span><span class="o">.</span><span class="n">setFormatter</span><span class="p">(</span><span class="n">formatter</span><span class="p">)</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">addHandler</span><span class="p">(</span><span class="n">ch</span><span class="p">)</span>
-</pre></div>
+  <section id="edgeir-operator-support-for-the-vgf-backend">
+<h1>EdgeIR Operator support for the VGF backend<a class="headerlink" href="#edgeir-operator-support-for-the-vgf-backend" title="Link to this heading">#</a></h1>
+<p>This list contains operators with silicon acceleration support.
+The ExecuTorch portable kernels allow running more operations with a fallback.
+8x8 designates 8-bit activation and 8-bit weight. 16x8 means 16-bit activation and 8-bit weight.
+Per-tensor and per-channel quantization are supported.</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>EdgeIR operator</p></th>
+<th class="head"><p>Compute DType</p></th>
+<th class="head"><p>Quantization</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>_log_softmax.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>_native_batch_norm_legit_no_training.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>_softmax.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>_to_copy.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>abs.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>acos.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>acosh.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>adaptive_avg_pool2d.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>add.Tensor</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>addmm.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>alias_copy.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>amax.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>amin.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>any.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>arange.start_step</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>asin.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>asinh.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>atan.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>atanh.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>avg_pool2d.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>bitwise_and.Scalar</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>bitwise_and.Tensor</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>bitwise_left_shift.Scalar</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>bitwise_left_shift.Tensor</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>bitwise_not.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>bitwise_or.Scalar</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>bitwise_or.Tensor</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>bitwise_right_shift.Scalar</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>bitwise_right_shift.Tensor</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>bitwise_xor.Scalar</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>bitwise_xor.Tensor</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>bmm.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>cat.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>ceil.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>clamp.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>clone.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>constant_pad_nd.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>convolution.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>copy.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>cos.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>cosh.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>cumsum.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>div.Tensor</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>div.Tensor_mode</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>elu.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>embedding.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>eq.Scalar</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>erf.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>exp.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>expand_copy.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>expm1.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>eye.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>fill.Scalar</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>floor.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>floor_divide.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>full.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>gather.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>ge.Scalar</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>ge.Tensor</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>gelu.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>glu.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>gt.Scalar</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>gt.Tensor</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>hardsigmoid.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>hardswish.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>hardtanh.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>index_select.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>le.Scalar</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>le.Tensor</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>leaky_relu.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>linear.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>linspace.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>log.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>log1p.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>logical_and.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>logical_not.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>logical_or.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>logical_xor.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>logit.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>lt.Scalar</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>lt.Tensor</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>masked_fill.Scalar</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>max.dim</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>maximum.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>mean.dim</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>min.dim</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>minimum.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>mm.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>mul.Tensor</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>multihead_attention.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>native_group_norm.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>native_layer_norm.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>ne.Scalar</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>ne.Tensor</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>neg.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>ones.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>permute_copy.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>pixel_shuffle.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>pixel_unshuffle.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>pow.Tensor_Scalar</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>reciprocal.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>relu.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>remainder.Scalar</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>remainder.Tensor</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>repeat.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>round.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>rsqrt.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>rsub.Scalar</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>scalar_tensor.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>sdpa.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>select_copy.int</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>select_scatter.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>sigmoid.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>sign.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>silu.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>sin.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>sinh.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>slice_copy.Tensor</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>slice_scatter.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>split_copy.Tensor</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>split_with_sizes_copy.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>sqrt.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>squeeze_copy.dim</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>squeeze_copy.dims</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>stack.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>sub.Tensor</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>sum.dim_IntList</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>t_copy.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>tan.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>tanh.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>transpose_copy.int</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>tril.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>unbind_copy.int</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>unflatten.int</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>unsqueeze_copy.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>upsample_bilinear2d.vec</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>upsample_nearest2d.vec</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>var.dim</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>vector_norm.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>view_copy.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-even"><td><p>where.self</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+<tr class="row-odd"><td><p>zeros.default</p></td>
+<td><p>Static integer quantization</p></td>
+<td><p>8x8</p></td>
+</tr>
+</tbody>
+</table>
 </div>
-</section>
 </section>
 
 
@@ -2030,20 +2552,20 @@ to partition.</p></li>
 
 <div class="prev-next-area">
     <a class="left-prev"
-       href="xnnpack-quantization.html"
+       href="arm-vgf-troubleshooting.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Quantization</p>
+        <p class="prev-next-title">Arm VGF Troubleshooting</p>
       </div>
     </a>
     <a class="right-next"
-       href="xnnpack-arch-internals.html"
+       href="../../build-run-openvino.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Architecture and Internals</p>
+        <p class="prev-next-title">Building and Running ExecuTorch with OpenVINO Backend</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -2069,20 +2591,20 @@ to partition.</p></li>
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="xnnpack-quantization.html"
+       href="arm-vgf-troubleshooting.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Quantization</p>
+        <p class="prev-next-title">Arm VGF Troubleshooting</p>
       </div>
     </a>
     <a class="right-next"
-       href="xnnpack-arch-internals.html"
+       href="../../build-run-openvino.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Architecture and Internals</p>
+        <p class="prev-next-title">Building and Running ExecuTorch with OpenVINO Backend</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -2097,24 +2619,10 @@ to partition.</p></li>
 <div class="sidebar-secondary-items sidebar-secondary__inner">
     
        <div class="sidebar-secondary-item">
-<div
-    id="pst-page-navigation-heading-2"
-    class="page-toc tocsection onthispage">
-    <i class="fa-solid fa-list"></i> On this page
-  </div>
-  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
-    <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#xnnpack-backend-not-found">XNNPACK Backend Not Found</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#slow-performance">Slow Performance</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#debugging-why-nodes-are-not-partitioned">Debugging Why Nodes Are Not Partitioned</a></li>
-</ul>
-  </nav></div>
-    
-       <div class="sidebar-secondary-item">
 
   
   <div class="tocsection editthispage">
-    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/backends/xnnpack/xnnpack-troubleshooting.md">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/backends/arm-vgf/VGF_op_support.md">
       <i class="fa-solid fa-pencil"></i>
       
       
@@ -2128,7 +2636,7 @@ to partition.</p></li>
     
        <div class="sidebar-secondary-item">
     <div class="tocsection sourcelink">
-      <a href="../../_sources/backends/xnnpack/xnnpack-troubleshooting.md.txt">
+      <a href="../../_sources/backends/arm-vgf/VGF_op_support.md.txt">
         <i class="fa-solid fa-file-lines"></i> Show Source
       </a>
     </div>
@@ -2328,11 +2836,11 @@ to partition.</p></li>
     {
        "@context": "https://schema.org",
        "@type": "Article",
-       "name": "Troubleshooting",
-       "headline": "Troubleshooting",
+       "name": "EdgeIR Operator support for the VGF backend",
+       "headline": "EdgeIR Operator support for the VGF backend",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
-       "url": "/backends/xnnpack/xnnpack-troubleshooting.html",
-       "articleBody": "Troubleshooting# This page describes common issues that you may encounter when using the XNNPACK backend and how to debug and resolve them. XNNPACK Backend Not Found# This error indicates the XNNPACK backend is not registered with the runtime. This can happen because the backend was not compiled or linked, or because the registration code was optimized out. The XNNPACK backend is built by default for Python, Android, iOS, and in most CMake presets. Set the EXECUTORCH_BUILD_XNNPACK=ON CMake option option when building from source. Either by passing the option during CMake configuration or setting it inside the user CMake logic before including ExecuTorch. See Building from Source. On iOS, link the backend_xnnpack framework. If the backend is still not found, link with WHOLE_ARCHIVE. Pass \"LINK_LIBRARY:WHOLE_ARCHIVE,xnnpack_backend\u003e\" to target_link_libraries in CMake. Slow Performance# Try reducing the thread count using _unsafe_reset_threadpool. Small models may benefit from using fewer threads than default. Try values between 1 and 4 threads and measure performance on your model. Use op-level profiling to understand which operators are taking the most time. The XNNPACK backend provides operator-level timing for delegated operators. See general performance troubleshooting tips in Performance Troubleshooting. Debugging Why Nodes Are Not Partitioned# To debug cases where operators are not delegated to XNNPACK, you can enable internal debug logs before to_edge_transform_and_lower from the partitioner. This will print diagnostic messages explaining why specific nodes fail to partition. # caption: Enable internal partition debug logging import logging logger = logging.getLogger(\"executorch.backends.xnnpack.partition\") logger.setLevel(logging.DEBUG) if not logger.handlers: ch = logging.StreamHandler() ch.setLevel(logging.DEBUG) formatter = logging.Formatter(\"[%(levelname)s] %(name)s: %(message)s\") ch.setFormatter(formatter) logger.addHandler(ch)",
+       "url": "/backends/arm-vgf/VGF_op_support.html",
+       "articleBody": "EdgeIR Operator support for the VGF backend# This list contains operators with silicon acceleration support. The ExecuTorch portable kernels allow running more operations with a fallback. 8x8 designates 8-bit activation and 8-bit weight. 16x8 means 16-bit activation and 8-bit weight. Per-tensor and per-channel quantization are supported. EdgeIR operator Compute DType Quantization _log_softmax.default Static integer quantization 8x8 _native_batch_norm_legit_no_training.default Static integer quantization 8x8 _softmax.default Static integer quantization 8x8 _to_copy.default Static integer quantization 8x8 abs.default Static integer quantization 8x8 acos.default Static integer quantization 8x8 acosh.default Static integer quantization 8x8 adaptive_avg_pool2d.default Static integer quantization 8x8 add.Tensor Static integer quantization 8x8 addmm.default Static integer quantization 8x8 alias_copy.default Static integer quantization 8x8 amax.default Static integer quantization 8x8 amin.default Static integer quantization 8x8 any.default Static integer quantization 8x8 arange.start_step Static integer quantization 8x8 asin.default Static integer quantization 8x8 asinh.default Static integer quantization 8x8 atan.default Static integer quantization 8x8 atanh.default Static integer quantization 8x8 avg_pool2d.default Static integer quantization 8x8 bitwise_and.Scalar Static integer quantization 8x8 bitwise_and.Tensor Static integer quantization 8x8 bitwise_left_shift.Scalar Static integer quantization 8x8 bitwise_left_shift.Tensor Static integer quantization 8x8 bitwise_not.default Static integer quantization 8x8 bitwise_or.Scalar Static integer quantization 8x8 bitwise_or.Tensor Static integer quantization 8x8 bitwise_right_shift.Scalar Static integer quantization 8x8 bitwise_right_shift.Tensor Static integer quantization 8x8 bitwise_xor.Scalar Static integer quantization 8x8 bitwise_xor.Tensor Static integer quantization 8x8 bmm.default Static integer quantization 8x8 cat.default Static integer quantization 8x8 ceil.default Static integer quantization 8x8 clamp.default Static integer quantization 8x8 clone.default Static integer quantization 8x8 constant_pad_nd.default Static integer quantization 8x8 convolution.default Static integer quantization 8x8 copy.default Static integer quantization 8x8 cos.default Static integer quantization 8x8 cosh.default Static integer quantization 8x8 cumsum.default Static integer quantization 8x8 div.Tensor Static integer quantization 8x8 div.Tensor_mode Static integer quantization 8x8 elu.default Static integer quantization 8x8 embedding.default Static integer quantization 8x8 eq.Scalar Static integer quantization 8x8 erf.default Static integer quantization 8x8 exp.default Static integer quantization 8x8 expand_copy.default Static integer quantization 8x8 expm1.default Static integer quantization 8x8 eye.default Static integer quantization 8x8 fill.Scalar Static integer quantization 8x8 floor.default Static integer quantization 8x8 floor_divide.default Static integer quantization 8x8 full.default Static integer quantization 8x8 gather.default Static integer quantization 8x8 ge.Scalar Static integer quantization 8x8 ge.Tensor Static integer quantization 8x8 gelu.default Static integer quantization 8x8 glu.default Static integer quantization 8x8 gt.Scalar Static integer quantization 8x8 gt.Tensor Static integer quantization 8x8 hardsigmoid.default Static integer quantization 8x8 hardswish.default Static integer quantization 8x8 hardtanh.default Static integer quantization 8x8 index_select.default Static integer quantization 8x8 le.Scalar Static integer quantization 8x8 le.Tensor Static integer quantization 8x8 leaky_relu.default Static integer quantization 8x8 linear.default Static integer quantization 8x8 linspace.default Static integer quantization 8x8 log.default Static integer quantization 8x8 log1p.default Static integer quantization 8x8 logical_and.default Static integer quantization 8x8 logical_not.default Static integer quantization 8x8 logical_or.default Static integer quantization 8x8 logical_xor.default Static integer quantization 8x8 logit.default Static integer quantization 8x8 lt.Scalar Static integer quantization 8x8 lt.Tensor Static integer quantization 8x8 masked_fill.Scalar Static integer quantization 8x8 max.dim Static integer quantization 8x8 maximum.default Static integer quantization 8x8 mean.dim Static integer quantization 8x8 min.dim Static integer quantization 8x8 minimum.default Static integer quantization 8x8 mm.default Static integer quantization 8x8 mul.Tensor Static integer quantization 8x8 multihead_attention.default Static integer quantization 8x8 native_group_norm.default Static integer quantization 8x8 native_layer_norm.default Static integer quantization 8x8 ne.Scalar Static integer quantization 8x8 ne.Tensor Static integer quantization 8x8 neg.default Static integer quantization 8x8 ones.default Static integer quantization 8x8 permute_copy.default Static integer quantization 8x8 pixel_shuffle.default Static integer quantization 8x8 pixel_unshuffle.default Static integer quantization 8x8 pow.Tensor_Scalar Static integer quantization 8x8 reciprocal.default Static integer quantization 8x8 relu.default Static integer quantization 8x8 remainder.Scalar Static integer quantization 8x8 remainder.Tensor Static integer quantization 8x8 repeat.default Static integer quantization 8x8 round.default Static integer quantization 8x8 rsqrt.default Static integer quantization 8x8 rsub.Scalar Static integer quantization 8x8 scalar_tensor.default Static integer quantization 8x8 sdpa.default Static integer quantization 8x8 select_copy.int Static integer quantization 8x8 select_scatter.default Static integer quantization 8x8 sigmoid.default Static integer quantization 8x8 sign.default Static integer quantization 8x8 silu.default Static integer quantization 8x8 sin.default Static integer quantization 8x8 sinh.default Static integer quantization 8x8 slice_copy.Tensor Static integer quantization 8x8 slice_scatter.default Static integer quantization 8x8 split_copy.Tensor Static integer quantization 8x8 split_with_sizes_copy.default Static integer quantization 8x8 sqrt.default Static integer quantization 8x8 squeeze_copy.dim Static integer quantization 8x8 squeeze_copy.dims Static integer quantization 8x8 stack.default Static integer quantization 8x8 sub.Tensor Static integer quantization 8x8 sum.dim_IntList Static integer quantization 8x8 t_copy.default Static integer quantization 8x8 tan.default Static integer quantization 8x8 tanh.default Static integer quantization 8x8 transpose_copy.int Static integer quantization 8x8 tril.default Static integer quantization 8x8 unbind_copy.int Static integer quantization 8x8 unflatten.int Static integer quantization 8x8 unsqueeze_copy.default Static integer quantization 8x8 upsample_bilinear2d.vec Static integer quantization 8x8 upsample_nearest2d.vec Static integer quantization 8x8 var.dim Static integer quantization 8x8 vector_norm.default Static integer quantization 8x8 view_copy.default Static integer quantization 8x8 where.self Static integer quantization 8x8 zeros.default Static integer quantization 8x8",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
@@ -2341,7 +2849,7 @@ to partition.</p></li>
        "image": "https://pytorch.org/docs/stable/_static/img/pytorch_seo.png",
        "mainEntityOfPage": {
          "@type": "WebPage",
-         "@id": "/backends/xnnpack/xnnpack-troubleshooting.html"
+         "@id": "/backends/arm-vgf/VGF_op_support.html"
        },
        "datePublished": "2023-01-01T00:00:00Z",
        "dateModified": "2023-01-01T00:00:00Z"
