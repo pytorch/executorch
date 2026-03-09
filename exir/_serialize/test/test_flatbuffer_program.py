@@ -11,7 +11,10 @@ from executorch.exir._serialize._flatbuffer import (
     _program_flatbuffer_to_json,
     _program_json_to_flatbuffer,
 )
-from executorch.exir._serialize._flatbuffer_program import _program_to_flatbuffer
+from executorch.exir._serialize._flatbuffer_program import (
+    _flatbuffer_to_program,
+    _program_to_flatbuffer,
+)
 from executorch.exir._serialize._program import _json_to_program, _program_to_json
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.schema import (
@@ -171,6 +174,13 @@ class TestFlatbufferProgram(unittest.TestCase):
 
         program2 = _json_to_program(_program_flatbuffer_to_json(result.data))
         self.assertEqual(program2, program)
+
+    def test_roundtrip_via_direct_python(self) -> None:
+        program = self._make_program()
+        result = _program_to_flatbuffer(
+            program, constant_tensor_alignment=32, delegate_alignment=64
+        )
+        self.assertEqual(_flatbuffer_to_program(result.data), program)
 
     def test_flatbuffer_paths_match(self) -> None:
         program = self._make_program()
