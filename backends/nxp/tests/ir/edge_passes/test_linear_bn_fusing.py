@@ -311,4 +311,6 @@ def test_incompatible_linear_bn_not_fused(mocker, input_shape, linear_bias, bn_e
         graph=edge_program.graph,
         ops=batch_norm_target_ops,
     )
-    assert not any("lowered_module" in node.name for node in edge_program.graph.nodes)
+    assert not graph_contains_any_of_ops(
+        edge_program.graph, [torch.ops.higher_order.executorch_call_delegate]
+    )
