@@ -16,6 +16,17 @@ fbcode_target(_kind = python_unittest,
 )
 
 fbcode_target(_kind = python_unittest,
+    name = "test_qwen3_5_attention",
+    srcs = [
+        "test_qwen3_5_attention.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:llama_transformer",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
     name = "test_pre_quantization_transforms",
     srcs = [
         "test_pre_quantization_transforms.py",
