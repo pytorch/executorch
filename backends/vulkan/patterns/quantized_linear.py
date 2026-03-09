@@ -187,6 +187,7 @@ class QuantizedLinearMatch(PatternMatch):
             if utils.is_view_copy_node(cur_node) and len(cur_node.users) == 1:
                 self.output_view_copy_node = cur_node
                 self.all_nodes.append(self.output_view_copy_node)
+                self.output_node = self.output_view_copy_node
                 cur_node = list(cur_node.users)[0]
             if cur_node.target == exir_ops.edge.aten.relu.default:
                 self.relu_node = cur_node
