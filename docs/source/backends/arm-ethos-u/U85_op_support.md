@@ -1,0 +1,136 @@
+# EdgeIR Operator support for the U85 backend
+This list contains operators with silicon acceleration support.
+The ExecuTorch portable kernels allow running more operations with a fallback.
+8x8 designates 8-bit activation and 8-bit weight. 16x8 means 16-bit activation and 8-bit weight.
+Per-tensor and per-channel quantization are supported.
+
+| EdgeIR operator | Compute DType                 | Quantization |
+| --------------- | ------------------------------| ------------ |
+| _log_softmax.default | Static integer quantization | 8x8 |
+| _softmax.default | Static integer quantization | 8x8 |
+| abs.default | Static integer quantization | 8x8 |
+| acos.default | Static integer quantization | 8x8 |
+| adaptive_avg_pool2d.default | Static integer quantization | 16x8 / 8x8 |
+| add.Tensor | Static integer quantization | 16x8 / 8x8 |
+| addmm.default | Static integer quantization | 16x8 / 8x8 |
+| alias_copy.default | Static integer quantization | 8x8 |
+| amax.default | Static integer quantization | 16x8 / 8x8 |
+| amin.default | Static integer quantization | 16x8 / 8x8 |
+| any.default | Static integer quantization | 8x8 |
+| arange.start_step | Static integer quantization | 8x8 |
+| asin.default | Static integer quantization | 8x8 |
+| asinh.default | Static integer quantization | 8x8 |
+| atan.default | Static integer quantization | 8x8 |
+| atanh.default | Static integer quantization | 8x8 |
+| avg_pool2d.default | Static integer quantization | 16x8 / 8x8 |
+| bitwise_and.Scalar | Static integer quantization | 8x8 |
+| bitwise_left_shift.Scalar | Static integer quantization | 8x8 |
+| bitwise_left_shift.Tensor | Static integer quantization | 8x8 |
+| bitwise_not.default | Static integer quantization | 8x8 |
+| bitwise_or.Scalar | Static integer quantization | 8x8 |
+| bitwise_right_shift.Scalar | Static integer quantization | 8x8 |
+| bitwise_right_shift.Tensor | Static integer quantization | 8x8 |
+| bitwise_xor.Scalar | Static integer quantization | 8x8 |
+| bmm.default | Static integer quantization | 8x8 |
+| cat.default | Static integer quantization | 16x8 / 8x8 |
+| ceil.default | Static integer quantization | 8x8 |
+| clamp.default | Static integer quantization | 16x8 / 8x8 |
+| clone.default | Static integer quantization | 8x8 |
+| conv_transpose2d.default | Static integer quantization | 8x8 |
+| convolution.default | Static integer quantization | 16x8 / 8x8 |
+| copy.default | Static integer quantization | 8x8 |
+| cos.default | Static integer quantization | 8x8 |
+| cosh.default | Static integer quantization | 8x8 |
+| cumsum.default | Static integer quantization | 8x8 |
+| div.Tensor | Static integer quantization | 8x8 |
+| div.Tensor_mode | Static integer quantization | 8x8 |
+| elu.default | Static integer quantization | 8x8 |
+| eq.Scalar | Static integer quantization | 16x8 / 8x8 |
+| erf.default | Static integer quantization | 8x8 |
+| exp.default | Static integer quantization | 8x8 |
+| expand_copy.default | Static integer quantization | 8x8 |
+| expm1.default | Static integer quantization | 8x8 |
+| eye.default | Static integer quantization | 8x8 |
+| fill.Scalar | Static integer quantization | 8x8 |
+| floor.default | Static integer quantization | 8x8 |
+| floor_divide.default | Static integer quantization | 8x8 |
+| full.default | Static integer quantization | 8x8 |
+| gather.default | Static integer quantization | 8x8 |
+| ge.Scalar | Static integer quantization | 16x8 / 8x8 |
+| ge.Tensor | Static integer quantization | 16x8 / 8x8 |
+| gelu.default | Static integer quantization | 8x8 |
+| glu.default | Static integer quantization | 8x8 |
+| gt.Scalar | Static integer quantization | 16x8 / 8x8 |
+| gt.Tensor | Static integer quantization | 16x8 / 8x8 |
+| hardsigmoid.default | Static integer quantization | 8x8 |
+| hardswish.default | Static integer quantization | 8x8 |
+| hardtanh.default | Static integer quantization | 8x8 |
+| index_put.default | Static integer quantization | 8x8 |
+| index_select.default | Static integer quantization | 8x8 |
+| le.Scalar | Static integer quantization | 16x8 / 8x8 |
+| le.Tensor | Static integer quantization | 16x8 / 8x8 |
+| leaky_relu.default | Static integer quantization | 8x8 |
+| linear.default | Static integer quantization | 16x8 / 8x8 |
+| log.default | Static integer quantization | 8x8 |
+| logical_and.default | Static integer quantization | 8x8 |
+| logical_not.default | Static integer quantization | 8x8 |
+| logical_or.default | Static integer quantization | 8x8 |
+| logical_xor.default | Static integer quantization | 8x8 |
+| logit.default | Static integer quantization | 8x8 |
+| lt.Scalar | Static integer quantization | 16x8 / 8x8 |
+| lt.Tensor | Static integer quantization | 16x8 / 8x8 |
+| masked_fill.Scalar | Static integer quantization | 8x8 |
+| maximum.default | Static integer quantization | 16x8 / 8x8 |
+| mean.dim | Static integer quantization | 8x8 |
+| minimum.default | Static integer quantization | 16x8 / 8x8 |
+| mm.default | Static integer quantization | 8x8 |
+| mul.Tensor | Static integer quantization | 16x8 / 8x8 |
+| multihead_attention.default | Static integer quantization | 8x8 |
+| native_group_norm.default | Static integer quantization | 8x8 |
+| ne.Scalar | Static integer quantization | 8x8 |
+| ne.Tensor | Static integer quantization | 8x8 |
+| neg.default | Static integer quantization | 16x8 / 8x8 |
+| ones.default | Static integer quantization | 8x8 |
+| permute_copy.default | Static integer quantization | 16x8 / 8x8 |
+| pow.Tensor_Scalar | Static integer quantization | 8x8 |
+| reciprocal.default | Static integer quantization | 8x8 |
+| relu.default | Static integer quantization | 8x8 |
+| remainder.Scalar | Static integer quantization | 8x8 |
+| remainder.Tensor | Static integer quantization | 8x8 |
+| repeat.default | Static integer quantization | 16x8 / 8x8 |
+| round.default | Static integer quantization | 8x8 |
+| rsqrt.default | Static integer quantization | 16x8 / 8x8 |
+| rsub.Scalar | Static integer quantization | 8x8 |
+| scalar_tensor.default | Static integer quantization | 8x8 |
+| sdpa.default | Static integer quantization | 8x8 |
+| select_copy.int | Static integer quantization | 8x8 |
+| select_scatter.default | Static integer quantization | 8x8 |
+| sigmoid.default | Static integer quantization | 16x8 / 8x8 |
+| sign.default | Static integer quantization | 8x8 |
+| silu.default | Static integer quantization | 8x8 |
+| sin.default | Static integer quantization | 8x8 |
+| sinh.default | Static integer quantization | 8x8 |
+| slice_copy.Tensor | Static integer quantization | 16x8 / 8x8 |
+| slice_scatter.default | Static integer quantization | 8x8 |
+| split_copy.Tensor | Static integer quantization | 8x8 |
+| split_with_sizes_copy.default | Static integer quantization | 8x8 |
+| sqrt.default | Static integer quantization | 8x8 |
+| squeeze_copy.dim | Static integer quantization | 8x8 |
+| squeeze_copy.dims | Static integer quantization | 8x8 |
+| stack.default | Static integer quantization | 8x8 |
+| sub.Tensor | Static integer quantization | 16x8 / 8x8 |
+| sum.default | Static integer quantization | 8x8 |
+| t_copy.default | Static integer quantization | 8x8 |
+| tan.default | Static integer quantization | 8x8 |
+| tanh.default | Static integer quantization | 16x8 / 8x8 |
+| transpose_copy.int | Static integer quantization | 8x8 |
+| tril.default | Static integer quantization | 16x8 / 8x8 |
+| unflatten.int | Static integer quantization | 8x8 |
+| unsqueeze_copy.default | Static integer quantization | 8x8 |
+| upsample_bilinear2d.vec | Static integer quantization | 16x8 / 8x8 |
+| var.dim | Static integer quantization | 8x8 |
+| vector_norm.default | Static integer quantization | 8x8 |
+| view_copy.default | Static integer quantization | 16x8 / 8x8 |
+| where.self | Static integer quantization | 8x8 |
+| while_loop.default | Static integer quantization | 8x8 |
+| zeros.default | Static integer quantization | 8x8 |
