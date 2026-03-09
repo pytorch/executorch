@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional
+from typing import cast, List, Optional
 
 import executorch.backends.vulkan.utils as utils
 
@@ -41,7 +41,7 @@ class QuantizedConvolutionMatch(PatternMatch):
             if transposed_flag:
                 self.transposed = True
                 self.output_padding = (
-                    list(conv_node.args[7]) if len(conv_node.args) > 7 else [0, 0]
+                    cast(List[int], conv_node.args[7]) if len(conv_node.args) > 7 else [0, 0]
                 )
 
         # Extract convolution parameters
@@ -51,7 +51,7 @@ class QuantizedConvolutionMatch(PatternMatch):
         self.groups = conv_node.args[8] if len(conv_node.args) > 8 else 1
 
         # Transposed conv only supported with dilation=[1,1]
-        if self.transposed and list(self.dilation) != [1, 1]:
+        if self.transposed and cast(List[int], self.dilation) != [1, 1]:
             return
 
         const_node, arg_chain = utils.trace_args_until_placeholder(
