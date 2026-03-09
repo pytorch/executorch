@@ -166,6 +166,10 @@ Tensor& quantized_transpose_conv2d_out(
       bias.has_value() ? bias.value().const_data_ptr<int32_t>() : nullptr;
 
   // Reference transposed conv (output-centric, channels-last NHWC layout).
+  // Weight layout: [output_channels, kernel_h, kernel_w, input_channels] (OHWI).
+  // For each output position (n, oh, ow, oc), the contributing input positions
+  // satisfy: ih = (oh - kh*dil_h + pad_h) / stride_h (must be a non-negative
+  // integer within input bounds), and similarly for iw.
   for (int32_t n = 0; n < batch; ++n) {
     for (int32_t oh = 0; oh < output_height; ++oh) {
       for (int32_t ow = 0; ow < output_width; ++ow) {
@@ -212,7 +216,7 @@ Tensor& quantized_transpose_conv2d_out(
             }
           }
 
-          // Per-channel requantization
+          // Per-channel requantization: result = round(acc * multiplier / 2^(31-shift))
           const int32_t mul = multiplier_data[oc];
           const int32_t sft = shift_data[oc];
           const int32_t right_shift = 31 - sft;

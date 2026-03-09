@@ -16,9 +16,9 @@
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/platform/assert.h>
 
+#include <array>
 #include <cinttypes>
 #include <limits>
-#include <optional>
 
 #include "arm_nn_types.h"
 #include "arm_nnfunctions.h"
@@ -42,7 +42,6 @@ inline void validate_cmsis_nn_tensor_requirements(
     const Tensor& input2,
     Tensor& output,
     ScalarType expected_dtype = ScalarType::Char,
-    bool require_channels_last = false,
     bool require_same_sizes = true) {
   // Basic dtype validation
   ET_CHECK_MSG(
@@ -74,11 +73,9 @@ inline void validate_cmsis_nn_tensor_requirements(
 }
 
 inline void validate_single_quant_params(
-    const int64_t zero_point,
     const int64_t multiplier,
     const int64_t shift,
     const char* param_name) {
-  (void)zero_point;
   ET_CHECK_MSG(
       multiplier >= std::numeric_limits<int32_t>::min() &&
           multiplier <= std::numeric_limits<int32_t>::max(),
@@ -96,34 +93,24 @@ inline void validate_single_quant_params(
 /**
  * Validate quantization parameters for inputs and output.
  *
- * Checks that zero points fit in int8 range, multipliers fit in int32 range,
- * and shifts are within a valid bit-shift range (0-31).
+ * Checks that multipliers fit in int32 range and shifts are within a valid
+ * bit-shift range (-31 to 31).
  *
- * Ensures parameters comply with Ahead-Of-Time (AOT) quantization requirements
- * and CMSIS-NN kernel expectations.
+ * Ensures parameters comply with Ahead-Of-Time (AOT) quantization requirements.
  *
- * Raises errors via ET_KERNEL_CHECK if any check fails.
+ * Raises errors via ET_CHECK_MSG if any check fails.
  */
 inline void validate_quantization_params(
-    const int64_t zero_point1,
     const int64_t multiplier1,
     const int64_t shift1,
-    const int64_t zero_point2,
     const int64_t multiplier2,
     const int64_t shift2,
-    const int64_t output_zero_point,
     const int64_t output_multiplier,
-    const int64_t output_shift,
-    Tensor& output) {
+    const int64_t output_shift) {
+  validate_single_quant_params(multiplier1, shift1, "Single quant Input1");
+  validate_single_quant_params(multiplier2, shift2, "Single quant Input2");
   validate_single_quant_params(
-      zero_point1, multiplier1, shift1, "Single quant Input1");
-  validate_single_quant_params(
-      zero_point2, multiplier2, shift2, "Single quant Input2");
-  validate_single_quant_params(
-      output_zero_point,
-      output_multiplier,
-      output_shift,
-      "Single quant Output");
+      output_multiplier, output_shift, "Single quant Output");
 }
 
 inline bool is_channels_last_tensor(const Tensor& tensor) {
@@ -136,11 +123,10 @@ inline bool is_channels_last_tensor(const Tensor& tensor) {
     return true;
   }
 
-  constexpr executorch::aten::DimOrderType kChannelsLastDimOrder[] = {
-      0, 2, 3, 1};
+  constexpr std::array<executorch::aten::DimOrderType, 4>
+      kChannelsLastDimOrder = {0, 2, 3, 1};
   executorch::aten::ArrayRef<executorch::aten::DimOrderType>
-      channels_last_order(kChannelsLastDimOrder, 4);
-
+      channels_last_order(kChannelsLastDimOrder);
   return tensor.dim_order() == channels_last_order;
 }
 
@@ -374,18 +360,19 @@ inline Error resize_to_broadcast_target_size(
     const Tensor& input2,
     Tensor& output) {
   static constexpr int kTensorDimensionLimit = 5;
-  Tensor::SizesType expected_output_size[kTensorDimensionLimit];
+  std::array<Tensor::SizesType, kTensorDimensionLimit> expected_output_size{};
   size_t expected_output_dim = 0;
   auto err = torch::executor::get_broadcast_target_size(
       input1,
       input2,
-      expected_output_size,
+      expected_output_size.data(),
       kTensorDimensionLimit,
       &expected_output_dim);
 
-  if (err != Error::Ok)
+  if (err != Error::Ok) {
     return err;
+  }
 
   return executorch::runtime::resize_tensor(
-      output, {expected_output_size, expected_output_dim});
+      output, {expected_output_size.data(), expected_output_dim});
 }

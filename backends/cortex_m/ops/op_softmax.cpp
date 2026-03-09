@@ -72,10 +72,7 @@ Tensor& softmax_out(
   const int32_t diff_min_val = static_cast<int32_t>(diff_min);
 
   validate_single_quant_params(
-      static_cast<int32_t>(input_zero_point),
-      input_multiplier_val,
-      input_shift_val,
-      "softmax input");
+      input_multiplier_val, input_shift_val, "softmax input");
 
   const auto positive_dim = normalize_dim(input, dim);
   const int64_t row_size64 = input.size(positive_dim);

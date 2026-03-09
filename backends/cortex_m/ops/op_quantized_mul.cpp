@@ -36,22 +36,17 @@ Tensor& quantized_mul_out(
       input2_int8,
       out,
       ScalarType::Char,
-      /*require_channels_last=*/channel_broadcast,
       /*require_same_sizes=*/!channel_broadcast);
 
   const int32_t kIdentityMultiplier(/*value=*/1);
   const int32_t kZeroShift(/*value=*/0);
   validate_quantization_params(
-      input1_zero_point,
       kIdentityMultiplier,
       kZeroShift,
-      input2_zero_point,
       kIdentityMultiplier,
       kZeroShift,
-      output_zero_point,
       output_multiplier,
-      output_shift,
-      out);
+      output_shift);
 
   // Extract quantization parameters
   int8_t* input1_ptr = input1_int8.data_ptr<int8_t>();
