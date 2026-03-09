@@ -14,7 +14,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/schema/program_generated.h>
 
-#include <c10/util/safe_numerics.h>
+// #include <c10/util/safe_numerics.h>
 
 namespace executorch {
 namespace runtime {
@@ -30,7 +30,7 @@ validate_tensor(const executorch_flatbuffer::Tensor* tensor) {
     return Error::InvalidProgram;
   }
 
-  ssize_t numel = 1;
+  // ssize_t numel = 1;
   for (flatbuffers::uoffset_t i = 0; i < sizes->size(); i++) {
     int32_t size = sizes->Get(i);
 
@@ -43,37 +43,38 @@ validate_tensor(const executorch_flatbuffer::Tensor* tensor) {
       return Error::InvalidProgram;
     }
 
-    bool overflow =
-        c10::mul_overflows(numel, static_cast<ssize_t>(size), &numel);
-    if (overflow) {
-      ET_LOG(
-          Error,
-          "numel overflowed at dimension %u with size %d",
-          static_cast<unsigned>(i),
-          size);
-      return Error::InvalidProgram;
-    }
+    // bool overflow =
+    //     c10::mul_overflows(numel, static_cast<ssize_t>(size), &numel);
+    // if (overflow) {
+    //   ET_LOG(
+    //       Error,
+    //       "numel overflowed at dimension %u with size %d",
+    //       static_cast<unsigned>(i),
+    //       size);
+    //   return Error::InvalidProgram;
+    // }
   }
 
   auto scalar_type =
       static_cast<executorch::aten::ScalarType>(tensor->scalar_type());
   if (!executorch::runtime::isValid(scalar_type)) {
+    ET_LOG(Error, "Invalid ScalarType %d", static_cast<int>(scalar_type));
     return Error::InvalidProgram;
   }
 
-  size_t nbytes;
-  bool nbytes_overflow = c10::mul_overflows(
-      static_cast<size_t>(numel),
-      executorch::runtime::elementSize(scalar_type),
-      &nbytes);
-  if (nbytes_overflow) {
-    ET_LOG(
-        Error,
-        "nbytes overflowed: numel %zd with element size %zu",
-        numel,
-        executorch::runtime::elementSize(scalar_type));
-    return Error::InvalidProgram;
-  }
+  // size_t nbytes;
+  // bool nbytes_overflow = c10::mul_overflows(
+  //     static_cast<size_t>(numel),
+  //     executorch::runtime::elementSize(scalar_type),
+  //     &nbytes);
+  // if (nbytes_overflow) {
+  //   ET_LOG(
+  //       Error,
+  //       "nbytes overflowed: numel %zd with element size %zu",
+  //       numel,
+  //       executorch::runtime::elementSize(scalar_type));
+  //   return Error::InvalidProgram;
+  // }
 
   return Error::Ok;
 }

@@ -5,6 +5,7 @@
 
 
 import logging
+import operator
 from typing import List, Optional
 
 import torch
@@ -250,23 +251,61 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         torch.ops.aten.clone.default,
         torch.ops.aten.lift_fresh_copy.default,
         torch.ops.aten.detach_.default,
+        torch.ops.aten.alias.default,
+        torch.ops.aten.alias_copy.default,
+        torch.ops.aten.copy_.default,
+        torch.ops.aten.detach_copy.default,
+        torch.ops.aten.unfold_copy.default,
+        torch.ops.aten.unbind.int,
         # Min/Max/Mean
         torch.ops.aten.minimum.default,
         torch.ops.aten.maximum.default,
+        torch.ops.aten.min.dim,
+        torch.ops.aten.max.dim,
+        torch.ops.aten.amin.default,
+        torch.ops.aten.amax.default,
         # Data shuffling
         torch.ops.aten.permute.default,
         torch.ops.aten.permute_copy.default,
-        torch.ops.aten.transpose.Dimname,
         torch.ops.aten.transpose.int,
         torch.ops.aten.transpose_copy.int,
         torch.ops.aten.t_copy.default,
         torch.ops.aten.t.default,
+        torch.ops.aten.repeat.default,
+        torch.ops.aten.repeat_interleave.self_int,
+        torch.ops.aten.expand_copy.default,
+        torch.ops.aten.expand.default,
+        torch.ops.aten.select.int,
+        torch.ops.aten.select_copy.int,
+        torch.ops.aten.slice.Tensor,
+        torch.ops.aten.slice_copy.Tensor,
+        torch.ops.aten.split.Tensor,
+        torch.ops.aten.split_with_sizes.default,
+        torch.ops.aten.split_copy.Tensor,
+        torch.ops.aten.tile.default,
+        torch.ops.aten.flip.default,
+        torch.ops.aten.index_select.default,
+        torch.ops.aten.index_put.default,
+        torch.ops.aten.contiguous.default,
+        torch.ops.aten.as_strided_copy.default,
+        torch.ops.aten.pixel_shuffle.default,
+        torch.ops.aten.pixel_unshuffle.default,
+        torch.ops.aten.cat.default,
+        torch.ops.aten.concatenate.default,
+        torch.ops.aten.stack.default,
+        torch.ops.aten.dropout.default,
+        torch.ops.aten.dropout_.default,
+        torch.ops.aten.chunk.default,
+        torch.ops.aten.index.Tensor,
+        torch.ops.aten.gather.default,
+        operator.getitem,
         # Change shape
         torch.ops.aten.squeeze.default,
         torch.ops.aten.squeeze_copy.default,
         torch.ops.aten.squeeze_copy.dim,
         torch.ops.aten.squeeze.dim,
         torch.ops.aten.squeeze.dims,
+        torch.ops.aten.squeeze_.dim,
         torch.ops.aten.unsqueeze.default,
         torch.ops.aten.unsqueeze_copy.default,
         torch.ops.aten.reshape.default,
@@ -279,22 +318,50 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         # Padding
         torch.ops.aten.pad.default,
         torch.ops.aten.constant_pad_nd.default,
+        # Ativation functions
+        torch.ops.aten.clamp.default,
+        torch.ops.aten.clamp.Tensor,
+        torch.ops.aten.hardtanh.default,
+        torch.ops.aten.hardtanh_.default,
+        torch.ops.aten.relu.default,
+        torch.ops.aten.relu_.default,
+        # Logic ops
+        torch.ops.aten.eq.Tensor,
+        torch.ops.aten.eq.Scalar,
+        torch.ops.aten.ne.Tensor,
+        torch.ops.aten.ne.Scalar,
+        torch.ops.aten.ge.Tensor,
+        torch.ops.aten.ge.Scalar,
+        torch.ops.aten.gt.Tensor,
+        torch.ops.aten.gt.Scalar,
+        torch.ops.aten.le.Tensor,
+        torch.ops.aten.le.Scalar,
+        torch.ops.aten.lt.Tensor,
+        torch.ops.aten.lt.Scalar,
+        torch.ops.aten.where.self,
+        torch.ops.aten.where.default,
+        torch.ops.higher_order.while_loop,
+        torch.ops.higher_order.cond,
     ]
 
     def __init__(self, targets: Optional[List[OpOverload]] = None) -> None:
         super().__init__()
         if targets is None:
             self.targets = self.SHARED_QSPEC_OPS_DEFAULT
+            self.support_config_path = (
+                __name__ + f".{self.__class__.__name__}.SHARED_QSPEC_OPS_DEFAULT"
+            )
         else:
             self.targets = targets
+            self.support_config_path = (
+                f"CUSTOM TARGETS: {', '.join([str(target) for target in targets])}"
+            )
 
     def get_quantizer_info(self):
         name = self.__class__.__name__
         targeted_nodes_description = ""
         quantization_config_path = "SHARED_QCONFIG"
-        support_config_path = (
-            __name__ + f".{self.__class__.__name__}.SHARED_QSPEC_OPS_DEFAULT"
-        )
+        support_config_path = self.support_config_path
         return QuantizerInfo(
             name,
             targeted_nodes_description,
@@ -319,35 +386,38 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         """
         shared_nodes = set()
         bfs_queue = [root_node]
-        adjacent_qspecs = set()
+        adjacent_qspecs = []
 
         while bfs_queue:
             node = bfs_queue.pop(0)
             shared_nodes.add(node)
 
             # Neighbours may either be other shared nodes, annotated nodes, or non-annotated (float) nodes.
-            for input_node in self._get_input_nodes_with_float_output(node):
+            for input_node in node.all_input_nodes:
                 if input_node.target in self.targets and input_node not in shared_nodes:
                     if not self._is_annotated(input_node):
                         bfs_queue.append(input_node)
                 if self._is_annotated(input_node):
-                    output_qspec = input_node.meta.get(
-                        Q_ANNOTATION_KEY, None
-                    ).output_qspec
-                    adjacent_qspecs.add(output_qspec)
+                    output_qspec = input_node.meta.get(Q_ANNOTATION_KEY).output_qspec
+                    if output_qspec is not None:
+                        adjacent_qspecs.append(output_qspec)
 
-            for output_node in self._get_user_nodes_with_float_input(node):
+            for output_node in node.users.keys():
                 if (
                     output_node.target in self.targets
                     and output_node not in shared_nodes
                 ):
                     if not self._is_annotated(output_node):
                         bfs_queue.append(output_node)
-                if self._is_annotated(output_node):
+                if (
+                    self._is_annotated(output_node)
+                    and node in output_node.meta.get(Q_ANNOTATION_KEY).input_qspec_map
+                ):
                     input_qspec = output_node.meta.get(
-                        Q_ANNOTATION_KEY, None
+                        Q_ANNOTATION_KEY
                     ).input_qspec_map[node]
-                    adjacent_qspecs.add(input_qspec)
+                    if input_qspec is not None:
+                        adjacent_qspecs.append(input_qspec)
 
         return shared_nodes, adjacent_qspecs
 
@@ -356,6 +426,21 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         Finds a cluster of unannotated nodes starting in root_node and annotates them with a common
         SharedQuantizationSpec.
         """
+
+        if (
+            len(self._get_input_nodes_with_float_output(root_node)) == 0
+            and len(self._get_user_nodes_with_float_input(root_node)) == 0
+        ):
+            self.report_reject(
+                [root_node],
+                "No float inputs nor outputs to annotate",
+            )
+            mark_node_as_annotated(
+                root_node,
+                {},
+                None,
+            )
+            return
 
         shared_nodes, adjacent_qspecs = self._get_shared_clique(root_node)
         node_order = {node: index for index, node in enumerate(root_node.graph.nodes)}
@@ -369,10 +454,21 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         # This means that we need to make sure that the root node of the shared_qspec
         # has an input node with a quantization spec, so that an observer is created.
 
-        if len(adjacent_qspecs) == 1:
-            root_node_first_input = self._get_input_nodes_with_float_output(root_node)[
-                0
-            ]
+        if len(adjacent_qspecs) > 0:
+            # Warn if multiple different adjacent qspecs are found.
+            if len(adjacent_qspecs) > 1:
+                logger.warning(
+                    f"Multiple adjacent quantization specs found for {', '.join([n.name for n in ordered_nodes])}, all nodes will share the input quantization spec of {root_node.name}."
+                )
+
+            root_node_float_inputs = self._get_input_nodes_with_float_output(root_node)
+            if len(root_node_float_inputs) == 0:
+                self.report_reject(
+                    ordered_nodes,
+                    "Couldn't find any floating point input to base shared quantization spec on.",
+                )
+                return
+            root_node_first_input = root_node_float_inputs[0]
 
             # Make all nodes share qspec with the root node's first input
             shared_qspec = SharedQuantizationSpec((root_node_first_input, root_node))
@@ -386,25 +482,21 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
                 else:
                     output_qspec = shared_qspec
                 mark_node_as_annotated(
-                    node, input_qspec_map, output_qspec, self.reporter, self
+                    node,
+                    input_qspec_map,
+                    output_qspec,
                 )
 
             # Force the root qspec to be the adjacent spec
-            root_node.meta[Q_ANNOTATION_KEY].input_qspec_map[
-                root_node_first_input
-            ] = adjacent_qspecs.pop()
+            root_node.meta[Q_ANNOTATION_KEY].input_qspec_map[root_node_first_input] = (
+                adjacent_qspecs[0]
+            )
             self.report_accept(ordered_nodes)
 
-        elif len(adjacent_qspecs) == 0:
-            self.report_reject(
-                ordered_nodes,
-                "Couldn't find any adjacent quantization spec to base shared quantization spec on.",
-            )
-            return
         else:
             self.report_reject(
                 ordered_nodes,
-                "Found multiple adjacent quantization specs to base shared quantization spec on.",
+                "Couldn't find any adjacent quantization spec to base shared quantization spec on. You may however quantize these nodes manually if required.",
             )
             return
 

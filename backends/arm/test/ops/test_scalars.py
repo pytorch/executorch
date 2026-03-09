@@ -2,20 +2,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
-
-from typing import Tuple
-
-import pytest
-
-import torch
-
-from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineFP,
-    TosaPipelineINT,
-)
-
 """Summary of non-working cases.
 
 FP:
@@ -32,6 +18,19 @@ FP:
     Sub or inplace-sub with an integer input.
 
 """
+
+from typing import Tuple
+
+import pytest
+
+import torch
+
+from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.test_pipeline import (
+    TosaPipelineFP,
+    TosaPipelineINT,
+)
+
 input_t1 = Tuple[torch.Tensor, torch.scalar_tensor]  # Input x, Input y
 
 

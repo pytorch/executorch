@@ -1588,7 +1588,23 @@ def get_softmax_inputs():
         "utils::kWidthPacked",
         "utils::kChannelsPacked",
     ]
-    return test_suite
+
+    # Large negative values regression test (edgeTAM attention scores that
+    # produced NaN due to missing max-shift in softmax numerics)
+    large_neg_test_suite = VkTestSuite(
+        [
+            ((1, 8, 512, 12), -1, False),
+        ]
+    )
+    large_neg_test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    large_neg_test_suite.data_range = (-1.8e10, -6.5e9)
+    large_neg_test_suite.test_name_suffix = "large_negative"
+    large_neg_test_suite.dtypes = ["at::kFloat"]
+
+    return [test_suite, large_neg_test_suite]
 
 
 @register_test_suite(

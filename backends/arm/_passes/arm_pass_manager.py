@@ -113,10 +113,11 @@ from executorch.backends.arm._passes import (
     RemoveNoopPass,
     ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
-    RewriteBoolBitwiseNotToLogicalNotPass,
+    RewriteBoolBitwiseToLogicalPass,
     RewriteBoolToFp32CastViaInt8Pass,
     RewriteConvPass,
     RewriteIndexPutPass,
+    RewriteLeLtToGeGtPass,
     RewriteMatmulPass,
     RewriteUpsamplePass,
     ScalarsToAttributePass,
@@ -220,7 +221,8 @@ class ArmPassManager(PassManager):
                 self.add_pass(p)
 
     def _transform(self, graph_module: GraphModule):
-        with TosaLoweringContext(self.tosa_spec):
+        shape_env = graph_module.shape_env
+        with TosaLoweringContext(self.tosa_spec, shape_env):
             return self(graph_module).graph_module
 
     def add_pass(self, pipeline_pass):
@@ -238,7 +240,6 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 FuseQuantizedActivationPass(),
-                RewriteBoolBitwiseNotToLogicalNotPass(),
                 RewriteBoolToFp32CastViaInt8Pass(),
                 CanonicalizeGatherPass(),
                 ConvertToClampPass(),
@@ -310,6 +311,7 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 ReplaceScalarWithTensorByProfilePass(),
+                RewriteLeLtToGeGtPass(),
                 ConvertFullLikeToFullPass(),
                 MatchArgDtypePass(),
                 UnsqueezeScalarPlaceholdersPass(exported_program),
@@ -326,6 +328,7 @@ class ArmPassManager(PassManager):
                 DecomposeSliceScatterPass(),
                 AccumulateIndexPutPass(),
                 RewriteIndexPutPass(),
+                RewriteBoolBitwiseToLogicalPass(),
                 DecomposeRemainderPass(),
                 DecomposeDivTensorModePass(),
                 FuseBatchNorm2dPass(exported_program),

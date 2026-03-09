@@ -8,6 +8,7 @@ exclude_patterns = [
     '**/third-party/**',
     '.github/scripts/**',
     'exir/serde/**',
+    'exir/_serialize/generated/executorch_flatbuffer/**',
 ]
 command = [
     'python',
@@ -39,6 +40,7 @@ exclude_patterns = [
     'third-party/**',
     '**/third-party/**',
     'exir/serde/**',
+    'exir/_serialize/generated/executorch_flatbuffer/**',
 ]
 command = [
     'python',
@@ -265,6 +267,8 @@ exclude_patterns = [
     'kernels/portable/cpu/op_lt.cpp',
     'kernels/portable/cpu/op_ne.cpp',
     'runtime/kernel/thread_parallel_interface.h',
+    # Zephyr sample application can use std::vector in the sample code
+    'zephyr/samples/**',
     'scripts/**',
     'third-party/**',
     'util/**',
@@ -511,7 +515,6 @@ include_patterns = ['backends/arm/**/*.py']
 exclude_patterns = [
   'third-party/**',
   '**/third-party/**',
-  'backends/arm/test/**',
 ]
 command = [
   'python','-m','lintrunner_adapters','run','docformatter_linter','--config=pyproject.toml','--','@{{PATHSFILE}}'

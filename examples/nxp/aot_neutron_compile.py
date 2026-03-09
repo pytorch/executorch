@@ -211,8 +211,17 @@ if __name__ == "__main__":  # noqa C901
         required=False,
         default=False,
         action="store_true",
-        help="The model (including the Neutron backend) will use the channels last dim order, which can result in faster "
-        "inference. The inputs must also be provided in the channels last dim order.",
+        help="The model (including the Neutron backend) will use the channels last dim order, which can result in "
+        "faster inference. The inputs must also be provided in the channels last dim order.",
+    )
+    parser.add_argument(
+        "--dump_kernel_selection_code",
+        required=False,
+        default=False,
+        action="store_true",
+        help="During conversion to Neutron microcode by Neutron Converter, a kernel selection file will be dumped in "
+        "the working directory. This file can be used for reduction of Neutron Firmware size in the built app."
+        "See `docs/source/backends/nxp/nxp-kernel-selection.md` for details.",
     )
     parser.add_argument(
         "--use_random_dataset",
@@ -310,6 +319,7 @@ if __name__ == "__main__":  # noqa C901
         args.target,
         operators_not_to_delegate=args.operators_not_to_delegate,
         fetch_constants_to_sram=args.fetch_constants_to_sram,
+        dump_kernel_selection_code=args.dump_kernel_selection_code,
     )
     partitioners = (
         [

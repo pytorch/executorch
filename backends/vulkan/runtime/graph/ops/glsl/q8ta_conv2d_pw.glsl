@@ -55,13 +55,14 @@ layout(push_constant) uniform restrict Block {
   int input_zp;
   float output_inv_scale;
   int output_zp;
+  int K4_per_group;
+  int OC4_per_group;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "int", "apply_bias", "1")}
 ${layout_declare_spec_const(C, "int", "activation_type", "0")}
-${layout_declare_spec_const(C, "int", "conv2d_params_K4_per_group", "1")}
 
 // Layout specialization constants
 ${layout_declare_spec_const(C, "int", "outp_layout", "CONTIG_LAYOUT_INT")}
@@ -124,12 +125,18 @@ void main() {
     }
   }
 
-  // Compute initial input tile index
-  // Input has same spatial layout, channel dimension iterates from 0
-  int input_idx = oh * inp_h_stride + ow_block_idx * inp_w_stride;
+  // Compute group index from output channel block
+  const int group_idx = oc_block_idx / OC4_per_group;
+
+  // Compute initial input tile index with group offset
+  // For grouped im2col, each group's K range starts at group_idx * K4_per_group
+  // For non-grouped (groups=1), group_idx is always 0 so offset is 0
+  int input_idx = oh * inp_h_stride
+                + ow_block_idx * inp_w_stride
+                + group_idx * K4_per_group;
 
   // Main accumulation loop over K dimension
-  for (int k4 = 0; k4 < conv2d_params_K4_per_group; k4++) {
+  for (int k4 = 0; k4 < K4_per_group; k4++) {
     // Load packed int8 input tile (TILE_M4=1, TILE_K4=1)
     // Each int contains 4 packed int8s (one per width position in the tile)
     ivec4 int8_input_tile = t_packed_int8_input[input_idx];
