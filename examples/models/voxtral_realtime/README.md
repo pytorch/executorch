@@ -58,6 +58,10 @@ python -m executorch.extension.audio.mel_spectrogram \
 Export produces a single `.pte` containing the audio encoder, text decoder,
 and token embedding.
 
+> [!Tip]
+> Mistral has already published pre-exported .pte files for select backends, including macOS Metal, on their [Hugging Face Hub](https://huggingface.co/mistral-labs/Voxtral-Mini-4B-Realtime-2602-Executorch).
+
+
 ```bash
 python export_voxtral_rt.py \
     --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
