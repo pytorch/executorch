@@ -204,19 +204,17 @@ class TestTritonSdpaNan(unittest.TestCase):
             mod = _export_pybind(module, (q, k, v), tmpdir)
             triton = _run_pybind(mod, (q, k, v))[0].float()
 
-        self.assertFalse(torch.isnan(triton).any(), "non-pow2 bool mask has NaN")
-        self.assertFalse(torch.isinf(triton).any(), "non-pow2 bool mask has Inf")
-
-        """
         with torch.no_grad():
             eager = module(q, k, v).float().cpu()
+
+        self.assertFalse(torch.isnan(triton).any(), "non-pow2 bool mask has NaN")
+        self.assertFalse(torch.isinf(triton).any(), "non-pow2 bool mask has Inf")
         rel = (triton - eager).abs() / eager.abs().clamp(min=1e-6)
-        TODO: Enable this test. Currently fails.
         self.assertLess(
             rel.mean().item(),
             0.1,
             f"non-pow2 bool mask mean_rel={rel.mean():.4f} too large",
-        )"""
+        )
 
     def test_ring_buffer_bool_mask_no_nan(self):
         """Triton SDPA must not produce NaN with sparse ring buffer bool masks.
