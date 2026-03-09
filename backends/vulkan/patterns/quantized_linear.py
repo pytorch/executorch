@@ -90,6 +90,11 @@ class QuantizedLinearMatch(PatternMatch):
         # Identify output node
         self.output_node = self.anchor_node
 
+        # bmm with batch dim > 1 is not supported
+        is_bmm = self.anchor_node.target == exir_ops.edge.aten.bmm.default
+        if is_bmm and self.output_node.meta["val"].shape[0] != 1:
+            return
+
         # Identify primary input node of the anchor. Due to decomposition of aten.linear
         # there may be a view_copy node between the original input tensor to the linear
         # op and the actual linear op node.
@@ -267,6 +272,7 @@ linear_anchor_nodes = {
     exir_ops.edge.aten.linear.default,
     exir_ops.edge.aten.mm.default,
     exir_ops.edge.aten.addmm.default,
+    exir_ops.edge.aten.bmm.default,
 }
 
 
