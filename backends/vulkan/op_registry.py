@@ -482,6 +482,7 @@ def register_quantize_per_tensor():
         outputs_storage=[
             utils.PACKED_INT8_BUFFER,
         ],
+        supports_highdim=True,
     )
 
 
@@ -499,6 +500,7 @@ def register_dequantize_per_tensor():
         outputs_storage=[
             utils.CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER,
         ],
+        supports_highdim=True,
     )
 
 
