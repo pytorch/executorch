@@ -9,12 +9,6 @@
 
 #include <array>
 #include <limits>
-#include <vector>
-
-// Include CMSIS-NN headers with C linkage
-extern "C" {
-#include "arm_nnfunctions.h"
-}
 
 namespace cortex_m {
 namespace native {
@@ -83,38 +77,45 @@ Tensor& transpose_out(
     output_dims_arr[i] = static_cast<int32_t>(out_size);
   }
 
-  cmsis_nn_dims input_dims = {
-      input_dims_arr[0],
-      input_dims_arr[1],
-      input_dims_arr[2],
-      input_dims_arr[3]};
-  cmsis_nn_dims output_dims = {
-      output_dims_arr[0],
-      output_dims_arr[1],
-      output_dims_arr[2],
-      output_dims_arr[3]};
+  // Compute row-major strides for input and output
+  std::array<int64_t, kMaxSupportedDims> input_strides{1, 1, 1, 1};
+  for (int i = static_cast<int>(kMaxSupportedDims) - 2; i >= 0; --i) {
+    input_strides[i] = input_strides[i + 1] * input_dims_arr[i + 1];
+  }
+  std::array<int64_t, kMaxSupportedDims> output_strides{1, 1, 1, 1};
+  for (int i = static_cast<int>(kMaxSupportedDims) - 2; i >= 0; --i) {
+    output_strides[i] = output_strides[i + 1] * output_dims_arr[i + 1];
+  }
 
   std::array<uint32_t, kMaxSupportedDims> perm_buffer{0, 1, 2, 3};
   for (size_t i = 0; i < rank; ++i) {
     perm_buffer[i] = static_cast<uint32_t>(perm[i]);
   }
 
-  const cmsis_nn_transpose_params transpose_params{
-      static_cast<int32_t>(rank), perm_buffer.data()};
-
   const int8_t* input_data = input.const_data_ptr<int8_t>();
   int8_t* output_data = out.mutable_data_ptr<int8_t>();
 
-  const arm_cmsis_nn_status status = arm_transpose_s8(
-      input_data, output_data, &input_dims, &output_dims, &transpose_params);
-
-  if (status != ARM_CMSIS_NN_SUCCESS) {
-    ET_LOG(
-        Error,
-        "transpose_out: arm_transpose_s8 failed with status [%d]",
-        static_cast<int>(status));
-    context.fail(Error::Internal);
-    return out;
+  for (int32_t i0 = 0; i0 < output_dims_arr[0]; ++i0) {
+    for (int32_t i1 = 0; i1 < output_dims_arr[1]; ++i1) {
+      for (int32_t i2 = 0; i2 < output_dims_arr[2]; ++i2) {
+        for (int32_t i3 = 0; i3 < output_dims_arr[3]; ++i3) {
+          const std::array<int32_t, kMaxSupportedDims> out_idx{i0, i1, i2, i3};
+          std::array<int32_t, kMaxSupportedDims> in_idx{0, 0, 0, 0};
+          for (size_t k = 0; k < kMaxSupportedDims; ++k) {
+            in_idx[perm_buffer[k]] = out_idx[k];
+          }
+          const int64_t in_offset = in_idx[0] * input_strides[0] +
+                                     in_idx[1] * input_strides[1] +
+                                     in_idx[2] * input_strides[2] +
+                                     in_idx[3] * input_strides[3];
+          const int64_t out_offset = i0 * output_strides[0] +
+                                      i1 * output_strides[1] +
+                                      i2 * output_strides[2] +
+                                      i3 * output_strides[3];
+          output_data[out_offset] = input_data[in_offset];
+        }
+      }
+    }
   }
 
   return out;

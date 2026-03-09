@@ -8,10 +8,6 @@
 
 #include "cortex_m_ops_common.h"
 
-extern "C" {
-#include "arm_nnfunctions.h"
-}
-
 namespace cortex_m {
 namespace native {
 
@@ -113,6 +109,10 @@ Tensor& quantized_transpose_conv2d_out(
     return out;
   }
 
+  ET_CHECK_MSG(
+      output_padding[0] == 0 && output_padding[1] == 0,
+      "quantized_transpose_conv2d: non-zero output_padding is not supported");
+
   const int32_t batch = static_cast<int32_t>(input.size(0));
   const int32_t input_channels = static_cast<int32_t>(input.size(1));
   const int32_t input_height = static_cast<int32_t>(input.size(2));
@@ -137,43 +137,27 @@ Tensor& quantized_transpose_conv2d_out(
     return out;
   }
 
+  ET_CHECK_MSG(
+      weight.size(3) == input_channels,
+      "quantized_transpose_conv2d: weight input channels (%d) must match input channels (%d)",
+      static_cast<int>(weight.size(3)),
+      static_cast<int>(input_channels));
+
   const int32_t input_offset_val = static_cast<int32_t>(input_offset);
   const int32_t output_offset_val = static_cast<int32_t>(output_offset);
   const int32_t activation_min_val = static_cast<int32_t>(activation_min);
   const int32_t activation_max_val = static_cast<int32_t>(activation_max);
 
-  const cmsis_nn_dims input_dims{
-      batch, input_height, input_width, input_channels};
-  const cmsis_nn_dims filter_dims{
-      kernel_output_channels,
-      kernel_height,
-      kernel_width,
-      kernel_input_channels};
-  const cmsis_nn_dims output_dims{
-      batch, output_height, output_width, output_channels};
-  const cmsis_nn_dims bias_dims{1, 1, 1, output_channels};
+  const int32_t stride_h = static_cast<int32_t>(stride[0]);
+  const int32_t stride_w = static_cast<int32_t>(stride[1]);
+  const int32_t pad_h = static_cast<int32_t>(padding[0]);
+  const int32_t pad_w = static_cast<int32_t>(padding[1]);
+  const int32_t dil_h = static_cast<int32_t>(dilation[0]);
+  const int32_t dil_w = static_cast<int32_t>(dilation[1]);
 
-  // Setup transposed convolution parameters
-  cmsis_nn_transpose_conv_params transpose_conv_params;
-  transpose_conv_params.input_offset = input_offset_val;
-  transpose_conv_params.output_offset = output_offset_val;
-  transpose_conv_params.stride.h = static_cast<const int32_t>(stride[0]);
-  transpose_conv_params.stride.w = static_cast<const int32_t>(stride[1]);
-  transpose_conv_params.padding.h = static_cast<const int32_t>(padding[0]);
-  transpose_conv_params.padding.w = static_cast<const int32_t>(padding[1]);
-  // padding_offsets corresponds to output_padding in PyTorch
-  transpose_conv_params.padding_offsets.h =
-      static_cast<const int32_t>(output_padding[0]);
-  transpose_conv_params.padding_offsets.w =
-      static_cast<const int32_t>(output_padding[1]);
-  transpose_conv_params.dilation.h = static_cast<const int32_t>(dilation[0]);
-  transpose_conv_params.dilation.w = static_cast<const int32_t>(dilation[1]);
-  transpose_conv_params.activation.min = activation_min_val;
-  transpose_conv_params.activation.max = activation_max_val;
-
-  cmsis_nn_per_channel_quant_params quant_params;
-  quant_params.multiplier = requantize_multipliers.data_ptr<int32_t>();
-  quant_params.shift = requantize_shifts.data_ptr<int32_t>();
+  const int32_t* multiplier_data =
+      requantize_multipliers.const_data_ptr<int32_t>();
+  const int32_t* shift_data = requantize_shifts.const_data_ptr<int32_t>();
 
   const int8_t* input_data = input.const_data_ptr<int8_t>();
   const int8_t* weight_data = weight.const_data_ptr<int8_t>();
@@ -181,67 +165,79 @@ Tensor& quantized_transpose_conv2d_out(
   const int32_t* bias_data =
       bias.has_value() ? bias.value().const_data_ptr<int32_t>() : nullptr;
 
-  cmsis_nn_context cmsis_context;
-  cmsis_context.buf = nullptr;
-  cmsis_context.size = 0;
+  // Reference transposed conv (output-centric, channels-last NHWC layout).
+  for (int32_t n = 0; n < batch; ++n) {
+    for (int32_t oh = 0; oh < output_height; ++oh) {
+      for (int32_t ow = 0; ow < output_width; ++ow) {
+        for (int32_t oc = 0; oc < output_channels; ++oc) {
+          int32_t acc = bias_data != nullptr ? bias_data[oc] : 0;
 
-  cmsis_nn_context output_context;
-  output_context.buf = nullptr;
-  output_context.size = 0;
+          for (int32_t kh = 0; kh < kernel_height; ++kh) {
+            const int32_t ih_raw = oh - kh * dil_h + pad_h;
+            if (ih_raw < 0 || ih_raw % stride_h != 0) {
+              continue;
+            }
+            const int32_t ih = ih_raw / stride_h;
+            if (ih >= input_height) {
+              continue;
+            }
 
-  const int32_t buffer_bytes = arm_transpose_conv_s8_get_buffer_size(
-      &transpose_conv_params, &input_dims, &filter_dims, &output_dims);
-  auto buffer_or_error = context.allocate_temp(
-      static_cast<size_t>(buffer_bytes), kCortexMMveAlignment);
-  if (!buffer_or_error.ok()) {
-    ET_LOG(
-        Error,
-        "quantized_transpose_conv2d_out: failed to allocate scratch buffer (%d bytes, error %d)",
-        buffer_bytes,
-        static_cast<int>(buffer_or_error.error()));
-    context.fail(buffer_or_error.error());
-    return out;
-  }
-  cmsis_context.buf = buffer_or_error.get();
-  cmsis_context.size = buffer_bytes;
+            for (int32_t kw = 0; kw < kernel_width; ++kw) {
+              const int32_t iw_raw = ow - kw * dil_w + pad_w;
+              if (iw_raw < 0 || iw_raw % stride_w != 0) {
+                continue;
+              }
+              const int32_t iw = iw_raw / stride_w;
+              if (iw >= input_width) {
+                continue;
+              }
 
-  const int32_t output_buffer_bytes =
-      arm_transpose_conv_s8_get_reverse_conv_buffer_size(
-          &transpose_conv_params, &input_dims, &filter_dims);
-  auto output_buffer_or_error = context.allocate_temp(
-      static_cast<size_t>(output_buffer_bytes), kCortexMMveAlignment);
-  if (!output_buffer_or_error.ok()) {
-    ET_LOG(
-        Error,
-        "quantized_transpose_conv2d_out: failed to allocate output scratch buffer (%d bytes, error %d)",
-        output_buffer_bytes,
-        static_cast<int>(output_buffer_or_error.error()));
-    context.fail(output_buffer_or_error.error());
-    return out;
-  }
-  output_context.buf = output_buffer_or_error.get();
-  output_context.size = output_buffer_bytes;
+              for (int32_t ic = 0; ic < input_channels; ++ic) {
+                const int64_t in_idx =
+                    ((static_cast<int64_t>(n) * input_height + ih) *
+                         input_width +
+                     iw) *
+                        input_channels +
+                    ic;
+                const int64_t w_idx =
+                    ((static_cast<int64_t>(oc) * kernel_height + kh) *
+                         kernel_width +
+                     kw) *
+                        input_channels +
+                    ic;
+                acc += (static_cast<int32_t>(input_data[in_idx]) +
+                        input_offset_val) *
+                       static_cast<int32_t>(weight_data[w_idx]);
+              }
+            }
+          }
 
-  const arm_cmsis_nn_status status = arm_transpose_conv_wrapper_s8(
-      &cmsis_context,
-      &output_context,
-      &transpose_conv_params,
-      &quant_params,
-      &input_dims,
-      input_data,
-      &filter_dims,
-      weight_data,
-      &bias_dims,
-      bias_data,
-      &output_dims,
-      output_data);
+          // Per-channel requantization
+          const int32_t mul = multiplier_data[oc];
+          const int32_t sft = shift_data[oc];
+          const int32_t right_shift = 31 - sft;
+          const int64_t acc64 = static_cast<int64_t>(acc) * mul;
+          int32_t result;
+          if (right_shift > 0) {
+            result = static_cast<int32_t>(
+                (acc64 + (1LL << (right_shift - 1))) >> right_shift);
+          } else {
+            result = static_cast<int32_t>(acc64 << (-right_shift));
+          }
 
-  if (status != ARM_CMSIS_NN_SUCCESS) {
-    ET_LOG(
-        Error,
-        "quantized_transpose_conv2d_out: arm_transpose_conv_wrapper_s8 failed with status %d",
-        status);
-    context.fail(Error::Internal);
+          result += output_offset_val;
+          result = result < activation_min_val ? activation_min_val : result;
+          result = result > activation_max_val ? activation_max_val : result;
+          const int64_t out_idx =
+              ((static_cast<int64_t>(n) * output_height + oh) *
+                   output_width +
+               ow) *
+                  output_channels +
+              oc;
+          output_data[out_idx] = static_cast<int8_t>(result);
+        }
+      }
+    }
   }
 
   return out;

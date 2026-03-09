@@ -7,11 +7,6 @@
 
 #include "cortex_m_ops_common.h"
 
-// Include CMSIS-NN headers with C linkage
-extern "C" {
-#include "arm_nnfunctions.h"
-}
-
 namespace cortex_m {
 namespace native {
 
@@ -27,7 +22,6 @@ Tensor& maximum_out(
       input2,
       out,
       ScalarType::Char,
-      /*require_channels_last=*/false,
       /*require_same_sizes=*/false);
 
   auto resize_error = resize_to_broadcast_target_size(input1, input2, out);
@@ -78,21 +72,32 @@ Tensor& maximum_out(
       static_cast<int32_t>(
           output_rank >= 1 ? output_sizes[output_rank - 1] : 1)};
 
-  const arm_cmsis_nn_status status = arm_maximum_s8(
-      /* ctx */ nullptr,
-      input1_data,
-      &input1_dims,
-      input2_data,
-      &input2_dims,
-      output_data,
-      &output_dims);
-
-  if (status != ARM_CMSIS_NN_SUCCESS) {
-    ET_LOG(
-        Error,
-        "maximum_out: arm_maximum_s8 failed with status [%d]",
-        static_cast<int>(status));
-    context.fail(Error::Internal);
+  for (int32_t n = 0; n < output_dims.n; ++n) {
+    for (int32_t h = 0; h < output_dims.h; ++h) {
+      for (int32_t w = 0; w < output_dims.w; ++w) {
+        for (int32_t c = 0; c < output_dims.c; ++c) {
+          const int32_t n1 = (input1_dims.n == 1) ? 0 : n;
+          const int32_t h1 = (input1_dims.h == 1) ? 0 : h;
+          const int32_t w1 = (input1_dims.w == 1) ? 0 : w;
+          const int32_t c1 = (input1_dims.c == 1) ? 0 : c;
+          const int32_t n2 = (input2_dims.n == 1) ? 0 : n;
+          const int32_t h2 = (input2_dims.h == 1) ? 0 : h;
+          const int32_t w2 = (input2_dims.w == 1) ? 0 : w;
+          const int32_t c2 = (input2_dims.c == 1) ? 0 : c;
+          const int32_t idx1 =
+              ((n1 * input1_dims.h + h1) * input1_dims.w + w1) * input1_dims.c +
+              c1;
+          const int32_t idx2 =
+              ((n2 * input2_dims.h + h2) * input2_dims.w + w2) * input2_dims.c +
+              c2;
+          const int32_t out_idx =
+              ((n * output_dims.h + h) * output_dims.w + w) * output_dims.c + c;
+          output_data[out_idx] = input1_data[idx1] > input2_data[idx2]
+              ? input1_data[idx1]
+              : input2_data[idx2];
+        }
+      }
+    }
   }
 
   return out;
