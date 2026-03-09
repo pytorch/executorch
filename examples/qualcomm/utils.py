@@ -291,6 +291,8 @@ class SimpleADB:
             )
             qnn_executor_runner_cmds = " ".join(
                 [
+                    f"export LD_LIBRARY_PATH={self.workspace} &&",
+                    f"export ADSP_LIBRARY_PATH={self.workspace} &&",
                     f"cd {self.workspace} &&",
                     f"chmod +x {os.path.basename(self.runner)} &&",
                     f"export LD_LIBRARY_PATH=. && export ADSP_LIBRARY_PATH=. && echo 0x0C > {os.path.basename(self.runner)}.farf && ./{os.path.basename(self.runner)} {qnn_executor_runner_args}",

@@ -178,10 +178,6 @@ def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    quant_dtype = QuantDtype.use_8a8w
-    if args.use_fp16:
-        quant_dtype = None
-
     instance = Model()
     pte_filename = "custom_qnn"
     sample_input = (torch.ones(1, 32, 28, 28),)
@@ -195,9 +191,14 @@ def main(args):
         soc_info.htp_info.htp_arch,
         args.build_op_package,
     )
-    quantizer = make_quantizer(
-        quant_dtype=quant_dtype, custom_annotations=(annotate_custom,)
-    )
+
+    quant_dtype = QuantDtype.use_8a8w
+    if args.use_fp16:
+        quantizer = None
+    else:
+        quantizer = make_quantizer(
+            quant_dtype=quant_dtype, custom_annotations=(annotate_custom,)
+        )
 
     build_executorch_binary(
         instance,
@@ -260,7 +261,13 @@ def main(args):
             target=args.target,
         )
         adb.push(inputs=sample_input, files=op_package_paths)
+        if args.debug:
+            adb.execute(custom_runner_cmd="logcat -c")
+            adb.execute(custom_runner_cmd=f"echo 0x1f > {workspace}/qnn_executor_runner.farf")
+
         adb.execute()
+        if args.debug:
+            adb.execute(custom_runner_cmd=f"logcat -d -v time >{workspace}/outputs/debug_logs.txt")
         adb.pull(host_output_path=args.artifact)
 
     x86_golden = instance(*sample_input)
@@ -320,6 +327,13 @@ if __name__ == "__main__":
         "`HEXAGON_SDK_ROOT` and `ANDROID_NDK_ROOT` environment variable. "
         "And add clang compiler into `PATH`. Please refer to  Qualcomm AI Engine "
         "Direct SDK document to get more details",
+        action="store_true",
+        default=False,
+    )
+
+    parser.add_argument(
+        "--debug",
+        help="Enable device logging",
         action="store_true",
         default=False,
     )
