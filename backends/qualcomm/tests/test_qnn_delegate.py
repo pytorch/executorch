@@ -8311,6 +8311,7 @@ class TestUtilsScript(TestQNN):
                 cmds.extend(["--host", self.host])
             subprocess.run(cmds, stdout=subprocess.DEVNULL)
             self.assertTrue(os.path.isfile(f"{tmp_dir}/e_out/Result_0/output_0.pt"))
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/e_out/performance.json"))
 
     def test_cli_with_input_list_assignment(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -8379,11 +8380,10 @@ class TestUtilsScript(TestQNN):
                 "--input_list",
                 f"{tmp_dir}/input_list",
             ]
-            if self.host:
-                cmds.extend(["--host", self.host])
             subprocess.run(cmds, stdout=subprocess.DEVNULL)
             output_file = f"{tmp_dir}/e_out/Result_0/output_0.pt"
             self.assertTrue(os.path.isfile(output_file))
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/e_out/performance.json"))
             device_output = torch.load(output_file, weights_only=True)
             golden_output = ep.module()(sample_input, sample_input2)
             self._assert_outputs_equal(golden_output, device_output)
