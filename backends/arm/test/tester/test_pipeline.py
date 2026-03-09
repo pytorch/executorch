@@ -20,6 +20,8 @@ from typing import (
     Union,
 )
 
+import executorch.backends.arm.test.tester.arm_tester as arm_tester_module
+
 import torch
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.ethosu import EthosUCompileSpec
@@ -299,6 +301,25 @@ class BasePipeline(Generic[T]):
     def visualize(self, stage_id: str, suffix: str | None = None):
         """Adds a dump_operator_distribution stage after the given stage id."""
         self.add_stage_after(stage_id, self.tester.visualize, suffix=suffix)
+        return self
+
+    def count_tosa_ops(self, expected_ops: Dict[str, int]):
+        """Assert the number of TOSA ops in the graph,"""
+        if not self.has_stage("to_edge_transform_and_lower"):
+            raise RuntimeError(
+                "count_tosa_ops requires to_edge_transform_and_lower in the pipeline."
+            )
+
+        def _count_tosa_ops():
+            stage = self.tester.stages[StageType.TO_EDGE_TRANSFORM_AND_LOWER]
+            graph_module = stage.graph_module
+            arm_tester_module.count_tosa_ops(graph_module, expected_ops)
+
+        self.add_stage_after(
+            "to_edge_transform_and_lower",
+            _count_tosa_ops,
+            suffix="tosa_ops",
+        )
         return self
 
     def change_args(self, stage_id: str, *args, **kwargs):
