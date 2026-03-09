@@ -1182,3 +1182,24 @@ def _format_dict(to_print: dict, print_table: bool = True) -> str:
         )
     else:
         return pformat(to_print, compact=True, indent=1)
+
+
+def count_tosa_ops(graph_module: torch.fx.GraphModule, expected_ops: Dict[str, int]):
+    """Asserts that the number of occurrences of TOSA operators in the graph of
+    a partitioned module matches the expected counts.
+    """
+    op_counts = dict(_get_tosa_operator_distribution(graph_module))
+    for op, expected_count in expected_ops.items():
+        actual_count = op_counts.get(op, 0)
+
+        if expected_count != actual_count:
+            if expected_count == 0:
+                raise AssertionError(
+                    f"Expected no occurrences of TOSA op {op} but found {actual_count}."
+                )
+            elif actual_count == 0:
+                raise AssertionError(f"Expected TOSA op {op} but it was not found.")
+            else:
+                raise AssertionError(
+                    f"Expected {expected_count} occurrences of TOSA op {op} but found {actual_count}."
+                )
