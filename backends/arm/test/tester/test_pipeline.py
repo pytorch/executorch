@@ -425,6 +425,7 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
         tosa_version: Optional[str] = "1.0",
         tosa_extensions: Optional[List[str]] = None,
         epsilon: float = 2**-16,
+        fold_quantize: bool = True,
     ):
         if tosa_extensions is None:
             tosa_extensions = []
@@ -450,7 +451,9 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
             )
         if symmetric_io_quantization:
             quantizer.set_io(quantization_config)
-        quant_stage = Quantize(quantizer, quantization_config)
+        quant_stage = Quantize(
+            quantizer, quantization_config, fold_quantize=fold_quantize
+        )
 
         super().__init__(
             module,
@@ -622,6 +625,7 @@ class EthosUPipelineINTBase(BasePipeline, Generic[T]):
         rtol: float = 1e-03,
         qtol: int = 1,
         epsilon: float = 2**-12,
+        fold_quantize: bool = True,
     ):
         super().__init__(
             module,
@@ -644,7 +648,9 @@ class EthosUPipelineINTBase(BasePipeline, Generic[T]):
             )
         if symmetric_io_quantization:
             quantizer.set_io(quantization_config)
-        quant_stage = Quantize(quantizer, quantization_config)
+        quant_stage = Quantize(
+            quantizer, quantization_config, fold_quantize=fold_quantize
+        )
 
         self.add_stage(self.tester.quantize, quant_stage, pos=0)
 
@@ -720,6 +726,7 @@ class EthosU55PipelineINT(EthosUPipelineINTBase, Generic[T]):
         rtol: float = 1e-03,
         qtol: int = 1,
         epsilon: float = 2**-12,
+        fold_quantize: bool = True,
     ):
         compile_spec = common.get_u55_compile_spec(
             custom_path=custom_path,
@@ -740,6 +747,7 @@ class EthosU55PipelineINT(EthosUPipelineINTBase, Generic[T]):
             rtol=rtol,
             qtol=qtol,
             epsilon=epsilon,
+            fold_quantize=fold_quantize,
         )
 
 
@@ -777,6 +785,7 @@ class EthosU85PipelineINT(EthosUPipelineINTBase, Generic[T]):
         rtol: float = 1e-03,
         qtol: int = 1,
         epsilon: float = 2**-12,
+        fold_quantize: bool = True,
     ):
         compile_spec = common.get_u85_compile_spec(
             custom_path=custom_path,
@@ -797,6 +806,7 @@ class EthosU85PipelineINT(EthosUPipelineINTBase, Generic[T]):
             rtol=rtol,
             qtol=qtol,
             epsilon=epsilon,
+            fold_quantize=fold_quantize,
         )
 
 
@@ -982,6 +992,7 @@ class QuantizationPipeline(TOSAPipeline, Generic[T]):
         input_qspecs: Optional[Dict[QuantizationSpec | None, int]] = None,
         output_qspecs: Optional[Dict[QuantizationSpec | None, int]] = None,
         custom_path: Optional[str] = None,
+        fold_quantize: bool = True,
     ):
         tosa_spec = quantizer.tosa_spec
         compile_spec = common.get_tosa_compile_spec(tosa_spec, custom_path=custom_path)
@@ -994,7 +1005,7 @@ class QuantizationPipeline(TOSAPipeline, Generic[T]):
             use_to_edge_transform_and_lower=True,
         )
         # TODO sort out typing
-        quant_stage = Quantize(quantizer, quantization_config=quantizer.global_config)  # type: ignore[arg-type]
+        quant_stage = Quantize(quantizer, quantization_config=quantizer.global_config, fold_quantize=fold_quantize)  # type: ignore[arg-type]
         self.add_stage(self.tester.quantize, quant_stage, pos=0)
 
         # Delete most of the pipeline
@@ -1126,6 +1137,7 @@ class VgfPipeline(BasePipeline, Generic[T]):
         tosa_version: str | None = None,
         tosa_extensions: Optional[List[str]] = None,
         tosa_spec: TosaSpecification | str | None = None,
+        fold_quantize: bool = True,
     ):
         if tosa_spec is None:
             if tosa_version is None:
@@ -1169,7 +1181,9 @@ class VgfPipeline(BasePipeline, Generic[T]):
             )
             if symmetric_io_quantization:
                 quantizer.set_io(quantization_config)
-            quant_stage = Quantize(quantizer, quantization_config)
+            quant_stage = Quantize(
+                quantizer, quantization_config, fold_quantize=fold_quantize
+            )
 
             self.add_stage(self.tester.quantize, quant_stage, pos=0)
 
