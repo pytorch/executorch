@@ -25,7 +25,7 @@ from executorch.backends.arm.common.arm_compile_spec import (
     ArmCompileSpec,
 )  # isort: skip
 from executorch.backends.arm.vgf import VgfCompileSpec
-from executorch.exir.graph_module import get_cond_while_submodules
+from executorch.exir.graph_module import _get_control_flow_submodules
 
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e import (
@@ -639,14 +639,40 @@ class TOSAQuantizer(Quantizer):
                         f"Quantizer detected operator {node.name} with different device inputs: {devices}."
                     )
 
+    @staticmethod
+    def _get_submodules_not_handled_by_torchao(
+        graph_module: GraphModule,
+    ):
+        """Returns control flow submodules that torchao's
+        prepare_pt2e/convert_pt2e do not handle natively. torchao now
+        recursively handles while_loop body_fn.
+
+        (arg 1), so we only need to manually handle:
+          - cond true/false branches (args 1, 2)
+          - while_loop cond_fn (arg 0)
+
+        """
+        return _get_control_flow_submodules(
+            graph_module,
+            {
+                torch.ops.higher_order.cond: [1, 2],
+                torch.ops.higher_order.while_loop: [0],
+            },
+        )
+
     def quantize_with_submodules(
         self,
         model: GraphModule,
         calibration_samples: list[tuple],
         is_qat: bool = False,
+        fold_quantize: bool = True,
     ):
         """Quantizes a GraphModule in a way such that conditional submodules are
         handled properly.
+
+        Note: torchao's prepare_pt2e and convert_pt2e natively handle
+        while_loop body_fn submodules, so we only manually process cond
+        branches and while_loop cond_fn here.
 
         Args:
             model (GraphModule): The model to quantize.
@@ -655,6 +681,8 @@ class TOSAQuantizer(Quantizer):
                 model with submodules, at least one sample per code path is
                 needed.
             is_qat (bool): Whether to do quantization aware training or not.
+            fold_quantize (bool): Enables or disables constant folding when quantization
+                is completed.
 
         Returns:
             GraphModule: The quantized model.
@@ -663,14 +691,17 @@ class TOSAQuantizer(Quantizer):
         prepare_fn = prepare_qat_pt2e if is_qat else prepare_pt2e
 
         prepared = prepare_fn(model, self)
-        for name, submodule, _ in get_cond_while_submodules(prepared):
+        for name, submodule, _ in self._get_submodules_not_handled_by_torchao(prepared):
             prepared.set_submodule(name, prepare_fn(submodule, self), strict=True)
         for inp in calibration_samples:
             prepared(*inp)
 
-        for name, submodule, _ in get_cond_while_submodules(prepared):
-            prepared.set_submodule(name, convert_pt2e(submodule), strict=True)
-        converted = convert_pt2e(prepared)
+        for name, submodule, _ in self._get_submodules_not_handled_by_torchao(prepared):
+            prepared.set_submodule(
+                name, convert_pt2e(submodule, fold_quantize=fold_quantize), strict=True
+            )
+        converted = convert_pt2e(prepared, fold_quantize=fold_quantize)
+
         return converted
 
 

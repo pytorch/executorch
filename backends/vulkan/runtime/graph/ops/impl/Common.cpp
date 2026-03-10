@@ -232,11 +232,12 @@ utils::uvec3 pick_linear_global_wg_with_block_config(
       BlockConfig::outer_dim_from_packed_int(packed_block_config);
 
   const std::vector<int64_t>& sizes = graph->sizes_of(output);
-  const size_t ndim = sizes.size();
 
-  // Compute number of blocks along inner and outer dimensions
-  const int64_t inner_size = sizes[ndim - 1 - inner_dim];
-  const int64_t outer_size = sizes[ndim - 1 - outer_dim];
+  // Use val_at with negative indices to safely access WHCN dimensions.
+  // val_at returns 1 for out-of-bounds indices, correctly handling tensors
+  // with fewer than 4 dimensions. WHCN dim d maps to val_at(-(d+1), sizes).
+  const int64_t inner_size = utils::val_at(-1 - inner_dim, sizes);
+  const int64_t outer_size = utils::val_at(-1 - outer_dim, sizes);
 
   const uint32_t num_inner_blocks =
       utils::safe_downcast<uint32_t>(utils::div_up(inner_size, int64_t(4)));
@@ -245,10 +246,10 @@ utils::uvec3 pick_linear_global_wg_with_block_config(
 
   // Compute number of planes (product of dimensions not in the block)
   uint32_t num_planes = 1;
-  for (size_t i = 0; i < ndim; ++i) {
-    const int32_t whcn_dim = ndim - 1 - i;
-    if (whcn_dim != inner_dim && whcn_dim != outer_dim) {
-      num_planes *= utils::safe_downcast<uint32_t>(sizes[i]);
+  for (int32_t d = 0; d < 4; ++d) {
+    if (d != inner_dim && d != outer_dim) {
+      num_planes *=
+          utils::safe_downcast<uint32_t>(utils::val_at(-1 - d, sizes));
     }
   }
 

@@ -12,7 +12,11 @@ from torch._export.passes.constant_folding import constant_fold
 
 
 class ConstantFoldingPass(ArmPass):
-    """Fold constant subgraphs using torch's export constant folding pass. To be used before to_edge transform."""
+    """Fold constant subgraphs using torch's export constant folding pass.
+
+    To be used before to_edge transform.
+
+    """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
@@ -31,9 +35,7 @@ class ConstantFoldingPass(ArmPass):
     def _ensure_param_attr(
         self, graph_module: torch.fx.GraphModule, node: torch.fx.Node | None
     ) -> bool:
-        """
-        Replaces tensor attributes with parameter attributes.
-        """
+        """Replaces tensor attributes with parameter attributes."""
         if node is None or node.op != "get_attr":
             return False
         target = node.target

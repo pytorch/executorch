@@ -12,6 +12,7 @@ from typing import Callable, Optional, Protocol, TypeVar
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from executorch.backends.cadence.aot.utils import is_depthwise_conv
 from executorch.exir.scalar_type import ScalarType
 from torch.library import impl, Library
 
@@ -28,7 +29,6 @@ except (OSError, RuntimeError):
     )
     if custom_libs:
         torch.ops.load_library(str(custom_libs[0]))
-    del Path
 
 # Registry to track all ops with reference implementations
 _REGISTERED_REF_IMPLEMENTATIONS: set[str] = set()
@@ -1103,25 +1103,31 @@ def quantized_conv2d_nhwc_per_tensor(
     """
 
     # Convert to NCHW format to reuse the existing implementation
-    conv_is_1d = False
+    in_channels = input_tensor.shape[-1]
+    depthwise = is_depthwise_conv(groups, in_channels)
+
     if len(input_tensor.shape) == 3:
-        conv_is_1d = True
+        # 1D conv: input is [N, L, C] -> [N, C, L]
         input_tensor = input_tensor.movedim(-1, 1).contiguous()
-        if len(weight.shape) != 3:
-            raise ValueError("Weight tensor must be 3D if input is 3D")
-        weight = weight.movedim(-1, 1).contiguous()
+        if len(weight.shape) == 2:
+            assert depthwise, "1D depthwise conv requires 2D weight tensor"
+            # 1D depthwise: weight is [K, OC] -> [OC, 1, K]
+            weight = weight.permute(1, 0).unsqueeze(1).contiguous()
+        else:
+            # 1D regular: weight is [OC, K, IC] -> [OC, IC, K]
+            weight = weight.movedim(-1, 1).contiguous()
+        conv_is_1d = True
     else:
+        # 2D conv: input is [N, H, W, C] -> [N, C, H, W]
         input_tensor = input_tensor.movedim(-1, -3)
         if len(weight.shape) == 3:
-            # Depthwise convolution: weight shape is [KH, KW, OC]
-            # Transform to [OC, 1, KH, KW] for NCHW conv
+            assert depthwise, "2D depthwise conv requires 3D weight tensor"
+            # 2D depthwise: weight is [KH, KW, OC] -> [OC, 1, KH, KW]
             weight = weight.permute(2, 0, 1).unsqueeze(1).contiguous()
-        elif len(weight.shape) == 4:
-            weight = torch.permute(weight, (0, -1, 1, 2)).contiguous()
         else:
-            raise ValueError(
-                f"Weight tensor must be 3D or 4D if input is nd > 3, got {len(weight.shape)}D"
-            )
+            # 2D regular: weight is [OC, KH, KW, IC] -> [OC, IC, KH, KW]
+            weight = torch.permute(weight, (0, -1, 1, 2)).contiguous()
+        conv_is_1d = False
 
     nchw_out = quantized_conv_per_tensor(
         input_tensor,
@@ -1758,6 +1764,61 @@ def rope(
     o0 = x0 * cos_tensor - x1 * sin_tensor
     o1 = x0 * sin_tensor + x1 * cos_tensor
     rotated = torch.cat([o0.view(-1, 1), o1.view(-1, 1)], dim=-1)
+    return rotated.view(original_shape)
+
+
+@impl_tracked(m, "rope_rotate_stacked_halves")
+def rope_rotate_stacked_halves(
+    input_tensor: torch.Tensor,
+    sin_tensor: torch.Tensor,
+    cos_tensor: torch.Tensor,
+    pos: torch.Tensor | None,
+) -> torch.Tensor:
+    original_shape = input_tensor.shape
+
+    if len(original_shape) not in [4, 5]:
+        raise ValueError(
+            f"Input tensor must be 4D or 5D. Got {len(original_shape)}D tensor"
+        )
+    if original_shape[0] != 1:
+        raise ValueError("Input tensor must have batch size 1")
+    if len(original_shape) == 5:
+        input_tensor = input_tensor.view(
+            input_tensor.shape[0], input_tensor.shape[1], input_tensor.shape[2], -1
+        )
+
+    _, seq, _, hd = input_tensor.shape
+
+    if hd % 2:
+        raise ValueError("Hidden dimension must be divisible by 2")
+
+    if (
+        sin_tensor.size(-1) * 2 != hd
+        or cos_tensor.size(-1) * 2 != hd
+        or sin_tensor.size(0) < seq
+        or cos_tensor.size(0) < seq
+    ):
+        raise ValueError(
+            f"sin_tensor and cos_tensor must have shape <kvseq (> {seq}) x {hd // 2}>. Got {sin_tensor.shape} and {cos_tensor.shape}"
+        )
+
+    if pos is not None:
+        if pos.shape != (seq,):
+            raise ValueError(
+                f"pos must have shape {input_tensor.shape[1]}. Got {pos.shape}"
+            )
+        sin_tensor = sin_tensor[pos]
+        cos_tensor = cos_tensor[pos]
+
+    # seq x 1 x hd
+    sin_tensor = sin_tensor.unsqueeze(1)
+    cos_tensor = cos_tensor.unsqueeze(1)
+
+    # batch x seq x num_heads x hd -> batch x seq x num_heads x 2 x head_dim_by_two
+    x0, x1 = input_tensor[..., 0 : hd // 2], input_tensor[..., hd // 2 :]
+    o0 = x0 * cos_tensor - x1 * sin_tensor
+    o1 = x1 * cos_tensor + x0 * sin_tensor
+    rotated = torch.cat([o0.view(-1, 1), o1.view(-1, 1)], dim=-2)
     return rotated.view(original_shape)
 
 

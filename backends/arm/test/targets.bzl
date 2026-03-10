@@ -20,6 +20,7 @@ def define_arm_tests():
         "ops/test_cat.py",
         "ops/test_conv2d.py",
         "ops/test_linear.py",
+        "ops/test_max_pool1d.py",
         "ops/test_mul.py",
         "ops/test_permute.py",
         "ops/test_rsqrt.py",
@@ -40,6 +41,7 @@ def define_arm_tests():
     # Misc tests
     test_files += [
         "misc/test_compile_spec.py",
+        "misc/test_pass_pipeline_config.py",
         "misc/test_tosa_spec.py",
         "misc/test_bn_relu_folding_qat.py",
         "misc/test_custom_partition.py",

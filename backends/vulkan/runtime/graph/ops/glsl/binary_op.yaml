@@ -46,7 +46,7 @@ binary_op:
           - VALUE: half
           - VALUE: float
     - NAME: binary_eq_texture3d
-      OPERATOR: all(lessThanEqual(abs(X - Y), VEC4_T(1e-5)))
+      OPERATOR: lessThanEqual(abs(X - Y), VEC4_T(1e-5))
       STORAGE: texture3d
       generate_variant_forall:
         DTYPE:
@@ -61,7 +61,7 @@ binary_op:
           - VALUE: float
           - VALUE: int32
     - NAME: binary_lt_texture3d
-      OPERATOR: all(lessThan(X, Y))
+      OPERATOR: lessThan(X, Y)
       STORAGE: texture3d
       generate_variant_forall:
         DTYPE:
@@ -77,7 +77,7 @@ binary_op:
           - VALUE: float
           - VALUE: int32
     - NAME: binary_le_texture3d
-      OPERATOR: all(lessThanEqual(X, Y))
+      OPERATOR: lessThanEqual(X, Y)
       STORAGE: texture3d
       generate_variant_forall:
         DTYPE:
@@ -93,7 +93,7 @@ binary_op:
           - VALUE: float
           - VALUE: int32
     - NAME: binary_gt_texture3d
-      OPERATOR: all(greaterThan(X, Y))
+      OPERATOR: greaterThan(X, Y)
       STORAGE: texture3d
       generate_variant_forall:
         DTYPE:
@@ -109,10 +109,18 @@ binary_op:
           - VALUE: float
           - VALUE: int32
     - NAME: binary_ge_texture3d
-      OPERATOR: all(greaterThanEqual(X, Y))
+      OPERATOR: greaterThanEqual(X, Y)
       STORAGE: texture3d
       generate_variant_forall:
         DTYPE:
           - VALUE: half
           - VALUE: float
           - VALUE: int32
+    - NAME: binary_bitwise_and
+      OPERATOR: X & Y
+      generate_variant_forall:
+        STORAGE:
+          - VALUE: buffer
+          - VALUE: texture3d
+        DTYPE:
+          - VALUE: uint8

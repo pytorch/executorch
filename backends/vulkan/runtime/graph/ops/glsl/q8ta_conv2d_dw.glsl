@@ -44,6 +44,7 @@ layout(push_constant) uniform restrict Block {
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "int", "apply_bias", "1")}
+${layout_declare_spec_const(C, "int", "activation_type", "0")}
 
 // Layout specialization constants
 ${layout_declare_spec_const(C, "int", "inp_layout", "CONTIG_LAYOUT_INT")}
@@ -194,6 +195,13 @@ void main() {
     const vec4 bias = vec4(t_bias[c4]);
     [[unroll]] for (int subtile_w = 0; subtile_w < 4; ++subtile_w) {
       facc[subtile_w] += bias;
+    }
+  }
+
+  // Apply ReLU if enabled
+  if (activation_type > 0) {
+    [[unroll]] for (int subtile_w = 0; subtile_w < 4; ++subtile_w) {
+      facc[subtile_w] = max(facc[subtile_w], vec4(0.0));
     }
   }
 

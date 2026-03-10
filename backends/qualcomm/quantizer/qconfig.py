@@ -114,14 +114,21 @@ def get_8a8w_qnn_ptq_config(
     # the smallest scale defaults to DEFAULT_EPS_8BIT
     extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_8BIT}
 
-    act_quantization_spec = QuantizationSpec(
-        dtype=torch.uint8,
-        qscheme=(
-            torch.per_tensor_symmetric if act_symmetric else torch.per_tensor_affine
-        ),
-        ch_axis=0,
-        observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
-    )
+    if act_symmetric:
+        act_quantization_spec = QuantizationSpec(
+            dtype=torch.uint8,
+            qscheme=(torch.per_tensor_symmetric),
+            ch_axis=0,
+            observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
+        )
+    else:
+        act_quantization_spec = QuantizationSpec(
+            dtype=torch.uint8,
+            quant_min=torch.iinfo(torch.uint8).min,
+            quant_max=torch.iinfo(torch.uint8).max,
+            qscheme=(torch.per_tensor_affine),
+            observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
+        )
 
     weight_quantization_spec = QuantizationSpec(
         dtype=torch.int8,

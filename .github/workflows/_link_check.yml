@@ -8,76 +8,100 @@ on:
 jobs:
   lint-urls:
     if: ${{ github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'skip-url-lint') }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-linter
-      submodules: false
-      fetch-depth: 0
-      ref: ${{ inputs.ref }}
-      timeout: 120
-      script: |
-        ./scripts/lint_urls.sh $(
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Fetch base ref
+        run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
+            git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.base.sha }}"
           else
-            echo "${{ github.event.before }}" "${{ github.sha }}"
+            git fetch --no-tags --depth=1 origin "${{ github.event.before }}"
           fi
-        ) || {
-          echo
-          echo "URL lint failed."
-          echo "If this is a transient outage, you can bypass it by adding the \`skip-url-lint\` label to your PR."
-          echo "Or add \`@lint-ignore\` somewhere on the same line as the URL you want to skip checking."
-          exit 1
-        }
+      - name: Lint URLs
+        run: |
+          ./scripts/lint_urls.sh $(
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              echo "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
+            else
+              echo "${{ github.event.before }}" "${{ github.sha }}"
+            fi
+          ) || {
+            echo
+            echo "URL lint failed."
+            echo "If this is a transient outage, you can bypass it by adding the \`skip-url-lint\` label to your PR."
+            echo "Or add \`@lint-ignore\` somewhere on the same line as the URL you want to skip checking."
+            exit 1
+          }
 
   lint-xrefs:
     if: ${{ github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'skip-xref-lint') }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-linter
-      submodules: false
-      fetch-depth: 0
-      ref: ${{ inputs.ref }}
-      timeout: 60
-      script: |
-        ./scripts/lint_xrefs.sh $(
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Fetch base ref
+        run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
+            git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.base.sha }}"
           else
-            echo "${{ github.event.before }}" "${{ github.sha }}"
+            git fetch --no-tags --depth=1 origin "${{ github.event.before }}"
           fi
-        ) || {
-          echo
-          echo "Xref lint failed."
-          echo "If this is a transient outage, you can bypass it by adding the \`skip-xref-lint\` label to your PR."
-          echo "Or add \`@lint-ignore\` somewhere on the same line as the reference you want to skip checking."
-          exit 1
-        }
+      - name: Lint cross-references
+        run: |
+          ./scripts/lint_xrefs.sh $(
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              echo "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
+            else
+              echo "${{ github.event.before }}" "${{ github.sha }}"
+            fi
+          ) || {
+            echo
+            echo "Xref lint failed."
+            echo "If this is a transient outage, you can bypass it by adding the \`skip-xref-lint\` label to your PR."
+            echo "Or add \`@lint-ignore\` somewhere on the same line as the reference you want to skip checking."
+            exit 1
+          }
 
   lint-file-size:
     if: ${{ github.event_name == 'pull_request' }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-linter
-      submodules: false
-      fetch-depth: 0
-      ref: ${{ inputs.ref }}
-      timeout: 30
-      script: |
-        chmod +x ./scripts/lint_file_size.sh
-        ./scripts/lint_file_size.sh $(
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Fetch base ref
+        run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
+            git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.base.sha }}"
           else
-            echo "${{ github.event.before }}" "${{ github.sha }}"
+            git fetch --no-tags --depth=1 origin "${{ github.event.before }}"
           fi
-        ) || {
-          echo
-          echo "File size lint failed: some files exceed the 1 MB limit."
-          echo "If you really need large files, consider using Git LFS or storing them elsewhere."
-          echo "If you really need to get unblocked and check in the file, can add it to the EXCEPTIONS list in scripts/lint_file_size.sh."
-          exit 1
-        }
+      - name: Lint file sizes
+        run: |
+          chmod +x ./scripts/lint_file_size.sh
+          ./scripts/lint_file_size.sh $(
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              echo "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
+            else
+              echo "${{ github.event.before }}" "${{ github.sha }}"
+            fi
+          ) || {
+            echo
+            echo "File size lint failed: some files exceed the 1 MB limit."
+            echo "If you really need large files, consider using Git LFS or storing them elsewhere."
+            echo "If you really need to get unblocked and check in the file, can add it to the EXCEPTIONS list in scripts/lint_file_size.sh."
+            exit 1
+          }

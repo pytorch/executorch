@@ -59,6 +59,61 @@ jobs:
 
         source .ci/scripts/test_backend.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"
 
+  package-golden-artifacts:
+    if: ${{ inputs.run-linux }}
+    needs: test-backend-linux
+    runs-on: linux.2xlarge
+    steps:
+      - name: Download model test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-report-*-models
+          path: downloaded/
+
+      - name: Package golden artifacts
+        run: |
+          set -eux
+          TIMESTAMP=$(date -u +%y%m%d%H)
+          mkdir -p golden_combined
+
+          # Collect golden artifacts preserving flow directory structure.
+          # Raw files live under downloaded/*/golden-artifacts/{flow}/.
+          for flow_dir in downloaded/*/golden-artifacts/*/; do
+            [ -d "$flow_dir" ] || continue
+            flow_name=$(basename "$flow_dir")
+            if ls "$flow_dir"/*.pte 1>/dev/null 2>&1; then
+              mkdir -p "golden_combined/${flow_name}"
+              cp "$flow_dir"/*.pte "$flow_dir"/*_input*.bin "$flow_dir"/*_expected_output*.bin \
+                "golden_combined/${flow_name}/" 2>/dev/null || true
+            fi
+          done
+
+          if find golden_combined -name '*.pte' | grep -q .; then
+            (cd golden_combined && zip -r "../golden_artifacts_${TIMESTAMP}.zip" .)
+            echo "Created golden_artifacts_${TIMESTAMP}.zip"
+            find golden_combined -type f | head -20
+          else
+            echo "No golden artifacts found."
+          fi
+
+      - name: Upload combined golden artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-artifacts-${{ inputs.backend }}
+          path: golden_artifacts_*.zip
+          if-no-files-found: ignore
+
+      - name: Upload golden artifacts to S3
+        uses: seemethere/upload-artifact-s3@v5
+        if: ${{ hashFiles('golden_artifacts_*.zip') != '' }}
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/test-backend-artifacts/golden-artifacts-${{ inputs.backend }}
+          retention-days: 90
+          if-no-files-found: ignore
+          path: golden_artifacts_*.zip
+
   test-backend-macos:
     if: ${{ inputs.run-macos }}
     strategy:

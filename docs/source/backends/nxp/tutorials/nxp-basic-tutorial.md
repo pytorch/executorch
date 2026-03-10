@@ -59,7 +59,7 @@ See the example `aot_neutron_compile.py` and its [README](https://github.com/pyt
 For the purpose of this tutorial we will use a simple image classification model CifarNet10.
 ```bash
 python -m examples.nxp.aot_neutron_compile --quantize \
-    --delegate --neutron_converter_flavor SDK_25_12 -m "cifar10"
+    --delegate -m "cifar10"
 ```
 
 Also, we will dump few of the images from the Cifar 10 dataset to a folder: 

@@ -47,3 +47,9 @@ QCOM_SAMPLE_INPUTS = "sample_inputs"
 
 # constants in backends/qualcomm/utils
 QCOM_QNN_COMPILE_SPEC = "qnn_compile_spec"
+
+
+# constants for environment variables
+HEXAGON_SDK_ROOT = "HEXAGON_SDK_ROOT"
+HEXAGON_TOOLS_ROOT = "HEXAGON_TOOLS_ROOT"
+DSP_VERSION = "DSP_VERSION"
