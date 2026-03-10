@@ -259,7 +259,7 @@ def linear_q4gsw(
         weights, [1, group_size], weight_scales, weight_zeros, torch.int8, -8, 7
     )
 
-    out = torch.nn.functional.linear(x, weights)
+    out = torch.nn.functional.linear(x, weights, bias)
     return out
 
 
@@ -273,7 +273,7 @@ def linear_dq8ca_q4gsw(
     group_size: int,
     bias: Optional[torch.Tensor] = None,
 ):
-    return linear_q4gsw(x, weights, weight_scales, group_size)
+    return linear_q4gsw(x, weights, weight_scales, group_size, bias)
 
 
 name = "linear_q4gsw"
