@@ -17,7 +17,7 @@ echo "Running backend test job for suite $SUITE, flow $FLOW."
 echo "Saving job artifacts to $ARTIFACT_DIR."
 
 eval "$(conda shell.bash hook)"
-CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+CONDA_ENV=$(conda env list --json | python -c "import sys, json; print(json.load(sys.stdin)['envs'][-1])")
 conda activate "${CONDA_ENV}"
 
 if [[ "$(uname)" == "Darwin" ]]; then
