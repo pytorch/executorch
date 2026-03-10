@@ -560,6 +560,22 @@ def _create_cuda_partitioners(programs, is_windows=False):
     return partitioner, updated_programs
 
 
+def _create_vulkan_partitioners(programs):
+    """Create Vulkan partitioners for all programs except preprocessor."""
+    from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
+        VulkanPartitioner,
+    )
+
+    print("\nLowering to ExecuTorch with Vulkan...")
+    partitioner = {}
+    for key in programs.keys():
+        if key == "preprocessor":
+            partitioner[key] = []
+        else:
+            partitioner[key] = [VulkanPartitioner()]
+    return partitioner, programs
+
+
 def lower_to_executorch(programs, metadata=None, backend="portable"):
     if backend == "xnnpack":
         partitioner, programs = _create_xnnpack_partitioners(programs)
@@ -569,6 +585,8 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
         partitioner, programs = _create_cuda_partitioners(
             programs, is_windows=(backend == "cuda-windows")
         )
+    elif backend == "vulkan":
+        partitioner, programs = _create_vulkan_partitioners(programs)
     else:
         print("\nLowering to ExecuTorch...")
         partitioner = []
@@ -607,7 +625,7 @@ def main():
         "--backend",
         type=str,
         default="xnnpack",
-        choices=["portable", "xnnpack", "metal", "cuda", "cuda-windows"],
+        choices=["portable", "xnnpack", "metal", "cuda", "cuda-windows", "vulkan"],
         help="Backend for acceleration (default: xnnpack)",
     )
     parser.add_argument(
