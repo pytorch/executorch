@@ -9,7 +9,7 @@ oncall("executorch")
 
 non_fbcode_target(_kind = fb_apple_library,
     name = "ExecuTorch",
-    autoglob_mode = EXPORT_UNLESS_INTERNAL,
+    autoglob_mode = "EXPORT_UNLESS_INTERNAL",
     extension_api_only = True,
     frameworks = [
         "Foundation",
