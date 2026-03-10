@@ -63,7 +63,7 @@ Export produces a single `.pte` containing the audio encoder, text decoder,
 and token embedding.
 
 > [!Tip]
-> Mistral has already published pre-exported `.pte` files for select backends, including macOS Metal, on their [Hugging Face Hub](https://huggingface.co/mistral-labs/Voxtral-Mini-4B-Realtime-2602-Executorch).
+> Mistral has already published pre-exported `.pte` files for select backends, including macOS Metal, on their [HuggingFace Hub](https://huggingface.co/mistral-labs/Voxtral-Mini-4B-Realtime-2602-Executorch).
 
 
 ```bash
