@@ -95,7 +95,7 @@ Then: `cmake --build cmake-out -j$(sysctl -n hw.ncpu)` (macOS) or `cmake --build
 ```bash
 cmake --workflow --preset llm-release        # CPU
 cmake --workflow --preset llm-release-metal  # Metal (macOS)
-cmake --workflow --preset llm-release-cuda   # CUDA (Linux)
+cmake --workflow --preset llm-release-cuda   # CUDA (Linux/Windows)
 ```
 
 **Manual CMake (custom flags):**
