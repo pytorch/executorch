@@ -27,7 +27,7 @@ def reseed_model_per_test_run():
 
 
 # noinspection PyProtectedMember
-ExecutorchDelegateCall = torch._higher_order_ops.executorch_call_delegate
+ExecutorchDelegateCall = torch.ops.higher_order.executorch_call_delegate
 UpsampleNearest2D = exir_ops.edge.aten.upsample_nearest2d.vec
 
 

@@ -9,8 +9,9 @@ Currently, the symmetric `int8` config defined by `executorch.backends.arm.quant
 The Arm Ethos-U delegate supports the following quantization schemes:
 
 - 8-bit symmetric weights with 8-bit asymmetric activations (via the PT2E quantization flow).
-- Limited support for 16-bit quantization with 16-bit activations and 8-bit weights (a.k.a 16x8 quantization). This is under development.
-- Partial quantization is *not* supported on the Ethos-U backend. The entire model must be quantized.
+- Limited support for 16-bit quantization with 16-bit activations and 8-bit weights (a.k.a 16x8 quantization).
+- Limited support for 8-bit quantization with 8-bit activations and 4-bit weights (a.k.a. 8x4 quantization). 
+- Partial quantization is supported by the quantizer, but non-quantized operators won't be delegated to the Ethos-U backend.
 
 ### Quantization API
 
@@ -26,7 +27,12 @@ Args:
 ```python
 def EthosUQuantizer.quantize_with_submodules(self, model: 'GraphModule', calibration_samples: 'list[tuple]', is_qat: 'bool' = False):
 ```
-Quantizes a GraphModule in a way such that conditional submodules are handled properly.
+Quantizes a GraphModule in a way such that conditional submodules are
+handled properly.
+
+Note: torchao's prepare_pt2e and convert_pt2e natively handle
+while_loop body_fn submodules, so we only manually process cond
+branches and while_loop cond_fn here.
 
 Args:
 - **model (GraphModule)**: The model to quantize.

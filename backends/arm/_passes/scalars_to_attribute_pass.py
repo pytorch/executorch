@@ -41,8 +41,7 @@ class ScalarsToAttributePass(ArmPass):
         graph_module: GraphModule,
         n: Node,
     ) -> None:
-        """
-        Convert scalar literal args of targeted_ops in node n of graph_module
+        """Convert scalar literal args of targeted_ops in node n of graph_module
         into attribute get_attr nodes with registered buffers.
         """
         if n.op != "call_function" or n.target not in self.targeted_ops:
@@ -97,8 +96,8 @@ class ScalarsToAttributePass(ArmPass):
                 graph_module.graph.erase_node(n)
 
     def handle_control_nodes(self, node: Node, graph_module: GraphModule) -> None:
-        """
-        Apply scalar argument conversion on subgraphs of control-flow nodes.
+        """Apply scalar argument conversion on subgraphs of control-flow
+        nodes.
         """
         for _, submodule, _ in get_cond_while_submodules(graph_module):
             for submodule_node in submodule.graph.nodes:

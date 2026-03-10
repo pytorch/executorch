@@ -453,6 +453,49 @@ TEST_F(TensorImplTest, TestResizingTensorToZeroAndBack) {
   EXPECT_EQ(t.data(), data);
 }
 
+// ============== Size Tests ==============
+
+TEST_F(TensorImplTest, TestTensorImplSize) {
+  // Verify TensorImpl size hasn't regressed after adding Device member.
+  // Device (2 bytes) fits within existing padding after type_ and
+  // shape_dynamism_, so sizeof(TensorImpl) should remain unchanged.
+  //
+  // Memory layout (64-bit):
+  //   sizes_          : 8 bytes (pointer)
+  //   dim_order_      : 8 bytes (pointer)
+  //   strides_        : 8 bytes (pointer)
+  //   data_           : 8 bytes (pointer)
+  //   dim_            : 8 bytes (ssize_t)
+  //   numel_          : 8 bytes (ssize_t)
+  //   numel_bound_    : 8 bytes (size_t)
+  //   type_           : 1 byte  (ScalarType : int8_t)
+  //   shape_dynamism_ : 1 byte  (TensorShapeDynamism : uint8_t)
+  //   device_         : 2 bytes (Device: DeviceType + DeviceIndex)
+  //   padding         : 4 bytes (to align struct to 8 bytes)
+  //   Total           : 64 bytes
+  //
+  // Memory layout (32-bit):
+  //   sizes_          : 4 bytes (pointer)
+  //   dim_order_      : 4 bytes (pointer)
+  //   strides_        : 4 bytes (pointer)
+  //   data_           : 4 bytes (pointer)
+  //   dim_            : 4 bytes (ssize_t)
+  //   numel_          : 4 bytes (ssize_t)
+  //   numel_bound_    : 4 bytes (size_t)
+  //   type_           : 1 byte  (ScalarType : int8_t)
+  //   shape_dynamism_ : 1 byte  (TensorShapeDynamism : uint8_t)
+  //   device_         : 2 bytes (Device: DeviceType + DeviceIndex)
+  //   Total           : 32 bytes (no additional padding needed)
+
+#if INTPTR_MAX == INT64_MAX
+  // 64-bit architecture
+  EXPECT_EQ(sizeof(TensorImpl), 64);
+#else
+  // 32-bit architecture
+  EXPECT_EQ(sizeof(TensorImpl), 32);
+#endif
+}
+
 // ============== Device Tests ==============
 
 TEST_F(TensorImplTest, TestDefaultDeviceIsCPU) {

@@ -32,6 +32,13 @@ class RemoveRedundantOpsTransform(ExportPass):
         exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
         exir_ops.edge.dim_order_ops._clone_dim_order.default,
         exir_ops.edge.aten.expand_copy.default,
+        # copy.default(self, src): no-op when src dtype/shape matches self.
+        exir_ops.edge.aten.copy.default,
+    }
+
+    # For these ops the meaningful input is args[1] (src), not args[0] (self).
+    _src_arg1_ops: Set[OpType] = {
+        exir_ops.edge.aten.copy.default,
     }
 
     def __init__(self) -> None:
@@ -41,7 +48,8 @@ class RemoveRedundantOpsTransform(ExportPass):
         if node.target not in self.redundant_ops:
             return False
 
-        orig_node = node.args[0]
+        src_arg_idx = 1 if node.target in self._src_arg1_ops else 0
+        orig_node = node.args[src_arg_idx]
         assert isinstance(orig_node, torch.fx.Node)
 
         src_dtype = orig_node.meta["val"].dtype
@@ -61,7 +69,8 @@ class RemoveRedundantOpsTransform(ExportPass):
             if not self._should_remove(node):
                 continue
 
-            node.replace_all_uses_with(node.args[0])
+            src_arg_idx = 1 if node.target in self._src_arg1_ops else 0
+            node.replace_all_uses_with(node.args[src_arg_idx])
 
         graph_module.graph.eliminate_dead_code()
 

@@ -52,6 +52,7 @@ from executorch.backends.arm._passes import (
     DecomposeDivTensorModePass,
     DecomposeEluPass,
     DecomposeEmbeddingPass,
+    DecomposeErfinvPass,
     DecomposeExpm1Pass,
     DecomposeFloorDividePass,
     DecomposeGeluPass,
@@ -113,11 +114,13 @@ from executorch.backends.arm._passes import (
     RemoveNoopPass,
     ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
-    RewriteBoolBitwiseNotToLogicalNotPass,
+    RewriteBoolBitwiseToLogicalPass,
     RewriteBoolToFp32CastViaInt8Pass,
     RewriteConvPass,
     RewriteIndexPutPass,
+    RewriteLeLtToGeGtPass,
     RewriteMatmulPass,
+    RewritePadPass,
     RewriteUpsamplePass,
     ScalarsToAttributePass,
     SizeAdjustInputPass,
@@ -174,6 +177,9 @@ class ArmPassManager(PassManager):
             case SoftmaxDecompositionConfig.UNSTABLE:
                 skip_set.add(DecomposeSoftmaxPass)
                 skip_set.add(DecomposeMaskedFillPass)
+            case SoftmaxDecompositionConfig.STABLE:
+                skip_set.add(DecomposeSoftmaxUnstablePass)
+                skip_set.add(DecomposeMaskedFillPass)
 
         if config.fuse_duplicate_users is FuseDuplicateUsersConfig.DISABLED:
             skip_set.add(FuseDuplicateUsersPass)
@@ -217,7 +223,8 @@ class ArmPassManager(PassManager):
                 self.add_pass(p)
 
     def _transform(self, graph_module: GraphModule):
-        with TosaLoweringContext(self.tosa_spec):
+        shape_env = graph_module.shape_env
+        with TosaLoweringContext(self.tosa_spec, shape_env):
             return self(graph_module).graph_module
 
     def add_pass(self, pipeline_pass):
@@ -235,7 +242,6 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 FuseQuantizedActivationPass(),
-                RewriteBoolBitwiseNotToLogicalNotPass(),
                 RewriteBoolToFp32CastViaInt8Pass(),
                 CanonicalizeGatherPass(),
                 ConvertToClampPass(),
@@ -279,6 +285,7 @@ class ArmPassManager(PassManager):
                 DecomposeAsinhPass(),
                 DecomposeCoshPass(),
                 DecomposeAsinAndAcosPass(),
+                DecomposeErfinvPass(),
                 DecomposeSqrtPass(),
                 DecomposeAtanPass(),
                 DecomposeAtanhPass(),
@@ -307,6 +314,7 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 ReplaceScalarWithTensorByProfilePass(),
+                RewriteLeLtToGeGtPass(),
                 ConvertFullLikeToFullPass(),
                 MatchArgDtypePass(),
                 UnsqueezeScalarPlaceholdersPass(exported_program),
@@ -323,6 +331,7 @@ class ArmPassManager(PassManager):
                 DecomposeSliceScatterPass(),
                 AccumulateIndexPutPass(),
                 RewriteIndexPutPass(),
+                RewriteBoolBitwiseToLogicalPass(),
                 DecomposeRemainderPass(),
                 DecomposeDivTensorModePass(),
                 FuseBatchNorm2dPass(exported_program),
@@ -330,7 +339,9 @@ class ArmPassManager(PassManager):
                 DecomposeGluPass(),
                 DecomposeLeakyReLUPass(),
                 DecomposeDivPass(),
-                DecomposeSoftmaxPass(),
+                # _safe_softmax results in a ReduceMax
+                # which is not currently supported by TOSA in U55
+                DecomposeSoftmaxPass(skip_safe_softmax=self.tosa_spec.is_U55_subset),
                 ConvertMinMaxPass(),
                 DecomposeAnyPass(),
                 DecomposeAdaptiveAvgPool2dPass(),
@@ -362,6 +373,7 @@ class ArmPassManager(PassManager):
                 RewriteUpsamplePass(),
                 RewriteConvPass(exported_program),
                 RewriteMatmulPass(),
+                RewritePadPass(),
             ]
         )
 
@@ -448,7 +460,10 @@ class ArmPassManager(PassManager):
                 DecomposeSqrtPass(tfa_pass=True),
                 DecomposeAvgPool2dPass(tfa_pass=True),
                 DecomposeSoftmaxUnstablePass(tfa_pass=True),
-                DecomposeSoftmaxPass(tfa_pass=True),
+                DecomposeSoftmaxPass(
+                    skip_safe_softmax=self.tosa_spec.is_U55_subset,
+                    tfa_pass=True,
+                ),
                 ConvertMinMaxPass(tfa_pass=True),
                 AccumulateIndexPutPass(tfa_pass=True),
                 DecomposeMatmulPass(tfa_pass=True),

@@ -45,6 +45,7 @@ from .decompose_div_pass import DecomposeDivPass  # noqa
 from .decompose_div_tensor_mode import DecomposeDivTensorModePass  # noqa
 from .decompose_elu_pass import DecomposeEluPass  # noqa
 from .decompose_embedding_pass import DecomposeEmbeddingPass  # noqa  # noqa
+from .decompose_erfinv_pass import DecomposeErfinvPass  # noqa
 from .decompose_expm1_pass import DecomposeExpm1Pass  # noqa
 from .decompose_floor_divide_pass import DecomposeFloorDividePass  # noqa
 from .decompose_gelu_pass import DecomposeGeluPass  # noqa
@@ -124,15 +125,17 @@ from .remove_noop_pass import RemoveNoopPass  # noqa
 from .replace_scalar_with_tensor_pass import (  # noqa
     ReplaceScalarWithTensorByProfilePass,
 )
-from .rewrite_bool_bitwise_not_to_logical_not_pass import (  # noqa
-    RewriteBoolBitwiseNotToLogicalNotPass,
+from .rewrite_bool_bitwise_to_logical_pass import (  # noqa
+    RewriteBoolBitwiseToLogicalPass,
 )
 from .rewrite_bool_to_fp32_cast_via_int8_pass import (  # noqa
     RewriteBoolToFp32CastViaInt8Pass,
 )
 from .rewrite_conv_pass import RewriteConvPass  # noqa
 from .rewrite_index_put_pass import RewriteIndexPutPass  # noqa
+from .rewrite_le_lt_to_ge_gt_pass import RewriteLeLtToGeGtPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
+from .rewrite_pad import RewritePadPass  # noqa
 from .rewrite_upsample import RewriteUpsamplePass  # noqa
 from .scalars_to_attribute_pass import ScalarsToAttributePass  # noqa
 from .size_adjust_input_pass import SizeAdjustInputPass  # noqa

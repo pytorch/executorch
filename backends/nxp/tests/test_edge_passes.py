@@ -319,7 +319,7 @@ class TestEdgePasses(unittest.TestCase):
 
         edge_program_manager = edge_program_manager.transform(NeutronEdgePassManager())
 
-        compile_spec = generate_neutron_compile_spec(target, "SDK_25_12")
+        compile_spec = generate_neutron_compile_spec(target)
         partitioner = NeutronPartitioner(
             compile_spec, neutron_target_spec, custom_delegation_options
         )

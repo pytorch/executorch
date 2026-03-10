@@ -50,6 +50,7 @@ class VoxtralRealtimeConfig:
     downsample_factor: int = 4
     # Runtime
     max_seq_len: int = 4096
+    backend: str = "xnnpack"  # "xnnpack", "metal", "cuda", or "portable"
 
     @staticmethod
     def from_params_json(path: str) -> "VoxtralRealtimeConfig":
@@ -316,8 +317,50 @@ class KVCache(nn.Module):
             k_cache, v_cache: (B, max_seq_len, n_kv_heads, head_dim).
         """
         start_pos = input_pos[0].item()
+        torch._check_is_size(start_pos)
+        torch._check(start_pos < self.max_seq_len)
         torch.ops.llama.update_cache(k_val, self.k_cache, start_pos)
         torch.ops.llama.update_cache(v_val, self.v_cache, start_pos)
+        return self.k_cache, self.v_cache
+
+
+class StaticKVCache(nn.Module):
+    """Export-friendly KV cache using index_copy_ for updates.
+
+    Compatible with torch.export and AOTI. Uses [B, H, S, D] layout
+    (matching transformers.StaticCache) for index_copy_ compatibility.
+    """
+
+    def __init__(self, max_seq_len: int, n_kv_heads: int, head_dim: int):
+        super().__init__()
+        self.max_seq_len = max_seq_len
+        self.n_kv_heads = n_kv_heads
+        self.head_dim = head_dim
+        # Use [B, H, S, D] layout like transformers.StaticCache
+        cache_shape = (1, n_kv_heads, max_seq_len, head_dim)
+        self.register_buffer("k_cache", torch.zeros(cache_shape))
+        self.register_buffer("v_cache", torch.zeros(cache_shape))
+
+    def update(
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Write k_val/v_val into cache using index_copy_ (export-friendly).
+
+        Args:
+            input_pos: (seq_len,) position indices [0, 1, 2, ...] or [start_pos] for decode.
+            k_val, v_val: (B, seq_len, n_kv_heads, head_dim).
+        Returns:
+            k_cache, v_cache: (B, n_kv_heads, max_seq_len, head_dim).
+        """
+        # Transpose k_val, v_val from [B, S, H, D] to [B, H, S, D]
+        k_val = k_val.transpose(1, 2)  # [B, n_kv_heads, seq_len, head_dim]
+        v_val = v_val.transpose(1, 2)  # [B, n_kv_heads, seq_len, head_dim]
+
+        # Use index_copy_ on dimension 2 (sequence dimension in [B, H, S, D])
+        # This matches transformers.cache_utils.StaticLayer implementation
+        self.k_cache.index_copy_(2, input_pos, k_val)
+        self.v_cache.index_copy_(2, input_pos, v_val)
+
         return self.k_cache, self.v_cache
 
 
@@ -340,6 +383,7 @@ class SDPA(nn.Module):
         v: torch.Tensor,
         bsz: int,
         seqlen: int,
+        mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -347,6 +391,8 @@ class SDPA(nn.Module):
             q: (B, seq_len, n_heads, head_dim).
             k, v: (B, max_seq_len, n_kv_heads, head_dim) — full KV cache.
             bsz, seqlen: batch size and query sequence length.
+            mask: optional (seq_len, max_seq_len) attention mask. If provided,
+                  used instead of causal masking.
         Returns:
             output: (B, seq_len, n_heads * head_dim).
         """
@@ -355,24 +401,226 @@ class SDPA(nn.Module):
         k = k.to(dtype=torch.float32)
         v = v.to(dtype=torch.float32)
         start_pos = input_pos[0].item()
-        y = torch.ops.llama.custom_sdpa(
-            q,
-            k,
-            v,
-            start_pos,
-            None,
-            0,
-            True,
-        )
+        torch._check_is_size(start_pos)
+        if mask is not None:
+            y = torch.ops.llama.custom_sdpa(
+                q,
+                k,
+                v,
+                start_pos,
+                mask.to(dtype=torch.float32),
+                0,
+                False,
+            )
+        else:
+            y = torch.ops.llama.custom_sdpa(
+                q,
+                k,
+                v,
+                start_pos,
+                None,
+                0,
+                True,
+            )
         return y.view(bsz, seqlen, self.dim).to(dtype=input_dtype)
 
 
-class LMAttention(nn.Module):
-    """GQA with RoPE, KV cache, and fused SDPA. No biases.
+def _build_attn_mask(
+    input_pos: torch.Tensor, max_seq_len: int, device: torch.device
+) -> torch.Tensor:
+    """Build float additive attention mask without bool intermediates.
 
-    Data flows in [B, T, H, D] throughout — no transposes in the hot path.
-    GQA expansion is handled inside the custom_sdpa kernel.
-    Causal masking is handled via start_pos — no pre-built mask buffer.
+    Metal AOTI doesn't support bool tensor allocation on MPS, so we use
+    integer arithmetic: clamp(curr_pos - k_pos + 1, 0, 1) gives 1 for
+    valid positions (k <= curr_pos) and 0 for invalid, then convert to
+    additive mask (0.0 = attend, -1e9 = don't attend).
+    """
+    seqlen = input_pos.shape[0]
+    k_pos = torch.arange(max_seq_len, device=device)
+    if seqlen > 1:
+        # Prefill: [seqlen, max_seq_len]
+        diff = input_pos.unsqueeze(1) - k_pos.unsqueeze(0) + 1
+    else:
+        # Decode: [1, max_seq_len]
+        diff = (input_pos[0] - k_pos + 1).unsqueeze(0)
+    valid = torch.clamp(diff, min=0, max=1)
+    return (valid.float() - 1.0) * 1e9
+
+
+def _build_causal_mask_bool(
+    input_pos: torch.Tensor, max_seq_len: int, device: torch.device
+) -> torch.Tensor:
+    """Build boolean causal attention mask. True = attend, False = masked.
+
+    Returns [1, 1, seqlen, max_seq_len] for Triton SDPA compatibility
+    (requires 4D mask with batch and head dims).
+    """
+    k_pos = torch.arange(max_seq_len, device=device)
+    mask = input_pos.unsqueeze(1) >= k_pos.unsqueeze(0)  # [seqlen, max_seq_len]
+    return mask.unsqueeze(0).unsqueeze(0)  # [1, 1, seqlen, max_seq_len]
+
+
+class MetalSDPA(nn.Module):
+    """Standard SDPA calling the MPS op directly for native GQA support.
+
+    The Metal SDPA kernel handles GQA natively via gqa_factor = n_heads / n_kv_heads,
+    avoiding the 4x memory bandwidth overhead of repeat_interleave.
+    """
+
+    def __init__(self, n_heads: int, n_kv_heads: int, head_dim: int):
+        super().__init__()
+        self.n_heads = n_heads
+        self.n_kv_heads = n_kv_heads
+        self.head_dim = head_dim
+        self.dim = n_heads * head_dim
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz: int,
+        seqlen: int,
+        attn_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """
+        Args:
+            input_pos: (seq_len,) position indices.
+            q: (B, seq_len, n_heads, head_dim) in [B, S, H, D] layout.
+            k, v: (B, n_kv_heads, max_seq_len, head_dim) in [B, H, S, D] layout from StaticKVCache.
+            bsz, seqlen: batch size and query sequence length.
+            attn_mask: precomputed float additive mask, or None to compute here.
+        Returns:
+            output: (B, seq_len, n_heads * head_dim).
+        """
+        q = q.transpose(1, 2)  # [B, n_heads, seq_len, head_dim]
+
+        if attn_mask is None:
+            attn_mask = _build_attn_mask(input_pos, k.shape[2], q.device)
+
+        # Call the MPS SDPA op directly — bypasses CompositeImplicitAutograd
+        # decomposition which would insert repeat_interleave for GQA.
+        # The Metal kernel handles GQA natively via gqa_factor = n_heads / n_kv_heads.
+        y, _ = torch.ops.aten._scaled_dot_product_attention_math_for_mps(
+            q, k, v, attn_mask, 0.0, False, None
+        )  # [B, n_heads, seq_len, head_dim]
+
+        y = y.transpose(1, 2).contiguous()  # [B, seq_len, n_heads, head_dim]
+        return y.view(bsz, seqlen, self.dim)
+
+
+class CudaSDPA(nn.Module):
+    """Standard SDPA with GQA support for CUDA/AOTI backend.
+
+    Uses F.scaled_dot_product_attention with repeat_interleave for GQA expansion.
+    KV cache uses [B, H, S, D] layout from StaticKVCache. Requires boolean
+    attention masks (Triton SDPA kernel only accepts torch.bool).
+    """
+
+    def __init__(self, n_heads: int, n_kv_heads: int, head_dim: int):
+        super().__init__()
+        self.n_heads = n_heads
+        self.n_kv_heads = n_kv_heads
+        self.n_rep = n_heads // n_kv_heads
+        self.head_dim = head_dim
+        self.dim = n_heads * head_dim
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz: int,
+        seqlen: int,
+        attn_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """
+        Args:
+            input_pos: (seq_len,) position indices.
+            q: (B, seq_len, n_heads, head_dim) in [B, S, H, D] layout.
+            k, v: (B, n_kv_heads, max_seq_len, head_dim) in [B, H, S, D] layout from StaticKVCache.
+            bsz, seqlen: batch size and query sequence length.
+            attn_mask: precomputed boolean mask (True=attend), or None to compute here.
+        Returns:
+            output: (B, seq_len, n_heads * head_dim).
+        """
+        q = q.transpose(1, 2)  # [B, n_heads, seq_len, head_dim]
+
+        # Expand KV for GQA
+        if self.n_rep > 1:
+            k = k.repeat_interleave(self.n_rep, dim=1)
+            v = v.repeat_interleave(self.n_rep, dim=1)
+
+        if attn_mask is None:
+            attn_mask = _build_causal_mask_bool(input_pos, k.shape[2], q.device)
+
+        y = F.scaled_dot_product_attention(
+            q, k, v, attn_mask=attn_mask, is_causal=False
+        )  # [B, n_heads, seq_len, head_dim]
+
+        y = y.transpose(1, 2).contiguous()  # [B, seq_len, n_heads, head_dim]
+        return y.view(bsz, seqlen, self.dim)
+
+
+class StandardEncoderSDPA(nn.Module):
+    """Standard SDPA for encoder using F.scaled_dot_product_attention.
+
+    Compatible with AOTI/Metal/CUDA backend. Works with EncoderRingKVCache that uses
+    [B, S, H, D] layout and sliding window masks.
+    """
+
+    def __init__(self, n_heads: int, head_dim: int):
+        super().__init__()
+        self.n_heads = n_heads
+        self.head_dim = head_dim
+        self.dim = n_heads * head_dim
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz: int,
+        seqlen: int,
+        mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """
+        Args:
+            input_pos: (seq_len,) position indices.
+            q: (B, seq_len, n_heads, head_dim) in [B, S, H, D] layout.
+            k, v: (B, buf_size, n_heads, head_dim) in [B, S, H, D] layout from EncoderRingKVCache.
+            bsz, seqlen: batch size and query sequence length.
+            mask: (seq_len, buf_size) attention mask. Float additive (0.0=attend, -inf=masked)
+                for Metal, or boolean (True=attend) for CUDA.
+        Returns:
+            output: (B, seq_len, n_heads * head_dim).
+        """
+        # Convert from [B, S, H, D] to [B, H, S, D] for F.scaled_dot_product_attention
+        q = q.transpose(1, 2)  # [B, n_heads, seq_len, head_dim]
+        k = k.transpose(1, 2)  # [B, n_heads, buf_size, head_dim]
+        v = v.transpose(1, 2)  # [B, n_heads, buf_size, head_dim]
+
+        # Apply SDPA with sliding window mask
+        y = F.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=mask,
+            is_causal=False,  # We handle masking explicitly via mask parameter
+        )  # [B, n_heads, seq_len, head_dim]
+
+        # Convert back to [B, S, H, D] and flatten
+        y = y.transpose(1, 2).contiguous()  # [B, seq_len, n_heads, head_dim]
+        return y.view(bsz, seqlen, self.dim)
+
+
+class LMAttention(nn.Module):
+    """GQA with RoPE, KV cache, and SDPA. No biases.
+
+    Supports both custom ops (for XNNPACK) and standard PyTorch ops (for Metal/AOTI).
     """
 
     def __init__(self, config: VoxtralRealtimeConfig, max_seq_len: int):
@@ -381,14 +629,23 @@ class LMAttention(nn.Module):
         self.n_kv_heads = config.n_kv_heads
         self.head_dim = config.head_dim
         self.dim = config.dim
+        self.backend = config.backend
 
         self.wq = nn.Linear(config.dim, self.n_heads * self.head_dim, bias=False)
         self.wk = nn.Linear(config.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wv = nn.Linear(config.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wo = nn.Linear(self.n_heads * self.head_dim, config.dim, bias=False)
 
-        self.kv_cache = KVCache(max_seq_len, self.n_kv_heads, self.head_dim)
-        self.sdpa = SDPA(self.n_heads, self.head_dim)
+        # Choose KV cache and SDPA based on backend
+        if self.backend == "metal":
+            self.kv_cache = StaticKVCache(max_seq_len, self.n_kv_heads, self.head_dim)
+            self.sdpa = MetalSDPA(self.n_heads, self.n_kv_heads, self.head_dim)
+        elif self.backend == "cuda":
+            self.kv_cache = StaticKVCache(max_seq_len, self.n_kv_heads, self.head_dim)
+            self.sdpa = CudaSDPA(self.n_heads, self.n_kv_heads, self.head_dim)
+        else:
+            self.kv_cache = KVCache(max_seq_len, self.n_kv_heads, self.head_dim)
+            self.sdpa = SDPA(self.n_heads, self.head_dim)
 
     def forward(
         self,
@@ -396,6 +653,7 @@ class LMAttention(nn.Module):
         freqs_cos: torch.Tensor,
         freqs_sin: torch.Tensor,
         input_pos: torch.Tensor,
+        attn_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         B, T, _ = x.shape
         q = self.wq(x).view(B, T, self.n_heads, self.head_dim)
@@ -406,7 +664,7 @@ class LMAttention(nn.Module):
 
         k, v = self.kv_cache.update(input_pos, k, v)
 
-        y = self.sdpa(input_pos, q, k, v, B, T)
+        y = self.sdpa(input_pos, q, k, v, B, T, attn_mask)
 
         return self.wo(y)
 
@@ -452,8 +710,11 @@ class MistralDecoderLayer(nn.Module):
         freqs_sin: torch.Tensor,
         input_pos: torch.Tensor,
         t_cond: torch.Tensor,
+        attn_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        x = x + self.attention(self.attention_norm(x), freqs_cos, freqs_sin, input_pos)
+        x = x + self.attention(
+            self.attention_norm(x), freqs_cos, freqs_sin, input_pos, attn_mask
+        )
         normed = self.ffn_norm(x)
         scale = 1.0 + self.ada_rms_norm_t_cond(t_cond)
         x = x + self.feed_forward(normed * scale)
@@ -488,9 +749,20 @@ class MistralDecoder(nn.Module):
         freqs_cos = self.freqs_cos[input_pos]
         freqs_sin = self.freqs_sin[input_pos]
 
+        # Compute attention mask once for all 26 layers (P3 optimization).
+        attn_mask: torch.Tensor | None = None
+        if self.config.backend == "metal":
+            max_seq_len = self.freqs_cos.shape[0]
+            attn_mask = _build_attn_mask(input_pos, max_seq_len, input_embeds.device)
+        elif self.config.backend == "cuda":
+            max_seq_len = self.freqs_cos.shape[0]
+            attn_mask = _build_causal_mask_bool(
+                input_pos, max_seq_len, input_embeds.device
+            )
+
         x = input_embeds
         for layer in self.layers:
-            x = layer(x, freqs_cos, freqs_sin, input_pos, t_cond)
+            x = layer(x, freqs_cos, freqs_sin, input_pos, t_cond, attn_mask)
 
         return self.output(self.norm(x))
 
@@ -565,16 +837,130 @@ class VoxtralRealtimeModel(nn.Module):
 # ---------------------------------------------------------------------------
 
 
+class EncoderRingKVCache(nn.Module):
+    """Ring buffer KV cache for continuous streaming.
+
+    Uses [B, S, H, D] layout matching the encoder's convention.
+    Buffer is 2x the window size for safe wraparound. Old entries
+    are overwritten when the buffer wraps, enabling unlimited streaming.
+
+    Position tracking is analytic (no mutable state buffer). For buffer
+    slot j after total_written frames:
+        abs_pos[j] = j + ((total_written - 1 - j) // buf_size) * buf_size
+    Negative results indicate unwritten slots.
+    """
+
+    def __init__(self, window_size: int, n_heads: int, head_dim: int):
+        super().__init__()
+        self.window_size = window_size
+        self.buf_size = window_size * 2
+        cache_shape = (1, self.buf_size, n_heads, head_dim)
+        self.register_buffer("k_cache", torch.zeros(cache_shape))
+        self.register_buffer("v_cache", torch.zeros(cache_shape))
+
+    def update(
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        start_pos = input_pos[0].item()
+        torch._check_is_size(start_pos)
+        seq_len = k_val.size(1)
+        indices = (torch.arange(seq_len, dtype=torch.long) + start_pos) % self.buf_size
+        indices = indices.unsqueeze(0)
+        torch.ops.llama.update_cache_with_indices(k_val, self.k_cache, 0, indices)
+        torch.ops.llama.update_cache_with_indices(v_val, self.v_cache, 0, indices)
+        return self.k_cache, self.v_cache
+
+    def create_causal_mask(
+        self, start_pos: torch.Tensor | int, seq_len: int, bool_mask: bool = False
+    ) -> torch.Tensor:
+        device = (
+            start_pos.device
+            if isinstance(start_pos, torch.Tensor)
+            else self.k_cache.device
+        )
+        total_written = start_pos + seq_len
+        j = torch.arange(self.buf_size, dtype=torch.long, device=device)
+        cache_pos = j + ((total_written - 1 - j) // self.buf_size) * self.buf_size
+        pos_q = (
+            start_pos + torch.arange(seq_len, dtype=torch.long, device=device)
+        ).view(-1, 1)
+        delta = pos_q - cache_pos.unsqueeze(0)
+        valid = (cache_pos >= 0) & (delta >= 0) & (delta < self.window_size)
+        return torch.where(valid, 0.0, float("-inf"))
+
+
+class StandardEncoderRingKVCache(nn.Module):
+    """Export-friendly ring buffer KV cache using index_copy_ for updates.
+
+    Compatible with torch.export and AOTI. Uses [B, S, H, D] layout
+    matching the encoder's convention. Ring buffer enables unlimited streaming.
+    """
+
+    def __init__(self, window_size: int, n_heads: int, head_dim: int):
+        super().__init__()
+        self.window_size = window_size
+        self.buf_size = window_size * 2
+        cache_shape = (1, self.buf_size, n_heads, head_dim)
+        self.register_buffer("k_cache", torch.zeros(cache_shape))
+        self.register_buffer("v_cache", torch.zeros(cache_shape))
+
+    def update(
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Write k_val/v_val into ring buffer using index_copy_ with modulo wraparound.
+
+        Args:
+            input_pos: (seq_len,) position indices.
+            k_val, v_val: (B, seq_len, n_heads, head_dim) in [B, S, H, D] layout.
+        Returns:
+            k_cache, v_cache: (B, buf_size, n_heads, head_dim) in [B, S, H, D] layout.
+        """
+        # Compute wrapped indices for ring buffer
+        wrapped_indices = input_pos % self.buf_size
+
+        # Use index_copy_ on dimension 1 (sequence dimension in [B, S, H, D])
+        self.k_cache.index_copy_(1, wrapped_indices, k_val)
+        self.v_cache.index_copy_(1, wrapped_indices, v_val)
+
+        return self.k_cache, self.v_cache
+
+    def create_causal_mask(
+        self, start_pos: torch.Tensor, seq_len: int, bool_mask: bool = False
+    ) -> torch.Tensor:
+        """Create sliding window attention mask for ring buffer.
+
+        Args:
+            start_pos: Tensor containing the starting position (scalar tensor)
+            seq_len: Number of query positions
+            bool_mask: If True, return boolean mask (True=attend). If False,
+                return float additive mask (0.0=attend, -inf=masked).
+        """
+        total_written = start_pos + seq_len
+        j = torch.arange(self.buf_size, dtype=torch.long, device=start_pos.device)
+        cache_pos = j + ((total_written - 1 - j) // self.buf_size) * self.buf_size
+
+        # Query positions using tensor operations
+        q_offsets = torch.arange(seq_len, dtype=torch.long, device=start_pos.device)
+        pos_q = (start_pos + q_offsets).view(-1, 1)
+
+        delta = pos_q - cache_pos.unsqueeze(0)
+        valid = (cache_pos >= 0) & (delta >= 0) & (delta < self.window_size)
+        if bool_mask:
+            return valid.unsqueeze(0).unsqueeze(
+                0
+            )  # [1, 1, seq_len, buf_size] for Triton
+        return torch.where(valid, 0.0, float("-inf"))
+
+
 class StreamingAudioEncoderExport(nn.Module):
     """Streaming encoder: processes one 8-mel-frame chunk at a time.
 
     Shares conv/transformer/adapter weights with the offline encoder.
     Owns separate KV caches and SDPA for incremental KV-cached attention.
+    Conv states are maintained as internal buffers.
 
     Forward:
-        mel_chunk(1,128,8) + conv1_state(1,128,2) + conv2_state(1,1280,2)
-        + enc_input_pos(4,)
-        -> audio_embeds(1,1,3072), new_conv1_state(1,128,2), new_conv2_state(1,1280,2)
+        mel_chunk(1,128,8) + enc_input_pos(4,) -> audio_embeds(1,1,3072)
     """
 
     def __init__(self, model: VoxtralRealtimeModel, max_enc_len: int = 750):
@@ -591,24 +977,41 @@ class StreamingAudioEncoderExport(nn.Module):
         self.downsample_factor = config.downsample_factor
         self.n_heads = config.enc_n_heads
         self.head_dim = config.enc_head_dim
+        self.bool_mask = config.backend == "cuda"
 
-        # Streaming-specific: encoder KV caches (one per layer)
+        # Register conv states as buffers (mutable state for streaming)
+        self.register_buffer("conv1_state", torch.zeros(1, config.num_mel_bins, 2))
+        self.register_buffer("conv2_state", torch.zeros(1, config.enc_dim, 2))
+
+        # Ring buffer KV caches for unlimited streaming.
+        # Window size = max_enc_len (encoder sliding window from params.json).
+        # Buffer is 2x internally for safe wraparound.
+        # Choose cache implementation based on backend
+        cache_class = (
+            StandardEncoderRingKVCache
+            if config.backend in ("metal", "cuda")
+            else EncoderRingKVCache
+        )
         self.kv_caches = nn.ModuleList(
             [
-                KVCache(max_enc_len, config.enc_n_heads, config.enc_head_dim)
+                cache_class(max_enc_len, config.enc_n_heads, config.enc_head_dim)
                 for _ in range(config.enc_n_layers)
             ]
         )
 
-        # SDPA for encoder MHA (n_heads=32, head_dim=64 -> attn_dim=2048)
-        self.sdpa = SDPA(config.enc_n_heads, config.enc_head_dim)
+        # Choose SDPA based on backend
+        if config.backend in ("metal", "cuda"):
+            self.sdpa = StandardEncoderSDPA(config.enc_n_heads, config.enc_head_dim)
+        else:
+            self.sdpa = SDPA(config.enc_n_heads, config.enc_head_dim)
 
-        # RoPE for encoder dimensions
-        freqs_cos, freqs_sin = precompute_freqs_cis(
-            config.enc_head_dim, max_enc_len, config.enc_rope_theta
+        # RoPE inverse frequencies for on-the-fly computation.
+        # No pre-computed buffer — supports unlimited streaming positions.
+        inv_freq = 1.0 / (
+            config.enc_rope_theta
+            ** (torch.arange(0, config.enc_head_dim, 2).float() / config.enc_head_dim)
         )
-        self.register_buffer("freqs_cos", freqs_cos)
-        self.register_buffer("freqs_sin", freqs_sin)
+        self.register_buffer("inv_freq", inv_freq)
 
     def _streaming_encoder_layer(
         self,
@@ -616,10 +1019,11 @@ class StreamingAudioEncoderExport(nn.Module):
         freqs_cos: torch.Tensor,
         freqs_sin: torch.Tensor,
         input_pos: torch.Tensor,
+        mask: torch.Tensor,
         layer: CausalEncoderLayer,
         layer_idx: int,
     ) -> torch.Tensor:
-        """One encoder layer with streaming attention (KV cache + custom_sdpa)."""
+        """One encoder layer with streaming attention (ring buffer KV cache)."""
         h = layer.attention_norm(x)
 
         B, T, _ = h.shape
@@ -630,7 +1034,8 @@ class StreamingAudioEncoderExport(nn.Module):
 
         q, k = apply_rotary_emb(q, k, freqs_cos, freqs_sin)
         k, v = self.kv_caches[layer_idx].update(input_pos, k, v)
-        y = self.sdpa(input_pos, q, k, v, B, T)
+
+        y = self.sdpa(input_pos, q, k, v, B, T, mask)
         y = attn.wo(y)
 
         x = x + y
@@ -640,31 +1045,45 @@ class StreamingAudioEncoderExport(nn.Module):
     def forward(
         self,
         mel_chunk: torch.Tensor,
-        conv1_state: torch.Tensor,
-        conv2_state: torch.Tensor,
         enc_input_pos: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor:
+        # Auto-reset conv states at the start of each new session (enc_input_pos[0] == 0).
+        # Using tensor ops (not .item()) avoids constant-folding during export.
+        is_start = (enc_input_pos[:1] == 0).view(1, 1, 1).to(self.conv1_state.dtype)
+        self.conv1_state.mul_(1.0 - is_start)
+        self.conv2_state.mul_(1.0 - is_start)
+
         # Conv1: cat state + chunk, raw Conv1d (no CausalConv1d padding)
         # (1, 128, 2+8=10) -> conv1(k=3, s=1) -> (1, 1280, 8)
-        conv1_input = torch.cat([conv1_state, mel_chunk], dim=2)
+        conv1_input = torch.cat([self.conv1_state, mel_chunk], dim=2)
         conv1_out = F.gelu(self.conv1(conv1_input))
-        new_conv1_state = mel_chunk[:, :, -2:]
+        # Update conv1 state with last 2 frames from mel_chunk
+        self.conv1_state.copy_(mel_chunk[:, :, -2:])
 
         # Conv2: cat state + conv1_out, raw Conv1d
         # (1, 1280, 2+8=10) -> conv2(k=3, s=2) -> (1, 1280, 4)
-        conv2_input = torch.cat([conv2_state, conv1_out], dim=2)
+        conv2_input = torch.cat([self.conv2_state, conv1_out], dim=2)
         conv2_out = F.gelu(self.conv2(conv2_input))
-        new_conv2_state = conv1_out[:, :, -2:]
+        # Update conv2 state with last 2 frames from conv1_out
+        self.conv2_state.copy_(conv1_out[:, :, -2:])
 
         x = conv2_out.transpose(1, 2)  # (1, 4, 1280)
 
-        # Encoder transformer with KV cache
-        freqs_cos = self.freqs_cos[enc_input_pos]
-        freqs_sin = self.freqs_sin[enc_input_pos]
+        # Compute RoPE on-the-fly (no buffer size limit)
+        freqs = torch.outer(enc_input_pos.float(), self.inv_freq)
+        freqs_cos = freqs.cos()
+        freqs_sin = freqs.sin()
+
+        # Sliding window mask — identical for all layers, compute once.
+        T = x.size(1)
+        # Pass start position as tensor (not .item()) to avoid unbacked symbols in AOTI
+        mask = self.kv_caches[0].create_causal_mask(
+            enc_input_pos[0], T, bool_mask=self.bool_mask
+        )
 
         for i, layer in enumerate(self.layers):
             x = self._streaming_encoder_layer(
-                x, freqs_cos, freqs_sin, enc_input_pos, layer, i
+                x, freqs_cos, freqs_sin, enc_input_pos, mask, layer, i
             )
 
         x = self.enc_norm(x)  # (1, 4, 1280)
@@ -675,7 +1094,7 @@ class StreamingAudioEncoderExport(nn.Module):
 
         audio_embeds = self.adapter(x)  # (1, 1, 3072)
 
-        return audio_embeds, new_conv1_state, new_conv2_state
+        return audio_embeds
 
 
 # ---------------------------------------------------------------------------
@@ -730,6 +1149,7 @@ def load_model(
     max_seq_len: int = 4096,
     n_delay_tokens: int = 6,
     dtype: torch.dtype = torch.float32,
+    backend: str = "xnnpack",
 ) -> VoxtralRealtimeModel:
     """Load VoxtralRealtimeModel from a Mistral consolidated checkpoint.
 
@@ -742,16 +1162,25 @@ def load_model(
         max_seq_len: Maximum sequence length for KV cache.
         n_delay_tokens: Transcription delay in tokens (default 6 = 480ms).
         dtype: Weight dtype (default: float32).
+        backend: Backend for acceleration ("xnnpack", "metal", "cuda", or "portable").
     """
+    _VALID_BACKENDS = ("xnnpack", "metal", "cuda", "portable")
+    if backend not in _VALID_BACKENDS:
+        raise ValueError(
+            f"Unknown backend '{backend}'. Must be one of {_VALID_BACKENDS}."
+        )
+
     from safetensors import safe_open
 
     model_dir = Path(model_path)
     config = VoxtralRealtimeConfig.from_params_json(str(model_dir / "params.json"))
     config.max_seq_len = max_seq_len
+    config.backend = backend
 
     print(
         f"Building model on meta device (dim={config.dim}, enc_dim={config.enc_dim}, "
-        f"layers={config.n_layers}, enc_layers={config.enc_n_layers})..."
+        f"layers={config.n_layers}, enc_layers={config.enc_n_layers}, "
+        f"backend={backend})..."
     )
     with torch.device("meta"):
         model = VoxtralRealtimeModel(config, max_seq_len)

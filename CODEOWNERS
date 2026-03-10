@@ -7,9 +7,10 @@
 /backends/apple/mps @cccclai @DenisVieriu97
 /backends/arm @digantdesai
 /backends/cadence
+/backends/cortex_m @rascani
 /backends/example @JacobSzwejbka @larryliu0820
 /backends/mediatek @cccclai @neuropilot-captain
-/backends/qualcomm @cccclai @chunit-quic @haowhsu-quic @shewu-quic @winskuo-quic
+/backends/qualcomm @cccclai @chunit-quic @haowhsu-quic @shewu-quic @winskuo-quic @abhinaykukkadapu
 /backends/test @cccclai
 /backends/transforms @kimishpatel
 /backends/vulkan @SS-JIA
@@ -31,7 +32,7 @@
 /examples/mediatek @cccclai
 /examples/models @lucylq @jackzhxng
 /examples/portable @larryliu0820 @manuelcandales
-/examples/qualcomm @cccclai
+/examples/qualcomm @cccclai @abhinaykukkadapu
 /examples/selective_build @lucylq @larryliu0820 @JacobSzwejbka
 /examples/xnnpack @digantdesai @mcr229
 /examples/nxp @robert-kalmar

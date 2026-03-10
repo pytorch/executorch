@@ -22,9 +22,8 @@ input_t1 = Tuple[torch.Tensor]
 
 from torch.nn.parameter import Parameter
 
-
 """
-This file contain unit tests where conv are combined with other ops.
+This file contains unit tests where conv are combined with other ops.
 """
 
 
