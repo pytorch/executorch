@@ -1343,7 +1343,7 @@ def register_grid_priors():
 @update_features(exir_ops.edge.aten.repeat.default)
 def register_repeat():
     return OpFeatures(
-        inputs_storage=utils.ANY_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
     )
 
