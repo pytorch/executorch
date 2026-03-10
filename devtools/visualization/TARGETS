@@ -10,6 +10,7 @@ runtime.python_library(
         "__init__.py",
         "visualization_utils.py",
         "html_visualization.py",
+        "trace_passes.py",
     ],
     visibility = ["PUBLIC"],
     deps = [
