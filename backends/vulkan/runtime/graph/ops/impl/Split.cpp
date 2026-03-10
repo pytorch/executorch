@@ -35,7 +35,7 @@ void resize_split_node(
 
   const ValueListPtr out_list = graph->get_value_list(out_list_ref);
   const std::vector<int64_t> split_sizes =
-      *(graph->get_int_list(split_sizes_ref));
+      graph->extract_int_or_symint_list(split_sizes_ref);
   const int64_t dim = graph->extract_scalar<int64_t>(dim_ref);
 
   const int64_t input_ndim = graph->dim_of(input);
@@ -125,7 +125,8 @@ void split_with_sizes_copy_default(
   ValueRef out_list_ref = args[3];
 
   int64_t dim = graph.extract_scalar<int64_t>(dim_ref);
-  std::vector<int64_t> split_sizes = *(graph.get_int_list(split_sizes_ref));
+  std::vector<int64_t> split_sizes =
+      graph.extract_int_or_symint_list(split_sizes_ref);
 
   add_split_with_sizes_node(graph, input, split_sizes, dim, out_list_ref);
 }
