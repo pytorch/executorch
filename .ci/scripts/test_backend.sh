@@ -57,6 +57,12 @@ if [[ "$FLOW" == *vulkan* ]]; then
 fi
 
 if [[ "$FLOW" == *cuda* ]]; then
+    # The Docker image has CPU-only PyTorch and executorch pre-installed.
+    # Uninstall everything and reinstall with CUDA-enabled PyTorch.
+    echo "Uninstalling existing executorch and CPU-only PyTorch..."
+    pip uninstall -y executorch torch torchvision torchaudio
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+
     # Fix libstdc++ GLIBCXX version for CUDA backend.
     # The embedded .so files in the CUDA blob require GLIBCXX_3.4.30
     # which the default conda libstdc++ doesn't have.
@@ -64,14 +70,18 @@ if [[ "$FLOW" == *cuda* ]]; then
     conda install -y -c conda-forge 'libstdcxx-ng>=12'
     export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
 
-    # CUDA backend uses the generic PyTorch test-infra Docker image (not the
-    # custom executorch image), so PyTorch is NOT pre-installed from a pinned
-    # commit.  Install executorch with nightly PyTorch (which auto-detects
-    # CUDA via nvcc) and then build the runner manually.
-    echo "Installing ExecuTorch with nightly PyTorch (CUDA-enabled)..."
+    # Reinstall executorch and build the runner with CUDA-enabled PyTorch.
+    # Skip setup-linux.sh which expects the pinned-commit torch from the
+    # Docker image and runs do_not_use_nightly_on_ci check.
     ./install_executorch.sh --editable
-    CMAKE_ARGS="$EXTRA_BUILD_ARGS" source .ci/scripts/utils.sh
-    build_executorch_runner cmake Release
+
+    # Verify PyTorch was installed with CUDA support
+    python -c "import torch; assert torch.cuda.is_available(), 'PyTorch CUDA not available after reinstall'; print(f'PyTorch {torch.__version__} with CUDA {torch.version.cuda}')" || {
+        echo "ERROR: PyTorch was not installed with CUDA support"
+        exit 1
+    }
+    source .ci/scripts/utils.sh
+    CMAKE_ARGS="$EXTRA_BUILD_ARGS" build_executorch_runner cmake Release
     CUDA_SETUP_DONE=1
 fi
 
