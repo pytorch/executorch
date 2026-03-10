@@ -564,6 +564,14 @@ bool check_constant_pad_args(
       pad.size() / 2,
       in.dim());
 
+  for (size_t i = 0; i < pad.size(); ++i) {
+    ET_CHECK_OR_RETURN_FALSE(
+        pad[i] >= 0,
+        "Padding values must be non-negative, but got pad[%zu] = %" PRId64,
+        i,
+        pad[i]);
+  }
+
   return true;
 }
 
