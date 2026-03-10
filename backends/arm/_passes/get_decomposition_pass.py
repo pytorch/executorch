@@ -24,10 +24,14 @@ class GetDecompositionPass(ArmPass):
     def __init__(self, tfa_pass=False, *args, **kwargs):
         super().__init__(tfa_pass, *args, **kwargs)
 
-        if type(self) is GetDecompositionPass:
-            raise TypeError("Base class DecomposePass cannot be instantiated directly.")
+        self.__decomposition = None
 
-    def _skip_pass(self, input_tensors: list):
+        if type(self) is GetDecompositionPass:
+            raise TypeError(
+                "Base class GetDecompositionPass cannot be instantiated directly."
+            )
+
+    def _skip_pass(self, input_tensors: list) -> bool:
         return False
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
@@ -51,10 +55,16 @@ class GetDecompositionPass(ArmPass):
             if self._skip_pass(input_tensors):
                 continue
 
+            decomposition = (
+                self.__decomposition
+                if self.__decomposition is not None
+                else get_decompositions(self.targeted_ops)
+            )
+
             # refer to pytorch/test/test_decomp.py
             decomposed_module = make_fx(
                 node.target,
-                decomposition_table=get_decompositions(self.targeted_ops),  # type: ignore[arg-type]
+                decomposition_table=decomposition,  # type: ignore[arg-type]
                 tracing_mode="fake",
                 _allow_non_fake_inputs=False,
             )(*input_tensors)
