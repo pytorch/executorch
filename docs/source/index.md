@@ -9,6 +9,62 @@
 - **Performance:** Lightweight runtime with full hardware acceleration (CPU, GPU, NPU, DSP)
 - **Productivity:** Use familiar PyTorch tools from authoring to deployment
 
+## 🗺️ Find Your Path
+
+Not sure where to start? Use the guided pathways to navigate ExecuTorch based on your experience level, goal, and target platform.
+
+::::{grid} 3
+:gutter: 3
+
+:::{grid-item-card} 🟢 New to ExecuTorch
+:class-header: bg-success text-white
+:link: pathway-beginner
+:link-type: doc
+
+Step-by-step learning sequence from installation to your first on-device deployment. Includes concept explanations and worked examples.
+
++++
+**Beginner Pathway →**
+:::
+
+:::{grid-item-card} 🟡 Get Running Fast
+:class-header: bg-warning text-dark
+:link: pathway-quickstart
+:link-type: doc
+
+Skip the theory — get a model running in 15 minutes. Includes export cheat sheets, backend selection tables, and platform quick starts.
+
++++
+**Quick Start Pathway →**
+:::
+
+:::{grid-item-card} 🔴 Production & Advanced
+:class-header: bg-danger text-white
+:link: pathway-advanced
+:link-type: doc
+
+Quantization, custom backends, C++ runtime, LLM deployment, and compiler internals for production-grade systems.
+
++++
+**Advanced Pathway →**
+:::
+
+::::
+
+::::{grid} 1
+
+:::{grid-item-card} 🔀 Decision Matrix — Route by Goal, Platform & Model
+:link: user-pathways
+:link-type: doc
+
+Not sure which pathway fits? The decision matrix routes you by experience level, target platform, model status, and developer role to the exact documentation you need.
+
++++
+**View Decision Matrix →**
+:::
+
+::::
+
 ---
 
 ## 🎯 Wins & Success Stories
@@ -186,6 +242,7 @@ Profile, debug, and inspect your models with comprehensive tooling.
 
 intro-section
 quick-start-section
+user-pathways
 edge-platforms-section
 backends-section
 llm/working-with-llms
