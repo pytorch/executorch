@@ -75,6 +75,16 @@ Tensor& custom_quantized_sdpa_out(
     const optional<Tensor>& v_scales,
     const bool is_seq_at_dim_1,
     Tensor& output);
+
+Tensor& recurrent_gated_delta_rule_out(
+    RuntimeContext& ctx,
+    const Tensor& query,
+    const Tensor& key,
+    const Tensor& value,
+    const Tensor& g,
+    const Tensor& beta,
+    Tensor& recurrent_state,
+    Tensor& output);
 } // namespace native
 } // namespace executor
 } // namespace torch

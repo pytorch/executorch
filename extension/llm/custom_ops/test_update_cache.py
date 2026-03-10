@@ -431,3 +431,72 @@ class UpdateQuantizedKVCacheTest(unittest.TestCase):
         self._update_and_validate(
             k, v, k_scales, v_scales, k_zero_points, v_zero_points, start_pos
         )
+
+
+class RecurrentGatedDeltaRuleTest(unittest.TestCase):
+    def _reference_recurrent_gated_delta_rule(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        g: torch.Tensor,
+        beta: torch.Tensor,
+        recurrent_state: torch.Tensor,
+    ):
+        state = recurrent_state.clone()
+        output = torch.zeros_like(value)
+
+        for token in range(query.size(2)):
+            g_t = g[:, :, token].exp().unsqueeze(-1).unsqueeze(-1)
+            beta_t = beta[:, :, token].unsqueeze(-1)
+            k_t = key[:, :, token]
+            v_t = value[:, :, token]
+            q_t = query[:, :, token]
+
+            state = state * g_t
+            kv_mem = (state * k_t.unsqueeze(-1)).sum(dim=-2)
+            delta = (v_t - kv_mem) * beta_t
+            state = state + k_t.unsqueeze(-1) * delta.unsqueeze(-2)
+            output[:, :, token] = (state * q_t.unsqueeze(-1)).sum(dim=-2)
+
+        return output, state
+
+    def test_recurrent_gated_delta_rule_matches_reference(self):
+        torch.manual_seed(0)
+
+        batch_size = 2
+        num_heads = 3
+        seq_len = 4
+        k_head_dim = 5
+        v_head_dim = 6
+
+        query = torch.randn(batch_size, num_heads, seq_len, k_head_dim)
+        key = torch.randn(batch_size, num_heads, seq_len, k_head_dim)
+        value = torch.randn(batch_size, num_heads, seq_len, v_head_dim)
+        g = torch.randn(batch_size, num_heads, seq_len)
+        beta = torch.sigmoid(torch.randn(batch_size, num_heads, seq_len))
+        recurrent_state = torch.randn(
+            batch_size, num_heads, k_head_dim, v_head_dim
+        )
+
+        expected_output, expected_state = self._reference_recurrent_gated_delta_rule(
+            query,
+            key,
+            value,
+            g,
+            beta,
+            recurrent_state,
+        )
+
+        actual_state = recurrent_state.clone()
+        actual_output = torch.ops.llama.recurrent_gated_delta_rule(
+            query,
+            key,
+            value,
+            g,
+            beta,
+            actual_state,
+        )
+
+        self.assertTrue(torch.allclose(actual_output, expected_output, atol=1e-5))
+        self.assertTrue(torch.allclose(actual_state, expected_state, atol=1e-5))

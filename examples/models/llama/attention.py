@@ -48,6 +48,8 @@ class Attention(nn.Module, ABC):
 
 
 ATTENTION_REGISTRY: Dict[str, Type[Attention]] = {}
+_RECURRENT_GATED_DELTA_RULE_OP = None
+_TRIED_LOADING_RECURRENT_GATED_DELTA_RULE_OP = False
 
 
 def register_attention(name: str):
@@ -58,6 +60,37 @@ def register_attention(name: str):
         return cls
 
     return decorator
+
+
+def _get_recurrent_gated_delta_rule_op():
+    global _RECURRENT_GATED_DELTA_RULE_OP
+    global _TRIED_LOADING_RECURRENT_GATED_DELTA_RULE_OP
+
+    if _TRIED_LOADING_RECURRENT_GATED_DELTA_RULE_OP:
+        return _RECURRENT_GATED_DELTA_RULE_OP
+
+    _TRIED_LOADING_RECURRENT_GATED_DELTA_RULE_OP = True
+    try:
+        _RECURRENT_GATED_DELTA_RULE_OP = (
+            torch.ops.llama.recurrent_gated_delta_rule.default
+        )
+        return _RECURRENT_GATED_DELTA_RULE_OP
+    except (AttributeError, RuntimeError):
+        pass
+
+    try:
+        from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
+    except Exception:
+        return None
+
+    try:
+        _RECURRENT_GATED_DELTA_RULE_OP = (
+            torch.ops.llama.recurrent_gated_delta_rule.default
+        )
+    except (AttributeError, RuntimeError):
+        _RECURRENT_GATED_DELTA_RULE_OP = None
+
+    return _RECURRENT_GATED_DELTA_RULE_OP
 
 
 class KVCache(nn.Module):
@@ -667,6 +700,18 @@ class AttentionGatedDeltaNet(Attention):
         v_head_dim = value.shape[-1]
         scale = 1.0 / (query.shape[-1] ** 0.5)
         query = query * scale
+
+        recurrent_gated_delta_rule_op = _get_recurrent_gated_delta_rule_op()
+        if recurrent_gated_delta_rule_op is not None:
+            core_attn_out = recurrent_gated_delta_rule_op(
+                query,
+                key,
+                value,
+                g,
+                beta,
+                self.recurrent_state[:batch_size],
+            )
+            return core_attn_out.transpose(1, 2).contiguous().to(initial_dtype)
 
         core_attn_out = torch.zeros(
             batch_size,

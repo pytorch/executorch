@@ -18,6 +18,7 @@ endif()
 
 set(_common_compile_options
     $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+    $<$<CXX_COMPILER_ID:MSVC>:/Zc:__cplusplus>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
 )
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
@@ -54,9 +55,11 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|armv7)$")
        "extension/llm/custom_ops/spinquant/third-party/FFHT/fht_neon.c"
   )
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)")
-  list(APPEND _custom_ops__srcs
-       "extension/llm/custom_ops/spinquant/third-party/FFHT/fht_avx.c"
-  )
+  if(NOT MSVC)
+    list(APPEND _custom_ops__srcs
+         "extension/llm/custom_ops/spinquant/third-party/FFHT/fht_avx.c"
+    )
+  endif()
 else()
   message(
     FATAL_ERROR
