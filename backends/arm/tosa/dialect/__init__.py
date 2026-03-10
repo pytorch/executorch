@@ -9,6 +9,7 @@ from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
     depthwise_conv2d,
     gather,
     matmul,
+    pad,
     rescale,
     resize,
     scatter,

@@ -258,15 +258,22 @@ class QuantizedInputWrapper(torch.nn.Module):
             If provided, extracts quant params from graph.
         quant_args: Optional dict mapping input index to (scale, zero_point, qmin, qmax, dtype).
             If provided, uses these directly instead of extracting from graph.
+        expected_inputs: Optional dict mapping input index to the expected
+            dequantized tensor. After dequantization, the result is compared
+            against these values using atol/rtol. Raises ValueError if exceeded.
+        atol: Absolute tolerance for the expected-value check (default 1e-4).
+        rtol: Relative tolerance for the expected-value check (default 1e-4).
 
     Example:
         # Extract from graph
         wrapper = QuantizedInputWrapper(quantized_module, input_names=["x"])
 
-        # Explicit quant args
+        # Explicit quant args with expected-value validation
         wrapper = QuantizedInputWrapper(
             quantized_module,
             quant_args={0: (1/255, 0, 0, 255, torch.uint8)},
+            expected_inputs={0: reference_float_tensor},
+            atol=1e-3,
         )
     """
 
@@ -274,6 +281,9 @@ class QuantizedInputWrapper(torch.nn.Module):
         self,
         module: GraphModule,
         input_args: Optional[Union[list[str], dict[int, QuantArgs]]] = None,
+        expected_inputs: Optional[dict[int, torch.Tensor]] = None,
+        atol: float = 1e-4,
+        rtol: float = 1e-4,
     ) -> None:
         super().__init__()
         self.module: GraphModule = module
@@ -281,6 +291,9 @@ class QuantizedInputWrapper(torch.nn.Module):
         self.expected_shapes: dict[int, tuple[int, ...]] = (
             extract_input_shapes_from_graph(module)
         )
+        self.expected_inputs: Optional[dict[int, torch.Tensor]] = expected_inputs
+        self.atol: float = atol
+        self.rtol: float = rtol
 
         if input_args is not None:
             logger.warning(
@@ -316,6 +329,23 @@ class QuantizedInputWrapper(torch.nn.Module):
                     node, scale, zp, qmin, qmax, dtype
                 )
             dequantized_args.append(node)
+
+        # Check dequantized values against expected inputs
+        expected_inputs = self.expected_inputs
+        if expected_inputs is not None:
+            for index, expected in expected_inputs.items():
+                if index >= len(dequantized_args):
+                    continue
+                actual = dequantized_args[index]
+                if not torch.allclose(actual, expected, atol=self.atol, rtol=self.rtol):
+                    max_abs_diff = (actual - expected).abs().max().item()
+                    mean_abs_diff = (actual - expected).abs().mean().item()
+                    msg = (
+                        f"Dequantized input at index {index} differs from expected value: "
+                        f"max_abs_diff={max_abs_diff:.6g}, mean_abs_diff={mean_abs_diff:.6g} "
+                        f"(atol={self.atol}, rtol={self.rtol})"
+                    )
+                    raise ValueError(msg)
 
         return self.module(*dequantized_args)
 
