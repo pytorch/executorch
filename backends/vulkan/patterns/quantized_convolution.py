@@ -28,7 +28,7 @@ from torch.export.graph_signature import InputKind
 
 
 class QuantizedConvolutionMatch(PatternMatch):
-    def __init__(self, conv_node: torch.fx.Node) -> None:
+    def __init__(self, conv_node: torch.fx.Node) -> None:  # noqa: C901
         self.anchor_node = conv_node
         self.match_found = False
         self.all_nodes = [self.anchor_node]
@@ -41,7 +41,9 @@ class QuantizedConvolutionMatch(PatternMatch):
             if transposed_flag:
                 self.transposed = True
                 self.output_padding = (
-                    cast(List[int], conv_node.args[7]) if len(conv_node.args) > 7 else [0, 0]
+                    cast(List[int], conv_node.args[7])
+                    if len(conv_node.args) > 7
+                    else [0, 0]
                 )
 
         # Extract convolution parameters
