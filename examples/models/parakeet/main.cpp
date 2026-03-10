@@ -29,7 +29,11 @@
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/llm/runner/wav_loader.h>
+#ifdef EXECUTORCH_FB_BUCK
+#include <unicode.h>
+#else
 #include <executorch/extension/llm/tokenizers/third-party/llama.cpp-unicode/include/unicode.h>
+#endif
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/core/evalue.h>
@@ -489,7 +493,7 @@ int main(int argc, char** argv) {
       static_cast<long long>(pred_hidden),
       static_cast<long long>(sample_rate),
       window_stride,
-      encoder_subsampling_factor);
+      static_cast<long long>(encoder_subsampling_factor));
 
   ET_LOG(Info, "Running TDT greedy decode...");
   auto decoded_tokens = greedy_decode_executorch(

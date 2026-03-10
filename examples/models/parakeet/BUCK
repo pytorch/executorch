@@ -1,0 +1,66 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+# C++ targets shared between fbcode and xplat are defined in targets.bzl.
+
+non_fbcode_target(_kind = define_common_targets,)
+
+fbcode_target(_kind = define_common_targets,)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "quantize",
+    srcs = [
+        "quantize.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.parakeet",
+    visibility = ["//executorch/..."],
+    deps = [
+        "//executorch/extension/llm/export:export_lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "export_library",
+    srcs = [
+        "export_parakeet_tdt.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.parakeet",
+    visibility = ["//executorch/..."],
+    deps = [
+        ":quantize",
+        "//caffe2:torch",
+        "fbsource//third-party/pypi/torchaudio:torchaudio",
+        "//executorch/exir:lib",
+        "//executorch/exir/passes:memory_planning_pass",
+        "//executorch/runtime:runtime",
+        # Backend deps (lazy imports per --backend flag)
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/cuda:cuda_backend",
+        "//executorch/backends/cuda:cuda_partitioner",
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        # Model loading deps
+        "fbsource//third-party/pypi/nemo-toolkit:nemo-toolkit",
+        "fbsource//third-party/pypi/huggingface-hub:huggingface-hub",
+        # Transitive dep required by NeMo
+        "fbsource//third-party/pypi/onnx:onnx",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_binary,
+    name = "export_parakeet_tdt",
+    main_function = "executorch.examples.models.parakeet.export_parakeet_tdt.main",
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/kernels/quantized:aot_lib",
+    ],
+    deps = [
+        ":export_library",
+        "//caffe2:torch",
+        "//executorch/extension/pybindings:aten_lib",
+    ],
+)
