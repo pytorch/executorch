@@ -1405,7 +1405,7 @@ def register_native_group_norm():
 @update_features(exir_ops.edge.aten.native_layer_norm.default)
 def register_native_layer_norm():
     return OpFeatures(
-        inputs_storage=utils.ANY_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
         supports_resize=True,
