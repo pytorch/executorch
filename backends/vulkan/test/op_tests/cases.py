@@ -1868,6 +1868,14 @@ def get_constant_pad_nd_inputs():
             ([L, M, M1, M2], [3, 3, 3, 3, 3, 3], 12.2),
         ]
     )
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = [
+        "utils::kTexture3D",
+        "utils::kBuffer",
+    ]
     return test_suite
 
 

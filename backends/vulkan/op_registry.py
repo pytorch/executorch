@@ -1263,8 +1263,9 @@ def register_arange():
 @update_features(exir_ops.edge.aten.constant_pad_nd.default)
 def register_constant_pad_nd():
     return OpFeatures(
-        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
     )
 
 
