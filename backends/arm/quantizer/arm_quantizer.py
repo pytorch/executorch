@@ -665,6 +665,7 @@ class TOSAQuantizer(Quantizer):
         model: GraphModule,
         calibration_samples: list[tuple],
         is_qat: bool = False,
+        fold_quantize: bool = True,
     ):
         """Quantizes a GraphModule in a way such that conditional submodules are
         handled properly.
@@ -680,6 +681,8 @@ class TOSAQuantizer(Quantizer):
                 model with submodules, at least one sample per code path is
                 needed.
             is_qat (bool): Whether to do quantization aware training or not.
+            fold_quantize (bool): Enables or disables constant folding when quantization
+                is completed.
 
         Returns:
             GraphModule: The quantized model.
@@ -694,8 +697,11 @@ class TOSAQuantizer(Quantizer):
             prepared(*inp)
 
         for name, submodule, _ in self._get_submodules_not_handled_by_torchao(prepared):
-            prepared.set_submodule(name, convert_pt2e(submodule), strict=True)
-        converted = convert_pt2e(prepared)
+            prepared.set_submodule(
+                name, convert_pt2e(submodule, fold_quantize=fold_quantize), strict=True
+            )
+        converted = convert_pt2e(prepared, fold_quantize=fold_quantize)
+
         return converted
 
 

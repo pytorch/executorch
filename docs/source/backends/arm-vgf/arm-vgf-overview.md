@@ -138,6 +138,8 @@ The example application is recommended to use for testing basic functionality of
 
 **→{doc}`/backends/arm-vgf/tutorials/arm-vgf-tutorials` — Tutorials.**
 
+**→{doc}`/backends/arm-vgf/VGF_op_support` — VGF supported operators.**
+
 
 ```{toctree}
 :maxdepth: 2
@@ -148,4 +150,5 @@ arm-vgf-partitioner
 arm-vgf-quantization
 arm-vgf-troubleshooting
 tutorials/arm-vgf-tutorials
+VGF_op_support
 ```
