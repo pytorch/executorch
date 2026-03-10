@@ -72,8 +72,12 @@ def main(args):
 
     pte_filename = "fastvit_qnn"
 
-    def get_custom_quantizer():
-        quantizer = make_quantizer(quant_dtype=QuantDtype.use_8a8w)
+    def get_custom_quantizer(backend, soc_model):
+        quantizer = make_quantizer(
+            quant_dtype=QuantDtype.use_8a8w,
+            backend=backend,
+            soc_model=soc_model,
+        )
 
         # there are lots of outliers appearing in fastvit parameters
         # we need to apply special configuration to saturate their impact
@@ -116,7 +120,7 @@ def main(args):
     backend = get_backend_type(args.backend)
     quantizer = {
         QnnExecuTorchBackendType.kGpuBackend: None,
-        QnnExecuTorchBackendType.kHtpBackend: get_custom_quantizer(),
+        QnnExecuTorchBackendType.kHtpBackend: get_custom_quantizer(backend, args.model),
     }[backend]
     build_executorch_binary(
         convert_linear_to_conv2d(get_instance(args.oss_repo, args.pretrained_weight)),
