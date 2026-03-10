@@ -8,10 +8,6 @@
 
 #include "cortex_m_ops_common.h"
 
-extern "C" {
-#include "arm_nnfunctions.h"
-}
-
 namespace cortex_m {
 namespace native {
 
@@ -74,21 +70,35 @@ Tensor& pad_out(
   const int8_t* input_data = input.const_data_ptr<int8_t>();
   int8_t* output_data = out.mutable_data_ptr<int8_t>();
 
-  const arm_cmsis_nn_status status = arm_pad_s8(
-      input_data,
-      output_data,
-      static_cast<int8_t>(pad_value),
-      &input_dims,
-      &cmsis_pre_pad,
-      &cmsis_post_pad);
+  const int32_t out_n = input_dims.n + cmsis_pre_pad.n + cmsis_post_pad.n;
+  const int32_t out_h = input_dims.h + cmsis_pre_pad.h + cmsis_post_pad.h;
+  const int32_t out_w = input_dims.w + cmsis_pre_pad.w + cmsis_post_pad.w;
+  const int32_t out_c = input_dims.c + cmsis_pre_pad.c + cmsis_post_pad.c;
 
-  if (status != ARM_CMSIS_NN_SUCCESS) {
-    ET_LOG(
-        Error,
-        "pad_out: arm_pad_s8 failed with status [%d]",
-        static_cast<int>(status));
-    context.fail(Error::Internal);
-    return out;
+  const int8_t pad_byte = static_cast<int8_t>(pad_value);
+  for (int32_t n = 0; n < out_n; ++n) {
+    for (int32_t h = 0; h < out_h; ++h) {
+      for (int32_t w = 0; w < out_w; ++w) {
+        for (int32_t c = 0; c < out_c; ++c) {
+          const int32_t out_idx = ((n * out_h + h) * out_w + w) * out_c + c;
+          const int32_t in_n = n - cmsis_pre_pad.n;
+          const int32_t in_h = h - cmsis_pre_pad.h;
+          const int32_t in_w = w - cmsis_pre_pad.w;
+          const int32_t in_c = c - cmsis_pre_pad.c;
+          if (in_n >= 0 && in_n < input_dims.n && in_h >= 0 &&
+              in_h < input_dims.h && in_w >= 0 && in_w < input_dims.w &&
+              in_c >= 0 && in_c < input_dims.c) {
+            const int32_t in_idx =
+                ((in_n * input_dims.h + in_h) * input_dims.w + in_w) *
+                    input_dims.c +
+                in_c;
+            output_data[out_idx] = input_data[in_idx];
+          } else {
+            output_data[out_idx] = pad_byte;
+          }
+        }
+      }
+    }
   }
 
   return out;

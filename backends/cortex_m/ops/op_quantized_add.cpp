@@ -9,11 +9,6 @@
 
 #include "cortex_m_ops_common.h"
 
-// Include CMSIS-NN headers with C linkage
-extern "C" {
-#include "arm_nnfunctions.h"
-}
-
 namespace cortex_m {
 namespace native {
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
@@ -39,21 +34,16 @@ Tensor& quantized_add_out(
       input2_int8,
       out,
       ScalarType::Char,
-      /*require_channels_last=*/channel_broadcast,
       /*require_same_sizes=*/!channel_broadcast);
 
   // Validate quantization parameters
   validate_quantization_params(
-      input1_zero_point,
       input1_multiplier,
       input1_shift,
-      input2_zero_point,
       input2_multiplier,
       input2_shift,
-      output_zero_point,
       output_multiplier,
-      output_shift,
-      out);
+      output_shift);
 
   ET_LOG(
       Debug,
