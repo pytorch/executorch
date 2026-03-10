@@ -9,7 +9,6 @@ registered via decorators and discovered at runtime.
 
 """
 
-
 from . import (  # noqa
     node_visitor,
     op_abs,
@@ -17,7 +16,6 @@ from . import (  # noqa
     op_amax,
     op_amin,
     op_any,
-    op_avg_pool2d,
     op_bitwise_not,
     op_cat,
     op_ceil,
@@ -49,6 +47,7 @@ from . import (  # noqa
     op_sum,
     op_tanh,
     op_to_dim_order_copy,
+    op_tosa_avg_pool2d,
     op_tosa_conv2d,
     op_tosa_conv3d,
     op_tosa_custom,
