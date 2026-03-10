@@ -36,12 +36,10 @@ ${layout_declare_ubo(B, "float", "out_min", "float", "out_max")}
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 /*
- * Computes a 1D convolution over width-packed buffer tensors. Each shader
- * invocation computes one output element at position (n, out_c, out_l).
+ * Computes a pointwise (kernel_size=1) 1D convolution over width-packed buffer
+ * tensors. Each shader invocation computes one output element at (n, out_c, out_l).
  *
- * Tensor sizes/strides are in WHCN order:
- *   out_sizes.x = L_out, out_sizes.z = C_out, out_sizes.w = N
- *   in_sizes.x  = L_in,  in_sizes.z  = C_in
+ * Since kernel_size=1 there is no spatial loop; only the channel reduction loop.
  */
 void main() {
   const int out_l = int(gl_GlobalInvocationID.x);
@@ -55,18 +53,18 @@ void main() {
 
   const int c_start = (out_c / out_group_size) * in_group_size;
 
+  // Pointwise: kernel_size=1, k=0 always
+  const int in_l = out_l * stride - padding;
+
   T sum = T(0);
-  for (int ic = 0; ic < in_group_size; ic++) {
-    const int in_c = c_start + ic;
-    for (int k = 0; k < kernel_size; k++) {
-      const int in_l = out_l * stride - padding + k * dilation;
-      if (in_l >= 0 && in_l < in_sizes.x) {
-        // WHCN tidx for (n, in_c, in_l) in [N, C, L] tensor: (in_l, in_c, n, 0)
-        const int in_idx = tidx_to_bufi(ivec4(in_l, in_c, n, 0), in_strides);
-        // WHCN tidx for weight (k, ic, out_c) in [C_out, C_in/g, K]: (k, ic, out_c, 0)
-        const int w_idx = tidx_to_bufi(ivec4(k, ic, out_c, 0), weight_strides);
-        sum += t_in[in_idx] * t_weight[w_idx];
-      }
+  if (in_l >= 0 && in_l < in_sizes.x) {
+    for (int ic = 0; ic < in_group_size; ic++) {
+      const int in_c = c_start + ic;
+      // WHCN tidx for (n, in_c, in_l) in [N, C, L] tensor: (in_l, in_c, n, 0)
+      const int in_idx = tidx_to_bufi(ivec4(in_l, in_c, n, 0), in_strides);
+      // WHCN tidx for weight (0, ic, out_c) in [C_out, C_in/g, 1]: (0, ic, out_c, 0)
+      const int w_idx = tidx_to_bufi(ivec4(0, ic, out_c, 0), weight_strides);
+      sum += t_in[in_idx] * t_weight[w_idx];
     }
   }
 

@@ -36,43 +36,37 @@ ${layout_declare_ubo(B, "float", "out_min", "float", "out_max")}
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 /*
- * Computes a 1D convolution over width-packed buffer tensors. Each shader
- * invocation computes one output element at position (n, out_c, out_l).
+ * Computes a depthwise 1D convolution over width-packed buffer tensors. Each
+ * shader invocation computes one output element at position (n, c, out_l).
  *
- * Tensor sizes/strides are in WHCN order:
- *   out_sizes.x = L_out, out_sizes.z = C_out, out_sizes.w = N
- *   in_sizes.x  = L_in,  in_sizes.z  = C_in
+ * For depthwise conv: groups == C_in == C_out, so each output channel uses
+ * exactly one input channel. Weight shape is [C, 1, K].
  */
 void main() {
   const int out_l = int(gl_GlobalInvocationID.x);
-  const int out_c = int(gl_GlobalInvocationID.y);
+  const int c = int(gl_GlobalInvocationID.y);
   const int n = int(gl_GlobalInvocationID.z);
 
   // WHCN sizes for [N, C, L]: (L, C, N, 1) -> sizes.y=C, sizes.z=N
-  if (out_l >= out_sizes.x || out_c >= out_sizes.y || n >= out_sizes.z) {
+  if (out_l >= out_sizes.x || c >= out_sizes.y || n >= out_sizes.z) {
     return;
   }
 
-  const int c_start = (out_c / out_group_size) * in_group_size;
-
   T sum = T(0);
-  for (int ic = 0; ic < in_group_size; ic++) {
-    const int in_c = c_start + ic;
-    for (int k = 0; k < kernel_size; k++) {
-      const int in_l = out_l * stride - padding + k * dilation;
-      if (in_l >= 0 && in_l < in_sizes.x) {
-        // WHCN tidx for (n, in_c, in_l) in [N, C, L] tensor: (in_l, in_c, n, 0)
-        const int in_idx = tidx_to_bufi(ivec4(in_l, in_c, n, 0), in_strides);
-        // WHCN tidx for weight (k, ic, out_c) in [C_out, C_in/g, K]: (k, ic, out_c, 0)
-        const int w_idx = tidx_to_bufi(ivec4(k, ic, out_c, 0), weight_strides);
-        sum += t_in[in_idx] * t_weight[w_idx];
-      }
+  for (int k = 0; k < kernel_size; k++) {
+    const int in_l = out_l * stride - padding + k * dilation;
+    if (in_l >= 0 && in_l < in_sizes.x) {
+      // WHCN tidx for (n, c, in_l) in [N, C, L] tensor: (in_l, c, n, 0)
+      const int in_idx = tidx_to_bufi(ivec4(in_l, c, n, 0), in_strides);
+      // WHCN tidx for weight (k, 0, c) in [C, 1, K]: (k, 0, c, 0)
+      const int w_idx = tidx_to_bufi(ivec4(k, 0, c, 0), weight_strides);
+      sum += t_in[in_idx] * t_weight[w_idx];
     }
   }
 
-  sum += T(t_bias[out_c]);
+  sum += T(t_bias[c]);
 
-  // WHCN tidx for (n, out_c, out_l): (out_l, out_c, n, 0)
-  const int out_idx = tidx_to_bufi(ivec4(out_l, out_c, n, 0), out_strides);
+  // WHCN tidx for (n, c, out_l): (out_l, c, n, 0)
+  const int out_idx = tidx_to_bufi(ivec4(out_l, c, n, 0), out_strides);
   t_out[out_idx] = op(sum, T(out_min), T(out_max));
 }
