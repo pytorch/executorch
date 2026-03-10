@@ -29,6 +29,7 @@ using ET_RUNTIME_NAMESPACE::Method;
 using ET_RUNTIME_NAMESPACE::MethodMeta;
 using ET_RUNTIME_NAMESPACE::NamedDataMap;
 using ET_RUNTIME_NAMESPACE::Program;
+using runtime::LoadBackendOptionsMap;
 
 class ExecuTorchJni;
 
@@ -59,13 +60,29 @@ class Module {
    * @param[in] file_path The path to the ExecuTorch program file to load.
    * @param[in] load_mode The loading mode to use.
    * @param[in] event_tracer A EventTracer used for tracking and logging events.
+   * @param[in] share_memory_arenas When true, all methods loaded by this Module
+   * share the same memory-planned buffers for mem_id=1 (activation memory)
+   * and mem_id=2 (shared mutable buffer memory), sized to the max
+   * across all methods. mem_id>2 indicates a custom memory plan, and those
+   * receive fresh memory buffers. share_memory_arenas is required for models
+   * exported with share_mutable_buffers=true, where methods access shared
+   * mutable state (e.g., set/get state). When enabled, outputs from one method
+   * may be invalidated by executing another method, since their output tensors
+   * can alias the same underlying buffer. Consume or copy outputs before
+   * calling execute again. NOTE: This class is not thread-safe and performs
+   * no internal synchronization. Calling execute concurrently on the same
+   * Module instance from multiple threads is unsafe, regardless of whether
+   * share_memory_arenas is true or false. When share_memory_arenas is true,
+   * methods may overwrite each other's data in the shared memory arenas,
+   * increasing aliasing and the risk of unintended overwrites.
    */
   explicit Module(
       const std::string& file_path,
       const LoadMode load_mode = LoadMode::File,
       std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
       std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
-      std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr);
+      std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr,
+      bool share_memory_arenas = false);
 
   /**
    * Constructs an instance by loading a program from a file with specified
@@ -75,6 +92,8 @@ class Module {
    * @param[in] data_map_path The path to a .ptd file.
    * @param[in] load_mode The loading mode to use.
    * @param[in] event_tracer A EventTracer used for tracking and logging events.
+   * @param[in] share_memory_arenas When true, all methods loaded by this Module
+   * share a single set of memory-planned buffers.
    */
   explicit Module(
       const std::string& file_path,
@@ -82,7 +101,8 @@ class Module {
       const LoadMode load_mode = LoadMode::File,
       std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
       std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
-      std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr);
+      std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr,
+      bool share_memory_arenas = false);
 
   /**
    * Constructs an instance by loading a program from a file with specified
@@ -92,6 +112,8 @@ class Module {
    * @param[in] data_files The path to one or more .ptd file/s.
    * @param[in] load_mode The loading mode to use.
    * @param[in] event_tracer A EventTracer used for tracking and logging events.
+   * @param[in] share_memory_arenas When true, all methods loaded by this Module
+   * share a single set of memory-planned buffers.
    */
   explicit Module(
       const std::string& file_path,
@@ -99,7 +121,8 @@ class Module {
       const LoadMode load_mode = LoadMode::File,
       std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
       std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
-      std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr);
+      std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr,
+      bool share_memory_arenas = false);
 
   /**
    * Constructs an instance with the provided data loader and memory allocator.
@@ -110,13 +133,16 @@ class Module {
    * temporary data during kernel or delegate execution.
    * @param[in] event_tracer A EventTracer used for tracking and logging events.
    * @param[in] data_map_loader A DataLoader used for loading external weights.
+   * @param[in] share_memory_arenas When true, all methods loaded by this Module
+   * share a single set of memory-planned buffers.
    */
   explicit Module(
       std::unique_ptr<runtime::DataLoader> data_loader,
       std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
       std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr,
       std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
-      std::unique_ptr<runtime::DataLoader> data_map_loader = nullptr);
+      std::unique_ptr<runtime::DataLoader> data_map_loader = nullptr,
+      bool share_memory_arenas = false);
 
   /**
    * Constructs an instance using an existing shared program.
@@ -128,13 +154,16 @@ class Module {
    * temporary data.
    * @param[in] event_tracer A EventTracer used for tracking and logging events.
    * @param[in] data_map_loader A DataLoader used for loading external weights.
+   * @param[in] share_memory_arenas When true, all methods loaded by this Module
+   * share a single set of memory-planned buffers.
    */
   explicit Module(
       std::shared_ptr<Program> program,
       std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
       std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr,
       std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
-      std::unique_ptr<runtime::DataLoader> data_map_loader = nullptr);
+      std::unique_ptr<runtime::DataLoader> data_map_loader = nullptr,
+      bool share_memory_arenas = false);
 
   Module(const Module&) = delete;
   Module& operator=(const Module&) = delete;
@@ -150,6 +179,22 @@ class Module {
    * @returns An Error to indicate success or failure of the loading process.
    */
   ET_NODISCARD virtual runtime::Error load(
+      const Program::Verification verification =
+          Program::Verification::Minimal);
+
+  /**
+   * Loads the program with per-delegate runtime options.
+   *
+   * @param[in] backend_options A LoadBackendOptionsMap containing per-delegate
+   * load-time configuration options. The caller must ensure this object
+   * outlives any methods loaded with these options.
+   * @param[in] verification The type of verification to do before returning
+   * success.
+   *
+   * @returns An Error to indicate success or failure of the loading process.
+   */
+  ET_NODISCARD virtual runtime::Error load(
+      const LoadBackendOptionsMap& backend_options,
       const Program::Verification verification =
           Program::Verification::Minimal);
 
@@ -207,12 +252,13 @@ class Module {
   runtime::Error load_method(
       const std::string& method_name,
       runtime::HierarchicalAllocator* planned_memory = nullptr,
-      torch::executor::EventTracer* event_tracer = nullptr);
+      torch::executor::EventTracer* event_tracer = nullptr,
+      const LoadBackendOptionsMap* backend_options = nullptr);
 
   ET_DEPRECATED ET_NODISCARD runtime::Error inline load_method(
       const std::string& method_name,
       torch::executor::EventTracer* event_tracer) {
-    return load_method(method_name, nullptr, event_tracer);
+    return load_method(method_name, nullptr, event_tracer, nullptr);
   }
 
   /**
@@ -254,13 +300,15 @@ class Module {
    */
   ET_NODISCARD inline runtime::Error load_forward(
       runtime::HierarchicalAllocator* planned_memory = nullptr,
-      torch::executor::EventTracer* event_tracer = nullptr) {
-    return load_method("forward", planned_memory, event_tracer);
+      torch::executor::EventTracer* event_tracer = nullptr,
+      const LoadBackendOptionsMap* backend_options = nullptr) {
+    return load_method(
+        "forward", planned_memory, event_tracer, backend_options);
   }
 
   ET_DEPRECATED ET_NODISCARD inline runtime::Error load_forward(
       torch::executor::EventTracer* event_tracer) {
-    return load_forward(nullptr, event_tracer);
+    return load_forward(nullptr, event_tracer, nullptr);
   }
 
   /**
@@ -630,10 +678,22 @@ class Module {
   }
 
  private:
-  struct MethodHolder {
+  struct PlannedMemory {
     std::vector<std::vector<uint8_t>> planned_buffers;
     std::vector<runtime::Span<uint8_t>> planned_spans;
     std::unique_ptr<runtime::HierarchicalAllocator> planned_memory;
+  };
+  std::unique_ptr<PlannedMemory> make_planned_memory(
+      const std::vector<size_t>& buffer_sizes);
+  std::unique_ptr<PlannedMemory> make_planned_memory_with_shared_arenas(
+      const std::vector<size_t>& buffer_sizes,
+      std::vector<std::vector<uint8_t>>& shared_arenas);
+  runtime::Result<std::vector<size_t>> get_mem_planned_buffer_sizes(
+      const std::string& method_name);
+  runtime::Result<std::vector<size_t>> get_max_mem_planned_buffer_sizes();
+
+  struct MethodHolder {
+    std::unique_ptr<PlannedMemory> planned_memory;
     std::unique_ptr<runtime::MemoryManager> memory_manager;
     std::unique_ptr<Method> method;
   };
@@ -649,7 +709,13 @@ class Module {
   std::vector<std::unique_ptr<runtime::DataLoader>> data_map_loaders_;
   std::vector<std::unique_ptr<NamedDataMap>> named_data_maps_;
   std::unique_ptr<NamedDataMap> merged_data_map_;
+  std::vector<std::vector<uint8_t>> shared_arenas_;
   ET_DEPRECATED std::vector<uint8_t> debug_buffer_;
+  const LoadBackendOptionsMap* backend_options_ = nullptr;
+  bool share_memory_arenas_;
+
+  ET_NODISCARD runtime::Error load_internal(
+      const Program::Verification verification);
 
  protected:
   std::unordered_map<std::string, MethodHolder> methods_;

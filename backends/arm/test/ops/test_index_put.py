@@ -243,10 +243,14 @@ def test_index_put_u55_INT(test_module: input_t):
 @common.XfailIfNoCorstone320
 @common.parametrize("test_module", test_data_suite)
 def test_index_put_u85_INT(test_module: input_t):
-    """same_index test case already supported on u85 even though it is not supported by TOSA spec.
-    This is because the SCATTER is converted to a DMA op where the destination is specificed by the index and each index
-    leads to one copy to the output tensor. It has been implemented so because there is no realistic way of detecting
-    repeat indices at runtime.
+    """same_index test case already supported on u85 even though it is not
+    supported by TOSA spec.
+
+    This is because the SCATTER is converted to a DMA op where the destination
+    is specified by the index and each index leads to one copy to the output
+    tensor. It has been implemented so because there is no realistic way of
+    detecting repeat indices at runtime.
+
     """
     pipeline = EthosU85PipelineINT[input_t](
         IndexPut(),

@@ -35,6 +35,7 @@ enable_mlsdk_pip_install=1
 toolchain_url=""
 toolchain_dir=""
 toolchain_md5_checksum=""
+toolchain_archive=""
 
 # Load logging helpers early so option parsing can emit status messages.
 source "$et_dir/backends/arm/scripts/utils.sh"
@@ -45,6 +46,7 @@ OPTION_LIST=(
   "--i-agree-to-the-contained-eula (required) Agree to the EULA"
   "--root-dir Path to scratch directory"
   "--enable-baremetal-toolchain Enable baremetal toolchain setup"
+  "--target-toolchain Select toolchain: gnu (default), zephyr, or linux-musl"
   "--enable-fvps Enable FVP setup"
   "--enable-vela Enable VELA setup"
   "--enable-model-converter Enable MLSDK model converter setup"
@@ -333,7 +335,7 @@ if [[ $is_script_sourced -eq 0 ]]; then
     fi
 
     pushd tosa-tools
-    git checkout v2025.11.0
+    git checkout v2025.11.2
 
     if [[ ! -d "reference_model" ]]; then
         log_step "main" "[error] Missing reference_model directory in tosa-tools repo."
@@ -344,11 +346,11 @@ if [[ $is_script_sourced -eq 0 ]]; then
         exit 1
     fi
 
-
     export CMAKE_BUILD_PARALLEL_LEVEL="$(get_parallel_jobs)"
 
     CMAKE_POLICY_VERSION_MINIMUM=3.5 \
         BUILD_PYBIND=1 \
+        BUILD_TOSA_REFERENCE_MODEL_TESTS=0 \
         pip install --no-dependencies ./reference_model
 
     CMAKE_POLICY_VERSION_MINIMUM=3.5 \

@@ -237,7 +237,7 @@ Tensor& quantized_depthwise_conv2d_out(
   }
 
   auto buffer_or_error = context.allocate_temp(
-      static_cast<size_t>(buffer_bytes), alignof(int16_t));
+      static_cast<size_t>(buffer_bytes), kCortexMMveAlignment);
   if (!buffer_or_error.ok()) {
     ET_LOG(
         Error,

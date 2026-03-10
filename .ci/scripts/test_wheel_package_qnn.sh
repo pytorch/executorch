@@ -18,6 +18,9 @@ import argparse
 
 import torch
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -50,7 +53,7 @@ def main() -> None:
     example_inputs = model.get_example_inputs()
 
     if args.quantization:
-        quantizer = QnnQuantizer()
+        quantizer = QnnQuantizer(backend=QnnExecuTorchBackendType.kHtpBackend, soc_model=get_soc_to_chipset_map()[args.soc])
         m = torch.export.export(model.eval(), example_inputs, strict=True).module()
         if args.quantization == "qat":
             m = prepare_qat_pt2e(m, quantizer)
@@ -86,6 +89,14 @@ EOF
 # ----------------------------
 echo "=== Building Wheel Package ==="
 source .ci/scripts/utils.sh
+
+# Ensure QNN SDK is available so setup.py auto-detects it.
+source backends/qualcomm/scripts/install_qnn_sdk.sh
+install_qnn
+
+# Make QNN SDK libraries available for runtime loading (e.g. libQnnHtp.so)
+export LD_LIBRARY_PATH="${QNN_SDK_ROOT}/lib/x86_64-linux-clang/:${LD_LIBRARY_PATH:-}"
+
 install_executorch
 EXECUTORCH_BUILDING_WHEEL=1 python setup.py bdist_wheel
 unset EXECUTORCH_BUILDING_WHEEL

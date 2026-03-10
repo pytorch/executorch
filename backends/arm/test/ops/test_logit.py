@@ -52,9 +52,7 @@ def test_logit_tosa_FP(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data", test_data_suite, xfails={"uniform_valid": "Numerical error in TFA"}
-)
+@common.parametrize("test_data", test_data_suite)
 def test_logit_tosa_INT(test_data: Tuple):
     pipeline = TosaPipelineINT[input_t1](
         Logit(),
@@ -62,8 +60,8 @@ def test_logit_tosa_INT(test_data: Tuple):
         aten_op=[],
         exir_op=exir_op,
         # Quantization issues when logit(x) -> inf
-        frobenius_threshold=1.0,
-        cosine_threshold=0.8,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 

@@ -193,7 +193,9 @@ test_cases: dict[str, Callable[[], tuple[torch.nn.Module, tuple]]] = {
 def _make_calibration_samples(
     module: torch.nn.Module, example_inputs: tuple
 ) -> tuple[tuple[torch.Tensor, ...], ...]:
-    """Return one example input that triggers the if branch, and one that triggers the else branch."""
+    """Return one example input that triggers the if branch, and one that
+    triggers the else branch.
+    """
 
     if isinstance(module, CondTwoArgsOneOutput):
         # Predicate is sum(lhs-rhs) > 0
@@ -286,12 +288,6 @@ def test_cond_u55_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     test_cases,
     xfails={
         "nested_one_arg_one_output": "Node submodule_0 target submodule_0 references nonexistent attribute submodule_0",
-    },
-    skips={
-        "one_arg_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
-        "one_arg_const_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
-        "multiple_one_arg_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
-        "one_arg_and_scalar_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
     },
 )
 @common.XfailIfNoCorstone320.with_args(raises=None)

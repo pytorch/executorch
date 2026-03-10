@@ -53,7 +53,7 @@ class SliceCopySupported(SupportedTOSAOperatorCheck):
         values_dtype = node.args[0].meta["val"].dtype  # type: ignore[union-attr]
 
         SUPPORTED_INT_DTYPES = (torch.int8, torch.int16, torch.int32)
-        SUPPORTED_FLOAT_DTYPES = (torch.float16, torch.float32)
+        SUPPORTED_FLOAT_DTYPES = (torch.float16, torch.float32, torch.bfloat16)
         SUPPORTED_DTYPES = (torch.bool,) + SUPPORTED_INT_DTYPES + SUPPORTED_FLOAT_DTYPES
 
         # bool is supported in both INT and FP profiles
@@ -68,8 +68,16 @@ class SliceCopySupported(SupportedTOSAOperatorCheck):
                 )
                 return False
 
-        # fp16/fp32: either FP profile, or INT profile (via quantization)
+        # fp16/fp32/bf16: either FP profile, or INT profile (via quantization)
         elif values_dtype in SUPPORTED_FLOAT_DTYPES:
+            if values_dtype == torch.bfloat16 and not tosa_spec.support_extension(
+                "bf16"
+            ):
+                self.reporter.report_reject(
+                    node,
+                    f"{node.target}: dtype {values_dtype} requires bf16 extension.",
+                )
+                return False
             if not (tosa_spec.support_float() or tosa_spec.support_integer()):
                 self.reporter.report_reject(
                     node,

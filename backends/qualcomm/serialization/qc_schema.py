@@ -152,6 +152,14 @@ class QnnExecuTorchBackendType(IntEnum):
     kHtpBackend = 2
     kDspBackend = 3
 
+    def __str__(self) -> str:
+        return {
+            QnnExecuTorchBackendType.kUndefinedBackend: "undefined",
+            QnnExecuTorchBackendType.kGpuBackend: "gpu",
+            QnnExecuTorchBackendType.kHtpBackend: "htp",
+            QnnExecuTorchBackendType.kDspBackend: "dsp",
+        }[self]
+
 
 @dataclass
 class QnnExecuTorchHtpBackendOptions:
@@ -166,6 +174,7 @@ class QnnExecuTorchHtpBackendOptions:
     use_fold_relu: bool = True
     use_multi_contexts: bool = False
     use_weight_sharing: bool = False
+    use_slc_allocator: bool = False
 
 
 @unique

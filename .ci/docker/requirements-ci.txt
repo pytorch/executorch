@@ -30,6 +30,6 @@ sphinx-reredirects==0.1.4
 matplotlib>=3.9.4
 sphinx-copybutton==0.5.2
 # PyTorch Theme
-pytorch_sphinx_theme2==0.2.0
+pytorch_sphinx_theme2==0.4.4
 # script unit test requirements
 yaspin==3.1.0

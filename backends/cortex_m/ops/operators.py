@@ -195,15 +195,15 @@ def quantized_add_impl(
 # ===================================================================
 lib.define(
     "quantized_mul("
-    "Tensor self, Scalar self_zero_point, "
-    "Tensor other, Scalar other_zero_point, "
-    "Scalar output_zero_point, Scalar output_multiplier, Scalar output_shift) -> Tensor"
+    "Tensor self, int self_zero_point, "
+    "Tensor other, int other_zero_point, "
+    "int output_zero_point, int output_multiplier, int output_shift) -> Tensor"
 )
 lib.define(
     "quantized_mul.out("
-    "Tensor self, Scalar self_zero_point, "
-    "Tensor other, Scalar other_zero_point, "
-    "Scalar output_zero_point, Scalar output_multiplier, Scalar output_shift, "
+    "Tensor self, int self_zero_point, "
+    "Tensor other, int other_zero_point, "
+    "int output_zero_point, int output_multiplier, int output_shift, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
@@ -253,6 +253,59 @@ def quantized_mul_impl(
     result_quantized = requantize_cmsis(result_fp, output_multiplier, output_shift)
     result = torch.clamp(result_quantized + output_zero_point, -128, 127).to(torch.int8)
     return result
+
+
+# ===================================================================
+# QUANTIZED BATCH MATMUL OPERATION DEFINITION
+# ===================================================================
+lib.define(
+    "quantized_batch_matmul("
+    "Tensor lhs, int lhs_zero_point, "
+    "Tensor rhs_transposed, int rhs_zero_point, "
+    "int output_zero_point, int output_multiplier, int output_shift) -> Tensor"
+)
+lib.define(
+    "quantized_batch_matmul.out("
+    "Tensor lhs, int lhs_zero_point, "
+    "Tensor rhs_transposed, int rhs_zero_point, "
+    "int output_zero_point, int output_multiplier, int output_shift, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_batch_matmul")
+def quantized_batch_matmul_meta(
+    lhs: torch.Tensor,
+    lhs_zero_point: int,
+    rhs_transposed: torch.Tensor,
+    rhs_zero_point: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+) -> torch.Tensor:
+    batch, lhs_rows, inner = lhs.shape
+    batch_rhs, rhs_cols, inner_rhs = rhs_transposed.shape
+    assert batch == batch_rhs and inner == inner_rhs
+    return torch.empty((batch, lhs_rows, rhs_cols), dtype=torch.int8, device=lhs.device)
+
+
+@impl(lib, "quantized_batch_matmul", "CompositeExplicitAutograd")
+def quantized_batch_matmul_impl(
+    lhs: torch.Tensor,
+    lhs_zero_point: int,
+    rhs_transposed: torch.Tensor,
+    rhs_zero_point: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+) -> torch.Tensor:
+    # Offsets are negated zero points (CMSIS-NN convention)
+    lhs_fp = lhs.to(torch.float32) + float(lhs_zero_point)
+    rhs_t_fp = rhs_transposed.to(torch.float32) + float(rhs_zero_point)
+    rhs_fp = rhs_t_fp.permute(0, 2, 1)
+    acc = torch.bmm(lhs_fp, rhs_fp).to(torch.int32)
+    result = requantize_cmsis(acc, output_multiplier, output_shift)
+    return torch.clamp(result + output_zero_point, -128, 127).to(torch.int8)
 
 
 # ===================================================================
