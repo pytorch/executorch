@@ -22,7 +22,7 @@ microphone input).
 
 https://github.com/user-attachments/assets/44717dc5-777f-4710-ad55-5ec4fa04b9c4
 
-Also, try a sample [standalone macOS app](https://github.com/meta-pytorch/executorch-examples/tree/main/voxtral_realtime/macos) to do realtime transcription 
+Also, try a sample [standalone macOS app](https://github.com/meta-pytorch/executorch-examples/tree/main/voxtral_realtime/macos) to do real time transcription
 
 https://github.com/user-attachments/assets/0ce4fb05-76b2-47e4-85e2-6f49b4e9e34e
 
