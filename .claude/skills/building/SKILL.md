@@ -107,7 +107,7 @@ cmake -B cmake-out \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
   -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
   -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON
-cmake --build cmake-out -j$(sysctl -n hw.ncpu)
+cmake --build cmake-out --parallel "$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
 ```
 
 Run `cmake --list-presets` to see all available presets.
