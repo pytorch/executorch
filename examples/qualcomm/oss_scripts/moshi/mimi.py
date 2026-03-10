@@ -24,6 +24,10 @@ from executorch.backends.qualcomm.quantizer.custom_annotation import (
     annotate_mimi_decoder,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -283,6 +287,8 @@ def compile_static_mimi_decoder(
         per_channel_conv=True,
         per_channel_linear=True,
         act_observer=MinMaxObserver,
+        backend=QnnExecuTorchBackendType.kHtpBackend,
+        soc_model=args.model,
     )
     quantizer.add_custom_quant_annotations((annotate_mimi_decoder,))
 
