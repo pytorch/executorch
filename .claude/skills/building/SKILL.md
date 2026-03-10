@@ -163,12 +163,14 @@ Most commonly needed flags (full list: `CMakeLists.txt`):
 
 ## Build output
 
+Installed artifact locations under `CMAKE_INSTALL_PREFIX=cmake-out`:
+
 | Artifact | Location |
 |----------|----------|
-| Core runtime | `cmake-out/libexecutorch.a` |
+| Core runtime | `cmake-out/lib/libexecutorch.a` |
 | executor_runner | `cmake-out/executor_runner` |
 | Model runners | `cmake-out/examples/models/<model>/<runner>` |
-| XNNPACK backend | `cmake-out/backends/xnnpack/libxnnpack_backend.a` |
+| XNNPACK backend | `cmake-out/lib/libxnnpack_backend.a` |
 | Python package | `site-packages/executorch` |
 | iOS frameworks | `cmake-out/*.xcframework` |
 | Android AAR | `aar-out/` |
