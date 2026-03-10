@@ -5,13 +5,6 @@ description: Build ExecuTorch from source — Python package, C++ runtime, runne
 
 # Building ExecuTorch
 
-## Prerequisites (macOS)
-
-A C++ compiler is required. On macOS, ensure Xcode Command Line Tools are installed:
-```bash
-xcode-select -p || xcode-select --install
-```
-
 ## Step 1: Ensure Python environment (detect and fix automatically)
 
 **Path A — conda (preferred):**
