@@ -156,6 +156,18 @@ def test_amin_u55_INT_not_delegated():
     pipeline.run()
 
 
+def test_amin_u55_INT_int32_not_delegated():
+    data, dim, keep_dims = ((torch.ones([2, 2], dtype=torch.int32),), 1, False)
+    pipeline = OpNotSupportedPipeline[Amin.input_t](
+        Amin(dim, keep_dims),
+        data,
+        {"executorch_exir_dialects_edge__ops_aten_amin_default": 1},
+        quantize=True,
+        u55_subset=True,
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_data", Amin.test_data)
 @common.XfailIfNoCorstone320
 def test_amin_u85_INT(test_data: Amin.input_t):
@@ -276,7 +288,9 @@ def test_amin_tosa_INT_a16w8(test_data: Amin.input_t):
 @common.parametrize("test_data", Amin.test_data)
 @common.XfailIfNoCorstone320
 def test_amin_u85_INT_a16w8(test_data: Min.input_t):
-    """Test amin with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test amin with 16A8W quantization on U85 (16-bit activations, 8-bit
+    weights)
+    """
     data, dim, keep_dims = test_data()
     pipeline = EthosU85PipelineINT[Amin.input_t](
         Amin(dim, keep_dims),

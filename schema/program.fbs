@@ -1,4 +1,5 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
+// Copyright 2026 Arm Limited and/or its affiliates.
 
 //
 // See README.md before modifying this file.
@@ -401,16 +402,13 @@ table ExecutionPlan {
   // constants memory buffer size, and ignore non_const_buffer_sizes[0].
   non_const_buffer_sizes: [int64];
 
-  // [Optional] Sparse device placement information for non-constant buffers.
-  // Only buffers that are NOT on CPU need to be listed here. Each entry
-  // specifies a buffer_index (into non_const_buffer_sizes) and its device.
-  // Buffers not listed here default to CPU, saving binary size when most
-  // buffers are on CPU.
-  non_const_buffer_device: [NonConstBufferDevice];
-
 }
 
 // Constant tensor data stored directly in the flatbuffer.
+// NOTE: If you change Buffer or BackendDelegateInlineData fields, update the
+// custom packers in exir/_serialize/_flatbuffer_program.py
+// (_pack_buffer and _pack_backend_delegate_inline_data);
+// they override the flatc-generated packers.
 table Buffer {
   // During serialization, this alignment may be rewritten to a larger value.
   // The magic "@executorch-tensor-alignment" comment tells EXIR which lines to
@@ -421,29 +419,15 @@ table Buffer {
 // Delegate data stored directly in the flatbuffer. This is a different type
 // than Buffer because tensors and delegates can have different alignment
 // requirements.
+// NOTE: If you change Buffer or BackendDelegateInlineData fields, update the
+// custom packers in exir/_serialize/_flatbuffer_program.py
+// (_pack_buffer and _pack_backend_delegate_inline_data);
+// they override the flatc-generated packers.
 table BackendDelegateInlineData {
   // During serialization, this alignment may be rewritten to a larger value.
   // The magic "@executorch-delegate-alignment" comment tells EXIR which lines
   // to patch.
   data: [ubyte] (force_align: 16);  // @executorch-delegate-alignment
-}
-
-// Device placement information for a non-constant memory buffer.
-// This is a sparse representation: only buffers that are NOT on CPU need entries.
-// Buffers not listed in ExecutionPlan.non_const_buffer_device default to CPU.
-table NonConstBufferDevice {
-  // Index into ExecutionPlan.non_const_buffer_sizes identifying which buffer
-  // this entry applies to.
-  buffer_index: uint32;
-
-  // The device type where this buffer should be allocated.
-  // Defaults to CPU for backward compatibility with existing PTE files.
-  device_type: DeviceType = CPU;
-
-  // The device index for multi-device scenarios (e.g., cuda:0, cuda:1).
-  // A value of -1 indicates the default device. Defaults to -1 for backward
-  // compatibility.
-  device_index: byte = -1;
 }
 
 // Describes a contiguous piece of data that lives outside of the flatbuffer data,

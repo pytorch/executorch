@@ -280,7 +280,9 @@ def test_amax_tosa_INT_a16w8(test_data: Amax.input_t):
 @common.parametrize("test_data", Amax.test_data)
 @common.XfailIfNoCorstone320
 def test_amax_u85_INT_a16w8(test_data: Amax.input_t):
-    """Test amax with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test amax with 16A8W quantization on U85 (16-bit activations, 8-bit
+    weights)
+    """
     data, dim, keep_dims = test_data()
     module = Amax(dim, keep_dims)
     pipeline = EthosU85PipelineINT[Max.input_t](

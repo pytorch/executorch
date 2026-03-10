@@ -11,10 +11,13 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
 import java.io.IOException
 import java.net.URISyntaxException
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import org.apache.commons.io.FileUtils
 import org.json.JSONException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -96,6 +99,178 @@ class LlmModuleInstrumentationTest : LlmCallback {
       tps = numGeneratedTokens.toFloat() / (inferenceEndMs - promptEvalEndMs) * 1000
       tokensPerSecond.add(tps)
     } catch (_: JSONException) {}
+  }
+
+  // --- prefillImages(ByteBuffer) validation tests ---
+
+  @Test
+  fun testPrefillImagesByteBuffer_nonDirectThrows() {
+    val heapBuffer = ByteBuffer.allocate(2 * 2 * 3)
+    assertThrows(IllegalArgumentException::class.java) {
+      llmModule.prefillImages(heapBuffer, 2, 2, 3)
+    }
+  }
+
+  @Test
+  fun testPrefillImagesByteBuffer_insufficientRemainingThrows() {
+    val buffer = ByteBuffer.allocateDirect(10)
+    assertThrows(IllegalArgumentException::class.java) { llmModule.prefillImages(buffer, 2, 2, 3) }
+  }
+
+  @Test
+  fun testPrefillImagesByteBuffer_zeroWidthThrows() {
+    val buffer = ByteBuffer.allocateDirect(12)
+    assertThrows(IllegalArgumentException::class.java) { llmModule.prefillImages(buffer, 0, 2, 3) }
+  }
+
+  @Test
+  fun testPrefillImagesByteBuffer_zeroHeightThrows() {
+    val buffer = ByteBuffer.allocateDirect(12)
+    assertThrows(IllegalArgumentException::class.java) { llmModule.prefillImages(buffer, 2, 0, 3) }
+  }
+
+  @Test
+  fun testPrefillImagesByteBuffer_zeroChannelsThrows() {
+    val buffer = ByteBuffer.allocateDirect(12)
+    assertThrows(IllegalArgumentException::class.java) { llmModule.prefillImages(buffer, 2, 2, 0) }
+  }
+
+  @Test
+  fun testPrefillImagesByteBuffer_negativeWidthThrows() {
+    val buffer = ByteBuffer.allocateDirect(12)
+    assertThrows(IllegalArgumentException::class.java) { llmModule.prefillImages(buffer, -1, 2, 3) }
+  }
+
+  @Test
+  fun testPrefillImagesByteBuffer_negativeHeightThrows() {
+    val buffer = ByteBuffer.allocateDirect(12)
+    assertThrows(IllegalArgumentException::class.java) { llmModule.prefillImages(buffer, 2, -1, 3) }
+  }
+
+  @Test
+  fun testPrefillImagesByteBuffer_negativeChannelsThrows() {
+    val buffer = ByteBuffer.allocateDirect(12)
+    assertThrows(IllegalArgumentException::class.java) { llmModule.prefillImages(buffer, 2, 2, -1) }
+  }
+
+  @Test
+  fun testPrefillImagesByteBuffer_validBufferPassesValidation() {
+    val buffer = ByteBuffer.allocateDirect(2 * 2 * 3)
+    try {
+      llmModule.prefillImages(buffer, 2, 2, 3)
+    } catch (e: IllegalArgumentException) {
+      throw AssertionError("Validation should not reject a correctly sized direct buffer", e)
+    } catch (_: RuntimeException) {
+      // Expected: native call may fail since this is a text-only model
+    }
+  }
+
+  // --- prefillNormalizedImage(ByteBuffer) validation tests ---
+
+  @Test
+  fun testPrefillNormalizedImage_nonDirectThrows() {
+    val heapBuffer = ByteBuffer.allocate(2 * 2 * 3 * 4)
+    assertThrows(IllegalArgumentException::class.java) {
+      llmModule.prefillNormalizedImage(heapBuffer, 2, 2, 3)
+    }
+  }
+
+  @Test
+  fun testPrefillNormalizedImage_insufficientRemainingThrows() {
+    val buffer = ByteBuffer.allocateDirect(10)
+    buffer.order(ByteOrder.nativeOrder())
+    assertThrows(IllegalArgumentException::class.java) {
+      llmModule.prefillNormalizedImage(buffer, 2, 2, 3)
+    }
+  }
+
+  @Test
+  fun testPrefillNormalizedImage_zeroWidthThrows() {
+    val buffer = ByteBuffer.allocateDirect(2 * 2 * 3 * 4)
+    buffer.order(ByteOrder.nativeOrder())
+    assertThrows(IllegalArgumentException::class.java) {
+      llmModule.prefillNormalizedImage(buffer, 0, 2, 3)
+    }
+  }
+
+  @Test
+  fun testPrefillNormalizedImage_zeroHeightThrows() {
+    val buffer = ByteBuffer.allocateDirect(2 * 2 * 3 * 4)
+    buffer.order(ByteOrder.nativeOrder())
+    assertThrows(IllegalArgumentException::class.java) {
+      llmModule.prefillNormalizedImage(buffer, 2, 0, 3)
+    }
+  }
+
+  @Test
+  fun testPrefillNormalizedImage_zeroChannelsThrows() {
+    val buffer = ByteBuffer.allocateDirect(2 * 2 * 3 * 4)
+    buffer.order(ByteOrder.nativeOrder())
+    assertThrows(IllegalArgumentException::class.java) {
+      llmModule.prefillNormalizedImage(buffer, 2, 2, 0)
+    }
+  }
+
+  @Test
+  fun testPrefillNormalizedImage_negativeWidthThrows() {
+    val buffer = ByteBuffer.allocateDirect(2 * 2 * 3 * 4)
+    buffer.order(ByteOrder.nativeOrder())
+    assertThrows(IllegalArgumentException::class.java) {
+      llmModule.prefillNormalizedImage(buffer, -1, 2, 3)
+    }
+  }
+
+  @Test
+  fun testPrefillNormalizedImage_negativeHeightThrows() {
+    val buffer = ByteBuffer.allocateDirect(2 * 2 * 3 * 4)
+    buffer.order(ByteOrder.nativeOrder())
+    assertThrows(IllegalArgumentException::class.java) {
+      llmModule.prefillNormalizedImage(buffer, 2, -1, 3)
+    }
+  }
+
+  @Test
+  fun testPrefillNormalizedImage_negativeChannelsThrows() {
+    val buffer = ByteBuffer.allocateDirect(2 * 2 * 3 * 4)
+    buffer.order(ByteOrder.nativeOrder())
+    assertThrows(IllegalArgumentException::class.java) {
+      llmModule.prefillNormalizedImage(buffer, 2, 2, -1)
+    }
+  }
+
+  @Test
+  fun testPrefillNormalizedImage_nonNativeByteOrderThrows() {
+    val buffer = ByteBuffer.allocateDirect(2 * 2 * 3 * 4)
+    val nonNativeOrder =
+        if (ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN) ByteOrder.BIG_ENDIAN
+        else ByteOrder.LITTLE_ENDIAN
+    buffer.order(nonNativeOrder)
+    assertThrows(IllegalArgumentException::class.java) {
+      llmModule.prefillNormalizedImage(buffer, 2, 2, 3)
+    }
+  }
+
+  @Test
+  fun testPrefillNormalizedImage_misalignedPositionThrows() {
+    val buffer = ByteBuffer.allocateDirect(2 * 2 * 3 * 4 + 1)
+    buffer.order(ByteOrder.nativeOrder())
+    buffer.position(1)
+    assertThrows(IllegalArgumentException::class.java) {
+      llmModule.prefillNormalizedImage(buffer, 2, 2, 3)
+    }
+  }
+
+  @Test
+  fun testPrefillNormalizedImage_validBufferPassesValidation() {
+    val buffer = ByteBuffer.allocateDirect(2 * 2 * 3 * 4)
+    buffer.order(ByteOrder.nativeOrder())
+    try {
+      llmModule.prefillNormalizedImage(buffer, 2, 2, 3)
+    } catch (e: IllegalArgumentException) {
+      throw AssertionError("Validation should not reject a correctly sized direct buffer", e)
+    } catch (_: RuntimeException) {
+      // Expected: native call may fail since this is a text-only model
+    }
   }
 
   companion object {

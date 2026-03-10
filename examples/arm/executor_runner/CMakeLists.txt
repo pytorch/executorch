@@ -77,6 +77,7 @@ set(ET_DIR_PATH
     "${CMAKE_CURRENT_SOURCE_DIR}/../../.."
     CACHE PATH "Path to ExecuTorch dir"
 )
+include(${ET_DIR_PATH}/tools/cmake/Utils.cmake)
 set(ET_BUILD_DIR_PATH
     "${ET_DIR_PATH}/cmake-out-arm"
     CACHE PATH "Path to ExecuTorch build/install dir"
@@ -223,6 +224,12 @@ execute_process(
 )
 target_link_options(arm_executor_runner PRIVATE "-T" "${LINK_FILE_OUT}")
 
+# Apply whole-archive helper where available to keep static initializers.
+executorch_target_link_options_shared_lib(executorch_delegate_ethos_u)
+executorch_target_link_options_shared_lib(quantized_kernels)
+executorch_target_link_options_shared_lib(cortex_m_kernels)
+executorch_target_link_options_shared_lib(portable_kernels)
+
 set(arm_executor_runner_link)
 list(
   APPEND
@@ -232,12 +239,10 @@ list(
   executorch
   quantized_ops_lib
   cortex_m_ops_lib
-  "-Wl,--whole-archive"
   executorch_delegate_ethos_u
   quantized_kernels
   cortex_m_kernels
   portable_kernels
-  "-Wl,--no-whole-archive"
   -Xlinker
   -Map=arm_executor_runner.map
 )

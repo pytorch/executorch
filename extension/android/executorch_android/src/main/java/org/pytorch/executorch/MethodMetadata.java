@@ -8,15 +8,14 @@
 
 package org.pytorch.executorch;
 
-/** Helper class to access the metadata for a method from a Module */
+/** Immutable metadata for a method in a Module. */
 public class MethodMetadata {
-  private String mName;
+  private final String mName;
+  private final String[] mBackends;
 
-  private String[] mBackends;
-
-  MethodMetadata setName(String name) {
+  MethodMetadata(String name, String[] backends) {
     mName = name;
-    return this;
+    mBackends = backends;
   }
 
   /**
@@ -24,11 +23,6 @@ public class MethodMetadata {
    */
   public String getName() {
     return mName;
-  }
-
-  MethodMetadata setBackends(String[] backends) {
-    mBackends = backends;
-    return this;
   }
 
   /**

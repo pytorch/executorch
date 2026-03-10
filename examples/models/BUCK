@@ -29,6 +29,7 @@ fbcode_target(_kind = python_library,
         "//executorch/examples/models/gemma3:gemma3",  # @manual
         "//executorch/examples/models/qwen2_5:qwen2_5",  # @manual
         "//executorch/examples/models/qwen3:qwen3",  # @manual
+        "//executorch/examples/models/qwen3_5:qwen3_5",  # @manual
         "//executorch/examples/models/phi_4_mini:phi_4_mini",  # @manual
         "//executorch/examples/models/smollm2:smollm2",  # @manual
         "//executorch/examples/models/smollm3:smollm3",  # @manual

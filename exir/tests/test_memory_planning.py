@@ -12,6 +12,17 @@ from typing import Any, Callable, List, Optional, Tuple, Type
 
 import executorch.exir as exir
 
+try:
+    import executorch.kernels.portable  # noqa: F401
+except ModuleNotFoundError:
+    import logging
+
+    logging.warning(
+        "Failed to load portable_custom_ops_aot_lib. This is expected only if running in BUCK "
+        "where the library is loaded via preload_deps in the TARGETS file."
+    )
+    del logging
+
 import torch
 from executorch.exir import ExecutorchBackendConfig, to_edge
 from executorch.exir.capture._capture import patch_forward
@@ -37,7 +48,6 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 from executorch.exir.tensor import TensorSpec
 from functorch.experimental.control_flow import map as torch_map
 from parameterized import parameterized
-
 from torch import nn
 from torch.ao.quantization import (  # @manual=//caffe2:torch
     float_qparams_weight_only_qconfig,
@@ -60,8 +70,6 @@ from torch.export.exported_program import ExportGraphSignature
 from torch.fx import Graph, GraphModule, Node
 from torch.nn import functional as F
 from torch.utils import _pytree as pytree
-
-torch.ops.load_library("//executorch/kernels/portable:custom_ops_generated_lib")
 
 
 def swap_modules(
@@ -1162,3 +1170,92 @@ class TestMap(unittest.TestCase):
                         value.val.extra_tensor_info.fully_qualified_name, "state"
                     )
         self.assertEqual(count, 3)
+
+    def test_custom_kv_cache_shared_buffers(self) -> None:
+        from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
+            CustomKVCache,
+        )
+        from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
+
+        class KVCacheModel(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.kv_cache = CustomKVCache(
+                    max_batch_size=1,
+                    max_context_length=8,
+                    n_heads=2,
+                    head_dim=4,
+                )
+
+            def forward(
+                self,
+                input_pos: torch.Tensor,
+                k_val: torch.Tensor,
+                v_val: torch.Tensor,
+            ) -> torch.Tensor:
+                k_out, v_out = self.kv_cache.update(input_pos, k_val, v_val)
+                return (k_out + v_out).sum(dim=-1)
+
+            def reset(self, k_zeros: torch.Tensor, v_zeros: torch.Tensor) -> None:
+                self.kv_cache.k_cache.copy_(k_zeros)
+                self.kv_cache.v_cache.copy_(v_zeros)
+
+        model = KVCacheModel().eval()
+        cache_shape = (1, 8, 2, 4)  # [B, S, H, D]
+
+        forward_ep = export(
+            model,
+            (torch.tensor([0]), torch.randn(1, 2, 1, 4), torch.randn(1, 2, 1, 4)),
+        )
+        with patch_forward(model, model.reset):
+            reset_ep = export(
+                model, (torch.zeros(cache_shape), torch.zeros(cache_shape))
+            )
+
+        edge = to_edge({"forward": forward_ep, "reset": reset_ep})
+        et = edge.to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(
+                    share_mutable_buffers=True,
+                ),
+                emit_mutable_buffer_names=True,
+            )
+        )
+        et_prog = et.executorch_program
+
+        self.assertEqual(len(et_prog.execution_plan[0].non_const_buffer_sizes), 3)
+        self.assertEqual(len(et_prog.execution_plan[1].non_const_buffer_sizes), 3)
+
+        # Verify that mem_id=2 has the same buffer size in both execution plans.
+        self.assertEqual(
+            et_prog.execution_plan[0].non_const_buffer_sizes[2],
+            512,  # 2 * (1*8*2*4) = 128 * 4 bytes = 512 bytes
+        )
+        self.assertEqual(
+            et_prog.execution_plan[1].non_const_buffer_sizes[2],
+            512,  # 2 * (1*8*2*4) = 128 * 4 bytes = 512 bytes
+        )
+
+        for plan in et_prog.execution_plan:
+            k_cache = [
+                v
+                for v in plan.values
+                if hasattr(v.val, "extra_tensor_info")
+                and v.val.extra_tensor_info is not None
+                and v.val.extra_tensor_info.fully_qualified_name == "kv_cache.k_cache"
+            ]
+            self.assertEqual(len(k_cache), 1)
+            self.assertEqual(k_cache[0].val.allocation_info.memory_id, 2)
+            self.assertEqual(k_cache[0].val.allocation_info.memory_offset_low, 0)
+            self.assertEqual(k_cache[0].val.allocation_info.memory_offset_high, 0)
+            v_cache = [
+                v
+                for v in plan.values
+                if hasattr(v.val, "extra_tensor_info")
+                and v.val.extra_tensor_info is not None
+                and v.val.extra_tensor_info.fully_qualified_name == "kv_cache.v_cache"
+            ]
+            self.assertEqual(len(v_cache), 1)
+            self.assertEqual(v_cache[0].val.allocation_info.memory_id, 2)
+            self.assertEqual(v_cache[0].val.allocation_info.memory_offset_low, 256)
+            self.assertEqual(v_cache[0].val.allocation_info.memory_offset_high, 0)

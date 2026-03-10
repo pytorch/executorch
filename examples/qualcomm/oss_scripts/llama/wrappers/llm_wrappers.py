@@ -26,6 +26,7 @@ from executorch.backends.qualcomm.quantizer.custom_annotation import (
     annotate_prefill_kv_output,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
@@ -572,16 +573,18 @@ class TextDecoder(Component):
                 VISION_ENCODER
             ].calibration_data.intermediate_outputs[0]
 
-        quantizer = make_quantizer()
+        quantizer = make_quantizer(backend=data.backend, soc_model=data.soc_model)
         for custom_annotation in data.custom_annotation:
             self.quant_recipe.recipe.custom_quant_annotations.append(custom_annotation)
-        quantizer.recipe = self.quant_recipe
+        quantizer.set_recipe(self.quant_recipe.recipe)
 
         text_embedding_quantizer = make_quantizer(
             quant_dtype=QuantDtype.use_16a8w,
             per_channel_conv=True,
             per_channel_linear=True,
             act_observer=MinMaxObserver,
+            backend=data.backend,
+            soc_model=data.soc_model,
         )
 
         with torch.no_grad():
@@ -824,9 +827,9 @@ class HybridTextDecoder(Component):
             skip_node_op_set={"llama.fallback.default"},
         )
 
-        if self.config.num_sharding > 1 and self.control_args.model_mode == "kv":
-            # weight-sharing based context binaries cannot be opened in x86 host
-            update_spill_fill_size(edge_prog_mgr.exported_program("kv_forward"))
+        if self.config.num_sharding > 1:
+            for graph_name in graph_names:
+                update_spill_fill_size(edge_prog_mgr.exported_program(graph_name))
 
         if self.control_args.verbose:
             for ep in edge_prog_mgr._edge_programs.values():
@@ -906,8 +909,10 @@ class Modality(Component):
         with torch.no_grad():
             self.model = torch.export.export(self.model, self.example_input).module()
 
-            quantizer = make_quantizer()
-            quantizer.recipe = self.quant_recipe
+            quantizer = make_quantizer(
+                backend=request_data.backend, soc_model=request_data.soc_model
+            )
+            quantizer.set_recipe(self.quant_recipe.recipe)
             self.model = prepare_pt2e(self.model, quantizer)
 
             # calibration
@@ -995,6 +1000,8 @@ class MultiModalManager(Component):
         self,
         calibration_data: Dict[str, List[Any]],
         tokenizer,
+        backend,
+        soc_model,
     ):
         quantize_request = Request(
             inspect.currentframe().f_code.co_name,
@@ -1004,6 +1011,8 @@ class MultiModalManager(Component):
                         datasets=calibration_data[m]
                     ),
                     tokenizer=tokenizer,
+                    backend=backend,
+                    soc_model=soc_model,
                 )
                 for m in self._modalities
             },

@@ -6,6 +6,8 @@
 import logging
 import operator
 
+import torch
+
 from executorch.backends.nxp.backend.data_format import DataFormat, NXP_NODE_FORMAT
 
 from executorch.backends.nxp.backend.edge_helper import is_channels_last_dim_order
@@ -49,7 +51,11 @@ class NodeFormatInference:
     # List of all edge operations, which are supported by the converter.
     _known_targets: list[EdgeOpOverload]
 
-    def __init__(self, edge_program: ExportedProgram):
+    def __init__(self, edge_program: ExportedProgram, only_for_op_support_check=False):
+        # If true, the format is inferred only for nodes that are eligible for delegation,
+        # excluding nodes like `output`, `getitem`, etc.
+        self.only_for_op_support_check = only_for_op_support_check
+
         self._edge_program = edge_program
 
         self._nodes = edge_program.graph.nodes
@@ -218,6 +224,23 @@ class NodeFormatInference:
         # Validate the assumption.
         self._assign_format_to_node(node, DataFormat.CHANNELS_FIRST)
 
+    @staticmethod
+    def _is_potentially_delegable_node(node: Node):
+        """
+        Determines if the node is NOT one of the following:
+        - output
+        - lowered_module
+        - getitem
+        - executorch_call_delegate
+        The nodes listed above are non-delegable.
+        """
+        return (
+            node.target != "output"
+            and node.target != operator.getitem
+            and node.target != torch.ops.higher_order.executorch_call_delegate
+            and not str(node.target).startswith("lowered_module")
+        )
+
     def _handle_node_which_can_use_any_node_format(self, node: Node):
         """
         Function for assigning format to nodes that don't care about format (Softmax, Abs).
@@ -226,10 +249,16 @@ class NodeFormatInference:
         # If the node uses channels last dim order in ExecuTorch, it will also require channels last data in Neutron IR.
         #  Therefore, it's format must be marked as `channels first` here, which will cause it to be converted to
         #  channels last later during the conversion stage.
-        if hasattr(val := node.meta["val"], "dim_order") and is_channels_last_dim_order(
-            list(val.dim_order())
+
+        # For the purpose of checking delegation compatibility, node format must be inferred. Nodes that cannot be delegated
+        #  may not always have the format specified. Thus the node format inference is skipped.
+        if not self.only_for_op_support_check or self._is_potentially_delegable_node(
+            node
         ):
-            self._assign_format_to_node(node, DataFormat.CHANNELS_FIRST)
+            if hasattr(
+                val := node.meta["val"], "dim_order"
+            ) and is_channels_last_dim_order(list(val.dim_order())):
+                self._assign_format_to_node(node, DataFormat.CHANNELS_FIRST)
 
         if not self._node_produces_or_consumes_channels_first_format(node):
             # Neither inputs nor current node are channels first -> assign everything to formatless

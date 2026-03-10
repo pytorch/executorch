@@ -44,6 +44,13 @@ test_data_suite_fp16 = {
     ),
 }
 
+test_data_suite_bf16 = {
+    "ones_slice_4_bf16": lambda: (
+        torch.ones((1, 12, 10, 10), dtype=torch.bfloat16),
+        [(0, 1), (0, 5), (3, 5), (4, 10)],
+    ),
+}
+
 
 class Slice(torch.nn.Module):
     def forward(self, x: torch.Tensor, s: list[tuple[int, int]]):
@@ -54,6 +61,14 @@ class Slice(torch.nn.Module):
 @common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 def test_slice_tensor_tosa_FP(test_data: torch.Tensor):
     pipeline = TosaPipelineFP[input_t1](Slice(), test_data(), aten_op, exir_op)
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_bf16)
+def test_slice_tensor_tosa_FP_bf16(test_data: torch.Tensor):
+    pipeline = TosaPipelineFP[input_t1](
+        Slice(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
+    )
     pipeline.run()
 
 
@@ -131,7 +146,9 @@ def test_slice_tensor_vgf_quant(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 def test_slice_tensor_16a8w_tosa_INT(test_data: torch.Tensor):
-    """Test slice operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
+    """Test slice operation with 16A8W quantization (16-bit activations, 8-bit
+    weights)
+    """
     per_channel_quantization = False
 
     pipeline = TosaPipelineINT[input_t1](
@@ -152,7 +169,9 @@ def test_slice_tensor_16a8w_tosa_INT(test_data: torch.Tensor):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_slice_tensor_16a8w_u55_INT(test_data: torch.Tensor):
-    """Test slice operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test slice operation with 16A8W quantization on U55 (16-bit activations,
+    8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU55PipelineINT[input_t1](
@@ -172,7 +191,9 @@ def test_slice_tensor_16a8w_u55_INT(test_data: torch.Tensor):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_slice_tensor_16a8w_u85_INT(test_data: torch.Tensor):
-    """Test slice operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test slice operation with 16A8W quantization on U85 (16-bit activations,
+    8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU85PipelineINT[input_t1](
