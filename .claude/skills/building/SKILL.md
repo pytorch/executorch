@@ -138,7 +138,7 @@ Most commonly needed flags (full list: `CMakeLists.txt`):
 | `EXECUTORCH_BUILD_COREML` | Core ML (macOS/iOS) |
 | `EXECUTORCH_BUILD_MPS` | MPS GPU (macOS/iOS) |
 | `EXECUTORCH_BUILD_METAL` | Metal compute (macOS, requires EXTENSION_TENSOR) |
-| `EXECUTORCH_BUILD_CUDA` | CUDA GPU (Linux, requires EXTENSION_TENSOR) |
+| `EXECUTORCH_BUILD_CUDA` | CUDA GPU (Linux/Windows, requires EXTENSION_TENSOR) |
 | `EXECUTORCH_BUILD_KERNELS_OPTIMIZED` | Optimized kernels |
 | `EXECUTORCH_BUILD_KERNELS_QUANTIZED` | Quantized kernels |
 | `EXECUTORCH_BUILD_EXTENSION_MODULE` | Module extension (requires DATA_LOADER + FLAT_TENSOR + NAMED_DATA_MAP) |
