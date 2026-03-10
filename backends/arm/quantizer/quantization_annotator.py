@@ -400,6 +400,7 @@ _one_to_one = [
     torch.ops.aten.abs.default,
     torch.ops.aten.ceil.default,
     torch.ops.aten.erf.default,
+    torch.ops.aten.erfinv.default,
     torch.ops.aten.exp.default,
     torch.ops.aten.expm1.default,
     torch.ops.aten.elu.default,
@@ -666,16 +667,11 @@ def get_quant_properties(  # noqa: C901
         torch.ops.aten.minimum.default,
         torch.ops.aten.maximum.default,
     ):
-        lhs_node = ensure_type(Node, node.args[0])
-        shared_qspec = SharedQuantizationSpec((lhs_node, node))
         quant_properties.quant_inputs = [
             _QuantProperty(0, input_act_qspec),
-            _QuantProperty(
-                1,
-                input_act_qspec if node.args[0] == node.args[1] else shared_qspec,
-            ),
+            _QuantProperty(1, input_act_qspec),
         ]
-        quant_properties.quant_output = _QuantProperty(0, shared_qspec)
+        quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in (torch.ops.aten.where.self,):
         true_node = ensure_type(Node, node.args[1])
         input_qspec = (

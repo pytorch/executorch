@@ -28,7 +28,5 @@ jobs:
       timeout: 120
       run-linux: true
       runner-linux: linux.g5.4xlarge.nvidia.gpu
-      docker-image: ''
-      use-custom-docker-registry: false
       gpu-arch-type: cuda
       gpu-arch-version: '12.6'
