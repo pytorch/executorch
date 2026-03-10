@@ -120,6 +120,7 @@ from executorch.backends.arm._passes import (
     RewriteIndexPutPass,
     RewriteLeLtToGeGtPass,
     RewriteMatmulPass,
+    RewritePadPass,
     RewriteUpsamplePass,
     ScalarsToAttributePass,
     SizeAdjustInputPass,
@@ -372,6 +373,7 @@ class ArmPassManager(PassManager):
                 RewriteUpsamplePass(),
                 RewriteConvPass(exported_program),
                 RewriteMatmulPass(),
+                RewritePadPass(),
             ]
         )
 
