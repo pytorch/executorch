@@ -152,10 +152,11 @@ class LCMOpenVINOExporter:
         pipeline.unet = original_unet
         return calibration_data
 
-    def _quantize_unet_model(
+    def quantize_unet_model(
         self,
-        model: torch.fx.GraphModule,
-    ) -> torch.fx.GraphModule:
+        model: torch.export.ExportedProgram,
+        dummy_inputs,
+    ) -> torch.export.ExportedProgram:
         """Quantize UNet using activation-aware PTQ."""
         pipeline = self.model_loader.pipeline
         calibration_dataset = self.get_unet_calibration_dataset(
@@ -163,21 +164,29 @@ class LCMOpenVINOExporter:
             self.calibration_dataset_name,
             self.calibration_dataset_column,
         )
-
-        return quantize_model(
+        model = model.graph_module()
+        quantized_model = quantize_model(
             model,
             mode=QuantizationMode.INT8_TRANSFORMER,
             calibration_dataset=calibration_dataset,
             smooth_quant=True,
         )
+        # Re-export the transformed torch.fx.GraphModule to ExportedProgram
+        quantized_exported_program = export(quantized_model, dummy_inputs)
+        return quantized_exported_program
 
     @staticmethod
-    def _compress_non_unet_model(
-        model: torch.fx.GraphModule,
-    ) -> torch.fx.GraphModule:
+    def compress_model(
+        model: torch.export.ExportedProgram,
+        dummy_inputs,
+    ) -> torch.export.ExportedProgram:
         """Apply weights-only compression for non-UNet components."""
+        model = model.graph_module()
         ov_quantizer = OpenVINOQuantizer(mode=QuantizationMode.INT8WO_ASYM)
-        return nncf.experimental.torch.fx.compress_pt2e(model, quantizer=ov_quantizer)
+        quantized_model = nncf.experimental.torch.fx.compress_pt2e(model, quantizer=ov_quantizer)
+        # Re-export the transformed torch.fx.GraphModule to ExportedProgram
+        quantized_exported_program = export(quantized_model, dummy_inputs)
+        return quantized_exported_program
 
     def export_text_encoder(self, output_path: str, device: str = "CPU") -> bool:
         """Export CLIP text encoder to PTE file"""
@@ -194,13 +203,11 @@ class LCMOpenVINOExporter:
             component_dummy_inputs = dummy_inputs[sd_model_component]
             exported_program = export(text_encoder_wrapper, component_dummy_inputs)
 
-            exported_program_module = exported_program.module()
             if self.is_quantization_enabled:
-                exported_program_module = self._compress_non_unet_model(
-                    exported_program_module
+                exported_program = self.compress_model(
+                    exported_program,
+                    component_dummy_inputs
                 )
-            # Re-export the transformed torch.fx.GraphModule to ExportedProgram
-            exported_program = export(exported_program_module, component_dummy_inputs)
 
             # Configure OpenVINO compilation
             compile_spec = [CompileSpec("device", device.encode())]
@@ -244,13 +251,11 @@ class LCMOpenVINOExporter:
             component_dummy_inputs = dummy_inputs[sd_model_component]
             exported_program = export(unet_wrapper, component_dummy_inputs)
 
-            exported_program_module = exported_program.module()
             if self.is_quantization_enabled:
-                exported_program_module = self._quantize_unet_model(
-                    exported_program_module
+                exported_program = self.quantize_unet_model(
+                    exported_program,
+                    component_dummy_inputs
                 )
-            # Re-export the transformed torch.fx.GraphModule to ExportedProgram
-            exported_program = export(exported_program_module, component_dummy_inputs)
 
             # Configure OpenVINO compilation
             compile_spec = [CompileSpec("device", device.encode())]
@@ -294,13 +299,11 @@ class LCMOpenVINOExporter:
             component_dummy_inputs = dummy_inputs[sd_model_component]
             exported_program = export(vae_decoder, component_dummy_inputs)
 
-            exported_program_module = exported_program.module()
             if self.is_quantization_enabled:
-                exported_program_module = self._compress_non_unet_model(
-                    exported_program_module
+                exported_program = self.compress_model(
+                    exported_program,
+                    component_dummy_inputs
                 )
-            # Re-export the transformed torch.fx.GraphModule to ExportedProgram
-            exported_program = export(exported_program_module, component_dummy_inputs)
 
             # Configure OpenVINO compilation
             compile_spec = [CompileSpec("device", device.encode())]
