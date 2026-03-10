@@ -17,7 +17,7 @@ echo "Running backend test job for suite $SUITE, flow $FLOW."
 echo "Saving job artifacts to $ARTIFACT_DIR."
 
 eval "$(conda shell.bash hook)"
-CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+CONDA_ENV=$(conda env list --json | python -c "import sys, json; print(json.load(sys.stdin)['envs'][-1])")
 conda activate "${CONDA_ENV}"
 
 if [[ "$(uname)" == "Darwin" ]]; then
@@ -56,6 +56,32 @@ if [[ "$FLOW" == *vulkan* ]]; then
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_VULKAN=ON"
 fi
 
+if [[ "$FLOW" == *cuda* ]]; then
+    # When running with the PyTorch test-infra Docker image (which has nvcc),
+    # install executorch directly — it will auto-detect CUDA and install
+    # CUDA-enabled PyTorch.  Skip setup-linux.sh which expects the custom
+    # Docker image with pre-built pinned-commit torch.
+    echo "Installing ExecuTorch with CUDA support..."
+    ./install_executorch.sh --editable
+
+    # Verify PyTorch was installed with CUDA support
+    python -c "import torch; assert torch.cuda.is_available(), 'PyTorch CUDA not available after reinstall'; print(f'PyTorch {torch.__version__} with CUDA {torch.version.cuda}')" || {
+        echo "ERROR: PyTorch was not installed with CUDA support"
+        exit 1
+    }
+
+    # Fix libstdc++ GLIBCXX version for CUDA backend.
+    # The embedded .so files in the CUDA blob require GLIBCXX_3.4.30
+    # which the default conda libstdc++ doesn't have.
+    echo "Installing newer libstdc++ for CUDA backend..."
+    conda install -y -c conda-forge 'libstdcxx-ng>=12'
+    export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
+
+    source .ci/scripts/utils.sh
+    CMAKE_ARGS="$EXTRA_BUILD_ARGS" build_executorch_runner cmake Release
+    CUDA_SETUP_DONE=1
+fi
+
 if [[ "$FLOW" == *arm* ]]; then
 
     # Setup ARM deps.
@@ -78,12 +104,14 @@ if [[ "$FLOW" == *arm* ]]; then
     fi
 fi
 
-if [[ $IS_MACOS -eq 1 ]]; then
-    SETUP_SCRIPT=.ci/scripts/setup-macos.sh
-else
-    SETUP_SCRIPT=.ci/scripts/setup-linux.sh
+if [[ "${CUDA_SETUP_DONE:-0}" != "1" ]]; then
+    if [[ $IS_MACOS -eq 1 ]]; then
+        SETUP_SCRIPT=.ci/scripts/setup-macos.sh
+    else
+        SETUP_SCRIPT=.ci/scripts/setup-linux.sh
+    fi
+    CMAKE_ARGS="$EXTRA_BUILD_ARGS" ${CONDA_RUN_CMD} $SETUP_SCRIPT --build-tool cmake --build-mode Release --editable true
 fi
-CMAKE_ARGS="$EXTRA_BUILD_ARGS" ${CONDA_RUN_CMD} $SETUP_SCRIPT --build-tool cmake --build-mode Release --editable true
 
 GOLDEN_DIR="${ARTIFACT_DIR}/golden-artifacts"
 export GOLDEN_ARTIFACTS_DIR="${GOLDEN_DIR}"
