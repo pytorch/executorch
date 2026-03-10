@@ -247,6 +247,15 @@ class Atan(torch.nn.Module):
         return torch.atan(x)
 
 
+class AvgPool1D(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.pool = torch.nn.AvgPool1d(kernel_size=3, stride=2, padding=1)
+
+    def forward(self, x):
+        return self.pool(x)
+
+
 class AvgPool3d(torch.nn.Module):
     def __init__(self, kernel_size, stride, padding, ceil_mode, count_include_pad):
         super().__init__()
