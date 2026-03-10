@@ -272,17 +272,7 @@ def test_cond_u55_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     pipeline.run()
 
 
-@common.parametrize(
-    "case",
-    test_cases,
-    skips={
-        "one_arg_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
-        "one_arg_const_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
-        "multiple_one_arg_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
-        "one_arg_and_scalar_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
-        "nested_one_arg_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
-    },
-)
+@common.parametrize("case", test_cases)
 @common.XfailIfNoCorstone320.with_args(raises=None)
 def test_cond_u85_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     module, example_inputs = case()
