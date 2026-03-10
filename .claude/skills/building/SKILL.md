@@ -98,7 +98,7 @@ Output: `cmake-out/examples/models/<model>/<runner>`
 | Linux | `cmake -B cmake-out --preset linux -DCMAKE_BUILD_TYPE=Release` |
 | Windows | `cmake -B cmake-out --preset windows -T ClangCL` |
 
-Then: `cmake --build cmake-out -j$(sysctl -n hw.ncpu)` (macOS) or `cmake --build cmake-out -j$(nproc)` (Linux)
+Then: `cmake --build cmake-out --config Release -j$(sysctl -n hw.ncpu)` (macOS) or `cmake --build cmake-out -j$(nproc)` (Linux)
 
 **LLM libraries via workflow presets** (configure + build + install in one command):
 ```bash
