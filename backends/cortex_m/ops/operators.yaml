@@ -93,3 +93,9 @@
   kernels:
     - arg_meta: null
       kernel_name: cortex_m::quantized_max_pool2d_out
+
+- func: cortex_m::quantized_batch_matmul.out(Tensor lhs, int lhs_zero_point, Tensor rhs_transposed, int rhs_zero_point, int output_zero_point, int output_multiplier, int output_shift, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: cortex_m::quantized_batch_matmul_out
