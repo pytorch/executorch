@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional
+from typing import cast, List, Optional
 
 import executorch.backends.vulkan.utils as utils
 
@@ -33,11 +33,26 @@ class QuantizedConvolutionMatch(PatternMatch):
         self.match_found = False
         self.all_nodes = [self.anchor_node]
 
+        # Determine if this is a transposed convolution
+        self.transposed = False
+        self.output_padding = [0, 0]
+        if conv_node.target == exir_ops.edge.aten.convolution.default:
+            transposed_flag = conv_node.args[6] if len(conv_node.args) > 6 else False
+            if transposed_flag:
+                self.transposed = True
+                self.output_padding = (
+                    cast(List[int], conv_node.args[7]) if len(conv_node.args) > 7 else [0, 0]
+                )
+
         # Extract convolution parameters
         self.stride = conv_node.args[3] if len(conv_node.args) > 3 else [1, 1]
         self.padding = conv_node.args[4] if len(conv_node.args) > 4 else [0, 0]
         self.dilation = conv_node.args[5] if len(conv_node.args) > 5 else [1, 1]
         self.groups = conv_node.args[8] if len(conv_node.args) > 8 else 1
+
+        # Transposed conv only supported with dilation=[1,1]
+        if self.transposed and cast(List[int], self.dilation) != [1, 1]:
+            return
 
         const_node, arg_chain = utils.trace_args_until_placeholder(
             self.anchor_node.args[1]
@@ -59,6 +74,16 @@ class QuantizedConvolutionMatch(PatternMatch):
         self.weight_node = const_node
         self.dequantize_weight_node = dequantize_weight_node
         self.all_nodes.extend(arg_chain)
+
+        # For transposed conv, verify per-channel quantization is on the OC dimension.
+        # Transposed weight shape is (IC, OC_per_group, KH, KW), so per-OC quantization
+        # should be on axis=1. If axis=0, that's per-IC which is not supported.
+        if self.transposed and utils.is_dequant_per_channel_node(
+            self.dequantize_weight_node
+        ):
+            quant_axis = self.dequantize_weight_node.args[3]
+            if quant_axis != 1:
+                return
 
         # Identify weight quantization parameter nodes
         self.weight_scales_node, arg_chain = utils.trace_args_until_placeholder(
@@ -177,9 +202,30 @@ def make_q8ta_conv2d_custom_op(
         bias_tensor = get_param_tensor(ep, match.bias_node)
         assert bias_tensor is not None
 
-    OC, IC_per_group, H, W = weight_tensor.shape
+    if match.transposed:
+        # Transposed conv weight shape: (IC, OC_per_group, H, W)
+        IC, OC_per_group, H, W = weight_tensor.shape
+        OC = OC_per_group * match.groups
+        IC_per_group = IC // match.groups
+        # Reshape to (OC, H*W*IC_per_group) matrix format for Im2Col-based
+        # transposed convolution.
+        # (IC, OC_per_group, H, W) ->
+        #   (groups, IC_per_group, OC_per_group, H, W) ->
+        #   (groups, OC_per_group, H, W, IC_per_group) ->
+        #   (OC, H*W*IC_per_group)
+        weight_tensor = (
+            weight_tensor.reshape(match.groups, IC_per_group, OC_per_group, H, W)
+            .permute(0, 2, 3, 4, 1)
+            .contiguous()
+            .reshape(OC, H * W * IC_per_group)
+            .contiguous()
+        )
+    else:
+        OC, IC_per_group, H, W = weight_tensor.shape
 
-    is_depthwise_conv = IC_per_group == 1 and match.groups == OC
+    is_depthwise_conv = (
+        not match.transposed and IC_per_group == 1 and match.groups == OC
+    )
 
     if is_depthwise_conv:
         assert OC % 4 == 0, "depthwise conv requires that OC is divisible by 4"
@@ -188,7 +234,7 @@ def make_q8ta_conv2d_custom_op(
         weight_tensor = (
             weight_tensor.permute(2, 3, 1, 0).contiguous().view(H, W, OC).contiguous()
         )
-    else:
+    elif not match.transposed:
         # Reshape weight tensor from (OC, IC_per_group, H, W) to (OC, H * W * IC_per_group)
         # (i.e. matrix format). This prepares the weights for Im2Col-based convolution.
         weight_tensor = (
@@ -257,32 +303,41 @@ def make_q8ta_conv2d_custom_op(
     )
 
     with graph_module.graph.inserting_before(match.output_node):
-        op_target = exir_ops.edge.et_vk.q8ta_conv2d.default
-        if is_depthwise_conv:
+        if match.transposed:
+            op_target = exir_ops.edge.et_vk.q8ta_conv2d_transposed.default
+        elif is_depthwise_conv:
             op_target = exir_ops.edge.et_vk.q8ta_conv2d_dw.default
         elif is_pointwise_conv:
             op_target = exir_ops.edge.et_vk.q8ta_conv2d_pw.default
+        else:
+            op_target = exir_ops.edge.et_vk.q8ta_conv2d.default
+
+        op_args = (
+            match.quantize_input_node,
+            match.input_scales_node,
+            match.input_zeros_node,
+            match.weight_node,
+            weight_sums_node,
+            match.weight_scales_node,
+            match.output_scales_node,
+            match.output_zeros_node,
+            match.bias_node,
+            [H, W],
+            match.stride,
+            match.padding,
+        )
+        if match.transposed:
+            op_args = op_args + (match.output_padding,)
+        op_args = op_args + (
+            match.dilation,
+            match.groups,
+            "relu" if match.relu_node is not None else "none",
+        )
 
         qconv_node = graph_module.graph.create_node(
             "call_function",
             op_target,
-            args=(
-                match.quantize_input_node,
-                match.input_scales_node,
-                match.input_zeros_node,
-                match.weight_node,
-                weight_sums_node,
-                match.weight_scales_node,
-                match.output_scales_node,
-                match.output_zeros_node,
-                match.bias_node,  # Add bias after weight_scales
-                [H, W],  # Pass kernel size information before stride
-                match.stride,
-                match.padding,
-                match.dilation,
-                match.groups,
-                "relu" if match.relu_node is not None else "none",
-            ),
+            args=op_args,
         )
 
     qconv_node.meta["val"] = match.output_node.meta["val"]
