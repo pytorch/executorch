@@ -5,21 +5,23 @@ description: Build ExecuTorch from source — Python package, C++ runtime, runne
 
 # Building ExecuTorch
 
-IMPORTANT: Do NOT ask the user questions about environment setup. Detect issues and fix them automatically. The standard path is conda — always use it.
-
-## Step 1: Ensure conda environment (do this silently, fix issues automatically)
+## Step 1: Ensure Python environment (detect and fix automatically)
 
 ```bash
 # Check if executorch conda env exists; create if not
-conda env list | grep executorch || conda create -yn executorch python=3.12 'cmake<4'
+# Note: `conda env list` may fail with PermissionError on some setups.
+# Fallback: check if the env directory exists on disk.
+conda env list 2>/dev/null | grep executorch || \
+  ls "$CONDA_PREFIX/../envs/" 2>/dev/null | grep executorch || \
+  conda create -yn executorch python=3.12
+
 # Activate
 conda activate executorch
-# Verify — fix automatically if wrong
-python --version          # need 3.10–3.13
-cmake --version           # need >= 3.24, < 4.0; if cmake >= 4, run: pip install 'cmake>=3.24,<4'
-```
 
-If cmake is >= 4.0 inside the conda env, fix it: `pip install 'cmake>=3.24,<4'` — do not ask the user.
+# Verify
+python --version          # need 3.10–3.13
+cmake --version           # need >= 3.24; cmake 4.x works in practice
+```
 
 Parallel jobs: `$(sysctl -n hw.ncpu)` on macOS, `$(nproc)` on Linux.
 
@@ -154,7 +156,8 @@ Most commonly needed flags (full list: `CMakeLists.txt`):
 |---------|-----|
 | Missing headers / `CMakeLists.txt not found` in third-party | `git submodule sync --recursive && git submodule update --init --recursive` |
 | Mysterious failures after `git pull` or branch switch | `rm -rf cmake-out/ pip-out/ && git submodule sync && git submodule update --init --recursive` |
-| CMake >= 4.0 (too new) | `pip install 'cmake>=3.24,<4'` inside the conda env |
+| `conda env list` PermissionError | Use `CONDA_NO_PLUGINS=true conda env list` or check env dir directly |
+| CMake >= 4.0 | Works in practice despite `< 4.0` in docs; only fix if build actually fails |
 | `externally-managed-environment` / PEP 668 error | You're using system Python, not conda. Activate conda env first. |
 | pip conflicts with torch versions | Fresh conda env; or `./install_executorch.sh --use-pt-pinned-commit` |
 | Missing `Python.h` (Linux) | `sudo apt install python3.X-dev` |
