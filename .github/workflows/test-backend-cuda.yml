@@ -11,6 +11,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/test-backend-cuda.yml
+      - .ci/scripts/test_backend.sh
       - .github/workflows/_test_backend.yml
       - .ci/scripts/generate_test_pass_rate_in_v3_format.py
   workflow_dispatch:
@@ -21,16 +22,25 @@ concurrency:
 
 jobs:
   test-cuda:
-    uses: ./.github/workflows/_test_backend.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [models, operators]
+
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
-      backend: cuda
-      flows: '["cuda"]'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 120
-      run-linux: true
-      runner-linux: linux.g5.4xlarge.nvidia.gpu
+      runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
       gpu-arch-version: '12.6'
+      use-custom-docker-registry: false
+      submodules: recursive
+      timeout: 120
+      upload-artifact: test-report-cuda-${{ matrix.suite }}
+      script: |
+        set -eux
+
+        source .ci/scripts/test_backend.sh "${{ matrix.suite }}" "cuda" "${RUNNER_ARTIFACT_DIR}"
 
   upload-test-results:
     needs: test-cuda

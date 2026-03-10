@@ -36,16 +36,6 @@ on:
         required: false
         type: string
         default: linux.4xlarge.memory
-      gpu-arch-type:
-        description: 'GPU architecture type (e.g. cuda)'
-        required: false
-        type: string
-        default: ''
-      gpu-arch-version:
-        description: 'GPU architecture version (e.g. 12.6)'
-        required: false
-        type: string
-        default: ''
 
 jobs:
   test-backend-linux:
@@ -61,8 +51,6 @@ jobs:
       ref: ${{ inputs.ref }}
       runner: ${{ inputs.runner-linux }}
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      gpu-arch-type: ${{ inputs.gpu-arch-type }}
-      gpu-arch-version: ${{ inputs.gpu-arch-version }}
       submodules: recursive
       timeout: ${{ inputs.timeout }}
       upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
