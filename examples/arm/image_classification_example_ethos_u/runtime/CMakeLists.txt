@@ -118,9 +118,12 @@ set(LINK_FILE_OUT
 # Shared_Sram, in the application, we set ETHOSU_ARENA to 0 so that the
 # intermediate tensors are placed in the SRAM. If you generate a pte for a
 # different memory mode, you need to change the placement in the linker script.
-# Read
-# https://docs.pytorch.org/executorch/stable/backends-arm-ethos-u.html#ethos-u-memory-modes
-# for more information.
+# For more information, read
+# Link to stable documentation
+# https://docs.pytorch.org/executorch/stable/backends/arm-ethos-u/arm-ethos-u-overview.html#ethos-u-memory-modes
+
+# For 1.0 compatibility (if required)
+# https://docs.pytorch.org/executorch/1.0/backends-arm-ethos-u.html#ethos-u-memory-modes
 set(ETHOSU_ARENA "0")
 # Generate linker script - we have a few if/else statements in
 # Corstone-320.ld/Corstone-300.ld that are compiled into a final linker script.
