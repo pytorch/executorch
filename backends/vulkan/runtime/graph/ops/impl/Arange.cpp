@@ -85,6 +85,7 @@ void add_arange_node(
 
   std::string kernel_name("arange");
   kernel_name.reserve(kShaderNameReserve);
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
@@ -95,7 +96,7 @@ void add_arange_node(
       // Inputs and Outputs
       {{out, vkapi::kWrite}},
       // Shader params buffers
-      {graph.sizes_ubo(out),
+      {graph.meta_ubo(out),
        graph.create_params_buffer(start_val),
        graph.create_params_buffer(step_val)},
       // Push Constants
