@@ -131,14 +131,17 @@ class ExecuTorchTrainingJni
         tensors.emplace_back(JEValue::JEValueToTensorImpl(jevalue));
         evalues.emplace_back(tensors.back());
       } else if (typeCode == JEValue::kTypeCodeInt) {
-        int64_t value = jevalue->getFieldValue(typeCodeField);
-        evalues.emplace_back(value);
+        static const auto toIntMethod =
+            JEValue::javaClassStatic()->getMethod<jlong()>("toInt");
+        evalues.emplace_back(static_cast<int64_t>(toIntMethod(jevalue)));
       } else if (typeCode == JEValue::kTypeCodeDouble) {
-        double value = jevalue->getFieldValue(typeCodeField);
-        evalues.emplace_back(value);
+        static const auto toDoubleMethod =
+            JEValue::javaClassStatic()->getMethod<jdouble()>("toDouble");
+        evalues.emplace_back(static_cast<double>(toDoubleMethod(jevalue)));
       } else if (typeCode == JEValue::kTypeCodeBool) {
-        bool value = jevalue->getFieldValue(typeCodeField);
-        evalues.emplace_back(value);
+        static const auto toBoolMethod =
+            JEValue::javaClassStatic()->getMethod<jboolean()>("toBool");
+        evalues.emplace_back(static_cast<bool>(toBoolMethod(jevalue)));
       }
     }
 

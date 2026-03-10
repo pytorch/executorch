@@ -373,6 +373,26 @@ def smart_mask_updater(
     return pos, k_caches, v_caches
 
 
+def evict_tokens(
+    ar_len: int,
+    atten_mask: AttentionMask,
+    pos,
+    k_caches,
+    v_caches,
+    rope_module,
+    position_shift,
+):
+    max_cache_len = k_caches[0].size(-1)
+    shifted_pos = pos + position_shift
+    if shifted_pos + ar_len > max_cache_len:
+        num_to_evict = rope_module.eviction_batch_size
+        k_caches, v_caches = rope_module(k_caches, v_caches)
+        position_shift -= num_to_evict
+        shifted_pos -= num_to_evict
+        atten_mask.smart_mask_init(shifted_pos)
+    return k_caches, v_caches, position_shift
+
+
 def _prefill_chunking(
     inputs: DecoderInputs,
     module: torch.fx.GraphModule,

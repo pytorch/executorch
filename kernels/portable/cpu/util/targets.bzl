@@ -155,7 +155,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -168,7 +168,10 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = [
+            "//executorch/kernels/portable/cpu/...",
+            "//executorch/kernels/optimized/cpu/...",
+        ],
     )
 
     runtime.cxx_library(
@@ -181,7 +184,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -195,7 +198,10 @@ def define_common_targets():
             ":broadcast_util",
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = [
+            "//executorch/kernels/portable/cpu/...",
+            "//executorch/kernels/optimized/cpu/...",
+        ],
     )
 
     runtime.cxx_library(
@@ -208,7 +214,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -221,7 +227,10 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = [
+            "//executorch/kernels/portable/cpu/...",
+            "//executorch/kernels/optimized/cpu/...",
+        ],
     )
 
     runtime.cxx_library(

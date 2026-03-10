@@ -33,6 +33,7 @@ And for building and running your application using the generic executor_runner:
 The [VGF Minimal Example](https://github.com/pytorch/executorch/blob/main/examples/arm/vgf_minimal_example.ipynb) demonstrates how to lower a module using the VGF backend.
 
 The main configuration point for the lowering is the `VgfCompileSpec` consumed by the partitioner and quantizer.
+To extract the VGF file for integration into applications without the ExecuTorch runtime, use `VgfCompileSpec.dump_intermediate_artifacts_to()`.  
 The full user-facing API is documented below.
 
 $COMPILE_SPEC

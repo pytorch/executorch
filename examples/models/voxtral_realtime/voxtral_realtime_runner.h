@@ -40,6 +40,7 @@ class VoxtralRealtimeRunner {
       const std::string& model_path,
       const std::string& tokenizer_path,
       const std::string& preprocessor_path = "",
+      const std::string& data_path = "",
       bool warmup = true);
 
   // Offline transcription: full encoder first, then step-by-step decode.
@@ -78,6 +79,11 @@ class VoxtralRealtimeRunner {
   int64_t vocab_size_ = 131072;
   int64_t dim_ = 3072;
 
+  // Model dtype detected from method metadata (input_tensor_meta).
+  // Defaults to Float; set to BFloat16 if the model expects bf16 inputs.
+  ::executorch::aten::ScalarType model_dtype_ =
+      ::executorch::aten::ScalarType::Float;
+
   // Streaming metadata (from constant_methods, if present)
   bool is_streaming_ = false;
   int64_t num_mel_bins_ = 128;
@@ -103,6 +109,10 @@ class VoxtralRealtimeRunner {
   ::executorch::extension::TensorPtr run_preprocessor(
       const float* audio,
       int64_t num_samples);
+
+  // Convert a tensor to model_dtype_ if needed (e.g., fp32 mel -> bf16).
+  ::executorch::extension::TensorPtr convert_to_model_dtype(
+      ::executorch::extension::TensorPtr tensor);
 };
 
 // Streaming session: accepts raw audio incrementally via feed_audio(),
@@ -136,9 +146,7 @@ class StreamingSession {
   std::vector<float> audio_buf_;
   int64_t samples_consumed_ = 0;
 
-  // Encoder streaming state
-  std::vector<float> conv1_state_;
-  std::vector<float> conv2_state_;
+  // Encoder streaming state (conv states are now internal buffers)
   int64_t enc_frame_pos_ = 0;
 
   // Decoder state
@@ -149,13 +157,17 @@ class StreamingSession {
   bool flushed_ = false;
 
   ::executorch::extension::llm::Sampler sampler_;
-  std::vector<float> input_embeds_buf_;
+  ::executorch::extension::TensorPtr input_embeds_;
+  std::vector<float> logits_fp32_buf_;
 
   // Process one 80ms step from the audio buffer.
   bool try_process_step();
 
   // Run one decoder step (token_embed + optional audio_embed -> logits).
-  bool decode_step(const float* audio_embeds);
+  // audio_embeds_tensor is the output from encode_audio_chunk, or nullptr
+  // for text-only decoding after audio ends.
+  bool decode_step(
+      const ::executorch::extension::TensorPtr* audio_embeds_tensor);
 };
 
 } // namespace voxtral_realtime

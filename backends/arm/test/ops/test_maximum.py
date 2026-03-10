@@ -139,7 +139,9 @@ def test_maximum_tosa_INT_a16w8(test_data: test_t):
 @common.parametrize("test_data", Maximum.test_parameters)
 @common.XfailIfNoCorstone300
 def test_maximum_u55_INT_a16w8(test_data: test_t):
-    """Test maximum with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test maximum with 16A8W quantization on U55 (16-bit activations, 8-bit
+    weights)
+    """
     pipeline = EthosU55PipelineINT[test_t](
         Maximum(),
         test_data(),
@@ -155,7 +157,9 @@ def test_maximum_u55_INT_a16w8(test_data: test_t):
 @common.parametrize("test_data", Maximum.test_parameters)
 @common.XfailIfNoCorstone320
 def test_maximum_u85_INT_a16w8(test_data: test_t):
-    """Test maximum with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test maximum with 16A8W quantization on U85 (16-bit activations, 8-bit
+    weights)
+    """
     pipeline = EthosU85PipelineINT[test_t](
         Maximum(),
         test_data(),

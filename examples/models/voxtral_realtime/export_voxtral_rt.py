@@ -12,13 +12,26 @@ Produces a single .pte with three methods:
   - token_embedding: token_ids (1, seq_len) -> embeds (1, seq_len, 3072)
 
 With --streaming, produces a streaming .pte instead:
-  - encode_audio_chunk: mel_chunk (1,128,8) + conv states + enc_pos -> audio_embeds + new states
+  - encode_audio_chunk: mel_chunk (1,128,8) + enc_pos (4,) -> audio_embeds (1,1,3072)
   - text_decoder:       same as above
   - token_embedding:    same as above
+
+Backend support:
+  - XNNPACK (default): Uses custom SDPA op (torch.ops.llama.custom_sdpa) for optimal performance
+  - Metal/AOTI: Uses MetalSDPA (_scaled_dot_product_attention_math_for_mps) for text_decoder
+                and StandardEncoderSDPA (F.scaled_dot_product_attention) for streaming encoder,
+                avoiding custom_sdpa which is incompatible with AOTI. Uses Dim.AUTO for audio
+                encoder dynamic shapes (explicit bounds cause issues with AOTI).
+  - CUDA/AOTI: Uses CudaSDPA (F.scaled_dot_product_attention with GQA expansion) for text_decoder
+               and StandardEncoderSDPA for streaming encoder. Compiles to CUDA kernels via
+               AOTInductor. Supports int4 quantization via _weight_int4pack_mm fallback kernel.
+  - Portable: Uses custom SDPA like XNNPACK
 
 Usage:
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --streaming
+    python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend metal
+    python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend cuda --qlinear 4w
 """
 
 import argparse
@@ -92,12 +105,19 @@ class TokenEmbeddingExport(nn.Module):
 
 
 def _export_decoder_and_embedding(
-    programs, model, max_seq_len, qlinear, qlinear_group_size, qembedding
+    programs,
+    model,
+    max_seq_len,
+    qlinear,
+    qlinear_group_size,
+    qlinear_packing_format,
+    qembedding,
+    device="cpu",
 ):
     """Export text_decoder and token_embedding into programs dict."""
     from executorch.extension.llm.export.quantize import quantize_model_
 
-    param_dtype = torch.float32
+    param_dtype = next(model.parameters()).dtype
 
     print("\nExporting text_decoder...")
     text_decoder = TextDecoderExport(model)
@@ -109,11 +129,14 @@ def _export_decoder_and_embedding(
             text_decoder,
             qlinear_config=qlinear,
             qlinear_group_size=qlinear_group_size,
+            qlinear_packing_format=qlinear_packing_format,
         )
 
     seq_dim = Dim("seq_len", min=1, max=max_seq_len)
-    sample_embeds = torch.randn(1, 4, model.config.dim, dtype=param_dtype)
-    sample_pos = torch.arange(4, dtype=torch.long)
+    sample_embeds = torch.randn(
+        1, 4, model.config.dim, dtype=param_dtype, device=device
+    )
+    sample_pos = torch.arange(4, dtype=torch.long, device=device)
     programs["text_decoder"] = export(
         text_decoder,
         (sample_embeds, sample_pos),
@@ -137,7 +160,7 @@ def _export_decoder_and_embedding(
         )
 
     tok_seq_dim = Dim("tok_seq_len", min=1, max=max_seq_len)
-    sample_ids = torch.tensor([[0, 1, 2, 3]], dtype=torch.long)
+    sample_ids = torch.tensor([[0, 1, 2, 3]], dtype=torch.long, device=device)
     programs["token_embedding"] = export(
         tok_emb,
         (sample_ids,),
@@ -152,15 +175,19 @@ def export_all(
     max_seq_len,
     qlinear_encoder=None,
     qlinear_encoder_group_size=32,
+    qlinear_encoder_packing_format=None,
     qlinear=None,
     qlinear_group_size=32,
+    qlinear_packing_format=None,
     qembedding=None,
+    backend="xnnpack",
 ):
     """Export all three model components with per-component quantization."""
     from executorch.extension.llm.export.quantize import quantize_model_
 
     programs = {}
-    param_dtype = torch.float32
+    param_dtype = next(model.parameters()).dtype
+    device = "cuda" if backend == "cuda" else "cpu"
 
     # 1. Audio encoder
     print("\nExporting audio_encoder...")
@@ -173,22 +200,43 @@ def export_all(
             audio_encoder,
             qlinear_config=qlinear_encoder,
             qlinear_group_size=qlinear_encoder_group_size,
+            qlinear_packing_format=qlinear_encoder_packing_format,
         )
 
-    _t_mel_base = Dim("_t_mel_base", min=1, max=3000)
-    t_mel_dim = 8 * _t_mel_base
-    sample_mel = torch.randn(1, model.config.num_mel_bins, 160, dtype=param_dtype)
+    # For Metal/CUDA/AOTI: use max size as sample and Dim.AUTO (explicit bounds cause issues)
+    # For XNNPACK: use small sample with explicit bounds
+    if backend in ("metal", "cuda"):
+        max_t_mel = 24000  # 3000 * 8
+        sample_mel = torch.randn(
+            1, model.config.num_mel_bins, max_t_mel, dtype=param_dtype, device=device
+        )
+        dynamic_shapes = {"mel": {2: Dim.AUTO}}
+    else:
+        _t_mel_base = Dim("_t_mel_base", min=1, max=3000)
+        t_mel_dim = 8 * _t_mel_base
+        sample_mel = torch.randn(
+            1, model.config.num_mel_bins, 160, dtype=param_dtype, device=device
+        )
+        dynamic_shapes = {"mel": {2: t_mel_dim}}
+
     programs["audio_encoder"] = export(
         audio_encoder,
         (sample_mel,),
-        dynamic_shapes={"mel": {2: t_mel_dim}},
+        dynamic_shapes=dynamic_shapes,
         strict=True,
     )
     print(f"  audio_encoder exported (sample input: {sample_mel.shape})")
 
     # 2-3. Text decoder + token embedding
     _export_decoder_and_embedding(
-        programs, model, max_seq_len, qlinear, qlinear_group_size, qembedding
+        programs,
+        model,
+        max_seq_len,
+        qlinear,
+        qlinear_group_size,
+        qlinear_packing_format,
+        qembedding,
+        device,
     )
 
     metadata = {
@@ -211,15 +259,19 @@ def export_streaming(
     max_enc_len=750,
     qlinear_encoder=None,
     qlinear_encoder_group_size=32,
+    qlinear_encoder_packing_format=None,
     qlinear=None,
     qlinear_group_size=32,
+    qlinear_packing_format=None,
     qembedding=None,
+    backend="xnnpack",
 ):
     """Export streaming model components with per-component quantization."""
     from executorch.extension.llm.export.quantize import quantize_model_
 
     programs = {}
-    param_dtype = torch.float32
+    param_dtype = next(model.parameters()).dtype
+    device = "cuda" if backend == "cuda" else "cpu"
 
     # 1. Streaming audio encoder
     print("\nExporting encode_audio_chunk...")
@@ -228,6 +280,7 @@ def export_streaming(
     )
 
     streaming_enc = StreamingAudioEncoderExport(model, max_enc_len=max_enc_len)
+    streaming_enc.to(device=device, dtype=param_dtype)
     streaming_enc.eval()
 
     if qlinear_encoder:
@@ -236,16 +289,17 @@ def export_streaming(
             streaming_enc,
             qlinear_config=qlinear_encoder,
             qlinear_group_size=qlinear_encoder_group_size,
+            qlinear_packing_format=qlinear_encoder_packing_format,
         )
 
-    sample_mel_chunk = torch.randn(1, model.config.num_mel_bins, 8, dtype=param_dtype)
-    sample_conv1_state = torch.zeros(1, model.config.num_mel_bins, 2, dtype=param_dtype)
-    sample_conv2_state = torch.zeros(1, model.config.enc_dim, 2, dtype=param_dtype)
-    sample_enc_pos = torch.arange(4, dtype=torch.long)
+    sample_mel_chunk = torch.randn(
+        1, model.config.num_mel_bins, 8, dtype=param_dtype, device=device
+    )
+    sample_enc_pos = torch.arange(4, dtype=torch.long, device=device)
 
     programs["encode_audio_chunk"] = export(
         streaming_enc,
-        (sample_mel_chunk, sample_conv1_state, sample_conv2_state, sample_enc_pos),
+        (sample_mel_chunk, sample_enc_pos),
         dynamic_shapes=None,
         strict=True,
     )
@@ -255,7 +309,14 @@ def export_streaming(
 
     # 2-3. Text decoder + token embedding
     _export_decoder_and_embedding(
-        programs, model, max_seq_len, qlinear, qlinear_group_size, qembedding
+        programs,
+        model,
+        max_seq_len,
+        qlinear,
+        qlinear_group_size,
+        qlinear_packing_format,
+        qembedding,
+        device,
     )
 
     # Derive STFT overlap from audio parameters.
@@ -299,6 +360,19 @@ def export_streaming(
     return programs, metadata
 
 
+# Custom decomposition for Metal backend compatibility.
+# This decomposition is necessary to avoid issues with reinterpret_tensor_wrapper
+# when linear layers have biases, which would cause ExecuTorch errors with 0 stride.
+# TODO(manuelcandales): Remove this once ExecuTorch Metal backend supports bias in linear layers.
+def _linear_bias_decomposition(input, weight, bias=None):
+    """Decompose linear with bias into matmul + add."""
+    weight_t = torch.ops.aten.t.default(weight)
+    out = torch.ops.aten.matmul.default(input, weight_t)
+    if bias is not None:
+        return torch.ops.aten.add.Tensor(out, bias)
+    return out
+
+
 def lower_to_executorch(programs, metadata, backend="xnnpack"):
     """Lower exported programs to ExecuTorch."""
     if backend == "xnnpack":
@@ -312,6 +386,48 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
             key: [XnnpackDynamicallyQuantizedPartitioner(), XnnpackPartitioner()]
             for key in programs
         }
+    elif backend == "metal":
+        from executorch.backends.apple.metal.metal_backend import MetalBackend
+        from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
+
+        print("\nLowering to ExecuTorch with Metal...")
+
+        # Run decompositions for Metal backend
+        updated_programs = {}
+        for key, ep in programs.items():
+            updated_programs[key] = ep.run_decompositions(
+                {torch.ops.aten.linear.default: _linear_bias_decomposition}
+            )
+        programs = updated_programs
+
+        partitioner = {}
+        for key in programs:
+            compile_specs = [MetalBackend.generate_method_name_compile_spec(key)]
+            partitioner[key] = [MetalPartitioner(compile_specs)]
+    elif backend in ("cuda", "cuda-windows"):
+        from executorch.backends.cuda.cuda_backend import CudaBackend
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+        from torch._inductor.decomposition import conv1d_to_conv2d
+
+        print(
+            f"\nLowering to ExecuTorch with CUDA{' (Windows)' if backend == 'cuda-windows' else ''}..."
+        )
+
+        # Run conv1d decomposition for CUDA backend
+        updated_programs = {}
+        for key, ep in programs.items():
+            updated_programs[key] = ep.run_decompositions(
+                {torch.ops.aten.conv1d.default: conv1d_to_conv2d}
+            )
+        programs = updated_programs
+
+        partitioner = {}
+        for key in programs:
+            compile_specs = [CudaBackend.generate_method_name_compile_spec(key)]
+            if backend == "cuda-windows":
+                compile_specs.append(CompileSpec("platform", b"windows"))
+            partitioner[key] = [CudaPartitioner(compile_specs)]
     else:
         print("\nLowering to ExecuTorch (portable)...")
         partitioner = []
@@ -352,7 +468,7 @@ def main():
     parser.add_argument(
         "--backend",
         default="xnnpack",
-        choices=["portable", "xnnpack"],
+        choices=["portable", "xnnpack", "metal", "cuda", "cuda-windows"],
         help="Backend for acceleration (default: xnnpack)",
     )
     parser.add_argument(
@@ -375,7 +491,7 @@ def main():
     parser.add_argument(
         "--qlinear",
         default=None,
-        choices=["4w", "8w", "8da4w", "8da8w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
         help="Quantize decoder linear layers.",
     )
     parser.add_argument(
@@ -385,9 +501,15 @@ def main():
         help="Group size for decoder linear quantization (default: 32).",
     )
     parser.add_argument(
+        "--qlinear-packing-format",
+        default=None,
+        choices=["tile_packed_to_4d"],
+        help="Packing format for decoder 4w quantization (CUDA: tile_packed_to_4d).",
+    )
+    parser.add_argument(
         "--qlinear-encoder",
         default=None,
-        choices=["4w", "8w", "8da4w", "8da8w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
         help="Quantize encoder linear layers (separate from decoder).",
     )
     parser.add_argument(
@@ -395,6 +517,12 @@ def main():
         type=int,
         default=32,
         help="Group size for encoder linear quantization (default: 32).",
+    )
+    parser.add_argument(
+        "--qlinear-encoder-packing-format",
+        default=None,
+        choices=["tile_packed_to_4d"],
+        help="Packing format for encoder 4w quantization (CUDA: tile_packed_to_4d).",
     )
     parser.add_argument(
         "--qembedding",
@@ -413,17 +541,38 @@ def main():
         default=750,
         help="Encoder sliding window size for streaming (default: 750).",
     )
+    parser.add_argument(
+        "--dtype",
+        default="fp32",
+        choices=["fp32", "bf16"],
+        help="Model dtype (default: fp32).",
+    )
     args = parser.parse_args()
+    backend_for_export = "cuda" if args.backend == "cuda-windows" else args.backend
+
+    # Validate fpa4w quantization requires Metal backend
+    if args.qlinear == "fpa4w" and backend_for_export != "metal":
+        parser.error("--qlinear=fpa4w can only be used with --backend=metal")
+    if args.qlinear_encoder == "fpa4w" and backend_for_export != "metal":
+        parser.error("--qlinear-encoder=fpa4w can only be used with --backend=metal")
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Load model
+    model_dtype = {"fp32": torch.float32, "bf16": torch.bfloat16}[args.dtype]
+
     print("Loading model...")
     model = load_model(
         args.model_path,
         max_seq_len=args.max_seq_len,
         n_delay_tokens=args.delay_tokens,
+        dtype=model_dtype,
+        backend=backend_for_export,
     )
+
+    # Move to CUDA for CUDA backend export (AOTInductor needs CUDA tensors)
+    if backend_for_export == "cuda":
+        print("Moving model to CUDA...")
+        model.cuda()
 
     # Untie output/embedding weights before quantization so each layer gets
     # its own quantization config (embedding: 8w, output linear: 8da4w).
@@ -437,9 +586,12 @@ def main():
     quant_args = {
         "qlinear_encoder": args.qlinear_encoder,
         "qlinear_encoder_group_size": args.qlinear_encoder_group_size,
+        "qlinear_encoder_packing_format": args.qlinear_encoder_packing_format,
         "qlinear": args.qlinear,
         "qlinear_group_size": args.qlinear_group_size,
+        "qlinear_packing_format": args.qlinear_packing_format,
         "qembedding": args.qembedding,
+        "backend": backend_for_export,
     }
     if args.streaming:
         programs, metadata = export_streaming(
@@ -458,6 +610,11 @@ def main():
         et.write_to_file(f)
     size_mb = os.path.getsize(pte_path) / (1024 * 1024)
     print(f"Saved {size_mb:.1f} MB")
+
+    # Write tensor data for CUDA backend (.ptd file with compiled .so and weights)
+    if et._tensor_data:
+        et.write_tensor_data_to_file(args.output_dir)
+        print(f"Saved tensor data to {args.output_dir}/")
 
     print("\nDone!")
 

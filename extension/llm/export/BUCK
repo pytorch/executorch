@@ -69,6 +69,8 @@ fbcode_target(_kind = runtime.python_binary,
         "//executorch/extension/llm/custom_ops:model_sharding_py",
         "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
         "//executorch/kernels/quantized:aot_lib",
+        "//pytorch/ao/torchao/csrc/cpu/shared_kernels/embedding_xbit:op_embedding_xbit_aten",
+        "//pytorch/ao/torchao/csrc/cpu/shared_kernels/linear_8bit_act_xbit_weight:op_linear_8bit_act_xbit_weight_aten",
     ],
     deps = [
         "fbsource//third-party/pypi/hydra-core:hydra-core",

@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -32,6 +32,7 @@ test_data_suite = {
     "select1d_0_dim_1_index": lambda: (torch.randn(10) + 10, 0, 1),
     "select1d_0_dim_0_index": lambda: (torch.randn(10) - 10, 0, 2),
     "select3d_0_dim_1_index": lambda: (torch.arange(-16, 16, 0.2), 0, 1),
+    "select5d_0_dim_1_index": lambda: (torch.rand(6, 1, 64, 4, 96), 0, 1),
 }
 
 test_data_not_delegated = {

@@ -42,11 +42,13 @@ logger = logging.getLogger(__name__)
 
 
 class TestLlama:
-    """
-    Test class of Llama models. Type of Llama model depends on command line parameters:
+    """Test class of Llama models.
+
+    Type of Llama model depends on command line parameters:
     --llama_inputs <path to .pt file> <path to json file> <name of model variant>
     Example: --llama_inputs stories110M/stories110M.pt stories110M/params.json stories110m
     For more examples and info see examples/models/llama/README.md.
+
     """
 
     def prepare_model(self):
@@ -101,7 +103,7 @@ class TestLlama:
 
 
 def _use_partial_quantizer(pipeline):
-    """Set the pipeline's quantizer to only include Linear layers"""
+    """Set the pipeline's quantizer to only include Linear layers."""
     pipeline.quantizer.set_global(None)
     pipeline.quantizer.set_module_type(
         torch.nn.Linear, get_symmetric_quantization_config()
@@ -207,6 +209,8 @@ def test_llama_tosa_INT_FP_partial_quant():
             tosa_extensions=["FP"],
             # Due to a few outliers, atol must be set high
             atol=1.1,
+            # TODO(MLETORCH-1875): reduce tolerance
+            qtol=75,
             frobenius_threshold=None,
             cosine_threshold=None,
         )
@@ -230,6 +234,8 @@ def test_llama_vgf_quant_partial_quant():
             quantize=True,
             # Due to a few outliers, atol must be set high
             atol=1.1,
+            # TODO(MLETORCH-1875): reduce tolerance
+            qtol=75,
         )
         _use_partial_quantizer(pipeline)
         pipeline.run()

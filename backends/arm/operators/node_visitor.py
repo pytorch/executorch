@@ -13,13 +13,18 @@ Use this module to construct and serialize TOSA operators from FX nodes.
 import json
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import torch
 import tosa_serializer as ts
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.debug.schema import DebugHook
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+    validate_same_dtype,
+    validate_valid_dtype,
+)
 from executorch.backends.arm.tosa.mapping import TosaArg
 from executorch.backends.arm.tosa.specification import (
     TosaSpecification,
@@ -102,6 +107,77 @@ class NodeVisitor:
             location=op_location,
         )
 
+    def validate(
+        self,
+        *,
+        target: str,
+        inputs: List[TosaArg],
+        output: TosaArg,
+        num_inputs: int | List[int],
+        input_dtypes: List[Any],
+        output_dtypes: Optional[List[Any]] = None,
+        same_dtype_with_output: bool = True,
+        dtype_check_inputs_only: bool = False,
+    ) -> None:
+        validate_num_inputs(target, inputs, num_inputs)
+        if same_dtype_with_output:
+            validate_same_dtype(target, [*inputs, output], ts)
+        else:
+            validate_same_dtype(target, inputs, ts)
+
+        dtype_check_tensors = inputs if dtype_check_inputs_only else [*inputs, output]
+        validate_valid_dtype(
+            target,
+            dtype_check_tensors,
+            input_dtypes,
+            self.tosa_spec,
+        )
+        if output_dtypes is not None:
+            validate_valid_dtype(
+                target,
+                output,
+                output_dtypes,
+                self.tosa_spec,
+            )
+
+    def serialize(
+        self,
+        node: torch.fx.Node,
+        tosa_graph: Any,
+        *,
+        tosa_op: ts.Op,
+        inputs: List[TosaArg],
+        output: TosaArg,
+        attr_method: Optional[str] = None,
+        attr_kwargs: Optional[dict[str, Any]] = None,
+        attr_builder: Optional[Callable[[ts.TosaSerializerAttribute], None]] = None,
+        extra_input_builders: Optional[
+            List[Callable[[torch.fx.Node, Any, List[TosaArg], TosaArg, Any], str]]
+        ] = None,
+    ) -> None:
+        attr = ts.TosaSerializerAttribute()
+        if attr_method is not None:
+            getattr(attr, attr_method)(**(attr_kwargs or {}))
+        elif attr_builder is not None:
+            attr_builder(attr)
+        else:
+            raise NotImplementedError(
+                f"{self.__class__.__name__} must define attr_method or attr_builder."
+            )
+        input_names = [arg.name for arg in inputs]
+        for builder in extra_input_builders or []:
+            input_names.append(
+                builder(node, tosa_graph, inputs, output, self.tosa_spec)
+            )
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            tosa_op,
+            input_names,
+            [output.name],
+            attr,
+        )
+
     def define_node(
         self,
         node: torch.fx.Node,
@@ -151,6 +227,9 @@ def register_node_visitor(visitor):
 
 def get_node_visitors(*args) -> Dict[str, NodeVisitor]:
     """Return a mapping from target names to visitor instances for a spec."""
+    # Ensure all operator modules are imported so visitors are registered.
+    import executorch.backends.arm.operators  # noqa: F401
+
     node_visitors: Dict[str, NodeVisitor] = {}
     tosa_spec: TosaSpecification | None = None
     for arg in args:
