@@ -12,16 +12,13 @@ from multiprocessing.connection import Client
 import numpy as np
 import torch
 
-from executorch.backends.qualcomm.quantizer.annotators import (
-    QuantizationConfig,
-    QuantizationSpec,
-)
 from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
     PerChannelParamObserver,
 )
 from executorch.backends.qualcomm.quantizer.qconfig import (
     _derived_bias_quant_spec,
     MovingAverageMinMaxObserver,
+    QuantizationConfig,
 )
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
@@ -40,6 +37,7 @@ from executorch.examples.qualcomm.utils import (
     SimpleADB,
     topk_accuracy,
 )
+from torchao.quantization.pt2e.quantizer import QuantizationSpec
 
 
 def get_instance(repo_path: str, checkpoint_path: str):
