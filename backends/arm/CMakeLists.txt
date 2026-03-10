@@ -29,7 +29,7 @@ set(ETHOSU_LINUX_DRIVER_GIT_REPO
     CACHE STRING "Git repository that hosts the Ethos-U Linux driver stack"
 )
 set(ETHOSU_LINUX_DRIVER_GIT_TAG
-    "25.11"
+    "26.02"
     CACHE STRING
           "Git tag/branch/commit used to fetch the Ethos-U Linux driver stack"
 )
