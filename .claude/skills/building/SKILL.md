@@ -132,7 +132,11 @@ Run `cmake --list-presets` to see all available presets.
 Link in Xcode with `-all_load` linker flag.
 
 **Android:**
+
+Requires `ANDROID_NDK` on PATH (typically set by Android Studio or standalone NDK install).
 ```bash
+# Verify NDK is available
+echo $ANDROID_NDK           # must point to NDK root, e.g. ~/Library/Android/sdk/ndk/<version>
 export ANDROID_ABIS=arm64-v8a BUILD_AAR_DIR=aar-out
 mkdir -p $BUILD_AAR_DIR && sh scripts/build_android_library.sh
 ```
@@ -155,7 +159,7 @@ Most commonly needed flags (full list: `CMakeLists.txt`):
 | `EXECUTORCH_BUILD_TESTS` | Unit tests (`ctest --test-dir cmake-out --output-on-failure`) |
 | `EXECUTORCH_BUILD_DEVTOOLS` | DevTools (Inspector, ETDump) |
 | `EXECUTORCH_OPTIMIZE_SIZE` | Size-optimized build (`-Os`, no exceptions/RTTI) |
-| `CMAKE_BUILD_TYPE` | `Release` (default for presets) or `Debug` (5-10x slower) |
+| `CMAKE_BUILD_TYPE` | `Release` or `Debug` (5-10x slower). Some presets (e.g. `llm-release`) set this; others require it explicitly. |
 
 ## Troubleshooting
 
@@ -175,15 +179,25 @@ Most commonly needed flags (full list: `CMakeLists.txt`):
 
 ## Build output
 
-Installed artifact locations after `cmake --install` (or `./install_executorch.sh`) with `CMAKE_INSTALL_PREFIX=cmake-out`:
+**From `./install_executorch.sh` (Python package):**
+
+| Artifact | Location |
+|----------|----------|
+| Python package | `site-packages/executorch` |
+
+**From CMake builds** (`cmake --install` with `CMAKE_INSTALL_PREFIX=cmake-out`):
 
 | Artifact | Location |
 |----------|----------|
 | Core runtime | `cmake-out/lib/libexecutorch.a` |
-| executor_runner (built only; not installed by default) | **build tree**: `<build-dir>/executor_runner` (Ninja/Make) or `<build-dir>/<config>/executor_runner` (e.g., `cmake-out/Release/executor_runner` with Xcode/Visual Studio) |
-| Model runners | `cmake-out/examples/models/<model>/<runner>` |
 | XNNPACK backend | `cmake-out/lib/libxnnpack_backend.a` |
-| Python package | `site-packages/executorch` |
+| executor_runner | `cmake-out/executor_runner` (Ninja/Make) or `cmake-out/Release/executor_runner` (Xcode) |
+| Model runners | `cmake-out/examples/models/<model>/<runner>` |
+
+**From cross-compilation:**
+
+| Artifact | Location |
+|----------|----------|
 | iOS frameworks | `cmake-out/*.xcframework` |
 | Android AAR | `aar-out/` |
 
