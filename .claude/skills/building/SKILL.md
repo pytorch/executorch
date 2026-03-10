@@ -165,12 +165,12 @@ Most commonly needed flags (full list: `CMakeLists.txt`):
 
 ## Build output
 
-Installed artifact locations under `CMAKE_INSTALL_PREFIX=cmake-out`:
+Installed artifact locations after `cmake --install` (or `./install_executorch.sh`) with `CMAKE_INSTALL_PREFIX=cmake-out`:
 
 | Artifact | Location |
 |----------|----------|
 | Core runtime | `cmake-out/lib/libexecutorch.a` |
-| executor_runner | `cmake-out/executor_runner` |
+| executor_runner (built only; not installed by default) | **build tree**: `<build-dir>/executor_runner` (Ninja/Make) or `<build-dir>/<config>/executor_runner` (e.g., `cmake-out/Release/executor_runner` with Xcode/Visual Studio) |
 | Model runners | `cmake-out/examples/models/<model>/<runner>` |
 | XNNPACK backend | `cmake-out/lib/libxnnpack_backend.a` |
 | Python package | `site-packages/executorch` |
