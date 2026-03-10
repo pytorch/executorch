@@ -5,23 +5,44 @@ description: Build ExecuTorch from source — Python package, C++ runtime, runne
 
 # Building ExecuTorch
 
+## Prerequisites (macOS)
+
+A C++ compiler is required. On macOS, ensure Xcode Command Line Tools are installed:
+```bash
+xcode-select -p || xcode-select --install
+```
+
 ## Step 1: Ensure Python environment (detect and fix automatically)
 
+**Path A — conda (preferred):**
 ```bash
+# Initialize conda for non-interactive shells (required in Claude Code / CI)
+eval "$(conda shell.bash hook 2>/dev/null)"
+
 # Check if executorch conda env exists; create if not
-# Note: `conda env list` may fail with PermissionError on some setups.
-# Fallback: check if the env directory exists on disk.
 conda env list 2>/dev/null | grep executorch || \
-  ls "$CONDA_PREFIX/../envs/" 2>/dev/null | grep executorch || \
+  ls "$(conda info --base 2>/dev/null)/envs/" 2>/dev/null | grep executorch || \
   conda create -yn executorch python=3.12
 
 # Activate
 conda activate executorch
-
-# Verify
-python --version          # need 3.10–3.13
-cmake --version           # need >= 3.24; cmake 4.x works in practice
 ```
+
+**Path B — no conda (fall back to venv):**
+```bash
+# Find a compatible Python (3.10–3.13). On macOS with only Homebrew Python 3.14+,
+# install a compatible version first: brew install python@3.12
+python3.12 -m venv .executorch-venv   # or python3.11, python3.10, python3.13
+source .executorch-venv/bin/activate
+pip install --upgrade pip
+```
+
+**Then verify (either path):**
+
+Run `python --version` and `cmake --version`. Fix automatically:
+- **Python not 3.10–3.13**: recreate the env with a correct Python version.
+- **cmake missing or < 3.24**: run `pip install 'cmake>=3.24'` inside the env.
+- **cmake >= 4.0**: works in practice, no action needed.
 
 Parallel jobs: `$(sysctl -n hw.ncpu)` on macOS, `$(nproc)` on Linux.
 
