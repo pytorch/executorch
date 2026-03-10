@@ -25,9 +25,16 @@ cmake --version           # need >= 3.24; cmake 4.x works in practice
 
 Parallel jobs: `$(sysctl -n hw.ncpu)` on macOS, `$(nproc)` on Linux.
 
-## Step 2: Build (route by what the user needs)
+## Step 2: Build
 
-### Python package (default — use this unless user asks for something specific)
+Route based on what the user asks for:
+- User mentions **Android** → skip to [Cross-compilation: Android](#cross-compilation)
+- User mentions **iOS** or **frameworks** → skip to [Cross-compilation: iOS](#cross-compilation)
+- User mentions a **model name** (llama, whisper, etc.) → skip to [LLM / ASR model runner](#llm--asr-model-runner-simplest-path-for-running-models)
+- User mentions **C++ runtime** or **cmake** → skip to [C++ runtime](#c-runtime-standalone)
+- Otherwise → default to **Python package** below
+
+### Python package (default)
 ```bash
 conda activate executorch
 ./install_executorch.sh --editable    # editable install from source
