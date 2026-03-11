@@ -108,6 +108,8 @@ std::vector<TestCase> generate_q_dq_8bit_easy_cases() {
       {1, 16, 16, 16}, // 4D: [N, C, H, W]
       {1, 144}, // 2D: exercises block config with ndim < 4
       {1, 90}, // 2D: matches skin_seg model's keypoint/bbox tensor sizes
+      {2, 1, 3, 16, 16}, // 5D: exercises high-dim batch support
+      {2, 1, 1, 4, 8, 16}, // 6D: exercises high-dim batch support
   };
 
   // FP memory layouts to test
@@ -199,6 +201,14 @@ std::vector<TestCase> generate_q_dq_8bit_test_cases() {
       {1, 64, 128, 128},
       {1, 32, 64, 64},
       {1, 128, 56, 56},
+
+      // 5D tensors (high-dim batch support)
+      {2, 1, 3, 16, 16},
+      {1, 2, 8, 8, 8},
+
+      // 6D tensors (high-dim batch support)
+      {2, 1, 1, 4, 8, 16},
+      {1, 1, 2, 3, 8, 8},
   };
 
   // FP memory layouts to test
@@ -234,9 +244,15 @@ std::vector<TestCase> generate_q_dq_8bit_test_cases() {
       }
     }
 
+    // Skip texture3d for high-dim tensors (textures are limited to 4D)
+    const bool is_highdim = shape.size() > 4;
+    const auto& effective_storage_types = is_highdim
+        ? std::vector<utils::StorageType>{utils::kBuffer}
+        : storage_types;
+
     for (const auto& fp_layout : fp_layouts) {
       for (const auto& quant_layout : quant_layouts) {
-        for (const auto& storage_type : storage_types) {
+        for (const auto& storage_type : effective_storage_types) {
           QDQ8BitConfig config;
           config.shape = shape;
           config.test_case_name = prefix;
@@ -244,7 +260,8 @@ std::vector<TestCase> generate_q_dq_8bit_test_cases() {
           test_cases.push_back(create_test_case_from_config(
               config, storage_type, vkapi::kFloat, fp_layout, quant_layout));
           // For 4W4C layout, also test with legacy implementation
-          if (fp_layout == utils::kChannelsPacked &&
+          // (legacy path doesn't support high-dim tensors)
+          if (!is_highdim && fp_layout == utils::kChannelsPacked &&
               quant_layout == utils::kPackedInt8_4W4C) {
             test_cases.push_back(create_test_case_from_config(
                 config,
