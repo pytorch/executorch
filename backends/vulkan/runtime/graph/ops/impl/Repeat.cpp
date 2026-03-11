@@ -9,9 +9,6 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
@@ -53,33 +50,17 @@ void add_repeat_node(
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  if (graph.is_buffer_storage(out)) {
-    graph.execute_nodes().emplace_back(new DynamicDispatchNode(
-        graph,
-        VK_KERNEL_FROM_STR(kernel_name),
-        default_pick_global_wg_size,
-        default_pick_local_wg_size,
-        {{out, vkapi::kWrite}, {in, vkapi::kRead}},
-        {graph.meta_ubo(out), graph.meta_ubo(in)},
-        {},
-        {},
-        {repeats_ref},
-        resize_repeat_node));
-  } else {
-    graph.execute_nodes().emplace_back(new DynamicDispatchNode(
-        graph,
-        VK_KERNEL_FROM_STR(kernel_name),
-        default_pick_global_wg_size,
-        default_pick_local_wg_size,
-        {{out, vkapi::kWrite}, {in, vkapi::kRead}},
-        {},
-        {graph.logical_limits_pc_of(out),
-         graph.sizes_pc_of(in),
-         graph.sizes_pc_of(out)},
-        {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
-        {repeats_ref},
-        resize_repeat_node));
-  }
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
+      {{out, vkapi::kWrite}, {in, vkapi::kRead}},
+      {graph.meta_ubo(out), graph.meta_ubo(in)},
+      {},
+      {},
+      {repeats_ref},
+      resize_repeat_node));
 }
 
 void repeat(ComputeGraph& graph, const std::vector<ValueRef>& args) {

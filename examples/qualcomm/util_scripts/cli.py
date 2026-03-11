@@ -38,7 +38,11 @@ from executorch.backends.qualcomm.utils.utils import (
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.examples.qualcomm.qaihub_scripts.utils.utils import preprocess_binary
-from executorch.examples.qualcomm.utils import make_quantizer, SimpleADB
+from executorch.examples.qualcomm.utils import (
+    get_backend_type,
+    make_quantizer,
+    SimpleADB,
+)
 from executorch.exir import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torchao.quantization import pt2e
@@ -141,6 +145,8 @@ def quantize(args):
             per_channel_conv=args.per_channel,
             per_channel_linear=args.per_row,
             act_observer=act_observer,
+            backend=get_backend_type(args.backend),
+            soc_model=args.model,
         )
     except Exception:
         logger.error(
@@ -429,6 +435,20 @@ def main():
             "Activation observer for PTQ "
             "(MinMaxObserver / MovingAverageMinMaxObserver / HistogramObserver)."
         ),
+    )
+    sub_quantize.add_argument(
+        "-m",
+        "--model",
+        type=str,
+        required=True,
+        help="SoC model. e.g. SM8750",
+    )
+    sub_quantize.add_argument(
+        "--backend",
+        type=str,
+        choices=["htp", "gpu"],
+        default="htp",
+        help="Backend to be deployed ('htp'/'gpu' are currently supported).",
     )
     sub_quantize.set_defaults(callback=quantize)
 
