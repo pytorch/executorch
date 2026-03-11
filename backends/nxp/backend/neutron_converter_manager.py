@@ -5,6 +5,7 @@
 
 import logging
 import multiprocessing
+import os
 
 try:
     from eiq_neutron_sdk import neutron_converter, neutron_library_utils
@@ -31,8 +32,19 @@ class NeutronConverterManager:
     contains NeutronGraph nodes.
     """
 
-    def __init__(self):
-        pass
+    def __init__(
+        self,
+        dump_kernel_selection_code: bool = False,
+    ):
+        self.dump_kernel_selection_code = dump_kernel_selection_code
+
+    @staticmethod
+    def _rename_partition_kernel_selection_file(delegation_tag):
+        try:
+            base_name = "_kernel_selection.c"
+            os.rename(base_name, f"_kernel_selection_{delegation_tag}.c")
+        except OSError:
+            logging.error("Failed to rename partition kernel selection file.")
 
     def get_converter(self):
         return neutron_converter
@@ -50,13 +62,18 @@ class NeutronConverterManager:
             )
 
     def convert(
-        self, tflite_model: bytes, target: str, fetch_constants_to_sram: bool = False
+        self,
+        tflite_model: bytes,
+        target: str,
+        delegation_tag: str,
+        fetch_constants_to_sram: bool = False,
     ) -> bytes:
         """
         Call Neutron Converter.
 
         :param tflite_model: A generic TFLite model to be converted.
         :param target: The target platform.
+        :param delegation_tag: The delegation tag of model partition.
         :param fetch_constants_to_sram: Add microcode that fetches weights from external memory.
         This allows running models which do not fit into SRAM. Applies to Neutron-C only (microcontrollers).
 
@@ -72,6 +89,7 @@ class NeutronConverterManager:
             "HoistSliceAboveTranspose,MergeTranspose"
         )
         cctx.compilationOpts.fetchConstantsToSRAM = fetch_constants_to_sram
+        cctx.compilationOpts.dumpKernelSelectionCode = self.dump_kernel_selection_code
 
         # Try to use multiprocessing for isolation, but fall back to direct execution
         # if the environment doesn't support it (e.g., in sandcastle/build environments)
@@ -101,5 +119,7 @@ class NeutronConverterManager:
                 f"Multiprocessing not available ({e}), running neutron converter directly"
             )
             model_converted = neutron_converter.convertModel(list(tflite_model), cctx)
+        if self.dump_kernel_selection_code:
+            self._rename_partition_kernel_selection_file(delegation_tag)
 
         return bytes(model_converted)

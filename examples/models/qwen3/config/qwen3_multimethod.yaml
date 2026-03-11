@@ -30,3 +30,4 @@ multimethod_lora:
       adapter_config: ${oc.env:LORA_ADAPTER_CONFIG}
     # Base method - no LoRA
     base_forward: null
+  share_mutable_buffers: True

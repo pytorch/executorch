@@ -44,6 +44,9 @@ class ModelType(str, Enum):
     qwen3_0_6b = "qwen3_0_6b"
     qwen3_1_7b = "qwen3_1_7b"
     qwen3_4b = "qwen3_4b"
+    qwen3_5_0_8b = "qwen3_5_0_8b"
+    qwen3_5_2b = "qwen3_5_2b"
+    qwen3_5_4b = "qwen3_5_4b"
     phi_4_mini = "phi_4_mini"
     smollm2 = "smollm2"
     lfm2_350m = "lfm2_350m"
@@ -304,6 +307,9 @@ class MultimethodLoraConfig:
     Attributes:
         methods: Dict mapping method names to optional LoRA configs.
             Empty dict disables multimethod_lora export.
+        share_mutable_buffers: Whether to share mutable buffers across methods.
+            If True, sets all mutable buffers to mem_id=2. Mutable buffers with
+            the same FQN (fully qualified name) will have the same offset.
 
     Example:
         MultimethodLoraConfig(methods={
@@ -313,6 +319,7 @@ class MultimethodLoraConfig:
     """
 
     methods: Dict[str, Optional[LoraConfig]] = field(default_factory=dict)
+    share_mutable_buffers: bool = False
 
     @property
     def enabled(self) -> bool:
@@ -349,6 +356,7 @@ class Pt2eQuantize(str, Enum):
     vulkan_8w = "vulkan_8w"
     tosa_8a8w = "tosa_8a8w"
     ethosu_8a8w = "ethosu_8a8w"
+    vgf_8a8w = "vgf_8a8w"
 
 
 class SpinQuant(str, Enum):
@@ -559,6 +567,17 @@ class EthosUConfig:
 
 
 @dataclass
+class VgfConfig:
+    """
+    Configures the VGF backend.
+    """
+
+    enabled: bool = False
+    compile_spec: Optional[str] = "TOSA-1.0+INT"
+    compiler_flags: List[str] = field(default_factory=list)
+
+
+@dataclass
 class BackendConfig:
     """
     Configures which backends should be used and how the backends
@@ -574,6 +593,7 @@ class BackendConfig:
     torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
     tosa: TosaConfig = field(default_factory=TosaConfig)
     ethosu: EthosUConfig = field(default_factory=EthosUConfig)
+    vgf: VgfConfig = field(default_factory=VgfConfig)
 
 
 ################################################################################

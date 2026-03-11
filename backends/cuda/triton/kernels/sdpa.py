@@ -181,7 +181,7 @@ def _sdpa_fwd_kernel_non_pow2(
                 mask_b_base + offs_m[:, None] * stride_mlq + kn[None, :] * stride_mlk
             )
             tile_valid = q_row_mask[:, None] & kv_col_mask[None, :]
-            keep = tl.load(mask_ptrs, mask=tile_valid, other=True)
+            keep = tl.load(mask_ptrs, mask=tile_valid, other=False)
             qk = tl.where(keep, qk, tl.full(qk.shape, NEG_INF, dtype=tl.float32))
 
         qk = tl.where(
@@ -189,9 +189,15 @@ def _sdpa_fwd_kernel_non_pow2(
         )
 
         m_ij = tl.maximum(m_i, tl.max(qk, 1).to(tl.float32))
-        p = tl.math.exp2(qk - m_ij[:, None]).to(tl.float32)
+        # Guard against all-masked blocks: when m_ij == -inf, qk - m_ij = NaN.
+        # Use 0.0 for p in that case (no contribution to output).
+        safe_diff = tl.where(
+            m_ij[:, None] > -float("inf"), qk - m_ij[:, None], -float("inf")
+        )
+        p = tl.math.exp2(safe_diff).to(tl.float32)
         l_ij = tl.sum(p, 1).to(tl.float32)
-        alpha = tl.math.exp2(m_i - m_ij).to(tl.float32)
+        safe_alpha_diff = tl.where(m_ij > -float("inf"), m_i - m_ij, 0.0)
+        alpha = tl.math.exp2(safe_alpha_diff).to(tl.float32)
 
         acc = (acc * alpha[:, None]).to(tl.float32)
 
@@ -308,9 +314,15 @@ def _sdpa_fwd_kernel_body(
             )
 
         m_ij = tl.maximum(m_i, tl.max(qk, axis=1).to(tl.float32))
-        p_f32 = tl.exp(qk - m_ij[:, None]).to(tl.float32)
+        # Guard against all-masked blocks: when m_ij == -inf, qk - m_ij = NaN.
+        # Use 0.0 for p in that case (no contribution to output).
+        safe_diff = tl.where(
+            m_ij[:, None] > -float("inf"), qk - m_ij[:, None], -float("inf")
+        )
+        p_f32 = tl.exp(safe_diff).to(tl.float32)
         l_ij = tl.sum(p_f32, axis=1).to(tl.float32)
-        alpha = tl.exp(m_i - m_ij).to(tl.float32)
+        safe_alpha_diff = tl.where(m_ij > -float("inf"), m_i - m_ij, 0.0)
+        alpha = tl.exp(safe_alpha_diff).to(tl.float32)
 
         v_ptrs = V_ptr + (
             b * stride_vb

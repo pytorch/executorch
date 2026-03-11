@@ -215,7 +215,9 @@ VkDevice create_logical_device(
   return handle;
 }
 
-bool test_linear_tiling_3d_image_support(VkDevice device) {
+bool test_linear_tiling_3d_image_support(
+    VkDevice device,
+    VkPhysicalDevice physical_device) {
   // Test creating a 3D image with linear tiling to see if it is supported.
   // According to the Vulkan spec, linear tiling may not be supported for 3D
   // images.
@@ -242,9 +244,15 @@ bool test_linear_tiling_3d_image_support(VkDevice device) {
 
   if (res == VK_SUCCESS) {
     vkDestroyImage(device, image, nullptr);
+
+    VkFormatProperties props;
+    vkGetPhysicalDeviceFormatProperties(
+        physical_device, VK_FORMAT_R32G32B32A32_SFLOAT, &props);
+
+    return props.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
   }
 
-  return res == VK_SUCCESS;
+  return false;
 }
 
 } // namespace
@@ -275,8 +283,9 @@ Adapter::Adapter(
       compute_pipeline_cache_(device_.handle, cache_data_path),
       sampler_cache_(device_.handle),
       vma_(instance_, physical_device_.handle, device_.handle),
-      linear_tiling_3d_enabled_{
-          test_linear_tiling_3d_image_support(device_.handle)},
+      linear_tiling_3d_enabled_{test_linear_tiling_3d_image_support(
+          device_.handle,
+          physical_device_.handle)},
       owns_device_{true} {}
 
 Adapter::Adapter(
@@ -298,8 +307,9 @@ Adapter::Adapter(
       compute_pipeline_cache_(device_.handle, cache_data_path),
       sampler_cache_(device_.handle),
       vma_(instance_, physical_device_.handle, device_.handle),
-      linear_tiling_3d_enabled_{
-          test_linear_tiling_3d_image_support(device_.handle)},
+      linear_tiling_3d_enabled_{test_linear_tiling_3d_image_support(
+          device_.handle,
+          physical_device_.handle)},
       owns_device_{false} {
   std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
   std::vector<std::pair<uint32_t, uint32_t>> queues_to_get;
@@ -373,6 +383,10 @@ void Adapter::submit_cmd(
       queue_mutexes_[device_queue.queue_index % NUM_QUEUE_MUTEXES]);
 
   VK_CHECK(vkQueueSubmit(device_queue.handle, 1u, &submit_info, fence));
+}
+
+void Adapter::override_device_name(const std::string& new_name) {
+  physical_device_.override_device_name(new_name);
 }
 
 std::string Adapter::stringize() const {

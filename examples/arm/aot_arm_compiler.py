@@ -21,7 +21,7 @@ _EXECUTORCH_DIR_STR = str(_EXECUTORCH_DIR)
 if _EXECUTORCH_DIR_STR not in sys.path:
     sys.path.insert(0, _EXECUTORCH_DIR_STR)
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import torch
 from examples.devtools.scripts.export_bundled_program import save_bundled_program
@@ -36,19 +36,12 @@ from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.util._factory import create_partitioner, create_quantizer
 
 from executorch.backends.arm.vgf import VgfCompileSpec
-
-# To use Cortex-M backend
-from executorch.backends.cortex_m.passes.convert_to_cortex_m_pass import (
-    ConvertToCortexMPass,
-)
-
-from executorch.backends.cortex_m.passes.quantized_op_fusion_pass import (
-    QuantizedOpFusionPass,
-)
+from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 
 from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
     ReplaceQuantNodesPass,
 )
+from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 
 from executorch.devtools import generate_etrecord
 from executorch.devtools.backend_debug import get_delegation_info
@@ -64,35 +57,12 @@ from executorch.extension.export_util.utils import save_pte_program
 from tabulate import tabulate
 from torch.export import ExportedProgram
 from torch.fx import GraphModule
-from torch.utils.data import DataLoader
 
 # Quantize model if required using the standard export quantizaion flow.
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
-
-
-_arm_model_evaluator = None
-
-
-def _load_arm_model_evaluator() -> Any:
-    """Lazily import arm_model_evaluator to avoid heavy deps when not evaluating."""
-    global _arm_model_evaluator
-    if _arm_model_evaluator is not None:
-        return _arm_model_evaluator
-
-    try:
-        from executorch.backends.arm.util import arm_model_evaluator as arm_eval
-    except Exception as exc:
-        raise RuntimeError(
-            "Unable to run evaluation because arm_model_evaluator could not be imported. "
-            "You probably need to install torchvision or rerun without --evaluate. "
-            f"Original import error: {exc}"
-        )
-
-    _arm_model_evaluator = arm_eval
-    return arm_eval
 
 
 def _load_example_inputs(model_input: str | None) -> Any:  # nosec B614
@@ -145,7 +115,7 @@ def _load_registered_model(
         return None
 
     logging.warning(
-        "Using a model from examples/models not all of these are currently supported"
+        "Using a model from examples/models. Not all of these are currently supported."
     )
     logging.info(
         f"Load {model_name} -> {MODEL_NAME_TO_MODEL[model_name]} from examples/models"
@@ -207,6 +177,14 @@ def _load_serialized_model(
     return model, example_inputs
 
 
+def _apply_replace_quant_nodes(edge, args):
+    """Apply the replace_quant_nodes pass to the edge graph module."""
+
+    if args.target != "vgf" and not args.direct_drive:
+        edge = edge.transform([ReplaceQuantNodesPass()])
+    return edge
+
+
 def get_model_and_inputs_from_name(
     model_name: str, model_input: str | None
 ) -> Tuple[torch.nn.Module, Any]:
@@ -251,10 +229,8 @@ def get_model_and_inputs_from_name(
 def quantize(
     model: GraphModule,
     model_name: str,
-    compile_specs: EthosUCompileSpec | VgfCompileSpec | TosaCompileSpec,
+    compile_specs: ArmCompileSpec,
     example_inputs: Tuple[torch.Tensor],
-    evaluator_name: str | None,
-    evaluator_config: Dict[str, Any] | None,
     is_int16x8: bool = False,
 ) -> GraphModule:
     """This is the official recommended flow for quantization in pytorch 2.0
@@ -281,17 +257,9 @@ def quantize(
     quantizer.set_global(operator_config)
     m = prepare_pt2e(model, quantizer)
 
-    dataset = get_calibration_data(
-        model_name, example_inputs, evaluator_name, evaluator_config
-    )
-
-    # The dataset could be a tuple of tensors or a DataLoader
-    # These two cases need to be accounted for
-    if isinstance(dataset, DataLoader):
-        for sample, _ in dataset:
-            m(sample)
-    else:
-        m(*dataset)
+    # Calibrate model using example inputs
+    # TODO: Add support for using a calibration dataset
+    m(*example_inputs)
 
     m = convert_pt2e(m)
     logging.debug(f"Quantized model: {m}")
@@ -368,20 +336,6 @@ MODELS = {
     "qlinear": QuantLinearTest,
 }
 
-CALIBRATION_DATA = {
-    "qadd": (torch.randn(32, 2, 1),),
-    "qadd2": (
-        torch.randn(32, 2, 1),
-        torch.randn(32, 2, 1),
-    ),
-    "qops": (
-        torch.randn(32, 2, 1),
-        torch.randn(32, 2, 1),
-        torch.randn(32, 2, 1) * -0.000001,
-        torch.randn(32, 2, 1) * 1000,
-    ),
-}
-
 TARGETS = [
     "ethos-u55-32",
     "ethos-u55-64",
@@ -396,75 +350,43 @@ TARGETS = [
     "TOSA-1.0+INT",
     "TOSA-1.0+FP",
     "TOSA-1.0+INT+int16",
+    "cortex-m55+int8",
 ]
 
 
-def get_calibration_data(
-    model_name: str,
-    example_inputs: Tuple[torch.Tensor],
-    evaluator_name: str | None,
-    evaluator_config: str | None,
-):
-    # Firstly, if the model is being evaluated, take the evaluators calibration function if it has one
-    if evaluator_name is not None:
-        arm_eval = _load_arm_model_evaluator()
-        evaluator_data = arm_eval.evaluator_calibration_data(
-            evaluator_name, evaluator_config
-        )
-        if evaluator_data is not None:
-            return evaluator_data
-
-    # If the model is in the CALIBRATION_DATA dictionary, get the data from there
-    # This is used for the simple model examples provided
-    if model_name in CALIBRATION_DATA:
-        return CALIBRATION_DATA[model_name]
-
-    # As a last resort, fallback to the scripts previous behavior and return the example inputs
-    return example_inputs
-
-
-def get_compile_spec(
-    target: str,
-    intermediates: Optional[str] = None,
-    system_config: Optional[str] = None,
-    memory_mode: Optional[str] = None,
-    quantize: bool = False,
-    config: Optional[str] = None,
-    debug_mode: Optional[str] = None,
-    direct_drive: bool = False,
-) -> TosaCompileSpec | EthosUCompileSpec | VgfCompileSpec:
+def get_compile_spec(args) -> ArmCompileSpec:
     compile_spec = None
-    if target.startswith("TOSA"):
-        tosa_spec = TosaSpecification.create_from_string(target)
+    if args.target.startswith("TOSA"):
+        tosa_spec = TosaSpecification.create_from_string(args.target)
         compile_spec = TosaCompileSpec(tosa_spec)
-    elif "ethos-u" in target:
+    elif "ethos-u" in args.target:
         extra_flags = ["--verbose-operators", "--verbose-cycle-estimate"]
-        if debug_mode is not None:
+        if args.enable_debug_mode is not None:
             extra_flags.append("--enable-debug-db")
-        if direct_drive:
+        if args.direct_drive:
             extra_flags.append("--separate-io-regions")
             extra_flags.append("--cop-format=COP2")
         compile_spec = EthosUCompileSpec(
-            target,
-            system_config=system_config,
-            memory_mode=memory_mode,
+            args.target,
+            system_config=args.system_config,
+            memory_mode=args.memory_mode,
             extra_flags=extra_flags,
-            config_ini=config,
+            config_ini=args.config,
         )
-    elif "vgf" in target:
-        if quantize:
+    elif "vgf" in args.target:
+        if args.quantize:
             tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
         else:
             tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+FP")
         compile_spec = VgfCompileSpec(tosa_spec)
     else:
-        raise RuntimeError(f"Unkown target {target}")
+        raise RuntimeError(f"Unkown target {args.target}")
 
-    if intermediates is not None:
-        compile_spec.dump_intermediate_artifacts_to(intermediates)
+    if args.intermediates is not None:
+        compile_spec.dump_intermediate_artifacts_to(args.intermediates)
 
-    if debug_mode is not None:
-        mode = ArmCompileSpec.DebugMode[debug_mode.upper()]
+    if args.enable_debug_mode is not None:
+        mode = ArmCompileSpec.DebugMode[args.enable_debug_mode.upper()]
         compile_spec.dump_debug_info(mode)
 
     return compile_spec
@@ -528,8 +450,10 @@ def get_args():
         required=False,
         default="ethos-u55-128",
         choices=TARGETS,
-        help=f"For ArmBackend delegated models, pick the target, and therefore the instruction set generated. valid targets are {TARGETS}",
+        help=f"Target backend. For delegated models: Ethos-U/VGF/TOSA variants. For non-delegated: cortex-m55+int8 (CMSIS-NN portable kernels). Valid targets: {TARGETS}",
     )
+    # TODO: Remove --evaluate and --evaluate_config completely after a suitable time.
+    # They are deprecated and no longer functional in this script.
     parser.add_argument(
         "-e",
         "--evaluate",
@@ -537,14 +461,13 @@ def get_args():
         nargs="?",
         const="generic",
         choices=["generic", "mv2", "deit_tiny", "resnet18"],
-        help="Flag for running evaluation of the model.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "-c",
         "--evaluate_config",
         required=False,
-        default=None,
-        help="Provide path to evaluator config, if it is required.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "-q",
@@ -569,7 +492,7 @@ def get_args():
         "--intermediates",
         action="store",
         required=False,
-        help="Store intermediate output (like TOSA artefacts) somewhere.",
+        help="Store intermediate output (like TOSA artifacts) somewhere.",
     )
     parser.add_argument(
         "-o",
@@ -606,7 +529,7 @@ def get_args():
     parser.add_argument(
         "--enable_qdq_fusion_pass",
         action="store_true",
-        help="Enable the Quantized qdq fusion Op passes",
+        help="[DEPRECATED] This flag is no longer used and will be removed in a future release.",
     )
     parser.add_argument(
         "--enable_debug_mode",
@@ -623,13 +546,6 @@ def get_args():
     )
     args = parser.parse_args()
 
-    if args.evaluate and (
-        (not args.quantize) or args.intermediates is None or (not args.delegate)
-    ):
-        raise RuntimeError(
-            "--evaluate requires --quantize, --intermediates and --delegate to be enabled."
-        )
-
     LOGGING_FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
     logging_level = logging.DEBUG if args.debug else logging.WARNING
     logging.basicConfig(level=logging_level, format=LOGGING_FORMAT, force=True)
@@ -645,6 +561,11 @@ def get_args():
         and MODELS[args.model_name].can_delegate is False
     ):
         raise RuntimeError(f"Model {args.model_name} cannot be delegated.")
+
+    if args.evaluate is not None or args.evaluate_config is not None:
+        logging.error(
+            "Model evaluation is no longer supported in this script. Ignore and continue."
+        )
 
     return args
 
@@ -740,8 +661,6 @@ def quantize_model(
         args.model_name,
         compile_spec,
         example_inputs,
-        args.evaluate,
-        args.evaluate_config,
         is_int16x8,
     )
     # Wrap quantized model back into an exported_program
@@ -760,16 +679,7 @@ def to_edge_TOSA_delegate(
 ):
     # As we can target multiple output encodings, one must
     # be specified.
-    compile_spec = get_compile_spec(
-        args.target,
-        args.intermediates,
-        args.system_config,
-        args.memory_mode,
-        args.quantize,
-        args.config,
-        args.enable_debug_mode,
-        args.direct_drive,
-    )
+    compile_spec = get_compile_spec(args)
 
     model_quant = None
     if args.quantize:
@@ -787,7 +697,75 @@ def to_edge_TOSA_delegate(
         ),
     )
 
+    # Replace quantized_decomposed::{quantize,dequantize}_per_tensor nodes
+    # with cortex_m:: equivalents for int8 QDQ ops remaining outside the
+    # delegated subgraph.
+    edge = _apply_replace_quant_nodes(edge, args)
+
     return model_quant, edge
+
+
+def to_edge_cortex_m(
+    exported_program: ExportedProgram,
+    args,
+    model: GraphModule,
+    example_inputs: Tuple[torch.Tensor],
+):
+    """Cortex-M/CMSIS-NN compilation path with no delegation."""
+    logging.info("Using Cortex-M/CMSIS-NN compilation path (no delegation)")
+
+    def _to_channels_last(x):
+        if isinstance(x, torch.Tensor):
+            if x.dim() == 4 and not x.is_contiguous(memory_format=torch.channels_last):
+                logging.warning(
+                    "Converting input tensor with shape %s to channels_last",
+                    list(x.shape),
+                )
+                return x.to(memory_format=torch.channels_last)
+            return x
+        elif isinstance(x, tuple):
+            return tuple(_to_channels_last(t) for t in x)
+        return x
+
+    if not args.quantize:
+        logging.warning(
+            "Quantization is DISABLED. Cortex-M typically requires quantization."
+        )
+    else:
+        model = model.to(memory_format=torch.channels_last)
+        example_inputs = tuple(_to_channels_last(x) for x in example_inputs)
+
+        quantizer = CortexMQuantizer()
+        prepared = prepare_pt2e(model, quantizer)
+
+        # Calibrate model using example inputs
+        # TODO: Add support for using a calibration dataset
+        prepared(*example_inputs)
+
+        model_quant = convert_pt2e(prepared)
+
+        exported_program = torch.export.export(
+            model_quant, example_inputs, strict=args.strict_export
+        )
+
+    edge = to_edge_transform_and_lower(
+        exported_program,
+        compile_config=EdgeCompileConfig(
+            preserve_ops=[
+                torch.ops.aten.linear.default,
+                torch.ops.aten.hardsigmoid.default,
+                torch.ops.aten.hardsigmoid_.default,
+                torch.ops.aten.hardswish.default,
+                torch.ops.aten.hardswish_.default,
+            ],
+            _check_ir_validity=False,
+        ),
+    )
+
+    pass_manager = CortexMPassManager(edge.exported_program())
+    edge._edge_programs["forward"] = pass_manager.transform()
+
+    return model_quant if args.quantize else None, edge
 
 
 def to_edge_no_delegate(
@@ -800,16 +778,7 @@ def to_edge_no_delegate(
     if args.quantize:
         # As we can target multiple output encodings, one must
         # be specified.
-        compile_spec = get_compile_spec(
-            args.target,
-            args.intermediates,
-            args.system_config,
-            args.memory_mode,
-            args.quantize,
-            args.config,
-            args.enable_debug_mode,
-            args.direct_drive,
-        )
+        compile_spec = get_compile_spec(args)
         model, exported_program = quantize_model(
             args, model, example_inputs, compile_spec
         )
@@ -822,27 +791,12 @@ def to_edge_no_delegate(
         ),
     )
 
+    # Replace quantized_decomposed::{quantize,dequantize}_per_tensor nodes
+    # with cortex_m:: equivalents for int8 QDQ ops remaining outside the
+    # delegated subgraph.
+    edge = _apply_replace_quant_nodes(edge, args)
+
     return model_quant, edge
-
-
-def transform_for_cortex_m_backend(edge_program_manager, args):
-    # Let's make sure we are using optimized Cortex M backend
-    # NB: If we can't find and replace ops those are expected to be replaced,
-    # bad things will happen at runtime, like "missing operator" errors!
-
-    # Instantiate the mandatory ReplaceQuantNodesPass
-    passes = [ReplaceQuantNodesPass]
-    if args.enable_qdq_fusion_pass:
-        passes += [ConvertToCortexMPass, QuantizedOpFusionPass]
-    current_edge = edge_program_manager
-    for pass_cls in passes:
-        transform_pass = (
-            pass_cls(current_edge.exported_program())
-            if pass_cls.__name__ == "QuantizedLinearFusionPass"
-            else pass_cls()
-        )
-        current_edge = current_edge.transform([transform_pass])
-    return current_edge
 
 
 if __name__ == "__main__":  # noqa: C901
@@ -863,6 +817,13 @@ if __name__ == "__main__":  # noqa: C901
     model = exported_program.module()
     model_fp32 = model
 
+    if args.enable_qdq_fusion_pass:
+        logging.warning(
+            "--enable_qdq_fusion_pass is deprecated and has no effect. "
+            "Quantized node replacement is now handled within the "
+            "respective compilation paths."
+        )
+
     model_name = os.path.basename(os.path.splitext(args.model_name)[0])
     if args.intermediates:
         os.makedirs(args.intermediates, exist_ok=True)
@@ -876,7 +837,18 @@ if __name__ == "__main__":  # noqa: C901
 
     # Quantize if required
     model_quant = None
-    if args.delegate:
+    if args.target == "cortex-m55+int8":
+        # Cortex-M path: CMSIS-NN portable kernels, no delegation
+        if args.delegate:
+            logging.warning(
+                "--delegate is ignored for target 'cortex-m55+int8' "
+                "(this target does not use delegated ops)."
+            )
+            args.delegate = False
+        model_quant, edge = to_edge_cortex_m(
+            exported_program, args, model, example_inputs
+        )
+    elif args.delegate:
         model_quant, edge = to_edge_TOSA_delegate(
             exported_program, args, model, example_inputs
         )
@@ -884,11 +856,6 @@ if __name__ == "__main__":  # noqa: C901
         model_quant, edge = to_edge_no_delegate(
             exported_program, args, model, example_inputs
         )
-
-    # Cortex-m ops are never included in vgf or direct-drive
-    if args.target != "vgf" and not args.direct_drive:
-        # Transform so we can use ops from the Cortex M backend
-        edge = transform_for_cortex_m_backend(edge, args)
 
     dump_delegation_info(edge, args.intermediates)
 
@@ -948,16 +915,3 @@ if __name__ == "__main__":  # noqa: C901
     else:
         save_pte_program(exec_prog, output_file_name)
         print(f"PTE file saved as {output_file_name}")
-
-    if args.evaluate:
-        arm_eval = _load_arm_model_evaluator()
-        arm_eval.evaluate_model(
-            args.model_name,
-            args.intermediates,
-            args.target,
-            model_fp32,
-            model_quant,
-            example_inputs,
-            args.evaluate,
-            args.evaluate_config,
-        )

@@ -1,4 +1,5 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
+// Copyright 2026 Arm Limited and/or its affiliates.
 
 //
 // See README.md before modifying this file.
@@ -389,6 +390,10 @@ table ExecutionPlan {
 }
 
 // Constant tensor data stored directly in the flatbuffer.
+// NOTE: If you change Buffer or BackendDelegateInlineData fields, update the
+// custom packers in exir/_serialize/_flatbuffer_program.py
+// (_pack_buffer and _pack_backend_delegate_inline_data);
+// they override the flatc-generated packers.
 table Buffer {
   // During serialization, this alignment may be rewritten to a larger value.
   // The magic "@executorch-tensor-alignment" comment tells EXIR which lines to
@@ -399,6 +404,10 @@ table Buffer {
 // Delegate data stored directly in the flatbuffer. This is a different type
 // than Buffer because tensors and delegates can have different alignment
 // requirements.
+// NOTE: If you change Buffer or BackendDelegateInlineData fields, update the
+// custom packers in exir/_serialize/_flatbuffer_program.py
+// (_pack_buffer and _pack_backend_delegate_inline_data);
+// they override the flatc-generated packers.
 table BackendDelegateInlineData {
   // During serialization, this alignment may be rewritten to a larger value.
   // The magic "@executorch-delegate-alignment" comment tells EXIR which lines
