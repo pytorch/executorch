@@ -57,10 +57,15 @@ class TensorRTIOBinding:
     shape: List[int]
     is_input: bool
     is_shape_tensor: bool = False
+    max_shape_value: Optional[List[int]] = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
-        return asdict(self)
+        d = asdict(self)
+        # Omit max_shape_value if not set to keep metadata compact
+        if d.get("max_shape_value") is None:
+            del d["max_shape_value"]
+        return d
 
     @classmethod
     def from_dict(cls, data: dict) -> "TensorRTIOBinding":
@@ -71,6 +76,7 @@ class TensorRTIOBinding:
             shape=data["shape"],
             is_input=data["is_input"],
             is_shape_tensor=data.get("is_shape_tensor", False),
+            max_shape_value=data.get("max_shape_value"),
         )
 
 

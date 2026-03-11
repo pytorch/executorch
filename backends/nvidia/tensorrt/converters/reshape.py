@@ -448,7 +448,7 @@ def convert_view(
     return layer.get_output(0)
 
 
-@converter("aten.reshape.default", validator_fn=validate_view_reshape)
+@converter("aten.reshape.default", validator_fn=validate_view_reshape, supports_dynamic_shapes=True)
 def convert_reshape(
     node: torch.fx.Node,
     network: trt.INetworkDefinition,
@@ -458,52 +458,10 @@ def convert_reshape(
     """
     Convert PyTorch reshape to TensorRT shuffle layer.
 
-    Args:
-        node: FX node representing the reshape operation.
-        network: TensorRT network definition.
-        input_map: Mapping from FX nodes to TensorRT tensors.
-        edge_program: Optional edge program (unused).
-
-    Returns:
-        TensorRT output tensor.
-
-    Raises:
-        ValueError: If input is invalid or target_shape is malformed.
-        RuntimeError: If TensorRT layer creation fails.
+    Delegates to convert_view which handles both static and dynamic shapes
+    via shape tensor API.
     """
-    logger.debug(f"[TensorRT] Converting reshape node: {node.name}")
-
-    args = node.args
-
-    input_node = args[0]
-    target_shape = args[1]
-
-    if not isinstance(input_node, torch.fx.Node):
-        raise ValueError(f"Input to reshape must be a node, got {type(input_node)}")
-
-    if input_node not in input_map:
-        raise ValueError(
-            f"Input node '{input_node.name}' not found in input_map for "
-            f"reshape node '{node.name}'"
-        )
-
-    if not isinstance(target_shape, (list, tuple)):
-        raise ValueError(f"target_shape must be list or tuple, got {type(target_shape)}")
-
-    input_trt = input_map[input_node]
-
-    # Use the same shape computation logic as convert_view for consistency
-    output_shape = _compute_view_output_shape(node, input_node, input_trt, list(target_shape))
-
-    layer = network.add_shuffle(input_trt)
-    if layer is None:
-        raise RuntimeError(f"Failed to create shuffle layer for reshape {node.name}")
-
-    layer.reshape_dims = trt.Dims(output_shape)
-    layer.name = f"reshape_{node.name}"
-    logger.debug(f"[TensorRT] Created reshape layer: {layer.name}, shape={output_shape}")
-
-    return layer.get_output(0)
+    return convert_view(node, network, input_map, edge_program)
 
 
 @converter("aten.flatten.using_ints", validator_fn=validate_flatten, supports_dynamic_shapes=True)

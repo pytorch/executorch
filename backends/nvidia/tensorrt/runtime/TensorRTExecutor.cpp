@@ -9,6 +9,7 @@
 #include <executorch/backends/nvidia/tensorrt/runtime/TensorRTExecutor.h>
 
 #include <cstring>
+#include <unordered_map>
 
 #include <NvInferRuntime.h>
 
@@ -275,6 +276,34 @@ Error TensorRTExecutor::allocate_gpu_buffers() {
 
   // For dynamic shapes, temporarily set all inputs to their profile-max
   // so we can query max output shapes for pre-allocation.
+  // IMPORTANT: shape tensor host buffers must outlive the loop because
+  // context_->getTensorShape() for outputs (called later) lazily reads
+  // shape tensor values from the addresses set via setTensorAddress.
+  std::vector<std::vector<int32_t>> prealloc_shape_bufs;
+  prealloc_shape_bufs.reserve(num_shape_tensors);
+  // Compute conservative max dimension from regular input profiles.
+  // Used as fallback for shape tensor values and dynamic output dims
+  // when metadata is unavailable.
+  int32_t max_profile_dim = 1;
+  if (has_dynamic_shapes_) {
+    for (int32_t i = 0; i < num_io_tensors; ++i) {
+      const char* tname = engine_->getIOTensorName(i);
+      if (engine_->getTensorIOMode(tname) != nvinfer1::TensorIOMode::kINPUT) {
+        continue;
+      }
+      if (engine_->getTensorLocation(tname) == nvinfer1::TensorLocation::kHOST) {
+        continue;  // skip shape tensors
+      }
+      auto pdims = engine_->getProfileShape(
+          tname, 0, nvinfer1::OptProfileSelector::kMAX);
+      for (int d = 0; d < pdims.nbDims; ++d) {
+        if (pdims.d[d] > max_profile_dim) {
+          max_profile_dim = pdims.d[d];
+        }
+      }
+    }
+  }
+
   if (has_dynamic_shapes_) {
     for (int32_t i = 0; i < num_io_tensors; ++i) {
       const char* name = engine_->getIOTensorName(i);
@@ -287,25 +316,66 @@ Error TensorRTExecutor::allocate_gpu_buffers() {
         // Shape tensor: set via profile tensor values
         const auto* max_vals = engine_->getProfileTensorValues(
             name, 0, nvinfer1::OptProfileSelector::kMAX);
-        if (max_vals) {
-          auto dims = engine_->getTensorShape(name);
-          size_t n = 1;
-          for (int d = 0; d < dims.nbDims; ++d) {
-            n *= static_cast<size_t>(dims.d[d] > 0 ? dims.d[d] : 1);
+
+        // Fall back to max_shape_value from io_bindings metadata
+        // (getProfileTensorValues returns null in TRT 10 for shape tensors).
+        const int32_t* fallback_vals = nullptr;
+        for (const auto& iob : io_bindings_) {
+          if (iob.name == name && !iob.max_shape_value.empty()) {
+            fallback_vals = iob.max_shape_value.data();
+            break;
           }
-          context_->setInputShape(name, dims);
-          // Allocate a temporary host buffer for this shape tensor
-          // so we can call setTensorAddress during pre-allocation inference.
-          std::vector<int32_t> host_buf(n);
+        }
+        const int32_t* vals_to_use = max_vals ? max_vals : fallback_vals;
+
+        auto dims = engine_->getTensorShape(name);
+        size_t n = 1;
+        for (int d = 0; d < dims.nbDims; ++d) {
+          n *= static_cast<size_t>(dims.d[d] > 0 ? dims.d[d] : 1);
+        }
+        context_->setInputShape(name, dims);
+        prealloc_shape_bufs.emplace_back(n);
+        auto& host_buf = prealloc_shape_bufs.back();
+
+        if (vals_to_use) {
           for (size_t j = 0; j < n; ++j) {
-            host_buf[j] = max_vals[j];
+            host_buf[j] = vals_to_use[j];
           }
           context_->setTensorAddress(name, host_buf.data());
+        } else {
+          // Last resort: use the largest dimension from regular input
+          // max profile shapes as a conservative upper bound.
+          for (size_t j = 0; j < n; ++j) {
+            host_buf[j] = max_profile_dim;
+          }
+          context_->setTensorAddress(name, host_buf.data());
+          ET_LOG(
+              Info,
+              "Shape tensor '%s': using max_profile_dim=%d as fallback",
+              name, max_profile_dim);
         }
       } else {
         auto max_dims = engine_->getProfileShape(
             name, 0, nvinfer1::OptProfileSelector::kMAX);
         context_->setInputShape(name, max_dims);
+      }
+    }
+  }
+
+  // Build name-to-io_index maps from io_bindings_ metadata.
+  // io_bindings_ preserves the FX-graph construction order which matches
+  // ExecuTorch's delegate args order.  The TRT engine's getIOTensorName()
+  // enumeration may return tensors in a different order after
+  // serialization/deserialization.
+  std::unordered_map<std::string, size_t> input_name_to_idx;
+  std::unordered_map<std::string, size_t> output_name_to_idx;
+  {
+    size_t iidx = 0, oidx = 0;
+    for (const auto& binding : io_bindings_) {
+      if (binding.is_input) {
+        input_name_to_idx[binding.name] = iidx++;
+      } else {
+        output_name_to_idx[binding.name] = oidx++;
       }
     }
   }
@@ -340,10 +410,15 @@ Error TensorRTExecutor::allocate_gpu_buffers() {
       buf.tensor_index = i;
       buf.has_dynamic_dims = false;
       buf.is_shape_tensor = true;
+      std::string name_str(name);
       if (buf.is_input) {
-        buf.io_index = input_idx++;
+        auto it = input_name_to_idx.find(name_str);
+        buf.io_index = (it != input_name_to_idx.end()) ? it->second : input_idx;
+        input_idx++;
       } else {
-        buf.io_index = output_idx++;
+        auto it = output_name_to_idx.find(name_str);
+        buf.io_index = (it != output_name_to_idx.end()) ? it->second : output_idx;
+        output_idx++;
         ++num_outputs;
       }
       gpu_buffers_.push_back(buf);
@@ -367,6 +442,33 @@ Error TensorRTExecutor::allocate_gpu_buffers() {
     } else if (has_dynamic_shapes_ && mode == nvinfer1::TensorIOMode::kOUTPUT) {
       alloc_dims = context_->getTensorShape(name);
       is_dynamic = true;
+
+      // If shape inference failed (nbDims < 0 or any dim <= 0), fall back
+      // to using max_profile_dim for dynamic dims.
+      bool has_invalid = (alloc_dims.nbDims <= 0);
+      if (!has_invalid) {
+        for (int d = 0; d < alloc_dims.nbDims; ++d) {
+          if (alloc_dims.d[d] <= 0) {
+            has_invalid = true;
+            break;
+          }
+        }
+      }
+      if (has_invalid) {
+        // Use max_profile_dim (largest dimension from regular input max
+        // profiles) as a conservative upper bound for dynamic output dims.
+        ET_LOG(
+            Info,
+            "Output '%s' shape inference returned invalid dims, "
+            "using max_profile_dim=%d for dynamic dims",
+            name, max_profile_dim);
+        alloc_dims = static_dims;
+        for (int d = 0; d < alloc_dims.nbDims; ++d) {
+          if (alloc_dims.d[d] <= 0) {
+            alloc_dims.d[d] = max_profile_dim;
+          }
+        }
+      }
     } else {
       alloc_dims = static_dims;
     }
@@ -401,10 +503,15 @@ Error TensorRTExecutor::allocate_gpu_buffers() {
     buf.tensor_index = i;
     buf.has_dynamic_dims = is_dynamic;
     buf.is_shape_tensor = false;
+    std::string name_str(name);
     if (buf.is_input) {
-      buf.io_index = input_idx++;
+      auto it = input_name_to_idx.find(name_str);
+      buf.io_index = (it != input_name_to_idx.end()) ? it->second : input_idx;
+      input_idx++;
     } else {
-      buf.io_index = output_idx++;
+      auto it = output_name_to_idx.find(name_str);
+      buf.io_index = (it != output_name_to_idx.end()) ? it->second : output_idx;
+      output_idx++;
       ++num_outputs;
     }
     gpu_buffers_.push_back(buf);
@@ -488,11 +595,15 @@ Error TensorRTExecutor::execute(
       const auto& shape = input_shapes[buf.io_index];
       nvinfer1::Dims dims;
       dims.nbDims = static_cast<int>(shape.size());
+      std::string shape_str;
       for (int d = 0; d < dims.nbDims; ++d) {
         dims.d[d] = static_cast<int32_t>(shape[d]);
+        if (d > 0) shape_str += ",";
+        shape_str += std::to_string(shape[d]);
       }
       if (!context_->setInputShape(name, dims)) {
-        ET_LOG(Error, "Failed to set input shape for %s", name);
+        ET_LOG(Error, "Failed to set input shape for %s: [%s]",
+               name, shape_str.c_str());
         return Error::InvalidArgument;
       }
     }
@@ -615,7 +726,17 @@ Error TensorRTExecutor::execute(
 
     bool success = context_->enqueueV3(stream_);
     if (!success) {
-      ET_LOG(Error, "TensorRT inference failed");
+      ET_LOG(Error, "TensorRT inference failed (enqueueV3 returned false)");
+      return Error::InvalidState;
+    }
+
+    // Sync before output copy to catch deferred errors
+    cudaError_t sync_err = cudaStreamSynchronize(stream_);
+    if (sync_err != cudaSuccess) {
+      ET_LOG(
+          Error,
+          "Post-inference CUDA sync failed: %s",
+          cudaGetErrorString(sync_err));
       return Error::InvalidState;
     }
 
@@ -632,6 +753,9 @@ Error TensorRTExecutor::execute(
         }
       } else {
         size_t copy_size = get_output_copy_size(buf);
+        if (copy_size == 0) {
+          continue;
+        }
         cudaError_t err = cudaMemcpyAsync(
             output_buffers[buf.io_index],
             buf.ptr,
@@ -743,6 +867,31 @@ bool TensorRTExecutor::parse_io_bindings(
           if (ns != std::string::npos) {
             binding.shape.push_back(
                 static_cast<int64_t>(std::stoll(num_str.substr(ns))));
+          }
+          spos = next + 1;
+        }
+      }
+    }
+
+    // Extract max_shape_value array (for shape tensor pre-allocation)
+    auto msv_pos = obj.find("\"max_shape_value\"");
+    if (msv_pos != std::string::npos) {
+      auto bracket_start = obj.find('[', msv_pos);
+      auto bracket_end = obj.find(']', bracket_start);
+      if (bracket_start != std::string::npos &&
+          bracket_end != std::string::npos) {
+        std::string msv_str =
+            obj.substr(bracket_start + 1, bracket_end - bracket_start - 1);
+        size_t spos = 0;
+        while (spos < msv_str.size()) {
+          auto next = msv_str.find(',', spos);
+          if (next == std::string::npos)
+            next = msv_str.size();
+          std::string num_str = msv_str.substr(spos, next - spos);
+          auto ns = num_str.find_first_not_of(" \t");
+          if (ns != std::string::npos) {
+            binding.max_shape_value.push_back(
+                static_cast<int32_t>(std::stoi(num_str.substr(ns))));
           }
           spos = next + 1;
         }

@@ -305,7 +305,15 @@ Error TensorRTBackend::execute(
         auto resize_err = executorch::runtime::resize_tensor(
             tensor, {new_sizes.data(), new_sizes.size()});
         if (resize_err != Error::Ok) {
-          ET_LOG(Error, "Failed to resize output tensor %zu", i);
+          // Non-fatal: memory-planned tensors may not support resize.
+          // Output data is still valid; callers should use length outputs
+          // to determine the valid region.
+          ET_LOG(
+              Info,
+              "Could not resize output %zu to TRT-inferred shape "
+              "(error %d). Output tensor retains pre-allocated shape.",
+              i,
+              static_cast<int>(resize_err));
         }
       }
     }

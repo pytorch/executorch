@@ -32,6 +32,7 @@ struct IOBinding {
   std::vector<int64_t> shape;
   bool is_input;
   bool is_shape_tensor{false};
+  std::vector<int32_t> max_shape_value; // max profile values for shape tensors
 };
 
 /**

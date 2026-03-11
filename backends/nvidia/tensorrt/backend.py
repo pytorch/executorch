@@ -107,6 +107,12 @@ class TensorRTBackend(BackendDetails):
         _add_params_to_input_map(
             graph_module, edge_program, network, input_map, get_trt_tensor
         )
+        # Internalize anti-correlated shape tensors (e.g. PE slice indices
+        # that decrease when the base dimension increases).  This must run
+        # BEFORE _process_graph_nodes so converters see the computed values.
+        _internalize_anticorrelated_shape_tensors(
+            network, input_map, input_nodes, edge_program, trt
+        )
         _process_graph_nodes(
             graph_module, edge_program, network, input_map, get_trt_tensor, get_op_name, ctx
         )
@@ -117,9 +123,17 @@ class TensorRTBackend(BackendDetails):
 
         # Configure and build engine
         config = _create_builder_config(builder, spec, trt)
-        _add_optimization_profile(
+        shape_tensor_max_vals = _add_optimization_profile(
             builder, config, network, input_nodes, edge_program, trt
         )
+
+        # Attach max shape tensor values to io_bindings for C++ runtime
+        # pre-allocation (getProfileTensorValues returns null in TRT 10).
+        if shape_tensor_max_vals:
+            for binding in io_bindings:
+                if binding.is_input and binding.name in shape_tensor_max_vals:
+                    binding.max_shape_value = shape_tensor_max_vals[binding.name]
+
         serialized_engine = builder.build_serialized_network(network, config)
 
         if serialized_engine is None:
@@ -491,6 +505,212 @@ def _add_network_inputs(
     return input_map
 
 
+def _internalize_anticorrelated_shape_tensors(
+    network: Any,
+    input_map: Dict[torch.fx.Node, Any],
+    input_nodes: List[torch.fx.Node],
+    exported_program: ExportedProgram,
+    trt: Any,
+) -> None:
+    """Detect anti-correlated shape tensor inputs and compute them internally.
+
+    TRT optimization profiles require min <= opt <= max for each shape tensor.
+    Anti-correlated shape tensors (values DECREASE when the base dimension
+    increases) violate this constraint.  We fix this by expressing them as
+    affine functions of correlated inputs, computing them with TRT elementwise
+    layers, and disconnecting the original network inputs so TRT no longer
+    classifies them as shape tensors.
+
+    The original network inputs are kept (preserving positional mapping with
+    the edge program) but become unused regular tensors with static shape (1,).
+    """
+    import numpy as np
+
+    # Build sym_ranges (same logic as _add_optimization_profile).
+    sym_ranges: Dict[str, Tuple[int, Optional[int]]] = {}
+    if hasattr(exported_program, "range_constraints"):
+        for sym, vr in exported_program.range_constraints.items():
+            try:
+                lo = int(vr.lower)
+            except Exception:
+                lo = 2
+            try:
+                hi = int(vr.upper)
+            except Exception:
+                hi = None
+            sym_ranges[str(sym)] = (lo, hi)
+
+    for node in input_nodes:
+        if "val" not in node.meta:
+            continue
+        val = node.meta["val"]
+        shape = getattr(val, "shape", None)
+        if shape is None:
+            continue
+        for s in shape:
+            if not _is_symint(s):
+                continue
+            sn = getattr(s, "node", None)
+            if sn is None:
+                continue
+            shape_env = getattr(sn, "shape_env", None)
+            if shape_env is None:
+                continue
+            var_to_range = getattr(shape_env, "var_to_range", {})
+            for sym, rng in var_to_range.items():
+                sym_name = str(sym)
+                if sym_name in sym_ranges:
+                    continue
+                try:
+                    lo = int(rng.lower)
+                except Exception:
+                    lo = 2
+                try:
+                    hi = int(rng.upper)
+                except Exception:
+                    hi = None
+                sym_ranges[sym_name] = (lo, hi)
+            break
+
+    if not sym_ranges:
+        return
+
+    # Evaluate each shape tensor input's stashed expression at sym min/max.
+    shape_tensor_evals: Dict[str, Tuple] = {}  # name -> (expr, v_min, v_max, opt, node)
+
+    for node in input_nodes:
+        val = node.meta.get("val")
+        if val is None:
+            continue
+        stashed = node.meta.get("trt_symint_exprs", {})
+        stashed_expr = stashed.get(-1)  # -1 = scalar SymInt
+        if stashed_expr is None:
+            continue
+        free = stashed_expr.free_symbols
+        if not free:
+            continue
+
+        subs_min = {}
+        subs_max = {}
+        try:
+            opt_val = int(val)
+        except (TypeError, ValueError):
+            continue
+        for sym in free:
+            sname = str(sym)
+            if sname in sym_ranges:
+                slo, shi = sym_ranges[sname]
+                subs_min[sym] = slo
+                subs_max[sym] = shi if shi is not None else opt_val
+
+        if not subs_min:
+            continue
+        try:
+            v_at_min = int(stashed_expr.subs(subs_min))
+            v_at_max = int(stashed_expr.subs(subs_max))
+        except Exception:
+            continue
+
+        shape_tensor_evals[node.name] = (stashed_expr, v_at_min, v_at_max, opt_val, node)
+
+    # Separate anti-correlated (v_at_min > v_at_max) from correlated.
+    anticorr = {}
+    correlated = {}
+    for name, info in shape_tensor_evals.items():
+        _, v_min, v_max, _, _ = info
+        if v_min > v_max:
+            anticorr[name] = info
+        elif v_min != v_max:
+            correlated[name] = info
+
+    if not anticorr:
+        return
+
+    print(
+        f"[TensorRT] Found {len(anticorr)} anti-correlated shape tensor(s): "
+        f"{list(anticorr.keys())}"
+    )
+
+    # For each anti-correlated input, find a correlated source and express it
+    # as an affine function:  anti = scale * corr + offset.
+    for ac_name, (ac_expr, ac_vmin, ac_vmax, ac_opt, ac_node) in anticorr.items():
+        found = False
+        for co_name, (co_expr, co_vmin, co_vmax, co_opt, co_node) in correlated.items():
+            denom = co_vmin - co_vmax
+            if denom == 0:
+                continue
+            a_num = ac_vmin - ac_vmax
+            if a_num % denom != 0:
+                continue
+            a = a_num // denom
+            b = ac_vmin - a * co_vmin
+            # Verify at opt.
+            if a * co_opt + b != ac_opt:
+                continue
+
+            print(
+                f"[TensorRT] Internalizing '{ac_name}' = "
+                f"{a} * '{co_name}' + {b}"
+            )
+
+            co_trt = input_map[co_node]
+
+            if a == -1:
+                const_l = network.add_constant(
+                    [1], trt.Weights(np.array([b], dtype=np.int32))
+                )
+                const_l.name = f"_anticorr_{ac_name}_const"
+                ew = network.add_elementwise(
+                    const_l.get_output(0),
+                    co_trt,
+                    trt.ElementWiseOperation.SUB,
+                )
+            elif a == 1:
+                const_l = network.add_constant(
+                    [1], trt.Weights(np.array([b], dtype=np.int32))
+                )
+                const_l.name = f"_anticorr_{ac_name}_const"
+                ew = network.add_elementwise(
+                    co_trt,
+                    const_l.get_output(0),
+                    trt.ElementWiseOperation.SUM,
+                )
+            else:
+                a_l = network.add_constant(
+                    [1], trt.Weights(np.array([a], dtype=np.int32))
+                )
+                a_l.name = f"_anticorr_{ac_name}_scale"
+                mul = network.add_elementwise(
+                    a_l.get_output(0),
+                    co_trt,
+                    trt.ElementWiseOperation.PROD,
+                )
+                mul.name = f"_anticorr_{ac_name}_mul"
+                b_l = network.add_constant(
+                    [1], trt.Weights(np.array([b], dtype=np.int32))
+                )
+                b_l.name = f"_anticorr_{ac_name}_offset"
+                ew = network.add_elementwise(
+                    mul.get_output(0),
+                    b_l.get_output(0),
+                    trt.ElementWiseOperation.SUM,
+                )
+
+            ew.name = f"_anticorr_{ac_name}"
+            # Replace in input_map so downstream converters use the
+            # computed tensor.  The original TRT input is now disconnected
+            # and will NOT be classified as a shape tensor by TRT.
+            input_map[ac_node] = ew.get_output(0)
+            found = True
+            break
+
+        if not found:
+            print(
+                f"[TensorRT] WARNING: Could not find correlated source for "
+                f"anti-correlated shape tensor '{ac_name}'"
+            )
+
+
 def _add_optimization_profile(
     builder: Any,
     config: Any,
@@ -499,7 +719,7 @@ def _add_optimization_profile(
     exported_program: ExportedProgram,
     trt: Any,
     symint_exprs: Optional[Dict[str, list]] = None,
-) -> None:
+) -> Dict[str, List[int]]:
     """Create an optimization profile for dynamic inputs.
 
     Must be called after the network is fully built (all layers added,
@@ -523,7 +743,10 @@ def _add_optimization_profile(
             break
 
     if not has_dynamic:
-        return
+        return {}
+
+    # Track max shape tensor values for io_bindings metadata.
+    shape_tensor_max_vals: Dict[str, List[int]] = {}
 
     # Build symbol → (lower, upper) lookup from range_constraints and
     # shape_env.  After partitioning, SymInt expressions may be concretized
@@ -602,13 +825,88 @@ def _add_optimization_profile(
             fx_node = node_lookup.get(name)
             if fx_node is not None:
                 val = fx_node.meta.get("val")
+                opt_val = None
                 if _is_symint(val):
-                    lo, opt, hi = _eval_symint_range(val, sym_ranges)
-                    profile.set_shape_input(name, [lo], [opt], [hi])
-                    continue
+                    lo, opt_val, hi = _eval_symint_range(val, sym_ranges)
+                    if lo != opt_val or hi != opt_val:
+                        # Non-trivial range from live SymInt.
+                        print(
+                            f"[TensorRT] Shape tensor '{name}': "
+                            f"min=[{lo}], opt=[{opt_val}], max=[{hi}]"
+                        )
+                        profile.set_shape_input(name, [lo], [opt_val], [hi])
+                        shape_tensor_max_vals[name] = [hi]
+                        continue
                 elif isinstance(val, (int, float)):
-                    v = int(val)
-                    profile.set_shape_input(name, [v], [v], [v])
+                    opt_val = int(val)
+
+                if opt_val is not None:
+                    # Try stashed SymInt expressions (saved before
+                    # concretization by the partitioner).
+                    stashed = fx_node.meta.get("trt_symint_exprs", {})
+                    stashed_expr = stashed.get(-1)  # -1 = scalar SymInt
+                    if stashed_expr is not None:
+                        try:
+                            free = stashed_expr.free_symbols
+                            subs_min = {}
+                            subs_max = {}
+                            for sym in free:
+                                sname = str(sym)
+                                if sname in sym_ranges:
+                                    slo, shi = sym_ranges[sname]
+                                    subs_min[sym] = slo
+                                    subs_max[sym] = (
+                                        shi if shi is not None else opt_val
+                                    )
+                            if subs_min:
+                                v_at_min = int(stashed_expr.subs(subs_min))
+                                v_at_max = int(stashed_expr.subs(subs_max))
+                                # TRT requires min <= opt <= max.
+                                # For anti-correlated shape tensors (decreasing
+                                # functions like 5000-T), v_at_min > v_at_max.
+                                # Sort values so the profile is valid.
+                                v_lo = min(v_at_min, v_at_max)
+                                v_hi = max(v_at_min, v_at_max)
+                                print(
+                                    f"[TensorRT] Shape tensor '{name}': "
+                                    f"min=[{v_lo}], opt=[{opt_val}], "
+                                    f"max=[{v_hi}] (from stashed expr "
+                                    f"{stashed_expr})"
+                                )
+                                profile.set_shape_input(
+                                    name, [v_lo], [opt_val], [v_hi]
+                                )
+                                shape_tensor_max_vals[name] = [v_hi]
+                                continue
+                        except Exception:
+                            pass
+
+                    # Try shape_env proportional matching.
+                    if _is_symint(val):
+                        lo_se, hi_se = _eval_symint_range_from_shape_env(
+                            val, opt_val, sym_ranges
+                        )
+                        if lo_se != opt_val or (
+                            hi_se is not None and hi_se != opt_val
+                        ):
+                            if hi_se is None:
+                                hi_se = opt_val
+                            print(
+                                f"[TensorRT] Shape tensor '{name}': "
+                                f"min=[{lo_se}], opt=[{opt_val}], "
+                                f"max=[{hi_se}] (from shape_env)"
+                            )
+                            profile.set_shape_input(
+                                name, [lo_se], [opt_val], [hi_se]
+                            )
+                            shape_tensor_max_vals[name] = [hi_se]
+                            continue
+
+                    # No range recovery — use fixed trace-time value.
+                    profile.set_shape_input(
+                        name, [opt_val], [opt_val], [opt_val]
+                    )
+                    shape_tensor_max_vals[name] = [opt_val]
                     continue
 
             # Fallback for shape inputs: use trace-time value if available,
@@ -625,6 +923,7 @@ def _add_optimization_profile(
             opt_vals = [max(1, opt_val)] * ndims
             max_vals = [max(1, opt_val)] * ndims
             profile.set_shape_input(name, min_vals, opt_vals, max_vals)
+            shape_tensor_max_vals[name] = max_vals
         else:
             # Regular tensor input: set shape ranges.
             fx_node = node_lookup.get(name)
@@ -728,7 +1027,7 @@ def _add_optimization_profile(
 
     config.add_optimization_profile(profile)
 
-
+    return shape_tensor_max_vals
 def _process_graph_nodes(
     graph_module: torch.fx.GraphModule,
     exported_program: ExportedProgram,
