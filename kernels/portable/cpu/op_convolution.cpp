@@ -109,7 +109,7 @@ void conv2d_impl(
             size_t in_y = stride_y * out_y + dilation_y * w_y - padding_y;
             in_coord[2] = in_y;
             // Only proceed if input y coordinate is within bounds
-            if (in_y >= 0 && in_y < in_H) {
+            if (in_y < in_H) {
               for (const auto w_x : c10::irange(w_W)) {
                 w_coord[3] = w_x;
 
@@ -117,7 +117,7 @@ void conv2d_impl(
                 in_coord[3] = in_x;
 
                 // Only proceed if input x coordinate is within bounds
-                if (in_x >= 0 && in_x < in_W) {
+                if (in_x < in_W) {
                   size_t in_idx =
                       calculate_linear_index(in_coord, in_strides.data(), 4);
                   CTYPE in_val = in_ptr[in_idx];
@@ -165,14 +165,14 @@ void conv2d_impl(
             out_coord[2] = out_y;
 
             // Only proceed if output y coordinate is within bounds
-            if (out_y >= 0 && out_y < out_H) {
+            if (out_y < out_H) {
               for (const auto w_x : c10::irange(w_W)) {
                 w_coord[3] = w_x;
                 size_t out_x = stride_x * in_x + dilation_x * w_x - padding_x;
                 out_coord[3] = out_x;
 
                 // Only proceed if output x coordinate is within bounds
-                if (out_x >= 0 && out_x < out_W) {
+                if (out_x < out_W) {
                   size_t w_idx =
                       calculate_linear_index(w_coord, w_strides.data(), 4);
                   CTYPE w_val = w_ptr[w_idx];
