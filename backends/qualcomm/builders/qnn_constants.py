@@ -168,6 +168,11 @@ class OpElementWiseFloor:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseFloorDiv:
+    op_name: str = "ElementWiseFloorDiv"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseGreater:
     op_name: str = "ElementWiseGreater"
 
