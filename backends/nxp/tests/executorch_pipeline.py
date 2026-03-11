@@ -28,7 +28,11 @@ from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
     RemoveIOQuantOpsPass,
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
-from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
+
+from executorch.backends.nxp.nxp_backend import (
+    core_aten_ops_exception_list,
+    generate_neutron_compile_spec,
+)
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 from executorch.exir import (
@@ -176,6 +180,7 @@ def to_quantized_edge_program(
         partitioner=partitioners,
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False,
+            _core_aten_ops_exception_list=core_aten_ops_exception_list,
         ),
     )
 

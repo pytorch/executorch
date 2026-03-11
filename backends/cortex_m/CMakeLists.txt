@@ -53,21 +53,22 @@ endif()
 
 # Cortex-M ops kernel sources
 set(_cortex_m_kernels__srcs
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantize_per_tensor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_dequantize_per_tensor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_maximum.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_minimum.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_pad.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantize_per_tensor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_add.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_avg_pool2d.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_batch_matmul.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_conv2d.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_depthwise_conv2d.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_max_pool2d.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_linear.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_max_pool2d.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_mul.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_transpose_conv2d.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_minimum.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_maximum.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_softmax.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_transpose.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_pad.cpp
 )
 
 # Generate C++ bindings to register kernels into Executorch

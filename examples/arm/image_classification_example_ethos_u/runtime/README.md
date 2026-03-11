@@ -12,10 +12,10 @@ cmake --build ../../cmake-out-arm --target install -j$(nproc)
 ```
 
 3. Set up the build system. You need to provide path to the DEiT-Tiny pte generated in the
-`examples/arm/image_classification_example/model_export` folder. You also need to provide an image of a dog or cat, you can download such image from the [HuggingFace Oxford iiit pet dataset](https://huggingface.co/datasets/timm/oxford-iiit-pet).
+`examples/arm/image_classification_example_ethos_u/model_export` folder. You also need to provide an image of a dog or cat, you can download such image from the [HuggingFace Oxford iiit pet dataset](https://huggingface.co/datasets/timm/oxford-iiit-pet).
 
 ```
-$ cmake -DCMAKE_TOOLCHAIN_FILE=$(pwd)/ethos-u-setup/arm-none-eabi-gcc.cmake -DET_PTE_FILE_PATH=<path to DEiT-Tiny compiled for Ethos-U85-256> -DIMAGE_PATH=<path to a JPG image> -Bsimple_app_deit_tiny image_classification_example/runtime
+$ cmake -DCMAKE_TOOLCHAIN_FILE=$(pwd)/ethos-u-setup/arm-none-eabi-gcc.cmake -DET_PTE_FILE_PATH=<path to DEiT-Tiny compiled for Ethos-U85-256> -DIMAGE_PATH=<path to a JPG image> -Bsimple_app_deit_tiny image_classification_example_ethos_u/runtime
 ```
 
 4. Compile the application.
