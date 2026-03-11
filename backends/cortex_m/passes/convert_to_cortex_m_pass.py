@@ -16,6 +16,7 @@ from executorch.backends.cortex_m.passes.passes_utils import quantize_multiplier
 from executorch.backends.transforms.utils import (
     create_constant_placeholder,
     get_param_tensor,
+    is_param_node,
 )
 
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
@@ -372,6 +373,52 @@ class ConvertToCortexMPass(XNNPACKPass):
         )
         return exir_ops.edge.cortex_m.quantized_transpose_conv2d.default, new_args
 
+    def _get_bmm_replacement(self, node):
+        lhs_scale = node.meta["input_qparams"][0].scale
+        lhs_zp = node.meta["input_qparams"][0].zp
+        rhs_scale = node.meta["input_qparams"][1].scale
+        rhs_zp = node.meta["input_qparams"][1].zp
+        output_scale = node.meta["output_qparams"][0].scale
+        output_zp = node.meta["output_qparams"][0].zp
+
+        output_mult, output_shift = quantize_multiplier_aot(
+            (lhs_scale * rhs_scale) / output_scale
+        )
+
+        lhs_node = node.args[0]
+        rhs_node = node.args[1]
+
+        is_constant_rhs = is_param_node(self.exported_program, rhs_node)
+        if is_constant_rhs:
+            rhs_tensor = get_param_tensor(self.exported_program, rhs_node)
+            rhs_transposed_tensor = rhs_tensor.permute(0, 2, 1).contiguous()
+            with node.graph.inserting_after(rhs_node):
+                rhs_transposed = create_constant_placeholder(
+                    self.exported_program,
+                    node.graph,
+                    node.name + "_rhs_transposed",
+                    InputKind.PARAMETER,
+                    rhs_transposed_tensor,
+                )
+        else:
+            with node.graph.inserting_before(node):
+                rhs_transposed = node.graph.create_node(
+                    "call_function",
+                    target=exir_ops.edge.cortex_m.transpose.default,
+                    args=(rhs_node, [0, 2, 1]),
+                )
+
+        args = (
+            lhs_node,
+            -lhs_zp,
+            rhs_transposed,
+            -rhs_zp,
+            output_zp,
+            output_mult,
+            output_shift,
+        )
+        return exir_ops.edge.cortex_m.quantized_batch_matmul.default, args
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         modified = False
         for node in graph_module.graph.nodes:
@@ -393,6 +440,8 @@ class ConvertToCortexMPass(XNNPACKPass):
                         op, args = self._get_transpose_conv2d_replacement(node)
                     else:
                         op, args = self._get_convolution_replacement(node)
+                case exir_ops.edge.aten.bmm.default:
+                    op, args = self._get_bmm_replacement(node)
                 case _:
                     continue
 

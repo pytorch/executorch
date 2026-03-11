@@ -8,6 +8,7 @@ conv1d_pw:
   parameter_names_with_default_values:
     OPERATOR: X
     DTYPE: float
+    STORAGE: buffer
   generate_variant_forall:
     DTYPE:
       - VALUE: half

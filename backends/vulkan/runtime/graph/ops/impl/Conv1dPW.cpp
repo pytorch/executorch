@@ -48,10 +48,8 @@ void add_conv1d_pw_buf_node(
       {{out, vkapi::kWrite}, {{in, arg_weight, arg_bias}, vkapi::kRead}},
       // Shader params buffers (UBOs) - must match conv1d_pw.glsl binding order
       {
-          graph.sizes_ubo(out),
-          graph.strides_ubo(out),
-          graph.sizes_ubo(in),
-          graph.strides_ubo(in),
+          graph.meta_ubo(out),
+          graph.meta_ubo(in),
           graph.strides_ubo(arg_weight),
           graph.create_params_buffer(kernel_params),
           graph.create_params_buffer(out_params),
