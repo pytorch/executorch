@@ -17,7 +17,7 @@ ${define_active_storage_type(STORAGE)}
 layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_packed_int8_weight", "int", STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_int8_weight", "int", "buffer")}
+${layout_declare_tensor(B, "r", "t_int8_weight", "int", "buffer", is_scalar_array=False)}
 
 layout(push_constant) uniform restrict Block {
   ivec4 qmat2_sizes;
@@ -65,7 +65,8 @@ void main() {
         if (ic + col < orig_sizes.w) {
           const int byte_idx = buf_idx + col;
           const int byte_pos = byte_idx & 3;
-          weight_vals[col] = (t_int8_weight[byte_idx >> 2] >> (byte_pos * 8)) & 0xFF;
+          const int word_idx = byte_idx >> 2;
+          weight_vals[col] = (t_int8_weight[word_idx >> 2][word_idx & 3] >> (byte_pos * 8)) & 0xFF;
         }
       }
       packed_block[row] = pack_into_int32(weight_vals);

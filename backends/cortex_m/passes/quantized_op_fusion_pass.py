@@ -360,14 +360,29 @@ class QuantizedOpFusionPass(ExportPass):
         divisor_override = args[6] if len(args) > 6 else None
         divisor_override_val = self._unwrap_argument(divisor_override)
 
-        if ceil_mode or count_include_pad or divisor_override_val is not None:
+        if ceil_mode or divisor_override_val is not None:
             return exir_ops.edge.aten.avg_pool2d.default, args
 
+        input_arg = args[0]
+        avg_padding = padding
+        if count_include_pad:
+            # Decompose count_include_pad=True into explicit input padding.
+            pad_h, pad_w = padding
+            pre_pad = [0, 0, pad_h, pad_w]
+            post_pad = [0, 0, pad_h, pad_w]
+            input_arg = super().call_operator(
+                exir_ops.edge.cortex_m.pad.default,
+                (input_arg, pre_pad, post_pad, int(zero_point)),
+                {},
+                NodeMetadata({}),
+            )
+            avg_padding = [0, 0]
+
         args = (
-            args[0],
+            input_arg,
             kernel_size,
             stride,
-            padding,
+            avg_padding,
             zero_point,
             output_mult,
             output_shift,
