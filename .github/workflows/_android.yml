@@ -70,7 +70,7 @@ jobs:
       API_LEVEL: 34
     steps:
       - name: Setup SSH (Click me for login details)
-        uses: pytorch/test-infra/.github/actions/setup-ssh@main
+        uses: pytorch/test-infra/.github/actions/setup-ssh@release/2.11
         with:
           github-secret: ${{ secrets.GITHUB_TOKEN }}
           instructions: |

@@ -21,7 +21,7 @@ jobs:
     environment: ${{ (github.event_name == 'schedule') && 'update-commit-hash' || '' }}
     steps:
       - name: update-pytorch-commit-hash
-        uses: pytorch/test-infra/.github/actions/update-commit-hash@main
+        uses: pytorch/test-infra/.github/actions/update-commit-hash@release/2.11
         if: ${{ github.event_name == 'schedule' }}
         with:
           repo-name: pytorch
@@ -39,7 +39,7 @@ jobs:
     
   test-static-hf-llm-qnn-linux:
     name: test-static-hf-llm-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.11
     permissions:
       id-token: write
       contents: read
