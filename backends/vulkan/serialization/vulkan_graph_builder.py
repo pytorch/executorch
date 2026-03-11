@@ -118,6 +118,14 @@ class VkGraphBuilder:
 
             # Convert the tensor dtype if needed
             if tensor.dtype != effective_dtype:
+                # Clamp float tensors to the representable range of the effective
+                # dtype to avoid infinities. This is needed when force_fp16 converts
+                # fp32 constants (e.g. -100000 attention mask values) to fp16 where
+                # the max representable value is ~65504.
+                if effective_dtype.is_floating_point:
+                    dtype_info = torch.finfo(effective_dtype)
+                    tensor = tensor.clamp(min=dtype_info.min, max=dtype_info.max)
+
                 tensor = tensor.to(effective_dtype)
 
             # Serialize tensor data to bytes

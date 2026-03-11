@@ -123,6 +123,16 @@ def _patch_build_mode_flags(kwargs):
         # @oss-disable: "fbsource//xplat/assistant/oacr/native/scripts:compiler_flag_O2": ["-O2"],
     })
 
+    # Add pthread flags for Emscripten/WASM builds with threading support.
+    # Required when linking into WASM binaries that use -sUSE_PTHREADS=1.
+    # Without these flags, wasm-ld fails with:
+    #   "error: --shared-memory is disallowed by <file>.o because it was not
+    #    compiled with 'atomics' or 'bulk-memory' features."
+    kwargs["compiler_flags"] = kwargs["compiler_flags"] + select({
+        "DEFAULT": [],
+        # @oss-disable: "ovr_config//runtime:wasm-emscripten": ["-pthread", "-matomics", "-mbulk-memory"],
+    })
+
     return kwargs
 
 def _has_pytorch_dep(dep_list):
