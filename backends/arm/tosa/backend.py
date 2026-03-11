@@ -22,6 +22,10 @@ from typing import cast, Dict, final, List
 import torch
 
 import tosa_serializer as ts
+
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_cond_while_submodules_nested,
+)
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.debug import debug_fail, debug_tosa_dump
 from executorch.backends.arm.debug.schema import DebugHook
@@ -35,7 +39,6 @@ from executorch.backends.arm.tosa.mapping import TOSA_TENSOR_NAME_META
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dim_order_utils import get_memory_format
-from executorch.exir.graph_module import get_cond_while_submodules
 from torch.export.exported_program import ExportedProgram
 from torch.fx import Graph, GraphModule, Node
 
@@ -398,7 +401,7 @@ class TOSABackend(BackendDetails):
                 raise
 
         # Recursively preprocess controlflow submodules.
-        for name, submodule, control_flow_node in get_cond_while_submodules(
+        for name, submodule, control_flow_node in get_cond_while_submodules_nested(
             graph_module
         ):
             TOSABackend._regularize_submodule(submodule, control_flow_node)
