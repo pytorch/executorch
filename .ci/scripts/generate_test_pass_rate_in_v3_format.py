@@ -58,6 +58,7 @@ def build_v3_record(
             "name": "ExecuTorch",
             "mode": "test",
             "extra_info": {
+                "board name": "backend infra test",
                 "backend": "cuda",
                 "suite": suite,
                 "flow": flow,
