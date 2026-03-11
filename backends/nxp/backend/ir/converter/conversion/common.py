@@ -1,6 +1,6 @@
 #
 # Copyright 2023 Martin Pavella
-# Copyright 2023-2025 NXP
+# Copyright 2023-2026 NXP
 #
 # License: MIT
 # See the LICENSE_MIT for more details.
@@ -12,7 +12,7 @@ This file contains functions shared by the various files in the
 'conversion/builtin/' directory.
 """
 
-from typing import List, MutableSequence, Optional
+from typing import List, MutableSequence, Optional, Sequence
 
 import executorch.backends.nxp.backend.ir.logger as logger
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
@@ -71,7 +71,7 @@ StridedOptions = (
 )
 
 
-def assign_2d_strides(options: StridedOptions, strides: Optional[List[int]]):
+def assign_2d_strides(options: StridedOptions, strides: Sequence[int] | None):
     """Assign to 'obj' the attributes 'stride_h' and 'stride_w' from 'strides'.
          If 'strides' is None, assign 1s.
 
