@@ -59,7 +59,7 @@ def _read_qnn_config() -> Dict[str, str]:
                 continue
             key, _, val = line.partition("=")
             # Strip quotes and resolve bash-style ${VAR} references
-            val = val.strip().strip('"').strip("'")
+            val = val.strip('"')
             config[key.strip()] = val
     # Resolve ${QNN_VERSION} in QNN_ZIP_URL
     if "QNN_ZIP_URL" in config and "QNN_VERSION" in config:
@@ -389,7 +389,7 @@ def _extract_tar(archive_path: pathlib.Path, prefix: str, target_dir: pathlib.Pa
 
             if total > 0:
                 pct = (i + 1) * 100 // total
-                _progress(f"\r[QNN] Extracting: {pct}%")
+                _progress(f"\r[QNN] Extracting SDK: {pct}%")
         if total > 0:
             _progress_newline()
 
