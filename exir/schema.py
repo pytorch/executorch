@@ -48,6 +48,11 @@ class TensorDataLocation(IntEnum):
     EXTERNAL = 1
 
 
+class DeviceType(IntEnum):
+    CPU = 0
+    CUDA = 1
+
+
 @dataclass
 class ExtraTensorInfo:
     """
@@ -57,6 +62,8 @@ class ExtraTensorInfo:
     mutable_data_segments_idx: int = 0
     fully_qualified_name: Optional[str] = None
     location: TensorDataLocation = TensorDataLocation.SEGMENT
+    device_type: DeviceType = DeviceType.CPU
+    device_index: int = -1
 
 
 @dataclass
