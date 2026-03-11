@@ -230,7 +230,7 @@ def test_bitwise_and_scalar_tosa_INT(test_data: input_t2):
 
 
 @common.parametrize("test_data", And().test_data_non_bool)
-def test_bitwise_and_tensor_u55_INT(test_data: input_t2):
+def test_bitwise_and_tensor_u55_INT_not_delegated(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
         And(),
@@ -243,16 +243,16 @@ def test_bitwise_and_tensor_u55_INT(test_data: input_t2):
 
 
 @common.parametrize("test_data", AndScalar.test_data)
-def test_bitwise_and_scalar_u55_INT(test_data: input_t2):
-    # There will be one full op which will be delegated.
-    num_delegates = 1
-    num_exir = 0
+def test_bitwise_and_scalar_u55_INT_not_delegated(test_data: input_t2):
+    # There will be one full op which will be delegated, unless it outputs boolean.
+    test_input = test_data()
+    num_delegates = 0 if test_input[0].dtype == torch.bool else 1
     pipeline = OpNotSupportedPipeline[input_t2](
         AndScalar(),
-        test_data(),
+        test_input,
         {
             AndScalar.exir_op: 1,
-            "executorch_exir_dialects_edge__ops_aten_full_default": num_exir,
+            "executorch_exir_dialects_edge__ops_aten_full_default": 1 - num_delegates,
         },
         num_delegates,
         quantize=True,
@@ -437,7 +437,7 @@ def test_bitwise_xor_scalar_tosa_INT(test_data: input_t2):
 
 
 @common.parametrize("test_data", Xor().test_data_non_bool)
-def test_bitwise_xor_tensor_u55_INT(test_data: input_t2):
+def test_bitwise_xor_tensor_u55_INT_not_delegated(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
         Xor(),
@@ -450,16 +450,16 @@ def test_bitwise_xor_tensor_u55_INT(test_data: input_t2):
 
 
 @common.parametrize("test_data", XorScalar.test_data)
-def test_bitwise_xor_scalar_u55_INT(test_data: input_t2):
-    # There will be one full op which will be delegated.
-    num_delegates = 1
-    num_exir = 0
+def test_bitwise_xor_scalar_u55_INT_not_delegated(test_data: input_t2):
+    # There will be one full op which will be delegated, unless it outputs boolean.
+    test_input = test_data()
+    num_delegates = 0 if test_input[0].dtype == torch.bool else 1
     pipeline = OpNotSupportedPipeline[input_t2](
         XorScalar(),
-        test_data(),
+        test_input,
         {
             XorScalar.exir_op: 1,
-            "executorch_exir_dialects_edge__ops_aten_full_default": num_exir,
+            "executorch_exir_dialects_edge__ops_aten_full_default": 1 - num_delegates,
         },
         num_delegates,
         quantize=True,
@@ -644,7 +644,7 @@ def test_bitwise_or_scalar_tosa_INT(test_data: input_t2):
 
 
 @common.parametrize("test_data", Or().test_data_non_bool)
-def test_bitwise_or_tensor_u55_INT(test_data: input_t2):
+def test_bitwise_or_tensor_u55_INT_not_delegated(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
         Or(),
@@ -657,16 +657,16 @@ def test_bitwise_or_tensor_u55_INT(test_data: input_t2):
 
 
 @common.parametrize("test_data", OrScalar.test_data)
-def test_bitwise_or_scalar_u55_INT(test_data: input_t2):
-    # There will be one full op which will be delegated.
-    num_delegates = 1
-    num_exir = 0
+def test_bitwise_or_scalar_u55_INT_not_delegated(test_data: input_t2):
+    # There will be one full op which will be delegated, unless it outputs boolean.
+    test_input = test_data()
+    num_delegates = 0 if test_input[0].dtype == torch.bool else 1
     pipeline = OpNotSupportedPipeline[input_t2](
         OrScalar(),
-        test_data(),
+        test_input,
         {
             OrScalar.exir_op: 1,
-            "executorch_exir_dialects_edge__ops_aten_full_default": num_exir,
+            "executorch_exir_dialects_edge__ops_aten_full_default": 1 - num_delegates,
         },
         num_delegates,
         quantize=True,
