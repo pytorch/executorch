@@ -11,11 +11,6 @@
 #include <limits>
 #include <vector>
 
-// Include CMSIS-NN headers with C linkage
-extern "C" {
-#include "arm_nnfunctions.h"
-}
-
 namespace cortex_m {
 namespace native {
 
