@@ -291,8 +291,7 @@ class CortexMAvgPool2DCheck(PatternCheck):
             return False
         node = pattern[0]
         ceil_mode = cast(bool, node.args[4]) if len(node.args) > 4 else False
-        count_include_pad = cast(bool, node.args[5]) if len(node.args) > 5 else True
-        return not (ceil_mode or count_include_pad)
+        return not ceil_mode
 
     @classmethod
     def check_quantization_config(
@@ -310,6 +309,33 @@ class CortexMAvgPool2DCheck(PatternCheck):
             output_qspec
         )
         return is_int8 and is_per_tensor
+
+
+class CortexMBmmCheck(PatternCheck):
+
+    @classmethod
+    def check_pattern(cls, pattern):
+        for node in pattern:
+            if len(node.all_input_nodes) == 2:
+                t1 = get_first_fake_tensor(node.all_input_nodes[0])
+                t2 = get_first_fake_tensor(node.all_input_nodes[1])
+                if t1.dim() != 3 or t2.dim() != 3:
+                    return False
+                if t1.shape[0] != t2.shape[0]:
+                    return False
+                if t1.shape[2] != t2.shape[1]:
+                    return False
+        return True
+
+    @classmethod
+    def check_quantization_config(
+        cls, pattern: list[Node], quantization_config: CortexMQuantizationConfig
+    ):
+        is_per_tensor = PatternCheck.is_per_tensor(
+            quantization_config.get_input_act_qspec()
+        ) and PatternCheck.is_per_tensor(quantization_config.get_output_act_qspec())
+        is_int8 = cls.is_int8_activations(quantization_config)
+        return is_per_tensor and is_int8
 
 
 class CortexMMaxPool2DCheck(PatternCheck):
