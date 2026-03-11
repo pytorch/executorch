@@ -134,6 +134,21 @@ def define_common_targets():
     else:
         runtime.cxx_library(
             name = "c10",
-            exported_deps = [":aten_headers_for_executorch"],
+            exported_deps = select({
+                "ovr_config//os:zephyr": [],
+                "DEFAULT": [":aten_headers_for_executorch"],
+            }),
+            xplat_exported_deps = select({
+                "ovr_config//os:zephyr": [
+                    "fbsource//xplat/caffe2/c10:c10_headers",
+                ],
+                "DEFAULT": [],
+            }),
+            fbcode_exported_deps = select({
+                "ovr_config//os:zephyr": [
+                    "//caffe2/c10:c10_headers",
+                ],
+                "DEFAULT": [],
+            }) if not runtime.is_oss else [],
             visibility = ["PUBLIC"],
         )

@@ -559,7 +559,7 @@ def _create_cuda_partitioners(programs, is_windows=False):
     return partitioner, updated_programs
 
 
-def _create_vulkan_partitioners(programs):
+def _create_vulkan_partitioners(programs, vulkan_force_fp16=False):
     """Create Vulkan partitioners for all programs except preprocessor."""
     from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
         VulkanPartitioner,
@@ -571,11 +571,13 @@ def _create_vulkan_partitioners(programs):
         if key == "preprocessor":
             partitioner[key] = []
         else:
-            partitioner[key] = [VulkanPartitioner()]
+            partitioner[key] = [VulkanPartitioner({"force_fp16": vulkan_force_fp16})]
     return partitioner, programs
 
 
-def lower_to_executorch(programs, metadata=None, backend="portable"):
+def lower_to_executorch(
+    programs, metadata=None, backend="portable", vulkan_force_fp16=False
+):
     if backend == "xnnpack":
         partitioner, programs = _create_xnnpack_partitioners(programs)
     elif backend == "metal":
@@ -585,7 +587,9 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
             programs, is_windows=(backend == "cuda-windows")
         )
     elif backend == "vulkan":
-        partitioner, programs = _create_vulkan_partitioners(programs)
+        partitioner, programs = _create_vulkan_partitioners(
+            programs, vulkan_force_fp16=vulkan_force_fp16
+        )
     else:
         print("\nLowering to ExecuTorch...")
         partitioner = []
@@ -689,6 +693,8 @@ def main():
         help="Group size for embedding quantization (default: 0 = per-axis)",
     )
 
+    parser.add_argument("--vulkan_force_fp16", action="store_true")
+
     args = parser.parse_args()
 
     # Validate dtype
@@ -736,7 +742,12 @@ def main():
         qembedding_group_size=args.qembedding_group_size,
     )
 
-    et = lower_to_executorch(programs, metadata=metadata, backend=args.backend)
+    et = lower_to_executorch(
+        programs,
+        metadata=metadata,
+        backend=args.backend,
+        vulkan_force_fp16=args.vulkan_force_fp16,
+    )
 
     pte_path = os.path.join(args.output_dir, "model.pte")
     print(f"\nSaving ExecuTorch program to: {pte_path}")
