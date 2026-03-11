@@ -17,7 +17,6 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
-from executorch.backends.qualcomm.quantizer.annotators import Q_ANNOTATION_KEY
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
@@ -66,6 +65,7 @@ from torch.fx import Node
 from torchao.quantization.pt2e import FixedQParamsObserver, MinMaxObserver
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.quantization.pt2e.quantizer import QuantizationAnnotation, QuantizationSpec
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 dtype_map = {
     "torch.uint8": torch.uint8,

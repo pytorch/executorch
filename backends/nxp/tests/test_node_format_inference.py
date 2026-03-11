@@ -11,14 +11,12 @@ from executorch.backends.nxp.backend.node_format_inference import (
     NodeFormatInference,
     NXP_NODE_FORMAT,
 )
-from executorch.backends.nxp.neutron_pass_manager import NeutronPassManager
+
 from executorch.backends.nxp.tests.models import (
     Conv2dModule,
     MaxPool2dModule,
     SoftmaxModule,
 )
-from executorch.backends.xnnpack._passes import RemoveGetItemPass
-from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 
 
 def test_convolution():
@@ -61,31 +59,21 @@ def test_softmax():
         assert expected_mapping[node.name] == node.meta[NXP_NODE_FORMAT]
 
 
-def test_maxpool2d():
+def test_max_pool2d():
     model = MaxPool2dModule()
     example_input = (torch.ones(1, 4, 32, 32),)
 
     exir_program = torch.export.export(model, example_input)
-    edge_program = exir.to_edge(exir_program).exported_program()
+    epm = exir.to_edge(exir_program)
 
-    # We need to create custom model verifier with max_pool2d added as exception.
-    # Otherwise, we get violation that this op is not part of ATen Core ops.
-    edge_program._verifiers = [
-        EXIREdgeDialectVerifier(
-            class_only=True,
-            core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
-        )
-    ]
-
-    # Remove MaxPool-related "getitem" nodes from graph
-    edge_program = NeutronPassManager(edge_program, [RemoveGetItemPass]).transform()
-    NodeFormatInference(edge_program).identify_node_formats()
+    NodeFormatInference(epm.exported_program()).identify_node_formats()
 
     expected_mapping = {
         "x": DataFormat.CHANNELS_FIRST,
-        "aten_max_pool2d_default": DataFormat.CHANNELS_FIRST,
+        "aten_max_pool2d_with_indices_default": DataFormat.CHANNELS_FIRST,
+        "getitem": DataFormat.CHANNELS_FIRST,
         "output": DataFormat.CHANNELS_FIRST,
     }
 
-    for node in edge_program.graph.nodes:
+    for node in epm.exported_program().graph.nodes:
         assert expected_mapping[node.name] == node.meta[NXP_NODE_FORMAT]
