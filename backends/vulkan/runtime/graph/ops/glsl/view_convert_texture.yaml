@@ -14,6 +14,13 @@ view_convert_texture:
       parameter_names: [IN_DTYPE, OUT_DTYPE]
       combos:
         - parameter_values: [int32, float]
+        - parameter_values: [int32, half]
+        - parameter_values: [uint8, float]
+        - parameter_values: [uint8, half]
+        - parameter_values: [uint8, int32]
         - parameter_values: [float, int32]
+        - parameter_values: [float, half]
+        - parameter_values: [half, float]
+        - parameter_values: [half, int32]
   shader_variants:
     - NAME: view_convert_texture
