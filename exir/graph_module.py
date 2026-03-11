@@ -78,7 +78,7 @@ def get_control_flow_submodules(
 ) -> List[Tuple[str, torch.fx.GraphModule, torch.fx.Node]]:
     """
     Returns a list of submodules used for control flow operations
-    (torch.ops.higher_order.cond/map/scan) that are in the given toplevel graph (does not look
+    (torch.ops.higher_order.cond/map/scan/while_loop) that are in the given toplevel graph (does not look
     into submodules). Specifically, the returned value is a list containing
     tuples of (name of the submodule that's stored in the graph module, the
     submodule itself, and the fx node that uses this submodule).
@@ -89,6 +89,7 @@ def get_control_flow_submodules(
             torch.ops.higher_order.cond: [1, 2],
             torch.ops.higher_order.map_impl: [0],
             torch.ops.higher_order.scan: [0],  # combine_fn is at arg index 0
+            torch.ops.higher_order.while_loop: [0, 1],
         },
     )
 

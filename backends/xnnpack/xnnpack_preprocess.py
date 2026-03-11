@@ -9,11 +9,9 @@ from dataclasses import dataclass
 from typing import Dict, final, List
 
 import torch
-
 from executorch.backends.xnnpack._passes import XNNPACKPassManager
 from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
 from executorch.backends.xnnpack.operators.node_visitor import get_node_visitors
-
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     ConstantDataOffset,
     XNNGraph,
@@ -23,13 +21,11 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_serialize import (
 )
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 from executorch.backends.xnnpack.utils.utils import is_param_node
-
 from executorch.backends.xnnpack.utils.xnnpack_constants import (
     XNN_VALUE_FLAG_EXTERNAL_INPUT,
     XNN_VALUE_FLAG_EXTERNAL_OUTPUT,
 )
 from executorch.exir._serialize._named_data_store import NamedDataStore
-
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     CompileSpec,

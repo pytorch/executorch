@@ -45,9 +45,9 @@ class RemoveCloneOpsTransform(ExportPass):
             if self._is_non_identity_clone(n):
                 continue
 
-            # If preserve_input_output_copies is set, don't remove clones that directly
-            # copy from input to output.
-            if self._is_input_output_copy(n) and self._preserve_input_output_copies:
+            if self._preserve_input_output_copies and (
+                self._is_input_output_copy(n) or self._would_cause_output_aliasing(n)
+            ):
                 continue
 
             modified = True
@@ -93,6 +93,22 @@ class RemoveCloneOpsTransform(ExportPass):
                 and node.meta["val"].dim_order() != input_meta["val"].dim_order()
             )
 
+        return False
+
+    def _would_cause_output_aliasing(self, node: torch.fx.Node) -> bool:
+        """Return True if removing this clone would cause duplicate nodes in the output."""
+        output_node = None
+        for user in node.users:
+            if user.op == "output":
+                output_node = user
+                break
+        if output_node is None:
+            return False
+
+        source = node.args[0]
+        for arg in output_node.args[0]:
+            if arg is source:
+                return True
         return False
 
     def _is_input_output_copy(self, node: torch.fx.Node) -> bool:
