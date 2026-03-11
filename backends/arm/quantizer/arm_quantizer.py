@@ -24,8 +24,11 @@ from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.common.arm_compile_spec import (
     ArmCompileSpec,
 )  # isort: skip
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_cond_while_submodules_nested,
+    is_submodule_node,
+)
 from executorch.backends.arm.vgf import VgfCompileSpec
-from executorch.exir.graph_module import _get_control_flow_submodules
 
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e import (
@@ -639,27 +642,6 @@ class TOSAQuantizer(Quantizer):
                         f"Quantizer detected operator {node.name} with different device inputs: {devices}."
                     )
 
-    @staticmethod
-    def _get_submodules_not_handled_by_torchao(
-        graph_module: GraphModule,
-    ):
-        """Returns control flow submodules that torchao's
-        prepare_pt2e/convert_pt2e do not handle natively. torchao now
-        recursively handles while_loop body_fn.
-
-        (arg 1), so we only need to manually handle:
-          - cond true/false branches (args 1, 2)
-          - while_loop cond_fn (arg 0)
-
-        """
-        return _get_control_flow_submodules(
-            graph_module,
-            {
-                torch.ops.higher_order.cond: [1, 2],
-                torch.ops.higher_order.while_loop: [0],
-            },
-        )
-
     def quantize_with_submodules(
         self,
         model: GraphModule,
@@ -691,18 +673,40 @@ class TOSAQuantizer(Quantizer):
         prepare_fn = prepare_qat_pt2e if is_qat else prepare_pt2e
 
         prepared = prepare_fn(model, self)
-        for name, submodule, _ in self._get_submodules_not_handled_by_torchao(prepared):
+        # Prepare conditional submodules (e.g., if/while bodies)
+        # prepare only cond branches and while_loop cond_fn
+        for name, submodule, _ in get_cond_while_submodules_nested(
+            prepared, apply_quantization=True
+        ):
             prepared.set_submodule(name, prepare_fn(submodule, self), strict=True)
+            for submodule_node in submodule.graph.nodes:
+                if is_submodule_node(submodule_node):
+                    for nested_name, nested_sub, _ in get_cond_while_submodules_nested(
+                        submodule, apply_quantization=True
+                    ):
+                        prepared.set_submodule(
+                            nested_name, prepare_fn(nested_sub, self), strict=True
+                        )
+
         for inp in calibration_samples:
             prepared(*inp)
 
-        for name, submodule, _ in self._get_submodules_not_handled_by_torchao(prepared):
-            prepared.set_submodule(
-                name, convert_pt2e(submodule, fold_quantize=fold_quantize), strict=True
-            )
-        converted = convert_pt2e(prepared, fold_quantize=fold_quantize)
+        # Prepare conditional submodules (e.g., if/while bodies)
+        # convert only cond branches and while_loop cond_fn
+        for _, submodule, _ in get_cond_while_submodules_nested(
+            prepared, apply_quantization=True
+        ):
+            converted = convert_pt2e(submodule)
+            for submodule_node in submodule.graph.nodes:
+                if is_submodule_node(submodule_node):
+                    for nested_name, nested_sub, _ in get_cond_while_submodules_nested(
+                        submodule, apply_quantization=True
+                    ):
+                        converted.set_submodule(
+                            nested_name, convert_pt2e(nested_sub), strict=True
+                        )
 
-        return converted
+        return convert_pt2e(prepared)
 
 
 class EthosUQuantizer(TOSAQuantizer):

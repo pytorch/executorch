@@ -16,22 +16,22 @@ ${define_required_extensions("buffer", DTYPE)}
 
 #define op(X, A, B) ${OPERATOR}
 
+${define_active_storage_type(STORAGE)}
+
 layout(std430) buffer;
+
+#include "indexing.glslh"
 
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, "buffer")}
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, "buffer")}
 ${layout_declare_tensor(B, "r", "t_weight", DTYPE, "buffer")}
 ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer")}
 
-${layout_declare_ubo(B, "ivec4", "out_sizes")}
-${layout_declare_ubo(B, "ivec4", "out_strides")}
-${layout_declare_ubo(B, "ivec4", "in_sizes")}
-${layout_declare_ubo(B, "ivec4", "in_strides")}
+${layout_declare_ubo(B, "BufferMetadata", "out_meta")}
+${layout_declare_ubo(B, "BufferMetadata", "in_meta")}
 ${layout_declare_ubo(B, "ivec4", "weight_strides")}
 ${layout_declare_ubo(B, "int", "kernel_size", "int", "stride", "int", "padding", "int", "dilation", "int", "in_group_size", "int", "out_group_size")}
 ${layout_declare_ubo(B, "float", "out_min", "float", "out_max")}
-
-#include "indexing_utils.h"
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -40,16 +40,17 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
  * invocation computes one output element at position (n, out_c, out_l).
  *
  * Tensor sizes/strides are in WHCN order:
- *   out_sizes.x = L_out, out_sizes.z = C_out, out_sizes.w = N
- *   in_sizes.x  = L_in,  in_sizes.z  = C_in
+ *   out_meta sizes: W=L_out, H=C_out, C=N
+ *   in_meta sizes:  W=L_in,  H=C_in
  */
 void main() {
   const int out_l = int(gl_GlobalInvocationID.x);
   const int out_c = int(gl_GlobalInvocationID.y);
   const int n = int(gl_GlobalInvocationID.z);
 
-  // WHCN sizes for [N, C, L]: (L, C, N, 1) -> sizes.y=C, sizes.z=N
-  if (out_l >= out_sizes.x || out_c >= out_sizes.y || n >= out_sizes.z) {
+  if (out_l >= int(size_at(out_meta, 0)) ||
+      out_c >= int(size_at(out_meta, 1)) ||
+      n >= int(size_at(out_meta, 2))) {
     return;
   }
 
@@ -60,11 +61,13 @@ void main() {
     const int in_c = c_start + ic;
     for (int k = 0; k < kernel_size; k++) {
       const int in_l = out_l * stride - padding + k * dilation;
-      if (in_l >= 0 && in_l < in_sizes.x) {
-        // WHCN tidx for (n, in_c, in_l) in [N, C, L] tensor: (in_l, in_c, n, 0)
-        const int in_idx = tidx_to_bufi(ivec4(in_l, in_c, n, 0), in_strides);
-        // WHCN tidx for weight (k, ic, out_c) in [C_out, C_in/g, K]: (k, ic, out_c, 0)
-        const int w_idx = tidx_to_bufi(ivec4(k, ic, out_c, 0), weight_strides);
+      if (in_l >= 0 && in_l < int(size_at(in_meta, 0))) {
+        TensorIndex4D in_tidx;
+        in_tidx.data = ivec4(in_l, in_c, n, 0);
+        const uint in_idx = tensor4d_idx_to_linear_idx(in_meta, in_tidx);
+        // Weight tidx (k, ic, out_c) in [C_out, C_in/g, K]: (k, ic, out_c, 0)
+        const int w_idx = k * weight_strides.x + ic * weight_strides.y +
+            out_c * weight_strides.z;
         sum += t_in[in_idx] * t_weight[w_idx];
       }
     }
@@ -72,7 +75,8 @@ void main() {
 
   sum += T(t_bias[out_c]);
 
-  // WHCN tidx for (n, out_c, out_l): (out_l, out_c, n, 0)
-  const int out_idx = tidx_to_bufi(ivec4(out_l, out_c, n, 0), out_strides);
+  TensorIndex4D out_tidx;
+  out_tidx.data = ivec4(out_l, out_c, n, 0);
+  const uint out_idx = tensor4d_idx_to_linear_idx(out_meta, out_tidx);
   t_out[out_idx] = op(sum, T(out_min), T(out_max));
 }

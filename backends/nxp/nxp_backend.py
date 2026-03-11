@@ -15,7 +15,6 @@ from typing import final, List, Optional
 import numpy as np
 import torch
 
-from executorch.backends.nxp._passes.remove_getitem_pass import RemoveGetItemPass
 from executorch.backends.nxp.backend.data_format import DataFormat
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
@@ -29,11 +28,15 @@ from executorch.backends.nxp.neutron_node_extraction import (
     extract_artifacts_from_neutron_node,
     NeutronNodeArtifacts,
 )
-from executorch.backends.nxp.neutron_pass_manager import NeutronPassManager
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from torch.export.exported_program import ExportedProgram
+
+# Aten dialect operators that are allowed to be in the edge dialect model. These operators are usually created by a
+#  transform pass or by a prevented operator decomposition during lowering to edge.
+core_aten_ops_exception_list = [
+    torch.ops.aten.prelu.default,
+]
 
 
 class NeutronCompileSpecBuilder:
@@ -196,23 +199,6 @@ class NeutronBackend(BackendDetails):
 
         # Serialize and return the program.
         if output_format == "tflite":
-            # We need to create custom model verifier with max_pool2d added as exception.
-            # Otherwise, we get violation that this op is not part of ATen Core ops.
-            edge_program._verifiers = [
-                EXIREdgeDialectVerifier(
-                    class_only=True,
-                    core_aten_ops_exception_list=[
-                        torch.ops.aten.max_pool2d.default,
-                        torch.ops.aten.prelu.default,
-                    ],
-                )
-            ]
-
-            # Remove MaxPool-related "getitem" nodes from graph
-            edge_program = NeutronPassManager(
-                edge_program, [RemoveGetItemPass]
-            ).transform()
-
             # Some of the nodes do not have delegation_tag, find any node with delegation tag.
             delegation_tag = None
             for n in edge_program.graph.nodes:

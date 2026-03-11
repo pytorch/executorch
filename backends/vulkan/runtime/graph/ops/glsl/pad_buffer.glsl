@@ -30,7 +30,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 void main() {
   const uint out_bufi = gl_GlobalInvocationID.x;
-  if (out_bufi >= numel(out_meta)) {
+  if (out_of_bounds(out_bufi, out_meta)) {
     return;
   }
 

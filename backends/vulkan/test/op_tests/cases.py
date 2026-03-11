@@ -11,7 +11,6 @@ from typing import Callable
 
 from executorch.backends.vulkan.test.op_tests.utils.test_suite import VkTestSuite
 
-
 # Prime numbers dim sizes for testing
 XL = 113
 L = 89

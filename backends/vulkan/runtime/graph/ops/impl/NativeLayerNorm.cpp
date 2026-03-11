@@ -50,7 +50,6 @@ void resize_native_layer_norm_node(
   graph->virtual_resize(rstd, mean_size);
 }
 
-// Global workgroup size for buffer path: one workgroup per row
 utils::uvec3 layer_norm_buffer_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -64,7 +63,6 @@ utils::uvec3 layer_norm_buffer_global_wg_size(
   return {1u, num_rows, 1u};
 }
 
-// Local workgroup size for buffer path: NUM_WORKERS threads per row
 utils::uvec3 layer_norm_buffer_local_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -77,103 +75,6 @@ utils::uvec3 layer_norm_buffer_local_wg_size(
   (void)args;
   (void)resize_args;
   return {64u, 1u, 1u};
-}
-
-void add_native_layer_norm_buffer_node(
-    ComputeGraph& graph,
-    const ValueRef in,
-    const ValueRef normalized_shape,
-    const ValueRef weight_data,
-    const ValueRef bias_data,
-    const ValueRef eps,
-    const ValueRef out) {
-  ValueRef arg_weight = prepack_standard_like(graph, weight_data, in);
-  ValueRef arg_bias = prepack_standard_like(graph, bias_data, in);
-
-  const auto out_val = graph.get_value_list(out);
-  const ValueRef out_tensor = out_val->at(0);
-  const ValueRef mean_tensor = out_val->at(1);
-  const ValueRef rstd_tensor = out_val->at(2);
-
-  float epsilon = graph.extract_scalar<float>(eps);
-
-  std::string kernel_name("native_layer_norm");
-  kernel_name.reserve(kShaderNameReserve);
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(out_tensor));
-  add_dtype_suffix(kernel_name, graph.dtype_of(out_tensor));
-
-  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
-      graph,
-      VK_KERNEL_FROM_STR(kernel_name),
-      layer_norm_buffer_global_wg_size,
-      layer_norm_buffer_local_wg_size,
-      // Inputs and Outputs
-      {{{out_tensor, mean_tensor, rstd_tensor}, vkapi::kWrite},
-       {{in, arg_weight, arg_bias}, vkapi::kRead}},
-      // Shader params buffers
-      {graph.buffer_meta_ubo(out_tensor),
-       graph.buffer_meta_ubo(in),
-       graph.buffer_meta_ubo(mean_tensor)},
-      // Push Constants
-      {PushConstantDataInfo(&epsilon, sizeof(epsilon))},
-      // Specialization Constants
-      {graph.hashed_layout_of(in)},
-      // Resize Args
-      {normalized_shape},
-      // Resizing Logic
-      resize_native_layer_norm_node));
-}
-
-void add_native_layer_norm_texture_node(
-    ComputeGraph& graph,
-    const ValueRef in,
-    const ValueRef normalized_shape,
-    const ValueRef weight_data,
-    const ValueRef bias_data,
-    const ValueRef eps,
-    const ValueRef out) {
-  ValueRef arg_weight = prepack_standard_like(graph, weight_data, in);
-  ValueRef arg_bias = prepack_standard_like(graph, bias_data, in);
-
-  const auto out_val = graph.get_value_list(out);
-  const ValueRef out_tensor = out_val->at(0);
-  const ValueRef mean_tensor = out_val->at(1);
-  const ValueRef rstd_tensor = out_val->at(2);
-
-  float epsilon = graph.extract_scalar<float>(eps);
-
-  VK_CHECK_COND(check_same_packed_dim(graph, in, out_tensor));
-
-  std::string kernel_name("native_layer_norm");
-  kernel_name.reserve(kShaderNameReserve);
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(out_tensor));
-  add_dtype_suffix(kernel_name, graph.dtype_of(out_tensor));
-
-  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
-      graph,
-      VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
-      // Inputs and Outputs
-      {{{out_tensor, mean_tensor, rstd_tensor}, vkapi::kWrite},
-       {{in, arg_weight, arg_bias}, vkapi::kRead}},
-      // Shader params buffers
-      {},
-      // Push Constants
-      {
-          graph.logical_limits_pc_of(out_tensor),
-          graph.sizes_pc_of(out_tensor),
-          PushConstantDataInfo(&epsilon, sizeof(epsilon)),
-      },
-      // Specialization Constants
-      {
-          graph.hashed_layout_of(in),
-          graph.hashed_layout_of(out_tensor),
-      },
-      // Resize Args
-      {normalized_shape},
-      // Resizing Logic
-      resize_native_layer_norm_node));
 }
 
 void add_native_layer_norm_node(
@@ -198,13 +99,55 @@ void add_native_layer_norm_node(
     VK_THROW("native_layer_norm requires bias to be non-None");
   }
 
-  if (graph.is_buffer_storage(in)) {
-    add_native_layer_norm_buffer_node(
-        graph, in, normalized_shape, weight_data, bias_data, eps, out);
-  } else {
-    add_native_layer_norm_texture_node(
-        graph, in, normalized_shape, weight_data, bias_data, eps, out);
+  ValueRef arg_weight = prepack_standard_like(graph, weight_data, in);
+  ValueRef arg_bias = prepack_standard_like(graph, bias_data, in);
+
+  const auto out_val = graph.get_value_list(out);
+  const ValueRef out_tensor = out_val->at(0);
+  const ValueRef mean_tensor = out_val->at(1);
+  const ValueRef rstd_tensor = out_val->at(2);
+
+  float epsilon = graph.extract_scalar<float>(eps);
+
+  std::string kernel_name("native_layer_norm");
+  kernel_name.reserve(kShaderNameReserve);
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out_tensor));
+  add_dtype_suffix(kernel_name, graph.dtype_of(out_tensor));
+
+  const bool is_buffer = graph.is_buffer_storage(in);
+
+  if (!is_buffer) {
+    VK_CHECK_COND(check_same_packed_dim(graph, in, out_tensor));
   }
+
+  vkapi::ParamsBindList param_ubos = {
+      graph.meta_ubo(out_tensor), graph.meta_ubo(in)};
+  vkapi::SpecVarList spec_constants;
+
+  if (is_buffer) {
+    param_ubos.append(graph.meta_ubo(mean_tensor));
+    spec_constants = {graph.hashed_layout_of(in)};
+  }
+
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      is_buffer ? layer_norm_buffer_global_wg_size
+                : default_pick_global_wg_size,
+      is_buffer ? layer_norm_buffer_local_wg_size : default_pick_local_wg_size,
+      // Inputs and Outputs
+      {{{out_tensor, mean_tensor, rstd_tensor}, vkapi::kWrite},
+       {{in, arg_weight, arg_bias}, vkapi::kRead}},
+      // Shader params buffers
+      param_ubos,
+      // Push Constants
+      {PushConstantDataInfo(&epsilon, sizeof(epsilon))},
+      // Specialization Constants
+      spec_constants,
+      // Resize Args
+      {normalized_shape},
+      // Resizing Logic
+      resize_native_layer_norm_node));
 }
 
 void native_layer_norm(ComputeGraph& graph, const std::vector<ValueRef>& args) {
