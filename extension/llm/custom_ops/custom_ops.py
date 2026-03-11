@@ -34,25 +34,37 @@ def _is_custom_ops_registered() -> bool:
         return False
 
 
+def _get_custom_ops_library_override() -> Path | None:
+    override = os.environ.get("EXECUTORCH_CUSTOM_OPS_AOT_LIB")
+    if override is None:
+        return None
+
+    lib_path = Path(override).expanduser().resolve()
+    assert lib_path.is_file(), (
+        "EXECUTORCH_CUSTOM_OPS_AOT_LIB must point to an existing "
+        f"custom_ops_aot_lib, but got {lib_path}"
+    )
+    return lib_path
+
+
 def _find_custom_ops_library() -> Path:
+    override = _get_custom_ops_library_override()
+    if override is not None:
+        return override
+
     package_path = Path(__file__).parent.resolve()
-    repo_root = package_path.parents[2]
     candidates = []
     patterns = (
         "**/custom_ops_aot_lib.dll",
         "**/custom_ops_aot_lib.so",
         "**/custom_ops_aot_lib.dylib",
-        "cmake-out*/extension/llm/custom_ops/custom_ops_aot_lib.dll",
-        "cmake-out*/extension/llm/custom_ops/custom_ops_aot_lib.so",
-        "cmake-out*/extension/llm/custom_ops/custom_ops_aot_lib.dylib",
     )
 
-    for base_path in (package_path, repo_root):
-        for pattern in patterns:
-            candidates.extend(base_path.glob(pattern))
+    for pattern in patterns:
+        candidates.extend(package_path.glob(pattern))
 
     libs = sorted({path.resolve() for path in candidates if path.is_file()})
-    assert libs, f"Could not find custom_ops_aot_lib under {package_path} or {repo_root}"
+    assert libs, f"Could not find custom_ops_aot_lib under {package_path}"
     return max(libs, key=lambda path: path.stat().st_mtime)
 
 
