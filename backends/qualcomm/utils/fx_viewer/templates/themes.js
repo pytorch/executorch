@@ -1,0 +1,40 @@
+const THEMES = {
+    'light': {
+        bg: '#ffffff',
+        text: '#000000',
+        textMuted: '#666666',
+        nodeFill: '#66ccee',
+        nodeInput: '#75dcfe',
+        nodeOutput: '#75dcfe',
+        nodeSelected: '#ffeb3b',
+        edgeNormal: '#333333',
+        edgeInput: '#ff9800',
+        edgeOutput: '#ff9800',
+        edgeHover: '#e91e63',
+        minimapBox: 'rgba(255, 0, 0, 0.1)',
+        minimapBorder: 'red',
+        uiBg: 'rgba(255, 255, 255, 0.95)',
+        uiBorder: '#cccccc',
+        uiHover: '#f0f8ff',
+        legendBg: 'rgba(255, 255, 255, 0.8)'
+    },
+    'dark': {
+        bg: '#1e1e1e',
+        text: '#ffffff',
+        textMuted: '#cccccc',
+        nodeFill: '#0277a1',
+        nodeInput: '#1287b1',
+        nodeOutput: '#1287b1',
+        nodeSelected: '#ffeb3b',
+        edgeNormal: '#cccccc',
+        edgeInput: '#ffb74d',
+        edgeOutput: '#ffb74d',
+        edgeHover: '#ff4081',
+        minimapBox: 'rgba(255, 100, 100, 0.3)',
+        minimapBorder: '#ff5555',
+        uiBg: 'rgba(30, 30, 30, 0.95)',
+        uiBorder: '#777777',
+        uiHover: '#333333',
+        legendBg: 'rgba(30, 30, 30, 0.8)'
+    }
+};
