@@ -97,8 +97,8 @@ def _as_list(x):
 
 
 def _adjust_weight_qspec_for_conv_transpose(
-    node: Node, weight_qspec: QuantizationSpec
-) -> QuantizationSpec:
+    node: Node, weight_qspec: QuantizationSpec | None
+) -> QuantizationSpec | None:
     """Adjust weight qspec axis/ctor for conv_transpose2d per-channel
     quantization.
 
@@ -112,13 +112,13 @@ def _adjust_weight_qspec_for_conv_transpose(
     a non-fused FakeQuantize + MovingAveragePerChannelMinMaxObserver when the
     required axis is not 0.
 
+    Return the qspec unchanged when weights are unset.
+
     """
-    assert isinstance(
-        weight_qspec, QuantizationSpec
-    ), f"Expected QuantizationSpec, got {type(weight_qspec)}"
 
     if (
         node.target != torch.ops.aten.conv_transpose2d.input
+        or weight_qspec is None
         or weight_qspec.qscheme != torch.per_channel_symmetric
     ):
         return weight_qspec
@@ -626,9 +626,10 @@ def get_quant_properties(  # noqa: C901
         filter_fn=any_or_hardtanh_min_zero,
     ):
         if node.target in _conv_ops:
+            conv_weight_qspec = ensure_type(QuantizationSpec, weight_qspec)  # For MyPy
             quant_properties.quant_inputs = [
                 _QuantProperty(0, input_act_qspec),
-                _QuantProperty(1, weight_qspec, mark_annotated=True),
+                _QuantProperty(1, conv_weight_qspec, mark_annotated=True),
                 _QuantProperty(2, bias_qspec, optional=True, mark_annotated=True),
             ]
         elif node.target in (
@@ -647,9 +648,10 @@ def get_quant_properties(  # noqa: C901
         ],
     ):
         if node.target in _conv_ops:
+            conv_weight_qspec = ensure_type(QuantizationSpec, weight_qspec)  # For MyPy
             quant_properties.quant_inputs = [
                 _QuantProperty(0, input_act_qspec),
-                _QuantProperty(1, weight_qspec, mark_annotated=True),
+                _QuantProperty(1, conv_weight_qspec, mark_annotated=True),
                 _QuantProperty(2, bias_qspec, optional=True, mark_annotated=True),
             ]
         elif node.target in [
@@ -676,9 +678,12 @@ def get_quant_properties(  # noqa: C901
             *_conv_ops,
             torch.ops.aten.linear.default,
         ):
+            conv_or_linear_weight_qspec = ensure_type(
+                QuantizationSpec, weight_qspec
+            )  # For MyPy
             quant_properties.quant_inputs = [
                 _QuantProperty(0, input_act_qspec),
-                _QuantProperty(1, weight_qspec, mark_annotated=True),
+                _QuantProperty(1, conv_or_linear_weight_qspec, mark_annotated=True),
                 _QuantProperty(2, bias_qspec, optional=True, mark_annotated=True),
             ]
         else:
@@ -687,9 +692,12 @@ def get_quant_properties(  # noqa: C901
         *_conv_ops,
         torch.ops.aten.linear.default,
     ):
+        conv_or_linear_weight_qspec = ensure_type(
+            QuantizationSpec, weight_qspec
+        )  # For MyPy
         quant_properties.quant_inputs = [
             _QuantProperty(0, input_act_qspec),
-            _QuantProperty(1, weight_qspec, mark_annotated=True),
+            _QuantProperty(1, conv_or_linear_weight_qspec, mark_annotated=True),
             _QuantProperty(2, bias_qspec, optional=True, mark_annotated=True),
         ]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
