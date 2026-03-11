@@ -424,7 +424,7 @@ class TestQNN(unittest.TestCase):
                     "--method_index",
                     str(method_index),
                 ]
-                if expected_intermediate_events != -1:
+                if self.dump_intermediate_outputs:
                     cmd.append("--dump_intermediate_outputs")
                 cmd += extra_cmds.split()
 
@@ -495,9 +495,7 @@ class TestQNN(unittest.TestCase):
                     host_id=self.host,
                     soc_model=self.model,
                     error_only=self.error_only,
-                    dump_intermediate_outputs=(
-                        True if expected_intermediate_events != -1 else False
-                    ),
+                    dump_intermediate_outputs=self.dump_intermediate_outputs,
                     expected_input_shape=(
                         (tensor.shape for tensor in processed_inputs)
                         if check_io_shape
@@ -661,6 +659,8 @@ class TestQNN(unittest.TestCase):
             per_channel_conv=is_conv_per_channel,
             per_channel_linear=is_linear_per_channel,
             submodule_qconfig_list=submodule_qconfig_list,
+            backend=get_backend_type(self.backend),
+            soc_model=self.model,
         )
         if block_size_map is not None:
             quantizer.set_block_size_map(block_size_map)
@@ -701,6 +701,8 @@ class TestQNN(unittest.TestCase):
             per_channel_linear=is_linear_per_channel,
             is_qat=True,
             submodule_qconfig_list=submodule_qconfig_list,
+            backend=get_backend_type(self.backend),
+            soc_model=self.model,
         )
         if block_size_map is not None:
             quantizer.set_block_size_map(block_size_map)
