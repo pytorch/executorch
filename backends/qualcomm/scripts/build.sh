@@ -7,6 +7,7 @@
 set -e
 
 pip install pydot
+pip install py-cpuinfo
 
 # Check if running on macOS/Darwin
 if [[ "$(uname -s)" == "Darwin" ]]; then
