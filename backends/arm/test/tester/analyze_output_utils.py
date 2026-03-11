@@ -301,8 +301,8 @@ def dump_error_output(
     rtol: float = 1e-03,
     qtol: float = 0,
 ) -> None:
-    """
-    Prints Quantization info and error tolerances, and saves the differing tensors to disc.
+    """Prints Quantization info and error tolerances, and saves the differing
+    tensors to disc.
     """
     # Capture assertion error and print more info
     banner = "=" * 40 + "TOSA debug info" + "=" * 40
@@ -318,6 +318,8 @@ def dump_error_output(
         output_node = export_stage.artifact.graph_module.graph.output_node()
         qp_input = get_input_quantization_params(export_stage.artifact)
         qp_output = get_output_quantization_params(output_node)
+        scales = {k.name: v.scale for k, v in qp_output.items() if v is not None}
+        logger.error(f"Output Quant scales: {scales}")
         logger.error(f"Input QuantArgs: {qp_input}")
         logger.error(f"Output QuantArgs: {qp_output}")
 
@@ -336,7 +338,7 @@ def dump_error_output(
 
 
 if __name__ == "__main__":
-    """This is expected to produce the example output of print_diff"""
+    """This is expected to produce the example output of print_diff."""
     torch.manual_seed(0)
     a = torch.rand(3, 3, 2, 2) * 0.01
     b = a.clone().detach()

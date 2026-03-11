@@ -183,7 +183,8 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
     std::optional<const std::string> data_path,
     float temperature,
-    const std::string& method_name) {
+    const std::string& method_name,
+    Module::LoadMode load_mode) {
   if (data_path.has_value()) {
     std::vector<std::string> data_files;
     data_files.push_back(data_path.value());
@@ -193,7 +194,8 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
         std::move(data_files),
         temperature,
         nullptr,
-        method_name);
+        method_name,
+        load_mode);
   }
   return create_text_llm_runner(
       model_path,
@@ -201,7 +203,8 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
       std::vector<std::string>(),
       temperature,
       nullptr,
-      method_name);
+      method_name,
+      load_mode);
 }
 
 std::unique_ptr<TextLLMRunner> create_text_llm_runner(
@@ -210,7 +213,8 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     std::vector<std::string> data_files,
     float temperature,
     std::unique_ptr<::executorch::runtime::EventTracer> event_tracer,
-    const std::string& method_name) {
+    const std::string& method_name,
+    Module::LoadMode load_mode) {
   // Sanity check tokenizer
   if (!tokenizer || !tokenizer->is_loaded()) {
     ET_LOG(Error, "Tokenizer is null or not loaded");
@@ -221,13 +225,10 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
   std::unique_ptr<Module> module;
   if (data_files.size() > 0) {
     module = std::make_unique<Module>(
-        model_path,
-        data_files,
-        Module::LoadMode::File,
-        std::move(event_tracer));
+        model_path, data_files, load_mode, std::move(event_tracer));
   } else {
     module = std::make_unique<Module>(
-        model_path, Module::LoadMode::File, std::move(event_tracer));
+        model_path, load_mode, std::move(event_tracer));
   }
 
   // Get metadata from Module

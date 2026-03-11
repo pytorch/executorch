@@ -199,18 +199,26 @@ void add_q8ta_conv2d_pw_node(
     const ValueRef output_zp,
     const ValueRef bias_data,
     const ValueRef packed_bias,
-    const ValueRef packed_int8_output) {
-  // Validate packed dim info for input and output tensors
-  // To maximize performance, the input tensor must be in 4W4C layout
+    const uint32_t activation_type,
+    const ValueRef packed_int8_output,
+    const int32_t groups) {
   VK_CHECK_COND(q8ta_conv2d_check_4w4c_packed_dim_info(
       graph.packed_dim_info_of(packed_int8_input)));
-  // However, the requirements for output tensor layout is flexible
   VK_CHECK_COND(q8ta_conv2d_check_packed_dim_info(
       graph.packed_dim_info_of(packed_int8_output)));
 
-  // Validate dtype is kInt8x4
   VK_CHECK_COND(graph.dtype_of(packed_int8_input) == vkapi::kInt8x4);
   VK_CHECK_COND(graph.dtype_of(packed_int8_output) == vkapi::kInt8x4);
+
+  // Compute K4_per_group and OC4_per_group from tensor dimensions and groups
+  // Input K dim (dim -3) = K_per_group * groups for grouped im2col, or IC for
+  // non-grouped. Either way, K4_per_group = div_up_4(K_dim / groups).
+  const int32_t K_dim = graph.size_at<int32_t>(-3, packed_int8_input);
+  const int32_t OC = graph.size_at<int32_t>(-3, packed_int8_output);
+  const int32_t K4_per_group =
+      static_cast<int32_t>(utils::div_up_4(K_dim / groups));
+  const int32_t OC4_per_group =
+      static_cast<int32_t>(utils::div_up_4(OC / groups));
 
   float input_scale_val = graph.extract_scalar<float>(input_scale);
   int32_t input_zp_val = graph.extract_scalar<int32_t>(input_zp);
@@ -218,35 +226,29 @@ void add_q8ta_conv2d_pw_node(
   float output_inv_scale_val = 1.0f / graph.extract_scalar<float>(output_scale);
   int32_t output_zp_val = graph.extract_scalar<int32_t>(output_zp);
 
-  uint32_t apply_bias = 1;
-  if (graph.val_is_none(bias_data)) {
-    apply_bias = 0;
-  }
-
-  // Get input channel count for K4_per_group
-  const uint32_t IC = graph.size_at<uint32_t>(-3, packed_int8_input);
-  const uint32_t K4_per_group = utils::div_up_4(IC);
-
+  uint32_t apply_bias = graph.val_is_none(bias_data) ? 0u : 1u;
   std::vector<PushConstantDataInfo> push_constants = {
       PushConstantDataInfo(&input_scale_val, sizeof(input_scale_val)),
       PushConstantDataInfo(&input_zp_val, sizeof(input_zp_val)),
       PushConstantDataInfo(&output_inv_scale_val, sizeof(output_inv_scale_val)),
       PushConstantDataInfo(&output_zp_val, sizeof(output_zp_val)),
+      PushConstantDataInfo(&K4_per_group, sizeof(K4_per_group)),
+      PushConstantDataInfo(&OC4_per_group, sizeof(OC4_per_group)),
   };
 
-  std::string kernel_name = "q8ta_conv2d_pw";
+  const bool use_hw_dot =
+      graph.context()->adapter_ptr()->supports_int8_dot_product();
+  std::string kernel_name =
+      use_hw_dot ? "q8ta_conv2d_pw" : "q8ta_conv2d_pw_fallback";
   add_dtype_suffix(kernel_name, graph.dtype_of(packed_weight_scales));
 
-  // Pass metadata for both output and input tensors
   vkapi::ParamsBindList param_buffers = {
       graph.buffer_meta_ubo(packed_int8_output),
       graph.buffer_meta_ubo(packed_int8_input)};
 
-  // Build spec constants: apply_bias + layout constants
   vkapi::SpecVarList spec_constants = {
       apply_bias,
-      K4_per_group,
-      // Layout specialization constants
+      activation_type,
       graph.hashed_layout_of(packed_int8_output),
       graph.hashed_layout_of(packed_int8_input),
   };
@@ -256,7 +258,6 @@ void add_q8ta_conv2d_pw_node(
       VK_KERNEL_FROM_STR(kernel_name),
       pick_q8ta_conv2d_pw_global_wg_size,
       pick_q8ta_conv2d_pw_local_wg_size,
-      // Inputs and Outputs
       {{packed_int8_output, vkapi::kWrite},
        {{packed_int8_input,
          packed_weight,
@@ -264,13 +265,9 @@ void add_q8ta_conv2d_pw_node(
          packed_weight_scales,
          packed_bias},
         vkapi::kRead}},
-      // Shader params buffers
       param_buffers,
-      // Push Constants
       push_constants,
-      // Specialization Constants
       spec_constants,
-      // Resize args
       {}));
 }
 
@@ -296,7 +293,11 @@ void q8ta_conv2d_pw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   (void)args.at(idx++); // padding
   (void)args.at(idx++); // dilation
   (void)args.at(idx++); // groups
+  const ValueRef activation_ref = args.at(idx++);
   const ValueRef packed_int8_output = args.at(idx++);
+
+  uint32_t activation_type_val = static_cast<uint32_t>(
+      activation_type_from_string(graph.extract_string(activation_ref)));
 
   QuantizationConfig weight_quant_config(8, kPerChannel, {});
 
@@ -342,6 +343,7 @@ void q8ta_conv2d_pw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       output_zp,
       bias_data,
       packed_bias,
+      activation_type_val,
       packed_int8_output);
 }
 

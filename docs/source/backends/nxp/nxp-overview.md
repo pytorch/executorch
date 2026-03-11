@@ -11,7 +11,7 @@ For up-to-date status about running ExecuTorch on Neutron backend please visit t
 ## Features
 
 
-ExecuTorch v1.0 supports running machine learning models on selected NXP chips (for now only i.MXRT700).
+ExecuTorch v1.0 supports running machine learning models on selected NXP chips (for now only `i.MXRT700`).
 Among currently supported machine learning models are:
 - Convolution-based neutral networks
 - Full support for MobileNetV2 and CifarNet
@@ -27,7 +27,7 @@ Among currently supported machine learning models are:
 - eIQ Neutron Converter for MCUXPresso SDK 25.12, what you can download from eIQ PyPI:
 
 ```commandline
-$ pip install --index-url https://eiq.nxp.com/repository neutron_converter_SDK_25_12
+$ pip install --index-url https://eiq.nxp.com/repository eiq_neutron_sdk
 ```
 
 Instead of manually installing requirements, except MCUXpresso IDE and SDK, you can use the setup script: 
@@ -59,6 +59,8 @@ For more finegrained tutorial, visit [this manual page](https://mcuxpresso.nxp.c
 
 **→{doc}`nxp-dim-order` — Dim order support (channels last inputs).**
 
+**→{doc}`nxp-kernel-selection` — Neutron Firmware Kernel Selection support.**
+
 ```{toctree}
 :maxdepth: 2
 :hidden:
@@ -68,4 +70,5 @@ nxp-partitioner
 nxp-quantization
 tutorials/nxp-tutorials
 nxp-dim-order
+nxp-kernel-selection
 ```

@@ -16,7 +16,6 @@ from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
 from executorch.backends.nxp.tests.executorch_pipeline import (
-    neutron_converter_flavor,
     neutron_target_spec,
     to_quantized_edge_program,
 )
@@ -271,10 +270,6 @@ def test_decompose_split_with_one_chunk(mocker, input_shape, size_or_sections, d
 def test_decompose_gru_with_split_full_pipeline(
     mocker, input_shape, size_or_sections, dim
 ):
-    # The delegation of slices will not work in older versions, thus making the tests fail.
-    if neutron_converter_flavor == "SDK_25_09":
-        pytest.skip("Neutron Software must be version 2.2.1 or higher.")
-
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     if isinstance(size_or_sections, list):

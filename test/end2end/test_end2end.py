@@ -61,7 +61,7 @@ except ImportError as e:
     pass
 
 try:
-    from executorch.extension.pybindings.aten_lib import (  # type: ignore[import-not-found]
+    from executorch.extension.pybindings.aten_lib import (  # type: ignore[import-not-found, no-redef]
         _load_for_executorch_from_buffer,
     )
 

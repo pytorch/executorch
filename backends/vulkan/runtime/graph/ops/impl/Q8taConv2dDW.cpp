@@ -281,6 +281,7 @@ void add_q8ta_conv2d_dw_node(
     const ValueRef padding,
     const ValueRef dilation,
     const ValueRef groups,
+    const uint32_t activation_type,
     const ValueRef packed_int8_output) {
   Conv2DParams conv_params = create_conv2d_params(
       graph,
@@ -334,9 +335,10 @@ void add_q8ta_conv2d_dw_node(
       graph.buffer_meta_ubo(packed_int8_input),
       graph.create_params_buffer(conv_params)};
 
-  // Build spec constants: apply_bias + layout constants
+  // Build spec constants: apply_bias, activation_type + layout constants
   vkapi::SpecVarList spec_constants = {
       apply_bias,
+      activation_type,
       // Layout specialization constants
       graph.hashed_layout_of(packed_int8_input),
       graph.hashed_layout_of(packed_int8_output),
@@ -385,7 +387,11 @@ void q8ta_conv2d_dw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef padding = args.at(idx++);
   const ValueRef dilation = args.at(idx++);
   const ValueRef groups = args.at(idx++);
+  const ValueRef activation = args.at(idx++);
   const ValueRef packed_int8_output = args.at(idx++);
+
+  uint32_t activation_type_val = static_cast<uint32_t>(
+      activation_type_from_string(graph.extract_string(activation)));
 
   QuantizationConfig weight_quant_config(8, kPerChannel, {});
 
@@ -432,6 +438,7 @@ void q8ta_conv2d_dw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       padding,
       dilation,
       groups,
+      activation_type_val,
       packed_int8_output);
 }
 
