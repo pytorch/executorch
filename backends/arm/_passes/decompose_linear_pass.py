@@ -6,7 +6,8 @@
 
 from typing import Set, Type
 
-import numpy as np
+import torch
+
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
@@ -44,7 +45,9 @@ class DecomposeLinearPass(ArmPass):
             output_shape = get_first_fake_tensor(node).shape
             input_shape = get_first_fake_tensor(input).shape
             weights_shape = get_first_fake_tensor(weights).shape
-            batches = int(np.prod(input_shape[:-1])) if len(input_shape) > 1 else 1
+            batches = torch.sym_int(1)
+            for dim in input_shape[:-1]:
+                batches *= dim
             # input has shape (..., Ci)
             input_reshaped_shape = [batches, input_shape[-1], 1, 1]
             # weights have shape (Co, Ci)

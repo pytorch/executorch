@@ -9,7 +9,6 @@ from typing import Optional
 
 import torch
 import torchaudio
-
 from executorch.examples.models.parakeet.quantize import quantize_model_
 from executorch.exir import (
     EdgeCompileConfig,

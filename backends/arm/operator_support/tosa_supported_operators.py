@@ -297,6 +297,8 @@ def tosa_support_factory(
     disallowed_dtypes = [torch.float64]
     if not tosa_spec.support_extension("bf16"):
         disallowed_dtypes.append(torch.bfloat16)
+    if tosa_spec.is_U55_subset:
+        disallowed_dtypes.append(torch.bool)
     negative_checks.append(
         CheckDtypeInputsAndOutputs(
             exported_program, reporter, disallowed_dtypes, tosa_spec
