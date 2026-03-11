@@ -44,13 +44,13 @@ void check_arange_input(
     const ValueRef start,
     const ValueRef end,
     const ValueRef step) {
-  if (!graph.val_is_none(start) && !graph.val_is_int(end)) {
+  if (!graph.val_is_none(start) && !graph.val_is_int(start)) {
     VK_THROW("arange: start must be int!");
   }
   if (!graph.val_is_none(end) && !graph.val_is_int(end)) {
     VK_THROW("arange: end must be int!");
   }
-  if (!graph.val_is_none(step) && !graph.val_is_int(end)) {
+  if (!graph.val_is_none(step) && !graph.val_is_int(step)) {
     VK_THROW("arange: step must be int!");
   }
 }

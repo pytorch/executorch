@@ -7,10 +7,6 @@
 from typing import Sequence
 
 import torch
-from executorch.backends.qualcomm.quantizer.annotators import (
-    _is_float_tensor,
-    Q_ANNOTATION_KEY,
-)
 from executorch.backends.qualcomm.quantizer.quantizer import (
     get_16a8w_qnn_ptq_config,
     get_16a8w_qnn_qat_config,
@@ -18,6 +14,10 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
     get_8a8w_qnn_qat_config,
     get_ptq_per_channel_quant_config,
     QuantizationConfig,
+)
+from executorch.backends.qualcomm.quantizer.rules import (
+    _is_float_tensor,
+    Q_ANNOTATION_KEY,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Node
@@ -251,23 +251,25 @@ def annotate_kv_8bit(  # noqa: C901
             )
         while isinstance(node, Node) and node.op == "call_function":
             if node.target in [
+                torch.ops.aten.select.int,
+                torch.ops.aten.slice.Tensor,
+            ]:
+                annotate_single_in_single_out(node, quantization_config_8a8w)
+                node = node.args[0]
+            elif node.target in [
                 torch.ops.aten.permute.default,
                 torch.ops.aten.squeeze.dim,
                 torch.ops.aten.transpose.int,
                 torch.ops.aten.view.default,
                 torch.ops.aten.reshape.default,
-                torch.ops.aten.select.int,
-                torch.ops.aten.slice.Tensor,
                 torch.ops.aten.expand.default,
                 torch.ops.aten.unsqueeze.default,
+                torch.ops.aten.flatten.using_ints,
             ]:
-                annotate_single_in_single_out(node, quantization_config_8a8w)
+                annotate_single_in_share_out(node, quantization_config_8a8w)
                 node = node.args[0]
             elif node.target == torch.ops.aten.stack.default:
                 annotate_stack(node, quantization_config_8a8w)
-                node = node.args[0]
-            elif node.target == torch.ops.aten.flatten.using_ints:
-                annotate_single_in_share_out(node, quantization_config_8a8w)
                 node = node.args[0]
             elif node.target == torch.ops.aten.rms_norm.default:
                 annotate_rms_norm(node, quantization_config_8a8w)

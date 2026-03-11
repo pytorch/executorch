@@ -4,8 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import torch
-from executorch.backends.qualcomm.builders.node_visitor import q_ops
+from executorch.backends.qualcomm.builders.node_visitor import dq_ops, q_ops
 from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
@@ -25,17 +26,27 @@ class AnnotateAdaptiveAvgPool1D(ExportPass):
 
     def _annotate_adaptive_avg_pool1d(self, graph_module: torch.fx.GraphModule):
         partitions = get_source_partitions(
-            graph_module.graph, [torch.ops.aten.adaptive_avg_pool1d.default]
+            graph_module.graph,
+            [torch.ops.aten.adaptive_avg_pool1d.default, torch.adaptive_avg_pool1d],
         )
         for src_partitions in partitions.values():
             for src_partition in src_partitions:
+                input_node = src_partition.input_nodes[0]
+                if input_node.target in dq_ops:
+                    quant_attrs = get_quant_attrs(self.edge_program, input_node)
+                    for n in src_partition.nodes:
+                        if n.target == exir_ops.edge.aten.unsqueeze_copy.default:
+                            n.meta[QCOM_QUANT_ATTRS] = quant_attrs.copy()
+
                 output = src_partition.output_nodes[0]
                 if (list(output.users)[0].target) in q_ops:
                     quant_attrs = get_quant_attrs(
                         self.edge_program, list(output.users)[0]
                     )
                     for n in src_partition.nodes:
-                        n.meta[QCOM_QUANT_ATTRS] = quant_attrs.copy()
+                        # For adaptive_avg_pool2d and squeeze
+                        if n.target != exir_ops.edge.aten.unsqueeze_copy.default:
+                            n.meta[QCOM_QUANT_ATTRS] = quant_attrs.copy()
 
     def call(self, graph_module: torch.fx.GraphModule):
         self._annotate_adaptive_avg_pool1d(graph_module)
