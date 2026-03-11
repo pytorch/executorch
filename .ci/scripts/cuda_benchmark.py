@@ -584,6 +584,7 @@ class BenchmarkResults:
 
         # Create base extra_info
         base_extra_info = {
+            "board name": "cuda benchmark",
             "backend": "cuda",
             "quantization": quantization,
             "git_sha": git_sha,
