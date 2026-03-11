@@ -19,7 +19,7 @@ jobs:
     steps:
       - name: Update viable/strict
         id: update
-        uses: pytorch/test-infra/.github/actions/update-viablestrict@main
+        uses: pytorch/test-infra/.github/actions/update-viablestrict@release/2.11
         with:
           repository: pytorch/executorch
           stable-branch: viable/strict

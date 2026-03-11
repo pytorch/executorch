@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   build:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.11
     permissions:
       id-token: write
       contents: read
@@ -98,7 +98,7 @@ jobs:
     permissions:
       id-token: write
       contents: write
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.11
     secrets: inherit
     with:
       secrets-env: DOC_BUILD_GITHUB_TOKEN
