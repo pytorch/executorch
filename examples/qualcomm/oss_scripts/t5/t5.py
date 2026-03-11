@@ -102,7 +102,9 @@ class T5:
         self.exported_decoder = None
         self.quant_dtype = None
 
-    def quantize(self, inputs, quant_dtype, targets=None, metrics=None):
+    def quantize(
+        self, backend, soc_model, inputs, quant_dtype, targets=None, metrics=None
+    ):
         assert quant_dtype is not None, "quant_dtype must be specified"
         self.quant_dtype = quant_dtype
 
@@ -121,6 +123,8 @@ class T5:
                 per_channel_linear=True,
                 quant_dtype=quant_dtype,
                 eps=2**-20,
+                backend=backend,
+                soc_model=soc_model,
             )
 
             self.exported_encoder = prepare_pt2e(self.exported_encoder, quantizer)
@@ -258,7 +262,7 @@ def main(args):
             QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_16a8w,
         }[backend]
         if quant_dtype:
-            t5.quantize(inputs, quant_dtype)
+            t5.quantize(backend, args.model, inputs, quant_dtype)
         t5.lowering_modules(
             args.artifact,
             soc_model=getattr(QcomChipset, args.model),
