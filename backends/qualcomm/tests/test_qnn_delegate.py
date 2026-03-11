@@ -8380,6 +8380,8 @@ class TestUtilsScript(TestQNN):
                 "--input_list",
                 f"{tmp_dir}/input_list",
             ]
+            if self.host:
+                cmds.extend(["--host", self.host])
             subprocess.run(cmds, stdout=subprocess.DEVNULL)
             output_file = f"{tmp_dir}/e_out/Result_0/output_0.pt"
             self.assertTrue(os.path.isfile(output_file))

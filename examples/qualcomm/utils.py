@@ -906,7 +906,7 @@ def setup_common_args_and_variables():
         "-H",
         "--host",
         help="hostname where android device is connected.",
-        default="localhost",
+        default=None,
         type=str,
     )
 
