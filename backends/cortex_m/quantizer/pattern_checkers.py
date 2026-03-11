@@ -291,8 +291,7 @@ class CortexMAvgPool2DCheck(PatternCheck):
             return False
         node = pattern[0]
         ceil_mode = cast(bool, node.args[4]) if len(node.args) > 4 else False
-        count_include_pad = cast(bool, node.args[5]) if len(node.args) > 5 else True
-        return not (ceil_mode or count_include_pad)
+        return not ceil_mode
 
     @classmethod
     def check_quantization_config(
