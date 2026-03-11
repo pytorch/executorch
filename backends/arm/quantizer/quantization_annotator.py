@@ -13,15 +13,15 @@ import functools
 import logging
 import operator
 from dataclasses import dataclass, replace
-from typing import Callable, cast, Iterable, List, Optional, Sequence
+from typing import Any, Callable, cast, Iterable, List, NamedTuple, Optional, Sequence
 
 import torch
 import torch.fx
 from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.quantizer import QuantizationConfig
-from torch._subclasses import FakeTensor
 
+from torch._subclasses import FakeTensor
 from torch.fx import Node
 from torchao.quantization.pt2e import (
     FakeQuantize,
@@ -29,9 +29,11 @@ from torchao.quantization.pt2e import (
     MovingAveragePerChannelMinMaxObserver,
     PartialWrapper,
 )
+
 from torchao.quantization.pt2e.quantizer import (
     annotate_input_qspec_map,
     annotate_output_qspec,
+    FixedQParamsQuantizationSpec,
     QuantizationSpec,
     QuantizationSpecBase,
     SharedQuantizationSpec,
@@ -76,6 +78,11 @@ class _OpQuantProperties:
     def __init__(self):
         self.quant_inputs: List[_QuantProperty] = []
         self.quant_output: Optional[_QuantProperty] = None
+
+
+class _QParams(NamedTuple):
+    scale: float
+    zero_point: int
 
 
 def _as_list(x):
@@ -443,6 +450,29 @@ _conv_ops = {
     torch.ops.aten.conv3d.padding,
 }
 
+# For these ops, we use fixed qspecs, meaning that quantization params for
+# these are statically defined. This is to prevent issues with out-of-range
+# values when using dynamic quantization.
+#
+# Dict of operator to a dict of num_bits to qparams for that operator.
+_fixed_input_qspec_ops: dict[Any, dict[int, _QParams]] = {
+    # acos has a valid range of [-1, 1]
+    torch.ops.aten.acos.default: {
+        8: _QParams((1.0 - (-1.0)) / (1 << 8), 0),
+        16: _QParams((1.0 - (-1.0)) / (1 << 16), 0),
+    },
+    # asin has a valid range of [-1, 1]
+    torch.ops.aten.asin.default: {
+        8: _QParams((1.0 - (-1.0)) / (1 << 8), 0),
+        16: _QParams((1.0 - (-1.0)) / (1 << 16), 0),
+    },
+    # atanh has a valid range of (-1, 1) (excluding -1 and 1).
+    torch.ops.aten.atanh.default: {
+        8: _QParams((0.999 - (-0.999)) / (1 << 8), 0),
+        16: _QParams((0.99999 - (-0.99999)) / (1 << 16), 0),
+    },
+}
+
 _one_to_one = {
     torch.ops.aten.abs.default,
     torch.ops.aten.ceil.default,
@@ -474,11 +504,8 @@ _one_to_one = {
     torch.ops.aten.log1p.default,
     torch.ops.aten.acosh.default,
     torch.ops.aten.sign.default,
-    torch.ops.aten.asin.default,
-    torch.ops.aten.atanh.default,
     torch.ops.aten.asinh.default,
     torch.ops.aten.cosh.default,
-    torch.ops.aten.acos.default,
     torch.ops.aten.cumsum.default,
     torch.ops.aten.tan.default,
 }
@@ -783,6 +810,25 @@ def get_quant_properties(  # noqa: C901
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
     elif node.target in _one_to_one:
         quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
+        quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
+    elif node.target in _fixed_input_qspec_ops:
+        num_bits = torch.iinfo(input_act_qspec.dtype).bits
+        qparams = _fixed_input_qspec_ops[node.target][num_bits]
+
+        quant_properties.quant_inputs = [
+            _QuantProperty(
+                0,
+                FixedQParamsQuantizationSpec(
+                    dtype=input_act_qspec.dtype,
+                    scale=qparams.scale,
+                    zero_point=qparams.zero_point,
+                    quant_min=input_act_qspec.quant_min,
+                    quant_max=input_act_qspec.quant_max,
+                    qscheme=input_act_qspec.qscheme,
+                    is_dynamic=input_act_qspec.is_dynamic,
+                ),
+            )
+        ]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in _one_to_one_shared_input_qspec:
         input_node = ensure_type(Node, node.args[0])
