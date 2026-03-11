@@ -7,10 +7,6 @@
 
 #include "cortex_m_ops_common.h"
 
-extern "C" {
-#include "arm_nnfunctions.h"
-}
-
 namespace cortex_m {
 namespace native {
 
@@ -192,7 +188,7 @@ Tensor& quantized_conv2d_out(
       arm_convolve_s8_get_buffer_size(&input_dims, &filter_dims));
   if (buffer_bytes > 0) {
     auto buffer_or_error =
-        context.allocate_temp(buffer_bytes, alignof(int16_t));
+        context.allocate_temp(buffer_bytes, kCortexMMveAlignment);
     if (!buffer_or_error.ok()) {
       if (buffer_or_error.error() != Error::NotFound) {
         ET_LOG(

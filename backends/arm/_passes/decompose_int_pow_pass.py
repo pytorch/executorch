@@ -25,11 +25,7 @@ class DecomposeIntPowPass(ArmPass):
         if op != exir_ops.edge.aten.pow.Tensor_Scalar:
             return super().call_operator(op, args, kwargs, meta)
 
-        is_quantized = (
-            len(meta.data.get("input_qparams", {})) > 0
-            and len(meta.data.get("output_qparams", {})) > 0
-        )
-        if is_quantized:
+        if self._is_quantized_meta(meta):
             # If quantized, node should be replace by table op
             return super().call_operator(op, args, kwargs, meta)
 

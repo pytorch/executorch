@@ -31,28 +31,6 @@ class MockDeviceAllocator : public DeviceAllocator {
  public:
   explicit MockDeviceAllocator(DeviceType type) : type_(type) {}
 
-  Error init_buffer(uint32_t memory_id, size_t size, DeviceIndex index)
-      override {
-    last_init_buffer_memory_id_ = memory_id;
-    last_init_buffer_size_ = size;
-    last_init_buffer_index_ = index;
-    init_buffer_call_count_++;
-    return Error::Ok;
-  }
-
-  Result<void*> get_offset_address(
-      uint32_t memory_id,
-      size_t offset_bytes,
-      size_t size_bytes,
-      DeviceIndex index) override {
-    last_get_offset_memory_id_ = memory_id;
-    last_get_offset_offset_ = offset_bytes;
-    last_get_offset_size_ = size_bytes;
-    last_get_offset_index_ = index;
-    get_offset_address_call_count_++;
-    return &dummy_buffer_;
-  }
-
   Result<void*> allocate(size_t nbytes, DeviceIndex index) override {
     last_allocate_size_ = nbytes;
     last_allocate_index_ = index;
@@ -97,17 +75,6 @@ class MockDeviceAllocator : public DeviceAllocator {
   }
 
   // Tracking variables for verification
-  uint32_t last_init_buffer_memory_id_ = 0;
-  size_t last_init_buffer_size_ = 0;
-  DeviceIndex last_init_buffer_index_ = -1;
-  int init_buffer_call_count_ = 0;
-
-  uint32_t last_get_offset_memory_id_ = 0;
-  size_t last_get_offset_offset_ = 0;
-  size_t last_get_offset_size_ = 0;
-  DeviceIndex last_get_offset_index_ = -1;
-  int get_offset_address_call_count_ = 0;
-
   size_t last_allocate_size_ = 0;
   DeviceIndex last_allocate_index_ = -1;
   int allocate_call_count_ = 0;
@@ -146,34 +113,6 @@ TEST_F(DeviceAllocatorTest, MockAllocatorDeviceType) {
 
   EXPECT_EQ(cpu_allocator.device_type(), DeviceType::CPU);
   EXPECT_EQ(cuda_allocator.device_type(), DeviceType::CUDA);
-}
-
-TEST_F(DeviceAllocatorTest, MockAllocatorInitBuffer) {
-  MockDeviceAllocator allocator(DeviceType::CUDA);
-
-  Error err =
-      allocator.init_buffer(/*memory_id=*/1, /*size=*/1024, /*index=*/0);
-
-  EXPECT_EQ(err, Error::Ok);
-  EXPECT_EQ(allocator.init_buffer_call_count_, 1);
-  EXPECT_EQ(allocator.last_init_buffer_memory_id_, 1);
-  EXPECT_EQ(allocator.last_init_buffer_size_, 1024);
-  EXPECT_EQ(allocator.last_init_buffer_index_, 0);
-}
-
-TEST_F(DeviceAllocatorTest, MockAllocatorGetOffsetAddress) {
-  MockDeviceAllocator allocator(DeviceType::CUDA);
-
-  Result<void*> result = allocator.get_offset_address(
-      /*memory_id=*/2, /*offset_bytes=*/128, /*size_bytes=*/256, /*index=*/1);
-
-  EXPECT_TRUE(result.ok());
-  EXPECT_NE(result.get(), nullptr);
-  EXPECT_EQ(allocator.get_offset_address_call_count_, 1);
-  EXPECT_EQ(allocator.last_get_offset_memory_id_, 2);
-  EXPECT_EQ(allocator.last_get_offset_offset_, 128);
-  EXPECT_EQ(allocator.last_get_offset_size_, 256);
-  EXPECT_EQ(allocator.last_get_offset_index_, 1);
 }
 
 TEST_F(DeviceAllocatorTest, MockAllocatorAllocateAndDeallocate) {
@@ -262,9 +201,6 @@ TEST_F(DeviceAllocatorTest, RegisterAndDispatchThroughRegistry) {
   ASSERT_NE(alloc, nullptr);
 
   // Use the allocator through the registry and verify it reaches the mock.
-  Error err = alloc->init_buffer(/*memory_id=*/5, /*size=*/2048, /*index=*/0);
-  EXPECT_EQ(err, Error::Ok);
-
   Result<void*> result = alloc->allocate(/*nbytes=*/256, /*index=*/1);
   EXPECT_TRUE(result.ok());
   EXPECT_NE(result.get(), nullptr);

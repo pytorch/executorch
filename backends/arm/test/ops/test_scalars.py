@@ -2,7 +2,22 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Summary of non-working cases.
 
+FP:
+    Op(scalar, tensor):
+        One issue is that lift_constant_tensor_pass looks for a fake_tensor in
+        the meta of the first node which does not work the first node is a
+        scalar. Fixing that, the lowering fails since
+        edge_program.graph_signatures.inputs_to_buffers is changed from
+        {"_lifted_tensor_constant0":"_lifted_tensor_constant0"} to
+        {"x":"_lifted_tensor_constant0"} somewhere in _transform in the to_edge
+        step. This makes ArmPartitioner miss tagging the data in
+        tag_constant_data.
+        # MLETORCH-408
+    Sub or inplace-sub with an integer input.
+
+"""
 
 from typing import Tuple
 
@@ -16,23 +31,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
 )
 
-"""
-Summary of non-working cases.
-FP:
-    Op(scalar, tensor):
-        One issue is that lift_constant_tensor_pass looks for a fake_tensor in the meta of the first
-        node which does not work the first node is a scalar.
-        Fixing that, the lowering fails since edge_program.graph_signatures.inputs_to_buffers is changed from
-        {"_lifted_tensor_constant0":"_lifted_tensor_constant0"} to {"x":"_lifted_tensor_constant0"}
-        somewhere in _transform in the to_edge step. This makes ArmPartitioner miss tagging the
-        data in tag_constant_data.
-        # MLETORCH-408
-    Sub or inplace-sub with an integer input.
-"""
 input_t1 = Tuple[torch.Tensor, torch.scalar_tensor]  # Input x, Input y
-
-
-"""Tests various scalar cases"""
 
 
 class Add(torch.nn.Module):
@@ -401,7 +400,7 @@ def test_div_scalar_tosa_FP(test_data):
 def test_div_tensor_tosa_INT_scalar(test_data):
     """Tests regular div with one scalar input."""
     pipeline = TosaPipelineINT[input_t1](
-        Div(), test_data, aten_op=[], frobenius_threshold=0.5
+        Div(), test_data, aten_op=[], frobenius_threshold=None, cosine_threshold=None
     )
     pipeline.run()
 
@@ -410,7 +409,11 @@ def test_div_tensor_tosa_INT_scalar(test_data):
 def test_div_tensor_tosa_INT_inplace(test_data):
     """Tests inplace div with one scalar input."""
     pipeline = TosaPipelineINT[input_t1](
-        DivInplace(), test_data, aten_op=[], frobenius_threshold=0.5
+        DivInplace(),
+        test_data,
+        aten_op=[],
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 

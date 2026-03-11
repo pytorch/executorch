@@ -1,4 +1,4 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -22,7 +22,12 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
     neutron_target_spec,
     to_quantized_edge_program,
 )
-from executorch.backends.nxp.tests.executors import OverrideTargetSupportCheck
+from executorch.backends.nxp.tests.executors import (
+    graph_contains_any_of_ops,
+    OverrideTargetSupportCheck,
+)
+
+from executorch.backends.nxp.tests.models import ConvBNModule
 from torch import nn
 
 
@@ -172,9 +177,7 @@ def test_batch_norm_conv_fusing__full_pipeline__1d(bias: bool):
     ).exported_program()
     nodes = list(edge_program.graph.nodes)
 
-    assert (
-        len(nodes) == 17
-    )  # 1D Conv currently isn't delegated, because it doesn't get quantized.
+    assert len(nodes) == 13
     assert not any(
         node.op == "call_function" and "batch_norm" in node.target.__name__
         for node in nodes
@@ -230,4 +233,29 @@ def test_batch_norm_linear_fusing__full_pipeline(bias: bool):
     assert not any(
         node.op == "call_function" and "batch_norm" in node.target.__name__
         for node in nodes
+    )
+
+
+@pytest.mark.parametrize(
+    "conv_module",
+    ["conv2d"],
+)
+def test_biasless_convbn_fusion_qat(
+    conv_module,
+):
+    if conv_module.startswith("conv1d"):
+        input_shape = (1, 3, 32)
+    elif conv_module.startswith("conv2d"):
+        input_shape = (1, 3, 32, 32)
+    else:  # conv3d
+        input_shape = (1, 3, 32, 32, 32)
+
+    model = ConvBNModule(conv_module, conv_bias=False, bn_affine=True)
+
+    edge_program = to_quantized_edge_program(
+        model, input_shape, use_qat=True, use_neutron_for_format_conversion=False
+    ).exported_program()
+
+    assert graph_contains_any_of_ops(
+        edge_program.graph, [torch.ops.higher_order.executorch_call_delegate]
     )

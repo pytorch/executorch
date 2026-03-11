@@ -9,7 +9,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/portable_type/device.h>
@@ -30,34 +29,6 @@ namespace runtime {
 class DeviceAllocator {
  public:
   virtual ~DeviceAllocator() = default;
-
-  /**
-   * Initialize a memory buffer pool for memory-planned tensors.
-   *
-   * @param memory_id The ID of the memory buffer (index into
-   *     ExecutionPlan.non_const_buffer_sizes).
-   * @param size The size in bytes to allocate for this buffer.
-   * @param index The device index (e.g., GPU 0 vs GPU 1).
-   * @return Error::Ok on success, or an appropriate error code on failure.
-   */
-  virtual Error
-  init_buffer(uint32_t memory_id, size_t size, etensor::DeviceIndex index) = 0;
-
-  /**
-   * Get a pointer to a specific offset within a pre-allocated buffer pool.
-   *
-   * @param memory_id The ID of the memory buffer.
-   * @param offset_bytes Offset in bytes from the start of the buffer.
-   * @param size_bytes Size of the requested region in bytes.
-   * @param index The device index.
-   * @return A Result containing the device pointer on success, or an error.
-   */
-  virtual Result<void*> get_offset_address(
-      uint32_t memory_id,
-      size_t offset_bytes,
-      size_t size_bytes,
-      etensor::DeviceIndex index) = 0;
-
   /**
    * Allocate device memory.
    *

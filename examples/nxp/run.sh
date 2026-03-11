@@ -24,8 +24,7 @@ popd
 
 echo "** Export cifar10 model to executorch"
 # Run the AoT example
-python -m examples.nxp.aot_neutron_compile --quantize \
-    --delegate --neutron_converter_flavor SDK_25_12 -m "cifar10"
+python -m examples.nxp.aot_neutron_compile --quantize --delegate -m "cifar10"
 test -f cifar10_nxp_delegate.pte
 
 echo "** Generate test dataset"

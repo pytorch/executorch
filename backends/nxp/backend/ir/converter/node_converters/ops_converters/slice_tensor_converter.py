@@ -31,11 +31,6 @@ class SliceTensorConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        # Provisional solution - slice conversion works for neutron software 2.2.1+
-        neutron_flavor = neutron_target_spec.neutron_target.__module__.split(".")[0]
-        if neutron_flavor != "neutron_converter_SDK_25_12":
-            return False
-
         input_shape = input_tensor(node, 0).shape
         dim = node.args[1]
         if node.args[0].meta[NXP_NODE_FORMAT].is_channels_first():

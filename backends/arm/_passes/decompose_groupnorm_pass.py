@@ -101,6 +101,9 @@ class DecomposeGroupNormPass(ArmPass):
                 # MI profile always provides all the args: x, weight, bias, N, C, HxW, group, eps
                 case 8:
                     x, weights, bias, N, C, HxW, group, eps = args
+                # BI profile: affine=[True|False], all args explicit (including cudnn_enabled)
+                case 6:
+                    x, group, weights, bias, eps, _cudnn_enabled = args
                 # BI profile: affine=[True|False], eps!=1e-5
                 case 5:
                     x, group, weights, bias, eps = args
