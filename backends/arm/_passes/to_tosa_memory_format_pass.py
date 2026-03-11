@@ -413,8 +413,16 @@ class ToTosaMemoryFormatPass(ArmPass):
                 # shape nodes depending on the order of user traversal.
                 old_dim_order = arg.meta.get("tosa_dim_order", None) is not None
                 dim_order = node.meta["tosa_dim_order"]
+                # The shape node may have a different rank than the dim_order being propagated from its users
                 if len(dim_order) != len(arg.meta["val"]):
-                    dim_order = tuple(range(len(arg.meta["val"])))
+                    # For pad shape nodes, the rank is always 2x of the input tensor rank, and the dim order needs to be adjusted accordingly.
+                    # For other shape nodes, we assume the dim order is the same as the order of dimensions in the shape.
+                    if node.target == exir_ops.backend.tosa.PAD.default:
+                        dim_order = tuple(
+                            i for axis in dim_order for i in (2 * axis, 2 * axis + 1)
+                        )
+                    else:
+                        dim_order = tuple(range(len(arg.meta["val"])))
                 if old_dim_order and arg.meta["tosa_dim_order"] != dim_order:
                     raise RuntimeError(
                         f"Conflicting dim orders {arg.meta['tosa_dim_order']} and {dim_order} for shape node {arg.name}"
