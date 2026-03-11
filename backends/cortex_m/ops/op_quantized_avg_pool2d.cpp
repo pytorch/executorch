@@ -27,8 +27,6 @@ Tensor& quantized_avg_pool2d_out(
 
   const int64_t dilation_values[2] = {1, 1};
   const Int64ArrayRef dilation(dilation_values, 2);
-  const bool ceil_mode = false;
-
   CmsisPool2DConfig pool_config;
   if (!prepare_cmsis_pool2d_config(
           context,
@@ -39,7 +37,7 @@ Tensor& quantized_avg_pool2d_out(
           stride,
           padding,
           dilation,
-          ceil_mode,
+          false,
           activation_min,
           activation_max,
           pool_config)) {
@@ -53,7 +51,7 @@ Tensor& quantized_avg_pool2d_out(
   const int8_t* input_data = input.const_data_ptr<int8_t>();
   int8_t* output_data = out.mutable_data_ptr<int8_t>();
 
-  arm_cmsis_nn_status status = arm_avgpool_s8(
+  const arm_cmsis_nn_status status = arm_avgpool_s8(
       &cmsis_ctx,
       &pool_config.pool_params,
       &pool_config.input_dims,
