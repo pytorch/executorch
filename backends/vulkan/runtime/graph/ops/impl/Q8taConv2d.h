@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
 
 namespace vkcompute {
@@ -144,5 +145,11 @@ void add_q8ta_im2col_node(
     const int32_t zp);
 
 void q8ta_conv2d_im2col(ComputeGraph& graph, const std::vector<ValueRef>& args);
+
+// Transposed convolution
+
+void q8ta_conv2d_transposed(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args);
 
 } // namespace vkcompute
