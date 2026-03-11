@@ -10,12 +10,34 @@ import torch
 from executorch.exir._warnings import experimental
 from torchao.core.config import AOBaseConfig
 from torchao.prototype.mx_formats.config import ScaleCalculationMode
+from torchao.prototype.mx_formats.mx_tensor import to_dtype, to_mx
 from torchao.quantization import quantize_
 
 
 def _match_supported_modules(module: torch.nn.Module, _name: str) -> bool:
     """Default filter function that matches supported modules."""
-    return isinstance(module, torch.nn.Linear)
+    return isinstance(module, (torch.nn.Linear, torch.nn.Conv2d))
+
+
+def _cast_to_block_scaled_cpu_ref(
+    input: torch.Tensor,
+    output_dtype: torch.dtype,
+    block_size: int,
+) -> torch.Tensor:
+    """Emulate the current TOSA activation cast in eager mode."""
+    input_scale, input_qdata = to_mx(
+        input.to(torch.float32).contiguous(),
+        elem_dtype=output_dtype,
+        block_size=block_size,
+        scaling_mode=ScaleCalculationMode.RCEIL,
+    )
+    return to_dtype(
+        input_qdata,
+        input_scale,
+        output_dtype,
+        block_size,
+        torch.float32,
+    )
 
 
 @experimental("This API is experimental and may change without notice.")
