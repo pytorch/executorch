@@ -1313,7 +1313,7 @@ class InstanceNorm2d(torch.nn.Module):
 class LargeTensorLinear(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        hidden_dim = 4096
+        hidden_dim = 8192
         self.linear1_1 = torch.nn.Linear(512, hidden_dim)
         self.linear1_2 = torch.nn.Linear(512, hidden_dim)
         self.linear1_3 = torch.nn.Linear(512, hidden_dim)

@@ -12,7 +12,7 @@ See the sections below for requirements and exact commands.
 
 ## Requirements
 
-- Python 3.10+ with `executorch` and the dependencies in `examples/arm/image_classification_example/requirements.txt`.
+- Python 3.10+ with `executorch` and the dependencies in `examples/arm/image_classification_example_ethos_u/requirements.txt`.
 - Internet access to download pretrained weights and the Oxford-IIIT Pet dataset.
 
 ## Fine-tuning DEiT Tiny
@@ -20,7 +20,7 @@ See the sections below for requirements and exact commands.
 The `train_deit.py` script can be run as follows:
 
 ```bash
-python examples/arm/image_classification_example/model_export/train_deit.py \
+python examples/arm/image_classification_example_ethos_u/model_export/train_deit.py \
   --output-dir ./deit-tiny-oxford-pet \
   --num-epochs 3
 ```
@@ -33,7 +33,7 @@ Running this script achieves a test set accuracy of 86.10% in FP32.
 The `export_deit.py` script can be run as follows:
 
 ```bash
-python examples/arm/image_classification_example/model_export/export_deit.py \
+python examples/arm/image_classification_example_ethos_u/model_export/export_deit.py \
   --model-path ./deit-tiny-oxford-pet/final_model \
   --output-path ./deit_quantized_exported.pte \
   --num-calibration-samples 300 \
