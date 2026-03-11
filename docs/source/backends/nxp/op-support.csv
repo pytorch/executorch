@@ -13,8 +13,9 @@ aten.convolution.default,int8,static int8,"1D or 2D convolution, constant weight
 aten.div.Tensor,int8,static int8,"divisor - static tensor or scalar value, one dimension must satisfy %8 = 0 or scalar division (all dims = 1)"
 aten.hardtanh.default,int8,static int8,"supported ranges: <0,6>, <-1, 1>, <0,1>, <0,inf>"
 aten.leaky_relu.default,int8,static int8,
-aten.max_pool2d.default,int8,static int8,"dilation=1, ceil_mode=False"
-aten.max_pool2d_with_indices.default,int8,static int8,"dilation=1, ceil_mode=False"
+aten.max_pool1d.default,int8,static int8,"dilation=1, ceil_mode=False, channels%8=0, batch_size=1, stride_h=1 or 2"
+aten.max_pool2d.default,int8,static int8,"dilation=1, ceil_mode=False, channels%8=0, batch_size=1, stride_h=1 or 2"
+aten.max_pool2d_with_indices.default,int8,static int8,"dilation=1, ceil_mode=False, channels%8=0, batch_size=1, stride_h=1 or 2"
 aten.mean.dim,int8,static int8,"4D tensor only, dims = [-1,-2] or [-2,-1]"
 aten.mul.Tensor, int8, static int8, "tensor-size % 8 = 0"
 aten.mm.default,int8,static int8,"2D tensor only"

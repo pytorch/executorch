@@ -16,12 +16,12 @@
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/platform/assert.h>
 
+#include <cinttypes>
 #include <limits>
 #include <optional>
 
-extern "C" {
 #include "arm_nn_types.h"
-}
+#include "arm_nnfunctions.h"
 
 using Tensor = torch::executor::Tensor;
 using ScalarType = executorch::aten::ScalarType;
@@ -47,19 +47,19 @@ inline void validate_cmsis_nn_tensor_requirements(
   // Basic dtype validation
   ET_CHECK_MSG(
       input1.scalar_type() == expected_dtype,
-      "Input1 dtype must be %hhd, got %hhd",
-      expected_dtype,
-      input1.scalar_type());
+      "Input1 dtype must be %d, got %d",
+      static_cast<int>(expected_dtype),
+      static_cast<int>(input1.scalar_type()));
   ET_CHECK_MSG(
       input2.scalar_type() == expected_dtype,
-      "Input2 dtype must be %hhd, got %hhd",
-      expected_dtype,
-      input2.scalar_type());
+      "Input2 dtype must be %d, got %d",
+      static_cast<int>(expected_dtype),
+      static_cast<int>(input2.scalar_type()));
   ET_CHECK_MSG(
       output.scalar_type() == expected_dtype,
-      "Output dtype must be %hhd, got %hhd",
-      expected_dtype,
-      output.scalar_type());
+      "Output dtype must be %d, got %d",
+      static_cast<int>(expected_dtype),
+      static_cast<int>(output.scalar_type()));
   if (require_same_sizes) {
     ET_CHECK_MSG(
         input1.sizes() == input2.sizes(),
@@ -78,16 +78,17 @@ inline void validate_single_quant_params(
     const int64_t multiplier,
     const int64_t shift,
     const char* param_name) {
+  (void)zero_point;
   ET_CHECK_MSG(
       multiplier >= std::numeric_limits<int32_t>::min() &&
           multiplier <= std::numeric_limits<int32_t>::max(),
-      "%s multiplier must be in int32 range [Value: %d]",
+      "%s multiplier must be in int32 range [Value: %" PRIi64 "]",
       param_name,
       multiplier);
 
   ET_CHECK_MSG(
       shift >= -31 && shift <= 31,
-      "%s shift must be in range [-31, 31] [Value: %d]",
+      "%s shift must be in range [-31, 31] [Value: %" PRIi64 "]",
       param_name,
       shift);
 }
@@ -172,7 +173,7 @@ inline bool check_int32_within_range(
       value > std::numeric_limits<int32_t>::max()) {
     ET_LOG(
         Error,
-        "%s: %s value (%ld) exceeds int32_t range",
+        "%s: %s value (%" PRIi64 ") exceeds int32_t range",
         op_name,
         value_name,
         value);
@@ -354,14 +355,14 @@ inline bool validate_per_channel_quant_params(
     if (multipliers[i] <= ARM_NN_Q31_MIN || multipliers[i] > ARM_NN_Q31_MAX) {
       ET_LOG(
           Error,
-          "weight_multiplier[%d] out of CMSIS-NN range: %d",
+          "weight_multiplier[%d] out of CMSIS-NN range: %" PRIi64,
           i,
           multipliers[i]);
       return false;
     }
     // Shift: {-31, 30} for arm_nn_requantize
     if (shifts[i] < -31 || shifts[i] > 30) {
-      ET_LOG(Error, "weight_shift[%d] out of range: %d", i, shifts[i]);
+      ET_LOG(Error, "weight_shift[%d] out of range: %" PRIi64, i, shifts[i]);
       return false;
     }
   }
