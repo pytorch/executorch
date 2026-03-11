@@ -19,10 +19,11 @@ if env_flag not in ("1", "true", "yes"):
             raise RuntimeError(
                 "Failed to set up QNN SDK.\n\n"
                 "To resolve, try one of:\n"
-                "  1. Set QNN_SDK_ROOT to an existing SDK installation:\n"
+                "  1. Download the SDK manually from:\n"
+                f"       {QNN_ZIP_URL}\n"
+                "     Or go to step 2 if QNN SDK already exists.\n"
+                "  2. Set QNN_SDK_ROOT to an existing SDK installation:\n"
                 "       export QNN_SDK_ROOT=/path/to/qualcomm/sdk\n"
                 "       export LD_LIBRARY_PATH="
-                "$QNN_SDK_ROOT/lib/x86_64-linux-clang/:$LD_LIBRARY_PATH\n"
-                "  2. Download the SDK manually from:\n"
-                f"       {QNN_ZIP_URL}"
+                "$QNN_SDK_ROOT/lib/x86_64-linux-clang/:$LD_LIBRARY_PATH"
             )
