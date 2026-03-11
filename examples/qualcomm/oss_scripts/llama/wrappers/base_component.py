@@ -17,6 +17,9 @@ from functools import wraps
 from typing import Any, Dict, List, Tuple
 
 import torch
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.utils.utils import (
     get_sdk_build_id,
     is_qnn_sdk_version_less_than,
@@ -201,6 +204,8 @@ class Request:
         custom_annotation: Any = ()
         calibration_data: Request.CalibrationData = None
         tokenizer: callable = None
+        backend: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend
+        soc_model: str = "SM8750"
 
     method_name: str
     method_data: Dict[str, Data]
