@@ -8,122 +8,58 @@
 
 #version 450 core
 
+${define_required_extensions("texture3d", DTYPE)}
+
 #define PRECISION ${PRECISION}
 
-#define VEC4_T ${texel_type(DTYPE)}
+#define VEC4_T ${texel_load_type(DTYPE, "texture3d")}
+
+${define_active_storage_type("texture3d")}
+
+#extension GL_EXT_control_flow_attributes : require
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
-${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
+#include "common.glslh"
+#include "indexing.glslh"
 
-layout(push_constant) uniform restrict Block {
-  ivec4 range;
-  // source tensor sizes in WHCB dims respectively
-  ivec4 src_dims;
-  // output tensor sizes in WHCB dims respectively
-  ivec4 out_dims;
-};
+${layout_declare_tensor(B, "w", "t_out", DTYPE, "texture3d")}
+${layout_declare_tensor(B, "r", "t_in", DTYPE, "texture3d")}
 
-#include "indexing_utils.h"
+${layout_declare_ubo(B, "TextureMetadata", "out_meta")}
+${layout_declare_ubo(B, "TextureMetadata", "in_meta")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
-const lowp ivec4 out_axis_map = unhash_axis_map(out_layout);
-const lowp int packed_dim = unhash_packed_dim(out_layout);
-
-${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
-const lowp ivec4 in_axis_map = unhash_axis_map(in_layout);
-
 void main() {
-  ivec3 pos = ivec3(gl_GlobalInvocationID);
+  const ivec3 out_pos = ivec3(gl_GlobalInvocationID);
 
-  if (any(greaterThanEqual(pos, range.xyz))) {
+  if (out_of_bounds(out_pos, out_meta)) {
     return;
   }
 
-  // expand position in packed dim
-  pos[packed_dim] <<= 2;
+  TensorIndex4D out_tidx = texture_pos_to_tensor4d_idx_simple(out_meta, out_pos);
 
-  // channel size aligned by 4 when tensors are channel packed raw value otherwise
-  const int channel_size = (packed_dim == C_DIM ? alignup4(src_dims.z) : src_dims.z);
+  VEC4_T out_texel = VEC4_T(0);
 
-  // find input texel's WHCB index
-  const int width_index = pos.x % src_dims.x;
-  const int height_index = pos.y % src_dims.y;
-  int channel_index;
-  int batch_index;
+  int limit = min(
+      4, out_meta.sizes[out_meta.packed_dim] - out_tidx.data[out_meta.packed_dim]);
+  for (int comp = 0; comp < 4; comp++) {
+    TensorIndex4D in_tidx = out_tidx;
+    in_tidx.data = ivec4(
+        out_tidx.data.x % in_meta.sizes.x,
+        out_tidx.data.y % in_meta.sizes.y,
+        out_tidx.data.z % in_meta.sizes.z,
+        out_tidx.data.w % in_meta.sizes.w);
 
-  // if tensors are channel packed
-  if (packed_dim == C_DIM) {
-    // the output channels in a batch will be channel size * channel repetitions aligned by 4
-    const int out_channel_size = alignup4(out_dims.z);
+    TextureElementIndex in_elem =
+        tensor4d_idx_to_texture_element_idx_simple(in_meta, in_tidx);
 
-    // batch index in the output
-    const int out_pos_batch_index = pos.z / out_channel_size;
+    VEC4_T in_texel = texelFetch(t_in, in_elem.pos, 0);
+    out_texel[comp] = in_texel[in_elem.comp];
 
-    // source batch index for based on current output pos
-    batch_index = out_pos_batch_index % src_dims.w;
-
-    // batch repetition count for current output pos
-    const int batch_repetition_index = out_pos_batch_index / src_dims.w;
-
-    // calculate input channel index based on current output pos and batch index
-    // its done this way because we want source channel to restart from zero when a batch index increments
-    // also batch_index will reset to zero after hitting batch repetition count
-    // so track the current repetition in batch_repetition_index so it can be used for determining current_index
-    channel_index = (pos.z - (batch_index + batch_repetition_index * src_dims.w) * out_channel_size) % src_dims.z;
-  } else {
-    // the output channels in a batch will be channel size * channel repetitions
-    const int out_channel_size = out_dims.z;
-
-    // source batch index for based on current output pos
-    batch_index = (pos.z / out_channel_size) % src_dims.w;
-
-    // source channel index is current output pos wrapped based on channel count
-    channel_index = pos.z % src_dims.z;
+    out_tidx.data[out_meta.packed_dim]++;
   }
 
-  // input texel's WCB position
-  const ivec3 in_pos = ivec3(width_index, height_index, channel_index);
-
-  // squeeze position in packed dim
-  pos[packed_dim] >>= 2;
-
-  // packed dim index of texel last fetched
-  int fetched_in_pos_packed_dim = -1;
-
-  // fetched input texel
-  VEC4_T in_value;
-
-  // output texel value
-  VEC4_T out_value = VEC4_T(0);
-
-  int src_lane_offset = in_pos[packed_dim];
-
-  for (int i=0; i<4; i++) {
-    if ((src_lane_offset >> 2) != fetched_in_pos_packed_dim) {
-      fetched_in_pos_packed_dim = (src_lane_offset >> 2);
-
-      ivec3 curr_in_pos = in_pos;
-      curr_in_pos[packed_dim] = src_lane_offset;
-      curr_in_pos.z = curr_in_pos.z + batch_index * channel_size;
-      curr_in_pos[packed_dim] >>= 2;
-
-      in_value = VEC4_T(load_texel_lpos(t_in, curr_in_pos, in_axis_map));
-    }
-
-    out_value[i] = in_value[src_lane_offset & 0x3];
-
-    src_lane_offset++;
-    // if packed index exceeded source packed dim round to zero
-    src_lane_offset = mix(src_lane_offset, 0, src_lane_offset >= src_dims[packed_dim]);
-  }
-
-  write_texel_lpos(
-    t_out,
-    pos,
-    out_value,
-    out_axis_map);
+  imageStore(t_out, out_pos, out_texel);
 }
