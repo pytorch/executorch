@@ -69,7 +69,6 @@ from executorch.backends.cortex_m.quantizer.quantization_configs import (
     _get_int32_bias_qspec,
     _get_int32_per_channel_bias_qspec,
 )
-from executorch.exir.graph_module import _get_control_flow_submodules
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e import (
     FakeQuantize,
