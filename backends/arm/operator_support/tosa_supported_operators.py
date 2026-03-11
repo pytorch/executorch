@@ -240,7 +240,10 @@ def get_registered_tosa_support_checks(
 class MXOpsSupportList(OperatorSupportBase):
     """Accept Arm MX custom ops when the active spec enables MX support."""
 
-    targets = (exir_ops.edge.tosa_mxfp.linear.default,)
+    targets = (
+        exir_ops.edge.tosa_mxfp.conv2d.default,
+        exir_ops.edge.tosa_mxfp.linear.default,
+    )
 
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node

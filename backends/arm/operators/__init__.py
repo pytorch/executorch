@@ -47,6 +47,7 @@ from . import (  # noqa
     op_tosa_cast_to_block_scaled,
     op_tosa_clamp,
     op_tosa_conv2d,
+    op_tosa_conv2d_block_scaled,
     op_tosa_conv3d,
     op_tosa_custom,
     op_tosa_depthwise_conv2d,

@@ -6,13 +6,20 @@
 import copy
 import math
 from collections.abc import Callable
+from typing import Tuple
 
+import pytest
 import torch
 from executorch.backends.arm.ao_ext import MXFPOpConfig, to_mxfp
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.analyze_output_utils import (
     compare_rel_frobenius_and_cosine_similarity,
 )
+from executorch.backends.arm.test.tester.test_pipeline import TosaPipelineFP
+
+aten_op = "torch.ops.tosa_mxfp.conv2d.default"
+
+input_t1 = Tuple[torch.Tensor]
 
 
 def _block_input_rank4(
@@ -214,3 +221,27 @@ def test_mxfp_conv2d_eager_cpu(test_data: Callable[[], tuple[Conv2d, bool]]) -> 
         cosine_threshold=0.995,
         clean_reference=False,
     )
+
+
+@pytest.mark.parametrize("bias", [True, False])
+def test_mxfp_conv2d_tosa_FP(bias: bool) -> None:
+    module = Conv2d(
+        input_shape=(1, 32, 9, 9),
+        out_channels=8,
+        kernel_size=3,
+        stride=2,
+        padding=1,
+        bias=bias,
+    ).eval()
+    test_input = module.get_inputs()
+    to_mxfp(module, MXFPOpConfig(), filter_fn=_is_conv2d)
+
+    pipeline = TosaPipelineFP[input_t1](
+        module,
+        (test_input,),
+        aten_op,
+        exir_op=[],
+        tosa_version="1.1",
+        tosa_extensions=["mxfp"],
+    )
+    pipeline.run()
