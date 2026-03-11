@@ -54,7 +54,10 @@ from executorch.examples.qualcomm.oss_scripts.llama.wrappers import (
     MultiModalManager,
     next_power_of_two,
 )
-from executorch.examples.qualcomm.utils import setup_common_args_and_variables
+from executorch.examples.qualcomm.utils import (
+    get_backend_type,
+    setup_common_args_and_variables,
+)
 from torchao.quantization.utils import compute_error
 
 
@@ -102,6 +105,8 @@ def compile(
     multi_modal_mgr.quantize(
         calibration_data=calibration_data,
         tokenizer=tokenizer,
+        backend=get_backend_type(args.backend),
+        soc_model=args.model,
     )
 
     # Prepare dataset

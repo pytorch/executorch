@@ -84,7 +84,7 @@ def measure_accuracy(quantized_model, test_set):
 
 
 if __name__ == "__main__":
-    argparser = argparse.ArgumentParser(description="Export ViT model")
+    argparser = argparse.ArgumentParser(description="Export ViT model for Ethos-U")
     argparser.add_argument(
         "--model-path",
         type=str,
@@ -123,13 +123,12 @@ if __name__ == "__main__":
         use_fast=True,
         revision="b3428f18dcc7b543470d07f14b4a4157815d1880",
     )
-
     compile_spec = EthosUCompileSpec(
         target="ethos-u85-256",
         memory_mode="Shared_Sram",
     )
-
     quantizer = EthosUQuantizer(compile_spec)
+
     operator_config = get_symmetric_quantization_config()
     quantizer.set_global(operator_config)
 
