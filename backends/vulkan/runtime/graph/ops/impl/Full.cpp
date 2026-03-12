@@ -25,7 +25,7 @@ void resize_full_node(
   if (graph->val_is_tensor(extra_args.at(0))) {
     out_sizes = graph->sizes_of(extra_args.at(0));
   } else {
-    out_sizes = *graph->get_int_list(extra_args.at(0));
+    out_sizes = graph->extract_int_or_symint_list(extra_args.at(0));
   }
 
   graph->virtual_resize(out, out_sizes);
@@ -41,6 +41,7 @@ void add_full_node(
   std::string kernel_name("full");
   kernel_name.reserve(kShaderNameReserve);
 
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
@@ -51,11 +52,11 @@ void add_full_node(
       // Inputs and Outputs
       {{out, vkapi::kWrite}},
       // Shader params buffers
-      {graph.sizes_ubo(out), graph.create_params_buffer(fill_value_val)},
+      {graph.meta_ubo(out), graph.create_params_buffer(fill_value_val)},
       // Push Constants
       {},
       // Specialization Constants
-      {graph.packed_dim_of(out)},
+      {},
       // Resize Args
       {size_or_in},
       // Resizing Logic

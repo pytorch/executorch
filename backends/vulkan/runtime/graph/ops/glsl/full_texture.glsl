@@ -8,35 +8,36 @@
 
 #version 450 core
 
+${define_required_extensions("texture3d", DTYPE)}
+
 #define PRECISION ${PRECISION}
 
-#define VEC4_T ${texel_type(DTYPE)}
+#define VEC4_T ${texel_load_type(DTYPE, "texture3d")}
 
-#define POS ${get_pos[NDIM]("pos")}
-
-#include "indexing_utils.h"
+${define_active_storage_type("texture3d")}
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
-${layout_declare_ubo(B, "ivec4", "sizes")}
+#include "indexing.glslh"
+
+${layout_declare_tensor(B, "w", "t_out", DTYPE, "texture3d")}
+${layout_declare_ubo(B, "TextureMetadata", "outp")}
 ${layout_declare_ubo(B, "float", "fill_value")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int packed_dim = C_DIM;
-
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 idx = to_tensor_idx(pos, sizes, packed_dim);
 
-  if (any(greaterThanEqual(idx, sizes))) {
+  if (out_of_bounds(pos, outp)) {
     return;
   }
 
   VEC4_T outtex = VEC4_T(fill_value);
-  const int packed_dim_size = sizes[packed_dim];
-  int packed_idx = idx[packed_dim];
+
+  TensorIndex4D tidx = texture_pos_to_tensor4d_idx_simple(outp, pos);
+  const int packed_dim_size = outp.sizes[outp.packed_dim];
+  int packed_idx = tidx.data[outp.packed_dim];
 
   if (packed_idx + 3 >= packed_dim_size) {
     ivec4 packed_ind = ivec4(packed_idx) + ivec4(0, 1, 2, 3);
@@ -44,5 +45,5 @@ void main() {
     outtex = outtex * valid_idx;
   }
 
-  imageStore(t_out, POS, outtex);
+  imageStore(t_out, pos, outtex);
 }
