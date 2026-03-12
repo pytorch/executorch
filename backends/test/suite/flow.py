@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import os
 
 from dataclasses import dataclass, field
 from typing import Callable
@@ -118,26 +119,29 @@ def all_flows() -> dict[str, TestFlow]:
     except Exception as e:
         logger.info(f"Skipping OpenVINO flow registration: {e}")
 
-    # try:
-    #     from executorch.backends.test.suite.flows.qualcomm import (
-    #         QNN_16A16W_TEST_FLOW,
-    #         QNN_16A4W_BLOCK_TEST_FLOW,
-    #         QNN_16A4W_TEST_FLOW,
-    #         QNN_16A8W_TEST_FLOW,
-    #         QNN_8A8W_TEST_FLOW,
-    #         QNN_TEST_FLOW,
-    #     )
+    if os.environ.get("QNN_SDK_ROOT"):
+        try:
+            from executorch.backends.test.suite.flows.qualcomm import (
+                QNN_16A16W_TEST_FLOW,
+                QNN_16A4W_BLOCK_TEST_FLOW,
+                QNN_16A4W_TEST_FLOW,
+                QNN_16A8W_TEST_FLOW,
+                QNN_8A8W_TEST_FLOW,
+                QNN_TEST_FLOW,
+            )
 
-    #     flows += [
-    #         QNN_TEST_FLOW,
-    #         QNN_16A16W_TEST_FLOW,
-    #         QNN_16A8W_TEST_FLOW,
-    #         QNN_16A4W_TEST_FLOW,
-    #         QNN_16A4W_BLOCK_TEST_FLOW,
-    #         QNN_8A8W_TEST_FLOW,
-    #     ]
-    # except Exception as e:
-    #     logger.info(f"Skipping QNN flow registration: {e}")
+            flows += [
+                QNN_TEST_FLOW,
+                QNN_16A16W_TEST_FLOW,
+                QNN_16A8W_TEST_FLOW,
+                QNN_16A4W_TEST_FLOW,
+                QNN_16A4W_BLOCK_TEST_FLOW,
+                QNN_8A8W_TEST_FLOW,
+            ]
+        except Exception as e:
+            logger.info(f"Skipping QNN flow registration: {e}")
+    else:
+        logger.info("Skipping QNN flow registration: QNN_SDK_ROOT not set")
 
     try:
         from executorch.backends.test.suite.flows.arm import (
