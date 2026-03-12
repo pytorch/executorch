@@ -50,6 +50,33 @@ void resize_native_layer_norm_node(
   graph->virtual_resize(rstd, mean_size);
 }
 
+utils::uvec3 layer_norm_buffer_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+  const ValueRef mean_tensor = args.at(0).refs.at(1);
+  const uint32_t num_rows =
+      utils::safe_downcast<uint32_t>(graph->numel_of(mean_tensor));
+  return {1u, num_rows, 1u};
+}
+
+utils::uvec3 layer_norm_buffer_local_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const utils::uvec3& global_workgroup_size,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)graph;
+  (void)shader;
+  (void)global_workgroup_size;
+  (void)args;
+  (void)resize_args;
+  return {64u, 1u, 1u};
+}
+
 void add_native_layer_norm_node(
     ComputeGraph& graph,
     const ValueRef in,
@@ -82,50 +109,41 @@ void add_native_layer_norm_node(
 
   float epsilon = graph.extract_scalar<float>(eps);
 
-  VK_CHECK_COND(check_same_packed_dim(graph, in, out_tensor));
-
-  const std::vector<int64_t> in_sizes = graph.sizes_of(in);
-
-  utils::uvec3 global_size = graph.logical_limits_of(out_tensor);
-  utils::uvec3 local_size;
-
-  // Since the shader sets shared memory scale factor > 1, if dispatch is
-  // greater than maximum WG size. Setting WG size in X axis to max WG size,
-  // would allow best thread utilization.
-  if (global_size[0] > 64) {
-    local_size = {64, 1, 1};
-  } else {
-    // If thread size in X axis is smaller or equal to maximum WG size, we can
-    // let the function decide the best WG size.
-    local_size = graph.create_local_wg_size(global_size);
-  }
-
   std::string kernel_name("native_layer_norm");
   kernel_name.reserve(kShaderNameReserve);
-
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out_tensor));
   add_dtype_suffix(kernel_name, graph.dtype_of(out_tensor));
+
+  const bool is_buffer = graph.is_buffer_storage(in);
+
+  if (!is_buffer) {
+    VK_CHECK_COND(check_same_packed_dim(graph, in, out_tensor));
+  }
+
+  vkapi::ParamsBindList param_ubos = {
+      graph.meta_ubo(out_tensor), graph.meta_ubo(in)};
+  vkapi::SpecVarList spec_constants;
+
+  if (is_buffer) {
+    param_ubos.append(graph.meta_ubo(mean_tensor));
+    spec_constants = {graph.hashed_layout_of(in)};
+  }
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
+      is_buffer ? layer_norm_buffer_global_wg_size
+                : default_pick_global_wg_size,
+      is_buffer ? layer_norm_buffer_local_wg_size : default_pick_local_wg_size,
       // Inputs and Outputs
       {{{out_tensor, mean_tensor, rstd_tensor}, vkapi::kWrite},
        {{in, arg_weight, arg_bias}, vkapi::kRead}},
       // Shader params buffers
-      {},
+      param_ubos,
       // Push Constants
-      {
-          graph.logical_limits_pc_of(out_tensor),
-          graph.sizes_pc_of(out_tensor),
-          PushConstantDataInfo(&epsilon, sizeof(epsilon)),
-      },
+      {PushConstantDataInfo(&epsilon, sizeof(epsilon))},
       // Specialization Constants
-      {
-          graph.hashed_layout_of(in),
-          graph.hashed_layout_of(out_tensor),
-      },
+      spec_constants,
       // Resize Args
       {normalized_shape},
       // Resizing Logic
