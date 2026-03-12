@@ -24,6 +24,7 @@ from . import (  # noqa
     op_clamp,
     op_cond_if,
     op_cos,
+    op_tosa_custom,
     op_eq,
     op_erf,
     op_exp,
