@@ -18,6 +18,14 @@ Two modes are supported: **offline** (encode full audio, then decode)
 and **streaming** (process 80ms chunks in real time, including live
 microphone input).
 
+## Demo: streaming on Metal backend with microphone input
+
+https://github.com/user-attachments/assets/44717dc5-777f-4710-ad55-5ec4fa04b9c4
+
+Also, try a sample [standalone macOS app](https://github.com/meta-pytorch/executorch-examples/tree/main/voxtral_realtime/macos) to do real time transcription.
+
+https://github.com/user-attachments/assets/a89677ef-8309-426e-a2f4-6d1ea8494b99
+
 ## Prerequisites
 
 - ExecuTorch installed from source (see [building from source](../../../docs/source/using-executorch-building-from-source.md))
@@ -54,6 +62,10 @@ python -m executorch.extension.audio.mel_spectrogram \
 Export produces a single `.pte` containing the audio encoder, text decoder,
 and token embedding.
 
+> [!TIP]
+> Mistral has already published pre-exported `.pte` files for select backends, including macOS Metal, on their [HuggingFace Hub](https://huggingface.co/mistral-labs/Voxtral-Mini-4B-Realtime-2602-Executorch).
+
+
 ```bash
 python export_voxtral_rt.py \
     --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
@@ -83,17 +95,65 @@ python export_voxtral_rt.py \
 | Backend | Offline | Streaming | Quantization |
 |---------|---------|-----------|--------------|
 | `xnnpack` | ✓ | ✓ | `4w`, `8w`, `8da4w`, `8da8w` |
-| `metal` | ✓ | ✗ | none (fp32) or `fpa4w` (Metal-specific 4-bit) |
+| `metal` | ✓ | ✓ | none (fp32) or `fpa4w` (Metal-specific 4-bit) |
+| `cuda` | ✓ | ✓ | `4w`, `8w` |
 
-Metal backend provides Apple GPU acceleration. It does not yet support
-streaming mode.
+Metal backend provides Apple GPU acceleration. CUDA backend provides NVIDIA GPU
+acceleration via AOTInductor.
 
-#### Metal export example
+#### CUDA export examples
+
+Offline with int4 quantization:
+
+```bash
+python export_voxtral_rt.py \
+    --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
+    --backend cuda \
+    --dtype bf16 \
+    --output-dir ./voxtral_rt_exports \
+    --qlinear-encoder 4w \
+    --qlinear-encoder-packing-format tile_packed_to_4d \
+    --qlinear 4w \
+    --qlinear-packing-format tile_packed_to_4d \
+    --qembedding 8w
+```
+
+Streaming with int4 quantization:
+
+```bash
+python export_voxtral_rt.py \
+    --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
+    --backend cuda \
+    --dtype bf16 \
+    --streaming \
+    --output-dir ./voxtral_rt_exports \
+    --qlinear-encoder 4w \
+    --qlinear-encoder-packing-format tile_packed_to_4d \
+    --qlinear 4w \
+    --qlinear-packing-format tile_packed_to_4d \
+    --qembedding 8w
+```
+
+#### Metal export examples
+
+Offline:
 
 ```bash
 python export_voxtral_rt.py \
     --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
     --backend metal \
+    --output-dir ./voxtral_rt_exports \
+    --qlinear-encoder fpa4w \
+    --qlinear fpa4w
+```
+
+Streaming:
+
+```bash
+python export_voxtral_rt.py \
+    --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
+    --backend metal \
+    --streaming \
     --output-dir ./voxtral_rt_exports \
     --qlinear-encoder fpa4w \
     --qlinear fpa4w
@@ -116,14 +176,17 @@ EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_ex
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--model-path` | (required) | Directory with `params.json` + `consolidated.safetensors` |
-| `--backend` | `xnnpack` | `xnnpack`, `metal`, or `portable` |
+| `--backend` | `xnnpack` | `xnnpack`, `metal`, `cuda`, or `portable` |
+| `--dtype` | `fp32` | Model dtype: `fp32` or `bf16` |
 | `--output-dir` | `./voxtral_rt_exports` | Output directory |
 | `--max-seq-len` | `4096` | KV cache length |
 | `--delay-tokens` | `6` | Transcription delay in tokens (6 = 480ms) |
 | `--qlinear` | (none) | Decoder linear layer quantization (`4w`, `8w`, `8da4w`, `8da8w`, `fpa4w`) |
 | `--qlinear-group-size` | `32` | Group size for decoder linear quantization |
+| `--qlinear-packing-format` | (none) | Packing format for decoder 4w quantization (`tile_packed_to_4d` for CUDA) |
 | `--qlinear-encoder` | (none) | Encoder linear layer quantization (`4w`, `8w`, `8da4w`, `8da8w`, `fpa4w`) |
 | `--qlinear-encoder-group-size` | `32` | Group size for encoder linear quantization |
+| `--qlinear-encoder-packing-format` | (none) | Packing format for encoder 4w quantization (`tile_packed_to_4d` for CUDA) |
 | `--qembedding` | (none) | Embedding layer quantization (`8w`) |
 | `--streaming` | off | Export streaming encoder with KV cache |
 | `--max-enc-len` | `750` | Encoder sliding window size (streaming only) |
@@ -147,6 +210,15 @@ make voxtral_realtime-cpu
 This builds ExecuTorch core libraries with XNNPACK, then the runner binary
 at `cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner`.
 
+### CUDA (NVIDIA GPU)
+
+```bash
+make voxtral_realtime-cuda
+```
+
+This builds ExecuTorch with CUDA backend support. The runner binary is at
+the same path as above. Requires NVIDIA GPU with CUDA toolkit installed.
+
 ### Metal (Apple GPU)
 
 ```bash
@@ -163,10 +235,22 @@ The runner requires:
 - `tekken.json` — tokenizer from the model weights directory
 - `preprocessor.pte` — mel spectrogram preprocessor (see [Preprocessor](#preprocessor))
 - A 16kHz mono WAV audio file (or live audio via `--mic`)
+- For CUDA: `aoti_cuda_blob.ptd` — delegate data file (pass via `--data_path`)
 
 ```bash
 cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
     --model_path voxtral_rt_exports/model.pte \
+    --tokenizer_path ~/models/Voxtral-Mini-4B-Realtime-2602/tekken.json \
+    --preprocessor_path voxtral_rt_exports/preprocessor.pte \
+    --audio_path input.wav
+```
+
+For CUDA, include the `.ptd` data file:
+
+```bash
+cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
+    --model_path voxtral_rt_exports/model.pte \
+    --data_path voxtral_rt_exports/aoti_cuda_blob.ptd \
     --tokenizer_path ~/models/Voxtral-Mini-4B-Realtime-2602/tekken.json \
     --preprocessor_path voxtral_rt_exports/preprocessor.pte \
     --audio_path input.wav
@@ -201,9 +285,13 @@ ffmpeg -f avfoundation -i ":0" -ar 16000 -ac 1 -f f32le -nostats -loglevel error
 
 Ctrl+C stops recording and flushes remaining text.
 
+**CUDA:** Add `--data_path voxtral_rt_exports/aoti_cuda_blob.ptd` to all
+run commands above when using the CUDA backend.
+
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--model_path` | `model.pte` | Path to exported model |
+| `--data_path` | (none) | Path to delegate data file (`.ptd`, required for CUDA) |
 | `--tokenizer_path` | `tekken.json` | Path to Tekken tokenizer |
 | `--preprocessor_path` | (none) | Path to mel preprocessor `.pte` |
 | `--audio_path` | (none) | Path to 16kHz mono WAV file |
@@ -211,6 +299,8 @@ Ctrl+C stops recording and flushes remaining text.
 | `--max_new_tokens` | `500` | Maximum tokens to generate |
 | `--streaming` | off | Use streaming transcription (from WAV file) |
 | `--mic` | off | Live microphone mode (reads raw f32le PCM from stdin) |
+| `--mic_chunk_ms` | `80` | Mic read chunk size in ms (multiples of 80 recommended) |
+| `--color` | (none) | Output text color: `green` or `red` |
 
 ## Troubleshooting
 

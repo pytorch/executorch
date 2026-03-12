@@ -19,8 +19,10 @@ Arguments:
   hf_model    HuggingFace model ID (required)
               Supported models:
                 - mistralai/Voxtral-Mini-3B-2507
+                - nvidia/diar_streaming_sortformer_4spk-v2
                 - openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo})
                 - google/gemma-3-4b-it
+                - Qwen/Qwen3-0.6B
                 - nvidia/parakeet-tdt
                 - mistralai/Voxtral-Mini-4B-Realtime-2602
 
@@ -43,6 +45,7 @@ Arguments:
 Examples:
   test_model_e2e.sh metal "openai/whisper-small" "non-quantized"
   test_model_e2e.sh cuda "mistralai/Voxtral-Mini-3B-2507" "quantized-int4-tile-packed" "./model_output"
+  test_model_e2e.sh cuda "nvidia/diar_streaming_sortformer_4spk-v2" "non-quantized" "./model_output"
   test_model_e2e.sh cuda "nvidia/parakeet-tdt" "non-quantized" "./model_output"
   test_model_e2e.sh xnnpack "nvidia/parakeet-tdt" "quantized-8da4w" "./model_output"
   test_model_e2e.sh metal "mistralai/Voxtral-Mini-4B-Realtime-2602" "non-quantized" "." "vr-streaming"
@@ -151,6 +154,18 @@ case "$HF_MODEL" in
     AUDIO_FILE=""
     IMAGE_PATH="docs/source/_static/img/et-logo.png"
     ;;
+  Qwen/Qwen3-0.6B)
+    MODEL_NAME="qwen3"
+    RUNNER_TARGET="llama_main"
+    RUNNER_PATH="llama"
+    EXPECTED_OUTPUT="Paris"
+    PREPROCESSOR=""
+    TOKENIZER_URL="https://huggingface.co/Qwen/Qwen3-0.6B/resolve/main" # @lint-ignore
+    TOKENIZER_FILE=""
+    AUDIO_URL=""
+    AUDIO_FILE=""
+    IMAGE_PATH=""
+    ;;
   nvidia/parakeet-tdt)
     MODEL_NAME="parakeet"
     RUNNER_TARGET="parakeet_runner"
@@ -161,6 +176,18 @@ case "$HF_MODEL" in
     TOKENIZER_FILE="tokenizer.model"
     AUDIO_URL="https://dldata-public.s3.us-east-2.amazonaws.com/2086-149220-0033.wav"
     AUDIO_FILE="test_audio.wav"
+    IMAGE_PATH=""
+    ;;
+  nvidia/diar_streaming_sortformer_4spk-v2)
+    MODEL_NAME="sortformer"
+    RUNNER_TARGET="sortformer_runner"
+    RUNNER_PATH="sortformer"
+    EXPECTED_OUTPUT="Speaker 1"
+    PREPROCESSOR=""
+    TOKENIZER_URL=""
+    TOKENIZER_FILE=""
+    AUDIO_URL="https://github.com/voxserv/audio_quality_testing_samples/raw/refs/heads/master/testaudio/16000/test01_20s.wav"
+    AUDIO_FILE="poem.wav"
     IMAGE_PATH=""
     ;;
   mistralai/Voxtral-Mini-4B-Realtime-2602)
@@ -177,7 +204,7 @@ case "$HF_MODEL" in
     ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, nvidia/parakeet-tdt"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/parakeet-tdt"
     exit 1
     ;;
 esac
@@ -190,8 +217,8 @@ echo "::endgroup::"
 echo "::group::Prepare $MODEL_NAME Artifacts"
 
 
-# Download tokenizer files (skip for parakeet and voxtral_realtime which bundle tokenizer in export)
-if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ]; then
+# Download tokenizer files (skip for models that bundle tokenizer in export or do not use one)
+if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ] && [ "$MODEL_NAME" != "sortformer" ]; then
   if [ "$TOKENIZER_FILE" != "" ]; then
     curl -L $TOKENIZER_URL/$TOKENIZER_FILE -o $MODEL_DIR/$TOKENIZER_FILE
   else
@@ -246,9 +273,14 @@ if [ "$(uname -s)" = "Darwin" ] && [ -f "$RUNNER_BIN" ]; then
     install_name_tool -change /opt/llvm-openmp/lib/libomp.dylib @rpath/libomp.dylib "$RUNNER_BIN"
   fi
 fi
-# For CUDA, add data_path argument (Metal embeds data in .pte)
+# For CUDA, add named data argument (Metal embeds data in .pte).
+# Llama runner uses --data_paths, other runners use --data_path.
 if [ "$DEVICE" = "cuda" ]; then
-  RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
+  if [ "$RUNNER_PATH" = "llama" ]; then
+    RUNNER_ARGS="$RUNNER_ARGS --data_paths ${MODEL_DIR}/aoti_cuda_blob.ptd"
+  else
+    RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
+  fi
 fi
 
 # Add model-specific arguments
@@ -262,6 +294,15 @@ case "$MODEL_NAME" in
   gemma3)
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/ --image_path $IMAGE_PATH"
     ;;
+  qwen3)
+    PROMPT_FILE="${MODEL_DIR}/qwen3_prompt.txt"
+    cat > "${PROMPT_FILE}" << 'EOF'
+<|im_start|>user
+What is the capital of France?<|im_end|>
+<|im_start|>assistant
+EOF
+    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/ --prompt_file ${PROMPT_FILE}"
+    ;;
   parakeet)
     RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --audio_path ${MODEL_DIR}/$AUDIO_FILE --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE"
     # For CUDA, add data_path argument (Metal embeds data in .pte)
@@ -269,19 +310,22 @@ case "$MODEL_NAME" in
       RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
     fi
     ;;
+  sortformer)
+    RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --audio_path ${MODEL_DIR}/$AUDIO_FILE"
+    if [ "$DEVICE" = "cuda" ]; then
+      RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
+    fi
+    ;;
   voxtral_realtime)
     RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --preprocessor_path ${MODEL_DIR}/$PREPROCESSOR --audio_path ${MODEL_DIR}/$AUDIO_FILE --temperature 0"
+    # Add CUDA data path if present
+    if [ "$DEVICE" = "cuda" ] && [ -f "${MODEL_DIR}/aoti_cuda_blob.ptd" ]; then
+      RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
+    fi
     # Determine streaming mode based on MODE parameter
-    USE_STREAMING="false"
-    if [ "$MODE" = "vr-streaming" ]; then
-      USE_STREAMING="true"
-    elif [ "$MODE" = "vr-offline" ]; then
+    USE_STREAMING="true"
+    if [ "$MODE" = "vr-offline" ]; then
       USE_STREAMING="false"
-    elif [ -z "$MODE" ]; then
-      # Auto-detect: XNNPACK uses streaming, others use offline
-      if [ "$DEVICE" = "xnnpack" ]; then
-        USE_STREAMING="true"
-      fi
     fi
     # Add streaming flag if needed
     if [ "$USE_STREAMING" = "true" ]; then

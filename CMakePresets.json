@@ -290,13 +290,8 @@
       "name": "arm-ethosu-linux",
       "displayName": "Build ExecuTorch for Arm Ethos-U Linux",
       "inherits": ["common"],
-      "description": "musl declares __assert_fail with int for line; avoid NDEBUG forward-decl mismatch in Release builds",
       "cacheVariables": {
-        "EXECUTORCH_BUILD_ARM_ETHOSU_LINUX": "ON",
-        "EXECUTORCH_BUILD_EXECUTOR_RUNNER": "ON",
-        "EXECUTORCH_BUILD_KERNELS_QUANTIZED": "ON",
-        "CMAKE_C_FLAGS_RELEASE": "-UNDEBUG",
-        "CMAKE_CXX_FLAGS_RELEASE": "-UNDEBUG",
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/arm_ethosu_linux.cmake",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/arm/ethos-u-setup/aarch64-linux-musl-toolchain.cmake"
       }
     }

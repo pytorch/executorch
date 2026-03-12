@@ -198,6 +198,7 @@ DEFINE_BINARY_OP_FN(lt);
 DEFINE_BINARY_OP_FN(le);
 DEFINE_BINARY_OP_FN(gt);
 DEFINE_BINARY_OP_FN(ge);
+DEFINE_BINARY_OP_FN(bitwise_and);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.add.Tensor, add);
@@ -212,6 +213,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.le.Tensor, le);
   VK_REGISTER_OP(aten.gt.Tensor, gt);
   VK_REGISTER_OP(aten.ge.Tensor, ge);
+  VK_REGISTER_OP(aten.bitwise_and.Tensor, bitwise_and);
 }
 
 } // namespace vkcompute

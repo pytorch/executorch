@@ -53,6 +53,7 @@ from executorch.exir.passes import (
     ToOutVarPass,
 )
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
+from executorch.exir.passes.cse_pass import CSEPass
 from executorch.exir.passes.debug_handle_generator_pass import (
     DebugHandleGeneratorPass,
     generate_missing_debug_handles,
@@ -2499,3 +2500,248 @@ class TestPasses(unittest.TestCase):
                         modified_const.is_contiguous(),
                         f"Constant should be contiguous after pass, got strides {modified_const.stride()}",
                     )
+
+
+class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):
+    """
+    Tests for MemoryFormatOpsPass preserve_format semantics.
+    """
+
+    def test_clone_no_kwarg_preserves_channels_last_dim_order(self) -> None:
+        """
+        Verify that clone() on a channels-last input with no memory_format kwarg
+        produces a _clone_dim_order node with channels-last dim_order (0,2,3,1).
+        """
+
+        class ConvClone(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(3, 16, kernel_size=3, padding=1)
+
+            def forward(self, x):
+                return self.conv(x).clone()
+
+        model = ConvClone().to(memory_format=torch.channels_last)
+        x = torch.randn(1, 3, 8, 8).to(memory_format=torch.channels_last)
+
+        # Run the model and verify that the output tensor preserves channels-last
+        # layout when no memory_format kwarg is provided.
+        with torch.no_grad():
+            y = model(x)
+        self.assertTrue(
+            y.is_contiguous(memory_format=torch.channels_last),
+            f"clone() without memory_format kwarg should preserve channels-last layout, got strides {y.stride()}",
+        )
+
+        ep = torch.export.export(model, (x,))
+        edge = to_edge(ep, compile_config=EdgeCompileConfig(_skip_dim_order=False))
+
+        # Find the _clone_dim_order node and check its dim_order
+        found_clone = False
+        for node in edge.exported_program().graph_module.graph.nodes:
+            if node.op == "call_function" and "_clone_dim_order" in str(node.target):
+                found_clone = True
+                spec = node.meta.get("val")
+                self.assertIsNotNone(spec, "Clone node should have meta['val']")
+                dim_order = tuple(spec.dim_order())
+                self.assertEqual(
+                    dim_order,
+                    (0, 2, 3, 1),
+                    f"Clone should preserve channels-last dim_order, got {dim_order}",
+                )
+                break
+
+        self.assertTrue(found_clone, "Should find a _clone_dim_order node in the graph")
+
+    def test_clone_contiguous_format_kwarg_stays_contiguous(self) -> None:
+        """
+        Regression guard: explicit contiguous_format should produce contiguous dim_order.
+
+        Note: When clone(memory_format=contiguous_format) is called on a channels-last
+        input, this is a layout-transforming operation. After export, this typically
+        lowers to _to_dim_order_copy (not _clone_dim_order) because it changes the
+        memory layout. We check for both node types to be robust.
+        """
+
+        class CloneContiguousModel(torch.nn.Module):
+            def forward(self, x):
+                return x.clone(memory_format=torch.contiguous_format)
+
+        model = CloneContiguousModel()
+        x = torch.randn(1, 3, 8, 8).to(memory_format=torch.channels_last)
+
+        # Run the model and verify that the explicit contiguous_format kwarg
+        # produces a contiguous output layout (not channels-last).
+        with torch.no_grad():
+            y = model(x)
+        self.assertTrue(
+            y.is_contiguous(),
+            f"clone(memory_format=contiguous_format) should produce contiguous layout, got strides {y.stride()}",
+        )
+        self.assertFalse(
+            y.is_contiguous(memory_format=torch.channels_last),
+            "clone(memory_format=contiguous_format) should not preserve channels-last layout",
+        )
+
+        ep = torch.export.export(model, (x,))
+        edge = to_edge(ep, compile_config=EdgeCompileConfig(_skip_dim_order=False))
+
+        # Find the dim_order copy node and check its dim_order.
+        # This may be _to_dim_order_copy (layout transform) or _clone_dim_order.
+        found_copy = False
+        for node in edge.exported_program().graph_module.graph.nodes:
+            if node.op == "call_function" and (
+                "_clone_dim_order" in str(node.target)
+                or "_to_dim_order_copy" in str(node.target)
+            ):
+                found_copy = True
+                spec = node.meta.get("val")
+                self.assertIsNotNone(spec, "Copy node should have meta['val']")
+                dim_order = tuple(spec.dim_order())
+                self.assertEqual(
+                    dim_order,
+                    (0, 1, 2, 3),
+                    f"Explicit contiguous clone should have contiguous dim_order, got {dim_order}",
+                )
+                break
+
+        self.assertTrue(
+            found_copy, "Should find a _clone_dim_order or _to_dim_order_copy node"
+        )
+
+    def test_to_copy_no_kwarg_preserves_channels_last_dim_order(self) -> None:
+        """
+        Verify that tensor.to(dtype=...) with no memory_format kwarg preserves
+        the input's dim_order (preserve_format semantics).
+
+        This tests the _to_copy.default path in MemoryFormatOpsPass.
+        """
+
+        class ToCopyModel(torch.nn.Module):
+            def forward(self, x):
+                # .to(dtype=...) with no memory_format → preserve_format semantics
+                return x.to(dtype=torch.float32)
+
+        model = ToCopyModel()
+        x = torch.randn(1, 3, 8, 8, dtype=torch.float16).to(
+            memory_format=torch.channels_last
+        )
+
+        # Run the model and verify that tensor.to(dtype=...) with no memory_format
+        # kwarg preserves channels-last layout on the output tensor.
+        with torch.no_grad():
+            y = model(x)
+        self.assertTrue(
+            y.is_contiguous(memory_format=torch.channels_last),
+            f"to(dtype=...) without memory_format kwarg should preserve channels-last layout, got strides {y.stride()}",
+        )
+
+        ep = torch.export.export(model, (x,))
+        edge = to_edge(ep, compile_config=EdgeCompileConfig(_skip_dim_order=False))
+
+        # Find the _to_dim_order_copy node and verify it preserves channels-last
+        found_copy = False
+        for node in edge.exported_program().graph_module.graph.nodes:
+            if node.op == "call_function" and "_to_dim_order_copy" in str(node.target):
+                found_copy = True
+                spec = node.meta.get("val")
+                self.assertIsNotNone(spec, "Copy node should have meta['val']")
+                dim_order = tuple(spec.dim_order())
+                self.assertEqual(
+                    dim_order,
+                    (0, 2, 3, 1),
+                    f"to(dtype=...) should preserve channels-last dim_order, got {dim_order}",
+                )
+                break
+
+        self.assertTrue(found_copy, "Should find a _to_dim_order_copy node")
+
+
+class TestCSEPass(unittest.TestCase):
+    """Tests for Common Subexpression Elimination pass."""
+
+    @staticmethod
+    def _to_edge_gm(module, example_inputs):
+        ep = torch.export.export(module, example_inputs, strict=False)
+        edge = to_edge(ep)
+        return edge.exported_program().graph_module
+
+    @staticmethod
+    def _count_ops(gm, target):
+        return sum(
+            1 for n in gm.graph.nodes if n.op == "call_function" and n.target == target
+        )
+
+    def test_duplicate_unary_ops_deduplicated(self):
+        """Two identical neg(x) ops should be merged into one."""
+
+        class M(torch.nn.Module):
+            def forward(self, x):
+                a = torch.neg(x)
+                b = torch.neg(x)
+                return a + b
+
+        gm = self._to_edge_gm(M(), (torch.randn(4, 4),))
+        target = exir_ops.edge.aten.neg.default
+        before = self._count_ops(gm, target)
+
+        if before < 2:
+            self.skipTest("Export already deduplicated neg ops")
+
+        result = CSEPass()(gm)
+
+        self.assertTrue(result.modified)
+        self.assertEqual(self._count_ops(result.graph_module, target), 1)
+
+    def test_different_ops_not_merged(self):
+        """neg(x) and abs(x) should not be merged."""
+
+        class M(torch.nn.Module):
+            def forward(self, x):
+                return torch.neg(x) + torch.abs(x)
+
+        gm = self._to_edge_gm(M(), (torch.randn(4, 4),))
+        result = CSEPass()(gm)
+        self.assertFalse(result.modified)
+
+    def test_same_op_different_inputs_not_merged(self):
+        """neg(x) and neg(y) should not be merged."""
+
+        class M(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.neg(x) + torch.neg(y)
+
+        gm = self._to_edge_gm(M(), (torch.randn(4, 4), torch.randn(4, 4)))
+        result = CSEPass()(gm)
+        self.assertFalse(result.modified)
+
+    def test_noop_when_no_duplicates(self):
+        class M(torch.nn.Module):
+            def forward(self, x):
+                return x + 1
+
+        gm = self._to_edge_gm(M(), (torch.randn(4, 4),))
+        result = CSEPass()(gm)
+        self.assertFalse(result.modified)
+
+    def test_duplicate_chains_deduplicated(self):
+        """Duplicate multi-op chains should be merged via structural hashing."""
+
+        class M(torch.nn.Module):
+            def forward(self, x):
+                a = torch.neg(torch.abs(x))
+                b = torch.neg(torch.abs(x))
+                return a + b
+
+        gm = self._to_edge_gm(M(), (torch.randn(4, 4),))
+        neg_target = exir_ops.edge.aten.neg.default
+        abs_target = exir_ops.edge.aten.abs.default
+
+        if self._count_ops(gm, neg_target) < 2:
+            self.skipTest("Export already deduplicated chains")
+
+        result = CSEPass()(gm)
+
+        self.assertTrue(result.modified)
+        self.assertEqual(self._count_ops(result.graph_module, neg_target), 1)
+        self.assertEqual(self._count_ops(result.graph_module, abs_target), 1)

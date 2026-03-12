@@ -58,10 +58,28 @@ from executorch.exir import (
     to_edge,
     to_edge_transform_and_lower,
 )
+from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
 from torch.export import export, ExportedProgram
+
+
+# Models for testing inplace ops intermediate output logging
+class IndexPutModel(torch.nn.Module):
+    """
+    A model that uses index_put to update a tensor at specific indices.
+    When the reinplace_pass is enabled, this will be converted to index_put_
+    (the inplace variant), which was causing issues with event tracer logging.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("data", torch.zeros(5, 3))
+
+    def forward(self, indices: torch.Tensor, values: torch.Tensor) -> torch.Tensor:
+        result = self.data.index_put((indices,), values)
+        return result.sum()
 
 
 OP_TYPE = "aten::add"
@@ -525,8 +543,14 @@ class TestInspector(unittest.TestCase):
                     aten_model.example_inputs[0]
                 )
 
+                # First resolve the reference graph, then get intermediate outputs
+                reference_graph_module, _ = inspector_instance._resolve_reference_graph(
+                    "edge_dialect_exported_program"
+                )
                 aot_intermediate_outputs, aot_debug_handle_to_op_names = (
-                    inspector_instance._get_aot_intermediate_outputs_and_op_names()
+                    inspector_instance._get_aot_intermediate_outputs_and_op_names(
+                        reference_graph_module
+                    )
                 )
                 self.assertTrue(
                     check_if_intermediate_outputs_match(
@@ -579,8 +603,14 @@ class TestInspector(unittest.TestCase):
                     aten_model.example_inputs[0]
                 )
 
+                # First resolve the reference graph, then get intermediate outputs
+                reference_graph_module, _ = inspector_instance._resolve_reference_graph(
+                    "exported_program"
+                )
                 aot_intermediate_outputs, aot_debug_handle_to_op_names = (
-                    inspector_instance._get_aot_intermediate_outputs_and_op_names()
+                    inspector_instance._get_aot_intermediate_outputs_and_op_names(
+                        reference_graph_module
+                    )
                 )
                 self.assertTrue(
                     check_if_intermediate_outputs_match(
@@ -682,8 +712,16 @@ class TestInspector(unittest.TestCase):
             aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
             runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
 
+            # Create a mock graph module for _resolve_reference_graph
+            mock_graph_module = MagicMock()
+            inspector_instance._resolve_reference_graph = (
+                lambda ref_graph=None, disable_validation=False: (
+                    mock_graph_module,
+                    "exported_program",
+                )
+            )
             inspector_instance._get_aot_intermediate_outputs_and_op_names = (
-                lambda x, y: (
+                lambda reference_graph_module: (
                     aot_intermediate_outputs,
                     aot_debug_handle_to_op_name,
                 )
@@ -691,6 +729,11 @@ class TestInspector(unittest.TestCase):
             inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
                 lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
             )
+            inspector_instance._get_aot_debug_handle_to_stack_traces = (
+                lambda reference_graph_module, resolved_graph_name: {}
+            )
+
+            # --- Test 1: MSE comparator
 
             df = inspector_instance.calculate_numeric_gap(distance="L1")
             self.assertIsInstance(df, pd.DataFrame)
@@ -702,6 +745,7 @@ class TestInspector(unittest.TestCase):
                 "runtime_ops",
                 "runtime_intermediate_output",
                 "gap",
+                "stacktraces",
             }
             self.assertEqual(cols, expected_cols)
             for i, row in df.iterrows():
@@ -723,6 +767,84 @@ class TestInspector(unittest.TestCase):
                 )
                 # gap should equal 3.0
                 self.assertEqual(row["gap"][0], 3.0)
+
+    def test_calculate_numeric_gap_with_stacktraces(self):
+        """Test calculate_numeric_gap includes stacktraces column when stack traces are available."""
+        # Create a context manager to patch functions called by Inspector.__init__
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
+        ):
+            # Call the constructor of Inspector
+            inspector_instance = Inspector(
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
+            )
+
+            aot_intermediate_outputs = {
+                (0,): torch.tensor([1.0, 2.0, 3.0]),
+                (1,): torch.tensor([4.0, 5.0, 6.0]),
+            }
+
+            runtime_intermediate_outputs = {
+                (0,): ([torch.tensor([2.0, 1.0, 4.0])], 1),
+                (1,): ([torch.tensor([3.0, 6.0, 5.0])], 1),
+            }
+
+            aot_debug_handle_to_op_name = {(0,): ["op_0"], (1,): ["op_1"]}
+            runtime_debug_handle_to_op_name = {(0,): ["op_0"], (1,): ["op_1"]}
+            aot_debug_handle_to_stack_traces = {
+                (0,): {"op_0": "File 'test.py', line 10\n    x * y"},
+                (1,): {"op_1": "File 'test.py', line 15\n    x + y"},
+            }
+
+            # Create a mock graph module for _resolve_reference_graph
+            mock_graph_module = MagicMock()
+            inspector_instance._resolve_reference_graph = (
+                lambda ref_graph=None, disable_validation=False: (
+                    mock_graph_module,
+                    "exported_program",
+                )
+            )
+            inspector_instance._get_aot_intermediate_outputs_and_op_names = (
+                lambda reference_graph_module: (
+                    aot_intermediate_outputs,
+                    aot_debug_handle_to_op_name,
+                )
+            )
+            inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
+                lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
+            )
+            inspector_instance._get_aot_debug_handle_to_stack_traces = (
+                lambda reference_graph_module, resolved_graph_name: (
+                    aot_debug_handle_to_stack_traces
+                )
+            )
+
+            df = inspector_instance.calculate_numeric_gap(distance="L1")
+            self.assertIsInstance(df, pd.DataFrame)
+            self.assertEqual(len(df), 2)
+            cols = set(df.columns)
+            expected_cols = {
+                "aot_ops",
+                "aot_intermediate_output",
+                "runtime_ops",
+                "runtime_intermediate_output",
+                "gap",
+                "stacktraces",
+            }
+            self.assertEqual(cols, expected_cols)
+
+            # Verify stacktraces column contains the expected data
+            for i, row in df.iterrows():
+                key = (i,)
+                expected_stack_traces = aot_debug_handle_to_stack_traces[key]
+                self.assertEqual(row["stacktraces"], expected_stack_traces)
 
     def test_calculate_numeric_gap_with_custom_comparator(self):
         """Test calculate_numeric_gap with a custom NumericalComparatorBase implementation."""
@@ -766,14 +888,25 @@ class TestInspector(unittest.TestCase):
             aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
             runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
 
+            # Create a mock graph module for _resolve_reference_graph
+            mock_graph_module = MagicMock()
+            inspector_instance._resolve_reference_graph = (
+                lambda ref_graph=None, disable_validation=False: (
+                    mock_graph_module,
+                    "exported_program",
+                )
+            )
             inspector_instance._get_aot_intermediate_outputs_and_op_names = (
-                lambda x, y: (
+                lambda reference_graph_module: (
                     aot_intermediate_outputs,
                     aot_debug_handle_to_op_name,
                 )
             )
             inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
                 lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
+            )
+            inspector_instance._get_aot_debug_handle_to_stack_traces = (
+                lambda reference_graph_module, resolved_graph_name: {}
             )
 
             # Create custom comparator instance
@@ -790,6 +923,7 @@ class TestInspector(unittest.TestCase):
                 "runtime_ops",
                 "runtime_intermediate_output",
                 "gap",
+                "stacktraces",
             }
             self.assertEqual(cols, expected_cols)
 
@@ -895,14 +1029,27 @@ class TestInspector(unittest.TestCase):
             aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
             runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
 
+            # Create a mock graph module for _resolve_reference_graph
+            mock_graph_module = MagicMock()
+            inspector_instance._resolve_reference_graph = (
+                lambda ref_graph=None, disable_validation=False: (
+                    mock_graph_module,
+                    "exported_program",
+                )
+            )
             inspector_instance._get_aot_intermediate_outputs_and_op_names = (
-                lambda x, y: (
+                lambda reference_graph_module: (
                     aot_intermediate_outputs,
                     aot_debug_handle_to_op_name,
                 )
             )
             inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
                 lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
+            )
+
+            # Test 1: Invalid return type
+            inspector_instance._get_aot_debug_handle_to_stack_traces = (
+                lambda reference_graph_module, resolved_graph_name: {}
             )
 
             # --- Test 1: MSE comparator with scaling preprocessing ---
@@ -924,6 +1071,7 @@ class TestInspector(unittest.TestCase):
                 "runtime_ops",
                 "runtime_intermediate_output",
                 "gap",
+                "stacktraces",
             }
             self.assertEqual(cols, expected_cols)
 
@@ -1058,8 +1206,16 @@ class TestInspector(unittest.TestCase):
             aot_debug_handle_to_op_name = {(0,): "op_0"}
             runtime_debug_handle_to_op_name = {(0,): "op_0"}
 
+            # Create a mock graph module for _resolve_reference_graph
+            mock_graph_module = MagicMock()
+            inspector_instance._resolve_reference_graph = (
+                lambda ref_graph=None, disable_validation=False: (
+                    mock_graph_module,
+                    "exported_program",
+                )
+            )
             inspector_instance._get_aot_intermediate_outputs_and_op_names = (
-                lambda x, y: (
+                lambda reference_graph_module: (
                     aot_intermediate_outputs,
                     aot_debug_handle_to_op_name,
                 )
@@ -1067,8 +1223,11 @@ class TestInspector(unittest.TestCase):
             inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
                 lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
             )
+            inspector_instance._get_aot_debug_handle_to_stack_traces = (
+                lambda reference_graph_module, resolved_graph_name: {}
+            )
 
-            # Test 1: Non-dict return type
+            # Test 1: Invalid return type
             with self.assertRaises(TypeError) as context:
                 inspector_instance.calculate_numeric_gap(
                     distance=NonDictPreprocessingComparator()
@@ -1175,6 +1334,11 @@ class TestInspector(unittest.TestCase):
                 mock_capturer.run_and_capture.return_value = aot_intermediate_outputs
                 mock_capturer_class.return_value = mock_capturer
                 mock_get_mapping.return_value = aot_debug_handle_to_op_name
+
+                # Mock the stack traces method since we don't have a real graph module with stack traces
+                inspector_instance._get_aot_debug_handle_to_stack_traces = (
+                    lambda reference_graph_module, resolved_graph_name: {}
+                )
 
                 # Test with reference_graph parameter (without /forward suffix)
                 # The code should automatically add "/forward" when looking up in graph_map
@@ -1302,15 +1466,25 @@ class TestInspector(unittest.TestCase):
             aot_debug_handle_to_op_name = {(0,): "op_0"}
             runtime_debug_handle_to_op_name = {(0,): "op_0"}
 
-            # Mock the internal methods like test_calculate_numeric_gap does
+            # Create a mock graph module for _resolve_reference_graph
+            mock_graph_module = MagicMock()
+            inspector_instance._resolve_reference_graph = (
+                lambda ref_graph=None, disable_validation=False: (
+                    mock_graph_module,
+                    "exported_program",
+                )
+            )
             inspector_instance._get_aot_intermediate_outputs_and_op_names = (
-                lambda x, y: (
+                lambda reference_graph_module: (
                     aot_intermediate_outputs,
                     aot_debug_handle_to_op_name,
                 )
             )
             inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
                 lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
+            )
+            inspector_instance._get_aot_debug_handle_to_stack_traces = (
+                lambda reference_graph_module, resolved_graph_name: {}
             )
 
             # Test with edge_dialect_exported_program parameter
@@ -1486,6 +1660,31 @@ class TestInspector(unittest.TestCase):
                     f"which exceeds tolerance {TOLERANCE}",
                 )
 
+            # Verify that stacktraces column exists and contains valid data
+            self.assertIn("stacktraces", df.columns)
+            for _, row in df.iterrows():
+                stacktraces = row["stacktraces"]
+                aot_ops = row["aot_ops"]
+                # stacktraces should be a dict
+                self.assertIsInstance(stacktraces, dict)
+                # Each aot_op should have a corresponding entry in stacktraces
+                for op_name in aot_ops:
+                    self.assertIn(
+                        op_name,
+                        stacktraces,
+                        f"Missing stack trace for operator {op_name}",
+                    )
+                    # Stack trace can be None or a string
+                    # (None when model was exported without stack trace preservation)
+                    stack_trace = stacktraces[op_name]
+                    self.assertIsInstance(stack_trace, str)
+                    # Stack traces should contain file information
+                    self.assertIn(
+                        "File",
+                        stack_trace,
+                        f"Stack trace for {op_name} doesn't contain file info",
+                    )
+
     @unittest.skipIf(sys.platform.startswith("win"), "Skipping on Windows")
     def test_intermediate_tensor_comparison_with_torch_export(self):
         """Test intermediate tensor comparison using torch.export.export and to_edge_transform_and_lower.
@@ -1600,6 +1799,30 @@ class TestInspector(unittest.TestCase):
             # Verify that we got some intermediate tensor comparisons
             # The exact number will depend on the model structure and partitioning
             self.assertEqual(len(df), 2)
+
+            # Verify that stacktraces column exists and contains valid data
+            self.assertIn("stacktraces", df.columns)
+            for _, row in df.iterrows():
+                stacktraces = row["stacktraces"]
+                aot_ops = row["aot_ops"]
+                # stacktraces should be a dict
+                self.assertIsInstance(stacktraces, dict)
+                # Each aot_op should have a corresponding entry in stacktraces
+                for op_name in aot_ops:
+                    self.assertIn(
+                        op_name,
+                        stacktraces,
+                        f"Missing stack trace for operator {op_name}",
+                    )
+                    # Stack trace can be None or a string
+                    stack_trace = stacktraces[op_name]
+                    self.assertIsInstance(stack_trace, str)
+                    # Stack traces should contain file information
+                    self.assertIn(
+                        "File",
+                        stack_trace,
+                        f"Stack trace for {op_name} doesn't contain file info",
+                    )
 
     def _gen_random_float_list(self) -> List[float]:
         return [random.uniform(0, 10) for _ in range(RAW_DATA_SIZE)]
@@ -1788,3 +2011,238 @@ class TestInspector(unittest.TestCase):
                 )
             )
         return events
+
+
+class TestInplaceOpsIntermediateOutput(unittest.TestCase):
+    """
+    Test suite for verifying that inplace operators correctly log intermediate
+    outputs when the event tracer is enabled.
+
+    This validates the fix for an issue where inplace ops converted by the
+    reinplace_pass could cause logging errors because the output tensor's data
+    pointer was null at the time of logging.
+
+    Note: The reinplace_pass currently only supports converting index_put to
+    index_put_ (see executorch/exir/passes/reinplace.py).
+    """
+
+    def _run_model_and_get_inspector(
+        self,
+        model: torch.nn.Module,
+        example_inputs: tuple,
+        run_reinplace_pass: bool = True,
+    ) -> Inspector:
+        """
+        Helper method to export a model, run it with event tracing, and return
+        an Inspector instance for verifying intermediate outputs.
+        """
+        model.eval()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            model_path = os.path.join(tmp_dir, "model.pte")
+            etrecord_path = os.path.join(tmp_dir, "etrecord.bin")
+            etdump_path = os.path.join(tmp_dir, "etdump.etdp")
+            debug_buffer_path = os.path.join(tmp_dir, "debug_buffer.bin")
+
+            # Step 1: Export the model
+            exported_program = export(model, example_inputs)
+            self.assertIsNotNone(exported_program)
+
+            # Step 2: Convert to edge dialect
+            edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
+            edge_program = to_edge(exported_program, compile_config=edge_compile_config)
+            self.assertIsNotNone(edge_program)
+
+            # Keep a copy for etrecord
+            edge_program_copy = to_edge(
+                export(model, example_inputs), compile_config=edge_compile_config
+            )
+
+            # Step 3: Convert to executorch with reinplace_pass enabled
+            executorch_config = ExecutorchBackendConfig(
+                run_reinplace_pass=run_reinplace_pass
+            )
+            executorch_program = edge_program.to_executorch(config=executorch_config)
+            self.assertIsNotNone(executorch_program)
+
+            # Step 4: Generate ETRecord
+            generate_etrecord(
+                etrecord_path,
+                edge_program_copy,
+                executorch_program,
+            )
+
+            # Step 5: Save the PTE file
+            with open(model_path, "wb") as f:
+                executorch_program.write_to_file(f)
+
+            # Step 6: Load and run with event tracing enabled
+            with open(model_path, "rb") as f:
+                pte_buffer = f.read()
+
+            executorch_module = _load_for_executorch_from_buffer(
+                pte_buffer,
+                enable_etdump=True,
+                debug_buffer_size=1024 * 1024,  # 1MB for testing
+            )
+            self.assertIsNotNone(executorch_module)
+
+            # Run the model
+            import torch.utils._pytree as pytree
+
+            flattened_inputs = pytree.tree_flatten(example_inputs)[0]
+            executorch_module.run_method("forward", tuple(flattened_inputs))
+
+            # Write ETDump results
+            executorch_module.write_etdump_result_to_file(
+                etdump_path, debug_buffer_path
+            )
+
+            # Check if event tracer captured data
+            if not os.path.exists(etdump_path):
+                self.skipTest(
+                    "Event tracer not enabled. Run with --config executorch.event_tracer_enabled=true"
+                )
+
+            # Step 7: Create Inspector and return
+            inspector = Inspector(
+                etdump_path=etdump_path,
+                etrecord=etrecord_path,
+                debug_buffer_path=debug_buffer_path,
+            )
+            return inspector
+
+    def test_index_put_without_reinplace_pass(self):
+        """
+        Test that the model works correctly without the reinplace pass as a
+        baseline comparison, and verify intermediate output correctness.
+        """
+        model = IndexPutModel()
+        indices = torch.tensor([0, 2, 4])
+        values = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]])
+        example_inputs = (indices, values)
+
+        # Compute expected intermediate output of index_put
+        # index_put on zeros(5,3) with indices [0,2,4] and values [[1,2,3],[4,5,6],[7,8,9]]
+        # Result should be:
+        # [[1, 2, 3],
+        #  [0, 0, 0],
+        #  [4, 5, 6],
+        #  [0, 0, 0],
+        #  [7, 8, 9]]
+        expected_index_put_output = torch.zeros(5, 3)
+        expected_index_put_output[0] = torch.tensor([1.0, 2.0, 3.0])
+        expected_index_put_output[2] = torch.tensor([4.0, 5.0, 6.0])
+        expected_index_put_output[4] = torch.tensor([7.0, 8.0, 9.0])
+
+        inspector = self._run_model_and_get_inspector(
+            model, example_inputs, run_reinplace_pass=False
+        )
+
+        self.assertIsNotNone(inspector)
+        self.assertGreater(len(inspector.event_blocks), 0)
+
+        # Verify intermediate output correctness (same validation as with reinplace)
+        found_index_put_output = False
+        for event_block in inspector.event_blocks:
+            for event in event_block.events:
+                if hasattr(event, "debug_data") and event.debug_data is not None:
+                    for debug_entry in event.debug_data:
+                        if isinstance(debug_entry, torch.Tensor):
+                            # Verify tensor has valid data pointer
+                            self.assertIsNotNone(
+                                debug_entry.data_ptr(),
+                                "Intermediate output tensor should have valid data pointer",
+                            )
+                            self.assertNotEqual(
+                                debug_entry.data_ptr(),
+                                0,
+                                "Intermediate output tensor data pointer should not be null",
+                            )
+
+                            # Check if this matches our expected index_put output shape
+                            if debug_entry.shape == expected_index_put_output.shape:
+                                if torch.allclose(
+                                    debug_entry, expected_index_put_output, atol=1e-5
+                                ):
+                                    found_index_put_output = True
+
+        self.assertTrue(
+            found_index_put_output,
+            "Expected to find index_put intermediate output with correct tensor data (without reinplace pass).",
+        )
+
+    def test_index_put_intermediate_output_data_correctness(self):
+        """
+        Test that the intermediate output values captured by the event tracer
+        are valid tensors with correct data.
+
+        This specifically validates that:
+        1. The output tensor has a valid (non-null) data pointer
+        2. The output tensor contains the correct values after index_put_
+        """
+        model = IndexPutModel()
+        # Use simple values to verify correctness
+        indices = torch.tensor([0, 1])
+        values = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        example_inputs = (indices, values)
+
+        # Compute expected intermediate output of index_put
+        # index_put on zeros(5,3) with indices [0,1] and values [[1,2,3],[4,5,6]]
+        # Result should be:
+        # [[1, 2, 3],
+        #  [4, 5, 6],
+        #  [0, 0, 0],
+        #  [0, 0, 0],
+        #  [0, 0, 0]]
+        expected_index_put_output = torch.zeros(5, 3)
+        expected_index_put_output[0] = torch.tensor([1.0, 2.0, 3.0])
+        expected_index_put_output[1] = torch.tensor([4.0, 5.0, 6.0])
+
+        inspector = self._run_model_and_get_inspector(
+            model, example_inputs, run_reinplace_pass=True
+        )
+
+        self.assertIsNotNone(inspector)
+        self.assertGreater(len(inspector.event_blocks), 0)
+
+        total_events = sum(len(eb.events) for eb in inspector.event_blocks)
+        self.assertGreater(
+            total_events, 0, "Expected at least one event to be captured"
+        )
+
+        # Find and verify the index_put_ output
+        found_index_put_output = False
+        for event_block in inspector.event_blocks:
+            for event in event_block.events:
+                # Check if this event has debug_data (intermediate outputs)
+                if hasattr(event, "debug_data") and event.debug_data is not None:
+                    for debug_entry in event.debug_data:
+                        if isinstance(debug_entry, torch.Tensor):
+                            # Verify tensor has valid data pointer
+                            self.assertIsNotNone(
+                                debug_entry.data_ptr(),
+                                "Intermediate output tensor should have valid data pointer",
+                            )
+                            self.assertNotEqual(
+                                debug_entry.data_ptr(),
+                                0,
+                                "Intermediate output tensor data pointer should not be null",
+                            )
+
+                            # Check if this matches our expected index_put output shape
+                            if debug_entry.shape == expected_index_put_output.shape:
+                                # Verify the data is correct
+                                if torch.allclose(
+                                    debug_entry, expected_index_put_output, atol=1e-5
+                                ):
+                                    found_index_put_output = True
+
+        # Assert that we found the expected index_put output with correct data
+        # This validates that the intermediate output was properly logged
+        # and contains the correct tensor values
+        self.assertTrue(
+            found_index_put_output,
+            "Expected to find index_put intermediate output with correct tensor data. "
+            "The output tensor should match the expected result of index_put operation.",
+        )

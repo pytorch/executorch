@@ -28,9 +28,10 @@ input_t = Tuple[torch.Tensor]
 
 
 class TestAutoencoderKL:
-    """
-    Test class of AutoencoderKL.
+    """Test class of AutoencoderKL.
+
     AutoencoderKL is the encoder/decoder used by Stable Diffusion 3.5 Medium
+
     """
 
     def _prepare_inputs(self, batch_size=4, num_channels=3, sizes=(32, 32)):

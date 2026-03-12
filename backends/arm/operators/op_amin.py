@@ -36,17 +36,20 @@ class MinVisitor(NodeVisitor):
     ) -> None:
         validate_num_inputs(self.target, inputs, 3)
         validate_same_dtype(self.target, [inputs[0], output], ts)
+        valid_dtypes = [
+            ts.DType.INT8,
+            ts.DType.INT16,
+            ts.DType.INT32,
+            ts.DType.FP16,
+            ts.DType.FP32,
+            ts.DType.BF16,
+        ]
+        if self.tosa_spec.is_U55_subset:
+            valid_dtypes.remove(ts.DType.INT32)
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [
-                ts.DType.INT8,
-                ts.DType.INT16,
-                ts.DType.INT32,
-                ts.DType.FP16,
-                ts.DType.FP32,
-                ts.DType.BF16,
-            ],
+            valid_dtypes,
             self.tosa_spec,
         )
 

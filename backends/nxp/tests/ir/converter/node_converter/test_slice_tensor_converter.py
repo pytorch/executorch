@@ -8,12 +8,10 @@ import torch
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
-from executorch.backends.nxp.tests.executorch_pipeline import (
-    neutron_converter_flavor,
-    to_quantized_edge_program,
-)
+from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 from executorch.backends.nxp.tests.executors import (
     convert_run_compare,
+    graph_contains_any_of_ops,
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
@@ -32,72 +30,112 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
+ExecutorchDelegateCall = torch.ops.higher_order.executorch_call_delegate
+Slice = exir_ops.edge.aten.slice.Tensor
+SliceCopy = exir_ops.edge.aten.slice_copy.Tensor
+
+
+passing_cases = [
+    pytest.param((24, 32), (0, 1), (0, 16), (24, 32), id="2D, no transpose"),
+    pytest.param(
+        (24, 32, 64), (0, 1, 2), (0, 0, 8), (24, 32, 64), id="3D, no transpose"
+    ),
+    pytest.param(
+        (24, 32, 64, 48),
+        (0, 1, 2, 3),
+        (0, 0, 0, 8),
+        (24, 32, 64, 48),
+        id="4D, no transpose",
+    ),
+    pytest.param(
+        (24, 32),
+        (0, 1),
+        (0, 13),
+        (24, 32),
+        id="2D, start arg not divisible by num_macs",
+    ),
+    pytest.param(
+        (24, 32),
+        (0, 1),
+        (0, 0),
+        (24, 31),
+        id="2D, end arg not divisible by num_macs",
+    ),
+    pytest.param((24, 32), (1, 0), (16, 0), (32, 24), id="2D, mixed dim args"),
+    pytest.param((24, 32), (0, -1), (0, 16), (24, 32), id="2D, negative dim arg"),
+]
+
+xfail_cases = [
+    pytest.param(
+        (24, 32),
+        (0, 1),
+        (8, 0),
+        (24, 32),
+        id="2D, one transpose",
+        marks=pytest.mark.xfail(
+            reason="Neutron-converter now only supports transpose in 4D, ticket: AIR-13446",
+            strict=True,
+        ),
+    ),
+    pytest.param(
+        (24, 32, 64),
+        (0, 1, 2),
+        (0, 8, 0),
+        (24, 32, 64),
+        id="3D, one transpose",
+        marks=pytest.mark.xfail(
+            reason="Neutron-converter now only supports transpose in 4D, ticket: AIR-13446",
+            strict=True,
+        ),
+    ),
+    pytest.param(
+        (24, 32, 64, 48),
+        (0, 1, 2, 3),
+        (0, 0, 8, 0),
+        (24, 32, 64, 48),
+        id="4D, one transpose",
+        marks=pytest.mark.xfail(
+            reason="Neutron-converter now only supports transpose of NHWC -> NCHW and vice versa, ticket: AIR-13446",
+            strict=True,
+        ),
+    ),
+    pytest.param(
+        (24, 32, 64),
+        (0, 1, 2),
+        (8, 8, 0),
+        (24, 32, 64),
+        id="3D, two transposes",
+        marks=pytest.mark.xfail(
+            reason="Neutron-converter now only supports transpose in 4D, ticket: AIR-13446",
+            strict=True,
+        ),
+    ),
+    pytest.param(
+        (24, 32, 64, 48),
+        (0, 1, 2, 3),
+        (16, 0, 8, 0),
+        (24, 32, 64, 48),
+        id="4D, two transposes",
+        marks=pytest.mark.xfail(
+            reason="Bug in neutron-converter, ticket: AIR-13665", strict=True
+        ),
+    ),
+    pytest.param(
+        (24, 32, 64, 48),
+        (0, 1, 2, 3),
+        (16, 0, 8, 0),
+        (24, 24, 56, 48),
+        id="4D, three transposes",
+        marks=pytest.mark.xfail(
+            reason="Bug in neutron-converter, ticket: AIR-13665", strict=True
+        ),
+    ),
+]
+
+
 @pytest.mark.parametrize(
     "x_input_shape, dims, starts, ends",
-    [
-        pytest.param((24, 32), (0, 1), (0, 16), (24, 32), id="2D, no transpose"),
-        pytest.param(
-            (24, 32, 64), (0, 1, 2), (0, 0, 8), (24, 32, 64), id="3D, no transpose"
-        ),
-        pytest.param(
-            (24, 32, 64, 48),
-            (0, 1, 2, 3),
-            (0, 0, 0, 8),
-            (24, 32, 64, 48),
-            id="4D, no transpose",
-        ),
-        pytest.param(
-            (24, 32),
-            (0, 1),
-            (8, 0),
-            (24, 32),
-            id="2D, one transpose",
-            marks=pytest.mark.xfail(reason="EIEX-649", strict=True),
-        ),
-        pytest.param(
-            (24, 32, 64),
-            (0, 1, 2),
-            (0, 8, 0),
-            (24, 32, 64),
-            id="3D, one transpose",
-            marks=pytest.mark.xfail(reason="EIEX-649", strict=True),
-        ),
-        pytest.param(
-            (24, 32, 64, 48),
-            (0, 1, 2, 3),
-            (0, 0, 8, 0),
-            (24, 32, 64, 48),
-            id="4D, one transpose",
-            marks=pytest.mark.xfail(reason="EIEX-649", strict=True),
-        ),
-        pytest.param(
-            (24, 32, 64),
-            (0, 1, 2),
-            (8, 8, 0),
-            (24, 32, 64),
-            id="3D, two transposes",
-            marks=pytest.mark.xfail(reason="EIEX-649", strict=True),
-        ),
-        # bug in neutron-converter will not properly convert models in these test cases
-        # pytest.param((24, 32, 64, 48), (0, 1, 2, 3), (16, 0, 8, 0), (24, 32, 64, 48), id="4D, two transposes"),
-        # pytest.param((24, 32, 64, 48), (0, 1, 2, 3), (16, 0, 8, 0), (24, 24, 56, 48), id="4D, three transposes"),
-        pytest.param(
-            (24, 32),
-            (0, 1),
-            (0, 13),
-            (24, 32),
-            id="2D, start arg not divisible by num_macs",
-        ),
-        pytest.param(
-            (24, 32),
-            (0, 1),
-            (0, 0),
-            (24, 31),
-            id="2D, end arg not divisible by num_macs",
-        ),
-        pytest.param((24, 32), (1, 0), (16, 0), (32, 24), id="2D, mixed dim args"),
-        pytest.param((24, 32), (0, -1), (0, 16), (24, 32), id="2D, negative dim arg"),
-    ],
+    passing_cases + xfail_cases,
 )
 def test_slice_tensor_quant_conversion(mocker, x_input_shape, dims, starts, ends):
     model = SliceTensorModule(
@@ -105,18 +143,14 @@ def test_slice_tensor_quant_conversion(mocker, x_input_shape, dims, starts, ends
         starts=starts,
         ends=ends,
     )
-
-    if neutron_converter_flavor == "SDK_25_09":
-        pytest.skip("Neutron Software must be version 2.2.1 or higher.")
-
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
     edge_program = to_quantized_edge_program(model, x_input_shape).exported_program()
-    edge_nodes = list(edge_program.graph.nodes)
 
     # Check if slices were delegated
-    assert not any("slice" in n.name for n in edge_nodes)
+    assert not graph_contains_any_of_ops(edge_program.graph, [Slice, SliceCopy])
+    assert graph_contains_any_of_ops(edge_program.graph, [ExecutorchDelegateCall])
 
     # Capture generated model
     tflite_flatbuffers_model, _ = converter_spy.spy_return
@@ -140,22 +174,25 @@ def test_slice_tensor_quant_conversion(mocker, x_input_shape, dims, starts, ends
     "x_input_shape, dims, starts, ends",
     [
         pytest.param(
-            (1, 4, 34, 50),
+            (1, 16, 32, 48),
             (0, 1, 2, 3),
-            (0, 0, 8, 0),
-            (1, 8, 32, 32),
+            (0, 8, 0, 0),
+            (1, 16, 32, 48),
             id="4D, handle channel order swap",
-            marks=pytest.mark.xfail(reason="EIEX-649", strict=True),
         )
     ],
 )
 def test_slice_tensor_w_conv_quant_conversion(
     mocker, x_input_shape, dims, starts, ends
 ):
-    if neutron_converter_flavor == "SDK_25_09":
-        pytest.skip("Neutron Software must be version 2.2.1 or higher.")
-
-    model = SliceTensorConvModule(dims=dims, starts=starts, ends=ends)
+    in_channels = out_channels = x_input_shape[1]
+    model = SliceTensorConvModule(
+        dims=dims,
+        starts=starts,
+        ends=ends,
+        in_channels=in_channels,
+        out_channels=out_channels,
+    )
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
@@ -163,10 +200,10 @@ def test_slice_tensor_w_conv_quant_conversion(
     edge_program = to_quantized_edge_program(
         model, x_input_shape, use_neutron_for_format_conversion=False
     ).exported_program()
-    edge_nodes = list(edge_program.graph.nodes)
 
     # Check if slices were delegated
-    assert not any("slice" in n.name for n in edge_nodes)
+    assert not graph_contains_any_of_ops(edge_program.graph, [Slice, SliceCopy])
+    assert graph_contains_any_of_ops(edge_program.graph, [ExecutorchDelegateCall])
 
     # Capture generated model
     tflite_flatbuffers_model, _ = converter_spy.spy_return
@@ -260,4 +297,4 @@ def test_slice_not_delegated(mocker, x_input_shape, dims, starts, ends):
 
     for i in range(0, num_slice_ops):
         slice_idx = (i + 1) * 3
-        assert nodes[slice_idx].target == exir_ops.edge.aten.slice_copy.Tensor
+        assert nodes[slice_idx].target in [Slice, SliceCopy]

@@ -382,7 +382,7 @@ class Tester:
             if isinstance(inp, torch.Tensor):
                 suffix = "" if len(inputs) == 1 else f"_{i}"
                 path = os.path.join(artifact_dir, f"{artifact_name}_input{suffix}.bin")
-                inp.contiguous().numpy().tofile(path)
+                inp.detach().contiguous().numpy().tofile(path)
                 logger.info(f"Saved golden input to {path}")
 
         if isinstance(reference_output, torch.Tensor):
@@ -396,7 +396,7 @@ class Tester:
                 path = os.path.join(
                     artifact_dir, f"{artifact_name}_expected_output{suffix}.bin"
                 )
-                out.contiguous().numpy().tofile(path)
+                out.detach().contiguous().numpy().tofile(path)
                 logger.info(f"Saved golden output to {path}")
 
     @staticmethod

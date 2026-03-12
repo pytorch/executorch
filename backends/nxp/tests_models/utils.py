@@ -18,7 +18,11 @@ from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
-from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
+
+from executorch.backends.nxp.nxp_backend import (
+    core_aten_ops_exception_list,
+    generate_neutron_compile_spec,
+)
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.backends.nxp.tests_models.model_input_spec import ModelInputSpec
 from executorch.devtools.visualization.visualization_utils import (
@@ -75,9 +79,7 @@ def to_quantized_edge_program(
     exir_program_aten = torch.export.export(model, example_input, strict=True)
     module = exir_program_aten.module()
 
-    neutron_target_spec = NeutronTargetSpec(
-        target="imxrt700", neutron_converter_flavor="SDK_25_12"
-    )
+    neutron_target_spec = NeutronTargetSpec(target="imxrt700")
 
     # Quantize model
     quantizer = NeutronQuantizer(
@@ -134,7 +136,7 @@ def to_quantized_edge_program(
         (
             [
                 NeutronPartitioner(
-                    generate_neutron_compile_spec("imxrt700", "SDK_25_12"),
+                    generate_neutron_compile_spec("imxrt700"),
                     neutron_target_spec=neutron_target_spec,
                     post_quantization_state_dict=exir_program_aten_quant.state_dict(),
                 )
@@ -148,7 +150,9 @@ def to_quantized_edge_program(
         core_aten_ep,
         transform_passes=NeutronEdgePassManager(),
         partitioner=partitioners,
-        compile_config=EdgeCompileConfig(),
+        compile_config=EdgeCompileConfig(
+            _core_aten_ops_exception_list=core_aten_ops_exception_list
+        ),
     )
 
     return edge_program_manager
