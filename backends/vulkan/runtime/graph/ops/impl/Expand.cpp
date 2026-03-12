@@ -16,7 +16,33 @@
 
 namespace vkcompute {
 
-void add_expand_buffer_node(
+void resize_expand_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  const ValueRef in = args.at(1).refs.at(0);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef size_ref = extra_args.at(0);
+
+  const std::vector<int64_t> in_sizes = graph->sizes_of(in);
+  const std::vector<int64_t> target_sizes =
+      graph->extract_int_or_symint_list(size_ref);
+
+  const size_t dim_offset = target_sizes.size() - in_sizes.size();
+  std::vector<int64_t> out_sizes(target_sizes.size());
+  for (size_t i = 0; i < target_sizes.size(); i++) {
+    if (target_sizes[i] == -1 && i >= dim_offset) {
+      out_sizes[i] = in_sizes[i - dim_offset];
+    } else if (target_sizes[i] == -1) {
+      out_sizes[i] = 1;
+    } else {
+      out_sizes[i] = target_sizes[i];
+    }
+  }
+  graph->virtual_resize(out, out_sizes);
+}
+
+void add_expand_node(
     ComputeGraph& graph,
     const ValueRef in,
     const ValueRef size,
@@ -27,8 +53,8 @@ void add_expand_buffer_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   vkapi::ParamsBindList param_buffers = {
-      graph.buffer_meta_ubo(out),
-      graph.buffer_meta_ubo(in),
+      graph.meta_ubo(out),
+      graph.meta_ubo(in),
   };
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
@@ -46,7 +72,7 @@ void add_expand_buffer_node(
       // Resize Args
       {size},
       // Resizing Logic
-      nullptr));
+      resize_expand_node));
 }
 
 void expand(ComputeGraph& graph, const std::vector<ValueRef>& args) {
@@ -57,11 +83,7 @@ void expand(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   (void)implicit;
   const ValueRef out = args.at(idx++);
 
-  if (graph.is_buffer_storage(out)) {
-    return add_expand_buffer_node(graph, in, size, out);
-  }
-
-  VK_THROW("Expand operator only supports buffer storage");
+  add_expand_node(graph, in, size, out);
 }
 
 REGISTER_OPERATORS {

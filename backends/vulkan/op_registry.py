@@ -1120,7 +1120,7 @@ def register_gather():
 @update_features(exir_ops.edge.aten.expand_copy.default)
 def register_expand_copy():
     return OpFeatures(
-        inputs_storage=utils.ANY_BUFFER,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=False,
         supports_highdim=True,
