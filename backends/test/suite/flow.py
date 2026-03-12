@@ -162,4 +162,4 @@ def all_flows() -> dict[str, TestFlow]:
         + _register_flow(_load_arm, "ARM")
     )
 
-    return {f.name: f for f in flows}
+    return {f.name: f for f in flows if f is not None}
