@@ -18,23 +18,6 @@ using executorch::runtime::Result;
 
 /* Potential NNLIB function/APIs */
 
-extern "C" WORD32 xa_nn_broadcast_32_32(
-    WORD32* __restrict__ p_out,
-    const int* const out_shape,
-    WORD32* __restrict__ p_in,
-    const int* const in_shape,
-    int num_dims);
-
-extern "C" WORD32 xa_nn_concat_32_32(
-    WORD32* __restrict__ p_out,
-    const WORD32* const p_out_shape,
-    const WORD32** pp_inps,
-    const WORD32* const* pp_inps_shape,
-    WORD32 num_out_dims,
-    WORD32 num_inp,
-    WORD32 num_inp_dims,
-    WORD32 axis);
-
 extern "C" WORD32 xa_nn_elm_add_broadcast_4D_f32xf32_f32(
     FLOAT32* __restrict__ p_out,
     const WORD32* const p_out_shape,
