@@ -4,16 +4,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-conv1d:
+conv1d_pw_texture:
   parameter_names_with_default_values:
     OPERATOR: X
     DTYPE: float
-    STORAGE: buffer
   generate_variant_forall:
     DTYPE:
       - VALUE: half
       - VALUE: float
   shader_variants:
-    - NAME: conv1d
-    - NAME: conv1d_clamp
+    - NAME: conv1d_pw_texture
+    - NAME: conv1d_pw_texture_clamp
       OPERATOR: clamp(X, A, B)

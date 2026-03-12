@@ -802,9 +802,36 @@ def register_convolution_cpp_ops():
 
         return True
 
+    def pick_conv_storage(
+        node: torch.fx.Node,
+    ) -> Tuple[List[utils.TensorRepSet], utils.TensorRepSet]:
+        x_shape = node.args[0].meta["val"].size()  # type: ignore[union-attr]
+        no_storage_tail = [utils.NO_STORAGE] * (len(node.args) - 1)
+        if len(x_shape) == 3:
+            weight = node.args[1]  # type: ignore[union-attr]
+            weight_shape = weight.meta["val"].size()  # type: ignore[union-attr]
+            groups = node.args[8]  # type: ignore[union-attr]
+            groups_val = groups if isinstance(groups, int) else int(groups)
+            is_depthwise = weight_shape[0] == groups_val and weight_shape[1] == 1
+            if weight_shape[2] == 1 or is_depthwise:
+                # Pointwise and depthwise 1D conv both have texture implementations
+                # using width-packed TEXTURE_3D.
+                return (
+                    [utils.WIDTH_PACKED_TEXTURE] + no_storage_tail,
+                    utils.WIDTH_PACKED_TEXTURE,
+                )
+            # General (non-pointwise, non-depthwise) 1D convolution: buffer path
+            return [utils.CONTIGUOUS_BUFFER] + no_storage_tail, utils.CONTIGUOUS_BUFFER
+        else:
+            # 2D convolution: channels-packed texture path
+            return (
+                [utils.CHANNELS_PACKED_TEXTURE] + no_storage_tail,
+                utils.CHANNELS_PACKED_TEXTURE,
+            )
+
     return OpFeatures(
         inputs_storage=[
-            utils.CHANNELS_PACKED_TEXTURE,  # input
+            utils.CHANNELS_PACKED_TEXTURE,  # input (overridden by pick_conv_storage)
             utils.NO_STORAGE,  # weight (prepacked)
             utils.NO_STORAGE,  # bias (prepacked)
             utils.NO_STORAGE,  # stride (non tensor)
@@ -820,6 +847,7 @@ def register_convolution_cpp_ops():
         supports_resize=True,
         supports_prepacking=True,
         are_node_inputs_supported_fn=check_conv_node,
+        pick_io_storage_fn=pick_conv_storage,
     )
 
 

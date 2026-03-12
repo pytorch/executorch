@@ -11,7 +11,6 @@ from typing import Callable
 
 from executorch.backends.vulkan.test.op_tests.utils.test_suite import VkTestSuite
 
-
 # Prime numbers dim sizes for testing
 XL = 113
 L = 89
@@ -704,7 +703,118 @@ def get_conv_inputs():
         "utils::kChannelsPacked",
     ]
     test_suite_dw.test_name_suffix = "dw"
-    return [test_suite, test_suite_pw, test_suite_dw]
+
+    # Extract 1D conv cases (3D input tensors) from test_cases for buffer path
+    test_cases_1d = [tc for tc in test_cases if len(tc.self) == 3]
+    test_cases_1d_dw = [
+        Test(
+            self=(1, 6, 7),
+            weight=(6, 1, 3),
+            bias=(6,),
+            stride=[1],
+            padding=[0],
+            dilation=[1],
+            transposed=False,
+            output_padding=[0],
+            groups=6,
+        ),
+        Test(
+            self=(2, 20, 30),
+            weight=(10, 4, 6),
+            bias=(10,),
+            stride=[5],
+            padding=[5],
+            dilation=[3],
+            transposed=False,
+            output_padding=[0],
+            groups=5,
+        ),
+        Test(
+            self=(1, 9, 11),
+            weight=(9, 1, 3),
+            bias=None,
+            stride=[1],
+            padding=[0],
+            dilation=[1],
+            transposed=False,
+            output_padding=[0],
+            groups=9,
+        ),
+        Test(
+            self=(5, 15, 30),
+            weight=(20, 3, 3),
+            bias=None,
+            stride=[3],
+            padding=[5],
+            dilation=[7],
+            transposed=False,
+            output_padding=[0],
+            groups=5,
+        ),
+    ]
+    test_cases_1d_pw = [
+        Test(
+            self=(1, 16, 64),
+            weight=(8, 16, 1),
+            bias=(8,),
+            stride=[1],
+            padding=[0],
+            dilation=[1],
+            transposed=False,
+            output_padding=[0],
+            groups=1,
+        ),
+        Test(
+            self=(2, 8, 32),
+            weight=(16, 8, 1),
+            bias=(16,),
+            stride=[1],
+            padding=[0],
+            dilation=[1],
+            transposed=False,
+            output_padding=[0],
+            groups=1,
+        ),
+    ]
+
+    # Buffer path for non-pointwise 1D convolution
+    test_suite_1d_buf = VkTestSuite(test_cases_1d_dw)
+    test_suite_1d_buf.layouts = ["utils::kWidthPacked"]
+    test_suite_1d_buf.storage_types = ["utils::kBuffer"]
+    test_suite_1d_buf.test_name_suffix = "1d_buf"
+
+    # Buffer path for pointwise 1D convolution
+    test_suite_1d_pw_buf = VkTestSuite(test_cases_1d_pw)
+    test_suite_1d_pw_buf.layouts = ["utils::kWidthPacked"]
+    test_suite_1d_pw_buf.storage_types = ["utils::kBuffer"]
+    test_suite_1d_pw_buf.test_name_suffix = "1d_pw_buf"
+
+    # Texture path for pointwise 1D convolution
+    test_suite_1d_pw_tex = VkTestSuite(test_cases_1d_pw)
+    test_suite_1d_pw_tex.layouts = ["utils::kWidthPacked"]
+    test_suite_1d_pw_tex.storage_types = ["utils::kTexture3D"]
+    test_suite_1d_pw_tex.test_name_suffix = "1d_pw_tex"
+
+    # Depthwise-only cases for 1D depthwise convolution
+    test_cases_1d_dw_only = [
+        tc for tc in test_cases_1d_dw if tc.weight[1] == 1 and tc.weight[0] == tc.groups
+    ]
+
+    # Texture path for depthwise 1D convolution
+    test_suite_1d_dw_tex = VkTestSuite(test_cases_1d_dw_only)
+    test_suite_1d_dw_tex.layouts = ["utils::kWidthPacked"]
+    test_suite_1d_dw_tex.storage_types = ["utils::kTexture3D"]
+    test_suite_1d_dw_tex.test_name_suffix = "1d_dw_tex"
+
+    return [
+        test_suite,
+        test_suite_pw,
+        test_suite_dw,
+        test_suite_1d_buf,
+        test_suite_1d_pw_buf,
+        test_suite_1d_pw_tex,
+        test_suite_1d_dw_tex,
+    ]
 
 
 @register_test_suite("aten.native_layer_norm.default")
