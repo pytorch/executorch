@@ -246,7 +246,6 @@ If your generator is single-config, the runner may be at `.\cmake-out\examples\m
 | `--data_path` | Path to data file (.ptd) for delegate data (required for CUDA/CUDA-Windows) |
 | `--timestamps`     | Timestamp output mode: `none\|token\|word\|segment\|all` (default: `segment`) |
 
-
 ### Mobile App
 
 Check out a [demo Android app](https://github.com/meta-pytorch/executorch-examples/tree/main/parakeet/android/ParakeetApp) for Parakeet
