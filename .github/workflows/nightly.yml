@@ -27,7 +27,7 @@ jobs:
           repo-name: pytorch
           branch: main
           pin-folder: .ci/docker/ci_commit_pins
-          test-infra-ref: main
+          test-infra-ref: release/2.11
           updatebot-token: ${{ secrets.UPDATEBOT_TOKEN }}
           pytorchbot-token: ${{ secrets.GH_PYTORCHBOT_TOKEN }}
 
