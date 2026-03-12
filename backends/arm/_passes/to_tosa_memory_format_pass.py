@@ -329,19 +329,11 @@ class ToTosaMemoryFormatPass(ArmPass):
 
         """
         for node in graph_module.graph.nodes:
-            # call_function and placeholder allowed due to
-            # index.Tensor being able to come in as both
             if node.op != "call_function":
                 continue
 
             # Transpose views
-            elif node.target in (
-                exir_ops.edge.aten.view_copy.default,
-                exir_ops.edge.aten.index.Tensor,
-            ):
-                # For index.Tensor:
-                #   If we want to support 4D indexing tensors this logic
-                #   should be updated.
+            elif node.target == exir_ops.edge.aten.view_copy.default:
                 input_node = node.args[0]
                 input_shape = input_node.meta["val"].shape
                 output_shape = node.meta["val"].shape
