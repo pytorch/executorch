@@ -10,11 +10,13 @@ import executorch.exir.tests.models as models
 
 import torch
 from executorch import exir
+from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.test.demo_backend import DemoBackend
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir.delegate import executorch_call_delegate
-from hypothesis import given, settings, strategies as st
+from hypothesis import settings
+from torch.export import export
 
 
 class TestBackendDebugHandle(unittest.TestCase):
@@ -34,14 +36,14 @@ class TestBackendDebugHandle(unittest.TestCase):
         m = Model()
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
 
-        ep = exir.capture(m, inputs, exir.CaptureConfig()).to_edge()
+        ep = to_edge(export(m, inputs, strict=True))
         executorch_prog = ep
-        executorch_prog.exported_program = to_backend(
-            ep.exported_program, AddMulPartitionerDemo()
+        executorch_prog._edge_programs["forward"] = to_backend(
+            ep.exported_program(), AddMulPartitionerDemo()
         )
         lowered_nodes = [
-            getattr(executorch_prog.exported_program.graph_module, node.target)
-            for node in executorch_prog.exported_program.graph.nodes
+            getattr(executorch_prog.exported_program().graph_module, node.target)
+            for node in executorch_prog.exported_program().graph.nodes
             if node.op == "get_attr"
         ]
         for lowered_node in lowered_nodes:
@@ -49,18 +51,15 @@ class TestBackendDebugHandle(unittest.TestCase):
 
         call_delegate_nodes = [
             node
-            for node in executorch_prog.exported_program.graph.nodes
+            for node in executorch_prog.exported_program().graph.nodes
             if node.target == executorch_call_delegate
         ]
 
         for call_delegate_node in call_delegate_nodes:
             self.assertIsNotNone(call_delegate_node.meta["debug_handle"])
 
-    @given(
-        unlift=st.booleans(),  # verify both lifted and unlifted graph
-    )
     @settings(deadline=500000)
-    def test_lowered_the_whole_model(self, unlift):
+    def test_lowered_the_whole_model(self):
         module_list = [
             models.Emformer(),
             models.Repeat(),
@@ -69,10 +68,6 @@ class TestBackendDebugHandle(unittest.TestCase):
             models.ModelWithUnusedArg(),
         ]
 
-        capture_config = (
-            exir.CaptureConfig(enable_aot=True) if unlift else exir.CaptureConfig()
-        )
-
         edge_compile_config = exir.EdgeCompileConfig(
             _check_ir_validity=False, _use_edge_ops=True
         )
@@ -80,11 +75,12 @@ class TestBackendDebugHandle(unittest.TestCase):
         for model in module_list:
             model_inputs = model.get_random_inputs()
 
-            edgeir_m = exir.capture(model, model_inputs, capture_config).to_edge(
-                edge_compile_config
+            edgeir_m = to_edge(
+                export(model, model_inputs, strict=True),
+                compile_config=edge_compile_config,
             )
             lowered_model = to_backend(
-                DemoBackend.__name__, edgeir_m.exported_program, []
+                DemoBackend.__name__, edgeir_m.exported_program(), []
             )
 
             # DemoBackend compile all nodes as one node. The debug_handle_map will be like (1: (debug handle from all nodes))
@@ -114,12 +110,13 @@ class TestBackendDebugHandle(unittest.TestCase):
                 def forward(self, *args):
                     return self.back_bone(*args)
 
-            edge = exir.capture(
-                ComposedModel(lowered_model), model_inputs, capture_config
-            ).to_edge(edge_compile_config)
+            edge = to_edge(
+                export(ComposedModel(lowered_model), model_inputs, strict=True),
+                compile_config=edge_compile_config,
+            )
             lowered_nodes = [
-                getattr(edge.exported_program.graph_module, node.target)
-                for node in edge.exported_program.graph.nodes
+                getattr(edge.exported_program().graph_module, node.target)
+                for node in edge.exported_program().graph.nodes
                 if node.op == "get_attr"
             ]
             for lowered_node in lowered_nodes:
