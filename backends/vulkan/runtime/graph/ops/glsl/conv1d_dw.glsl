@@ -36,47 +36,40 @@ ${layout_declare_ubo(B, "float", "out_min", "float", "out_max")}
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 /*
- * Computes a 1D convolution over width-packed buffer tensors. Each shader
- * invocation computes one output element at position (n, out_c, out_l).
+ * Computes a depthwise 1D convolution over width-packed buffer tensors. Each
+ * shader invocation computes one output element at position (n, c, out_l).
  *
- * Tensor sizes/strides are in WHCN order:
- *   out_meta sizes: W=L_out, H=C_out, C=N
- *   in_meta sizes:  W=L_in,  H=C_in
+ * For depthwise conv: groups == C_in == C_out, so each output channel uses
+ * exactly one input channel. Weight shape is [C, 1, K].
  */
 void main() {
   const int out_l = int(gl_GlobalInvocationID.x);
-  const int out_c = int(gl_GlobalInvocationID.y);
+  const int c = int(gl_GlobalInvocationID.y);
   const int n = int(gl_GlobalInvocationID.z);
 
   if (out_l >= int(size_at(out_meta, 0)) ||
-      out_c >= int(size_at(out_meta, 1)) ||
+      c >= int(size_at(out_meta, 1)) ||
       n >= int(size_at(out_meta, 2))) {
     return;
   }
 
-  const int c_start = (out_c / out_group_size) * in_group_size;
-
   T sum = T(0);
-  for (int ic = 0; ic < in_group_size; ic++) {
-    const int in_c = c_start + ic;
-    for (int k = 0; k < kernel_size; k++) {
-      const int in_l = out_l * stride - padding + k * dilation;
-      if (in_l >= 0 && in_l < int(size_at(in_meta, 0))) {
-        TensorIndex4D in_tidx;
-        in_tidx.data = ivec4(in_l, in_c, n, 0);
-        const uint in_idx = tensor4d_idx_to_linear_idx(in_meta, in_tidx);
-        // Weight tidx (k, ic, out_c) in [C_out, C_in/g, K]: (k, ic, out_c, 0)
-        const int w_idx = k * weight_strides.x + ic * weight_strides.y +
-            out_c * weight_strides.z;
-        sum += t_in[in_idx] * t_weight[w_idx];
-      }
+  for (int k = 0; k < kernel_size; k++) {
+    const int in_l = out_l * stride - padding + k * dilation;
+    if (in_l >= 0 && in_l < int(size_at(in_meta, 0))) {
+      TensorIndex4D in_tidx;
+      in_tidx.data = ivec4(in_l, c, n, 0);
+      const uint in_idx = tensor4d_idx_to_linear_idx(in_meta, in_tidx);
+      // Weight tidx (k, 0, c) in [C, 1, K]: (k, 0, c, 0)
+      const int w_idx = k * weight_strides.x + c * weight_strides.z;
+      sum += t_in[in_idx] * t_weight[w_idx];
     }
   }
 
-  sum += T(t_bias[out_c]);
+  sum += T(t_bias[c]);
 
   TensorIndex4D out_tidx;
-  out_tidx.data = ivec4(out_l, out_c, n, 0);
+  out_tidx.data = ivec4(out_l, c, n, 0);
   const uint out_idx = tensor4d_idx_to_linear_idx(out_meta, out_tidx);
   t_out[out_idx] = op(sum, T(out_min), T(out_max));
 }

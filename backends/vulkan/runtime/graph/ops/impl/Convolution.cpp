@@ -9,6 +9,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Conv1d.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
@@ -442,12 +443,13 @@ utils::uvec3 conv1d_global_wg_size(
   (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
 
-  return {// out length
-          graph->size_at<uint32_t>(-1, out),
-          // out channels
-          static_cast<uint32_t>(graph->size_at<int64_t>(-2, out)),
-          // out batches
-          utils::div_up_4(graph->size_at<uint32_t>(-3, out))};
+  return {
+      // out length
+      graph->size_at<uint32_t>(-1, out),
+      // out channels
+      static_cast<uint32_t>(graph->size_at<int64_t>(-2, out)),
+      // out batches
+      utils::div_up_4(graph->size_at<uint32_t>(-3, out))};
 }
 
 void add_conv2d_node(
@@ -709,7 +711,7 @@ void add_conv1d_node(
 
   const OutputParams out_params = {out_min_val, out_max_val};
 
-  std::string kernel_name("conv1d");
+  std::string kernel_name("conv1d_texture");
   if (clamp_out) {
     kernel_name += "_clamp";
   }
@@ -783,36 +785,142 @@ void conv(ComputeGraph& graph, const std::vector<ValueRef>& args) {
           true);
     }
   } else {
-    if (args.size() == 10) {
-      // ordinary conv1d
-      return add_conv1d_node(
-          graph,
-          args[0],
-          args[1],
-          args[2],
-          args[3],
-          args[4],
-          args[5],
-          args[8],
-          /*out_min = */ kDummyValueRef,
-          /*out_max = */ kDummyValueRef,
-          args[9],
-          false);
+    const bool use_buf_path = graph.is_buffer_storage(args[0]) &&
+        graph.packed_dim_of(args[0]) == WHCN::kWidthDim;
+    // Width-packed texture pointwise conv1d: avoid texture->buffer transition
+    const bool use_texture_pw_path = !use_buf_path &&
+        !graph.is_buffer_storage(args[0]) &&
+        graph.packed_dim_of(args[0]) == WHCN::kWidthDim &&
+        graph.sizes_of(args[1]).at(2) == 1;
+    // Width-packed texture depthwise conv1d
+    const auto weight_sizes_1d = graph.sizes_of(args[1]);
+    const int64_t groups_1d = graph.get_int(args[8]);
+    const bool use_texture_dw_path = !use_buf_path && !use_texture_pw_path &&
+        !graph.is_buffer_storage(args[0]) &&
+        graph.packed_dim_of(args[0]) == WHCN::kWidthDim &&
+        weight_sizes_1d.at(0) == groups_1d && weight_sizes_1d.at(1) == 1;
+    if (use_texture_dw_path) {
+      if (args.size() == 10) {
+        return add_conv1d_dw_texture_entry(
+            graph,
+            args[0],
+            args[1],
+            args[2],
+            args[3],
+            args[4],
+            args[5],
+            args[8],
+            /*out_min_val = */ 0.0f,
+            /*out_max_val = */ 0.0f,
+            args[9],
+            false);
+      } else {
+        return add_conv1d_dw_texture_entry(
+            graph,
+            args[0],
+            args[1],
+            args[2],
+            args[3],
+            args[4],
+            args[5],
+            args[8],
+            graph.extract_scalar<float>(args[9]),
+            graph.extract_scalar<float>(args[10]),
+            args[11],
+            true);
+      }
+    } else if (use_texture_pw_path) {
+      if (args.size() == 10) {
+        return add_conv1d_pw_texture_node(
+            graph,
+            args[0],
+            args[1],
+            args[2],
+            args[3],
+            args[4],
+            args[5],
+            args[8],
+            /*out_min_val = */ 0.0f,
+            /*out_max_val = */ 0.0f,
+            args[9],
+            false);
+      } else {
+        return add_conv1d_pw_texture_node(
+            graph,
+            args[0],
+            args[1],
+            args[2],
+            args[3],
+            args[4],
+            args[5],
+            args[8],
+            graph.extract_scalar<float>(args[9]),
+            graph.extract_scalar<float>(args[10]),
+            args[11],
+            true);
+      }
+    } else if (use_buf_path) {
+      if (args.size() == 10) {
+        return add_conv1d_buf_node(
+            graph,
+            args[0],
+            args[1],
+            args[2],
+            args[3],
+            args[4],
+            args[5],
+            args[8],
+            /*out_min_val = */ 0.0f,
+            /*out_max_val = */ 0.0f,
+            args[9],
+            false);
+      } else {
+        return add_conv1d_buf_node(
+            graph,
+            args[0],
+            args[1],
+            args[2],
+            args[3],
+            args[4],
+            args[5],
+            args[8],
+            graph.extract_scalar<float>(args[9]),
+            graph.extract_scalar<float>(args[10]),
+            args[11],
+            true);
+      }
     } else {
-      // conv1d with clamp
-      return add_conv1d_node(
-          graph,
-          args[0],
-          args[1],
-          args[2],
-          args[3],
-          args[4],
-          args[5],
-          args[8],
-          args[9],
-          args[10],
-          args[11],
-          true);
+      if (args.size() == 10) {
+        // ordinary conv1d (texture path)
+        return add_conv1d_node(
+            graph,
+            args[0],
+            args[1],
+            args[2],
+            args[3],
+            args[4],
+            args[5],
+            args[8],
+            /*out_min = */ kDummyValueRef,
+            /*out_max = */ kDummyValueRef,
+            args[9],
+            false);
+      } else {
+        // conv1d with clamp (texture path)
+        return add_conv1d_node(
+            graph,
+            args[0],
+            args[1],
+            args[2],
+            args[3],
+            args[4],
+            args[5],
+            args[8],
+            args[9],
+            args[10],
+            args[11],
+            true);
+      }
     }
   }
 }
