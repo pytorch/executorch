@@ -52,6 +52,7 @@ from executorch.backends.arm._passes import (
     DecomposeDivTensorModePass,
     DecomposeEluPass,
     DecomposeEmbeddingPass,
+    DecomposeErfinvPass,
     DecomposeExpm1Pass,
     DecomposeFloorDividePass,
     DecomposeGeluPass,
@@ -119,6 +120,8 @@ from executorch.backends.arm._passes import (
     RewriteIndexPutPass,
     RewriteLeLtToGeGtPass,
     RewriteMatmulPass,
+    RewritePadPass,
+    RewriteSlicePass,
     RewriteUpsamplePass,
     ScalarsToAttributePass,
     SizeAdjustInputPass,
@@ -283,6 +286,7 @@ class ArmPassManager(PassManager):
                 DecomposeAsinhPass(),
                 DecomposeCoshPass(),
                 DecomposeAsinAndAcosPass(),
+                DecomposeErfinvPass(),
                 DecomposeSqrtPass(),
                 DecomposeAtanPass(),
                 DecomposeAtanhPass(),
@@ -370,6 +374,8 @@ class ArmPassManager(PassManager):
                 RewriteUpsamplePass(),
                 RewriteConvPass(exported_program),
                 RewriteMatmulPass(),
+                RewritePadPass(),
+                RewriteSlicePass(),
             ]
         )
 
