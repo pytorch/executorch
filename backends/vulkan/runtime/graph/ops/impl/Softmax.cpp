@@ -24,14 +24,26 @@ utils::uvec3 pick_softmax_global_wg_size(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
-  (void)resize_args;
 
   const ValueRef out = args.at(0).refs.at(0);
-  const int32_t reduce_dim_xyz =
-      graph->extract_scalar<int32_t>(resize_args.at(1));
+  const ValueRef in = args.at(1).refs.at(0);
+  const int dim = resize_args.at(0);
+
+  const int64_t ndim = graph->dim_of(in);
+  int32_t reduce_dim = normalize(dim, ndim);
+  reduce_dim = nchw_dim_to_whcn_dim(reduce_dim, ndim);
+
+  if (graph->is_buffer_storage(out)) {
+    utils::uvec3 global_size = {
+        graph->size_at<uint32_t>(-1, out),
+        graph->size_at<uint32_t>(-2, out),
+        graph->size_at<uint32_t>(-3, out) * graph->size_at<uint32_t>(-4, out)};
+    global_size[reduce_dim] = 1;
+    return global_size;
+  }
 
   utils::uvec3 global_size = graph->logical_limits_of(out);
-  global_size[reduce_dim_xyz] = 1;
+  global_size[reduce_dim] = 1;
   return global_size;
 }
 
@@ -43,22 +55,30 @@ utils::uvec3 pick_softmax_local_wg_size(
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
   (void)global_workgroup_size;
-  (void)args;
+
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
+  const int dim = resize_args.at(0);
+
+  const int64_t ndim = graph->dim_of(in);
+  int32_t reduce_dim = normalize(dim, ndim);
+  reduce_dim = nchw_dim_to_whcn_dim(reduce_dim, ndim);
+
+  const uint32_t nworkers_per_group = 4;
+
+  if (graph->is_buffer_storage(out)) {
+    utils::uvec3 local_wg_size{1, 1, 1};
+    local_wg_size[reduce_dim] = nworkers_per_group;
+    return local_wg_size;
+  }
 
   const int64_t group_dim_xyz =
-      graph->extract_scalar<int64_t>(resize_args.at(2));
-
-  const int32_t reduce_dim_xyz =
-      graph->extract_scalar<int32_t>(resize_args.at(1));
-
-  // These values are hardcoded in add_softmax_node
-  const uint32_t nworkers_per_group = 4;
+      graph->extract_scalar<int64_t>(resize_args.at(1));
   const uint32_t ngroups = 4;
 
   utils::uvec3 local_wg_size{1, 1, 1};
-  local_wg_size[reduce_dim_xyz] = nworkers_per_group;
+  local_wg_size[reduce_dim] = nworkers_per_group;
   local_wg_size[group_dim_xyz] = ngroups;
-
   return local_wg_size;
 }
 
@@ -80,10 +100,6 @@ void add_softmax_node(
     const ValueRef dim_ref,
     const ValueRef out,
     bool log_softmax) {
-  VK_CHECK_COND(
-      !graph.is_buffer_storage(in) && !graph.is_buffer_storage(out),
-      "Vulkan softmax only supports texture storage");
-
   const int64_t ndim = graph.dim_of(in);
 
   int32_t reduce_dim_nchw = graph.extract_scalar<int32_t>(dim_ref);
@@ -101,9 +117,9 @@ void add_softmax_node(
         "Softmax shader currently does not support concat dim == reduce dim");
   }
 
-  vkapi::ShaderInfo shader_descriptor;
   std::string kernel_name = "softmax";
   kernel_name.reserve(kShaderNameReserve);
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
   if (log_softmax) {
     kernel_name = "log_" + kernel_name;
@@ -111,25 +127,32 @@ void add_softmax_node(
 
   // This should match the value of MAX_NTHREADS in the softmax shader.
   constexpr uint32_t max_nthreads = 16;
-
   const uint32_t nworkers_per_group = 4;
   const uint32_t ngroups = 4;
   VK_CHECK_COND(nworkers_per_group * ngroups <= max_nthreads);
 
-  // Determine the group dimension
-  const int other_dim_1 = (reduce_dim_xyz + 1) % 3;
-  const int other_dim_2 = (reduce_dim_xyz + 2) % 3;
-  int32_t group_dim;
-  utils::uvec3 global_wg_size = graph.logical_limits_of(out);
-  if (global_wg_size[other_dim_1] > global_wg_size[other_dim_2]) {
-    group_dim = other_dim_1;
-  } else {
-    group_dim = other_dim_2;
-  }
+  const int dim_val = graph.extract_scalar<int>(dim_ref);
 
-  const ValueRef reduce_dim_xyz_ref =
-      graph.get_or_add_value_for_int(reduce_dim_xyz);
-  const ValueRef group_dim_xyz_ref = graph.get_or_add_value_for_int(group_dim);
+  vkapi::SpecVarList spec_constants = {reduce_dim_xyz};
+  std::vector<ValueRef> resize_args = {dim_val};
+
+  if (!graph.is_buffer_storage(out)) {
+    const int other_dim_1 = (reduce_dim_xyz + 1) % 3;
+    const int other_dim_2 = (reduce_dim_xyz + 2) % 3;
+    int32_t group_dim;
+    utils::uvec3 global_wg_size = graph.logical_limits_of(out);
+    if (global_wg_size[other_dim_1] > global_wg_size[other_dim_2]) {
+      group_dim = other_dim_1;
+    } else {
+      group_dim = other_dim_2;
+    }
+
+    spec_constants = {graph.packed_dim_of(out), reduce_dim_xyz, group_dim};
+
+    const ValueRef group_dim_xyz_ref =
+        graph.get_or_add_value_for_int(group_dim);
+    resize_args = {dim_val, group_dim_xyz_ref};
+  }
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -139,13 +162,13 @@ void add_softmax_node(
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
-      {},
+      {graph.meta_ubo(in), graph.meta_ubo(out)},
       // Push Constants
-      {graph.sizes_pc_of(in), graph.logical_limits_pc_of(out)},
+      {},
       // Specialization Constants
-      {graph.packed_dim_of(out), reduce_dim_xyz, group_dim},
+      spec_constants,
       // Resize Args
-      {dim_ref, reduce_dim_xyz_ref, group_dim_xyz_ref},
+      resize_args,
       // Resizing Logic
       resize_softmax_node));
 }
