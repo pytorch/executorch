@@ -320,6 +320,7 @@ class ArmPassManager(PassManager):
             [
                 ReplaceScalarWithTensorByProfilePass(),
                 RewriteLeLtToGeGtPass(),
+                DecomposeLeakyReLUPass(),  # Emits full_like so before ConvertFullLikeToFullPass
                 ConvertFullLikeToFullPass(),
                 MatchArgDtypePass(),
                 UnsqueezeScalarPlaceholdersPass(exported_program),
@@ -340,7 +341,6 @@ class ArmPassManager(PassManager):
                 FuseBatchNorm2dPass(exported_program),
                 ConvertMmToBmmPass(),
                 DecomposeGluPass(),
-                DecomposeLeakyReLUPass(),
                 DecomposeDivPass(),
                 # _safe_softmax results in a ReduceMax
                 # which is not currently supported by TOSA in U55
