@@ -6,7 +6,6 @@
 # LICENSE file in the root directory of this source tree.
 
 set -ex
-set +u
 
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
@@ -42,8 +41,10 @@ curl -Lo /tmp/openvino_toolkit.tgz --retry 3 --fail ${OPENVINO_URL}
 tar -xzf /tmp/openvino_toolkit.tgz
 mv "${OPENVINO_EXTRACTED_DIR}" openvino
 
+set +u
 source openvino/setupvars.sh
-cd backends/openvino
-pip install -r requirements.txt
-cd scripts
+set -u
+pip install -r backends/openvino/requirements.txt
+pushd backends/openvino/scripts
 ./openvino_build.sh --enable_python
+popd
