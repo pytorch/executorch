@@ -54,7 +54,9 @@ class TestFlow:
         return self.name
 
 
-def _register_flow(import_fn: Callable[[], list[TestFlow]], backend_name: str) -> list[TestFlow]:
+def _register_flow(
+    import_fn: Callable[[], list[TestFlow]], backend_name: str
+) -> list[TestFlow]:
     try:
         return import_fn()
     except Exception as e:
