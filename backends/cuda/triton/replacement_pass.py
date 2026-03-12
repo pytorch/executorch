@@ -24,6 +24,7 @@ triton = torch.ops.triton
 # Global mapping from edge dialect operators to Triton kernel functions
 EDGE_TO_TRITON_KERNELS = {
     exir_ops.edge.aten.scaled_dot_product_attention.default: triton.sdpa,
+    exir_ops.edge.aten.topk.default: triton.topk,
 }
 
 

@@ -5,7 +5,9 @@
 # LICENSE file in the root directory of this source tree.
 
 from executorch.backends.cuda.triton.kernels.sdpa import sdpa
+from executorch.backends.cuda.triton.kernels.topk import topk
 
 __all__ = [
     "sdpa",
+    "topk",
 ]
