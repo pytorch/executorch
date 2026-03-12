@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,6 +9,7 @@ from executorch.backends.nxp.backend.ir import logger as logger
 from executorch.backends.nxp.backend.ir.tflite_generator import (
     tflite_model as tflite_model,
 )
+from torch.fx import Node
 
 
 def _buffer_has_data(t_buffer: tflite_model.Buffer) -> Optional[bool]:
@@ -48,3 +49,7 @@ def all_tensors_are_static(*list_of_tensors) -> bool:
     """
 
     return all(tensor_has_data(t) for t in list_of_tensors)
+
+
+def get_name_of_node_output(node: Node, output_index: int) -> str:
+    return node.name + f"_<getitem_extracted_output_{output_index}>"
