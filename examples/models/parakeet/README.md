@@ -248,6 +248,6 @@ If your generator is single-config, the runner may be at `.\cmake-out\examples\m
 
 ### Mobile App
 
-Check out a [demo Android app](https://github.com/meta-pytorch/executorch-examples/tree/main/parakeet/android/ParakeetApp) for Parakeet
+Check out a [demo Android app](https://github.com/meta-pytorch/executorch-examples/tree/main/parakeet/android/ParakeetApp) for Parakeet in the separate `executorch-examples` repository.
 
 https://github.com/user-attachments/assets/9793d2d0-0d23-4627-a8dc-4334b97b07ab
