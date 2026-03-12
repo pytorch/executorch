@@ -159,6 +159,8 @@ def update_features(aten_op):
         torch.ops.aten.sym_size.int,
         operator.add,
         operator.sub,
+        operator.floordiv,
+        operator.mul,
         operator.lt,
         operator.gt,
         operator.ge,
@@ -279,6 +281,26 @@ def register_bitwise_and():
     )
 
 
+@update_features(exir_ops.edge.aten.bitwise_not.default)
+def register_bitwise_not():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features(exir_ops.edge.aten.logical_and.default)
+def register_logical_and():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
 # =============================================================================
 # BinaryScalarOp.cpp
 # =============================================================================
@@ -301,16 +323,22 @@ def register_pow_tensor_scalar():
 
 @update_features(exir_ops.edge.aten._to_copy.default)
 def register_to_copy():
-    def check_to_copy_node(node: torch.fx.Node) -> bool:
-        # Only single-arg _to_copy is supported
-        return len(node.args) == 1
+    def pick_to_copy_storage(
+        node: torch.fx.Node,
+    ) -> Tuple[utils.TensorRepSet, utils.TensorRepSet]:
+        in_dtype = node.args[0].meta["val"].dtype  # type: ignore[union-attr]
+        out_dtype = node.meta["val"].dtype
+        fp_types = {torch.float16, torch.float32}
+        if in_dtype in fp_types and out_dtype in fp_types:
+            return utils.ANY_STORAGE, utils.ANY_STORAGE
+        return utils.CONTIGUOUS_BUFFER, utils.CONTIGUOUS_BUFFER
 
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
-        inputs_dtypes=utils.FP_INT_T,
-        outputs_dtypes=utils.FP_INT_T,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        outputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
-        are_node_inputs_supported_fn=check_to_copy_node,
+        pick_io_storage_fn=pick_to_copy_storage,
     )
 
 
@@ -1336,6 +1364,7 @@ def register_scalar_tensor():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
         inputs_dtypes=utils.FP_INT_T,
+        supports_resize=True,
     )
 
 
