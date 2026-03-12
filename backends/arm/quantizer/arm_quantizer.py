@@ -76,6 +76,7 @@ def get_symmetric_quantization_config(
     act_qmax: int = 127,
     weight_qmin: int = -127,
     weight_qmax: int = 127,
+    eps: float = 2**-16,
 ) -> QuantizationConfig:
     """Create symmetric quantization config for activations and weights.
 
@@ -95,7 +96,7 @@ def get_symmetric_quantization_config(
         bias.
 
     """
-    extra_args: Dict[str, Any] = {"eps": 2**-16}
+    extra_args: Dict[str, Any] = {"eps": eps}
     if is_qat:
         if is_dynamic:
             act_observer_or_fake_quant_ctr = FakeQuantize
