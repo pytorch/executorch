@@ -23,8 +23,8 @@ OPENVINO_VERSION="2026.0"
 OPENVINO_BUILD="2026.0.0.20965.c6d6a13a886"
 OPENVINO_STABLE_URL="https://storage.openvinotoolkit.org/repositories/openvino/packages/${OPENVINO_VERSION}/linux/openvino_toolkit_ubuntu22_${OPENVINO_BUILD}_x86_64.tgz"
 
-OPENVINO_NIGHTLY_BUILD_ID="2026.1.0-21296-4589d335731"
-OPENVINO_NIGHTLY_BUILD="2026.1.0.dev20260311"
+OPENVINO_NIGHTLY_BUILD_ID="2026.1.0-21310-c694fbc2b6d"
+OPENVINO_NIGHTLY_BUILD="2026.1.0.dev20260312"
 OPENVINO_NIGHTLY_URL="https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/${OPENVINO_NIGHTLY_BUILD_ID}/openvino_toolkit_ubuntu22_${OPENVINO_NIGHTLY_BUILD}_x86_64.tgz"
 
 if [ "${USE_NIGHTLY}" = true ]; then
