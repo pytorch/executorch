@@ -11,15 +11,18 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackFloatingPointPartitioner,
 )
 from executorch.backends.xnnpack.utils.configs import (
+    get_transform_passes,
+    get_xnnpack_edge_compile_config,
     get_xnnpack_executorch_backend_config,
 )
-from executorch.backends.xnnpack.utils.utils import capture_graph_for_xnnpack
 
 from executorch.devtools.size_analysis_tool.size_analysis_tool import (
     generate_model_size_information,
 )
-from executorch.exir.backend.backend_api import to_backend, validation_disabled
+from executorch.exir import to_edge
+from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
+from torch.export import export
 
 
 class SizeAnalysisToolTest(unittest.TestCase):
@@ -52,13 +55,14 @@ class SizeAnalysisToolTest(unittest.TestCase):
 
         test_input = torch.ones(size=(4, 7, 5, 6), dtype=torch.float)
 
-        edge_program = capture_graph_for_xnnpack(mm, (test_input,))
-        partitioner = XnnpackFloatingPointPartitioner()
+        edge_program = to_edge(
+            export(mm, (test_input,), strict=True),
+            compile_config=get_xnnpack_edge_compile_config(),
+        ).transform(get_transform_passes())
 
         with validation_disabled():
-            delegated_program = edge_program
-            delegated_program.exported_program = to_backend(
-                edge_program.exported_program, partitioner
+            delegated_program = edge_program.to_backend(
+                XnnpackFloatingPointPartitioner()
             )
 
         program = delegated_program.to_executorch(
@@ -66,7 +70,7 @@ class SizeAnalysisToolTest(unittest.TestCase):
         )
 
         size_information = generate_model_size_information(
-            model=program,
+            model=program.exported_program(),
             delegate_deserializers=None,
             flatbuffer=program.buffer,
         )

@@ -618,12 +618,10 @@ class TestETRecord(unittest.TestCase):
 
         # Create additional module to add
         f2 = models.BasicSinMax()
-        captured_output2 = exir.capture(
-            f2, f2.get_random_inputs(), exir.CaptureConfig()
-        )
+        captured_output2 = export(f2, f2.get_random_inputs(), strict=True)
 
         extra_modules = {
-            "new_module": captured_output2.exported_program,
+            "new_module": captured_output2,
         }
 
         # Add extra export modules
@@ -640,7 +638,7 @@ class TestETRecord(unittest.TestCase):
         )
         self.check_graph_closeness(
             etrecord.graph_map["new_module/forward"],
-            captured_output2.exported_program.graph_module,
+            captured_output2.graph_module,
         )
 
     def test_add_extra_export_modules_reserved_name_validation(self):
@@ -1066,13 +1064,11 @@ class TestETRecord(unittest.TestCase):
 
         # Create another exported program to try to add
         f2 = models.BasicSinMax()
-        captured_output2 = exir.capture(
-            f2, f2.get_random_inputs(), exir.CaptureConfig()
-        )
+        captured_output2 = export(f2, f2.get_random_inputs(), strict=True)
 
         # Verify that adding exported program raises RuntimeError
         with self.assertRaises(RuntimeError) as context:
-            etrecord.add_exported_program(captured_output2.exported_program)
+            etrecord.add_exported_program(captured_output2)
 
         self.assertIn(
             "Exported program already exists in the ETRecord",
@@ -1202,11 +1198,9 @@ class TestETRecord(unittest.TestCase):
 
         # Create another edge program to try to add
         f2 = models.BasicSinMax()
-        captured_output2 = exir.capture(
-            f2, f2.get_random_inputs(), exir.CaptureConfig()
-        )
-        edge_output2 = captured_output2.to_edge(
-            exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=False)
+        edge_output2 = to_edge(
+            export(f2, f2.get_random_inputs(), strict=True),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=False),
         )
 
         # Verify that adding edge dialect program raises RuntimeError
