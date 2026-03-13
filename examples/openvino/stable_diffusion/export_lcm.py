@@ -136,9 +136,8 @@ class LCMOpenVINOExporter:
                     f"Column '{dataset_column}' was not found in dataset '{dataset_name}'"
                 )
             prompt = batch[dataset_column]
-            if not isinstance(prompt, str):
-                prompt = str(prompt)
-            if len(prompt.split()) > pipeline.tokenizer.model_max_length:
+            tokenized = pipeline.tokenizer.encode(prompt)
+            if len(tokenized["input_ids"]) > pipeline.tokenizer.model_max_length:
                 continue
             # Run the pipeline
             pipeline(
