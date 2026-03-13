@@ -47,11 +47,6 @@ void setExecutorchPendingException(
     return;
   }
 
-  // If an exception is already pending, preserve it and do not overwrite.
-  if (env->ExceptionCheck()) {
-    return;
-  }
-
   jclass exceptionClass =
       env->FindClass("org/pytorch/executorch/ExecutorchRuntimeException");
   if (env->ExceptionCheck()) {

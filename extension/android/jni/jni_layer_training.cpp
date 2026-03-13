@@ -80,7 +80,7 @@ class ExecuTorchTrainingJni
       executorch::jni_helper::throwExecutorchException(
           static_cast<uint32_t>(modelLoaderRes.error()),
           "Failed to open model file: " + modelPathString);
-      throw std::runtime_error("Failed to open model file: " + modelPathString);
+      return;
     }
     auto modelLoader =
         std::make_unique<FileDataLoader>(std::move(modelLoaderRes.get()));
@@ -93,7 +93,7 @@ class ExecuTorchTrainingJni
         executorch::jni_helper::throwExecutorchException(
             static_cast<uint32_t>(dataLoaderRes.error()),
             "Failed to open ptd file: " + dataPathString);
-        throw std::runtime_error("Failed to open ptd file: " + dataPathString);
+        return;
       }
       dataLoader =
           std::make_unique<FileDataLoader>(std::move(dataLoaderRes.get()));

@@ -208,6 +208,15 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jfloat temperature,
       jint num_bos,
       jint num_eos) {
+    Error err = Error::Ok;
+    if (!prompt) {
+      err = Error::InvalidArgument;
+      callback->onError(
+          static_cast<int>(err),
+          "generate() failed: prompt must not be null");
+      return static_cast<jint>(err);
+    }
+
     float effective_temperature = temperature >= 0 ? temperature : temperature_;
     std::string prompt_str = prompt->toStdString();
     std::string token_buffer;
@@ -223,7 +232,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       callback->onResult(result);
     };
 
-    Error err = Error::Ok;
+    err = Error::Ok;
     try {
       if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
         std::vector<llm::MultimodalInput> inputs = std::move(prefill_inputs_);
