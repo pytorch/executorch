@@ -12,6 +12,7 @@
 - Some popular torch.nn.functional models (NN functional)
 - Some popular torch.nn.modules models (NN modules)
 - Some popular torch ops (Torch Functions)
+- T5 (T5 for conditional generation)
 - Neural Super Sampler (NSS)
 - Phi-3
 - ResNet 18
