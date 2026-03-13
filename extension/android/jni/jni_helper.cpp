@@ -35,6 +35,42 @@ void throwExecutorchException(uint32_t errorCode, const std::string& details) {
   facebook::jni::throwNewJavaException(exception.get());
 }
 
+void setExecutorchPendingException(
+    JNIEnv* env,
+    uint32_t errorCode,
+    const std::string& details) {
+  if (!env) {
+    return;
+  }
+
+  jclass exceptionClass =
+      env->FindClass("org/pytorch/executorch/ExecutorchRuntimeException");
+  if (!exceptionClass || env->ExceptionCheck()) {
+    env->ExceptionClear();
+    env->ThrowNew(
+        env->FindClass("java/lang/RuntimeException"), details.c_str());
+    return;
+  }
+
+  jmethodID factoryMethod = env->GetStaticMethodID(
+      exceptionClass,
+      "makeExecutorchException",
+      "(ILjava/lang/String;)Ljava/lang/RuntimeException;");
+  if (!factoryMethod || env->ExceptionCheck()) {
+    env->ExceptionClear();
+    env->ThrowNew(exceptionClass, details.c_str());
+    return;
+  }
+
+  jstring jDetails = env->NewStringUTF(details.c_str());
+  auto exception = static_cast<jthrowable>(env->CallStaticObjectMethod(
+      exceptionClass, factoryMethod, static_cast<jint>(errorCode), jDetails));
+  if (env->ExceptionCheck()) {
+    return;
+  }
+  env->Throw(exception);
+}
+
 bool utf8_check_validity(const char* str, size_t length) {
   for (size_t i = 0; i < length; ++i) {
     uint8_t byte = static_cast<uint8_t>(str[i]);

@@ -71,6 +71,14 @@ class ExecuTorchLlmCallbackJni
         facebook::jni::make_jstring(
             executorch::extension::llm::stats_to_json_string(result)));
   }
+
+  void onError(int errorCode, const std::string& message) const {
+    static auto cls = ExecuTorchLlmCallbackJni::javaClassStatic();
+    static const auto on_error_method =
+        cls->getMethod<void(jint, facebook::jni::local_ref<jstring>)>(
+            "onError");
+    on_error_method(self(), errorCode, facebook::jni::make_jstring(message));
+  }
 };
 
 class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
@@ -201,6 +209,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jint num_bos,
       jint num_eos) {
     float effective_temperature = temperature >= 0 ? temperature : temperature_;
+    std::string prompt_str = prompt->toStdString();
     std::string token_buffer;
     auto token_callback = [callback, &token_buffer](const std::string& token) {
       token_buffer += token;
@@ -214,38 +223,58 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       callback->onResult(result);
     };
 
-    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      std::vector<llm::MultimodalInput> inputs = std::move(prefill_inputs_);
-      if (!prompt->toStdString().empty()) {
-        inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
+    Error err = Error::Ok;
+    try {
+      if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
+        std::vector<llm::MultimodalInput> inputs = std::move(prefill_inputs_);
+        if (!prompt_str.empty()) {
+          inputs.emplace_back(llm::MultimodalInput{prompt_str});
+        }
+        executorch::extension::llm::GenerationConfig config{
+            .echo = static_cast<bool>(echo),
+            .seq_len = seq_len,
+            .temperature = effective_temperature,
+            .num_bos = num_bos,
+            .num_eos = num_eos,
+        };
+        err = multi_modal_runner_->generate(
+            std::move(inputs),
+            config,
+            token_callback,
+            [callback](const llm::Stats& result) {
+              callback->onStats(result);
+            });
+      } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
+        executorch::extension::llm::GenerationConfig config{
+            .echo = static_cast<bool>(echo),
+            .seq_len = seq_len,
+            .temperature = effective_temperature,
+            .num_bos = num_bos,
+            .num_eos = num_eos,
+        };
+        err = runner_->generate(
+            prompt_str,
+            config,
+            token_callback,
+            [callback](const llm::Stats& result) {
+              callback->onStats(result);
+            });
+      } else {
+        err = Error::InvalidArgument;
       }
-      executorch::extension::llm::GenerationConfig config{
-          .echo = static_cast<bool>(echo),
-          .seq_len = seq_len,
-          .temperature = effective_temperature,
-          .num_bos = num_bos,
-          .num_eos = num_eos,
-      };
-      multi_modal_runner_->generate(
-          std::move(inputs),
-          config,
-          token_callback,
-          [callback](const llm::Stats& result) { callback->onStats(result); });
-    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
-      executorch::extension::llm::GenerationConfig config{
-          .echo = static_cast<bool>(echo),
-          .seq_len = seq_len,
-          .temperature = effective_temperature,
-          .num_bos = num_bos,
-          .num_eos = num_eos,
-      };
-      runner_->generate(
-          prompt->toStdString(),
-          config,
-          token_callback,
-          [callback](const llm::Stats& result) { callback->onStats(result); });
+    } catch (const std::exception& e) {
+      callback->onError(
+          static_cast<int>(Error::Internal),
+          std::string("generate() threw: ") + e.what());
+      return static_cast<jint>(Error::Internal);
     }
-    return 0;
+    if (err != Error::Ok) {
+      callback->onError(
+          static_cast<int>(err),
+          "generate() failed with error code " +
+              std::to_string(static_cast<int>(err)));
+    }
+    return static_cast<jint>(err);
   }
 
   // Returns status_code

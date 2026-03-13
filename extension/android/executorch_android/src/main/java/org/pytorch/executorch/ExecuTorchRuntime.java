@@ -8,6 +8,8 @@
 
 package org.pytorch.executorch;
 
+import android.app.ActivityManager;
+import android.content.Context;
 import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
@@ -43,6 +45,29 @@ public class ExecuTorchRuntime {
     if (!file.canRead() || !file.isFile()) {
       throw new RuntimeException("Cannot load " + description + " " + path);
     }
+  }
+
+  /**
+   * Heuristic check: compares reported available memory against model file size. A true result does
+   * not guarantee that loading will succeed (runtime overhead, fragmentation, other allocations may
+   * still cause OOM). A false result reliably indicates the model is too large.
+   *
+   * @param context Android context for accessing system services (must not be null)
+   * @param modelPath Path to the model file
+   * @return true if reported available memory exceeds the file size, false otherwise
+   * @throws IllegalArgumentException if context is null
+   * @throws RuntimeException if the file does not exist or is not readable
+   */
+  public static boolean checkMemoryFit(Context context, String modelPath) {
+    if (context == null) {
+      throw new IllegalArgumentException("context must not be null");
+    }
+    validateFilePath(modelPath, "model file");
+    long fileSize = new File(modelPath).length();
+    ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+    ActivityManager.MemoryInfo memInfo = new ActivityManager.MemoryInfo();
+    am.getMemoryInfo(memInfo);
+    return memInfo.availMem > fileSize;
   }
 
   /** Get all registered ops. */
