@@ -80,7 +80,7 @@ fi
 
 if [[ "$FLOW" == *openvino* ]]; then
     # Setup OpenVINO environment
-    source .ci/scripts/setup-openvino.sh
+    source .ci/scripts/setup-openvino.sh --nightly
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_OPENVINO=ON"
 fi
 
