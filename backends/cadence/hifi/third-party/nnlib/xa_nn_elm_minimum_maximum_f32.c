@@ -23,6 +23,19 @@
 #include "xa_nnlib_common_fpu.h"
 #include "xa_nnlib_err_chk.h"
 
+// HiFi1 compatibility: int32_rtor_xtbool2 is not available on HiFi1
+#ifndef int32_rtor_xtbool2
+static inline xtbool2 int32_rtor_xtbool2(int val) {
+  // Convert an int to xtbool2 - the 2 LSBs represent the 2 bools
+  // Use comparison operations available on HiFi1 to generate xtbool2
+  // Create vectors where the values are -1 (true bit) or 0 (false bit)
+  ae_int32x2 bits = AE_MOVDA32X2((val >> 1) & 1, val & 1);
+  ae_int32x2 zero = AE_ZERO32();
+  // Compare bits > 0 to get xtbool2 (true where bit is set)
+  return AE_LT32(zero, bits);
+}
+#endif
+
 #if !HAVE_VFPU
 DISCARD_FUN_FOR_NONVOID_RETURN(
              WORD32, xa_nn_elm_maximum_f32xf32_f32,
