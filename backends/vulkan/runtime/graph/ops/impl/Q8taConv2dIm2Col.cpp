@@ -135,18 +135,27 @@ void add_q8ta_im2col_node(
 
   vkapi::ParamsBindList param_buffers = {
       graph.buffer_meta_ubo(packed_int8_im2col),
-      graph.buffer_meta_ubo(packed_int8_input),
-      graph.create_params_buffer(conv_params)};
+      graph.buffer_meta_ubo(packed_int8_input)};
 
   std::vector<PushConstantDataInfo> push_constants = {
       PushConstantDataInfo(&zp, sizeof(zp)),
   };
 
-  // Build spec constants: apply_bias + layout constants (for generic shader)
+  // Build spec constants: apply_bias, layout constants, conv2d params
   vkapi::SpecVarList spec_constants = {
       1u,
       graph.hashed_layout_of(packed_int8_im2col),
       graph.hashed_layout_of(packed_int8_input),
+      // Conv2D parameter specialization constants
+      static_cast<uint32_t>(conv_params.kernel_size[0]),
+      static_cast<uint32_t>(conv_params.stride[0]),
+      static_cast<uint32_t>(conv_params.stride[1]),
+      static_cast<uint32_t>(conv_params.padding[0]),
+      static_cast<uint32_t>(conv_params.padding[1]),
+      static_cast<uint32_t>(conv_params.dilation[0]),
+      static_cast<uint32_t>(conv_params.dilation[1]),
+      static_cast<uint32_t>(conv_params.in_channels_per_group),
+      static_cast<uint32_t>(conv_params.K_per_group),
   };
 
   // // Add layout specialization constants (only for generic shader)

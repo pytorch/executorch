@@ -15,7 +15,6 @@
 layout(std430) buffer;
 
 #include "indexing.glslh"
-#include "conv2d_common.glslh"
 
 ${layout_declare_tensor(B, "w", "t_packed_int8_output", "int", "buffer", is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_packed_int8_input", "int", "buffer", is_scalar_array=True)}
@@ -23,13 +22,23 @@ ${layout_declare_tensor(B, "r", "t_packed_int8_input", "int", "buffer", is_scala
 // Metadata for im2col output and input tensors (layout-agnostic)
 ${layout_declare_ubo(B, "BufferMetadata", "im2col_outp")}
 ${layout_declare_ubo(B, "BufferMetadata", "inp")}
-${layout_declare_ubo(B, "Conv2DParams", "conv2d_params")}
 
 ${layout_declare_spec_const(C, "int", "apply_bias", "1")}
 
 // Layout specialization constants
 ${layout_declare_spec_const(C, "int", "outp_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "inp_layout", "CONTIG_LAYOUT_INT")}
+
+// Conv2D parameter specialization constants
+${layout_declare_spec_const(C, "int", "kernel_size_x", "1")}
+${layout_declare_spec_const(C, "int", "stride_x", "1")}
+${layout_declare_spec_const(C, "int", "stride_y", "1")}
+${layout_declare_spec_const(C, "int", "padding_x", "0")}
+${layout_declare_spec_const(C, "int", "padding_y", "0")}
+${layout_declare_spec_const(C, "int", "dilation_x", "1")}
+${layout_declare_spec_const(C, "int", "dilation_y", "1")}
+${layout_declare_spec_const(C, "int", "in_channels_per_group", "1")}
+${layout_declare_spec_const(C, "int", "K_per_group", "1")}
 
 layout(push_constant) uniform restrict Block {
   int zp;
@@ -64,23 +73,23 @@ void main() {
   const int im2col_h = h_idx;
   const int im2col_k = mul_4(c4_idx);
 
-  const int group_idx = im2col_k / conv2d_params.K_per_group;
-  const int k_in_group = im2col_k % conv2d_params.K_per_group;
+  const int group_idx = im2col_k / K_per_group;
+  const int k_in_group = im2col_k % K_per_group;
 
-  const int c_in_group = k_in_group % conv2d_params.in_channels_per_group;
-  const int krow = k_in_group / conv2d_params.in_channels_per_group;
-  const int kernel_x = krow % conv2d_params.kernel_size.x;
-  const int kernel_y = krow / conv2d_params.kernel_size.x;
+  const int c_in_group = k_in_group % in_channels_per_group;
+  const int krow = k_in_group / in_channels_per_group;
+  const int kernel_x = krow % kernel_size_x;
+  const int kernel_y = krow / kernel_size_x;
 
   // Base input position
   const int input_x_base =
-      (im2col_w * conv2d_params.stride.x) - conv2d_params.padding.x +
-      (kernel_x * conv2d_params.dilation.x);
+      (im2col_w * stride_x) - padding_x +
+      (kernel_x * dilation_x);
   const int input_y =
-      (im2col_h * conv2d_params.stride.y) - conv2d_params.padding.y +
-      (kernel_y * conv2d_params.dilation.y);
+      (im2col_h * stride_y) - padding_y +
+      (kernel_y * dilation_y);
   const int input_z =
-      group_idx * conv2d_params.in_channels_per_group + c_in_group;
+      group_idx * in_channels_per_group + c_in_group;
 
   // Input tensor extents
   const int input_W = input_sizes.x;
@@ -98,7 +107,7 @@ void main() {
   // Each loaded int contains 4 packed int8 channel values.
   ivec4 im2col_block;
   for (int i = 0; i < 4; i++) {
-    const int x = input_x_base + i * conv2d_params.stride.x;
+    const int x = input_x_base + i * stride_x;
     if (!y_z_in_bounds || x < 0 || x >= input_W) {
       im2col_block[i] = zp_packed;
     } else {
