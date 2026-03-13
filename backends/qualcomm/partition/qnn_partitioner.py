@@ -206,15 +206,9 @@ class QnnPartitioner(Partitioner):
     ) -> bool:
         pl = len(partitions)
         if backend == QnnExecuTorchBackendType.kLpaiBackend:
-            # By default, there are two partitions that are always created in LPAI backend:
-            # one for the quantized and one for the dequantized.
-            bypass_nodes = [
-                node
-                for partition in partitions
-                for node in partition.nodes
-                if node.meta.get(QCOM_BYPASS_NODE, False)
-            ]
-            pl -= len(bypass_nodes)
+            assert (
+                pl != 1
+            ), "LPAI backend only supports fully delegation due to the accuracy issue of Q/DQ in the LPAI backend."
         if pl == 0:
             logging.warning("Nothing can be partitioned!")
         else:

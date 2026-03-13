@@ -120,7 +120,7 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
           implementation_ptr,
           qnn_backend_ptr,
           backend_params->qnn_context_ptr_.get(),
-          options->profile_level(),
+          get_option(options->profile_level(), QNN_RUNTIME_PROFILE_LEVEL),
           gpu_options);
     } break;
     case QnnExecuTorchBackendType::kLpaiBackend: {
@@ -163,7 +163,7 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
           implementation_ptr,
           qnn_backend_ptr,
           backend_params->qnn_context_ptr_.get(),
-          options->profile_level(),
+          get_option(options->profile_level(), QNN_RUNTIME_PROFILE_LEVEL),
           lpai_options);
     } break;
     case QnnExecuTorchBackendType::kDspBackend:
