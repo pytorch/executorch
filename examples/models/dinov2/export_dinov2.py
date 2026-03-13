@@ -9,11 +9,15 @@ Export DINOv2 image classification model for ExecuTorch with CUDA backend.
 
 Usage:
     python examples/models/dinov2/export_dinov2.py \
-        --output-dir ./dinov2_exports
+        --backend cuda --output-dir ./dinov2_exports
 
     # With fp32 precision:
     python examples/models/dinov2/export_dinov2.py \
-        --dtype fp32 --output-dir ./dinov2_exports
+        --backend cuda --dtype fp32 --output-dir ./dinov2_exports
+
+    # For Windows CUDA:
+    python examples/models/dinov2/export_dinov2.py \
+        --backend cuda-windows --output-dir ./dinov2_exports
 """
 
 import argparse
@@ -55,7 +59,7 @@ def export_model(model, sample_input, dtype=None):
     return exported
 
 
-def lower_to_executorch(exported_program, is_windows=False, metadata=None):
+def lower_to_executorch(exported_program, backend="cuda", metadata=None):
     """Lower the exported program to ExecuTorch format with CUDA backend."""
     from torch._inductor.decomposition import conv1d_to_conv2d
 
@@ -64,7 +68,7 @@ def lower_to_executorch(exported_program, is_windows=False, metadata=None):
     )
 
     compile_specs = [CudaBackend.generate_method_name_compile_spec("forward")]
-    if is_windows:
+    if backend == "cuda-windows":
         compile_specs.append(
             CompileSpec("platform", "windows".encode("utf-8"))
         )
@@ -127,14 +131,16 @@ def main():
         help="Input image size (default: 224)",
     )
     parser.add_argument(
+        "--backend",
+        type=str,
+        default="cuda",
+        choices=["cuda", "cuda-windows"],
+        help="Backend to export for (default: cuda)",
+    )
+    parser.add_argument(
         "--random-weights",
         action="store_true",
         help="Use random weights instead of pretrained (for pipeline testing)",
-    )
-    parser.add_argument(
-        "--windows",
-        action="store_true",
-        help="Target Windows platform",
     )
     args = parser.parse_args()
 
@@ -162,9 +168,9 @@ def main():
         "get_num_classes": 1000,
     }
 
-    print("Lowering to ExecuTorch with CUDA backend...")
+    print(f"Lowering to ExecuTorch with {args.backend} backend...")
     et = lower_to_executorch(
-        exported, is_windows=args.windows, metadata=metadata
+        exported, backend=args.backend, metadata=metadata
     )
 
     # Save the .pte file
