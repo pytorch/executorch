@@ -159,38 +159,6 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_test,
-    name = "test_backends",
-    srcs = [
-        "test_backends.py",
-    ],
-    preload_deps = [
-        "//executorch/configurations:optimized_native_cpu_ops",
-        "//executorch/kernels/quantized:custom_ops_generated_lib",
-        "//executorch/runtime/executor/test:test_backend_compiler_lib",
-    ],
-    deps = [
-        ":backend_with_compiler_demo",
-        ":hta_partitioner_demo",
-        ":op_partitioner_demo",
-        ":demo_backend",
-        "//caffe2:torch",
-        "//caffe2/functorch:functorch_src",
-        "//executorch/exir:delegate",
-        "//executorch/exir:graph_module",
-        "//executorch/exir:lib",
-        "//executorch/exir:lowered_backend_module",
-        "//executorch/exir:print_program",
-        "//executorch/exir:schema",
-        "//executorch/exir/backend:backend_api",
-        "//executorch/exir/backend:compile_spec_schema",
-        "//executorch/exir/backend:partitioner",
-        "//executorch/exir/dialects:lib",
-        "//executorch/extension/pybindings:portable_lib",  # @manual
-        "//executorch/extension/pytree:pylib",
-    ],
-)
-
-fbcode_target(_kind = runtime.python_test,
     name = "test_to_backend_multi_method",
     srcs = [
         "test_to_backend_multi_method.py",
