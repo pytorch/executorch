@@ -24,7 +24,7 @@ https://github.com/user-attachments/assets/44717dc5-777f-4710-ad55-5ec4fa04b9c4
 
 Also, try a sample [standalone macOS app](https://github.com/meta-pytorch/executorch-examples/tree/main/voxtral_realtime/macos) to do real time transcription.
 
-https://github.com/user-attachments/assets/a89677ef-8309-426e-a2f4-6d1ea8494b99
+https://github.com/user-attachments/assets/6d6089fc-5feb-458b-a60b-08379855976a
 
 ## Prerequisites
 
