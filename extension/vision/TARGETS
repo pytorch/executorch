@@ -1,0 +1,32 @@
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.python_library(
+    name = "image_processing",
+    srcs = [
+        "__init__.py",
+        "image_processing.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_test(
+    name = "test_image_processing",
+    srcs = [
+        "test/__init__.py",
+        "test/test_image_processing.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/colour-science:colour-science",
+        "fbsource//third-party/pypi/parameterized:parameterized",
+        ":image_processing",
+        "//caffe2:torch",
+    ],
+)
