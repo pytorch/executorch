@@ -408,6 +408,16 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "propagate_input_spec",
+    srcs = [
+        "propagate_input_spec.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "remove_unused_parameters_pass",
     srcs = [
         "remove_unused_parameters_pass.py",
