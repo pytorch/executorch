@@ -208,6 +208,15 @@ QUANTIZER_ANNOTATION_TEST_CASES: list[
     ),
     # CadenceFusedConvReluQuantizer test cases
     (
+        "fused_conv1d_relu_A8W8sym",
+        lambda self: self._build_conv1d_relu_graph(),
+        CadenceFusedConvReluQuantizer(),
+        torch.ops.aten.relu.default,
+        qconfig_A8W8sym.output_activation,
+        # For fused conv1d+relu: [input_activation, weight] from conv1d node
+        [qconfig_A8W8sym.input_activation, qconfig_A8W8sym.weight],
+    ),
+    (
         "fused_conv2d_relu_A8W8sym",
         lambda self: self._build_conv2d_relu_graph(),
         CadenceFusedConvReluQuantizer(),
@@ -502,6 +511,52 @@ class QuantizerAnnotationTest(unittest.TestCase):
         self.assertEqual(len(conv2d_nodes), 1, "Should find exactly one conv2d node")
 
         return gm, relu_nodes[0], conv2d_nodes[0]
+
+    def _build_conv1d_relu_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node, torch.fx.Node]:
+        """Build a graph with a conv1d followed by relu (fused pattern).
+
+        Returns:
+            A tuple of (graph_module, relu_node, conv_node).
+            The relu_node is the target node where the annotation is placed.
+            The conv_node is the input source node whose args contain the quantized inputs.
+        """
+        builder = GraphBuilder()
+        # Input shape: (batch, in_channels, length)
+        x = builder.placeholder("x", torch.randn(1, 3, 10))
+        # Weight shape: (out_channels, in_channels, kernel_size)
+        weight = builder.placeholder("weight", torch.randn(6, 3, 3))
+        conv1d = builder.call_operator(
+            op=torch.ops.aten.conv1d.default,
+            args=(x, weight),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("conv1d", torch.ops.aten.conv1d.default)]}
+            ),
+        )
+        relu = builder.call_operator(
+            op=torch.ops.aten.relu.default,
+            args=(conv1d,),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("relu", torch.ops.aten.relu.default)]}
+            ),
+        )
+        builder.output([relu])
+        gm = builder.get_graph_module()
+
+        relu_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.relu.default,
+        )
+        self.assertEqual(len(relu_nodes), 1, "Should find exactly one relu node")
+
+        conv1d_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.conv1d.default,
+        )
+        self.assertEqual(len(conv1d_nodes), 1, "Should find exactly one conv1d node")
+
+        return gm, relu_nodes[0], conv1d_nodes[0]
 
     @parameterized.expand(QUANTIZER_ANNOTATION_TEST_CASES)
     def test_quantizer_annotation(
