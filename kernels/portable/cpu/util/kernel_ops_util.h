@@ -229,8 +229,10 @@ void kernel_reduction_then_map_2d(
           ssize_t in_x = stride_x * out_x + dilation_x * w_x - padding_x;
           in_coord[in_dim - 1] = in_x;
 
-          const bool x_in_bound = (in_x >= 0 && in_x < in_W);
-          const bool y_in_bound = (in_y >= 0 && in_y < in_H);
+          const bool x_in_bound =
+              (in_x >= 0 && in_x < static_cast<ssize_t>(in_W));
+          const bool y_in_bound =
+              (in_y >= 0 && in_y < static_cast<ssize_t>(in_H));
           const bool xy_in_bound = (x_in_bound && y_in_bound);
 
           CTYPE in_val = 0;
