@@ -2874,6 +2874,27 @@
     bias: T0
     __ret_0: T8
 
+- func: aten::convolution_backward
+  namespace: edge
+  inherits: aten::convolution_backward
+  type_alias:
+    T0: [Byte, Char, Float, Half]
+    T1: [Double, Half, Long]
+    T2: [Float]
+  type_constraint:
+  - grad_output: T1
+    input: T1
+    weight: T1
+    __ret_0: T1
+    __ret_1: T1
+    __ret_2: T1
+  - grad_output: T2
+    input: T2
+    weight: T0
+    __ret_0: T2
+    __ret_1: T2
+    __ret_2: T2
+
 - func: aten::copy
   namespace: edge
   inherits: aten::copy
