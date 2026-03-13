@@ -9,6 +9,9 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
+    ConvertFullLikeToFullPass,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -48,7 +51,7 @@ class DecomposeLeakyReLUPass(ArmPass):
 
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {ConvertFullLikeToFullPass}
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in (edge_ops + torch_ops) or not self.allowed_to_transform(meta):
