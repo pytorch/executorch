@@ -8,6 +8,7 @@ q8ta_conv2d:
   parameter_names_with_default_values:
     DTYPE: float
     USE_INT8_DOT_PRODUCT_EXT: 1
+    USE_SPEC_CONST: 0
   generate_variant_forall:
     DTYPE:
       - VALUE: float
@@ -15,3 +16,8 @@ q8ta_conv2d:
     - NAME: q8ta_conv2d
     - NAME: q8ta_conv2d_fallback
       USE_INT8_DOT_PRODUCT_EXT: 0
+    - NAME: q8ta_conv2d_spec_const
+      USE_SPEC_CONST: 1
+    - NAME: q8ta_conv2d_fallback_spec_const
+      USE_INT8_DOT_PRODUCT_EXT: 0
+      USE_SPEC_CONST: 1

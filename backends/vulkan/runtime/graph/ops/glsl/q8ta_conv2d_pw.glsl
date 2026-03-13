@@ -50,14 +50,22 @@ ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer", is_scalar_array=False
 ${layout_declare_ubo(B, "BufferMetadata", "outp")}
 ${layout_declare_ubo(B, "BufferMetadata", "inp")}
 
-layout(push_constant) uniform restrict Block {
-  float input_scale;
-  int input_zp;
-  float output_inv_scale;
-  int output_zp;
-  int K4_per_group;
-  int OC4_per_group;
-};
+$if USE_SPEC_CONST:
+  layout(push_constant) uniform restrict Block {
+    float input_scale;
+    int input_zp;
+    float output_inv_scale;
+    int output_zp;
+  };
+$else:
+  layout(push_constant) uniform restrict Block {
+    float input_scale;
+    int input_zp;
+    float output_inv_scale;
+    int output_zp;
+    int K4_per_group;
+    int OC4_per_group;
+  };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -67,6 +75,10 @@ ${layout_declare_spec_const(C, "int", "activation_type", "0")}
 // Layout specialization constants
 ${layout_declare_spec_const(C, "int", "outp_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "inp_layout", "CONTIG_LAYOUT_INT")}
+
+$if USE_SPEC_CONST:
+  ${layout_declare_spec_const(C, "int", "K4_per_group", "1")}
+  ${layout_declare_spec_const(C, "int", "OC4_per_group", "1")}
 
 int compute_outp_buffer_idx(
     const int w_block_idx,
