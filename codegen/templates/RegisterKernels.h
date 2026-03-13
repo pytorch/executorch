@@ -16,7 +16,11 @@
 namespace torch {
 namespace executor {
 
+#if USE_LIB_NAME_IN_REGISTER
+Error register_kernels_${lib_name}();
+#else
 Error register_all_kernels();
+#endif
 
 } // namespace executor
 } // namespace torch
