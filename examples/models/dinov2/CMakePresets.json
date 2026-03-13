@@ -12,11 +12,6 @@
             }
         },
         {
-            "name": "dinov2-cpu",
-            "displayName": "DINOv2 runner (CPU)",
-            "inherits": ["dinov2-base"]
-        },
-        {
             "name": "dinov2-cuda",
             "displayName": "DINOv2 runner (CUDA)",
             "inherits": ["dinov2-base"],
@@ -42,29 +37,9 @@
                 "string": "${hostSystemName}",
                 "list": ["Linux", "Windows"]
             }
-        },
-        {
-            "name": "dinov2-metal",
-            "displayName": "DINOv2 runner (Metal)",
-            "inherits": ["dinov2-base"],
-            "cacheVariables": {
-                "EXECUTORCH_BUILD_METAL": "ON"
-            },
-            "condition": {
-                "lhs": "${hostSystemName}",
-                "type": "equals",
-                "rhs": "Darwin"
-            }
         }
     ],
     "buildPresets": [
-        {
-            "name": "dinov2-cpu",
-            "displayName": "Build DINOv2 runner (CPU)",
-            "configurePreset": "dinov2-cpu",
-            "configuration": "Release",
-            "targets": ["dinov2_runner"]
-        },
         {
             "name": "dinov2-cuda",
             "displayName": "Build DINOv2 runner (CUDA)",
@@ -78,30 +53,9 @@
             "configurePreset": "dinov2-cuda-debug",
             "configuration": "Debug",
             "targets": ["dinov2_runner"]
-        },
-        {
-            "name": "dinov2-metal",
-            "displayName": "Build DINOv2 runner (Metal)",
-            "configurePreset": "dinov2-metal",
-            "configuration": "Release",
-            "targets": ["dinov2_runner"]
         }
     ],
     "workflowPresets": [
-        {
-            "name": "dinov2-cpu",
-            "displayName": "Configure and build DINOv2 runner (CPU)",
-            "steps": [
-                {
-                    "type": "configure",
-                    "name": "dinov2-cpu"
-                },
-                {
-                    "type": "build",
-                    "name": "dinov2-cpu"
-                }
-            ]
-        },
         {
             "name": "dinov2-cuda",
             "displayName": "Configure and build DINOv2 runner (CUDA)",
@@ -127,20 +81,6 @@
                 {
                     "type": "build",
                     "name": "dinov2-cuda-debug"
-                }
-            ]
-        },
-        {
-            "name": "dinov2-metal",
-            "displayName": "Configure and build DINOv2 runner (Metal)",
-            "steps": [
-                {
-                    "type": "configure",
-                    "name": "dinov2-metal"
-                },
-                {
-                    "type": "build",
-                    "name": "dinov2-metal"
                 }
             ]
         }

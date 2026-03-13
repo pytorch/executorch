@@ -8,25 +8,26 @@
 Export DINOv2 image classification model for ExecuTorch with CUDA backend.
 
 Usage:
-    python -m executorch.examples.models.dinov2.export_dinov2 \
-        --backend cuda \
+    python examples/models/dinov2/export_dinov2.py \
         --output-dir ./dinov2_exports
 
-    # With bf16 precision:
-    python -m executorch.examples.models.dinov2.export_dinov2 \
-        --backend cuda --dtype bf16 \
-        --output-dir ./dinov2_exports
+    # With fp32 precision:
+    python examples/models/dinov2/export_dinov2.py \
+        --dtype fp32 --output-dir ./dinov2_exports
 """
 
 import argparse
 import os
 
 import torch
+from executorch.backends.cuda.cuda_backend import CudaBackend
+from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
     to_edge_transform_and_lower,
 )
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.passes import MemoryPlanningPass
 from transformers import Dinov2Config, Dinov2ForImageClassification
 
@@ -54,53 +55,21 @@ def export_model(model, sample_input, dtype=None):
     return exported
 
 
-def create_cuda_partitioner(compile_specs=None):
-    """Create a CUDA partitioner for the model."""
-    from executorch.backends.cuda.cuda_backend import CudaBackend
-    from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
-
-    if compile_specs is None:
-        compile_specs = [CudaBackend.generate_method_name_compile_spec("forward")]
-    return CudaPartitioner(compile_specs)
-
-
-def create_xnnpack_partitioner():
-    """Create an XNNPACK partitioner for the model."""
-    from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-        XnnpackPartitioner,
-    )
-
-    return XnnpackPartitioner()
-
-
-def lower_to_executorch(exported_program, backend="cuda", metadata=None):
-    """Lower the exported program to ExecuTorch format."""
+def lower_to_executorch(exported_program, is_windows=False, metadata=None):
+    """Lower the exported program to ExecuTorch format with CUDA backend."""
     from torch._inductor.decomposition import conv1d_to_conv2d
 
-    # Apply conv1d decomposition for CUDA backend
-    if backend in ("cuda", "cuda-windows"):
-        exported_program = exported_program.run_decompositions(
-            {torch.ops.aten.conv1d.default: conv1d_to_conv2d}
+    exported_program = exported_program.run_decompositions(
+        {torch.ops.aten.conv1d.default: conv1d_to_conv2d}
+    )
+
+    compile_specs = [CudaBackend.generate_method_name_compile_spec("forward")]
+    if is_windows:
+        compile_specs.append(
+            CompileSpec("platform", "windows".encode("utf-8"))
         )
+    partitioner = [CudaPartitioner(compile_specs)]
 
-    # Set up partitioner based on backend
-    if backend in ("cuda", "cuda-windows"):
-        from executorch.backends.cuda.cuda_backend import CudaBackend
-        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
-        from executorch.exir.backend.compile_spec_schema import CompileSpec
-
-        compile_specs = [CudaBackend.generate_method_name_compile_spec("forward")]
-        if backend == "cuda-windows":
-            compile_specs.append(
-                CompileSpec("platform", "windows".encode("utf-8"))
-            )
-        partitioner = [CudaPartitioner(compile_specs)]
-    elif backend == "xnnpack":
-        partitioner = [create_xnnpack_partitioner()]
-    else:
-        partitioner = []
-
-    # Build constant_methods from metadata
     constant_methods = {}
     if metadata:
         for key, value in metadata.items():
@@ -130,20 +99,13 @@ def lower_to_executorch(exported_program, backend="cuda", metadata=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Export DINOv2 model for ExecuTorch"
+        description="Export DINOv2 model for ExecuTorch CUDA backend"
     )
     parser.add_argument(
         "--model-name",
         type=str,
         default="facebook/dinov2-small-imagenet1k-1-layer",
         help="HuggingFace model name for DINOv2",
-    )
-    parser.add_argument(
-        "--backend",
-        type=str,
-        default="cuda",
-        choices=["cuda", "cuda-windows", "xnnpack", "portable"],
-        help="Backend to export for",
     )
     parser.add_argument(
         "--dtype",
@@ -168,6 +130,11 @@ def main():
         "--random-weights",
         action="store_true",
         help="Use random weights instead of pretrained (for pipeline testing)",
+    )
+    parser.add_argument(
+        "--windows",
+        action="store_true",
+        help="Target Windows platform",
     )
     args = parser.parse_args()
 
@@ -195,8 +162,10 @@ def main():
         "get_num_classes": 1000,
     }
 
-    print(f"Lowering to ExecuTorch with backend={args.backend}...")
-    et = lower_to_executorch(exported, backend=args.backend, metadata=metadata)
+    print("Lowering to ExecuTorch with CUDA backend...")
+    et = lower_to_executorch(
+        exported, is_windows=args.windows, metadata=metadata
+    )
 
     # Save the .pte file
     pte_path = os.path.join(args.output_dir, "model.pte")
@@ -204,7 +173,7 @@ def main():
         et.write_to_file(f)
     print(f"Saved model to {pte_path}")
 
-    # Save tensor data (.ptd) if present (CUDA backend)
+    # Save tensor data (.ptd)
     if et._tensor_data:
         et.write_tensor_data_to_file(args.output_dir)
         print(f"Saved tensor data to {args.output_dir}/")

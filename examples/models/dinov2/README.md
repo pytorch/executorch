@@ -23,12 +23,10 @@ export PATH="/usr/local/cuda/bin:$PATH"
 
 # Export with pretrained weights (default: bf16)
 python examples/models/dinov2/export_dinov2.py \
-    --backend cuda \
     --output-dir ./dinov2_exports
 
 # Export with random weights (for pipeline testing)
 python examples/models/dinov2/export_dinov2.py \
-    --backend cuda \
     --output-dir ./dinov2_exports \
     --random-weights
 ```
@@ -42,11 +40,11 @@ This produces:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--model-name` | `facebook/dinov2-small-imagenet1k-1-layer` | HuggingFace model name |
-| `--backend` | `cuda` | Backend: `cuda`, `cuda-windows`, `xnnpack`, `portable` |
 | `--dtype` | `bf16` | Data type (`bf16` required for CUDA Triton SDPA) |
 | `--output-dir` | `./dinov2_exports` | Output directory |
 | `--img-size` | `224` | Input image size |
 | `--random-weights` | off | Use random weights for testing |
+| `--windows` | off | Target Windows platform |
 
 ## Python Inference
 
@@ -88,11 +86,9 @@ export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
 
 ### Build
 
-Requires ExecuTorch built from source with CUDA support:
-
 ```bash
-# From executorch root, build the runner
-cmake --workflow --preset dinov2-cuda
+# From executorch root
+make dinov2-cuda
 ```
 
 ### Run
