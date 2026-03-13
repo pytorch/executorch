@@ -99,3 +99,4 @@ def define_common_targets(is_fbcode = False):
     define_custom_op_test_binary("test_q8ta_conv2d_dw")
     define_custom_op_test_binary("test_q8ta_linear")
     define_custom_op_test_binary("test_q8ta_conv2d_transposed")
+    define_custom_op_test_binary("test_mm")
