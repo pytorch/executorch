@@ -24,6 +24,7 @@ Arguments:
                  - google/gemma-3-4b-it
                  - nvidia/diar_streaming_sortformer_4spk-v2
                  - nvidia/parakeet-tdt
+                 - facebook/dinov2-small-imagenet1k-1-layer
 
   quant_name   Quantization type (optional, default: non-quantized)
                Options:
@@ -167,6 +168,14 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  facebook/dinov2-small-imagenet1k-1-layer)
+    MODEL_NAME="dinov2"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   mistralai/Voxtral-Mini-4B-Realtime-2602)
     MODEL_NAME="voxtral_realtime"
     TASK=""
@@ -177,7 +186,7 @@ case "$HF_MODEL" in
     ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer"
     exit 1
     ;;
 esac
@@ -285,6 +294,23 @@ if [ "$MODEL_NAME" = "sortformer" ]; then
   test -f "${OUTPUT_DIR}/sortformer.pte"
   mv "${OUTPUT_DIR}/sortformer.pte" "${OUTPUT_DIR}/model.pte"
   # CUDA saves named data to separate .ptd file, XNNPACK/portable do not.
+  if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
+    test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  fi
+  ls -al "${OUTPUT_DIR}"
+  echo "::endgroup::"
+  exit 0
+fi
+
+# DINOv2 uses a custom export script
+if [ "$MODEL_NAME" = "dinov2" ]; then
+  pip install -r examples/models/dinov2/install_requirements.txt
+
+  python -m executorch.examples.models.dinov2.export_dinov2 \
+      --backend "$DEVICE" \
+      --output-dir "${OUTPUT_DIR}"
+
+  test -f "${OUTPUT_DIR}/model.pte"
   if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
     test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
   fi
