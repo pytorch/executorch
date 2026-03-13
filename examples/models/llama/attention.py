@@ -1,3 +1,4 @@
+import logging
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any, Dict, Optional, Tuple, Type, TypedDict
@@ -80,7 +81,8 @@ def _get_recurrent_gated_delta_rule_op():
 
     try:
         from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
-    except Exception:
+    except (ImportError, OSError):
+        logging.debug("Failed to import custom ops library", exc_info=True)
         return None
 
     try:
@@ -678,7 +680,7 @@ class AttentionGatedDeltaNet(Attention):
         out = F.silu(out[:, :, -seq_len:]).to(mixed_qkv.dtype)
         return out.transpose(1, 2).contiguous()
 
-    def _recurrent_gated_delta_rule(
+    def _gated_delta_rule_op(
         self,
         query: torch.Tensor,
         key: torch.Tensor,
@@ -686,24 +688,10 @@ class AttentionGatedDeltaNet(Attention):
         g: torch.Tensor,
         beta: torch.Tensor,
     ) -> torch.Tensor:
-        # query/key/value: (batch, seq_len, num_heads, head_dim)
-        # g/beta: (batch, seq_len, num_heads)
-        initial_dtype = query.dtype
-        query = _l2norm(query, dim=-1, eps=1e-6)
-        key = _l2norm(key, dim=-1, eps=1e-6)
-        query, key, value, beta, g = [
-            x.transpose(1, 2).contiguous().to(torch.float32)
-            for x in (query, key, value, beta, g)
-        ]
-
-        batch_size, num_heads, sequence_length, k_head_dim = key.shape
-        v_head_dim = value.shape[-1]
-        scale = 1.0 / (query.shape[-1] ** 0.5)
-        query = query * scale
-
+        batch_size = query.shape[0]
         recurrent_gated_delta_rule_op = _get_recurrent_gated_delta_rule_op()
         if recurrent_gated_delta_rule_op is not None:
-            core_attn_out = recurrent_gated_delta_rule_op(
+            return recurrent_gated_delta_rule_op(
                 query,
                 key,
                 value,
@@ -711,7 +699,24 @@ class AttentionGatedDeltaNet(Attention):
                 beta,
                 self.recurrent_state[:batch_size],
             )
-            return core_attn_out.transpose(1, 2).contiguous().to(initial_dtype)
+        return self._naive_gated_delta_rule_op(
+            query,
+            key,
+            value,
+            g,
+            beta,
+        )
+
+    def _naive_gated_delta_rule_op(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        g: torch.Tensor,
+        beta: torch.Tensor,
+    ) -> torch.Tensor:
+        batch_size, num_heads, sequence_length, _ = key.shape
+        v_head_dim = value.shape[-1]
 
         core_attn_out = torch.zeros(
             batch_size,
@@ -745,6 +750,36 @@ class AttentionGatedDeltaNet(Attention):
                 last_recurrent_state.to(self.recurrent_state.dtype)
             )
 
+        return core_attn_out
+
+    def _recurrent_gated_delta_rule(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        g: torch.Tensor,
+        beta: torch.Tensor,
+    ) -> torch.Tensor:
+        # query/key/value: (batch, seq_len, num_heads, head_dim)
+        # g/beta: (batch, seq_len, num_heads)
+        initial_dtype = query.dtype
+        query = _l2norm(query, dim=-1, eps=1e-6)
+        key = _l2norm(key, dim=-1, eps=1e-6)
+        query, key, value, beta, g = [
+            x.transpose(1, 2).contiguous().to(torch.float32)
+            for x in (query, key, value, beta, g)
+        ]
+
+        scale = 1.0 / (query.shape[-1] ** 0.5)
+        query = query * scale
+
+        core_attn_out = self._gated_delta_rule_op(
+            query,
+            key,
+            value,
+            g,
+            beta,
+        )
         return core_attn_out.transpose(1, 2).contiguous().to(initial_dtype)
 
     def forward(

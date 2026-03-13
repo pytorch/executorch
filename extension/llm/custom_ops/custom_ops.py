@@ -23,6 +23,7 @@ from torch._inductor.lowering import lowerings as L, register_lowering
 from torch.library import impl
 
 aten = torch.ops.aten
+_CUSTOM_OPS_DLL_DIR_HANDLES = []
 
 
 def _is_custom_ops_registered() -> bool:
@@ -40,10 +41,11 @@ def _get_custom_ops_library_override() -> Path | None:
         return None
 
     lib_path = Path(override).expanduser().resolve()
-    assert lib_path.is_file(), (
-        "EXECUTORCH_CUSTOM_OPS_AOT_LIB must point to an existing "
-        f"custom_ops_aot_lib, but got {lib_path}"
-    )
+    if not lib_path.is_file():
+        raise FileNotFoundError(
+            "EXECUTORCH_CUSTOM_OPS_AOT_LIB must point to an existing "
+            f"custom_ops_aot_lib, but got {lib_path}"
+        )
     return lib_path
 
 
@@ -56,15 +58,18 @@ def _find_custom_ops_library() -> Path:
     candidates = []
     patterns = (
         "**/custom_ops_aot_lib.dll",
-        "**/custom_ops_aot_lib.so",
-        "**/custom_ops_aot_lib.dylib",
+        "**/libcustom_ops_aot_lib.so",
+        "**/libcustom_ops_aot_lib.dylib",
     )
 
     for pattern in patterns:
         candidates.extend(package_path.glob(pattern))
 
     libs = sorted({path.resolve() for path in candidates if path.is_file()})
-    assert libs, f"Could not find custom_ops_aot_lib under {package_path}"
+    if not libs:
+        raise FileNotFoundError(
+            f"Could not find custom_ops_aot_lib under {package_path}"
+        )
     return max(libs, key=lambda path: path.stat().st_mtime)
 
 
@@ -80,10 +85,12 @@ def _load_custom_ops_library() -> None:
     logging.info(f"Loading custom ops library: {lib_path}")
 
     if os.name == "nt":
-        os.add_dll_directory(str(lib_path.parent))
+        _CUSTOM_OPS_DLL_DIR_HANDLES.append(os.add_dll_directory(str(lib_path.parent)))
         torch_lib_dir = Path(torch.__file__).resolve().parent / "lib"
         if torch_lib_dir.is_dir():
-            os.add_dll_directory(str(torch_lib_dir))
+            _CUSTOM_OPS_DLL_DIR_HANDLES.append(
+                os.add_dll_directory(str(torch_lib_dir))
+            )
 
     torch.ops.load_library(lib_path)
 
@@ -91,9 +98,11 @@ def _load_custom_ops_library() -> None:
     # portable_lib is needed for symbol resolution.
     _ = portable_lib
 
+
 if not _is_custom_ops_registered():
     _load_custom_ops_library()
-    assert _is_custom_ops_registered()
+    if not _is_custom_ops_registered():
+        raise RuntimeError("Failed to register ExecuTorch custom ops library")
 
 custom_ops_lib = torch.library.Library("llama", "IMPL")
 

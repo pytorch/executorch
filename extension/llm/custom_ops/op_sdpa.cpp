@@ -203,7 +203,8 @@ bool validate_recurrent_gated_delta_rule_args(
       key.scalar_type() == ScalarType::Float, "key must be float32");
   ET_CHECK_OR_RETURN_FALSE(
       value.scalar_type() == ScalarType::Float, "value must be float32");
-  ET_CHECK_OR_RETURN_FALSE(g.scalar_type() == ScalarType::Float, "g must be float32");
+  ET_CHECK_OR_RETURN_FALSE(
+      g.scalar_type() == ScalarType::Float, "g must be float32");
   ET_CHECK_OR_RETURN_FALSE(
       beta.scalar_type() == ScalarType::Float, "beta must be float32");
   ET_CHECK_OR_RETURN_FALSE(
@@ -698,10 +699,7 @@ Tensor& recurrent_gated_delta_rule_out(
       InvalidArgument,
       output);
   ET_KERNEL_CHECK(
-      ctx,
-      output.scalar_type() == ScalarType::Float,
-      InvalidArgument,
-      output);
+      ctx, output.scalar_type() == ScalarType::Float, InvalidArgument, output);
   ET_KERNEL_CHECK(
       ctx,
       is_contiguous_dim_order(output.dim_order().data(), output.dim()),
@@ -735,6 +733,8 @@ Tensor& recurrent_gated_delta_rule_out(
   const auto* beta_data = beta.const_data_ptr<float>();
   auto* recurrent_state_data = recurrent_state.mutable_data_ptr<float>();
   auto* output_data = output.mutable_data_ptr<float>();
+  std::vector<float> kv_mem(v_head_dim);
+  std::vector<float> delta(v_head_dim);
 
   for (int64_t batch = 0; batch < batch_size; ++batch) {
     for (int64_t head = 0; head < num_heads; ++head) {
@@ -752,9 +752,6 @@ Tensor& recurrent_gated_delta_rule_out(
       const auto* beta_head = beta_data + gv_offset;
       auto* state_head = recurrent_state_data + state_offset;
       auto* output_head = output_data + value_offset;
-
-      std::vector<float> kv_mem(v_head_dim);
-      std::vector<float> delta(v_head_dim);
 
       for (int64_t token = 0; token < sequence_length; ++token) {
         const auto* q_t = q_head + token * q_seq_stride;

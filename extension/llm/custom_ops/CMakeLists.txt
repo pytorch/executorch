@@ -18,7 +18,6 @@ endif()
 
 set(_common_compile_options
     $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
-    $<$<CXX_COMPILER_ID:MSVC>:/Zc:__cplusplus>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
 )
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
