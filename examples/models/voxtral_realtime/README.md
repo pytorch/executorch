@@ -95,7 +95,7 @@ python export_voxtral_rt.py \
 | Backend | Offline | Streaming | Quantization |
 |---------|---------|-----------|--------------|
 | `xnnpack` | ✓ | ✓ | `4w`, `8w`, `8da4w`, `8da8w` |
-| `metal` | ✓ | ✓ | none (fp32) or `fpa4w` (Metal-specific 4-bit) |
+| `metal` | ✓ | ✓ | none or `fpa4w` (Metal-specific 4-bit); bf16 recommended with quantization |
 | `cuda` | ✓ | ✓ | `4w`, `8w` |
 
 Metal backend provides Apple GPU acceleration. CUDA backend provides NVIDIA GPU
@@ -136,23 +136,25 @@ python export_voxtral_rt.py \
 
 #### Metal export examples
 
-Offline:
+Offline with fpa4w quantization and bf16:
 
 ```bash
 python export_voxtral_rt.py \
     --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
     --backend metal \
+    --dtype bf16 \
     --output-dir ./voxtral_rt_exports \
     --qlinear-encoder fpa4w \
     --qlinear fpa4w
 ```
 
-Streaming:
+Streaming with fpa4w quantization and bf16:
 
 ```bash
 python export_voxtral_rt.py \
     --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
     --backend metal \
+    --dtype bf16 \
     --streaming \
     --output-dir ./voxtral_rt_exports \
     --qlinear-encoder fpa4w \
