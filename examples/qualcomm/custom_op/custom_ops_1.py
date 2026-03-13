@@ -73,7 +73,6 @@ def annotate_custom(gm: torch.fx.GraphModule) -> None:
     from executorch.backends.qualcomm.quantizer.qconfig import (
         get_ptq_per_channel_quant_config,
     )
-    from executorch.backends.qualcomm.quantizer.rules import _is_annotated
     from torch.fx import Node
     from torchao.quantization.pt2e.quantizer import QuantizationAnnotation
     from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
