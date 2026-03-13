@@ -590,6 +590,7 @@ install(
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/core
   FILES_MATCHING
   PATTERN "*.h"
+  PATTERN "testing_util" EXCLUDE
 )
 # Install generated version.h
 install(
@@ -601,12 +602,15 @@ install(
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/executor
   FILES_MATCHING
   PATTERN "*.h"
+  PATTERN "test" EXCLUDE
+  PATTERN "platform_memory_allocator.h" EXCLUDE
 )
 install(
   DIRECTORY runtime/kernel/
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/kernel
   FILES_MATCHING
   PATTERN "*.h"
+  PATTERN "test" EXCLUDE
 )
 install(
   DIRECTORY runtime/backend/
@@ -619,6 +623,7 @@ install(
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/platform
   FILES_MATCHING
   PATTERN "*.h"
+  PATTERN "test" EXCLUDE
 )
 install(
   DIRECTORY extension/kernel_util/
@@ -745,11 +750,15 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+  if(NOT WIN32)
+    set(data_loader_exclude_pattern "*mman_windows.h")
+  endif()
   install(
     DIRECTORY extension/data_loader/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/data_loader
     FILES_MATCHING
     PATTERN "*.h"
+    PATTERN ${data_loader_exclude_pattern} EXCLUDE
   )
   list(APPEND _executorch_extensions extension_data_loader)
 endif()
