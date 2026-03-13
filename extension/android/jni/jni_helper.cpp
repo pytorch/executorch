@@ -46,9 +46,15 @@ void setExecutorchPendingException(
   jclass exceptionClass =
       env->FindClass("org/pytorch/executorch/ExecutorchRuntimeException");
   if (!exceptionClass || env->ExceptionCheck()) {
+    if (exceptionClass) {
+      env->DeleteLocalRef(exceptionClass);
+    }
     env->ExceptionClear();
-    env->ThrowNew(
-        env->FindClass("java/lang/RuntimeException"), details.c_str());
+    jclass runtimeClass = env->FindClass("java/lang/RuntimeException");
+    if (runtimeClass) {
+      env->ThrowNew(runtimeClass, details.c_str());
+      env->DeleteLocalRef(runtimeClass);
+    }
     return;
   }
 
@@ -59,16 +65,37 @@ void setExecutorchPendingException(
   if (!factoryMethod || env->ExceptionCheck()) {
     env->ExceptionClear();
     env->ThrowNew(exceptionClass, details.c_str());
+    env->DeleteLocalRef(exceptionClass);
     return;
   }
 
   jstring jDetails = env->NewStringUTF(details.c_str());
-  auto exception = static_cast<jthrowable>(env->CallStaticObjectMethod(
-      exceptionClass, factoryMethod, static_cast<jint>(errorCode), jDetails));
-  if (env->ExceptionCheck()) {
+  if (!jDetails || env->ExceptionCheck()) {
+    env->ExceptionClear();
+    env->ThrowNew(exceptionClass, details.c_str());
+    if (jDetails) {
+      env->DeleteLocalRef(jDetails);
+    }
+    env->DeleteLocalRef(exceptionClass);
     return;
   }
+
+  auto exception = static_cast<jthrowable>(env->CallStaticObjectMethod(
+      exceptionClass, factoryMethod, static_cast<jint>(errorCode), jDetails));
+  if (env->ExceptionCheck() || !exception) {
+    // If a Java exception was thrown, it is already pending; just clean up.
+    if (exception) {
+      env->DeleteLocalRef(exception);
+    }
+    env->DeleteLocalRef(jDetails);
+    env->DeleteLocalRef(exceptionClass);
+    return;
+  }
+
   env->Throw(exception);
+  env->DeleteLocalRef(exception);
+  env->DeleteLocalRef(jDetails);
+  env->DeleteLocalRef(exceptionClass);
 }
 
 bool utf8_check_validity(const char* str, size_t length) {
