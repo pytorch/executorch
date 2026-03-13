@@ -513,9 +513,9 @@ def _create_metal_partitioners(programs):
         # print(f"Running decompositions for {key}")
         # print(ep.graph_module)
         if key != "preprocessor":
-            updated_programs[key] = ep.run_decompositions(
-                {torch.ops.aten.linear.default: _linear_bias_decomposition}
-            )
+            decomp_table = torch.export.default_decompositions()
+            decomp_table[torch.ops.aten.linear.default] = _linear_bias_decomposition
+            updated_programs[key] = ep.run_decompositions(decomp_table)
         else:
             updated_programs[key] = ep
 
