@@ -130,7 +130,7 @@ DEFINE_int32(
 DEFINE_int32(
     lpai_core_selection,
     0,
-    "Specify the core number from 1 or 2. "
+    "Specifies which core(s) to select. "
     "1: selects core 0; 2: selects core 1.  "
     "This is a runtime option and will override the core selection set during AOT. "
     "Refer to QnnExecuTorchLpaiBackendOptions under qc_compiler_spec.fbs for more info.");
