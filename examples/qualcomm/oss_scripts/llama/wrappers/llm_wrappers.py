@@ -506,6 +506,7 @@ class TextDecoder(Component):
                 use_i64_token=self.control_args.embedding_quantize is not None,
                 event_name=f"{event}_tasks",
                 seq_mse_candidates=self.config.seq_mse_candidates,
+                skip_generate=True,
             )
 
         # prepare lookahead config if applicable
@@ -534,6 +535,7 @@ class TextDecoder(Component):
                 use_i64_token=self.control_args.embedding_quantize is not None,
                 event_name=f"{event}_prompt",
                 lookahead_config=lookahead_config,
+                skip_generate=True,
             )
 
     @log_info
