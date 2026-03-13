@@ -8,7 +8,6 @@ from typing import Any, cast, Optional, Tuple
 
 import executorch.exir as exir
 import torch
-
 from executorch.backends.xnnpack.utils.configs import (
     get_transform_passes,
     get_xnnpack_capture_config,
@@ -16,15 +15,8 @@ from executorch.backends.xnnpack.utils.configs import (
 )
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
-
-from torch._export.utils import (
-    get_buffer,
-    get_lifted_tensor_constant,
-    get_param,
-    is_buffer,
-    is_lifted_tensor_constant,
-    is_param,
-)
+from executorch.exir.passes.propagate_input_spec import INPUT_SPEC_KEY
+from torch.export.graph_signature import InputKind
 from torchao.quantization.pt2e.utils import _is_conv_node, _is_conv_transpose_node
 
 
@@ -104,12 +96,35 @@ def is_get_attr_node(node: torch.fx.Node) -> bool:
 
 
 def is_param_node(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool:
-    return (
-        is_get_attr_node(node)
-        or is_param(exp_prog, node)
-        or is_buffer(exp_prog, node)
-        or is_lifted_tensor_constant(exp_prog, node)
-    )
+    if is_get_attr_node(node):
+        return True
+
+    # Check via input_spec metadata (set by propagate_input_spec)
+    input_spec = node.meta.get(INPUT_SPEC_KEY, None)
+    if input_spec is not None and input_spec.target is not None:
+        target = input_spec.target
+        if input_spec.kind == InputKind.PARAMETER:
+            if target in exp_prog.state_dict or target in exp_prog.constants:
+                return True
+        elif input_spec.kind == InputKind.BUFFER:
+            if target in exp_prog.state_dict or target in exp_prog.constants:
+                return True
+        elif input_spec.kind == InputKind.CONSTANT_TENSOR:
+            if target in exp_prog.constants:
+                return True
+
+    # Fall back to graph signature (for nodes created by preprocessing passes
+    # that don't have input_spec metadata)
+    if node.op == "placeholder":
+        sig = exp_prog.graph_signature
+        if node.name in sig.inputs_to_parameters:
+            return True
+        if node.name in sig.inputs_to_buffers:
+            return True
+        if node.name in sig.inputs_to_lifted_tensor_constants:
+            return True
+
+    return False
 
 
 def get_param_tensor(
@@ -117,35 +132,68 @@ def get_param_tensor(
 ) -> Optional[torch.Tensor]:
     if node is None:
         return None
-    elif is_param(exp_prog, node):
-        return get_param(exp_prog, node)
-    elif is_buffer(exp_prog, node):
-        return get_buffer(exp_prog, node)
-    elif is_lifted_tensor_constant(exp_prog, node):
-        return get_lifted_tensor_constant(exp_prog, node)
-    elif is_get_attr_node(node):
-        # This is a hack to support both lifted and unlifted graph
-        try:
-            return getattr(node.graph.owning_module, node.target)
-        except AttributeError:
-            return getattr(exp_prog.graph_module, node.target)
-    raise RuntimeError(f"unsupported param type, {node.op}.")
+
+    # Try input_spec metadata first (set by propagate_input_spec)
+    input_spec = node.meta.get(INPUT_SPEC_KEY, None)
+    if input_spec is not None and input_spec.target is not None:
+        target = input_spec.target
+        if input_spec.kind == InputKind.PARAMETER:
+            if target in exp_prog.state_dict:
+                return exp_prog.state_dict[target]
+            if target in exp_prog.constants:
+                return exp_prog.constants[target]
+        elif input_spec.kind == InputKind.BUFFER:
+            if input_spec.persistent and target in exp_prog.state_dict:
+                return exp_prog.state_dict[target]
+            if target in exp_prog.constants:
+                return exp_prog.constants[target]
+        elif input_spec.kind == InputKind.CONSTANT_TENSOR:
+            if target in exp_prog.constants:
+                return exp_prog.constants[target]
+
+    # Fall back to graph signature (for nodes created by preprocessing passes)
+    if node.op == "placeholder":
+        sig = exp_prog.graph_signature
+        target = None
+        if node.name in sig.inputs_to_parameters:
+            target = sig.inputs_to_parameters[node.name]
+        elif node.name in sig.inputs_to_buffers:
+            target = sig.inputs_to_buffers[node.name]
+        elif node.name in sig.inputs_to_lifted_tensor_constants:
+            target = sig.inputs_to_lifted_tensor_constants[node.name]
+        if target is not None:
+            if target in exp_prog.state_dict:
+                return exp_prog.state_dict[target]
+            if target in exp_prog.constants:
+                return exp_prog.constants[target]
+
+    # Last resort: try to get from graph module attributes
+    try:
+        return getattr(node.graph.owning_module, node.target)
+    except AttributeError:
+        return getattr(exp_prog.graph_module, node.target)
 
 
 def get_tensor_name(exp_prog: ExportedProgram, node: torch.fx.Node) -> str:
     if node is None:
         return ""
-    if is_param(exp_prog, node):
-        return exp_prog.graph_signature.inputs_to_parameters[node.name]
-    elif is_buffer(exp_prog, node):
-        return exp_prog.graph_signature.inputs_to_buffers[node.name]
-    elif is_lifted_tensor_constant(exp_prog, node):
-        return exp_prog.graph_signature.inputs_to_lifted_tensor_constants[node.name]
-    else:
-        assert isinstance(node.target, str)
-        return node.target
 
-    return ""
+    input_spec = node.meta.get(INPUT_SPEC_KEY, None)
+    if input_spec is not None:
+        return input_spec.target
+
+    # Fall back to graph signature for nodes without input_spec metadata
+    if node.op == "placeholder":
+        sig = exp_prog.graph_signature
+        if node.name in sig.inputs_to_parameters:
+            return sig.inputs_to_parameters[node.name]
+        if node.name in sig.inputs_to_buffers:
+            return sig.inputs_to_buffers[node.name]
+        if node.name in sig.inputs_to_lifted_tensor_constants:
+            return sig.inputs_to_lifted_tensor_constants[node.name]
+
+    assert isinstance(node.target, str)
+    return node.target
 
 
 def get_source_fn(node: torch.fx.Node) -> Optional[torch.fx.Node]:

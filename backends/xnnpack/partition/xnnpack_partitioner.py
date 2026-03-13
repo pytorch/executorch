@@ -18,16 +18,16 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
 from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
 from executorch.exir.backend.backend_details import ExportedProgram
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
-    ConfigerationBasedPartitioner,
+    ConfigurationBasedPartitioner,
 )
-from executorch.exir.backend.partitioner import DelegationSpec
+from executorch.exir.backend.partitioner import DelegationSpec, PartitionResult
 from torch.fx.passes.infra.partitioner import Partition
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
-class XnnpackPartitioner(ConfigerationBasedPartitioner):
+class XnnpackPartitioner(ConfigurationBasedPartitioner):
     def __init__(
         self,
         configs: Optional[List[Type[XNNPartitionerConfig]]] = None,
@@ -83,7 +83,7 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
                     return True
         return False
 
-    def partition(self, exported_program):
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         """
         Override partition to add deprecation warning when called from to_backend.
         """
