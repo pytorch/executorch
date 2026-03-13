@@ -678,7 +678,7 @@ xfails = {
     "lt_scalar": "MLETORCH-1865: Properly support flaky scalar comparison ops.",
     "where_self": "MLETORCH-1865: Properly support flaky scalar comparison ops.",
     "where_default": "MLETORCH-1865: Properly support flaky scalar comparison ops.",
-    "while_loop": "MLETORCH-1866: Support higher-order operators",
+    # "while_loop": "MLETORCH-1866: Support higher-order operators",
     "cond": "MLETORCH-1866: Support higher-order operators",
 }
 
