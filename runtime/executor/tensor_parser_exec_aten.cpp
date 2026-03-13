@@ -46,6 +46,11 @@ ET_NODISCARD Result<void*> getMemPlannedPtr(
   // TODO(T142455629): make the allocator actually id based and not indexed
   // based. -1 is a hack to get the memory ids 0 aligned because previously
   // 0 was reserved
+  ET_CHECK_OR_RETURN_ERROR(
+      allocation_info->memory_id() > 0,
+      InvalidProgram,
+      "memory_id must be > 0 (got %u)",
+      allocation_info->memory_id());
   const uint32_t memory_id = allocation_info->memory_id() - 1;
 
   // Originally this field was a single uint32_t, but we need 64 bits for

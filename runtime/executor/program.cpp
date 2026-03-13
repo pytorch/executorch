@@ -520,6 +520,12 @@ Result<FreeableBuffer> Program::LoadSegment(
   // Could fail if offset and size are out of bound for the data, or if this
   // is reading from a file and fails, or for many other reasons depending on
   // the implementation of the loader.
+  ET_CHECK_OR_RETURN_ERROR(
+      segment->offset() <= SIZE_MAX - segment_base_offset_,
+      InvalidProgram,
+      "Segment offset %" PRIu64 " + base %zu overflows",
+      segment->offset(),
+      segment_base_offset_);
   return loader_->load(
       segment_base_offset_ + segment->offset(), segment->size(), segment_info);
 }
@@ -588,8 +594,8 @@ Error Program::load_mutable_subsegment_into(
   auto segment =
       internal_program_->segments()->Get(segment_offsets->segment_index());
 
-  // Check size
-  if (offset + size > segment->size()) {
+  // Check size (overflow-safe)
+  if (offset > segment->size() || size > segment->size() - offset) {
     ET_LOG(
         Error,
         "offset %zu + size %zu out of range > %" PRIu64,
@@ -599,14 +605,30 @@ Error Program::load_mutable_subsegment_into(
     return Error::InvalidArgument;
   }
 
+  // Compute the absolute load offset with overflow checks.
+  size_t segment_abs_offset = segment_base_offset_;
+  ET_CHECK_OR_RETURN_ERROR(
+      segment->offset() <= SIZE_MAX - segment_abs_offset,
+      InvalidProgram,
+      "Segment offset %" PRIu64 " + base %zu overflows",
+      segment->offset(),
+      segment_abs_offset);
+  segment_abs_offset += segment->offset();
+  ET_CHECK_OR_RETURN_ERROR(
+      offset <= SIZE_MAX - segment_abs_offset,
+      InvalidProgram,
+      "Subsegment offset %zu + segment offset %zu overflows",
+      offset,
+      segment_abs_offset);
+  segment_abs_offset += offset;
+
   DataLoader::SegmentInfo info = DataLoader::SegmentInfo(
       DataLoader::SegmentInfo::Type::Mutable,
       segment_offsets->segment_index(),
       nullptr);
 
   // Load the data
-  return loader_->load_into(
-      segment_base_offset_ + segment->offset() + offset, size, info, buffer);
+  return loader_->load_into(segment_abs_offset, size, info, buffer);
 }
 
 } // namespace ET_RUNTIME_NAMESPACE

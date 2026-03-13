@@ -240,9 +240,9 @@ Result<InstructionArgs> gen_instruction_arguments(
   for (size_t i = 0; i < num_args; ++i) {
     int32_t arg_idx = arg_idxs[i];
     ET_CHECK_OR_RETURN_ERROR(
-        static_cast<size_t>(arg_idx) < num_values,
+        arg_idx >= 0 && static_cast<size_t>(arg_idx) < num_values,
         InvalidProgram,
-        "Arg index %zd >= %" ET_PRIsize_t,
+        "Arg index %zd out of range (%" ET_PRIsize_t " values)",
         static_cast<ssize_t>(arg_idx),
         num_values);
     arg_list[i] = &values[arg_idx];
@@ -1057,6 +1057,28 @@ Error Method::init(
                 InvalidProgram,
                 "Index %zd negative or >= %" ET_PRIsize_t,
                 static_cast<ssize_t>(index),
+                n_value_);
+            chain_instruction_arg_lists[instr_idx] = InstructionArgs();
+          } break;
+          case executorch_flatbuffer::InstructionArguments::MoveCall: {
+            auto move_call =
+                static_cast<const executorch_flatbuffer::MoveCall*>(
+                    instr_args);
+            auto move_from = move_call->move_from();
+            auto move_to = move_call->move_to();
+            ET_CHECK_OR_RETURN_ERROR(
+                move_from >= 0 && static_cast<size_t>(move_from) < n_value_,
+                InvalidProgram,
+                "MoveCall move_from %zd out of range (%" ET_PRIsize_t
+                " values)",
+                static_cast<ssize_t>(move_from),
+                n_value_);
+            ET_CHECK_OR_RETURN_ERROR(
+                move_to >= 0 && static_cast<size_t>(move_to) < n_value_,
+                InvalidProgram,
+                "MoveCall move_to %zd out of range (%" ET_PRIsize_t
+                " values)",
+                static_cast<ssize_t>(move_to),
                 n_value_);
             chain_instruction_arg_lists[instr_idx] = InstructionArgs();
           } break;
