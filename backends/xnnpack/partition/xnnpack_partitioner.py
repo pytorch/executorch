@@ -114,7 +114,7 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
         are put into their own partition.
         """
         partitions = []
-        matched_nodes = self.get_matched_nodes_from_configs(ep)
+        matched_nodes = self.get_matched_nodes_from_configs(ep, ep.graph_module)
         partition_id = itertools.count()
         nodes_seen = {}
         for match in matched_nodes:

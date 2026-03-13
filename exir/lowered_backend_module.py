@@ -402,32 +402,25 @@ def arrange_graph_placeholders(
     graph_sign = owning_program.graph_signature
 
     # Add all placeholders into the graph first:
-    param_nodes = []
-    buffer_nodes = []
+    constant_names = set()
+    constant_names.update(graph_sign.inputs_to_parameters.keys())
+    constant_names.update(graph_sign.inputs_to_buffers.keys())
+    constant_names.update(graph_sign.inputs_to_lifted_tensor_constants.keys())
+
+    constant_nodes = []
     input_nodes = []
     for node in gm.graph.nodes:
         if node.op != "placeholder":
             continue
 
-        if (
-            node.name in graph_sign.inputs_to_parameters
-            and node.meta.get("delegation_tag", None) == tag
-        ):
-            param_nodes.append(node)
-        elif (
-            node.name in graph_sign.inputs_to_buffers
-            and node.meta.get("delegation_tag", None) == tag
-        ):
-            buffer_nodes.append(node)
+        if node.name in constant_names and node.meta.get("delegation_tag", None) == tag:
+            constant_nodes.append(node)
         else:
             input_nodes.append(node)
 
-    for param_node in param_nodes:
-        new_node = new_graph.node_copy(param_node, lambda x: node_map[x])
-        node_map[param_node] = new_node
-    for buffer_node in buffer_nodes:
-        new_node = new_graph.node_copy(buffer_node, lambda x: node_map[x])
-        node_map[buffer_node] = new_node
+    for constant_node in constant_nodes:
+        new_node = new_graph.node_copy(constant_node, lambda x: node_map[x])
+        node_map[constant_node] = new_node
     for input_node in input_nodes:
         new_node = new_graph.node_copy(input_node, lambda x: node_map[x])
         node_map[input_node] = new_node
@@ -703,8 +696,11 @@ def create_exported_program_from_submodule(
             been consumed by the delegate (buffer mutation nodes) and should be
             removed from the toplevel ExportedProgram.
     """
-    # Arrange the submodule's placeholders in order
-    submodule = arrange_graph_placeholders(submodule, owning_program, tag)
+    # Arrange the submodule's placeholders so constants come before user inputs.
+    # Skip for HOP submodule delegations — the call site inside the branch
+    # passes arguments in a fixed order that must match placeholder order.
+    if not is_submodule:
+        submodule = arrange_graph_placeholders(submodule, owning_program, tag)
 
     # TODO: we probably need to arrange the outputs wrt buffer mutations.
 
@@ -764,12 +760,28 @@ def create_submodule_from_nodes(
         The submodule that has been partitioned, the call_module node in the
         toplevel graph module calling the submodule
     """
-    sorted_nodes = topo_sort(node_list)
+
+    # Exclude placeholders from the node list so fuse_as_graphmodule recreates
+    # them as external inputs. After fusion, propagate metadata (delegation_tag,
+    # input_spec) from the original tagged constant placeholders so that
+    # _get_new_signature, arrange_graph_placeholders, and backend preprocessing
+    # passes can identify them correctly.
+    filtered_node_list = [n for n in node_list if n.op != "placeholder"]
+    tagged_placeholders = {n.name: n for n in node_list if n.op == "placeholder"}
+
+    sorted_nodes = topo_sort(filtered_node_list)
 
     submodule_name = "fused_" + tag
     sub_gm, orig_inputs, orig_outputs = fuse_as_graphmodule(
         gm, sorted_nodes, submodule_name
     )
+
+    for sub_node in sub_gm.graph.nodes:
+        if sub_node.op == "placeholder" and sub_node.name in tagged_placeholders:
+            orig_node = tagged_placeholders[sub_node.name]
+            sub_node.meta["delegation_tag"] = tag
+            if "input_spec" in orig_node.meta:
+                sub_node.meta["input_spec"] = orig_node.meta["input_spec"]
 
     _fixup_output_node(sub_gm)
 
