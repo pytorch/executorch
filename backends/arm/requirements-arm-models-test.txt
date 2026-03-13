@@ -4,8 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 diffusers[torch] @ git+https://github.com/huggingface/diffusers.git@a7cb14efbe4b255f4c8721c91a04f0ef40f4a05a
-# ng_model_gym deps needed by NSS model tests
-pydantic
-slangtorch
-rich
+# ng_model_gym deps needed by NSS model tests since we install ng_model_gym with --no-deps
+pydantic==2.10.4
+slangtorch==1.3.11
+rich==13.9.3
 setuptools==80.10.2
