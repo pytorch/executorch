@@ -87,6 +87,30 @@ class BackendInterface {
       ArrayRef<CompileSpec> compile_specs) const = 0;
 
   /**
+   * Initialize from cached artifacts, without loading the processed data
+   * segment. Called before init() when a BackendCache is available.
+   *
+   * Backends that support caching override this to restore from
+   * context.get_cache(). On cache hit, the runtime skips loading
+   * the processed data segment entirely.
+   *
+   * @param[in] context The init context, including the scoped backend cache.
+   * @param[in] compile_specs The compile specs from the program.
+   *
+   * @returns On cache hit, an opaque DelegateHandle* (same as init()).
+   * @returns Error::NotSupported if the backend doesn't support caching
+   *     or no cache entry exists (default). The runtime will fall through
+   *     to the normal init() path.
+   */
+  ET_NODISCARD virtual Result<DelegateHandle*> init_from_cache(
+      BackendInitContext& context,
+      ArrayRef<CompileSpec> compile_specs) const {
+    (void)context;
+    (void)compile_specs;
+    return Error::NotSupported;
+  }
+
+  /**
    * Responsible for executing the given method’s handle, as it was produced
    * by compile.
    *

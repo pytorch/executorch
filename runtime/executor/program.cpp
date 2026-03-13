@@ -314,7 +314,8 @@ Result<Method> Program::load_method(
     MemoryManager* memory_manager,
     EventTracer* event_tracer,
     const NamedDataMap* named_data_map,
-    const LoadBackendOptionsMap* backend_options) const {
+    const LoadBackendOptionsMap* backend_options,
+    BackendCache* backend_cache) const {
   EXECUTORCH_SCOPE_PROF("Program::load_method");
   internal::event_tracer_create_event_block(event_tracer, "Default");
   internal::EventTracerProfileMethodScope event_tracer_scope =
@@ -337,7 +338,8 @@ Result<Method> Program::load_method(
       memory_manager,
       event_tracer,
       named_data_map,
-      backend_options);
+      backend_options,
+      backend_cache);
 }
 
 Result<MethodMeta> Program::method_meta(const char* method_name) const {
