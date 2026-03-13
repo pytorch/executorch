@@ -1542,7 +1542,8 @@ class TestRefImplementations(unittest.TestCase):
         expected_output: torch.Tensor,
         pos: torch.Tensor | None = None,
     ) -> None:
-        output = torch.ops.cadence.rope(input_tensor, sin_tensor, cos_tensor, pos)
+        rope_type = 0
+        output = torch.ops.cadence.rope(input_tensor, sin_tensor, cos_tensor, pos, rope_type)
 
         # Verify output properties
         self.assertEqual(
