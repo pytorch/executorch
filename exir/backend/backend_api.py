@@ -33,7 +33,6 @@ from executorch.exir.lowered_backend_module import (
     LoweredBackendModule,
 )
 from executorch.exir.passes.propagate_device_pass import PropagateDevicePass
-from executorch.exir.passes.spec_prop_pass import make_spec
 from executorch.exir.program._fake_program import (
     get_fake_program,
     update_to_real_program,
@@ -244,9 +243,6 @@ def _insert_lowered_submodule(
         call_delegate_node.meta["val"] = [
             out_arg.meta["val"] for out_arg in submodule_output_node.args[0]
         ]
-        call_delegate_node.meta["spec"] = tuple(
-            make_spec(out_arg.meta["val"]) for out_arg in submodule_output_node.args[0]
-        )
         call_submodule_node.replace_all_uses_with(call_delegate_node)
         owning_graph_module.graph.erase_node(call_submodule_node)
     if is_submodule:
