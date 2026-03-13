@@ -9,3 +9,4 @@ tosa-adapter-model-explorer == 0.1.0
 ai-edge-model-explorer >= 0.1.16
 # NOTE: Will be removed when tosa-tools is installed via pypi
 pybind11 == 2.10.4
+pytest-timeout
