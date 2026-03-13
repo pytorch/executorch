@@ -158,7 +158,7 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
         name = self.__class__.__name__
         targeted_nodes_description = str(self.node_finder)
         quantization_config_path = SUPPORTED_QCONFIGS.get(
-            self.quantization_config, "UNREGISTRED_QCONFIG"
+            self.quantization_config, "UNREGISTERED_QCONFIG"
         )
         support_config_path = self.pattern_matcher.support_dict_name
 

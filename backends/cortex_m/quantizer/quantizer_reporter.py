@@ -90,7 +90,7 @@ def _qspec_repr(qspec):
             if qspec.is_dynamic != key.is_dynamic:
                 continue
             return val
-    return "UNREGISTRED_QSPEC"
+    return "UNREGISTERED_QSPEC"
 
 
 class QuantizerInfo(NamedTuple):

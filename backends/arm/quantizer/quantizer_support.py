@@ -131,7 +131,6 @@ ALL_QPARAM_OP_PATTERNS = (
         (torch.ops.aten.sqrt.default,),
         (torch.ops.aten.silu.default,),
         (torch.ops.aten.silu_.default,),
-        (torch.ops.aten.logit.default,),
         (torch.ops.aten.var.dim,),
         (torch.ops.aten.var.correction,),
         (torch.ops.aten.leaky_relu.default,),
