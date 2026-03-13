@@ -510,27 +510,54 @@ class MeanDimConfig(GenericNodePartitionerConfig):
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
         Mean Dim currently only supports averaging 4D tensors across the innermost
-        dimensions
+        dimensions, or 3D tensors with dim=[-1] and keepdim=True (which will be
+        transformed to 4D by the MeanDimRewritePass)
         """
         if not self.check_common_constraints(node, ep):
             return False
 
         dims = node.args[1]
         output_dims = node.meta["val"].dim()
+        keepdim = len(node.args) >= 3 and node.args[2]
 
-        if dims not in ([-2, -1], [-1, -2]):
+        # Support the standard case: 4D tensors with dims [-2, -1] or [-1, -2]
+        if dims in ([-2, -1], [-1, -2]) and output_dims == 4:
+            return True
+
+        # Support the new case: 3D tensors with dim [-1] and keepdim=True
+        # (This will be handled by MeanDimRewritePass to convert to 4D case)
+        if dims == [-1] and keepdim and output_dims == 3:
+            return True
+
+        # Reject all other cases
+        if dims not in ([-2, -1], [-1, -2], [-1]):
             why(
                 node,
-                reason="mean.dim only supports averaging 4D tensors across the innermost dimensions",
+                reason=f"mean.dim only supports averaging across dimensions [-2, -1], [-1, -2], or [-1] with keepdim=True, got dims: {dims}",
             )
             return False
 
-        if output_dims != 4:
+        if dims == [-1] and not keepdim:
             why(
                 node,
-                reason=f"mean.dim only supports averaging 4D tensors, got tensor of rank {output_dims}",
+                reason=f"mean.dim with dim=[-1] is only supported when keepdim=True, got: dim={dims}, keepdim={keepdim}",
             )
             return False
+
+        if dims in ([-2, -1], [-1, -2]) and output_dims != 4:
+            why(
+                node,
+                reason=f"mean.dim with dims {dims} only supports 4D tensors, got tensor of rank {output_dims}",
+            )
+            return False
+
+        if dims == [-1] and output_dims != 3:
+            why(
+                node,
+                reason=f"mean.dim with dim=[-1] only supports 3D tensors, got tensor of rank {output_dims}",
+            )
+            return False
+
         return True
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
