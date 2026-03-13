@@ -98,10 +98,15 @@ ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
         "Invalid value index %" PRId32 " for TensorList",
         tensor_index);
 
+    auto tensor_result =
+        values[static_cast<size_t>(tensor_index)].tryToTensor();
+    if (!tensor_result.ok()) {
+      return tensor_result.error();
+    }
     // Placement new as the list elements are not initialized, so calling
     // copy assignment is not defined if it's non trivial.
-    new (&tensor_list[output_idx]) executorch::aten::Tensor(
-        values[static_cast<size_t>(tensor_index)].toTensor());
+    new (&tensor_list[output_idx])
+        executorch::aten::Tensor(std::move(*tensor_result));
     evalp_list[output_idx] = &values[static_cast<size_t>(tensor_index)];
     output_idx++;
   }
