@@ -52,13 +52,16 @@ from executorch.backends.arm._passes import (
     DecomposeDivTensorModePass,
     DecomposeEluPass,
     DecomposeEmbeddingPass,
+    DecomposeErfinvPass,
     DecomposeExpm1Pass,
     DecomposeFloorDividePass,
     DecomposeGeluPass,
     DecomposeGluPass,
     DecomposeGroupedConvPass,
     DecomposeGroupNormPass,
+    DecomposeIndexCopyPass,
     DecomposeIndexSelectToGatherPass,
+    DecomposeIndexTensorToGatherPass,
     DecomposeIntPowPass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
@@ -90,6 +93,7 @@ from executorch.backends.arm._passes import (
     DecomposeTrilPass,
     DecomposeUnfoldToGatherPass,
     DecomposeVarPass,
+    DecomposeWhereScalarOtherPass,
     DecorateFp32toInt32CastingPass,
     FoldAndAnnotateQParamsPass,
     FuseBatchNorm2dPass,
@@ -119,6 +123,8 @@ from executorch.backends.arm._passes import (
     RewriteIndexPutPass,
     RewriteLeLtToGeGtPass,
     RewriteMatmulPass,
+    RewritePadPass,
+    RewriteSlicePass,
     RewriteUpsamplePass,
     ScalarsToAttributePass,
     SizeAdjustInputPass,
@@ -283,6 +289,7 @@ class ArmPassManager(PassManager):
                 DecomposeAsinhPass(),
                 DecomposeCoshPass(),
                 DecomposeAsinAndAcosPass(),
+                DecomposeErfinvPass(),
                 DecomposeSqrtPass(),
                 DecomposeAtanPass(),
                 DecomposeAtanhPass(),
@@ -303,6 +310,9 @@ class ArmPassManager(PassManager):
                 DecomposeEmbeddingPass(),
                 DecomposeIndexSelectToGatherPass(),
                 DecomposeStridedSliceCopyPass(),
+                DecomposeSliceScatterPass(),
+                AccumulateIndexPutPass(),
+                DecomposeIndexTensorToGatherPass(),
                 Conv1dUnsqueezePass(),
             ]
         )
@@ -312,6 +322,7 @@ class ArmPassManager(PassManager):
             [
                 ReplaceScalarWithTensorByProfilePass(),
                 RewriteLeLtToGeGtPass(),
+                DecomposeLeakyReLUPass(),  # Emits full_like so before ConvertFullLikeToFullPass
                 ConvertFullLikeToFullPass(),
                 MatchArgDtypePass(),
                 UnsqueezeScalarPlaceholdersPass(exported_program),
@@ -325,8 +336,6 @@ class ArmPassManager(PassManager):
         # Node transformation passes (post scalar-removal)
         self.add_passes(
             [
-                DecomposeSliceScatterPass(),
-                AccumulateIndexPutPass(),
                 RewriteIndexPutPass(),
                 RewriteBoolBitwiseToLogicalPass(),
                 DecomposeRemainderPass(),
@@ -334,7 +343,6 @@ class ArmPassManager(PassManager):
                 FuseBatchNorm2dPass(exported_program),
                 ConvertMmToBmmPass(),
                 DecomposeGluPass(),
-                DecomposeLeakyReLUPass(),
                 DecomposeDivPass(),
                 # _safe_softmax results in a ReduceMax
                 # which is not currently supported by TOSA in U55
@@ -370,6 +378,8 @@ class ArmPassManager(PassManager):
                 RewriteUpsamplePass(),
                 RewriteConvPass(exported_program),
                 RewriteMatmulPass(),
+                RewritePadPass(),
+                RewriteSlicePass(),
             ]
         )
 
@@ -410,6 +420,7 @@ class ArmPassManager(PassManager):
         # Transformation passes (pre scalar -> tensor)
         self.add_passes(
             [
+                DecomposeIndexCopyPass(tfa_pass=True),
                 DecomposeSelectScatterPass(tfa_pass=True),
                 DecomposeSliceScatterPass(tfa_pass=True),
                 ConvertInt64ConstOpsToInt32Pass(tfa_pass=True),
@@ -426,6 +437,7 @@ class ArmPassManager(PassManager):
                 DecomposeRemainderPass(tfa_pass=True),
                 DecomposeFloorDividePass(tfa_pass=True),
                 DecomposeDivTensorModePass(tfa_pass=True),
+                DecomposeWhereScalarOtherPass(tfa_pass=True),
             ]
         )
 

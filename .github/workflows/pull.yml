@@ -475,10 +475,8 @@ jobs:
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
         size=${arr[4]}
-        # threshold=48120 on devserver with gcc9
-        # todo(lfq): update once binary size is below 50kb.
-        # Note: using gcc9-nopytorch container with pinned nightly PyTorch
-        threshold="63785"
+        # Current CI size: 48008 (gcc9-nopytorch, 2026-03-06)
+        threshold="48500"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
         else
@@ -513,7 +511,8 @@ jobs:
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
         size=${arr[4]}
-        threshold="51752"
+        # Current CI size: 44160 (clang12, 2026-03-06)
+        threshold="45000"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
         else
@@ -1058,7 +1057,8 @@ jobs:
 
   test-samsung-quantmodels-linux:
     name: test-samsung-quantmodels-linux
-    # if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    # Skip this job if the pull request is from a fork (secrets are not available)
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -1095,7 +1095,8 @@ jobs:
 
   test-samsung-models-linux:
     name: test-samsung-models-linux
-    # if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    # Skip this job if the pull request is from a fork (secrets are not available)
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write

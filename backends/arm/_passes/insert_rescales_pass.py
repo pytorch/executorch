@@ -200,8 +200,6 @@ class InsertRescaleInt32Pass(ArmPass):
 
         if target in [
             exir_ops.edge.aten.abs.default,
-            exir_ops.edge.aten.maximum.default,
-            exir_ops.edge.aten.minimum.default,
             exir_ops.edge.aten.sum.dim_IntList,
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.sub.Tensor,
@@ -209,6 +207,16 @@ class InsertRescaleInt32Pass(ArmPass):
             # The op has not altered the scale; the output scale is equal to
             # the operands' scales.
             return self._int32_qargs(inputs_qparams[0].get_scale_per_tensor())
+        elif target in [
+            exir_ops.edge.aten.maximum.default,
+            exir_ops.edge.aten.minimum.default,
+        ]:
+            # Min/Max use a shared INT32 accumulator scale for inputs, then
+            # rescale to the original output activation scale.
+            min_scale = min(
+                [qp.get_scale_per_tensor() for qp in inputs_qparams.values()]
+            )
+            return self._int32_qargs(min_scale)
         elif target in [
             exir_ops.edge.aten.eq.Tensor,
             exir_ops.edge.aten.ge.Tensor,

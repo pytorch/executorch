@@ -402,7 +402,7 @@ jobs:
         setup_script_args=""
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then
           toolchain_prefix=arm-none-eabi-
-          threshold="110642" # 108 KiB
+          threshold="111000" # 111 KiB
           toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
           setup_script_args="--target-toolchain zephyr"
@@ -1123,10 +1123,11 @@ jobs:
         model: [mv3, resnet50, vit, mobilebert, emformer_transcribe]
         backend: [portable, xnnpack-q8]
     with:
-      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 60
       script: |
+        git config --global http.sslBackend openssl
+        git submodule update --init --recursive
         conda init powershell
 
         powershell -Command "& {

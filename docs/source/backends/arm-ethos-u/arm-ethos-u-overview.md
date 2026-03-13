@@ -137,6 +137,14 @@ An example runtime application is available in [examples/arm/executor_runner](ht
 The example application is recommended to use for testing basic functionality of your lowered models, as well as a starting point for developing runtime integrations for your own targets.
 For an in-depth explanation of the architecture of the executor_runner and the steps required for doing such an integration, please refer to [Ethos-U porting guide](https://github.com/pytorch/executorch/blob/main/examples/arm/ethos-u-porting-guide.md).
 
+### Example: Image classification flow
+
+[`examples/arm/image_classification_example_ethos_u`](https://github.com/pytorch/executorch/tree/main/examples/arm/image_classification_example_ethos_u)
+contains a complete DeiT-based export and runtime walkthrough. The README shows
+how to run `model_export/export_deit.py`, build the sample firmware, and convert
+test images into C arrays so the workflow described in this guide can be tried
+end to end.
+
 ### Ethos-U memory modes
 
 The Ethos-U NPU provides two distinct memory interfaces:
@@ -225,6 +233,10 @@ ExecuTorch for the Ethos-U backend, you automatically install the compiler conta
 
 **→{doc}`/backends/arm-ethos-u/tutorials/arm-ethos-u-tutorials` — Tutorials.**
 
+**→{doc}`/backends/arm-ethos-u/U55_op_support` — Ethos-U55 supported operators.**
+
+**→{doc}`/backends/arm-ethos-u/U85_op_support` — Ethos-U85 supported operators.**
+
 
 ```{toctree}
 :maxdepth: 2
@@ -235,4 +247,6 @@ arm-ethos-u-partitioner
 arm-ethos-u-quantization
 arm-ethos-u-troubleshooting
 tutorials/arm-ethos-u-tutorials
+U55_op_support
+U85_op_support
 ```

@@ -45,14 +45,19 @@ from .decompose_div_pass import DecomposeDivPass  # noqa
 from .decompose_div_tensor_mode import DecomposeDivTensorModePass  # noqa
 from .decompose_elu_pass import DecomposeEluPass  # noqa
 from .decompose_embedding_pass import DecomposeEmbeddingPass  # noqa  # noqa
+from .decompose_erfinv_pass import DecomposeErfinvPass  # noqa
 from .decompose_expm1_pass import DecomposeExpm1Pass  # noqa
 from .decompose_floor_divide_pass import DecomposeFloorDividePass  # noqa
 from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_glu_pass import DecomposeGluPass  # noqa
 from .decompose_grouped_conv_pass import DecomposeGroupedConvPass  # noqa
 from .decompose_groupnorm_pass import DecomposeGroupNormPass  # noqa
+from .decompose_index_copy_pass import DecomposeIndexCopyPass  # noqa
 from .decompose_index_select_to_gather_pass import (  # noqa
     DecomposeIndexSelectToGatherPass,
+)
+from .decompose_index_tensor_to_gather_pass import (  # noqa
+    DecomposeIndexTensorToGatherPass,
 )
 from .decompose_int16_activation_conv_pass import (  # noqa
     DecomposeConvWithInt16ActivationPass,
@@ -90,6 +95,7 @@ from .decompose_tosa_unsupported_clamp_pass import (  # noqa
 from .decompose_tril_pass import DecomposeTrilPass  # noqa
 from .decompose_unfold_to_gather_pass import DecomposeUnfoldToGatherPass  # noqa
 from .decompose_var_pass import DecomposeVarPass  # noqa
+from .decompose_where_scalar_other_pass import DecomposeWhereScalarOtherPass  # noqa
 from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass  # noqa
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,
@@ -134,6 +140,8 @@ from .rewrite_conv_pass import RewriteConvPass  # noqa
 from .rewrite_index_put_pass import RewriteIndexPutPass  # noqa
 from .rewrite_le_lt_to_ge_gt_pass import RewriteLeLtToGeGtPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
+from .rewrite_pad import RewritePadPass  # noqa
+from .rewrite_slice import RewriteSlicePass  # noqa
 from .rewrite_upsample import RewriteUpsamplePass  # noqa
 from .scalars_to_attribute_pass import ScalarsToAttributePass  # noqa
 from .size_adjust_input_pass import SizeAdjustInputPass  # noqa

@@ -17,19 +17,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-test_data_suite = {
-    "rank3_zeros_int8": (
-        lambda: (
-            torch.zeros((1, 3, 2), dtype=torch.int8),
-            (
-                torch.tensor([0, 0], dtype=torch.int64),
-                torch.tensor([2, 1], dtype=torch.int64),
-            ),
-            torch.randint(-5, 5, (2, 2), dtype=torch.int8),
-            False,
-        ),
-        0,  # used for u55 tests to config n_expected_delgates, only 1 when accumulate is True
-    ),
+test_data_suite_fp = {
     "rank3_accumulate": (
         lambda: (
             torch.rand((5, 9, 3), dtype=torch.float32),
@@ -54,32 +42,6 @@ test_data_suite = {
             False,
         ),
         0,  # used for u55 tests to config n_expected_delgates, only 1 when accumulate is True
-    ),
-    "rank4_accumulate_int32": (
-        lambda: (
-            torch.ones((3, 4, 20, 9), dtype=torch.int32),
-            (
-                torch.tensor(
-                    [0, 2, 2],
-                    dtype=torch.int64,
-                ),
-                torch.tensor(
-                    [1, 1, 1],
-                    dtype=torch.int64,
-                ),
-                torch.tensor(
-                    [4, 8, 5],
-                    dtype=torch.int64,
-                ),
-                torch.tensor(
-                    [1, 2, 3],
-                    dtype=torch.int64,
-                ),
-            ),
-            torch.zeros((3), dtype=torch.int32),
-            True,
-        ),
-        1,  # used for u55 tests to config n_expected_delgates, only 1 when accumulate is True
     ),
     "rank5_ones": (
         lambda: (
@@ -161,6 +123,46 @@ test_data_suite = {
         0,
     ),
 }
+test_data_int = {
+    "rank3_zeros_int8": (
+        lambda: (
+            torch.zeros((1, 3, 2), dtype=torch.int8),
+            (
+                torch.tensor([0, 0], dtype=torch.int64),
+                torch.tensor([2, 1], dtype=torch.int64),
+            ),
+            torch.randint(-5, 5, (2, 2), dtype=torch.int8),
+            False,
+        ),
+        0,  # used for u55 tests to config n_expected_delgates, only 1 when accumulate is True
+    ),
+    "rank4_accumulate_int32": (
+        lambda: (
+            torch.ones((3, 4, 20, 9), dtype=torch.int32),
+            (
+                torch.tensor(
+                    [0, 2, 2],
+                    dtype=torch.int64,
+                ),
+                torch.tensor(
+                    [1, 1, 1],
+                    dtype=torch.int64,
+                ),
+                torch.tensor(
+                    [4, 8, 5],
+                    dtype=torch.int64,
+                ),
+                torch.tensor(
+                    [1, 2, 3],
+                    dtype=torch.int64,
+                ),
+            ),
+            torch.zeros((3), dtype=torch.int32),
+            True,
+        ),
+        1,  # used for u55 tests to config n_expected_delgates, only 1 when accumulate is True
+    ),
+}
 test_data_suite_bf16 = {
     "rank3_rand_bf16": (
         lambda: (
@@ -199,7 +201,7 @@ xfails = {
 
 
 @common.parametrize(
-    "test_module", test_data_suite | test_data_suite_bf16, xfails=xfails
+    "test_module", test_data_suite_fp | test_data_suite_bf16, xfails=xfails
 )
 def test_index_put_tosa_FP(test_module: input_t):
     pipeline = TosaPipelineFP[input_t](
@@ -215,7 +217,7 @@ def test_index_put_tosa_FP(test_module: input_t):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_suite, xfails=xfails)
+@common.parametrize("test_module", test_data_suite_fp | test_data_int, xfails=xfails)
 def test_index_put_tosa_INT(test_module: input_t):
     pipeline = TosaPipelineINT[input_t](
         IndexPut(),
@@ -226,7 +228,7 @@ def test_index_put_tosa_INT(test_module: input_t):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_suite)
+@common.parametrize("test_module", test_data_suite_fp | test_data_int)
 def test_index_put_u55_INT(test_module: input_t):
     # SCATTER op is not supported on U55
     pipeline = OpNotSupportedPipeline[input_t](
@@ -241,7 +243,7 @@ def test_index_put_u55_INT(test_module: input_t):
 
 
 @common.XfailIfNoCorstone320
-@common.parametrize("test_module", test_data_suite)
+@common.parametrize("test_module", test_data_suite_fp | test_data_int)
 def test_index_put_u85_INT(test_module: input_t):
     """same_index test case already supported on u85 even though it is not
     supported by TOSA spec.
@@ -264,7 +266,7 @@ def test_index_put_u85_INT(test_module: input_t):
 
 
 @common.SkipIfNoModelConverter
-@common.parametrize("test_module", test_data_suite, xfails=xfails)
+@common.parametrize("test_module", test_data_suite_fp | test_data_int, xfails=xfails)
 def test_index_put_vgf_no_quant(test_module: input_t):
     pipeline = VgfPipeline[input_t](
         IndexPut(),
@@ -280,7 +282,7 @@ def test_index_put_vgf_no_quant(test_module: input_t):
 
 
 @common.SkipIfNoModelConverter
-@common.parametrize("test_module", test_data_suite, xfails=xfails)
+@common.parametrize("test_module", test_data_suite_fp | test_data_int, xfails=xfails)
 def test_index_put_vgf_quant(test_module: input_t):
     pipeline = VgfPipeline[input_t](
         IndexPut(),

@@ -106,14 +106,14 @@ void conv2d_impl(
           for (const auto w_y : c10::irange(w_H)) {
             w_coord[2] = w_y;
 
-            size_t in_y = stride_y * out_y + dilation_y * w_y - padding_y;
+            ssize_t in_y = stride_y * out_y + dilation_y * w_y - padding_y;
             in_coord[2] = in_y;
             // Only proceed if input y coordinate is within bounds
             if (in_y >= 0 && in_y < in_H) {
               for (const auto w_x : c10::irange(w_W)) {
                 w_coord[3] = w_x;
 
-                size_t in_x = stride_x * out_x + dilation_x * w_x - padding_x;
+                ssize_t in_x = stride_x * out_x + dilation_x * w_x - padding_x;
                 in_coord[3] = in_x;
 
                 // Only proceed if input x coordinate is within bounds
@@ -161,14 +161,14 @@ void conv2d_impl(
           w_coord[0] = in_c;
           for (const auto w_y : c10::irange(w_H)) {
             w_coord[2] = w_y;
-            size_t out_y = stride_y * in_y + dilation_y * w_y - padding_y;
+            ssize_t out_y = stride_y * in_y + dilation_y * w_y - padding_y;
             out_coord[2] = out_y;
 
             // Only proceed if output y coordinate is within bounds
             if (out_y >= 0 && out_y < out_H) {
               for (const auto w_x : c10::irange(w_W)) {
                 w_coord[3] = w_x;
-                size_t out_x = stride_x * in_x + dilation_x * w_x - padding_x;
+                ssize_t out_x = stride_x * in_x + dilation_x * w_x - padding_x;
                 out_coord[3] = out_x;
 
                 // Only proceed if output x coordinate is within bounds
