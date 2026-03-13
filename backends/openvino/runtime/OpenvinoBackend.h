@@ -18,10 +18,10 @@
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
-namespace exr = executorch::runtime;
-namespace exa = executorch::aten;
-
 using namespace std;
+namespace exr = executorch::runtime;
+namespace exat = executorch::aten;
+
 
 namespace executorch {
 namespace backends {
@@ -49,7 +49,7 @@ class OpenvinoBackend final : public ::exr::BackendInterface {
   void destroy(exr::DelegateHandle* handle) const override;
 
  private:
-  ov::element::Type convert_to_openvino_type(exa::ScalarType scalar_type) const;
+  ov::element::Type convert_to_openvino_type(exat::ScalarType scalar_type) const;
 };
 
 } // namespace openvino
