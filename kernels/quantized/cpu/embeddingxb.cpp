@@ -72,17 +72,19 @@ void check_embedding_xbit_args(
   ET_CHECK_MSG(8 % weight_nbit == 0, "nbit must divide 8");
 
   ET_CHECK_MSG(
-      weight.dim() == 2, "weight must be 2D but got() %zd dims", weight.dim());
+      weight.dim() == 2,
+      "weight must be 2D but got() %" ET_PRI_TENSOR_DIM " dims",
+      weight.dim());
 
   ET_CHECK_MSG(
       weight_scales.dim() == 1 || weight_scales.dim() == 2,
-      "weight_scales must be 1D or 2D but got() %zd dims",
+      "weight_scales must be 1D or 2D but got() %" ET_PRI_TENSOR_DIM " dims",
       weight_scales.dim());
 
   ET_CHECK_MSG(
       weight_scales.size(0) == weight.size(0),
-      "Number of scales must be == weight.size(0)=%zd"
-      ", but got %zd",
+      "Number of scales must be == weight.size(0)=%" ET_PRI_TENSOR_DIM
+      ", but got %" ET_PRI_TENSOR_DIM,
       weight_scales.size(0),
       weight.size(0));
 
@@ -90,9 +92,11 @@ void check_embedding_xbit_args(
     auto num_groups = weight_scales.size(1);
     ET_CHECK_MSG(
         // each 8b uint8 column is packed_values_per_byte columns
-        get_embedding_dim(weight.size(1), weight_nbit) % num_groups == 0,
-        "Number of groups must divide weight.size(1)=%zd"
-        ", but got # of groups = %zd",
+        get_embedding_dim(static_cast<int32_t>(weight.size(1)), weight_nbit) %
+                num_groups ==
+            0,
+        "Number of groups must divide weight.size(1)=%" ET_PRI_TENSOR_DIM
+        ", but got # of groups = %" ET_PRI_TENSOR_DIM,
         weight.size(1),
         num_groups);
   }
@@ -132,8 +136,8 @@ void check_embedding_xbit_args(
       ET_CHECK_MSG(
           opt_weight_zero_points.value().size(i) == weight_scales.size(i),
           "Dimension size misatch at dim %" PRIi32
-          "Weight_zero_point size = %zd"
-          ", weight_scales size = %zd.",
+          " Weight_zero_point size = %" ET_PRI_TENSOR_DIM
+          ", weight_scales size = %" ET_PRI_TENSOR_DIM ".",
           i,
           opt_weight_zero_points.value().size(i),
           weight_scales.size(i));
@@ -172,13 +176,14 @@ void embedding_xbit_per_channel(
     const Tensor& indices,
     Tensor& out,
     int weight_nbit) {
-  auto embedding_dim = get_embedding_dim(weight.size(1), weight_nbit);
+  auto embedding_dim =
+      get_embedding_dim(static_cast<int32_t>(weight.size(1)), weight_nbit);
 
-  int32_t num_groups_per_channel = 1;
+  ssize_t num_groups_per_channel = 1;
   if (weight_scales.dim() == 2) {
     num_groups_per_channel = weight_scales.size(1);
   }
-  int32_t group_size = embedding_dim / num_groups_per_channel;
+  auto group_size = embedding_dim / num_groups_per_channel;
 
   CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
   const CTYPE_INDICES* indices_ptr = indices.const_data_ptr<CTYPE_INDICES>();
@@ -192,7 +197,7 @@ void embedding_xbit_per_channel(
   for (int i = 0; i < indices.numel(); i++) {
     CTYPE_INDICES index = indices_ptr[i];
     // If using groupwise embedding
-    int32_t qparams_index = index * num_groups_per_channel;
+    auto qparams_index = index * num_groups_per_channel;
     CTYPE_PARAMS zp = 0.0;
     const CTYPE_PARAMS* scale_ptr = scales + qparams_index;
     const CTYPE_PARAMS* zero_points_ptr = nullptr;
@@ -225,10 +230,13 @@ void resize_out_tensor(
     int weight_nbit) {
   executorch::aten::SizesType expected_output_size[kTensorDimensionLimit];
   for (size_t i = 0; i < indices.dim(); i++) {
-    expected_output_size[i] = indices.size(i);
+    expected_output_size[i] =
+        static_cast<executorch::aten::SizesType>(indices.size(i));
   }
-  const size_t embedding_dim = get_embedding_dim(weight.size(1), weight_nbit);
-  expected_output_size[out.dim() - 1] = embedding_dim;
+  const auto embedding_dim =
+      get_embedding_dim(static_cast<int32_t>(weight.size(1)), weight_nbit);
+  expected_output_size[out.dim() - 1] =
+      static_cast<executorch::aten::SizesType>(embedding_dim);
 
   executorch::aten::ArrayRef<executorch::aten::SizesType> output_size{
       expected_output_size, static_cast<size_t>(out.dim())};

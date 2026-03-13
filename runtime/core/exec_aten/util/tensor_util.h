@@ -44,13 +44,14 @@
       UPPER_BOUND,                                          \
       UPPER_BOUND)
 
-#define ET_CHECK_VALID_DIM(DIM, UPPER_BOUND)              \
-  ET_CHECK_MSG(                                           \
-      DIM >= -static_cast<int64_t>(UPPER_BOUND) &&        \
-          DIM < static_cast<int64_t>(UPPER_BOUND),        \
-      "dim %" PRId64 " must be within range [-%zd, %zd)", \
-      DIM,                                                \
-      UPPER_BOUND,                                        \
+#define ET_CHECK_VALID_DIM(DIM, UPPER_BOUND)                       \
+  ET_CHECK_MSG(                                                    \
+      DIM >= -static_cast<int64_t>(UPPER_BOUND) &&                 \
+          DIM < static_cast<int64_t>(UPPER_BOUND),                 \
+      "dim %" PRId64 " must be within range [-%" ET_PRI_TENSOR_DIM \
+      ", %" ET_PRI_TENSOR_DIM ")",                                 \
+      DIM,                                                         \
+      UPPER_BOUND,                                                 \
       UPPER_BOUND)
 
 #define ET_CHECK_NON_ZERO_DIM_SIZE(DIM, T)           \
@@ -891,7 +892,7 @@ inline bool tensor_is_contiguous(executorch::aten::Tensor t) {
       "Tensor is not contiguous; the stride of the last dimension must be 1, "
       "but got %zu",
       static_cast<size_t>(strides[strides.size() - 1]));
-  for (int i = strides.size() - 1; i > 0; --i) {
+  for (auto i = strides.size() - 1; i > 0; --i) {
     ET_CHECK_OR_RETURN_FALSE(
         strides[i - 1] == strides[i] * sizes[i],
         "Tensor is not contiguous; the stride of dim %zu should be equal to "
@@ -984,7 +985,7 @@ inline void memoizeTrailingDims(
     size_t trailing_dims_memo[kTensorDimensionLimit]) {
   const auto tensorDim = tensor.dim();
   size_t dims = 1;
-  for (int ii = tensorDim - 1; ii >= 0; --ii) {
+  for (auto ii = tensorDim - 1; ii >= 0; --ii) {
     trailing_dims_memo[ii] = dims;
     dims *= static_cast<size_t>(tensor.size(ii));
   }

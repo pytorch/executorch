@@ -63,23 +63,25 @@ void check_quantize_per_tensor_args(
     for (auto i = 0; i < input.dim() - 1; i++) {
       ET_CHECK_MSG(
           scale_out.size(i) == input.size(i),
-          "Exepcted scale to have the same number of elements at dimentions %d got %zd",
+          "Exepcted scale to have the same number of elements at dimentions %d got %" ET_PRI_TENSOR_DIM,
           i,
           scale_out.size(i));
       ET_CHECK_MSG(
           zero_point_out.size(i) == input.size(i),
-          "Exepcted zero pont to have the same number of elements at dimentions %d got %zd",
+          "Exepcted zero pont to have the same number of elements at dimentions %d got %" ET_PRI_TENSOR_DIM,
           i,
           zero_point_out.size(i));
     }
     ET_CHECK_MSG(
         scale_out.size(input.dim() - 1) == 1,
-        "Exepcted scale to have only one element at dimentions %zd but got %zd",
+        "Exepcted scale to have only one element at dimentions %" ET_PRI_TENSOR_DIM
+        " but got %" ET_PRI_TENSOR_DIM,
         input.dim() - 1,
         scale_out.size(input.dim() - 1));
     ET_CHECK_MSG(
         zero_point_out.size(input.dim() - 1) == 1,
-        "Exepcted zero point to have only one element at dimentions %zd but got %zd",
+        "Exepcted zero point to have only one element at dimentions %" ET_PRI_TENSOR_DIM
+        " but got %" ET_PRI_TENSOR_DIM,
         input.dim() - 1,
         zero_point_out.size(input.dim() - 1));
   } else {
@@ -254,7 +256,12 @@ std::tuple<Tensor&, Tensor&> choose_qparams_tensor_out(
   check_quantize_per_tensor_args(
       input, quant_min, quant_max, dtype, scale_out, zero_point_out);
 
-  choose_qparams(input, quant_min, quant_max, scale_out, zero_point_out);
+  choose_qparams(
+      input,
+      static_cast<int32_t>(quant_min),
+      static_cast<int32_t>(quant_max),
+      scale_out,
+      zero_point_out);
   return {scale_out, zero_point_out};
 }
 
@@ -283,7 +290,7 @@ std::tuple<Tensor&, Tensor&> choose_qparams_per_token_asymmetric_out(
   int64_t quant_max = 127;
   executorch::aten::SizesType output_sizes[kTensorDimensionLimit];
   for (ssize_t i = 0; i < input.dim() - 1; i++) {
-    output_sizes[i] = input.size(i);
+    output_sizes[i] = static_cast<executorch::aten::SizesType>(input.size(i));
   }
   output_sizes[input.dim() - 1] = 1;
   size_t output_dim = input.dim();
@@ -307,7 +314,11 @@ std::tuple<Tensor&, Tensor&> choose_qparams_per_token_asymmetric_out(
       true /* is_per_token*/);
 
   choose_qparams_per_token(
-      input, quant_min, quant_max, scale_out, zero_point_out);
+      input,
+      static_cast<int32_t>(quant_min),
+      static_cast<int32_t>(quant_max),
+      scale_out,
+      zero_point_out);
   return {scale_out, zero_point_out};
 }
 
