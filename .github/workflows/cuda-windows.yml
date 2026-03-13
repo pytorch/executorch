@@ -127,10 +127,11 @@ jobs:
       runner: windows.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
       gpu-arch-version: 12.8
-      submodules: recursive
       download-artifact: ${{ matrix.model_repo }}-${{ matrix.model_name }}-cuda-windows-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
+        git config --global http.sslBackend openssl
+        git submodule update --init --recursive
         conda init powershell
         powershell -Command "& {
           Set-PSDebug -Trace 1
