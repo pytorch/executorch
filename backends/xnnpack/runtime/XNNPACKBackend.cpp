@@ -147,8 +147,8 @@ class XnnpackBackend final
       return err;
     }
 
-    // Resize outputs and recast pointers if necessary
-    err = executor->resize_outputs(args);
+    // Convert output data types if necessary (e.g., int32 -> int64 for Long)
+    err = executor->convert_outputs(args);
 
     return err;
   }

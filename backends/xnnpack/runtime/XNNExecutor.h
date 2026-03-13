@@ -84,11 +84,19 @@ class XNNExecutor {
       executorch::ET_RUNTIME_NAMESPACE::BackendExecutionContext& context);
 
   /**
-   * Prepares the outputs to be returned by the delegate
+   * Resizes output tensors to match XNNPACK's computed shapes.
    *
-   * Performs any post processing of outputs like tensor resizing
    */
   ET_NODISCARD executorch::runtime::Error resize_outputs(
+      executorch::runtime::Span<executorch::runtime::EValue*> args) const;
+
+  /**
+   * Converts output data types after XNNPACK execution.
+   *
+   * For arg_max pooling, XNNPACK outputs int32 index tensors that need
+   * to be converted to int64 for ExecuTorch.
+   */
+  ET_NODISCARD executorch::runtime::Error convert_outputs(
       executorch::runtime::Span<executorch::runtime::EValue*> args) const;
 
   friend class XNNCompiler;
