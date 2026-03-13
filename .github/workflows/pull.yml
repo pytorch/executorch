@@ -6,6 +6,8 @@ on:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/trunk/*
   workflow_dispatch:
 
 concurrency:
@@ -553,7 +555,7 @@ jobs:
           threshold="136020" # 136 KiB
           toolchain_cmake=examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
         else
-          echo "Fail unsupport OS selection ${{ matrix.os }}"
+          echo "Unsupported OS selection: ${{ matrix.os }}"
           exit 1
         fi
 
@@ -577,7 +579,7 @@ jobs:
           CXXFLAGS=${cxx_flags}  cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out/test test
           cmake --build cmake-out/test -j9 --config Release
         else
-          echo "Fail unsupport OS selection ${{ matrix.os }}"
+          echo "Fail unsupported OS selection ${{ matrix.os }}"
           exit 1
         fi
 
