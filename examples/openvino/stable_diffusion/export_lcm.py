@@ -182,7 +182,9 @@ class LCMOpenVINOExporter:
         """Apply weights-only compression for non-UNet components."""
         model = model.graph_module()
         ov_quantizer = OpenVINOQuantizer(mode=QuantizationMode.INT8WO_ASYM)
-        quantized_model = nncf.experimental.torch.fx.compress_pt2e(model, quantizer=ov_quantizer)
+        quantized_model = nncf.experimental.torch.fx.compress_pt2e(
+            model, quantizer=ov_quantizer
+        )
         # Re-export the transformed torch.fx.GraphModule to ExportedProgram
         quantized_exported_program = export(quantized_model, dummy_inputs)
         return quantized_exported_program
@@ -204,8 +206,7 @@ class LCMOpenVINOExporter:
 
             if self.is_quantization_enabled:
                 exported_program = self.compress_model(
-                    exported_program,
-                    component_dummy_inputs
+                    exported_program, component_dummy_inputs
                 )
 
             # Configure OpenVINO compilation
@@ -252,8 +253,7 @@ class LCMOpenVINOExporter:
 
             if self.is_quantization_enabled:
                 exported_program = self.quantize_unet_model(
-                    exported_program,
-                    component_dummy_inputs
+                    exported_program, component_dummy_inputs
                 )
 
             # Configure OpenVINO compilation
@@ -300,8 +300,7 @@ class LCMOpenVINOExporter:
 
             if self.is_quantization_enabled:
                 exported_program = self.compress_model(
-                    exported_program,
-                    component_dummy_inputs
+                    exported_program, component_dummy_inputs
                 )
 
             # Configure OpenVINO compilation
