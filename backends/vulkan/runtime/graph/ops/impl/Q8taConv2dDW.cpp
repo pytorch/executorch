@@ -332,16 +332,25 @@ void add_q8ta_conv2d_dw_node(
   // Pass metadata for both output and input tensors
   vkapi::ParamsBindList param_buffers = {
       graph.buffer_meta_ubo(packed_int8_output),
-      graph.buffer_meta_ubo(packed_int8_input),
-      graph.create_params_buffer(conv_params)};
+      graph.buffer_meta_ubo(packed_int8_input)};
 
-  // Build spec constants: apply_bias, activation_type + layout constants
+  // Build spec constants: apply_bias, activation_type, layout constants,
+  // conv2d params
   vkapi::SpecVarList spec_constants = {
       apply_bias,
       activation_type,
       // Layout specialization constants
       graph.hashed_layout_of(packed_int8_input),
       graph.hashed_layout_of(packed_int8_output),
+      // Conv2D parameter specialization constants
+      static_cast<uint32_t>(conv_params.kernel_size[0]),
+      static_cast<uint32_t>(conv_params.kernel_size[1]),
+      static_cast<uint32_t>(conv_params.stride[0]),
+      static_cast<uint32_t>(conv_params.stride[1]),
+      static_cast<uint32_t>(conv_params.padding[0]),
+      static_cast<uint32_t>(conv_params.padding[1]),
+      static_cast<uint32_t>(conv_params.dilation[0]),
+      static_cast<uint32_t>(conv_params.dilation[1]),
   };
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
