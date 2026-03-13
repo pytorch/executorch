@@ -53,13 +53,13 @@ ${layout_declare_spec_const(C, "int", "inp_block_config", "0")}
 #include "block_int8x4_load.glslh"
 #include "block_store.glslh"
 
-// Generate loading functions for t_inp buffer
-define_load_int8x4_buffer_fns(t_inp)
-// Generate storing functions for t_outp
+// Generate 8D loading functions for t_inp buffer
+define_load_int8x4_buffer_8d_fns(t_inp)
+// Generate 8D storing functions for t_outp
 $if OUTPUT_STORAGE == "buffer":
-  define_store_buffer_fns(t_outp, T)
+  define_store_buffer_8d_fns(t_outp, T)
 $else:
-  define_store_texture_fns(t_outp, VEC4_T)
+  define_store_texture_8d_fns(t_outp, VEC4_T)
 
 mat4 dequantize_int8x4_block(
     const ivec4 block, const float scale, const int zp) {
@@ -81,18 +81,20 @@ mat4 dequantize_int8x4_block(
 }
 
 void main() {
-  TensorIndex4D tidx;
+  TensorIndex tidx;
 
 #ifdef USING_BUFFER
-  // Buffer storage: use linear dispatch
+  // Buffer storage: use linear dispatch (supports up to 8D)
   const uint contig_block_idx = gl_GlobalInvocationID.x;
-  tidx = contiguous_block_idx_to_tensor4d_idx_with_block_config(
+  tidx = contiguous_block_idx_to_tensor_idx_with_block_config(
       inp, contig_block_idx, inp_block_config);
 #else
-  // Texture storage: use 3D extents dispatch
+  // Texture storage: use 3D extents dispatch (limited to 4D)
   const uvec3 thread_idx = gl_GlobalInvocationID;
-  tidx = block_idx_3d_to_tensor4d_idx_with_block_config(
+  TensorIndex4D tidx4d = block_idx_3d_to_tensor4d_idx_with_block_config(
       inp, thread_idx, inp_block_config);
+  initialize(tidx);
+  tidx.data[0] = uvec4(tidx4d.data);
 #endif
 
   if (out_of_bounds(tidx, inp)) {

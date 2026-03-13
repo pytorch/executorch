@@ -59,7 +59,9 @@ from executorch.backends.arm._passes import (
     DecomposeGluPass,
     DecomposeGroupedConvPass,
     DecomposeGroupNormPass,
+    DecomposeIndexCopyPass,
     DecomposeIndexSelectToGatherPass,
+    DecomposeIndexTensorToGatherPass,
     DecomposeIntPowPass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
@@ -91,6 +93,7 @@ from executorch.backends.arm._passes import (
     DecomposeTrilPass,
     DecomposeUnfoldToGatherPass,
     DecomposeVarPass,
+    DecomposeWhereScalarOtherPass,
     DecorateFp32toInt32CastingPass,
     FoldAndAnnotateQParamsPass,
     FuseBatchNorm2dPass,
@@ -121,6 +124,7 @@ from executorch.backends.arm._passes import (
     RewriteLeLtToGeGtPass,
     RewriteMatmulPass,
     RewritePadPass,
+    RewriteSlicePass,
     RewriteUpsamplePass,
     ScalarsToAttributePass,
     SizeAdjustInputPass,
@@ -306,6 +310,9 @@ class ArmPassManager(PassManager):
                 DecomposeEmbeddingPass(),
                 DecomposeIndexSelectToGatherPass(),
                 DecomposeStridedSliceCopyPass(),
+                DecomposeSliceScatterPass(),
+                AccumulateIndexPutPass(),
+                DecomposeIndexTensorToGatherPass(),
                 Conv1dUnsqueezePass(),
             ]
         )
@@ -328,8 +335,6 @@ class ArmPassManager(PassManager):
         # Node transformation passes (post scalar-removal)
         self.add_passes(
             [
-                DecomposeSliceScatterPass(),
-                AccumulateIndexPutPass(),
                 RewriteIndexPutPass(),
                 RewriteBoolBitwiseToLogicalPass(),
                 DecomposeRemainderPass(),
@@ -374,6 +379,7 @@ class ArmPassManager(PassManager):
                 RewriteConvPass(exported_program),
                 RewriteMatmulPass(),
                 RewritePadPass(),
+                RewriteSlicePass(),
             ]
         )
 
@@ -414,6 +420,7 @@ class ArmPassManager(PassManager):
         # Transformation passes (pre scalar -> tensor)
         self.add_passes(
             [
+                DecomposeIndexCopyPass(tfa_pass=True),
                 DecomposeSelectScatterPass(tfa_pass=True),
                 DecomposeSliceScatterPass(tfa_pass=True),
                 ConvertInt64ConstOpsToInt32Pass(tfa_pass=True),
@@ -430,6 +437,7 @@ class ArmPassManager(PassManager):
                 DecomposeRemainderPass(tfa_pass=True),
                 DecomposeFloorDividePass(tfa_pass=True),
                 DecomposeDivTensorModePass(tfa_pass=True),
+                DecomposeWhereScalarOtherPass(tfa_pass=True),
             ]
         )
 
