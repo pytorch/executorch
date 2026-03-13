@@ -13,7 +13,7 @@ import functools
 import logging
 import operator
 from dataclasses import dataclass, replace
-from typing import Callable, cast, List, Optional, Sequence
+from typing import Callable, cast, Iterable, List, Optional, Sequence
 
 import torch
 import torch.fx
@@ -391,14 +391,16 @@ def _annotate_output(node: Node, quant_property: _QuantProperty):
 
 
 def _match_pattern(
-    node: Node, pattern: List[List], filter_fn: Optional[Callable[[Node], bool]] = None
+    node: Node,
+    pattern: Sequence[Iterable[object]],
+    filter_fn: Optional[Callable[[Node], bool]] = None,
 ) -> bool:
     """Check whether a node chain matches a pattern.
 
     Verify a chain of ancestors -> node -> descendants matches the provided
     ``pattern``. If ``filter_fn`` is provided, require all nodes in the chain
-    to pass the filter. Each pattern element is a list of disjunctive node
-    targets.
+    to pass the filter. Each pattern element is an iterable of disjunctive
+    node targets.
 
     """
     if len(pattern) < 1:
@@ -432,16 +434,16 @@ def _match_pattern(
     return left_condition and right_condition
 
 
-_conv_ops = [
+_conv_ops = {
     torch.ops.aten.conv1d.default,
     torch.ops.aten.conv2d.default,
     torch.ops.aten.conv2d.padding,
     torch.ops.aten.conv_transpose2d.input,
     torch.ops.aten.conv3d.default,
     torch.ops.aten.conv3d.padding,
-]
+}
 
-_one_to_one = [
+_one_to_one = {
     torch.ops.aten.abs.default,
     torch.ops.aten.ceil.default,
     torch.ops.aten.erf.default,
@@ -479,9 +481,9 @@ _one_to_one = [
     torch.ops.aten.acos.default,
     torch.ops.aten.cumsum.default,
     torch.ops.aten.tan.default,
-]
+}
 
-_one_to_one_shared_input_qspec = [
+_one_to_one_shared_input_qspec = {
     torch.ops.aten.squeeze.default,
     torch.ops.aten.squeeze_copy.default,
     torch.ops.aten.squeeze_copy.dim,
@@ -539,9 +541,9 @@ _one_to_one_shared_input_qspec = [
     # dequant -> neg -> requant chain.
     torch.ops.aten.neg.default,
     torch.ops.aten.detach_copy.default,
-]
+}
 
-_one_to_one_shared_input_or_input_act_qspec = [
+_one_to_one_shared_input_or_input_act_qspec = {
     torch.ops.aten.alias.default,
     torch.ops.aten.clone.default,
     torch.ops.aten.hardtanh.default,
@@ -562,7 +564,7 @@ _one_to_one_shared_input_or_input_act_qspec = [
     torch.ops.aten.alias_copy.default,
     torch.ops.aten.pixel_shuffle.default,
     torch.ops.aten.pixel_unshuffle.default,
-]
+}
 
 
 def get_quant_properties(  # noqa: C901
@@ -615,13 +617,13 @@ def get_quant_properties(  # noqa: C901
         node,
         [
             _conv_ops,
-            [torch.ops.aten.batch_norm.default],
-            [
+            {torch.ops.aten.batch_norm.default},
+            {
                 torch.ops.aten.relu.default,
                 torch.ops.aten.relu_.default,
                 torch.ops.aten.hardtanh.default,
                 torch.ops.aten.hardtanh_.default,
-            ],
+            },
         ],
         filter_fn=any_or_hardtanh_min_zero,
     ):
@@ -644,7 +646,7 @@ def get_quant_properties(  # noqa: C901
         node,
         [
             _conv_ops,
-            [torch.ops.aten.batch_norm.default],
+            {torch.ops.aten.batch_norm.default},
         ],
     ):
         if node.target in _conv_ops:
@@ -654,23 +656,21 @@ def get_quant_properties(  # noqa: C901
                 _QuantProperty(1, conv_weight_qspec, mark_annotated=True),
                 _QuantProperty(2, bias_qspec, optional=True, mark_annotated=True),
             ]
-        elif node.target in [
-            torch.ops.aten.batch_norm.default,
-        ]:
+        elif node.target in {torch.ops.aten.batch_norm.default}:
             quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif not is_symmetric and _match_pattern(
         node,
         [
-            [
+            {
                 *_conv_ops,
                 torch.ops.aten.linear.default,
-            ],
-            [
+            },
+            {
                 torch.ops.aten.relu.default,
                 torch.ops.aten.relu_.default,
                 torch.ops.aten.hardtanh.default,
                 torch.ops.aten.hardtanh_.default,
-            ],
+            },
         ],
         any_or_hardtanh_min_zero,
     ):
