@@ -156,14 +156,26 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
         kernel = cast(fx.Node, node.args[1]).meta["val"].shape
         kernel_h = kernel[2]
         kernel_w = kernel[3] if len(kernel) > 3 else 1
-        if input_C > 65536 or input_H > 65536 or input_W > 65536:
+        if (
+            input_C > 65536
+            or input_C < 1
+            or input_H > 65536
+            or input_H < 1
+            or input_W > 65536
+            or input_W < 1
+        ):
             self.reporter.report_reject(
                 node,
                 f"HWC must be in the range [1;65536] but got {input_C} {input_H} {input_W}",
             )
             return False
 
-        if kernel_h * kernel_w > 4096 or kernel_h > 64:
+        if (
+            kernel_h * kernel_w > 4096
+            or kernel_h * kernel_w < 1
+            or kernel_h > 64
+            or kernel_h < 1
+        ):
             self.reporter.report_reject(
                 node,
                 f"Kernel Height * Kernel Width must be in the range [1;4096] but got {kernel_h * kernel_w}",
@@ -187,7 +199,7 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
         return True
 
     def _is_node_supported_u55(self, node: fx.Node) -> bool:
-        """Enforce Ethos-U55-specific constraints (Vela 4.5.0).
+        """Enforce Ethos-U55-specific constraints (Vela 5.0.0).
 
         Check channel dimensions, kernel sizes, and stride/pad/dilation
         combinations permitted on U55.
