@@ -1630,6 +1630,7 @@ class TestQNNFloatingPointOperator(TestQNN):
         modules = [
             RmsNorm(),  # noqa: F405
             RmsNorm(eps=1e-5),  # noqa: F405
+            RmsNorm(elementwise_affine=False),  # noqa: F405
         ]
         sample_input = (torch.randn([1, 1, 1, 4]),)
         for i, module in enumerate(modules):
@@ -3958,6 +3959,7 @@ class TestQNNQuantizedOperator(TestQNN):
         modules = [
             RmsNorm(),  # noqa: F405
             RmsNorm(eps=1e-5),  # noqa: F405
+            RmsNorm(elementwise_affine=False),  # noqa: F405
         ]
         sample_input = (torch.randn([1, 1, 1, 4]),)
         for i, module in enumerate(modules):
