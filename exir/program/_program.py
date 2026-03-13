@@ -59,6 +59,7 @@ from executorch.exir.passes.insert_write_back_for_buffers_pass import (
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
+from executorch.exir.passes.propagate_input_spec import propagate_input_spec
 from executorch.exir.passes.quant_fusion_pass import quant_fusion_and_const_prop_pass
 from executorch.exir.passes.reinplace import reinplace_pass
 from executorch.exir.passes.remove_graph_asserts_pass import (
@@ -912,6 +913,9 @@ def _generate_edge_program(
         ],
     )
 
+    # Recursively tag placeholder nodes in submodules with input specs.
+    propagate_input_spec(edge_program)
+
     # Lift the tensor constants created in ScalarToTensorPass
     edge_program = lift_constant_tensor_pass(edge_program)
 
@@ -1231,6 +1235,11 @@ def _gen_edge_manager_for_partitioners(
 
                     # First pass of decompositions with this partitioner's preserved ops
                     program = program.run_decompositions(table)
+
+                    # Propagate input specs so that check_constraints
+                    # can identify parameter nodes inside control flow
+                    # submodules (e.g. cond/map/scan branches).
+                    propagate_input_spec(program)
 
                     # Filter ops using EDGE_DO_NOT_DECOMP
                     temp_partitioner_dict = {name: [curr_partitioner]}
