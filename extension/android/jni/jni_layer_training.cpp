@@ -19,6 +19,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <stdexcept>
 
 #include <fbjni/ByteBuffer.h>
 #include <fbjni/fbjni.h>
@@ -79,7 +80,7 @@ class ExecuTorchTrainingJni
       executorch::jni_helper::throwExecutorchException(
           static_cast<uint32_t>(modelLoaderRes.error()),
           "Failed to open model file: " + modelPathString);
-      return;
+      throw std::runtime_error("Failed to open model file: " + modelPathString);
     }
     auto modelLoader =
         std::make_unique<FileDataLoader>(std::move(modelLoaderRes.get()));
@@ -92,7 +93,7 @@ class ExecuTorchTrainingJni
         executorch::jni_helper::throwExecutorchException(
             static_cast<uint32_t>(dataLoaderRes.error()),
             "Failed to open ptd file: " + dataPathString);
-        return;
+        throw std::runtime_error("Failed to open ptd file: " + dataPathString);
       }
       dataLoader =
           std::make_unique<FileDataLoader>(std::move(dataLoaderRes.get()));

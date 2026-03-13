@@ -42,19 +42,28 @@ void setExecutorchPendingException(
   if (!env) {
     return;
   }
+  if (env->ExceptionCheck()) {
+    // Preserve any preexisting pending exception; do not overwrite it here.
+    return;
+  }
+
+  // If an exception is already pending, preserve it and do not overwrite.
+  if (env->ExceptionCheck()) {
+    return;
+  }
 
   jclass exceptionClass =
       env->FindClass("org/pytorch/executorch/ExecutorchRuntimeException");
-  if (!exceptionClass || env->ExceptionCheck()) {
+  if (env->ExceptionCheck()) {
     if (exceptionClass) {
       env->DeleteLocalRef(exceptionClass);
     }
-    env->ExceptionClear();
-    jclass runtimeClass = env->FindClass("java/lang/RuntimeException");
-    if (runtimeClass) {
-      env->ThrowNew(runtimeClass, details.c_str());
-      env->DeleteLocalRef(runtimeClass);
-    }
+    // Preserve the original exception; do not clear or overwrite it.
+    return;
+  }
+
+  if (!exceptionClass) {
+    // FindClass failed. It should have set a pending exception; leave it as is.
     return;
   }
 
@@ -62,20 +71,33 @@ void setExecutorchPendingException(
       exceptionClass,
       "makeExecutorchException",
       "(ILjava/lang/String;)Ljava/lang/RuntimeException;");
-  if (!factoryMethod || env->ExceptionCheck()) {
-    env->ExceptionClear();
+  if (env->ExceptionCheck()) {
+    // Preserve the original exception; do not overwrite it.
+    env->DeleteLocalRef(exceptionClass);
+    return;
+  }
+
+  if (!factoryMethod) {
+    // If the factory method cannot be found but no exception is pending,
+    // fall back to throwing the base Executorch exception.
     env->ThrowNew(exceptionClass, details.c_str());
     env->DeleteLocalRef(exceptionClass);
     return;
   }
 
   jstring jDetails = env->NewStringUTF(details.c_str());
-  if (!jDetails || env->ExceptionCheck()) {
-    env->ExceptionClear();
-    env->ThrowNew(exceptionClass, details.c_str());
+  if (env->ExceptionCheck()) {
+    // Preserve the original exception; do not overwrite it.
     if (jDetails) {
       env->DeleteLocalRef(jDetails);
     }
+    env->DeleteLocalRef(exceptionClass);
+    return;
+  }
+
+  if (!jDetails) {
+    // NewStringUTF returned null without setting an exception; fall back.
+    env->ThrowNew(exceptionClass, details.c_str());
     env->DeleteLocalRef(exceptionClass);
     return;
   }
