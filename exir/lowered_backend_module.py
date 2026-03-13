@@ -288,6 +288,8 @@ class LoweredBackendModule(torch.nn.Module):
                 args=(delegate_node, i),
             )
             getitem_node.meta["val"] = delegate_node.meta["val"][i]
+            # FIX: Set spec at creation so SpecPropPass/MemoryPlanningPass don't need to synthesize it (issue #16032).
+            getitem_node.meta["spec"] = make_spec(delegate_node.meta["val"][i])
             getitem_nodes.append(getitem_node)
         lowered_exported_program.graph.output(getitem_nodes)
 
