@@ -84,7 +84,7 @@ def annotate_custom(gm: torch.fx.GraphModule) -> None:
             continue
 
         # skip annotation if it is already annotated
-        if _is_annotated([node]):
+        if Q_ANNOTATION_KEY in node.meta and node.meta[Q_ANNOTATION_KEY]._annotated:
             continue
 
         input_qspec_map = {}
