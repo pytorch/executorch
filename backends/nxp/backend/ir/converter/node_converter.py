@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from abc import ABC, abstractmethod
+from typing import Callable
 
 import torch
 
@@ -180,6 +181,33 @@ class NodeConverter(ABC):
 
         # Node not quantized
         return True
+
+    @staticmethod
+    def is_node_alone_in_partition(
+        node: Node, partition_list: list[Partition], filter_fn: Callable
+    ):
+        """Return True if `node` is the only node in its partition for which `filter_fn`
+        returns True.
+
+        The function finds the unique partition containing `node` and applies
+        `filter_fn` to all nodes in that partition. If only one node passes the
+        predicate — and that node is `node` — the function returns True.
+
+        :param node: The torch.Node to check.
+        :param partition_list: List of proposed partitions.
+        :param filter_fn: Predicate applied to nodes in the partition.
+                        `node` is considered alone if it is the only node
+                        for which this predicate returns True.
+        """
+        partitions = [p for p in partition_list if node in p.nodes]
+        if len(partitions) != 1:
+            return False  # Should never happen
+
+        partition = partitions[0]
+        filtered_partition_nodes = list(filter(filter_fn, partition.nodes))
+        return (
+            len(filtered_partition_nodes) == 1 and filtered_partition_nodes[0] == node
+        )
 
     def assert_convertible(self, node):
         """Assert that the call `is_supported()` returns `True`. Otherwise, raise an exception and print an
