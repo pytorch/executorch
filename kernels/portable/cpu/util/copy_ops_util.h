@@ -282,5 +282,9 @@ void get_view_as_real_copy_out_target_size(
     const Tensor& self,
     executorch::aten::SizesType* out_sizes);
 
+void get_view_as_complex_copy_out_target_size(
+    const Tensor& self,
+    executorch::aten::SizesType* out_sizes);
+
 } // namespace executor
 } // namespace torch
