@@ -218,7 +218,7 @@ void kernel_reduction_then_map_2d(
         int64_t padding_y = p_H;
         int64_t dilation_y = d_H;
 
-        size_t in_y = stride_y * out_y + dilation_y * w_y - padding_y;
+        ssize_t in_y = stride_y * out_y + dilation_y * w_y - padding_y;
         in_coord[in_dim - 2] = in_y;
 
         for (const auto w_x : c10::irange(k_W)) {
@@ -226,11 +226,11 @@ void kernel_reduction_then_map_2d(
           int64_t padding_x = p_W;
           int64_t dilation_x = d_W;
 
-          size_t in_x = stride_x * out_x + dilation_x * w_x - padding_x;
+          ssize_t in_x = stride_x * out_x + dilation_x * w_x - padding_x;
           in_coord[in_dim - 1] = in_x;
 
-          const bool x_in_bound = (in_x < in_W);
-          const bool y_in_bound = (in_y < in_H);
+          const bool x_in_bound = (in_x >= 0 && in_x < in_W);
+          const bool y_in_bound = (in_y >= 0 && in_y < in_H);
           const bool xy_in_bound = (x_in_bound && y_in_bound);
 
           CTYPE in_val = 0;
