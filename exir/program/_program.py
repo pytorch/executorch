@@ -176,7 +176,7 @@ def _get_updated_graph_signature(
             continue
 
         assert i < len(
-            old_signature.input_specs
+           old_signature.input_specs
         ), "Number of inputs changed after transformation"
         old_input_spec = old_signature.input_specs[i]
         arg = (

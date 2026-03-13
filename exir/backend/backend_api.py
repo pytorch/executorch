@@ -13,18 +13,14 @@ from functools import singledispatch
 from typing import Dict, Generator, List, Mapping
 
 import torch
-
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-
 from executorch.exir.backend.partitioner import Partitioner, PartitionResult
 from executorch.exir.backend.utils import (
     _maybe_duplicate_constant_nodes,
     is_identical_graph,
 )
-
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
-
 from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.lowered_backend_module import (
     _unsafe_adjust_original_program,
@@ -32,12 +28,14 @@ from executorch.exir.lowered_backend_module import (
     create_submodule_from_nodes,
     LoweredBackendModule,
 )
+from executorch.exir.passes import remove_unused_parameters_pass
+from executorch.exir.passes.propagate_input_spec import propagate_input_spec
 from executorch.exir.program._fake_program import (
     get_fake_program,
     update_to_real_program,
 )
-from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.export.exported_program import ExportedProgram, InputSpec, OutputSpec
+from torch.export.graph_signature import InputKind
 
 
 @singledispatch
@@ -163,7 +161,6 @@ def validation_disabled() -> Generator[None, None, None]:
 def _get_node_list_with_same_tag(
     tagged_graph_module: torch.fx.GraphModule,
     tag: str,
-    owning_program: ExportedProgram,
 ) -> List[torch.fx.Node]:
     """
     Return a list of nodes with the same tag.
@@ -175,11 +172,13 @@ def _get_node_list_with_same_tag(
             if node.op == "output":
                 raise RuntimeError(f"output node {node} should not be tagged")
             if node.op == "placeholder":
-                if (
-                    not is_param(owning_program, node)
-                    and not is_buffer(owning_program, node)
-                    and not is_lifted_tensor_constant(owning_program, node)
-                ):
+                input_spec = node.meta.get("input_spec", None)
+                is_constant = input_spec is not None and input_spec.kind in (
+                    InputKind.PARAMETER,
+                    InputKind.BUFFER,
+                    InputKind.CONSTANT_TENSOR,
+                )
+                if not is_constant:
                     raise RuntimeError(
                         f"placeholder node for non-params, non-buffer, and non-tensor constants should not be tagged: {node} "
                     )
@@ -254,7 +253,7 @@ def _insert_lowered_submodule(
         _unsafe_adjust_original_program(
             owning_program,
             call_delegate_node,
-            toplevel_input_specs_to_delete,
+            {},
             toplevel_output_specs_to_delete,
         )
 
@@ -271,9 +270,7 @@ def _partition_and_lower_one_graph_module(
     for tag, delegation_spec in partition_result.partition_tags.items():
         # Create partition with nodes containing this tag. There should only be
         # one contained submodule per tag
-        node_list = _get_node_list_with_same_tag(
-            tagged_graph_module, tag, owning_program
-        )
+        node_list = _get_node_list_with_same_tag(tagged_graph_module, tag)
 
         if len(node_list) == 0:
             logging.debug(f"Did not find any nodes for tag {tag}")
@@ -418,6 +415,11 @@ def _(
 
     update_to_real_program(tagged_exported_program, edge_program)
 
+    # Refresh input_spec metadata on all placeholder nodes. Transforms
+    # applied between to_edge() and to_backend() may have created new
+    # placeholder nodes that lack input_spec metadata.
+    propagate_input_spec(tagged_exported_program)
+
     for tag, _ in partitioner_result.partition_tags.items():
         _maybe_duplicate_constant_nodes(tagged_exported_program, tag)
 
@@ -432,17 +434,21 @@ def _(
     for node in tagged_graph_module.graph.nodes:
         node.meta.pop("delegation_tag", None)
 
-    return ExportedProgram(
-        root=tagged_graph_module,
-        graph=tagged_graph_module.graph,
-        graph_signature=tagged_exported_program.graph_signature,
-        state_dict=tagged_exported_program.state_dict,
-        range_constraints=copy.deepcopy(tagged_exported_program.range_constraints),
-        module_call_graph=copy.deepcopy(tagged_exported_program.module_call_graph),
-        example_inputs=None,
-        constants=tagged_exported_program.constants,
-        verifiers=[tagged_exported_program.verifier],
+    # Clean up unused parameters after delegation
+    lowered_program = remove_unused_parameters_pass(
+        ExportedProgram(
+            root=tagged_graph_module,
+            graph=tagged_graph_module.graph,
+            graph_signature=tagged_exported_program.graph_signature,
+            state_dict=tagged_exported_program.state_dict,
+            range_constraints=copy.deepcopy(tagged_exported_program.range_constraints),
+            module_call_graph=copy.deepcopy(tagged_exported_program.module_call_graph),
+            example_inputs=None,
+            constants=tagged_exported_program.constants,
+            verifiers=[tagged_exported_program.verifier],
+        )
     )
+    return lowered_program
 
 
 def _create_partitions_in_graph_module(
@@ -455,9 +461,7 @@ def _create_partitions_in_graph_module(
     for tag, delegation_spec in partition_result.partition_tags.items():
         # Create partition with nodes containing this tag. There should only be
         # one contained submodule per tag
-        node_list = _get_node_list_with_same_tag(
-            tagged_graph_module, tag, owning_program
-        )
+        node_list = _get_node_list_with_same_tag(tagged_graph_module, tag)
 
         if len(node_list) == 0:
             logging.debug(f"Did not find any nodes for tag {tag}")
@@ -737,6 +741,9 @@ def _(
 
         update_to_real_program(tagged_exported_program, edge_program)
 
+        # Refresh input_spec metadata on all placeholder nodes.
+        propagate_input_spec(tagged_exported_program)
+
         for tag, _ in partitioner_result.partition_tags.items():
             _maybe_duplicate_constant_nodes(tagged_exported_program, tag)
 
@@ -770,21 +777,25 @@ def _(
             tagged_exported_program = method_to_tagged_exported_program[method_name]
             tagged_exported_program._validate()
             remove_used_metadata(tagged_exported_program.graph_module.graph)
-            partitioned_and_lowered_exported_programs[method_name] = ExportedProgram(
-                root=tagged_exported_program.graph_module,
-                graph=tagged_exported_program.graph_module.graph,
-                graph_signature=tagged_exported_program.graph_signature,
-                state_dict=tagged_exported_program.state_dict,
-                range_constraints=copy.deepcopy(
-                    tagged_exported_program.range_constraints
-                ),
-                module_call_graph=copy.deepcopy(
-                    tagged_exported_program.module_call_graph
-                ),
-                example_inputs=None,
-                constants=tagged_exported_program.constants,
-                verifiers=[tagged_exported_program.verifier],
+            # Clean up unused parameters after delegation
+            lowered_program = remove_unused_parameters_pass(
+                ExportedProgram(
+                    root=tagged_exported_program.graph_module,
+                    graph=tagged_exported_program.graph_module.graph,
+                    graph_signature=tagged_exported_program.graph_signature,
+                    state_dict=tagged_exported_program.state_dict,
+                    range_constraints=copy.deepcopy(
+                        tagged_exported_program.range_constraints
+                    ),
+                    module_call_graph=copy.deepcopy(
+                        tagged_exported_program.module_call_graph
+                    ),
+                    example_inputs=None,
+                    constants=tagged_exported_program.constants,
+                    verifiers=[tagged_exported_program.verifier],
+                )
             )
+            partitioned_and_lowered_exported_programs[method_name] = lowered_program
         else:
             # this edge program wasn't partitioned, so we can just return it as is
             partitioned_and_lowered_exported_programs[method_name] = (

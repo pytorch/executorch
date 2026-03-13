@@ -17,8 +17,10 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
+from executorch.exir.graph_module import get_control_flow_submodules
 
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
+from torch.fx import GraphModule
 from torch.fx.passes.infra.partitioner import Partition
 
 
@@ -137,16 +139,16 @@ class DSJ:
         return [list(group) for group in groups.values()]
 
 
-class ConfigerationBasedPartitioner(Partitioner):
+class ConfigurationBasedPartitioner(Partitioner):
     def __init__(
         self,
         delegation_spec: DelegationSpec,
         partitioner_configs: Iterable[PartitionerConfig],
     ):
         """
-        Configeration based partitioner. We supply the partitioner with a set of configerations
+        Configuration based partitioner. We supply the partitioner with a set of configurations
         which describe the node type, constraints, and any dependencies required to be partitioned
-        with the node. We use the configerations to partition the graph module.
+        with the node. We use the configurations to partition the graph module.
         """
         super().__init__()
         # Initialize partitioner configs map {"target_name": PartitionerConfig}
@@ -197,13 +199,12 @@ class ConfigerationBasedPartitioner(Partitioner):
         return (do_not_decomp, filter_fn)
 
     def get_matched_nodes_from_configs(
-        self, ep: ExportedProgram
+        self, ep: ExportedProgram, gm: GraphModule
     ) -> List[List[torch.fx.Node]]:
         # disjoint set union for merging partitions
         dsj = DSJ()
 
         # gather supported nodes
-        gm = ep.graph_module
         for node in gm.graph.nodes:
             if node.op != "call_function":
                 continue
@@ -233,14 +234,29 @@ class ConfigerationBasedPartitioner(Partitioner):
 
         return dsj.gen_groups()
 
-    def generate_partitions(self, ep: ExportedProgram) -> List[Partition]:
-        matched_nodes = self.get_matched_nodes_from_configs(ep)
+    def _generate_partitions_recursive(
+        self, ep: ExportedProgram, gm: GraphModule
+    ) -> List[Partition]:
+        """
+        Generate partitions for the given graph module, including recursing into
+        submodules.
+        """
+        matched_nodes = self.get_matched_nodes_from_configs(ep, gm)
+
         # create partitions
         partitions = generate_grouped_partitions_from_list_of_nodes(
-            ep.graph_module,
+            gm,
             matched_nodes,
         )
+
+        # recurse into submodules
+        for _, submodule, _ in get_control_flow_submodules(gm):
+            partitions += self._generate_partitions_recursive(ep, submodule)
+
         return partitions
+
+    def generate_partitions(self, ep: ExportedProgram) -> List[Partition]:
+        return self._generate_partitions_recursive(ep, ep.graph_module)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         partitions = self.generate_partitions(exported_program)
@@ -260,3 +276,7 @@ class ConfigerationBasedPartitioner(Partitioner):
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags
         )
+
+
+# Alias for backward compatibility. It used to be misspelled.
+ConfigerationBasedPartitioner = ConfigurationBasedPartitioner
