@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,7 +18,6 @@ input_t3 = Tuple[torch.Tensor, torch.LongTensor, torch.Tensor]
 
 
 class Int64InputModel(torch.nn.Module):
-
     def forward(self, weights: torch.Tensor, indices: torch.Tensor):
         return torch.embedding(weights, indices)
 
@@ -51,7 +50,10 @@ def test_insert_int32_casts_after_int64_placeholders_tosa_FP():
 
 
 class UpcastToInt64ForIndexCopyInplaceModel(torch.nn.Module):
-    aten_op = "torch.ops.aten.index_copy_.default"
+    aten_ops = [
+        "torch.ops.dim_order_ops._to_dim_order_copy.default",
+        "torch.ops.aten.index_put_.default",
+    ]
 
     def forward(self, x: torch.Tensor, index: torch.LongTensor, y: torch.Tensor):
         return x.index_copy_(0, index, y)
@@ -66,24 +68,22 @@ class UpcastToInt64ForIndexCopyInplaceModel(torch.nn.Module):
 
 def test_insert_int32_casts_after_int64_placeholders_tosa_INT_upcast_for_index_copy_inplace():
     module = UpcastToInt64ForIndexCopyInplaceModel()
+
+    # In TOSA+INT index_copy_ decomposes to index_put_
+    # There should also be cast from int64 to int32
     pipeline = TosaPipelineINT[input_t3](
         module,
         module.get_inputs(),
-        aten_op=module.aten_op,
+        aten_op=UpcastToInt64ForIndexCopyInplaceModel.aten_ops,
     )
-    pipeline.pop_stage("check.quant_nodes")
-    pipeline.change_args(
-        "check_count.exir",
-        {
-            "torch.ops.higher_order.executorch_call_delegate": 0,
-        },
-    )
-    pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.run()
 
 
 class UpcastToInt64ForIndexCopyModel(torch.nn.Module):
-    aten_op = "torch.ops.aten.index_copy.default"
+    aten_ops = [
+        "torch.ops.dim_order_ops._to_dim_order_copy.default",
+        "torch.ops.aten.index_put.default",
+    ]
 
     def forward(self, x: torch.Tensor, index: torch.LongTensor, y: torch.Tensor):
         return x.index_copy(0, index, y)
@@ -98,17 +98,12 @@ class UpcastToInt64ForIndexCopyModel(torch.nn.Module):
 
 def test_insert_int32_casts_after_int64_placeholders_tosa_INT_upcast_for_index_copy():
     module = UpcastToInt64ForIndexCopyModel()
+
+    # In TOSA+INT index_copy decomposes to index_put
+    # There should also be cast from int64 to int32
     pipeline = TosaPipelineINT[input_t3](
         module,
         module.get_inputs(),
-        aten_op=module.aten_op,
+        aten_op=UpcastToInt64ForIndexCopyModel.aten_ops,
     )
-    pipeline.pop_stage("check.quant_nodes")
-    pipeline.change_args(
-        "check_count.exir",
-        {
-            "torch.ops.higher_order.executorch_call_delegate": 0,
-        },
-    )
-    pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.run()
