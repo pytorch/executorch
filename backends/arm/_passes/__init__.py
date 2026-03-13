@@ -99,7 +99,11 @@ from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,
     QuantizeClampArgumentsPass,
 )
+from .eliminate_rescale_before_mul_pass import (  # noqa
+    EliminateRescaleBeforeMulPass,
+)
 from .fuse_batch_norm2d_pass import FuseBatchNorm2dPass  # noqa
+from .fuse_consecutive_rescales_pass import FuseConsecutiveRescalesPass  # noqa
 from .fuse_constant_ops_pass import (  # noqa
     ComputeConstantOpsAOTPass,
     FuseConstantArgsPass,
