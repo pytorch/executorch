@@ -148,3 +148,57 @@ TEST_F(BufferDataSinkTest, illegalAlignment) {
     ASSERT_EQ(buffer_data_sink_ret.error(), Error::InvalidArgument);
   }
 }
+
+TEST_F(BufferDataSinkTest, WriteInPlaceTensorZeroFill) {
+  // Test writing with nullptr ptr and non-zero length (in-place tensor case)
+  // This should zero-fill the buffer
+  size_t length = 16;
+
+  Result<size_t> ret = buffer_data_sink_->write(nullptr, length);
+  ASSERT_EQ(ret.error(), Error::Ok);
+
+  size_t offset = ret.get();
+  EXPECT_NE(offset, static_cast<size_t>(-1));
+
+  // Verify the data in the buffer is zero-filled
+  const uint8_t* buffer_data = buffer_.data() + offset;
+  for (size_t i = 0; i < length; ++i) {
+    EXPECT_EQ(buffer_data[i], 0);
+  }
+}
+
+TEST_F(BufferDataSinkTest, WriteZeroLengthReturnsCurrentOffset) {
+  // Test writing with zero length returns current offset
+  Result<size_t> ret = buffer_data_sink_->write(nullptr, 0);
+  ASSERT_EQ(ret.error(), Error::Ok);
+  EXPECT_EQ(ret.get(), 0);
+
+  // Write some data first
+  TensorFactory<ScalarType::Float> tf;
+  Tensor tensor = tf.make({1, 4}, {1.0, 2.0, 3.0, 4.0});
+  Result<size_t> write_ret =
+      buffer_data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
+  ASSERT_EQ(write_ret.error(), Error::Ok);
+
+  // Zero length write should return current offset
+  size_t current_used = buffer_data_sink_->get_used_bytes();
+  Result<size_t> ret2 = buffer_data_sink_->write(nullptr, 0);
+  ASSERT_EQ(ret2.error(), Error::Ok);
+  EXPECT_EQ(ret2.get(), current_used);
+}
+
+TEST_F(BufferDataSinkTest, WriteNullptrWithZeroLengthReturnsCurrentOffset) {
+  // Write some data first to advance the offset
+  TensorFactory<ScalarType::Float> tf;
+  Tensor tensor = tf.make({1, 4}, {1.0, 2.0, 3.0, 4.0});
+  Result<size_t> write_ret =
+      buffer_data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
+  ASSERT_EQ(write_ret.error(), Error::Ok);
+
+  size_t current_used = buffer_data_sink_->get_used_bytes();
+
+  // Writing nullptr with zero length should return current offset
+  Result<size_t> ret = buffer_data_sink_->write(nullptr, 0);
+  ASSERT_EQ(ret.error(), Error::Ok);
+  EXPECT_EQ(ret.get(), current_used);
+}
