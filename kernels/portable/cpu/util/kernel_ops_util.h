@@ -229,8 +229,8 @@ void kernel_reduction_then_map_2d(
           size_t in_x = stride_x * out_x + dilation_x * w_x - padding_x;
           in_coord[in_dim - 1] = in_x;
 
-          const bool x_in_bound = (in_x >= 0 && in_x < in_W);
-          const bool y_in_bound = (in_y >= 0 && in_y < in_H);
+          const bool x_in_bound = (in_x < in_W);
+          const bool y_in_bound = (in_y < in_H);
           const bool xy_in_bound = (x_in_bound && y_in_bound);
 
           CTYPE in_val = 0;
@@ -383,6 +383,17 @@ void apply_kernel_2d_reduce_then_map_fn(
 //
 // Operator specific utility functions
 //
+
+bool check_adaptive_avg_pool2d_args(
+    const Tensor& in,
+    const IntArrayRef output_size,
+    const Tensor& out);
+
+void get_adaptive_avg_pool2d_out_target_size(
+    const Tensor& in,
+    const IntArrayRef output_size,
+    executorch::aten::SizesType* const out_sizes,
+    size_t* const out_ndim);
 
 bool check_arange_args(double start, double end, double step, Tensor& out);
 
