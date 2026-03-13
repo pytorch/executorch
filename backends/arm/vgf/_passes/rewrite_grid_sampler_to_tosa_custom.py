@@ -9,6 +9,7 @@ from typing import Set, Type
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm.constants import NHWC_INVERSE_ORDER, NHWC_ORDER
 from executorch.backends.arm.tosa.dialect.ops.custom import register_fake_tosa
 from executorch.backends.arm.vgf.shaders.grid_sampler import (
     build_grid_sampler_2d_payload,
@@ -18,6 +19,7 @@ from executorch.backends.arm.vgf.shaders.grid_sampler import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from torch.fx.passes.shape_prop import _extract_tensor_metadata
 
 
 @register_fake_tosa(GRID_SAMPLER_2D_OPERATOR_NAME)
@@ -26,19 +28,27 @@ def _grid_sampler_2d_custom_fake_impl(
 ) -> list[torch.Tensor]:
     _ = (operator_name, domain_name, implementation_attrs)
     input_tensor, grid = inputs
-    output_shape = (
-        input_tensor.shape[0],
-        input_tensor.shape[1],
-        grid.shape[1],
-        grid.shape[2],
-    )
     return [
         torch.empty(
-            output_shape,
+            (
+                input_tensor.shape[0],
+                grid.shape[1],
+                grid.shape[2],
+                input_tensor.shape[-1],
+            ),
             dtype=input_tensor.dtype,
             device=input_tensor.device,
         )
     ]
+
+
+def _set_fake_tensor_meta(node: torch.fx.Node, value) -> None:
+    node.meta["val"] = value
+    if isinstance(value, list):
+        if value:
+            node.meta["tensor_meta"] = _extract_tensor_metadata(value[0])
+    else:
+        node.meta["tensor_meta"] = _extract_tensor_metadata(value)
 
 
 class RewriteGridSamplerToTosaCustomPass(ArmPass):
@@ -79,10 +89,23 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
             )
 
             with graph_module.graph.inserting_before(node):
+                nhwc_input = create_node(
+                    graph_module.graph,
+                    op_target=exir_ops.edge.aten.permute_copy.default,
+                    args=(input_tensor, list(NHWC_ORDER)),
+                    from_node=input_tensor,
+                )
+                _set_fake_tensor_meta(
+                    nhwc_input,
+                    exir_ops.edge.aten.permute_copy.default(
+                        input_tensor.meta["val"], list(NHWC_ORDER)
+                    ),
+                )
+
                 custom_node = create_node(
                     graph_module.graph,
                     op_target=exir_ops.backend.tosa.CUSTOM.default,
-                    args=([input_tensor, grid],),
+                    args=([nhwc_input, grid],),
                     kwargs={
                         "operator_name": GRID_SAMPLER_2D_OPERATOR_NAME,
                         "domain_name": CUSTOM_SHADER_DOMAIN_NAME,
@@ -99,10 +122,31 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
                     args=(custom_node, 0),
                     kwargs={},
                 )
-                # The getitem is a temporary FX node removed during TOSA
-                # serialization. Keep the original tensor metadata until then.
+                custom_output = _grid_sampler_2d_custom_fake_impl(
+                    [nhwc_input.meta["val"], grid.meta["val"]],
+                    GRID_SAMPLER_2D_OPERATOR_NAME,
+                    CUSTOM_SHADER_DOMAIN_NAME,
+                    implementation_attrs,
+                )[0]
+                _set_fake_tensor_meta(custom_node, [custom_output])
                 getitem_node.meta = dict(node.meta)
-                node.replace_all_uses_with(getitem_node)
+                _set_fake_tensor_meta(getitem_node, custom_output)
+
+            with graph_module.graph.inserting_after(getitem_node):
+                output = create_node(
+                    graph_module.graph,
+                    op_target=exir_ops.edge.aten.permute_copy.default,
+                    args=(getitem_node, list(NHWC_INVERSE_ORDER)),
+                    from_node=node,
+                )
+                output.meta = dict(node.meta)
+                _set_fake_tensor_meta(
+                    output,
+                    exir_ops.edge.aten.permute_copy.default(
+                        custom_output, list(NHWC_INVERSE_ORDER)
+                    ),
+                )
+                node.replace_all_uses_with(output)
                 graph_module.graph.erase_node(node)
 
         if modified:
