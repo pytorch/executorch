@@ -71,6 +71,14 @@ class ExecuTorchLlmCallbackJni
         facebook::jni::make_jstring(
             executorch::extension::llm::stats_to_json_string(result)));
   }
+
+  void onError(int errorCode, const std::string& message) const {
+    static auto cls = ExecuTorchLlmCallbackJni::javaClassStatic();
+    static const auto on_error_method =
+        cls->getMethod<void(jint, facebook::jni::local_ref<jstring>)>(
+            "onError");
+    on_error_method(self(), errorCode, facebook::jni::make_jstring(message));
+  }
 };
 
 class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
@@ -200,52 +208,83 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jfloat temperature,
       jint num_bos,
       jint num_eos) {
-    float effective_temperature = temperature >= 0 ? temperature : temperature_;
-    std::string token_buffer;
-    auto token_callback = [callback, &token_buffer](const std::string& token) {
-      token_buffer += token;
-      if (!utf8_check_validity(token_buffer.c_str(), token_buffer.size())) {
-        ET_LOG(
-            Info, "Current token buffer is not valid UTF-8. Waiting for more.");
-        return;
-      }
-      std::string result = token_buffer;
-      token_buffer.clear();
-      callback->onResult(result);
-    };
-
-    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      std::vector<llm::MultimodalInput> inputs = std::move(prefill_inputs_);
-      if (!prompt->toStdString().empty()) {
-        inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
-      }
-      executorch::extension::llm::GenerationConfig config{
-          .echo = static_cast<bool>(echo),
-          .seq_len = seq_len,
-          .temperature = effective_temperature,
-          .num_bos = num_bos,
-          .num_eos = num_eos,
-      };
-      multi_modal_runner_->generate(
-          std::move(inputs),
-          config,
-          token_callback,
-          [callback](const llm::Stats& result) { callback->onStats(result); });
-    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
-      executorch::extension::llm::GenerationConfig config{
-          .echo = static_cast<bool>(echo),
-          .seq_len = seq_len,
-          .temperature = effective_temperature,
-          .num_bos = num_bos,
-          .num_eos = num_eos,
-      };
-      runner_->generate(
-          prompt->toStdString(),
-          config,
-          token_callback,
-          [callback](const llm::Stats& result) { callback->onStats(result); });
+    Error err = Error::Ok;
+    if (!prompt) {
+      err = Error::InvalidArgument;
+      callback->onError(
+          static_cast<int>(err), "generate() failed: prompt must not be null");
+      return static_cast<jint>(err);
     }
-    return 0;
+
+    try {
+      float effective_temperature =
+          temperature >= 0 ? temperature : temperature_;
+      std::string prompt_str = prompt->toStdString();
+      std::string token_buffer;
+      auto token_callback = [callback,
+                             &token_buffer](const std::string& token) {
+        token_buffer += token;
+        if (!utf8_check_validity(token_buffer.c_str(), token_buffer.size())) {
+          ET_LOG(
+              Info,
+              "Current token buffer is not valid UTF-8. Waiting for more.");
+          return;
+        }
+        std::string result = token_buffer;
+        token_buffer.clear();
+        callback->onResult(result);
+      };
+
+      if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
+        std::vector<llm::MultimodalInput> inputs = std::move(prefill_inputs_);
+        if (!prompt_str.empty()) {
+          inputs.emplace_back(llm::MultimodalInput{prompt_str});
+        }
+        executorch::extension::llm::GenerationConfig config{
+            .echo = static_cast<bool>(echo),
+            .seq_len = seq_len,
+            .temperature = effective_temperature,
+            .num_bos = num_bos,
+            .num_eos = num_eos,
+        };
+        err = multi_modal_runner_->generate(
+            std::move(inputs),
+            config,
+            token_callback,
+            [callback](const llm::Stats& result) {
+              callback->onStats(result);
+            });
+      } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
+        executorch::extension::llm::GenerationConfig config{
+            .echo = static_cast<bool>(echo),
+            .seq_len = seq_len,
+            .temperature = effective_temperature,
+            .num_bos = num_bos,
+            .num_eos = num_eos,
+        };
+        err = runner_->generate(
+            prompt_str,
+            config,
+            token_callback,
+            [callback](const llm::Stats& result) {
+              callback->onStats(result);
+            });
+      } else {
+        err = Error::InvalidArgument;
+      }
+      if (err != Error::Ok) {
+        callback->onError(
+            static_cast<int>(err),
+            "generate() failed with error code " +
+                std::to_string(static_cast<int>(err)));
+      }
+    } catch (const std::exception& e) {
+      callback->onError(
+          static_cast<int>(Error::Internal),
+          std::string("generate() threw: ") + e.what());
+      return static_cast<jint>(Error::Internal);
+    }
+    return static_cast<jint>(err);
   }
 
   // Returns status_code
