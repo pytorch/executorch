@@ -123,7 +123,6 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
         },
         cmd = genrule_cmd,
         default_outs = ["."],
-        labels = ["uses_dotslash"],
     )
 
     suffix = "_no_volk" if no_volk else ""
