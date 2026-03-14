@@ -123,32 +123,35 @@ class LCMOpenVINOExporter:
         dataset = datasets.load_dataset(
             dataset_name,
             split="train",
-            trust_remote_code=True,
+            trust_remote_code=False,
         ).shuffle(seed=42)
         original_unet = pipeline.unet
         wrapped_unet = UNetWrapper(pipeline.unet, pipeline.unet.config)
         pipeline.unet = wrapped_unet
         # Run inference for data collection
         pbar = tqdm(total=calibration_dataset_size)
-        for batch in dataset:
-            if dataset_column not in batch:
-                raise RuntimeError(
-                    f"Column '{dataset_column}' was not found in dataset '{dataset_name}'"
+        try:
+            for batch in dataset:
+                if dataset_column not in batch:
+                    raise RuntimeError(
+                        f"Column '{dataset_column}' was not found in dataset '{dataset_name}'"
+                    )
+                prompt = batch[dataset_column]
+                tokenized = pipeline.tokenizer.encode(prompt)
+                if len(tokenized["input_ids"]) > pipeline.tokenizer.model_max_length:
+                    continue
+                # Run the pipeline
+                pipeline(
+                    prompt, num_inference_steps=num_inference_steps, height=512, width=512
                 )
-            prompt = batch[dataset_column]
-            tokenized = pipeline.tokenizer.encode(prompt)
-            if len(tokenized["input_ids"]) > pipeline.tokenizer.model_max_length:
-                continue
-            # Run the pipeline
-            pipeline(
-                prompt, num_inference_steps=num_inference_steps, height=512, width=512
-            )
-            calibration_data.extend(wrapped_unet.captured_args)
-            wrapped_unet.captured_args = []
-            pbar.update(len(calibration_data) - pbar.n)
-            if pbar.n >= calibration_dataset_size:
-                break
-        pipeline.unet = original_unet
+                calibration_data.extend(wrapped_unet.captured_args)
+                wrapped_unet.captured_args = []
+                pbar.update(len(calibration_data) - pbar.n)
+                if pbar.n >= calibration_dataset_size:
+                    break
+        finally:
+            pipeline.unet = original_unet
+            pbar.close()
         return calibration_data
 
     def quantize_unet_model(

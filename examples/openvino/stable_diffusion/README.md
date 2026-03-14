@@ -26,7 +26,7 @@ python export_lcm.py \
     --dtype fp16
 ```
 
-To quantize the Unet with 8a8w and weights-only 16a8w quantize other models
+To quantize the UNet with 8-bit activations and 8-bit weights (8a8w) and apply weights-only 16-bit quantization (16a8w) to the remaining components, run:
 ```bash
 python export_lcm.py \
     --model_id SimianLuo/LCM_Dreamshaper_v7 \
