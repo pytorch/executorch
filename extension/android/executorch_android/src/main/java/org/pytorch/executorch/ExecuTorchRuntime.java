@@ -50,8 +50,9 @@ public class ExecuTorchRuntime {
   /**
    * Heuristic check: compares reported available memory against model file size. A true result does
    * not guarantee that loading will succeed (runtime overhead, fragmentation, other allocations may
-   * still cause OOM). A false result may indicate the model is too large, but can be a false negative
-   * (for example with mmap-based loads, shared page cache behavior, or compressed model files).
+   * still cause OOM). A false result may indicate the model is too large, but can be a false
+   * negative (for example with mmap-based loads, shared page cache behavior, or compressed model
+   * files).
    *
    * @param context Android context for accessing system services (must not be null)
    * @param modelPath Path to the model file (must not be null or empty)
