@@ -37,9 +37,7 @@ class TestT5ForConditionalGeneration:
     }
 
     ops_after_partitioner_INT = {
-        "executorch_exir_dialects_edge__ops_aten_where_self": 3,
         "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 7,
-        "torch.ops.aten.scalar_tensor.default": 3,
         "torch.ops.higher_order.executorch_call_delegate": 3,
     }
 
