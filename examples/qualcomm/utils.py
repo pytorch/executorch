@@ -371,9 +371,9 @@ def make_quantizer(
     act_symmetric=False,
     is_qat=False,
     submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
-    eps=None,
     backend=QnnExecuTorchBackendType.kHtpBackend,
     soc_model="SM8750",
+    eps=None,
 ):
     quantizer = QnnQuantizer(backend=backend, soc_model=getattr(QcomChipset, soc_model))
     quantizer.add_custom_quant_annotations(custom_annotations)
