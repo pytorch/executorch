@@ -1,0 +1,10 @@
+{
+  "model_id": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+  "tokenizer_type": "qwen3_tts_tokenizer_v2",
+  "tts_model_type": "base",
+  "output_sample_rate": 24000,
+  "notes": [
+    "Text generation uses Qwen3-TTS talker in Python helper.",
+    "ExecuTorch export in this bring-up targets speech tokenizer decode path first."
+  ]
+}

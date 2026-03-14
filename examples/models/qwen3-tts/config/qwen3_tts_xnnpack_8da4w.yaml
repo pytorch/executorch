@@ -1,0 +1,10 @@
+model:
+  converted_dir: "qwen3_tts_artifacts"
+  metadata_file: "decoder_metadata.json"
+
+export:
+  backend: "xnnpack"
+  dtype: "fp32"
+  fixed_codes_len: 1200
+  qlinear: "8da4w"
+  qlinear_group_size: 32

@@ -1,0 +1,48 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "qwen3-tts-base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/qwen3-tts",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
+      }
+    },
+    {
+      "name": "qwen3-tts-cpu",
+      "displayName": "Qwen3-TTS runner (CPU)",
+      "inherits": [
+        "qwen3-tts-base"
+      ]
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "qwen3-tts-cpu",
+      "displayName": "Build Qwen3-TTS runner (CPU)",
+      "configurePreset": "qwen3-tts-cpu",
+      "targets": [
+        "qwen3_tts_runner"
+      ]
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "qwen3-tts-cpu",
+      "displayName": "Configure and build Qwen3-TTS runner (CPU)",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "qwen3-tts-cpu"
+        },
+        {
+          "type": "build",
+          "name": "qwen3-tts-cpu"
+        }
+      ]
+    }
+  ]
+}
