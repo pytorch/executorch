@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.abspath("."))
 
 # Add the source tree so we can import executorch without installing it.
 # This helps building the docs in environments where the package isn't installed.
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "src")))
 
 # -- Project information -----------------------------------------------------
 
