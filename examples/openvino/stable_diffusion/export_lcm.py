@@ -99,7 +99,7 @@ class LCMOpenVINOExporter:
                 )
                 timestep = (
                     timestep.unsqueeze(0)
-                    if timestep.dim() == 0 and isinstance(timestep, torch.Tensor)
+                    if isinstance(timestep, torch.Tensor) and timestep.dim() == 0
                     else timestep
                 )
                 processed_args = (
@@ -123,7 +123,7 @@ class LCMOpenVINOExporter:
         dataset = datasets.load_dataset(
             dataset_name,
             split="train",
-            trust_remote_code=False,
+            streaming=True,
         ).shuffle(seed=42)
         original_unet = pipeline.unet
         wrapped_unet = UNetWrapper(pipeline.unet, pipeline.unet.config)
@@ -137,12 +137,16 @@ class LCMOpenVINOExporter:
                         f"Column '{dataset_column}' was not found in dataset '{dataset_name}'"
                     )
                 prompt = batch[dataset_column]
-                tokenized = pipeline.tokenizer.encode(prompt)
-                if len(tokenized["input_ids"]) > pipeline.tokenizer.model_max_length:
+                tokenized_prompt = pipeline.tokenizer.encode(prompt)
+                if len(tokenized_prompt) > pipeline.tokenizer.model_max_length:
                     continue
                 # Run the pipeline
                 pipeline(
-                    prompt, num_inference_steps=num_inference_steps, height=512, width=512
+                    prompt,
+                    num_inference_steps=num_inference_steps,
+                    height=512,
+                    width=512,
+                    output_type="latent",
                 )
                 calibration_data.extend(wrapped_unet.captured_args)
                 wrapped_unet.captured_args = []
@@ -166,7 +170,7 @@ class LCMOpenVINOExporter:
             self.calibration_dataset_name,
             self.calibration_dataset_column,
         )
-        model = model.graph_module()
+        model = model.module()
         quantized_model = quantize_model(
             model,
             mode=QuantizationMode.INT8_TRANSFORMER,
@@ -183,7 +187,7 @@ class LCMOpenVINOExporter:
         dummy_inputs,
     ) -> torch.export.ExportedProgram:
         """Apply weights-only compression for non-UNet components."""
-        model = model.graph_module()
+        model = model.module()
         ov_quantizer = OpenVINOQuantizer(mode=QuantizationMode.INT8WO_ASYM)
         quantized_model = nncf.experimental.torch.fx.compress_pt2e(
             model, quantizer=ov_quantizer
@@ -405,7 +409,7 @@ Examples:
         "--calibration_dataset_name",
         type=str,
         default="google-research-datasets/conceptual_captions",
-        help="HuggingFace dataset name used for UNet calibration when dtype=int8",
+        help="HuggingFace dataset used for UNet calibration when INT8 quantization is enabled",
     )
 
     parser.add_argument(
