@@ -82,16 +82,20 @@ Error register_kernels_internal(const Span<const Kernel> kernels) {
 
   for (const auto& kernel : kernels) {
     // Linear search. This is fine if the number of kernels is small.
+    bool is_duplicate = false;
     for (size_t i = 0; i < num_registered_kernels; i++) {
       Kernel k = registered_kernels[i];
       if (strcmp(kernel.name_, k.name_) == 0 &&
           kernel.kernel_key_ == k.kernel_key_) {
-        ET_LOG(Error, "Re-registering %s, from %s", k.name_, lib_name);
+        ET_LOG(Info, "Skipping duplicate registration of %s, from %s", k.name_, lib_name);
         ET_LOG_KERNEL_KEY(k.kernel_key_);
-        return Error::RegistrationAlreadyRegistered;
+        is_duplicate = true;
+        break;
       }
     }
-    registered_kernels[num_registered_kernels++] = kernel;
+    if (!is_duplicate) {
+      registered_kernels[num_registered_kernels++] = kernel;
+    }
   }
   ET_LOG(
       Debug,
