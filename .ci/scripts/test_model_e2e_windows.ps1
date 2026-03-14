@@ -13,7 +13,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$QuantName,
     [string]$ModelDir = ".",
-    [string]$ExpectedCudaVersion = ""
+    [string]$ExpectedCudaVersion = "",
+    [string]$Mode = ""
 )
 
 Set-StrictMode -Version Latest
@@ -23,6 +24,15 @@ $ProgressPreference = "SilentlyContinue"
 
 if ($Device -ne "cuda-windows") {
     throw "Unsupported device '$Device'. Expected 'cuda-windows'."
+}
+
+if ($Mode -ne "") {
+    if ($Mode -notin @("vr-streaming", "vr-offline")) {
+        throw "Unsupported mode '$Mode'. Supported modes: vr-streaming, vr-offline"
+    }
+    if ($HfModel -ne "mistralai/Voxtral-Mini-4B-Realtime-2602") {
+        throw "Mode '$Mode' can only be used with Voxtral Realtime model"
+    }
 }
 
 Write-Host "Testing model: $HfModel (quantization: $QuantName)"
@@ -79,7 +89,7 @@ switch ($HfModel) {
         $runnerTarget = "voxtral_realtime_runner"
         $runnerPath = "voxtral_realtime"
         $runnerPreset = "voxtral-realtime-cuda"
-        $expectedOutput = "Loading audio from"
+        $expectedOutput = "Quilter"
         $preprocessor = "preprocessor.pte"
         $tokenizerUrl = ""
         $tokenizerFile = "tekken.json"
@@ -207,6 +217,9 @@ try {
                 "--audio_path", (Join-Path -Path $resolvedModelDir -ChildPath $audioFile),
                 "--preprocessor_path", (Join-Path -Path $resolvedModelDir -ChildPath $preprocessor)
             )
+            if ($Mode -ne "vr-offline") {
+                $runnerArgs += "--streaming"
+            }
         }
     }
 
