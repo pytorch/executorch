@@ -212,8 +212,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     if (!prompt) {
       err = Error::InvalidArgument;
       callback->onError(
-          static_cast<int>(err),
-          "generate() failed: prompt must not be null");
+          static_cast<int>(err), "generate() failed: prompt must not be null");
       return static_cast<jint>(err);
     }
 
