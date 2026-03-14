@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,8 +9,8 @@
 
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
-from executorch.backends.cadence.aot.program_builder import ProgramBuilder
 from executorch.backends.cadence.aot.to_out_var_pass import CadenceToOutVarPass
+from executorch.backends.test.program_builder import ProgramBuilder
 from executorch.exir import ExecutorchBackendConfig
 from executorch.exir.dialects._ops import ops as exir_ops
 from later.unittest import TestCase

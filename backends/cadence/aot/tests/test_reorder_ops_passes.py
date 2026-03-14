@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -13,7 +14,6 @@ from typing import cast
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
 from executorch.backends.cadence.aot.fuse_ops import FuseQuantDequantToRequantizePass
-from executorch.backends.cadence.aot.graph_builder import GraphBuilder
 from executorch.backends.cadence.aot.pass_utils import (
     count_node,
     get_compute_nodes_in_gm,
@@ -28,6 +28,7 @@ from executorch.backends.cadence.aot.reorder_ops import (
     PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView,
     SinkOpsCloserToUsePass,
 )
+from executorch.backends.test.graph_builder import GraphBuilder
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassBase, PassResult
 from torch.utils import _pytree as pytree

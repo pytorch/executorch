@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,7 +15,6 @@ from typing import cast, List, Optional, Sequence
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
 from executorch.backends.cadence.aot import compiler
-from executorch.backends.cadence.aot.graph_builder import GraphBuilder
 from executorch.backends.cadence.aot.memory_constraints import (
     ConstraintsGenPass,
     MemConstraints,
@@ -33,12 +33,13 @@ from executorch.backends.cadence.aot.pass_utils import (
     count_node,
     register_cadence_pass,
 )
-from executorch.backends.cadence.aot.program_builder import ProgramBuilder
 from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.backends.cadence.aot.utils import (
     get_default_memory_config,
     MemoryConfig,
 )
+from executorch.backends.test.graph_builder import GraphBuilder
+from executorch.backends.test.program_builder import ProgramBuilder
 from executorch.exir import EdgeProgramManager, ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.memory_planning import (

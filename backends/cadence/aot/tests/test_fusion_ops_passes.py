@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -28,9 +29,9 @@ from executorch.backends.cadence.aot.fuse_ops import (
     FuseTransposeOrPermuteOpPairsPass,
     HierarchicalCSEPass,
 )
-from executorch.backends.cadence.aot.graph_builder import GraphBuilder
 from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_match
 from executorch.backends.cadence.aot.typing_stubs import expand
+from executorch.backends.test.graph_builder import GraphBuilder
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import PassResult, ProxyValue

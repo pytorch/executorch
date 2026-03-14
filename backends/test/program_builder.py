@@ -1,11 +1,15 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 # pyre-strict
 
 from enum import auto, Enum
 from typing import Optional
 
-from executorch.backends.cadence.aot.graph_builder import GraphBuilder
+from executorch.backends.test.graph_builder import GraphBuilder
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager
 from executorch.exir.pass_base import ProxyValue
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
