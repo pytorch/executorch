@@ -73,9 +73,13 @@ void setExecutorchPendingException(
   }
 
   if (!factoryMethod) {
-    // If the factory method cannot be found but no exception is pending,
-    // fall back to throwing the base Executorch exception.
-    env->ThrowNew(exceptionClass, details.c_str());
+    // ExecutorchRuntimeException lacks a (String) ctor, so fall back to
+    // a standard RuntimeException with the details message.
+    jclass runtimeExClass = env->FindClass("java/lang/RuntimeException");
+    if (!env->ExceptionCheck() && runtimeExClass) {
+      env->ThrowNew(runtimeExClass, details.c_str());
+      env->DeleteLocalRef(runtimeExClass);
+    }
     env->DeleteLocalRef(exceptionClass);
     return;
   }
@@ -91,8 +95,14 @@ void setExecutorchPendingException(
   }
 
   if (!jDetails) {
-    // NewStringUTF returned null without setting an exception; fall back.
-    env->ThrowNew(exceptionClass, details.c_str());
+    // NewStringUTF returned null without setting an exception; fall back to
+    // a standard RuntimeException since ExecutorchRuntimeException lacks a
+    // (String) ctor.
+    jclass runtimeExClass = env->FindClass("java/lang/RuntimeException");
+    if (!env->ExceptionCheck() && runtimeExClass) {
+      env->ThrowNew(runtimeExClass, details.c_str());
+      env->DeleteLocalRef(runtimeExClass);
+    }
     env->DeleteLocalRef(exceptionClass);
     return;
   }

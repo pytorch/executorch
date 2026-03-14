@@ -216,23 +216,25 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       return static_cast<jint>(err);
     }
 
-    float effective_temperature = temperature >= 0 ? temperature : temperature_;
-    std::string prompt_str = prompt->toStdString();
-    std::string token_buffer;
-    auto token_callback = [callback, &token_buffer](const std::string& token) {
-      token_buffer += token;
-      if (!utf8_check_validity(token_buffer.c_str(), token_buffer.size())) {
-        ET_LOG(
-            Info, "Current token buffer is not valid UTF-8. Waiting for more.");
-        return;
-      }
-      std::string result = token_buffer;
-      token_buffer.clear();
-      callback->onResult(result);
-    };
-
-    err = Error::Ok;
     try {
+      float effective_temperature =
+          temperature >= 0 ? temperature : temperature_;
+      std::string prompt_str = prompt->toStdString();
+      std::string token_buffer;
+      auto token_callback = [callback,
+                             &token_buffer](const std::string& token) {
+        token_buffer += token;
+        if (!utf8_check_validity(token_buffer.c_str(), token_buffer.size())) {
+          ET_LOG(
+              Info,
+              "Current token buffer is not valid UTF-8. Waiting for more.");
+          return;
+        }
+        std::string result = token_buffer;
+        token_buffer.clear();
+        callback->onResult(result);
+      };
+
       if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
         std::vector<llm::MultimodalInput> inputs = std::move(prefill_inputs_);
         if (!prompt_str.empty()) {
@@ -270,17 +272,17 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       } else {
         err = Error::InvalidArgument;
       }
+      if (err != Error::Ok) {
+        callback->onError(
+            static_cast<int>(err),
+            "generate() failed with error code " +
+                std::to_string(static_cast<int>(err)));
+      }
     } catch (const std::exception& e) {
       callback->onError(
           static_cast<int>(Error::Internal),
           std::string("generate() threw: ") + e.what());
       return static_cast<jint>(Error::Internal);
-    }
-    if (err != Error::Ok) {
-      callback->onError(
-          static_cast<int>(err),
-          "generate() failed with error code " +
-              std::to_string(static_cast<int>(err)));
     }
     return static_cast<jint>(err);
   }

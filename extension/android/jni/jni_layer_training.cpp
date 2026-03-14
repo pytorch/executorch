@@ -80,7 +80,7 @@ class ExecuTorchTrainingJni
       executorch::jni_helper::throwExecutorchException(
           static_cast<uint32_t>(modelLoaderRes.error()),
           "Failed to open model file: " + modelPathString);
-      return;
+      throw std::runtime_error("Failed to open model file: " + modelPathString);
     }
     auto modelLoader =
         std::make_unique<FileDataLoader>(std::move(modelLoaderRes.get()));
@@ -93,7 +93,7 @@ class ExecuTorchTrainingJni
         executorch::jni_helper::throwExecutorchException(
             static_cast<uint32_t>(dataLoaderRes.error()),
             "Failed to open ptd file: " + dataPathString);
-        return;
+        throw std::runtime_error("Failed to open ptd file: " + dataPathString);
       }
       dataLoader =
           std::make_unique<FileDataLoader>(std::move(dataLoaderRes.get()));
@@ -154,7 +154,9 @@ class ExecuTorchTrainingJni
           static_cast<uint32_t>(result.error()),
           "Execution of forward_backward for method " +
               methodName->toStdString() + " failed");
-      return facebook::jni::JArrayClass<JEValue>::newArray(0);
+      throw std::runtime_error(
+          "Execution of forward_backward failed with error code " +
+          std::to_string(static_cast<uint32_t>(result.error())));
     }
 
     facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> jresult =
@@ -176,8 +178,9 @@ class ExecuTorchTrainingJni
       executorch::jni_helper::throwExecutorchException(
           static_cast<uint32_t>(result.error()),
           "Getting named parameters for method " + method + " failed");
-      return facebook::jni::JHashMap<jstring, TensorHybrid::javaobject>::
-          create();
+      throw std::runtime_error(
+          "Getting named parameters failed with error code " +
+          std::to_string(static_cast<uint32_t>(result.error())));
     }
     facebook::jni::local_ref<
         facebook::jni::JHashMap<jstring, TensorHybrid::javaobject>>
@@ -200,8 +203,9 @@ class ExecuTorchTrainingJni
       executorch::jni_helper::throwExecutorchException(
           static_cast<uint32_t>(result.error()),
           "Getting named gradients for method " + method + " failed");
-      return facebook::jni::JHashMap<jstring, TensorHybrid::javaobject>::
-          create();
+      throw std::runtime_error(
+          "Getting named gradients failed with error code " +
+          std::to_string(static_cast<uint32_t>(result.error())));
     }
     facebook::jni::local_ref<
         facebook::jni::JHashMap<jstring, TensorHybrid::javaobject>>
@@ -327,6 +331,7 @@ class SGDHybrid : public facebook::jni::HybridClass<SGDHybrid> {
     if (result != ::executorch::runtime::Error::Ok) {
       executorch::jni_helper::throwExecutorchException(
           static_cast<uint32_t>(result), "SGD optimization step failed");
+      throw std::runtime_error("SGD optimization step failed");
     }
   }
 
