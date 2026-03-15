@@ -86,7 +86,9 @@ POOL_SHARE_OUTPUT_TARGETS = {
 class CortexMQuantizationConfig(QuantizationConfig):
     """Configures quantization, while enforcing cortex-m specific constraints."""
 
-    def get_input_act_qspec(self, node: Node | None = None) -> QuantizationSpec | None:
+    def get_input_act_qspec(
+        self, node: Node | None = None, input_node: Node | None = None
+    ) -> QuantizationSpec | None:
         """
         Returns the configured input activation spec, no specific adjustments.
         """

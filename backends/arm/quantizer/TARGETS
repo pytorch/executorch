@@ -17,9 +17,11 @@ runtime.python_library(
     deps = [
         ":arm_quantizer_utils",
         ":quantization_annotator",
+        ":quantizer_support",
         "//executorch/backends/arm:constants",
         "//executorch/backends/arm:ethosu",
         "//executorch/backends/arm:vgf",
+        "//executorch/backends/cortex_m/quantizer:quantizer",
         "//executorch/backends/arm/tosa:specification",
         "//executorch/backends/arm:arm_compile_spec",
         "//caffe2:torch",
@@ -45,6 +47,16 @@ runtime.python_library(
     deps = [
         ":quantization_config",
         "//pytorch/ao:torchao",
+    ],
+)
+
+runtime.python_library(
+    name = "quantizer_support",
+    srcs = ["quantizer_support.py"],
+    deps = [
+        ":quantization_annotator",
+        "//caffe2:torch",
+        "//executorch/backends/cortex_m/quantizer:quantizer",
     ],
 )
 
