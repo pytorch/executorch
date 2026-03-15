@@ -137,6 +137,9 @@ from .rewrite_bool_to_fp32_cast_via_int8_pass import (  # noqa
     RewriteBoolToFp32CastViaInt8Pass,
 )
 from .rewrite_conv_pass import RewriteConvPass  # noqa
+from .rewrite_high_rank_singleton_permute_pass import (  # noqa
+    RewriteHighRankSingletonPermutePass,
+)
 from .rewrite_index_put_pass import RewriteIndexPutPass  # noqa
 from .rewrite_le_lt_to_ge_gt_pass import RewriteLeLtToGeGtPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
