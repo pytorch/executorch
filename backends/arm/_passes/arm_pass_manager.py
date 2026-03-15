@@ -97,6 +97,13 @@ from executorch.backends.arm._passes import (
     DecorateFp32toInt32CastingPass,
     FoldAndAnnotateQParamsPass,
     FuseBatchNorm2dPass,
+    FuseConsecutiveTransposesPass,
+    FuseTransposeReshapeTransposePass,
+    FuseTransposeReshapeLinearPass,
+    FuseTransposeSandwichPass,
+    PropagateTransposesThroughConcatPass,
+    PropagateTransposesThroughRescalePass,
+    FoldConstantTransposePass,
     FuseConstantArgsPass,
     FuseDuplicateUsersPass,
     FuseEqualPlaceholdersPass,
@@ -386,9 +393,16 @@ class ArmPassManager(PassManager):
         # Postprocessing/cleanup passes
         self.add_passes(
             [
-                CastInt64BuffersToInt32Pass(exported_program),
+            CastInt64BuffersToInt32Pass(exported_program),
                 FuseEqualPlaceholdersPass(exported_program),
-                ToTosaMemoryFormatPass(exported_program),
+            ToTosaMemoryFormatPass(exported_program),
+                FoldConstantTransposePass(exported_program),
+                PropagateTransposesThroughConcatPass(),
+                PropagateTransposesThroughRescalePass(),
+                FuseConsecutiveTransposesPass(),
+                FuseTransposeReshapeLinearPass(),
+                FuseTransposeReshapeTransposePass(),
+                FuseTransposeSandwichPass(),
                 RemoveNoopPass(),
                 InsertRescalePass(),
             ]

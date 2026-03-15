@@ -63,7 +63,7 @@ def vela_bin_pack_io(prefix, data):
 def vela_compile(
     tosa_flatbuffer: bytes,
     args: List[str],
-    verbose: bool = False,
+    verbose: bool = True,
     intermediate_path: str | None = None,
 ):
     """Compile a TOSA graph to a binary stream for ArmBackendEthosU using

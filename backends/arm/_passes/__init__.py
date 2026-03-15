@@ -102,10 +102,25 @@ from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     QuantizeClampArgumentsPass,
 )
 from .fuse_batch_norm2d_pass import FuseBatchNorm2dPass  # noqa
+from .fuse_consecutive_transposes_pass import FuseConsecutiveTransposesPass  # noqa
+from .fuse_transpose_reshape_transpose_pass import (  # noqa
+    FuseTransposeReshapeTransposePass,
+)
+from .fuse_transpose_reshape_linear_pass import (  # noqa
+    FuseTransposeReshapeLinearPass,
+)
+from .fuse_transpose_sandwich_pass import FuseTransposeSandwichPass  # noqa
+from .propagate_transposes_through_rescale_pass import (  # noqa
+    PropagateTransposesThroughRescalePass,
+)
+from .propagate_transposes_through_concat_pass import (  # noqa
+    PropagateTransposesThroughConcatPass,
+)
 from .fuse_constant_ops_pass import (  # noqa
     ComputeConstantOpsAOTPass,
     FuseConstantArgsPass,
 )
+from .fold_constant_transpose_pass import FoldConstantTransposePass  # noqa
 from .fuse_duplicate_users_pass import FuseDuplicateUsersPass  # noqa
 from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
