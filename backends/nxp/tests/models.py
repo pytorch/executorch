@@ -191,6 +191,17 @@ class SliceTensorModule(torch.nn.Module):
         return x
 
 
+class HardTanhModule(torch.nn.Module):
+    def __init__(self, min_val, max_val, inplace=True):
+        super().__init__()
+        self.hardtanh = torch.nn.Hardtanh(
+            min_val=min_val, max_val=max_val, inplace=inplace
+        )
+
+    def forward(self, x):
+        return self.hardtanh(x)
+
+
 class SliceTensorConvModule(torch.nn.Module):
     def __init__(self, dims, starts, ends, in_channels, out_channels):
         super().__init__()
