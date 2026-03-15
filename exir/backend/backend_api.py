@@ -32,7 +32,6 @@ from executorch.exir.lowered_backend_module import (
     create_submodule_from_nodes,
     LoweredBackendModule,
 )
-from executorch.exir.passes.propagate_device_pass import PropagateDevicePass
 from executorch.exir.program._fake_program import (
     get_fake_program,
     update_to_real_program,
@@ -428,9 +427,6 @@ def _(
         tagged_exported_program,
     )
 
-    # Propagate device metadata from delegate CompileSpecs onto TensorSpecs
-    PropagateDevicePass()(tagged_graph_module)
-
     # Partitioner added delegation tags to the graph module nodes,
     # we make sure to remove them after we finished partition_and_lower
     for node in tagged_graph_module.graph.nodes:
@@ -768,13 +764,6 @@ def _(
             method_to_submodule_nodes,
             method_to_tagged_exported_program,
         )
-
-    # Propagate device metadata from delegate CompileSpecs onto TensorSpecs
-    for (
-        method_name,
-        tagged_exported_program,
-    ) in method_to_tagged_exported_program.items():
-        PropagateDevicePass()(tagged_exported_program.graph_module)
 
     for method_name in method_to_edge_program.keys():
         if method_name in method_to_tagged_exported_program:
