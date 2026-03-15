@@ -80,9 +80,7 @@ std::vector<float> load_image(const std::string& path, int target_size) {
   // Resize to target_size x target_size
   std::vector<unsigned char> resized(target_size * target_size * 3);
   stbir_resize_uint8(
-      raw, width, height, 0,
-      resized.data(), target_size, target_size, 0,
-      3);
+      raw, width, height, 0, resized.data(), target_size, target_size, 0, 3);
   stbi_image_free(raw);
 
   // Convert to CHW float with ImageNet normalization
@@ -117,25 +115,48 @@ std::vector<float> generate_random_input(size_t size) {
  */
 const char* get_imagenet_label(int class_id) {
   static const std::unordered_map<int, const char*> labels = {
-      {0, "tench"}, {1, "goldfish"}, {2, "great white shark"},
-      {6, "stingray"}, {15, "robin"}, {65, "sea snake"},
-      {99, "goose"}, {207, "golden retriever"}, {208, "Labrador retriever"},
-      {229, "Old English sheepdog"}, {232, "Border collie"},
-      {243, "bull mastiff"}, {258, "Samoyed"},
-      {281, "tabby cat"}, {282, "tiger cat"}, {283, "Persian cat"},
+      {0, "tench"},
+      {1, "goldfish"},
+      {2, "great white shark"},
+      {6, "stingray"},
+      {15, "robin"},
+      {65, "sea snake"},
+      {99, "goose"},
+      {207, "golden retriever"},
+      {208, "Labrador retriever"},
+      {229, "Old English sheepdog"},
+      {232, "Border collie"},
+      {243, "bull mastiff"},
+      {258, "Samoyed"},
+      {281, "tabby cat"},
+      {282, "tiger cat"},
+      {283, "Persian cat"},
       {285, "Egyptian cat"},
-      {291, "lion"}, {292, "tiger"}, {340, "zebra"},
-      {355, "llama"}, {360, "otter"},
-      {386, "African elephant"}, {388, "giant panda"},
-      {463, "bucket"}, {508, "computer keyboard"},
-      {530, "digital clock"}, {543, "drum"},
-      {620, "laptop"}, {717, "pickup truck"},
-      {751, "racket"}, {779, "school bus"},
-      {817, "sports car"}, {849, "teapot"},
-      {852, "tennis ball"}, {864, "tow truck"},
-      {895, "warplane"}, {920, "traffic light"},
-      {948, "Granny Smith"}, {950, "orange"},
-      {954, "banana"}, {963, "pizza"},
+      {291, "lion"},
+      {292, "tiger"},
+      {340, "zebra"},
+      {355, "llama"},
+      {360, "otter"},
+      {386, "African elephant"},
+      {388, "giant panda"},
+      {463, "bucket"},
+      {508, "computer keyboard"},
+      {530, "digital clock"},
+      {543, "drum"},
+      {620, "laptop"},
+      {717, "pickup truck"},
+      {751, "racket"},
+      {779, "school bus"},
+      {817, "sports car"},
+      {849, "teapot"},
+      {852, "tennis ball"},
+      {864, "tow truck"},
+      {895, "warplane"},
+      {920, "traffic light"},
+      {948, "Granny Smith"},
+      {950, "orange"},
+      {954, "banana"},
+      {963, "pizza"},
   };
   auto it = labels.find(class_id);
   return it != labels.end() ? it->second : nullptr;
@@ -244,8 +265,8 @@ int main(int argc, char** argv) {
   auto output_tensor = output_evalue.toTensor();
   int num_classes = output_tensor.size(output_tensor.dim() - 1);
 
-  std::cout << "Output shape: (" << output_tensor.size(0) << ", "
-            << num_classes << ")" << std::endl;
+  std::cout << "Output shape: (" << output_tensor.size(0) << ", " << num_classes
+            << ")" << std::endl;
 
   // Convert output to float for top-k processing
   std::vector<float> logits_float(num_classes);
@@ -256,8 +277,7 @@ int main(int argc, char** argv) {
       logits_float[i] = static_cast<float>(bf16_ptr[i]);
     }
   } else {
-    const float* float_ptr =
-        output_tensor.template const_data_ptr<float>();
+    const float* float_ptr = output_tensor.template const_data_ptr<float>();
     for (int i = 0; i < num_classes; ++i) {
       logits_float[i] = float_ptr[i];
     }

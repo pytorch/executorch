@@ -69,9 +69,7 @@ def lower_to_executorch(exported_program, backend="cuda", metadata=None):
 
     compile_specs = [CudaBackend.generate_method_name_compile_spec("forward")]
     if backend == "cuda-windows":
-        compile_specs.append(
-            CompileSpec("platform", "windows".encode("utf-8"))
-        )
+        compile_specs.append(CompileSpec("platform", "windows".encode("utf-8")))
     partitioner = [CudaPartitioner(compile_specs)]
 
     constant_methods = {}
@@ -169,9 +167,7 @@ def main():
     }
 
     print(f"Lowering to ExecuTorch with {args.backend} backend...")
-    et = lower_to_executorch(
-        exported, backend=args.backend, metadata=metadata
-    )
+    et = lower_to_executorch(exported, backend=args.backend, metadata=metadata)
 
     # Save the .pte file
     pte_path = os.path.join(args.output_dir, "model.pte")

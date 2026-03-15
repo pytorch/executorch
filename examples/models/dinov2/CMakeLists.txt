@@ -41,13 +41,8 @@ if(TARGET optimized_native_cpu_ops_lib)
 endif()
 
 # Add the required ExecuTorch extensions
-list(
-  APPEND
-  link_libraries
-  extension_module
-  extension_data_loader
-  extension_tensor
-  extension_flat_tensor
+list(APPEND link_libraries extension_module extension_data_loader
+     extension_tensor extension_flat_tensor
 )
 
 # stb_image: lightweight library to load and resize images
@@ -77,9 +72,7 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   endif()
 endif()
 
-target_include_directories(
-  dinov2_runner PUBLIC ${_common_include_directories}
-)
+target_include_directories(dinov2_runner PUBLIC ${_common_include_directories})
 target_link_libraries(dinov2_runner PUBLIC ${link_libraries})
 target_compile_options(dinov2_runner PUBLIC ${_common_compile_options})
 
