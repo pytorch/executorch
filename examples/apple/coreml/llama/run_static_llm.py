@@ -171,6 +171,12 @@ def main():
         default=4,
         help="Number of verification branches for lookahead decoding",
     )
+    parser.add_argument(
+        "--method",
+        type=str,
+        default="forward",
+        help="Method name to run (default: 'forward', use 'base' or 'lora' for multimethod models)",
+    )
 
     args = parser.parse_args()
 
@@ -208,7 +214,8 @@ def main():
     print(f"Loading model from {args.model}...")
     runtime = Runtime.get()
     program = runtime.load_program(args.model)
-    method = program.load_method("forward")
+    print(f"Loading method '{args.method}'...")
+    method = program.load_method(args.method)
 
     metadata = method.metadata
     print(
