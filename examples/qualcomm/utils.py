@@ -201,14 +201,15 @@ class SimpleADB:
             )
             output_callback(result)
         else:
-            subprocess.run(
+            result = subprocess.run(
                 cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
             )
+        if result.returncode != 0:
+            raise RuntimeError(f"adb command failed: {cmds}")
 
     def push(
         self,
         inputs=None,
-        input_list=None,
         files=None,
         backends: Optional[Set[QnnExecuTorchBackendType]] = None,
         init_env=True,
