@@ -10,6 +10,7 @@
 
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/portable_type/device.h>
 #include <executorch/runtime/core/portable_type/scalar_type.h>
 #include <executorch/runtime/core/tensor_shape_dynamism.h>
 
@@ -99,6 +100,8 @@ class TensorImpl {
    * @param strides Strides of the tensor at each dimension. Must contain `dim`
    *     entries.
    * @param dynamism The mutability of the shape of the tensor.
+   * @param device_type The type of device where tensor data resides.
+   * @param device_index The device index for multi-device scenarios.
    */
   TensorImpl(
       ScalarType type,
@@ -107,7 +110,9 @@ class TensorImpl {
       void* data = nullptr,
       DimOrderType* dim_order = nullptr,
       StridesType* strides = nullptr,
-      TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC);
+      TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC,
+      DeviceType device_type = DeviceType::CPU,
+      DeviceIndex device_index = -1);
 
   /**
    * Returns the size of the tensor in bytes.
@@ -174,6 +179,21 @@ class TensorImpl {
   /// Returns the mutability of the shape of the tensor.
   TensorShapeDynamism shape_dynamism() const {
     return shape_dynamism_;
+  }
+
+  /// Returns the device where tensor data resides.
+  Device device() const {
+    return device_;
+  }
+
+  /// Returns the type of device where tensor data resides.
+  DeviceType device_type() const {
+    return device_.type();
+  }
+
+  /// Returns the device index, or -1 if default/unspecified.
+  DeviceIndex device_index() const {
+    return device_.index();
   }
 
   /// Returns a pointer of type T to the constant underlying data blob.
@@ -261,6 +281,9 @@ class TensorImpl {
 
   /// Specifies the mutability of the shape of the tensor.
   const TensorShapeDynamism shape_dynamism_;
+
+  /// Device where tensor data resides (CPU, CUDA, etc.)
+  Device device_;
 };
 
 /**
