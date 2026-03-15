@@ -282,7 +282,8 @@ void add_q8ta_conv2d_dw_node(
     const ValueRef dilation,
     const ValueRef groups,
     const uint32_t activation_type,
-    const ValueRef packed_int8_output) {
+    const ValueRef packed_int8_output,
+    const bool spec_const) {
   Conv2DParams conv_params = create_conv2d_params(
       graph,
       packed_int8_input,
@@ -327,15 +328,20 @@ void add_q8ta_conv2d_dw_node(
   };
 
   std::string kernel_name = "q8ta_conv2d_dw";
+  if (spec_const) {
+    kernel_name += "_spec_const";
+  }
   add_dtype_suffix(kernel_name, graph.dtype_of(packed_weight_scales));
 
   // Pass metadata for both output and input tensors
   vkapi::ParamsBindList param_buffers = {
       graph.buffer_meta_ubo(packed_int8_output),
-      graph.buffer_meta_ubo(packed_int8_input),
-      graph.create_params_buffer(conv_params)};
+      graph.buffer_meta_ubo(packed_int8_input)};
+  if (!spec_const) {
+    param_buffers.append(graph.create_params_buffer(conv_params));
+  }
 
-  // Build spec constants: apply_bias, activation_type + layout constants
+  // Build spec constants: apply_bias, activation_type, layout constants
   vkapi::SpecVarList spec_constants = {
       apply_bias,
       activation_type,
@@ -343,6 +349,22 @@ void add_q8ta_conv2d_dw_node(
       graph.hashed_layout_of(packed_int8_input),
       graph.hashed_layout_of(packed_int8_output),
   };
+
+  if (spec_const) {
+    // Conv2D parameter specialization constants
+    spec_constants.append(
+        static_cast<uint32_t>(conv_params.kernel_size[0]));
+    spec_constants.append(
+        static_cast<uint32_t>(conv_params.kernel_size[1]));
+    spec_constants.append(static_cast<uint32_t>(conv_params.stride[0]));
+    spec_constants.append(static_cast<uint32_t>(conv_params.stride[1]));
+    spec_constants.append(static_cast<uint32_t>(conv_params.padding[0]));
+    spec_constants.append(static_cast<uint32_t>(conv_params.padding[1]));
+    spec_constants.append(
+        static_cast<uint32_t>(conv_params.dilation[0]));
+    spec_constants.append(
+        static_cast<uint32_t>(conv_params.dilation[1]));
+  }
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -442,8 +464,79 @@ void q8ta_conv2d_dw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       packed_int8_output);
 }
 
+void q8ta_conv2d_dw_spec_const(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  int32_t idx = 0;
+  const ValueRef packed_int8_input = args.at(idx++);
+  const ValueRef input_scale = args.at(idx++);
+  const ValueRef input_zp = args.at(idx++);
+  const ValueRef weight_data = args.at(idx++);
+  const ValueRef weight_sums_data = args.at(idx++);
+  const ValueRef weight_scales_data = args.at(idx++);
+  const ValueRef output_scale = args.at(idx++);
+  const ValueRef output_zp = args.at(idx++);
+  const ValueRef bias_data = args.at(idx++);
+  const ValueRef kernel_size = args.at(idx++);
+  const ValueRef stride = args.at(idx++);
+  const ValueRef padding = args.at(idx++);
+  const ValueRef dilation = args.at(idx++);
+  const ValueRef groups = args.at(idx++);
+  const ValueRef activation = args.at(idx++);
+  const ValueRef packed_int8_output = args.at(idx++);
+
+  uint32_t activation_type_val = static_cast<uint32_t>(
+      activation_type_from_string(graph.extract_string(activation)));
+
+  QuantizationConfig weight_quant_config(8, kPerChannel, {});
+
+  ValueRef packed_weight = prepack_quantized_conv2d_dw_weight(
+      graph, weight_quant_config, weight_data, kernel_size);
+
+  ValueRef packed_weight_sums = prepack_standard(
+      graph, weight_sums_data, utils::kBuffer, utils::kWidthPacked);
+
+  ValueRef packed_weight_scales = prepack_standard(
+      graph, weight_scales_data, utils::kBuffer, utils::kWidthPacked);
+
+  TmpTensor dummy_bias(
+      &graph,
+      {},
+      graph.dtype_of(weight_scales_data),
+      utils::kBuffer,
+      utils::kWidthPacked);
+
+  ValueRef packed_bias = dummy_bias.vref;
+  if (graph.val_is_not_none(bias_data)) {
+    packed_bias =
+        prepack_standard(graph, bias_data, utils::kBuffer, utils::kWidthPacked);
+  }
+
+  add_q8ta_conv2d_dw_node(
+      graph,
+      packed_int8_input,
+      input_scale,
+      input_zp,
+      packed_weight,
+      packed_weight_sums,
+      packed_weight_scales,
+      output_scale,
+      output_zp,
+      bias_data,
+      packed_bias,
+      kernel_size,
+      stride,
+      padding,
+      dilation,
+      groups,
+      activation_type_val,
+      packed_int8_output,
+      /*spec_const=*/true);
+}
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(et_vk.q8ta_conv2d_dw.default, q8ta_conv2d_dw);
+  VK_REGISTER_OP(et_vk.q8ta_conv2d_dw.spec_const, q8ta_conv2d_dw_spec_const);
 }
 
 } // namespace vkcompute

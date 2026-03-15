@@ -67,7 +67,8 @@ void add_q8ta_conv2d_dw_node(
     const ValueRef dilation,
     const ValueRef groups,
     const uint32_t activation_type,
-    const ValueRef packed_int8_output);
+    const ValueRef packed_int8_output,
+    const bool spec_const = false);
 
 void add_conv2d_dw_q8ta_q8csw_q8to_4w4c_node(
     ComputeGraph& graph,
@@ -107,7 +108,8 @@ void add_q8ta_conv2d_node(
     const ValueRef dilation,
     const ValueRef groups,
     const uint32_t activation_type,
-    const ValueRef packed_int8_output);
+    const ValueRef packed_int8_output,
+    const bool spec_const = false);
 
 void add_q8ta_conv2d_pw_node(
     ComputeGraph& graph,
@@ -123,7 +125,8 @@ void add_q8ta_conv2d_pw_node(
     const ValueRef packed_bias,
     const uint32_t activation_type,
     const ValueRef packed_int8_output,
-    const int32_t groups = 1);
+    const int32_t groups = 1,
+    const bool spec_const = false);
 
 std::vector<int64_t> calculate_q8ta_im2col_sizes(
     ComputeGraph* graph,
@@ -142,9 +145,14 @@ void add_q8ta_im2col_node(
     const ValueRef groups,
     const ValueRef packed_int8_output,
     const ValueRef packed_int8_im2col,
-    const int32_t zp);
+    const int32_t zp,
+    const bool spec_const = false);
 
 void q8ta_conv2d_im2col(ComputeGraph& graph, const std::vector<ValueRef>& args);
+
+void q8ta_conv2d_im2col_spec_const(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args);
 
 // Transposed convolution
 
