@@ -190,7 +190,7 @@ void printClassificationOutput(
   FILE* results = fopen(resultsFile.c_str(), "a+");
   // Print classification results and save to results.txt.
   std::cout << "Top1 class " << runPathPrefix << " = " << maxIdx << std::endl;
-  fprintf(results, "%s %d ", runPathPrefix.c_str(), maxIdx);
+  fprintf(results, "%s %zu ", runPathPrefix.c_str(), maxIdx);
   std::cout << "Confidence = " << static_cast<float_t>(maxVal) << std::endl;
   fprintf(results, "%f ", static_cast<float_t>(maxVal));
   fprintf(results, "\n");
@@ -238,8 +238,8 @@ void printOutput(
       default:
         fprintf(
             stderr,
-            "Unsupported tensor data type: %d\n",
-            values[0].toTensor().scalar_type());
+            "Unsupported tensor data type: %hhd\n",
+            static_cast<int8_t>(values[0].toTensor().scalar_type()));
         exit(-1);
     }
   }

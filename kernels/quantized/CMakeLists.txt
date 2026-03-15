@@ -21,7 +21,7 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-set(_common_compile_options -Wno-deprecated-declarations)
+set(_common_compile_options -Wno-deprecated-declarations -Werror)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
@@ -93,7 +93,7 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
                                              kernels_util_all_deps
       )
       target_compile_options(
-        quantized_pybind_kernels_lib PUBLIC ${_common_compile_options}
+        quantized_pybind_kernels_lib PRIVATE ${_common_compile_options}
       )
       target_include_directories(
         quantized_pybind_kernels_lib PUBLIC "${_common_include_directories}"
@@ -141,7 +141,7 @@ add_library(quantized_kernels ${_quantized_kernels__srcs})
 target_link_libraries(
   quantized_kernels PRIVATE executorch_core kernels_util_all_deps
 )
-target_compile_options(quantized_kernels PUBLIC ${_common_compile_options})
+target_compile_options(quantized_kernels PRIVATE ${_common_compile_options})
 # Build a library for _quantized_kernels_srcs
 #
 # quantized_ops_lib: Register quantized ops kernels into Executorch runtime

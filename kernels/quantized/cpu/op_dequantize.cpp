@@ -213,7 +213,7 @@ void dequantize_per_channel_optimized(
     zero_points_data = opt_zero_points.value().const_data_ptr<int64_t>();
   }
   const StridesType axis_stride = in.strides()[axis];
-  const StridesType outer_stride = in.size(axis) * axis_stride;
+  const auto outer_stride = in.size(axis) * axis_stride;
   apply_over_unpacked_dim(
       [in_data,
        out_data,
@@ -222,8 +222,7 @@ void dequantize_per_channel_optimized(
        axis_stride,
        outer_stride,
        quant_min,
-       quant_max](
-          SizesType numel, SizesType outer_idx, SizesType unpacked_dim_idx) {
+       quant_max](size_t numel, size_t outer_idx, size_t unpacked_dim_idx) {
         const int8_t* in_data_local =
             in_data + outer_idx * outer_stride + unpacked_dim_idx * axis_stride;
         const double scale = get_scale(scales, unpacked_dim_idx);

@@ -84,8 +84,10 @@ Error resize_upsample_2d(
     scale_w_out =
         static_cast<double>(output_size.value()[1]) / in.sizes()[dim - 1];
 
-    target_size[dim - 2] = output_size.value()[0];
-    target_size[dim - 1] = output_size.value()[1];
+    target_size[dim - 2] =
+        static_cast<Tensor::SizesType>(output_size.value()[0]);
+    target_size[dim - 1] =
+        static_cast<Tensor::SizesType>(output_size.value()[1]);
   } else {
     ET_LOG(Error, "Invalid output_size or scale_factors");
     return Error::InvalidArgument;
