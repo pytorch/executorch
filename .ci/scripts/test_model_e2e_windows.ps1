@@ -96,8 +96,21 @@ switch ($HfModel) {
         $audioUrl = "https://github.com/voxserv/audio_quality_testing_samples/raw/refs/heads/master/testaudio/16000/test01_20s.wav"
         $audioFile = "poem.wav"
     }
+    "facebook/dinov2-small-imagenet1k-1-layer" {
+        $runnerTarget = "dinov2_runner"
+        $runnerPath = "dinov2"
+        $runnerPreset = "dinov2-cuda"
+        $expectedOutput = "Samoyed"
+        $preprocessor = ""
+        $tokenizerUrl = ""
+        $tokenizerFile = ""
+        $audioUrl = ""
+        $audioFile = ""
+        $imageUrl = "https://github.com/pytorch/hub/raw/master/images/dog.jpg"
+        $imageFile = "test_image.jpg"
+    }
     default {
-        throw "Unsupported model '$HfModel'. Supported: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt"
+        throw "Unsupported model '$HfModel'. Supported: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer"
     }
 }
 
@@ -172,6 +185,9 @@ try {
     if ($audioUrl -ne "") {
         Download-IfNeeded -Url $audioUrl -OutFile (Join-Path -Path $resolvedModelDir -ChildPath $audioFile)
     }
+    if ((Get-Variable -Name imageUrl -ErrorAction SilentlyContinue) -and $imageUrl -ne "") {
+        Download-IfNeeded -Url $imageUrl -OutFile (Join-Path -Path $resolvedModelDir -ChildPath $imageFile)
+    }
     Get-ChildItem -Path $resolvedModelDir
     Write-Host "::endgroup::"
 
@@ -220,6 +236,13 @@ try {
             if ($Mode -ne "vr-offline") {
                 $runnerArgs += "--streaming"
             }
+        }
+        "facebook/dinov2-small-imagenet1k-1-layer" {
+            $runnerArgs = @(
+                "--model_path", $modelPte,
+                "--data_path", $cudaBlob,
+                "--image_path", (Join-Path -Path $resolvedModelDir -ChildPath $imageFile)
+            )
         }
     }
 
