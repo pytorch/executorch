@@ -1004,7 +1004,6 @@ jobs:
   test-openvino-linux:
     name: test-openvino-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    if: false # TODO: fix https://github.com/pytorch/executorch/issues/17684
     permissions:
       id-token: write
       contents: read
@@ -1115,7 +1114,7 @@ jobs:
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
-        
+
         # Install eIQ packages
         pip install -r backends/nxp/requirements-eiq.txt
 
@@ -1134,13 +1133,13 @@ jobs:
         # Run aot examples:
         PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh cifar10
         PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh mobilenetv2
-        
+
         # Run e2e example with Simulator:
         PYTHON_EXECUTABLE=python bash examples/nxp/run.sh cifar10
-        
-        # Run lightweight model tests: 
+
+        # Run lightweight model tests:
         PYTHON_EXECUTABLE=python pytest -c /dev/null backends/nxp/tests_models/ \
-        --nxp_runner_path "./examples/nxp/executor_runner/build/nxp_executor_runner" 
+        --nxp_runner_path "./examples/nxp/executor_runner/build/nxp_executor_runner"
 
   test-samsung-quantmodels-linux:
     name: test-samsung-quantmodels-linux

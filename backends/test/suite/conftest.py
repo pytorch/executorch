@@ -103,7 +103,11 @@ class TestRunner:
     ids=str,
 )
 def test_runner(request):
-    return TestRunner(request.param, request.node.name, request.node.originalname)
+    flow = request.param
+    test_name = request.node.originalname or request.node.name
+    if flow.should_skip_test(test_name):
+        pytest.skip(f"Test '{test_name}' matches skip_patterns for flow '{flow.name}'")
+    return TestRunner(flow, request.node.name, request.node.originalname)
 
 
 @pytest.hookimpl(optionalhook=True)
