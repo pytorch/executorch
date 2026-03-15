@@ -192,12 +192,16 @@ TEST_F(OperatorRegistryTest, Basic) {
   EXPECT_TRUE(registry_has_op_function("foo"));
 }
 
-TEST_F(OperatorRegistryTest, RegisterOpsMoreThanOnceDie) {
+TEST_F(OperatorRegistryTest, RegisterOpsMoreThanOnceSkipsDuplicate) {
   Kernel kernels[] = {
       Kernel("foo", [](KernelRuntimeContext&, Span<EValue*>) {}),
       Kernel("foo", [](KernelRuntimeContext&, Span<EValue*>) {})};
   Span<const Kernel> kernels_span = Span<const Kernel>(kernels);
-  ET_EXPECT_DEATH((void)register_kernels(kernels_span), "registration failed");
+  // Should succeed and skip the duplicate
+  Error err = register_kernels(kernels_span);
+  EXPECT_EQ(err, Error::Ok);
+  // Verify the operator was registered
+  EXPECT_TRUE(registry_has_op_function("foo"));
 }
 
 TEST_F(OperatorRegistryTest, KernelKeyEquals) {
@@ -387,7 +391,7 @@ TEST_F(OperatorRegistryTest, RegisterTwoKernels) {
   ASSERT_EQ(val_2, 50);
 }
 
-TEST_F(OperatorRegistryTest, DoubleRegisterKernelsDies) {
+TEST_F(OperatorRegistryTest, DoubleRegisterKernelsSkipsDuplicate) {
   std::array<char, kKernelKeyBufSize> buf_long_contiguous;
   Error err = make_kernel_key(
       {{ScalarType::Long, {0, 1, 2, 3}}},
@@ -406,10 +410,33 @@ TEST_F(OperatorRegistryTest, DoubleRegisterKernelsDies) {
         (void)context;
         *(stack[0]) = Scalar(50);
       });
-  Kernel kernels[] = {kernel_1, kernel_2};
-  // clang-tidy off
-  ET_EXPECT_DEATH((void)register_kernels(kernels), "registration failed");
-  // clang-tidy on
+
+  // Register first kernel
+  err = register_kernels({kernel_1});
+  ASSERT_EQ(err, Error::Ok);
+
+  // Attempt to register duplicate - should succeed but skip
+  err = register_kernels({kernel_2});
+  ASSERT_EQ(err, Error::Ok);
+
+  // Verify first registration was kept (returns 100, not 50)
+  Tensor::DimOrderType dims[] = {0, 1, 2, 3};
+  auto dim_order_type = Span<Tensor::DimOrderType>(dims, 4);
+  TensorMeta meta[] = {TensorMeta(ScalarType::Long, dim_order_type)};
+  Span<const TensorMeta> user_kernel_key(meta);
+
+  EXPECT_TRUE(registry_has_op_function("test::baz", user_kernel_key));
+  Result<OpFunction> op = get_op_function_from_registry("test::baz", user_kernel_key);
+  ASSERT_EQ(op.error(), Error::Ok);
+
+  EValue values[1];
+  values[0] = Scalar(0);
+  EValue* evalues[1];
+  evalues[0] = &values[0];
+  KernelRuntimeContext context{};
+
+  (*op)(context, Span<EValue*>(evalues));
+  ASSERT_EQ(values[0].toScalar().to<int64_t>(), 100);
 }
 
 TEST_F(OperatorRegistryTest, ExecutorChecksKernel) {
