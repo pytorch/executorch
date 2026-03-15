@@ -25,7 +25,10 @@ def eval_expr(symint: Union[int, torch.SymInt]) -> Optional[int]:
     shape_env = node.shape_env
     expr = node.expr
     try:
-        output = shape_env.size_hint(expr)
+        if hasattr(shape_env, "guarding_hint_or_throw"):
+            output = shape_env.guarding_hint_or_throw(expr)
+        else:
+            output = shape_env.size_hint(expr)
     except torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode:
         return None
     return int(output)
