@@ -563,6 +563,9 @@ class QuantFusion(ExportPass):
                             quant_node,
                         )
                     elif isinstance(pattern, CatPattern):
+                        # Skip fusion if inputs_inputs is empty to avoid creating cat([])
+                        if not inputs_inputs:
+                            continue
                         args, kwargs = get_args_and_kwargs_cat(
                             inputs_inputs, other_inputs, op_node
                         )
