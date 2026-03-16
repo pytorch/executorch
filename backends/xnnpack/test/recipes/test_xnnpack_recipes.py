@@ -12,6 +12,7 @@ import unittest
 from typing import List, Optional, Tuple
 
 import torch
+from parameterized import parameterized
 from executorch.backends.xnnpack.recipes.xnnpack_recipe_provider import (
     XNNPACKRecipeProvider,
 )
@@ -263,6 +264,31 @@ class TestXnnpackRecipes(unittest.TestCase):
                 error > sqnr_threshold, f"Model '{model_name}' SQNR check failed"
             )
 
+    @parameterized.expand(
+        [
+            ("linear", 1e-3, 20),
+            ("add", 1e-3, 20),
+            ("add_mul", 1e-3, 20),
+            ("dl3", 1e-3, 20),
+            ("ic3", None, None),
+            ("ic4", 1e-3, 20),
+            ("mv2", 1e-3, None),
+            ("mv3", 1e-3, None),
+            ("resnet18", 1e-3, 20),
+            ("resnet50", 1e-3, 20),
+            ("vit", 1e-1, 10),
+            ("w2l", 1e-3, 20),
+        ]
+    )
+    def test_model(
+        self,
+        model_name: str,
+        tolerance: Optional[float],
+        sqnr_threshold: Optional[float],
+    ) -> None:
+        with torch.no_grad():
+            self._test_model_with_factory(model_name, tolerance, sqnr_threshold)
+
     def test_validate_recipe_kwargs_int4_tensor_with_valid_group_size(
         self,
     ) -> None:
@@ -295,34 +321,3 @@ class TestXnnpackRecipes(unittest.TestCase):
         self.assertIn(
             "Parameter 'group_size' must be an integer, got str: 32", error_msg
         )
-
-
-# (model_name, error tolerance, minimum sqnr)
-_MODELS_TO_TEST = [
-    ("linear", 1e-3, 20),
-    ("add", 1e-3, 20),
-    ("add_mul", 1e-3, 20),
-    ("dl3", 1e-3, 20),
-    ("ic3", None, None),
-    ("ic4", 1e-3, 20),
-    ("mv2", 1e-3, None),
-    ("mv3", 1e-3, None),
-    ("resnet18", 1e-3, 20),
-    ("resnet50", 1e-3, 20),
-    ("vit", 1e-1, 10),
-    ("w2l", 1e-3, 20),
-]
-
-
-def _make_model_test(
-    model_name: str, tolerance: Optional[float], sqnr: Optional[float]
-) -> None:
-    def test_fn(self: TestXnnpackRecipes) -> None:
-        with torch.no_grad():
-            self._test_model_with_factory(model_name, tolerance, sqnr)
-
-    setattr(TestXnnpackRecipes, f"test_{model_name}_model", test_fn)
-
-
-for _name, _tol, _sqnr in _MODELS_TO_TEST:
-    _make_model_test(_name, _tol, _sqnr)
