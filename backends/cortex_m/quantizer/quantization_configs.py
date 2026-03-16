@@ -5,7 +5,15 @@
 
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer_utils import (
+    _get_int32_bias_qspec,
+    _get_int32_per_channel_bias_qspec,
+)
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
+from executorch.backends.cortex_m.quantizer.quantizer_reporter import (
+    SUPPORTED_QCONFIGS,
+    SUPPORTED_QSPECS,
+)
 from torch.fx import Node
 from torchao.quantization.pt2e import (
     HistogramObserver,
@@ -13,7 +21,6 @@ from torchao.quantization.pt2e import (
     PerChannelMinMaxObserver,
 )
 from torchao.quantization.pt2e.quantizer import (
-    DerivedQuantizationSpec,
     FixedQParamsQuantizationSpec,
     QuantizationSpec,
     SharedQuantizationSpec,
@@ -134,44 +141,6 @@ class CortexMQuantizationConfig(QuantizationConfig):
         return super().get_bias_qspec(node)
 
 
-def _derive_bias_qparams_fn(
-    obs_or_fqs,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    if len(obs_or_fqs) != 2:
-        raise ValueError(
-            f"Expecting two obs/fqs, one for activation and one for weight, got: {len(obs_or_fqs)}"
-        )
-    act_obs_or_fq = obs_or_fqs[0]
-    weight_obs_or_fq = obs_or_fqs[1]
-    act_scale, _ = act_obs_or_fq.calculate_qparams()
-    weight_scale, _ = weight_obs_or_fq.calculate_qparams()
-    return act_scale * weight_scale, torch.full_like(
-        weight_scale, fill_value=0, dtype=torch.int32
-    )
-
-
-def _get_int32_bias_qspec(node):
-    return DerivedQuantizationSpec(
-        derived_from=((node.args[0], node), (node.args[1], node)),  # type: ignore[list-item]
-        derive_qparams_fn=_derive_bias_qparams_fn,
-        dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max - 1,
-    )
-
-
-def _get_int32_per_channel_bias_qspec(node):
-    return DerivedQuantizationSpec(
-        derived_from=((node.args[0], node), (node.args[1], node)),  # type: ignore[list-item]
-        derive_qparams_fn=_derive_bias_qparams_fn,
-        dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max - 1,
-        qscheme=torch.per_channel_symmetric,
-        ch_axis=0,
-    )
-
-
 # ----------------- QUANTIZATION CONFIG PRESETS -----------------
 INT8_PER_TENSOR_CONFIG = CortexMQuantizationConfig(
     INT8_ACTIVATION_PER_TENSOR_QSPEC,
@@ -186,4 +155,25 @@ INT8_PER_CHANNEL_CONFIG = CortexMQuantizationConfig(
     INT8_ACTIVATION_PER_TENSOR_QSPEC,
     INT8_WEIGHT_PER_CHANNEL_QSPEC,
     _get_int32_per_channel_bias_qspec,
+)
+
+
+# Register supported quantization configs and qspecs in the reporter for human-readable reporting
+# MLETORCH-1854: Temporary solution, refactor to automatically register these instead
+SUPPORTED_QCONFIGS.update(
+    {
+        INT8_PER_CHANNEL_CONFIG: f"{__name__}.INT8_PER_CHANNEL_QCONFIG",
+        INT8_PER_TENSOR_CONFIG: f"{__name__}.INT8_PER_TENSOR_QCONFIG",
+    }
+)
+
+SUPPORTED_QSPECS.update(
+    {
+        INT8_ACTIVATION_PER_TENSOR_QSPEC: "INT8_ACTIVATION_PER_TENSOR_QSPEC",
+        INT8_ACTIVATION_PER_CHANNEL_QSPEC: "INT8_ACTIVATION_PER_CHANNEL_QSPEC",
+        INT8_WEIGHT_PER_TENSOR_QSPEC: "INT8_WEIGHT_PER_TENSOR_QSPEC",
+        INT8_WEIGHT_PER_CHANNEL_QSPEC: "INT8_WEIGHT_PER_CHANNEL_QSPEC",
+        INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC: "INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC",
+        SOFTMAX_OUTPUT_FIXED_QSPEC: "SOFTMAX_OUTPUT_FIXED_QSPEC",
+    }
 )

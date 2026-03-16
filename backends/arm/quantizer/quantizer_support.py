@@ -7,11 +7,11 @@ from itertools import product
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm.quantizer.arm_quantizer_utils import PatternCheck
 from executorch.backends.arm.quantizer.quantization_annotator import (
     _conv_ops,
     _one_to_one,
 )
-from executorch.backends.cortex_m.quantizer.pattern_checkers import PatternCheck
 from torch._ops import OpOverload
 
 

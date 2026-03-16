@@ -24,6 +24,7 @@ python_library(
         "//caffe2:torch",
         "//executorch/backends/arm:common",
         "//executorch/backends/arm:constants",
+        "//executorch/backends/arm/quantizer:arm_quantizer_utils",
         "//executorch/backends/arm/quantizer:quantization_annotator",
         "//executorch/backends/arm/quantizer:quantization_config",
         "//pytorch/ao:torchao",
@@ -39,6 +40,7 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/arm/quantizer:arm_quantizer_utils",
         "//executorch/backends/arm/quantizer:quantization_config",
         "//pytorch/ao:torchao",
     ],

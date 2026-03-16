@@ -16,6 +16,7 @@ import logging
 from typing import Any, Callable, Dict, List, Optional
 
 import torch
+from executorch.backends.arm._passes import ArmPassManager
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.constants import DISALLOW_TFA_META_KEY
 from executorch.backends.arm.ethosu import EthosUCompileSpec
@@ -32,22 +33,18 @@ from executorch.backends.cortex_m.quantizer.node_finders import (
     InputNodeFinder,
     ModuleNameNodeFinder,
     ModuleTypeNodeFinder,
-    NodeFinder,
     NodeNameNodeFinder,
     NodeTargetNodeFinder,
     OutputNodeFinder,
 )
 from executorch.backends.cortex_m.quantizer.pattern_matcher import PatternMatcher
-from executorch.backends.cortex_m.quantizer.quantizer import (
-    PatternQuantizer,
-    SharedQspecQuantizer,
-)
 
 from executorch.backends.cortex_m.quantizer.quantizer_reporter import (
     QuantizerReporter,
     SUPPORTED_QCONFIGS,
     SUPPORTED_QSPECS,
 )
+
 from torch._ops import OpOverload
 
 from torchao.quantization.pt2e.quantizer import (
@@ -63,12 +60,17 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     get_cond_while_submodules_nested,
     is_submodule_node,
 )
-from executorch.backends.arm.vgf import VgfCompileSpec
 
-from executorch.backends.cortex_m.quantizer.quantization_configs import (
+from executorch.backends.arm.quantizer.arm_quantizer_utils import (
     _get_int32_bias_qspec,
     _get_int32_per_channel_bias_qspec,
+    is_annotated,
+    mark_node_as_annotated,
+    NodeFinder,
+    PatternQuantizer,
+    SharedQspecQuantizer,
 )
+from executorch.backends.arm.vgf import VgfCompileSpec
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e import (
     FakeQuantize,
@@ -93,7 +95,6 @@ from torchao.quantization.pt2e.quantizer import (
     QuantizationSpec,
 )
 
-from .arm_quantizer_utils import is_annotated, mark_node_as_annotated
 from .quantization_annotator import annotate_graph
 
 
@@ -808,9 +809,6 @@ class _TOSAQuantizerV1(Quantizer):
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
         self._set_disallow_tfa_for_nodes(model)
 
-        # TODO: Fix the need to lazily import this.
-        from executorch.backends.arm._passes import ArmPassManager
-
         pass_manager = ArmPassManager(self.compile_spec)
         return pass_manager.transform_for_annotation_pipeline(graph_module=model)
 
@@ -999,6 +997,7 @@ class _TOSAQuantizerV2(ComposableQuantizer):
         # nodes since nodes can be annotated by any quantizer. Instead, self.annotate is
         # run to set DISALLOW_TFA_META_KEY for quantized nodes and all nodes missing
         # this key afterwards are set to DISALLOW_TFA_META_KEY=True.
+
         reporter = QuantizerReporter(
             self.quantizers, "PRE-TRANSFORM_FOR_ANNOTATION QUANTIZATION REPORT"  # type: ignore[arg-type]
         )
@@ -1007,9 +1006,6 @@ class _TOSAQuantizerV2(ComposableQuantizer):
         for node in model.graph.nodes:
             if DISALLOW_TFA_META_KEY not in node.meta:
                 node.meta[DISALLOW_TFA_META_KEY] = True
-
-        # TODO: Fix the need to lazily import this.
-        from executorch.backends.arm._passes import ArmPassManager
 
         pass_manager = ArmPassManager(self.compile_spec)
         transformed_model = pass_manager.transform_for_annotation_pipeline(model)
