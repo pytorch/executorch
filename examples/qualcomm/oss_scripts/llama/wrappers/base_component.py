@@ -17,6 +17,9 @@ from functools import wraps
 from typing import Any, Dict, List, Tuple
 
 import torch
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.utils.utils import (
     get_sdk_build_id,
     is_qnn_sdk_version_less_than,
@@ -37,37 +40,6 @@ from transformers import AutoConfig
 class Mode(Enum):
     PREFILL = 1
     DECODE = 2
-
-
-def is_node_src_start_with_name(node: torch.fx.Node, prefix: str) -> bool:
-    """
-    Return True if any NodeSource in node.meta['from_node']
-    has a `name` starting with `prefix`.
-    """
-
-    def has_source_name_prefix(
-        node_src: torch.fx.traceback.NodeSource, prefix: str
-    ) -> bool:
-
-        name = getattr(node_src, "name", None)
-        if isinstance(name, str) and name.startswith(prefix):
-            return True
-
-        children = getattr(node_src, "from_node", None)
-        if not children:
-            return False
-
-        for src in children:
-            if has_source_name_prefix(src, prefix):
-                return True
-
-        return False
-
-    node_srcs = node.meta.get("from_node", None)
-    if not node_srcs:
-        return False
-
-    return any(has_source_name_prefix(node_src, prefix) for node_src in node_srcs)
 
 
 def log_info(func):
@@ -201,6 +173,8 @@ class Request:
         custom_annotation: Any = ()
         calibration_data: Request.CalibrationData = None
         tokenizer: callable = None
+        backend: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend
+        soc_model: str = "SM8750"
 
     method_name: str
     method_data: Dict[str, Data]

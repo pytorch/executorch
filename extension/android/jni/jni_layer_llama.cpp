@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -232,7 +233,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
 
   // Returns status_code
   // Contract is valid within an AAR (JNI + corresponding Java code)
-  jint prefill_text_input(facebook::jni::alias_ref<jstring> prompt) {
+  jint append_text_input(facebook::jni::alias_ref<jstring> prompt) {
     if (!runner_) {
       return static_cast<jint>(Error::InvalidState);
     }
@@ -248,7 +249,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   }
 
   // Returns status_code
-  jint prefill_images_input(
+  jint append_images_input(
       facebook::jni::alias_ref<jintArray> image,
       jint width,
       jint height,
@@ -281,8 +282,71 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     return 0;
   }
 
+  jint append_images_input_buffer(
+      facebook::jni::alias_ref<facebook::jni::JByteBuffer> image,
+      jint width,
+      jint height,
+      jint channels) {
+    if (!runner_) {
+      return static_cast<jint>(Error::InvalidState);
+    }
+    if (image == nullptr || width <= 0 || height <= 0 || channels <= 0) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    auto* data = image->getDirectBytes();
+    auto size = image->getDirectSize();
+    size_t expected = static_cast<size_t>(width) * height * channels;
+    if (data == nullptr || size < expected) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    std::vector<uint8_t> image_data(data, data + expected);
+    llm::Image image_runner{std::move(image_data), width, height, channels};
+    std::vector<llm::MultimodalInput> inputs;
+    inputs.emplace_back(llm::MultimodalInput{std::move(image_runner)});
+    int32_t bos = needs_bos_ ? num_bos_ : 0;
+    needs_bos_ = false;
+    auto result = runner_->prefill(inputs, bos, /*num_eos=*/0);
+    if (!result.ok()) {
+      return static_cast<jint>(result.error());
+    }
+    return 0;
+  }
+
+  jint append_normalized_images_input_buffer(
+      facebook::jni::alias_ref<facebook::jni::JByteBuffer> image,
+      jint width,
+      jint height,
+      jint channels) {
+    if (!runner_) {
+      return static_cast<jint>(Error::InvalidState);
+    }
+    if (image == nullptr || width <= 0 || height <= 0 || channels <= 0) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    auto* data = image->getDirectBytes();
+    auto size = image->getDirectSize();
+    size_t expected_bytes =
+        static_cast<size_t>(width) * height * channels * sizeof(float);
+    if (data == nullptr || size < expected_bytes || size % sizeof(float) != 0) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    size_t num_floats = static_cast<size_t>(width) * height * channels;
+    std::vector<float> image_data(num_floats);
+    std::memcpy(image_data.data(), data, expected_bytes);
+    llm::Image image_runner{std::move(image_data), width, height, channels};
+    std::vector<llm::MultimodalInput> inputs;
+    inputs.emplace_back(llm::MultimodalInput{std::move(image_runner)});
+    int32_t bos = needs_bos_ ? num_bos_ : 0;
+    needs_bos_ = false;
+    auto result = runner_->prefill(inputs, bos, /*num_eos=*/0);
+    if (!result.ok()) {
+      return static_cast<jint>(result.error());
+    }
+    return 0;
+  }
+
   // Returns status_code
-  jint prefill_normalized_images_input(
+  jint append_normalized_images_input(
       facebook::jni::alias_ref<jfloatArray> image,
       jint width,
       jint height,
@@ -316,7 +380,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   }
 
   // Returns status_code
-  jint prefill_audio_input(
+  jint append_audio_input(
       facebook::jni::alias_ref<jbyteArray> data,
       jint batch_size,
       jint n_bins,
@@ -350,7 +414,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   }
 
   // Returns status_code
-  jint prefill_audio_input_float(
+  jint append_audio_input_float(
       facebook::jni::alias_ref<jfloatArray> data,
       jint batch_size,
       jint n_bins,
@@ -384,7 +448,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   }
 
   // Returns status_code
-  jint prefill_raw_audio_input(
+  jint append_raw_audio_input(
       facebook::jni::alias_ref<jbyteArray> data,
       jint batch_size,
       jint n_channels,
@@ -457,19 +521,25 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         makeNativeMethod("stop", ExecuTorchLlmJni::stop),
         makeNativeMethod("load", ExecuTorchLlmJni::load),
         makeNativeMethod(
-            "prefillImagesInput", ExecuTorchLlmJni::prefill_images_input),
+            "appendImagesInput", ExecuTorchLlmJni::append_images_input),
         makeNativeMethod(
-            "prefillNormalizedImagesInput",
-            ExecuTorchLlmJni::prefill_normalized_images_input),
+            "appendImagesInputBuffer",
+            ExecuTorchLlmJni::append_images_input_buffer),
         makeNativeMethod(
-            "prefillAudioInput", ExecuTorchLlmJni::prefill_audio_input),
+            "appendNormalizedImagesInput",
+            ExecuTorchLlmJni::append_normalized_images_input),
         makeNativeMethod(
-            "prefillAudioInputFloat",
-            ExecuTorchLlmJni::prefill_audio_input_float),
+            "appendNormalizedImagesInputBuffer",
+            ExecuTorchLlmJni::append_normalized_images_input_buffer),
         makeNativeMethod(
-            "prefillRawAudioInput", ExecuTorchLlmJni::prefill_raw_audio_input),
+            "appendAudioInput", ExecuTorchLlmJni::append_audio_input),
         makeNativeMethod(
-            "prefillTextInput", ExecuTorchLlmJni::prefill_text_input),
+            "appendAudioInputFloat",
+            ExecuTorchLlmJni::append_audio_input_float),
+        makeNativeMethod(
+            "appendRawAudioInput", ExecuTorchLlmJni::append_raw_audio_input),
+        makeNativeMethod(
+            "appendTextInput", ExecuTorchLlmJni::append_text_input),
         makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
     });
   }

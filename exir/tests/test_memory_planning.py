@@ -11,6 +11,18 @@ import unittest
 from typing import Any, Callable, List, Optional, Tuple, Type
 
 import executorch.exir as exir
+
+try:
+    import executorch.kernels.portable  # noqa: F401
+except ModuleNotFoundError:
+    import logging
+
+    logging.warning(
+        "Failed to load portable_custom_ops_aot_lib. This is expected only if running in BUCK "
+        "where the library is loaded via preload_deps in the TARGETS file."
+    )
+    del logging
+
 import torch
 from executorch.exir import ExecutorchBackendConfig, to_edge
 from executorch.exir.capture._capture import patch_forward
@@ -58,22 +70,6 @@ from torch.export.exported_program import ExportGraphSignature
 from torch.fx import Graph, GraphModule, Node
 from torch.nn import functional as F
 from torch.utils import _pytree as pytree
-
-try:
-    torch.ops.load_library("//executorch/kernels/portable:custom_ops_generated_lib")
-except (OSError, RuntimeError):
-    # When running outside of Buck (e.g., CMake/pip), find the shared library
-    # by globbing relative to the kernels/portable directory.
-    from pathlib import Path
-
-    _libs = list(
-        Path(__file__)
-        .parent.parent.parent.resolve()
-        .glob("**/kernels/portable/**/*custom_ops_generated_lib.*")
-    )
-    if _libs:
-        torch.ops.load_library(str(_libs[0]))
-    del Path
 
 
 def swap_modules(

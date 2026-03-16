@@ -66,7 +66,12 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 #include "linear_int_weight_sums_load.glslh"
 #include "linear_fp_bias_load.glslh"
 
-shared Int32Accum partial_accums[WGS];
+// Array-of-arrays shared memory layout: partial_accums[lid][tile_n4].
+// Each element is exactly 16 bytes (ivec4). This avoids the Samsung S25
+// (Adreno 830) driver bug triggered by the original Int32Accum struct layout,
+// where barrier() only invalidated the first 16-byte component of each
+// 32-byte struct slot, leaving subsequent components stale.
+shared ivec4 partial_accums[WGS][TILE_N4];
 
 void main() {
   const int lid = int(gl_LocalInvocationID.z);
@@ -104,18 +109,28 @@ void main() {
     }
   }
 
-  partial_accums[lid] = out_accum;
+  [[unroll]] for (int tile_n4 = 0; tile_n4 < TILE_N4; ++tile_n4) {
+    partial_accums[lid][tile_n4] = out_accum.data[0][tile_n4];
+  }
 
   memoryBarrierShared();
   barrier();
 
+  // Tree reduction: O(log2(WGS)).
+  for (int i = WGS / 2; i > 0; i /= 2) {
+    if (lid < i) {
+      [[unroll]] for (int tile_n4 = 0; tile_n4 < TILE_N4; ++tile_n4) {
+        partial_accums[lid][tile_n4] += partial_accums[lid + i][tile_n4];
+      }
+    }
+    memoryBarrierShared();
+    barrier();
+  }
+
   // Only the first thread writes the result
   if (lid == 0) {
-    for (int i = 1; i < WGS; ++i) {
-      [[unroll]] for (int tile_n4 = 0; tile_n4 < TILE_N4; ++tile_n4) {
-        out_accum.data[0][tile_n4] +=
-            partial_accums[i].data[0][tile_n4];
-      }
+    [[unroll]] for (int tile_n4 = 0; tile_n4 < TILE_N4; ++tile_n4) {
+      out_accum.data[0][tile_n4] = partial_accums[0][tile_n4];
     }
 
     FPPerOutChannelParams weight_scales_tile;

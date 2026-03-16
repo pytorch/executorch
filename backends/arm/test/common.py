@@ -27,8 +27,8 @@ from executorch.backends.arm.vgf import VgfCompileSpec
 
 
 def get_time_formatted_path(path: str, log_prefix: str) -> str:
-    """
-    Returns the log path with the current time appended to it. Used for debugging.
+    """Returns the log path with the current time appended to it. Used for
+    debugging.
 
     Args:
         path: The path to the folder where the log file will be stored.
@@ -36,6 +36,7 @@ def get_time_formatted_path(path: str, log_prefix: str) -> str:
 
     Example output:
         './my_log_folder/test_INT_artifact_28-Nov-14:14:38.log'
+
     """
     return str(
         Path(path) / f"{log_prefix}_{datetime.now().strftime('%d-%b-%H:%M:%S')}.log"
@@ -43,8 +44,7 @@ def get_time_formatted_path(path: str, log_prefix: str) -> str:
 
 
 def maybe_get_tosa_collate_path() -> str | None:
-    """
-    Checks the environment variable TOSA_TESTCASES_BASE_PATH and returns the
+    """Checks the environment variable TOSA_TESTCASES_BASE_PATH and returns the
     path to the where to store the current tests if it is set.
     """
     tosa_test_base = os.environ.get("TOSA_TESTCASES_BASE_PATH")
@@ -86,7 +86,7 @@ def get_u55_compile_spec(
     macs: int = 128,
     system_config: str = "Ethos_U55_High_End_Embedded",
     memory_mode: str = "Shared_Sram",
-    extra_flags: str = "--debug-force-regor --output-format=raw --arena-cache-size=2097152",
+    extra_flags: str = "--arena-cache-size=2097152",
     custom_path: Optional[str] = None,
     config: Optional[str] = None,
     tosa_debug_mode: EthosUCompileSpec.DebugMode | None = None,
@@ -161,8 +161,8 @@ def get_vgf_compile_spec(
     custom_path: Optional[str] = None,
     tosa_debug_mode: VgfCompileSpec.DebugMode | None = None,
 ) -> VgfCompileSpec:
-    """Get the ArmCompileSpec for the default VGF tests, to modify
-    the compile spec before calling .build() to finalize it.
+    """Get the ArmCompileSpec for the default VGF tests, to modify the compile
+    spec before calling .build() to finalize it.
     """
 
     if not custom_path:
@@ -198,7 +198,9 @@ XfailIfNoCorstone300 = pytest.mark.xfail(
     raises=FileNotFoundError,
     reason="Did not find Corstone-300 FVP or executor_runner on path",
 )
-"""Xfails a test if Corsone300 FVP is not installed, or if the executor runner is not built"""
+"""Xfails a test if Corsone300 FVP is not installed, or if the executor runner
+is not built.
+"""
 
 XfailIfNoCorstone320 = pytest.mark.xfail(
     condition=not (
@@ -207,21 +209,23 @@ XfailIfNoCorstone320 = pytest.mark.xfail(
     raises=FileNotFoundError,
     reason="Did not find Corstone-320 FVP or executor_runner on path",
 )
-"""Xfails a test if Corsone320 FVP is not installed, or if the executor runner is not built"""
+"""Xfails a test if Corsone320 FVP is not installed, or if the executor runner
+is not built.
+"""
 
 SkipIfNoModelConverter = pytest.mark.skipif(  # type: ignore[call-arg]
     condition=not (model_converter_installed()),
     raises=FileNotFoundError,
     reason="Did not find model-converter on path",
 )
-"""Skips a test if model-converter is not installed"""
+"""Skips a test if model-converter is not installed."""
 
 XfailfNoVKMLEmulationLayer = pytest.mark.xfail(
     condition=not (vkml_emulation_layer_installed()),
     raises=TypeError,
     reason="VKML environment is not set properly or executor_runner path is misused",
 )
-"""Xfails a test if VKML Emulation Layer is not installed"""
+"""Xfails a test if VKML Emulation Layer is not installed."""
 
 xfail_type = str | tuple[str, type[Exception]]
 
@@ -238,12 +242,14 @@ def parametrize(
     strict: bool = True,
     flakies: dict[str, int] | None = None,
 ) -> Decorator:
-    """
-    Custom version of pytest.mark.parametrize with some syntatic sugar and added xfail functionality
-        - test_data is expected as a dict of (id, test_data) pairs
-        - alllows to specifiy a dict of (id, failure_reason) pairs to mark specific tests as xfail.
-          Failure_reason can be str, type[Exception], or tuple[str, type[Exception]].
-          Strings set the reason for failure, the exception type sets expected error.
+    """Custom version of pytest.mark.parametrize with some syntatic sugar and
+    added xfail functionality.
+
+    - test_data is expected as a dict of (id, test_data) pairs
+    - alllows to specifiy a dict of (id, failure_reason) pairs to mark specific tests as xfail.
+      Failure_reason can be str, type[Exception], or tuple[str, type[Exception]].
+      Strings set the reason for failure, the exception type sets expected error.
+
     """
     if xfails is None:
         xfails = {}
@@ -253,7 +259,9 @@ def parametrize(
         flakies = {}
 
     def decorator_func(func: Callable[_P, _R]) -> Callable[_P, _R]:
-        """Test data is transformed from a dict of (id, data) pairs to a list of pytest params to work with the native pytests parametrize function"""
+        """Test data is transformed from a dict of (id, data) pairs to a list of
+        pytest params to work with the native pytests parametrize function.
+        """
         pytest_testsuite = []
         for id, test_parameters in test_data.items():
             if id in flakies:

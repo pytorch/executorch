@@ -86,7 +86,10 @@ def main(args):
     quantizer = {
         QnnExecuTorchBackendType.kGpuBackend: None,
         QnnExecuTorchBackendType.kHtpBackend: make_quantizer(
-            quant_dtype=QuantDtype.use_16a8w, eps=2**-12
+            quant_dtype=QuantDtype.use_16a8w,
+            eps=2**-12,
+            backend=backend,
+            soc_model=args.model,
         ),
     }[backend]
     build_executorch_binary(

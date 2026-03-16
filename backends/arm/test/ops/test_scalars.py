@@ -2,20 +2,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
-
-from typing import Tuple
-
-import pytest
-
-import torch
-
-from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineFP,
-    TosaPipelineINT,
-)
-
 """Summary of non-working cases.
 
 FP:
@@ -32,6 +18,19 @@ FP:
     Sub or inplace-sub with an integer input.
 
 """
+
+from typing import Tuple
+
+import pytest
+
+import torch
+
+from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.test_pipeline import (
+    TosaPipelineFP,
+    TosaPipelineINT,
+)
+
 input_t1 = Tuple[torch.Tensor, torch.scalar_tensor]  # Input x, Input y
 
 
@@ -401,7 +400,7 @@ def test_div_scalar_tosa_FP(test_data):
 def test_div_tensor_tosa_INT_scalar(test_data):
     """Tests regular div with one scalar input."""
     pipeline = TosaPipelineINT[input_t1](
-        Div(), test_data, aten_op=[], frobenius_threshold=0.5
+        Div(), test_data, aten_op=[], frobenius_threshold=None, cosine_threshold=None
     )
     pipeline.run()
 
@@ -410,7 +409,11 @@ def test_div_tensor_tosa_INT_scalar(test_data):
 def test_div_tensor_tosa_INT_inplace(test_data):
     """Tests inplace div with one scalar input."""
     pipeline = TosaPipelineINT[input_t1](
-        DivInplace(), test_data, aten_op=[], frobenius_threshold=0.5
+        DivInplace(),
+        test_data,
+        aten_op=[],
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 

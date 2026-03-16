@@ -1307,9 +1307,29 @@ def is_qnn_sdk_version_less_than(target_version):
         current_major, current_minor = map(int, match.groups()[:2])
     else:
         raise ValueError(
-            f"Failed to get current major and minor version from QNN sdk Build id {current_version}"
+            f"Failed to get current major and minor version from QNN SDK Build id {current_version}"
         )
 
     target_major, target_minor = map(int, target_version.split(".")[:2])
 
     return current_major == target_major and current_minor < target_minor
+
+
+def is_qnn_sdk_version_greater_than(target_version):
+    current_version = get_sdk_build_id()
+
+    match = re.search(r"v(\d+)\.(\d+)", current_version)
+    if match:
+        current_major, current_minor = map(int, match.groups()[:2])
+    else:
+        raise ValueError(
+            f"Failed to get current major and minor version from QNN SDK Build id {current_version}"
+        )
+
+    target_major, target_minor = map(int, target_version.split(".")[:2])
+
+    return current_major == target_major and current_minor > target_minor
+
+
+def get_qnn_context_binary_alignment() -> int:
+    return PyQnnManagerAdaptor.GetQNNCtxBinAlignment()

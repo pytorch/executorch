@@ -11,6 +11,23 @@
 namespace vkcompute {
 namespace vkapi {
 
+VmaAllocationCreateFlags test_host_cached_available(
+    VkPhysicalDevice physical_device) {
+  VkPhysicalDeviceMemoryProperties mem_props;
+  vkGetPhysicalDeviceMemoryProperties(physical_device, &mem_props);
+
+  VkMemoryPropertyFlags const flags = mem_props.memoryTypes->propertyFlags;
+
+  bool const host_visible = flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+  bool const host_cached = flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+
+  if (host_visible && host_cached) {
+    return VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+  }
+
+  return VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+}
+
 Allocator::Allocator(
     VkInstance instance,
     VkPhysicalDevice physical_device,
@@ -18,7 +35,9 @@ Allocator::Allocator(
     : instance_{},
       physical_device_(physical_device),
       device_(device),
-      allocator_{VK_NULL_HANDLE} {
+      allocator_{VK_NULL_HANDLE},
+      allocation_strategy_device_to_host_{
+          test_host_cached_available(physical_device_)} {
   VmaVulkanFunctions vk_functions{};
   vk_functions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
   vk_functions.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
@@ -44,7 +63,9 @@ Allocator::Allocator(Allocator&& other) noexcept
     : instance_(other.instance_),
       physical_device_(other.physical_device_),
       device_(other.device_),
-      allocator_(other.allocator_) {
+      allocator_(other.allocator_),
+      allocation_strategy_device_to_host_(
+          other.allocation_strategy_device_to_host_) {
   other.allocator_ = VK_NULL_HANDLE;
   other.device_ = VK_NULL_HANDLE;
   other.physical_device_ = VK_NULL_HANDLE;
@@ -158,7 +179,7 @@ VulkanBuffer Allocator::create_staging_buffer(
     alloc_create_info.flags |=
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
   } else {
-    alloc_create_info.flags |= VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+    alloc_create_info.flags |= allocation_strategy_device_to_host_;
   }
   alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
   alloc_create_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;

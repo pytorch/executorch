@@ -252,6 +252,10 @@ utils::uvec3 pick_linear_global_wg_with_block_config(
           utils::safe_downcast<uint32_t>(utils::val_at(-1 - d, sizes));
     }
   }
+  // Include extra batch dimensions beyond 4D WHCN space
+  for (int32_t d = 4; d < static_cast<int32_t>(sizes.size()); ++d) {
+    num_planes *= utils::safe_downcast<uint32_t>(utils::val_at(-1 - d, sizes));
+  }
 
   // Return linear workgroup size: {total_blocks, 1u, 1u}
   const uint32_t total_blocks =
@@ -285,7 +289,11 @@ utils::uvec3 pick_extents_global_wg_with_block_config(
   const int64_t W = utils::val_at(-1, sizes);
   const int64_t H = utils::val_at(-2, sizes);
   const int64_t C = utils::val_at(-3, sizes);
-  const int64_t N = utils::val_at(-4, sizes);
+  // N is the product of all batch dimensions (WHCN dims 3+)
+  int64_t N = 1;
+  for (int64_t i = 4; i <= static_cast<int64_t>(sizes.size()); ++i) {
+    N *= utils::val_at(-i, sizes);
+  }
 
   // Dispatch structure: {x_threads, y_threads, z_threads}
   // - x corresponds to W dimension

@@ -22,7 +22,7 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
 fi
 
 if [[ $# -eq 0 ]]; then
-    TEST_SUITES=(run_ootb_tests_ethos_u run_ootb_tests_tosa run_deit_e2e_ethos_u)
+    TEST_SUITES=(run_ootb_tests_ethos_u run_ootb_tests_tosa run_ootb_tests_vgf run_deit_e2e_ethos_u)
 else
     TEST_SUITES=("$1")
 fi
@@ -44,13 +44,21 @@ run_ootb_tests_tosa() {
     echo "${FUNCNAME}: PASS"
 }
 
+run_ootb_tests_vgf() {
+    echo "$FUNCNAME: Running out-of-the-box tests for VGF"
+    jupyter nbconvert \
+        --to notebook \
+        --execute examples/arm/vgf_minimal_example.ipynb
+    echo "${FUNCNAME}: PASS"
+}
+
 run_deit_e2e_ethos_u() {
     echo "$FUNCNAME: Fine-tune, export, build, and run the DEiT e2e test"
 
     local script_dir
     script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
     et_root_dir=$(cd "${script_dir}/../../.." && pwd)
-    local example_dir="${et_root_dir}/examples/arm/image_classification_example"
+    local example_dir="${et_root_dir}/examples/arm/image_classification_example_ethos_u"
     local work_root="${et_root_dir}/arm_test/deit_tiny_ootb_smoke"
     local model_dir="${work_root}/deit_tiny_finetuned"
     local export_dir="${work_root}/export"
@@ -74,7 +82,7 @@ run_deit_e2e_ethos_u() {
     cmake --build "${et_root_dir}/cmake-out-arm" --target install -j"$n_proc"
 
     # Install requirements
-    pip install -r examples/arm/image_classification_example/requirements.txt
+    pip install -r examples/arm/image_classification_example_ethos_u/requirements.txt
 
     # Get and finetune model
     echo "${FUNCNAME}: Running DeiT fine-tuning script"
@@ -99,7 +107,14 @@ run_deit_e2e_ethos_u() {
     local image_url="https://gitlab.arm.com/artificial-intelligence/ethos-u/ml-embedded-evaluation-kit/-/raw/main/resources/img_class/samples/dog.bmp?ref_type=heads"
     if [[ ! -f "${image_path}" ]]; then
         echo "${FUNCNAME}: Downloading sample image from ${image_url}"
-        wget -O "${image_path}" "${image_url}"
+        if command -v wget >/dev/null 2>&1; then
+            wget -O "${image_path}" "${image_url}"
+        elif command -v curl >/dev/null 2>&1; then
+            curl -L "${image_url}" -o "${image_path}"
+        else
+            echo "${FUNCNAME}: Missing wget or curl; unable to download sample image"
+            return 1
+        fi
     else
         echo "${FUNCNAME}: Reusing sample image at ${image_path}"
     fi

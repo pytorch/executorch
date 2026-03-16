@@ -14,14 +14,13 @@ if ! python -c "import tosa_serializer" >/dev/null 2>&1; then
   TOSA_SERIALIZATION_DIR="./examples/arm/arm-scratch/tosa-tools/serialization"
   if [[ ! -d "${TOSA_SERIALIZATION_DIR}" ]]; then
     TOSA_TOOLS_DIR="$(mktemp -d /tmp/tosa-tools.XXXXXX)"
-    git clone --depth 1 --branch v2025.11.0 \
+    git clone --depth 1 --branch v2025.11.2 \
       https://git.gitlab.arm.com/tosa/tosa-tools.git "${TOSA_TOOLS_DIR}"
     TOSA_SERIALIZATION_DIR="${TOSA_TOOLS_DIR}/serialization"
   fi
 
-  # Workaround to allow TOSA serializer to build for v2025.11.0
+  # NOTE: Will be removed when tosa-tools is installed via pypi
   python -m pip install pybind11==2.10.4
-
   CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 \
     python -m pip install --no-dependencies \
     "${TOSA_SERIALIZATION_DIR}"

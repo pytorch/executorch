@@ -7,6 +7,7 @@ from typing import Callable
 
 import torch
 
+from executorch.backends.nxp.aten_passes.convert_div_to_mul import ConvertDivToMulPass
 from executorch.backends.nxp.aten_passes.decompose_split_to_slices_pass import (
     DecomposeSplitToSlicesPass,
 )
@@ -47,6 +48,7 @@ def _get_default_passes(neutron_target_spec, qat_mode: bool = False) -> list[Pas
         RemoveNodesWithKnownOutputs(),
         FuseLinearAndAddPass(),
         MoveActivationBeforeConcat(neutron_target_spec),
+        ConvertDivToMulPass(),
     ]
 
     if not qat_mode:

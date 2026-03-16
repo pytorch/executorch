@@ -307,8 +307,8 @@ def register_to_copy():
 
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
-        inputs_dtypes=utils.FP_T,
-        outputs_dtypes=utils.FP_T,
+        inputs_dtypes=utils.FP_INT_T,
+        outputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
         are_node_inputs_supported_fn=check_to_copy_node,
     )
@@ -482,6 +482,7 @@ def register_quantize_per_tensor():
         outputs_storage=[
             utils.PACKED_INT8_BUFFER,
         ],
+        supports_highdim=True,
     )
 
 
@@ -499,6 +500,7 @@ def register_dequantize_per_tensor():
         outputs_storage=[
             utils.CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER,
         ],
+        supports_highdim=True,
     )
 
 
@@ -839,7 +841,7 @@ def register_q8ta_conv_pw_op():
 def register_q8ta_conv2d_ops():
     return OpFeatures(
         inputs_storage=[
-            utils.PACKED_INT8_4C1W_BUFFER,  # input
+            utils.PACKED_INT8_CONV2D_BUFFER,  # input
             utils.NO_STORAGE,  # input_scale (non tensor)
             utils.NO_STORAGE,  # input_zero_point (non tensor)
             utils.NO_STORAGE,  # weight (prepacked)
@@ -854,6 +856,39 @@ def register_q8ta_conv2d_ops():
             utils.NO_STORAGE,  # dilation (non tensor)
             utils.NO_STORAGE,  # groups (non tensor)
             utils.NO_STORAGE,  # original OC count (non tensor)
+        ],
+        outputs_storage=[
+            utils.PACKED_INT8_CHANNELS_PACKED_BUFFER,
+        ],
+        supports_resize=False,
+        supports_prepacking=True,
+    )
+
+
+@update_features(
+    [
+        exir_ops.edge.et_vk.q8ta_conv2d_transposed.default,
+    ]
+)
+def register_q8ta_conv2d_transposed_op():
+    return OpFeatures(
+        inputs_storage=[
+            utils.PACKED_INT8_CONV2D_BUFFER,  # input
+            utils.NO_STORAGE,  # input_scale (non tensor)
+            utils.NO_STORAGE,  # input_zero_point (non tensor)
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # weight_sums (prepacked)
+            utils.NO_STORAGE,  # weight_scales (prepacked)
+            utils.NO_STORAGE,  # output_scale (non tensor)
+            utils.NO_STORAGE,  # output_zero_point (non tensor)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # kernel_size (non tensor)
+            utils.NO_STORAGE,  # stride (non tensor)
+            utils.NO_STORAGE,  # padding (non tensor)
+            utils.NO_STORAGE,  # output_padding (non tensor)
+            utils.NO_STORAGE,  # dilation (non tensor)
+            utils.NO_STORAGE,  # groups (non tensor)
+            utils.NO_STORAGE,  # activation (non tensor)
         ],
         outputs_storage=[
             utils.PACKED_INT8_CHANNELS_PACKED_BUFFER,

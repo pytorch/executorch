@@ -76,13 +76,15 @@ class QDQClusterRecognizer:
 
     AUXILIARY_OPS = [
         operator.getitem,
-        exir_ops.edge.aten.view_copy.default,
-        exir_ops.edge.aten.permute_copy.default,
+        exir_ops.edge.aten.clone.default,
         exir_ops.edge.aten.hardtanh.default,
+        exir_ops.edge.aten.permute_copy.default,
         exir_ops.edge.aten.relu.default,
         exir_ops.edge.aten.sigmoid.default,
+        exir_ops.edge.aten.squeeze_copy.dims,
         exir_ops.edge.aten.tanh.default,
-        exir_ops.edge.aten.clone.default,
+        exir_ops.edge.aten.unsqueeze_copy.default,
+        exir_ops.edge.aten.view_copy.default,
         exir_ops.edge.dim_order_ops._clone_dim_order.default,
     ]
 
@@ -211,8 +213,7 @@ supported_ops = {
     exir_ops.edge.aten.convolution.default: ConvolutionConverter,  # noqa F405
     exir_ops.edge.aten.hardtanh.default: HardTanhConverter,  # noqa F405
     exir_ops.edge.aten.leaky_relu.default: LeakyReluConverter,  # noqa F405
-    exir_ops.edge.aten.max_pool2d.default: MaxPool2dConverter,  # noqa F405
-    exir_ops.edge.aten.max_pool2d_with_indices.default: MaxPool2dConverter,  # noqa F405
+    exir_ops.edge.aten.max_pool2d_with_indices.default: MaxPool2DWithIndicesConverter,  # noqa F405
     exir_ops.edge.aten.mean.dim: MeanDimConverter,  # noqa F405
     exir_ops.edge.aten.mm.default: MMConverter,  # noqa F405
     exir_ops.edge.aten.mul.Tensor: MulTensorConverter,  # noqa F405

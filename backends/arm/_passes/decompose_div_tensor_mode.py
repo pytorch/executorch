@@ -20,7 +20,7 @@ edge_unary = {
     "floor": exir_ops.edge.aten.floor.default,
     "ceil": exir_ops.edge.aten.ceil.default,
     "full": exir_ops.edge.aten.full.default,
-    "lt": exir_ops.edge.aten.lt.Tensor,
+    "gt": exir_ops.edge.aten.gt.Tensor,
     "where": exir_ops.edge.aten.where.self,
 }
 
@@ -29,7 +29,7 @@ aten_unary = {
     "floor": torch.ops.aten.floor.default,
     "ceil": torch.ops.aten.ceil.default,
     "full": torch.ops.aten.full.default,
-    "lt": torch.ops.aten.lt.Tensor,
+    "gt": torch.ops.aten.gt.Tensor,
     "where": torch.ops.aten.where.self,
 }
 
@@ -87,11 +87,13 @@ class DecomposeDivTensorModePass(ArmPass):
                 meta=meta,
                 updated=True,
             )
-            lt0 = super().call_operator(opset["lt"], (q, zero), {}, meta, updated=True)
+            is_neg = super().call_operator(
+                opset["gt"], (zero, q), {}, meta, updated=True
+            )
             ceilq = super().call_operator(opset["ceil"], (q,), {}, meta, updated=True)
             floorq = super().call_operator(opset["floor"], (q,), {}, meta, updated=True)
             return super().call_operator(
-                opset["where"], (lt0, ceilq, floorq), {}, meta, updated=True
+                opset["where"], (is_neg, ceilq, floorq), {}, meta, updated=True
             )
 
         raise RuntimeError(

@@ -192,9 +192,15 @@ class SliceTensorModule(torch.nn.Module):
 
 
 class SliceTensorConvModule(torch.nn.Module):
-    def __init__(self, dims, starts, ends):
+    def __init__(self, dims, starts, ends, in_channels, out_channels):
         super().__init__()
-        self.conv = Conv2dModule(in_channels=4, out_channels=8, kernel_size=3, stride=1)
+        self.conv = Conv2dModule(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+        )
         self.slice = SliceTensorModule(dims, starts, ends)
 
     def forward(self, x):
@@ -800,3 +806,24 @@ class SqueezeAddModel(torch.nn.Module):
             return torch.squeeze(x + y)
         else:
             return torch.squeeze(x + y, self.dim)
+
+
+class StaticDivLinearModel(torch.nn.Module):
+    def __init__(self, in_channels=8, out_channels=8, divisor=1):
+        super().__init__()
+        self.linear = torch.nn.Linear(in_channels, out_channels)
+        self.divisor = divisor
+
+    def forward(self, x):
+        x = self.linear(x)
+        return x / self.divisor
+
+
+class NonstaticDivLinearModel(torch.nn.Module):
+    def __init__(self, in_channels=8, out_channels=8):
+        super().__init__()
+        self.linear = torch.nn.Linear(in_channels, out_channels)
+
+    def forward(self, x, divisor):
+        x = self.linear(x)
+        return x / divisor

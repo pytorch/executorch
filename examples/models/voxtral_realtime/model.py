@@ -50,9 +50,7 @@ class VoxtralRealtimeConfig:
     downsample_factor: int = 4
     # Runtime
     max_seq_len: int = 4096
-    use_standard_attention: bool = (
-        False  # Use standard PyTorch attention instead of custom ops
-    )
+    backend: str = "xnnpack"  # "xnnpack", "metal", "cuda", or "portable"
 
     @staticmethod
     def from_params_json(path: str) -> "VoxtralRealtimeConfig":
@@ -428,14 +426,20 @@ class SDPA(nn.Module):
 
 
 def _build_attn_mask(
-    input_pos: torch.Tensor, max_seq_len: int, device: torch.device
+    input_pos: torch.Tensor,
+    max_seq_len: int,
+    device: torch.device,
+    dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
-    """Build float additive attention mask without bool intermediates.
+    """Build additive attention mask matching the model dtype.
 
     Metal AOTI doesn't support bool tensor allocation on MPS, so we use
     integer arithmetic: clamp(curr_pos - k_pos + 1, 0, 1) gives 1 for
     valid positions (k <= curr_pos) and 0 for invalid, then convert to
     additive mask (0.0 = attend, -1e9 = don't attend).
+
+    The mask dtype must match Q/K/V dtype — the Metal SDPA kernel reads
+    the mask buffer with the same element type as Q/K/V.
     """
     seqlen = input_pos.shape[0]
     k_pos = torch.arange(max_seq_len, device=device)
@@ -446,22 +450,40 @@ def _build_attn_mask(
         # Decode: [1, max_seq_len]
         diff = (input_pos[0] - k_pos + 1).unsqueeze(0)
     valid = torch.clamp(diff, min=0, max=1)
-    return (valid.float() - 1.0) * 1e9
+    return (valid.to(dtype) - 1.0) * 1e9
+
+
+def _build_causal_mask_bool(
+    input_pos: torch.Tensor, max_seq_len: int, device: torch.device
+) -> torch.Tensor:
+    """Build boolean causal attention mask. True = attend, False = masked.
+
+    Returns [1, 1, seqlen, max_seq_len] for Triton SDPA compatibility
+    (requires 4D mask with batch and head dims).
+    """
+    k_pos = torch.arange(max_seq_len, device=device)
+    mask = input_pos.unsqueeze(1) >= k_pos.unsqueeze(0)  # [seqlen, max_seq_len]
+    return mask.unsqueeze(0).unsqueeze(0)  # [1, 1, seqlen, max_seq_len]
 
 
 class MetalSDPA(nn.Module):
-    """Standard SDPA calling the MPS op directly for native GQA support.
+    """Scaled dot-product attention using the native MPS kernel.
 
-    The Metal SDPA kernel handles GQA natively via gqa_factor = n_heads / n_kv_heads,
-    avoiding the 4x memory bandwidth overhead of repeat_interleave.
+    Supports GQA (n_heads != n_kv_heads) and bf16 without requiring
+    repeat_interleave or manual fp32 upcast. Expects Q in [B, S, H, D]
+    layout; K/V in [B, H, S, D] by default (set transpose_kv=True if
+    K/V arrive in [B, S, H, D]).
     """
 
-    def __init__(self, n_heads: int, n_kv_heads: int, head_dim: int):
+    def __init__(
+        self, n_heads: int, n_kv_heads: int, head_dim: int, transpose_kv: bool = False
+    ):
         super().__init__()
         self.n_heads = n_heads
         self.n_kv_heads = n_kv_heads
         self.head_dim = head_dim
         self.dim = n_heads * head_dim
+        self.transpose_kv = transpose_kv
 
     def forward(
         self,
@@ -473,44 +495,40 @@ class MetalSDPA(nn.Module):
         seqlen: int,
         attn_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """
-        Args:
-            input_pos: (seq_len,) position indices.
-            q: (B, seq_len, n_heads, head_dim) in [B, S, H, D] layout.
-            k, v: (B, n_kv_heads, max_seq_len, head_dim) in [B, H, S, D] layout from StaticKVCache.
-            bsz, seqlen: batch size and query sequence length.
-            attn_mask: precomputed float additive mask, or None to compute here.
-        Returns:
-            output: (B, seq_len, n_heads * head_dim).
-        """
-        q = q.transpose(1, 2)  # [B, n_heads, seq_len, head_dim]
+        q = q.transpose(1, 2)
+        if self.transpose_kv:
+            k = k.transpose(1, 2)
+            v = v.transpose(1, 2)
 
         if attn_mask is None:
-            attn_mask = _build_attn_mask(input_pos, k.shape[2], q.device)
+            attn_mask = _build_attn_mask(input_pos, k.shape[2], q.device, q.dtype)
 
-        # Call the MPS SDPA op directly — bypasses CompositeImplicitAutograd
-        # decomposition which would insert repeat_interleave for GQA.
-        # The Metal kernel handles GQA natively via gqa_factor = n_heads / n_kv_heads.
         y, _ = torch.ops.aten._scaled_dot_product_attention_math_for_mps(
             q, k, v, attn_mask, 0.0, False, None
-        )  # [B, n_heads, seq_len, head_dim]
+        )
 
-        y = y.transpose(1, 2).contiguous()  # [B, seq_len, n_heads, head_dim]
+        y = y.transpose(1, 2).contiguous()
         return y.view(bsz, seqlen, self.dim)
 
 
-class StandardEncoderSDPA(nn.Module):
-    """Standard SDPA for encoder using F.scaled_dot_product_attention.
+class StandardSDPA(nn.Module):
+    """Scaled dot-product attention using F.scaled_dot_product_attention.
 
-    Compatible with AOTI/Metal backend. Works with EncoderRingKVCache that uses
-    [B, S, H, D] layout and sliding window masks.
+    Supports GQA via repeat_interleave when n_heads != n_kv_heads.
+    Expects Q in [B, S, H, D]; K/V in [B, H, S, D] by default
+    (set transpose_kv=True if K/V arrive in [B, S, H, D]).
     """
 
-    def __init__(self, n_heads: int, head_dim: int):
+    def __init__(
+        self, n_heads: int, n_kv_heads: int, head_dim: int, transpose_kv: bool = False
+    ):
         super().__init__()
         self.n_heads = n_heads
+        self.n_kv_heads = n_kv_heads
+        self.n_rep = n_heads // n_kv_heads
         self.head_dim = head_dim
         self.dim = n_heads * head_dim
+        self.transpose_kv = transpose_kv
 
     def forward(
         self,
@@ -520,34 +538,25 @@ class StandardEncoderSDPA(nn.Module):
         v: torch.Tensor,
         bsz: int,
         seqlen: int,
-        mask: torch.Tensor | None = None,
+        attn_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """
-        Args:
-            input_pos: (seq_len,) position indices.
-            q: (B, seq_len, n_heads, head_dim) in [B, S, H, D] layout.
-            k, v: (B, buf_size, n_heads, head_dim) in [B, S, H, D] layout from EncoderRingKVCache.
-            bsz, seqlen: batch size and query sequence length.
-            mask: (seq_len, buf_size) additive attention mask (0.0 = attend, -inf = don't attend).
-        Returns:
-            output: (B, seq_len, n_heads * head_dim).
-        """
-        # Convert from [B, S, H, D] to [B, H, S, D] for F.scaled_dot_product_attention
-        q = q.transpose(1, 2)  # [B, n_heads, seq_len, head_dim]
-        k = k.transpose(1, 2)  # [B, n_heads, buf_size, head_dim]
-        v = v.transpose(1, 2)  # [B, n_heads, buf_size, head_dim]
+        q = q.transpose(1, 2)
+        if self.transpose_kv:
+            k = k.transpose(1, 2)
+            v = v.transpose(1, 2)
 
-        # Apply SDPA with sliding window mask
+        if self.n_rep > 1:
+            k = k.repeat_interleave(self.n_rep, dim=1)
+            v = v.repeat_interleave(self.n_rep, dim=1)
+
+        if attn_mask is None:
+            attn_mask = _build_causal_mask_bool(input_pos, k.shape[2], q.device)
+
         y = F.scaled_dot_product_attention(
-            q,
-            k,
-            v,
-            attn_mask=mask,
-            is_causal=False,  # We handle masking explicitly via mask parameter
-        )  # [B, n_heads, seq_len, head_dim]
+            q, k, v, attn_mask=attn_mask, is_causal=False
+        )
 
-        # Convert back to [B, S, H, D] and flatten
-        y = y.transpose(1, 2).contiguous()  # [B, seq_len, n_heads, head_dim]
+        y = y.transpose(1, 2).contiguous()
         return y.view(bsz, seqlen, self.dim)
 
 
@@ -563,7 +572,7 @@ class LMAttention(nn.Module):
         self.n_kv_heads = config.n_kv_heads
         self.head_dim = config.head_dim
         self.dim = config.dim
-        self.use_standard_attention = config.use_standard_attention
+        self.backend = config.backend
 
         self.wq = nn.Linear(config.dim, self.n_heads * self.head_dim, bias=False)
         self.wk = nn.Linear(config.dim, self.n_kv_heads * self.head_dim, bias=False)
@@ -571,9 +580,12 @@ class LMAttention(nn.Module):
         self.wo = nn.Linear(self.n_heads * self.head_dim, config.dim, bias=False)
 
         # Choose KV cache and SDPA based on backend
-        if self.use_standard_attention:
+        if self.backend == "metal":
             self.kv_cache = StaticKVCache(max_seq_len, self.n_kv_heads, self.head_dim)
             self.sdpa = MetalSDPA(self.n_heads, self.n_kv_heads, self.head_dim)
+        elif self.backend == "cuda":
+            self.kv_cache = StaticKVCache(max_seq_len, self.n_kv_heads, self.head_dim)
+            self.sdpa = StandardSDPA(self.n_heads, self.n_kv_heads, self.head_dim)
         else:
             self.kv_cache = KVCache(max_seq_len, self.n_kv_heads, self.head_dim)
             self.sdpa = SDPA(self.n_heads, self.head_dim)
@@ -595,10 +607,7 @@ class LMAttention(nn.Module):
 
         k, v = self.kv_cache.update(input_pos, k, v)
 
-        if self.use_standard_attention:
-            y = self.sdpa(input_pos, q, k, v, B, T, attn_mask)
-        else:
-            y = self.sdpa(input_pos, q, k, v, B, T)
+        y = self.sdpa(input_pos, q, k, v, B, T, attn_mask)
 
         return self.wo(y)
 
@@ -685,9 +694,16 @@ class MistralDecoder(nn.Module):
 
         # Compute attention mask once for all 26 layers (P3 optimization).
         attn_mask: torch.Tensor | None = None
-        if self.config.use_standard_attention:
+        if self.config.backend == "metal":
             max_seq_len = self.freqs_cos.shape[0]
-            attn_mask = _build_attn_mask(input_pos, max_seq_len, input_embeds.device)
+            attn_mask = _build_attn_mask(
+                input_pos, max_seq_len, input_embeds.device, input_embeds.dtype
+            )
+        elif self.config.backend == "cuda":
+            max_seq_len = self.freqs_cos.shape[0]
+            attn_mask = _build_causal_mask_bool(
+                input_pos, max_seq_len, input_embeds.device
+            )
 
         x = input_embeds
         for layer in self.layers:
@@ -800,8 +816,22 @@ class EncoderRingKVCache(nn.Module):
         return self.k_cache, self.v_cache
 
     def create_causal_mask(
-        self, start_pos: torch.Tensor | int, seq_len: int
+        self,
+        start_pos: torch.Tensor | int,
+        seq_len: int,
+        bool_mask: bool = False,
+        dtype: torch.dtype = torch.float32,
     ) -> torch.Tensor:
+        """Create sliding window attention mask for ring buffer.
+
+        Args:
+            start_pos: Starting position (scalar tensor or int).
+            seq_len: Number of query positions.
+            bool_mask: If True, return boolean mask (True=attend). If False,
+                return additive mask (0.0=attend, -inf=masked) in the given dtype.
+            dtype: Mask dtype for additive masks. Must match Q/K/V dtype for
+                the Metal SDPA kernel.
+        """
         device = (
             start_pos.device
             if isinstance(start_pos, torch.Tensor)
@@ -815,7 +845,13 @@ class EncoderRingKVCache(nn.Module):
         ).view(-1, 1)
         delta = pos_q - cache_pos.unsqueeze(0)
         valid = (cache_pos >= 0) & (delta >= 0) & (delta < self.window_size)
-        return torch.where(valid, 0.0, float("-inf"))
+        if bool_mask:
+            return valid.unsqueeze(0).unsqueeze(0)
+        return torch.where(
+            valid,
+            torch.zeros(1, dtype=dtype, device=device),
+            torch.tensor(float("-inf"), dtype=dtype, device=device),
+        )
 
 
 class StandardEncoderRingKVCache(nn.Module):
@@ -853,12 +889,22 @@ class StandardEncoderRingKVCache(nn.Module):
 
         return self.k_cache, self.v_cache
 
-    def create_causal_mask(self, start_pos: torch.Tensor, seq_len: int) -> torch.Tensor:
+    def create_causal_mask(
+        self,
+        start_pos: torch.Tensor,
+        seq_len: int,
+        bool_mask: bool = False,
+        dtype: torch.dtype = torch.float32,
+    ) -> torch.Tensor:
         """Create sliding window attention mask for ring buffer.
 
         Args:
             start_pos: Tensor containing the starting position (scalar tensor)
             seq_len: Number of query positions
+            bool_mask: If True, return boolean mask (True=attend). If False,
+                return additive mask (0.0=attend, -inf=masked) in the given dtype.
+            dtype: Mask dtype for additive masks. Must match Q/K/V dtype for
+                the Metal SDPA kernel.
         """
         total_written = start_pos + seq_len
         j = torch.arange(self.buf_size, dtype=torch.long, device=start_pos.device)
@@ -870,7 +916,15 @@ class StandardEncoderRingKVCache(nn.Module):
 
         delta = pos_q - cache_pos.unsqueeze(0)
         valid = (cache_pos >= 0) & (delta >= 0) & (delta < self.window_size)
-        return torch.where(valid, 0.0, float("-inf"))
+        if bool_mask:
+            return valid.unsqueeze(0).unsqueeze(
+                0
+            )  # [1, 1, seq_len, buf_size] for Triton
+        return torch.where(
+            valid,
+            torch.zeros(1, dtype=dtype, device=start_pos.device),
+            torch.tensor(float("-inf"), dtype=dtype, device=start_pos.device),
+        )
 
 
 class StreamingAudioEncoderExport(nn.Module):
@@ -898,6 +952,7 @@ class StreamingAudioEncoderExport(nn.Module):
         self.downsample_factor = config.downsample_factor
         self.n_heads = config.enc_n_heads
         self.head_dim = config.enc_head_dim
+        self.bool_mask = config.backend == "cuda"
 
         # Register conv states as buffers (mutable state for streaming)
         self.register_buffer("conv1_state", torch.zeros(1, config.num_mel_bins, 2))
@@ -909,7 +964,7 @@ class StreamingAudioEncoderExport(nn.Module):
         # Choose cache implementation based on backend
         cache_class = (
             StandardEncoderRingKVCache
-            if config.use_standard_attention
+            if config.backend in ("metal", "cuda")
             else EncoderRingKVCache
         )
         self.kv_caches = nn.ModuleList(
@@ -920,8 +975,20 @@ class StreamingAudioEncoderExport(nn.Module):
         )
 
         # Choose SDPA based on backend
-        if config.use_standard_attention:
-            self.sdpa = StandardEncoderSDPA(config.enc_n_heads, config.enc_head_dim)
+        if config.backend == "metal":
+            self.sdpa = MetalSDPA(
+                config.enc_n_heads,
+                config.enc_n_heads,
+                config.enc_head_dim,
+                transpose_kv=True,
+            )
+        elif config.backend == "cuda":
+            self.sdpa = StandardSDPA(
+                config.enc_n_heads,
+                config.enc_n_heads,
+                config.enc_head_dim,
+                transpose_kv=True,
+            )
         else:
             self.sdpa = SDPA(config.enc_n_heads, config.enc_head_dim)
 
@@ -997,7 +1064,9 @@ class StreamingAudioEncoderExport(nn.Module):
         # Sliding window mask — identical for all layers, compute once.
         T = x.size(1)
         # Pass start position as tensor (not .item()) to avoid unbacked symbols in AOTI
-        mask = self.kv_caches[0].create_causal_mask(enc_input_pos[0], T)
+        mask = self.kv_caches[0].create_causal_mask(
+            enc_input_pos[0], T, bool_mask=self.bool_mask, dtype=x.dtype
+        )
 
         for i, layer in enumerate(self.layers):
             x = self._streaming_encoder_layer(
@@ -1067,7 +1136,7 @@ def load_model(
     max_seq_len: int = 4096,
     n_delay_tokens: int = 6,
     dtype: torch.dtype = torch.float32,
-    use_standard_attention: bool = False,
+    backend: str = "xnnpack",
 ) -> VoxtralRealtimeModel:
     """Load VoxtralRealtimeModel from a Mistral consolidated checkpoint.
 
@@ -1080,20 +1149,25 @@ def load_model(
         max_seq_len: Maximum sequence length for KV cache.
         n_delay_tokens: Transcription delay in tokens (default 6 = 480ms).
         dtype: Weight dtype (default: float32).
-        use_standard_attention: Use standard PyTorch attention instead of custom ops
-            (required for Metal/AOTI backends).
+        backend: Backend for acceleration ("xnnpack", "metal", "cuda", or "portable").
     """
+    _VALID_BACKENDS = ("xnnpack", "metal", "cuda", "portable")
+    if backend not in _VALID_BACKENDS:
+        raise ValueError(
+            f"Unknown backend '{backend}'. Must be one of {_VALID_BACKENDS}."
+        )
+
     from safetensors import safe_open
 
     model_dir = Path(model_path)
     config = VoxtralRealtimeConfig.from_params_json(str(model_dir / "params.json"))
     config.max_seq_len = max_seq_len
-    config.use_standard_attention = use_standard_attention
+    config.backend = backend
 
     print(
         f"Building model on meta device (dim={config.dim}, enc_dim={config.enc_dim}, "
         f"layers={config.n_layers}, enc_layers={config.enc_n_layers}, "
-        f"attention={'standard' if use_standard_attention else 'custom'})..."
+        f"backend={backend})..."
     )
     with torch.device("meta"):
         model = VoxtralRealtimeModel(config, max_seq_len)

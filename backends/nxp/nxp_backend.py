@@ -15,7 +15,6 @@ from typing import final, List, Optional
 import numpy as np
 import torch
 
-from executorch.backends.nxp._passes.remove_getitem_pass import RemoveGetItemPass
 from executorch.backends.nxp.backend.data_format import DataFormat
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
@@ -29,11 +28,15 @@ from executorch.backends.nxp.neutron_node_extraction import (
     extract_artifacts_from_neutron_node,
     NeutronNodeArtifacts,
 )
-from executorch.backends.nxp.neutron_pass_manager import NeutronPassManager
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from torch.export.exported_program import ExportedProgram
+
+# Aten dialect operators that are allowed to be in the edge dialect model. These operators are usually created by a
+#  transform pass or by a prevented operator decomposition during lowering to edge.
+core_aten_ops_exception_list = [
+    torch.ops.aten.prelu.default,
+]
 
 
 class NeutronCompileSpecBuilder:
@@ -46,6 +49,7 @@ class NeutronCompileSpecBuilder:
         self.operators_not_to_delegate: List[str] = []
         self.use_neutron_for_format_conversion = True
         self.fetch_constants_to_sram = False
+        self.dump_kernel_selection_code = False
 
     def _replace_colons(self, operator: str) -> str:
         """
@@ -60,6 +64,7 @@ class NeutronCompileSpecBuilder:
         operators_not_to_delegate: Optional[List[str]] = None,
         use_neutron_for_format_conversion: bool = True,
         fetch_constants_to_sram: bool = False,
+        dump_kernel_selection_code: bool = False,
     ):
         """
         Generate compile spec for Neutron NPU
@@ -73,6 +78,7 @@ class NeutronCompileSpecBuilder:
                                                 delegated to Neutron.
             fetch_constants_to_sram: If True, the Neutron Converter will insert microinstructions to prefetch weights
                                      from FLASH to SRAM. This should be used when the whole model does not fit into SRAM.
+            dump_kernel_selection_code: Whether Neutron converter dumps kernel selection code.
         """
 
         self.config = NeutronTargetSpec(config)
@@ -92,8 +98,8 @@ class NeutronCompileSpecBuilder:
             ]
 
         self.use_neutron_for_format_conversion = use_neutron_for_format_conversion
-
         self.fetch_constants_to_sram = fetch_constants_to_sram
+        self.dump_kernel_selection_code = dump_kernel_selection_code
 
         return self
 
@@ -118,6 +124,10 @@ class NeutronCompileSpecBuilder:
                     "fetch_constants_to_sram",
                     f"{self.fetch_constants_to_sram}".encode(),
                 ),
+                CompileSpec(
+                    "dump_kernel_selection_code",
+                    f"{self.dump_kernel_selection_code}".encode(),
+                ),
             ]
 
         return self.compile_spec
@@ -130,6 +140,7 @@ def generate_neutron_compile_spec(
     operators_not_to_delegate: Optional[List[str]] = None,
     use_neutron_for_format_conversion: bool = True,
     fetch_constants_to_sram: bool = False,
+    dump_kernel_selection_code: bool = False,
 ) -> List[CompileSpec]:
     return (
         NeutronCompileSpecBuilder()
@@ -139,6 +150,7 @@ def generate_neutron_compile_spec(
             operators_not_to_delegate=operators_not_to_delegate,
             use_neutron_for_format_conversion=use_neutron_for_format_conversion,
             fetch_constants_to_sram=fetch_constants_to_sram,
+            dump_kernel_selection_code=dump_kernel_selection_code,
         )
         .build()
     )
@@ -162,6 +174,7 @@ class NeutronBackend(BackendDetails):
         target = ""
         use_neutron_for_format_conversion = None
         fetch_constants_to_sram = False
+        dump_kernel_selection_code = None
         for spec in compile_spec:
             if spec.key == "output_format":
                 output_format = spec.value.decode()
@@ -173,6 +186,8 @@ class NeutronBackend(BackendDetails):
                 use_neutron_for_format_conversion = spec.value.decode() == "True"
             if spec.key == "fetch_constants_to_sram":
                 fetch_constants_to_sram = spec.value.decode() == "True"
+            if spec.key == "dump_kernel_selection_code":
+                dump_kernel_selection_code = spec.value.decode() == "True"
 
         # Check that the output format is set in the compile spec
         if not output_format:
@@ -184,22 +199,13 @@ class NeutronBackend(BackendDetails):
 
         # Serialize and return the program.
         if output_format == "tflite":
-            # We need to create custom model verifier with max_pool2d added as exception.
-            # Otherwise, we get violation that this op is not part of ATen Core ops.
-            edge_program._verifiers = [
-                EXIREdgeDialectVerifier(
-                    class_only=True,
-                    core_aten_ops_exception_list=[
-                        torch.ops.aten.max_pool2d.default,
-                        torch.ops.aten.prelu.default,
-                    ],
-                )
-            ]
-
-            # Remove MaxPool-related "getitem" nodes from graph
-            edge_program = NeutronPassManager(
-                edge_program, [RemoveGetItemPass]
-            ).transform()
+            # Some of the nodes do not have delegation_tag, find any node with delegation tag.
+            delegation_tag = None
+            for n in edge_program.graph.nodes:
+                if "delegation_tag" in n.meta.keys():
+                    delegation_tag = n.meta["delegation_tag"]
+                    break
+            assert delegation_tag is not None
 
             # Convert the edge program to TFLite.
             conversion_config = ConversionConfig(
@@ -213,21 +219,13 @@ class NeutronBackend(BackendDetails):
                 conversion_config=conversion_config,
             )
 
-            neutron_model = NeutronConverterManager().convert(
-                tflite_model, target, fetch_constants_to_sram
+            neutron_model = NeutronConverterManager(dump_kernel_selection_code).convert(
+                tflite_model, target, delegation_tag, fetch_constants_to_sram
             )
 
             # Dump the tflite file if logging level is enabled
             if logging.root.isEnabledFor(logging.DEBUG):
                 import os
-
-                # Some of the nodes do not have delegation_tag, find any node with delegation tag.
-                delegation_tag = None
-                for n in list(edge_program.graph.nodes):
-                    if "delegation_tag" in n.meta.keys():
-                        delegation_tag = n.meta["delegation_tag"]
-                        break
-                assert delegation_tag is not None
 
                 logging.debug(
                     f"Serializing converted graph with tag {delegation_tag} to {os.getcwd()}"

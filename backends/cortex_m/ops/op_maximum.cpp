@@ -7,11 +7,6 @@
 
 #include "cortex_m_ops_common.h"
 
-// Include CMSIS-NN headers with C linkage
-extern "C" {
-#include "arm_nnfunctions.h"
-}
-
 namespace cortex_m {
 namespace native {
 

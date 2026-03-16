@@ -13,7 +13,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$QuantName,
     [string]$ModelDir = ".",
-    [string]$ExpectedCudaVersion = ""
+    [string]$ExpectedCudaVersion = "",
+    [string]$Mode = ""
 )
 
 Set-StrictMode -Version Latest
@@ -23,6 +24,15 @@ $ProgressPreference = "SilentlyContinue"
 
 if ($Device -ne "cuda-windows") {
     throw "Unsupported device '$Device'. Expected 'cuda-windows'."
+}
+
+if ($Mode -ne "") {
+    if ($Mode -notin @("vr-streaming", "vr-offline")) {
+        throw "Unsupported mode '$Mode'. Supported modes: vr-streaming, vr-offline"
+    }
+    if ($HfModel -ne "mistralai/Voxtral-Mini-4B-Realtime-2602") {
+        throw "Mode '$Mode' can only be used with Voxtral Realtime model"
+    }
 }
 
 Write-Host "Testing model: $HfModel (quantization: $QuantName)"
@@ -64,8 +74,43 @@ switch ($HfModel) {
         $audioUrl = "https://dldata-public.s3.us-east-2.amazonaws.com/2086-149220-0033.wav"
         $audioFile = "test_audio.wav"
     }
+    "nvidia/diar_streaming_sortformer_4spk-v2" {
+        $runnerTarget = "sortformer_runner"
+        $runnerPath = "sortformer"
+        $runnerPreset = "sortformer-cuda"
+        $expectedOutput = "Speaker 1"
+        $preprocessor = ""
+        $tokenizerUrl = ""
+        $tokenizerFile = ""
+        $audioUrl = "https://github.com/voxserv/audio_quality_testing_samples/raw/refs/heads/master/testaudio/16000/test01_20s.wav"
+        $audioFile = "poem.wav"
+    }
+    "mistralai/Voxtral-Mini-4B-Realtime-2602" {
+        $runnerTarget = "voxtral_realtime_runner"
+        $runnerPath = "voxtral_realtime"
+        $runnerPreset = "voxtral-realtime-cuda"
+        $expectedOutput = "Quilter"
+        $preprocessor = "preprocessor.pte"
+        $tokenizerUrl = ""
+        $tokenizerFile = "tekken.json"
+        $audioUrl = "https://github.com/voxserv/audio_quality_testing_samples/raw/refs/heads/master/testaudio/16000/test01_20s.wav"
+        $audioFile = "poem.wav"
+    }
+    "facebook/dinov2-small-imagenet1k-1-layer" {
+        $runnerTarget = "dinov2_runner"
+        $runnerPath = "dinov2"
+        $runnerPreset = "dinov2-cuda"
+        $expectedOutput = "Samoyed"
+        $preprocessor = ""
+        $tokenizerUrl = ""
+        $tokenizerFile = ""
+        $audioUrl = ""
+        $audioFile = ""
+        $imageUrl = "https://github.com/pytorch/hub/raw/master/images/dog.jpg"
+        $imageFile = "test_image.jpg"
+    }
     default {
-        throw "Unsupported model '$HfModel'. Supported: mistralai/Voxtral-Mini-3B-2507, nvidia/parakeet-tdt"
+        throw "Unsupported model '$HfModel'. Supported: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer"
     }
 }
 
@@ -140,6 +185,9 @@ try {
     if ($audioUrl -ne "") {
         Download-IfNeeded -Url $audioUrl -OutFile (Join-Path -Path $resolvedModelDir -ChildPath $audioFile)
     }
+    if ((Get-Variable -Name imageUrl -ErrorAction SilentlyContinue) -and $imageUrl -ne "") {
+        Download-IfNeeded -Url $imageUrl -OutFile (Join-Path -Path $resolvedModelDir -ChildPath $imageFile)
+    }
     Get-ChildItem -Path $resolvedModelDir
     Write-Host "::endgroup::"
 
@@ -171,6 +219,31 @@ try {
                 "--data_path", $cudaBlob
             )
         }
+        "nvidia/diar_streaming_sortformer_4spk-v2" {
+            $runnerArgs = @(
+                "--model_path", $modelPte,
+                "--audio_path", (Join-Path -Path $resolvedModelDir -ChildPath $audioFile),
+                "--data_path", $cudaBlob
+            )
+        }
+        "mistralai/Voxtral-Mini-4B-Realtime-2602" {
+            $runnerArgs += @(
+                "--temperature", "0",
+                "--tokenizer_path", (Join-Path -Path $resolvedModelDir -ChildPath $tokenizerFile),
+                "--audio_path", (Join-Path -Path $resolvedModelDir -ChildPath $audioFile),
+                "--preprocessor_path", (Join-Path -Path $resolvedModelDir -ChildPath $preprocessor)
+            )
+            if ($Mode -ne "vr-offline") {
+                $runnerArgs += "--streaming"
+            }
+        }
+        "facebook/dinov2-small-imagenet1k-1-layer" {
+            $runnerArgs = @(
+                "--model_path", $modelPte,
+                "--data_path", $cudaBlob,
+                "--image_path", (Join-Path -Path $resolvedModelDir -ChildPath $imageFile)
+            )
+        }
     }
 
     $stdoutFile = Join-Path -Path $env:TEMP -ChildPath ("et_runner_stdout_{0}.log" -f ([Guid]::NewGuid().ToString("N")))
@@ -186,23 +259,31 @@ try {
             -RedirectStandardError $stderrFile
 
         $stdout = if (Test-Path -Path $stdoutFile -PathType Leaf) { Get-Content -Path $stdoutFile -Raw } else { "" }
+        $stderr = if (Test-Path -Path $stderrFile -PathType Leaf) { Get-Content -Path $stderrFile -Raw } else { "" }
         $exitCode = $proc.ExitCode
     }
     finally {
         Remove-Item -Path $stdoutFile -ErrorAction SilentlyContinue
         Remove-Item -Path $stderrFile -ErrorAction SilentlyContinue
     }
-    Write-Host "Runner output:"
+    Write-Host "Runner stdout:"
     Write-Host $stdout
+    Write-Host "Runner stderr:"
+    Write-Host $stderr
 
     if ($exitCode -ne 0) {
         Write-Warning "Runner exited with code $exitCode (may be benign)"
     }
 
-    if ($expectedOutput -ne "" -and $stdout -notmatch [Regex]::Escape($expectedOutput)) {
-        throw "Expected output '$expectedOutput' not found in runner output"
+    if ($expectedOutput -ne "") {
+        if ($stdout -notmatch [Regex]::Escape($expectedOutput)) {
+            throw "Expected output '$expectedOutput' not found in runner output"
+        }
+        Write-Host "Success: '$expectedOutput' found in output"
     }
-    Write-Host "Success: '$expectedOutput' found in output"
+    else {
+        Write-Host "Success: runner completed"
+    }
     Write-Host "::endgroup::"
 }
 finally {
