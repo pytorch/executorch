@@ -223,12 +223,14 @@ class NumericalStatsOutputComparator(BaseOutputComparator):
         max_mse_error=3.5e-4,
         fail_if_not_close=True,
         output_filename: None | str = "numerical_stats.csv",
+        use_softmax=False,
         is_classification_task=False,
     ):
         self._max_mse_error = max_mse_error
         self._fail_if_not_close = fail_if_not_close
         self._output_filename = output_filename
         self._stats_data = None
+        self.use_softmax = use_softmax
         self._is_classification_task = is_classification_task
 
     def compare_results(self, cpu_results_dir, npu_results_dir, output_tensor_spec):
@@ -275,6 +277,10 @@ class NumericalStatsOutputComparator(BaseOutputComparator):
             assert np.any(
                 cpu_tensor
             ), "Output tensor contains only zeros. This is suspicious."
+
+            if self.use_softmax:
+                cpu_tensor = np.exp(cpu_tensor) / sum(np.exp(cpu_tensor))
+                npu_tensor = np.exp(npu_tensor) / sum(np.exp(npu_tensor))
 
             mse = np.square(np.subtract(cpu_tensor, npu_tensor)).mean()
             max_error = np.max(np.abs(cpu_tensor - npu_tensor))
