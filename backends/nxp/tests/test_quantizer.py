@@ -646,22 +646,24 @@ def test_qat_produces_same_graph_as_ptq():
     )
 
 
-# TODO: conv1d_t is currently unsupported, add when resolved
-@pytest.mark.parametrize("conv_module", ["conv1d", "conv2d", "conv2d_t"])
+@pytest.mark.parametrize("input_shape", [(1, 3, 32), (1, 3, 32, 32)])
+@pytest.mark.parametrize("transposed_conv", [True, False])
 @pytest.mark.parametrize("conv_bias", [True, False])
 @pytest.mark.parametrize("bn_affine", [True, False])
-def test_torchao_native_conv_bn_qat_fusing(conv_module, conv_bias, bn_affine):
+def test_torchao_native_conv_bn_qat_fusing(
+    input_shape, transposed_conv, conv_bias, bn_affine
+):
     if not conv_bias:
         pytest.skip("Conv without bias is not supported.")
 
-    if conv_module.startswith("conv1d"):
-        input_shape = (1, 3, 32)
-    elif conv_module.startswith("conv2d"):
-        input_shape = (1, 3, 32, 32)
+    if len(input_shape) < 4 and transposed_conv:
+        pytest.skip("Conv1d transpose is not supported.")
 
-    model = models.ConvBNModule(
-        conv_module=conv_module,
-        conv_bias=conv_bias,
+    model = models.ConvBatchNormModule(
+        bias=conv_bias,
+        input_rank=len(input_shape),
+        num_features=input_shape[1],
+        transposed_conv=transposed_conv,
         bn_affine=bn_affine,
     )
     model.eval()
