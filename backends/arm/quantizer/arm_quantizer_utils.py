@@ -193,7 +193,10 @@ class PatternCheck:
 
         if not isinstance(qspec, QuantizationSpecBase):
             return False
-        return qspec.qscheme in (torch.per_tensor_affine, torch.per_tensor_symmetric)
+        return qspec.qscheme in (  # type: ignore[attr-defined]
+            torch.per_tensor_affine,
+            torch.per_tensor_symmetric,
+        )
 
     @classmethod
     def is_per_channel(cls, qspec) -> bool:
@@ -201,7 +204,10 @@ class PatternCheck:
 
         if not isinstance(qspec, QuantizationSpecBase):
             return False
-        return qspec.qscheme in (torch.per_channel_affine, torch.per_channel_symmetric)
+        return qspec.qscheme in (  # type: ignore[attr-defined]
+            torch.per_channel_affine,
+            torch.per_channel_symmetric,
+        )
 
     @classmethod
     def is_int8_activations(
@@ -215,7 +221,9 @@ class PatternCheck:
             output_qspec, QuantizationSpecBase
         ):
             return False
-        return input_qspec.dtype == torch.int8 and output_qspec.dtype == torch.int8
+        return (
+            input_qspec.dtype == torch.int8 and output_qspec.dtype == torch.int8  # type: ignore[attr-defined]
+        )
 
     @classmethod
     def check_pattern(cls, pattern: list[Node]) -> bool:
@@ -285,7 +293,7 @@ class PatternQuantizer(Quantizer, _QuantizerReporterUserMixin):
     def is_parameter(self, node: Node, model: torch.fx.GraphModule) -> bool:
         """Returns True if the given node is a parameter of the model."""
         try:
-            _ = model.get_parameter(node.target)
+            _ = model.get_parameter(node.target)  # type: ignore[arg-type]
             return True
         except Exception:
             return False
@@ -352,7 +360,7 @@ class PatternQuantizer(Quantizer, _QuantizerReporterUserMixin):
                     )
                 elif self.is_bias(input_node, params, model):
                     input_qspec_map[input_node] = (
-                        config.get_bias_qspec(node) if config else None
+                        config.get_bias_qspec(node) if config else None  # type: ignore[assignment]
                     )
                 elif input_node not in match:
                     input_qspec_map[input_node] = (
@@ -370,10 +378,10 @@ class PatternQuantizer(Quantizer, _QuantizerReporterUserMixin):
                 config is not None,
             )
 
-    def annotate(self, model: torch.fx.GraphModule) -> None:
+    def annotate(self, model: torch.fx.GraphModule) -> None:  # type: ignore[override]
         nodes = self.node_finder.find_nodes(model)
         matches = self.pattern_matcher.find_pattern_matches(
-            nodes, self.quantization_config
+            nodes, self.quantization_config  # type: ignore[arg-type]
         )
         for result in matches:
             if result.accepted:
@@ -385,7 +393,7 @@ class PatternQuantizer(Quantizer, _QuantizerReporterUserMixin):
                     result.message or "Pattern rejected.",
                 )
 
-    def validate(self, model: torch.fx.GraphModule) -> bool:
+    def validate(self, model: torch.fx.GraphModule) -> bool:  # type: ignore[override]
         return True
 
 
@@ -538,7 +546,9 @@ class SharedQspecQuantizer(Quantizer, _QuantizerReporterUserMixin):
                     if not self._is_annotated(input_node):
                         bfs_queue.append(input_node)
                 if self._is_annotated(input_node):
-                    output_qspec = input_node.meta.get(Q_ANNOTATION_KEY).output_qspec
+                    output_qspec = input_node.meta.get(  # type: ignore[union-attr]
+                        Q_ANNOTATION_KEY
+                    ).output_qspec
                     if output_qspec is not None:
                         adjacent_qspecs.append(output_qspec)
 
@@ -551,9 +561,12 @@ class SharedQspecQuantizer(Quantizer, _QuantizerReporterUserMixin):
                         bfs_queue.append(output_node)
                 if (
                     self._is_annotated(output_node)
-                    and node in output_node.meta.get(Q_ANNOTATION_KEY).input_qspec_map
+                    and node
+                    in output_node.meta.get(  # type: ignore[union-attr]
+                        Q_ANNOTATION_KEY
+                    ).input_qspec_map
                 ):
-                    input_qspec = output_node.meta.get(
+                    input_qspec = output_node.meta.get(  # type: ignore[union-attr]
                         Q_ANNOTATION_KEY
                     ).input_qspec_map[node]
                     if input_qspec is not None:
@@ -600,7 +613,7 @@ class SharedQspecQuantizer(Quantizer, _QuantizerReporterUserMixin):
             shared_qspec = SharedQuantizationSpec((root_node_first_input, root_node))
             for node in shared_nodes:
                 input_qspec_map: dict[Node, Optional[QuantizationSpec]] = {
-                    n: shared_qspec
+                    n: shared_qspec  # type: ignore[misc]
                     for n in self._get_input_nodes_with_float_output(node)
                 }
                 if len(self._get_user_nodes_with_float_input(node)) == 0:
@@ -623,10 +636,10 @@ class SharedQspecQuantizer(Quantizer, _QuantizerReporterUserMixin):
             )
             return
 
-    def annotate(self, model: torch.fx.GraphModule) -> None:
+    def annotate(self, model: torch.fx.GraphModule) -> None:  # type: ignore[override]
         for node in model.graph.nodes:
             if node.target in self.targets and not self._is_annotated(node):
                 self._annotate_shared_cluster(node)
 
-    def validate(self, model: torch.fx.GraphModule) -> bool:
+    def validate(self, model: torch.fx.GraphModule) -> bool:  # type: ignore[override]
         return True
