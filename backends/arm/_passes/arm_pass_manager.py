@@ -102,6 +102,7 @@ from executorch.backends.arm._passes import (
     FuseEqualPlaceholdersPass,
     FuseQuantizedActivationPass,
     FuseViewCopyTransformPass,
+    InsertConstShapesPass,
     InsertControlFlowRescalesPass,
     InsertInt32CastsAfterInt64PlaceholdersPass,
     InsertRescaleInt32Pass,
@@ -322,6 +323,7 @@ class ArmPassManager(PassManager):
             [
                 ReplaceScalarWithTensorByProfilePass(),
                 RewriteLeLtToGeGtPass(),
+                DecomposeLeakyReLUPass(),  # Emits full_like so before ConvertFullLikeToFullPass
                 ConvertFullLikeToFullPass(),
                 MatchArgDtypePass(),
                 UnsqueezeScalarPlaceholdersPass(exported_program),
@@ -342,7 +344,6 @@ class ArmPassManager(PassManager):
                 FuseBatchNorm2dPass(exported_program),
                 ConvertMmToBmmPass(),
                 DecomposeGluPass(),
-                DecomposeLeakyReLUPass(),
                 DecomposeDivPass(),
                 # _safe_softmax results in a ReduceMax
                 # which is not currently supported by TOSA in U55
@@ -380,6 +381,7 @@ class ArmPassManager(PassManager):
                 RewriteMatmulPass(),
                 RewritePadPass(),
                 RewriteSlicePass(),
+                InsertConstShapesPass(),
             ]
         )
 
