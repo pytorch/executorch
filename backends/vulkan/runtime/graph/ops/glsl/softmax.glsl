@@ -30,9 +30,11 @@ ${layout_declare_ubo(B, "TextureMetadata", "out_meta")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int packed_dim = 0;
-layout(constant_id = 4) const int reduce_dim = 0;
-layout(constant_id = 5) const int group_dim = 1;
+${layout_declare_spec_const(C, "int", "out_layout", "CONTIG_LAYOUT_INT")}
+const int packed_dim = get_packed_dim(out_layout);
+
+${layout_declare_spec_const(C, "int", "reduce_dim", "0")}
+${layout_declare_spec_const(C, "int", "group_dim", "1")}
 
 #define NWORKERS 4
 #define MAX_NTHREADS 16
