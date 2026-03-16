@@ -20,7 +20,8 @@ class DecomposeLinearPass(ExportPass):
     then squeeze back to 2D.
     """
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
+        """Decompose linear into matmul + add."""
         modified = False
         graph = graph_module.graph
 
