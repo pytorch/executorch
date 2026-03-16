@@ -1363,6 +1363,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op__adaptive_avg_pool2d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
+    ),
+    op_target(
         name = "op__conj_physical",
         deps = [
             "//executorch/kernels/portable/cpu/util:functional_util",

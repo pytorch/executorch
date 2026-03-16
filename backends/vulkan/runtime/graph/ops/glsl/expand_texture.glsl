@@ -29,6 +29,9 @@ ${layout_declare_ubo(B, "TextureMetadata", "inp")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+${layout_declare_spec_const(C, "int", "out_layout", "CONTIG_LAYOUT_INT")}
+const int packed_dim = get_packed_dim(out_layout);
+
 void main() {
   const ivec3 out_pos = ivec3(gl_GlobalInvocationID);
 
@@ -41,7 +44,7 @@ void main() {
   VEC4_T out_texel = VEC4_T(0);
 
   int limit = min(
-      4, outp.sizes[outp.packed_dim] - out_tidx.data[outp.packed_dim]);
+      4, outp.sizes[packed_dim] - out_tidx.data[packed_dim]);
   for (int comp = 0; comp < 4; comp++) {
     if (comp >= limit) {
       break;
@@ -60,7 +63,7 @@ void main() {
     VEC4_T inp_texel = texelFetch(t_inp, inp_elem.pos, 0);
     out_texel[comp] = inp_texel[inp_elem.comp];
 
-    out_tidx.data[outp.packed_dim]++;
+    out_tidx.data[packed_dim]++;
   }
 
   imageStore(t_outp, out_pos, out_texel);

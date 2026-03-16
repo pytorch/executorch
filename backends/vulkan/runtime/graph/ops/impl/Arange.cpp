@@ -102,7 +102,7 @@ void add_arange_node(
       // Push Constants
       {},
       // Specialization Constants
-      {},
+      {graph.hashed_layout_of(out)},
       // Resize Args
       {start, end, step},
       // Resizing Logic

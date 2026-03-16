@@ -58,7 +58,7 @@ void add_repeat_node(
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       {graph.meta_ubo(out), graph.meta_ubo(in)},
       {},
-      {},
+      {graph.hashed_layout_of(out)},
       {repeats_ref},
       resize_repeat_node));
 }

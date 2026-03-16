@@ -56,7 +56,7 @@ void add_full_node(
       // Push Constants
       {},
       // Specialization Constants
-      {},
+      {graph.hashed_layout_of(out)},
       // Resize Args
       {size_or_in},
       // Resizing Logic

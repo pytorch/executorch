@@ -26,6 +26,9 @@ ${layout_declare_ubo(B, "float", "fill_value")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+${layout_declare_spec_const(C, "int", "out_layout", "CONTIG_LAYOUT_INT")}
+const int packed_dim = get_packed_dim(out_layout);
+
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
 
@@ -36,8 +39,8 @@ void main() {
   VEC4_T outtex = VEC4_T(fill_value);
 
   TensorIndex4D tidx = texture_pos_to_tensor4d_idx_simple(outp, pos);
-  const int packed_dim_size = outp.sizes[outp.packed_dim];
-  int packed_idx = tidx.data[outp.packed_dim];
+  const int packed_dim_size = outp.sizes[packed_dim];
+  int packed_idx = tidx.data[packed_dim];
 
   if (packed_idx + 3 >= packed_dim_size) {
     ivec4 packed_ind = ivec4(packed_idx) + ivec4(0, 1, 2, 3);
