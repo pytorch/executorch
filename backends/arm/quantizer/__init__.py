@@ -11,33 +11,16 @@ unavailable.
 """
 
 from .quantization_config import QuantizationConfig  # noqa  # usort: skip
+from .arm_quantizer import (  # noqa
+    EthosUQuantizer,
+    get_symmetric_a16w8_quantization_config,
+    get_symmetric_quantization_config,
+    TOSAQuantizer,
+    VgfQuantizer,
+)
 
 # Used in tests
 from .arm_quantizer_utils import is_annotated  # noqa
-
-# Lazily import heavy quantizer classes to avoid circular imports with
-# Cortex-M quantization configs.
-_LAZY_EXPORTS = {
-    "EthosUQuantizer": "executorch.backends.arm.quantizer.arm_quantizer",
-    "get_symmetric_a16w8_quantization_config": "executorch.backends.arm.quantizer.arm_quantizer",
-    "get_symmetric_quantization_config": "executorch.backends.arm.quantizer.arm_quantizer",
-    "TOSAQuantizer": "executorch.backends.arm.quantizer.arm_quantizer",
-    "VgfQuantizer": "executorch.backends.arm.quantizer.arm_quantizer",
-}
-
-
-def __getattr__(name: str):
-    if name not in _LAZY_EXPORTS:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    import importlib
-
-    module = importlib.import_module(_LAZY_EXPORTS[name])
-    return getattr(module, name)
-
-
-def __dir__():
-    return sorted(list(globals().keys()) + list(_LAZY_EXPORTS.keys()))
-
 
 # Load quantized ops library.
 try:
