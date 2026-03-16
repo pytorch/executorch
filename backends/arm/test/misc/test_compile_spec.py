@@ -16,17 +16,17 @@ def test_compile_spec_u55_INT():
         .dump_intermediate_artifacts_to("my_path")
         .dump_debug_info(EthosUCompileSpec.DebugMode.TOSA)
     )
-    spec_list = compile_spec.to_list()
+    spec_list = compile_spec._to_list()
 
-    assert EthosUCompileSpec.from_list(spec_list) == compile_spec
+    assert EthosUCompileSpec._from_list(spec_list) == compile_spec
     assert "--my-flag" in compile_spec.compiler_flags
     assert "--output-format=raw" in compile_spec.compiler_flags
     with raises(ValueError, match="Incorrect output format"):
-        VgfCompileSpec.from_list(spec_list)
+        VgfCompileSpec._from_list(spec_list)
 
     spec_list.pop(0)
     with raises(ValueError, match="No tosa_spec in compile spec."):
-        EthosUCompileSpec.from_list(spec_list)
+        EthosUCompileSpec._from_list(spec_list)
 
 
 def test_ethos_u55_defaults_to_stable_softmax_u55_INT():
@@ -53,18 +53,18 @@ def test_compile_spec_vgf_no_quant():
         compiler_flags=["--my-flag2"]
     ).dump_intermediate_artifacts_to("my_path")
 
-    spec_list = compile_spec.to_list()
+    spec_list = compile_spec._to_list()
 
-    assert VgfCompileSpec.from_list(spec_list) == compile_spec
-    assert VgfCompileSpec.from_list(spec_list) != compile_spec2
+    assert VgfCompileSpec._from_list(spec_list) == compile_spec
+    assert VgfCompileSpec._from_list(spec_list) != compile_spec2
     with raises(ValueError, match="Incorrect output format"):
-        EthosUCompileSpec.from_list(spec_list)
+        EthosUCompileSpec._from_list(spec_list)
 
 
 def test_compile_spec_tosa_INT():
     compile_spec = TosaCompileSpec("TOSA-1.0+INT")
-    spec_list = compile_spec.to_list()
+    spec_list = compile_spec._to_list()
 
-    assert TosaCompileSpec.from_list(spec_list) == compile_spec
+    assert TosaCompileSpec._from_list(spec_list) == compile_spec
     with raises(ValueError, match="Incorrect output format"):
-        VgfCompileSpec.from_list(spec_list)
+        VgfCompileSpec._from_list(spec_list)

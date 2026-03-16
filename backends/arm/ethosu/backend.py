@@ -96,7 +96,7 @@ class EthosUBackend(BackendDetails):
         """
         logger.info(f"{EthosUBackend.__name__} preprocess")
 
-        compile_spec = EthosUCompileSpec.from_list(compile_specs)
+        compile_spec = EthosUCompileSpec._from_list(compile_specs)
         # deduce TOSA compile_spec from Ethos-U compile spec. We get a new
         # compile spec list, containing only elements relevant for the
         # TOSABackend.
