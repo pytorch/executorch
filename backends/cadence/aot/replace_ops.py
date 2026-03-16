@@ -2368,8 +2368,18 @@ class ReplaceMulTensorWithMulAndFullOpsPass(RemoveOrReplacePassInterface):
                 args=([1], full_arg),
                 kwargs={"dtype": full_output_dtype},
             )
-            full_node.meta = node.meta
-            full_node.meta["val"] = [1]
+            full_node.meta = node.meta.copy()
+            # Create a proper FakeTensor for metadata instead of Python list
+            fake_mode = node.meta["val"].fake_mode
+            if fake_mode is not None:
+                with fake_mode:
+                    full_node.meta["val"] = torch.full(
+                        [1], full_arg, dtype=full_output_dtype
+                    )
+            else:
+                full_node.meta["val"] = torch.empty(
+                    [1], dtype=full_output_dtype, device="meta"
+                )
             new_mul_node = node.graph.call_function(
                 torch.ops.aten.mul.Tensor, args=(x_arg, full_node)
             )
