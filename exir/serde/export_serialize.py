@@ -333,7 +333,7 @@ def deserialize_torch_artifact(
         return {}
     buffer = io.BytesIO(serialized)
     buffer.seek(0)
-    artifact = torch.load(buffer)
+    artifact = torch.load(buffer, weights_only=True)
     assert isinstance(artifact, (tuple, dict))
     return artifact
 
