@@ -23,9 +23,9 @@ class TosaCompileSpec(ArmCompileSpec):
         if isinstance(tosa_spec, str):
             tosa_spec = TosaSpecification.create_from_string(tosa_spec)
         self._set_compile_specs(tosa_spec, [])
-        self.validate()
+        self._validate()
 
-    def validate(self):
+    def _validate(self):
         """Ensure that no unsupported compiler flags were supplied."""
         if len(self.compiler_flags) != 0:
             raise ValueError(
