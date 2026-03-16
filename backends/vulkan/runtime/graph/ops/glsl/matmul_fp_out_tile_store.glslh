@@ -1,0 +1,119 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Assume the following variables are defined in the shader layout:
+ * - t_output
+ * - t_bias (when HAS_BIAS is defined)
+ *
+ * Macro Settings:
+ * - OUTPUT_BUFFER
+ * - HAS_BIAS
+ * - BIAS_BUFFER
+ */
+
+#ifndef MATMUL_FP_OUT_TILE_STORE_GLSLH
+#define MATMUL_FP_OUT_TILE_STORE_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_fp_output_tile.glslh"
+#include "linear_fp_per_out_channel_params.glslh"
+
+#ifndef SCALAR_BUFFER
+void store_matmul_output_x4(
+    const VEC4_T texel,
+    const int n4,
+    const int m,
+    const int b,
+    const int N4,
+    const int M) {
+#ifdef OUTPUT_BUFFER
+  t_output[(b * M + m) * N4 + n4] = texel;
+#else
+  imageStore(t_output, ivec3(n4, m, b), texel);
+#endif
+}
+
+void store_matmul_out_tile_with_checks(
+    const FPOutTile out_tile,
+    const int n4_start,
+    const int m_start,
+    const int b,
+    const int N4,
+    const int M) {
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      if (m_start + m < M && n4_start + n4 < N4) {
+        store_matmul_output_x4(
+            out_tile.data[m][n4], n4_start + n4, m_start + m, b, N4, M);
+      }
+    }
+  }
+}
+#endif // !SCALAR_BUFFER
+
+#ifdef SCALAR_BUFFER
+void store_matmul_out_tile_scalar(
+    const FPOutTile out_tile,
+    const int n4_start,
+    const int m_start,
+    const int b,
+    const int N4,
+    const int N,
+    const int M) {
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      if (m_start + m < M && n4_start + n4 < N4) {
+        const int base = (b * M + m_start + m) * N + mul_4(n4_start + n4);
+        const VEC4_T val = out_tile.data[m][n4];
+        t_output[base] = val.x;
+        if (mul_4(n4_start + n4) + 1 < N) t_output[base + 1] = val.y;
+        if (mul_4(n4_start + n4) + 2 < N) t_output[base + 2] = val.z;
+        if (mul_4(n4_start + n4) + 3 < N) t_output[base + 3] = val.w;
+      }
+    }
+  }
+}
+#endif // SCALAR_BUFFER
+
+#ifdef HAS_BIAS
+
+#ifndef SCALAR_BUFFER
+void load_bias_params(
+    out FPPerOutChannelParams params,
+    const int n4_start,
+    const int N4) {
+  [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+    if (n4_start + n4 < N4) {
+#ifdef BIAS_BUFFER
+      params.data[n4] = t_bias[n4_start + n4];
+#else
+      params.data[n4] = texelFetch(t_bias, ivec3(n4_start + n4, 0, 0), 0);
+#endif
+    } else {
+      params.data[n4] = VEC4_T(0.0);
+    }
+  }
+}
+#endif // !SCALAR_BUFFER
+
+void apply_addmm_bias(
+    inout FPOutTile out_tile,
+    const FPPerOutChannelParams bias) {
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      out_tile.data[m][n4] =
+          VEC4_T(alpha) * out_tile.data[m][n4] + VEC4_T(beta) * bias.data[n4];
+    }
+  }
+}
+
+#endif // HAS_BIAS
+
+#endif // MATMUL_FP_OUT_TILE_STORE_GLSLH
