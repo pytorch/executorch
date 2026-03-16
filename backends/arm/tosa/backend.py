@@ -170,7 +170,7 @@ class TOSABackend(BackendDetails):
 
         """
         return TOSABackend._preprocess(
-            edge_program, TosaCompileSpec.from_list(compile_specs)
+            edge_program, TosaCompileSpec._from_list(compile_specs)
         )
 
     @staticmethod

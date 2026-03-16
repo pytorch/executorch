@@ -95,7 +95,7 @@ class VgfBackend(BackendDetails):
         """
         logger.info(f"{VgfBackend.__name__} preprocess")
 
-        compile_spec = VgfCompileSpec.from_list(compile_specs)
+        compile_spec = VgfCompileSpec._from_list(compile_specs)
         # deduce TOSA compile_spec from VGF compile spec. We get a new
         # compile spec list, containing only elements relevant for the
         # TOSABackend.

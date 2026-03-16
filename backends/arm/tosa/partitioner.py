@@ -145,7 +145,7 @@ class TOSAPartitioner(Partitioner):
 
         """
         self.delegation_spec = DelegationSpec(
-            TOSABackend.__name__, compile_spec.to_list()
+            TOSABackend.__name__, compile_spec._to_list()
         )
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
