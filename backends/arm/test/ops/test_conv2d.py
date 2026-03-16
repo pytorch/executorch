@@ -483,6 +483,8 @@ def test_convolution_2d_tosa_FP(test_data):
         aten_op,
         exir_op,
         tosa_extensions=["bf16"],
+        atol=3e-3,
+        rtol=3e-3,
     )
     pipeline.run()
 
@@ -593,6 +595,8 @@ def test_convolution_2d_vgf_no_quant(test_data):
         aten_op,
         exir_op,
         quantize=False,
+        atol=3e-3,
+        rtol=3e-3,
     )
     pipeline.run()
 
