@@ -293,37 +293,52 @@ class DebugConfig:
 
 
 ################################################################################
-############################## MultimethodLoraConfig ###########################
+############################## MultimethodConfig ###########################
 ################################################################################
 
 
 @dataclass
-class MultimethodLoraConfig:
+class MethodConfig:
+    """Configuration for exporting a single method to a .pte file.
+    By default, all other fields fall back to the default configs in
+    the yaml file.
+
+    Attributes:
+        method_name: Name of the method to export.
+        lora_config: Optional LoRA configuration.
+    """
+
+    method_name: str
+    lora_config: Optional[LoraConfig] = None
+
+
+@dataclass
+class MultimethodConfig:
     """Configuration for exporting multiple methods to a single .pte file.
 
     Maps method names to optional LoRA configurations. A None value means
     the method uses base model weights.
 
     Attributes:
-        methods: Dict mapping method names to optional LoRA configs.
-            Empty dict disables multimethod_lora export.
+        methods: List of MethodConfig objects with method name and config
+            for each method.
         share_mutable_buffers: Whether to share mutable buffers across methods.
             If True, sets all mutable buffers to mem_id=2. Mutable buffers with
             the same FQN (fully qualified name) will have the same offset.
 
     Example:
-        MultimethodLoraConfig(methods={
-            "forward": None,  # base model
-            "lora_forward": lora_config,  # LoRA variant
-        })
+        MultimethodConfig(methods=[
+            MethodConfig("forward", lora_config=None),  # base model
+            MethodConfig("lora_forward", lora_config=lora_config),  # LoRA variant
+        ])
     """
 
-    methods: Dict[str, Optional[LoraConfig]] = field(default_factory=dict)
+    methods: List[MethodConfig] = field(default_factory=list)
     share_mutable_buffers: bool = False
 
     @property
     def enabled(self) -> bool:
-        """Returns True if multimethod_lora export is configured."""
+        """Returns True if multimethod export is configured."""
         return len(self.methods) > 0
 
 
@@ -611,9 +626,7 @@ class LlmConfig:
     model: ModelConfig = field(default_factory=ModelConfig)
     export: ExportConfig = field(default_factory=ExportConfig)
     debug: DebugConfig = field(default_factory=DebugConfig)
-    multimethod_lora: MultimethodLoraConfig = field(
-        default_factory=MultimethodLoraConfig
-    )
+    multimethod: MultimethodConfig = field(default_factory=MultimethodConfig)
     quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
     backend: BackendConfig = field(default_factory=BackendConfig)
 
