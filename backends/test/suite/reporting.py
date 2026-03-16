@@ -58,8 +58,9 @@ OP_COUNT_IGNORED_OPS = {
 
 
 class TestResult(IntEnum):
-    __test__ = False
     """Represents the result of a test case run, indicating success or a specific failure reason."""
+
+    __test__ = False
 
     SUCCESS = 0
     """ The test succeeded with the backend delegate part or all of the graph. """
@@ -152,10 +153,11 @@ class TestResult(IntEnum):
 
 @dataclass
 class TestCaseSummary:
-    __test__ = False
     """
     Contains summary results for the execution of a single test case.
     """
+
+    __test__ = False
 
     backend: str
     """ The name of the target backend. """
