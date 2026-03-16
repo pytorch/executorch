@@ -287,14 +287,14 @@ void et_pal_emit_log_message(
     size_t line,
     const char* message,
     ET_UNUSED size_t length) {
-  fprintf(
-      stderr,
+  printf(
       "%c [executorch:%s:%lu %s()] %s\n",
       level,
       filename,
       static_cast<unsigned long>(line),
       function,
       message);
+  fflush(stdout);
 }
 
 /**
@@ -1065,38 +1065,3 @@ void executor_runner_main(void) {
 
   ET_LOG(Info, "Program complete.");
 }
-
-#if defined(ESP_PLATFORM)
-/**
- * ESP-IDF application entry point.
- * Runs the executor runner on a task with a sufficiently large stack.
- */
-extern "C" void app_main(void) {
-  ET_LOG(Info, "ExecuTorch ESP32 Executor Runner starting...");
-
-  // Run directly - for production use, consider creating a dedicated
-  // FreeRTOS task with appropriate stack size:
-  //
-  //   xTaskCreatePinnedToCore(
-  //       [](void*) { executor_runner_main(); vTaskDelete(nullptr); },
-  //       "et_runner",
-  //       32768,  // Stack size in bytes
-  //       nullptr,
-  //       5,      // Priority
-  //       nullptr,
-  //       1       // Core ID (0 or 1)
-  //   );
-  //
-  executor_runner_main();
-}
-#else
-/**
- * Host/test entry point when building outside ESP-IDF.
- */
-int main(int argc, const char* argv[]) {
-  (void)argc;
-  (void)argv;
-  executor_runner_main();
-  return 0;
-}
-#endif
