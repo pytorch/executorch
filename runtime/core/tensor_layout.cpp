@@ -12,6 +12,8 @@
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/core/tensor_layout.h>
 
+#include <limits>
+
 namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
 
@@ -24,10 +26,21 @@ Result<size_t> calculate_nbytes(
     if (sizes[i] < 0) {
       return Error::InvalidArgument;
     }
+    if (n > std::numeric_limits<ssize_t>::max() /
+                std::max(sizes[i], (int32_t)1)) {
+      return Error::InvalidArgument;
+    }
     n *= sizes[i];
   }
   // Use the full namespace to disambiguate from c10::elementSize.
-  return n * executorch::runtime::elementSize(scalar_type);
+  auto elem_size =
+      static_cast<ssize_t>(executorch::runtime::elementSize(scalar_type));
+  if (n > 0 && elem_size > 0 &&
+      static_cast<size_t>(n) >
+          std::numeric_limits<size_t>::max() / static_cast<size_t>(elem_size)) {
+    return Error::InvalidArgument;
+  }
+  return static_cast<size_t>(n) * static_cast<size_t>(elem_size);
 }
 } // namespace
 
