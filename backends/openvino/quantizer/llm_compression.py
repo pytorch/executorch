@@ -7,7 +7,7 @@
 # mypy: disable-error-code=import-not-found
 
 import logging
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple
 import random
 
 import torch
@@ -30,7 +30,6 @@ TASK_TO_HF_DATASET = {
 }
 
 
-# This code is adapted from https://github.com/pytorch/executorch/blob/0c54fd0483314da173f8e14d63d2ed9591c7133a/extension/llm/export/builder.py#L278
 def get_calibration_data(
     tokenizer,
     data: str,
@@ -47,12 +46,12 @@ def get_calibration_data(
     limit = nsamples * seqlen // 4  # ~1k for 128 samples with seqlen=32 to be aligned with optimum
     text = "".join([" \n" if s == "" else s for s in data["text"][:limit]])
 
-    enc = tokenizer(text, return_tensors="pt")
+    enc = tokenizer.encode(text, bos=True, eos=False)
     dataset = []
     for _ in range(nsamples):
-        i = random.randint(0, enc.input_ids.shape[1] - seqlen - 1)
+        i = random.randint(0, len(enc) - seqlen - 1)
         j = i + seqlen
-        inp = enc.input_ids[:, i:j]
+        inp = enc[i:j]
         dataset.extend([(token, pos) for pos, token in enumerate(inp)])
     return dataset
 
@@ -127,26 +126,52 @@ def _build_nncf_calibration_dataset(
     )
 
 
+def apply_nncf_data_aware_compression_from_builder(
+    builder: LLMEdgeManager,
+    quantizer: Quantizer,
+    awq: bool,
+    scale_estimation: bool,
+) -> LLMEdgeManager:
+    """
+    Applies NNCF data-aware weight compression to the exported LLM graph using the builder's configuration.
+    :param builder: LLMEdgeManager containing the pre-autograd graph module and calibration configuration.
+    :param quantizer: TorchAO quantizer to use for compression.
+    :param awq: If True, enables Activation-aware Weights Quantization (AWQ).
+    :param scale_estimation: If True, enables NNCF's scale estimation algorithm.
+    :param calibration_task: Optional task key for calibration dataset (e.g. "wikitext", "c4", "gsm8k").
+    :param subset_size: Optional max number of samples from the calibration dataset to use for calibration.
+    :return: LLMEdgeManager with compressed pre-autograd graph module.
+    """
+    tokenizer_path = builder.tokenizer_path
+    tokenizer = get_tokenizer(tokenizer_path) if tokenizer_path is not None else None
+    compressed_model = apply_nncf_data_aware_compression(
+        model=builder.pre_autograd_graph_module,
+        quantizer=quantizer,
+        awq=awq,
+        scale_estimation=scale_estimation,
+        tokenizer=tokenizer,
+    )
+    builder.pre_autograd_graph_module = compressed_model
+    return builder
+
+
 def apply_nncf_data_aware_compression(
-    builder_or_model: Union[LLMEdgeManager, torch.fx.GraphModule],
+    model: torch.fx.GraphModule,
     quantizer: Quantizer,
     awq: bool,
     scale_estimation: bool,
     calibration_task: Optional[str] = "wikitext",
     tokenizer: Optional[str] = None,
-    seq_len: Optional[int] = None,
-    subset_size: Optional[int] = 1024,
-) -> Union[LLMEdgeManager, torch.fx.GraphModule]:
+    seq_len: Optional[int] = 32,
+    subset_size: Optional[int] = 128,
+) -> torch.fx.GraphModule:
     """
     Applies NNCF data-aware weight compression to the exported LLM graph.
     Uses the builder's tokenizer and calibration prompt to generate token-level
     calibration data, then runs `nncf.experimental.torch.fx.compress_pt2e` with
     the given quantizer and optional AWQ / scale estimation enabled.
 
-    :param builder_or_model: Either:
-        - LLMEdgeManager containing the FX graph, tokenizer path,
-          calibration prompt, and max sequence length, or
-        - torch.fx.GraphModule to be compressed directly.
+        :param model: torch.fx.GraphModule to be compressed.
     :param quantizer: TorchAO quantizer to use for compression.
     :param awq: If True, enables Activation-aware Weights Quantization (AWQ).
     :param scale_estimation: If True, enables NNCF's scale estimation algorithm.
@@ -155,29 +180,12 @@ def apply_nncf_data_aware_compression(
     :param tokenizer: Optional tokenizer when passing GraphModule directly.
     :param seq_len: Optional max sequence length of each calibration prompt when passing GraphModule directly.
     :param subset_size: Optional max number of samples from the calibration dataset to use for calibration.
-        Default is 1024. This is high because it is token-level data, not sample-level. The number of tokens is much higher than the number of samples.
-    :return: Updated input object with compressed torch FX model.
+        Default is 128. This is high because it is token-level data, not sample-level. The number of tokens is much higher than the number of samples.
+    :return: Compressed torch FX model.
     """
-    nncf_calibration_data = None
-
     if not quantizer:
         logging.info("No quantizer provided, skipping NNCF compression.")
-        return builder_or_model
-
-    if isinstance(builder_or_model, LLMEdgeManager):
-        builder = builder_or_model
-        model = builder.pre_autograd_graph_module
-        tokenizer_path = builder.tokenizer_path
-        tokenizer = get_tokenizer(tokenizer_path) if tokenizer_path is not None else None
-        # Keeping it to model's max length for now, but this can be decoupled in the future if needed
-        seq_len = builder.max_seq_len
-    elif isinstance(builder_or_model, torch.fx.GraphModule):
-        builder = None
-        model = builder_or_model
-    else:
-        raise TypeError(
-            "builder_or_model must be either LLMEdgeManager or torch.fx.GraphModule"
-        )
+        return model
 
     nncf_calibration_data = _build_nncf_calibration_dataset(
         calibration_task=calibration_task,
@@ -188,17 +196,15 @@ def apply_nncf_data_aware_compression(
         scale_estimation=scale_estimation,
     )
 
+    # Since it is a static model, each input is a single token.
+    total_calibration_dataset_size = subset_size * seq_len
     compressed_model = nncf.experimental.torch.fx.compress_pt2e(
         model,
         quantizer=quantizer,
         dataset=nncf_calibration_data,
         awq=awq,
         scale_estimation=scale_estimation,
-        subset_size=subset_size,
+        subset_size=total_calibration_dataset_size,
     )
-
-    if builder is not None:
-        builder.pre_autograd_graph_module = compressed_model
-        return builder
 
     return compressed_model

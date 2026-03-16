@@ -997,13 +997,13 @@ def _to_edge_and_lower_llama_openvino(
     for partitioner in partitioners:
         logging.info(f"--> {partitioner.__class__.__name__}")
 
-    from executorch.backends.openvino.quantizer import apply_nncf_data_aware_compression
+    from executorch.backends.openvino.quantizer import apply_nncf_data_aware_compression_from_builder
 
     logging.info(f"Applying AWQ = {awq}, Scale Estimation = {scale_estimation}")
     quantizer = None
     if(quantizers):
         quantizer = quantizers[0]
-    builder = apply_nncf_data_aware_compression(
+    builder = apply_nncf_data_aware_compression_from_builder(
         builder_exported, quantizer, awq, scale_estimation
     )
 
