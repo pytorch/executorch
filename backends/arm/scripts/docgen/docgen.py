@@ -135,7 +135,7 @@ def generate_ethos_u_docs():
     """Generates documentation for the Ethos-U components in the backend."""
     compilespec_string = get_class_docstring(
         EthosUCompileSpec,
-        ("DebugMode", "to_list", "from_list", "from_list_hook", "validate"),
+        ("DebugMode", "to_list", "from_list", "validate"),
     )
     partitioner_string = get_class_docstring(EthosUPartitioner)
     quantizer_string = get_class_docstring(
@@ -190,7 +190,7 @@ def generate_vgf_docs():
     """Generates documentation for the VGF components in the backend."""
     compilespec_string = get_class_docstring(
         VgfCompileSpec,
-        ("DebugMode", "to_list", "from_list", "from_list_hook", "validate"),
+        ("DebugMode", "to_list", "from_list", "validate"),
     )
     partitioner_string = get_class_docstring(VgfPartitioner)
     quantizer_string = get_class_docstring(

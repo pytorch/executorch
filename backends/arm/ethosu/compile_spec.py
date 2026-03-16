@@ -128,7 +128,7 @@ class EthosUCompileSpec(ArmCompileSpec):
         return compile_specs
 
     @classmethod
-    def from_list_hook(cls, compile_spec, specs: dict[str, str]):
+    def _from_list_hook(cls, compile_spec, specs: dict[str, str]):
         """Restore target-specific metadata from serialized compile specs."""
         compile_spec.target = specs.get(cls._TARGET_KEY, None)
 
