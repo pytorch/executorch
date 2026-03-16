@@ -4,16 +4,32 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-addmm_naive_buffer:
+matmul_scalar:
   parameter_names_with_default_values:
     DTYPE: float
     STORAGE: buffer
     HAS_BIAS: false
+    TILE_M4: 1
+    TILE_K4: 1
+    TILE_N4: 1
+    TILE_M: 4
   generate_variant_forall:
+    STORAGE:
+      - VALUE: buffer
     DTYPE:
       - VALUE: float
       - VALUE: half
   shader_variants:
-    - NAME: matmul_naive_buffer
-    - NAME: addmm_naive_buffer
+    - NAME: matmul
+    - NAME: matmul_tile_row_2
+      TILE_M: 2
+    - NAME: matmul_tile_row_1
+      TILE_M: 1
+    - NAME: matmul_bias
       HAS_BIAS: true
+    - NAME: matmul_bias_tile_row_2
+      HAS_BIAS: true
+      TILE_M: 2
+    - NAME: matmul_bias_tile_row_1
+      HAS_BIAS: true
+      TILE_M: 1

@@ -21,6 +21,8 @@ namespace impl {
 namespace HiFi {
 namespace native {
 
+namespace {
+
 // Optimized NHWC 1D convolution for int8 x int8 -> int8
 void xa_opt_quantized_conv1d_nlc_asym8sxsym8s_asym8s(
     KernelRuntimeContext& ctx,
@@ -141,7 +143,81 @@ void xa_opt_quantized_conv1d_nlc_asym8sxsym8s_asym8s(
   }
 }
 
-void quantized_conv1d_nlc_asym8sxsym8s_asym8s_per_tensor_out(
+// Optimized NHWC 1D convolution for uint8 x uint8 -> uint8
+void xa_opt_quantized_conv1d_nlc_asym8uxsym8u_asym8u(
+    KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    int32_t in_zero_point,
+    int32_t weight_zero_point,
+    float bias_scale,
+    float output_scale,
+    int32_t output_zero_point,
+    Tensor& out) {
+  UWORD8* __restrict__ p_out =
+      (UWORD8* __restrict__)out.mutable_data_ptr<uint8_t>();
+  UWORD8* __restrict__ p_inp =
+      (UWORD8* __restrict__)input.const_data_ptr<uint8_t>();
+  UWORD8* __restrict__ p_kernel =
+      (UWORD8* __restrict__)weight.const_data_ptr<uint8_t>();
+  WORD32* __restrict__ p_bias =
+      (WORD32* __restrict__)bias.const_data_ptr<int32_t>();
+
+  WORD32 batches = input.size(0);
+  WORD32 input_channels = input.size(2);
+  WORD32 input_width = input.size(1);
+  WORD32 out_channels = weight.size(2);
+  WORD32 kernel_width = weight.size(1);
+  WORD32 out_width = out.size(1);
+  WORD32 x_stride = stride[1];
+  WORD32 x_padding = padding[1];
+  WORD32 input_zero_bias = -in_zero_point;
+  WORD32 out_multiplier32 = bias_scale * (1. / output_scale) * 2147483648;
+  WORD32 out_shift32 = 0;
+  WORD32 kernel_zero_bias = -weight_zero_point;
+
+  WORD32 out_zero_bias = output_zero_point;
+  WORD32 out_data_format = 0;
+  WORD32 scratch_size =
+      xa_nn_conv1d_std_getsize(kernel_width, input_width, input_channels, 8);
+  scratch_size = scratch_size < 0 ? 0 : scratch_size;
+  WORD32* ptr_scratch =
+      (WORD32*)kernels::allocate_temp_memory(ctx, scratch_size);
+  pVOID p_scratch = (pVOID)ALIGN_PTR(ptr_scratch, 8);
+
+  for (int _n = 0; _n < batches; _n++) {
+    UWORD8* in_batch = p_inp + _n * input_channels * input_width;
+    UWORD8* out_batch = p_out + _n * out_channels * out_width;
+
+    xa_nn_conv1d_std_asym8uxasym8u(
+        out_batch,
+        in_batch,
+        p_kernel,
+        p_bias,
+        input_width,
+        1,
+        input_channels,
+        kernel_width,
+        out_channels,
+        x_stride,
+        x_padding,
+        out_width,
+        input_zero_bias,
+        kernel_zero_bias,
+        out_multiplier32,
+        out_shift32,
+        out_zero_bias,
+        out_data_format,
+        p_scratch);
+  }
+}
+
+} // namespace
+
+void quantized_conv1d_nlc_per_tensor_out(
     KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
@@ -158,19 +234,42 @@ void quantized_conv1d_nlc_asym8sxsym8s_asym8s_per_tensor_out(
     __ET_UNUSED int64_t out_multiplier,
     __ET_UNUSED int64_t out_shift,
     Tensor& out) {
-  xa_opt_quantized_conv1d_nlc_asym8sxsym8s_asym8s(
-      ctx,
-      input,
-      weight,
-      bias,
-      stride,
-      padding,
-      in_zero_point,
-      weight_zero_point,
-      bias_scale,
-      output_scale,
-      output_zero_point,
-      out);
+  ScalarType dtype = out.scalar_type();
+
+  if (dtype == ScalarType::Char) {
+    xa_opt_quantized_conv1d_nlc_asym8sxsym8s_asym8s(
+        ctx,
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        static_cast<int32_t>(in_zero_point),
+        static_cast<int32_t>(weight_zero_point),
+        static_cast<float>(bias_scale),
+        static_cast<float>(output_scale),
+        static_cast<int32_t>(output_zero_point),
+        out);
+  } else if (dtype == ScalarType::Byte) {
+    xa_opt_quantized_conv1d_nlc_asym8uxsym8u_asym8u(
+        ctx,
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        static_cast<int32_t>(in_zero_point),
+        static_cast<int32_t>(weight_zero_point),
+        static_cast<float>(bias_scale),
+        static_cast<float>(output_scale),
+        static_cast<int32_t>(output_zero_point),
+        out);
+  } else {
+    ET_DCHECK_MSG(
+        false,
+        "Unhandled dtype %s for quantized_conv1d_nlc",
+        torch::executor::toString(dtype));
+  }
 }
 
 } // namespace native
