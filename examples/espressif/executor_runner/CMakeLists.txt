@@ -128,6 +128,7 @@ if(ESP_PLATFORM)
     extension_runner_util
     executorch
     portable_kernels
+    portable_ops_lib
   )
 
   if(TARGET xnnpack_backend)

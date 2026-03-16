@@ -10,6 +10,7 @@ CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 # ─── PSRAM (if available) ───
 # Enable PSRAM for larger model support
 CONFIG_SPIRAM=y
+#CONFIG_SPIRAM_MODE_QUAD=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
 # Allow malloc to fall back to PSRAM when internal RAM is exhausted
@@ -43,3 +44,8 @@ CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 # ─── Watchdog ───
 # Disable task watchdog for long-running inference
 CONFIG_ESP_TASK_WDT_EN=n
+
+
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"

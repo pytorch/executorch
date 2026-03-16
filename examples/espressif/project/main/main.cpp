@@ -22,9 +22,21 @@
 //
 // Alternatively, uncomment below to define your own entry point:
 //
-// extern void executor_runner_main(void);
-//
-// extern "C" void app_main(void) {
-//     // Custom initialization here
-//     executor_runner_main();
-// }
+
+#include <stdio.h>
+#include "sdkconfig.h"
+#include "freertos/FreeRTOS.h"
+#include "esp_system.h"
+
+extern void executor_runner_main(void);
+
+extern "C" void app_main(void) {
+    printf("Starting executorch runner !\n");
+    fflush(stdout);
+    // Custom initialization here
+    executor_runner_main();
+    for (int i = 5; i >= 0; i--) {
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+    esp_restart();
+}

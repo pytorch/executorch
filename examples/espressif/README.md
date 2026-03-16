@@ -139,6 +139,7 @@ cmake --preset esp-baremetal -B cmake-out-esp \
     -DCMAKE_TOOLCHAIN_FILE=$IDF_PATH/tools/cmake/toolchain-${IDF_TARGET}.cmake \
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_DEVTOOLS=ON \
+    -DEXECUTORCH_SELECT_OPS_LIST="aten::add.out,aten::mul.out" \
     .
 
 cmake --build cmake-out-esp -j$(nproc)
