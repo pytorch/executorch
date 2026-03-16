@@ -3,9 +3,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 from typing import Any, cast, Tuple
 
-import pytest
 import torch
 from executorch.backends.arm.test import common
 
@@ -39,6 +41,15 @@ from transformers.models.gemma3n.modeling_gemma3n import (
 input_t = Tuple[torch.Tensor, ...]
 
 
+class Gemma3NModule(torch.nn.Module):
+    """Base class for Gemma3n modules in this test suite."""
+
+    @classmethod
+    def prepare_model_and_inputs(cls) -> Tuple[Gemma3NModule, input_t]:
+        """Prepare the model and inputs for testing."""
+        raise NotImplementedError("Subclasses must implement this method.")
+
+
 def _make_position_ids(
     batch_size: int, seq_length: int, device: torch.device
 ) -> torch.Tensor:
@@ -67,7 +78,7 @@ def _promote_gradient_clipping_buffers(module: torch.nn.Module) -> None:
                 submodule_any.gradient_clipping = float(buffer.detach().item())
 
 
-class RMSNormModel(torch.nn.Module):
+class RMSNormModel(Gemma3NModule):
     """Gemma3n RMSNorm block wrapper."""
 
     def __init__(self, config) -> None:
@@ -93,7 +104,7 @@ class RMSNormModel(torch.nn.Module):
         return (rmsnorm_model, rmsnorm_model_inputs)
 
 
-class LaurelBlockModel(torch.nn.Module):
+class LaurelBlockModel(Gemma3NModule):
     """Gemma3n TextLaurelBlock wrapper."""
 
     def __init__(self, config) -> None:
@@ -119,7 +130,7 @@ class LaurelBlockModel(torch.nn.Module):
         return (laurel_model, laurel_model_inputs)
 
 
-class MLPModel(torch.nn.Module):
+class MLPModel(Gemma3NModule):
     """Gemma3n Text MLP wrapper."""
 
     def __init__(self, config) -> None:
@@ -152,7 +163,7 @@ class MLPModel(torch.nn.Module):
         return (mlp_model, mlp_model_inputs)
 
 
-class AltUpModel(torch.nn.Module):
+class AltUpModel(Gemma3NModule):
     """Wrapper around Gemma3nTextAltUp."""
 
     def __init__(self, config) -> None:
@@ -194,7 +205,7 @@ class AltUpModel(torch.nn.Module):
         return (altup_model, altup_model_inputs)
 
 
-class AttentionModel(torch.nn.Module):
+class AttentionModel(Gemma3NModule):
     """Gemma3n TextAttention wrapper."""
 
     def __init__(self, config) -> None:
@@ -229,7 +240,7 @@ class AttentionModel(torch.nn.Module):
         return (attn_model, attn_model_inputs)
 
 
-class DecoderLayerModel(torch.nn.Module):
+class DecoderLayerModel(Gemma3NModule):
     """Gemma3n TextDecoderLayer wrapper."""
 
     def __init__(self, config) -> None:
@@ -292,7 +303,7 @@ class DecoderLayerModel(torch.nn.Module):
         return (decoder_layer, decoder_inputs)
 
 
-class TestAudioAttentionModel(torch.nn.Module):
+class TestAudioAttentionModel(Gemma3NModule):
     """Wrap Gemma3nAudioAttention in a simple forward."""
 
     def __init__(self, config) -> None:
@@ -324,7 +335,7 @@ class TestAudioAttentionModel(torch.nn.Module):
         return (model, inputs)
 
 
-class CumulativeGroupNormModel(torch.nn.Module):
+class CumulativeGroupNormModel(Gemma3NModule):
     """Wrapper for Gemma3nAudioCumulativeGroupNorm."""
 
     def __init__(self, num_channels: int = 512, eps: float = 1e-05) -> None:
@@ -354,7 +365,7 @@ class CumulativeGroupNormModel(torch.nn.Module):
         return (cg_norm_model, cg_norm_inputs)
 
 
-class SSCPConvBlockModel(torch.nn.Module):
+class SSCPConvBlockModel(Gemma3NModule):
     """Wrapper for Gemma3nAudioSSCPConvBlock (first block)."""
 
     def __init__(self, config) -> None:
@@ -382,7 +393,7 @@ class SSCPConvBlockModel(torch.nn.Module):
         return (sscp_block, sscp_inputs)
 
 
-class SSCPConvProjectionModel(torch.nn.Module):
+class SSCPConvProjectionModel(Gemma3NModule):
     """Wrapper for Gemma3nAudioSubSampleConvProjection."""
 
     def __init__(self, config) -> None:
@@ -412,7 +423,7 @@ class SSCPConvProjectionModel(torch.nn.Module):
         return (sscp_proj_model, sscp_proj_inputs)
 
 
-class TestConformerAttentionModel(torch.nn.Module):
+class TestConformerAttentionModel(Gemma3NModule):
     """Wrapper for Gemma3nAudioConformerAttention."""
 
     def __init__(self, config) -> None:
@@ -441,7 +452,7 @@ class TestConformerAttentionModel(torch.nn.Module):
         return (model, inputs)
 
 
-class TestConformerFFNModel(torch.nn.Module):
+class TestConformerFFNModel(Gemma3NModule):
     """Wrapper for Gemma3nAudioConformerFeedForward."""
 
     def __init__(self, config) -> None:
@@ -469,7 +480,7 @@ class TestConformerFFNModel(torch.nn.Module):
         return (model, inputs)
 
 
-class ConformerLightConv1dModel(torch.nn.Module):
+class ConformerLightConv1dModel(Gemma3NModule):
     """Wrapper for Gemma3nAudioConformerLightConv1d."""
 
     def __init__(self, config) -> None:
@@ -498,7 +509,7 @@ class ConformerLightConv1dModel(torch.nn.Module):
         return (lightconv, lightconv_inputs)
 
 
-class TestConformerBlockModel(torch.nn.Module):
+class TestConformerBlockModel(Gemma3NModule):
     """Wrap a single Gemma3nAudioConformerBlock."""
 
     def __init__(self, config) -> None:
@@ -529,7 +540,7 @@ class TestConformerBlockModel(torch.nn.Module):
         return (model, inputs)
 
 
-class AudioEncoderModel(torch.nn.Module):
+class AudioEncoderModel(Gemma3NModule):
     """Wrapper for Gemma3nAudioEncoder."""
 
     def __init__(self, config) -> None:
@@ -560,563 +571,241 @@ class AudioEncoderModel(torch.nn.Module):
         return (encoder, encoder_inputs)
 
 
-PipelineConfig = tuple[str, bool | None, float | None, float | None, int | None]
+@dataclass(frozen=True)
+class Gemma3nTestCase:
+    model_cls: type[Gemma3NModule]
+    call_delegates: int = 1
+    atol: float = 1e-3
+    rtol: float = 1e-3
+    qtol: int = 1
+    frobenius_threshold: float | None = 0.15
+    cosine_threshold: float | None = 0.9
+    run_on_vulkan_runtime: bool = True
+    check_exir_quant_nodes: bool = True
 
-PIPELINE_TEST_DATA: dict[str, PipelineConfig] = {
-    "tosa_fp": ("tosa_fp", None, None, None, None),
-    "tosa_int": ("tosa_int", None, None, None, None),
-    "vgf_no_quant": ("vgf", False, None, None, None),
-    "vgf_quant": ("vgf", True, None, None, None),
+
+TOSA_FP_TEST_CASES: dict[str, Gemma3nTestCase] = {
+    "audio_attention": Gemma3nTestCase(
+        model_cls=TestAudioAttentionModel,
+    ),
+    "conformer_attention": Gemma3nTestCase(
+        model_cls=TestConformerAttentionModel,
+        call_delegates=2,
+    ),
+    "conformer_block": Gemma3nTestCase(
+        model_cls=TestConformerBlockModel,
+        call_delegates=2,
+    ),
+    "conformer_ffn": Gemma3nTestCase(model_cls=TestConformerFFNModel),
+    "conformer_light_conv1d": Gemma3nTestCase(model_cls=ConformerLightConv1dModel),
+    "audio_encoder": Gemma3nTestCase(model_cls=AudioEncoderModel),
+    "sscp_conv_block": Gemma3nTestCase(model_cls=SSCPConvBlockModel),
+    "sscp_conv_projection": Gemma3nTestCase(model_cls=SSCPConvProjectionModel),
+    "cumulative_group_norm": Gemma3nTestCase(model_cls=CumulativeGroupNormModel),
+    "rms_norm": Gemma3nTestCase(model_cls=RMSNormModel),
+    "altup": Gemma3nTestCase(model_cls=AltUpModel),
+    "attention": Gemma3nTestCase(model_cls=AttentionModel),
+    "decoder_layer": Gemma3nTestCase(model_cls=DecoderLayerModel),
+    "laurel_block": Gemma3nTestCase(model_cls=LaurelBlockModel),
+    "mlp": Gemma3nTestCase(model_cls=MLPModel),
+}
+##TODO (MLETORCH-1951): xfail/high atol/rtol
+
+TOSA_INT_TEST_CASES: dict[str, Gemma3nTestCase] = {
+    "audio_attention": Gemma3nTestCase(model_cls=TestAudioAttentionModel),
+    "conformer_attention": Gemma3nTestCase(
+        model_cls=TestConformerAttentionModel,
+        call_delegates=3,
+        atol=0.08,
+        frobenius_threshold=0.2,
+    ),
+    "conformer_block": Gemma3nTestCase(
+        model_cls=TestConformerBlockModel,
+        call_delegates=3,
+        atol=0.6,
+        frobenius_threshold=0.2,
+    ),
+    "conformer_ffn": Gemma3nTestCase(model_cls=TestConformerFFNModel, atol=0.08),
+    "conformer_light_conv1d": Gemma3nTestCase(
+        model_cls=ConformerLightConv1dModel,
+        atol=0.08,
+    ),
+    "audio_encoder": Gemma3nTestCase(
+        model_cls=AudioEncoderModel,
+        call_delegates=1,
+        atol=0.08,
+    ),
+    "sscp_conv_block": Gemma3nTestCase(model_cls=SSCPConvBlockModel),
+    "sscp_conv_projection": Gemma3nTestCase(model_cls=SSCPConvProjectionModel),
+    "cumulative_group_norm": Gemma3nTestCase(
+        model_cls=CumulativeGroupNormModel,
+        atol=0.04,
+    ),
+    "rms_norm": Gemma3nTestCase(model_cls=RMSNormModel),
+    "altup": Gemma3nTestCase(model_cls=AltUpModel),
+    "attention": Gemma3nTestCase(model_cls=AttentionModel),
+    "decoder_layer": Gemma3nTestCase(
+        model_cls=DecoderLayerModel,
+        call_delegates=0,
+        frobenius_threshold=None,
+        cosine_threshold=None,
+    ),
+    "laurel_block": Gemma3nTestCase(model_cls=LaurelBlockModel, qtol=2),
+    "mlp": Gemma3nTestCase(model_cls=MLPModel),
 }
 
-PIPELINE_TEST_DATA_NO_TOSA_FP: dict[str, PipelineConfig] = {
-    "tosa_int": ("tosa_int", None, None, None, None),
-    "vgf_no_quant": ("vgf", False, None, None, None),
-    "vgf_quant": ("vgf", True, None, None, None),
+VGF_NO_QUANT_TEST_CASES: dict[str, Gemma3nTestCase] = {
+    "audio_attention": Gemma3nTestCase(model_cls=TestAudioAttentionModel),
+    "conformer_attention": Gemma3nTestCase(model_cls=TestConformerAttentionModel),
+    "conformer_block": Gemma3nTestCase(model_cls=TestConformerBlockModel),
+    "conformer_ffn": Gemma3nTestCase(model_cls=TestConformerFFNModel),
+    "conformer_light_conv1d": Gemma3nTestCase(model_cls=ConformerLightConv1dModel),
+    "audio_encoder": Gemma3nTestCase(model_cls=AudioEncoderModel),
+    "sscp_conv_block": Gemma3nTestCase(model_cls=SSCPConvBlockModel),
+    "sscp_conv_projection": Gemma3nTestCase(
+        model_cls=SSCPConvProjectionModel,
+        run_on_vulkan_runtime=False,
+    ),
+    "cumulative_group_norm": Gemma3nTestCase(model_cls=CumulativeGroupNormModel),
+    "rms_norm": Gemma3nTestCase(model_cls=RMSNormModel),
+    "altup": Gemma3nTestCase(model_cls=AltUpModel),
+    "attention": Gemma3nTestCase(model_cls=AttentionModel),
+    "decoder_layer": Gemma3nTestCase(model_cls=DecoderLayerModel),
+    "laurel_block": Gemma3nTestCase(model_cls=LaurelBlockModel),
+    "mlp": Gemma3nTestCase(model_cls=MLPModel),
 }
 
-CONFORMER_INT_ATOL = 0.08
-PIPELINE_TEST_DATA_CONFORMER: dict[str, PipelineConfig] = dict(PIPELINE_TEST_DATA)
-PIPELINE_TEST_DATA_CONFORMER["tosa_int"] = (
-    "tosa_int",
-    None,
-    CONFORMER_INT_ATOL,
-    None,
-    None,
-)
-
-# Counts are the number of delegated subgraphs in the to_edge_transform_and_lower
-# stage, i.e. the occurrences of executorch_call_delegate in the EXIR graph.
-# To regenerate, run a pipeline and read
-# executorch.devtools.backend_debug.get_delegation_info(...).num_delegated_subgraphs
-# from the to_edge_transform_and_lower artifact.
-EXPECTED_DELEGATE_COUNTS: dict[str, dict[str, int]] = {
-    "AltUpModel": {
-        "tosa_fp": 1,
-        "tosa_int": 1,
-        "vgf_no_quant": 1,
-        "vgf_quant": 1,
-    },
-    "AttentionModel": {
-        "tosa_fp": 1,
-        "tosa_int": 1,
-        "vgf_no_quant": 1,
-        "vgf_quant": 1,
-    },
-    "AudioEncoderModel": {
-        "tosa_fp": 1,
-        "tosa_int": 2,
-        "vgf_no_quant": 1,
-        "vgf_quant": 2,
-    },
-    "ConformerLightConv1dModel": {
-        "tosa_fp": 1,
-        "tosa_int": 1,
-        "vgf_no_quant": 1,
-        "vgf_quant": 1,
-    },
-    "CumulativeGroupNormModel": {
-        "tosa_fp": 1,
-        "tosa_int": 1,
-        "vgf_no_quant": 1,
-        "vgf_quant": 1,
-    },
-    "DecoderLayerModel": {
-        "tosa_fp": 1,
-        "tosa_int": 0,
-        "vgf_no_quant": 1,
-        "vgf_quant": 0,
-    },
-    "LaurelBlockModel": {
-        "tosa_fp": 1,
-        "tosa_int": 1,
-        "vgf_no_quant": 1,
-        "vgf_quant": 1,
-    },
-    "MLPModel": {
-        "tosa_fp": 1,
-        "tosa_int": 1,
-        "vgf_no_quant": 1,
-        "vgf_quant": 1,
-    },
-    "RMSNormModel": {
-        "tosa_fp": 1,
-        "tosa_int": 1,
-        "vgf_no_quant": 1,
-        "vgf_quant": 1,
-    },
-    "SSCPConvBlockModel": {
-        "tosa_fp": 1,
-        "tosa_int": 1,
-        "vgf_no_quant": 1,
-        "vgf_quant": 1,
-    },
-    "SSCPConvProjectionModel": {
-        "tosa_fp": 1,
-        "tosa_int": 1,
-        "vgf_no_quant": 1,
-        "vgf_quant": 1,
-    },
-    "TestAudioAttentionModel": {
-        "tosa_fp": 1,
-        "tosa_int": 1,
-        "vgf_no_quant": 1,
-        "vgf_quant": 1,
-    },
-    "TestConformerAttentionModel": {
-        "tosa_fp": 2,
-        "tosa_int": 3,
-        "vgf_no_quant": 1,
-        "vgf_quant": 1,
-    },
-    "TestConformerBlockModel": {
-        "tosa_fp": 2,
-        "tosa_int": 3,
-        "vgf_no_quant": 1,
-        "vgf_quant": 1,
-    },
-    "TestConformerFFNModel": {
-        "tosa_fp": 1,
-        "tosa_int": 1,
-        "vgf_no_quant": 1,
-        "vgf_quant": 1,
-    },
+VGF_QUANT_TEST_CASES: dict[str, Gemma3nTestCase] = {
+    "audio_attention": Gemma3nTestCase(model_cls=TestAudioAttentionModel),
+    "conformer_attention": Gemma3nTestCase(
+        model_cls=TestConformerAttentionModel, qtol=2
+    ),
+    "conformer_block": Gemma3nTestCase(
+        model_cls=TestConformerBlockModel,
+        atol=0.6,
+    ),
+    "conformer_ffn": Gemma3nTestCase(model_cls=TestConformerFFNModel),
+    "conformer_light_conv1d": Gemma3nTestCase(model_cls=ConformerLightConv1dModel),
+    "audio_encoder": Gemma3nTestCase(model_cls=AudioEncoderModel, call_delegates=1),
+    "sscp_conv_block": Gemma3nTestCase(model_cls=SSCPConvBlockModel),
+    "sscp_conv_projection": Gemma3nTestCase(model_cls=SSCPConvProjectionModel),
+    "cumulative_group_norm": Gemma3nTestCase(
+        model_cls=CumulativeGroupNormModel,
+        atol=0.04,
+    ),
+    "rms_norm": Gemma3nTestCase(model_cls=RMSNormModel),
+    "altup": Gemma3nTestCase(model_cls=AltUpModel),
+    "attention": Gemma3nTestCase(model_cls=AttentionModel, atol=0.04),
+    "decoder_layer": Gemma3nTestCase(
+        model_cls=DecoderLayerModel,
+        call_delegates=0,
+        check_exir_quant_nodes=False,
+    ),
+    "laurel_block": Gemma3nTestCase(model_cls=LaurelBlockModel, qtol=2),
+    "mlp": Gemma3nTestCase(model_cls=MLPModel),
 }
 
 
-def _expected_delegate_count(
-    model_cls, pipeline_kind: str, quantize: bool | None
-) -> int:
-    model_name = model_cls.__name__
-    expected = EXPECTED_DELEGATE_COUNTS.get(model_name)
-    if expected is None:
-        raise KeyError(f"Missing delegate counts for {model_name}")
-    if pipeline_kind == "vgf":
-        if quantize is None:
-            raise ValueError("quantize must be set for VGF pipeline")
-        return expected["vgf_quant" if quantize else "vgf_no_quant"]
-    return expected[pipeline_kind]
-
-
-def _run_pipeline(
-    model: torch.nn.Module,
-    inputs: input_t,
-    pipeline_kind: str,
-    quantize: bool | None,
-    compare_atol: float | None,
-    compare_rtol: float | None,
-    compare_qtol: int | None,
-    expected_delegates: int,
-) -> None:
-    pipeline: Any
-    if pipeline_kind == "tosa_fp":
+@common.parametrize("test_case", TOSA_FP_TEST_CASES)
+def test_gemma3n_tosa_FP(test_case: Gemma3nTestCase):
+    model, inputs = test_case.model_cls.prepare_model_and_inputs()
+    with torch.no_grad():
         pipeline = TosaPipelineFP[input_t](model, inputs, aten_op=[], exir_op=[])
-    elif pipeline_kind == "tosa_int":
-        atol = compare_atol if compare_atol is not None else 1e-3
-        rtol = compare_rtol if compare_rtol is not None else 1e-3
-        qtol = compare_qtol if compare_qtol is not None else 1
+        pipeline.change_args(
+            "check_count.exir",
+            {
+                "torch.ops.higher_order.executorch_call_delegate": test_case.call_delegates
+            },
+        )
+        pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@common.parametrize(
+    "test_case",
+    TOSA_INT_TEST_CASES,
+    xfails={
+        "decoder_layer": "No TOSA delegate generated for decoder_layer on INT path."
+    },
+)
+def test_gemma3n_tosa_INT(test_case: Gemma3nTestCase):
+    model, inputs = test_case.model_cls.prepare_model_and_inputs()
+    with torch.no_grad():
         pipeline = TosaPipelineINT[input_t](
             model,
             inputs,
             aten_op=[],
             exir_op=[],
-            atol=atol,
-            rtol=rtol,
-            qtol=qtol,
+            atol=test_case.atol,
+            rtol=test_case.rtol,
+            qtol=test_case.qtol,
+            frobenius_threshold=test_case.frobenius_threshold,
+            cosine_threshold=test_case.cosine_threshold,
         )
-    elif pipeline_kind == "vgf":
-        if quantize is None:
-            raise ValueError("quantize must be set for VGF pipeline")
+        pipeline.change_args(
+            "check_count.exir",
+            {
+                "torch.ops.higher_order.executorch_call_delegate": test_case.call_delegates
+            },
+        )
+        pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@common.parametrize("test_case", VGF_NO_QUANT_TEST_CASES)
+def test_gemma3n_vgf_no_quant(test_case: Gemma3nTestCase):
+    model, inputs = test_case.model_cls.prepare_model_and_inputs()
+    with torch.no_grad():
         pipeline = VgfPipeline[input_t](
             model,
             inputs,
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
-            quantize=quantize,
+            quantize=False,
+            run_on_vulkan_runtime=test_case.run_on_vulkan_runtime,
+            atol=test_case.atol,
+            rtol=test_case.rtol,
+            qtol=test_case.qtol,
         )
-    else:
-        raise ValueError(f"Unsupported pipeline kind: {pipeline_kind}")
-    pipeline.change_args(
-        "check_count.exir",
-        {"torch.ops.higher_order.executorch_call_delegate": expected_delegates},
-    )
-    pipeline.run()
+        if not test_case.check_exir_quant_nodes and pipeline.has_stage(
+            "check_not.exir_quant_nodes"
+        ):
+            pipeline.pop_stage("check_not.exir_quant_nodes")
+        pipeline.change_args(
+            "check_count.exir",
+            {
+                "torch.ops.higher_order.executorch_call_delegate": test_case.call_delegates
+            },
+        )
+        pipeline.run()
 
 
-def _run_pipeline_test(model_cls, pipeline_config: PipelineConfig) -> None:
-    model, inputs = model_cls.prepare_model_and_inputs()
-    pipeline_kind, quantize, compare_atol, compare_rtol, compare_qtol = pipeline_config
-    expected_delegates = _expected_delegate_count(model_cls, pipeline_kind, quantize)
-    if pipeline_kind == "vgf" and not common.arm_executor_runner_exists(
-        "vkml_emulation_layer"
-    ):
-        pytest.xfail(
-            "Did not find build executor_runner for VKML; run setup_testing_vkml.sh."
-        )
+@common.SkipIfNoModelConverter
+@common.parametrize("test_case", VGF_QUANT_TEST_CASES)
+def test_gemma3n_vgf_quant(test_case: Gemma3nTestCase):
+    model, inputs = test_case.model_cls.prepare_model_and_inputs()
     with torch.no_grad():
-        _run_pipeline(
+        pipeline = VgfPipeline[input_t](
             model,
             inputs,
-            pipeline_kind,
-            quantize,
-            compare_atol,
-            compare_rtol,
-            compare_qtol,
-            expected_delegates,
+            aten_op=[],
+            exir_op=[],
+            use_to_edge_transform_and_lower=True,
+            quantize=True,
+            run_on_vulkan_runtime=test_case.run_on_vulkan_runtime,
+            atol=test_case.atol,
+            rtol=test_case.rtol,
+            qtol=test_case.qtol,
         )
-
-
-def _run_pipeline_test_by_key(
-    model_cls, pipeline_data: dict[str, PipelineConfig], key: str
-) -> None:
-    _run_pipeline_test(model_cls, pipeline_data[key])
-
-
-def test_gemma3n_tosa_FP_AudioAttentionModel():
-    _run_pipeline_test_by_key(TestAudioAttentionModel, PIPELINE_TEST_DATA, "tosa_fp")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_INT_AudioAttentionModel():
-    _run_pipeline_test_by_key(
-        TestAudioAttentionModel, PIPELINE_TEST_DATA_NO_TOSA_FP, "tosa_int"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_no_quant_AudioAttentionModel():
-    _run_pipeline_test_by_key(
-        TestAudioAttentionModel, PIPELINE_TEST_DATA_NO_TOSA_FP, "vgf_no_quant"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_quant_AudioAttentionModel():
-    _run_pipeline_test_by_key(
-        TestAudioAttentionModel, PIPELINE_TEST_DATA_NO_TOSA_FP, "vgf_quant"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_FP_ConformerAttentionModel():
-    _run_pipeline_test_by_key(
-        TestConformerAttentionModel, PIPELINE_TEST_DATA_CONFORMER, "tosa_fp"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_INT_ConformerAttentionModel():
-    _run_pipeline_test_by_key(
-        TestConformerAttentionModel, PIPELINE_TEST_DATA_CONFORMER, "tosa_int"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_no_quant_ConformerAttentionModel():
-    _run_pipeline_test_by_key(
-        TestConformerAttentionModel, PIPELINE_TEST_DATA_CONFORMER, "vgf_no_quant"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_quant_ConformerAttentionModel():
-    _run_pipeline_test_by_key(
-        TestConformerAttentionModel, PIPELINE_TEST_DATA_CONFORMER, "vgf_quant"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_FP_ConformerBlockModel():
-    _run_pipeline_test_by_key(
-        TestConformerBlockModel, PIPELINE_TEST_DATA_CONFORMER, "tosa_fp"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_INT_ConformerBlockModel():
-    _run_pipeline_test_by_key(
-        TestConformerBlockModel, PIPELINE_TEST_DATA_CONFORMER, "tosa_int"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_no_quant_ConformerBlockModel():
-    _run_pipeline_test_by_key(
-        TestConformerBlockModel, PIPELINE_TEST_DATA_CONFORMER, "vgf_no_quant"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_quant_ConformerBlockModel():
-    _run_pipeline_test_by_key(
-        TestConformerBlockModel, PIPELINE_TEST_DATA_CONFORMER, "vgf_quant"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_FP_ConformerFFNModel():
-    _run_pipeline_test_by_key(
-        TestConformerFFNModel, PIPELINE_TEST_DATA_CONFORMER, "tosa_fp"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_INT_ConformerFFNModel():
-    _run_pipeline_test_by_key(
-        TestConformerFFNModel, PIPELINE_TEST_DATA_CONFORMER, "tosa_int"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_no_quant_ConformerFFNModel():
-    _run_pipeline_test_by_key(
-        TestConformerFFNModel, PIPELINE_TEST_DATA_CONFORMER, "vgf_no_quant"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_quant_ConformerFFNModel():
-    _run_pipeline_test_by_key(
-        TestConformerFFNModel, PIPELINE_TEST_DATA_CONFORMER, "vgf_quant"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_FP_ConformerLightConv1dModel():
-    _run_pipeline_test_by_key(
-        ConformerLightConv1dModel, PIPELINE_TEST_DATA_CONFORMER, "tosa_fp"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_INT_ConformerLightConv1dModel():
-    _run_pipeline_test_by_key(
-        ConformerLightConv1dModel, PIPELINE_TEST_DATA_CONFORMER, "tosa_int"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_no_quant_ConformerLightConv1dModel():
-    _run_pipeline_test_by_key(
-        ConformerLightConv1dModel, PIPELINE_TEST_DATA_CONFORMER, "vgf_no_quant"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_quant_ConformerLightConv1dModel():
-    _run_pipeline_test_by_key(
-        ConformerLightConv1dModel, PIPELINE_TEST_DATA_CONFORMER, "vgf_quant"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_FP_AudioEncoderModel():
-    _run_pipeline_test_by_key(
-        AudioEncoderModel, PIPELINE_TEST_DATA_CONFORMER, "tosa_fp"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_INT_AudioEncoderModel():
-    _run_pipeline_test_by_key(
-        AudioEncoderModel, PIPELINE_TEST_DATA_CONFORMER, "tosa_int"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_no_quant_AudioEncoderModel():
-    _run_pipeline_test_by_key(
-        AudioEncoderModel, PIPELINE_TEST_DATA_CONFORMER, "vgf_no_quant"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_quant_AudioEncoderModel():
-    _run_pipeline_test_by_key(
-        AudioEncoderModel, PIPELINE_TEST_DATA_CONFORMER, "vgf_quant"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_FP_SSCPConvBlockModel():
-    _run_pipeline_test_by_key(SSCPConvBlockModel, PIPELINE_TEST_DATA, "tosa_fp")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_INT_SSCPConvBlockModel():
-    _run_pipeline_test_by_key(SSCPConvBlockModel, PIPELINE_TEST_DATA, "tosa_int")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_no_quant_SSCPConvBlockModel():
-    _run_pipeline_test_by_key(SSCPConvBlockModel, PIPELINE_TEST_DATA, "vgf_no_quant")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_quant_SSCPConvBlockModel():
-    _run_pipeline_test_by_key(SSCPConvBlockModel, PIPELINE_TEST_DATA, "vgf_quant")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_FP_SSCPConvProjectionModel():
-    _run_pipeline_test_by_key(SSCPConvProjectionModel, PIPELINE_TEST_DATA, "tosa_fp")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_INT_SSCPConvProjectionModel():
-    _run_pipeline_test_by_key(SSCPConvProjectionModel, PIPELINE_TEST_DATA, "tosa_int")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_no_quant_SSCPConvProjectionModel():
-    _run_pipeline_test_by_key(
-        SSCPConvProjectionModel, PIPELINE_TEST_DATA, "vgf_no_quant"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_quant_SSCPConvProjectionModel():
-    _run_pipeline_test_by_key(SSCPConvProjectionModel, PIPELINE_TEST_DATA, "vgf_quant")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_FP_CumulativeGroupNormModel():
-    _run_pipeline_test_by_key(CumulativeGroupNormModel, PIPELINE_TEST_DATA, "tosa_fp")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_INT_CumulativeGroupNormModel():
-    _run_pipeline_test_by_key(CumulativeGroupNormModel, PIPELINE_TEST_DATA, "tosa_int")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_no_quant_CumulativeGroupNormModel():
-    _run_pipeline_test_by_key(
-        CumulativeGroupNormModel, PIPELINE_TEST_DATA, "vgf_no_quant"
-    )
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_quant_CumulativeGroupNormModel():
-    _run_pipeline_test_by_key(CumulativeGroupNormModel, PIPELINE_TEST_DATA, "vgf_quant")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_FP_RMSNormModel():
-    _run_pipeline_test_by_key(RMSNormModel, PIPELINE_TEST_DATA, "tosa_fp")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_INT_RMSNormModel():
-    _run_pipeline_test_by_key(RMSNormModel, PIPELINE_TEST_DATA, "tosa_int")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_no_quant_RMSNormModel():
-    _run_pipeline_test_by_key(RMSNormModel, PIPELINE_TEST_DATA, "vgf_no_quant")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_quant_RMSNormModel():
-    _run_pipeline_test_by_key(RMSNormModel, PIPELINE_TEST_DATA, "vgf_quant")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_FP_AltUpModel():
-    _run_pipeline_test_by_key(AltUpModel, PIPELINE_TEST_DATA, "tosa_fp")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_INT_AltUpModel():
-    _run_pipeline_test_by_key(AltUpModel, PIPELINE_TEST_DATA, "tosa_int")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_no_quant_AltUpModel():
-    _run_pipeline_test_by_key(AltUpModel, PIPELINE_TEST_DATA, "vgf_no_quant")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_quant_AltUpModel():
-    _run_pipeline_test_by_key(AltUpModel, PIPELINE_TEST_DATA, "vgf_quant")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_FP_AttentionModel():
-    _run_pipeline_test_by_key(AttentionModel, PIPELINE_TEST_DATA, "tosa_fp")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_INT_AttentionModel():
-    _run_pipeline_test_by_key(AttentionModel, PIPELINE_TEST_DATA, "tosa_int")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_no_quant_AttentionModel():
-    _run_pipeline_test_by_key(AttentionModel, PIPELINE_TEST_DATA, "vgf_no_quant")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_quant_AttentionModel():
-    _run_pipeline_test_by_key(AttentionModel, PIPELINE_TEST_DATA, "vgf_quant")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_FP_DecoderLayerModel():
-    _run_pipeline_test_by_key(DecoderLayerModel, PIPELINE_TEST_DATA, "tosa_fp")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_INT_DecoderLayerModel():
-    _run_pipeline_test_by_key(DecoderLayerModel, PIPELINE_TEST_DATA, "tosa_int")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_no_quant_DecoderLayerModel():
-    _run_pipeline_test_by_key(DecoderLayerModel, PIPELINE_TEST_DATA, "vgf_no_quant")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_quant_DecoderLayerModel():
-    _run_pipeline_test_by_key(DecoderLayerModel, PIPELINE_TEST_DATA, "vgf_quant")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_FP_LaurelBlockModel():
-    _run_pipeline_test_by_key(LaurelBlockModel, PIPELINE_TEST_DATA, "tosa_fp")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_INT_LaurelBlockModel():
-    _run_pipeline_test_by_key(LaurelBlockModel, PIPELINE_TEST_DATA, "tosa_int")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_no_quant_LaurelBlockModel():
-    _run_pipeline_test_by_key(LaurelBlockModel, PIPELINE_TEST_DATA, "vgf_no_quant")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_quant_LaurelBlockModel():
-    _run_pipeline_test_by_key(LaurelBlockModel, PIPELINE_TEST_DATA, "vgf_quant")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_FP_MLPModel():
-    _run_pipeline_test_by_key(MLPModel, PIPELINE_TEST_DATA, "tosa_fp")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_tosa_INT_MLPModel():
-    _run_pipeline_test_by_key(MLPModel, PIPELINE_TEST_DATA, "tosa_int")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_no_quant_MLPModel():
-    _run_pipeline_test_by_key(MLPModel, PIPELINE_TEST_DATA, "vgf_no_quant")
-
-
-@common.SkipIfNoModelConverter
-def test_gemma3n_vgf_quant_MLPModel():
-    _run_pipeline_test_by_key(MLPModel, PIPELINE_TEST_DATA, "vgf_quant")
+        if not test_case.check_exir_quant_nodes and pipeline.has_stage(
+            "check_not.exir_quant_nodes"
+        ):
+            pipeline.pop_stage("check_not.exir_quant_nodes")
+        pipeline.change_args(
+            "check_count.exir",
+            {
+                "torch.ops.higher_order.executorch_call_delegate": test_case.call_delegates
+            },
+        )
+        pipeline.run()
