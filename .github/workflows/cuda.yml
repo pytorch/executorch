@@ -151,6 +151,8 @@ jobs:
             name: "Qwen3-0.6B"
           - repo: "nvidia"
             name: "parakeet-tdt"
+          - repo: "facebook"
+            name: "dinov2-small-imagenet1k-1-layer"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -179,6 +181,15 @@ jobs:
               repo: "nvidia"
               name: "diar_streaming_sortformer_4spk-v2"
             quant: "quantized-int4-weight-only"
+          # DINOv2 currently supports only non-quantized export
+          - model:
+              repo: "facebook"
+              name: "dinov2-small-imagenet1k-1-layer"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "facebook"
+              name: "dinov2-small-imagenet1k-1-layer"
+            quant: "quantized-int4-weight-only"
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
@@ -198,8 +209,8 @@ jobs:
         ./install_executorch.sh
         echo "::endgroup::"
 
-        # Setup Huggingface only for models that need it (not parakeet)
-        if [ "${{ matrix.model.name }}" != "parakeet-tdt" ]; then
+        # Setup Huggingface only for models that need it (not parakeet or dinov2)
+        if [ "${{ matrix.model.name }}" != "parakeet-tdt" ] && [ "${{ matrix.model.name }}" != "dinov2-small-imagenet1k-1-layer" ]; then
           echo "::group::Setup Huggingface"
           pip install -U "huggingface_hub[cli]<1.0" accelerate
           huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
@@ -235,6 +246,8 @@ jobs:
             name: "gemma-3-4b-it"
           - repo: "nvidia"
             name: "parakeet-tdt"
+          - repo: "facebook"
+            name: "dinov2-small-imagenet1k-1-layer"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -262,6 +275,15 @@ jobs:
           - model:
               repo: "nvidia"
               name: "diar_streaming_sortformer_4spk-v2"
+            quant: "quantized-int4-weight-only"
+          # DINOv2 currently supports only non-quantized export
+          - model:
+              repo: "facebook"
+              name: "dinov2-small-imagenet1k-1-layer"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "facebook"
+              name: "dinov2-small-imagenet1k-1-layer"
             quant: "quantized-int4-weight-only"
     with:
       timeout: 90
