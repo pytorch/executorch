@@ -1000,8 +1000,11 @@ def _to_edge_and_lower_llama_openvino(
     from executorch.backends.openvino.quantizer import apply_nncf_data_aware_compression
 
     logging.info(f"Applying AWQ = {awq}, Scale Estimation = {scale_estimation}")
+    quantizer = None
+    if(quantizers):
+        quantizer = quantizers[0]
     builder = apply_nncf_data_aware_compression(
-        builder_exported, quantizers[0], awq, scale_estimation
+        builder_exported, quantizer, awq, scale_estimation
     )
 
     builder = builder.to_edge_transform_and_lower(partitioners)
