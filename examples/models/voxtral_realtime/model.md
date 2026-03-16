@@ -185,7 +185,7 @@ pass optimizes the attention kernel at compile time.
 require when using `[B, H, S, D]` attention with `[B, S, H, D]` cache.
 
 **Metal/CUDA:** Q/K/V projections still produce `[B, T, H, D]`, but
-`StaticKVCache` stores `[B, H, S, D]` and `MetalSDPA`/`CudaSDPA` transpose q to
+`StaticKVCache` stores `[B, H, S, D]` and `MetalSDPA`/`StandardSDPA` transpose q to
 `[B, H, T, D]` for the SDPA kernel, then transpose back.
 
 ### Adaptive RMSNorm

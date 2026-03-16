@@ -816,8 +816,22 @@ class EncoderRingKVCache(nn.Module):
         return self.k_cache, self.v_cache
 
     def create_causal_mask(
-        self, start_pos: torch.Tensor | int, seq_len: int, bool_mask: bool = False
+        self,
+        start_pos: torch.Tensor | int,
+        seq_len: int,
+        bool_mask: bool = False,
+        dtype: torch.dtype = torch.float32,
     ) -> torch.Tensor:
+        """Create sliding window attention mask for ring buffer.
+
+        Args:
+            start_pos: Starting position (scalar tensor or int).
+            seq_len: Number of query positions.
+            bool_mask: If True, return boolean mask (True=attend). If False,
+                return additive mask (0.0=attend, -inf=masked) in the given dtype.
+            dtype: Mask dtype for additive masks. Must match Q/K/V dtype for
+                the Metal SDPA kernel.
+        """
         device = (
             start_pos.device
             if isinstance(start_pos, torch.Tensor)
@@ -831,7 +845,13 @@ class EncoderRingKVCache(nn.Module):
         ).view(-1, 1)
         delta = pos_q - cache_pos.unsqueeze(0)
         valid = (cache_pos >= 0) & (delta >= 0) & (delta < self.window_size)
-        return torch.where(valid, 0.0, float("-inf"))
+        if bool_mask:
+            return valid.unsqueeze(0).unsqueeze(0)
+        return torch.where(
+            valid,
+            torch.zeros(1, dtype=dtype, device=device),
+            torch.tensor(float("-inf"), dtype=dtype, device=device),
+        )
 
 
 class StandardEncoderRingKVCache(nn.Module):
