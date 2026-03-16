@@ -85,7 +85,6 @@ class RewriteIndexPutPass(ArmPass):
         source_shape: Sequence[int],
         indices: Iterable[Any],
         meta: NodeMetadata,
-        full_op,
     ) -> List[ProxyValue]:
         """Replace None indices with explicit ranges."""
         expanded: List[ProxyValue] = []
@@ -189,9 +188,7 @@ class RewriteIndexPutPass(ArmPass):
                 "index_put with only None indices is not supported"
             )
 
-        processed_indices = self._expand_none_indices(
-            source_shape, indices, plain_meta, full_op
-        )
+        processed_indices = self._expand_none_indices(source_shape, indices, plain_meta)
         index_shapes = [tuple(idx.data.shape) for idx in processed_indices]
         try:
             broadcast_shape = torch.broadcast_shapes(*index_shapes)
