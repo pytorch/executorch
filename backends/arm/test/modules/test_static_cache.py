@@ -124,25 +124,17 @@ def test_static_cache_tosa_FP(test_data):
     pipeline.run()
 
 
-@pytest.mark.xfail(
-    reason="TODO(MLETORCH-1818): Quantization for StaticCache is not yet supported."
-)
 @common.parametrize("test_data", test_configs)
 def test_static_cache_tosa_INT(test_data):
     module = StaticCacheModule(test_data).eval()
     pipeline = TosaPipelineINT[input_t](
-        module,
-        module.get_inputs(),
-        aten_op=[],
-        exir_op=[],
+        module, module.get_inputs(), aten_op=[], exir_op=[], fold_quantize=False
     )
     pipeline.run()
 
 
 @common.XfailIfNoCorstone300
-@pytest.mark.xfail(
-    reason="Quantization for StaticCache is not yet supported. Scatter operator is also not supported on U55."
-)
+@pytest.mark.xfail(reason="Scatter operator is not supported on U55.")
 @common.parametrize("test_data", test_configs)
 def test_static_cache_u55_INT(test_data):
     module = StaticCacheModule(test_data).eval()
@@ -155,13 +147,17 @@ def test_static_cache_u55_INT(test_data):
 
 
 @common.XfailIfNoCorstone320
-@pytest.mark.xfail(
-    reason="TODO(MLETORCH-1818): Quantization for StaticCache is not yet supported."
-)
 @common.parametrize("test_data", test_configs)
 def test_static_cache_u85_INT(test_data):
     module = StaticCacheModule(test_data).eval()
-    pipeline = EthosU85PipelineINT[input_t](module, module.get_inputs(), aten_ops=[])
+    pipeline = EthosU85PipelineINT[input_t](
+        module,
+        module.get_inputs(),
+        aten_ops=[],
+        fold_quantize=False,
+    )
+    # U85: keep _to_dim_order_copy portable for int64->int32 cast of cache_position (not delegatable).
+    pipeline.tester.use_portable_ops = True
     pipeline.run()
 
 
@@ -181,9 +177,6 @@ def test_static_cache_vgf_no_quant(test_data):
 
 
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(
-    reason="TODO(MLETORCH-1818): Quantization for StaticCache is not yet supported."
-)
 @common.parametrize("test_data", test_configs)
 def test_static_cache_vgf_quant(test_data):
     module = StaticCacheModule(test_data).eval()
@@ -193,5 +186,7 @@ def test_static_cache_vgf_quant(test_data):
         aten_op=[],
         exir_op=[],
         quantize=True,
+        fold_quantize=False,
+        tosa_spec="TOSA-1.0+INT",
     )
     pipeline.run()
