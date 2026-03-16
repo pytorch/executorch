@@ -144,7 +144,7 @@ class EthosUCompileSpec(ArmCompileSpec):
             )
 
     @classmethod
-    def get_output_format(cls) -> str:
+    def _get_output_format(cls) -> str:
         """Return the artifact format emitted by this compile spec."""
         return "vela"
 
