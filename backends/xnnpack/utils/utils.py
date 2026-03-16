@@ -6,14 +6,8 @@
 
 from typing import Any, cast, Optional, Tuple
 
-import executorch.exir as exir
 import torch
 
-from executorch.backends.xnnpack.utils.configs import (
-    get_transform_passes,
-    get_xnnpack_capture_config,
-    get_xnnpack_edge_compile_config,
-)
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -26,24 +20,6 @@ from torch._export.utils import (
     is_param,
 )
 from torchao.quantization.pt2e.utils import _is_conv_node, _is_conv_transpose_node
-
-
-### XNNPACK Capture ###
-def capture_graph_for_xnnpack(
-    module: torch.nn.Module,
-    inputs: Tuple[torch.Tensor],
-    enable_aot: Optional[bool] = None,
-    unlift: Optional[bool] = None,
-) -> exir.ExirExportedProgram:
-    return (
-        exir.capture(
-            module,
-            inputs,
-            get_xnnpack_capture_config(enable_aot=enable_aot, unlift=unlift),
-        )
-        .to_edge(get_xnnpack_edge_compile_config())
-        .transform(*get_transform_passes())
-    )
 
 
 ### XNNPACK Utils ###
