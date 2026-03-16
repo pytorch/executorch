@@ -6,7 +6,7 @@
 
 # pyre-unsafe
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Union
 
 import torch
 
@@ -94,9 +94,14 @@ class ExecutorchBackendConfig:
     # Moreover, static views will be elided from the ExecuTorch graph
     remove_view_copy: bool = True
 
-    # If set to true, all constant tensors will be stored in a separate file,
-    # external to the PTE file.
-    external_constants: bool = False
+    # Bool: if True, all constant tensors will be stored in a separate file. If False,
+    #       all constant tensors will be stored in the PTE file.
+    # Callable: a function from torch.fx.Node to Optional[str]. This will be called for each
+    #       placeholder (constant tensor) node, and if it returns a string, that node will be
+    #       tagged with the string. If None, the constant tensor is stored in the PTE file.
+    #       Otherwise, it is stored in a file named by the string. E.g., a function
+    #       lambda x: "model_weights" will save all constants into a file "model_weights.ptd".
+    external_constants: Union[bool, Callable[[torch.fx.Node], Optional[str]]] = False
 
     # If set to true, all trainable weights will be stored in a separate file,
     # external to the PTE file.

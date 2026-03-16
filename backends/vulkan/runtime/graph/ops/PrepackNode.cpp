@@ -18,9 +18,8 @@ namespace vkcompute {
 
 vkapi::ShaderInfo get_noop_shader(ComputeGraph& graph, const ValueRef packed) {
   std::string noop_shader_name("no_op");
-  vTensorPtr t_packed = graph.get_tensor(packed);
-  add_dtype_suffix(noop_shader_name, *t_packed);
-  add_storage_type_suffix(noop_shader_name, *t_packed);
+  add_dtype_suffix(noop_shader_name, graph.dtype_of(packed));
+  add_storage_type_suffix(noop_shader_name, graph.storage_type_of(packed));
   return VK_KERNEL_FROM_STR(noop_shader_name);
 }
 
@@ -48,23 +47,62 @@ PrepackNode::PrepackNode(
 }
 
 api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
-  vTensorPtr packed = graph->get_tensor(packed_);
-
-  // If no TensorRef is provided, create a staging buffer of zeros according to
-  // the vkapi::vTensor metadata.
+  // If no TensorRef is provided, create a staging buffer of zeros based on the
+  // Tensor metadata.
   if (graph->val_is_none(tref_)) {
-    size_t numel = utils::multiply_integers(packed->sizes());
-    api::StagingBuffer staging(graph->context(), packed->dtype(), numel);
+    const std::vector<int64_t> packed_sizes = graph->sizes_of(packed_);
+    size_t numel = utils::multiply_integers(packed_sizes);
+    api::StagingBuffer staging(
+        graph->context(),
+        graph->dtype_of(packed_),
+        numel,
+        vkapi::CopyDirection::HOST_TO_DEVICE);
     staging.set_staging_zeros();
     return staging;
   }
 
   TensorRefPtr tref = graph->get_tref(tref_);
   size_t numel = utils::multiply_integers(tref->sizes);
-  api::StagingBuffer staging(graph->context(), tref->dtype, numel);
+  api::StagingBuffer staging(
+      graph->context(),
+      tref->dtype,
+      numel,
+      vkapi::CopyDirection::HOST_TO_DEVICE);
   graph->update_staging_nbytes_in_cmd(staging.buffer().mem_size_as_size_t());
   size_t nbytes = numel * vkapi::element_size(tref->dtype);
-  staging.copy_from(tref->data, nbytes);
+
+  // In some cases the staging dtype will diverge from the TensorRef dtype. The
+  // most common case for this is when the tensor data is float16, but the GPU
+  // does not support 16-bit storage buffers. In these cases, the tensor data
+  // is manually casted to the staging dtype.
+  vkapi::ScalarType staging_dtype = staging.dtype();
+  vkapi::ScalarType tref_dtype = tref->dtype;
+  if (staging_dtype == tref_dtype) {
+    staging.copy_from(tref->data, nbytes);
+  } else {
+    // Hard-coded type conversion cases
+    if (tref_dtype == vkapi::kHalf && staging_dtype == vkapi::kFloat) {
+      const uint16_t* casted_data =
+          reinterpret_cast<const uint16_t*>(tref->data);
+      staging.cast_half_to_float_and_copy_from(casted_data, numel);
+    } else if (tref_dtype == vkapi::kLong && staging_dtype == vkapi::kInt) {
+      const int64_t* casted_data = reinterpret_cast<const int64_t*>(tref->data);
+      staging.cast_and_copy_from<int64_t, int32_t>(casted_data, numel);
+    } else if (tref_dtype == vkapi::kDouble && staging_dtype == vkapi::kFloat) {
+      const double* casted_data = reinterpret_cast<const double*>(tref->data);
+      staging.cast_and_copy_from<double, float>(casted_data, numel);
+    } else {
+      VK_THROW(
+          "Unsupported type conversion from ",
+          tref_dtype,
+          " to staging dtype ",
+          staging_dtype);
+    }
+  }
+
+  // Once the staging buffer is copied, if the TensorRef owns a FreeableBuffer,
+  // it can be freed.
+  tref->free_buffer();
   return staging;
 }
 
@@ -80,7 +118,6 @@ void PrepackNode::encode(ComputeGraph* graph) {
 
   context->check_device_capabilities(shader_);
 
-  vTensorPtr packed = graph->get_tensor(packed_);
   api::StagingBuffer staging = create_staging_buffer(graph);
 
   std::unique_lock<std::mutex> cmd_lock = context->dispatch_lock();
@@ -96,13 +133,17 @@ void PrepackNode::encode(ComputeGraph* graph) {
   }
 
   {
+    // If the vTensor is not yet bound to a memory allocation, create a new one
+    // and aquire it.
+    graph->create_dedicated_allocation_for(packed_);
+
     vkapi::PipelineBarrier pipeline_barrier{};
     vkapi::DescriptorSet descriptor_set = context->get_descriptor_set(
         shader_, local_workgroup_size_, spec_vars_, push_constants_offset);
 
     uint32_t idx = 0;
-    bind_tensor_to_descriptor_set(
-        *packed,
+    graph->bind_tensor_to_descriptor_set(
+        packed_,
         pipeline_barrier,
         vkapi::MemoryAccessType::WRITE,
         descriptor_set,
@@ -128,8 +169,8 @@ void PrepackNode::encode(ComputeGraph* graph) {
     vkapi::DescriptorSet descriptor_set = context->get_descriptor_set(
         noop_shader_, utils::WorkgroupSize(1, 1, 1));
 
-    bind_tensor_to_descriptor_set(
-        *packed,
+    graph->bind_tensor_to_descriptor_set(
+        packed_,
         pipeline_barrier,
         vkapi::MemoryAccessType::READ,
         descriptor_set,

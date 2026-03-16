@@ -1,0 +1,19 @@
+{
+  "dim": 2048,
+  "attention_qkv_bias": false,
+  "attention_multiplier": 0.015625,
+  "bos_idx": 0,
+  "embedding_scale_factor": 12.0,
+  "eos_idx": 0,
+  "act_fn": "silu",
+  "hidden_dim": 8192,
+  "n_heads": 32,
+  "n_layers": 40,
+  "n_kv_heads": 8,
+  "norm_eps": 1e-05,
+  "rope_theta": 10000000.0,
+  "vocab_size": 49159,
+  "use_hf_rope": false,
+  "residual_multiplier": 0.22,
+  "logits_scaling": 8.0
+}

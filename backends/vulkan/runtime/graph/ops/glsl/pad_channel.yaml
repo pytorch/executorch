@@ -8,5 +8,7 @@ pad_channel:
     DTYPE:
       - VALUE: float
       - VALUE: half
+      - VALUE: int32
+      - VALUE: uint8
   shader_variants:
     - NAME: pad_channel

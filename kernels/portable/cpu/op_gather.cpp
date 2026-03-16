@@ -30,7 +30,7 @@ void gather_helper(
     Tensor& out,
     int64_t dim) {
   const CTYPE* in_data = in.const_data_ptr<CTYPE>();
-  const long* index_data = index.const_data_ptr<long>();
+  const int64_t* index_data = index.const_data_ptr<int64_t>();
   CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 
   if (index.dim() == 0) {
@@ -85,7 +85,7 @@ Tensor& gather_out(
       InvalidArgument,
       out);
 
-  constexpr auto name = "gather.out";
+  static constexpr auto name = "gather.out";
 
   ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
     gather_helper<CTYPE>(in, index, out, dim);

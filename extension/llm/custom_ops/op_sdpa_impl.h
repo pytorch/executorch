@@ -24,7 +24,7 @@
 #endif
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 
-#include <torchao/experimental/kernels/cpu/interface/quantized_matmul.h>
+#include <torchao/csrc/cpu/torch_free_kernels/interface/quantized_matmul.h>
 
 namespace torch {
 namespace executor {
@@ -213,13 +213,13 @@ void dequant_and_gemm(
     const int64_t v_stride_n,
     float* o_data,
     const int64_t o_stride_m,
-    const float beta) {
-  std::vector<float> dequantized_v_data(v_data.m * v_data.n);
+    const float beta,
+    float* buf_qdq_ptr) {
   dequantize_per_channel_optimized(
       static_cast<const int8_t*>(v_data.data),
       static_cast<const float*>(v_data.scales),
       static_cast<const int8_t*>(v_data.zero_points),
-      dequantized_v_data.data(),
+      buf_qdq_ptr,
       -128,
       127,
       1,
@@ -237,7 +237,7 @@ void dequant_and_gemm(
       m,
       k,
       static_cast<float>(1),
-      dequantized_v_data.data(),
+      buf_qdq_ptr,
       v_data.n,
       qk_data,
       qk_stride_m,
@@ -257,7 +257,8 @@ void _qk_at_v_gemm(
     const int64_t v_stride_n,
     accum_t* o_data,
     const int64_t o_stride_m,
-    const accum_t beta) {
+    const accum_t beta,
+    accum_t* buf_qdq_ptr) {
   if (v_data.dtype == ScalarType::Char) {
     if constexpr (std::is_same<accum_t, float>::value) {
       if (m > 4) {
@@ -273,7 +274,8 @@ void _qk_at_v_gemm(
             v_stride_n,
             o_data,
             o_stride_m,
-            beta);
+            beta,
+            buf_qdq_ptr);
       } else {
         // For smaller batch sizes, use quantized gemm
         int a_stride_m_tmp, b_stride_n_tmp;
@@ -541,6 +543,7 @@ TODO: Just handle conversion of bool mask to float
  */
 template <typename scalar_t, int64_t q_split_size, int64_t kv_split_size>
 void cpu_flash_attention(
+    RuntimeContext& ctx,
     Tensor& output,
     const Tensor& query,
     const Tensor& key,
@@ -761,18 +764,34 @@ void cpu_flash_attention(
 
   // Since all intermediate compute is accum_t, we need to
   // allocate a buffer accordingly.
-  int64_t size_of_intermediate_precision = sizeof(accum_t);
-  int64_t size_bytes = size_per_thread * num_thread * query.element_size() *
-      size_of_intermediate_precision;
-  std::vector<char> buf_vec(size_bytes);
-  void* buf = reinterpret_cast<void*>(buf_vec.data());
-  // Need to double check the following
-  size_bytes = num_thread * qSplitSize * kvSplitSize * query.element_size();
-  std::vector<char> buf_reduced_vec(size_bytes);
-  void* buf_reduced = reinterpret_cast<void*>(buf_reduced_vec.data());
-  // at::Tensor buf_reduced = at::empty(
-  //    {num_thread, qSplitSize, is_reduced_type ? kvSplitSize : 0},
-  //    query.options());
+  int64_t size_bytes = size_per_thread * num_thread * sizeof(accum_t);
+  std::unique_ptr<char[]> allocated_buf;
+  void* buf;
+  Result<void*> scratch = ctx.allocate_temp(size_bytes, 64);
+  if (!scratch.ok()) {
+    allocated_buf = std::make_unique<char[]>(size_bytes);
+    buf = allocated_buf.get();
+  } else {
+    buf = scratch.get();
+  }
+  void* buf_reduced = nullptr;
+  int64_t size_per_thread_qdq_vec = kvSplitSize * headSize;
+  // Lets align size_per_thread_qdq_vec to 64 bytes, for coalesced cache reads,
+  // by padding with right number of per thread elements
+  int64_t size_per_thread_qdq_bytes = size_per_thread_qdq_vec * sizeof(accum_t);
+  int64_t size_qdq_bytes = size_per_thread_qdq_bytes * num_thread;
+  std::unique_ptr<char[]> allocated_buf_for_qdq;
+  accum_t* scratch_for_quant_dequant;
+  Result<void*> scratch_for_quant_dequant_res =
+      ctx.allocate_temp(size_qdq_bytes, 64);
+  if (!scratch_for_quant_dequant_res.ok()) {
+    allocated_buf_for_qdq = std::make_unique<char[]>(size_qdq_bytes);
+    scratch_for_quant_dequant =
+        reinterpret_cast<accum_t*>(allocated_buf_for_qdq.get());
+  } else {
+    scratch_for_quant_dequant =
+        reinterpret_cast<accum_t*>(scratch_for_quant_dequant_res.get());
+  }
 
   // Data ptrs
   const scalar_t* q_data = query.const_data_ptr<scalar_t>();
@@ -797,6 +816,8 @@ void cpu_flash_attention(
     scalar_t* qk_reduced_data = is_reduced_type
         ? buf_reduced_data + ompIdx * qSplitSize * kvSplitSize
         : nullptr;
+    accum_t* buf_qdq_ptr =
+        scratch_for_quant_dequant + ompIdx * size_per_thread_qdq_vec;
 
     for (int64_t z = begin; z < end; z++) {
       int64_t m = k * qSplitSize;
@@ -804,6 +825,7 @@ void cpu_flash_attention(
       // Initialize max and sum
       fill_stub(
           qk_max_data, -std::numeric_limits<accum_t>::infinity(), qBlockSize);
+      fill_stub(qk_sum_data, static_cast<accum_t>(0), qBlockSize);
       // Original flash sdpa wasnt really meant to be used
       // for decode the way we are using via start_pos here.
       // Thus when num_keys is 1 during decode phase, we
@@ -835,6 +857,7 @@ void cpu_flash_attention(
           is_causal ? std::min(m + start_pos + qBlockSize, kvSize) : kvSize;
       int64_t m_start_pos = m + start_pos;
       auto j_kv = j / num_reps;
+      fill_stub(dst_data, static_cast<accum_t>(0), qSplitSize * headSize);
       for (int64_t n = 0; n < num_keys; n += kvSplitSize) {
         int64_t kvBlockSize = std::min(kvSplitSize, kvSize - n);
         // Calculate scale * q @ k.T
@@ -1053,7 +1076,8 @@ void cpu_flash_attention(
             vStrideN,
             dst_data,
             headSize,
-            n == 0 ? static_cast<accum_t>(0) : static_cast<accum_t>(1));
+            n == 0 ? static_cast<accum_t>(0) : static_cast<accum_t>(1),
+            buf_qdq_ptr);
       }
       // dst <- dst / sum[row]
       // reorder MHA output with strides

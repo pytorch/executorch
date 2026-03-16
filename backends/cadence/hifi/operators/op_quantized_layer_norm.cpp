@@ -18,8 +18,9 @@ using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::getLeadingDims;
 using ::executorch::runtime::KernelRuntimeContext;
+using ::impl::HiFi::kernels::dequantize;
+using ::impl::HiFi::kernels::quantize;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -80,11 +81,9 @@ void quantized_layer_norm_per_tensor_(
     for (size_t j = 0; j < last_dim; ++j) {
       // Since X is quantized, we dequantize it, compute fp32 result, and
       // quantize the result to an int8/uint8 value.
-      float val = ::cadence::impl::HiFi::kernels::dequantize<T>(
-          x[j], input_scale, input_zero_point);
+      float val = dequantize<T>(x[j], input_scale, input_zero_point);
       val = (val - mean) * inv_std * weight_data[j] + bias_data[j];
-      y[j] = ::cadence::impl::HiFi::kernels::quantize<T>(
-          val, output_inv_scale, output_zero_point);
+      y[j] = quantize<T>(val, output_inv_scale, output_zero_point);
     }
   }
 }
@@ -195,7 +194,6 @@ void quantized_layer_norm_per_tensor_out(
 #undef typed_quantized_layer_norm
 }
 
-}; // namespace native
-}; // namespace HiFi
-}; // namespace impl
-}; // namespace cadence
+} // namespace native
+} // namespace HiFi
+} // namespace impl

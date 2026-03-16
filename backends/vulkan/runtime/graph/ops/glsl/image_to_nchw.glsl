@@ -8,6 +8,10 @@
 
 #version 450 core
 
+${define_required_extensions(STORAGE, DTYPE)}
+${define_required_extensions("buffer", BUF_DTYPE)}
+${define_explicit_type_extensions(DTYPE)}
+
 #define PRECISION ${PRECISION}
 
 #define BUF_T ${buffer_scalar_type(DTYPE)}
@@ -15,11 +19,9 @@
 
 ${define_active_storage_type(STORAGE)}
 
-${define_required_extensions(DTYPE)}
-
 layout(std430) buffer;
 
-${layout_declare_buffer(B, "w", "buf_out", DTYPE)}
+${layout_declare_buffer(B, "w", "buf_out", BUF_DTYPE)}
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
 
 $if USE_PUSH_CONST:

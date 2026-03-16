@@ -42,6 +42,7 @@ using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Method;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 using executorch::runtime::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
 
@@ -56,8 +57,8 @@ class StubBackend final : public BackendInterface {
       FreeableBuffer*,
       ArrayRef<CompileSpec>,
       BackendInitContext&)>;
-  using ExecuteFn =
-      std::function<Error(BackendExecutionContext&, DelegateHandle*, EValue**)>;
+  using ExecuteFn = std::function<
+      Error(BackendExecutionContext&, DelegateHandle*, Span<EValue*>)>;
   using DestroyFn = std::function<void(DelegateHandle*)>;
 
   // Default name that this backend is registered as.
@@ -97,7 +98,7 @@ class StubBackend final : public BackendInterface {
   Error execute(
       BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     if (execute_fn_) {
       return execute_fn_.value()(context, handle, args);
     }
@@ -442,7 +443,7 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
   StubBackend::singleton().install_execute(
       [&](ET_UNUSED BackendExecutionContext& backend_execution_context,
           DelegateHandle* handle,
-          ET_UNUSED EValue** args) -> Error {
+          ET_UNUSED Span<EValue*> args) -> Error {
         execute_handle = handle;
         auto* processed = reinterpret_cast<FreeableBuffer*>(handle);
 
@@ -593,7 +594,7 @@ TEST_P(BackendIntegrationTest, GetMethodNameDuringExecuteSuccess) {
   StubBackend::singleton().install_execute(
       [&](BackendExecutionContext& backend_execution_context,
           ET_UNUSED DelegateHandle* handle,
-          ET_UNUSED EValue** args) -> Error {
+          ET_UNUSED Span<EValue*> args) -> Error {
         // Ensure that we can get the method name during execution via context
         auto method_name = backend_execution_context.get_method_name();
         EXPECT_STREQ(method_name, "forward");
@@ -603,8 +604,190 @@ TEST_P(BackendIntegrationTest, GetMethodNameDuringExecuteSuccess) {
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method = program->load_method("forward", &mmm.get());
   EXPECT_TRUE(method.ok());
+
+  int32_t sizes[2] = {2, 2};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {2, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      nullptr,
+      dim_order,
+      strides);
+  auto input_err = method->set_input(
+      executorch::runtime::EValue(executorch::aten::Tensor(&impl)), 0);
+  input_err = method->set_input(
+      executorch::runtime::EValue(executorch::aten::Tensor(&impl)), 1);
+  input_err = method->set_input(
+      executorch::runtime::EValue(executorch::aten::Tensor(&impl)), 2);
+  ASSERT_EQ(input_err, Error::Ok);
+
   Error err = method->execute();
   ASSERT_EQ(err, Error::Ok);
+}
+
+TEST_P(BackendIntegrationTest, RuntimeSpecsPassedToBackendInitContext) {
+  using executorch::runtime::BackendOptions;
+  using executorch::runtime::LoadBackendOptionsMap;
+
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+
+  // Track whether init was called and what runtime_specs it received
+  bool init_called = false;
+  size_t received_specs_size = 0;
+  int received_num_threads = 0;
+  bool received_enable_profiling = false;
+  const char* received_compute_unit = nullptr;
+
+  StubBackend::singleton().install_init(
+      [&](FreeableBuffer* processed,
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          BackendInitContext& backend_init_context) -> Result<DelegateHandle*> {
+        init_called = true;
+
+        // Get runtime_specs from context
+        received_specs_size = backend_init_context.runtime_specs().size();
+
+        // Use convenience methods to extract values
+        auto num_threads_result =
+            backend_init_context.get_runtime_spec<int>("num_threads");
+        if (num_threads_result.ok()) {
+          received_num_threads = num_threads_result.get();
+        }
+
+        auto enable_profiling_result =
+            backend_init_context.get_runtime_spec<bool>("enable_profiling");
+        if (enable_profiling_result.ok()) {
+          received_enable_profiling = enable_profiling_result.get();
+        }
+
+        auto compute_unit_result =
+            backend_init_context.get_runtime_spec<const char*>("compute_unit");
+        if (compute_unit_result.ok()) {
+          received_compute_unit = compute_unit_result.get();
+        }
+
+        processed->Free();
+        return nullptr;
+      });
+
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Create backend options for StubBackend
+  BackendOptions<4> stub_opts;
+  stub_opts.set_option("num_threads", 8);
+  stub_opts.set_option("enable_profiling", true);
+  stub_opts.set_option("compute_unit", "cpu_and_gpu");
+
+  // Create the map and set options for StubBackend
+  LoadBackendOptionsMap backend_options;
+  ASSERT_EQ(
+      backend_options.set_options(StubBackend::kName, stub_opts.view()),
+      Error::Ok);
+
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+
+  // Load method with backend_options
+  Result<Method> method = program->load_method(
+      "forward",
+      &mmm.get(),
+      /*event_tracer=*/nullptr,
+      /*named_data_map=*/nullptr,
+      &backend_options);
+  EXPECT_TRUE(method.ok());
+
+  // Verify that init was called and received the correct runtime_specs
+  EXPECT_TRUE(init_called);
+  EXPECT_EQ(received_specs_size, 3);
+  EXPECT_EQ(received_num_threads, 8);
+  EXPECT_TRUE(received_enable_profiling);
+  ASSERT_NE(received_compute_unit, nullptr);
+  EXPECT_STREQ(received_compute_unit, "cpu_and_gpu");
+}
+
+TEST_P(BackendIntegrationTest, NoRuntimeSpecsWhenBackendOptionsNull) {
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+
+  // Track whether init was called and what runtime_specs it received
+  bool init_called = false;
+  size_t received_specs_size = 0;
+
+  StubBackend::singleton().install_init(
+      [&](FreeableBuffer* processed,
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          BackendInitContext& backend_init_context) -> Result<DelegateHandle*> {
+        init_called = true;
+        received_specs_size = backend_init_context.runtime_specs().size();
+        processed->Free();
+        return nullptr;
+      });
+
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+
+  // Load method WITHOUT backend_options (nullptr)
+  Result<Method> method = program->load_method("forward", &mmm.get());
+  EXPECT_TRUE(method.ok());
+
+  // Verify that init was called but received empty runtime_specs
+  EXPECT_TRUE(init_called);
+  EXPECT_EQ(received_specs_size, 0);
+}
+
+TEST_P(BackendIntegrationTest, NoRuntimeSpecsWhenBackendNotInMap) {
+  using executorch::runtime::BackendOptions;
+  using executorch::runtime::LoadBackendOptionsMap;
+
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+
+  // Track whether init was called and what runtime_specs it received
+  bool init_called = false;
+  size_t received_specs_size = 0;
+
+  StubBackend::singleton().install_init(
+      [&](FreeableBuffer* processed,
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          BackendInitContext& backend_init_context) -> Result<DelegateHandle*> {
+        init_called = true;
+        received_specs_size = backend_init_context.runtime_specs().size();
+        processed->Free();
+        return nullptr;
+      });
+
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Create backend options for a DIFFERENT backend (not StubBackend)
+  BackendOptions<2> other_opts;
+  other_opts.set_option("key", "value");
+
+  LoadBackendOptionsMap backend_options;
+  ASSERT_EQ(
+      backend_options.set_options("OtherBackend", other_opts.view()),
+      Error::Ok);
+
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+
+  // Load method with backend_options that don't include StubBackend
+  Result<Method> method = program->load_method(
+      "forward",
+      &mmm.get(),
+      /*event_tracer=*/nullptr,
+      /*named_data_map=*/nullptr,
+      &backend_options);
+  EXPECT_TRUE(method.ok());
+
+  // Verify that init was called but received empty runtime_specs
+  // (because StubBackend wasn't in the map)
+  EXPECT_TRUE(init_called);
+  EXPECT_EQ(received_specs_size, 0);
 }
 
 // TODO: Add more tests for the runtime-to-backend interface. E.g.:

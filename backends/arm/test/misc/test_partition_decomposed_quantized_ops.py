@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,8 +8,6 @@
 # such a Softplus that is decompsed into many other ops without
 # surrounding q/dq nodes.
 
-from typing import Tuple
-
 import torch
 from executorch.backends.arm.test import common
 
@@ -18,7 +16,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
 )
 
-input_t1 = Tuple[torch.Tensor]
+input_t1 = tuple[torch.Tensor, ...]
 softplus_aten_op: list[str] = [
     "torch.ops.aten.add.Tensor",
     "torch.ops.aten.softplus.default",
@@ -38,19 +36,23 @@ linear_residual_aten_op: list[str] = [
 ]
 linear_residual_exir_op: list[str] = [
     "executorch_exir_dialects_edge__ops_aten_gelu_default",
-    "executorch_exir_dialects_edge__ops_aten_clone_default",
+    "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default",
     "executorch_exir_dialects_edge__ops_aten_linear_default",
     "executorch_exir_dialects_edge__ops_aten_add_Tensor",
 ]
 
 
-test_data: dict[input_t1] = {
+test_data: dict[str, input_t1] = {
     "3d_rand": (torch.rand(1, 5, 5),),
 }
 
 
 class SoftplusModule(torch.nn.Module):
-    """Module containing an addition followed by a Softplus. Softplus is currently not supported by TosaBackend."""
+    """Module containing an addition followed by a Softplus.
+
+    Softplus is currently not supported by TosaBackend.
+
+    """
 
     def __init__(self):
         super().__init__()
@@ -61,8 +63,11 @@ class SoftplusModule(torch.nn.Module):
 
 
 class LinearResidualModule(torch.nn.Module):
-    """Module containing a residual and a linear layer followed by GELU and a Dropout.
+    """Module containing a residual and a linear layer followed by GELU and a
+    Dropout.
+
     GELU is currently not supported by TosaBackend nor TosaQuantizer.
+
     """
 
     def __init__(

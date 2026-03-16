@@ -10,8 +10,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <vector>
 
+#include <executorch/extension/memory_allocator/memory_allocator_utils.h>
 #include <executorch/runtime/core/memory_allocator.h>
 
 namespace executorch {
@@ -45,29 +47,31 @@ class MallocMemoryAllocator : public executorch::runtime::MemoryAllocator {
    * memory alignment size.
    */
   void* allocate(size_t size, size_t alignment = kDefaultAlignment) override {
-    EXECUTORCH_TRACK_ALLOCATION(prof_id(), size);
-
     if (!isPowerOf2(alignment)) {
       ET_LOG(Error, "Alignment %zu is not a power of 2", alignment);
       return nullptr;
     }
 
-    // The minimum alignment that malloc() is guaranteed to provide.
-    static constexpr size_t kMallocAlignment = alignof(std::max_align_t);
-    if (alignment > kMallocAlignment) {
-      // To get higher alignments, allocate extra and then align the returned
-      // pointer. This will waste an extra `alignment` bytes every time, but
-      // this is the only portable way to get aligned memory from the heap.
-      size += alignment;
+    auto adjusted_size_value =
+        executorch::extension::utils::get_aligned_size(size, alignment);
+    if (!adjusted_size_value.ok()) {
+      return nullptr;
     }
-    mem_ptrs_.emplace_back(std::malloc(size));
+    size = adjusted_size_value.get();
+    void* mem_ptr = std::malloc(size);
+    if (!mem_ptr) {
+      ET_LOG(Error, "Malloc failed to allocate %zu bytes", size);
+      return nullptr;
+    }
+    mem_ptrs_.emplace_back(mem_ptr);
+    EXECUTORCH_TRACK_ALLOCATION(prof_id(), size);
     return alignPointer(mem_ptrs_.back(), alignment);
   }
 
   // Free up each hosted memory pointer. The memory was created via malloc.
   void reset() override {
     for (auto mem_ptr : mem_ptrs_) {
-      free(mem_ptr);
+      std::free(mem_ptr);
     }
     mem_ptrs_.clear();
   }

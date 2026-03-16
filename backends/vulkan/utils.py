@@ -5,29 +5,27 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
-from typing import Any, List, Optional, Set, Tuple, Union
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
-
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
+    VkDataType,
     VkMemoryLayout,
     VkStorageType,
 )
-
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
-
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.tensor import TensorSpec
-
-from torch._export.utils import is_buffer, is_param
-
-from torch._subclasses.fake_tensor import FakeTensor
-
+from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
+from torch._subclasses.fake_tensor import FakeTensor, FakeTensorConverter
 from torch.export import ExportedProgram
-
 from torch.export.exported_program import InputKind
 from torch.export.graph_signature import TensorArgument
+
+TorchOpType = Union[EdgeOpOverload, torch._ops.OpOverload, str]
 
 _DQ_OPS = {
     "dequantize_per_tensor.tensor",
@@ -46,12 +44,81 @@ _Q_OPS = {
     "quantize_affine.default",
 }
 
+_VULKAN_DTYPES: Dict[torch.dtype, VkDataType] = {
+    torch.bool: VkDataType.BOOL,
+    torch.uint8: VkDataType.UINT8,
+    torch.int8: VkDataType.INT8,
+    torch.int32: VkDataType.INT32,
+    torch.int64: VkDataType.INT64,
+    torch.float16: VkDataType.FLOAT16,
+    torch.float32: VkDataType.FLOAT32,
+    torch.float64: VkDataType.FLOAT64,
+}
+
+##
+## Dtype sets for per-operator dtype constraints
+##
+
+DtypeSet = Set[torch.dtype]
+
+FP_T: DtypeSet = {torch.float16, torch.float32}
+INT_T: DtypeSet = {torch.int32, torch.int64}
+QINT8_T: DtypeSet = {torch.int8}
+BOOL_T: DtypeSet = {torch.bool}
+ALL_T: DtypeSet = set(_VULKAN_DTYPES.keys())
+NONE_T: DtypeSet = set()  # Marker for non-tensor args (skip validation)
+
+# Composite dtype sets for specific operator requirements
+FP_INT_T: DtypeSet = FP_T | INT_T
+FP_INT_BOOL_T: DtypeSet = FP_T | INT_T | BOOL_T
+
+
+class DtypeSetList:
+    """
+    Wrapper around a list of DtypeSet with broadcasting semantics.
+    If only one DtypeSet is provided, it applies to all positions.
+    """
+
+    def __init__(self, dtype_sets: Union[DtypeSet, List[DtypeSet]]):
+        self.vals: List[DtypeSet] = (
+            dtype_sets if isinstance(dtype_sets, list) else [dtype_sets]
+        )
+
+    def __len__(self) -> int:
+        return len(self.vals)
+
+    def __getitem__(self, idx: int) -> DtypeSet:
+        # Broadcasting: single set applies to all positions
+        if idx > 0 and len(self.vals) == 1:
+            return self.vals[0]
+        return self.vals[idx]
+
+    def is_empty(self) -> bool:
+        return len(self.vals) == 0
+
+    def any_constrained(self) -> bool:
+        """Returns True if any position has dtype constraints."""
+        return any(len(s) > 0 for s in self.vals)
+
+
 ##
 ## Node type determination
 ##
 
 # Convenience type
 MaybeNodeList = Union[torch.fx.Node, List[torch.fx.Node], Tuple[torch.fx.Node]]
+
+
+def is_torch_op_node(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+
+    if isinstance(node.target, EdgeOpOverload):
+        return True
+    if isinstance(node.target, torch._ops.OpOverload):
+        return True
+
+    return False
 
 
 def is_dequant_node(node: torch.fx.Node) -> bool:
@@ -68,11 +135,34 @@ def is_quant_node(node: torch.fx.Node) -> bool:
     return node_name in _Q_OPS
 
 
+def is_choose_qparams_node(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+    node_name = format_target_name(node.target.__name__)  # pyre-ignore
+    return "choose_qparams" in node_name
+
+
+def is_dynamic_qscale(node: Any) -> bool:
+    """Check if a scale node is dynamically computed via a choose_qparams op."""
+    return (
+        isinstance(node, torch.fx.Node)
+        and node.target == operator.getitem
+        and is_choose_qparams_node(node.args[0])
+    )
+
+
 def is_dequant_per_channel_node(node: torch.fx.Node) -> bool:
     if node.op != "call_function":
         return False
     node_name = format_target_name(node.target.__name__)  # pyre-ignore
     return node_name == "dequantize_per_channel.default"
+
+
+def is_view_copy_node(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+    node_name = format_target_name(node.target.__name__)  # pyre-ignore
+    return "view_copy" in node_name
 
 
 def is_linear_node(node: torch.fx.Node) -> bool:
@@ -98,7 +188,7 @@ def is_param_node(program: ExportedProgram, node: torch.fx.Node) -> bool:
         is_get_attr_node(node)
         or is_param(program, node)
         or is_buffer(program, node)
-        or is_constant(program, node)
+        or is_lifted_tensor_constant(program, node)
     )
 
 
@@ -176,6 +266,8 @@ def is_tensor_arg_node(node: Any) -> bool:
     if isinstance(node, torch.fx.Node):
         return is_tensor_node(node)
     elif isinstance(node, (list, tuple)):
+        if len(node) == 0:
+            return False
         return all(is_tensor_node(n) for n in node)
 
     return False
@@ -213,6 +305,124 @@ def num_tensors_in_node(node: torch.fx.Node) -> int:
     return 0
 
 
+def get_vk_datatype(torch_dtype: torch.dtype) -> VkDataType:
+    """
+    Returns Vulkan dtype corresponding to torch dtype
+    """
+    if torch_dtype not in _VULKAN_DTYPES:
+        raise AssertionError(f"Invalid dtype for vulkan_preprocess ({torch_dtype})")
+
+    return _VULKAN_DTYPES[torch_dtype]
+
+
+def output_dtypes_are_supported(node: torch.fx.Node) -> bool:
+    """
+    Returns true if the output of the given tensor node has dtype that
+    is supported by the Vulkan backend.
+    """
+    if not is_tensor_node(node):
+        return True
+
+    # The val metadata must exist after previous check
+    node_val = node.meta.get("val", None)
+    assert node_val is not None
+
+    # Get all the tensor dtypes in the node
+    tensor_dtypes = []
+    if isinstance(node_val, FakeTensor):
+        tensor_dtypes = [node_val.dtype]
+    elif isinstance(node_val, list) or isinstance(node_val, tuple):
+        tensor_dtypes = [x.dtype for x in node_val]
+
+    # Verify that all the tensor_dtypes are in vk_torch_dtypes
+    return all(dtype in _VULKAN_DTYPES for dtype in tensor_dtypes)
+
+
+def input_dtypes_are_supported(node: torch.fx.Node) -> bool:
+    """
+    Returns true if all the inputs to the given tensor node have dtype that
+    is supported by the Vulkan backend.
+    """
+    if not is_tensor_node(node):
+        return True
+
+    # Iterate over all the args of the node
+    for arg_node in node.args:
+        # The arg could be a single node, or a list (e.g., first arg of cat)
+        if isinstance(arg_node, torch.fx.Node):
+            if not output_dtypes_are_supported(arg_node):
+                return False
+        elif isinstance(arg_node, (list, tuple)):
+            if not all(output_dtypes_are_supported(x) for x in arg_node):
+                return False
+
+    return True
+
+
+def io_dtypes_are_supported(node: torch.fx.Node) -> bool:
+    """
+    Returns true if all the inputs and outputs of the given tensor node have
+    dtype that is supported by the Vulkan backend.
+    """
+    if not output_dtypes_are_supported(node):
+        return False
+    if not input_dtypes_are_supported(node):
+        return False
+
+    return True
+
+
+def check_node_dtypes(  # noqa: C901
+    node: torch.fx.Node,
+    inputs_dtypes: DtypeSetList,
+    outputs_dtypes: DtypeSetList,
+) -> Tuple[bool, str]:
+    """
+    Check if all tensor inputs/outputs have dtypes in the allowed sets.
+    Returns (is_valid, reason_string) for better error reporting.
+    """
+    # Check input tensor dtypes
+    for i, arg in enumerate(node.args):
+        allowed_dtypes = inputs_dtypes[i]
+        # Skip non-constrained positions (NO_DTYPE = empty set)
+        if len(allowed_dtypes) == 0:
+            continue
+
+        if is_tensor_node(arg):
+            if isinstance(arg.meta["val"], (list, tuple)):
+                arg_dtype = arg.meta["val"][0].dtype
+            else:
+                arg_dtype = arg.meta["val"].dtype
+            if arg_dtype not in allowed_dtypes:
+                return False, f"input[{i}] dtype {arg_dtype} not in {allowed_dtypes}"
+
+        elif isinstance(arg, (list, tuple)):
+            # Handle tensor list inputs (e.g., cat)
+            for j, sub_arg in enumerate(arg):
+                if is_tensor_node(sub_arg):
+                    sub_dtype = sub_arg.meta["val"].dtype
+                    if sub_dtype not in allowed_dtypes:
+                        return (
+                            False,
+                            f"input[{i}][{j}] dtype {sub_dtype} not in {allowed_dtypes}",
+                        )
+
+    # Check output tensor dtypes
+    out_val = node.meta.get("val")
+    if isinstance(out_val, FakeTensor):
+        allowed_dtypes = outputs_dtypes[0]
+        if len(allowed_dtypes) > 0 and out_val.dtype not in allowed_dtypes:
+            return False, f"output dtype {out_val.dtype} not in {allowed_dtypes}"
+    elif isinstance(out_val, (list, tuple)):
+        for i, t in enumerate(out_val):
+            if isinstance(t, FakeTensor):
+                allowed_dtypes = outputs_dtypes[i]
+                if len(allowed_dtypes) > 0 and t.dtype not in allowed_dtypes:
+                    return False, f"output[{i}] dtype {t.dtype} not in {allowed_dtypes}"
+
+    return True, "dtypes valid"
+
+
 def tensor_node_is_bool(node: torch.fx.Node) -> bool:
     """
     Returns true if a given node contains a tensor with bool dtype
@@ -227,6 +437,63 @@ def tensor_node_is_bool(node: torch.fx.Node) -> bool:
     return False
 
 
+def ndim_of(node: Any) -> Optional[int]:
+    """
+    Returns the number of dimensions of the tensor produced by the given node
+    """
+    if not is_single_tensor_node(node):
+        return None
+
+    return node.meta["val"].ndim
+
+
+def is_unsqueezed_vector(node: torch.fx.Node) -> bool:
+    """
+    Returns True if the node's tensor has all dimensions equal to 1 except for the last dimension.
+    """
+    if not is_single_tensor_node(node):
+        return False
+
+    tensor = node.meta["val"]
+    assert isinstance(tensor, FakeTensor)
+
+    if len(tensor.shape) < 1:
+        return False
+    # All dims except last are 1, last can be any size
+    return all(dim == 1 for dim in tensor.shape[:-1])
+
+
+def op_contains_bool_tensor(node: torch.fx.Node) -> bool:
+    """
+    Returns true if the operator used to compute the given node contains a bool tensor
+    """
+    if is_tensor_node(node) and tensor_node_is_bool(node):
+        return True
+
+    for arg_node in node.args:
+        # pyre-ignore[6]
+        if is_tensor_node(arg_node) and tensor_node_is_bool(arg_node):
+            return True
+
+    return False
+
+
+def op_contains_high_dim_tensor(node: torch.fx.Node) -> bool:
+    """
+    Returns true if the operator used to compute the given node contains a tensor
+    with more than 4 dimensions
+    """
+    if is_tensor_node(node) and tensor_node_is_high_dim(node):
+        return True
+
+    for arg_node in node.args:
+        # pyre-ignore[6]
+        if is_tensor_node(arg_node) and tensor_node_is_high_dim(arg_node):
+            return True
+
+    return False
+
+
 def get_primary_arg_idx(self, node: torch.fx.Node) -> Optional[int]:
     primary_arg_idx: Optional[int] = None
     for i, arg_node in enumerate(node.args):
@@ -234,6 +501,82 @@ def get_primary_arg_idx(self, node: torch.fx.Node) -> Optional[int]:
             return i
 
     return primary_arg_idx
+
+
+def node_comes_from_any_nn_module_in_set(
+    node,
+    nn_module_typenames: Set[str],
+) -> bool:
+    if isinstance(node, (list, tuple)):
+        return all(
+            node_comes_from_any_nn_module_in_set(n, nn_module_typenames) for n in node
+        )
+
+    if not isinstance(node, torch.fx.Node):
+        return False
+
+    nn_module_stack = node.meta.get("nn_module_stack", None)
+    if nn_module_stack is None:
+        return False
+
+    for _, packed in nn_module_stack.items():
+        _, typename = packed
+        for partial_name in nn_module_typenames:
+            if partial_name in typename:
+                return True
+
+    return False
+
+
+def get_tensor_name(exp_prog: ExportedProgram, node: torch.fx.Node) -> str:
+    if node is None:
+        return ""
+    if is_param(exp_prog, node):
+        return exp_prog.graph_signature.inputs_to_parameters[node.name]
+    elif is_buffer(exp_prog, node):
+        return exp_prog.graph_signature.inputs_to_buffers[node.name]
+    elif is_lifted_tensor_constant(exp_prog, node):
+        return exp_prog.graph_signature.inputs_to_lifted_tensor_constants[node.name]
+    else:
+        assert isinstance(node.target, str)
+        return node.target
+
+    return ""
+
+
+def find_dequant_user(node: torch.fx.Node) -> Optional[torch.fx.Node]:
+    """
+    Search the direct users of the given node and return the first one that is a
+    dequantization op. Returns None if no dequantization op is found.
+    """
+    for user in node.users:
+        if is_dequant_node(user):
+            return user
+    return None
+
+
+def find_quant_user(node: torch.fx.Node) -> Optional[torch.fx.Node]:
+    """
+    Search the direct users of the given node and return the first one that is a
+    quantization op. Returns None if no quantization op is found.
+    """
+    for user in node.users:
+        if is_quant_node(user):
+            return user
+
+    return None
+
+
+def node_has_target(node: Any, target: str):
+    if not hasattr(node, "target"):
+        return False
+
+    if isinstance(node.target, str):
+        return node.target == target
+    elif hasattr(node.target, "name"):
+        return node.target.name() == target
+
+    return False
 
 
 ##
@@ -250,14 +593,108 @@ all_storage_types: Set[VkStorageType] = {
     VkStorageType.TEXTURE_3D,
 }
 
+# Memory layouts available to non-quantized tensors
 all_memory_layouts: Set[VkMemoryLayout] = {
     VkMemoryLayout.TENSOR_WIDTH_PACKED,
     VkMemoryLayout.TENSOR_HEIGHT_PACKED,
     VkMemoryLayout.TENSOR_CHANNELS_PACKED,
 }
 
+# Memory layouts available to quantized tensors
+all_quantized_memory_layouts: Set[VkMemoryLayout] = {
+    VkMemoryLayout.PACKED_INT8_4W4C,
+    VkMemoryLayout.PACKED_INT8_4H4W,
+    VkMemoryLayout.PACKED_INT8_4W,
+    VkMemoryLayout.PACKED_INT8_4C1W,
+    VkMemoryLayout.PACKED_INT8_CONV2D,
+}
+
+universal_memory_layout_set: Set[VkMemoryLayout] = (
+    all_memory_layouts | all_quantized_memory_layouts
+)
+
 MemoryLayoutSet = Set[VkMemoryLayout]
 MemoryLayoutSetList = Union[MemoryLayoutSet, List[MemoryLayoutSet]]
+
+_LAYOUT_TO_PACKED_DIM: Dict[VkMemoryLayout, int] = {
+    VkMemoryLayout.TENSOR_WIDTH_PACKED: 0,
+    VkMemoryLayout.TENSOR_HEIGHT_PACKED: 1,
+    VkMemoryLayout.TENSOR_CHANNELS_PACKED: 2,
+    VkMemoryLayout.PACKED_INT8_4W4C: 2,
+    VkMemoryLayout.PACKED_INT8_4H4W: 0,
+    VkMemoryLayout.PACKED_INT8_4C1W: 2,
+    VkMemoryLayout.PACKED_INT8_CONV2D: 2,
+}
+
+
+def packed_dim_of(layout: VkMemoryLayout) -> int:
+    return _LAYOUT_TO_PACKED_DIM[layout]
+
+
+@dataclass(frozen=True)
+class PackedDimInfo:
+    """
+    Describes how tensor data is organized in physical memory, mirroring the
+    C++ PackedDimInfo struct in runtime/api/containers/Tensor.h.
+    """
+
+    packed_dim: int
+    packed_dim_block_size: int
+
+    @classmethod
+    def from_repr(
+        cls,
+        memory_layout: VkMemoryLayout,
+        storage_type: VkStorageType = VkStorageType.BUFFER,
+    ) -> "PackedDimInfo":
+        """
+        Construct a PackedDimInfo based on a memory layout and storage type,
+        mirroring calculate_packed_dim_info in runtime/api/containers/Tensor.cpp.
+        """
+        is_buffer = storage_type == VkStorageType.BUFFER
+
+        if memory_layout == VkMemoryLayout.TENSOR_WIDTH_PACKED:
+            return cls(
+                packed_dim=0,
+                packed_dim_block_size=1 if is_buffer else 4,
+            )
+        elif memory_layout == VkMemoryLayout.TENSOR_HEIGHT_PACKED:
+            return cls(
+                packed_dim=1,
+                packed_dim_block_size=1 if is_buffer else 4,
+            )
+        elif memory_layout == VkMemoryLayout.TENSOR_CHANNELS_PACKED:
+            return cls(
+                packed_dim=2,
+                packed_dim_block_size=1 if is_buffer else 4,
+            )
+        elif memory_layout == VkMemoryLayout.PACKED_INT8_4W:
+            return cls(
+                packed_dim=0,
+                packed_dim_block_size=4,
+            )
+        elif memory_layout == VkMemoryLayout.PACKED_INT8_4W4C:
+            return cls(
+                packed_dim=2,
+                packed_dim_block_size=4,
+            )
+        elif memory_layout == VkMemoryLayout.PACKED_INT8_4H4W:
+            return cls(
+                packed_dim=0,
+                packed_dim_block_size=4,
+            )
+        elif memory_layout == VkMemoryLayout.PACKED_INT8_4C1W:
+            return cls(
+                packed_dim=2,
+                packed_dim_block_size=4 if is_buffer else 16,
+            )
+        elif memory_layout == VkMemoryLayout.PACKED_INT8_CONV2D:
+            return cls(
+                packed_dim=2,
+                packed_dim_block_size=4,
+            )
+        else:
+            raise ValueError(f"Unknown memory layout: {memory_layout}")
 
 
 def within_buffer_limit(node: torch.fx.Node, buffer_limit: int) -> int:
@@ -305,6 +742,16 @@ def required_image_extents(sizes: torch.Size, layout: VkMemoryLayout) -> ImageEx
     elif layout == VkMemoryLayout.TENSOR_HEIGHT_PACKED:
         height = (height + 3) // 4
     elif layout == VkMemoryLayout.TENSOR_CHANNELS_PACKED:
+        channels = (channels + 3) // 4
+    elif layout == VkMemoryLayout.PACKED_INT8_4W4C:
+        width = (width + 3) // 4
+        channels = (channels + 3) // 4
+    elif layout == VkMemoryLayout.PACKED_INT8_4H4W:
+        height = (height + 3) // 4
+        width = (width + 3) // 4
+    elif layout == VkMemoryLayout.PACKED_INT8_CONV2D:
+        # Use conservative extents (same as 4W4C) since this is buffer-only
+        width = (width + 3) // 4
         channels = (channels + 3) // 4
     else:
         raise RuntimeError(f"Unsupported memory layout {layout}")
@@ -446,6 +893,11 @@ class TensorRepSet:
     def __ne__(self, other: object) -> bool:
         return not self.__eq__(other)
 
+    def copy(self) -> "TensorRepSet":
+        return TensorRepSet(
+            set(self.valid_buffer_layouts), set(self.valid_texture_layouts)
+        )
+
     def is_empty(self) -> bool:
         """
         A TensorRepSet is "empty" if there are no valid representations of the tensor.
@@ -462,6 +914,16 @@ class TensorRepSet:
         return TensorRepSet(
             self.valid_buffer_layouts & other.valid_buffer_layouts,
             self.valid_texture_layouts & other.valid_texture_layouts,
+        )
+
+    def make_union(self, other: "TensorRepSet") -> "TensorRepSet":
+        """
+        Merge this TensorRepSet with another TensorRepSet, returning a new TensorRepSet
+        with the union of the two.
+        """
+        return TensorRepSet(
+            self.valid_buffer_layouts | other.valid_buffer_layouts,
+            self.valid_texture_layouts | other.valid_texture_layouts,
         )
 
     def is_compatible(self, storage: TensorRepr) -> bool:
@@ -549,6 +1011,83 @@ class TensorRepSet:
         """
         return not self.is_constrained()
 
+    def _possible_pdis(self) -> Set[PackedDimInfo]:
+        buffer_set = set()
+        texture_set = set()
+        for layout in self.valid_buffer_layouts:
+            buffer_set.add(PackedDimInfo.from_repr(layout, VkStorageType.BUFFER))
+        for layout in self.valid_texture_layouts:
+            texture_set.add(PackedDimInfo.from_repr(layout, VkStorageType.TEXTURE_3D))
+        return buffer_set, texture_set
+
+    def has_same_packed_dim_info_set(self, other: "TensorRepSet") -> bool:
+        """
+        Check if self and other produce the exact same sets of PackedDimInfo
+        for both buffer and texture storage types. Completely empty repsets
+        (no layouts for any storage type) are treated as matching any other
+        repset.
+        """
+        other_buf_set, other_tex_set = other._possible_pdis()
+        buf_set, tex_set = self._possible_pdis()
+
+        # A completely empty repset is compatible with anything
+        if not buf_set and not tex_set:
+            return True
+        if not other_buf_set and not other_tex_set:
+            return True
+
+        return other_buf_set == buf_set and other_tex_set == tex_set
+
+    def has_compatible_packed_dim_info_set(self, other: "TensorRepSet") -> bool:
+        """
+        Check if all PackedDimInfos from other are contained within self's
+        PackedDimInfo sets, i.e. self is a superset of other for both buffer
+        and texture PDI sets.
+        """
+        other_buf_set, other_tex_set = other._possible_pdis()
+        buf_set, tex_set = self._possible_pdis()
+
+        for pdi in other_buf_set:
+            if pdi not in buf_set:
+                return False
+
+        for pdi in other_tex_set:
+            if pdi not in tex_set:
+                return False
+
+        return True
+
+    def constrain_to_compatible_packed_dim(
+        self, other: "TensorRepSet"
+    ) -> "TensorRepSet":
+        """
+        Return a new TensorRepSet containing only layouts from self whose
+        PackedDimInfo is present in other's PackedDimInfo sets. If other is
+        completely empty, return a copy of self unchanged. If other has layouts
+        for only one storage type, layouts for the missing storage type are
+        also removed.
+        """
+        other_buf_set, other_tex_set = other._possible_pdis()
+
+        # Completely empty other means no constraint
+        if not other_buf_set and not other_tex_set:
+            return self.copy()
+
+        new_buf = {
+            layout
+            for layout in self.valid_buffer_layouts
+            if other_buf_set
+            and PackedDimInfo.from_repr(layout, VkStorageType.BUFFER) in other_buf_set
+        }
+        new_tex = {
+            layout
+            for layout in self.valid_texture_layouts
+            if other_tex_set
+            and PackedDimInfo.from_repr(layout, VkStorageType.TEXTURE_3D)
+            in other_tex_set
+        }
+        return TensorRepSet(new_buf, new_tex)
+
 
 def make_tensor_repset(tensor_repr: TensorRepr) -> TensorRepSet:
     """
@@ -562,7 +1101,7 @@ def make_tensor_repset(tensor_repr: TensorRepr) -> TensorRepSet:
         raise RuntimeError(f"Unsupported storage type {tensor_repr.storage_type}")
 
 
-def make_filtered_tensor_repset(
+def filter_invalid_reprs(
     tensor_val: FakeTensor,
     tensor_repset: TensorRepSet,
     texture_limits: ImageExtents,
@@ -585,18 +1124,38 @@ def make_filtered_tensor_repset(
         if extents_are_valid(extents, texture_limits):
             valid_texture_layouts.add(memory_layout)
 
-    # High dimensional tensors are currently not supported
+    # High dimensional tensors require buffer storage
     if len(tensor_val.shape) > 4:
-        return NO_STORAGE
-
-    # Bool tensors are currently not supported
-    if tensor_val.dtype == torch.bool:
-        return NO_STORAGE
+        return TensorRepSet(tensor_repset.valid_buffer_layouts, set())
 
     return TensorRepSet(tensor_repset.valid_buffer_layouts, valid_texture_layouts)
 
 
+def filter_invalid_reprs_for_node_list(
+    arg_repsets: TensorRepSet,
+    arg_node: List[torch.fx.Node],
+    texture_limits: ImageExtents,
+) -> TensorRepSet:
+    """
+    Wrapper around filter_invalid_reprs for a list of nodes. This will happen
+    for the cat operator, where the first argument is a list of nodes.
+    """
+    # For variable length args, assume that they all need to use the same representation
+    # only one repset should be defined
+    common_tensor_repsets = arg_repsets
+
+    for n in arg_node:
+        assert isinstance(n, torch.fx.Node)
+        common_tensor_repsets = common_tensor_repsets.make_intersect(
+            filter_invalid_reprs(n.meta["val"], common_tensor_repsets, texture_limits)
+        )
+
+    return common_tensor_repsets
+
+
 ## Convenience TensorRepSet definitions
+
+# Only includes memory layouts that can be used by non-quantized tensors
 
 CONTIGUOUS_ANY = TensorRepSet(
     {VkMemoryLayout.TENSOR_WIDTH_PACKED}, {VkMemoryLayout.TENSOR_WIDTH_PACKED}
@@ -604,12 +1163,47 @@ CONTIGUOUS_ANY = TensorRepSet(
 CONTIGUOUS_BUFFER = TensorRepSet({VkMemoryLayout.TENSOR_WIDTH_PACKED}, set())
 
 WIDTH_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_WIDTH_PACKED})
+HEIGHT_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_HEIGHT_PACKED})
 CHANNELS_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_CHANNELS_PACKED})
 
-ANY_TEXTURE = TensorRepSet(set(), all_memory_layouts)
+CHANNELS_PACKED_ANY = TensorRepSet(
+    {VkMemoryLayout.TENSOR_CHANNELS_PACKED}, {VkMemoryLayout.TENSOR_CHANNELS_PACKED}
+)
 
+CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER = TensorRepSet(
+    {VkMemoryLayout.TENSOR_WIDTH_PACKED}, {VkMemoryLayout.TENSOR_CHANNELS_PACKED}
+)
+
+ANY_TEXTURE = TensorRepSet(set(), all_memory_layouts)
+ANY_BUFFER = TensorRepSet(all_memory_layouts, set())
 ANY_STORAGE = TensorRepSet(all_memory_layouts, all_memory_layouts)
+
+# Only includes memory layouts that can be used by quantized tensors
+
+PACKED_INT8_BUFFER = TensorRepSet(all_quantized_memory_layouts, set())
+PACKED_INT8_4W4C_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4W4C}, set())
+PACKED_INT8_4H4W_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4H4W}, set())
+PACKED_INT8_4W_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4W}, set())
+PACKED_INT8_4C1W_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4C1W}, set())
+
+PACKED_INT8_CONV2D_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_CONV2D}, set())
+
+PACKED_INT8_CHANNELS_PACKED_BUFFER = TensorRepSet(
+    {
+        VkMemoryLayout.PACKED_INT8_4W4C,
+        VkMemoryLayout.PACKED_INT8_4C1W,
+        VkMemoryLayout.PACKED_INT8_CONV2D,
+    },
+    set(),
+)
+
+
+# Special use RepSets
+
 NO_STORAGE = TensorRepSet(set(), set())
+ALL_STORAGES_REPSET = TensorRepSet(
+    universal_memory_layout_set, universal_memory_layout_set
+)
 
 
 class TensorRepSetList:
@@ -733,23 +1327,23 @@ class OpRepSets:
         # Now, go through the arguments of the operator and create a filtered repset
         # for each based on the actual tensor value.
         args_repset_list = TensorRepSetList([])
-        common_arg_repset = ANY_STORAGE
+        common_arg_repset = ALL_STORAGES_REPSET
         for i, arg_node in enumerate(op_node.args):
             arg_repset = inputs_repsets[i]
 
-            # Use ANY_STORAGE for non-tensor nodes so they don't cause the op repsets to
-            # appear empty
+            # Use ALL_STORAGES_REPSET for non-tensor nodes so they don't cause the op
+            # repsets to appear empty
             if not is_tensor_arg_node(arg_node):
-                args_repset_list.append(ANY_STORAGE)
+                args_repset_list.append(ALL_STORAGES_REPSET)
             # NO_STORAGE is used to denote that an input is either a non tensor arg or
             # a weight tensor that is not prepacked. Similar to the above, use
-            # ANY_STORAGE in this case.
+            # ALL_STORAGES_REPSET in this case.
             elif arg_repset.is_empty():
-                args_repset_list.append(ANY_STORAGE)
+                args_repset_list.append(ALL_STORAGES_REPSET)
             else:
                 assert not arg_repset.is_empty()
 
-                arg_repset = self.make_valid_tensor_repset_for_arg(
+                arg_repset = self.filter_invalid_reprs_for_arg(
                     arg_repset, arg_node, texture_limits
                 )
 
@@ -758,9 +1352,9 @@ class OpRepSets:
 
         # Repeat for output tensors.
         outs_repset_list = TensorRepSetList([])
-        common_out_repset = ANY_STORAGE
+        common_out_repset = ALL_STORAGES_REPSET
         if num_tensors_in_node(op_node) == 1:
-            common_out_repset = make_filtered_tensor_repset(
+            common_out_repset = filter_invalid_reprs(
                 op_node.meta["val"], outputs_repsets[0], texture_limits
             )
             outs_repset_list.append(common_out_repset)
@@ -768,42 +1362,46 @@ class OpRepSets:
         else:
             for i, val in enumerate(op_node.meta["val"]):
                 assert isinstance(val, FakeTensor)
-                out_repset = make_filtered_tensor_repset(
+                out_repset = filter_invalid_reprs(
                     val, outputs_repsets[i], texture_limits
                 )
 
                 outs_repset_list.append(out_repset)
                 common_out_repset = common_out_repset.make_intersect(out_repset)
 
+        # Apply synchronization rules between the primary input and output
+        primary_repset = NO_STORAGE
+        if self.sync_primary_io_repr:
+            primary_in_repset = (
+                common_arg_repset
+                if self.sync_args_repr
+                else args_repset_list[self.primary_arg_idx]
+            )
+            primary_out_repset = (
+                common_out_repset if self.sync_outs_repr else outs_repset_list[0]
+            )
+            primary_repset = primary_in_repset.make_intersect(primary_out_repset)
+
+            args_repset_list[self.primary_arg_idx] = primary_repset.copy()
+            outs_repset_list[0] = primary_repset.copy()
+
         # Apply synchronization rules; if either all inputs/outputs must use the same
         # representation, then only use a single underlying repset.
         if self.sync_args_repr:
-            args_repset_list = TensorRepSetList([common_arg_repset])
+            common_repset = (
+                primary_repset if self.sync_primary_io_repr else common_arg_repset
+            )
+
+            for i in range(len(args_repset_list)):
+                args_repset_list[i] = common_repset.copy()
 
         if self.sync_outs_repr:
-            outs_repset_list = TensorRepSetList([common_out_repset])
+            common_repset = (
+                primary_repset if self.sync_primary_io_repr else common_out_repset
+            )
 
-        # Finally, apply synchronization rules that sync inputs and outputs. If input
-        # or output repsets are updated, then maintain synchronization rules.
-        if self.sync_primary_io_repr:
-            assert self.primary_arg_idx is not None
-
-            primary_in_repset = args_repset_list[self.primary_arg_idx]
-            primary_out_repset = outs_repset_list[0]
-
-            primary_repset = primary_in_repset.make_intersect(primary_out_repset)
-
-            if self.sync_args_repr:
-                args_repset_list = TensorRepSetList([primary_repset])
-            else:
-                assert self.primary_arg_idx is not None
-                args_repset_list[self.primary_arg_idx] = primary_repset
-
-            if self.sync_outs_repr:
-                outs_repset_list = TensorRepSetList([primary_repset])
-            else:
-                assert self.primary_arg_idx is not None
-                outs_repset_list[0] = primary_repset
+            for i in range(len(outs_repset_list)):
+                outs_repset_list[i] = common_repset.copy()
 
         # Save the resulting repsets
         self.args_repset_list = args_repset_list
@@ -815,44 +1413,20 @@ class OpRepSets:
     def __str__(self) -> str:
         return f"OpRepSets(ins={self.args_repset_list}, outs={self.outs_repset_list})"
 
-    def make_valid_tensor_repset_for_node_list_arg(
-        self,
-        arg_repsets: TensorRepSet,
-        arg_node: List[torch.fx.Node],
-        texture_limits: ImageExtents,
-    ) -> TensorRepSet:
-        """
-        Wrapper around make_filtered_tensor_repset for a list of nodes. This will happen
-        for the cat operator, where the first argument is a list of nodes.
-        """
-        # For variable length args, assume that they all need to use the same representation
-        # only one repset should be defined
-        common_tensor_repsets = arg_repsets
-
-        for n in arg_node:
-            assert isinstance(n, torch.fx.Node)
-            common_tensor_repsets = common_tensor_repsets.make_intersect(
-                make_filtered_tensor_repset(
-                    n.meta["val"], common_tensor_repsets, texture_limits
-                )
-            )
-
-        return common_tensor_repsets
-
-    def make_valid_tensor_repset_for_arg(
+    def filter_invalid_reprs_for_arg(
         self, arg_repsets: TensorRepSet, arg_node: Any, texture_limits: ImageExtents
     ) -> TensorRepSet:
         """
-        Helper function to call make_filtered_tensor_repset
+        Helper function to call filter_invalid_reprs
         """
         if isinstance(arg_node, torch.fx.Node) and is_single_tensor_node(arg_node):
-            return make_filtered_tensor_repset(
+            return filter_invalid_reprs(
                 arg_node.meta["val"], arg_repsets, texture_limits
             )
         elif isinstance(arg_node, list) and all(
             is_single_tensor_node(n) for n in arg_node
         ):
-            return self.make_valid_tensor_repset_for_node_list_arg(
+            return filter_invalid_reprs_for_node_list(
                 arg_repsets, arg_node, texture_limits
             )
         # Special case for getitem; return the repset of the particular val in the
@@ -862,7 +1436,7 @@ class OpRepSets:
         ):
             idx = self.op_node.args[1]
             assert isinstance(idx, int)
-            return make_filtered_tensor_repset(
+            return filter_invalid_reprs(
                 arg_node.meta["val"][idx], arg_repsets, texture_limits
             )
 
@@ -870,15 +1444,32 @@ class OpRepSets:
 
     def assert_sync_contraints(self) -> None:
         if self.sync_args_repr:
-            assert len(self.args_repset_list) == 1
+            for i in range(len(self.args_repset_list)):
+                for j in range(i + 1, len(self.args_repset_list)):
+                    ri = self.args_repset_list[i]
+                    rj = self.args_repset_list[j]
+                    if not ri.is_empty() and not rj.is_empty():
+                        assert ri.has_compatible_packed_dim_info_set(
+                            rj
+                        ), f"Synced arg repsets {i} and {j} have incompatible packed dim info: {ri} vs {rj}"
 
         if self.sync_outs_repr:
-            assert len(self.outs_repset_list) == 1
+            for i in range(len(self.outs_repset_list)):
+                for j in range(i + 1, len(self.outs_repset_list)):
+                    ri = self.outs_repset_list[i]
+                    rj = self.outs_repset_list[j]
+                    if not ri.is_empty() and not rj.is_empty():
+                        assert ri.has_compatible_packed_dim_info_set(
+                            rj
+                        ), f"Synced out repsets {i} and {j} have incompatible packed dim info: {ri} vs {rj}"
 
         if self.sync_primary_io_repr:
-            assert (
-                self.args_repset_list[self.primary_arg_idx] == self.outs_repset_list[0]
-            )
+            primary_arg = self.args_repset_list[self.primary_arg_idx]
+            primary_out = self.outs_repset_list[0]
+            if not primary_arg.is_empty() and not primary_out.is_empty():
+                assert primary_arg.has_compatible_packed_dim_info_set(
+                    primary_out
+                ), f"Primary arg and out repsets have incompatible packed dim info: {primary_arg} vs {primary_out}"
 
     def any_is_empty(self) -> bool:
         return (
@@ -918,15 +1509,81 @@ class OpRepSets:
             return False
 
         if self.sync_primary_io_repr:
-            if not self.get_out_repset(0).any_in_common(source_repset):
+            if not self.get_out_repset(0).has_compatible_packed_dim_info_set(
+                source_repset
+            ):
                 return False
 
         # If this point is reached, then it is possible to constrain
-        self.args_repset_list[arg_i] = arg_current_repset.make_intersect(source_repset)
+        narrowed = arg_current_repset.make_intersect(source_repset)
+        self.args_repset_list[arg_i] = narrowed
+
+        # Propagate to other synced args via packed-dim compatibility
+        if self.sync_args_repr:
+            for i in range(len(self.args_repset_list)):
+                if i != arg_i:
+                    self.args_repset_list[i] = self.args_repset_list[
+                        i
+                    ].constrain_to_compatible_packed_dim(narrowed)
+
+        # Propagate to output via packed-dim compatibility
         if self.sync_primary_io_repr and (
             arg_i == self.primary_arg_idx or self.sync_args_repr
         ):
-            self.outs_repset_list[0] = arg_current_repset.make_intersect(source_repset)
+            self.outs_repset_list[0] = self.outs_repset_list[
+                0
+            ].constrain_to_compatible_packed_dim(narrowed)
+
+            # Propagate to other synced outputs via packed-dim compatibility
+            if self.sync_outs_repr:
+                for i in range(len(self.outs_repset_list)):
+                    if i != 0:
+                        self.outs_repset_list[i] = self.outs_repset_list[
+                            i
+                        ].constrain_to_compatible_packed_dim(self.outs_repset_list[0])
+
+        self.assert_sync_contraints()
+        return True
+
+    def try_constrain_with_out_repset(self, required_repset: TensorRepSet) -> bool:
+        """
+        Attempt to constrain the output repsets of the tensors participating in this
+        operator based the repset required by a downstream operator.
+        """
+        out_current_repset = self.outs_repset_list[0]
+
+        if out_current_repset == required_repset:
+            return False
+
+        if not out_current_repset.any_in_common(required_repset):
+            return False
+
+        narrowed = out_current_repset.make_intersect(required_repset)
+        self.outs_repset_list[0] = narrowed
+
+        # Propagate to other synced outputs via packed-dim compatibility
+        if self.sync_outs_repr:
+            for i in range(len(self.outs_repset_list)):
+                if i != 0:
+                    self.outs_repset_list[i] = self.outs_repset_list[
+                        i
+                    ].constrain_to_compatible_packed_dim(narrowed)
+
+        # Propagate to primary arg via packed-dim compatibility
+        if self.sync_primary_io_repr:
+            self.args_repset_list[self.primary_arg_idx] = self.args_repset_list[
+                self.primary_arg_idx
+            ].constrain_to_compatible_packed_dim(narrowed)
+
+            # Propagate to other synced args via packed-dim compatibility
+            if self.sync_args_repr:
+                for i in range(len(self.args_repset_list)):
+                    if i != self.primary_arg_idx:
+                        self.args_repset_list[i] = self.args_repset_list[
+                            i
+                        ].constrain_to_compatible_packed_dim(
+                            self.args_repset_list[self.primary_arg_idx]
+                        )
 
         self.assert_sync_contraints()
         return True
@@ -1029,8 +1686,173 @@ def get_node_repr(node) -> Union[TensorRepr, TensorReprList]:
 
 
 ##
+## Graph Pattern Matching
+##
+
+
+def maybe_skip_q_dq_arg_chain(
+    arg: torch.fx.node.Argument,
+) -> Tuple[Optional[torch.fx.Node], Optional[torch.fx.Node], Optional[torch.fx.Node]]:
+    """
+    Check if the given node argument is part of a Quantize/Dequantize chain produced by
+    the quant workflow. If so, return the source tensor that is the input to the Q/DQ
+    chain and the quantize/dequantize nodes in the chain. Otherwise, return the argument
+    as is and None, None
+    """
+    if not isinstance(arg, torch.fx.Node):
+        return None, None, None
+
+    # If the arg is a view copy node, check if the original node is a dequant node
+    if is_dequant_node(arg) or (
+        is_view_copy_node(arg) and is_dequant_node(arg.args[0])  # pyre-ignore[6]
+    ):
+        dequant_node = arg
+        if is_view_copy_node(arg):
+            dequant_node = arg.args[0]
+
+        quant_node = dequant_node.args[0]  # pyre-ignore[16]
+        assert isinstance(quant_node, torch.fx.Node)
+        source_arg = quant_node.args[0]
+        assert isinstance(source_arg, torch.fx.Node)
+        assert isinstance(dequant_node, torch.fx.Node)
+        return source_arg, quant_node, dequant_node
+    else:
+        return arg, None, None
+
+
+def trace_args_until_placeholder(
+    node: torch.fx.node.Argument, max_search_depth: int = 4
+) -> Tuple[Optional[torch.fx.Node], List[torch.fx.Node]]:
+    """
+    Trace through node.args[0] of a given initial node until a placeholder node is found
+    then return it and the list of nodes traversed. If no placeholder node is found,
+    returns None and an empty list.
+    """
+    cur_node = node
+    search_depth = 0
+
+    if not isinstance(cur_node, torch.fx.Node):
+        return None, []
+
+    traversed = [cur_node]
+    while cur_node.op != "placeholder" and search_depth < max_search_depth:
+        # Break if cur_node has no args
+        if len(cur_node.args) == 0:
+            break
+
+        cur_node = cur_node.args[0]
+        if not isinstance(cur_node, torch.fx.Node):
+            break
+        traversed.append(cur_node)
+        search_depth += 1
+
+    if not isinstance(cur_node, torch.fx.Node):
+        return None, []
+    if cur_node.op != "placeholder":
+        return None, []
+
+    assert isinstance(cur_node, torch.fx.Node)
+    return cur_node, traversed
+
+
+def is_in_4bit_range(tensor: torch.Tensor) -> bool:
+    """
+    Check if the given tensor is in the range of 4-bit quantization and is of integer type.
+    """
+    if tensor.dtype not in (torch.int8, torch.uint8):
+        return False
+
+    return tensor.min().item() >= -8 and tensor.max().item() <= 7
+
+
+def is_in_8bit_range(tensor: torch.Tensor) -> bool:
+    """
+    Check if the given tensor is in the range of 4-bit quantization and is of integer type.
+    """
+    if tensor.dtype not in (torch.int8, torch.uint8):
+        return False
+
+    return tensor.min().item() >= -128 and tensor.max().item() <= 127
+
+
+##
 ## Misc
 ##
+
+
+def normalize_dims(dims: Union[int, List[int]], ndim: int) -> Union[int, List[int]]:
+    """
+    Normalize dimension indices to be non-negative and within [0, ndim).
+    Accepts a single int or a list of ints.
+    """
+    if isinstance(dims, int):
+        if dims < 0:
+            dims += ndim
+
+        return dims
+
+    normalized = []
+    for d in dims:
+        if d < 0:
+            d += ndim
+        normalized.append(d)
+
+    return normalized
+
+
+def nchw_dim_to_whcn_dim(nchw_dim: int, ndim: int) -> int:
+    # Handle negative indices for nchw_dim
+    if nchw_dim < 0:
+        nchw_dim += ndim
+
+    assert nchw_dim >= 0 and nchw_dim < ndim
+    whcn_dim = (ndim - 1) - nchw_dim
+    return whcn_dim
+
+
+def get_tensor_val_str(tensor_val: FakeTensor) -> str:
+    return f"{tensor_val.dtype}: {tensor_val.shape}"
+
+
+def get_node_val_str(node: torch.fx.Node) -> str:
+    if is_single_tensor_node(node):
+        assert isinstance(node.meta["val"], FakeTensor)
+        return get_tensor_val_str(node.meta["val"])
+    elif is_tensor_collection_node(node):
+        assert isinstance(node.meta["val"], (list, tuple))
+        return f"[{', '.join(get_tensor_val_str(t) for t in node.meta['val'])}]"
+    else:
+        if "val" not in node.meta:
+            return str(node)
+        return str(node.meta["val"])
+
+
+def get_arg_node_val_str(arg_node: Any) -> str:
+    if isinstance(arg_node, torch.fx.Node):
+        return get_node_val_str(arg_node)
+    elif isinstance(arg_node, (list, tuple)):
+        return f"[{', '.join(get_arg_node_val_str(n) for n in arg_node)}]"
+    else:
+        return str(arg_node)
+
+
+def node_io_str(node: torch.fx.Node) -> str:
+    target = node.target
+    if isinstance(target, EdgeOpOverload):
+        assert isinstance(target, EdgeOpOverload)
+        target_name = target.__name__
+    elif isinstance(target, torch._ops.OpOverload):
+        assert isinstance(target, torch._ops.OpOverload)
+        target_name = target.name()
+    else:
+        target_name = str(target)
+
+    out_str = f"{get_node_val_str(node)} = {target_name}("
+    for arg in node.args:
+        out_str += get_arg_node_val_str(arg) + ", "
+
+    out_str += " ...)"
+    return out_str
 
 
 def update_program_state_dict(
@@ -1039,6 +1861,7 @@ def update_program_state_dict(
     updated_tensor: torch.Tensor,
 ) -> None:
     target_name = None
+    kind = None
     # Iterate over all the tensors in the graph signature, and find
     # the one corresponding to the parameter/buffer name
     for input_ in program.graph_signature.input_specs:
@@ -1047,6 +1870,7 @@ def update_program_state_dict(
             and isinstance(input_.arg, TensorArgument)
             and input_.arg.name == buffer_name
         ):
+            kind = input_.kind
             target_name = input_.target
             break
 
@@ -1056,5 +1880,44 @@ def update_program_state_dict(
     ), f"could not find {buffer_name} in source program signature"
     assert target_name in program.state_dict, f"could not find {target_name}"
 
+    if kind == InputKind.PARAMETER:
+        updated_tensor = torch.nn.Parameter(updated_tensor, requires_grad=False)
+
     # Finally, overwrite the current tensor with updated tensor
     program.state_dict[target_name] = updated_tensor
+
+
+def align_width_and_update_state_dict(
+    ep: ExportedProgram,
+    node: torch.fx.Node,
+    cur_tensor: torch.Tensor,
+    align_to: int = 4,
+    force_update: bool = False,
+) -> torch.Tensor:
+    """
+    Align the width of the given tensor to the given alignment value and update the
+    state dict of the program with the aligned tensor.
+    """
+    added_padding = False
+    cur_width = cur_tensor.shape[-1]
+    # Only align the width of the tensor if it is not already aligned
+    if cur_width % align_to != 0:
+        num_padding = align_to - (cur_width % align_to)
+        # Align the width of the tensor to the given alignment value
+        aligned_tensor = torch.nn.functional.pad(
+            cur_tensor, (0, num_padding)
+        ).contiguous()
+        added_padding = True
+    else:
+        aligned_tensor = cur_tensor
+
+    if added_padding or force_update:
+        update_program_state_dict(ep, node.name, aligned_tensor)
+        # FakeTensor needs to match updated tensor
+        cur_fake_tensor = node.meta["val"]
+        node.meta["val"] = FakeTensorConverter().from_real_tensor(
+            cur_fake_tensor.fake_mode,
+            aligned_tensor,
+        )
+
+    return aligned_tensor

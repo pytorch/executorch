@@ -1,0 +1,66 @@
+# From https://github.com/pytorch/test-infra/wiki/Using-Nova-Reusable-Build-Workflows
+name: Build Aarch64 Linux Wheels
+
+on:
+  pull_request:
+    paths:
+      - .ci/**/*
+      - .github/workflows/build-wheels-aarch64-linux.yml
+      - examples/**/*
+      - pyproject.toml
+      - setup.py
+    tags:
+      - ciflow/binaries/*
+  push:
+    branches:
+      - nightly
+      - release/*
+    tags:
+      # NOTE: Binary build pipelines should only get triggered on release candidate builds
+      # Release candidate tags look like: v1.11.0-rc1
+      - v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+
+      - ciflow/binaries/*
+  workflow_dispatch:
+
+jobs:
+  generate-matrix:
+    uses: pytorch/test-infra/.github/workflows/generate_binary_build_matrix.yml@main
+    with:
+      package-type: wheel
+      os: linux-aarch64
+      test-infra-repository: pytorch/test-infra
+      test-infra-ref: main
+      with-cuda: disabled
+      with-rocm: disabled
+      python-versions: '["3.10", "3.11", "3.12", "3.13"]'
+
+  build:
+    needs: generate-matrix
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - repository: pytorch/executorch
+            pre-script: .ci/scripts/wheel/pre_build_script.sh
+            post-script: .ci/scripts/wheel/post_build_script.sh
+            smoke-test-script: .ci/scripts/wheel/test_linux_aarch64.py
+            package-name: executorch
+    name: ${{ matrix.repository }}
+    uses: pytorch/test-infra/.github/workflows/build_wheels_linux.yml@main
+    with:
+      repository: ${{ matrix.repository }}
+      ref: ""
+      test-infra-repository: pytorch/test-infra
+      test-infra-ref: main
+      build-matrix: ${{ needs.generate-matrix.outputs.matrix }}
+      submodules: recursive
+      env-var-script: .ci/scripts/wheel/envvar_linux.sh
+      pre-script: ${{ matrix.pre-script }}
+      post-script: ${{ matrix.post-script }}
+      package-name: ${{ matrix.package-name }}
+      smoke-test-script: ${{ matrix.smoke-test-script }}
+      trigger-event: ${{ github.event_name }}
+      architecture: aarch64

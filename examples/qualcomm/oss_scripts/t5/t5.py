@@ -11,10 +11,14 @@ import subprocess
 from multiprocessing.connection import Client
 
 import torch
-
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
+    QnnExecuTorchBackendType,
+    QnnExecuTorchGpuPrecision,
+)
 from executorch.backends.qualcomm.utils.utils import (
+    generate_gpu_compiler_spec,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     to_edge_transform_and_lower_to_qnn,
@@ -28,6 +32,7 @@ from executorch.examples.qualcomm.oss_scripts.t5.t5_model import (
 )
 from executorch.examples.qualcomm.utils import (
     evaluate_squad,
+    get_backend_type,
     get_seq2seq_dataset_from_squad_csv,
     make_quantizer,
     replace_module_with_custom_class,
@@ -39,6 +44,7 @@ from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 from transformers.models.t5.modeling_t5 import T5Stack
+
 
 PTE_FILE_NAME = "t5_qnn"
 ENCODER = "encoder"
@@ -56,7 +62,7 @@ class T5:
     ):
         self.encoder = (
             Seq2SeqLMEncoderExportableModule(
-                model.get_encoder(), max_hidden_seq_length=max_hidden_seq_length
+                model, max_hidden_seq_length=max_hidden_seq_length
             )
             .to("cpu")
             .eval()
@@ -96,12 +102,13 @@ class T5:
         self.exported_decoder = None
         self.quant_dtype = None
 
-    def quantize(self, inputs, quant_dtype, targets=None, metrics=None):
+    def quantize(
+        self, backend, soc_model, inputs, quant_dtype, targets=None, metrics=None
+    ):
         assert quant_dtype is not None, "quant_dtype must be specified"
         self.quant_dtype = quant_dtype
 
         with torch.no_grad():
-
             # Export Modules
             self.exported_encoder = torch.export.export(
                 self.encoder, self.encoder.get_example_inputs(), strict=True
@@ -115,6 +122,9 @@ class T5:
             quantizer = make_quantizer(
                 per_channel_linear=True,
                 quant_dtype=quant_dtype,
+                eps=2**-20,
+                backend=backend,
+                soc_model=soc_model,
             )
 
             self.exported_encoder = prepare_pt2e(self.exported_encoder, quantizer)
@@ -143,8 +153,10 @@ class T5:
         workspace,
         use_fp16=False,
         soc_model=QcomChipset.SM8650,
+        backend=QnnExecuTorchBackendType.kHtpBackend,
         skip_node_id_set=None,
         skip_node_op_set=None,
+        online_prepare=False,
         verbose=True,
     ):
         graph_names = [ENCODER, DECODER]
@@ -160,10 +172,26 @@ class T5:
                 self.exported_decoder,
             ]
 
-        backend_options = generate_htp_compiler_spec(use_fp16=use_fp16)
+        if backend == QnnExecuTorchBackendType.kGpuBackend and not online_prepare:
+            raise RuntimeError("Currently GPU backend only support online_prepare.")
+        backend_options = {
+            QnnExecuTorchBackendType.kGpuBackend: generate_gpu_compiler_spec(
+                **{
+                    "precision": (
+                        QnnExecuTorchGpuPrecision.kGpuPrecisionFp16
+                        if use_fp16
+                        else QnnExecuTorchGpuPrecision.kGpuPrecisionUserProvided
+                    )
+                }
+            ),
+            QnnExecuTorchBackendType.kHtpBackend: generate_htp_compiler_spec(
+                use_fp16=use_fp16
+            ),
+        }[backend]
         compile_spec = generate_qnn_executorch_compiler_spec(
             soc_model=soc_model,
             backend_options=backend_options,
+            online_prepare=online_prepare,
         )
         edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
             dict(zip(graph_names, modules)),
@@ -203,23 +231,17 @@ class T5:
 
 
 def main(args):
-
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
-
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
 
     data_size = 100
     max_hidden_seq_length = 384
     max_cache_length = 512
 
-    tokenizer = AutoTokenizer.from_pretrained("google-t5/t5-small")
-    model = AutoModelForSeq2SeqLM.from_pretrained("google-t5/t5-small").eval()
-    inputs, targets, input_list = get_seq2seq_dataset_from_squad_csv(
+    model_name = "google-t5/t5-small"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name).eval()
+    inputs, targets = get_seq2seq_dataset_from_squad_csv(
         args.dataset,
         tokenizer,
         data_size,
@@ -234,12 +256,19 @@ def main(args):
             max_hidden_seq_length=max_hidden_seq_length,
             max_cache_length=max_cache_length,
         )
-        quant_dtype = QuantDtype.use_16a8w
-        t5.quantize(inputs, quant_dtype)
+        backend = get_backend_type(args.backend)
+        quant_dtype = {
+            QnnExecuTorchBackendType.kGpuBackend: None,
+            QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_16a8w,
+        }[backend]
+        if quant_dtype:
+            t5.quantize(backend, args.model, inputs, quant_dtype)
         t5.lowering_modules(
             args.artifact,
             soc_model=getattr(QcomChipset, args.model),
             use_fp16=True if quant_dtype is None else False,
+            backend=backend,
+            online_prepare=args.online_prepare,
         )
 
     if args.compile_only:
@@ -250,10 +279,9 @@ def main(args):
         if args.pre_gen_pte
         else f"{args.artifact}/{PTE_FILE_NAME}"
     ) + ".pte"
-    _, _, spiece_model, _, _ = tokenizer.save_pretrained(args.artifact)
-
+    tokenizer.save_vocabulary(args.artifact)
+    runtime_tokenizer_path = f"{args.artifact}/tokenizer.model"
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/{PTE_FILE_NAME}"
-
     outputs = []
 
     def post_process():
@@ -263,7 +291,7 @@ def main(args):
 
     runner_args = " ".join(
         [
-            f"--tokenizer_model_path {os.path.basename(spiece_model)}",
+            f"--tokenizer_model_path {os.path.basename(runtime_tokenizer_path)}",
             f"--model_path {PTE_FILE_NAME}.pte",
             f"--seq_len {max_cache_length}",
             "--output_folder_path outputs",
@@ -295,6 +323,7 @@ def main(args):
                 runner_args,
             ]
         )
+        backend = get_backend_type(args.backend)
         adb = SimpleADB(
             qnn_sdk=os.getenv("QNN_SDK_ROOT"),
             build_path=f"{args.build_folder}",
@@ -303,15 +332,17 @@ def main(args):
             device_id=args.device,
             host_id=args.host,
             soc_model=args.model,
+            shared_buffer=args.shared_buffer,
+            target=args.target,
             runner="examples/qualcomm/oss_scripts/t5/qnn_t5_runner",
         )
         adb.push(
             inputs=inputs,
-            input_list=input_list,
-            files=[spiece_model],
+            files=[runtime_tokenizer_path],
+            backends={backend},
         )
         adb.execute(custom_runner_cmd=runner_cmd)
-        adb.pull(output_path=args.artifact, callback=post_process)
+        adb.pull(host_output_path=args.artifact, callback=post_process)
 
     result = Seq2SeqLMExportableModulePipeline.evaluate_with_ground_truth(
         tokenizer, outputs, targets, evaluate_squad
@@ -334,11 +365,6 @@ if __name__ == "__main__":
         type=str,
     )
     parser.add_argument(
-        "--pre_gen_pte",
-        help="Run the pre-generated t5 in the given directory.",
-        type=str,
-    )
-    parser.add_argument(
         "-d",
         "--dataset",
         help=(
@@ -351,6 +377,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
     try:
         main(args)
     except Exception as e:

@@ -32,11 +32,13 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:select_copy_util",
             "//executorch/kernels/portable/cpu/util:advanced_index_util",
             "//executorch/kernels/portable/cpu/util:slice_util",
+            "//executorch/kernels/portable/cpu/util:stack_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:upsample_util",
             "//executorch/kernels/portable/cpu/util:vectorized_math",
+            "//executorch/kernels/portable/cpu/util:grid_sampler_2d_util",
         ],
-        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -86,7 +88,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -99,7 +101,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -113,16 +115,24 @@ def define_common_targets():
             ":broadcast_util",
             ":dtype_util",
             ":vectorized_math",
-            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
             "//executorch/runtime/kernel:kernel_runtime_context",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/extension/threadpool:threadpool",
             "//executorch/kernels/portable/cpu:scalar_utils",
-        ],
+        ] + (select({
+            # Zephyr builds use -fno-exceptions → ET_HAS_EXCEPTIONS=0 →
+            # ET_USE_PYTORCH_HEADERS=0, so ATen vectorization is unused.
+            "ovr_config//os:zephyr": [],
+            "DEFAULT": [
+                "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+            ],
+        }) if not runtime.is_oss else [
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+        ]),
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -137,7 +147,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -147,10 +157,13 @@ def define_common_targets():
             "copy_ops_util.h",
         ],
         compiler_flags = ["-Wno-missing-prototypes"],
+        exported_deps = [
+            ":broadcast_util",
+        ],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -163,7 +176,10 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = [
+            "//executorch/kernels/portable/cpu/...",
+            "//executorch/kernels/optimized/cpu/...",
+        ],
     )
 
     runtime.cxx_library(
@@ -176,7 +192,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -190,7 +206,10 @@ def define_common_targets():
             ":broadcast_util",
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = [
+            "//executorch/kernels/portable/cpu/...",
+            "//executorch/kernels/optimized/cpu/...",
+        ],
     )
 
     runtime.cxx_library(
@@ -203,7 +222,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -216,7 +235,10 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = [
+            "//executorch/kernels/portable/cpu/...",
+            "//executorch/kernels/optimized/cpu/...",
+        ],
     )
 
     runtime.cxx_library(
@@ -257,7 +279,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             ":broadcast_util",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -265,9 +287,16 @@ def define_common_targets():
         srcs = [],
         exported_headers = ["math_util.h"],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
-        exported_deps = [
+        exported_deps = select({
+            # Zephyr builds use -fno-exceptions → ET_HAS_EXCEPTIONS=0 →
+            # ET_USE_PYTORCH_HEADERS=0, so ATen vectorization is unused.
+            "ovr_config//os:zephyr": [],
+            "DEFAULT": [
+                "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+            ],
+        }) if not runtime.is_oss else [
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
-        ],
+            ],
     )
 
     runtime.cxx_library(
@@ -288,8 +317,22 @@ def define_common_targets():
         exported_headers = ["slice_util.h"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/extension/threadpool:threadpool",
         ],
         visibility = ["//executorch/kernels/portable/cpu/..."],
+    )
+
+    runtime.cxx_library(
+        name = "stack_util",
+        srcs = ["stack_util.cpp"],
+        exported_headers = ["stack_util.h"],
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+        exported_deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -309,10 +352,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/core/exec_aten/util:tensor_dimension_limit",
         ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -323,6 +363,16 @@ def define_common_targets():
             "//executorch/runtime/core/portable_type:portable_type",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
         ],
+    )
+
+    runtime.cxx_library(
+        name = "grid_sampler_2d_util",
+        srcs = ["grid_sampler_2d_util.cpp"],
+        exported_headers = ["grid_sampler_2d_util.h"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/..."],
     )
 
     # Utility functions that can be used by operators that perform reduction
@@ -340,14 +390,8 @@ def define_common_targets():
                 "//executorch/extension/threadpool:threadpool",
             ],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
-            visibility = [
-                "//executorch/extension/llm/custom_ops/...",
-                "//executorch/kernels/portable/cpu/...",
-                "//executorch/kernels/quantized/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
         )
-
 
         runtime.cxx_library(
             name = "arange_util{}".format(suffix),

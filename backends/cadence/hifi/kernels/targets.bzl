@@ -14,9 +14,7 @@ def define_common_targets():
         ],
         deps = common_deps,
         compatible_with = ["ovr_config//cpu:xtensa"],
-        visibility = [
-            "//executorch/backends/cadence/...",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "fbsource//third-party/nnlib-hifi4/xa_nnlib:libxa_nnlib_common",
         ],

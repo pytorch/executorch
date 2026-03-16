@@ -1,7 +1,13 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Provide TOSA support checks for 2D pooling.
+
+Validate ``avg_pool2d`` and ``max_pool2d_with_indices`` against U55 profile
+constraints including kernel size, stride, padding, and dimensionality.
+
+"""
 
 from typing import cast
 
@@ -15,39 +21,116 @@ from executorch.backends.arm.operator_support.tosa_supported_operators import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     adjust_pooling_pad_if_needed,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
 def kernel_check(kernel: tuple[int, int]) -> bool:
+    """Check if kernel size is within U55 constraints.
+
+    Checks that ``kernel_x * kernel_y`` is in ``[1, 65536]`` and
+    ``kernel_y`` is in ``[1, 256]`` as required by the U55 profile.
+
+    Args:
+        kernel (tuple[int, int]): Kernel height and width ``(kh, kw)``.
+
+    Returns:
+        bool: True if the kernel passes validation.
+
+    """
     if not (1 <= kernel[0] * kernel[1] <= 65536):
         return False
     return 1 <= kernel[1] <= 256
 
 
 def stride_check(strides: tuple[int, int]) -> bool:
+    """Check if strides are within U55 constraints.
+
+    Args:
+        strides (tuple[int, int]): Vertical and horizontal strides.
+
+    Returns:
+        bool: True if each stride is in ``[1, 3]``.
+
+    """
     return all(1 <= stride <= 3 for stride in strides)
 
 
 def dim_check(shape=torch.Size) -> bool:
+    """Check if non-batch dims are within U55 constraints.
+
+    Verifies that all dimensions except batch are in ``[1, 65536]``.
+
+    Args:
+        shape (torch.Size): Input tensor shape.
+
+    Returns:
+        bool: True if all checked dimensions pass.
+
+    """
     check = True
     for dim in shape[1:]:
         check &= 1 <= dim <= 65536
     return check
 
 
+def dilation_check(
+    shape: torch.Size,
+    kernel: tuple[int, int],
+    stride: tuple[int, int],
+    padding: tuple[int, int],
+    dilation: tuple[int, int],
+) -> bool:
+    """Check if dilation constraints are met for maxpool2d.
+
+    Verifies that when dilation > 1, stride must be 1. Also allows the case
+    where the output dimensions are 1.
+    Args:
+        shape (torch.Size): Input tensor shape.
+        kernel (tuple[int,int]): Kernel height and width.
+        stride (tuple[int,int]): Vertical and horizontal strides.
+        padding (tuple[int,int]): Vertical and horizontal padding.
+        dilation (tuple[int,int]): Vertical and horizontal dilation.
+    Returns:
+        bool: True if dilation constraints are met.
+
+    """
+
+    pad_h, pad_w = padding
+    d_h, d_w = dilation
+    k_h, k_w = kernel
+    s_h, s_w = stride
+    _, _, H, W = shape
+
+    H_out = 1 + (H + 2 * pad_h - d_h * (k_h - 1) - 1) // s_h
+    W_out = 1 + (W + 2 * pad_w - d_w * (k_w - 1) - 1) // s_w
+
+    h_ok = (d_h > 1 and s_h == 1) or d_h == 1
+    w_ok = (d_w > 1 and s_w == 1) or d_w == 1
+
+    return (H_out == W_out == 1) or (h_ok and w_ok)
+
+
 @register_tosa_support_check
 class AvgPool2dSupported(SupportedTOSAOperatorCheck):
+    """Provide TOSA support checks for ``aten.avg_pool2d``.
+
+    Applies additional constraints when targeting the U55 subset, including
+    limits on kernel size, stride, padding behavior, and tensor ranks.
+
+    """
+
     targets = [
         exir_ops.edge.aten.avg_pool2d.default,
     ]
 
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
-
     def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
+        """Return True if ``avg_pool2d`` satisfies U55 constraints.
+
+        Computes the effective TOSA padding (depending on ``count_include_pad``
+        and ``divisor_override``) and validates kernel, stride, and shape limits.
+
+        """
         if not tosa_spec.is_U55_subset:
             return True
 
@@ -115,23 +198,47 @@ class AvgPool2dSupported(SupportedTOSAOperatorCheck):
 
 @register_tosa_support_check
 class MaxPool2dSupported(SupportedTOSAOperatorCheck):
+    """Provide TOSA support checks for ``aten.max_pool2d_with_indices`` and
+    ``aten.max_pool2d``.
+
+    Checks that dilation constraints are met for both ops.
+
+    Applies additional constraints to the aten.max_pool2d_with_indices op when
+    targeting the U55 subset, including limits on kernel size, stride, and
+    tensor ranks.
+
+    """
+
     targets = [
         exir_ops.edge.aten.max_pool2d_with_indices.default,
-    ]
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
+        exir_ops.edge.aten.max_pool2d.default,
     ]
 
     def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
-        if not tosa_spec.is_U55_subset:
-            return True
+        """Return True if ``max_pool2d`` satisfies dilation constraints.
 
-        # U55 case, Vela 4.2.0 (25.02 release)
+        Return True if ``max_pool2d_with_indices`` satisfies both dilation constraints and U55 constraints.
+
+        """
+
         shape = cast(torch.Tensor, node.all_input_nodes[0].meta["val"]).shape
         kernel = cast(tuple[int, int], node.args[1])
         stride = cast(tuple[int, int], node.args[2])
+        padding = cast(tuple[int, int], node.args[3]) if len(node.args) >= 4 else (0, 0)
+        dilation = (
+            cast(tuple[int, int], node.args[4]) if len(node.args) >= 5 else (1, 1)
+        )
+
+        if not dilation_check(shape, kernel, stride, padding, dilation):
+            self.reporter.report_reject(
+                node,
+                f"Maxpool2d with dilation {dilation} needs stride = 1, got stride {stride}",
+            )
+            return False
+
+        # U55 case, Vela 4.2.0 (25.02 release)
+        if not tosa_spec.is_U55_subset:
+            return True
 
         if not kernel_check(kernel):
             self.reporter.report_reject(

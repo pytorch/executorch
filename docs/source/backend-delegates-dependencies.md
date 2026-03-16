@@ -49,7 +49,7 @@ for these third-party dependencies.
   `executorch/third-party` then try to use that if possible. This
   helps with reducing the binary size when the delegate is enabled.
 * The rest of the ExecuTorch code, outside of the delegate, should not depend on
-  this. And it should should build and run correctly without this dependency
+  this. And it should build and run correctly without this dependency
   when the delegate is disabled at build time.
 
 More details in the section [below](#runtime-dependencies).

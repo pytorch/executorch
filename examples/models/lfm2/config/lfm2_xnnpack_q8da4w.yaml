@@ -1,0 +1,15 @@
+base:
+  metadata: '{"get_bos_id": 1, "get_eos_ids":[7]}'
+
+model:
+  use_kv_cache: True
+  use_sdpa_with_kv_cache: True
+  dtype_override: fp32
+
+quantization:
+  qmode: 8da4w
+
+backend:
+  xnnpack:
+    enabled: True
+    extended_ops: True

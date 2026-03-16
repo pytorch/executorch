@@ -29,7 +29,11 @@ Result<uint64_t> get_abs(int64_t num) {
 }
 
 Result<std::string> get_op_name(int64_t op) {
-  auto unsigned_op = ET_UNWRAP(get_abs(op));
+  auto abs_result = get_abs(op);
+  if (!abs_result.ok()) {
+    return abs_result.error();
+  }
+  auto unsigned_op = abs_result.get();
 
   switch (unsigned_op) {
     case 0:

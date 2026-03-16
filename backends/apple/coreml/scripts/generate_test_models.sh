@@ -15,7 +15,9 @@ COREML_DIR_PATH="$EXECUTORCH_ROOT_PATH/backends/apple/coreml"
 
 cd "$EXECUTORCH_ROOT_PATH"
 
-mkdir "$COREML_DIR_PATH/runtime/test/models/"
+rm -rf "$COREML_DIR_PATH/runtime/test/models/"
+mkdir -p "$COREML_DIR_PATH/runtime/test/models/"
+
 #Generate models
 cd "$EXECUTORCH_ROOT_PATH"
 

@@ -1,15 +1,18 @@
-# Copyright 2024 NXP
+# Copyright 2024,2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from executorch.backends.nxp.backend.data_format import DataFormat
 from executorch.backends.nxp.backend.ir.converter.builder.model_builder import (
     ModelBuilder,
 )
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
-from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
+
+from executorch.backends.nxp.backend.ir.converter.tensor_utils import (
+    get_name_of_node_output,
+)
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
-from executorch.backends.nxp.backend.node_format_inference import NodeFormat
 from torch.fx import Node
 from torch.nn import Parameter
 
@@ -20,38 +23,47 @@ class AtenModelBuilderDirector(ModelBuilder):
     contains methods related to Edge program nodes conversion.
     """
 
-    def append_as_fake_tensor(self, node: Node, node_format: NodeFormat):
+    def append_as_fake_tensor(self, node: Node, node_format: DataFormat):
         """
         Append node into ModelBuilder as tensor without data (FakeTensor). Can be used
         for activations and output tensors.
 
         :param node: Node instance.
-        :param node_format: NodeFormat definition.
+        :param node_format: DataFormat definition.
         """
         if self.tensor_exists(node.name):
             return
 
-        tensor = node.meta["val"]
-        if isinstance(tensor, tuple):
-            tensor = tensor[0]  # Fake tensor
-        _type = translator.convert_data_type(tensor.dtype)
-        shape = list(tensor.shape)
+        def _append_tensor(tensor_, name=None):
+            type_ = translator.convert_data_type(tensor_.dtype)
+            shape = list(tensor_.shape)
 
-        if node_format.is_channels_first():
-            shape = translator.dims_to_channels_last(shape)
+            if node_format.is_channels_first():
+                shape = translator.dims_to_channels_last(shape)
 
-        tensor = self.create_empty_tensor(node.name, _type, shape)
-        tensor.tensor_format = TensorFormat.from_node_format(node_format)
+            tensor = self.create_empty_tensor(name or node.name, type_, shape)
+            tensor.tensor_format = DataFormat.convert_executorch_format_to_neutron(
+                node_format
+            )
+
+        tensor_or_tuple = node.meta["val"]
+        if isinstance(tensor_or_tuple, tuple):
+            # The `node` can produce multiple output tensors, which are represented using this tuple.
+            for i, t in enumerate(tensor_or_tuple):
+                _append_tensor(t, get_name_of_node_output(node, i))
+
+        else:
+            _append_tensor(tensor_or_tuple)
 
     def append_as_static_tensor(
-        self, node: Node, node_format: NodeFormat, tensor: Parameter
+        self, node: Node, node_format: DataFormat, tensor: Parameter
     ):
         """
         Append node into ModelBuilder as tensor with data (static). Can be used for weights,
         permutations etc.
 
         :param node: Node instance.
-        :param node_format: NodeFormat definition.
+        :param node_format: DataFormat definition.
         :param tensor: Torch Tensor (Parameter) that holds tensor data.
         """
         assert not self.tensor_exists(node.name), f"Tensor '{node.name}' already added!"
@@ -65,7 +77,9 @@ class AtenModelBuilderDirector(ModelBuilder):
             data = translator.convert_data_to_channels_last(data)
 
         tensor = self.create_tensor_for_data(data, node.name)
-        tensor.tensor_format = TensorFormat.from_node_format(node_format)
+        tensor.tensor_format = DataFormat.convert_executorch_format_to_neutron(
+            node_format
+        )
 
     def append_operators(self, ops_to_add: list[tflite_model.Operator]):
         """
@@ -88,19 +102,40 @@ class AtenModelBuilderDirector(ModelBuilder):
 
             self.check_and_append_operator(op)
 
-    def assign_model_io_to_subgraph_and_get_io_formats(
-        self, graph_signature
-    ) -> dict[str, dict]:
-        """
-        Assign model's inputs/outputs to SubGraph.
+    def get_io_formats(self, graph_signature) -> dict[str, dict[str, DataFormat]]:
+        """Get a mapping from tensor names to their formats.
 
-        :param graph_signature: Instance of GraphSignature.
+        :param graph_signature:  Instance of GraphSignature.
         :returns: Mapping between IO tensors' names and their formats.
         """
         io_formats = {
             "inputs": {},
             "outputs": {},
         }
+        for input_name in graph_signature.user_inputs:
+            tensor = self.tensor_for_name(input_name)
+            assert input_name == tensor.name, (
+                "Program's input name doesn't match with tensor name in TFLite. "
+                "Input was probably redirected."
+            )
+            io_formats["inputs"][tensor.name] = tensor.tensor_format
+
+        for output_name in graph_signature.user_outputs:
+            tensor = self.tensor_for_name(output_name)
+            assert output_name == tensor.name, (
+                "Program's output name doesn't match with tensor name in TFLite. "
+                "Output was probably redirected."
+            )
+            io_formats["outputs"][tensor.name] = tensor.tensor_format
+
+        return io_formats
+
+    def assign_model_io_to_subgraph(self, graph_signature):
+        """
+        Assign model's inputs/outputs to SubGraph.
+
+        :param graph_signature: Instance of GraphSignature.
+        """
 
         self.get_sub_graph().inputs = tflite_model.SubGraphInputs()
         for input_name in graph_signature.user_inputs:
@@ -110,7 +145,6 @@ class AtenModelBuilderDirector(ModelBuilder):
                 "Input was probably redirected."
             )
             self.get_sub_graph().inputs.tmp_inputs.append(tensor)
-            io_formats["inputs"][tensor.name] = tensor.tensor_format
 
         self.get_sub_graph().outputs = tflite_model.SubGraphOutputs()
         for output_name in graph_signature.user_outputs:
@@ -120,7 +154,3 @@ class AtenModelBuilderDirector(ModelBuilder):
                 "Output was probably redirected."
             )
             self.get_sub_graph().outputs.tmp_outputs.append(tensor)
-
-            io_formats["outputs"][tensor.name] = tensor.tensor_format
-
-        return io_formats

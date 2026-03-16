@@ -126,12 +126,37 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
   return self;
 }
 
-- (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor {
+- (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor
+                         shape:(NSArray<NSNumber *> *)shape
+                dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
+                       strides:(NSArray<NSNumber *> *)strides {
   ET_CHECK(otherTensor);
   auto tensor = make_tensor_ptr(
-    **reinterpret_cast<TensorPtr *>(otherTensor.nativeInstance)
+    *reinterpret_cast<TensorPtr *>(otherTensor.nativeInstance),
+    utils::toVector<SizesType>(shape),
+    utils::toVector<DimOrderType>(dimensionOrder),
+    utils::toVector<StridesType>(strides)
   );
-  return [self initWithNativeInstance:&tensor];
+  self = [self initWithNativeInstance:&tensor];
+  if (self) {
+    _data = otherTensor->_data;
+  }
+  return self;
+}
+
+- (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor
+                         shape:(NSArray<NSNumber *> *)shape {
+  return [self initWithTensor:otherTensor
+                        shape:shape
+               dimensionOrder:@[]
+                      strides:@[]];
+}
+
+- (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor {
+  return [self initWithTensor:otherTensor
+                        shape:@[]
+               dimensionOrder:@[]
+                      strides:@[]];
 }
 
 - (instancetype)copy {
@@ -141,6 +166,11 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
 - (instancetype)copyWithZone:(nullable NSZone *)zone {
   auto tensor = clone_tensor_ptr(_tensor);
   return [[ExecuTorchTensor allocWithZone:zone] initWithNativeInstance:&tensor];
+}
+
+- (instancetype)copyToDataType:(ExecuTorchDataType)dataType {
+  auto tensor = clone_tensor_ptr(_tensor, static_cast<ScalarType>(dataType));
+  return [[ExecuTorchTensor alloc] initWithNativeInstance:&tensor];
 }
 
 - (void *)nativeInstance {
@@ -265,9 +295,15 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
   auto const count = _tensor->numel();
   os << "\n  count: " << count << ",";
   os << "\n  scalars: [";
-  ET_SWITCH_REALHBBF16_TYPES(
+  // Create a minimal context for error handling in ET_SWITCH
+  struct {
+    [[noreturn]] void fail(torch::executor::Error /* error */) {
+      ET_CHECK_MSG(false, "Unsupported dtype in description");
+    }
+  } ctx;
+  ET_SWITCH_REALHBBF16_AND_UINT_TYPES(
     static_cast<ScalarType>(_tensor->scalar_type()),
-    nullptr,
+    ctx,
     "description",
     CTYPE,
     [&] {
@@ -488,9 +524,15 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
                "Number of scalars does not match the shape");
   std::vector<uint8_t> data;
   data.resize(count * ExecuTorchSizeOfDataType(dataType));
+  // Create a minimal context for error handling in ET_SWITCH
+  struct {
+    [[noreturn]] void fail(torch::executor::Error /* error */) {
+      ET_CHECK_MSG(false, "Unsupported dtype in initWithScalars");
+    }
+  } ctx;
   for (NSUInteger index = 0; index < count; ++index) {
     ET_SWITCH_REALHBBF16_AND_UINT_TYPES(
-      static_cast<ScalarType>(dataType), nil, "initWithScalars", CTYPE, [&] {
+      static_cast<ScalarType>(dataType), ctx, "initWithScalars", CTYPE, [&] {
         reinterpret_cast<CTYPE *>(data.data())[index] = utils::toType<CTYPE>(scalars[index]);
       }
     );
@@ -801,8 +843,14 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
                            dataType:(ExecuTorchDataType)dataType
                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
   Scalar fillValue;
+  // Create a minimal context for error handling in ET_SWITCH
+  struct {
+    [[noreturn]] void fail(torch::executor::Error /* error */) {
+      ET_CHECK_MSG(false, "Unsupported dtype in fullTensor");
+    }
+  } ctx;
   ET_SWITCH_REALHBBF16_AND_UINT_TYPES(
-    static_cast<ScalarType>(dataType), nil, "fullTensor", CTYPE, [&] {
+    static_cast<ScalarType>(dataType), ctx, "fullTensor", CTYPE, [&] {
       fillValue = utils::toType<CTYPE>(scalar);
     }
   );

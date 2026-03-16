@@ -19,6 +19,9 @@ def define_common_targets(is_fbcode=False):
             "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
             "ET_MODULE_ADD_MUL_PROGRAM_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleAddMul.pte])",
             "ET_MODULE_ADD_MUL_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleAddMul.ptd])",
+            "ET_MODULE_LINEAR_PROGRAM_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.pte])",
+            "ET_MODULE_LINEAR_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.ptd])",
+            "ET_MODULE_SHARED_STATE": "$(location fbcode//executorch/test/models:exported_programs[ModuleSharedState.pte])",
         }
 
         for aten_mode in get_aten_mode_options():
@@ -34,6 +37,8 @@ def define_common_targets(is_fbcode=False):
                     "//executorch/extension/data_loader:file_data_loader",
                     "//executorch/extension/module:module" + aten_suffix,
                     "//executorch/extension/tensor:tensor" + aten_suffix,
+                    "//executorch/runtime/backend:backend_options",
+                    "//executorch/runtime/backend:backend_options_map",
                     "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
                 ],
                 env = modules_env,

@@ -9,7 +9,7 @@
 import collections
 import itertools
 import logging
-from typing import Iterable, Optional, Sequence
+from typing import Callable, Iterable, Optional, Sequence, TypeAlias
 
 import torch
 from executorch.backends.cadence.aot.memory_constraints import MemConstraints
@@ -26,6 +26,8 @@ from executorch.backends.cadence.aot.utils import (
 
 from executorch.exir import ExecutorchProgramManager
 from executorch.exir.memory_planning import collect_specs_from_nodes, Verifier
+from executorch.exir.pass_base import PassBase
+from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.tensor import TensorSpec
 from tabulate import tabulate
@@ -116,6 +118,9 @@ class GreedyWithHeuristic(MemoryPlanningAlgo):
         Greedily place the spec in the first memory that can fit it.
         """
         for spec.mem_id in range(1, self.get_num_memories()):
+            if placement_constraints.is_mem_id_in_blocklist(spec, spec.mem_id):
+                # Skip placement for blocked memory id.
+                continue
             prev_offset, smallest_gap = 0, float("inf")
             for allocated_spec in state.allocated_buffers[spec.mem_id]:
                 if not Verifier.lifetime_overlap(spec, allocated_spec):
@@ -141,11 +146,11 @@ class GreedyWithHeuristic(MemoryPlanningAlgo):
                 )
             if spec.mem_offset is None:
                 spec.mem_offset = prev_offset
-                if not self.is_valid_placement(spec, placement_constraints):
-                    spec.mem_offset = None
-                    continue
-                else:
-                    spec.mem_offset = prev_offset
+
+            if not self.is_valid_placement(spec, placement_constraints):
+                # Skip placement for invalid memory id.
+                spec.mem_offset = None
+                continue
 
             state.place_spec(spec)
             # A data structure used for maintaining the tensor order
@@ -285,6 +290,7 @@ def print_memory_planning_info(
     opt_level: int,
     alloc_graph_input: bool,
     alloc_graph_output: bool,
+    log_level=logging.INFO,
 ) -> None:
     # Get the peak memory usages per memory space
     mem_constraints = MemConstraints(
@@ -314,7 +320,8 @@ def print_memory_planning_info(
     ]
 
     # Print the memory usage per memory space as a table
-    logging.info(
+    logging.log(
+        log_level,
         "\n"
         + tabulate(
             memory_usage_table,
@@ -325,7 +332,7 @@ def print_memory_planning_info(
                 "Peak Memory Usage (Bytes)",
             ],
             tablefmt="outline",
-        )
+        ),
     )
 
     # Get the total peak memory usage across all memory spaces
@@ -347,13 +354,43 @@ def print_memory_planning_info(
     ]
 
     # Print the total memory usage as a table
-    logging.info(
+    logging.log(
+        log_level,
         "\n"
         + tabulate(
             total_memory_usage_table,
             tablefmt="outline",
-        )
+        ),
     )
+
+
+class SimplifyIdmaOpsPass(PassBase):
+    """Replace idma_load and idma_store with idma_copy."""
+
+    def call(self, graph_module: torch.fx.GraphModule) -> Optional[PassResult]:
+        modified = False
+        for node in graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.cadence.idma_load.out
+        ):
+            modified = True
+            node.target = torch.ops.cadence.idma_copy.out
+            node.args = (node.args[0], *node.args[2:])
+
+        for node in graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.cadence.idma_store.out
+        ):
+            modified = True
+            node.target = torch.ops.cadence.idma_copy.out
+
+        graph_module.graph.eliminate_dead_code()
+        graph_module.recompile()
+        return PassResult(graph_module, modified)
+
+
+ConstraintGenPassType: TypeAlias = Callable[
+    [MemConstraints],
+    Callable[[torch.fx.GraphModule], Optional[PassResult]],
+]
 
 
 class CadenceMemoryPlanning:
@@ -420,10 +457,16 @@ class CadenceMemoryPlanning:
         # True.
         mem_planning = MemoryPlanningPass(
             self.algo,
-            allow_lifetime_and_storage_overlap=(self.opt_level >= 2),
+            # Always allow lifetime and storage overlap.
+            # At opt level 0, we need overlap for idma wait.
+            allow_lifetime_and_storage_overlap=True,
             alloc_graph_input=self.alloc_graph_input,
             alloc_graph_output=self.alloc_graph_output,
         )
         mem_planning.run(graph_module, graph_signature)
+
+        graph_module = PassManager(passes=[SimplifyIdmaOpsPass()])(
+            graph_module
+        ).graph_module
 
         return PassResult(graph_module, True)

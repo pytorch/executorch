@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -108,7 +109,7 @@ def get_pt2e_quantizers(
                     "Need to specify shared library path to register quantized ops (and their out variants) into EXIR.\n"
                     "Follow the following steps to build the needed lib via cmake.\n"
                     "Then from root executorch dir do the following:\n"
-                    "rm -rf cmake-out && mkdir cmake-out && (cd cmake-out && cmake -DBUCK2=<path-to-buck2> -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON ..) && cmake --build . -j16\n"
+                    "rm -rf cmake-out && mkdir cmake-out && (cd cmake-out && cmake -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON ..) && cmake --build . -j16\n"
                     'To find the location of the lib: find cmake-out -name "libquantized_ops_aot_lib*"\n'
                     "Then specify the said library via -s <path to libquantized_ops_aot_lib.so\n"
                 )
@@ -215,6 +216,47 @@ def get_qnn_quantizer(
     return qnn_quantizer, quant_dtype
 
 
+def get_ov_quantizer(
+    pt2e_quantize: str,
+    group_size: int = 128,
+):
+    try:
+        from executorch.backends.openvino.quantizer import (
+            OpenVINOQuantizer,
+            QuantizationMode,
+        )
+    except ImportError:
+        raise ImportError("Please install nncf via backends/openvino/requirements.txt")
+
+    backend, quant_config = pt2e_quantize.split("_")
+    assert (
+        backend == "openvino"
+    ), f"The quantization config is for backend {backend} instead of openvino."
+    assert (
+        group_size
+    ), "Group Size None is Not Supported. It should be set to -1 for per-channel."
+
+    quantization_params = {}
+
+    if quant_config == "4wo":
+        quantization_params["mode"] = QuantizationMode.INT4WO_SYM
+        quantization_params["group_size"] = group_size
+        quantization_params["ratio"] = 1
+
+    elif quant_config == "8wo":
+        quantization_params["mode"] = QuantizationMode.INT8WO_ASYM
+        quantization_params["group_size"] = -1
+        quantization_params["ratio"] = None
+
+    else:
+        raise AssertionError(
+            f"No support for quant type {quant_config}. Support 8a4w, 8a8w only."
+        )
+    ov_quantizer = OpenVINOQuantizer(**quantization_params)
+
+    return ov_quantizer
+
+
 def get_coreml_quantizer(pt2e_quantize: str):
     try:
         from coremltools.optimize.torch.quantization.quantization_config import (
@@ -226,7 +268,7 @@ def get_coreml_quantizer(pt2e_quantize: str):
         from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer
     except ImportError:
         raise ImportError(
-            "Please install the CoreML backend follwing https://pytorch.org/executorch/main/backends-coreml"
+            "Please install the CoreML backend following https://docs.pytorch.org/executorch/main/backends/coreml/coreml-overview.html"
         )
 
     if pt2e_quantize == "coreml_8a_c8w":
@@ -278,4 +320,67 @@ def get_vulkan_quantizer(pt2e_quantize: str):
         raise ValueError(f"Unsupported Vulkan quantizer specification {pt2e_quantize}")
 
     quantizer = VulkanQuantizer().set_global(config)
+    return quantizer
+
+
+def get_tosa_quantizer(version: str, pt2e_quantize: str):
+    from executorch.backends.arm.quantizer.arm_quantizer import (
+        get_symmetric_quantization_config,
+        TOSAQuantizer,
+    )
+    from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+
+    compile_spec = TosaCompileSpec(version)
+
+    quantizer = TOSAQuantizer(compile_spec)
+
+    if pt2e_quantize == "tosa_8a8w":
+        quantizer.set_global(get_symmetric_quantization_config())
+    else:
+        raise ValueError(f"Unsupported quantizer specification {pt2e_quantize}")
+
+    return quantizer
+
+
+def get_ethosu_quantizer(
+    target: str, system_config: str, memory_mode: str, pt2e_quantize: str
+):
+    from executorch.backends.arm.ethosu.compile_spec import EthosUCompileSpec
+    from executorch.backends.arm.quantizer.arm_quantizer import (
+        EthosUQuantizer,
+        get_symmetric_quantization_config,
+    )
+
+    compile_spec = EthosUCompileSpec(target, system_config, memory_mode)
+
+    quantizer = EthosUQuantizer(compile_spec)
+
+    if pt2e_quantize == "ethosu_8a8w":
+        quantizer.set_global(get_symmetric_quantization_config())
+    else:
+        raise ValueError(f"Unsupported quantizer specification {pt2e_quantize}")
+
+    return quantizer
+
+
+def get_vgf_quantizer(
+    compile_spec: Optional[str],
+    compiler_flags: Optional[List[str]],
+    pt2e_quantize: str,
+):
+    from executorch.backends.arm.quantizer.arm_quantizer import (
+        get_symmetric_quantization_config,
+        VgfQuantizer,
+    )
+    from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
+
+    compile_spec_obj = VgfCompileSpec(compile_spec, compiler_flags)
+
+    quantizer = VgfQuantizer(compile_spec_obj)
+
+    if pt2e_quantize == "vgf_8a8w":
+        quantizer.set_global(get_symmetric_quantization_config())
+    else:
+        raise ValueError(f"Unsupported quantizer specification {pt2e_quantize}")
+
     return quantizer

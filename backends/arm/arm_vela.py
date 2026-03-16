@@ -1,9 +1,8 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import os
 import struct
@@ -21,21 +20,38 @@ except ImportError:
     has_vela = False
 
 
+def _as_int32(value, name: str) -> int:
+    """Convert numpy scalars to signed int32 with a clear error on overflow."""
+    arr = np.asarray(value)
+    if np.issubdtype(arr.dtype, np.unsignedinteger):
+        # Interpret unsigned values as signed (e.g., uint64 max -> -1).
+        arr = arr.astype(np.int64)
+    v = int(arr)
+    if v < -(2**31) or v > 2**31 - 1:
+        raise ValueError(f"{name} out of int32 range: {v}")
+    return v
+
+
 # Pack either input or output tensor block, compose the related arrays into
 # per-io structs to simplify runtime use.
 def vela_bin_pack_io(prefix, data):
     vela_input_shapes = data[prefix + "_shape"]
+    # Vela input/output shape is fixed to 6D
+    vela_io_shape_dims = 6
 
     ios = struct.pack("<i", len(vela_input_shapes))
     for i in range(len(vela_input_shapes)):
         io_shape = vela_input_shapes[i]
-        io_elem_size = data[prefix + "_elem_size"][i]
-        io_offset = data[prefix + "_offset"][i]
-        io_region = data[prefix + "_region"][i]
-        assert len(io_shape) <= 4
-        inp_pad = io_shape.tolist() + [0] * (4 - len(io_shape))
+        io_elem_size = _as_int32(data[prefix + "_elem_size"][i], f"{prefix}_elem_size")
+        io_offset = _as_int32(data[prefix + "_offset"][i], f"{prefix}_offset")
+        io_region = _as_int32(data[prefix + "_region"][i], f"{prefix}_region")
+        if len(io_shape) != vela_io_shape_dims:
+            raise ValueError(
+                f"Expected {vela_io_shape_dims}D shape, got {len(io_shape)}D"
+            )
+        inp_pad = io_shape.tolist()
         io_struct = struct.pack(
-            "<iiiiiii", *inp_pad, io_elem_size, io_offset, io_region
+            "<iiiiiiiii", *inp_pad, io_elem_size, io_offset, io_region
         )
         ios += io_struct
     return ios
@@ -44,35 +60,35 @@ def vela_bin_pack_io(prefix, data):
 # Output via Vela to binary stream for ArmBackendEthosU
 # WARNING: Do not change this without changing VelaBinStream.cpp as that
 #          function consumes this format and the two need to align.
-def vela_compile(tosa_flatbuffer: bytes, args: List[str], verbose: bool = False):
-    """
-    Compile a TOSA graph to a binary stream for ArmBackendEthosU using Vela.
+def vela_compile(
+    tosa_flatbuffer: bytes,
+    args: List[str],
+    verbose: bool = False,
+    intermediate_path: str | None = None,
+):
+    """Compile a TOSA graph to a binary stream for ArmBackendEthosU using
+    Vela.
     """
     if not has_vela:
         raise RuntimeError(
             "ethos-u-vela pip package couldn't be imported. Make sure it's installed!"
         )
 
-    with tempfile.TemporaryDirectory() as tmpdir:
+    def run(dir: str) -> bytes:
         tosaname = "out.tosa"
-        tosa_path = os.path.join(tmpdir, tosaname)
+        tosa_path = os.path.join(dir, tosaname)
         with open(tosa_path, "wb") as f:
             f.write(tosa_flatbuffer)
 
         # invoke vela
-        output_dir = os.path.join(tmpdir, "output")
+        output_dir = os.path.join(dir, "output")
         args.append(f"--output-dir={output_dir}")
         args.append(tosa_path)
         if verbose:
             args.append("--verbose-all")
         vela.main(" ".join(args).split(" "))
 
-        if any("ethos-u85" in arg for arg in args) or any(
-            "debug-force-regor" in arg for arg in args
-        ):
-            np_path = os.path.join(tmpdir, "output", "out_vela.npz")
-        else:
-            np_path = os.path.join(tmpdir, "output", "out_sg0_vela.npz")
+        np_path = os.path.join(dir, "output", "out_vela.npz")
 
         blocks = b""
         with np.load(np_path, allow_pickle=False) as data:
@@ -120,3 +136,9 @@ def vela_compile(tosa_flatbuffer: bytes, args: List[str], verbose: bool = False)
                 blocks = blocks + block
 
         return blocks
+
+    if intermediate_path is not None:
+        return run(intermediate_path)
+    else:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            return run(tmpdir)

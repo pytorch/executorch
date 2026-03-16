@@ -21,10 +21,11 @@ class ConvertBmmToMatmul(ExportPass):
 
     view_copy = exir_ops.edge.aten.view_copy.default
     expand_copy = exir_ops.edge.aten.expand_copy.default
-    clone = exir_ops.edge.aten.clone.default
+    clone = exir_ops.edge.dim_order_ops._clone_dim_order.default
     bmm = exir_ops.edge.aten.bmm.default
     matmul = exir_ops.edge.aten.matmul.default
     patterns = [
+        {view_copy: 3, bmm: 1},
         {expand_copy: 2, view_copy: 3, bmm: 1},
         {expand_copy: 2, view_copy: 3, bmm: 1, clone: 1},
         {bmm: 1},
@@ -47,7 +48,13 @@ class ConvertBmmToMatmul(ExportPass):
         graph = graph_module.graph
         partitions = get_source_partitions(
             graph,
-            [operator.matmul, torch.matmul, torch.bmm, torch.ops.aten.matmul.default],
+            [
+                "matmul",
+                operator.matmul,
+                torch.matmul,
+                torch.bmm,
+                torch.ops.aten.matmul.default,
+            ],
         )
         for _, src_partitions in partitions.items():
             for src_partition in src_partitions:

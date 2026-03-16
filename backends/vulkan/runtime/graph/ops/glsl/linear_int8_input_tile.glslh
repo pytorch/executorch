@@ -1,0 +1,60 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Macro Settings:
+ * - TILE_M4
+ * - TILE_K4
+ */
+
+#ifndef LINEAR_INT8_INPUT_TILE_GLSLH
+#define LINEAR_INT8_INPUT_TILE_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+struct Int8InputTile {
+  ivec4 data[TILE_M4][TILE_K4];
+};
+
+#ifdef DEBUG_MODE
+
+#include "linear_common.glslh"
+
+void printInt8InputTile(const Int8InputTile tile) {
+  debugPrintfEXT(
+      "Int8InputTile [TILE_M4=%d][TILE_K4=%d]:\\n", TILE_M4, TILE_K4);
+
+  [[unroll]] for (int m4 = 0; m4 < TILE_M4; ++m4) {
+    [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
+      debugPrintfEXT("  tile[%d][%d]:\\n", m4, k4);
+
+      // Each ivec4 contains 4 packed integers, each integer contains 4 8-bit
+      // values
+      [[unroll]] for (int vec_idx = 0; vec_idx < 4; ++vec_idx) {
+        int packed_int = tile.data[m4][k4][vec_idx];
+        debugPrintfEXT("    [", vec_idx, packed_int);
+
+        // Extract 4 8-bit values from this packed integer
+        [[unroll]] for (int byte_idx = 0; byte_idx < 4; ++byte_idx) {
+          int val = extract_8bit_from_packed_int_le(packed_int, byte_idx);
+          if (byte_idx < 3) {
+            debugPrintfEXT("%d, ", val);
+          } else {
+            debugPrintfEXT("%d] ", val);
+          }
+        }
+        debugPrintfEXT("(packed=%d)\\n", packed_int);
+      }
+      debugPrintfEXT("\\n");
+    }
+  }
+}
+
+#endif // DEBUG_MODE
+
+#endif // LINEAR_INT8_INPUT_TILE_GLSLH

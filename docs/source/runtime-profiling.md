@@ -20,4 +20,4 @@ We provide access to all the profiling data via the Python [Inspector API](model
     - Through the Inspector API, users can do a wide range of analysis varying from printing out performance details to doing more finer granular calculation on module level.
 
 
-Please refer to the [Developer Tools tutorial](https://pytorch.org/executorch/main/tutorials/devtools-integration-tutorial) for a step-by-step walkthrough of the above process on a sample model.
+Please refer to the [Developer Tools tutorial](tutorials/devtools-integration-tutorial) <!-- @lint-ignore --> for a step-by-step walkthrough of the above process on a sample model.

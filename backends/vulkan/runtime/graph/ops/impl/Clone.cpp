@@ -11,6 +11,7 @@
 #include <executorch/backends/vulkan/runtime/graph/Logging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taClone.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/View.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
@@ -24,12 +25,12 @@ void resize_clone_node(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)resize_args;
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr in = graph->get_tensor(args[1].refs[0]);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
   // TODO: support for when dimensionality doesn't match, i.e. clone is used to
   // implement squeeze.
-  if (out->dim() == in->dim()) {
-    out->virtual_resize(in->sizes());
+  if (graph->dim_of(out) == graph->dim_of(in)) {
+    graph->virtual_resize(out, graph->sizes_of(in));
   }
 }
 
@@ -37,10 +38,8 @@ void add_clone_node(
     ComputeGraph& graph,
     const ValueRef in,
     const ValueRef out) {
-  vTensorPtr t_out = graph.get_tensor(out);
-
   std::string kernel_name = "clone";
-  add_dtype_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -50,9 +49,9 @@ void add_clone_node(
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Parameter Buffers
-      {t_out->logical_limits_ubo()},
-      // Push Constants
       {},
+      // Push Constants
+      {graph.logical_limits_pc_of(out)},
       // Specialization Constants
       {},
       // Resize Args
@@ -78,6 +77,7 @@ void add_image_to_buffer_node(
     const ValueRef buffer) {
   std::string kernel_name = "clone_image_to_buffer";
   add_dtype_suffix(kernel_name, graph.dtype_of(image));
+  add_dtype_suffix(kernel_name, graph.dtype_of(buffer));
   vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
@@ -105,6 +105,7 @@ void add_buffer_to_image_node(
     const ValueRef image) {
   std::string kernel_name = "clone_buffer_to_image";
   add_dtype_suffix(kernel_name, graph.dtype_of(image));
+  add_dtype_suffix(kernel_name, graph.dtype_of(buffer));
   vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
@@ -132,6 +133,13 @@ void clone(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
   const utils::StorageType src_storage = graph.storage_type_of(src);
   const utils::StorageType dst_storage = graph.storage_type_of(dst);
+
+  // Handle int8x4 (quantized) tensors with block-based clone
+  if (graph.dtype_of(src) == vkapi::kInt8x4 &&
+      graph.dtype_of(dst) == vkapi::kInt8x4) {
+    return add_q8ta_clone_node(graph, src, dst);
+  }
+
   if (src_storage == utils::kTexture3D && dst_storage == utils::kTexture3D) {
     if (graph.hashed_layout_of(src) == graph.hashed_layout_of(dst)) {
       return add_clone_node(graph, src, dst);
@@ -145,7 +153,11 @@ void clone(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   if (src_storage == utils::kBuffer && dst_storage == utils::kTexture3D) {
     return add_buffer_to_image_node(graph, src, dst);
   }
-  VK_THROW("Buffer to buffer memory layout transition not supported yet!");
+
+  std::vector<ValueRef> extra_args = {};
+  // Buffer to buffer copy
+  return add_view_copy_buffer_node(
+      graph, src, dst, extra_args, resize_clone_node);
 }
 
 // Clone node is not the most efficient implementation for the aten.clone

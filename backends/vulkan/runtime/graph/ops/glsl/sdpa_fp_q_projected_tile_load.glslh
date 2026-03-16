@@ -1,0 +1,74 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Assume the following variables are defined in the shader layout:
+ * - t_input
+ *
+ * Macro Settings:
+ * - INPUT_BUFFER
+ */
+
+#ifndef SDPA_FP_Q_PROJECTED_TILE_LOAD_GLSLH
+#define SDPA_FP_Q_PROJECTED_TILE_LOAD_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_fp_input_tile.glslh"
+
+VEC4_T load_q_projected_d4(
+    const int d4,
+    const int q_h,
+    const int s,
+    const int D4,
+    const int Q_H,
+    const int S) {
+#ifdef INPUT_BUFFER
+  return t_q_projected[(s * Q_H * D4) + (q_h * D4) + d4];
+#else
+  return texelFetch(t_q_projected, ivec3(d4, q_h, s), 0);
+#endif
+}
+
+void load_q_projected_tile_no_checks(
+    out FPInputTile tile,
+    const int d4_start,
+    const int s_start,
+    const int q_h,
+    const int D4,
+    const int Q_H,
+    const int S) {
+  [[unroll]] for (int s = 0; s < TILE_M; ++s) {
+    [[unroll]] for (int d4 = 0; d4 < TILE_K4; ++d4) {
+      tile.data[s][d4] =
+          load_q_projected_d4(d4_start + d4, q_h, s_start + s, D4, Q_H, S);
+    }
+  }
+}
+
+void load_q_projected_tile_with_checks(
+    out FPInputTile tile,
+    const int d4_start,
+    const int s_start,
+    const int q_h,
+    const int D4,
+    const int Q_H,
+    const int S) {
+  [[unroll]] for (int s = 0; s < TILE_M; ++s) {
+    [[unroll]] for (int d4 = 0; d4 < TILE_K4; ++d4) {
+      if (d4_start + d4 < D4 && s_start + s < S) {
+        tile.data[s][d4] =
+            load_q_projected_d4(d4_start + d4, q_h, s_start + s, D4, Q_H, S);
+      } else {
+        tile.data[s][d4] = VEC4_T(0.0);
+      }
+    }
+  }
+}
+
+#endif // SDPA_FP_Q_PROJECTED_TILE_LOAD_GLSLH

@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,43 +8,46 @@
 # Example script for exporting simple models to flatbuffer
 
 import argparse
-import json
+import copy
 import logging
 import os
+import sys
 
+from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+
+# Add Executorch root to path so this script can be run from anywhere
+_EXECUTORCH_DIR = Path(__file__).resolve().parents[2]
+_EXECUTORCH_DIR_STR = str(_EXECUTORCH_DIR)
+if _EXECUTORCH_DIR_STR not in sys.path:
+    sys.path.insert(0, _EXECUTORCH_DIR_STR)
+
+from typing import Any, List, Optional, Tuple
 
 import torch
 from examples.devtools.scripts.export_bundled_program import save_bundled_program
-from executorch.backends.arm.arm_backend import (
-    ArmCompileSpecBuilder,
-    get_tosa_spec,
-    is_ethosu,
-    is_tosa,
-    is_vgf,
-)
-from executorch.backends.arm.ethosu import EthosUPartitioner
+
+from examples.models import MODEL_NAME_TO_MODEL
+from examples.models.model_factory import EagerModelFactory
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
+from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.quantizer import (
-    EthosUQuantizer,
+    get_symmetric_a16w8_quantization_config,
     get_symmetric_quantization_config,
-    TOSAQuantizer,
-    VgfQuantizer,
 )
-from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.util._factory import create_partitioner, create_quantizer
 
-from executorch.backends.arm.util.arm_model_evaluator import (
-    GenericModelEvaluator,
-    MobileNetV2Evaluator,
-)
+from executorch.backends.arm.vgf import VgfCompileSpec
+from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 
-from executorch.backends.arm.vgf_partitioner import VgfPartitioner
-
-# To use Cortex-M backend
 from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
     ReplaceQuantNodesPass,
 )
+from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
+
+from executorch.devtools import generate_etrecord
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
 
@@ -53,172 +56,318 @@ from executorch.exir import (
     ExecutorchBackendConfig,
     to_edge_transform_and_lower,
 )
-from executorch.exir.backend.compile_spec_schema import CompileSpec
+
 from executorch.extension.export_util.utils import save_pte_program
 from tabulate import tabulate
-from torch.utils.data import DataLoader
+from torch.export import ExportedProgram
+from torch.fx import GraphModule
 
 # Quantize model if required using the standard export quantizaion flow.
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
-from ..models import MODEL_NAME_TO_MODEL
-from ..models.model_factory import EagerModelFactory
+# Maximum number of samples to use for calibration when quantizing.
+CALIBRATION_MAX_SAMPLES = 1000
 
 
-FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
-logging.basicConfig(level=logging.WARNING, format=FORMAT)
+class QuantMode(str, Enum):
+    INT8 = "INT8"
+    A16W8 = "A16W8"
+
+
+def _load_example_inputs(model_input: str | None) -> Any:  # nosec B614
+    """Load example inputs from a `.pt` file when a path is provided."""
+    if model_input is None:
+        return None
+
+    logging.info(f"Load model input from {model_input}")
+
+    if model_input.endswith(".pt"):
+        return torch.load(
+            model_input, weights_only=False
+        )  # nosec B614 trusted artifacts
+
+    raise RuntimeError(
+        f"Model input data '{model_input}' is not a valid name. Use --model_input "
+        "<FILE>.pt e.g. saved with torch.save()"
+    )
+
+
+def _load_internal_model(
+    model_name: str, example_inputs: Any
+) -> Optional[Tuple[torch.nn.Module, Any]]:
+    """Load a bundled example model from the internal `MODELS` mapping."""
+    logging.info(
+        "Loading internal models is deprecated. Use --model_name <FILE>.py/.pt "
+        "or a model from examples/models."
+    )
+
+    if model_name not in MODELS:
+        return None
+
+    logging.info(f"Internal model {model_name}")
+
+    model = MODELS[model_name]()
+    inputs = (
+        example_inputs
+        if example_inputs is not None
+        else MODELS[model_name].example_input
+    )
+
+    return model, inputs
+
+
+def _load_registered_model(
+    model_name: str, example_inputs: Any
+) -> Optional[Tuple[torch.nn.Module, Any]]:
+    """Load a registered example model from `examples.models`."""
+    if model_name not in MODEL_NAME_TO_MODEL:
+        return None
+
+    logging.warning(
+        "Using a model from examples/models. Not all of these are currently supported."
+    )
+    logging.info(
+        f"Load {model_name} -> {MODEL_NAME_TO_MODEL[model_name]} from examples/models"
+    )
+
+    model, tmp_example_inputs, _, _ = EagerModelFactory.create_model(
+        *MODEL_NAME_TO_MODEL[model_name]
+    )
+    inputs = example_inputs if example_inputs is not None else tmp_example_inputs
+
+    return model, inputs
+
+
+def _load_python_module_model(
+    model_name: str, example_inputs: Any
+) -> Optional[Tuple[torch.nn.Module, Any]]:
+    """Load a model and inputs from a Python source file.
+
+    The file must define `ModelUnderTest` and `ModelInputs` attributes.
+
+    """
+    if not model_name.endswith(".py"):
+        return None
+
+    logging.info(
+        f"Load model file {model_name} "
+        "Variable ModelUnderTest=<Model> ModelInputs=<ModelInput>"
+    )
+
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("tmp_model", model_name)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load model file {model_name}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    sys.modules["tmp_model"] = module
+    model = module.ModelUnderTest
+    inputs = example_inputs if example_inputs is not None else module.ModelInputs
+
+    return model, inputs
+
+
+def _load_serialized_model(
+    model_name: str, example_inputs: Any
+) -> Optional[Tuple[torch.nn.Module, Any]]:  # nosec B614
+    """Load a serialized Torch model saved via `torch.save`."""
+    if not model_name.endswith((".pth", ".pt")):
+        return None
+
+    logging.info(f"Load model file {model_name}")
+
+    model = torch.load(model_name, weights_only=False)  # nosec B614 trusted inputs
+    if example_inputs is None:
+        raise RuntimeError(
+            f"Model '{model_name}' requires input data specify --model_input <FILE>.pt"
+        )
+
+    return model, example_inputs
+
+
+def _apply_replace_quant_nodes(edge, args):
+    """Apply the replace_quant_nodes pass to the edge graph module."""
+
+    if args.target != "vgf" and not args.direct_drive:
+        edge = edge.transform([ReplaceQuantNodesPass()])
+    return edge
 
 
 def get_model_and_inputs_from_name(
     model_name: str, model_input: str | None
 ) -> Tuple[torch.nn.Module, Any]:
-    """Given the name of an example pytorch model, return it and example inputs.
+    """Resolve a model name into a model instance and example inputs.
 
-    Raises RuntimeError if there is no example model corresponding to the given name.
+    Args:
+        model_name: Identifier for the model. It can be a key in
+            `MODEL_NAME_TO_MODEL`, a Python module path, or a serialized
+            model file path.
+        model_input: Optional path to a `.pt` file containing example inputs.
+
+    Returns:
+        Tuple of `(model, example_inputs)` ready for compilation.
+
+    Raises:
+        RuntimeError: If the model cannot be resolved or required inputs are
+            missing.
+
     """
-    example_inputs = None
-    if model_input is not None:
-        logging.info(f"Load model input from {model_input}")
-        if model_input.endswith(".pt"):
-            example_inputs = torch.load(model_input, weights_only=False)
-        else:
-            raise RuntimeError(
-                f"Model input data '{model_input}' is not a valid name. Use --model_input <FILE>.pt e.g. saved with torch.save()"
+    example_inputs = _load_example_inputs(model_input)
+
+    loaders = (
+        _load_internal_model,
+        _load_registered_model,
+        _load_python_module_model,
+        _load_serialized_model,
+    )
+
+    for loader in loaders:
+        result = loader(model_name, example_inputs)
+        if result is not None:
+            model, example_inputs = result
+            logging.debug(f"Loaded model: {model}")
+            logging.debug(f"Loaded input: {example_inputs}")
+            return model, example_inputs
+
+    raise RuntimeError(
+        f"Model '{model_name}' is not a valid name. Use --help for a list of available models."
+    )
+
+
+def as_input_tuple(sample: object) -> Tuple[torch.Tensor, ...]:
+    if isinstance(sample, tuple):
+        return sample
+    if isinstance(sample, list):
+        return tuple(sample)
+    if isinstance(sample, torch.Tensor):
+        return (sample,)
+    if isinstance(sample, dict):
+        if "pixel_values" in sample:
+            return (sample["pixel_values"],)
+        raise ValueError("Calibration sample dict must contain 'pixel_values' key.")
+    raise ValueError(
+        "Calibration sample must be a Tensor, tuple, list, or dict with "
+        "'pixel_values'."
+    )
+
+
+def load_calibration_sample(
+    path: str, example_inputs: Tuple[torch.Tensor, ...]
+) -> Tuple[torch.Tensor, ...]:
+    suffix = Path(path).suffix.lower()
+    if suffix in {".pt", ".pth"}:
+        sample = torch.load(path, weights_only=False)  # nosec B614 trusted inputs
+        return as_input_tuple(sample)
+    raise ValueError(f"Unsupported calibration file type: {path}")
+
+
+def load_calibration_samples(
+    calibration_data: str | None,
+    example_inputs: Tuple[torch.Tensor, ...],
+) -> Optional[List[Tuple[torch.Tensor, ...]]]:
+    if calibration_data is None:
+        return None
+
+    path = Path(calibration_data)
+    if path.is_file():
+        return [load_calibration_sample(str(path), example_inputs)]
+
+    if not path.is_dir():
+        raise ValueError(
+            f"Calibration data path '{calibration_data}' is not a file or directory."
+        )
+
+    supported_suffixes = {".pt", ".pth"}
+    candidates = sorted(
+        str(p)
+        for p in path.rglob("*")
+        if p.is_file() and p.suffix.lower() in supported_suffixes
+    )
+    if not candidates:
+        raise ValueError(
+            f"No supported calibration files found in directory '{calibration_data}'."
+        )
+
+    samples: List[Tuple[torch.Tensor, ...]] = []
+    for candidate in candidates[:CALIBRATION_MAX_SAMPLES]:
+        samples.append(load_calibration_sample(candidate, example_inputs))
+
+    return samples
+
+
+def _validate_calibration_sample(
+    calibration_sample: Tuple[torch.Tensor, ...],
+    example_inputs: Tuple[torch.Tensor, ...],
+) -> None:
+    expected_len = len(example_inputs)
+
+    if len(calibration_sample) != expected_len:
+        raise ValueError(
+            "Calibration sample has %d inputs, expected %d."
+            % (len(calibration_sample), expected_len)
+        )
+    for input_idx, (expected, actual) in enumerate(
+        zip(example_inputs, calibration_sample)
+    ):
+        if isinstance(expected, torch.Tensor) and isinstance(actual, torch.Tensor):
+            if expected.shape != actual.shape:
+                raise ValueError(
+                    "Calibration sample input %d shape %s does not match "
+                    "expected shape %s."
+                    % (input_idx, list(actual.shape), list(expected.shape))
+                )
+        elif type(expected) is not type(actual):
+            raise ValueError(
+                "Calibration sample input %d type %s does not match "
+                "expected type %s."
+                % (input_idx, type(actual).__name__, type(expected).__name__)
             )
-
-    # Case 1: Model is defined in this file
-    if model_name in models.keys():
-        logging.info(f"Internal model {model_name}")
-        model = models[model_name]()
-        if example_inputs is None:
-            example_inputs = models[model_name].example_input
-    # Case 2: Model is defined in examples/models/
-    elif model_name in MODEL_NAME_TO_MODEL.keys():
-        logging.warning(
-            "Using a model from examples/models not all of these are currently supported"
-        )
-        logging.info(
-            f"Load {model_name} -> {MODEL_NAME_TO_MODEL[model_name]} from examples/models"
-        )
-
-        model, tmp_example_inputs, _, _ = EagerModelFactory.create_model(
-            *MODEL_NAME_TO_MODEL[model_name]
-        )
-        if example_inputs is None:
-            example_inputs = tmp_example_inputs
-    # Case 3: Model is in an external python file loaded as a module.
-    #         ModelUnderTest should be a torch.nn.module instance
-    #         ModelInputs should be a tuple of inputs to the forward function
-    elif model_name.endswith(".py"):
-        logging.info(
-            f"Load model file {model_name}   Variable ModelUnderTest=<Model> ModelInputs=<ModelInput>"
-        )
-        import importlib.util
-
-        # load model's module and add it
-        spec = importlib.util.spec_from_file_location("tmp_model", model_name)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        model = module.ModelUnderTest
-        if example_inputs is None:
-            example_inputs = module.ModelInputs
-    # Case 4: Model is in an saved model file torch.save(model)
-    elif model_name.endswith(".pth") or model_name.endswith(".pt"):
-        logging.info(f"Load model file {model_name}")
-        model = torch.load(model_name, weights_only=False)
-        if example_inputs is None:
-            raise RuntimeError(
-                f"Model '{model_name}' requires input data specify --model_input <FILE>.pt"
-            )
-    else:
-        raise RuntimeError(
-            f"Model '{model_name}' is not a valid name. Use --help for a list of available models."
-        )
-    logging.debug(f"Loaded model: {model}")
-    logging.debug(f"Loaded input: {example_inputs}")
-    return model, example_inputs
 
 
 def quantize(
-    model: torch.nn.Module,
+    model: GraphModule,
     model_name: str,
-    compile_specs: list[CompileSpec],
+    compile_specs: ArmCompileSpec,
     example_inputs: Tuple[torch.Tensor],
-    evaluator_name: str | None,
-    evaluator_config: Dict[str, Any] | None,
-) -> torch.nn.Module:
-    """This is the official recommended flow for quantization in pytorch 2.0 export"""
+    quant_mode: QuantMode = QuantMode.INT8,
+    calibration_samples: Optional[List[Tuple[torch.Tensor, ...]]] = None,
+) -> GraphModule:
+    """This is the official recommended flow for quantization in pytorch 2.0
+    export.
+
+    """
     logging.info("Quantizing Model...")
     logging.debug(f"Original model: {model}")
-    quantizer = None
-    if is_ethosu(compile_specs):
-        quantizer = EthosUQuantizer(compile_specs)
-    elif is_tosa(compile_specs):
-        quantizer = TOSAQuantizer(get_tosa_spec(compile_specs))
-    elif is_vgf(compile_specs):
-        quantizer = VgfQuantizer(compile_specs)
-    else:
-        raise RuntimeError("Unsupported compilespecs for quantization!")
 
-    operator_config = get_symmetric_quantization_config()
+    quantizer = create_quantizer(compile_specs)
+
+    match quant_mode:
+        case QuantMode.INT8:
+            operator_config = get_symmetric_quantization_config(is_per_channel=True)
+        case QuantMode.A16W8:
+            if compile_specs.tosa_spec.support_extension("int16"):
+                operator_config = get_symmetric_a16w8_quantization_config(
+                    is_per_channel=True
+                )
+            else:
+                raise ValueError(
+                    f"Context TOSA spec {compile_specs.tosa_spec} doesn't support int16"
+                )
+
     quantizer.set_global(operator_config)
     m = prepare_pt2e(model, quantizer)
 
-    dataset = get_calibration_data(
-        model_name, example_inputs, evaluator_name, evaluator_config
-    )
+    if calibration_samples is None:
+        calibration_samples = [example_inputs]
 
-    # The dataset could be a tuple of tensors or a DataLoader
-    # These two cases need to be accounted for
-    if isinstance(dataset, DataLoader):
-        for sample, _ in dataset:
-            m(sample)
-    else:
-        m(*dataset)
+    for sample in calibration_samples:
+        _validate_calibration_sample(sample, example_inputs)
+        m(*sample)
 
     m = convert_pt2e(m)
     logging.debug(f"Quantized model: {m}")
     return m
-
-
-# Simple example models
-class AddModule(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        return x + x
-
-    example_input = (torch.ones(5, dtype=torch.int32),)
-    can_delegate = True
-
-
-class AddModule2(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x, y):
-        return x + y
-
-    example_input = (
-        torch.ones(5, dtype=torch.int32),
-        torch.ones(5, dtype=torch.int32),
-    )
-    can_delegate = True
-
-
-class AddModule3(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x, y):
-        return (x + y, x + x)
-
-    example_input = (
-        torch.ones(5, dtype=torch.int32),
-        torch.ones(5, dtype=torch.int32),
-    )
-    can_delegate = True
 
 
 class QuantAddTest(torch.nn.Module):
@@ -269,68 +418,29 @@ class QuantOpTest(torch.nn.Module):
     can_delegate = True  # when quantized
 
 
-class SoftmaxModule(torch.nn.Module):
+class QuantLinearTest(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.softmax = torch.nn.Softmax(dim=0)
+        # Define a simple linear layer
+        self.linear = torch.nn.Linear(61, 37)
 
     def forward(self, x):
-        z = self.softmax(x)
-        return z
+        return self.linear(x)
 
-    example_input = (torch.ones(2, 2),)
+    example_input = (torch.randn([8, 61], dtype=torch.float32),)
     can_delegate = True
 
 
-class MultipleOutputsModule(torch.nn.Module):
-    def forward(self, x: torch.Tensor, y: torch.Tensor):
-        return (x * y, x.sum(dim=-1, keepdim=True))
-
-    example_input = (torch.randn(10, 4, 5), torch.randn(10, 4, 5))
-    can_delegate = True
-
-
-models = {
-    "add": AddModule,
-    "add2": AddModule2,
-    "add3": AddModule3,
+MODELS = {
     "qadd": QuantAddTest,
     "qadd2": QuantAddTest2,
     "qops": QuantOpTest,
-    "softmax": SoftmaxModule,
-    "MultipleOutputsModule": MultipleOutputsModule,
+    # TODO: Remove this from here, once we have dedicated MCU test pipeline ready. This is an interim solution.
+    # See https://github.com/pytorch/executorch/discussions/13944
+    "qlinear": QuantLinearTest,
 }
 
-calibration_data = {
-    "add": (torch.randn(1, 5),),
-    "add2": (
-        torch.randn(1, 5),
-        torch.randn(1, 5),
-    ),
-    "add3": (
-        torch.randn(32, 5),
-        torch.randn(32, 5),
-    ),
-    "qadd": (torch.randn(32, 2, 1),),
-    "qadd2": (
-        torch.randn(32, 2, 1),
-        torch.randn(32, 2, 1),
-    ),
-    "qops": (
-        torch.randn(32, 2, 1),
-        torch.randn(32, 2, 1),
-        torch.randn(32, 2, 1) * -0.000001,
-        torch.randn(32, 2, 1) * 1000,
-    ),
-    "softmax": (torch.randn(32, 2, 2),),
-}
-
-evaluators = {
-    "generic": GenericModelEvaluator,
-    "mv2": MobileNetV2Evaluator,
-}
-
-targets = [
+TARGETS = [
     "ethos-u55-32",
     "ethos-u55-64",
     "ethos-u55-128",
@@ -341,125 +451,49 @@ targets = [
     "ethos-u85-1024",
     "ethos-u85-2048",
     "vgf",
-    "TOSA-0.80+BI",
     "TOSA-1.0+INT",
     "TOSA-1.0+FP",
+    "TOSA-1.0+INT+int16",
+    "cortex-m55+int8",
 ]
 
 
-def get_calibration_data(
-    model_name: str,
-    example_inputs: Tuple[torch.Tensor],
-    evaluator_name: str | None,
-    evaluator_config: str | None,
-):
-    # Firstly, if the model is being evaluated, take the evaluators calibration function if it has one
-    if evaluator_name is not None:
-        evaluator = evaluators[evaluator_name]
-
-        if hasattr(evaluator, "get_calibrator"):
-            assert evaluator_config is not None
-
-            config_path = Path(evaluator_config)
-            with config_path.open() as f:
-                config = json.load(f)
-
-            if evaluator_name == "mv2":
-                return evaluator.get_calibrator(
-                    training_dataset_path=config["training_dataset_path"]
-                )
-            else:
-                raise RuntimeError(f"Unknown evaluator: {evaluator_name}")
-
-    # If the model is in the calibration_data dictionary, get the data from there
-    # This is used for the simple model examples provided
-    if model_name in calibration_data:
-        return calibration_data[model_name]
-
-    # As a last resort, fallback to the scripts previous behavior and return the example inputs
-    return example_inputs
-
-
-def get_compile_spec(
-    target: str,
-    intermediates: Optional[str] = None,
-    system_config: Optional[str] = None,
-    memory_mode: Optional[str] = None,
-    quantize: bool = False,
-    config: Optional[str] = None,
-) -> list[CompileSpec]:
-    spec_builder = None
-    if target.startswith("TOSA"):
-        try:
-            tosa_spec = TosaSpecification.create_from_string(target)
-        except:
-            tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
-        spec_builder = ArmCompileSpecBuilder().tosa_compile_spec(tosa_spec)
-    elif "ethos-u" in target:
-        spec_builder = ArmCompileSpecBuilder().ethosu_compile_spec(
-            target,
-            system_config=system_config,
-            memory_mode=memory_mode,
-            extra_flags="--verbose-operators --verbose-cycle-estimate",
-            config_ini=config,
+def _get_compile_spec(args) -> ArmCompileSpec:
+    compile_spec = None
+    if args.target.startswith("TOSA"):
+        tosa_spec = TosaSpecification.create_from_string(args.target)
+        compile_spec = TosaCompileSpec(tosa_spec)
+    elif "ethos-u" in args.target:
+        extra_flags = ["--verbose-operators", "--verbose-cycle-estimate"]
+        if args.enable_debug_mode is not None:
+            extra_flags.append("--enable-debug-db")
+        if args.direct_drive:
+            extra_flags.append("--separate-io-regions")
+            extra_flags.append("--cop-format=COP2")
+        compile_spec = EthosUCompileSpec(
+            args.target,
+            system_config=args.system_config,
+            memory_mode=args.memory_mode,
+            extra_flags=extra_flags,
+            config_ini=args.config,
         )
-    elif "vgf" in target:
-        if quantize:
+    elif "vgf" in args.target:
+        if args.quantize:
             tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
         else:
             tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+FP")
-        spec_builder = ArmCompileSpecBuilder().vgf_compile_spec(tosa_spec)
-
-    if intermediates is not None:
-        spec_builder.dump_intermediate_artifacts_to(intermediates)
-
-    return spec_builder.build()
-
-
-def evaluate_model(
-    model_name: str,
-    intermediates: str,
-    model_fp32: torch.nn.Module,
-    model_int8: torch.nn.Module,
-    example_inputs: Tuple[torch.Tensor],
-    evaluator_name: str,
-    evaluator_config: str | None,
-) -> None:
-    evaluator = evaluators[evaluator_name]
-
-    # Get the path of the TOSA flatbuffer that is dumped
-    intermediates_path = Path(intermediates)
-    tosa_paths = list(intermediates_path.glob("*.tosa"))
-
-    if evaluator.REQUIRES_CONFIG:
-        assert evaluator_config is not None
-
-        config_path = Path(evaluator_config)
-        with config_path.open() as f:
-            config = json.load(f)
-
-        if evaluator_name == "mv2":
-            init_evaluator = evaluator(
-                model_name,
-                model_fp32,
-                model_int8,
-                example_inputs,
-                str(tosa_paths[0]),
-                config["batch_size"],
-                config["validation_dataset_path"],
-            )
-        else:
-            raise RuntimeError(f"Unknown evaluator {evaluator_name}")
+        compile_spec = VgfCompileSpec(tosa_spec)
     else:
-        init_evaluator = evaluator(
-            model_name, model_fp32, model_int8, example_inputs, str(tosa_paths[0])
-        )
+        raise RuntimeError(f"Unkown target {args.target}")
 
-    quant_metrics = init_evaluator.evaluate()
-    output_json_path = intermediates_path / "quant_metrics.json"
+    if args.intermediates is not None:
+        compile_spec.dump_intermediate_artifacts_to(args.intermediates)
 
-    with output_json_path.open("w") as json_file:
-        json.dump(quant_metrics, json_file)
+    if args.enable_debug_mode is not None:
+        mode = ArmCompileSpec.DebugMode[args.enable_debug_mode.upper()]
+        compile_spec.dump_debug_info(mode)
+
+    return compile_spec
 
 
 def dump_delegation_info(edge, intermediate_files_folder: Optional[str] = None):
@@ -477,13 +511,13 @@ def dump_delegation_info(edge, intermediate_files_folder: Optional[str] = None):
             file.write(delegation_info_string)
 
 
-def get_args():
+def _get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-m",
         "--model_name",
         required=True,
-        help=f"Model file .py/.pth/.pt, builtin model or a model from examples/models. Valid names: {set(list(models.keys())+list(MODEL_NAME_TO_MODEL.keys()))}",
+        help=f"Model file .py/.pth/.pt or a model from examples/models. Valid names: {set(MODEL_NAME_TO_MODEL.keys())}",
     )
     parser.add_argument(
         "--model_input",
@@ -507,29 +541,37 @@ def get_args():
         help="Flag for producing BundleIO bpte file with input/output test/ref data.",
     )
     parser.add_argument(
+        "--etrecord",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Flag for producing a etrecord file.",
+    )
+    parser.add_argument(
         "-t",
         "--target",
         action="store",
         required=False,
         default="ethos-u55-128",
-        choices=targets,
-        help=f"For ArmBackend delegated models, pick the target, and therefore the instruction set generated. valid targets are {targets}",
+        choices=TARGETS,
+        help=f"Target backend. For delegated models: Ethos-U/VGF/TOSA variants. For non-delegated: cortex-m55+int8 (CMSIS-NN portable kernels). Valid targets: {TARGETS}",
     )
+    # TODO: Remove --evaluate and --evaluate_config completely after a suitable time.
+    # They are deprecated and no longer functional in this script.
     parser.add_argument(
         "-e",
         "--evaluate",
         required=False,
         nargs="?",
         const="generic",
-        choices=["generic", "mv2"],
-        help="Flag for running evaluation of the model.",
+        choices=["generic", "mv2", "deit_tiny", "resnet18"],
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "-c",
         "--evaluate_config",
         required=False,
-        default=None,
-        help="Provide path to evaluator config, if it is required.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "-q",
@@ -538,6 +580,17 @@ def get_args():
         required=False,
         default=False,
         help="Produce a quantized model",
+    )
+    parser.add_argument(
+        "--calibration_data",
+        required=False,
+        default=None,
+        help=(
+            "Optional calibration data file or directory. If a directory is "
+            "provided, up to 1000 samples are used for calibration. "
+            "Supported files: .pt/.pth. If not provided,"
+            "quantized models are calibrated on their example inputs."
+        ),
     )
     parser.add_argument(
         "-s",
@@ -554,7 +607,7 @@ def get_args():
         "--intermediates",
         action="store",
         required=False,
-        help="Store intermediate output (like TOSA artefacts) somewhere.",
+        help="Store intermediate output (like TOSA artifacts) somewhere.",
     )
     parser.add_argument(
         "-o",
@@ -579,7 +632,7 @@ def get_args():
         "--config",
         required=False,
         default="Arm/vela.ini",
-        help="Specify custom vela configuration file (vela.ini)",
+        help="Specify custom vela configuration file (vela.ini) for Ethos-U targets.",
     )
     parser.add_argument(
         "--non_strict_export",
@@ -588,17 +641,32 @@ def get_args():
         action="store_false",
         help="Disable strict checking while exporting models.",
     )
+    parser.add_argument(
+        "--enable_qdq_fusion_pass",
+        action="store_true",
+        help="[DEPRECATED] This flag is no longer used and will be removed in a future release.",
+    )
+    parser.add_argument(
+        "--enable_debug_mode",
+        required=False,
+        choices=["json", "tosa"],
+        help="Flag to enable ATen-to-TOSA debug mode and dumping of Vela's debug database.",
+    )
+    parser.add_argument(
+        "--direct_drive",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Flag for enabling direct drive.",
+    )
     args = parser.parse_args()
 
-    if args.evaluate and (
-        args.quantize is None or args.intermediates is None or (not args.delegate)
-    ):
-        raise RuntimeError(
-            "--evaluate requires --quantize, --intermediates and --delegate to be enabled."
-        )
+    LOGGING_FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
+    logging_level = logging.DEBUG if args.debug else logging.WARNING
+    logging.basicConfig(level=logging_level, format=LOGGING_FORMAT, force=True)
 
-    if args.debug:
-        logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
+    if args.calibration_data is not None and not args.quantize:
+        raise RuntimeError("--calibration_data requires --quantize to be enabled.")
 
     # if we have custom ops, register them before processing the model
     if args.so_library is not None:
@@ -606,16 +674,21 @@ def get_args():
         torch.ops.load_library(args.so_library)
 
     if (
-        args.model_name in models.keys()
+        args.model_name in MODELS.keys()
         and args.delegate is True
-        and models[args.model_name].can_delegate is False
+        and MODELS[args.model_name].can_delegate is False
     ):
         raise RuntimeError(f"Model {args.model_name} cannot be delegated.")
+
+    if args.evaluate is not None or args.evaluate_config is not None:
+        logging.error(
+            "Model evaluation is no longer supported in this script. Ignore and continue."
+        )
 
     return args
 
 
-def save_bpte_program(exec_prog, original_model: torch.nn.Module, output_name: str):
+def _save_bpte_program(exec_prog, original_model: torch.nn.Module, output_name: str):
     # Construct MethodTestSuite for Each Method
 
     # Generate Test Suites
@@ -693,52 +766,54 @@ def save_bpte_program(exec_prog, original_model: torch.nn.Module, output_name: s
     save_bundled_program(exec_prog, method_test_suites, output_name)
 
 
-def quantize_model(args, model: torch.nn.Module, example_inputs, compile_spec):
-    model_int8 = quantize(
+def quantize_model(
+    model: GraphModule,
+    example_inputs: Tuple[torch.Tensor],
+    compile_spec,
+    model_name: str,
+    strict_export: bool,
+    quant_mode: QuantMode,
+    calibration_samples: Optional[List[Tuple[torch.Tensor, ...]]],
+) -> Tuple[GraphModule, ExportedProgram]:
+    model_quant = quantize(
         model,
-        args.model_name,
+        model_name,
         compile_spec,
         example_inputs,
-        args.evaluate,
-        args.evaluate_config,
+        quant_mode,
+        calibration_samples,
     )
     # Wrap quantized model back into an exported_program
-    exported_program = torch.export.export_for_training(
-        model_int8, example_inputs, strict=args.strict_export
+    exported_program = torch.export.export(
+        model_quant, example_inputs, strict=strict_export
     )
 
-    return model_int8, exported_program
+    return model_quant, exported_program
 
 
-def to_edge_TOSA_delegate(
-    exported_program, args, model: torch.nn.Module, example_inputs
+def _to_edge_TOSA_delegate(
+    exported_program: ExportedProgram,
+    compile_spec,
+    model: GraphModule,
+    quant_mode: Optional[QuantMode],
+    example_inputs: Tuple[torch.Tensor],
+    model_name: str,
+    strict_export: bool,
+    calibration_samples: Optional[List[Tuple[torch.Tensor, ...]]],
 ):
-    # As we can target multiple output encodings, one must
-    # be specified.
-    compile_spec = get_compile_spec(
-        args.target,
-        args.intermediates,
-        args.system_config,
-        args.memory_mode,
-        args.quantize,
-        args.config,
-    )
-
-    model_int8 = None
-    if args.quantize:
-        model_int8, exported_program = quantize_model(
-            args, model, example_inputs, compile_spec
+    model_quant = None
+    if quant_mode is not None:
+        model_quant, exported_program = quantize_model(
+            model,
+            example_inputs,
+            compile_spec,
+            model_name,
+            strict_export,
+            quant_mode,
+            calibration_samples,
         )
-        model = model_int8
 
-    if is_ethosu(compile_spec):
-        partitioner = EthosUPartitioner(compile_spec)
-    elif is_tosa(compile_spec):
-        partitioner = TOSAPartitioner(compile_spec)
-    elif is_vgf(compile_spec):
-        partitioner = VgfPartitioner(compile_spec)
-    else:
-        raise RuntimeError(f"Unhandled compile spec: {compile_spec}")
+    partitioner = create_partitioner(compile_spec)
 
     edge = to_edge_transform_and_lower(
         exported_program,
@@ -748,26 +823,104 @@ def to_edge_TOSA_delegate(
         ),
     )
 
-    return model_int8, edge
+    # Replace quantized_decomposed::{quantize,dequantize}_per_tensor nodes
+    # with cortex_m:: equivalents for int8 QDQ ops remaining outside the
+    # delegated subgraph.
+    edge = _apply_replace_quant_nodes(edge, args)
+
+    return model_quant, edge
 
 
-def to_edge_no_delegate(exported_program, args, model: torch.nn.Module, example_inputs):
-    model_int8 = None
-    if args.quantize:
+def _to_edge_cortex_m(
+    exported_program: ExportedProgram,
+    args,
+    model: GraphModule,
+    example_inputs: Tuple[torch.Tensor],
+    calibration_samples: Optional[List[Tuple[torch.Tensor, ...]]],
+):
+    """Cortex-M/CMSIS-NN compilation path with no delegation."""
+    logging.info("Using Cortex-M/CMSIS-NN compilation path (no delegation)")
+
+    def _to_channels_last(x):
+        if isinstance(x, torch.Tensor):
+            if x.dim() == 4 and not x.is_contiguous(memory_format=torch.channels_last):
+                logging.warning(
+                    "Converting input tensor with shape %s to channels_last",
+                    list(x.shape),
+                )
+                return x.to(memory_format=torch.channels_last)
+            return x
+        elif isinstance(x, tuple):
+            return tuple(_to_channels_last(t) for t in x)
+        return x
+
+    if not args.quantize:
+        logging.warning(
+            "Quantization is DISABLED. Cortex-M typically requires quantization."
+        )
+    else:
+        model = model.to(memory_format=torch.channels_last)
+        example_inputs = tuple(_to_channels_last(x) for x in example_inputs)
+
+        quantizer = CortexMQuantizer()
+        prepared = prepare_pt2e(model, quantizer)
+
+        if calibration_samples is None:
+            calibration_samples = [example_inputs]
+
+        for sample in calibration_samples:
+            prepared(*tuple(_to_channels_last(x) for x in sample))
+
+        model_quant = convert_pt2e(prepared)
+
+        exported_program = torch.export.export(
+            model_quant, example_inputs, strict=args.strict_export
+        )
+
+    edge = to_edge_transform_and_lower(
+        exported_program,
+        compile_config=EdgeCompileConfig(
+            preserve_ops=[
+                torch.ops.aten.linear.default,
+                torch.ops.aten.hardsigmoid.default,
+                torch.ops.aten.hardsigmoid_.default,
+                torch.ops.aten.hardswish.default,
+                torch.ops.aten.hardswish_.default,
+            ],
+            _check_ir_validity=False,
+        ),
+    )
+
+    pass_manager = CortexMPassManager(edge.exported_program())
+    edge._edge_programs["forward"] = pass_manager.transform()
+
+    return model_quant if args.quantize else None, edge
+
+
+def _to_edge_no_delegate(
+    exported_program: ExportedProgram,
+    compile_spec,
+    model: GraphModule,
+    quant_mode: Optional[QuantMode],
+    example_inputs: Tuple[torch.Tensor],
+    model_name: str,
+    strict_export: bool,
+    calibration_samples: Optional[List[Tuple[torch.Tensor, ...]]],
+):
+    model_quant = None
+    if quant_mode is not None:
         # As we can target multiple output encodings, one must
         # be specified.
-        compile_spec = get_compile_spec(
-            args.target,
-            args.intermediates,
-            args.system_config,
-            args.memory_mode,
-            args.quantize,
-            args.config,
-        )
         model, exported_program = quantize_model(
-            args, model, example_inputs, compile_spec
+            model,
+            example_inputs,
+            compile_spec,
+            model_name,
+            strict_export,
+            quant_mode,
+            calibration_samples,
         )
-        model_int8 = model
+        model_quant = model
 
     edge = to_edge_transform_and_lower(
         exported_program,
@@ -776,52 +929,103 @@ def to_edge_no_delegate(exported_program, args, model: torch.nn.Module, example_
         ),
     )
 
-    return model_int8, edge
+    # Replace quantized_decomposed::{quantize,dequantize}_per_tensor nodes
+    # with cortex_m:: equivalents for int8 QDQ ops remaining outside the
+    # delegated subgraph.
+    edge = _apply_replace_quant_nodes(edge, args)
 
-
-def transform_for_cortex_m_backend(edge):
-    # Let's make sure we are using optimized Cortex M backend
-    # NB: If we can't find and replace ops those are expected to be replaced,
-    # bad things will happen at runtime, like "missing operator" errors!
-    edge = edge.transform([ReplaceQuantNodesPass()])
-    return edge
+    return model_quant, edge
 
 
 if __name__ == "__main__":  # noqa: C901
-    args = get_args()
+    args = _get_args()
 
     # Pick model from one of the supported lists
     original_model, example_inputs = get_model_and_inputs_from_name(
         args.model_name, args.model_input
     )
+    calibration_samples = load_calibration_samples(
+        args.calibration_data, example_inputs
+    )
     model = original_model.eval()
 
-    # export_for_training under the assumption we quantize, the exported form also works
+    # export under the assumption we quantize, the exported form also works
     # in to_edge if we don't quantize
-    exported_program = torch.export.export_for_training(
+    exported_program = torch.export.export(
         model, example_inputs, strict=args.strict_export
     )
+
     model = exported_program.module()
     model_fp32 = model
 
+    if args.enable_qdq_fusion_pass:
+        logging.warning(
+            "--enable_qdq_fusion_pass is deprecated and has no effect. "
+            "Quantized node replacement is now handled within the "
+            "respective compilation paths."
+        )
+
+    model_name = os.path.basename(os.path.splitext(args.model_name)[0])
     if args.intermediates:
         os.makedirs(args.intermediates, exist_ok=True)
 
+        # We only support Python3.10 and above, so use a later pickle protocol
+        torch.export.save(
+            exported_program,
+            f"{args.intermediates}/{model_name}_exported_program.pt2",
+            pickle_protocol=5,
+        )
+
     # Quantize if required
-    model_int8 = None
-    if args.delegate:
-        model_int8, edge = to_edge_TOSA_delegate(
-            exported_program, args, model, example_inputs
+    model_quant = None
+    if args.quantize:
+        quant_mode = QuantMode.A16W8 if "int16" in args.target else QuantMode.INT8
+    else:
+        quant_mode = None
+
+    if args.target == "cortex-m55+int8":
+        # Cortex-M path: CMSIS-NN portable kernels, no delegation
+        if args.delegate:
+            logging.warning(
+                "--delegate is ignored for target 'cortex-m55+int8' "
+                "(this target does not use delegated ops)."
+            )
+            args.delegate = False
+        model_quant, edge = _to_edge_cortex_m(
+            exported_program,
+            args,
+            model,
+            example_inputs,
+            calibration_samples,
+        )
+    elif args.delegate:
+        # As we can target multiple output encodings, one must
+        # be specified.
+        model_quant, edge = _to_edge_TOSA_delegate(
+            exported_program,
+            _get_compile_spec(args),
+            model,
+            quant_mode,
+            example_inputs,
+            args.model_name,
+            args.strict_export,
+            calibration_samples,
         )
     else:
-        model_int8, edge = to_edge_no_delegate(
-            exported_program, args, model, example_inputs
+        model_quant, edge = _to_edge_no_delegate(
+            exported_program,
+            _get_compile_spec(args),
+            model,
+            quant_mode,
+            example_inputs,
+            args.model_name,
+            args.strict_export,
+            calibration_samples,
         )
 
-    # Transform so we can use ops from the Cortex M backend
-    edge = transform_for_cortex_m_backend(edge)
-
     dump_delegation_info(edge, args.intermediates)
+
+    edge_program_manager_copy = copy.deepcopy(edge)
 
     try:
         exec_prog = edge.to_executorch(
@@ -836,7 +1040,6 @@ if __name__ == "__main__":  # noqa: C901
         else:
             raise e
 
-    model_name = os.path.basename(os.path.splitext(args.model_name)[0])
     output_name = f"{model_name}" + (
         f"_arm_delegate_{args.target}"
         if args.delegate is True
@@ -844,9 +1047,9 @@ if __name__ == "__main__":  # noqa: C901
     )
 
     if args.bundleio:
-        output_name = f"{output_name}.bpte"
+        output_file_name = f"{output_name}.bpte"
     else:
-        output_name = f"{output_name}.pte"
+        output_file_name = f"{output_name}.pte"
 
     if args.output is not None:
         if args.output.endswith(".pte") or args.output.endswith(".bpte"):
@@ -859,27 +1062,26 @@ if __name__ == "__main__":  # noqa: C901
                 raise RuntimeError(
                     f"When not using --bundleio a .bpte file should not be use as --output {args.output}"
                 )
-            output_name = args.output
+            output_file_name = args.output
+            output_dir = os.path.dirname(output_file_name)
+            if output_dir:
+                os.makedirs(output_dir, exist_ok=True)
         else:
             # --output is a folder
-            output_name = os.path.join(args.output, output_name)
+            os.makedirs(args.output, exist_ok=True)
+            output_file_name = os.path.join(args.output, output_file_name)
+
+    if args.bundleio or args.etrecord:
+        etrecord_file_name = os.path.splitext(output_file_name)[0] + "_etrecord.bin"
+        # Generate ETRecord
+        generate_etrecord(etrecord_file_name, edge_program_manager_copy, exec_prog)
+        print(f"ETRecord saved as {etrecord_file_name}")
 
     if args.bundleio:
         # Realize the quantization impact on numerics when generating reference output
-        reference_model = original_model if not model_int8 else model_int8
-        save_bpte_program(exec_prog, reference_model, output_name)
-        print(f"Bundle PTE file saved as {output_name}")
+        reference_model = original_model if not model_quant else model_quant
+        _save_bpte_program(exec_prog, reference_model, output_file_name)
+        print(f"Bundle PTE file saved as {output_file_name}")
     else:
-        save_pte_program(exec_prog, output_name)
-        print(f"PTE file saved as {output_name}")
-
-    if args.evaluate:
-        evaluate_model(
-            args.model_name,
-            args.intermediates,
-            model_fp32,
-            model_int8,
-            example_inputs,
-            args.evaluate,
-            args.evaluate_config,
-        )
+        save_pte_program(exec_prog, output_file_name)
+        print(f"PTE file saved as {output_file_name}")

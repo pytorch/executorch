@@ -6,6 +6,7 @@
 
 # pyre-unsafe
 
+import unittest
 from typing import List, Optional, Tuple, Union
 
 import torch
@@ -201,25 +202,26 @@ class Amax(OperatorTest):
             flow,
         )
 
+    @unittest.skip("NaN and Inf are not enforced for backends.")
     def test_amax_edge_cases(self, flow: TestFlow) -> None:
         x = torch.tensor([[1.0, float("inf"), 3.0], [4.0, 5.0, float("inf")]])
         self._test_op(
             AmaxModel(),
             (x,),
             flow,
-            use_random_test_inputs=False,
+            generate_random_test_inputs=False,
         )
         self._test_op(
             AmaxModel(dim=0),
             (x,),
             flow,
-            use_random_test_inputs=False,
+            generate_random_test_inputs=False,
         )
         self._test_op(
             AmaxModel(dim=1),
             (x,),
             flow,
-            use_random_test_inputs=False,
+            generate_random_test_inputs=False,
         )
 
         x = torch.tensor([[1.0, float("nan"), 3.0], [4.0, 5.0, float("nan")]])
@@ -227,19 +229,19 @@ class Amax(OperatorTest):
             AmaxModel(),
             (x,),
             flow,
-            use_random_test_inputs=False,
+            generate_random_test_inputs=False,
         )
         self._test_op(
             AmaxModel(dim=0),
             (x,),
             flow,
-            use_random_test_inputs=False,
+            generate_random_test_inputs=False,
         )
         self._test_op(
             AmaxModel(dim=1),
             (x,),
             flow,
-            use_random_test_inputs=False,
+            generate_random_test_inputs=False,
         )
 
     def test_amax_scalar(self, flow: TestFlow) -> None:

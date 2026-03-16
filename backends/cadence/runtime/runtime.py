@@ -9,9 +9,8 @@
 
 import logging
 import numbers
-import os
 import tempfile
-from typing import Any, Optional, Sequence, Tuple, Union
+from typing import Any, Optional, Sequence, Union
 
 import executorch.exir.schema as et_schema
 
@@ -19,8 +18,8 @@ import numpy as np
 import torch
 
 from executorch.backends.cadence.runtime import utils
+from executorch.backends.cadence.runtime.etdump import CadenceETDump
 from executorch.backends.cadence.runtime.executor import Executor
-from executorch.devtools import Inspector
 from executorch.exir import ExecutorchProgramManager
 from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.schema import DataLocation
@@ -28,90 +27,6 @@ from executorch.exir.schema import DataLocation
 from numpy import ndarray
 
 from torch.utils._pytree import TreeSpec
-
-
-class CadenceETDump:
-    def __init__(self, output_dir: str) -> None:
-        self.tensor_dump_dir: str = os.path.join(output_dir, "tensors")
-        self.etdump_path: str = os.path.join(output_dir, "etdump.etdp")
-        self.etrecord_path: Optional[str] = os.path.join(output_dir, "etrecord.bin")
-        self.debug_buffer_path: Optional[str] = os.path.join(
-            output_dir, "debug_output.bin"
-        )
-
-        if not os.path.exists(self.etdump_path):
-            raise RuntimeError(f"{self.etdump_path} does not exist")
-        # pyre-ignore[6]: os.path.exists expects str, but got Optional[str]
-        if not os.path.exists(self.etrecord_path):
-            logging.warning(
-                "ETRecord not found, intermediate tensors will not be dumped"
-            )
-            self.etrecord_path = None
-        # pyre-ignore[6]: os.path.exists expects str, but got Optional[str]
-        if not os.path.exists(self.debug_buffer_path):
-            logging.warning(
-                "Debug buffer not found, intermediate tensors will not be dumped"
-            )
-            self.debug_buffer_path = None
-
-        self.et_inspector: Inspector = Inspector(
-            etdump_path=self.etdump_path,
-            debug_buffer_path=self.debug_buffer_path,
-            etrecord=self.etrecord_path,
-        )
-
-    def get_outputs(self, log_to_stdout: bool = False) -> Tuple[torch.Tensor]:
-        output = [
-            event_block.run_output
-            for event_block in self.et_inspector.event_blocks
-            if event_block.name == "Execute"
-        ]
-        logging.debug(f"[ETdump] output: {output}")
-        return output[0]
-
-    def print_event_block(self) -> None:
-        logging.debug("[ETdump] data tabular:")
-        if logging.getLogger().level <= logging.DEBUG:
-            self.et_inspector.print_data_tabular()
-
-    def print_event_data(self) -> None:
-        logging.debug("[ETdump] event data ")
-        for event_block in self.et_inspector.event_blocks:
-            for event in event_block.events:
-                logging.debug(event)
-
-    def dump_intermediate_tensors(self) -> None:
-        if self.etrecord_path is None:
-            logging.info("[ETdump] Intermediate tensors not available")
-            return
-
-        logging.info(f"[ETdump] Dumping intermediate tensors to {self.tensor_dump_dir}")
-        os.makedirs(self.tensor_dump_dir, exist_ok=True)
-        exec_blocks = [
-            eb for eb in self.et_inspector.event_blocks if eb.name == "Execute"
-        ]
-        if len(exec_blocks) > 1:
-            logging.warning(
-                f'Found {len(exec_blocks)} "Execute" blocks, using the first one and ignoring the rest.'
-            )
-        block = exec_blocks[0]
-
-        # OPERATOR_CALL events are duplicates that contain framework tax data. We don't need them
-        op_events = [e for e in block.events if e.name != "OPERATOR_CALL"]
-        torch.set_printoptions(profile="full")
-
-        for event in op_events:
-            instr_id = event._instruction_id
-            if not event.debug_data:
-                logging.debug(
-                    f"Missing intermediate tensor data for {event.name} ({instr_id=})"
-                )
-                continue
-
-            with open(f"{self.tensor_dump_dir}/{instr_id}.txt", "w") as f:
-                for dd in event.debug_data:
-                    f.write(f"{str(dd)}\n\n")
-        torch.set_printoptions(profile="default")
 
 
 def get_op_names(program: et_schema.Program, execution_plan_id: int = 0) -> set[str]:
@@ -130,7 +45,7 @@ def get_op_names(program: et_schema.Program, execution_plan_id: int = 0) -> set[
             op_names |= get_op_names(
                 deserialize_pte_binary(
                     program.backend_delegate_data[delegate.processed.index].data
-                )
+                ).program
             )
     return op_names
 
@@ -161,6 +76,9 @@ def run(
 
     etdump = CadenceETDump(output_dir=working_dir)
     outputs = etdump.get_outputs()
+
+    # Print performance summary
+    etdump.print_summary()
 
     assert isinstance(out_spec, TreeSpec)
     outputs = torch.utils._pytree.tree_unflatten(outputs, out_spec)

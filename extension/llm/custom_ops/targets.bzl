@@ -1,3 +1,4 @@
+load("@fbsource//xplat/executorch/build:build_variables.bzl", "EXTENSION_LLM_CUSTOM_OPS_BUCK_SRCS")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(
     "@fbsource//xplat/executorch/kernels/optimized:lib_defs.bzl",
@@ -13,7 +14,7 @@ def _get_quantized_sdpa_deps():
     if runtime.is_oss:
         return []
     else:
-        return ["//pytorch/ao/torchao/experimental/kernels/cpu/interface:interface"]
+        return ["//pytorch/ao/torchao/csrc/cpu/torch_free_kernels/interface:interface"]
 
 def _get_quantized_preproc_flags():
     if runtime.is_oss:
@@ -30,12 +31,7 @@ def define_common_targets():
     for mkl_dep in ["", "_mkl_noomp"]:
         runtime.cxx_library(
             name = "custom_ops" + mkl_dep,
-            srcs = [
-                "op_fallback.cpp",
-                "op_fast_hadamard_transform.cpp",
-                "op_sdpa.cpp",
-                "op_update_cache.cpp",
-            ],
+            srcs = EXTENSION_LLM_CUSTOM_OPS_BUCK_SRCS,
             exported_headers = [
                 "op_fallback.h",
                 "op_fast_hadamard_transform.h",
@@ -64,11 +60,7 @@ def define_common_targets():
                 "DEFAULT": [],
                 "ovr_config//cpu:arm64": ["-march=armv8.2-a+dotprod"],
             }),
-            visibility = [
-                "//executorch/...",
-                "//executorch/extension/llm/custom_ops/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             # @lint-ignore BUCKLINT link_whole
             link_whole = True,
             force_static = True,
@@ -84,10 +76,7 @@ def define_common_targets():
             ],
             headers = ["op_tile_crop.h"],
             compiler_flags = ["-Wno-global-constructors"],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             external_deps = [
                 "libtorch",
             ],
@@ -102,10 +91,7 @@ def define_common_targets():
         srcs = [
             "custom_ops.py",
         ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             "//caffe2:torch",
         ],
@@ -145,10 +131,7 @@ def define_common_targets():
         srcs = [
             "preprocess_custom_ops.py",
         ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             "//caffe2:torch",
         ],
@@ -159,10 +142,7 @@ def define_common_targets():
         srcs = [
             "model_sharding.py",
         ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             "//caffe2:torch",
         ],
@@ -177,10 +157,7 @@ def define_common_targets():
             "//executorch/extension/kernel_util:kernel_util",
         ],
         compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         # @lint-ignore BUCKLINT link_whole
         link_whole = True,
         force_static = True,

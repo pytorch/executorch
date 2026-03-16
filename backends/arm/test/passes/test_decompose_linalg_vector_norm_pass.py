@@ -1,19 +1,25 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Tuple
+from typing import cast, Dict, Protocol, Tuple
 
 import torch
 
 from executorch.backends.arm._passes.decompose_linalg_vector_norm_pass import (
-    DecomposeLinearVectorNormPass,
+    DecomposeLinalgVectorNormPass,
 )
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
 input_t = Tuple[torch.Tensor]
+
+
+class ModuleWithInputs(Protocol):
+    ord: float | None
+
+    def get_inputs(self) -> input_t: ...
 
 
 class VectorNormModel(torch.nn.Module):
@@ -24,7 +30,9 @@ class VectorNormModel(torch.nn.Module):
     We support only order 1 or 2.
     """
 
-    def __init__(self, ord: float = None, dim=None, keepdim: bool = False):
+    def __init__(
+        self, ord: float | None = None, dim=None, keepdim: bool = False
+    ) -> None:
         super().__init__()
         self.ord = ord
         self.dim = dim
@@ -55,16 +63,19 @@ modules = {
 
 
 @common.parametrize("module", modules)
-def test_decompose_vector_norm_tosa_INT(module):
-    """
-    This test creates a PassPipeline that applies the DecomposeLinearVectorNormPass.
+def test_decompose_linalg_vector_norm_tosa_INT(module: ModuleWithInputs) -> None:
+    """This test creates a PassPipeline that applies the
+    DecomposeLinalgVectorNormPass.
+
     The expected primitive ops vary depending on the norm order:
       - p == 1: should decompose to ABS and SUM.
       - p == 2 (default): should decompose to MUL, SUM, and SQRT.
       - Other p: should decompose to ABS, two instances of POW, and SUM.
+
     """
     ord_val = module.ord if module.ord is not None else 2.0
 
+    ops_after_pass: Dict[str, int]
     if ord_val == 1:
         ops_after_pass = {
             "executorch_exir_dialects_edge__ops_aten_abs_default": 1,
@@ -75,9 +86,16 @@ def test_decompose_vector_norm_tosa_INT(module):
             "executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar": 2,
             "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList": 1,
         }
+    else:
+        ops_after_pass = {
+            "executorch_exir_dialects_edge__ops_aten_abs_default": 1,
+            "executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar": 2,
+            "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList": 1,
+        }
 
+    nn_module = cast(torch.nn.Module, module)
     pipeline = PassPipeline[input_t](
-        module,
+        nn_module,
         module.get_inputs(),
         # The op is decomposed in legalization aten -> edge, so we are not able to check ops before
         ops_before_pass=None,
@@ -86,6 +104,6 @@ def test_decompose_vector_norm_tosa_INT(module):
         ops_not_after_pass=[
             "executorch_exir_dialects_edge__ops_aten_linarg_vector_norm_default",
         ],
-        pass_list=[DecomposeLinearVectorNormPass],
+        pass_list=[DecomposeLinalgVectorNormPass],
     )
     pipeline.run()

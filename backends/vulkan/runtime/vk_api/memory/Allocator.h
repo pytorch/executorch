@@ -23,6 +23,17 @@
 namespace vkcompute {
 namespace vkapi {
 
+/**
+ * Indicates the direction of a copy to or from a staging buffer.
+ *
+ * HOST_TO_DEVICE: Data is written by the host and read by the device.
+ * DEVICE_TO_HOST: Data is written by the device and read by the host.
+ */
+enum class CopyDirection : uint8_t {
+  HOST_TO_DEVICE = 0u,
+  DEVICE_TO_HOST = 1u,
+};
+
 constexpr VmaAllocationCreateFlags DEFAULT_ALLOCATION_STRATEGY =
     VMA_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT;
 
@@ -46,6 +57,7 @@ class Allocator final {
   VkPhysicalDevice physical_device_;
   VkDevice device_;
   VmaAllocator allocator_;
+  VmaAllocationCreateFlags allocation_strategy_device_to_host_;
 
  public:
   VmaAllocationCreateInfo gpuonly_resource_create_info();
@@ -66,7 +78,7 @@ class Allocator final {
       const bool allow_transfer = false,
       const bool allocate_memory = true);
 
-  VulkanBuffer create_staging_buffer(const VkDeviceSize);
+  VulkanBuffer create_staging_buffer(const VkDeviceSize, const CopyDirection);
 
   VulkanBuffer create_storage_buffer(
       const VkDeviceSize,

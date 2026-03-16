@@ -16,14 +16,18 @@ cmake-android-out/
 cmake-ios-out/
 cmake-out*
 cmake-out-android/
+build-android/
+build-x86/
 dist/
-ethos-u-scratch/
+arm-scratch/
 executorch.egg-info
 pip-out/
+build-profiling/
 
 # Any exported models and profiling outputs
 *.bin
 *.model
+*.etdump
 tokenizer.json
 *.pte
 *.ptd
@@ -52,12 +56,23 @@ xcuserdata/
 *.dylib
 /cmake_wrapper.sh
 /data/
-/devtools/bundled_program/serialize/
+/devtools/bundled_program/serialize/*.fbs
 /exir/_serialize/program.fbs
 /exir/_serialize/scalar_type.fbs
 /include/
 /share/
 /version.py
+/src/executorch/include/
+/src/executorch/share/
+/src/executorch/version.py
+*_etdump
 
 # Android
 *.aar
+
+# Windows
+*.dll
+*.pyd
+
+# Agents
+.claude/*.local.*

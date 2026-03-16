@@ -3,6 +3,9 @@ rotary_embedding:
     DTYPE: float
     STORAGE: texture3d
   generate_variant_forall:
+    STORAGE:
+      - VALUE: texture3d
+      - VALUE: buffer
     DTYPE:
       - VALUE: half
       - VALUE: float

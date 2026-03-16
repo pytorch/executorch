@@ -1,9 +1,14 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Import and register Arm TOSA operator visitors.
 
-# pyre-unsafe
+Importing this package loads all visitor modules so their classes can be
+registered via decorators and discovered at runtime.
+
+"""
+
 
 from . import (  # noqa
     node_visitor,
@@ -13,22 +18,20 @@ from . import (  # noqa
     op_amin,
     op_any,
     op_avg_pool2d,
-    op_bmm,
+    op_bitwise_not,
     op_cat,
+    op_ceil,
     op_clamp,
-    op_constant_pad_nd,
-    op_conv2d,
+    op_cond_if,
     op_cos,
     op_eq,
     op_erf,
     op_exp,
+    op_floor,
     op_ge,
     op_gt,
-    op_index_select,
-    op_index_tensor,
-    op_le,
     op_log,
-    op_lt,
+    op_logical_not,
     op_max_pool2d,
     op_maximum,
     op_minimum,
@@ -38,24 +41,30 @@ from . import (  # noqa
     op_pow,
     op_reciprocal,
     op_repeat,
-    op_rescale,
     op_rshift_tensor,
     op_rsqrt,
     op_sigmoid,
     op_sin,
-    op_slice,
     op_sub,
     op_sum,
-    op_table,
     op_tanh,
-    op_to_copy,
     op_to_dim_order_copy,
-    op_transpose,
-    op_upsample_bilinear2d,
-    op_upsample_nearest2d,
+    op_tosa_conv2d,
+    op_tosa_conv3d,
+    op_tosa_depthwise_conv2d,
+    op_tosa_gather,
+    op_tosa_matmul,
+    op_tosa_pad,
+    op_tosa_rescale,
+    op_tosa_resize,
+    op_tosa_scatter,
+    op_tosa_shapes,
+    op_tosa_slice,
+    op_tosa_table,
+    op_tosa_transpose,
+    op_tosa_transpose_conv2d,
     op_view,
     op_where,
+    op_while,
     ops_binary,
-    ops_identity,
-    ops_unary,
 )

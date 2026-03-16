@@ -33,6 +33,7 @@ QCOM_REQUANTIZE = "requantize"
 QCOM_SCALE = "scale"
 QCOM_SCALES = "scales"
 QCOM_SCALE_OFFSET = "scale_offset"
+QCOM_TENSOR_NAME = "qnn_tensor_name"
 QCOM_ZERO_POINT = "zero_point"
 QCOM_ZERO_POINTS = "zero_points"
 QCOM_PASS_ACTIVATE_KEY = "activate"
@@ -46,3 +47,9 @@ QCOM_SAMPLE_INPUTS = "sample_inputs"
 
 # constants in backends/qualcomm/utils
 QCOM_QNN_COMPILE_SPEC = "qnn_compile_spec"
+
+
+# constants for environment variables
+HEXAGON_SDK_ROOT = "HEXAGON_SDK_ROOT"
+HEXAGON_TOOLS_ROOT = "HEXAGON_TOOLS_ROOT"
+DSP_VERSION = "DSP_VERSION"

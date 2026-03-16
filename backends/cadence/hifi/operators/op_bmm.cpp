@@ -22,7 +22,6 @@ using torch::executor::check_bmm_args;
 using torch::executor::Error;
 using torch::executor::get_bmm_out_target_size;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -79,11 +78,11 @@ Tensor& bmm_out(
 
     WORD32* __restrict__ tmp =
         (WORD32* __restrict__)kernels::allocate_temp_memory(
-            ctx, (batch_size * m * p) * sizeof(float));
+            ctx, (batch_size * m * p) * sizeof(FLOAT32));
 
     ET_KERNEL_CHECK(ctx, tmp != nullptr, MemoryAllocationFailed, out);
 
-    tmp[batch_size * m * p] = {0};
+    memset(tmp, 0, batch_size * m * p * sizeof(FLOAT32));
 
     WORD32* __restrict__ p_o =
         (WORD32* __restrict__)kernels::allocate_temp_memory(
@@ -168,4 +167,3 @@ Tensor& bmm_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

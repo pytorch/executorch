@@ -8,18 +8,23 @@
 
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include <executorch/examples/models/llama/runner/runner.h>
-#include <executorch/examples/models/llava/runner/llava_runner.h>
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/llm/runner/irunner.h>
+#include <executorch/extension/llm/runner/llm_runner_helper.h>
+#include <executorch/extension/llm/runner/multimodal_input.h>
+#include <executorch/extension/llm/runner/multimodal_runner.h>
+#include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
+
+#include <executorch/extension/android/jni/jni_helper.h>
 
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
@@ -29,6 +34,10 @@
 #include <fbjni/ByteBuffer.h>
 #include <fbjni/fbjni.h>
 
+#if defined(EXECUTORCH_BUILD_QNN)
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/runner.h>
+#endif
+
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
 #include <executorch/examples/mediatek/executor_runner/mtk_llama_runner.h>
 #endif
@@ -36,42 +45,7 @@
 namespace llm = ::executorch::extension::llm;
 using ::executorch::runtime::Error;
 
-namespace {
-bool utf8_check_validity(const char* str, size_t length) {
-  for (size_t i = 0; i < length; ++i) {
-    uint8_t byte = static_cast<uint8_t>(str[i]);
-    if (byte >= 0x80) { // Non-ASCII byte
-      if (i + 1 >= length) { // Incomplete sequence
-        return false;
-      }
-      uint8_t next_byte = static_cast<uint8_t>(str[i + 1]);
-      if ((byte & 0xE0) == 0xC0 &&
-          (next_byte & 0xC0) == 0x80) { // 2-byte sequence
-        i += 1;
-      } else if (
-          (byte & 0xF0) == 0xE0 && (next_byte & 0xC0) == 0x80 &&
-          (i + 2 < length) &&
-          (static_cast<uint8_t>(str[i + 2]) & 0xC0) ==
-              0x80) { // 3-byte sequence
-        i += 2;
-      } else if (
-          (byte & 0xF8) == 0xF0 && (next_byte & 0xC0) == 0x80 &&
-          (i + 2 < length) &&
-          (static_cast<uint8_t>(str[i + 2]) & 0xC0) == 0x80 &&
-          (i + 3 < length) &&
-          (static_cast<uint8_t>(str[i + 3]) & 0xC0) ==
-              0x80) { // 4-byte sequence
-        i += 3;
-      } else {
-        return false; // Invalid sequence
-      }
-    }
-  }
-  return true; // All bytes were valid
-}
-
-std::string token_buffer;
-} // namespace
+using executorch::jni_helper::utf8_check_validity;
 
 namespace executorch_jni {
 
@@ -81,21 +55,11 @@ class ExecuTorchLlmCallbackJni
   constexpr static const char* kJavaDescriptor =
       "Lorg/pytorch/executorch/extension/llm/LlmCallback;";
 
-  void onResult(std::string result) const {
+  void onResult(const std::string& result) const {
     static auto cls = ExecuTorchLlmCallbackJni::javaClassStatic();
     static const auto method =
         cls->getMethod<void(facebook::jni::local_ref<jstring>)>("onResult");
-
-    token_buffer += result;
-    if (!utf8_check_validity(token_buffer.c_str(), token_buffer.size())) {
-      ET_LOG(
-          Info, "Current token buffer is not valid UTF-8. Waiting for more.");
-      return;
-    }
-    result = token_buffer;
-    token_buffer = "";
-    facebook::jni::local_ref<jstring> s = facebook::jni::make_jstring(result);
-    method(self(), s);
+    method(self(), facebook::jni::make_jstring(result));
   }
 
   void onStats(const llm::Stats& result) const {
@@ -113,9 +77,13 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
  private:
   friend HybridBase;
   float temperature_ = 0.0f;
+  int num_bos_ = 0;
+  int num_eos_ = 0;
   int model_type_category_;
   std::unique_ptr<llm::IRunner> runner_;
-  std::unique_ptr<example::LlavaRunner> multi_modal_runner_;
+  std::unique_ptr<executorch::extension::llm::MultimodalRunner>
+      multi_modal_runner_;
+  std::vector<llm::MultimodalInput> prefill_inputs_;
 
  public:
   constexpr static auto kJavaDescriptor =
@@ -124,6 +92,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   constexpr static int MODEL_TYPE_CATEGORY_LLM = 1;
   constexpr static int MODEL_TYPE_CATEGORY_MULTIMODAL = 2;
   constexpr static int MODEL_TYPE_MEDIATEK_LLAMA = 3;
+  constexpr static int MODEL_TYPE_QNN_LLAMA = 4;
 
   static facebook::jni::local_ref<jhybriddata> initHybrid(
       facebook::jni::alias_ref<jclass>,
@@ -131,13 +100,18 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<jstring> model_path,
       facebook::jni::alias_ref<jstring> tokenizer_path,
       jfloat temperature,
-      facebook::jni::alias_ref<jstring> data_path) {
+      facebook::jni::alias_ref<facebook::jni::JList<jstring>::javaobject>
+          data_files,
+      jint num_bos,
+      jint num_eos) {
     return makeCxxInstance(
         model_type_category,
         model_path,
         tokenizer_path,
         temperature,
-        data_path);
+        data_files,
+        num_bos,
+        num_eos);
   }
 
   ExecuTorchLlmJni(
@@ -145,8 +119,12 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<jstring> model_path,
       facebook::jni::alias_ref<jstring> tokenizer_path,
       jfloat temperature,
-      facebook::jni::alias_ref<jstring> data_path = nullptr) {
+      facebook::jni::alias_ref<jobject> data_files = nullptr,
+      jint num_bos = 0,
+      jint num_eos = 0) {
     temperature_ = temperature;
+    num_bos_ = num_bos;
+    num_eos_ = num_eos;
 #if defined(ET_USE_THREADPOOL)
     // Reserve 1 thread for the main thread.
     int32_t num_performant_cores =
@@ -159,21 +137,50 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
 #endif
 
     model_type_category_ = model_type_category;
+    std::vector<std::string> data_files_vector;
     if (model_type_category == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      multi_modal_runner_ = std::make_unique<example::LlavaRunner>(
+      multi_modal_runner_ = llm::create_multimodal_runner(
+          model_path->toStdString().c_str(),
+          llm::load_tokenizer(tokenizer_path->toStdString()),
+          std::nullopt,
+          executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
+    } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
+      if (data_files != nullptr) {
+        // Convert Java List<String> to C++ std::vector<string>
+        auto list_class = facebook::jni::findClassStatic("java/util/List");
+        auto size_method = list_class->getMethod<jint()>("size");
+        auto get_method =
+            list_class->getMethod<facebook::jni::local_ref<jobject>(jint)>(
+                "get");
+
+        jint size = size_method(data_files);
+        for (jint i = 0; i < size; ++i) {
+          auto str_obj = get_method(data_files, i);
+          auto jstr = facebook::jni::static_ref_cast<jstring>(str_obj);
+          data_files_vector.push_back(jstr->toStdString());
+        }
+      }
+      runner_ = executorch::extension::llm::create_text_llm_runner(
+          model_path->toStdString(),
+          llm::load_tokenizer(tokenizer_path->toStdString()),
+          data_files_vector);
+#if defined(EXECUTORCH_BUILD_QNN)
+    } else if (model_type_category == MODEL_TYPE_QNN_LLAMA) {
+      std::unique_ptr<executorch::extension::Module> module = std::make_unique<
+          executorch::extension::Module>(
+          model_path->toStdString().c_str(),
+          data_files_vector,
+          executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
+      std::string decoder_model = "llama3"; // use llama3 for now
+      runner_ = std::make_unique<example::Runner<uint16_t>>( // QNN runner
+          std::move(module),
+          decoder_model.c_str(),
           model_path->toStdString().c_str(),
           tokenizer_path->toStdString().c_str(),
-          temperature);
-    } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
-      std::optional<const std::string> data_path_str = data_path
-          ? std::optional<const std::string>{data_path->toStdString()}
-          : std::nullopt;
-      // TODO(larryliu0820): Use the API in text_llm_runner.h to create the
-      // runner.
-      runner_ = example::create_llama_runner(
-          model_path->toStdString(),
-          tokenizer_path->toStdString(),
-          data_path_str);
+          "",
+          "");
+      model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
+#endif
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
     } else if (model_type_category == MODEL_TYPE_MEDIATEK_LLAMA) {
       runner_ = std::make_unique<MTKLlamaRunner>(
@@ -186,93 +193,79 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   }
 
   jint generate(
-      facebook::jni::alias_ref<jintArray> image,
-      jint width,
-      jint height,
-      jint channels,
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
       facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
-      jboolean echo) {
-    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      auto image_size = image->size();
-      std::vector<llm::Image> images;
-      if (image_size != 0) {
-        std::vector<jint> image_data_jint(image_size);
-        std::vector<uint8_t> image_data(image_size);
-        image->getRegion(0, image_size, image_data_jint.data());
-        for (int i = 0; i < image_size; i++) {
-          image_data[i] = image_data_jint[i];
-        }
-        llm::Image image_runner{image_data, width, height, channels};
-        images.push_back(image_runner);
+      jboolean echo,
+      jfloat temperature,
+      jint num_bos,
+      jint num_eos) {
+    float effective_temperature = temperature >= 0 ? temperature : temperature_;
+    std::string token_buffer;
+    auto token_callback = [callback, &token_buffer](const std::string& token) {
+      token_buffer += token;
+      if (!utf8_check_validity(token_buffer.c_str(), token_buffer.size())) {
+        ET_LOG(
+            Info, "Current token buffer is not valid UTF-8. Waiting for more.");
+        return;
       }
+      std::string result = token_buffer;
+      token_buffer.clear();
+      callback->onResult(result);
+    };
+
+    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      std::vector<llm::MultimodalInput> inputs = std::move(prefill_inputs_);
+      if (!prompt->toStdString().empty()) {
+        inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
+      }
+      executorch::extension::llm::GenerationConfig config{
+          .echo = static_cast<bool>(echo),
+          .seq_len = seq_len,
+          .temperature = effective_temperature,
+          .num_bos = num_bos,
+          .num_eos = num_eos,
+      };
       multi_modal_runner_->generate(
-          std::move(images),
-          prompt->toStdString(),
-          seq_len,
-          [callback](std::string result) { callback->onResult(result); },
-          [callback](const llm::Stats& result) { callback->onStats(result); },
-          echo);
+          std::move(inputs),
+          config,
+          token_callback,
+          [callback](const llm::Stats& result) { callback->onStats(result); });
     } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
       executorch::extension::llm::GenerationConfig config{
           .echo = static_cast<bool>(echo),
           .seq_len = seq_len,
-          .temperature = temperature_,
+          .temperature = effective_temperature,
+          .num_bos = num_bos,
+          .num_eos = num_eos,
       };
       runner_->generate(
           prompt->toStdString(),
           config,
-          [callback](std::string result) { callback->onResult(result); },
+          token_callback,
           [callback](const llm::Stats& result) { callback->onStats(result); });
     }
     return 0;
   }
 
-  // Returns a tuple of (error, start_pos)
+  // Returns status_code
   // Contract is valid within an AAR (JNI + corresponding Java code)
-  // If the first element is not Error::Ok, the other element is undefined.
-  facebook::jni::local_ref<jlongArray> prefill_prompt(
-      facebook::jni::alias_ref<jstring> prompt,
-      jlong start_pos,
-      jint bos,
-      jint eos) {
-    facebook::jni::local_ref<jlongArray> tuple_result =
-        facebook::jni::make_long_array(2);
-    if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      tuple_result->pin()[0] = static_cast<jint>(Error::NotSupported);
-      return tuple_result;
-    }
-
-    auto&& result = multi_modal_runner_->prefill_prompt(
-        prompt->toStdString(), start_pos, bos, eos);
-    tuple_result->pin()[0] = static_cast<jint>(Error::Ok);
-    if (result.ok()) {
-      tuple_result->pin()[1] = static_cast<jlong>(start_pos);
-    }
-    return tuple_result;
+  jint append_text_input(facebook::jni::alias_ref<jstring> prompt) {
+    prefill_inputs_.emplace_back(llm::MultimodalInput{prompt->toStdString()});
+    return 0;
   }
 
-  // Returns a tuple of (error, start_pos)
-  // Contract is valid within an AAR (JNI + corresponding Java code)
-  // If the first element is not Error::Ok, the other element is undefined.
-
-  facebook::jni::local_ref<jlongArray> prefill_images(
+  // Returns status_code
+  jint append_images_input(
       facebook::jni::alias_ref<jintArray> image,
       jint width,
       jint height,
-      jint channels,
-      jlong start_pos) {
-    facebook::jni::local_ref<jlongArray> tuple_result =
-        facebook::jni::make_long_array(2);
-
-    if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      tuple_result->pin()[0] = static_cast<jint>(Error::NotSupported);
-      return tuple_result;
-    }
-
-    auto image_size = image->size();
+      jint channels) {
     std::vector<llm::Image> images;
+    if (image == nullptr) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    auto image_size = image->size();
     if (image_size != 0) {
       std::vector<jint> image_data_jint(image_size);
       std::vector<uint8_t> image_data(image_size);
@@ -280,44 +273,151 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       for (int i = 0; i < image_size; i++) {
         image_data[i] = image_data_jint[i];
       }
-      llm::Image image_runner{image_data, width, height, channels};
-      images.push_back(image_runner);
+      llm::Image image_runner{std::move(image_data), width, height, channels};
+      prefill_inputs_.emplace_back(
+          llm::MultimodalInput{std::move(image_runner)});
     }
-    // TODO(hsz): make  start_pos a reference and update it here
-    jint result = static_cast<jint>(
-        multi_modal_runner_->prefill_images(images, start_pos));
-    tuple_result->pin()[0] = result;
-    tuple_result->pin()[1] = static_cast<jlong>(start_pos);
-    return tuple_result;
+
+    return 0;
   }
 
-  jint generate_from_pos(
-      facebook::jni::alias_ref<jstring> prompt,
-      jint seq_len,
-      jlong start_pos,
-      facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
-      jboolean echo) {
-    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      return static_cast<jint>(multi_modal_runner_->generate_from_pos(
-          prompt->toStdString(),
-          seq_len,
-          start_pos,
-          [callback](const std::string& result) { callback->onResult(result); },
-          [callback](const llm::Stats& stats) { callback->onStats(stats); },
-          echo));
-    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
-      executorch::extension::llm::GenerationConfig config{
-          .echo = static_cast<bool>(echo),
-          .seq_len = seq_len,
-          .temperature = temperature_,
-      };
-      return static_cast<jint>(runner_->generate_from_pos(
-          prompt->toStdString(),
-          start_pos,
-          config,
-          [callback](std::string result) { callback->onResult(result); },
-          [callback](const llm::Stats& stats) { callback->onStats(stats); }));
+  jint append_images_input_buffer(
+      facebook::jni::alias_ref<facebook::jni::JByteBuffer> image,
+      jint width,
+      jint height,
+      jint channels) {
+    if (image == nullptr || width <= 0 || height <= 0 || channels <= 0) {
+      return static_cast<jint>(Error::InvalidArgument);
     }
+    auto* data = image->getDirectBytes();
+    auto size = image->getDirectSize();
+    size_t expected = static_cast<size_t>(width) * height * channels;
+    if (data == nullptr || size < expected) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    std::vector<uint8_t> image_data(data, data + expected);
+    llm::Image image_runner{std::move(image_data), width, height, channels};
+    prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(image_runner)});
+    return 0;
+  }
+
+  jint append_normalized_images_input_buffer(
+      facebook::jni::alias_ref<facebook::jni::JByteBuffer> image,
+      jint width,
+      jint height,
+      jint channels) {
+    if (image == nullptr || width <= 0 || height <= 0 || channels <= 0) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    auto* data = image->getDirectBytes();
+    auto size = image->getDirectSize();
+    size_t expected_bytes =
+        static_cast<size_t>(width) * height * channels * sizeof(float);
+    if (data == nullptr || size < expected_bytes || size % sizeof(float) != 0) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    size_t num_floats = static_cast<size_t>(width) * height * channels;
+    std::vector<float> image_data(num_floats);
+    std::memcpy(image_data.data(), data, expected_bytes);
+    llm::Image image_runner{std::move(image_data), width, height, channels};
+    prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(image_runner)});
+    return 0;
+  }
+
+  // Returns status_code
+  jint append_normalized_images_input(
+      facebook::jni::alias_ref<jfloatArray> image,
+      jint width,
+      jint height,
+      jint channels) {
+    std::vector<llm::Image> images;
+    if (image == nullptr) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    auto image_size = image->size();
+    if (image_size != 0) {
+      std::vector<jfloat> image_data_jfloat(image_size);
+      std::vector<float> image_data(image_size);
+      image->getRegion(0, image_size, image_data_jfloat.data());
+      for (int i = 0; i < image_size; i++) {
+        image_data[i] = image_data_jfloat[i];
+      }
+      llm::Image image_runner{std::move(image_data), width, height, channels};
+      prefill_inputs_.emplace_back(
+          llm::MultimodalInput{std::move(image_runner)});
+    }
+
+    return 0;
+  }
+
+  // Returns status_code
+  jint append_audio_input(
+      facebook::jni::alias_ref<jbyteArray> data,
+      jint batch_size,
+      jint n_bins,
+      jint n_frames) {
+    if (data == nullptr) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    auto data_size = data->size();
+    if (data_size != 0) {
+      std::vector<jbyte> data_jbyte(data_size);
+      std::vector<uint8_t> data_u8(data_size);
+      data->getRegion(0, data_size, data_jbyte.data());
+      for (int i = 0; i < data_size; i++) {
+        data_u8[i] = data_jbyte[i];
+      }
+      llm::Audio audio{std::move(data_u8), batch_size, n_bins, n_frames};
+      prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(audio)});
+    }
+    return 0;
+  }
+
+  // Returns status_code
+  jint append_audio_input_float(
+      facebook::jni::alias_ref<jfloatArray> data,
+      jint batch_size,
+      jint n_bins,
+      jint n_frames) {
+    if (data == nullptr) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    auto data_size = data->size();
+    if (data_size != 0) {
+      std::vector<jfloat> data_jfloat(data_size);
+      std::vector<float> data_f(data_size);
+      data->getRegion(0, data_size, data_jfloat.data());
+      for (int i = 0; i < data_size; i++) {
+        data_f[i] = data_jfloat[i];
+      }
+      llm::Audio audio{std::move(data_f), batch_size, n_bins, n_frames};
+      prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(audio)});
+    }
+    return 0;
+  }
+
+  // Returns status_code
+  jint append_raw_audio_input(
+      facebook::jni::alias_ref<jbyteArray> data,
+      jint batch_size,
+      jint n_channels,
+      jint n_samples) {
+    if (data == nullptr) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    auto data_size = data->size();
+    if (data_size != 0) {
+      std::vector<jbyte> data_jbyte(data_size);
+      std::vector<uint8_t> data_u8(data_size);
+      data->getRegion(0, data_size, data_jbyte.data());
+      for (int i = 0; i < data_size; i++) {
+        data_u8[i] = data_jbyte[i];
+      }
+      llm::RawAudio audio{
+          std::move(data_u8), batch_size, n_channels, n_samples};
+      prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(audio)});
+    }
+    return 0;
   }
 
   void stop() {
@@ -328,13 +428,39 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     }
   }
 
-  jint load() {
-    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      return static_cast<jint>(multi_modal_runner_->load());
-    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
-      return static_cast<jint>(runner_->load());
+  void reset_context() {
+    if (runner_ != nullptr) {
+      runner_->reset();
     }
-    return static_cast<jint>(Error::InvalidArgument);
+    if (multi_modal_runner_ != nullptr) {
+      multi_modal_runner_->reset();
+    }
+  }
+
+  jint load() {
+    int result = -1;
+    std::stringstream ss;
+
+    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      result = static_cast<jint>(multi_modal_runner_->load());
+      if (result != 0) {
+        ss << "Failed to load multimodal runner: [" << result << "]";
+      }
+    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
+      result = static_cast<jint>(runner_->load());
+      if (result != 0) {
+        ss << "Failed to load llm runner: [" << result << "]";
+      }
+    } else {
+      ss << "Invalid model type category: " << model_type_category_
+         << ". Valid values are: " << MODEL_TYPE_CATEGORY_LLM << " or "
+         << MODEL_TYPE_CATEGORY_MULTIMODAL;
+    }
+    if (result != 0) {
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+    }
+    return result; // 0 on success to keep backward compatibility
   }
 
   static void registerNatives() {
@@ -344,11 +470,26 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         makeNativeMethod("stop", ExecuTorchLlmJni::stop),
         makeNativeMethod("load", ExecuTorchLlmJni::load),
         makeNativeMethod(
-            "prefillImagesNative", ExecuTorchLlmJni::prefill_images),
+            "appendImagesInput", ExecuTorchLlmJni::append_images_input),
         makeNativeMethod(
-            "prefillPromptNative", ExecuTorchLlmJni::prefill_prompt),
+            "appendImagesInputBuffer",
+            ExecuTorchLlmJni::append_images_input_buffer),
         makeNativeMethod(
-            "generateFromPos", ExecuTorchLlmJni::generate_from_pos),
+            "appendNormalizedImagesInput",
+            ExecuTorchLlmJni::append_normalized_images_input),
+        makeNativeMethod(
+            "appendNormalizedImagesInputBuffer",
+            ExecuTorchLlmJni::append_normalized_images_input_buffer),
+        makeNativeMethod(
+            "appendAudioInput", ExecuTorchLlmJni::append_audio_input),
+        makeNativeMethod(
+            "appendAudioInputFloat",
+            ExecuTorchLlmJni::append_audio_input_float),
+        makeNativeMethod(
+            "appendRawAudioInput", ExecuTorchLlmJni::append_raw_audio_input),
+        makeNativeMethod(
+            "appendTextInput", ExecuTorchLlmJni::append_text_input),
+        makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
     });
   }
 };

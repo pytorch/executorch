@@ -1,6 +1,5 @@
-#
 # Copyright 2023 Martin Pavella
-# Copyright 2023-2024 NXP
+# Copyright 2023-2026 NXP
 #
 # License: MIT
 # See the LICENSE_MIT for more details.
@@ -25,7 +24,7 @@ import executorch.backends.nxp.backend.ir.tflite_generator.meta.meta as meta
 
 import flatbuffers as fb
 import numpy as np
-from executorch.backends.nxp.backend.ir import tensor_formatting
+from executorch.backends.nxp.backend import data_format
 from executorch.backends.nxp.backend.ir.tflite_generator.meta import types
 from executorch.backends.nxp.backend.ir.tflite_generator.meta.types import name_for_type
 
@@ -272,8 +271,7 @@ class Quantization(meta.TFLiteObject):
         return False
 
     def gen_tflite(self, builder: fb.Builder):
-        # Sometimes 1D per-tensor quantized tensors can have quantized_dimension != 0
-        # (residue from badly defined ONNX models). This would cause TFLite inference to crash.
+        # Sometimes 1D per-tensor quantized tensors can have quantized_dimension != 0.
         if not self.is_per_channel():
             self.quantized_dimension = 0
 
@@ -382,7 +380,7 @@ class Tensor(meta.TFLiteObject):
     # TODO shapeSignature
     # TODO variantTensors
 
-    tensor_format: tensor_formatting.TensorFormat
+    tensor_format: data_format.DataFormat
 
     # TODO If 'hasRank' is false, "shape" must be [].
 
@@ -428,7 +426,7 @@ class Tensor(meta.TFLiteObject):
 
         self.tmp_null_tensor = False
 
-        self.tensor_format = tensor_formatting.TensorFormat.NONE
+        self.tensor_format = data_format.DataFormat.NONE
 
     def gen_tflite(self, builder: fb.Builder):
 
@@ -513,7 +511,7 @@ class Operator(meta.TFLiteObject):
     tmp_outputs: List[Tensor]
     tmp_version: int  # OperatorConverter uses this to assign the corresponding operator code with correct version.
 
-    # If `True`, this is an extra operator added during conversion. It was not present in the original ONNX model.
+    # If `True`, this is an extra operator added during conversion. It was not present in the original input model.
     tmp_added_extra: bool
 
     def __init__(

@@ -206,8 +206,8 @@ void vst1<int8_t, int8x8_t>(int8_t* out, int8x8_t vout) {
 
 template <>
 void quantize_tensor_arm64_q8_wrapper<uint8_t>(
-    const float* __restrict__ in,
-    uint8_t* __restrict__ out,
+    const float* ET_RESTRICT in,
+    uint8_t* ET_RESTRICT out,
     const int64_t N,
     const float scale,
     const int32_t zero_point) {
@@ -216,8 +216,8 @@ void quantize_tensor_arm64_q8_wrapper<uint8_t>(
 
 template <>
 void quantize_tensor_arm64_q8_wrapper<int8_t>(
-    const float* __restrict__ in,
-    int8_t* __restrict__ out,
+    const float* ET_RESTRICT in,
+    int8_t* ET_RESTRICT out,
     const int64_t N,
     const float scale,
     const int32_t zero_point) {

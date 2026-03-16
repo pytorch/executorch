@@ -1,14 +1,20 @@
-# Copyright 2023-2024 NXP
+# Copyright 2023-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+from __future__ import annotations
+
 import warnings
-from typing import Dict, Union
+from typing import Callable, Dict, Union
 
 import numpy
 import numpy as np
 import torch
 
+from executorch.backends.nxp.backend.custom_delegation_options import (
+    CustomDelegationOptions,
+)
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
@@ -18,16 +24,24 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     create_channels_first_to_channels_last_permutation,
     create_channels_last_to_channels_first_permutation,
 )
-from torch.export import ExportedProgram
-from torch.fx.graph import Graph
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 
+from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference
+from torch.export import ExportedProgram
+from torch.fx import Node
+from torch.fx.graph import Graph
+from torch.nn import Parameter
 
 # If executed on i.MX platform, there is no tensorflow module. And typically the intention is to use the tflite python
 # interpreter available in tflite_runtime
 try:
     import tensorflow.lite as tflite
 except ModuleNotFoundError:
-    import tflite_runtime.interpreter as tflite
+    try:
+        import tflite_runtime.interpreter as tflite
+    except ModuleNotFoundError:
+        tflite = None
 
 
 class EdgeProgramExecutor:
@@ -52,6 +66,13 @@ class EdgeProgramExecutor:
             return output.detach().numpy()
         elif isinstance(output, tuple) and len(output) == 1:
             return output[0].detach().numpy()
+        elif isinstance(output, tuple):
+            output_names = self.edge_program.graph_signature.user_outputs
+
+            return {
+                name: tensor.detach().numpy()
+                for (name, tensor) in zip(output_names, output)
+            }
 
         raise RuntimeError(
             "Edge program inference with multiple outputs not implemented"
@@ -69,7 +90,7 @@ class TFLiteExecutor:
         saved_model_name="model.tflite",
         delegate_path=None,
         num_threads=None,
-        op_resolver_type=tflite.experimental.OpResolverType.AUTO,
+        op_resolver_type=None,
     ):
         """
         Construct TFLiteExecutor used to quickly run inference on TFLite model.
@@ -89,6 +110,8 @@ class TFLiteExecutor:
             https://www.tensorflow.org/api_docs/python/tf/lite/Interpreter for details. Default value is
             tflite.experimental.OpResolverType.AUTO.
         """
+        if op_resolver_type is None:
+            op_resolver_type = tflite.experimental.OpResolverType.AUTO
         assert model_path is not None or model_content is not None
         assert model_path is None or model_content is None
 
@@ -183,6 +206,11 @@ def compare_output_arrays(
         )
 
     assert tfl_output.shape == edge_output.shape, "Output shapes don't match!"
+
+    if (max_diff := np.max(np.abs(tfl_output - edge_output))) > 0.0:
+        logger.w(
+            f"Maximum absolute difference of the tensor '{output_name}': '{max_diff}'"
+        )
 
     assert np.allclose(
         tfl_output, edge_output, rtol=rtol, atol=atol, equal_nan=True
@@ -289,10 +317,14 @@ def convert_run_compare(
     tflite_input_preprocess: TFLiteIOPreprocess = TFLiteIOPreprocess(),  # noqa B008
     tflite_output_preprocess: TFLiteIOPreprocess = TFLiteIOPreprocess(),  # noqa B008
     conversion_config: ConversionConfig = ConversionConfig(),  # noqa B008
-    tflite_op_resolver_type=tflite.experimental.OpResolverType.AUTO,
+    tflite_op_resolver_type=None,
 ) -> (TFLiteExecutor, EdgeProgramExecutor):
 
+    if tflite_op_resolver_type is None:
+        tflite_op_resolver_type = tflite.experimental.OpResolverType.AUTO
+
     if tfl_model is None:
+        NodeFormatInference(edge_program).identify_node_formats()
         tfl_model, _ = EdgeProgramToIRConverter().convert_program(
             edge_program, conversion_config
         )
@@ -353,19 +385,49 @@ def convert_run_compare(
 
 
 def graph_contains_any_of_ops(graph: Graph, ops: list) -> bool:
-    return any(node.target in ops for node in graph.nodes)
+    return graph_contains_any(
+        graph, condition=lambda n: hasattr(n, "target") and n.target in ops
+    )
 
 
-class OverrideSupportedTargets:
+def graph_contains_any(graph: Graph, condition: Callable[[Node], bool]) -> bool:
+    return any(map(condition, graph.nodes))
 
-    def __init__(self, converter_class, *, new_targets):
+
+target_support_check_function = Callable[
+    [Node, NeutronTargetSpec, dict[str, Parameter], CustomDelegationOptions], bool
+]
+
+
+class OverrideTargetSupportCheck:
+    """Temporarily override the static method `_is_supported_on_target` on a NodeConverter subclass."""
+
+    def __init__(
+        self,
+        converter_class: type[NodeConverter],
+        *,
+        new_target_support_check: target_support_check_function,
+    ):
         self._converter_class = converter_class
-        self._new_targets = new_targets
+        self.new_target_support_check = new_target_support_check
 
-        self._old_targets = self._converter_class.supported_targets
+        # Retrieve the method exactly as defined in the class, not the bound attribute.
+        # This preserves the `staticmethod` wrapper.
+        self.old_target_support_check = converter_class.__dict__.get(
+            "_is_supported_on_target", None
+        )
+        if self.old_target_support_check is None:
+            # The class doesn't override the method, so retrieve it from the parent class.
+            self.old_target_support_check = NodeConverter.__dict__[
+                "_is_supported_on_target"
+            ]
 
     def __enter__(self):
-        self._converter_class.supported_targets = self._new_targets
+        # Replace the target check with the mock method converted to a `staticmethod`.
+        self._converter_class._is_supported_on_target = staticmethod(
+            self.new_target_support_check
+        )
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._converter_class.supported_targets = self._old_targets
+        # Restore the original method, exactly as it was in the class dictionary.
+        self._converter_class._is_supported_on_target = self.old_target_support_check

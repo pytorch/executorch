@@ -9,6 +9,7 @@ from typing import final, List
 
 import torch
 from executorch import exir
+from executorch.exir import to_edge
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_pattern_op_partitions,
 )
@@ -18,9 +19,9 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
-from executorch.exir.backend.test.qnn_backend_demo import QnnBackend
+from executorch.exir.backend.test.demo_backend import DemoBackend
 from executorch.exir.backend.utils import tag_constant_data
-from torch.export import ExportedProgram
+from torch.export import export, ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
 
 
@@ -28,7 +29,7 @@ from torch.fx.passes.infra.partitioner import Partition
 class HTAPartitionerMultiplePatternsDemo(Partitioner):
     """
     An example implementation to partition graph for HTA, in this example, the backend
-    associate with this partitioner is QnnBackend. With QnnBackend, the two lowerable
+    associate with this partitioner is DemoBackend. With DemoBackend, the two lowerable
     patterns are: (lstm + conv) and (sub). backend is a class member instead of instance
     members, as it is a properties of HTAPartitionerMultiplePatternsDemo, and won't be different for
     different HTAPartitionerMultiplePatternsDemo instances.
@@ -63,60 +64,34 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
         input_h = torch.ones([1, 32])
         input_c = torch.ones([1, 32])
 
-        pattern_lstm_conv_lifted = (
-            exir.capture(
-                LSTMConvPattern(),
-                (input_x, input_h, input_c),
-                exir.CaptureConfig(enable_aot=True),
-            )
-            .to_edge(
-                # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
-                exir.EdgeCompileConfig(_check_ir_validity=False)
-            )
-            .exported_program.graph_module
-        )
         pattern_lstm_conv = (
-            exir.capture(
-                LSTMConvPattern(),
-                (input_x, input_h, input_c),
-                exir.CaptureConfig(),
-            )
-            .to_edge(
+            to_edge(
+                export(LSTMConvPattern(), (input_x, input_h, input_c), strict=True),
                 # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
-                exir.EdgeCompileConfig(_check_ir_validity=False)
+                compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
             )
-            .exported_program.graph_module
+            .exported_program()
+            .graph_module
         )
 
-        def sub(x, y):
-            return torch.sub(x, y)
+        class SubModule(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.sub(x, y)
 
-        pattern_sub_lifted = (
-            exir.capture(
-                sub,
-                (input_x, input_h),
-                exir.CaptureConfig(enable_aot=True, _unlift=False),
-            )
-            .to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
-            .exported_program.graph_module
-        )
         pattern_sub = (
-            exir.capture(
-                sub,
-                (input_x, input_h),
-                exir.CaptureConfig(),
+            to_edge(
+                export(SubModule(), (input_x, input_h), strict=True),
+                compile_config=exir.EdgeCompileConfig(_use_edge_ops=True),
             )
-            .to_edge()
-            .exported_program.graph_module
+            .exported_program()
+            .graph_module
         )
         self.patterns = [
-            pattern_lstm_conv_lifted.graph,
             pattern_lstm_conv.graph,
-            pattern_sub_lifted.graph,
             pattern_sub.graph,
         ]
 
-        backend_id = QnnBackend.__name__
+        backend_id = DemoBackend.__name__
         self.delegation_spec = DelegationSpec(backend_id, [])
 
     def is_exclusive(self, partition_list_list: List[List[Partition]]) -> bool:
@@ -239,37 +214,21 @@ class HTAPartitionerOnePatternDemo(Partitioner):
         input_h = torch.ones([1, 32])
         input_c = torch.ones([1, 32])
 
-        pattern_lstm_conv_lifted = (
-            exir.capture(
-                LSTMConvPattern(),
-                (input_x, input_h, input_c),
-                exir.CaptureConfig(enable_aot=True),
-            )
-            .to_edge(
+        pattern_lstm_conv = (
+            to_edge(
+                export(LSTMConvPattern(), (input_x, input_h, input_c), strict=True),
                 # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
-                exir.EdgeCompileConfig(_check_ir_validity=False)
+                compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
             )
-            .exported_program.graph_module
-        )
-        pattern_lstm_conv_unlifted = (
-            exir.capture(
-                LSTMConvPattern(),
-                (input_x, input_h, input_c),
-                exir.CaptureConfig(),
-            )
-            .to_edge(
-                # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
-                exir.EdgeCompileConfig(_check_ir_validity=False)
-            )
-            .exported_program.graph_module
+            .exported_program()
+            .graph_module
         )
         self.patterns = [
-            pattern_lstm_conv_lifted.graph,
-            pattern_lstm_conv_unlifted.graph,
+            pattern_lstm_conv.graph,
         ]
         # Only (lstm + conv) pattern is lowerable
 
-        backend_id = QnnBackend.__name__
+        backend_id = DemoBackend.__name__
         self.delegation_spec = DelegationSpec(backend_id, [])
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:

@@ -13,8 +13,18 @@
 namespace torch {
 namespace executor {
 namespace native {
+bool isnan_float(float x) {
+  return std::isnan(x);
+}
 
-DEFINE_UNARY_UFUNC_REALHBBF16_TO_BOOL(isnan_out, std::isnan)
+bool isnan_double(double x) {
+  return std::isnan(x);
+}
+
+Tensor& isnan_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
+  return internal::unary_ufunc_realhbbf16_to_bool(
+      isnan_float, isnan_double, ctx, in, out);
+}
 
 } // namespace native
 } // namespace executor

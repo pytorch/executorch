@@ -1,0 +1,92 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Assume the following variables are defined in the shader layout:
+ * - t_k_cache
+ *
+ * Macro Settings:
+ * - K_CACHE_BUFFER
+ */
+
+#ifndef SDPA_FP_K_CACHE_TILE_LOAD_GLSLH
+#define SDPA_FP_K_CACHE_TILE_LOAD_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_fp_weight_tile.glslh"
+
+VEC4_T load_k_cache_d4(
+    const int d4,
+    const int c,
+    const int kv_h,
+    const int D4,
+    const int C,
+    const int KV_H) {
+#ifdef K_CACHE_BUFFER
+  return VEC4_T(t_k_cache[(c * KV_H * D4) + (kv_h * D4) + d4]);
+#else
+  return VEC4_T(texelFetch(t_k_cache, ivec3(d4, kv_h, c), 0));
+#endif
+}
+
+void load_k_cache_tile_no_checks(
+    out FPWeightTile tile,
+    const int d4_start,
+    const int c_start,
+    const int kv_h,
+    const int D4,
+    const int context_len,
+    const int C,
+    const int KV_H) {
+  [[unroll]] for (int c = 0; c < TILE_N; ++c) {
+    const int c4 = div_4(c);
+    const int c4i = mod_4(c);
+    [[unroll]] for (int d4 = 0; d4 < TILE_K4; ++d4) {
+      VEC4_T d4_row =
+          load_k_cache_d4(d4_start + d4, c_start + c, kv_h, D4, C, KV_H);
+
+      // Transpose in-place
+      const int d_base = mul_4(d4);
+      tile.data[d_base][c4][c4i] = d4_row[0];
+      tile.data[d_base + 1][c4][c4i] = d4_row[1];
+      tile.data[d_base + 2][c4][c4i] = d4_row[2];
+      tile.data[d_base + 3][c4][c4i] = d4_row[3];
+    }
+  }
+}
+
+void load_k_cache_tile_with_checks(
+    out FPWeightTile tile,
+    const int d4_start,
+    const int c_start,
+    const int kv_h,
+    const int D4,
+    const int context_len,
+    const int C,
+    const int KV_H) {
+  [[unroll]] for (int c = 0; c < TILE_N; ++c) {
+    const int c4 = div_4(c);
+    const int c4i = mod_4(c);
+    [[unroll]] for (int d4 = 0; d4 < TILE_K4; ++d4) {
+      VEC4_T d4_row = VEC4_T(0.0);
+      if (d4_start + d4 < D4 && c_start + c < context_len) {
+        d4_row = load_k_cache_d4(d4_start + d4, c_start + c, kv_h, D4, C, KV_H);
+      }
+
+      // Transpose in-place
+      const int d_base = mul_4(d4);
+      tile.data[d_base][c4][c4i] = d4_row[0];
+      tile.data[d_base + 1][c4][c4i] = d4_row[1];
+      tile.data[d_base + 2][c4][c4i] = d4_row[2];
+      tile.data[d_base + 3][c4][c4i] = d4_row[3];
+    }
+  }
+}
+
+#endif // SDPA_FP_K_CACHE_TILE_LOAD_GLSLH

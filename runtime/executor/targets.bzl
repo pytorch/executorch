@@ -1,3 +1,4 @@
+load("@fbsource//xplat/executorch/build:build_variables.bzl", "PROGRAM_NO_PRIM_OPS_SRCS")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def _program_preprocessor_flags():
@@ -36,10 +37,7 @@ def define_common_targets():
         exported_deps = [
             "//executorch/runtime/core:memory_allocator",
         ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
 
@@ -54,10 +52,7 @@ def define_common_targets():
             exported_headers = [
                 "pte_data_map.h",
             ],
-            visibility = [
-                "//executorch/runtime/executor/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/core:named_data_map" + aten_suffix,
@@ -85,23 +80,17 @@ def define_common_targets():
                 ":program_no_prim_ops" + aten_suffix,
                 "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix,
             ],
-            visibility = [
-                "//executorch/runtime/executor/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
         )
 
         runtime.cxx_library(
             name = "program_no_prim_ops" + aten_suffix,
-            srcs = [
-                "method.cpp",
-                "method_meta.cpp",
-                "program.cpp",
-                "tensor_parser_exec_aten.cpp",
+            srcs = PROGRAM_NO_PRIM_OPS_SRCS + [
                 "tensor_parser{}.cpp".format(aten_suffix if aten_mode else "_portable"),
             ],
             headers = [
                 "platform_memory_allocator.h",
+                "program_validation.h",
             ],
             exported_headers = [
                 "method.h",
@@ -133,10 +122,8 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/schema:program",
-                "//executorch/runtime/core/exec_aten/util:tensor_dimension_limit"
+                "//executorch/runtime/core/exec_aten/util:tensor_dimension_limit",
+                "//executorch/runtime/core/portable_type/c10/c10:c10",
             ],
-            visibility = [
-                "//executorch/runtime/executor/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
         )

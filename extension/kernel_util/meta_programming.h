@@ -7,9 +7,6 @@
  */
 
 #pragma once
-#if __cplusplus < 201703L
-#error "This header requires C++17"
-#endif
 
 #include <executorch/extension/kernel_util/type_list.h>
 #include <cstdlib>
@@ -32,12 +29,13 @@ template <class T>
 using is_function_type_t = typename is_function_type<T>::type;
 
 // A compile-time wrapper around a function pointer
-template <class FuncType_, FuncType_* func_ptr_>
+template <class FuncType_, FuncType_* func_ptr_, const char* func_name>
 struct CompileTimeFunctionPointer final {
   static_assert(
       is_function_type<FuncType_>::value,
       "EXECUTORCH_FN can only wrap function types.");
   using FuncType = FuncType_;
+  static constexpr const char* func_name_ = func_name;
 
   static constexpr FuncType* func_ptr() {
     return func_ptr_;
@@ -47,15 +45,17 @@ struct CompileTimeFunctionPointer final {
 // Check if a given type is a compile-time function pointer
 template <class T>
 struct is_compile_time_function_pointer : std::false_type {};
-template <class FuncType, FuncType* func_ptr>
+template <class FuncType, FuncType* func_ptr, const char* func_name>
 struct is_compile_time_function_pointer<
-    CompileTimeFunctionPointer<FuncType, func_ptr>> : std::true_type {};
+    CompileTimeFunctionPointer<FuncType, func_ptr, func_name>>
+    : std::true_type {};
 
-#define EXECUTORCH_FN_TYPE(func)                                             \
+#define EXECUTORCH_FN_TYPE(func, name)                                       \
   ::executorch::extension::kernel_util_internal::CompileTimeFunctionPointer< \
       std::remove_pointer_t<std::remove_reference_t<decltype(func)>>,        \
-      func>
-#define EXECUTORCH_FN(func) EXECUTORCH_FN_TYPE(func)()
+      func,                                                                  \
+      name>
+#define EXECUTORCH_FN(func, name) EXECUTORCH_FN_TYPE(func, name)()
 
 /**
  * strip_class: helper to remove the class type from pointers to `operator()`.

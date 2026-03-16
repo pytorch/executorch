@@ -1,19 +1,20 @@
 # pyre-ignore-all-errors
 import argparse
-import copy
 
 import torch
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer
+
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     get_soc_to_chipset_map,
     to_edge_transform_and_lower_to_qnn,
 )
-from executorch.devtools import generate_etrecord
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
-from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.extension.export_util.utils import save_pte_program
 
 from torchao.quantization.pt2e.quantize_pt2e import (
@@ -78,7 +79,10 @@ def main() -> None:
     if args.quantization:
         print("Quantizing model...")
         # It is the model quantization path
-        quantizer = QnnQuantizer()
+        quantizer = QnnQuantizer(
+            backend=QnnExecuTorchBackendType.kHtpBackend,
+            soc_model=get_soc_to_chipset_map()[args.soc],
+        )
         # Typical pytorch 2.0 quantization flow
         m = torch.export.export(model.eval(), example_inputs, strict=True).module()
         if args.quantization == "qat":
@@ -107,19 +111,14 @@ def main() -> None:
         backend_options=backend_options,
     )
     delegated_program = to_edge_transform_and_lower_to_qnn(
-        m, example_inputs, compile_spec
+        m, example_inputs, compile_spec, generate_etrecord=args.generate_etrecord
     )
 
-    # this is needed for the ETRecord as lowering modifies the graph in-place
-    edge_copy = copy.deepcopy(delegated_program)
-
-    executorch_program = delegated_program.to_executorch(
-        config=ExecutorchBackendConfig(extract_delegate_segments=False)
-    )
+    executorch_program = delegated_program.to_executorch()
 
     if args.generate_etrecord:
         etrecord_path = args.output_folder + "etrecord.bin"
-        generate_etrecord(etrecord_path, edge_copy, executorch_program)
+        executorch_program.get_etrecord().save(etrecord_path)
 
     save_pte_program(executorch_program, args.model_name, args.output_folder)
 

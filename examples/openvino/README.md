@@ -9,7 +9,15 @@ Below is the layout of the `examples/openvino` directory, which includes the nec
 ```
 examples/openvino
 ├── README.md                           # Documentation for examples (this file)
-└── aot_optimize_and_infer.py           # Example script to export and execute models
+├── aot_optimize_and_infer.py           # Example script to export and execute models
+└── llama
+    ├── README.md                       # Documentation for Llama example
+    └── llama3_2_ov_4wo.yaml            # Configuration file for exporting Llama3.2 with OpenVINO backend
+└── stable_diffusion
+    ├── README.md                       # Documentation for Stable Diffusion example
+    ├── export_lcm.py                   # Script for exporting models
+    ├── openvino_lcm.py                 # Script for inference execution
+    └── requirements.txt                # Requirements file for Stable Diffusion example
 ```
 
 # Build Instructions for Examples
@@ -154,7 +162,7 @@ Build the backend libraries and executor runner by executing the script below in
 ```bash
 ./openvino_build.sh
 ```
-The executable is saved in `<executorch_root>/cmake-out/backends/openvino/`
+The executable is saved in `<executorch_root>/cmake-out/`
 
 ### Run the Example with Executor Runner
 
@@ -163,9 +171,9 @@ Now, run the example using the executable generated in the above step. The execu
 #### Command Syntax:
 
 ```
-cd ../../cmake-out/backends/openvino
+cd ../../cmake-out
 
-./openvino_executor_runner \
+./executor_runner \
     --model_path=<path_to_model> \
     --num_executions=<iterations>
 ```
@@ -179,7 +187,7 @@ cd ../../cmake-out/backends/openvino
 Run inference with a given model for 10 iterations:
 
 ```
-./openvino_executor_runner \
+./executor_runner \
     --model_path=model.pte \
     --num_executions=10
 ```

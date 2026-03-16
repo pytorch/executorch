@@ -1,0 +1,52 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef CONV2D_FP_INPUT_TILE_LOAD
+#define CONV2D_FP_INPUT_TILE_LOAD
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_fp_input_tile.glslh"
+
+VEC4_T load_fp_input_texel(const Conv2dTensorIndex tidx) {
+#ifdef INPUT_BUFFER
+  VEC4_T texel = VEC4_T(0);
+  const int c_idx = mul_4(tidx.data.z);
+  const int c_stride = input_sizes.y * input_sizes.x;
+
+  const int base_buf_i = c_idx * c_stride + tidx.data.y * input_sizes.x + tidx.data.x;
+  const int limit = min(input_sizes.z - c_idx, 4);
+
+  for (int i = 0; i < limit; i++) {
+    texel[i] = t_fp_input[base_buf_i + i * c_stride];
+  }
+  return texel;
+#else
+  return texelFetch(t_fp_input, tidx.data, 0);
+#endif
+}
+
+void load_fp_input_tile(
+    out FPInputTile tile,
+    const Conv2dBlockIndex block_idx) {
+#if TILE_M == 4 && TILE_K4 == 1
+  Conv2dTensorIndex load_tidx = block_idx_to_tensor_idx(block_idx);
+  [[unroll]] for (int w = 0; w < TILE_M; w++) {
+    if (load_tidx.data.x < input_sizes.x) {
+      tile.data[w][0] = load_fp_input_texel(load_tidx);
+    } else {
+      tile.data[w][0] = VEC4_T(0);
+    }
+    load_tidx.data.x++;
+  }
+#else
+  not_implemented;
+#endif
+}
+
+#endif // CONV2D_FP_INPUT_TILE_LOAD

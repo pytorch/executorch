@@ -6,6 +6,8 @@
 
 # pyre-unsafe
 
+import unittest
+
 import torch
 from executorch.backends.test.suite.flow import TestFlow
 
@@ -52,6 +54,7 @@ class TestRound(OperatorTest):
         x = torch.arange(-5, 5, 0.5)  # [-5.0, -4.5, -4.0, ..., 4.0, 4.5]
         self._test_op(RoundModel(), (x,), flow, generate_random_test_inputs=False)
 
+    @unittest.skip("NaN and Inf are not enforced for backends.")
     def test_round_edge_cases(self, flow: TestFlow) -> None:
         # Test edge cases
 
@@ -98,6 +101,7 @@ class TestRound(OperatorTest):
             RoundModel(decimals=-2), (x,), flow, generate_random_test_inputs=False
         )
 
+    @unittest.skip("NaN and Inf are not enforced for backends.")
     def test_round_decimals_edge_cases(self, flow: TestFlow) -> None:
         # Test edge cases with decimal places
 

@@ -43,7 +43,7 @@ To build the documentation locally:
    git clone -b viable/strict https://github.com/pytorch/executorch.git && cd executorch
    ```
 
-1. If you don't have it already, start either a Python virtual envitonment:
+1. If you don't have it already, start either a Python virtual environment:
 
    ```bash
    python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
@@ -111,7 +111,7 @@ You can use the variables in both regular text and code blocks.
 ## Including READMEs to the Documentation Build
 
 You might want to include some of the `README.md` files from various directories
-in this repositories in your documentation build. To do that, create an `.md`
+in this repository in your documentation build. To do that, create an `.md`
 file and use the `{include}` directive to insert your `.md` files. Example:
 
 ````
@@ -177,7 +177,7 @@ file:
 ````
 
 In the `index.md` file, I would add `tutorials/selective-build-tutorial` in
-both the `toctree` and the `cusotmcarditem` sections.
+both the `toctree` and the `customcarditem` sections.
 
 # Auto-generated API documentation
 

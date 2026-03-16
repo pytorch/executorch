@@ -10,23 +10,6 @@
 
 namespace vkcompute {
 
-void bind_tensor_to_descriptor_set(
-    api::vTensor& tensor,
-    vkapi::PipelineBarrier& pipeline_barrier,
-    const vkapi::MemoryAccessFlags accessType,
-    vkapi::DescriptorSet& descriptor_set,
-    const uint32_t idx) {
-  if (tensor.buffer()) {
-    vkapi::VulkanBuffer& buffer = tensor.buffer(
-        pipeline_barrier, vkapi::PipelineStage::COMPUTE, accessType);
-    descriptor_set.bind(idx, buffer);
-  } else {
-    vkapi::VulkanImage& image = tensor.image(
-        pipeline_barrier, vkapi::PipelineStage::COMPUTE, accessType);
-    descriptor_set.bind(idx, image);
-  }
-}
-
 uint32_t bind_values_to_descriptor_set(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
@@ -36,19 +19,8 @@ uint32_t bind_values_to_descriptor_set(
   uint32_t idx = base_idx;
   for (auto& arg : args) {
     for (auto& ref : arg.refs) {
-      if (graph->val_is_tensor(ref)) {
-        bind_tensor_to_descriptor_set(
-            *(graph->get_tensor(ref)),
-            pipeline_barrier,
-            arg.access,
-            descriptor_set,
-            idx++);
-      } else if (graph->val_is_staging(ref)) {
-        bind_staging_to_descriptor_set(
-            *(graph->get_staging(ref)), descriptor_set, idx++);
-      } else {
-        VK_THROW("Unsupported type: ", graph->get_val_type(ref));
-      }
+      graph->bind_value_to_descriptor_set(
+          ref, pipeline_barrier, arg.access, descriptor_set, idx++);
     }
   }
   return idx;

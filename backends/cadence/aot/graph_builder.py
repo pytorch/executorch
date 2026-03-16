@@ -44,12 +44,12 @@ class GraphBuilder(ExportPass):
         gm = builder.get_graph_module()
     """
 
-    def __init__(self) -> None:
+    def __init__(self, fake_tensor_mode: Optional[FakeTensorMode] = None) -> None:
         self.exporter = ExportPass()
         self.tracer: ExportPass.ExportTracer = self.ExportTracer(
             self, torch.fx.graph.CodeGen()
         )
-        self.fake_tensor_mode = FakeTensorMode(
+        self.fake_tensor_mode: FakeTensorMode = fake_tensor_mode or FakeTensorMode(
             allow_fallback_kernels=False,
             allow_non_fake_inputs=True,
         )

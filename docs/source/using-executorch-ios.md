@@ -14,10 +14,13 @@ The ExecuTorch Runtime for iOS and macOS (ARM64) is distributed as a collection 
 * `kernels_llm` - Custom kernels for LLMs
 * `kernels_optimized` - Accelerated generic CPU kernels
 * `kernels_quantized` - Quantized kernels
+* `kernels_torchao` - Quantized CPU kernels from torchao
 
 Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target.
 
-**Note:** To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the `executorch_debug` framework. For optimal performance, always link against the Release version of the deliverables (those without the `_debug` suffix), which have all logging overhead removed.
+**Note:** You may need to add some extra linker flags for the build settings of the components that links against ExecuTorch backends or kernels to let them register properly at the app startup. See the [Linkage](#Linkage) section for more details.
+
+**Note:** To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the `executorch_debug` framework. For optimal performance, always link against the Release version of the deliverables (those without the `_debug` suffix), which have all logging overhead removed. See the [Logging](#Logging) section for more details.
 
 ### Swift Package Manager
 
@@ -25,7 +28,7 @@ The prebuilt ExecuTorch runtime, backend, and kernels are available as a [Swift 
 
 #### Xcode
 
-In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format "swiftpm-<version>", (e.g. "swiftpm-0.7.0"), or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-0.8.0-20250801") for a [nightly build](https://ossci-ios.s3.amazonaws.com/list.html) on a specific date.
+In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format "swiftpm-<version>", (e.g. "swiftpm-1.0.0"), or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-1.1.0-20251101") for a [nightly build](https://ossci-ios.s3.amazonaws.com/list.html) on a specific date.
 
 ![](_static/img/swiftpm_xcode1.png)
 
@@ -58,7 +61,7 @@ let package = Package(
   ],
   dependencies: [
     // Use "swiftpm-<version>.<year_month_day>" branch name for a nightly build.
-    .package(url: "https://github.com/pytorch/executorch.git", branch: "swiftpm-0.7.0")
+    .package(url: "https://github.com/pytorch/executorch.git", branch: "swiftpm-1.0.0")
   ],
   targets: [
     .target(
@@ -69,6 +72,10 @@ let package = Package(
         .product(name: "kernels_optimized", package: "executorch"),
         // Add other backends and kernels as needed.
       ]),
+      linkerSettings: [
+         // Force load all symbols from static libraries to trigger backends and kernels registration
+         .unsafeFlags(["-Wl,-all_load"])
+      ]
   ]
 )
 ```
@@ -106,7 +113,7 @@ git clone -b viable/strict https://github.com/pytorch/executorch.git --depth 1 -
 python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 ```
 
-4. Install the required dependencies, including those needed for the backends like [Core ML](backends-coreml.md) or [MPS](backends-mps.md), if you plan to build them later:
+4. Install the required dependencies, including those needed for the backends like [Core ML](backends/coreml/coreml-overview.md) or [MPS](backends/mps/mps-overview.md), if you plan to build them later:
 
 ```bash
 ./install_requirements.sh
@@ -243,7 +250,7 @@ let imageBuffer: UnsafeMutableRawPointer = ... // Existing image buffer
 let inputTensor = Tensor<Float>(&imageBuffer, shape: [1, 3, 224, 224])
 
 // Execute the 'forward' method with the given input tensor and get an output tensor back.
-let outputTensor: Tensor<Float> = try module.forward(inputTensor)!
+let outputTensor = try Tensor<Float>(module.forward(inputTensor))
 
 // Copy the tensor data into logits array for easier access.
 let logits = outputTensor.scalars()
@@ -711,7 +718,10 @@ Inputs can be any type conforming to `ValueConvertible` (like `Tensor`, `Int`, `
 - `forward(_:)`: A convenient shortcut for executing the common "forward" method.
 
 The API provides overloads for single inputs, multiple inputs, or no inputs.
-Outputs are always returned as an array of `Value`.
+
+Outputs are returned in two ways:
+- As an array of `Value`s, letting you inspect and cast results yourself.
+- As your expected type. The generic overloads decode the result directly into your desired Swift type (such as a single `Tensor<Float>`, an array, or any custom type conforming to the `ValueSequenceConstructible` protocol). If the output doesn’t match the expected type (e.g. multiple Values returned when a single object is expected, or a tensor data type mismatch), an invalid type error is thrown.
 
 Objective-C:
 
@@ -777,6 +787,10 @@ do {
     let logits = try outputTensor.scalars()
     print("First 5 logits: \(logits.prefix(5))")
   }
+
+  // Try casting the outputs to a single typed object.
+  let tensorOutput = try Tensor<Float>(module.forward(inputTensor1, inputTensor2))
+  let logits = tensorOutput.scalars()
 } catch {
   print("Execution failed: \(error)")
 }

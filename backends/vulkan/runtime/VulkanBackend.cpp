@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/vulkan/runtime/ResolveLayouts.h>
 #include <executorch/backends/vulkan/runtime/VulkanDelegateHeader.h>
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
 
@@ -19,9 +20,11 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #ifdef ET_EVENT_TRACER_ENABLED
+#include <executorch/backends/vulkan/runtime/graph/Logging.h>
 #include <executorch/runtime/core/event_tracer_hooks_delegate.h>
 #endif // ET_EVENT_TRACER_ENABLED
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/profiler.h>
 
@@ -30,6 +33,7 @@
 #include <cstring>
 #include <memory>
 #include <type_traits>
+#include <unordered_map>
 #include <vector>
 
 namespace executorch {
@@ -47,7 +51,9 @@ using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::kTensorDimensionLimit;
+using executorch::runtime::NamedDataMap;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 using namespace vkcompute;
 
@@ -64,14 +70,6 @@ using VkValuesVector =
 using BytesVector =
     const flatbuffers::Vector<flatbuffers::Offset<vkgraph::VkBytes>>*;
 using UIntVector = const flatbuffers::Vector<uint32_t>*;
-
-const uint8_t* get_constant_data_ptr(
-    VkGraphPtr flatbuffer_graph,
-    const int32_t buffer_idx,
-    const uint8_t* constant_data) {
-  VkBytesPtr constant_bytes = flatbuffer_graph->constants()->Get(buffer_idx);
-  return constant_data + constant_bytes->offset();
-}
 
 vkapi::ScalarType get_scalar_type(const vkgraph::VkDataType& vk_datatype) {
   switch (vk_datatype) {
@@ -91,6 +89,32 @@ vkapi::ScalarType get_scalar_type(const vkgraph::VkDataType& vk_datatype) {
       return vkapi::kFloat;
     case vkgraph::VkDataType::FLOAT64:
       return vkapi::kDouble;
+    default:
+      VK_THROW("Invalid VkDataType type encountered!");
+  }
+}
+
+vkapi::ScalarType equivalent_scalar_type(
+    const executorch::runtime::etensor::ScalarType& et_datatype) {
+  switch (et_datatype) {
+    case executorch::runtime::etensor::ScalarType::Byte:
+      return vkapi::kByte;
+    case executorch::runtime::etensor::ScalarType::Char:
+      return vkapi::kChar;
+    case executorch::runtime::etensor::ScalarType::Int:
+      return vkapi::kInt;
+    case executorch::runtime::etensor::ScalarType::Long:
+      return vkapi::kLong;
+    case executorch::runtime::etensor::ScalarType::Half:
+      return vkapi::kHalf;
+    case executorch::runtime::etensor::ScalarType::Float:
+      return vkapi::kFloat;
+    case executorch::runtime::etensor::ScalarType::Double:
+      return vkapi::kDouble;
+    case executorch::runtime::etensor::ScalarType::Bool:
+      return vkapi::kBool;
+    default:
+      VK_THROW("Invalid etensor::ScalarType encountered!");
   }
 }
 
@@ -118,6 +142,19 @@ utils::GPUMemoryLayout get_memory_layout(
       return utils::kHeightPacked;
     case vkgraph::VkMemoryLayout::TENSOR_CHANNELS_PACKED:
       return utils::kChannelsPacked;
+    case vkgraph::VkMemoryLayout::PACKED_INT8_4W4C:
+      return utils::kPackedInt8_4W4C;
+    case vkgraph::VkMemoryLayout::PACKED_INT8_4H4W:
+      return utils::kPackedInt8_4H4W;
+    case vkgraph::VkMemoryLayout::PACKED_INT8_4W:
+      return utils::kPackedInt8_4W;
+    case vkgraph::VkMemoryLayout::PACKED_INT8_4C:
+      return utils::kPackedInt8_4C;
+    case vkgraph::VkMemoryLayout::PACKED_INT8_4C1W:
+      return utils::kPackedInt8_4C1W;
+    case vkgraph::VkMemoryLayout::PACKED_INT8_CONV2D:
+      // Fallback for unresolved dynamic layout
+      return utils::kPackedInt8_4C1W;
     default:
       break;
   }
@@ -154,6 +191,12 @@ GraphConfig get_graph_config(ArrayRef<CompileSpec>& compile_specs) {
         config.expect_dynamic_shapes = true;
       }
     }
+    if (strcmp(spec.key, "warmup_execute_after_compile") == 0) {
+      ET_CHECK_MSG(value_size == sizeof(uint8_t), "Unexpected value size!");
+      bool value = getBool(value_data);
+
+      config.warmup_execute_after_compile = value;
+    }
   }
 #ifdef ET_EVENT_TRACER_ENABLED
   config.enable_querypool = true;
@@ -165,18 +208,31 @@ class GraphBuilder {
   ComputeGraph* compute_graph_;
   VkGraphPtr flatbuffer_;
   const uint8_t* constant_data_;
+  const NamedDataMap* named_data_map_;
+  std::vector<FreeableBuffer> loaded_buffers_from_map_;
 
   std::vector<ValueRef> ref_mapping_;
+  std::unordered_map<uint32_t, vkgraph::VkMemoryLayout>
+      memory_layout_overrides_;
 
  public:
   explicit GraphBuilder(
       ComputeGraph* compute_graph,
       VkGraphPtr flatbuffer,
-      const uint8_t* constant_data)
+      const uint8_t* constant_data,
+      const NamedDataMap* named_data_map)
       : compute_graph_(compute_graph),
         flatbuffer_(flatbuffer),
         constant_data_(constant_data),
-        ref_mapping_() {}
+        named_data_map_(named_data_map),
+        loaded_buffers_from_map_(),
+        ref_mapping_(),
+        memory_layout_overrides_() {}
+
+  void resolve_layouts() {
+    resolve_memory_layouts(
+        flatbuffer_, compute_graph_, memory_layout_overrides_);
+  }
 
   void resize(uint32_t size) {
     ref_mapping_.resize(size, INT32_MAX);
@@ -194,6 +250,21 @@ class GraphBuilder {
     return ref_mapping_[fb_id];
   }
 
+  utils::GPUMemoryLayout get_resolved_memory_layout(
+      const uint32_t fb_id,
+      VkTensorPtr tensor_fb,
+      const std::vector<int64_t>& dims_vector) {
+    auto it = memory_layout_overrides_.find(fb_id);
+    if (it != memory_layout_overrides_.end()) {
+      return get_memory_layout(it->second);
+    }
+
+    if (tensor_fb->memory_layout() == vkgraph::VkMemoryLayout::DEFAULT_LAYOUT) {
+      return compute_graph_->suggested_memory_layout(dims_vector);
+    }
+    return get_memory_layout(tensor_fb->memory_layout());
+  }
+
   void add_tensor_to_graph(const uint32_t fb_id, VkTensorPtr tensor_fb) {
     const vkapi::ScalarType& dtype = get_scalar_type(tensor_fb->datatype());
     utils::StorageType storage_type =
@@ -205,16 +276,31 @@ class GraphBuilder {
     const std::vector<int64_t> dims_vector(dims_fb->cbegin(), dims_fb->cend());
 
     utils::GPUMemoryLayout memory_layout =
-        tensor_fb->memory_layout() == vkgraph::VkMemoryLayout::DEFAULT_LAYOUT
-        ? compute_graph_->suggested_memory_layout(dims_vector)
-        : get_memory_layout(tensor_fb->memory_layout());
+        get_resolved_memory_layout(fb_id, tensor_fb, dims_vector);
 
     ValueRef ref;
     if (tensor_fb->constant_id() >= 0) {
-      const uint8_t* tensor_data = get_constant_data_ptr(
-          flatbuffer_, tensor_fb->constant_id(), constant_data_);
+      VkBytesPtr constant_bytes =
+          flatbuffer_->constants()->Get(tensor_fb->constant_id());
 
-      ref = compute_graph_->add_tensorref(dims_vector, dtype, tensor_data);
+      if (constant_bytes->named_key() != nullptr &&
+          constant_bytes->offset() == UINT64_MAX &&
+          named_data_map_ != nullptr) {
+        const std::string& data_name = constant_bytes->named_key()->str();
+        Result<FreeableBuffer> buffer =
+            named_data_map_->get_data(data_name.c_str());
+
+        VK_CHECK_COND(
+            buffer.ok(),
+            "Failed to get constant data for key %s from named_data_map. Error code: %u",
+            data_name.c_str(),
+            static_cast<uint32_t>(buffer.error()));
+        ref = compute_graph_->add_tensorref(
+            dims_vector, dtype, std::move(buffer.get()));
+      } else {
+        const uint8_t* tensor_data = constant_data_ + constant_bytes->offset();
+        ref = compute_graph_->add_tensorref(dims_vector, dtype, tensor_data);
+      }
     } else {
       ref = compute_graph_->add_tensor(
           dims_vector,
@@ -326,6 +412,15 @@ class GraphBuilder {
     }
   }
 
+  vkapi::ScalarType get_staging_scalar_type_of(const uint32_t fb_id) {
+    VkTensorPtr tensor_fb =
+        flatbuffer_->values()->Get(fb_id)->value_as_VkTensor();
+    if (tensor_fb->staging_datatype() == vkgraph::VkDataType::UNSET) {
+      return get_scalar_type(tensor_fb->datatype());
+    }
+    return get_scalar_type(tensor_fb->staging_datatype());
+  }
+
   void build_graph() {
     // Resize the mapping to the number of values in the flatbuffer
     resize(flatbuffer_->values()->size());
@@ -342,7 +437,8 @@ class GraphBuilder {
     for (const uint32_t fb_id : *flatbuffer_->input_ids()) {
       const ValueRef ref = get_fb_id_valueref(fb_id);
       if (compute_graph_->val_is_tensor(ref)) {
-        compute_graph_->set_input_tensor(ref);
+        compute_graph_->set_input_tensor(
+            ref, get_staging_scalar_type_of(fb_id));
       } else {
         compute_graph_->set_val_as_input(ref);
       }
@@ -359,6 +455,13 @@ class GraphBuilder {
         args.push_back(get_fb_id_valueref(static_cast<int>(arg_fb_id)));
       }
 
+#ifdef ET_EVENT_TRACER_ENABLED
+      std::string operator_json =
+          make_operator_json(compute_graph_, op_name, args);
+      set_and_get_current_operator_json(operator_json);
+      get_current_operator_count(true);
+#endif // ET_EVENT_TRACER_ENABLED
+
       auto vkFn = VK_GET_OP_FN(op_name);
       vkFn(*compute_graph_, args);
     }
@@ -367,7 +470,15 @@ class GraphBuilder {
     // values as well if the source graph returns parameter nodes.
     for (const uint32_t fb_id : *flatbuffer_->output_ids()) {
       const ValueRef ref = get_fb_id_valueref(fb_id);
-      compute_graph_->set_output_value(ref);
+      if (compute_graph_->val_is_tensor(ref)) {
+#ifdef ET_EVENT_TRACER_ENABLED
+        get_current_operator_count(true);
+#endif // ET_EVENT_TRACER_ENABLED
+        compute_graph_->set_output_tensor(
+            ref, get_staging_scalar_type_of(fb_id));
+      } else {
+        compute_graph_->set_output_value(ref);
+      }
     }
 
     if (compute_graph_->graphconfig().enable_querypool) {
@@ -390,18 +501,20 @@ bool maybe_resize_input(
     const size_t input_i,
     executorch::aten::Tensor& et_tensor) {
   ValueRef in_tensor_ref = graph->inputs()[input_i].value;
-  vTensorPtr in_tensor = graph->get_tensor(in_tensor_ref);
+
+  const std::vector<int64_t> in_tensor_vk_sizes =
+      graph->sizes_of(in_tensor_ref);
 
   ET_CHECK_MSG(
-      et_tensor.dim() == in_tensor->sizes().size(),
+      et_tensor.dim() == in_tensor_vk_sizes.size(),
       "Cannot resize input tensor: old ndim %zu does not match new ndim %zu",
-      static_cast<size_t>(in_tensor->sizes().size()),
+      static_cast<size_t>(in_tensor_vk_sizes.size()),
       static_cast<size_t>(et_tensor.dim()));
 
   bool should_resize = false;
   std::vector<int64_t> new_sizes(et_tensor.dim());
   for (size_t i = 0; i < et_tensor.dim(); i++) {
-    if (in_tensor->sizes()[i] != et_tensor.sizes()[i]) {
+    if (in_tensor_vk_sizes[i] != et_tensor.sizes()[i]) {
       should_resize = true;
     }
     new_sizes.at(i) = et_tensor.sizes()[i];
@@ -411,10 +524,11 @@ bool maybe_resize_input(
     graph->resize_input(input_i, new_sizes);
   }
 
+  const size_t in_tensor_vk_numel = graph->numel_of(in_tensor_ref);
   ET_CHECK_MSG(
-      in_tensor->numel() == et_tensor.numel(),
+      in_tensor_vk_numel == et_tensor.numel(),
       "Vulkan tensor numel %zu does not match ET tensor numel %zu",
-      static_cast<size_t>(in_tensor->numel()),
+      static_cast<size_t>(in_tensor_vk_numel),
       static_cast<size_t>(et_tensor.numel()));
 
   return should_resize;
@@ -445,12 +559,14 @@ void maybe_resize_output(
     const size_t output_i,
     executorch::aten::Tensor& et_tensor) {
   ValueRef out_tensor_ref = graph->outputs()[output_i].value;
-  vTensorPtr out_tensor = graph->get_tensor(out_tensor_ref);
+
+  const std::vector<int64_t> out_tensor_vk_sizes =
+      graph->sizes_of(out_tensor_ref);
 
   executorch::aten::SizesType new_output_size[kTensorDimensionLimit];
-  size_t ndim = out_tensor->sizes().size();
+  size_t ndim = out_tensor_vk_sizes.size();
   for (int i = 0; i < ndim; ++i) {
-    new_output_size[i] = out_tensor->sizes()[i];
+    new_output_size[i] = out_tensor_vk_sizes[i];
   }
 
   executorch::aten::ArrayRef<executorch::aten::SizesType> output_size{
@@ -473,8 +589,10 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     return true;
   }
 
-  ET_NODISCARD Error
-  compileModel(const void* buffer_pointer, ComputeGraph* compute_graph) const {
+  ET_NODISCARD Error compileModel(
+      const void* buffer_pointer,
+      ComputeGraph* compute_graph,
+      const NamedDataMap* named_data_map) const {
     Result<VulkanDelegateHeader> header =
         VulkanDelegateHeader::parse(buffer_pointer);
 
@@ -500,14 +618,18 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
 
     VkGraphPtr flatbuffer_graph = vkgraph::GetVkGraph(flatbuffer_data);
 
-    GraphBuilder builder(compute_graph, flatbuffer_graph, constant_data);
+    GraphBuilder builder(
+        compute_graph, flatbuffer_graph, constant_data, named_data_map);
 
+    builder.resolve_layouts();
     builder.build_graph();
 
     compute_graph->prepare();
     compute_graph->prepare_pipelines();
 
     compute_graph->prepack();
+
+    compute_graph->optional_warmup_execute();
 
     return Error::Ok;
   }
@@ -526,7 +648,8 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     graph_config.external_adapter = vkapi::set_and_get_external_adapter();
     new (compute_graph) ComputeGraph(graph_config);
 
-    Error err = compileModel(processed->data(), compute_graph);
+    const NamedDataMap* named_data_map = context.get_named_data_map();
+    Error err = compileModel(processed->data(), compute_graph, named_data_map);
 
     // This backend does not need its processed data after compiling the
     // model.
@@ -542,13 +665,28 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
   Error execute(
       ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     EXECUTORCH_SCOPE_PROF("VulkanBackend::execute");
 
     ComputeGraph* compute_graph = static_cast<ComputeGraph*>(handle);
 
     const size_t num_inputs = compute_graph->inputs().size();
     bool should_propagate_resize = false;
+#ifdef ET_EVENT_TRACER_ENABLED
+    runtime::EventTracer* event_tracer = context.event_tracer();
+    runtime::EventTracerEntry overall_event_tracer_entry =
+        event_tracer_start_profiling_delegate(
+            event_tracer,
+            "ETVK_EXECUTE",
+            /* delegate_debug_id = */ -1);
+#endif // ET_EVENT_TRACER_ENABLED
+#ifdef ET_EVENT_TRACER_ENABLED
+    runtime::EventTracerEntry copy_inputs_event_tracer_entry =
+        event_tracer_start_profiling_delegate(
+            event_tracer,
+            "ETVK_COPY_INPUTS",
+            /* delegate_debug_id = */ -1);
+#endif // ET_EVENT_TRACER_ENABLED
     for (size_t i = 0; i < num_inputs; i++) {
       const ValueRef iref = compute_graph->inputs()[i].value;
       if (compute_graph->val_is_tensor(iref)) {
@@ -556,10 +694,11 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
         bool was_resized =
             maybe_resize_input(compute_graph, i, args[i]->toTensor());
         should_propagate_resize = should_propagate_resize || was_resized;
-        compute_graph->copy_into_staging(
+        compute_graph->maybe_cast_and_copy_into_staging(
             compute_graph->inputs()[i].staging,
             args[i]->toTensor().const_data_ptr(),
-            args[i]->toTensor().numel());
+            args[i]->toTensor().numel(),
+            equivalent_scalar_type(args[i]->toTensor().scalar_type()));
       } else if (compute_graph->val_is_symint(iref)) {
         VK_CHECK_COND(
             args[i]->isTensor(),
@@ -576,19 +715,61 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
             compute_graph->get_val_type(iref));
       }
     }
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_end_profiling_delegate(
+        event_tracer, copy_inputs_event_tracer_entry);
+#endif // ET_EVENT_TRACER_ENABLED
 
-    // propagate_resize() will re-encode the command buffer so that push
-    // constants are updated and DynamicDispatchNode can update the compute
-    // shader, global workgroup size, and local workgroup size to perform the
-    // model inference.
-    if (should_propagate_resize ||
-        (compute_graph->graphconfig().expect_dynamic_shapes &&
-         compute_graph->execute_count() == 0u)) {
+    if (should_propagate_resize || compute_graph->has_data_dependent_shapes()) {
+#ifdef ET_EVENT_TRACER_ENABLED
+      runtime::EventTracerEntry resize_event_tracer_entry =
+          event_tracer_start_profiling_delegate(
+              event_tracer,
+              "ETVK_RESIZE",
+              /* delegate_debug_id = */ -1);
+#endif // ET_EVENT_TRACER_ENABLED
       compute_graph->propagate_resize();
+#ifdef ET_EVENT_TRACER_ENABLED
+      event_tracer_end_profiling_delegate(
+          event_tracer, resize_event_tracer_entry);
+#endif // ET_EVENT_TRACER_ENABLED
     }
 
+#ifdef ET_EVENT_TRACER_ENABLED
+    runtime::EventTracerEntry execute_event_tracer_entry =
+        event_tracer_start_profiling_delegate(
+            event_tracer,
+            "ETVK_COMPUTE_GRAPH_EXECUTE",
+            /* delegate_debug_id = */ -1);
+#endif // ET_EVENT_TRACER_ENABLED
     compute_graph->execute();
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_end_profiling_delegate(
+        event_tracer, execute_event_tracer_entry);
+#endif // ET_EVENT_TRACER_ENABLED
 
+#ifdef ET_EVENT_TRACER_ENABLED
+    compute_graph->context()->querypool().extract_results();
+    for (const auto& r :
+         compute_graph->context()->querypool().get_shader_timestamp_data()) {
+      std::string event_name = "{" + r.kernel_name +
+          ", \"dispatch_id\": " + std::to_string(r.dispatch_id) + "}";
+      event_tracer_log_profiling_delegate(
+          event_tracer,
+          event_name.c_str(),
+          /* delegate_debug_id = */ -1,
+          r.start_time_ns,
+          r.end_time_ns);
+    }
+#endif // ET_EVENT_TRACER_ENABLED
+
+#ifdef ET_EVENT_TRACER_ENABLED
+    runtime::EventTracerEntry copy_outputs_event_tracer_entry =
+        event_tracer_start_profiling_delegate(
+            event_tracer,
+            "ETVK_COPY_OUTPUTS",
+            /* delegate_debug_id = */ -1);
+#endif // ET_EVENT_TRACER_ENABLED
     for (size_t i = 0; i < compute_graph->outputs().size(); i++) {
       const size_t o = i + num_inputs;
       const ValueRef oref = compute_graph->outputs()[i].value;
@@ -597,10 +778,11 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
         maybe_resize_output(compute_graph, i, args[o]->toTensor());
         // args holds inputs directly followed by outputs, so the i'th output
         // for compute_graph corresponds to the o'th arg
-        compute_graph->copy_from_staging(
+        compute_graph->maybe_cast_and_copy_from_staging(
             compute_graph->outputs()[i].staging,
             args[o]->toTensor().mutable_data_ptr(),
-            args[o]->toTensor().numel());
+            args[o]->toTensor().numel(),
+            equivalent_scalar_type(args[o]->toTensor().scalar_type()));
       }
       // TensorRef values represent constant tensors which will not have been
       // modified by the graph execution. Therefore, if a constant tensor is
@@ -613,23 +795,14 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
             compute_graph->get_val_type(oref));
       }
     }
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_end_profiling_delegate(
+        event_tracer, copy_outputs_event_tracer_entry);
+#endif // ET_EVENT_TRACER_ENABLED
 
 #ifdef ET_EVENT_TRACER_ENABLED
-    runtime::EventTracer* event_tracer = context.event_tracer();
-    compute_graph->context()->querypool().extract_results();
-    for (const auto& r :
-         compute_graph->context()->querypool().get_shader_timestamp_data()) {
-      std::string event_name =
-          r.kernel_name + "_" + std::to_string(r.dispatch_id);
-      event_tracer_log_profiling_delegate(
-          event_tracer,
-          event_name.c_str(),
-          /* delegate_debug_id = */ -1,
-          r.start_time_ns,
-          r.end_time_ns,
-          (void*)(&r.metadata),
-          sizeof(r.metadata));
-    }
+    event_tracer_end_profiling_delegate(
+        event_tracer, overall_event_tracer_entry);
 #endif // ET_EVENT_TRACER_ENABLED
 
     return Error::Ok;

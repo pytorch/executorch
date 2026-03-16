@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -17,11 +17,17 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
-from torchaudio import models
+from torchaudio import models  # type: ignore[import-untyped]
 
 input_t = Tuple[torch.Tensor]  # Input x
+
+quant_test_data = {
+    "per_channel_quantization=true": True,
+    "per_channel_quantization=false": False,
+}
 
 
 def get_test_inputs(batch_size, num_features, input_frames):
@@ -35,7 +41,6 @@ class TestW2L(unittest.TestCase):
     input_frames = 400
     num_features = 1
 
-    w2l = models.Wav2Letter(num_features=num_features).eval()
     model_example_inputs = get_test_inputs(batch_size, num_features, input_frames)
 
     all_operators = [
@@ -44,11 +49,17 @@ class TestW2L(unittest.TestCase):
         "executorch_exir_dialects_edge__ops_aten_relu_default",
     ]
 
+    @staticmethod
+    def create_model(input_type: str = "waveform"):
+        return models.Wav2Letter(
+            num_features=TestW2L.num_features, input_type=input_type
+        ).eval()
+
 
 @pytest.mark.slow  # about 3min on std laptop
 def test_w2l_tosa_FP():
     pipeline = TosaPipelineFP[input_t](
-        TestW2L.w2l,
+        TestW2L.create_model(),
         TestW2L.model_example_inputs,
         aten_op=[],
         exir_op=TestW2L.all_operators,
@@ -61,11 +72,13 @@ def test_w2l_tosa_FP():
 @pytest.mark.flaky
 def test_w2l_tosa_INT():
     pipeline = TosaPipelineINT[input_t](
-        TestW2L.w2l,
+        TestW2L.create_model(),
         TestW2L.model_example_inputs,
         aten_op=[],
         exir_op=TestW2L.all_operators,
         use_to_edge_transform_and_lower=True,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -73,31 +86,59 @@ def test_w2l_tosa_INT():
 @pytest.mark.slow
 @common.XfailIfNoCorstone300
 @pytest.mark.xfail(
-    reason="MLETORCH-1009: Wav2Letter fails on U55 due to unsupported conditions",
-    strict=False,
+    reason="Wav2Letter fails on U55 due to insufficient memory",
+    strict=True,
 )
 def test_w2l_u55_INT():
     pipeline = EthosU55PipelineINT[input_t](
-        TestW2L.w2l,
+        # Use "power_spectrum" variant because the default ("waveform") has a
+        # conv1d layer with an unsupported stride size.
+        TestW2L.create_model("power_spectrum"),
         TestW2L.model_example_inputs,
         aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
 @pytest.mark.slow
 @common.XfailIfNoCorstone320
-@pytest.mark.skip(reason="Intermittent timeout issue: MLETORCH-856")
-def test_w2l_u85_INT():
+@common.parametrize("per_channel_quantization", quant_test_data)
+def test_w2l_u85_INT(per_channel_quantization):
     pipeline = EthosU85PipelineINT[input_t](
-        TestW2L.w2l,
+        TestW2L.create_model("power_spectrum"),
         TestW2L.model_example_inputs,
         aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@pytest.mark.slow
+def test_w2l_vgf_quant():
+    pipeline = VgfPipeline[input_t](
+        TestW2L.create_model(),
+        TestW2L.model_example_inputs,
+        aten_op=[],
+        exir_op=TestW2L.all_operators,
+        use_to_edge_transform_and_lower=True,
+        quantize=True,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_w2l_vgf_no_quant():
+    pipeline = VgfPipeline[input_t](
+        TestW2L.create_model(),
+        TestW2L.model_example_inputs,
+        aten_op=[],
+        exir_op=TestW2L.all_operators,
+        use_to_edge_transform_and_lower=True,
+        quantize=False,
     )
     pipeline.run()

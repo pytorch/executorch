@@ -17,11 +17,11 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnLogger.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnMemManager.h>
-#include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpBackend.h>
-#include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpBackendCache.h>
-#include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpContext.h>
-#include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpDevice.h>
-#include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpGraph.h>
+#include <executorch/backends/qualcomm/runtime/backends/gpu/GpuContext.h>
+#include <executorch/backends/qualcomm/runtime/backends/gpu/GpuGraph.h>
+#include <executorch/backends/qualcomm/runtime/backends/htp/HtpBackendCache.h>
+#include <executorch/backends/qualcomm/runtime/backends/htp/HtpContext.h>
+#include <executorch/backends/qualcomm/runtime/backends/htp/HtpGraph.h>
 
 #include <memory>
 namespace executorch {
@@ -31,22 +31,18 @@ namespace qnn {
 class QnnDlcManager;
 typedef enum { UNINITIALIZED, INITIALIZED } BackendInitializeState;
 
-// @brief Struct containing all handles for a given QNN backend
+// @brief Struct containing non-shared handles for a given QNN backend
 typedef struct BackendConfigParameters {
-  std::unique_ptr<QnnBackend> qnn_backend_ptr_;
   BackendInitializeState backend_init_state_;
   std::unique_ptr<QnnContext> qnn_context_ptr_;
-  std::unique_ptr<QnnDevice> qnn_device_ptr_;
   std::unique_ptr<QnnGraph> qnn_graph_ptr_;
   std::unique_ptr<QnnMemManager> qnn_mem_manager_ptr_;
   std::unique_ptr<QnnBackendCache> qnn_backend_cache_ptr_;
 
   // Default ctor
   BackendConfigParameters()
-      : qnn_backend_ptr_(nullptr),
-        backend_init_state_(BackendInitializeState::UNINITIALIZED),
+      : backend_init_state_(BackendInitializeState::UNINITIALIZED),
         qnn_context_ptr_(nullptr),
-        qnn_device_ptr_(nullptr),
         qnn_graph_ptr_(nullptr),
         qnn_mem_manager_ptr_(nullptr),
         qnn_backend_cache_ptr_(nullptr) {}
@@ -56,8 +52,6 @@ typedef struct BackendConfigParameters {
     qnn_backend_cache_ptr_.reset();
     qnn_mem_manager_ptr_.reset();
     qnn_context_ptr_.reset();
-    qnn_device_ptr_.reset();
-    qnn_backend_ptr_.reset();
     backend_init_state_ = BackendInitializeState::UNINITIALIZED;
   }
 
@@ -66,8 +60,9 @@ typedef struct BackendConfigParameters {
 class QnnBackendFactory {
  public:
   std::unique_ptr<BackendConfigParameters> Create(
-      const QnnImplementation& implementation,
-      QnnLogger* logger,
+      QnnImplementation* implementation,
+      QnnBackend* qnn_backend_ptr,
+      QnnDevice* qnn_device_ptr,
       const QnnExecuTorchContextBinary& qnn_context_blob,
       const QnnExecuTorchOptions* options,
       QnnDlcManager* qnn_dlc_manager);

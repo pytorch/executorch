@@ -15,7 +15,6 @@ networks, as well as the ability to adapt and scale to new model architectures, 
 to AI workloads. ML application development with the eIQ Neutron NPU is fully supported by the 
 [eIQ machine learning software development environment](https://www.nxp.com/design/design-center/software/eiq-ml-development-environment/eiq-toolkit-for-end-to-end-model-development-and-deployment:EIQ-TOOLKIT).
 The eIQ AI SW Stack provides a streamlined development experience for developers and end-users of NXP products.
-eIQ extensions connect broader AI ecosystems to the edge, such as the NVIDIA TAO extension, which enables developers to bring AI models trained and fine-tuned with TAO to NXP-powered edge devices.
 
 
 ## Supported NXP platforms
@@ -35,37 +34,28 @@ improvements. NXP and the ExecuTorch community is actively developing this codeb
 
 ## Neutron Backend implementation and SW architecture
 Neutron Backend uses the eIQ Neutron Converter as ML compiler to compile the delegated subgraph to Neutron microcode. 
-The Neutron Converter accepts the ML model in LiteRT format, for the **eIQ Neutron N3** class  therefore the Neutron Backend uses the LiteRT flatbuffers format as IR between the ExecuTorch and Neutron Converter ML compiler. 
-
-The Neutron Backend in its early prototype phase, is based on existing NXP products, such as 
-onnx2tflite, known from the NXP's eIQ Toolkit. 
-The **onnx2tflite** is a converter from the ONNX format to LiteRT (formerly known as TFLite).
-It consists of 3 stages: 
-* ONNX Model Parsing
-* Tensor Format Inference, to identify tensors using channel-first layer
-* ONNX to LiteRT Conversion 
-* Optimization Passes, which operate on top of the LiteRT format
-* LiteRT Serialization 
-
-Due to the similarities between ONNX to LiteRT and Edge to LiteRT conversion, the Neutron Backend's 
-currently leverages the Tensor format Inference and LiteRT Optimizer. 
-This shall be considered as temporary solution, intended to be replaced with: 
-* Dim Order (https://github.com/pytorch/executorch/issues/4873)
-* Corresponding ExecuTorch/ATen passes
-
-before reaching higher maturity status by the end of 2025. 
+The Neutron Converter accepts the ML model in LiteRT format, for the **eIQ Neutron N3** class  therefore the Neutron Backend
+uses the LiteRT flatbuffers format as IR between the ExecuTorch and Neutron Converter ML compiler.
 
 ## Layout
-The current code base is as follows:
 * `backend/ir/` - TFLite/LiteRT based IR to represent the Edge Subgraph, taken from onnx2tflite code base and extended to
   support Edge Dialect to LiteRT conversion.
     * `backend/ir/converter` - Neutron Backends conversion from Edge (ATen) Dialect to LiteRT, TFLite. The subfolder
       `node_conveters` is structured as single module for each Edge operator.
-    * `backend/ir/lib` - automatically generated handlers from LiteRT flatbuffers schema
+    * `backend/ir/lib` - automatically generated handlers from LiteRT flatbuffers schema.
     * `backend/ir/tflite_generator` and `backend/ir/tflite_optimizer` handle the serialization
        of the in-memory built subgraph for delegation into LiteRT/TFLite flatbuffers 
        representation. Code taken from the onnx2tflite tool.
-*  `quantizer` - Neutron Backends quantizer implementation. 
+*  `edge_passes` - Various passes operating on Edge dialect level. 
+*  `quantizer` - Neutron Backend quantizer implementation. 
+*  `runtime` - Neutron Backend runtime implementation. For running compiled on device.
+*  `tests/` - Unit tests for Neutron backend.
+    * `tests/converter/node_converter` - Operator level unit tests.
+
+* `examples/nxp/` - Example models and scripts for running them.
+
+## Examples
+Please see this [README.md](https://github.com/pytorch/executorch/blob/main/examples/nxp/README.md).
 
 ## Help & Improvements
 If you have problems or questions or have suggestions for ways to make

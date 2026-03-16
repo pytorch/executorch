@@ -33,7 +33,6 @@ from executorch.exir.error import internal_assert, InternalError
 from executorch.exir.operator.convert import is_inplace_variant, is_out_variant
 from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
-
 from torch import fx
 from torch.export.exported_program import (
     ConstantArgument,
@@ -204,7 +203,7 @@ class Verifier:
 
     def verify_graph_input_output(self) -> None:
         r"""
-        alloc_graph_input / alloc_graph_output indicas if memory for graph
+        alloc_graph_input / alloc_graph_output indicates if memory for graph
         input/output is allocated by the compiler. If not, the runtime will
         set them using buffers provided by users.
         """
@@ -236,15 +235,27 @@ class Verifier:
         }
         assert "output" in check_list, f"graph module has no output: {graph_module}"
 
+        # Collect mutable buffer specs so we can filter them when they appear on
+        # non-placeholder nodes (e.g., aliased on the output node via SpecPropPass).
+        mutable_buffer_specs = _get_mutable_buffer_specs(
+            graph_module.graph.nodes, self.graph_signature
+        )
         for nd in graph_module.graph.nodes:
             if nd.op in check_list:
                 if not (specs := get_node_tensor_specs(nd)):
                     continue
                 if _is_mutable_buffer(nd, self.graph_signature):
                     continue
-                assert len(specs) > 0, "Expect tensor specs"
-                specs = list(filter(lambda spec: not spec.const, specs))
+                specs = list(
+                    filter(
+                        lambda spec: not spec.const
+                        and spec not in mutable_buffer_specs,
+                        specs,
+                    )
+                )
                 if len(specs) == 0:
+                    # all outputs are const so no need to allocate memory just say we succeeded
+                    graph_output_allocated = self.alloc_graph_output
                     continue
                 allocated = any(
                     spec is None or spec.mem_offset is not None for spec in specs
@@ -357,6 +368,17 @@ def _is_mutable_buffer(
     return False
 
 
+def _get_mutable_buffer_specs(
+    nodes: Iterable[Node], graph_signature: Optional[ExportGraphSignature]
+) -> Set[TensorSpec]:
+    mutable_buffer_specs: Set[TensorSpec] = set()
+    for node in nodes:
+        if _is_mutable_buffer(node, graph_signature):
+            for spec in get_node_tensor_specs(node):
+                mutable_buffer_specs.add(spec)
+    return mutable_buffer_specs
+
+
 def _do_user_inputs_exist(graph_signature: Optional[ExportGraphSignature]) -> bool:
     if graph_signature is None:
         return False
@@ -432,6 +454,12 @@ def collect_specs_from_nodes(  # noqa: C901
         get_graph_output_tensors(nodes) if ignore_graph_output else set()
     )
 
+    # Collect mutable buffer specs so we can filter them when they appear on
+    # non-placeholder nodes (e.g., aliased on the output node via SpecPropPass).
+    mutable_buffer_specs: Set[TensorSpec] = set()
+    if ignore_mutable_buffers:
+        mutable_buffer_specs = _get_mutable_buffer_specs(nodes, graph_signature)
+
     for node in nodes:
         # ignore the specs from unrelevant Fx ops for now.
         if node.op in ["get_attr"]:
@@ -483,6 +511,8 @@ def collect_specs_from_nodes(  # noqa: C901
             if ignore_graph_input and spec in graph_input_tensors:
                 continue
             if ignore_graph_output and spec in graph_output_tensors:
+                continue
+            if ignore_mutable_buffers and spec in mutable_buffer_specs:
                 continue
             if (
                 ignore_const
@@ -1020,6 +1050,12 @@ def get_map_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
             yield nd
 
 
+def get_scan_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
+    for nd in graph_module.graph.nodes:
+        if nd.target is torch.ops.higher_order.scan:
+            yield nd
+
+
 def get_return_specs(graph_module: fx.GraphModule) -> Set[TensorSpec]:
     return_specs = set()
     nodes = graph_module.graph.nodes
@@ -1122,7 +1158,7 @@ def _apply_algo_to_submodules(
     alignment: int,
     graph_signature: Optional[ExportGraphSignature] = None,
 ) -> list[int]:
-    """Apply algo to map/cond/while nodes in the graph module.
+    """Apply algo to map/cond/while/scan nodes in the graph module.
 
     This method will popuate graph_module.meta["non_const_buffer_sizes"] for
     all submodules and return a bufsizes list that is the maximum size of all
@@ -1157,6 +1193,9 @@ def _apply_algo_to_submodules(
 
     for map_node in get_map_nodes(graph_module):
         _handle(cast(torch.fx.Node, map_node.args[0]), alloc_graph_input=True)
+
+    for scan_node in get_scan_nodes(graph_module):
+        _handle(cast(torch.fx.Node, scan_node.args[0]), alloc_graph_input=True)
 
     # TODO: We can handle delegates the same way as map/cond/while.
     # Maybe populate the graph_module.meta["non_const_buffer_sizes"] for delegates.

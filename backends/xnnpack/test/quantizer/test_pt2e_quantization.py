@@ -22,7 +22,7 @@ from torch.ao.quantization.qconfig import (
     weight_observer_range_neg_127_to_127,
 )
 from torch.ao.quantization.qconfig_mapping import QConfigMapping
-from torch.export import export_for_training
+from torch.export import export
 from torch.testing._internal.common_quantization import (
     NodeSpec as ns,
     TestHelperModules,
@@ -58,7 +58,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
         # resetting dynamo cache
         torch._dynamo.reset()
 
-        m = export_for_training(m, example_inputs, strict=True).module()
+        m = export(m, example_inputs, strict=True).module()
         if is_qat:
             m = prepare_qat_pt2e(m, quantizer)
         else:
@@ -351,7 +351,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
         m.train()
 
         # After export: this is not OK
-        m = export_for_training(m, example_inputs, strict=True).module()
+        m = export(m, example_inputs, strict=True).module()
         with self.assertRaises(NotImplementedError):
             m.eval()
         with self.assertRaises(NotImplementedError):
@@ -405,7 +405,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
         m = M().train()
         example_inputs = (torch.randn(1, 3, 3, 3),)
         bn_train_op, bn_eval_op = self._get_bn_train_eval_ops()  # pyre-ignore[23]
-        m = export_for_training(m, example_inputs, strict=True).module()
+        m = export(m, example_inputs, strict=True).module()
 
         def _assert_ops_are_correct(m: torch.fx.GraphModule, train: bool) -> None:
             bn_op = bn_train_op if train else bn_eval_op
@@ -474,7 +474,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
         quantizer.set_global(operator_config)
         example_inputs = (torch.randn(2, 2),)
         m = M().eval()
-        m = export_for_training(m, example_inputs, strict=True).module()
+        m = export(m, example_inputs, strict=True).module()
         weight_meta = None
         for n in m.graph.nodes:  # pyre-ignore[16]
             if (
@@ -503,7 +503,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
         quantizer = XNNPACKQuantizer().set_global(
             get_symmetric_quantization_config(is_per_channel=True, is_qat=True)
         )
-        m.conv_bn_relu = export_for_training(  # pyre-ignore[8]
+        m.conv_bn_relu = export(  # pyre-ignore[8]
             m.conv_bn_relu, example_inputs, strict=True
         ).module()
         m.conv_bn_relu = prepare_qat_pt2e(m.conv_bn_relu, quantizer)  # pyre-ignore[6,8]
@@ -513,7 +513,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
         quantizer = XNNPACKQuantizer().set_module_type(
             torch.nn.Linear, get_symmetric_quantization_config(is_per_channel=False)
         )
-        m = export_for_training(m, example_inputs, strict=True).module()
+        m = export(m, example_inputs, strict=True).module()
         m = prepare_pt2e(m, quantizer)  # pyre-ignore[6]
         m = convert_pt2e(m)
 
@@ -575,7 +575,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
                 "ConvWithBNRelu" in node.meta["nn_module_stack"]["L__self__"][1]
             )
 
-        m.conv_bn_relu = export_for_training(  # pyre-ignore[8]
+        m.conv_bn_relu = export(  # pyre-ignore[8]
             m.conv_bn_relu, example_inputs, strict=True
         ).module()
         for node in m.conv_bn_relu.graph.nodes:  # pyre-ignore[16]
@@ -591,7 +591,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
 
         def dynamic_quantize_pt2e(model, example_inputs) -> torch.fx.GraphModule:
             torch._dynamo.reset()
-            model = export_for_training(model, example_inputs, strict=True).module()
+            model = export(model, example_inputs, strict=True).module()
             # Per channel quantization for weight
             # Dynamic quantization for activation
             # Please read a detail: https://fburl.com/code/30zds51q
@@ -648,7 +648,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
 
         example_inputs = (torch.randn(1, 3, 5, 5),)
         m = M()
-        m = export_for_training(m, example_inputs, strict=True).module()
+        m = export(m, example_inputs, strict=True).module()
         quantizer = XNNPACKQuantizer().set_global(
             get_symmetric_quantization_config(),
         )
@@ -724,11 +724,10 @@ instantiate_parametrized_tests(TestQuantizePT2E)
 
 
 class TestXNNPACKQuantizerNumericDebugger(PT2ENumericDebuggerTestCase):
-
     def test_quantize_pt2e_preserve_handle(self):
         m = TestHelperModules.Conv2dThenConv1d()
         example_inputs = m.example_inputs()
-        ep = export_for_training(m, example_inputs, strict=True)
+        ep = export(m, example_inputs, strict=True)
         m = ep.module()
 
         quantizer = XNNPACKQuantizer().set_global(
@@ -768,7 +767,7 @@ class TestXNNPACKQuantizerNumericDebugger(PT2ENumericDebuggerTestCase):
     def test_extract_results_from_loggers(self):
         m = TestHelperModules.Conv2dThenConv1d()
         example_inputs = m.example_inputs()
-        ep = export_for_training(m, example_inputs, strict=True)
+        ep = export(m, example_inputs, strict=True)
         m = ep.module()
         m_ref_logger = prepare_for_propagation_comparison(m)
 
@@ -792,7 +791,7 @@ class TestXNNPACKQuantizerNumericDebugger(PT2ENumericDebuggerTestCase):
     def test_extract_results_from_loggers_list_output(self):
         m = TestHelperModules.Conv2dWithSplit()
         example_inputs = m.example_inputs()
-        ep = export_for_training(m, example_inputs, strict=True)
+        ep = export(m, example_inputs, strict=True)
         m = ep.module()
         m_ref_logger = prepare_for_propagation_comparison(m)
 

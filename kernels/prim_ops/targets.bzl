@@ -7,13 +7,28 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
+    # Define the filegroup once outside the loop since it doesn't vary by aten mode
+    runtime.filegroup(
+        name = "prim_ops_sources",
+        srcs = ["register_prim_ops.cpp"],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.filegroup(
+        name = "selective_build_prim_ops.h",
+        srcs = ["selective_build_prim_ops.h"],
+        visibility = ["PUBLIC"],
+    )
+
     for aten_mode in get_aten_mode_options():
         aten_suffix = ("_aten" if aten_mode else "")
 
         runtime.cxx_library(
             name = "et_copy_index" + aten_suffix,
             srcs = ["et_copy_index.cpp"],
-            visibility = [],  # Private
+            # To allow for selective prim ops to depend on this library.
+            # Used by selective_build.bzl
+            visibility = ["PUBLIC"],
             exported_headers = ["et_copy_index.h"],
             deps = [
                 "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
@@ -28,7 +43,9 @@ def define_common_targets():
         runtime.cxx_library(
             name = "et_view" + aten_suffix,
             srcs = ["et_view.cpp"],
-            visibility = [],  # Private
+            # To allow for selective prim ops to depend on this library.
+            # Used by selective_build.bzl
+            visibility = ["PUBLIC"],
             exported_headers = ["et_view.h"],
             deps = [
                 "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
@@ -43,10 +60,7 @@ def define_common_targets():
         runtime.cxx_library(
             name = "prim_ops_registry" + aten_suffix,
             srcs = ["register_prim_ops.cpp"],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             # @lint-ignore BUCKLINT link_whole, need this to register prim ops.
             link_whole = True,
             # prim ops are registered through a global table so the ctor needs to be allowed

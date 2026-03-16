@@ -63,13 +63,26 @@ class BoxedEvalueList {
    * unwrapped vals.
    */
   BoxedEvalueList(EValue** wrapped_vals, T* unwrapped_vals, int size)
-      : wrapped_vals_(wrapped_vals, size), unwrapped_vals_(unwrapped_vals) {}
+      : wrapped_vals_(checkWrappedVals(wrapped_vals, size), size),
+        unwrapped_vals_(checkUnwrappedVals(unwrapped_vals)) {}
+
   /*
    * Constructs and returns the list of T specified by the EValue pointers
    */
   executorch::aten::ArrayRef<T> get() const;
 
  private:
+  static EValue** checkWrappedVals(EValue** wrapped_vals, int size) {
+    ET_CHECK_MSG(wrapped_vals != nullptr, "wrapped_vals cannot be null");
+    ET_CHECK_MSG(size >= 0, "size cannot be negative");
+    return wrapped_vals;
+  }
+
+  static T* checkUnwrappedVals(T* unwrapped_vals) {
+    ET_CHECK_MSG(unwrapped_vals != nullptr, "unwrapped_vals cannot be null");
+    return unwrapped_vals;
+  }
+
   // Source of truth for the list
   executorch::aten::ArrayRef<EValue*> wrapped_vals_;
   // Same size as wrapped_vals
@@ -94,15 +107,14 @@ struct EValue {
       int64_t as_int;
       double as_double;
       bool as_bool;
-      // TODO(jakeszwe): convert back to pointers to optimize size of this
-      // struct
-      executorch::aten::ArrayRef<char> as_string;
-      executorch::aten::ArrayRef<double> as_double_list;
-      executorch::aten::ArrayRef<bool> as_bool_list;
-      BoxedEvalueList<int64_t> as_int_list;
-      BoxedEvalueList<executorch::aten::Tensor> as_tensor_list;
-      BoxedEvalueList<std::optional<executorch::aten::Tensor>>
-          as_list_optional_tensor;
+
+      executorch::aten::ArrayRef<char>* as_string_ptr;
+      executorch::aten::ArrayRef<double>* as_double_list_ptr;
+      executorch::aten::ArrayRef<bool>* as_bool_list_ptr;
+      BoxedEvalueList<int64_t>* as_int_list_ptr;
+      BoxedEvalueList<executorch::aten::Tensor>* as_tensor_list_ptr;
+      BoxedEvalueList<std::optional<executorch::aten::Tensor>>*
+          as_list_optional_tensor_ptr;
     } copyable_union;
 
     // Since a Tensor just holds a TensorImpl*, there's no value to use Tensor*
@@ -280,9 +292,9 @@ struct EValue {
   }
 
   /****** String Type ******/
-  /*implicit*/ EValue(const char* s, size_t size) : tag(Tag::String) {
-    payload.copyable_union.as_string =
-        executorch::aten::ArrayRef<char>(s, size);
+  /*implicit*/ EValue(executorch::aten::ArrayRef<char>* s) : tag(Tag::String) {
+    ET_CHECK_MSG(s != nullptr, "ArrayRef<char> pointer cannot be null");
+    payload.copyable_union.as_string_ptr = s;
   }
 
   bool isString() const {
@@ -291,14 +303,19 @@ struct EValue {
 
   std::string_view toString() const {
     ET_CHECK_MSG(isString(), "EValue is not a String.");
+    ET_CHECK_MSG(
+        payload.copyable_union.as_string_ptr != nullptr,
+        "EValue string pointer is null.");
     return std::string_view(
-        payload.copyable_union.as_string.data(),
-        payload.copyable_union.as_string.size());
+        payload.copyable_union.as_string_ptr->data(),
+        payload.copyable_union.as_string_ptr->size());
   }
 
   /****** Int List Type ******/
-  /*implicit*/ EValue(BoxedEvalueList<int64_t> i) : tag(Tag::ListInt) {
-    payload.copyable_union.as_int_list = i;
+  /*implicit*/ EValue(BoxedEvalueList<int64_t>* i) : tag(Tag::ListInt) {
+    ET_CHECK_MSG(
+        i != nullptr, "BoxedEvalueList<int64_t> pointer cannot be null");
+    payload.copyable_union.as_int_list_ptr = i;
   }
 
   bool isIntList() const {
@@ -307,12 +324,17 @@ struct EValue {
 
   executorch::aten::ArrayRef<int64_t> toIntList() const {
     ET_CHECK_MSG(isIntList(), "EValue is not an Int List.");
-    return payload.copyable_union.as_int_list.get();
+    ET_CHECK_MSG(
+        payload.copyable_union.as_int_list_ptr != nullptr,
+        "EValue int list pointer is null.");
+    return (payload.copyable_union.as_int_list_ptr)->get();
   }
 
   /****** Bool List Type ******/
-  /*implicit*/ EValue(executorch::aten::ArrayRef<bool> b) : tag(Tag::ListBool) {
-    payload.copyable_union.as_bool_list = b;
+  /*implicit*/ EValue(executorch::aten::ArrayRef<bool>* b)
+      : tag(Tag::ListBool) {
+    ET_CHECK_MSG(b != nullptr, "ArrayRef<bool> pointer cannot be null");
+    payload.copyable_union.as_bool_list_ptr = b;
   }
 
   bool isBoolList() const {
@@ -321,13 +343,17 @@ struct EValue {
 
   executorch::aten::ArrayRef<bool> toBoolList() const {
     ET_CHECK_MSG(isBoolList(), "EValue is not a Bool List.");
-    return payload.copyable_union.as_bool_list;
+    ET_CHECK_MSG(
+        payload.copyable_union.as_bool_list_ptr != nullptr,
+        "EValue bool list pointer is null.");
+    return *(payload.copyable_union.as_bool_list_ptr);
   }
 
   /****** Double List Type ******/
-  /*implicit*/ EValue(executorch::aten::ArrayRef<double> d)
+  /*implicit*/ EValue(executorch::aten::ArrayRef<double>* d)
       : tag(Tag::ListDouble) {
-    payload.copyable_union.as_double_list = d;
+    ET_CHECK_MSG(d != nullptr, "ArrayRef<double> pointer cannot be null");
+    payload.copyable_union.as_double_list_ptr = d;
   }
 
   bool isDoubleList() const {
@@ -336,13 +362,18 @@ struct EValue {
 
   executorch::aten::ArrayRef<double> toDoubleList() const {
     ET_CHECK_MSG(isDoubleList(), "EValue is not a Double List.");
-    return payload.copyable_union.as_double_list;
+    ET_CHECK_MSG(
+        payload.copyable_union.as_double_list_ptr != nullptr,
+        "EValue double list pointer is null.");
+    return *(payload.copyable_union.as_double_list_ptr);
   }
 
   /****** Tensor List Type ******/
-  /*implicit*/ EValue(BoxedEvalueList<executorch::aten::Tensor> t)
+  /*implicit*/ EValue(BoxedEvalueList<executorch::aten::Tensor>* t)
       : tag(Tag::ListTensor) {
-    payload.copyable_union.as_tensor_list = t;
+    ET_CHECK_MSG(
+        t != nullptr, "BoxedEvalueList<Tensor> pointer cannot be null");
+    payload.copyable_union.as_tensor_list_ptr = t;
   }
 
   bool isTensorList() const {
@@ -351,14 +382,20 @@ struct EValue {
 
   executorch::aten::ArrayRef<executorch::aten::Tensor> toTensorList() const {
     ET_CHECK_MSG(isTensorList(), "EValue is not a Tensor List.");
-    return payload.copyable_union.as_tensor_list.get();
+    ET_CHECK_MSG(
+        payload.copyable_union.as_tensor_list_ptr != nullptr,
+        "EValue tensor list pointer is null.");
+    return payload.copyable_union.as_tensor_list_ptr->get();
   }
 
   /****** List Optional Tensor Type ******/
   /*implicit*/ EValue(
-      BoxedEvalueList<std::optional<executorch::aten::Tensor>> t)
+      BoxedEvalueList<std::optional<executorch::aten::Tensor>>* t)
       : tag(Tag::ListOptionalTensor) {
-    payload.copyable_union.as_list_optional_tensor = t;
+    ET_CHECK_MSG(
+        t != nullptr,
+        "BoxedEvalueList<optional<Tensor>> pointer cannot be null");
+    payload.copyable_union.as_list_optional_tensor_ptr = t;
   }
 
   bool isListOptionalTensor() const {
@@ -367,7 +404,12 @@ struct EValue {
 
   executorch::aten::ArrayRef<std::optional<executorch::aten::Tensor>>
   toListOptionalTensor() const {
-    return payload.copyable_union.as_list_optional_tensor.get();
+    ET_CHECK_MSG(
+        isListOptionalTensor(), "EValue is not a List Optional Tensor.");
+    ET_CHECK_MSG(
+        payload.copyable_union.as_list_optional_tensor_ptr != nullptr,
+        "EValue list optional tensor pointer is null.");
+    return payload.copyable_union.as_list_optional_tensor_ptr->get();
   }
 
   /****** ScalarType Type ******/
@@ -446,12 +488,19 @@ struct EValue {
     // minor performance bump for a code maintainability hit
     if (isTensor()) {
       payload.as_tensor.~Tensor();
-    } else if (isTensorList()) {
-      for (auto& tensor : toTensorList()) {
+    } else if (
+        isTensorList() &&
+        payload.copyable_union.as_tensor_list_ptr != nullptr) {
+      // for (auto& tensor : toTensorList()) {
+      for (auto& tensor : payload.copyable_union.as_tensor_list_ptr->get()) {
         tensor.~Tensor();
       }
-    } else if (isListOptionalTensor()) {
-      for (auto& optional_tensor : toListOptionalTensor()) {
+    } else if (
+        isListOptionalTensor() &&
+        payload.copyable_union.as_list_optional_tensor_ptr != nullptr) {
+      // for (auto& optional_tensor : toListOptionalTensor()) {
+      for (auto& optional_tensor :
+           payload.copyable_union.as_list_optional_tensor_ptr->get()) {
         optional_tensor.~optional();
       }
     }

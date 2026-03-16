@@ -5,10 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 from typing import cast, Dict
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
-
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
 
 from .node_visitor import NodeVisitor
 from .node_visitor_manager import register_node_visitor
@@ -25,11 +25,11 @@ class StrideSlice(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
-        tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
+        tensor_type = PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
 
         input_tensor_wrapper = self.define_tensor(
             input_node,
@@ -44,11 +44,12 @@ class StrideSlice(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-
         dim = cast(int, node.args[1])
+        if QCOM_AXIS_ORDER in node.meta:
+            dim = node.meta[QCOM_AXIS_ORDER].index(dim)
         if dim < 0:
             dim = dim % len(input_tensor.shape)
 
@@ -62,7 +63,6 @@ class StrideSlice(NodeVisitor):
                 end = end % input_tensor.shape[dim]
         else:
             end = input_tensor.shape[dim]
-
         input_tensor_rank = len(input_tensor.shape)
         ranges = []
         for i in range(input_tensor_rank):
@@ -75,7 +75,7 @@ class StrideSlice(NodeVisitor):
 
         range_shape = [input_tensor_rank, 3]
 
-        stride_slice_op = PyQnnWrapper.PyQnnOpWrapper(
+        stride_slice_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpStridedSlice.op_name,
@@ -85,7 +85,7 @@ class StrideSlice(NodeVisitor):
 
         stride_slice_op.AddTensorParam(
             OpStridedSlice.param_ranges,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_INT_32,
             len(range_shape),
             range_shape,
             np.array(ranges, dtype=np.int32),

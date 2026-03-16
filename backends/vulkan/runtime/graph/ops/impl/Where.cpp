@@ -10,6 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
@@ -19,14 +20,14 @@ void resize_where_node(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr in = graph->get_tensor(args[1].refs[0]);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef self = args.at(1).refs.at(1);
 
-  std::vector<int64_t> in_sizes = in->sizes();
-  out->virtual_resize(in_sizes);
+  const std::vector<int64_t> self_sizes = graph->sizes_of(self);
+  graph->virtual_resize(out, self_sizes);
 }
 
-void add_where_texture_node(
+void add_where_node(
     ComputeGraph& graph,
     const ValueRef cond,
     const ValueRef self,
@@ -36,59 +37,18 @@ void add_where_texture_node(
 
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
-
-  const utils::uvec3 global_wg_size = graph.create_global_wg_size(out);
-  const utils::uvec3 local_wg_size = graph.create_local_wg_size(global_wg_size);
-
-  graph.execute_nodes().emplace_back(new DispatchNode(
-      graph,
-      // Shader
-      VK_KERNEL_FROM_STR(kernel_name),
-      // Workgroup sizes
-      global_wg_size,
-      local_wg_size,
-      // Inputs and Outputs
-      {{out, vkapi::kWrite}, {{cond, self, other}, vkapi::kRead}},
-      // Parameter buffers
-      {graph.logical_limits_ubo(self)},
-      // Push Constants
-      {},
-      // Specialization Constants
-      {graph.hashed_layout_of(out)},
-      // Resize Arguments
-      {},
-      // Resizing Logic
-      resize_where_node));
-}
-
-void add_where_buffer_node(
-    ComputeGraph& graph,
-    const ValueRef cond,
-    const ValueRef self,
-    const ValueRef other,
-    const ValueRef out) {
-  std::string kernel_name = "where";
-
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
-  add_dtype_suffix(kernel_name, graph.dtype_of(out));
-
-  const utils::uvec3 global_wg_size = graph.create_global_wg_size(out);
-  const utils::uvec3 local_wg_size = graph.create_local_wg_size(global_wg_size);
 
   vkapi::ParamsBindList ubos = {
-      graph.numel_ubo(out),
-      graph.strides_ubo(out),
-      graph.strides_ubo(cond),
-      graph.strides_ubo(self),
-      graph.strides_ubo(other)};
+      graph.meta_ubo(out),
+      graph.meta_ubo(cond),
+      graph.meta_ubo(self),
+      graph.meta_ubo(other)};
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
-      // Shader
       VK_KERNEL_FROM_STR(kernel_name),
-      // Workgroup sizes
-      global_wg_size,
-      local_wg_size,
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{cond, self, other}, vkapi::kRead}},
       // Parameter buffers
@@ -96,7 +56,7 @@ void add_where_buffer_node(
       // Push Constants
       {},
       // Specialization Constants
-      {graph.hashed_layout_of(out)},
+      {},
       // Resize Arguments
       {},
       // Resizing Logic
@@ -109,11 +69,7 @@ void where(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef self = args[args_i++];
   const ValueRef other = args[args_i++];
   const ValueRef out = args[args_i++];
-  if (graph.is_buffer_storage(out)) {
-    add_where_buffer_node(graph, cond, self, other, out);
-  } else {
-    add_where_texture_node(graph, cond, self, other, out);
-  }
+  add_where_node(graph, cond, self, other, out);
 }
 
 REGISTER_OPERATORS {

@@ -1,3 +1,4 @@
+load("@fbsource//xplat/executorch/build:build_variables.bzl", "PLATFORM_SRCS")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(":log.bzl", "get_et_logging_flags")
 
@@ -73,23 +74,14 @@ def define_common_targets():
             "runtime.h",
             "compat_unistd.h",
         ],
-        srcs = [
-            "abort.cpp",
-            "log.cpp",
-            "platform.cpp",
-            "profiler.cpp",
-            "runtime.cpp",
-        ],
+        srcs = PLATFORM_SRCS,
         exported_preprocessor_flags = get_profiling_flags() + get_et_logging_flags(),
         exported_deps = [
             "//executorch/runtime/platform:pal_interface",
             ":compiler",
             ":platform_private",
         ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         # WARNING: using a deprecated API to avoid being built into a shared
         # library. In the case of dynamically loading so library we don't want
         # it to depend on other so libraries because that way we have to
@@ -115,10 +107,7 @@ def define_common_targets():
                 "ovr_config//os:macos": ["-DET_USE_LIBDL"],
             },
         ),
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     # Common compiler directives such as 'unlikely' or 'deprecated'
@@ -127,8 +116,5 @@ def define_common_targets():
         exported_headers = [
             "compiler.h",
         ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )

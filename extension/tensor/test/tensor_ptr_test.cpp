@@ -347,7 +347,7 @@ TEST_F(TensorPtrTest, TensorSharingImplResizingAffectsBothVector) {
 TEST_F(TensorPtrTest, MakeTensorPtrFromExistingTensorInt32) {
   std::vector<int32_t> data = {1, 2, 3, 4};
   auto tensor = make_tensor_ptr({2, 2}, data);
-  auto new_tensor = make_tensor_ptr(*tensor);
+  auto new_tensor = make_tensor_ptr(tensor);
 
   EXPECT_EQ(new_tensor->dim(), tensor->dim());
   EXPECT_EQ(new_tensor->size(0), tensor->size(0));
@@ -357,10 +357,208 @@ TEST_F(TensorPtrTest, MakeTensorPtrFromExistingTensorInt32) {
   EXPECT_EQ(new_tensor->scalar_type(), executorch::aten::ScalarType::Int);
 }
 
+TEST_F(TensorPtrTest, MakeViewOverrideSizesRankIncrease) {
+  std::vector<float> data = {1, 2, 3, 4, 5, 6};
+  auto tensor = make_tensor_ptr({2, 3}, std::move(data));
+  auto view = make_tensor_ptr(tensor, {1, 2, 3});
+
+  EXPECT_EQ(view->dim(), 3);
+  EXPECT_EQ(view->size(0), 1);
+  EXPECT_EQ(view->size(1), 2);
+  EXPECT_EQ(view->size(2), 3);
+  EXPECT_EQ(view->const_data_ptr<float>(), tensor->const_data_ptr<float>());
+  EXPECT_EQ(view->strides()[0], 6);
+  EXPECT_EQ(view->strides()[1], 3);
+  EXPECT_EQ(view->strides()[2], 1);
+}
+
+TEST_F(TensorPtrTest, MakeViewOverrideSizesSameRankRecomputesStrides) {
+  float data[12] = {0};
+  auto tensor = make_tensor_ptr({3, 4}, data);
+  auto view = make_tensor_ptr(tensor, {4, 3});
+
+  EXPECT_EQ(view->dim(), 2);
+  EXPECT_EQ(view->size(0), 4);
+  EXPECT_EQ(view->size(1), 3);
+  EXPECT_EQ(view->strides()[0], 3);
+  EXPECT_EQ(view->strides()[1], 1);
+}
+
+TEST_F(TensorPtrTest, MakeViewOverrideDimOrderOnly) {
+  float data[6] = {0};
+  auto tensor = make_tensor_ptr({2, 3}, data);
+  auto view = make_tensor_ptr(tensor, {}, {1, 0}, {});
+
+  EXPECT_EQ(view->dim(), 2);
+  EXPECT_EQ(view->size(0), 2);
+  EXPECT_EQ(view->size(1), 3);
+  EXPECT_EQ(view->strides()[0], 1);
+  EXPECT_EQ(view->strides()[1], 2);
+}
+
+TEST_F(TensorPtrTest, MakeViewOverrideStridesOnlyInfersDimOrder) {
+  float data[12] = {0};
+  auto tensor = make_tensor_ptr({3, 4}, data);
+  auto view = make_tensor_ptr(tensor, {}, {}, {1, 3});
+
+  EXPECT_EQ(view->dim(), 2);
+  EXPECT_EQ(view->size(0), 3);
+  EXPECT_EQ(view->size(1), 4);
+  EXPECT_EQ(view->strides()[0], 1);
+  EXPECT_EQ(view->strides()[1], 3);
+}
+
+TEST_F(TensorPtrTest, MakeViewReuseMetadataWhenShapeSame) {
+  float data[12] = {0};
+  auto tensor = make_tensor_ptr({3, 4}, data, {1, 0}, {1, 3});
+  auto view = make_tensor_ptr(tensor, {3, 4});
+
+  EXPECT_EQ(view->dim(), 2);
+  EXPECT_EQ(view->size(0), 3);
+  EXPECT_EQ(view->size(1), 4);
+  EXPECT_EQ(view->strides()[0], 1);
+  EXPECT_EQ(view->strides()[1], 3);
+}
+
+TEST_F(TensorPtrTest, MakeViewShapeChangeWithExplicitOldStridesExpectDeath) {
+  float data[12] = {0};
+  auto tensor = make_tensor_ptr({3, 4}, data);
+  std::vector<executorch::aten::StridesType> old_strides(
+      tensor->strides().begin(), tensor->strides().end());
+
+  ET_EXPECT_DEATH(
+      { auto _ = make_tensor_ptr(tensor, {2, 6}, {}, old_strides); }, "");
+}
+
+TEST_F(TensorPtrTest, MakeViewInvalidDimOrderExpectDeath) {
+  float data[12] = {0};
+  auto tensor = make_tensor_ptr({3, 4}, data);
+
+  ET_EXPECT_DEATH(
+      { auto _ = make_tensor_ptr(tensor, {3, 4}, {2, 1}, {1, 4}); }, "");
+}
+
+TEST_F(TensorPtrTest, MakeViewFromTensorPtrConvenienceOverload) {
+  float data[12] = {0};
+  auto tensor = make_tensor_ptr({3, 4}, data);
+  auto view = make_tensor_ptr(tensor, {}, {1, 0}, {});
+
+  EXPECT_EQ(view->dim(), 2);
+  EXPECT_EQ(view->size(0), 3);
+  EXPECT_EQ(view->size(1), 4);
+  EXPECT_EQ(view->strides()[0], 1);
+  EXPECT_EQ(view->strides()[1], 3);
+}
+
+TEST_F(TensorPtrTest, MakeViewRankDecreaseFlatten) {
+  float data[6] = {1, 2, 3, 4, 5, 6};
+  auto tensor = make_tensor_ptr(
+      {2, 3},
+      data,
+      {},
+      {},
+      executorch::aten::ScalarType::Float,
+      executorch::aten::TensorShapeDynamism::DYNAMIC_UNBOUND);
+  auto view = make_tensor_ptr(tensor, {6});
+  EXPECT_EQ(view->dim(), 1);
+  EXPECT_EQ(view->size(0), 6);
+  EXPECT_EQ(view->strides()[0], 1);
+  EXPECT_NE(tensor->unsafeGetTensorImpl(), view->unsafeGetTensorImpl());
+  EXPECT_EQ(resize_tensor_ptr(view, {3, 2}), Error::NotSupported);
+  EXPECT_EQ(view->dim(), 1);
+  EXPECT_EQ(view->size(0), 6);
+}
+
+TEST_F(TensorPtrTest, MakeViewFromScalarAliasAnd1D) {
+  float scalar_value = 7.f;
+  auto tensor = make_tensor_ptr({}, &scalar_value);
+  auto alias = make_tensor_ptr(tensor);
+  EXPECT_EQ(alias->dim(), 0);
+  EXPECT_EQ(alias->numel(), 1);
+  auto reshaped = make_tensor_ptr(tensor, {1});
+  EXPECT_EQ(reshaped->dim(), 1);
+  EXPECT_EQ(reshaped->size(0), 1);
+  EXPECT_EQ(reshaped->strides()[0], 1);
+  ET_EXPECT_DEATH({ auto unused = make_tensor_ptr(tensor, {}, {0}, {}); }, "");
+  ET_EXPECT_DEATH({ auto unused = make_tensor_ptr(tensor, {}, {}, {1}); }, "");
+}
+
+TEST_F(TensorPtrTest, MakeViewExplicitDimOrderAndStridesShapeChange) {
+  float data[6] = {0};
+  auto tensor = make_tensor_ptr({2, 3}, data);
+  auto view = make_tensor_ptr(tensor, {3, 2}, {1, 0}, {1, 3});
+  EXPECT_EQ(view->dim(), 2);
+  EXPECT_EQ(view->size(0), 3);
+  EXPECT_EQ(view->size(1), 2);
+  EXPECT_EQ(view->strides()[0], 1);
+  EXPECT_EQ(view->strides()[1], 3);
+}
+
+TEST_F(TensorPtrTest, TensorUint8dataInt16Type) {
+  std::vector<int16_t> int16_values = {-1, 2, -3, 4};
+  auto byte_pointer = reinterpret_cast<const uint8_t*>(int16_values.data());
+  std::vector<uint8_t> byte_data(
+      byte_pointer, byte_pointer + int16_values.size() * sizeof(int16_t));
+  auto tensor = make_tensor_ptr(
+      {4}, std::move(byte_data), executorch::aten::ScalarType::Short);
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 4);
+  auto int16_data = tensor->const_data_ptr<int16_t>();
+  EXPECT_EQ(int16_data[0], -1);
+  EXPECT_EQ(int16_data[1], 2);
+  EXPECT_EQ(int16_data[2], -3);
+  EXPECT_EQ(int16_data[3], 4);
+}
+
+TEST_F(TensorPtrTest, MakeView3DDimOrderOnly) {
+  float data[24] = {0};
+  auto tensor = make_tensor_ptr({2, 3, 4}, data);
+  auto view = make_tensor_ptr(tensor, {}, {2, 0, 1}, {});
+  EXPECT_EQ(view->dim(), 3);
+  EXPECT_EQ(view->size(0), 2);
+  EXPECT_EQ(view->size(1), 3);
+  EXPECT_EQ(view->size(2), 4);
+  EXPECT_EQ(view->strides()[0], 3);
+  EXPECT_EQ(view->strides()[1], 1);
+  EXPECT_EQ(view->strides()[2], 6);
+}
+
+#ifndef USE_ATEN_LIB
+TEST_F(TensorPtrTest, MakeViewDynamismPropagationResizeAlias) {
+  float data[12] = {0};
+  auto tensor = make_tensor_ptr(
+      {3, 4},
+      data,
+      {},
+      {},
+      executorch::aten::ScalarType::Float,
+      executorch::aten::TensorShapeDynamism::DYNAMIC_UNBOUND);
+  auto alias = make_tensor_ptr(tensor);
+  EXPECT_EQ(resize_tensor_ptr(alias, {2, 6}), Error::Ok);
+  EXPECT_EQ(alias->size(0), 2);
+  EXPECT_EQ(alias->size(1), 6);
+  EXPECT_EQ(tensor->size(0), 3);
+  EXPECT_EQ(tensor->size(1), 4);
+}
+
+TEST_F(TensorPtrTest, MakeViewSameRankShapeChangeCopiesDimOrder) {
+  float data[24] = {0};
+  auto tensor = make_tensor_ptr({2, 3, 4}, data, {2, 0, 1}, {3, 1, 6});
+  auto view = make_tensor_ptr(tensor, {4, 2, 3});
+  EXPECT_EQ(view->dim(), 3);
+  EXPECT_EQ(view->size(0), 4);
+  EXPECT_EQ(view->size(1), 2);
+  EXPECT_EQ(view->size(2), 3);
+  EXPECT_EQ(view->strides()[0], 2);
+  EXPECT_EQ(view->strides()[1], 1);
+  EXPECT_EQ(view->strides()[2], 8);
+}
+#endif
+
 TEST_F(TensorPtrTest, CloneTensorPtrFromExistingTensorInt32) {
   std::vector<int32_t> data = {1, 2, 3, 4};
   auto tensor = make_tensor_ptr({2, 2}, std::move(data));
-  auto cloned_tensor = clone_tensor_ptr(*tensor);
+  auto cloned_tensor = clone_tensor_ptr(tensor);
 
   EXPECT_EQ(cloned_tensor->dim(), tensor->dim());
   EXPECT_EQ(cloned_tensor->size(0), tensor->size(0));
@@ -371,6 +569,132 @@ TEST_F(TensorPtrTest, CloneTensorPtrFromExistingTensorInt32) {
   EXPECT_EQ(cloned_tensor->const_data_ptr<int32_t>()[0], 1);
   EXPECT_EQ(cloned_tensor->const_data_ptr<int32_t>()[3], 4);
   EXPECT_EQ(cloned_tensor->scalar_type(), executorch::aten::ScalarType::Int);
+}
+
+TEST_F(TensorPtrTest, CloneTensorPtrCastInt32ToFloat) {
+  std::vector<int32_t> data = {1, 2, 3, 4};
+  auto tensor = make_tensor_ptr({2, 2}, std::move(data));
+  auto cloned_tensor =
+      clone_tensor_ptr(*tensor, executorch::aten::ScalarType::Float);
+
+  EXPECT_EQ(cloned_tensor->dim(), 2);
+  EXPECT_EQ(cloned_tensor->size(0), 2);
+  EXPECT_EQ(cloned_tensor->size(1), 2);
+  EXPECT_EQ(cloned_tensor->scalar_type(), executorch::aten::ScalarType::Float);
+  auto ptr = cloned_tensor->const_data_ptr<float>();
+  EXPECT_FLOAT_EQ(ptr[0], 1.0f);
+  EXPECT_FLOAT_EQ(ptr[1], 2.0f);
+  EXPECT_FLOAT_EQ(ptr[2], 3.0f);
+  EXPECT_FLOAT_EQ(ptr[3], 4.0f);
+}
+
+TEST_F(TensorPtrTest, CloneTensorPtrCastFloatToBFloat16) {
+  std::vector<float> data = {1.0f, 2.0f, 3.5f};
+  auto tensor = make_tensor_ptr({3}, std::move(data));
+  auto cloned_tensor =
+      clone_tensor_ptr(*tensor, executorch::aten::ScalarType::BFloat16);
+
+  EXPECT_EQ(cloned_tensor->dim(), 1);
+  EXPECT_EQ(cloned_tensor->size(0), 3);
+  EXPECT_EQ(
+      cloned_tensor->scalar_type(), executorch::aten::ScalarType::BFloat16);
+  auto ptr = cloned_tensor->const_data_ptr<executorch::aten::BFloat16>();
+  EXPECT_NEAR(static_cast<float>(ptr[0]), 1.0f, 0.01f);
+  EXPECT_NEAR(static_cast<float>(ptr[1]), 2.0f, 0.01f);
+  EXPECT_NEAR(static_cast<float>(ptr[2]), 3.5f, 0.01f);
+}
+
+TEST_F(TensorPtrTest, CloneTensorPtrCastKeepsMetadata) {
+  std::vector<uint8_t> data(
+      6 * executorch::aten::elementSize(executorch::aten::ScalarType::Float));
+  auto tensor = make_tensor_ptr({2, 3}, std::move(data));
+  auto cloned_tensor =
+      clone_tensor_ptr(*tensor, executorch::aten::ScalarType::Float);
+
+  EXPECT_EQ(cloned_tensor->dim(), 2);
+  EXPECT_EQ(cloned_tensor->size(0), 2);
+  EXPECT_EQ(cloned_tensor->size(1), 3);
+  EXPECT_EQ(cloned_tensor->strides()[0], 3);
+  EXPECT_EQ(cloned_tensor->strides()[1], 1);
+  EXPECT_EQ(cloned_tensor->scalar_type(), executorch::aten::ScalarType::Float);
+}
+
+TEST_F(TensorPtrTest, CloneTensorPtrCastNullData) {
+  auto tensor = make_tensor_ptr(
+      {2, 2},
+      nullptr,
+      {},
+      {},
+      executorch::aten::ScalarType::Float,
+      executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND);
+  auto cloned_tensor =
+      clone_tensor_ptr(*tensor, executorch::aten::ScalarType::Int);
+
+  EXPECT_EQ(cloned_tensor->dim(), 2);
+  EXPECT_EQ(cloned_tensor->size(0), 2);
+  EXPECT_EQ(cloned_tensor->size(1), 2);
+  EXPECT_EQ(cloned_tensor->const_data_ptr(), nullptr);
+  EXPECT_EQ(cloned_tensor->scalar_type(), executorch::aten::ScalarType::Int);
+}
+
+TEST_F(TensorPtrTest, CloneTensorPtrCastInvalidExpectDeath) {
+  std::vector<float> data = {1.0f, 2.0f};
+  auto tensor = make_tensor_ptr({2}, std::move(data));
+  ET_EXPECT_DEATH(
+      {
+        auto _ = clone_tensor_ptr(*tensor, executorch::aten::ScalarType::Int);
+      },
+      "");
+}
+
+TEST_F(TensorPtrTest, MakeTensorPtrFromTensorPtrInt32) {
+  std::vector<int32_t> data = {1, 2, 3, 4};
+  auto tensor = make_tensor_ptr({2, 2}, data);
+  auto new_tensor = make_tensor_ptr(tensor);
+
+  EXPECT_EQ(new_tensor->dim(), tensor->dim());
+  EXPECT_EQ(new_tensor->size(0), tensor->size(0));
+  EXPECT_EQ(new_tensor->size(1), tensor->size(1));
+  EXPECT_EQ(
+      new_tensor->const_data_ptr<int32_t>(), tensor->const_data_ptr<int32_t>());
+  EXPECT_EQ(new_tensor->scalar_type(), executorch::aten::ScalarType::Int);
+}
+
+TEST_F(TensorPtrTest, MakeTensorPtrFromTensorPtrDouble) {
+  std::vector<double> data = {1.0, 2.0, 3.0, 4.0};
+  auto tensor = make_tensor_ptr({2, 2}, data);
+  auto new_tensor = make_tensor_ptr(tensor);
+
+  EXPECT_EQ(new_tensor->dim(), tensor->dim());
+  EXPECT_EQ(new_tensor->size(0), tensor->size(0));
+  EXPECT_EQ(new_tensor->size(1), tensor->size(1));
+  EXPECT_EQ(
+      new_tensor->const_data_ptr<double>(), tensor->const_data_ptr<double>());
+  EXPECT_EQ(new_tensor->scalar_type(), executorch::aten::ScalarType::Double);
+}
+
+TEST_F(TensorPtrTest, MakeTensorPtrFromTensorPtrInt64) {
+  std::vector<int64_t> data = {100, 200, 300, 400};
+  auto tensor = make_tensor_ptr({2, 2}, data);
+  auto new_tensor = make_tensor_ptr(tensor);
+
+  EXPECT_EQ(new_tensor->dim(), tensor->dim());
+  EXPECT_EQ(new_tensor->size(0), tensor->size(0));
+  EXPECT_EQ(new_tensor->size(1), tensor->size(1));
+  EXPECT_EQ(
+      new_tensor->const_data_ptr<int64_t>(), tensor->const_data_ptr<int64_t>());
+  EXPECT_EQ(new_tensor->scalar_type(), executorch::aten::ScalarType::Long);
+}
+
+TEST_F(TensorPtrTest, MakeTensorPtrFromTensorPtrNull) {
+  auto tensor = make_tensor_ptr({2, 2}, nullptr);
+  auto new_tensor = make_tensor_ptr(tensor);
+
+  EXPECT_EQ(new_tensor->dim(), tensor->dim());
+  EXPECT_EQ(new_tensor->size(0), tensor->size(0));
+  EXPECT_EQ(new_tensor->size(1), tensor->size(1));
+  EXPECT_EQ(new_tensor->const_data_ptr(), tensor->const_data_ptr());
+  EXPECT_EQ(new_tensor->const_data_ptr(), nullptr);
 }
 
 TEST_F(TensorPtrTest, CloneTensorPtrFromTensorPtrInt32) {
@@ -392,7 +716,7 @@ TEST_F(TensorPtrTest, CloneTensorPtrFromTensorPtrInt32) {
 TEST_F(TensorPtrTest, MakeTensorPtrFromExistingTensorDouble) {
   std::vector<double> data = {1.0, 2.0, 3.0, 4.0};
   auto tensor = make_tensor_ptr({2, 2}, data);
-  auto new_tensor = make_tensor_ptr(*tensor);
+  auto new_tensor = make_tensor_ptr(tensor);
 
   EXPECT_EQ(new_tensor->dim(), tensor->dim());
   EXPECT_EQ(new_tensor->size(0), tensor->size(0));
@@ -405,7 +729,7 @@ TEST_F(TensorPtrTest, MakeTensorPtrFromExistingTensorDouble) {
 TEST_F(TensorPtrTest, CloneTensorPtrFromExistingTensorDouble) {
   std::vector<double> data = {1.0, 2.0, 3.0, 4.0};
   auto tensor = make_tensor_ptr({2, 2}, std::move(data));
-  auto cloned_tensor = clone_tensor_ptr(*tensor);
+  auto cloned_tensor = clone_tensor_ptr(tensor);
 
   EXPECT_EQ(cloned_tensor->dim(), tensor->dim());
   EXPECT_EQ(cloned_tensor->size(0), tensor->size(0));
@@ -437,7 +761,7 @@ TEST_F(TensorPtrTest, CloneTensorPtrFromTensorPtrDouble) {
 TEST_F(TensorPtrTest, MakeTensorPtrFromExistingTensorInt64) {
   std::vector<int64_t> data = {100, 200, 300, 400};
   auto tensor = make_tensor_ptr({2, 2}, data);
-  auto new_tensor = make_tensor_ptr(*tensor);
+  auto new_tensor = make_tensor_ptr(tensor);
 
   EXPECT_EQ(new_tensor->dim(), tensor->dim());
   EXPECT_EQ(new_tensor->size(0), tensor->size(0));
@@ -450,7 +774,7 @@ TEST_F(TensorPtrTest, MakeTensorPtrFromExistingTensorInt64) {
 TEST_F(TensorPtrTest, CloneTensorPtrFromExistingTensorInt64) {
   std::vector<int64_t> data = {100, 200, 300, 400};
   auto tensor = make_tensor_ptr({2, 2}, std::move(data));
-  auto cloned_tensor = clone_tensor_ptr(*tensor);
+  auto cloned_tensor = clone_tensor_ptr(tensor);
 
   EXPECT_EQ(cloned_tensor->dim(), tensor->dim());
   EXPECT_EQ(cloned_tensor->size(0), tensor->size(0));
@@ -753,7 +1077,7 @@ TEST_F(TensorPtrTest, TensorDeducedScalarType) {
   EXPECT_EQ(tensor->const_data_ptr<double>()[3], 4.0);
 }
 
-TEST_F(TensorPtrTest, TensorUint8BufferWithFloatScalarType) {
+TEST_F(TensorPtrTest, TensorUint8dataWithFloatScalarType) {
   std::vector<uint8_t> data(
       4 * executorch::aten::elementSize(executorch::aten::ScalarType::Float));
 
@@ -777,23 +1101,105 @@ TEST_F(TensorPtrTest, TensorUint8BufferWithFloatScalarType) {
   EXPECT_EQ(tensor->const_data_ptr<float>()[3], 4.0f);
 }
 
-TEST_F(TensorPtrTest, TensorUint8BufferTooSmallExpectDeath) {
+TEST_F(TensorPtrTest, TensorUint8dataTooSmallExpectDeath) {
   std::vector<uint8_t> data(
       2 * executorch::aten::elementSize(executorch::aten::ScalarType::Float));
   ET_EXPECT_DEATH(
       { auto tensor = make_tensor_ptr({2, 2}, std::move(data)); }, "");
 }
 
-TEST_F(TensorPtrTest, TensorUint8BufferTooLarge) {
+TEST_F(TensorPtrTest, TensorUint8dataTooLargeExpectDeath) {
   std::vector<uint8_t> data(
-      4 * executorch::aten::elementSize(executorch::aten::ScalarType::Float));
-  auto tensor = make_tensor_ptr({2, 2}, std::move(data));
+      5 * executorch::aten::elementSize(executorch::aten::ScalarType::Float));
+  ET_EXPECT_DEATH({ auto _ = make_tensor_ptr({2, 2}, std::move(data)); }, "");
+}
 
-  EXPECT_EQ(tensor->dim(), 2);
-  EXPECT_EQ(tensor->size(0), 2);
-  EXPECT_EQ(tensor->size(1), 2);
-  EXPECT_EQ(tensor->strides()[0], 2);
-  EXPECT_EQ(tensor->strides()[1], 1);
+TEST_F(TensorPtrTest, MakeViewFromTensorPtrKeepsSourceAlive) {
+  bool freed = false;
+  auto* data = new float[6]{1, 2, 3, 4, 5, 6};
+  auto tensor = make_tensor_ptr(
+      {2, 3},
+      data,
+      {},
+      {},
+      executorch::aten::ScalarType::Float,
+      executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
+      [&freed](void* p) {
+        freed = true;
+        delete[] static_cast<float*>(p);
+      });
+  auto view = make_tensor_ptr(tensor);
+  tensor.reset();
+  EXPECT_FALSE(freed);
+  EXPECT_EQ(view->const_data_ptr<float>()[0], 1.0f);
+  view->mutable_data_ptr<float>()[0] = 42.0f;
+  EXPECT_EQ(view->const_data_ptr<float>()[0], 42.0f);
+  view.reset();
+  EXPECT_TRUE(freed);
+}
+
+TEST_F(TensorPtrTest, MakeViewFromTensorDoesNotKeepAliveByDefault) {
+  bool freed = false;
+  auto* data = new float[2]{7.0f, 8.0f};
+  auto tensor = make_tensor_ptr(
+      {2, 1},
+      data,
+      {},
+      {},
+      executorch::aten::ScalarType::Float,
+      executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
+      [&freed](void* p) {
+        freed = true;
+        delete[] static_cast<float*>(p);
+      });
+  auto view = make_tensor_ptr(*tensor);
+  auto raw = view->const_data_ptr<float>();
+  EXPECT_EQ(raw, data);
+  tensor.reset();
+  EXPECT_TRUE(freed);
+  view.reset();
+}
+
+TEST_F(TensorPtrTest, MakeViewFromTensorWithDeleterKeepsAlive) {
+  bool freed = false;
+  auto* data = new float[3]{1.0f, 2.0f, 3.0f};
+  auto tensor = make_tensor_ptr(
+      {3},
+      data,
+      {},
+      {},
+      executorch::aten::ScalarType::Float,
+      executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
+      [&freed](void* p) {
+        freed = true;
+        delete[] static_cast<float*>(p);
+      });
+  auto view = make_tensor_ptr(*tensor, {}, {}, {}, [tensor](void*) {});
+  tensor.reset();
+  EXPECT_FALSE(freed);
+  EXPECT_EQ(view->const_data_ptr<float>()[2], 3.0f);
+  view.reset();
+  EXPECT_TRUE(freed);
+}
+
+TEST_F(TensorPtrTest, VectorFloatTooSmallExpectDeath) {
+  std::vector<float> data(9, 1.f);
+  ET_EXPECT_DEATH({ auto _ = make_tensor_ptr({2, 5}, std::move(data)); }, "");
+}
+
+TEST_F(TensorPtrTest, VectorFloatTooLargeExpectDeath) {
+  std::vector<float> data(11, 1.f);
+  ET_EXPECT_DEATH({ auto _ = make_tensor_ptr({2, 5}, std::move(data)); }, "");
+}
+
+TEST_F(TensorPtrTest, VectorIntToFloatCastTooSmallExpectDeath) {
+  std::vector<int32_t> data(9, 1);
+  ET_EXPECT_DEATH({ auto _ = make_tensor_ptr({2, 5}, std::move(data)); }, "");
+}
+
+TEST_F(TensorPtrTest, VectorIntToFloatCastTooLargeExpectDeath) {
+  std::vector<int32_t> data(11, 1);
+  ET_EXPECT_DEATH({ auto _ = make_tensor_ptr({2, 5}, std::move(data)); }, "");
 }
 
 TEST_F(TensorPtrTest, StridesAndDimOrderMustMatchSizes) {
@@ -810,4 +1216,168 @@ TEST_F(TensorPtrTest, TensorDataCastingInvalidCast) {
             std::move(float_data), executorch::aten::ScalarType::Int);
       },
       "");
+}
+
+TEST_F(TensorPtrTest, TensorDataOnlyUInt16Type) {
+  std::vector<uint16_t> data = {1u, 65535u, 42u, 0u};
+  auto tensor = make_tensor_ptr(std::move(data));
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 4);
+  EXPECT_EQ(tensor->strides()[0], 1);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::UInt16);
+  auto ptr = tensor->const_data_ptr<uint16_t>();
+  EXPECT_EQ(ptr[0], 1u);
+  EXPECT_EQ(ptr[1], 65535u);
+  EXPECT_EQ(ptr[2], 42u);
+  EXPECT_EQ(ptr[3], 0u);
+}
+
+TEST_F(TensorPtrTest, TensorDataOnlyUInt32Type) {
+  std::vector<uint32_t> data = {0u, 123u, 4000000000u};
+  auto tensor = make_tensor_ptr(std::move(data));
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 3);
+  EXPECT_EQ(tensor->strides()[0], 1);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::UInt32);
+  auto ptr = tensor->const_data_ptr<uint32_t>();
+  EXPECT_EQ(ptr[0], 0u);
+  EXPECT_EQ(ptr[1], 123u);
+  EXPECT_EQ(ptr[2], 4000000000u);
+}
+
+TEST_F(TensorPtrTest, TensorDataOnlyUInt64Type) {
+  std::vector<uint64_t> data = {0ull, 1ull, 9000000000000000000ull};
+  auto tensor = make_tensor_ptr(std::move(data));
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 3);
+  EXPECT_EQ(tensor->strides()[0], 1);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::UInt64);
+  auto ptr = tensor->const_data_ptr<uint64_t>();
+  EXPECT_EQ(ptr[0], 0ull);
+  EXPECT_EQ(ptr[1], 1ull);
+  EXPECT_EQ(ptr[2], 9000000000000000000ull);
+}
+
+TEST_F(TensorPtrTest, TensorUint8dataUInt32Type) {
+  std::vector<uint32_t> values = {1u, 4000000000u, 123u};
+  const auto* bytes = reinterpret_cast<const uint8_t*>(values.data());
+  std::vector<uint8_t> raw(bytes, bytes + values.size() * sizeof(uint32_t));
+  auto tensor = make_tensor_ptr(
+      {3}, std::move(raw), executorch::aten::ScalarType::UInt32);
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 3);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::UInt32);
+  auto ptr = tensor->const_data_ptr<uint32_t>();
+  EXPECT_EQ(ptr[0], 1u);
+  EXPECT_EQ(ptr[1], 4000000000u);
+  EXPECT_EQ(ptr[2], 123u);
+}
+
+TEST_F(TensorPtrTest, TensorUint8dataUInt64Type) {
+  std::vector<uint64_t> values = {0ull, 42ull, 9000000000000000000ull};
+  const auto* bytes = reinterpret_cast<const uint8_t*>(values.data());
+  std::vector<uint8_t> raw(bytes, bytes + values.size() * sizeof(uint64_t));
+  auto tensor = make_tensor_ptr(
+      {3}, std::move(raw), executorch::aten::ScalarType::UInt64);
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 3);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::UInt64);
+  auto ptr = tensor->const_data_ptr<uint64_t>();
+  EXPECT_EQ(ptr[0], 0ull);
+  EXPECT_EQ(ptr[1], 42ull);
+  EXPECT_EQ(ptr[2], 9000000000000000000ull);
+}
+
+TEST_F(TensorPtrTest, TensorUint8dataSizeMismatchUInt32ExpectDeath) {
+  std::vector<uint8_t> data(
+      3 * executorch::aten::elementSize(executorch::aten::ScalarType::UInt32) -
+      1);
+  ET_EXPECT_DEATH({ auto _ = make_tensor_ptr({3}, std::move(data)); }, "");
+}
+
+TEST_F(TensorPtrTest, TensorUint8dataSizeMismatchUInt64ExpectDeath) {
+  std::vector<uint8_t> data(
+      2 * executorch::aten::elementSize(executorch::aten::ScalarType::UInt64) +
+      1);
+  ET_EXPECT_DEATH({ auto _ = make_tensor_ptr({2}, std::move(data)); }, "");
+}
+
+TEST_F(TensorPtrTest, TensorDataCastingFromInt32ToUInt16) {
+  std::vector<int32_t> data = {-1, 65535, 65536, -65536};
+  auto tensor =
+      make_tensor_ptr(std::move(data), executorch::aten::ScalarType::UInt16);
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 4);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::UInt16);
+  auto ptr = tensor->const_data_ptr<uint16_t>();
+  EXPECT_EQ(ptr[0], static_cast<uint16_t>(-1));
+  EXPECT_EQ(ptr[1], static_cast<uint16_t>(65535));
+  EXPECT_EQ(ptr[2], static_cast<uint16_t>(65536));
+  EXPECT_EQ(ptr[3], static_cast<uint16_t>(-65536));
+}
+
+TEST_F(TensorPtrTest, TensorDataCastingFromUInt32ToFloat) {
+  std::vector<uint32_t> data = {0u, 123u, 4000000000u};
+  auto tensor =
+      make_tensor_ptr(std::move(data), executorch::aten::ScalarType::Float);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
+  auto ptr = tensor->const_data_ptr<float>();
+  EXPECT_FLOAT_EQ(ptr[0], 0.0f);
+  EXPECT_FLOAT_EQ(ptr[1], 123.0f);
+  EXPECT_FLOAT_EQ(ptr[2], 4000000000.0f);
+}
+
+TEST_F(TensorPtrTest, TensorDataCastingFromFloatToUInt32) {
+  std::vector<float> data = {1.0f, 2.0f};
+  auto tensor =
+      make_tensor_ptr(std::move(data), executorch::aten::ScalarType::UInt32);
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 2);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::UInt32);
+
+  auto ptr = tensor->const_data_ptr<uint32_t>();
+  EXPECT_EQ(ptr[0], 1u);
+  EXPECT_EQ(ptr[1], 2u);
+}
+
+TEST_F(TensorPtrTest, MakeTensorPtrFromExistingTensorUInt32) {
+  std::vector<uint32_t> data = {10u, 20u, 30u, 40u};
+  auto tensor = make_tensor_ptr({2, 2}, data);
+  auto alias = make_tensor_ptr(tensor);
+  EXPECT_EQ(alias->dim(), 2);
+  EXPECT_EQ(alias->size(0), 2);
+  EXPECT_EQ(alias->size(1), 2);
+  EXPECT_EQ(alias->scalar_type(), executorch::aten::ScalarType::UInt32);
+  EXPECT_EQ(
+      alias->const_data_ptr<uint32_t>(), tensor->const_data_ptr<uint32_t>());
+}
+
+TEST_F(TensorPtrTest, CloneTensorPtrFromExistingTensorUInt32) {
+  std::vector<uint32_t> data = {10u, 20u, 30u, 40u};
+  auto tensor = make_tensor_ptr({2, 2}, std::move(data));
+  auto cloned = clone_tensor_ptr(tensor);
+  EXPECT_EQ(cloned->dim(), 2);
+  EXPECT_EQ(cloned->size(0), 2);
+  EXPECT_EQ(cloned->size(1), 2);
+  EXPECT_EQ(cloned->scalar_type(), executorch::aten::ScalarType::UInt32);
+  EXPECT_NE(
+      cloned->const_data_ptr<uint32_t>(), tensor->const_data_ptr<uint32_t>());
+  auto ptr = cloned->const_data_ptr<uint32_t>();
+  EXPECT_EQ(ptr[0], 10u);
+  EXPECT_EQ(ptr[3], 40u);
+}
+
+TEST_F(TensorPtrTest, Tensor2DUInt16OwningData) {
+  std::vector<uint16_t> data = {1u, 2u, 3u, 4u, 5u, 6u};
+  auto tensor = make_tensor_ptr({2, 3}, std::move(data));
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 2);
+  EXPECT_EQ(tensor->size(1), 3);
+  EXPECT_EQ(tensor->strides()[0], 3);
+  EXPECT_EQ(tensor->strides()[1], 1);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::UInt16);
+  auto ptr = tensor->const_data_ptr<uint16_t>();
+  EXPECT_EQ(ptr[0], 1u);
+  EXPECT_EQ(ptr[5], 6u);
 }

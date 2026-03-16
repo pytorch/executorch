@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,6 +8,8 @@ from typing import Collection
 
 import numpy as np
 
+from executorch.backends.nxp.backend.data_format import NXP_NODE_FORMAT
+
 from executorch.backends.nxp.backend.edge_helper import input_rank
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     apply_permutation_to,
@@ -15,8 +17,8 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     tf_lite_type_to_numpy,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
     NodeConverter,
-    Target,
 )
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import (
     quantize_int8,
@@ -26,16 +28,38 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
     pad_options,
     pad_v2_options,
 )
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 from torch.nn import Parameter
 
 
 class ConstantPadNDConverter(NodeConverter):
-    supported_targets = [Target.RT700]
+    @staticmethod
+    def _is_supported_on_target(
+        node: Node,
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
+        paddings = node.args[1]
+        if node.meta[NXP_NODE_FORMAT].is_channels_first():
+            # Dim `1` will end up being the channels. It is padded by paddings[4:6].
+            if len(paddings) > 4 and paddings[4:6] != [0, 0]:
+                # Attempt to Pad channels dimension -> currently not supported
+                return False
+        else:
+            # Dim `-1` will end up being the channels. It is padded by paddings[:2].
+            if len(paddings) > 0 and paddings[:2] != [0, 0]:
+                # Attempt to Pad channels dimension -> currently not supported
+                return False
+
+        return True
 
     @staticmethod
     def _is_supported_in_IR(
-        node: Node, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         paddings = node.args[1]
 
@@ -48,10 +72,6 @@ class ConstantPadNDConverter(NodeConverter):
             return False
 
         if not NodeConverter._has_shared_q_params_if_quantized(node):
-            return False
-
-        if len(paddings) > 4 and paddings[4:6] != [0, 0]:
-            # Attempt to Pad channels dimension -> currently not supported
             return False
 
         return True

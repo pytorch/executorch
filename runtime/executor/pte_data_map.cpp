@@ -57,7 +57,7 @@ Result<FreeableBuffer> PteDataMap::get_data(
       return loader_->load(
           /*offset=*/segment_base_offset_ + segment_offset,
           segment_size,
-          DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
+          DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Constant));
     }
   }
   return Error::NotFound;

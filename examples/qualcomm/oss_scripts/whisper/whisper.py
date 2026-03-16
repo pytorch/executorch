@@ -3,6 +3,10 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+# TODO: reenable pyre after fixing the issues
+# pyre-ignore-all-errors
+
 import getpass
 import json
 import logging
@@ -21,13 +25,18 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
 from executorch.backends.qualcomm.builders.utils import is_graph_output
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
+    QnnExecuTorchBackendType,
+    QnnExecuTorchGpuPrecision,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
 )
 from executorch.backends.qualcomm.utils.utils import (
     convert_linear_to_conv2d,
+    generate_gpu_compiler_spec,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     get_soc_to_chipset_map,
@@ -41,6 +50,7 @@ from executorch.examples.qualcomm.oss_scripts.whisper.whisper_model import (
 )
 
 from executorch.examples.qualcomm.utils import (
+    get_backend_type,
     make_output_dir,
     make_quantizer,
     parse_skip_delegation_node,
@@ -71,7 +81,7 @@ def get_dataset(data_size):
     processor = AutoProcessor.from_pretrained("openai/whisper-tiny")
 
     # prepare input data
-    inputs, target, input_list = [], [], ""
+    inputs, target = [], []
     for index, data in enumerate(dataset):
         if index >= data_size:
             break
@@ -84,9 +94,8 @@ def get_dataset(data_size):
         ).input_features
         inputs.append((feature,))
         target.append(data["text"])
-        input_list += f"input_{index}_0.raw\n"
 
-    return inputs, input_list, target
+    return inputs, target
 
 
 def calibrate(
@@ -209,21 +218,7 @@ class Whisper:
 
         return quant_io_type
 
-    def quantize(
-        self, calibration_inputs, quant_dtype, tokenizer, custom_annotations=()
-    ):
-        self.quant_dtype = quant_dtype
-        self.has_quant_io = True
-
-        # Need to set per_channel_linear=True for encoder to enhance accuracy
-        quantizer = make_quantizer(
-            quant_dtype=quant_dtype,
-            per_channel_conv=True,
-            per_channel_linear=True,
-            act_observer=MinMaxObserver,
-            custom_annotations=custom_annotations,
-        )
-
+    def prepare_model(self):
         with torch.no_grad():
             self.exported_whisper_encoder = torch.export.export(
                 self.whisper_encoder,
@@ -236,6 +231,31 @@ class Whisper:
                 strict=True,
             ).module()
 
+    def quantize(
+        self,
+        backend,
+        soc_model,
+        calibration_inputs,
+        quant_dtype,
+        tokenizer,
+        custom_annotations=(),
+    ):
+        self.quant_dtype = quant_dtype
+        self.has_quant_io = True
+
+        # Need to set per_channel_linear=True for encoder to enhance accuracy
+        quantizer = make_quantizer(
+            quant_dtype=quant_dtype,
+            per_channel_conv=True,
+            per_channel_linear=True,
+            act_observer=MinMaxObserver,
+            custom_annotations=custom_annotations,
+            eps=2**-20,
+            backend=backend,
+            soc_model=soc_model,
+        )
+
+        with torch.no_grad():
             self.exported_whisper_encoder = prepare_pt2e(
                 self.exported_whisper_encoder, quantizer
             )
@@ -274,6 +294,8 @@ class Whisper:
         skip_node_id_set=None,
         skip_node_op_set=None,
         verbose=True,
+        online_prepare=False,
+        backend=QnnExecuTorchBackendType.kHtpBackend,
     ):
         logging.info("Lowering the model...")
         executorch_config = ExecutorchBackendConfig(
@@ -285,10 +307,28 @@ class Whisper:
         )
         with torch.no_grad():
             # backend option
-            backend_options = generate_htp_compiler_spec(use_fp16=use_fp16)
+            if backend == QnnExecuTorchBackendType.kGpuBackend and not online_prepare:
+                raise RuntimeError(
+                    "Currently GPU backend only support online_prepare. "
+                )
+            backend_options = {
+                QnnExecuTorchBackendType.kGpuBackend: generate_gpu_compiler_spec(
+                    **{
+                        "precision": (
+                            QnnExecuTorchGpuPrecision.kGpuPrecisionFp16
+                            if use_fp16
+                            else QnnExecuTorchGpuPrecision.kGpuPrecisionUserProvided
+                        )
+                    }
+                ),
+                QnnExecuTorchBackendType.kHtpBackend: generate_htp_compiler_spec(
+                    use_fp16=use_fp16
+                ),
+            }[backend]
             compiler_specs = generate_qnn_executorch_compiler_spec(
                 soc_model=soc_model,
                 backend_options=backend_options,
+                online_prepare=online_prepare,
             )
 
             whisper_edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
@@ -331,11 +371,6 @@ def compile_whisper(args, inputs):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
     tokenizer = AutoTokenizer.from_pretrained("openai/whisper-tiny")
     module = (
         AutoModelForSpeechSeq2Seq.from_pretrained("openai/whisper-tiny")
@@ -352,17 +387,27 @@ def compile_whisper(args, inputs):
         max_seq_length=args.max_seq_len,
     )
 
-    whisper.quantize(inputs, QuantDtype.use_16a8w, tokenizer)
+    backend = get_backend_type(args.backend)
+    quant_type = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_16a8w,
+    }[backend]
+    whisper.prepare_model()
+    if quant_type:
+        whisper.quantize(backend, args.model, inputs, quant_type, tokenizer)
+
     whisper.lowering_modules(
         args.artifact,
         use_fp16=False,
         soc_model=get_soc_to_chipset_map()[args.model],
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
+        backend=backend,
+        online_prepare=args.online_prepare,
     )
 
 
-def inference_whisper(args, inputs, input_list, target):
+def inference_whisper(args, inputs, target):
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/whisper"
     tokenizer = AutoTokenizer.from_pretrained("openai/whisper-tiny")
     tokenizer_json = tokenizer.save_pretrained(args.artifact)[-1]
@@ -420,6 +465,7 @@ def inference_whisper(args, inputs, input_list, target):
             ]
         )
 
+        backend = get_backend_type(args.backend)
         adb = SimpleADB(
             qnn_sdk=os.getenv("QNN_SDK_ROOT"),
             build_path=f"{args.build_folder}",
@@ -429,13 +475,14 @@ def inference_whisper(args, inputs, input_list, target):
             host_id=args.host,
             soc_model=args.model,
             shared_buffer=args.shared_buffer,
+            target=args.target,
             runner="examples/qualcomm/oss_scripts/whisper/qnn_whisper_runner",
         )
         # No pregen inputs, input_list is not required
-        adb.push(inputs=inputs, input_list=input_list, files=[tokenizer_json])
+        adb.push(inputs=inputs, files=[tokenizer_json], backends={backend})
         adb.execute(custom_runner_cmd=runner_cmd)
 
-        adb.pull(output_path=args.artifact, callback=post_process)
+        adb.pull(host_output_path=args.artifact, callback=post_process)
     wer = eval_metric(outputs, target)
 
     if args.ip and args.port != -1:
@@ -472,13 +519,8 @@ if __name__ == "__main__":
         type=int,
     )
 
-    parser.add_argument(
-        "--pre_gen_pte",
-        help="Run the pre-generated llama in the given directory.",
-        type=str,
-    )
-
     args = parser.parse_args()
+    args.validate(args)
 
     if args.compile_only and args.pre_gen_pte:
         exit("Cannot set both compile_only and pre_gen_pte as true")
@@ -490,10 +532,10 @@ if __name__ == "__main__":
             "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
         )
     else:
-        inputs, input_list, target = get_dataset(data_num)
+        inputs, target = get_dataset(data_num)
 
     if args.pre_gen_pte:
-        inference_whisper(args, inputs, input_list, target)
+        inference_whisper(args, inputs, target)
         exit(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
 
     if args.compile_only:
@@ -502,7 +544,7 @@ if __name__ == "__main__":
 
     try:
         compile_whisper(args, inputs)
-        inference_whisper(args, inputs, input_list, target)
+        inference_whisper(args, inputs, target)
     except Exception as e:
         if args.ip and args.port != -1:
             with Client((args.ip, args.port)) as conn:

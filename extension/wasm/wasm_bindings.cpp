@@ -14,6 +14,10 @@
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <numeric>
 
+#ifdef EXECUTORCH_ENABLE_EVENT_TRACER
+#include <executorch/devtools/etdump/etdump_flatcc.h>
+#endif
+
 #define THROW_JS_ERROR(errorType, message, ...)                           \
   ({                                                                      \
     char msg_buf[256];                                                    \
@@ -51,9 +55,14 @@ using executorch::aten::Tensor;
 using ::executorch::extension::BufferDataLoader;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
+using ::executorch::runtime::EventTracer;
 using ::executorch::runtime::Result;
 using ::executorch::runtime::Tag;
 using ::executorch::runtime::TensorInfo;
+
+#ifdef EXECUTORCH_ENABLE_EVENT_TRACER
+using executorch::etdump::ETDumpGen;
+#endif
 
 namespace executorch {
 namespace extension {
@@ -466,16 +475,26 @@ struct ET_EXPERIMENTAL JsMethodMeta {
         val::array(),
         meta.num_instructions()};
     for (int i = 0; i < meta.num_inputs(); i++) {
-      js_array_push(new_meta.input_tags, meta.input_tag(i).get());
-      js_array_push(
-          new_meta.input_tensor_meta,
-          JsTensorInfo::from_tensor_info(meta.input_tensor_meta(i).get()));
+      Tag tag = meta.input_tag(i).get();
+      js_array_push(new_meta.input_tags, tag);
+      if (tag == Tag::Tensor) {
+        js_array_push(
+            new_meta.input_tensor_meta,
+            JsTensorInfo::from_tensor_info(meta.input_tensor_meta(i).get()));
+      } else {
+        js_array_push(new_meta.input_tensor_meta, val::undefined());
+      }
     }
     for (int i = 0; i < meta.num_outputs(); i++) {
-      js_array_push(new_meta.output_tags, meta.output_tag(i).get());
-      js_array_push(
-          new_meta.output_tensor_meta,
-          JsTensorInfo::from_tensor_info(meta.output_tensor_meta(i).get()));
+      Tag tag = meta.output_tag(i).get();
+      js_array_push(new_meta.output_tags, tag);
+      if (tag == Tag::Tensor) {
+        js_array_push(
+            new_meta.output_tensor_meta,
+            JsTensorInfo::from_tensor_info(meta.output_tensor_meta(i).get()));
+      } else {
+        js_array_push(new_meta.output_tensor_meta, val::undefined());
+      }
     }
     for (int i = 0; i < meta.num_attributes(); i++) {
       js_array_push(
@@ -494,6 +513,35 @@ struct ET_EXPERIMENTAL JsMethodMeta {
     return new_meta;
   }
 };
+
+/**
+ * EXPERIMENTAL: Wrapper around ETDumpResult for JavaScript.
+ */
+#ifdef EXECUTORCH_ENABLE_EVENT_TRACER
+class ET_EXPERIMENTAL JsETDumpResult final {
+ public:
+  JsETDumpResult() = delete;
+  JsETDumpResult(const JsETDumpResult&) = delete;
+  JsETDumpResult& operator=(const JsETDumpResult&) = delete;
+  JsETDumpResult(JsETDumpResult&&) = default;
+  JsETDumpResult& operator=(JsETDumpResult&&) = default;
+
+  explicit JsETDumpResult(uint8_t* buffer, size_t size)
+      : buffer_(buffer), size_(size) {}
+
+  ~JsETDumpResult() {
+    free(buffer_);
+  }
+
+  val get_buffer() const {
+    return val(typed_memory_view(size_, buffer_));
+  }
+
+ private:
+  uint8_t* buffer_;
+  size_t size_;
+};
+#endif
 
 /**
  * EXPERIMENTAL: Wrapper around extension/Module for JavaScript.
@@ -518,8 +566,16 @@ class ET_EXPERIMENTAL JsModule final {
     val memory_view = val(typed_memory_view(length, buffer.data()));
     memory_view.call<void>("set", data);
     auto loader = std::make_unique<BufferDataLoader>(buffer.data(), length);
+
+#ifdef EXECUTORCH_ENABLE_EVENT_TRACER
+    std::unique_ptr<EventTracer> etdump_gen = std::make_unique<ETDumpGen>();
+#else
+    std::unique_ptr<EventTracer> etdump_gen = nullptr;
+#endif
     return std::make_unique<JsModule>(
-        std::move(buffer), std::make_unique<Module>(std::move(loader)));
+        std::move(buffer),
+        std::make_unique<Module>(
+            std::move(loader), nullptr, nullptr, std::move(etdump_gen)));
   }
 
   static std::unique_ptr<JsModule> load(val data) {
@@ -527,8 +583,15 @@ class ET_EXPERIMENTAL JsModule final {
       THROW_JS_ERROR(TypeError, "Data cannot be null or undefined");
     }
     if (data.isString()) {
-      return std::make_unique<JsModule>(
-          std::make_unique<Module>(data.as<std::string>()));
+#ifdef EXECUTORCH_ENABLE_EVENT_TRACER
+      std::unique_ptr<EventTracer> etdump_gen = std::make_unique<ETDumpGen>();
+#else
+      std::unique_ptr<EventTracer> etdump_gen = nullptr;
+#endif
+      return std::make_unique<JsModule>(std::make_unique<Module>(
+          data.as<std::string>(),
+          Module::LoadMode::File,
+          std::move(etdump_gen)));
     } else if (data.instanceof (val::global("Uint8Array"))) {
       return load_from_uint8_array(data);
     } else if (data.instanceof (val::global("ArrayBuffer"))) {
@@ -569,12 +632,25 @@ class ET_EXPERIMENTAL JsModule final {
     return JsMethodMeta::from_method_meta(res.get());
   }
 
+#ifdef EXECUTORCH_ENABLE_EVENT_TRACER
+  std::unique_ptr<JsETDumpResult> etdump() {
+    ETDumpGen* etdump_gen = dynamic_cast<ETDumpGen*>(module_->event_tracer());
+    if (etdump_gen == nullptr) {
+      return nullptr;
+    }
+    auto etdump_data = etdump_gen->get_etdump_data();
+    return std::make_unique<JsETDumpResult>(
+        static_cast<uint8_t*>(etdump_data.buf), etdump_data.size);
+  }
+#endif
+
   val_array<val> execute(const std::string& method, val js_inputs) {
     std::vector<EValue> inputs;
     if (js_inputs.isArray()) {
-      inputs.reserve(js_inputs["length"].as<size_t>());
-      for (val v : js_inputs) {
-        inputs.push_back(to_evalue(v));
+      size_t len = js_inputs["length"].as<size_t>();
+      inputs.reserve(len);
+      for (int i = 0; i < len; i++) {
+        inputs.push_back(to_evalue(js_inputs[i]));
       }
     } else {
       inputs.push_back(to_evalue(js_inputs));
@@ -613,11 +689,19 @@ EMSCRIPTEN_BINDINGS(WasmBindings) {
 #define JS_DECLARE_TAG(NAME) .value(#NAME, Tag::NAME)
       EXECUTORCH_FORALL_TAGS(JS_DECLARE_TAG);
 
+#ifdef EXECUTORCH_ENABLE_EVENT_TRACER
+  class_<JsETDumpResult>("ETDumpResult")
+      .property("buffer", &JsETDumpResult::get_buffer);
+#endif
+
   class_<JsModule>("Module")
       .class_function("load", &JsModule::load)
       .function("getMethods", &JsModule::get_methods)
       .function("loadMethod", &JsModule::load_method)
       .function("getMethodMeta", &JsModule::get_method_meta)
+#ifdef EXECUTORCH_ENABLE_EVENT_TRACER
+      .function("etdump", &JsModule::etdump)
+#endif
       .function("execute", &JsModule::execute)
       .function("forward", &JsModule::forward);
   class_<JsTensor>("Tensor")

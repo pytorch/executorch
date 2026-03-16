@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+# Pre-commit hook to automatically update PyTorch commit pin and sync c10 directories when torch_pin.py changes
+
+# Check if torch_pin.py is being committed
+if git diff --cached --name-only | grep -q "^torch_pin.py$"; then
+    echo "🔍 Detected changes to torch_pin.py"
+    echo "📝 Updating PyTorch commit pin and syncing c10 directories..."
+
+    # Run the update script (which now also syncs c10 directories)
+    if python .github/scripts/update_pytorch_pin.py; then
+        # Stage any modified files (pytorch.txt and grafted c10 files)
+        if ! git diff --quiet .ci/docker/ci_commit_pins/pytorch.txt; then
+            git add .ci/docker/ci_commit_pins/pytorch.txt
+            echo "📌 Staged .ci/docker/ci_commit_pins/pytorch.txt"
+        fi
+
+        # Stage any grafted c10 files
+        if ! git diff --quiet runtime/core/portable_type/c10/; then
+            git add runtime/core/portable_type/c10/
+            echo "📌 Staged grafted c10 files"
+        fi
+    else
+        echo "❌ Failed to update PyTorch commit pin"
+        echo "Please run: python .github/scripts/update_pytorch_pin.py"
+        exit 1
+    fi
+fi
+
+exit 0

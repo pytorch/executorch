@@ -1,3 +1,4 @@
+load("@fbsource//xplat/executorch/build:build_variables.bzl", "PATTERN_SRCS")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
@@ -17,7 +18,7 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/pattern:comparison_op",
             "//executorch/kernels/portable/cpu/pattern:logical_op"
         ],
-        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -49,11 +50,7 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "pattern",
-        srcs = [
-            "unary_ufunc_realhbbf16_to_bool.cpp",
-            "unary_ufunc_realhbbf16_to_floathbf16.cpp",
-            "unary_ufunc_realhbf16.cpp",
-        ],
+        srcs = PATTERN_SRCS,
         exported_headers = [
             "pattern.h",
         ],

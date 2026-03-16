@@ -1,10 +1,10 @@
 load("@fbcode_macros//build_defs:cpp_library.bzl", "cpp_library")
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("executorch")
 
-python_library(
+runtime.python_library(
     name = "lib",
     srcs = [
         "common.py",
@@ -15,7 +15,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "models",
     srcs = [
         "models.py",
@@ -27,7 +27,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "control_flow_models",
     srcs = [
         "control_flow_models.py",
@@ -37,7 +37,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "dynamic_shape_models",
     srcs = [
         "dynamic_shape_models.py",
@@ -47,7 +47,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "transformer",
     srcs = [
         "transformer.py",
@@ -57,7 +57,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "asr_joiner",
     srcs = [
         "asr_joiner.py",
@@ -67,7 +67,7 @@ python_library(
     ],
 )
 
-python_unittest(
+runtime.python_test(
     name = "tracer",
     srcs = [
         "test_tracer.py",
@@ -176,13 +176,14 @@ python_unittest(
     ],
 )
 
-python_unittest(
+runtime.python_test(
     name = "memory_planning",
     srcs = [
         "test_memory_planning.py",
     ],
     preload_deps = [
         "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
     ],
     # Static listing does not support tests generated with parameterized
     supports_static_listing = False,
@@ -195,6 +196,8 @@ python_unittest(
         "//executorch/exir:pass_manager",
         "//executorch/exir/passes:lib",
         "//executorch/exir/passes:sym_shape_eval_pass",
+        "//executorch/examples/models/llama:custom_kv_cache",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
     ],
 )
 
@@ -221,6 +224,7 @@ python_unittest(
         "//executorch/exir/dialects/edge:lib",
         "//executorch/exir/emit:lib",
         "//executorch/exir/passes:constant_prop_pass",
+        "//executorch/exir/passes:cse_pass",
         "//executorch/exir/passes:debug_handle_generator_pass",
         "//executorch/exir/passes:insert_write_back_for_buffers_pass",
         "//executorch/exir/passes:lib",
@@ -335,7 +339,7 @@ python_unittest(
     ],
 )
 
-python_unittest(
+runtime.python_test(
     name = "capture",
     srcs = [
         "test_capture.py",
@@ -385,6 +389,7 @@ python_unittest(
     deps = [
         "//caffe2:torch",
         "//executorch/exir:dim_order_utils",
+        "//executorch/exir:lib",
     ],
 )
 
@@ -419,7 +424,7 @@ python_unittest(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "test_memory_format_ops_pass_utils",
     srcs = [
         "test_memory_format_ops_pass_utils.py",

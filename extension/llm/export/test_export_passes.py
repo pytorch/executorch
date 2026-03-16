@@ -7,13 +7,13 @@ from executorch.extension.llm.export.export_passes import (
     ReplaceSDPAWithCustomSDPAPass,
 )
 
-from torch.export import export_for_training
+from torch.export import export
 from torch.testing import FileCheck
 
 
 class RemoveRedundantTransposesPassTest(unittest.TestCase):
     def _export(self, model, example_inputs):
-        exported_module = export_for_training(model, example_inputs, strict=True)
+        exported_module = export(model, example_inputs, strict=True)
         return exported_module.module()
 
     def _check(self, model, example_inputs, key, before_count, after_count):
@@ -177,7 +177,7 @@ class ReplaceSDPAWithCustomSDPAPassTest(unittest.TestCase):
 
     def _test(self, args, assume_causal_mask=False):
         m = self.TestModule()
-        gm = export_for_training(m, args, strict=True).module()
+        gm = export(m, args, strict=True).module()
 
         sdpa_key = "torch.ops.aten.scaled_dot_product_attention.default"
         custom_sdpa_key = "torch.ops.llama.custom_sdpa.default"

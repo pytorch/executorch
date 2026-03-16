@@ -11,6 +11,7 @@ import copy
 import io
 import logging
 import os
+from collections import defaultdict
 from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Type, Union
 
 import torch
@@ -22,6 +23,7 @@ from executorch.exir._serialize._named_data_store import (
 )
 from executorch.exir._serialize._serialize import serialize_for_executorch
 from executorch.exir._serialize.data_serializer import DataSerializer
+from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_api import (
     MethodProgramsPartitionerSpec,
     to_backend,
@@ -40,6 +42,7 @@ from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import (
     base_post_op_replace_passes,
     base_pre_op_replace_passes,
+    convert_constant_dim_order_pass,
     dead_code_elimination_pass,
     EdgeToBackendOpsPass,
     MemoryFormatOpsPass,
@@ -77,8 +80,8 @@ from executorch.exir.verification.verifier import (
     EXIREdgeDialectVerifier,
     get_aten_verifier,
 )
-from executorch.extension.flat_tensor.serialize.serialize import FlatTensorSerializer
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
+from torch._export.utils import _detect_fake_mode_from_gm
 from torch._export.verifier import Verifier
 from torch.export import ExportedProgram
 from torch.export._remove_auto_functionalized_pass import (
@@ -109,8 +112,8 @@ except ImportError:
     # Define a stub decorator that does nothing
     def et_logger(api_name: str) -> Callable[[Any], Any]:
         def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-            def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
-                return func(self, *args, **kwargs)
+            def wrapper(*args: Any, **kwargs: Any) -> Any:
+                return func(*args, **kwargs)
 
             return wrapper
 
@@ -147,9 +150,7 @@ def _get_updated_range_constraints(gm):
     if shape_env is None:
         return {}
     range_constraints = {
-        k: v
-        for k, v in shape_env.var_to_range.items()
-        if k not in shape_env.replacements
+        shape_env.replacements.get(k, k): v for k, v in shape_env.var_to_range.items()
     }
     # Only when we have an unbacked symint, and it's used as constructor inputs,
     # runtime_var_to_range will make a difference compated to var_to_range.
@@ -240,8 +241,29 @@ def _transform(
         isinstance(p, (list, Verifier)) for p in passes
     ), f"Expected all passes to be of PassType, not list or Verifier. Use override_verifiers kwarg instead. Got: {list(passes)}"
 
-    pm = PassManager(list(passes))
-    res = pm(self.graph_module)
+    return _transform_with_pass_manager(
+        self, PassManager(list(passes)), override_verifiers
+    )
+
+
+def _transform_with_pass_manager(
+    self,
+    pass_manager: PassManager,
+    override_verifiers: None | list[Type[Verifier]] = None,
+) -> "ExportedProgram":
+    """
+    Transforms the program using the provided pass_manager.
+
+    Args:
+        self: The ExportedProgram instance to transform
+        pass_manager: An instance of PassManager to apply transformations.
+        override_verifiers: Optional list of verifier classes to use instead of the default verifiers.
+            This is needed if the transforms yields illegal graph that the default verifier cannot handle.
+
+    Returns:
+        ExportedProgram: A new ExportedProgram with the transformations applied, or self if no changes were made
+    """
+    res = pass_manager(self.graph_module)
     transformed_gm = res.graph_module if res is not None else self.graph_module
     assert transformed_gm is not None
 
@@ -311,7 +333,8 @@ def lift_constant_tensor_pass(ep):
     graph_signature = ep.graph_signature
     buffers = list(graph_signature.buffers)
 
-    fake_mode = list(ep.graph.nodes)[0].meta["val"].fake_mode
+    fake_mode = _detect_fake_mode_from_gm(ep.graph_module)
+
     first_user_input = None
     lifted_constants = []
     for node in ep.graph.nodes:
@@ -567,7 +590,14 @@ class ExecutorchProgram:
         self._segment_alignment: int = segment_alignment
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
-        self._data_serializer: DataSerializer = FlatTensorSerializer()
+        from executorch.extension.flat_tensor.serialize.serialize import (
+            FlatTensorConfig,
+            FlatTensorSerializer,
+        )
+
+        self._data_serializer: DataSerializer = FlatTensorSerializer(
+            FlatTensorConfig(self._segment_alignment)
+        )
 
     def _get_emitter_output(self) -> EmitterOutput:
         if self._emitter_output is None:
@@ -606,6 +636,24 @@ class ExecutorchProgram:
         return self._buffer
 
     @property
+    @experimental("This API is experimental and subject to change without notice.")
+    def data_files(self) -> Dict[str, bytes]:
+        """Returns the data files as a dictionary of filename to byte data.
+
+        Returns:
+            Dict[str, bytes]: Dictionary mapping data filenames (e.g., .ptd files) to
+                their serialized byte content.
+            Returns empty dict if no data files are available.
+        """
+        if self._pte_data is None:
+            self._get_pte_data()  # This populates _tensor_data
+
+        if self._tensor_data is None:
+            return {}
+
+        return {filename: bytes(cord) for filename, cord in self._tensor_data.items()}
+
+    @property
     def program(self) -> Program:
         return self._get_emitter_output().program
 
@@ -613,7 +661,7 @@ class ExecutorchProgram:
     def debug_handle_map(self) -> Dict[int, Union[int, List[int]]]:
         if self._emitter_output:
             return self._emitter_output.debug_handle_map
-        return {}
+        return self._get_emitter_output().debug_handle_map
 
     @property
     def delegate_map(
@@ -621,7 +669,15 @@ class ExecutorchProgram:
     ) -> Dict[str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]]:
         if self._emitter_output:
             return self._emitter_output.method_to_delegate_debug_id_map
-        return {}
+        return self._get_emitter_output().method_to_delegate_debug_id_map
+
+    @property
+    def instruction_id_to_num_outs_map(
+        self,
+    ) -> Dict[str, Dict[int, Union[int, List[int]]]]:
+        if self._emitter_output:
+            return self._emitter_output.instruction_id_to_num_outs_map
+        return self._get_emitter_output().instruction_id_to_num_outs_map
 
     @property
     def graph_module(self) -> torch.fx.GraphModule:
@@ -787,11 +843,11 @@ def edge_to_executorch_passes(
     Get the pre memory planning passes based on the method name, if the pass is not in the dict, use the default pass.
     """
     passes: List[PassType] = [
-        *config.passes,
-        SpecPropPass(),
         # ExecuTorch backend ops are unable to handle unbacked symints. So after
         # this pass, passes cannot be Interpreter-based, because it will fail if
         # there exists an unbacked symint operation.
+        *config.passes,
+        SpecPropPass(),
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
     ] + pre_memory_planning_passes(config, name)
@@ -855,8 +911,15 @@ def _generate_edge_program(
             )
         ],
     )
+
     # Lift the tensor constants created in ScalarToTensorPass
     edge_program = lift_constant_tensor_pass(edge_program)
+
+    # Normalize constant tensor dim order on the unlifted graph
+    edge_program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
+        edge_program
+    )
+
     edge_program = _transform(edge_program, *post_op_replace_passes)
 
     return edge_program
@@ -1086,7 +1149,7 @@ def _remove_invalid_ops_for_not_decompose(
 
 
 def _can_skip_using_EDGE_DO_NOT_DECOMP(
-    partitioner: Dict[str, List[Partitioner]], aten_programs: Dict[str, ExportedProgram]
+    partitioner: Partitioner, program: ExportedProgram
 ) -> bool:
     # THe current design of using EDGE_DO_NOT_DECOMP to prevent decomposition
     # has long standing issues.  _remove_invalid_ops_for_not_decompose was a band-aid to
@@ -1094,17 +1157,8 @@ def _can_skip_using_EDGE_DO_NOT_DECOMP(
     # and contiguous views: https://fb.workplace.com/groups/pytorch.edge.users/permalink/1796069037930048/
     # EDGE_DO_NOT_DECOMP is only needed by partitioners that specify check_op_support
     # As a temp fix, we give a more reliable path for backends that do not specify check_op_support
-    can_skip_using_EDGE_DO_NOT_DECOMP = True
-    for name, program in aten_programs.items():
-        if partitioner is not None:
-            for curr_partitioner in partitioner.get(name, []):
-                (
-                    curr_ops_no_decomp,
-                    check_op_support,
-                ) = curr_partitioner.ops_to_not_decompose(program)
-                if check_op_support is not None:
-                    can_skip_using_EDGE_DO_NOT_DECOMP = False
-    return can_skip_using_EDGE_DO_NOT_DECOMP
+    _, check_op_support = partitioner.ops_to_not_decompose(program)
+    return check_op_support is None
 
 
 def _gen_edge_manager_for_partitioners(
@@ -1127,67 +1181,95 @@ def _gen_edge_manager_for_partitioners(
           on nodes with preserved aten targets. They are then replaces with transformed ops to
           keep them through the second pass of decompositions
     """
-    can_skip_using_EDGE_DO_NOT_DECOMP = _can_skip_using_EDGE_DO_NOT_DECOMP(
-        partitioner, aten_programs
-    )
-    ops_set_to_not_decompose_by_program = {}
+    ops_set_to_not_decompose_by_program = defaultdict(list)
     edge_programs: Dict[str, ExportedProgram] = {}
     for name, program in aten_programs.items():
         # Functionalize program before asking partitioners to preserve ops
         program = program.run_decompositions({})
 
         if partitioner is not None:
-            # preserve all ops listed by all partitioners first
-            all_ops_no_decomp = set()
-            all_ops_no_decomp_needing_preservation = []
-            for curr_partitioner in partitioner.get(name, []):
+            partitioners_for_program = partitioner.get(name, [])
+            final_ops_to_preserve = set()
+
+            # Decompose by default if there are no partitioners for the method
+            if not partitioners_for_program:
+                table = _default_decomposition_table()
+                for op in config.preserve_ops:
+                    table.pop(op, None)
+                program = program.run_decompositions(table)
+
+            # Process each partitioner individually using their specific requirements
+            for curr_partitioner in partitioners_for_program:
                 curr_ops_no_decomp, _ = curr_partitioner.ops_to_not_decompose(program)
-                all_ops_no_decomp |= set(curr_ops_no_decomp)
 
-            # If not using the can_skip_using_EDGE_DO_NOT_DECOMP path, we need to remove invalid ops
-            # Otherwise there will be issues
-            if not can_skip_using_EDGE_DO_NOT_DECOMP:
-                all_ops_no_decomp = _remove_invalid_ops_for_not_decompose(
-                    list(all_ops_no_decomp)
-                )
-                all_ops_no_decomp = set(all_ops_no_decomp)
-
-            # Run default decompositions, except for those in all_ops_no_decomp
-            table = _default_decomposition_table()
-            for op in all_ops_no_decomp:
-                if table.pop(op, None) is not None:
-                    all_ops_no_decomp_needing_preservation.append(op)
-            program = program.run_decompositions(table)
-
-            # Among all the preserved aten ops, use the check_op_fn to do an additional
-            # check on which ops need to be preserved and which ops need to be decomposed
-            # Those which are truly preserved will be replaced with transformed ops
-            if can_skip_using_EDGE_DO_NOT_DECOMP:
-                ops_set_to_not_decompose_by_program[name] = (
-                    all_ops_no_decomp_needing_preservation
-                )
-            else:
-                ops_set_to_not_decompose_by_program[name] = (
-                    _replace_aten_ops_with_transformed_ops(name, program, partitioner)
-                    or []
+                # Check if this partitioner can skip using EDGE_DO_NOT_DECOMP
+                can_skip_using_edge_do_not_decomp = _can_skip_using_EDGE_DO_NOT_DECOMP(
+                    curr_partitioner, program
                 )
 
-        if not can_skip_using_EDGE_DO_NOT_DECOMP:
-            program = program.run_decompositions(_default_decomposition_table())
-            _restore_transformed_ops_to_aten_ops(program)
+                if can_skip_using_edge_do_not_decomp:
+                    # Preserve all ops in curr_ops_no_decomp from decomposition
+                    table = _default_decomposition_table()
+                    ops_needing_preservation = []
 
-        edge_programs[name] = program
+                    for op in curr_ops_no_decomp:
+                        if table.pop(op, None) is not None:
+                            ops_needing_preservation.append(op)
+
+                    program = program.run_decompositions(table)
+                    final_ops_to_preserve.update(ops_needing_preservation)
+                else:
+                    # EDGE_DO_NOT_DECOMP path for the partitioner
+                    curr_ops_no_decomp = _remove_invalid_ops_for_not_decompose(
+                        curr_ops_no_decomp
+                    )
+
+                    # Apply decompositions with this partitioner's preserved ops
+                    table = _default_decomposition_table()
+                    for op in curr_ops_no_decomp:
+                        table.pop(op, None)
+
+                    # First pass of decompositions with this partitioner's preserved ops
+                    program = program.run_decompositions(table)
+
+                    # Filter ops using EDGE_DO_NOT_DECOMP
+                    temp_partitioner_dict = {name: [curr_partitioner]}
+                    preserved_ops = (
+                        _replace_aten_ops_with_transformed_ops(
+                            name, program, temp_partitioner_dict
+                        )
+                        or []
+                    )
+                    final_ops_to_preserve.update(preserved_ops)
+
+                    # Second pass of decompositions with this partitioner's preserved ops after filtering
+                    program = program.run_decompositions(_default_decomposition_table())
+
+                    # Restore ops from edge_no_decomp_namespace to aten ops
+                    _restore_transformed_ops_to_aten_ops(program)
+            ops_set_to_not_decompose_by_program[name].extend(final_ops_to_preserve)
+
         edge_programs[name] = _generate_edge_program(
             config,
             program,
-            preserve_ops=list(ops_set_to_not_decompose_by_program.get(name, [])),
+            preserve_ops=ops_set_to_not_decompose_by_program.get(name, []),
         )
+
+    # Merge ops_to_not_decompose into config so that downstream calls (e.g.
+    # EdgeProgramManager.transform()) carry the exception list through their
+    # verifiers automatically.
+    all_ops_not_to_decompose = list(
+        set().union(*ops_set_to_not_decompose_by_program.values())
+    )
+    config._core_aten_ops_exception_list = list(
+        set(config._core_aten_ops_exception_list) | set(all_ops_not_to_decompose)
+    )
 
     edge_manager = EdgeProgramManager(
         edge_programs,
         constant_methods,
         config,
-        list(set().union(*ops_set_to_not_decompose_by_program.values())),
+        all_ops_not_to_decompose,
     )
 
     if generate_etrecord:
@@ -1230,7 +1312,7 @@ def collect_named_data_store_from_exported_program(
 def to_edge_transform_and_lower(  # noqa: C901
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     transform_passes: Optional[
-        Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
+        Union[Sequence[PassType], Dict[str, Sequence[PassType]], PassManager]
     ] = None,
     partitioner: Optional[
         Union[List[Partitioner], Dict[str, List[Partitioner]]]
@@ -1259,11 +1341,15 @@ def to_edge_transform_and_lower(  # noqa: C901
             to their corresponding ExportedPrograms. If only a single ExportedProgram is
             provided it will be assigned the name "forward".
 
-        transform_passes: The passes can either be a list of passes, or a dictionary
-            mapping method names to lists of passes. If it is just a list of passes, all methods
-            in the given EdgeProgramManager will be transformed with the provided passes. If it
-            is a dictionary, only method names specified in the dictionary will be transformed
-            with their corresponding passes.
+        transform_passes: The transform_passes can be one of:
+            1) a list of passes -
+                all methods in the given EdgeProgramManager will be transformed with the provided passes.
+            2) a dictionary -
+                only method names specified in the dictionary will be transformed
+                with their corresponding passes
+            3) an instance of a PassManager -
+                all methods in the given EdgeProgramManager will be
+                transformed with the given PassManager instance.
 
         partitioner: The partitioner can either be a Partitioner subclass instance, or a
             dictionary mapping method names to Partitioner subclass instance. If it is a
@@ -1295,15 +1381,17 @@ def to_edge_transform_and_lower(  # noqa: C901
     elif partitioner is None:
         partitioner = {name: [] for name in aten_programs.keys()}
 
-    can_skip_using_EDGE_DO_NOT_DECOMP = _can_skip_using_EDGE_DO_NOT_DECOMP(
-        partitioner, aten_programs
-    )
     edge_manager = _gen_edge_manager_for_partitioners(
         partitioner, aten_programs, config, constant_methods, generate_etrecord
     )
 
     if transform_passes is not None:
         edge_manager = edge_manager.transform(transform_passes)
+
+        if generate_etrecord:
+            edge_manager._etrecord.add_extra_export_modules(
+                {"edge_after_transform": copy.deepcopy(edge_manager)}
+            )
 
     max_num_partitioners = 0
     for partitioner_list in partitioner.values():
@@ -1323,7 +1411,8 @@ def to_edge_transform_and_lower(  # noqa: C901
             curr_op_set, check_op_support = curr_partitioner.ops_to_not_decompose(
                 program
             )
-            if not can_skip_using_EDGE_DO_NOT_DECOMP:
+
+            if not _can_skip_using_EDGE_DO_NOT_DECOMP(curr_partitioner, program):
                 curr_op_set = _remove_invalid_ops_for_not_decompose(curr_op_set)
             ops_set_to_not_decompose = ops_set_to_not_decompose.union(curr_op_set)
             _sanity_check_graph_for_non_decomp_ops(
@@ -1351,6 +1440,7 @@ def to_edge(
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     constant_methods: Optional[Dict[str, Any]] = None,
     compile_config: Optional[EdgeCompileConfig] = None,
+    generate_etrecord: bool = False,
 ) -> "EdgeProgramManager":
     """
     :func:`to_edge` constructs an EdgeProgramManager from a set of exported programs in
@@ -1362,6 +1452,8 @@ def to_edge(
         constant_methods: An optional dictionary of method name to the constant value returned by that method in eager mode. Often used to store config information on Edge models.
 
         compile_config: An optional argument used to provide greater control over the transformation to edge dialect process.
+
+        generate_etrecord: An optional argument used to generate an etrecord for debugging purposes. Default is False.
 
     Returns:
         EdgeProgramManager
@@ -1416,7 +1508,14 @@ def to_edge(
                 logging.info(f"Input program {name} is not in Edge dialect.")
                 raise e
 
-    return EdgeProgramManager(edge_programs, constant_methods, config)
+    epm = EdgeProgramManager(edge_programs, constant_methods, config)
+    if generate_etrecord:
+        etrecord = _create_empty_etrecord()
+        etrecord.add_exported_program(aten_programs)
+        etrecord.add_edge_dialect_program(copy.deepcopy(epm))
+        epm._etrecord = etrecord
+
+    return epm
 
 
 class EdgeProgramManager:
@@ -1493,19 +1592,23 @@ class EdgeProgramManager:
     @et_logger("transform")
     def transform(
         self,
-        passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]]],
+        passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]], PassManager],
         compile_config: Optional[EdgeCompileConfig] = None,
     ) -> "EdgeProgramManager":
         """
         Transforms the program according to the provided passes.
 
         Args:
-            passes: The passes can either be a list of passes, or a
-                dictionary mapping method names to lists of passes. If it is
-                just a list of passes, all methods in the given EdgeProgramManager
-                will be transformed with the provided passes. If it is a
-                dictionary, only method names specified in the dictionary will be
-                transformed with their corresponding passes.
+            passes: This param can be one of:
+                1) a list of passes -
+                    all methods in the given EdgeProgramManager
+                    will be transformed with the provided passes.
+                2) a dictionary mapping method names to lists of passes -
+                    only method names specified in the dictionary will be
+                    transformed with their corresponding passes.
+                3) a PassManager instance -
+                    all methods in the given EdgeProgramManager will be
+                    transformed with the given PassManager instance.
             compile_config: Compile config to use for veriy the correctness of model
                 graph after each pass. If not specified, the compile config of the
                 calling EdgeProgramManager will be used. It will be used in as compile
@@ -1515,28 +1618,51 @@ class EdgeProgramManager:
             EdgeProgramManager: A copy of the calling EdgeProgramManager with the
             transformations applied.
         """
+
         compile_config = compile_config or self.compile_config
         new_programs: Dict[str, ExportedProgram] = {}
+
+        # Cast passes parameter upfront.
+        passes_seq: Optional[Sequence[PassType]] = None
+        passes_dict: Optional[Dict[str, Sequence[PassType]]] = None
+        pass_manager: Optional[PassManager] = None
+
+        if isinstance(passes, Sequence):
+            passes_seq = passes
         if isinstance(passes, dict):
-            for name, program in self._edge_programs.items():
-                if name in passes.keys():
-                    new_programs[name] = _transform(program, *passes[name])
-                    EXIREdgeDialectVerifier(edge_compile_config=compile_config)(
-                        new_programs[name].graph_module
-                    )
-                else:
-                    new_programs[name] = copy.deepcopy(program)
+            passes_dict = passes
+        if isinstance(passes, PassManager):
+            pass_manager = passes
 
-        else:  # apply passes to every method
-            for name, program in self._edge_programs.items():
-                new_programs[name] = _transform(program, *passes)
-                EXIREdgeDialectVerifier(edge_compile_config=compile_config)(
-                    new_programs[name].graph_module
-                )
+        for name, program in self._edge_programs.items():
+            # If the method name is enforced, but not matched, we skip transformation.
+            if (
+                isinstance(passes, dict)
+                and passes_dict
+                and name not in passes_dict.keys()
+            ):
+                new_programs[name] = copy.deepcopy(program)
+                continue
 
-        return EdgeProgramManager(
+            # Depending on the passes parameter, call the corresponding transform function.
+            if passes_seq is not None:
+                new_programs[name] = _transform(program, *passes_seq)
+            elif passes_dict is not None:
+                new_programs[name] = _transform(program, *passes_dict[name])
+            elif pass_manager is not None:
+                new_programs[name] = _transform_with_pass_manager(program, pass_manager)
+
+            # Verify the correctness of model graph after each transformation.
+            EXIREdgeDialectVerifier(edge_compile_config=compile_config)(
+                new_programs[name].graph_module
+            )
+
+        epm = EdgeProgramManager(
             new_programs, copy.deepcopy(self._config_methods), compile_config
         )
+
+        epm._etrecord = self._etrecord
+        return epm
 
     @et_logger("to_backend")
     def to_backend(
@@ -1580,14 +1706,17 @@ class EdgeProgramManager:
 
         new_edge_programs = to_backend(method_to_programs_and_partitioners)
         config = EdgeCompileConfig(_check_ir_validity=False)
-        return EdgeProgramManager(
+        epm = EdgeProgramManager(
             new_edge_programs,
             copy.deepcopy(self._config_methods),
             config,
         )
 
+        epm._etrecord = self._etrecord
+        return epm
+
     @et_logger("to_executorch")
-    def to_executorch(
+    def to_executorch(  # noqa (FLAKE8) C901
         self,
         config: Optional[ExecutorchBackendConfig] = None,
     ) -> "ExecutorchProgramManager":
@@ -1635,11 +1764,19 @@ class EdgeProgramManager:
                     # TODO(who?)
                     p.update_placeholder_tensor_specs(program, new_gm)
 
-            # Extract constants if the config says too.
-            if config.external_constants:
+            # Tag constant weights.
+            if (
+                isinstance(config.external_constants, bool)
+                and config.external_constants
+            ):
                 new_gm_res = external_constants_pass(new_gm)
                 new_gm = new_gm_res.graph_module
-            elif config.external_mutable_weights:
+            elif callable(config.external_constants):
+                new_gm_res = external_constants_pass(new_gm, config.external_constants)
+                new_gm = new_gm_res.graph_module
+
+            # Tag mutable weights.
+            if config.external_mutable_weights:
                 new_gm_res = external_mutable_weights_pass(new_gm, program)
                 new_gm = new_gm_res.graph_module
 
@@ -1651,11 +1788,9 @@ class EdgeProgramManager:
                 memory_planning_pass = config.memory_planning_pass
             # TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work
             if hasattr(memory_planning_pass, "run"):
-                new_gm_res = memory_planning_pass.run(  # pyre-ignore[16]
-                    new_gm, new_signature
-                )
+                new_gm_res = memory_planning_pass.run(new_gm, new_signature)
             else:
-                new_gm_res = memory_planning_pass(new_gm)  # pyre-ignore[29]
+                new_gm_res = memory_planning_pass(new_gm)
 
             # WARNING: DO NOT ADD ANY MORE PASSES AFTER MEMORY PLANNING PASS.
             # THERE ARE A LOT OF ASSUMPTIONS IN THE STACK THAT MEMORY PLANNING IS THE LAST PASS BEFORE THE EMITTER.
@@ -1664,6 +1799,15 @@ class EdgeProgramManager:
 
             _copy_module(program.graph_module, new_gm)
             execution_programs[name] = program
+        # After running memory planning on all entry points we can run the cross entry point memory planning
+        if isinstance(config.memory_planning_pass, dict):
+            for memory_planning_pass in config.memory_planning_pass.values():
+                if hasattr(memory_planning_pass, "run_multimethod"):
+                    memory_planning_pass.run_multimethod()
+        else:
+            memory_planning_pass = config.memory_planning_pass
+            if hasattr(memory_planning_pass, "run_multimethod"):
+                memory_planning_pass.run_multimethod()
 
         et_pm = ExecutorchProgramManager(
             execution_programs,
@@ -1673,8 +1817,11 @@ class EdgeProgramManager:
         )
 
         if self._etrecord is not None:
-            self._etrecord.add_executorch_program(et_pm)
-            et_pm._etrecord = self._etrecord
+            # Create a clean copy of the ETRecord for the executorch manager
+            # This preserves edge-stage data while allowing executorch data to be added
+            et_etrecord = self._etrecord.copy()
+            et_etrecord.add_executorch_program(et_pm)
+            et_pm._etrecord = et_etrecord
 
         return et_pm
 
@@ -1733,7 +1880,14 @@ class ExecutorchProgramManager:
         )
 
         # Serialize emitter output, ready to be written to a file.
-        self._data_serializer = FlatTensorSerializer()
+        from executorch.extension.flat_tensor.serialize.serialize import (
+            FlatTensorConfig,
+            FlatTensorSerializer,
+        )
+
+        self._data_serializer = FlatTensorSerializer(
+            FlatTensorConfig(segment_alignment=backend_config.segment_alignment)
+        )
         self._pte_data, self._tensor_data = serialize_for_executorch(
             self._emitter_output,
             backend_config,
@@ -1794,6 +1948,12 @@ class ExecutorchProgramManager:
         return self._emitter_output.method_to_delegate_debug_id_map
 
     @property
+    def instruction_id_to_num_outs_map(
+        self,
+    ) -> Dict[str, Dict[int, Union[int, List[int]]]]:
+        return self._emitter_output.instruction_id_to_num_outs_map
+
+    @property
     def executorch_program(self) -> Program:
         """
         Returns the object that represents the ExecuTorch binary before serialization.
@@ -1843,7 +2003,9 @@ class ExecutorchProgramManager:
         """
         assert self._tensor_data is not None
         for filename, cord in self._tensor_data.items():
-            with open(os.path.join(outdir, f"{filename}.ptd"), "wb") as f:
+            if not filename.endswith(".ptd"):
+                filename += ".ptd"
+            with open(os.path.join(outdir, f"{filename}"), "wb") as f:
                 logging.info(f"Writing data file to {filename}")
                 cord.write_to_file(f)
 

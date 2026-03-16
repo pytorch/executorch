@@ -30,12 +30,13 @@ target_link_libraries(
 )
 target_sources(
   neuron_backend
-  INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/runtime/include/NeuronBackend.h>
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/runtime/include/NeuronBufferAllocator.h>
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/runtime/include/NeuronExecutor.h>
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/runtime/include/NeuronLog.h>
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/runtime/include/api/APUWareUtilsLib.h>
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/runtime/include/api/NeuronAdapterShim.h>
+  INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/runtime/include/NeuronBackend.h>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/runtime/include/NeuronBufferAllocator.h>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/runtime/include/NeuronExecutor.h>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/runtime/include/NeuronLog.h>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/runtime/include/api/APUWareUtilsLib.h>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/runtime/include/api/NeuronAdapterShim.h>
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/runtime/NeuronBackend.cpp
           ${CMAKE_CURRENT_LIST_DIR}/runtime/NeuronExecutor.cpp
           ${CMAKE_CURRENT_LIST_DIR}/runtime/NeuronBufferAllocator.cpp
@@ -45,5 +46,5 @@ executorch_target_link_options_shared_lib(neuron_backend)
 install(
   TARGETS neuron_backend
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )

@@ -8,8 +8,7 @@ import logging
 import sys
 
 import torch
-from executorch.examples.models.llava.image_util import prepare_image
-from executorch.examples.models.llava.model import LlavaModel
+from executorch.examples.models.llava.model import LlavaModel, prepare_image
 from executorch.extension.pybindings.portable_lib import _load_for_executorch
 from PIL import Image
 
@@ -47,7 +46,7 @@ def main():
         "token_embedding", (prompt_before_image,)
     )[0]
     pte_prefill_before_img = llava_module.run_method(
-        "text_model",
+        "text_decoder",
         (torch.tensor([start_pos], dtype=torch.int64), pte_embeds_before_img),
     )[0]
     print(pte_prefill_before_img)
@@ -56,11 +55,11 @@ def main():
 
     # pte prefill image
     logging.warning("Image encoder started")
-    pte_embeds_img = llava_module.run_method("image_encoder", (resized,))[0]
+    pte_embeds_img = llava_module.run_method("vision_encoder", (resized,))[0]
     logging.warning("Image encoder finished")
     logging.warning("Image token prefill started")
     pte_prefill_img = llava_module.run_method(
-        "text_model",
+        "text_decoder",
         (
             torch.tensor([start_pos], dtype=torch.int64),
             pte_embeds_img,
@@ -77,7 +76,7 @@ def main():
         "token_embedding", (prompt_after_image,)
     )[0]
     pte_prefill_after_img = llava_module.run_method(
-        "text_model",
+        "text_decoder",
         (torch.tensor([start_pos], dtype=torch.int64), pte_embeds_after_img),
     )[0]
     logging.warning("Text token prefill finished")
@@ -91,7 +90,7 @@ def main():
             "token_embedding", (torch.tensor([[new_tokens[i]]], dtype=torch.int64),)
         )[0]
         logits = llava_module.run_method(
-            "text_model",
+            "text_decoder",
             (torch.tensor([start_pos + i], dtype=torch.int64), token_embeds),
         )[0]
         new_tokens.append(torch.argmax(logits[..., -1, :]).item())

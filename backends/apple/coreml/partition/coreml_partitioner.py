@@ -2,6 +2,7 @@
 #
 # Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
+import inspect
 import logging
 from typing import Callable, List, Optional, Tuple
 
@@ -10,6 +11,9 @@ import coremltools as ct
 import torch
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
+from executorch.backends.apple.coreml.compiler.coreml_preprocess import (
+    COMPILE_SPEC_KEYS,
+)
 
 from executorch.backends.apple.coreml.logging import get_coreml_log_level
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -192,6 +196,13 @@ class CoreMLPartitioner(Partitioner):
         if skip_ops_for_coreml_delegation is None:
             skip_ops_for_coreml_delegation = []
         self.skip_ops_for_coreml_delegation = skip_ops_for_coreml_delegation
+
+        for compile_spec in compile_specs or []:
+            if compile_spec.key == COMPILE_SPEC_KEYS.ENUMERATED_SHAPES.value:
+                assert (
+                    lower_full_graph
+                ), "lower_full_graph must be True in the CoreMLPartitioner when using an enumerated shape compile spec"
+
         self.delegation_spec = DelegationSpec(
             backend_id=CoreMLBackend.__name__,
             compile_specs=compile_specs if compile_specs is not None else [],
@@ -212,7 +223,38 @@ class CoreMLPartitioner(Partitioner):
                 self.take_over_mutable_buffer
             ), "When lower_full_graph=True, you must set take_over_mutable_buffer=True"
 
+    def _check_if_called_from_to_backend(self) -> bool:
+        """
+        Check if the partition method is being called from the deprecated to_backend workflow.
+        Returns True if called from deprecated direct to_backend, False if called from to_edge_transform_and_lower.
+        """
+        stack = inspect.stack()
+
+        for frame_info in stack:
+            if frame_info.function == "to_edge_transform_and_lower":
+                return False
+
+        for frame_info in stack:
+            if frame_info.function == "to_backend":
+                filename = frame_info.filename
+                if "program/_program.py" in filename:
+                    return True
+        return False
+
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+        """
+        Override partition to add deprecation warning when called from to_backend.
+        """
+        # Check if we're being called from the deprecated to_backend workflow
+        if self._check_if_called_from_to_backend():
+            logger.warning(
+                "\nDEPRECATION WARNING: You are using the deprecated 'to_edge() + to_backend()' workflow. "
+                "This may result in decreased performance because ExecuTorch decomposes ops (e.g., SDPA) "
+                "that CoreML has optimized implementations for. "
+                "Please consider migrating to 'to_edge_transform_and_lower()' for better performance. "
+                "See: https://docs.pytorch.org/executorch/main/backends/coreml/coreml-overview.html#using-the-core-ml-backend"
+            )
+
         # Run the CapabilityBasedPartitioner to return the largest possible
         # subgraphs containing the nodes with the tags
         logger.info("CoreMLPartitioner::partition")

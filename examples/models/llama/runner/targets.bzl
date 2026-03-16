@@ -1,10 +1,25 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def _get_operator_lib(aten = False):
     if aten:
         return ["//executorch/kernels/aten:generated_lib"]
     else:
         return ["//executorch/configurations:optimized_native_cpu_ops", "//executorch/extension/llm/custom_ops:custom_ops"]
+
+def _get_torchao_lowbit_deps():
+    """Returns torchao lowbit kernel deps for shared embedding and linear on ARM builds."""
+    if runtime.is_oss:
+        return []
+    else:
+        # Use select to conditionally include torchao lowbit kernels only on ARM64 builds
+        # These kernels are only available for aarch64 architecture
+        return select({
+            "DEFAULT": [],
+            "ovr_config//cpu:arm64": [
+                "//xplat/pytorch/ao/torchao/csrc/cpu/shared_kernels/embedding_xbit:op_embedding_xbit_executorch",
+                "//xplat/pytorch/ao/torchao/csrc/cpu/shared_kernels/linear_8bit_act_xbit_weight:op_linear_8bit_act_xbit_weight_executorch",
+            ],
+        })
 
 def get_qnn_dependency():
     # buck build -c executorch.enable_qnn=true //executorch/examples/models/llama/runner:runner
@@ -18,7 +33,7 @@ def get_qnn_dependency():
     return []
 
 def define_common_targets():
-    for aten in (True, False):
+    for aten in get_aten_mode_options():
         aten_suffix = "_aten" if aten else ""
         runtime.cxx_library(
             name = "runner" + aten_suffix,
@@ -28,12 +43,13 @@ def define_common_targets():
             exported_headers = [
                 "runner.h",
             ],
+            deps = [
+                "//executorch/devtools/etdump:etdump_flatcc",
+            ],
             preprocessor_flags = [
                 "-DUSE_ATEN_LIB",
             ] if aten else [],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             compiler_flags = [
                 "-Wno-missing-prototypes",
             ],
@@ -46,7 +62,8 @@ def define_common_targets():
                 "//executorch/examples/models/llama/tokenizer:tiktoken",
                 "//pytorch/tokenizers:llama2c_tokenizer",
                 "//pytorch/tokenizers:hf_tokenizer",
-            ] + (_get_operator_lib(aten)) + ([
+                "//pytorch/tokenizers:regex_lookahead",
+            ] + (_get_operator_lib(aten)) + _get_torchao_lowbit_deps() + ([
                 # Vulkan API currently cannot build on some platforms (e.g. Apple, FBCODE)
                 # Therefore enable it explicitly for now to avoid failing tests
                 "//executorch/backends/vulkan:vulkan_backend_lib",
@@ -61,9 +78,7 @@ def define_common_targets():
         exported_headers = [
             "static_attention_io_manager.h",
         ],
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/runtime/executor:program",
         ]

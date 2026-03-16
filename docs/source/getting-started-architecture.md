@@ -4,7 +4,7 @@ This page describes the technical architecture of ExecuTorch and its individual 
 
 **Context**
 
-In order to target on-device AI with diverse hardware, critical power requirements, and realtime processing needs, a single monolithic solution is not practical. Instead, a modular, layered, and extendable architecture is desired. ExecuTorch defines a streamlined workflow to prepare (export, transformation, and compilation) and execute a PyTorch program, with opinionated out-of-the-box default components and well-defined entry points for customizations. This architecture greatly improves portability, allowing engineers to use a performant lightweight, cross-platform runtime that easily integrates into different devices and platforms.
+In order to target on-device AI with diverse hardware, critical power requirements, and real-time processing needs, a single monolithic solution is not practical. Instead, a modular, layered, and extensible architecture is desired. ExecuTorch defines a streamlined workflow to prepare (export, transformation, and compilation) and execute a PyTorch program, with opinionated out-of-the-box default components and well-defined entry points for customizations. This architecture greatly improves portability, allowing engineers to use a performant lightweight, cross-platform runtime that easily integrates into different devices and platforms.
 
 ## Overview
 
@@ -22,7 +22,7 @@ leverages PyTorch 2 compiler and export functionality
 [AOTAutograd](https://pytorch.org/functorch/stable/notebooks/aot_autograd_optimizations.html),
 [Quantization](https://pytorch.org/docs/main/quantization.html),
 [dynamic shapes](https://pytorch.org/get-started/pytorch-2.0/#pytorch-2x-faster-more-pythonic-and-as-dynamic-as-ever),
-[control flow](https://pytorch.org/docs/main/export.html#data-shape-dependent-control-flow),
+[control flow](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/export.html#data-shape-dependent-control-flow),
 etc.) to prepare a PyTorch program for execution on devices.
 
 Program preparation is often simply called AOT (ahead-of-time) because export, transformations and compilations to the program are performed before it is eventually run with the ExecuTorch runtime, written in C++. To have a lightweight runtime and small overhead in execution, we push work as much as possible to AOT.
@@ -33,14 +33,14 @@ Starting from the program source code, below are the steps you would go through 
 
 * Like all PyTorch use cases, ExecuTorch starts from model authoring, where standard `nn.Module` eager mode PyTorch programs are created.
 * Export-specific helpers are used to represent advanced features like [control
-  flow](https://pytorch.org/docs/main/export.html#data-shape-dependent-control-flow)
+  flow](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/export.html#data-shape-dependent-control-flow)
   (for example, helper functions to trace both branches of if-else) and [dynamic
   shapes](https://pytorch.org/get-started/pytorch-2.0/#pytorch-2x-faster-more-pythonic-and-as-dynamic-as-ever)
   (for example, data dependent dynamic shape constraint).
 
 ### Export
 
-To deploy the program to the device, engineers need to have a graph representation for compiling a model to run on various backends. With [`torch.export()`](https://pytorch.org/docs/main/export.html), an [EXIR](ir-exir.md) (export intermediate representation) is generated with ATen dialect. All AOT compilations are based on this EXIR, but can have multiple dialects along the lowering path as detailed below.
+To deploy the program to the device, engineers need to have a graph representation for compiling a model to run on various backends. With [`torch.export()`](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/export.html), an [EXIR](ir-exir.md) (export intermediate representation) is generated with ATen dialect. All AOT compilations are based on this EXIR, but can have multiple dialects along the lowering path as detailed below.
 
 * _[ATen Dialect](ir-exir.md#aten-dialect)_. PyTorch Edge is based on PyTorch’s Tensor library ATen, which has clear contracts for efficient execution. ATen Dialect is a graph represented by ATen nodes which are fully ATen compliant. Custom operators are allowed, but must be registered with the dispatcher. It’s flatten with no module hierarchy (submodules in a bigger module), but the source code and module hierarchy are preserved in the metadata. This representation is also autograd safe.
 * Optionally, _quantization_, either QAT (quantization-aware training) or PTQ (post training quantization) can be applied to the whole ATen graph before converting to Core ATen. Quantization helps with reducing the model size, which is important for edge devices.
@@ -89,6 +89,6 @@ _Executor_ is the entry point to load the program and execute it. The execution 
 
 ## Developer Tools
 
-It should be efficient for users to go from research to production using the flow above. Productivity is essentially important, for users to author, optimize and deploy their models. We provide [ExecuTorch Developer Tools](devtools-overview.md) to improve productivity. The Developer Tools are not in the diagram. Instead it's a tool set that covers the developer workflow in all three phases.
+It should be efficient for users to go from research to production using the flow above. Productivity is especially important, for users to author, optimize and deploy their models. We provide [ExecuTorch Developer Tools](devtools-overview.md) to improve productivity. The Developer Tools are not in the diagram. Instead it's a tool set that covers the developer workflow in all three phases.
 
 During the program preparation and execution, users can use the ExecuTorch Developer Tools to profile, debug, or visualize the program. Since the end-to-end flow is within the PyTorch ecosystem, users can correlate and display performance data along with graph visualization as well as direct references to the program source code and model hierarchy. We consider this to be a critical component for quickly iterating and lowering PyTorch programs to edge devices and environments.

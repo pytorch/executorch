@@ -11,6 +11,7 @@
 #include <executorch/backends/vulkan/runtime/vk_api/Adapter.h>
 
 #include <iomanip>
+#include <sstream>
 
 namespace vkcompute {
 namespace vkapi {
@@ -21,7 +22,8 @@ void find_compute_queues(
     const PhysicalDevice& physical_device,
     const uint32_t num_queues_to_create,
     std::vector<VkDeviceQueueCreateInfo>& queue_create_infos,
-    std::vector<std::pair<uint32_t, uint32_t>>& queues_to_get) {
+    std::vector<std::pair<uint32_t, uint32_t>>& queues_to_get,
+    std::vector<std::vector<float>>& queue_priorities) {
   queue_create_infos.reserve(num_queues_to_create);
   queues_to_get.reserve(num_queues_to_create);
 
@@ -35,14 +37,14 @@ void find_compute_queues(
       const uint32_t queues_to_init =
           std::min(remaining_queues, queue_properties.queueCount);
 
-      const std::vector<float> queue_priorities(queues_to_init, 1.0f);
+      queue_priorities.emplace_back(queues_to_init, 1.0f);
       queue_create_infos.push_back({
           VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, // sType
           nullptr, // pNext
           0u, // flags
           family_i, // queueFamilyIndex
           queues_to_init, // queueCount
-          queue_priorities.data(), // pQueuePriorities
+          queue_priorities.back().data(), // pQueuePriorities
       });
 
       for (size_t queue_i = 0; queue_i < queues_to_init; ++queue_i) {
@@ -89,8 +91,13 @@ VkDevice create_logical_device(
 
   std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
   std::vector<std::pair<uint32_t, uint32_t>> queues_to_get;
+  std::vector<std::vector<float>> queue_priorities;
   find_compute_queues(
-      physical_device, num_queues_to_create, queue_create_infos, queues_to_get);
+      physical_device,
+      num_queues_to_create,
+      queue_create_infos,
+      queues_to_get,
+      queue_priorities);
 
   // Create the VkDevice
   std::vector<const char*> requested_device_extensions{
@@ -109,9 +116,19 @@ VkDevice create_logical_device(
 #ifdef VK_KHR_shader_float16_int8
       VK_KHR_SHADER_FLOAT16_INT8_EXTENSION_NAME,
 #endif /* VK_KHR_shader_float16_int8 */
-#if defined(VK_KHR_pipeline_executable_properties) && defined(VULKAN_DEBUG)
+#ifdef VK_KHR_shader_integer_dot_product
+      VK_KHR_SHADER_INTEGER_DOT_PRODUCT_EXTENSION_NAME,
+#endif /* VK_KHR_shader_integer_dot_product */
+#if defined(VK_KHR_pipeline_executable_properties) && \
+    defined(ETVK_INSPECT_PIPELINES)
       VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME,
-#endif /* VK_KHR_pipeline_executable_properties */
+#endif /* VK_KHR_pipeline_executable_properties && ETVK_INSPECT_PIPELINES */
+#ifdef VK_KHR_cooperative_matrix
+      VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME,
+#endif /* VK_KHR_cooperative_matrix */
+#ifdef VK_NV_cooperative_matrix2
+      VK_NV_COOPERATIVE_MATRIX_2_EXTENSION_NAME,
+#endif /* VK_NV_cooperative_matrix2 */
   };
 
   std::vector<const char*> enabled_device_extensions;
@@ -160,6 +177,28 @@ VkDevice create_logical_device(
   extension_list_top = &shader_float16_int8_types;
 #endif /* VK_KHR_shader_float16_int8 */
 
+#ifdef VK_KHR_shader_integer_dot_product
+  VkPhysicalDeviceShaderIntegerDotProductFeaturesKHR
+      shader_int_dot_product_features{
+          physical_device.shader_int_dot_product_features};
+  shader_int_dot_product_features.pNext = extension_list_top;
+  extension_list_top = &shader_int_dot_product_features;
+#endif /* VK_KHR_shader_integer_dot_product */
+
+#ifdef VK_KHR_cooperative_matrix
+  VkPhysicalDeviceCooperativeMatrixFeaturesKHR cooperative_matrix_features{
+      physical_device.cooperative_matrix_features};
+  cooperative_matrix_features.pNext = extension_list_top;
+  extension_list_top = &cooperative_matrix_features;
+#endif /* VK_KHR_cooperative_matrix */
+
+#ifdef VK_NV_cooperative_matrix2
+  VkPhysicalDeviceCooperativeMatrix2FeaturesNV cooperative_matrix2_features{
+      physical_device.cooperative_matrix2_features};
+  cooperative_matrix2_features.pNext = extension_list_top;
+  extension_list_top = &cooperative_matrix2_features;
+#endif /* VK_NV_cooperative_matrix2 */
+
   device_create_info.pNext = extension_list_top;
 
   VkDevice handle = nullptr;
@@ -176,7 +215,9 @@ VkDevice create_logical_device(
   return handle;
 }
 
-bool test_linear_tiling_3d_image_support(VkDevice device) {
+bool test_linear_tiling_3d_image_support(
+    VkDevice device,
+    VkPhysicalDevice physical_device) {
   // Test creating a 3D image with linear tiling to see if it is supported.
   // According to the Vulkan spec, linear tiling may not be supported for 3D
   // images.
@@ -203,9 +244,15 @@ bool test_linear_tiling_3d_image_support(VkDevice device) {
 
   if (res == VK_SUCCESS) {
     vkDestroyImage(device, image, nullptr);
+
+    VkFormatProperties props;
+    vkGetPhysicalDeviceFormatProperties(
+        physical_device, VK_FORMAT_R32G32B32A32_SFLOAT, &props);
+
+    return props.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
   }
 
-  return res == VK_SUCCESS;
+  return false;
 }
 
 } // namespace
@@ -236,8 +283,9 @@ Adapter::Adapter(
       compute_pipeline_cache_(device_.handle, cache_data_path),
       sampler_cache_(device_.handle),
       vma_(instance_, physical_device_.handle, device_.handle),
-      linear_tiling_3d_enabled_{
-          test_linear_tiling_3d_image_support(device_.handle)},
+      linear_tiling_3d_enabled_{test_linear_tiling_3d_image_support(
+          device_.handle,
+          physical_device_.handle)},
       owns_device_{true} {}
 
 Adapter::Adapter(
@@ -247,7 +295,7 @@ Adapter::Adapter(
     const uint32_t num_queues,
     const std::string& cache_data_path)
     : queue_usage_mutex_{},
-      physical_device_(physical_device),
+      physical_device_(instance, physical_device),
       queues_{},
       queue_usage_{},
       queue_mutexes_{},
@@ -259,13 +307,19 @@ Adapter::Adapter(
       compute_pipeline_cache_(device_.handle, cache_data_path),
       sampler_cache_(device_.handle),
       vma_(instance_, physical_device_.handle, device_.handle),
-      linear_tiling_3d_enabled_{
-          test_linear_tiling_3d_image_support(device_.handle)},
+      linear_tiling_3d_enabled_{test_linear_tiling_3d_image_support(
+          device_.handle,
+          physical_device_.handle)},
       owns_device_{false} {
   std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
   std::vector<std::pair<uint32_t, uint32_t>> queues_to_get;
+  std::vector<std::vector<float>> queue_priorities;
   find_compute_queues(
-      physical_device_, num_queues, queue_create_infos, queues_to_get);
+      physical_device_,
+      num_queues,
+      queue_create_infos,
+      queues_to_get,
+      queue_priorities);
   populate_queue_info(
       physical_device_, device_.handle, queues_to_get, queues_, queue_usage_);
 }
@@ -329,6 +383,10 @@ void Adapter::submit_cmd(
       queue_mutexes_[device_queue.queue_index % NUM_QUEUE_MUTEXES]);
 
   VK_CHECK(vkQueueSubmit(device_queue.handle, 1u, &submit_info, fence));
+}
+
+void Adapter::override_device_name(const std::string& new_name) {
+  physical_device_.override_device_name(new_name);
 }
 
 std::string Adapter::stringize() const {
@@ -400,6 +458,112 @@ std::string Adapter::stringize() const {
   PRINT_PROP(physical_device_.shader_float16_int8_types, shaderInt8);
 #endif /* VK_KHR_shader_float16_int8 */
   ss << "    }" << std::endl;
+
+  ss << "    Shader 64bit Features {" << std::endl;
+  PRINT_BOOL(physical_device_.supports_int64_shader_types, shaderInt64)
+  PRINT_BOOL(physical_device_.supports_float64_shader_types, shaderFloat64)
+  ss << "    }" << std::endl;
+
+#ifdef VK_KHR_shader_integer_dot_product
+  ss << "    Shader Integer Dot Product Features {" << std::endl;
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_features,
+      shaderIntegerDotProduct);
+  ss << "    }" << std::endl;
+
+  ss << "    Shader Integer Dot Product Properties {" << std::endl;
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct8BitUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct8BitSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct8BitMixedSignednessAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct4x8BitPackedUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct4x8BitPackedSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct4x8BitPackedMixedSignednessAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct16BitUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct16BitSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct16BitMixedSignednessAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct32BitUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct32BitSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct32BitMixedSignednessAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct64BitUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct64BitSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct64BitMixedSignednessAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating8BitUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating8BitSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating8BitMixedSignednessAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating4x8BitPackedUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating4x8BitPackedSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating4x8BitPackedMixedSignednessAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating16BitUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating16BitSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating16BitMixedSignednessAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating32BitUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating32BitSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating32BitMixedSignednessAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating64BitUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating64BitSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating64BitMixedSignednessAccelerated);
+  ss << "    }" << std::endl;
+#endif /* VK_KHR_shader_integer_dot_product */
 
   const VkPhysicalDeviceMemoryProperties& mem_props =
       physical_device_.memory_properties;

@@ -36,10 +36,7 @@ def define_common_targets():
     runtime.python_library(
         name = "decompose_sdpa",
         srcs = ["decompose_sdpa.py"],
-        visibility = [
-            "//executorch/backends/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             "//caffe2:torch",
             "//executorch/exir:pass_base",
@@ -107,9 +104,7 @@ def define_common_targets():
     runtime.python_library(
         name = "remove_clone_ops",
         srcs = ["remove_clone_ops.py"],
-        visibility = [
-            "//executorch/backends/...",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             "//caffe2:torch",
             "//executorch/exir:pass_base",
@@ -163,12 +158,7 @@ def define_common_targets():
     runtime.python_library(
         name = "duplicate_dynamic_quant_chain",
         srcs = ["duplicate_dynamic_quant_chain.py"],
-        visibility = [
-            "//executorch/backends/...",
-            "//executorch/examples/...",
-            "//executorch/extension/llm/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             "//caffe2:torch",
         ],
@@ -179,9 +169,7 @@ def define_common_targets():
         srcs = [
             "convert_dtype_pass.py",
         ],
-        visibility = [
-            "//executorch/backends/...",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             "//caffe2:torch",
             "//executorch/exir:pass_base",
@@ -216,6 +204,31 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_library(
+        name = "quantize_fused_convbn_bias_pass",
+        srcs = ["quantize_fused_convbn_bias_pass.py"],
+        visibility = ["PUBLIC"],
+        deps = [
+            "//caffe2:torch",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_quantize_fused_convbn_bias_pass",
+        srcs = [
+            "test/test_quantize_fused_convbn_bias_pass.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":quantize_fused_convbn_bias_pass",
+            "//executorch/backends/arm/quantizer:lib",
+            "//executorch/backends/arm/test:common",
+            "//executorch/backends/arm/tosa:tosa",
+            "//executorch/kernels/quantized:custom_ops_generated_lib",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
+
     runtime.python_test(
         name = "test_duplicate_dynamic_quant_chain",
         srcs = [
@@ -240,5 +253,18 @@ def define_common_targets():
             "//caffe2:torch",
             "//executorch/exir:lib",
             ":rank_0_to_rank_1",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_remove_clone_ops",
+        srcs = [
+            "test/test_remove_clone_ops.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            ":remove_clone_ops",
+            "//executorch/exir/tests:test_memory_format_ops_pass_utils",
         ],
     )

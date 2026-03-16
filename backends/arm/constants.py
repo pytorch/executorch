@@ -29,3 +29,20 @@ PER_TENSOR_QDQ_OPS: Final = (
     DEQUANT_PER_TENSOR_OP_T,
 )
 PER_CHANNEL_QDQ_OPS: Final = (QUANT_PER_CHANNEL_OP, DEQUANT_PER_CHANNEL_OP)
+
+NHWC_ORDER: Final = (0, 2, 3, 1)
+NHWC_INVERSE_ORDER: Final = (0, 3, 1, 2)
+NNHWC_ORDER: Final = (0, 1, 3, 4, 2)
+NNHWC_INVERSE_ORDER: Final = (0, 1, 4, 2, 3)
+NNNHWC_ORDER: Final = (0, 1, 2, 4, 5, 3)
+NNNHWC_INVERSE_ORDER: Final = (0, 1, 2, 5, 3, 4)
+
+NCHW_ORDER: Final = (0, 1, 2, 3)
+NNCHW_ORDER: Final = (0, 1, 2, 3, 4)
+NNNCHW_ORDER: Final = (0, 1, 2, 3, 4, 5)
+
+HWCM_ORDER: Final = (2, 3, 0, 1)
+
+MAX_RANK: Final = 6
+
+DISALLOW_TFA_META_KEY: Final = "_arm_disallow_tfa"

@@ -11,5 +11,5 @@ program, making it easier for you to understand and implement the process.
 
 To learn more about exporting your model:
 
-* Complete the [Exporting to ExecuTorch tutorial](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial).
+* Complete the [Exporting to ExecuTorch tutorial](tutorials/export-to-executorch-tutorial) <!-- @lint-ignore -->.
 * Read the [torch.export documentation](https://pytorch.org/docs/2.1/export.html).

@@ -8,28 +8,35 @@
 
 #version 450 core
 
+${define_required_extensions(STORAGE, DTYPE)}
+
 #define PRECISION ${PRECISION}
 
 #define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
 
-${define_required_extensions(DTYPE)}
+${define_active_storage_type(STORAGE)}
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "w", "xqout", DTYPE, STORAGE)}
-${layout_declare_tensor(B, "w", "xkout", DTYPE, STORAGE)}
-${layout_declare_tensor(B, "r", "xq", DTYPE, STORAGE)}
-${layout_declare_tensor(B, "r", "xk", DTYPE, STORAGE)}
-${layout_declare_tensor(B, "r", "freqs_cos", DTYPE, STORAGE)}
-${layout_declare_tensor(B, "r", "freqs_sin", DTYPE, STORAGE)}
-${layout_declare_ubo(B, "ivec3", "xqout_limits")}
-${layout_declare_ubo(B, "ivec3", "xkout_limits")}
+#include "indexing.glslh"
+
+${layout_declare_tensor(B, "w", "t_xqout", DTYPE, STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "w", "t_xkout", DTYPE, STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_xq", DTYPE, STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_xk", DTYPE, STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_freqs_cos", DTYPE, STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_freqs_sin", DTYPE, STORAGE, is_scalar_array=False)}
+
+$if STORAGE == "buffer":
+  ${layout_declare_ubo(B, "BufferMetadata", "xqout")}
+  ${layout_declare_ubo(B, "BufferMetadata", "xkout")}
+  ${layout_declare_ubo(B, "BufferMetadata", "freqs_cos")}
+$else:
+  ${layout_declare_ubo(B, "TextureMetadata", "xqout")}
+  ${layout_declare_ubo(B, "TextureMetadata", "xkout")}
+  ${layout_declare_ubo(B, "TextureMetadata", "freqs_cos")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
-
-layout(constant_id = 3) const int packed_dim = 0;
-
-#include "indexing_utils.h"
 
 /*
  * This shader computes rotary positional embeddings which are used in the Llama
@@ -39,7 +46,7 @@ layout(constant_id = 3) const int packed_dim = 0;
  * 1. xq (batch_size, sequence_len, num_heads, head_dim)
  * 2. xk (batch_size, sequence_len, num_kv_heads, head_dim)
  * 3. freqs_cos (sequence_len, head_dim / 2)
- * 4. freqs_cos (sequence_len, head_dim / 2)
+ * 4. freqs_sin (sequence_len, head_dim / 2)
  *
  * Two output tensors are produced, with the same shapes as xq and xk
  * respectively.
@@ -66,23 +73,43 @@ void main() {
   // Each thread will write to two output locations to maximize data re-use.
   // One texel loaded from the freqs_cos/freqs_sin tensors can be used to
   // calculate two output texels.
-  const ivec3 x_pos_1 = ivec3(
-      gl_GlobalInvocationID.x * 2, gl_GlobalInvocationID.yz);
-  const ivec3 x_pos_2 = ivec3(x_pos_1.x + 1, x_pos_1.yz);
+  TensorIndex4D out_tidx_1 = zero_tensor4d_idx();
+  out_tidx_1.data.x = int(gl_GlobalInvocationID.x) * 8;
+  out_tidx_1.data.yz = ivec2(gl_GlobalInvocationID.yz);
 
-  if (any(greaterThanEqual(x_pos_2, xqout_limits))) {
+  TensorIndex4D out_tidx_2 = out_tidx_1;
+  out_tidx_2.data.x += 4;
+
+  if (out_of_bounds(out_tidx_2, xqout)) {
     return;
   }
 
-  const ivec3 freqs_pos = ivec3(gl_GlobalInvocationID.xz, 0);
+  TensorIndex4D freqs_tidx = zero_tensor4d_idx();
+  freqs_tidx.data.x = int(gl_GlobalInvocationID.x) * 4;
+  freqs_tidx.data.y = out_tidx_1.data.z;
 
-  VEC4_T cos_tex = load_texel(freqs_cos, freqs_pos);
-  VEC4_T sin_tex = load_texel(freqs_sin, freqs_pos);
+#ifdef USING_BUFFER
+  const uint freqs_texel_bufi = div_4(tensor4d_idx_to_linear_idx(freqs_cos, freqs_tidx));
+  VEC4_T cos_tex = t_freqs_cos[freqs_texel_bufi];
+  VEC4_T sin_tex = t_freqs_sin[freqs_texel_bufi];
+
+  uint x_texel_bufi_1 = div_4(tensor4d_idx_to_linear_idx(xqout, out_tidx_1));
+  uint x_texel_bufi_2 = div_4(tensor4d_idx_to_linear_idx(xqout, out_tidx_2));
+  VEC4_T x_tex_1 = t_xq[x_texel_bufi_1];
+  VEC4_T x_tex_2 = t_xq[x_texel_bufi_2];
+
+#else // USING_TEXTURE
+  const ivec3 freqs_pos = tensor4d_idx_to_texel_pos_simple(freqs_cos, freqs_tidx);
+  VEC4_T cos_tex = texelFetch(t_freqs_cos, freqs_pos, 0);
+  VEC4_T sin_tex = texelFetch(t_freqs_sin, freqs_pos, 0);
+
+  const ivec3 x_pos_1 = tensor4d_idx_to_texel_pos_simple(xqout, out_tidx_1);
+  const ivec3 x_pos_2 = tensor4d_idx_to_texel_pos_simple(xqout, out_tidx_2);
+  VEC4_T x_tex_1 = texelFetch(t_xq, x_pos_1, 0);
+  VEC4_T x_tex_2 = texelFetch(t_xq, x_pos_2, 0);
+#endif
 
   // Compute xqout
-
-  VEC4_T x_tex_1 = load_texel(xq, x_pos_1);
-  VEC4_T x_tex_2 = load_texel(xq, x_pos_2);
 
   // Separate into even and odd elements
   VEC4_T x_r = VEC4_T(x_tex_1.xz, x_tex_2.xz);
@@ -94,20 +121,34 @@ void main() {
   VEC4_T xout_tex_1 = VEC4_T(xout_r.x, xout_i.x, xout_r.y, xout_i.y);
   VEC4_T xout_tex_2 = VEC4_T(xout_r.z, xout_i.z, xout_r.w, xout_i.w);
 
-  write_texel(xqout, x_pos_1, xout_tex_1);
-  write_texel(xqout, x_pos_2, xout_tex_2);
+#ifdef USING_BUFFER
+  t_xqout[x_texel_bufi_1] = xout_tex_1;
+  t_xqout[x_texel_bufi_2] = xout_tex_2;
+#else // USING_TEXTURE
+  imageStore(t_xqout, x_pos_1, xout_tex_1);
+  imageStore(t_xqout, x_pos_2, xout_tex_2);
+#endif
 
   // n_heads will be greater than or equal to n_kv_heads, therefore xq and xqout
   // may have a larger height dim than xk and xkout. Only compute xkout if this
   // invocation is still within bounds.
-  if (any(greaterThanEqual(x_pos_2, xkout_limits))) {
+  if (out_of_bounds(out_tidx_2, xkout)) {
     return;
   }
 
   // Compute xkout
 
-  x_tex_1 = load_texel(xk, x_pos_1);
-  x_tex_2 = load_texel(xk, x_pos_2);
+#ifdef USING_BUFFER
+  x_texel_bufi_1 = div_4(tensor4d_idx_to_linear_idx(xkout, out_tidx_1));
+  x_texel_bufi_2 = div_4(tensor4d_idx_to_linear_idx(xkout, out_tidx_2));
+
+  x_tex_1 = t_xk[x_texel_bufi_1];
+  x_tex_2 = t_xk[x_texel_bufi_2];
+
+#else // USING_TEXTURE
+  x_tex_1 = texelFetch(t_xk, x_pos_1, 0);
+  x_tex_2 = texelFetch(t_xk, x_pos_2, 0);
+#endif
 
   x_r = VEC4_T(x_tex_1.xz, x_tex_2.xz);
   x_i = VEC4_T(x_tex_1.yw, x_tex_2.yw);
@@ -118,6 +159,11 @@ void main() {
   xout_tex_1 = VEC4_T(xout_r.x, xout_i.x, xout_r.y, xout_i.y);
   xout_tex_2 = VEC4_T(xout_r.z, xout_i.z, xout_r.w, xout_i.w);
 
-  write_texel(xkout, x_pos_1, xout_tex_1);
-  write_texel(xkout, x_pos_2, xout_tex_2);
+#ifdef USING_BUFFER
+  t_xkout[x_texel_bufi_1] = xout_tex_1;
+  t_xkout[x_texel_bufi_2] = xout_tex_2;
+#else // USING_TEXTURE
+  imageStore(t_xkout, x_pos_1, xout_tex_1);
+  imageStore(t_xkout, x_pos_2, xout_tex_2);
+#endif
 }

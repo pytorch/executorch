@@ -1,4 +1,4 @@
-# Copyright 2023, 2025 Arm Limited and/or its affiliates.
+# Copyright 2023, 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,74 +14,168 @@ endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
+if(POLICY CMP0169)
+  # Allow FetchContent_Populate to be used for source-only fetch
+  cmake_policy(SET CMP0169 OLD)
+endif()
+
 set(_common_include_directories
     ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
 )
 add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
-
-# bare metal backend builds
-if(EXECUTORCH_BUILD_ARM_BAREMETAL)
-
-add_compile_options("-Wall" "-Werror")
-
-# Third-party folder and Ethos-U driver inclued
-set(THIRD_PARTY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third-party")
-set(DRIVER_ETHOSU_INCLUDE_DIR "${THIRD_PARTY_ROOT}/ethos-u-core-driver/include")
-include_directories(${DRIVER_ETHOSU_INCLUDE_DIR})
-
-set(_arm_baremetal_sources backends/arm/runtime/EthosUBackend.cpp
-                           backends/arm/runtime/VelaBinStream.cpp
+set(ETHOSU_LINUX_DRIVER_GIT_REPO
+    "https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-linux-driver-stack.git"
+    CACHE STRING "Git repository that hosts the Ethos-U Linux driver stack"
 )
-list(TRANSFORM _arm_baremetal_sources PREPEND "${EXECUTORCH_ROOT}/")
-
-add_library(executorch_delegate_ethos_u STATIC ${_arm_baremetal_sources})
-target_link_libraries(
-  executorch_delegate_ethos_u PUBLIC executorch_core ethosu_core_driver
+set(ETHOSU_LINUX_DRIVER_GIT_TAG
+    "26.02"
+    CACHE STRING
+          "Git tag/branch/commit used to fetch the Ethos-U Linux driver stack"
+)
+set(ETHOSU_LINUX_DRIVER_SOURCE_DIR
+    ""
+    CACHE
+      PATH
+      "Optional local path to an existing ethos-u-linux-driver stack checkout"
 )
 
-install(TARGETS executorch_delegate_ethos_u EXPORT ExecuTorchTargets)
-
-# end config for bare metal builds
+if(EXECUTORCH_BUILD_ARM_BAREMETAL AND EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+  message(
+    FATAL_ERROR
+      "EXECUTORCH_BUILD_ARM_BAREMETAL and EXECUTORCH_BUILD_ARM_ETHOSU_LINUX cannot be enabled at the same time."
+  )
 endif()
 
+# Ethos-U backend builds (bare metal or Linux driver stack)
+if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
 
-# VGF backend builds 
+  add_compile_options("-Wall" "-Werror")
+
+  set(THIRD_PARTY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third-party")
+
+  set(_arm_backend_sources backends/arm/runtime/EthosUBackend.cpp
+                           backends/arm/runtime/VelaBinStream.cpp
+  )
+  list(TRANSFORM _arm_backend_sources PREPEND "${EXECUTORCH_ROOT}/")
+
+  add_library(executorch_delegate_ethos_u STATIC ${_arm_backend_sources})
+  target_link_libraries(executorch_delegate_ethos_u PUBLIC executorch_core)
+
+  if(EXECUTORCH_BUILD_ARM_BAREMETAL)
+    target_sources(
+      executorch_delegate_ethos_u
+      PRIVATE ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_Cortex_M.cpp
+    )
+    set(DRIVER_ETHOSU_INCLUDE_DIR
+        "${THIRD_PARTY_ROOT}/ethos-u-core-driver/include"
+    )
+    target_include_directories(
+      executorch_delegate_ethos_u PRIVATE ${DRIVER_ETHOSU_INCLUDE_DIR}
+    )
+    target_link_libraries(executorch_delegate_ethos_u PUBLIC ethosu_core_driver)
+  elseif(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+    target_sources(
+      executorch_delegate_ethos_u
+      PRIVATE ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_Cortex_A.cpp
+    )
+    if(NOT ETHOSU_LINUX_DRIVER_SOURCE_DIR
+       OR NOT EXISTS
+          "${ETHOSU_LINUX_DRIVER_SOURCE_DIR}/driver_library/src/ethosu.cpp"
+    )
+      include(FetchContent)
+      FetchContent_Declare(
+        ethosu_linux_driver_src
+        GIT_REPOSITORY ${ETHOSU_LINUX_DRIVER_GIT_REPO}
+        GIT_TAG ${ETHOSU_LINUX_DRIVER_GIT_TAG}
+        GIT_SHALLOW TRUE
+      )
+      FetchContent_GetProperties(ethosu_linux_driver_src)
+      if(NOT ethosu_linux_driver_src_POPULATED)
+        FetchContent_Populate(ethosu_linux_driver_src)
+      endif()
+      set(ETHOSU_LINUX_DRIVER_SOURCE_DIR ${ethosu_linux_driver_src_SOURCE_DIR})
+    endif()
+
+    target_include_directories(
+      executorch_delegate_ethos_u
+      PRIVATE ${ETHOSU_LINUX_DRIVER_SOURCE_DIR}/driver_library/include
+              ${ETHOSU_LINUX_DRIVER_SOURCE_DIR}/kernel/include
+    )
+    target_sources(
+      executorch_delegate_ethos_u
+      PRIVATE ${ETHOSU_LINUX_DRIVER_SOURCE_DIR}/driver_library/src/ethosu.cpp
+    )
+  endif()
+
+  install(TARGETS executorch_delegate_ethos_u EXPORT ExecuTorchTargets)
+
+endif()
+
+# VGF backend builds
 if(EXECUTORCH_BUILD_VGF)
+  set(VULKAN_THIRD_PARTY_PATH ${EXECUTORCH_ROOT}/backends/vulkan/third-party)
+  set(VULKAN_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/Vulkan-Headers/include)
+  set(VOLK_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
 
-# include libvgf
-set(LIBVGF_PATH "${EXECUTORCH_ROOT}/examples/arm/ethos-u-scratch/ml-sdk-for-vulkan-manifest/sw/vgf-lib/")
+  if(EXISTS
+     "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ml-sdk-for-vulkan-manifest/"
+  )
+    message(STATUS "libvgf sourced from local scratch tree")
 
-set(VULKAN_THIRD_PARTY_PATH ${EXECUTORCH_ROOT}/backends/vulkan/third-party)
-set(VULKAN_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/Vulkan-Headers/include)
-set(VOLK_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
+    # Legacy layout: libvgf sourced from local scratch tree
+    set(LIBVGF_PATH
+        "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ml-sdk-for-vulkan-manifest/sw/vgf-lib/"
+    )
+    set(LIBVGF_STATIC "${LIBVGF_PATH}/build/src/libvgf.a")
+  else()
+    message(STATUS "libvgf installed from pip package")
 
-set(LIBVGF_STATIC "${LIBVGF_PATH}/build/src/libvgf.a")
-set(LIBVGF_INCLUDE "${LIBVGF_PATH}/include/")
+    set(Python3_FIND_VIRTUALENV FIRST)
+    if(EXECUTORCH_ROOT AND EXISTS "${EXECUTORCH_ROOT}/env")
+      set(Python3_EXECUTABLE "${EXECUTORCH_ROOT}/env/bin/python3")
+    endif()
 
-add_library(vgf STATIC IMPORTED)
-set_property( TARGET vgf PROPERTY IMPORTED_LOCATION "${LIBVGF_STATIC}" )
-target_include_directories(vgf INTERFACE "${LIBVGF_INCLUDE}")
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-# Add backend delegate for VGF
-set(_vgf_backend_sources backends/arm/runtime/VGFBackend.cpp
-			 backends/arm/runtime/VGFSetup.cpp )
+    # Prefer arch-specific site-packages if present, else pure
+    set(_vgf_site_arch "${Python3_SITEARCH}/vgf_lib/binaries")
+    set(_vgf_site_pure "${Python3_SITELIB}/vgf_lib/binaries")
+    if(EXISTS "${_vgf_site_arch}")
+      set(LIBVGF_PATH "${_vgf_site_arch}")
+    else()
+      set(LIBVGF_PATH "${_vgf_site_pure}")
+    endif()
 
-# vgf backend
-list(TRANSFORM  _vgf_backend_sources PREPEND "${EXECUTORCH_ROOT}/")
-add_library(vgf_backend ${_vgf_backend_sources})
-target_include_directories(
-  vgf_backend PUBLIC
-  ${_common_include_directories}
-  ${VULKAN_HEADERS_PATH}
-  ${VOLK_HEADERS_PATH}
-)
-target_compile_options(vgf_backend PRIVATE -DUSE_VULKAN_WRAPPER -DUSE_VULKAN_VOLK)
+    set(LIBVGF_STATIC "${LIBVGF_PATH}/lib/libvgf.a")
+  endif()
 
+  set(LIBVGF_INCLUDE "${LIBVGF_PATH}/include/")
 
-target_link_libraries(vgf_backend PRIVATE executorch_core)
-target_link_libraries(vgf_backend PRIVATE vgf)
-executorch_target_link_options_shared_lib(vgf_backend)
+  add_library(vgf STATIC IMPORTED)
+  set_property(TARGET vgf PROPERTY IMPORTED_LOCATION "${LIBVGF_STATIC}")
+  target_include_directories(vgf INTERFACE "${LIBVGF_INCLUDE}")
 
-# end config for VGF builds
+  # Add backend delegate for VGF
+  set(_vgf_backend_sources backends/arm/runtime/VGFBackend.cpp
+                           backends/arm/runtime/VGFSetup.cpp
+  )
+
+  # vgf backend
+  list(TRANSFORM _vgf_backend_sources PREPEND "${EXECUTORCH_ROOT}/")
+  add_library(vgf_backend ${_vgf_backend_sources})
+  install(TARGETS vgf_backend EXPORT ExecuTorchTargets)
+  target_include_directories(
+    vgf_backend PRIVATE ${_common_include_directories} ${VULKAN_HEADERS_PATH}
+                        ${VOLK_HEADERS_PATH}
+  )
+  target_compile_options(
+    vgf_backend PRIVATE -DUSE_VULKAN_WRAPPER -DUSE_VULKAN_VOLK
+  )
+
+  target_link_libraries(vgf_backend PRIVATE executorch_core)
+  target_link_libraries(vgf_backend PRIVATE vgf)
+  executorch_target_link_options_shared_lib(vgf_backend)
+
+  # end config for VGF builds
 endif()

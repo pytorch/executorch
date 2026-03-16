@@ -106,18 +106,18 @@ void conv2d_impl(
           for (const auto w_y : c10::irange(w_H)) {
             w_coord[2] = w_y;
 
-            size_t in_y = stride_y * out_y + dilation_y * w_y - padding_y;
+            ssize_t in_y = stride_y * out_y + dilation_y * w_y - padding_y;
             in_coord[2] = in_y;
             // Only proceed if input y coordinate is within bounds
-            if (in_y >= 0 && in_y < in_H) {
+            if (in_y >= 0 && in_y < static_cast<ssize_t>(in_H)) {
               for (const auto w_x : c10::irange(w_W)) {
                 w_coord[3] = w_x;
 
-                size_t in_x = stride_x * out_x + dilation_x * w_x - padding_x;
+                ssize_t in_x = stride_x * out_x + dilation_x * w_x - padding_x;
                 in_coord[3] = in_x;
 
                 // Only proceed if input x coordinate is within bounds
-                if (in_x >= 0 && in_x < in_W) {
+                if (in_x >= 0 && in_x < static_cast<ssize_t>(in_W)) {
                   size_t in_idx =
                       calculate_linear_index(in_coord, in_strides.data(), 4);
                   CTYPE in_val = in_ptr[in_idx];
@@ -161,18 +161,18 @@ void conv2d_impl(
           w_coord[0] = in_c;
           for (const auto w_y : c10::irange(w_H)) {
             w_coord[2] = w_y;
-            size_t out_y = stride_y * in_y + dilation_y * w_y - padding_y;
+            ssize_t out_y = stride_y * in_y + dilation_y * w_y - padding_y;
             out_coord[2] = out_y;
 
             // Only proceed if output y coordinate is within bounds
-            if (out_y >= 0 && out_y < out_H) {
+            if (out_y >= 0 && out_y < static_cast<ssize_t>(out_H)) {
               for (const auto w_x : c10::irange(w_W)) {
                 w_coord[3] = w_x;
-                size_t out_x = stride_x * in_x + dilation_x * w_x - padding_x;
+                ssize_t out_x = stride_x * in_x + dilation_x * w_x - padding_x;
                 out_coord[3] = out_x;
 
                 // Only proceed if output x coordinate is within bounds
-                if (out_x >= 0 && out_x < out_W) {
+                if (out_x >= 0 && out_x < static_cast<ssize_t>(out_W)) {
                   size_t w_idx =
                       calculate_linear_index(w_coord, w_strides.data(), 4);
                   CTYPE w_val = w_ptr[w_idx];
@@ -412,10 +412,10 @@ Tensor& convolution_out(
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char name[] = "convolution.out";
 
-  ET_SWITCH_REALH_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
+  ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
     const auto load_bias = bias.has_value()
         ? utils::internal::get_load_to_compute_fn<CTYPE, name>(
-              bias.value(), utils::SupportedTensorDtypes::REALHBF16)
+              ctx, bias.value(), utils::SupportedTensorDtypes::REALHBF16)
         : nullptr;
     convolution_wrapper<CTYPE>(
         in,

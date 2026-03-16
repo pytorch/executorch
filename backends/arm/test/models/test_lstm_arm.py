@@ -1,11 +1,15 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 from typing import Tuple
 
+import pytest
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -13,6 +17,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 from torch.nn.quantizable.modules import rnn
@@ -50,7 +55,9 @@ def test_lstm_tosa_FP():
         exir_op=[],
         use_to_edge_transform_and_lower=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", get_test_inputs(), atol=3e-1)
+    pipeline.change_args(
+        "run_method_and_compare_outputs", inputs=get_test_inputs(), atol=3e-1
+    )
     pipeline.run()
 
 
@@ -61,9 +68,14 @@ def test_lstm_tosa_INT():
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.change_args(
-        "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1, qtol=1.0
+        "run_method_and_compare_outputs",
+        inputs=get_test_inputs(),
+        atol=3e-1,
+        qtol=1.0,
     )
     pipeline.run()
 
@@ -76,10 +88,12 @@ def test_lstm_u55_INT():
         aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
     pipeline.change_args(
-        "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1, qtol=1.0
+        "run_method_and_compare_outputs",
+        inputs=get_test_inputs(),
+        atol=3e-1,
+        qtol=1.0,
     )
     pipeline.run()
 
@@ -92,9 +106,93 @@ def test_lstm_u85_INT():
         aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
     pipeline.change_args(
-        "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1, qtol=1.0
+        "run_method_and_compare_outputs",
+        inputs=get_test_inputs(),
+        atol=3e-1,
+        qtol=1.0,
     )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_lstm_vgf_quant():
+    pipeline = VgfPipeline[input_t](
+        TestLSTM.lstm,
+        TestLSTM.model_example_inputs,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        quantize=True,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_lstm_vgf_no_quant():
+    pipeline = VgfPipeline[input_t](
+        TestLSTM.lstm,
+        TestLSTM.model_example_inputs,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+def test_lstm_tosa_INT_16a8w():
+    """Test LSTM 16A8W quantization (16-bit activations, 8-bit weights)."""
+
+    pipeline = TosaPipelineINT[input_t](
+        TestLSTM.lstm,
+        TestLSTM.model_example_inputs,
+        aten_op=[],
+        exir_op=[],
+        per_channel_quantization=False,
+        use_to_edge_transform_and_lower=True,
+        tosa_extensions=["int16"],
+        frobenius_threshold=None,
+        cosine_threshold=None,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=False, epsilon=2**-16)
+    )
+    pipeline.run()
+
+
+@pytest.mark.xfail(
+    reason="MLETORCH-1452: AssertionError: Output 0 does not match reference output."
+)
+@common.XfailIfNoCorstone300
+def test_lstm_u55_INT_16a8w():
+    pipeline = EthosU55PipelineINT[input_t](
+        TestLSTM.lstm,
+        TestLSTM.model_example_inputs,
+        aten_ops=[],
+        exir_ops=[],
+        use_to_edge_transform_and_lower=True,
+    )
+
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=False, epsilon=2**-16)
+    )
+
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320
+def test_lstm_u85_INT_16a8w():
+    pipeline = EthosU85PipelineINT[input_t](
+        TestLSTM.lstm,
+        TestLSTM.model_example_inputs,
+        aten_ops=[],
+        exir_ops=[],
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=False, epsilon=2**-16)
+    )
+
     pipeline.run()

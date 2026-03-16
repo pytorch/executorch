@@ -9,12 +9,13 @@
 #include <cmath>
 
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
-#include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
+
+#include <executorch/backends/cadence/common/xt_macros.h>
 
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
@@ -34,7 +35,6 @@ using torch::executor::native::utils::promote_type_with_scalar;
 using torch::executor::native::utils::scalar_to;
 using torch::executor::native::utils::SupportedTensorDtypes;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -122,9 +122,25 @@ Tensor& pow_Tensor_Tensor_out(
       for (int i = 0; i < b_dim; i++)
         p_inp2_shape[i] = b.size(i);
 
-      xa_nn_broadcast_32_32(ptr1, p_out_shape, pin1, p_inp1_shape, out_dim);
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_broadcast_32_32,
+          ptr1,
+          p_out_shape,
+          pin1,
+          p_inp1_shape,
+          out_dim);
 
-      xa_nn_broadcast_32_32(ptr2, p_out_shape, pin2, p_inp2_shape, out_dim);
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_broadcast_32_32,
+          ptr2,
+          p_out_shape,
+          pin2,
+          p_inp2_shape,
+          out_dim);
 
       FLOAT32* __restrict__ p_out =
           (FLOAT32* __restrict__)out.mutable_data_ptr<float>();
@@ -151,8 +167,15 @@ Tensor& pow_Tensor_Tensor_out(
       for (int i = 0; i < a_dim; i++)
         p_inp1_shape[i] = a.size(i);
 
-      xa_nn_broadcast_32_32(
-          (WORD32*)ptr1, p_out_shape, (WORD32*)pin1, p_inp1_shape, out_dim);
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_broadcast_32_32,
+          (WORD32*)ptr1,
+          p_out_shape,
+          (WORD32*)pin1,
+          p_inp1_shape,
+          out_dim);
 
       FLOAT32* __restrict__ p_out =
           (FLOAT32* __restrict__)out.mutable_data_ptr<float>();
@@ -180,7 +203,15 @@ Tensor& pow_Tensor_Tensor_out(
       for (int i = 0; i < b_dim; i++)
         p_inp1_shape[i] = b.size(i);
 
-      xa_nn_broadcast_32_32(ptr1, p_out_shape, pin1, p_inp1_shape, out_dim);
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_broadcast_32_32,
+          ptr1,
+          p_out_shape,
+          pin1,
+          p_inp1_shape,
+          out_dim);
 
       FLOAT32* __restrict__ p_out =
           (FLOAT32* __restrict__)out.mutable_data_ptr<float>();
@@ -320,4 +351,3 @@ Tensor& pow_Scalar_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

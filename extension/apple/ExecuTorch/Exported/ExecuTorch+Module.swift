@@ -8,7 +8,6 @@
 
 @_exported import ExecuTorch
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension TensorMetadata {
   /// The size of each dimension.
   var shape: [Int] { __shape.map(\.intValue) }
@@ -17,7 +16,6 @@ public extension TensorMetadata {
   var dimensionOrder: [Int] { __dimensionOrder.map(\.intValue) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension MethodMetadata {
   /// The declared input tags.
   var inputValueTags: [ValueTag] {
@@ -49,7 +47,6 @@ public extension MethodMetadata {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension Module {
   /// Executes a specific method with the provided input values.
   /// The method is loaded on demand if not already loaded.
@@ -94,7 +91,6 @@ public extension Module {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension Module {
   /// Executes a specific method and decodes the outputs into `Output` generic type.
   ///
@@ -174,5 +170,124 @@ public extension Module {
   /// - Throws: An error if loading, execution or result conversion fails.
   func forward<Output: ValueSequenceConstructible>() throws -> Output {
     try execute("forward")
+  }
+}
+
+public extension Module {
+  /// Sets a single input value for a method at the specified index.
+  ///
+  /// - Parameters:
+  ///   - value: The input as a `ValueConvertible`.
+  ///   - method: The method name.
+  ///   - index: Zero-based input index.
+  /// - Throws: If setting the input fails.
+  func setInput(_ value: ValueConvertible, for method: String, at index: Int) throws {
+    try __setInput(value.asValue(), forMethod: method, at: index)
+  }
+
+  /// Sets a single input value for a method at index 0.
+  ///
+  /// - Parameters:
+  ///   - value: The input as a `ValueConvertible`.
+  ///   - method: The method name.
+  /// - Throws: If setting the input fails.
+  func setInput(_ value: ValueConvertible, for method: String) throws {
+    try setInput(value, for: method, at: 0)
+  }
+
+  /// Sets a single input value for the "forward" method at the specified index.
+  ///
+  /// - Parameters:
+  ///   - value: The input as a `ValueConvertible`.
+  ///   - index: Zero-based input index.
+  /// - Throws: If setting the input fails.
+  func setInput(_ value: ValueConvertible, at index: Int) throws {
+    try setInput(value, for: "forward", at: index)
+  }
+
+  /// Sets the first input value (index 0) for the "forward" method.
+  ///
+  /// - Parameter value: The input as a `ValueConvertible`.
+  /// - Throws: If setting the input fails.
+  func setInput(_ value: ValueConvertible) throws {
+    try setInput(value, for: "forward", at: 0)
+  }
+
+  /// Sets all input values for a method.
+  ///
+  /// - Parameters:
+  ///   - values: The inputs as an array of `ValueConvertible`.
+  ///   - method: The method name.
+  /// - Throws: If setting the inputs fails.
+  func setInputs(_ values: [ValueConvertible], for method: String) throws {
+    try __setInputs(values.map { $0.asValue() }, forMethod: method)
+  }
+
+  /// Sets all input values for the "forward" method.
+  ///
+  /// - Parameter values: The inputs as an array of `ValueConvertible`.
+  /// - Throws: If setting the inputs fails.
+  func setInputs(_ values: [ValueConvertible]) throws {
+    try setInputs(values, for: "forward")
+  }
+
+  /// Sets all input values for a method using variadic arguments.
+  ///
+  /// - Parameters:
+  ///   - values: The inputs as a variadic list of `ValueConvertible`.
+  ///   - method: The method name.
+  /// - Throws: If setting the inputs fails.
+  func setInputs(_ values: ValueConvertible..., for method: String) throws {
+    try setInputs(values, for: method)
+  }
+
+  /// Sets all input values for the "forward" method using variadic arguments.
+  ///
+  /// - Parameter values: The inputs as a variadic list of `ValueConvertible`.
+  /// - Throws: If setting the inputs fails.
+  func setInputs(_ values: ValueConvertible...) throws {
+    try setInputs(values, for: "forward")
+  }
+
+  /// Sets the output location for a method at the specified index.
+  ///
+  /// Only tensor outputs are supported. The provided value must wrap a tensor
+  /// with compatible shape and data type for the method’s output slot.
+  ///
+  /// - Parameters:
+  ///   - value: The output buffer as a `ValueConvertible` (tensor).
+  ///   - method: The method name.
+  ///   - index: Zero-based output index.
+  /// - Throws: If setting the output fails.
+  func setOutput(_ value: ValueConvertible, for method: String, at index: Int) throws {
+    try __setOutput(value.asValue(), forMethod: method, at: index)
+  }
+
+  /// Sets the output location for a method at index 0.
+  ///
+  /// - Parameters:
+  ///   - value: The output buffer as a `ValueConvertible` (tensor).
+  ///   - method: The method name.
+  /// - Throws: If setting the output fails.
+  func setOutput(_ value: ValueConvertible, for method: String) throws {
+    try setOutput(value, for: method, at: 0)
+  }
+
+  /// Sets the output location for the "forward" method at the specified index.
+  ///
+  /// - Parameters:
+  ///   - value: The output buffer as a `ValueConvertible` (tensor).
+  ///   - index: Zero-based output index.
+  /// - Throws: If setting the output fails.
+  func setOutput(_ value: ValueConvertible, at index: Int) throws {
+    try setOutput(value, for: "forward", at: index)
+  }
+
+  /// Sets the first output location (index 0) for the "forward" method.
+  ///
+  /// - Parameter value: The output buffer as a `ValueConvertible` (tensor).
+  /// - Throws: If setting the output fails.
+  func setOutput(_ value: ValueConvertible) throws {
+    try setOutput(value, for: "forward", at: 0)
   }
 }

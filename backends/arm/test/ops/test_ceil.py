@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -28,7 +28,11 @@ class Ceil(torch.nn.Module):
 
 zeros = torch.zeros(1, 10, 10, 10)
 ones = torch.ones(10, 10, 10)
-rand = torch.rand(10, 10) - 0.5
+_rng = torch.Generator().manual_seed(0)
+# Keep values away from integer boundaries to avoid unstable ceil flips due to
+# tiny quantization noise, while still covering mixed-sign random data.
+rand_raw = torch.rand(10, 10, generator=_rng) - 0.5
+rand = torch.where(rand_raw >= 0, rand_raw + 0.1, rand_raw - 0.1)
 randn_pos = torch.randn(1, 4, 4, 4) + 10
 randn_neg = torch.randn(1, 4, 4, 4) - 10
 ramp = torch.arange(-16, 16, 0.2)
@@ -42,8 +46,29 @@ test_data = {
     "ceil_ramp": lambda: (Ceil(), ramp),
 }
 
+test_data_bf16 = {
+    "ceil_rand_bf16": lambda: (
+        Ceil(),
+        (torch.rand(4, 4, dtype=torch.bfloat16) - 0.5),
+    ),
+    "ceil_ramp_bf16": lambda: (
+        Ceil(),
+        torch.arange(-8, 8, 0.25, dtype=torch.bfloat16),
+    ),
+}
+test_data_fp16 = {
+    "ceil_rand_fp16": lambda: (
+        Ceil(),
+        (torch.rand(4, 4, dtype=torch.float16) - 0.5),
+    ),
+    "ceil_ramp_fp16": lambda: (
+        Ceil(),
+        torch.arange(-8, 8, 0.25, dtype=torch.float16),
+    ),
+}
 
-@common.parametrize("test_data", test_data)
+
+@common.parametrize("test_data", test_data | test_data_bf16 | test_data_fp16)
 def test_ceil_tosa_FP(test_data: input_t1):
     module, data = test_data()
     pipeline = TosaPipelineFP[input_t1](
@@ -51,6 +76,7 @@ def test_ceil_tosa_FP(test_data: input_t1):
         (data,),
         module.aten_op,
         module.exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -65,6 +91,7 @@ def test_ceil_tosa_INT(test_data: input_t1):
         module.exir_op,
         atol=0.06,
         rtol=0.01,
+        frobenius_threshold=0.2,
     )
     pipeline.run()
 
@@ -78,7 +105,6 @@ def test_ceil_u55_INT(test_data: input_t1):
         (data,),
         module.aten_op,
         module.exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -92,28 +118,27 @@ def test_ceil_u85_INT(test_data: input_t1):
         (data,),
         module.aten_op,
         module.exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data)
+@common.parametrize("test_data", test_data | test_data_fp16)
 @common.SkipIfNoModelConverter
-def test_ceil_vgf_FP(test_data: input_t1):
+def test_ceil_vgf_no_quant(test_data: input_t1):
     module, data = test_data()
     pipeline = VgfPipeline[input_t1](
         module,
         (data,),
         module.aten_op,
         module.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data)
 @common.SkipIfNoModelConverter
-def test_ceil_vgf_INT(test_data: input_t1):
+def test_ceil_vgf_quant(test_data: input_t1):
     module, data = test_data()
     pipeline = VgfPipeline[input_t1](
         module,
@@ -122,6 +147,6 @@ def test_ceil_vgf_INT(test_data: input_t1):
         module.exir_op,
         atol=0.06,
         rtol=0.01,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

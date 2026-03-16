@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
@@ -17,6 +18,18 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
+
+void resize_batch_norm_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef self = args.at(1).refs.at(0);
+
+  // For batch norm, output dimensions are the same as input dimensions
+  std::vector<int64_t> new_out_sizes = graph->sizes_of(self);
+  graph->virtual_resize(out, new_out_sizes);
+}
 
 ValueRef check_and_prepack_arg(
     ComputeGraph& graph,
@@ -46,53 +59,51 @@ void add_native_batch_norm_node(
     ValueRef var_ref,
     ValueRef eps_ref,
     ValueRef out_tuple_ref) {
-  std::vector<int64_t> in_sizes = graph.get_tensor(in_ref)->sizes();
-  std::vector<int64_t> out_sizes = graph.get_tensor(in_ref)->sizes();
+  const std::vector<int64_t> in_sizes = graph.sizes_of(in_ref);
+  const std::vector<int64_t> out_sizes = graph.sizes_of(in_ref);
 
   VK_CHECK_COND(in_sizes.size() == 4, "BatchNorm only support 4d tensor");
   VK_CHECK_COND(out_sizes.size() == 4, "BatchNorm only support 4d tensor");
 
   // Only the first element of the return value is propagated. The remaining 2
   // elements are zero-size dummy tensor.
-  ValueRef out_ref = graph.get_value_list(out_tuple_ref)->at(0);
+  const ValueRef out_ref = graph.get_value_list(out_tuple_ref)->at(0);
 
-  utils::StorageType stype = graph.storage_type_of(out_ref);
+  const utils::StorageType stype = graph.storage_type_of(out_ref);
 
-  int64_t num_channels = dim_at<kChannel4D>(in_sizes);
+  const int64_t num_channels = dim_at<kChannel4D>(in_sizes);
 
-  ValueRef arg_weight =
+  const ValueRef arg_weight =
       check_and_prepack_arg(graph, weight_ref, stype, num_channels, "weight");
-  ValueRef arg_bias =
+  const ValueRef arg_bias =
       check_and_prepack_arg(graph, bias_ref, stype, num_channels, "bias");
-  ValueRef arg_mean =
+  const ValueRef arg_mean =
       check_and_prepack_arg(graph, mean_ref, stype, num_channels, "mean");
-  ValueRef arg_var =
+  const ValueRef arg_var =
       check_and_prepack_arg(graph, var_ref, stype, num_channels, "var");
-  float epsilon = graph.extract_scalar<float>(eps_ref);
-
-  vTensorPtr t_in = graph.get_tensor(in_ref);
+  const float epsilon = graph.extract_scalar<float>(eps_ref);
 
   VK_CHECK_COND(!graph.val_is_tref(out_ref), "Output should not be tref");
-  vTensorPtr t_out = graph.get_tensor(out_ref);
 
+  const std::vector<int64_t> out_tensor_sizes = graph.sizes_of(out_ref);
   VK_CHECK_COND(
-      dim_at<kChannel4D>(t_out->sizes()) == num_channels,
+      dim_at<kChannel4D>(out_tensor_sizes) == num_channels,
       "out channel must match in channel");
 
   std::string kernel_name = "batchnorm";
-  add_dtype_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out_ref));
 
-  int32_t num_texel_per_batch =
-      utils::div_up_4((dim_at<kChannel4D>(t_in->sizes())));
+  const int32_t num_texel_per_batch =
+      utils::div_up_4((dim_at<kChannel4D>(in_sizes)));
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out_ref),
-      graph.create_local_wg_size(out_ref),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       {{out_ref, vkapi::kWrite},
        {{in_ref, arg_weight, arg_bias, arg_mean, arg_var}, vkapi::kRead}},
-      {t_out->logical_limits_ubo(),
+      {graph.logical_limits_ubo(out_ref),
        graph.create_params_buffer(epsilon),
        graph.create_params_buffer(num_texel_per_batch)},
       // Push Constants
@@ -102,7 +113,7 @@ void add_native_batch_norm_node(
       // Resize Args
       {},
       // Resizing Logic
-      nullptr));
+      resize_batch_norm_node));
 }
 
 void native_batch_norm(ComputeGraph& graph, const std::vector<ValueRef>& args) {

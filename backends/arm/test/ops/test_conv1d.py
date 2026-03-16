@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,6 +7,9 @@
 from typing import List, Tuple, Union
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a8w4_quantization_config,
+)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -23,9 +26,10 @@ input_t = Tuple[torch.Tensor]
 
 
 class Conv1d(torch.nn.Module):
-    """
-    Creates one or many chained 1D-convolutions. For multiple convolutions, the
-    respective parameteres are provided as lists.
+    """Creates one or many chained 1D-convolutions.
+
+    For multiple convolutions, the respective parameters are provided as lists.
+
     """
 
     def __init__(
@@ -307,7 +311,6 @@ def test_convolution_1d_u55_INT(test_data):
         model.get_inputs(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
         qtol=1,
     )
@@ -323,7 +326,6 @@ def test_convolution_1d_u85_INT(test_data):
         model.get_inputs(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
         qtol=1,
     )
@@ -332,27 +334,43 @@ def test_convolution_1d_u85_INT(test_data):
 
 @common.parametrize("test_data", test_data_FP)
 @common.SkipIfNoModelConverter
-def test_convolution_1d_vgf_FP(test_data):
+def test_convolution_1d_vgf_no_quant(test_data):
     pipeline = VgfPipeline[input_t](
         test_data(),
         test_data().get_inputs(),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_INT)
 @common.SkipIfNoModelConverter
-def test_convolution_1d_vgf_INT(test_data):
+def test_convolution_1d_vgf_quant(test_data):
     model, per_channel_quantization = test_data()
     pipeline = VgfPipeline[input_t](
         model,
         model.get_inputs(),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
         per_channel_quantization=per_channel_quantization,
+        quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_INT)
+@common.SkipIfNoModelConverter
+def test_convolution_1d_vgf_quant_a8w4(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()

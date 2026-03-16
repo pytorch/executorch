@@ -22,7 +22,6 @@ using torch::executor::check_permute_copy_args;
 using torch::executor::Error;
 using torch::executor::get_permute_copy_out_target_size;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -69,10 +68,8 @@ Tensor& permute_copy_out(
       InvalidArgument,
       out);
 
-  const auto in_type = out.scalar_type();
-
-  constexpr auto name = "permute_copy.out";
-  constexpr int kNnlibMaxDim = 16;
+  const auto in_type = in.scalar_type();
+  constexpr int kNnlibMaxDim = 5;
 
   bool optimized = false;
 
@@ -94,7 +91,13 @@ Tensor& permute_copy_out(
 
     for (int i = 0; i < num_inp_dims; i++) {
       p_inp_shape[i] = in.size(i);
-      p_out_shape[i] = in.size(dims[i]);
+    }
+
+    for (int i = 0; i < num_out_dims; i++) {
+      p_out_shape[i] = out.size(i);
+    }
+
+    for (int i = 0; i < num_inp_dims; i++) {
       p_permute_vec[i] = dims[i];
     }
 
@@ -150,18 +153,22 @@ Tensor& permute_copy_out(
   size_t trailing_dims_memo[kTensorDimensionLimit];
   executorch::runtime::memoizeTrailingDims(in, trailing_dims_memo);
 
-  // in and out must be the same dtype
-  ET_SWITCH_ALL_TYPES(in_type, ctx, name, CTYPE, [&] {
-    const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
-    CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
+  const char* const in_data = static_cast<const char*>(in.const_data_ptr());
+  char* const out_data = static_cast<char*>(out.mutable_data_ptr());
+  const size_t element_size = out.element_size();
 
-    for (size_t i = 0; i < out.numel(); ++i) {
-      out_data[i] =
-          in_data[executorch::runtime::coordinateToIndexWithTrailingDimsMemo(
-              in, in_coord, trailing_dims_memo)];
-      increment_coordinate_permuted(in, in_coord, dims);
-    }
-  });
+  for (size_t i = 0; i < out.numel(); ++i) {
+    const size_t in_index =
+        executorch::runtime::coordinateToIndexWithTrailingDimsMemo(
+            in, in_coord, trailing_dims_memo);
+
+    std::memcpy(
+        out_data + i * element_size,
+        in_data + in_index * element_size,
+        element_size);
+
+    increment_coordinate_permuted(in, in_coord, dims);
+  }
 
   return out;
 }
@@ -169,4 +176,3 @@ Tensor& permute_copy_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

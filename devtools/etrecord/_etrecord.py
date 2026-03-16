@@ -6,9 +6,9 @@
 
 # pyre-unsafe
 
+import io
 import json
 import os
-import pickle
 from typing import BinaryIO, Dict, IO, List, Optional, Union
 from zipfile import BadZipFile, ZipFile
 
@@ -52,6 +52,7 @@ class ETRecordReservedFileNames(StrEnum):
     ET_DIALECT_GRAPH_MODULE = "et_dialect_graph_module"
     DEBUG_HANDLE_MAP_NAME = "debug_handle_map"
     DELEGATE_MAP_NAME = "delegate_map"
+    INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME = "instruction_id_to_num_outs_map"
     REFERENCE_OUTPUTS = "reference_outputs"
     REPRESENTATIVE_INPUTS = "representative_inputs"
 
@@ -61,34 +62,107 @@ class ETRecord:
         self,
         exported_program: Optional[ExportedProgram] = None,
         export_graph_id: Optional[int] = None,
-        edge_dialect_program: Optional[ExportedProgram] = None,
+        edge_dialect_program: Optional[
+            Union[ExportedProgram, Dict[str, ExportedProgram]]
+        ] = None,
         graph_map: Optional[Dict[str, ExportedProgram]] = None,
         _debug_handle_map: Optional[Dict[int, Union[int, List[int]]]] = None,
         _delegate_map: Optional[
             Dict[str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]]
         ] = None,
+        _instruction_id_to_num_outs_map: Optional[
+            Dict[str, Dict[int, Union[int, List[int]]]]
+        ] = None,
         _reference_outputs: Optional[Dict[str, List[ProgramOutput]]] = None,
         _representative_inputs: Optional[List[ProgramInput]] = None,
     ):
+        """
+        Please do not construct an ETRecord object directly.
+
+        If you want to create an ETRecord for logging AOT information to further analysis, please mark `generate_etrecord`
+        as True in your export api, and get the ETRecord object from the `ExecutorchProgramManager`.
+        For exmaple:
+        ```python
+            exported_program = torch.export.export(model, inputs)
+            edge_program = to_edge_transform_and_lower(exported_program, generate_etrecord=True)
+            executorch_program = edge_program.to_executorch()
+            etrecord = executorch_program.get_etrecord()
+        ```
+
+        If user need to create an ETRecord manually, please use the `create_etrecord` function.
+
+        **EXPERIMENTAL**: This API supports multiple methods. For example:
+        ```python
+        lowered_and_edge = to_edge_transform_and_lower(
+            {
+                "vision_encoder": vision_encoder_ep,
+                "token_embedding": token_embedding_ep,
+                "text_decoder": causal_llm_ep,
+            },
+            partitioner={
+                "vision_encoder": [XnnpackPartitioner()],
+                "token_embedding": [XnnpackPartitioner()],
+                "text_decoder": [
+                    XnnpackPartitioner(
+                        config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
+                        per_op_mode=True,
+                    ),
+                    XnnpackPartitioner(),
+                ],
+            },
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            constant_methods=manager.metadata,
+            generate_etrecord=True,  # Enable ETRecord generation for all 3 methods
+        )
+        ```
+        """
+
         self.exported_program = exported_program
         self.export_graph_id = export_graph_id
         self.edge_dialect_program = edge_dialect_program
         self.graph_map = graph_map
-        self._debug_handle_map = _debug_handle_map
+        self.__debug_handle_map = _debug_handle_map  # Use private attribute
         self._delegate_map = _delegate_map
+        self._instruction_id_to_num_outs_map = _instruction_id_to_num_outs_map
         self._reference_outputs = _reference_outputs
         self._representative_inputs = _representative_inputs
 
+    @property
+    def _debug_handle_map(self):
+        return self.__debug_handle_map
+
+    @_debug_handle_map.setter
+    def _debug_handle_map(self, value):
+        self.__debug_handle_map = value
+
     def save(self, path: Union[str, os.PathLike, BinaryIO, IO[bytes]]) -> None:
         """
-        Serialize and save the ETRecord to the specified path.
+        Serialize and save the ETRecord to the specified path for use in Inspector. The ETRecord
+        should contains at least edge dialect program and executorch program information for further
+        analysis, otherwise it will raise an exception.
 
         Args:
             path: Path where the ETRecord file will be saved to.
+
+        Raises:
+            RuntimeError: If the ETRecord does not contain essential information for Inpector.
         """
         if isinstance(path, (str, os.PathLike)):
             # pyre-ignore[6]: In call `os.fspath`, for 1st positional argument, expected `str` but got `Union[PathLike[typing.Any], str]`
             path = os.fspath(path)
+
+        if not (self.edge_dialect_program and self._debug_handle_map):
+            raise RuntimeError(
+                "ETRecord must contain edge dialect program and executorch program to be saved"
+            )
+
+        # Normalize edge_dialect_program to dict format for consistent handling
+        if isinstance(self.edge_dialect_program, ExportedProgram):
+            self._edge_dialect_programs_dict: Dict[str, ExportedProgram] = {
+                "forward": self.edge_dialect_program
+            }
+        else:
+            self._edge_dialect_programs_dict = self.edge_dialect_program
 
         etrecord_zip = ZipFile(path, "w")
 
@@ -105,7 +179,7 @@ class ETRecord:
         etrecord_zip.writestr(ETRecordReservedFileNames.ETRECORD_IDENTIFIER, "")
 
     def _save_programs(self, etrecord_zip: ZipFile) -> None:
-        """Save exported program and edge dialect program."""
+        """Save exported program and edge dialect program(s)."""
         if self.exported_program is not None:
             self._save_exported_program(
                 etrecord_zip,
@@ -114,8 +188,9 @@ class ETRecord:
                 self.exported_program,
             )
 
-        if self.edge_dialect_program is not None:
-            self._save_edge_dialect_program(etrecord_zip, self.edge_dialect_program)
+        # Save all edge dialect programs (supports multiple methods)
+        for method_name, edge_program in self._edge_dialect_programs_dict.items():
+            self._save_edge_dialect_program(etrecord_zip, method_name, edge_program)
 
     def _save_graph_map(self, etrecord_zip: ZipFile) -> None:
         """Save graph map if present."""
@@ -146,16 +221,26 @@ class ETRecord:
                 json.dumps(self._delegate_map),
             )
 
+        if self._instruction_id_to_num_outs_map is not None:
+            etrecord_zip.writestr(
+                ETRecordReservedFileNames.INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME,
+                json.dumps(self._instruction_id_to_num_outs_map),
+            )
+
         if self._reference_outputs is not None:
+            buf = io.BytesIO()
+            torch.save(self._reference_outputs, buf)
             etrecord_zip.writestr(
                 ETRecordReservedFileNames.REFERENCE_OUTPUTS,
-                pickle.dumps(self._reference_outputs),
+                buf.getvalue(),
             )
 
         if self._representative_inputs is not None:
+            buf = io.BytesIO()
+            torch.save(self._representative_inputs, buf)
             etrecord_zip.writestr(
                 ETRecordReservedFileNames.REPRESENTATIVE_INPUTS,
-                pickle.dumps(self._representative_inputs),
+                buf.getvalue(),
             )
 
         if self.export_graph_id is not None:
@@ -163,6 +248,30 @@ class ETRecord:
                 ETRecordReservedFileNames.EXPORT_GRAPH_ID,
                 json.dumps(self.export_graph_id),
             )
+
+    def copy(self) -> "ETRecord":
+        """
+        Create a shallow copy of this ETRecord suitable for transformation stages.
+
+        This creates a new ETRecord instance with the same edge-stage data but without
+        executorch-specific data. Useful when transitioning between transformation stages
+        while preserving immutable snapshot semantics.
+
+        Returns:
+            ETRecord: A new ETRecord with edge-stage data copied over.
+        """
+        return ETRecord(
+            exported_program=self.exported_program,
+            export_graph_id=self.export_graph_id,
+            edge_dialect_program=self.edge_dialect_program,
+            graph_map=self.graph_map,
+            # Explicitly exclude executorch-specific fields for clean separation
+            _debug_handle_map=None,
+            _delegate_map=None,
+            _instruction_id_to_num_outs_map=None,
+            _reference_outputs=None,
+            _representative_inputs=None,
+        )
 
     def _save_exported_program(
         self,
@@ -186,13 +295,19 @@ class ETRecord:
         )
 
     def _save_edge_dialect_program(
-        self, etrecord_zip: ZipFile, edge_dialect_program: ExportedProgram
+        self,
+        etrecord_zip: ZipFile,
+        method_name: str,
+        edge_dialect_program: ExportedProgram,
     ) -> None:
         """Save the edge dialect program to the ETRecord zip file."""
         serialized_artifact = serialize(edge_dialect_program)
         assert isinstance(serialized_artifact.exported_program, bytes)
 
-        base_name = ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM
+        # Use format: edge_dialect_exported_program/method_name for multi-method support
+        base_name = (
+            f"{ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM}/{method_name}"
+        )
         etrecord_zip.writestr(base_name, serialized_artifact.exported_program)
         etrecord_zip.writestr(f"{base_name}_state_dict", serialized_artifact.state_dict)
         etrecord_zip.writestr(f"{base_name}_constants", serialized_artifact.constants)
@@ -258,6 +373,7 @@ class ETRecord:
         if (
             self._debug_handle_map is not None
             or self._delegate_map is not None
+            or self._instruction_id_to_num_outs_map is not None
             or self._reference_outputs is not None
             or self._representative_inputs is not None
         ):
@@ -267,13 +383,18 @@ class ETRecord:
             )
 
         # Process executorch program and extract data
-        debug_handle_map, delegate_map, reference_outputs, representative_inputs = (
-            _process_executorch_program(executorch_program)
-        )
+        (
+            debug_handle_map,
+            delegate_map,
+            instruction_id_to_num_outs_map,
+            reference_outputs,
+            representative_inputs,
+        ) = _process_executorch_program(executorch_program)
 
         # Set the extracted data
         self._debug_handle_map = debug_handle_map
         self._delegate_map = delegate_map
+        self._instruction_id_to_num_outs_map = instruction_id_to_num_outs_map
         self._reference_outputs = reference_outputs
         self._representative_inputs = representative_inputs
 
@@ -338,6 +459,7 @@ class ETRecord:
             )
 
         # Process edge dialect program and extract data
+
         processed_edge_dialect_program = _process_edge_dialect_program(
             edge_dialect_program
         )
@@ -548,13 +670,28 @@ def _add_module_to_graph_map(
 
 def _process_edge_dialect_program(
     edge_dialect_program: Union[EdgeProgramManager, ExirExportedProgram]
-) -> ExportedProgram:
-    """Process edge dialect program and return the exported program."""
+) -> Union[ExportedProgram, Dict[str, ExportedProgram]]:
+    """Process edge dialect program and return the exported program(s).
+
+    For EdgeProgramManager with multiple methods, returns a Dict[str, ExportedProgram]
+    mapping method names to their exported programs. For single-method cases or
+    ExirExportedProgram, returns a single ExportedProgram.
+    """
     if isinstance(
         edge_dialect_program,
         (EdgeProgramManager, exir.program._program.EdgeProgramManager),
     ):
-        return edge_dialect_program.exported_program()
+        methods = edge_dialect_program.methods
+        if len(methods) == 1:
+            # Single method case - return the ExportedProgram directly
+            method_name = next(iter(methods))
+            return edge_dialect_program.exported_program(method_name)
+        else:
+            # Multiple methods - return a dict of all methods
+            return {
+                method: edge_dialect_program.exported_program(method)
+                for method in methods
+            }
     elif isinstance(edge_dialect_program, ExirExportedProgram):
         return edge_dialect_program.exported_program
     else:
@@ -567,7 +704,9 @@ def _process_executorch_program(
     executorch_program: Union[
         ExecutorchProgram, ExecutorchProgramManager, BundledProgram
     ]
-) -> tuple[Optional[Dict], Optional[Dict], Optional[Dict], Optional[List]]:
+) -> tuple[
+    Optional[Dict], Optional[Dict], Optional[Dict], Optional[Dict], Optional[List]
+]:
     """Process executorch program and return debug maps and bundled program data."""
     if isinstance(executorch_program, BundledProgram):
         reference_outputs = _get_reference_outputs(executorch_program)
@@ -576,11 +715,30 @@ def _process_executorch_program(
         debug_handle_map = executorch_program.executorch_program.debug_handle_map
         # pyre-ignore[16]: Item `None` of `typing.Union[None, exir.program._program.ExecutorchProgram, exir.program._program.ExecutorchProgramManager]` has no attribute `debug_handle_map`
         delegate_map = executorch_program.executorch_program.delegate_map
-        return debug_handle_map, delegate_map, reference_outputs, representative_inputs
+        # pyre-ignore[16]: Item `None` of `typing.Union[None, exir.program._program.ExecutorchProgram, exir.program._program.ExecutorchProgramManager]` has no attribute `instruction_id_to_num_outs_map`
+        instruction_id_to_num_outs_map = (
+            executorch_program.executorch_program.instruction_id_to_num_outs_map
+        )
+        return (
+            debug_handle_map,
+            delegate_map,
+            instruction_id_to_num_outs_map,
+            reference_outputs,
+            representative_inputs,
+        )
     else:
         debug_handle_map = executorch_program.debug_handle_map
         delegate_map = executorch_program.delegate_map
-        return debug_handle_map, delegate_map, None, None
+        instruction_id_to_num_outs_map = (
+            executorch_program.instruction_id_to_num_outs_map
+        )
+        return (
+            debug_handle_map,
+            delegate_map,
+            instruction_id_to_num_outs_map,
+            None,
+            None,
+        )
 
 
 def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
@@ -612,18 +770,26 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
         )
 
     graph_map: Dict[str, ExportedProgram] = {}
+    edge_dialect_programs: Dict[str, ExportedProgram] = {}
     debug_handle_map = None
     delegate_map = None
+    instruction_id_to_num_outs_map = None
     exported_program = None
-    edge_dialect_program = None
+    edge_dialect_program: Optional[
+        Union[ExportedProgram, Dict[str, ExportedProgram]]
+    ] = None
     reference_outputs = None
     representative_inputs = None
     export_graph_id = 0
 
     serialized_exported_program_files = set()
+    serialized_edge_dialect_program_files = set()
     serialized_state_dict_files = set()
     serialized_constants_files = set()
     serialized_example_inputs_files = set()
+
+    edge_dialect_prefix = f"{ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM}/"
+
     for entry in file_list:
         if entry == ETRecordReservedFileNames.DEBUG_HANDLE_MAP_NAME:
             debug_handle_map = json.loads(
@@ -633,9 +799,16 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
             delegate_map = json.loads(
                 etrecord_zip.read(ETRecordReservedFileNames.DELEGATE_MAP_NAME)
             )
+        elif entry == ETRecordReservedFileNames.INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME:
+            instruction_id_to_num_outs_map = json.loads(
+                etrecord_zip.read(
+                    ETRecordReservedFileNames.INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME
+                )
+            )
         elif entry == ETRecordReservedFileNames.ETRECORD_IDENTIFIER:
             continue
         elif entry == ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM:
+            # Old format: single edge dialect program (backward compatibility)
             serialized_artifact = SerializedArtifact(
                 etrecord_zip.read(
                     ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM
@@ -645,6 +818,11 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
                 etrecord_zip.read(f"{entry}_example_inputs"),
             )
             edge_dialect_program = deserialize(serialized_artifact)
+        elif entry.startswith(edge_dialect_prefix) and not entry.endswith(
+            ("_state_dict", "_constants", "_example_inputs")
+        ):
+            # New format: edge_dialect_exported_program/method_name
+            serialized_edge_dialect_program_files.add(entry)
         elif entry == ETRecordReservedFileNames.EXPORTED_PROGRAM:
             serialized_artifact = SerializedArtifact(
                 etrecord_zip.read(ETRecordReservedFileNames.EXPORTED_PROGRAM),
@@ -654,15 +832,37 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
             )
             exported_program = deserialize(serialized_artifact)
         elif entry == ETRecordReservedFileNames.REFERENCE_OUTPUTS:
-            # @lint-ignore PYTHONPICKLEISBAD
-            reference_outputs = pickle.loads(
-                etrecord_zip.read(ETRecordReservedFileNames.REFERENCE_OUTPUTS)
-            )
+            try:
+                reference_outputs = torch.load(
+                    io.BytesIO(
+                        etrecord_zip.read(ETRecordReservedFileNames.REFERENCE_OUTPUTS)
+                    ),
+                    weights_only=True,
+                )
+            except Exception as e:
+                raise RuntimeError(
+                    "Failed to load reference_outputs from ETRecord. "
+                    "This ETRecord file may have been created with an older "
+                    "version that used pickle serialization. Please regenerate "
+                    "the ETRecord file with the current version of ExecuTorch."
+                ) from e
         elif entry == ETRecordReservedFileNames.REPRESENTATIVE_INPUTS:
-            # @lint-ignore PYTHONPICKLEISBAD
-            representative_inputs = pickle.loads(
-                etrecord_zip.read(ETRecordReservedFileNames.REPRESENTATIVE_INPUTS)
-            )
+            try:
+                representative_inputs = torch.load(
+                    io.BytesIO(
+                        etrecord_zip.read(
+                            ETRecordReservedFileNames.REPRESENTATIVE_INPUTS
+                        )
+                    ),
+                    weights_only=True,
+                )
+            except Exception as e:
+                raise RuntimeError(
+                    "Failed to load representative_inputs from ETRecord. "
+                    "This ETRecord file may have been created with an older "
+                    "version that used pickle serialization. Please regenerate "
+                    "the ETRecord file with the current version of ExecuTorch."
+                ) from e
         elif entry == ETRecordReservedFileNames.EXPORT_GRAPH_ID:
             export_graph_id = json.loads(
                 etrecord_zip.read(ETRecordReservedFileNames.EXPORT_GRAPH_ID)
@@ -676,6 +876,30 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
                 serialized_example_inputs_files.add(entry)
             else:
                 serialized_exported_program_files.add(entry)
+
+    # Parse new format edge dialect programs (multi-method support)
+    for serialized_file in serialized_edge_dialect_program_files:
+        serialized_state_dict_file = f"{serialized_file}_state_dict"
+        serialized_constants_file = f"{serialized_file}_constants"
+        serialized_example_inputs_file = f"{serialized_file}_example_inputs"
+        serialized_artifact = SerializedArtifact(
+            etrecord_zip.read(serialized_file),
+            etrecord_zip.read(serialized_state_dict_file),
+            etrecord_zip.read(serialized_constants_file),
+            etrecord_zip.read(serialized_example_inputs_file),
+        )
+        # Extract method name from path: edge_dialect_exported_program/method_name -> method_name
+        method_name = serialized_file[len(edge_dialect_prefix) :]
+        edge_dialect_programs[method_name] = deserialize(serialized_artifact)
+
+    # If we found multi-method edge dialect programs, use them
+    if edge_dialect_programs:
+        if len(edge_dialect_programs) == 1:
+            # Single method - store as ExportedProgram for backward compatibility
+            edge_dialect_program = next(iter(edge_dialect_programs.values()))
+        else:
+            # Multiple methods - store as dict
+            edge_dialect_program = edge_dialect_programs
 
     for serialized_file in serialized_exported_program_files:
         serialized_state_dict_file = f"{serialized_file}_state_dict"
@@ -698,6 +922,7 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
         graph_map=graph_map,
         _debug_handle_map=debug_handle_map,
         _delegate_map=delegate_map,
+        _instruction_id_to_num_outs_map=instruction_id_to_num_outs_map,
         _reference_outputs=reference_outputs,
         _representative_inputs=representative_inputs,
         export_graph_id=export_graph_id,

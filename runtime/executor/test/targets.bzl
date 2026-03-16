@@ -81,11 +81,7 @@ def define_common_targets(is_fbcode = False):
         exported_headers = [
             "managed_memory_manager.h",
         ],
-        visibility = [
-            "//executorch/runtime/executor/test/...",
-            "//executorch/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             "//executorch/runtime/core:memory_allocator",
             "//executorch/runtime/executor:memory_manager",
@@ -189,6 +185,20 @@ def define_common_targets(is_fbcode = False):
             name = "program_test",
             srcs = [
                 "program_test.cpp",
+            ],
+            deps = [
+                "//executorch/runtime/executor:program",
+                "//executorch/extension/data_loader:buffer_data_loader",
+                "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/schema:program",
+            ],
+            env = modules_env,
+        )
+
+        runtime.cxx_test(
+            name = "program_validation_test",
+            srcs = [
+                "program_validation_test.cpp",
             ],
             deps = [
                 "//executorch/runtime/executor:program",

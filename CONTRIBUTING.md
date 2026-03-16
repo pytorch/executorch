@@ -24,17 +24,17 @@ For Apple, please refer to the [iOS documentation](docs/source/using-executorch-
 executorch
 ├── <a href="backends">backends</a> - Backend delegate implementations for various hardware targets. Each backend uses partitioner to split the graph into subgraphs that can be executed on specific hardware, quantizer to optimize model precision, and runtime components to execute the graph on target hardware. For details refer to the <a href="docs/source/backend-delegates-integration.md">backend documentation</a> and the <a href="docs/source/using-executorch-export.md">Export and Lowering tutorial</a> for more information.
 │   ├── <a href="backends/apple">apple</a> - Apple-specific backends.
-│   │   ├── <a href="backends/apple/coreml">coreml</a> - CoreML backend for Apple devices. See <a href="docs/source/backends-coreml.md">doc</a>.
-│   │   └── <a href="backends/apple/mps">mps</a> - Metal Performance Shaders backend for Apple devices. See <a href="docs/source/backends-mps.md">doc</a>.
-│   ├── <a href="backends/arm">arm</a> - ARM architecture backends. See <a href="docs/source/backends-arm-ethos-u.md">doc</a>.
+│   │   ├── <a href="backends/apple/coreml">coreml</a> - CoreML backend for Apple devices. See <a href="docs/source/backends/coreml/coreml-overview.md">doc</a>.
+│   │   └── <a href="backends/apple/mps">mps</a> - Metal Performance Shaders backend for Apple devices. See <a href="docs/source/backends/mps/mps-overview.md">doc</a>.
+│   ├── <a href="backends/arm">arm</a> - ARM architecture backends. See <a href="docs/source/backends/arm-ethos-u/arm-ethos-u-overview.md">doc</a>.
 │   ├── <a href="backends/cadence">cadence</a> - Cadence-specific backends. See <a href="docs/source/backends-cadence.md">doc</a>.
 │   ├── <a href="backends/example">example</a> - Example backend implementations.
 │   ├── <a href="backends/mediatek">mediatek</a> - MediaTek-specific backends. See <a href="docs/source/backends-mediatek.md">doc</a>.
 │   ├── <a href="backends/openvino">openvino</a> - OpenVINO backend for Intel hardware.
 │   ├── <a href="backends/qualcomm">qualcomm</a> - Qualcomm-specific backends. See <a href="docs/source/backends-qualcomm.md">doc</a>.
 │   ├── <a href="backends/transforms">transforms</a> - Transformations for backend optimization.
-│   ├── <a href="backends/vulkan">vulkan</a> - Vulkan backend for cross-platform GPU support. See <a href="docs/source/backends-vulkan.md">doc</a>.
-│   └── <a href="backends/xnnpack">xnnpack</a> - XNNPACK backend for optimized neural network operations. See <a href="docs/source/backends-xnnpack.md">doc</a>.
+│   ├── <a href="backends/vulkan">vulkan</a> - Vulkan backend for cross-platform GPU support. See <a href="docs/source/backends/vulkan/vulkan-overview.md">doc</a>.
+│   └── <a href="backends/xnnpack">xnnpack</a> - XNNPACK backend for optimized neural network operations. See <a href="docs/source/backends/xnnpack/xnnpack-overview.md">doc</a>.
 ├── <a href="codegen">codegen</a> - Tooling to autogenerate bindings between kernels and the runtime.
 ├── <a href="configurations">configurations</a> - Configuration files.
 ├── <a href="devtools">devtools</a> - Model profiling, debugging, and inspection. Please refer to the <a href="docs/source/devtools-overview.md">tools documentation</a> for more information.
@@ -199,8 +199,7 @@ We use [`lintrunner`](https://pypi.org/project/lintrunner/) to help make sure th
 code follows our standards. Set it up with:
 
 ```
-pip install lintrunner==0.12.7
-pip install lintrunner-adapters==0.12.4
+./install_requirements.sh  # (automatically run by install_executorch.sh)
 lintrunner init
 ```
 
@@ -325,7 +324,8 @@ the code you're modifying and find an author who has more context. Ask them
 for their help in the PR comments.
 
 ### Continuous Integration
-See https://hud.pytorch.org/hud/pytorch/executorch/main for the current state of
+
+See https://hud.pytorch.org/hud/pytorch/executorch/main for the current state of <!-- @lint-ignore -->
 the CI (continuous integration) jobs. If `main` is broken, consider rebasing
 your PR onto the `viable/strict` branch, which points to the most recent
 all-green commit.
@@ -384,7 +384,7 @@ for basics.
      - `Release notes: quantization`: changes to quantization.
      - `Release notes: ops & kernels`: changes to the opset and any new / changed kernel implementations.
      - `Release notes: api`: changes to public facing apis (any interfaces, pybinded runtime methods, etc.).
-     - `Release notes: backends`: changes to any of the backend delegates.
+     - `Release notes: <backend>`: changes to any of the backend delegates (e.g: `Release notes: apple`, `Release notes: arm`, etc).
      - `Release notes: build`: changes related to the build system, including major dependency upgrades, notable build flags, optimizations, etc.
      - `Release notes: devtools`: changes to any of ExecuTorch's developer tools, for example the debugger & profiler.
      - `Release notes: examples`: changes to any code under `examples/`.

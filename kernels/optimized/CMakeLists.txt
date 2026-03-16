@@ -21,7 +21,11 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-set(_common_compile_options -Wno-deprecated-declarations)
+set(_common_compile_options
+    $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations>
+    $<$<CXX_COMPILER_ID:GNU>:-Wno-psabi>
+)
 
 # Note for apple platform we can rely on Accelerate framework Will come back to
 # this
@@ -64,6 +68,7 @@ target_include_directories(
 )
 target_compile_definitions(
   optimized_kernels PRIVATE "ET_USE_PYTORCH_HEADERS=ET_HAS_EXCEPTIONS"
+                            POCKETFFT_USE_POSIX_MEMALIGN
 )
 target_link_libraries(
   optimized_kernels PUBLIC executorch_core cpublas extension_threadpool
@@ -83,6 +88,7 @@ install(
   # it.
   TARGETS cpublas optimized_kernels optimized_ops_lib eigen_blas
   EXPORT ExecuTorchTargets
-  DESTINATION lib
-  PUBLIC_HEADER DESTINATION include/executorch/kernels/optimized/
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  PUBLIC_HEADER
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/kernels/optimized/
 )

@@ -68,6 +68,8 @@
  */
 #define mod4(x) ((x) & 3)
 
+#define ALIGN_DOWN_4(x) ((x) & ~3)
+
 #define ALIGN_UP_4(x) (((x) + 3) & ~3)
 
 #define DIV_UP_8(x) (((x) + 7) >> 3)
@@ -110,6 +112,10 @@ ivec4 tidx_to_4bufi(
   return base_i + ivec4(0, 1, 2, 3) * strides[packed_dim];
 }
 
+/*
+ * Given a buffer index to a contiguous tensor and the tensor's sizes, return
+ * the tensor index that corresponds to the buffer index.
+ */
 ivec4 nchwi_to_tidx(const int nchwi, const ivec4 sizes) {
   const int nchwi_div_x = nchwi / sizes.x;
   const int nchwi_div_y = nchwi_div_x / sizes.y;

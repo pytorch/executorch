@@ -1,0 +1,19 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+pack_fp_linear_weight:
+  parameter_names_with_default_values:
+    DTYPE: float
+    PACKED_STORAGE: texture2d
+  generate_variant_forall:
+    PACKED_STORAGE:
+      - VALUE: texture2d
+      - VALUE: buffer
+    DTYPE:
+      - VALUE: float
+      - VALUE: half
+  shader_variants:
+    - NAME: pack_fp_linear_weight

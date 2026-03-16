@@ -23,6 +23,57 @@ get_filename_component(
   _common_include_directories "${EXECUTORCH_SOURCE_DIR}/.." ABSOLUTE
 )
 
+# If QNN_SDK_ROOT was not passed as a CMake variable, fall back to the
+# environment variable.  Prefer downloading the SDK *outside* of CMake (e.g. via
+# backends/qualcomm/scripts/download_qnn_sdk.py) and passing the path in.
+if(NOT DEFINED QNN_SDK_ROOT AND DEFINED ENV{QNN_SDK_ROOT})
+  set(QNN_SDK_ROOT
+      $ENV{QNN_SDK_ROOT}
+      CACHE PATH "Qualcomm SDK root directory" FORCE
+  )
+endif()
+
+# Last-resort fallback: download during cmake configure when building wheels and
+# QNN_SDK_ROOT was not provided externally.
+if(NOT DEFINED QNN_SDK_ROOT AND EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+  set(_qnn_default_sdk_dir "${CMAKE_CURRENT_BINARY_DIR}/sdk/qnn")
+
+  if(EXISTS "${_qnn_default_sdk_dir}" AND EXISTS "${_qnn_default_sdk_dir}/lib")
+    message(STATUS "Found cached Qualcomm SDK at ${_qnn_default_sdk_dir}")
+    set(QNN_SDK_ROOT
+        ${_qnn_default_sdk_dir}
+        CACHE PATH "Qualcomm SDK root directory" FORCE
+    )
+  else()
+    message(STATUS "Downloading Qualcomm SDK (fallback)")
+    execute_process(
+      COMMAND
+        ${PYTHON_EXECUTABLE}
+        ${EXECUTORCH_SOURCE_DIR}/backends/qualcomm/scripts/download_qnn_sdk.py
+        --dst-folder ${_qnn_default_sdk_dir} --print-sdk-path
+      WORKING_DIRECTORY ${EXECUTORCH_SOURCE_DIR}
+      RESULT_VARIABLE _qnn_sdk_download_result
+      OUTPUT_VARIABLE _qnn_sdk_download_output
+      ERROR_VARIABLE _qnn_sdk_download_error
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if(NOT _qnn_sdk_download_result EQUAL 0 OR _qnn_sdk_download_output
+                                               STREQUAL ""
+    )
+      message(
+        FATAL_ERROR
+          "Failed to download Qualcomm SDK. stdout: ${_qnn_sdk_download_output}\n"
+          "stderr: ${_qnn_sdk_download_error}"
+      )
+    endif()
+    set(QNN_SDK_ROOT
+        ${_qnn_sdk_download_output}
+        CACHE PATH "Qualcomm SDK root directory" FORCE
+    )
+  endif()
+  set(ENV{QNN_SDK_ROOT} ${QNN_SDK_ROOT})
+endif()
+
 if(NOT DEFINED QNN_SDK_ROOT)
   message(
     FATAL_ERROR
@@ -38,17 +89,6 @@ message(STATUS "Using EXECUTORCH_SOURCE_DIR ${EXECUTORCH_SOURCE_DIR}")
 if(${ANDROID})
   find_library(android_log log)
 endif()
-
-set(qcir_schema_include_dir ${CMAKE_CURRENT_LIST_DIR}/aot/ir)
-set(qcir_schema_output ${qcir_schema_include_dir}/qcir_generated.h)
-add_custom_command(
-  OUTPUT qcir_schema_output
-  COMMAND flatc --cpp --cpp-std c++11 --scoped-enums -o
-          ${qcir_schema_include_dir} ${qcir_schema_include_dir}/qcir.fbs
-  DEPENDS flatc
-  COMMENT "Generating qualcomm ir schema headers"
-  VERBATIM
-)
 
 add_compile_options("-Wall" "-Werror" "-Wno-sign-compare")
 add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
@@ -69,11 +109,8 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 include_directories(
-  BEFORE
-  ${_common_include_directories}
-  ${QNN_SDK_ROOT}/include/QNN
+  BEFORE ${_common_include_directories} ${QNN_SDK_ROOT}/include/QNN
   ${QNN_SDK_ROOT}/share/QNN/converter/jni
-  ${EXECUTORCH_SOURCE_DIR}/third-party/flatbuffers/include
   ${EXECUTORCH_SOURCE_DIR}/runtime/core/portable_type/c10
 )
 
@@ -112,10 +149,9 @@ include_directories(
 # declare targets
 #
 add_library(executorch_backend INTERFACE)
-add_library(qcir INTERFACE qcir_schema_output)
-add_library(qcir_utils STATIC)
 add_library(qnn_backend STATIC)
 add_library(qnn_backend_cache STATIC)
+add_library(qnn_backend_options STATIC)
 add_library(qnn_context STATIC)
 add_library(qnn_custom_protocol STATIC)
 add_library(qnn_dlc_manager STATIC)
@@ -124,6 +160,7 @@ add_library(qnn_executorch_backend SHARED)
 add_library(qnn_executorch_header INTERFACE)
 add_library(qnn_executorch_logging STATIC)
 add_library(qnn_factory STATIC)
+add_library(qnn_backend_unified_registry STATIC)
 add_library(qnn_function_interface INTERFACE)
 add_library(qnn_graph STATIC)
 add_library(qnn_implementation STATIC)
@@ -137,12 +174,10 @@ add_library(qnn_sys_function_interface INTERFACE)
 add_library(qnn_sys_implementation STATIC)
 add_library(shared_buffer STATIC)
 add_library(wrappers STATIC)
-add_library(utils STATIC)
 
 #
 # declare dependency
 #
-target_link_libraries(qcir_utils PRIVATE qcir)
 target_link_libraries(wrappers PRIVATE qnn_executorch_logging)
 target_link_libraries(
   qnn_implementation PRIVATE qnn_function_interface qnn_executorch_logging
@@ -159,6 +194,7 @@ target_link_libraries(
   qnn_backend PRIVATE qnn_implementation qnn_logger qnn_op_package_manager
 )
 target_link_libraries(qnn_custom_protocol PRIVATE qnn_logger)
+target_link_libraries(qnn_backend_options PRIVATE qnn_schema)
 target_link_libraries(
   qnn_device PRIVATE qnn_executorch_logging qnn_implementation qnn_logger
 )
@@ -187,22 +223,54 @@ target_link_libraries(
 )
 
 target_link_libraries(
-  qnn_dlc_manager PRIVATE qnn_factory qnn_backend qnn_device qnn_context
-                          qnn_graph qnn_mem_manager
+  qnn_backend_unified_registry PRIVATE qnn_schema qnn_backend qnn_device
+                                       qnn_implementation
 )
 
 target_link_libraries(
-  qnn_manager PRIVATE qnn_factory wrappers qnn_schema utils shared_buffer
-                      qnn_dlc_manager
+  qnn_dlc_manager
+  PRIVATE qnn_factory
+          qnn_backend_unified_registry
+          qnn_backend
+          qnn_device
+          qnn_context
+          qnn_graph
+          qnn_mem_manager
+)
+
+target_link_libraries(
+  qnn_manager PRIVATE qnn_factory qnn_backend_unified_registry wrappers
+                      qnn_schema shared_buffer qnn_dlc_manager
 )
 target_link_libraries(
-  qnn_executorch_backend PRIVATE qnn_executorch_header qnn_schema qnn_manager
-                                 executorch_core extension_tensor
+  qnn_executorch_backend
+  PRIVATE qnn_executorch_header qnn_schema qnn_manager executorch_core
+          extension_tensor qnn_backend_options
 )
+
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)
+  # Add macro here so we can dlopen the correct .so library.
+  if(DSP_TYPE STREQUAL "3")
+    string(TOUPPER ${DSP_VERSION} CAPITAL_DSP_VERSION)
+    set(HEXAGON_LIB "libQnnHtp${CAPITAL_DSP_VERSION}.so")
+    add_compile_definitions(HEXAGON_LIB="${HEXAGON_LIB}")
+    message(STATUS "For hexagon build, using HTP Library: ${HEXAGON_LIB}")
+  else()
+    message(FATAL_ERROR "Unknown DSP_TYPE ${DSP_TYPE}")
+  endif()
+
+  target_link_libraries(
+    qnn_executorch_backend
+    PRIVATE
+      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc.so
+      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc++.so.1
+      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc++abi.so.1
+  )
+endif()
+
 set_target_properties(
   qnn_executorch_backend PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
 )
-target_link_libraries(utils PRIVATE qnn_executorch_logging)
 target_link_libraries(
   shared_buffer PRIVATE qnn_executorch_logging ${CMAKE_DL_LIBS}
 )
@@ -225,15 +293,20 @@ add_subdirectory(
   ${QNN_EXECUTORCH_ROOT_DIR}/aot/wrappers
   ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/wrappers
 )
-add_subdirectory(
-  ${QNN_EXECUTORCH_ROOT_DIR}/aot/ir
-  ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/ir
-)
 install(
   TARGETS qnn_executorch_backend
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
+  RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
 )
+
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)
+  add_subdirectory(
+    ${QNN_EXECUTORCH_ROOT_DIR}/runtime/backends/direct_mode
+    ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/direct_mode
+  )
+endif()
 
 # QNN pybind
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
@@ -242,14 +315,10 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
     ${CMAKE_CURRENT_BINARY_DIR}/pybind11
   )
   add_library(PyQnnManagerAdaptor MODULE)
-  add_library(PyQnnWrapperAdaptor MODULE)
   # PyQnnManager containing a pybind type triggers the warning because pybind11
   # code internally forces hidden visibility.
   set_target_properties(
     PyQnnManagerAdaptor PROPERTIES CXX_VISIBILITY_PRESET hidden
-  )
-  set_target_properties(
-    PyQnnWrapperAdaptor PROPERTIES CXX_VISIBILITY_PRESET hidden
   )
 
   target_link_libraries(
@@ -261,18 +330,15 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
             qnn_executorch_header
             executorch
             extension_tensor
-  )
-  target_link_libraries(
-    PyQnnWrapperAdaptor PRIVATE pybind11::module pybind11::lto wrappers
-                                qnn_executorch_logging qnn_executorch_header
+            qnn_backend_options
+            wrappers
+            qnn_executorch_logging
   )
 
   pybind11_extension(PyQnnManagerAdaptor)
-  pybind11_extension(PyQnnWrapperAdaptor)
   if(NOT MSVC AND NOT ${CMAKE_BUILD_TYPE} MATCHES RelWithDebInfo)
     # Strip unnecessary sections of the binary
     pybind11_strip(PyQnnManagerAdaptor)
-    pybind11_strip(PyQnnWrapperAdaptor)
   endif()
 
   if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -283,13 +349,18 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
     target_compile_options(
       PyQnnManagerAdaptor PUBLIC ${_pybind_compile_options}
     )
-    target_compile_options(
-      PyQnnWrapperAdaptor PUBLIC ${_pybind_compile_options}
-    )
   endif()
 
   add_subdirectory(
     ${QNN_EXECUTORCH_ROOT_DIR}/aot/python
     ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/python
+  )
+
+  install(
+    TARGETS PyQnnManagerAdaptor
+    LIBRARY
+      DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm/python
+    RUNTIME
+      DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm/python
   )
 endif()

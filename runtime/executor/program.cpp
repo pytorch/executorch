@@ -14,6 +14,7 @@
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/method.h>
+#include <executorch/runtime/executor/program_validation.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/extended_header.h>
 #include <executorch/schema/program_generated.h>
@@ -49,7 +50,8 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   auto execution_plans = program->execution_plan();
   for (size_t i = 0; i < execution_plans->size(); i++) {
     auto plan = execution_plans->GetMutableObject(i);
-    if (std::strcmp(plan->name()->c_str(), method_name) == 0) {
+    if (plan != nullptr && plan->name() != nullptr &&
+        std::strcmp(plan->name()->c_str(), method_name) == 0) {
       return plan;
     }
   }
@@ -67,6 +69,7 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   // See if the program size is in the header.
   size_t program_size = 0;
   size_t segment_base_offset = 0;
+  size_t segment_data_size = 0;
   {
     EXECUTORCH_SCOPE_PROF("Program::check_header");
     Result<FreeableBuffer> header = loader->load(
@@ -82,6 +85,24 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
       // The header has the program size.
       program_size = eh->program_size;
       segment_base_offset = eh->segment_base_offset;
+      segment_data_size = eh->segment_data_size;
+
+      // segment_data_size was added in ET 1.0 release. For BC, only check the
+      // expected file size when there are no segments or when segment_data_size
+      // is positive (0-value may indicate no segments)
+      if ((segment_data_size == 0 && segment_base_offset == 0) ||
+          segment_data_size > 0) {
+        size_t expected = segment_base_offset == 0
+            ? program_size
+            : segment_base_offset + segment_data_size;
+        size_t actual = loader->size().get();
+        ET_CHECK_OR_RETURN_ERROR(
+            expected <= actual,
+            InvalidProgram,
+            "File size is too small. Expected file size from extended header is %zu, actual file size from data loader is %zu",
+            expected,
+            actual);
+      }
     } else if (eh.error() == Error::NotFound) {
       // No header; the program consumes the whole file, and there are no
       // segments.
@@ -130,6 +151,13 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
         ok,
         InvalidProgram,
         "Verification failed; data may be truncated or corrupt");
+    const executorch_flatbuffer::Program* flatbuffer_program =
+        executorch_flatbuffer::GetProgram(program_data->data());
+    Error err = validate_program(flatbuffer_program);
+    ET_CHECK_OR_RETURN_ERROR(
+        err == Error::Ok,
+        InvalidProgram,
+        "Program validation failed: likely a corrupt file");
 #else
     ET_LOG(
         Info, "InternalConsistency verification requested but not available");
@@ -263,6 +291,11 @@ size_t Program::num_methods() const {
 
 Result<const char*> Program::get_method_name(size_t plan_index) const {
   if (plan_index >= this->num_methods()) {
+    ET_LOG(
+        Error,
+        "Plan index %zu >= num methods %zu",
+        plan_index,
+        this->num_methods());
     return Error::InvalidArgument;
   }
   auto internal_program =
@@ -270,6 +303,7 @@ Result<const char*> Program::get_method_name(size_t plan_index) const {
   // We know that the execution plan exists because num_methods() returned > 0.
   auto name = internal_program->execution_plan()->Get(plan_index)->name();
   if (name == nullptr) {
+    ET_LOG(Error, "Execution plan %zu has null name", plan_index);
     return Error::InvalidProgram;
   }
   return name->c_str();
@@ -279,7 +313,8 @@ Result<Method> Program::load_method(
     const char* method_name,
     MemoryManager* memory_manager,
     EventTracer* event_tracer,
-    const NamedDataMap* named_data_map) const {
+    const NamedDataMap* named_data_map,
+    const LoadBackendOptionsMap* backend_options) const {
   EXECUTORCH_SCOPE_PROF("Program::load_method");
   internal::event_tracer_create_event_block(event_tracer, "Default");
   internal::EventTracerProfileMethodScope event_tracer_scope =
@@ -297,7 +332,12 @@ Result<Method> Program::load_method(
     return plan.error();
   }
   return Method::load(
-      plan.get(), this, memory_manager, event_tracer, named_data_map);
+      plan.get(),
+      this,
+      memory_manager,
+      event_tracer,
+      named_data_map,
+      backend_options);
 }
 
 Result<MethodMeta> Program::method_meta(const char* method_name) const {
@@ -382,12 +422,16 @@ Result<const void*> Program::get_constant_buffer_data(
     const auto& constant_buffer = *constant_buffer_ptr;
     const auto* storage = constant_buffer[buffer_index]->storage();
     auto storage_size = storage == nullptr ? 0 : storage->size();
+    // nbytes (requested from the program) should be less than storage_size
+    // (size of the constant buffer from PTE), to prevent reading out of bounds.
+    // in some cases storage size may be larger than nbytes because of padding;
+    // executorch-tensor-alignment, or 16 by default.
     ET_CHECK_OR_RETURN_ERROR(
-        storage_size <= nbytes,
+        nbytes <= storage_size,
         InvalidArgument,
-        "Constant buffer size %zu larger than allocated nbytes %zu",
-        static_cast<size_t>(constant_buffer[buffer_index]->storage()->size()),
-        nbytes);
+        "Requested nbytes %zu exceeds constant buffer storage size %zu",
+        nbytes,
+        static_cast<size_t>(storage_size));
 
     return storage->data();
   }
@@ -406,7 +450,17 @@ Result<const char*> Program::get_output_flattening_encoding(
   if (!plan.ok()) {
     return plan.error();
   }
-  return plan.get()->container_meta_type()->encoded_out_str()->c_str();
+  auto* container_meta_type = plan.get()->container_meta_type();
+  ET_CHECK_OR_RETURN_ERROR(
+      container_meta_type != nullptr,
+      InvalidProgram,
+      "Missing container_meta_type in execution plan");
+  auto* encoded_out_str = container_meta_type->encoded_out_str();
+  ET_CHECK_OR_RETURN_ERROR(
+      encoded_out_str != nullptr,
+      InvalidProgram,
+      "Missing encoded_out_str in container_meta_type");
+  return encoded_out_str->c_str();
 }
 
 Error Program::get_backend_delegate_data(

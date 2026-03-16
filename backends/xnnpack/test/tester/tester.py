@@ -102,11 +102,14 @@ class ToExecutorch(BaseStages.ToExecutorch):
 
 
 class Tester(TesterBase):
+    __test__ = False
+
     def __init__(
         self,
         module: torch.nn.Module,
         example_inputs: Tuple[torch.Tensor],
         dynamic_shapes: Optional[Tuple[Any]] = None,
+        **kwargs,
     ):
         # Specialize for XNNPACK
         stage_classes = (
@@ -127,4 +130,5 @@ class Tester(TesterBase):
             stage_classes=stage_classes,
             example_inputs=example_inputs,
             dynamic_shapes=dynamic_shapes,
+            **kwargs,
         )

@@ -232,11 +232,14 @@ class Context final {
     return cmd_;
   }
 
+  void wait_for_queue();
+
+  void clear_resources();
+
   void flush();
 
-#ifdef VULKAN_DEBUG
-
-#ifdef VK_KHR_pipeline_executable_properties
+#if defined(VK_KHR_pipeline_executable_properties) && \
+    defined(ETVK_INSPECT_PIPELINES)
 
   VkPipeline get_shader_pipeline(
       const vkapi::ShaderInfo& shader,
@@ -260,9 +263,7 @@ class Context final {
       const vkapi::ShaderInfo& shader,
       const vkapi::SpecVarList& spec_constants);
 
-#endif // VK_KHR_pipeline_executable_properties
-
-#endif // VULKAN_DEBUG
+#endif // VK_KHR_pipeline_executable_properties && ETVK_INSPECT_PIPELINES
 };
 
 bool available();

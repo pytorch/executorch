@@ -1,4 +1,4 @@
-# Copyright 2023 NXP
+# Copyright 2023-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,10 +6,10 @@
 from enum import Enum
 
 import numpy as np
+from executorch.backends.nxp.backend.data_format import DataFormat
 
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
-from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
 
 
 class SingleUnitaryDimensionChangeType(Enum):
@@ -158,26 +158,26 @@ def ensure_reshape_transposition(builder, ops: OpsList) -> list[int]:
     new_shape = output_tensor.shape.vector
 
     if input_format.is_channels_last() and not output_format.is_channels_last():
-        # The dimensions of the tensor lose their meaning! Insert a transpose op, to change input to match ONNX.
+        # The dimensions of the tensor lose their meaning! Insert a transpose op, to change input to match ExecuTorch.
 
         permutation = list(
             translator.create_channels_last_to_channels_first_permutation(input_rank)
         )
         transpose = builder.create_transpose_operator_before(t_op, 0, permutation)
-        transpose.tmp_outputs[0].tensor_format = TensorFormat.CHANNELS_FIRST
+        transpose.tmp_outputs[0].tensor_format = DataFormat.CHANNELS_FIRST
 
         ops.add_pre(transpose)
 
     elif not input_format.is_channels_last() and output_format.is_channels_last():
         # The Reshape introduces format to the tensor (2D -> 4D  for example)
-        # The ONNX Reshape outputs a 'channels first' tensor. This has to stay the same, and then a Transpose operator
+        # The `view_copy` outputs a 'channels first' tensor. This has to stay the same, and then a Transpose operator
         # must be added, to change the tensor to 'channels last'.
 
         permutation = list(
             translator.create_channels_first_to_channels_last_permutation(output_rank)
         )
         transpose = builder.create_transpose_operator_after(t_op, 0, permutation)
-        transpose.tmp_inputs[0].tensor_format = TensorFormat.CHANNELS_FIRST
+        transpose.tmp_inputs[0].tensor_format = DataFormat.CHANNELS_FIRST
 
         new_shape = translator.dims_to_channels_first(new_shape)
 
@@ -196,7 +196,7 @@ def ensure_reshape_transposition(builder, ops: OpsList) -> list[int]:
             # Single added/removed dimension with value 1
             transpose = builder.create_transpose_operator_before(t_op, 0, permutation)
             transpose.tmp_outputs[0].tensor_format = (
-                TensorFormat.RESHAPE_SINGLE_UNITARY_TRANSPOSITION
+                DataFormat.RESHAPE_SINGLE_UNITARY_TRANSPOSITION
             )
 
             ops.add_pre(transpose)
@@ -213,7 +213,7 @@ def ensure_reshape_transposition(builder, ops: OpsList) -> list[int]:
                     t_op, 0, list(last_to_first_perm)
                 )
             )
-            t_op.tmp_inputs[0].tensor_format = TensorFormat.CHANNELS_FIRST
+            t_op.tmp_inputs[0].tensor_format = DataFormat.CHANNELS_FIRST
 
             new_shape = translator.dims_to_channels_first(new_shape)
 
@@ -228,6 +228,6 @@ def ensure_reshape_transposition(builder, ops: OpsList) -> list[int]:
                     t_op, 0, list(first_to_last_perm)
                 ),
             )
-            t_op.tmp_outputs[0].tensor_format = TensorFormat.CHANNELS_FIRST
+            t_op.tmp_outputs[0].tensor_format = DataFormat.CHANNELS_FIRST
 
     return new_shape

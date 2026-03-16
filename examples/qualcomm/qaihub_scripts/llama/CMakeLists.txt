@@ -30,8 +30,7 @@ list(PREPEND _qaihub_llama2_7b_runner__srcs
 add_executable(qaihub_llama2_7b_runner ${_qaihub_llama2_7b_runner__srcs})
 
 target_include_directories(
-  qaihub_llama2_7b_runner
-  PUBLIC ${_common_include_directories}
+  qaihub_llama2_7b_runner PUBLIC ${_common_include_directories}
 )
 target_link_libraries(
   qaihub_llama2_7b_runner
@@ -64,9 +63,7 @@ list(APPEND _common_compile_options -DQAIHUB_LLAMA3_RUNNER)
 # build qaihub llama3 8b runner
 add_executable(qaihub_llama3_8b_runner ${_qaihub_llama3_8b_runner__srcs})
 target_include_directories(
-  qaihub_llama3_8b_runner
-  PUBLIC
-    ${_common_include_directories}
+  qaihub_llama3_8b_runner PUBLIC ${_common_include_directories}
 )
 
 target_link_libraries(

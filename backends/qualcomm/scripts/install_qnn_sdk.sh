@@ -9,7 +9,7 @@ source "${SCRIPT_DIR}/qnn_config.sh"
 # Function to install Android NDK (only if not already set)
 setup_android_ndk() {
     # Check if ANDROID_NDK_ROOT is already set and valid
-    if [ -n "${ANDROID_NDK_ROOT}" ] && [ -d "${ANDROID_NDK_ROOT}" ]; then
+    if [ -n "${ANDROID_NDK_ROOT:-}" ] && [ -d "${ANDROID_NDK_ROOT:-}" ]; then
         echo "Android NDK already set to ${ANDROID_NDK_ROOT} - skipping installation"
         return
     fi
@@ -27,7 +27,7 @@ setup_android_ndk() {
     mkdir -p "${NDK_INSTALL_DIR}"
     NDK_ZIP="android-ndk-${NDK_VERSION}-linux.zip"
 
-    curl -Lo "/tmp/${NDK_ZIP}" "https://dl.google.com/android/repository/${NDK_ZIP}"
+    curl --retry 3 --retry-delay 5 --retry-connrefused --continue-at - -Lo "/tmp/${NDK_ZIP}" "https://dl.google.com/android/repository/${NDK_ZIP}"
     unzip -q "/tmp/${NDK_ZIP}" -d "${NDK_INSTALL_DIR}"
     mv "${NDK_INSTALL_DIR}/android-ndk-${NDK_VERSION}" "${NDK_INSTALL_DIR}/ndk"
 
@@ -41,13 +41,19 @@ verify_pkg_installed() {
 
 install_qnn() {
   # Check if QNN_SDK_ROOT is already set and valid
-  if [ -n "${QNN_SDK_ROOT}" ] && [ -d "${QNN_SDK_ROOT}" ]; then
+  if [ -n "${QNN_SDK_ROOT:-}" ] && [ -d "${QNN_SDK_ROOT:-}" ]; then
     echo "QNN SDK already set to ${QNN_SDK_ROOT} - skipping installation"
     return
   fi
 
   echo "Start installing qnn v${QNN_VERSION}"
   QNN_INSTALLATION_DIR="/tmp/qnn"
+
+  if [ -d "${QNN_INSTALLATION_DIR}/${QNN_VERSION}" ]; then
+        echo "QNN SDK already installed at ${QNN_INSTALLATION_DIR}/${QNN_VERSION}"
+        export QNN_SDK_ROOT="${QNN_INSTALLATION_DIR}/${QNN_VERSION}"
+        return
+  fi
 
   # Clean up any previous installation
   if [ -d "${QNN_INSTALLATION_DIR}" ]; then
@@ -58,7 +64,7 @@ install_qnn() {
   mkdir -p "${QNN_INSTALLATION_DIR}"
 
   QNN_ZIP_FILE="v${QNN_VERSION}.zip"
-  curl -Lo "/tmp/${QNN_ZIP_FILE}" "${QNN_ZIP_URL}"
+  curl --retry 3 -Lo "/tmp/${QNN_ZIP_FILE}" "${QNN_ZIP_URL}"
   echo "Finishing downloading qnn sdk."
   unzip -qo "/tmp/${QNN_ZIP_FILE}" -d /tmp
   echo "Finishing unzip qnn sdk."
@@ -79,7 +85,7 @@ install_qnn() {
   ls -lah "${QNN_INSTALLATION_DIR}"
 
   # Set QNN_SDK_ROOT environment variable
-  export QNN_SDK_ROOT="${QNN_INSTALLATION_DIR}"
+  export QNN_SDK_ROOT="${QNN_INSTALLATION_DIR}/${QNN_VERSION}"
   echo "Set QNN_SDK_ROOT=${QNN_SDK_ROOT}"
 }
 
@@ -111,7 +117,7 @@ setup_libcpp() {
   LLVM_URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/${BASE_NAME}.tar.xz"
 
   echo "Downloading LLVM from ${LLVM_URL}"
-  curl -fLO "${LLVM_URL}" || {
+  curl --retry 3 -fLO "${LLVM_URL}" || {
       echo "Error: Failed to download LLVM"
       exit 1
   }
@@ -141,13 +147,9 @@ setup_libcpp() {
   popd >/dev/null
 
   # Set environment variables
-  export CPLUS_INCLUDE_PATH="${INSTALL_DIR}/include:$CPLUS_INCLUDE_PATH"
-  export LD_LIBRARY_PATH="${INSTALL_DIR}/lib:$LD_LIBRARY_PATH"
-  export LIBRARY_PATH="${INSTALL_DIR}/lib:$LIBRARY_PATH"
+  export CPLUS_INCLUDE_PATH="${INSTALL_DIR}/include:${CPLUS_INCLUDE_PATH:-}"
+  export LD_LIBRARY_PATH="${INSTALL_DIR}/lib:${LD_LIBRARY_PATH:-}"
+  export LIBRARY_PATH="${INSTALL_DIR}/lib:${LIBRARY_PATH:-}"
 
   echo "libc++ installed to ${INSTALL_DIR}"
 }
-
-setup_libcpp 12
-setup_android_ndk
-install_qnn

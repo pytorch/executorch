@@ -21,10 +21,14 @@
 
 #include <errno.h>
 #include <io.h>
+#include <cstdint>
+#include <limits>
+#define NOMINMAX
 #include <windows.h>
+#undef NOMINMAX
 
 #ifndef STATUS_SECTION_TOO_BIG
-#define STATUS_SECTION_TOO_BIG ((NTSTATUS)0xC0000040L)
+#define STATUS_SECTION_TOO_BIG 0xC0000040L
 #endif
 
 #ifndef FILE_MAP_EXECUTE
@@ -129,48 +133,43 @@ static DWORD __map_mmap_prot_file(const int prot) {
 
 } // namespace
 
-void* mmap(void* addr, size_t len, int prot, int flags, int fildes, off_t off) {
+void* mmap(
+    void* addr,
+    size_t len,
+    int prot,
+    int flags,
+    int fildes,
+    uint64_t off) {
   HANDLE fm, h;
-
   void* map = MAP_FAILED;
-
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 4293)
-#endif
-
-  const DWORD dwFileOffsetLow = (sizeof(off_t) <= sizeof(DWORD))
-      ? (DWORD)off
-      : (DWORD)(off & 0xFFFFFFFFL);
-  const DWORD dwFileOffsetHigh = (sizeof(off_t) <= sizeof(DWORD))
-      ? (DWORD)0
-      : (DWORD)((off >> 32) & 0xFFFFFFFFL);
-  const DWORD protect = __map_mmap_prot_page(prot);
-  const DWORD desiredAccess = __map_mmap_prot_file(prot);
-
-  const off_t maxSize = off + (off_t)len;
-
-  const DWORD dwMaxSizeLow = (sizeof(off_t) <= sizeof(DWORD))
-      ? (DWORD)maxSize
-      : (DWORD)(maxSize & 0xFFFFFFFFL);
-  const DWORD dwMaxSizeHigh = (sizeof(off_t) <= sizeof(DWORD))
-      ? (DWORD)0
-      : (DWORD)((maxSize >> 32) & 0xFFFFFFFFL);
-
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
 
   errno = 0;
 
   if (len == 0
       /* Unsupported flag combinations */
       || (flags & MAP_FIXED) != 0
-      /* Usupported protection combinations */
+      /* Unsupported protection combinations */
       || prot == PROT_EXEC) {
     errno = EINVAL;
     return MAP_FAILED;
   }
+
+  if (off > std::numeric_limits<std::uint64_t>::max() - len) {
+    errno = EINVAL;
+    return MAP_FAILED;
+  }
+
+  const std::uint64_t maxSize = off + static_cast<std::uint64_t>(len);
+
+  const DWORD dwFileOffsetLow = static_cast<DWORD>(off & 0xFFFFFFFFULL);
+  const DWORD dwFileOffsetHigh =
+      static_cast<DWORD>((off >> 32) & 0xFFFFFFFFULL);
+  const DWORD protect = __map_mmap_prot_page(prot);
+  const DWORD desiredAccess = __map_mmap_prot_file(prot);
+
+  const DWORD dwMaxSizeLow = static_cast<DWORD>(maxSize & 0xFFFFFFFFULL);
+  const DWORD dwMaxSizeHigh =
+      static_cast<DWORD>((maxSize >> 32) & 0xFFFFFFFFULL);
 
   h = ((flags & MAP_ANONYMOUS) == 0) ? (HANDLE)_get_osfhandle(fildes)
                                      : INVALID_HANDLE_VALUE;

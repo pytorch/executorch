@@ -468,3 +468,30 @@ TEST_F(OpVarCorrectionOutTest, SmokeTest) {
   ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
+
+TEST_F(OpVarOutTest, EmptyInput) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor x = tf.make({2, 0, 3}, {});
+  bool unbiased = true;
+  optional<ArrayRef<int64_t>> dim_list = ArrayRef<int64_t>{};
+  Tensor out = tf.zeros({1, 1, 1});
+  op_var_out(x, dim_list, unbiased, /*keepdim=*/true, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({1, 1, 1}, {NAN}));
+
+  out = tf.zeros({});
+  op_var_out(x, dim_list, unbiased, /*keepdim=*/false, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({}, {NAN}));
+
+  int64_t dims1[1] = {1};
+  dim_list = ArrayRef<int64_t>{dims1, 1};
+  out = tf.zeros({2, 3});
+  op_var_out(x, dim_list, unbiased, /*keepdim=*/false, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({2, 3}, {NAN, NAN, NAN, NAN, NAN, NAN}));
+
+  int64_t dims2[1] = {2};
+  dim_list = ArrayRef<int64_t>{dims2, 1};
+  out = tf.make({2, 0, 1}, {});
+  op_var_out(x, dim_list, unbiased, /*keepdim=*/true, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({2, 0, 1}, {}));
+}

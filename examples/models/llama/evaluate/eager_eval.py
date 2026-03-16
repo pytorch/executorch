@@ -10,6 +10,7 @@ from typing import Optional, Union
 import torch
 
 from lm_eval.models.huggingface import HFLM as eval_wrapper
+from pytorch_tokenizers.hf_tokenizer import HuggingFaceTokenizer
 from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
 from pytorch_tokenizers.tiktoken import TiktokenTokenizer as Tiktoken
 
@@ -24,7 +25,7 @@ class EagerEvalWrapper(eval_wrapper):
     def __init__(
         self,
         model: nn.Module,
-        tokenizer: Union[SentencePieceTokenizer, Tiktoken],
+        tokenizer: Union[SentencePieceTokenizer, Tiktoken, HuggingFaceTokenizer],
         max_seq_length: Optional[int] = None,
         use_kv_cache: bool = False,
     ):
@@ -68,8 +69,8 @@ class EagerEvalWrapper(eval_wrapper):
     def tok_encode(self, string: str, **kwargs):  # pyre-ignore
         return self._tokenizer.encode(string, bos=False, eos=False)
 
-    def tok_decode(self, tokens):
-        return self._tokenizer.decode(tokens)
+    def tok_decode(self, tokens, **kwargs):
+        return self._tokenizer.decode([tokens] if isinstance(tokens, int) else tokens)
 
     def _model_call(self, inps):
         if self._use_kv_cache:

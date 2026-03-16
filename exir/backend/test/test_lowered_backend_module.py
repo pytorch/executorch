@@ -16,7 +16,7 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
-from executorch.exir.backend.test.qnn_backend_demo import QnnBackend
+from executorch.exir.backend.test.demo_backend import DemoBackend
 from executorch.exir.schema import DelegateCall, Program
 
 from executorch.extension.pybindings.portable_lib import (  # @manual
@@ -128,7 +128,7 @@ class TestBackendAPI(unittest.TestCase):
                 compile_config=edge_compile_config,
             )
             lowered_model = to_backend(
-                QnnBackend.__name__, edgeir_m.exported_program(), []
+                DemoBackend.__name__, edgeir_m.exported_program(), []
             )
             program = lowered_model.program()
             reference_program = self.get_program_from_wrapped_module(
@@ -181,7 +181,7 @@ class TestBackendAPI(unittest.TestCase):
                 compile_config=edge_compile_config,
             )
             lowered_module = to_backend(
-                QnnBackend.__name__, edgeir_m.exported_program(), []
+                DemoBackend.__name__, edgeir_m.exported_program(), []
             )
 
             # This module will include one operator and two delegate call
@@ -200,7 +200,7 @@ class TestBackendAPI(unittest.TestCase):
             )
 
             nested_lowered_model = to_backend(
-                QnnBackend.__name__, wrapped_module_edge.exported_program(), []
+                DemoBackend.__name__, wrapped_module_edge.exported_program(), []
             )
 
             program = nested_lowered_model.program()

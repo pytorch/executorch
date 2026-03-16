@@ -1,11 +1,13 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
 
+import importlib.resources as _resources
 import json
 import math
 import os
@@ -13,20 +15,19 @@ import tempfile
 from dataclasses import dataclass
 from typing import ClassVar, Dict, List, Literal, Optional
 
-import pkg_resources
+import executorch.extension.flat_tensor.serialize as serialize_package
+
 from executorch.exir._serialize._cord import Cord
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
-
 from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
+from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 from executorch.exir._serialize._program import _insert_flatbuffer_header
 from executorch.exir._serialize.data_serializer import (
     DataEntry,
     DataPayload,
     DataSerializer,
 )
-
 from executorch.exir._serialize.padding import aligned_size, pad_to, padding_required
-
 from executorch.extension.flat_tensor.serialize.flat_tensor_schema import (
     DataSegment,
     FlatTensor,
@@ -37,6 +38,9 @@ from executorch.extension.flat_tensor.serialize.flat_tensor_schema import (
 # regardless of the host system, since all commonly-used modern CPUs are little
 # endian.
 _HEADER_BYTEORDER: Literal["little"] = "little"
+
+# Alignment of the flatbuffer (after the header).
+_FLATBUFFER_ALIGNMENT: int = 16
 
 # Current version. Keep in sync with c++ version number in serialize.
 _FLAT_TENSOR_VERSION: int = 0
@@ -49,12 +53,12 @@ def _serialize_to_flatbuffer(flat_tensor: FlatTensor) -> Cord:
         schema_path = os.path.join(d, "flat_tensor.fbs")
         with open(schema_path, "wb") as schema_file:
             schema_file.write(
-                pkg_resources.resource_string(__name__, "flat_tensor.fbs")
+                _resources.read_binary(serialize_package, "flat_tensor.fbs")
             )
         scalar_type_path = os.path.join(d, "scalar_type.fbs")
         with open(scalar_type_path, "wb") as scalar_type_file:
             scalar_type_file.write(
-                pkg_resources.resource_string(__name__, "scalar_type.fbs")
+                _resources.read_binary(serialize_package, "scalar_type.fbs")
             )
         json_path = os.path.join(d, "flat_tensor.json")
         with open(json_path, "wb") as json_file:
@@ -72,13 +76,13 @@ def _deserialize_to_flat_tensor(flatbuffer: bytes) -> FlatTensor:
         schema_path = os.path.join(d, "flat_tensor.fbs")
         with open(schema_path, "wb") as schema_file:
             schema_file.write(
-                pkg_resources.resource_string(__name__, "flat_tensor.fbs")
+                _resources.read_binary(serialize_package, "flat_tensor.fbs")
             )
 
         scalar_type_path = os.path.join(d, "scalar_type.fbs")
         with open(scalar_type_path, "wb") as scalar_type_file:
             scalar_type_file.write(
-                pkg_resources.resource_string(__name__, "scalar_type.fbs")
+                _resources.read_binary(serialize_package, "scalar_type.fbs")
             )
 
         bin_path = os.path.join(d, "flat_tensor.bin")
@@ -94,8 +98,7 @@ def _deserialize_to_flat_tensor(flatbuffer: bytes) -> FlatTensor:
 
 @dataclass
 class FlatTensorConfig:
-    tensor_alignment: int = 16
-    segment_alignment: int = 16
+    segment_alignment: int = 128
 
 
 @dataclass
@@ -333,18 +336,13 @@ class FlatTensorSerializer(DataSerializer):
         )
 
         flatbuffer_payload = _serialize_to_flatbuffer(flat_tensor)
-        padded_flatbuffer_length: int = aligned_size(
-            input_size=len(flatbuffer_payload),
-            alignment=self.config.tensor_alignment,
-        )
-
         padded_header_length: int = aligned_size(
             input_size=FlatTensorHeader.EXPECTED_LENGTH,
-            alignment=self.config.tensor_alignment,
+            alignment=_FLATBUFFER_ALIGNMENT,
         )
 
         segment_base_offset = aligned_size(
-            padded_flatbuffer_length + padded_header_length,
+            len(flatbuffer_payload) + padded_header_length,
             self.config.segment_alignment,
         )
 
@@ -359,19 +357,16 @@ class FlatTensorSerializer(DataSerializer):
 
         # Pad header and payload to segment alignment.
         header_data = pad_to(header_data, padded_header_length)
-        original_flatbuffer_payload_size = len(flatbuffer_payload)
-        flatbuffer_payload.append(
-            b"\x00" * (padded_flatbuffer_length - len(flatbuffer_payload))
-        )
         injected_flatbuffer_data: bytes = _insert_flatbuffer_header(
             flatbuffer_data=flatbuffer_payload.__bytes__(),
             magic_regex=r"FT[0-9a-zA-Z][0-9a-zA-Z]",
             header_data=header_data,
         )
+        injected_flatbuffer_data = pad_to(injected_flatbuffer_data, segment_base_offset)
 
         eh = _get_extended_header(injected_flatbuffer_data)
         assert eh is not None
-        assert eh.flatbuffer_size == original_flatbuffer_payload_size
+        assert eh.flatbuffer_size == len(flatbuffer_payload)
         assert eh.segment_base_offset == segment_base_offset
         assert eh.flatbuffer_offset == padded_header_length
         assert eh.segment_data_size == len(aggregated_segment_data)
@@ -389,6 +384,8 @@ class FlatTensorSerializer(DataSerializer):
     def deserialize(self, blob: Cord) -> DataPayload:
         """
         Deserializes a flat_tensor blob into a list of tensor metadata and tensors.
+
+        Note: deserialization does not preserve alignment information.
         """
 
         data = bytes(blob)
@@ -436,3 +433,14 @@ class FlatTensorSerializer(DataSerializer):
             payload.named_data[named_data.key] = entry
 
         return payload
+
+    def deserialize_to_named_data_store_output(
+        self, blob: bytes, name: str
+    ) -> NamedDataStoreOutput:
+        bytes = Cord(blob)
+        data_payload = self.deserialize(bytes)
+        return NamedDataStoreOutput(
+            buffers=data_payload.buffers,
+            pte_data={},
+            external_data={name: data_payload.named_data},
+        )

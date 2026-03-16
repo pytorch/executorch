@@ -8,6 +8,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <unordered_map>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
@@ -104,9 +105,13 @@ TEST_F(MethodTest, MoveTest) {
   Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
   ASSERT_EQ(method.error(), Error::Ok);
 
-  // Can execute the method.
+  // Set dummy inputs.
   auto input_cleanup = prepare_input_tensors(*method);
   ASSERT_EQ(input_cleanup.error(), Error::Ok);
+  auto input_err = method->set_input(executorch::runtime::EValue(1.0), 2);
+  ASSERT_EQ(input_err, Error::Ok);
+
+  // Can execute the method.
   Error err = method->execute();
   ASSERT_EQ(err, Error::Ok);
 
@@ -135,8 +140,8 @@ TEST_F(MethodTest, GetInputTests) {
   method->get_input(num_inputs - 1);
 
   // Out-of-range inputs should abort.
-  ET_EXPECT_DEATH(method->get_input(num_inputs), "");
-  ET_EXPECT_DEATH(method->get_input(num_inputs + 1), "");
+  ET_EXPECT_DEATH(method->get_input(num_inputs), "[0-9]+ >= [0-9]+");
+  ET_EXPECT_DEATH(method->get_input(num_inputs + 1), "[0-9]+ >= [0-9]+");
 }
 
 TEST_F(MethodTest, MutableInputTests) {
@@ -152,8 +157,8 @@ TEST_F(MethodTest, MutableInputTests) {
   method->mutable_input(num_inputs - 1);
 
   // Out-of-range inputs should abort.
-  ET_EXPECT_DEATH(method->mutable_input(num_inputs), "");
-  ET_EXPECT_DEATH(method->mutable_input(num_inputs + 1), "");
+  ET_EXPECT_DEATH(method->mutable_input(num_inputs), "[0-9]+ >= [0-9]+");
+  ET_EXPECT_DEATH(method->mutable_input(num_inputs + 1), "[0-9]+ >= [0-9]+");
 }
 
 TEST_F(MethodTest, GetOutputTests) {
@@ -169,8 +174,8 @@ TEST_F(MethodTest, GetOutputTests) {
   method->get_output(num_outputs - 1);
 
   // Out-of-range outputs should abort.
-  ET_EXPECT_DEATH(method->get_output(num_outputs), "");
-  ET_EXPECT_DEATH(method->get_output(num_outputs + 1), "");
+  ET_EXPECT_DEATH(method->get_output(num_outputs), "[0-9]+ >= [0-9]+");
+  ET_EXPECT_DEATH(method->get_output(num_outputs + 1), "[0-9]+ >= [0-9]+");
 }
 
 TEST_F(MethodTest, MutableOutputTests) {
@@ -186,8 +191,8 @@ TEST_F(MethodTest, MutableOutputTests) {
   method->mutable_output(num_outputs - 1);
 
   // Out-of-range outputs should abort.
-  ET_EXPECT_DEATH(method->mutable_output(num_outputs), "");
-  ET_EXPECT_DEATH(method->mutable_output(num_outputs + 1), "");
+  ET_EXPECT_DEATH(method->mutable_output(num_outputs), "[0-9]+ >= [0-9]+");
+  ET_EXPECT_DEATH(method->mutable_output(num_outputs + 1), "[0-9]+ >= [0-9]+");
 }
 
 TEST_F(MethodTest, SetPrimInputTest) {
@@ -312,6 +317,21 @@ TEST_F(MethodTest, ConstantSegmentTest) {
       programs_["add_mul"]->load_method("forward", &mmm.get());
   ASSERT_EQ(method.error(), Error::Ok);
 
+  // Set a dummy input.
+  int32_t sizes[2] = {2, 2};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {2, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      nullptr,
+      dim_order,
+      strides);
+  auto input_err = method->set_input(
+      executorch::runtime::EValue(executorch::aten::Tensor(&impl)), 0);
+  ASSERT_EQ(input_err, Error::Ok);
+
   // Can execute the method.
   Error err = method->execute();
   ASSERT_EQ(err, Error::Ok);
@@ -324,6 +344,21 @@ TEST_F(MethodTest, ConstantBufferTest) {
       programs_["linear_constant_buffer"]->load_method("forward", &mmm.get());
   ASSERT_EQ(method.error(), Error::Ok);
 
+  // Set a dummy input.
+  int32_t sizes[2] = {2, 2};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {2, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      nullptr,
+      dim_order,
+      strides);
+  auto input_err = method->set_input(
+      executorch::runtime::EValue(executorch::aten::Tensor(&impl)), 0);
+  ASSERT_EQ(input_err, Error::Ok);
+
   // Can execute the method.
   Error err = method->execute();
   ASSERT_EQ(err, Error::Ok);
@@ -334,6 +369,21 @@ TEST_F(MethodTest, ProgramDataSeparationTest) {
   Result<Method> method = programs_["add_mul_program"]->load_method(
       "forward", &mmm.get(), nullptr, data_maps_["add_mul_data"].get());
   ASSERT_EQ(method.error(), Error::Ok);
+
+  // Set a dummy input.
+  int32_t sizes[2] = {2, 2};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {2, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      nullptr,
+      dim_order,
+      strides);
+  auto input_err = method->set_input(
+      executorch::runtime::EValue(executorch::aten::Tensor(&impl)), 0);
+  ASSERT_EQ(input_err, Error::Ok);
 
   // Can execute the method.
   Error err = method->execute();
@@ -357,12 +407,117 @@ TEST_F(MethodTest, MethodGetAttributeTest) {
   // expect data to be set
   EXPECT_EQ(res->const_data_ptr(), &data);
 
+  // Set a dummy input.
+  int32_t sizes[1] = {1};
+  uint8_t dim_order[1] = {0};
+  int32_t strides[1] = {1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      1,
+      sizes,
+      nullptr,
+      dim_order,
+      strides);
+  auto input_err = method->set_input(
+      executorch::runtime::EValue(executorch::aten::Tensor(&impl)), 0);
+  ASSERT_EQ(input_err, Error::Ok);
+
   // Can execute the method.
   Error err = method->execute();
   ASSERT_EQ(err, Error::Ok);
 
   // Expect the state to be incremented
   EXPECT_EQ(res->const_data_ptr<int32_t>()[0], 1);
+}
+
+TEST_F(MethodTest, InProgressInitialState) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  EXPECT_FALSE(method->in_progress());
+}
+
+TEST_F(MethodTest, InProgressDuringStepExecution) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method =
+      programs_["add_mul"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  auto input_cleanup = prepare_input_tensors(*method);
+  ASSERT_EQ(input_cleanup.error(), Error::Ok);
+
+  Error err = method->step();
+  ASSERT_EQ(err, Error::Ok);
+
+  EXPECT_TRUE(method->in_progress());
+
+  while (err != Error::EndOfMethod) {
+    err = method->step();
+    ASSERT_TRUE(err == Error::Ok || err == Error::EndOfMethod);
+  }
+
+  EXPECT_FALSE(method->in_progress());
+}
+
+TEST_F(MethodTest, ExecuteFailsWhenInProgress) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method =
+      programs_["add_mul"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  auto input_cleanup = prepare_input_tensors(*method);
+  ASSERT_EQ(input_cleanup.error(), Error::Ok);
+
+  Error err = method->step();
+  ASSERT_EQ(err, Error::Ok);
+  ASSERT_TRUE(method->in_progress());
+
+  err = method->execute();
+  EXPECT_EQ(err, Error::InvalidState);
+}
+
+TEST_F(MethodTest, ExecuteSucceedsAfterReset) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  auto input_cleanup = prepare_input_tensors(*method);
+  ASSERT_EQ(input_cleanup.error(), Error::Ok);
+  auto input_err = method->set_input(EValue(1.0), 2);
+  ASSERT_EQ(input_err, Error::Ok);
+
+  Error err = Error::Ok;
+  while (err != Error::EndOfMethod) {
+    err = method->step();
+    ASSERT_TRUE(err == Error::Ok || err == Error::EndOfMethod);
+  }
+
+  err = method->reset_execution();
+  ASSERT_EQ(err, Error::Ok);
+  EXPECT_FALSE(method->in_progress());
+
+  err = method->execute();
+  EXPECT_EQ(err, Error::Ok);
+}
+
+TEST_F(MethodTest, ExecuteResetsOnError) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  Error err = method->execute();
+  EXPECT_NE(err, Error::Ok);
+
+  EXPECT_FALSE(method->in_progress());
+
+  auto input_cleanup = prepare_input_tensors(*method);
+  ASSERT_EQ(input_cleanup.error(), Error::Ok);
+  auto input_err = method->set_input(EValue(1.0), 2);
+  ASSERT_EQ(input_err, Error::Ok);
+
+  err = method->execute();
+  EXPECT_EQ(err, Error::Ok);
 }
 
 /*

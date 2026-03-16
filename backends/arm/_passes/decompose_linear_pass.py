@@ -1,29 +1,36 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
-import numpy as np
+from typing import Set, Type
+
+import torch
+
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
 )
+from executorch.backends.arm._passes.insert_rescales_pass import InsertRescaleInt32Pass
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import PassResult
+from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class DecomposeLinearPass(ArmPass):
+    """This pass decomposes linear into a Conv2D with view operations.
+
+    Example:
+        linear(x, weights, bias) becomes:
+            x_reshaped = view(x)
+            weights_reshaped = view(weights)
+            conv2d = conv2d(x_reshaped, weights_reshaped, bias)
+            output = view(conv2d)
+
     """
-    This pass decomposes linear into a Conv2D with the required view operations.
-    linear(x, weights, bias) becomes:
-        x_reshaped       = view(x)
-        weights_reshaped = view(weights)
-        conv2d           = conv2d(x_reshaped, weights_reshaped, bias)
-        output           = view(conv2d)
-    """
+
+    _passes_required_after: Set[Type[ExportPass]] = {InsertRescaleInt32Pass}
 
     def call(self, graph_module):
         for node in graph_module.graph.nodes:
@@ -38,7 +45,9 @@ class DecomposeLinearPass(ArmPass):
             output_shape = get_first_fake_tensor(node).shape
             input_shape = get_first_fake_tensor(input).shape
             weights_shape = get_first_fake_tensor(weights).shape
-            batches = int(np.prod(input_shape[:-1])) if len(input_shape) > 1 else 1
+            batches = torch.sym_int(1)
+            for dim in input_shape[:-1]:
+                batches *= dim
             # input has shape (..., Ci)
             input_reshaped_shape = [batches, input_shape[-1], 1, 1]
             # weights have shape (Co, Ci)
@@ -51,6 +60,8 @@ class DecomposeLinearPass(ArmPass):
                     op_target=exir_ops.edge.aten.view_copy.default,
                     args=(input, input_reshaped_shape),
                     kwargs={},
+                    from_node=node,
+                    inherit_qparams=False,
                 )
 
                 # Reshape weights to 4D with shape (Co, Ci, 1, 1)
@@ -59,6 +70,8 @@ class DecomposeLinearPass(ArmPass):
                     op_target=exir_ops.edge.aten.view_copy.default,
                     args=(weights, weights_reshaped_shape),
                     kwargs={},
+                    from_node=node,
+                    inherit_qparams=False,
                 )
 
                 conv = create_node(
@@ -77,6 +90,7 @@ class DecomposeLinearPass(ArmPass):
                     ),
                     kwargs={},
                     from_node=node,
+                    inherit_qparams=True,
                 )
 
             with graph_module.graph.inserting_after(conv):
@@ -89,6 +103,7 @@ class DecomposeLinearPass(ArmPass):
                     args=(conv, list(output_shape)),
                     kwargs={},
                     from_node=node,
+                    inherit_qparams=False,
                 )
 
             node.replace_all_uses_with(output)

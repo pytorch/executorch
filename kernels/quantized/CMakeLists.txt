@@ -4,7 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Kernel library for quantized operators. Please this file formatted by running:
+# Kernel library for quantized operators. Please keep this file formatted by
+# running:
 # ~~~
 # cmake-format -i CMakeLists.txt
 # ~~~
@@ -152,6 +153,7 @@ gen_operators_lib(
 install(
   TARGETS quantized_kernels quantized_ops_lib
   EXPORT ExecuTorchTargets
-  DESTINATION lib
-  PUBLIC_HEADER DESTINATION include/executorch/kernels/quantized/
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  PUBLIC_HEADER
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/kernels/quantized/
 )

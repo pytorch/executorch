@@ -43,7 +43,7 @@ class ExecuteNode {
   friend class ComputeGraph;
 
  public:
-  using ResizeFunction = const std::function<void(
+  using ResizeFunction = std::function<void(
       ComputeGraph*,
       const std::vector<ArgGroup>&,
       const std::vector<ValueRef>&)>;
@@ -57,7 +57,8 @@ class ExecuteNode {
       const ResizeFunction& resize_fn = nullptr,
       const std::vector<ValueRef>& resize_args = {},
       const std::vector<ArgGroup>& args = {},
-      const std::string& name = "Graph Node");
+      const std::string& name = "Graph Node",
+      const bool has_data_dependent_shape = false);
 
   virtual ~ExecuteNode() = default;
 
@@ -69,11 +70,9 @@ class ExecuteNode {
     (void)graph;
   }
 
-  virtual inline void trigger_resize(ComputeGraph* graph) {
-    if (resize_fn_ != nullptr) {
-      resize_fn_(graph, args_, resize_args_);
-    }
-  }
+  virtual bool trigger_resize(ComputeGraph* graph);
+
+  bool was_any_arg_updated(const ComputeGraph* const graph) const;
 
   inline void set_node_id(uint32_t node_id) {
     node_id_ = node_id;
@@ -89,6 +88,12 @@ class ExecuteNode {
   const std::vector<ValueRef> resize_args_;
   const std::vector<ArgGroup> args_;
   const std::string name_;
+  bool has_data_dependent_shape_ = false;
+
+#ifdef ET_EVENT_TRACER_ENABLED
+  std::string operator_json;
+  size_t operator_count = 0;
+#endif
 };
 
 } // namespace vkcompute

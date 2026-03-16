@@ -6,11 +6,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/portable/cpu/util/math_util.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
+
 #include <c10/util/irange.h>
 #include <cmath>
 #include <tuple>
-
-#include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
 namespace executor {
@@ -62,7 +64,7 @@ bool float_less_than(T x, T y) {
   if constexpr (std::is_integral_v<T>) {
     return x < y;
   }
-  return (!std::isnan(x) && std::isnan(y)) || x < y;
+  return (!utils::isnan_override(x) && utils::isnan_override(y)) || x < y;
 }
 
 template <typename CTYPE, typename elem_t = std::pair<CTYPE, int64_t>>
@@ -77,7 +79,7 @@ void perform_topk(
     elem_t* queue) {
   const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
   CTYPE* values_data = values.mutable_data_ptr<CTYPE>();
-  long* indices_data = indices.mutable_data_ptr<long>();
+  int64_t* indices_data = indices.mutable_data_ptr<int64_t>();
 
   if (in.dim() == 0) {
     values_data[0] = in_data[0];
@@ -115,14 +117,18 @@ void perform_topk(
         queue[i].second = i;
       }
 
-      // Perform topk on the queue
-      const auto elem_greater = [](const elem_t& x, const elem_t& y) -> bool {
+      // Perform topk on the queue, explict typing for the lambda to satisfy
+      // msvc compiler.
+      bool (*elem_greater)(const elem_t&, const elem_t&) =
+          [](const elem_t& x, const elem_t& y) -> bool {
         return float_less_than(y.first, x.first);
       };
-      const auto elem_less = [](const elem_t& x, const elem_t& y) -> bool {
+      bool (*elem_less)(const elem_t&, const elem_t&) =
+          [](const elem_t& x, const elem_t& y) -> bool {
         return float_less_than(x.first, y.first);
       };
-      const auto cmp = largest ? elem_greater : elem_less;
+      bool (*cmp)(const elem_t&, const elem_t&) =
+          largest ? elem_greater : elem_less;
       if (use_partial_sort) {
         std::partial_sort(queue, queue + k, queue + dim_size, cmp);
       } else {
@@ -185,7 +191,7 @@ std::tuple<Tensor&, Tensor&> topk_values(
       InvalidArgument,
       out);
 
-  constexpr auto name = "topk.values";
+  static constexpr auto name = "topk.values";
 
   if (in.numel() == 0 || (k == 0 && in.dim() > 0)) {
     return out;

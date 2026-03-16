@@ -62,15 +62,22 @@ if(EXECUTORCH_BUILD_PYBIND)
     )
   endif()
 
-  # pybind training
   pybind11_add_module(
     _training_lib SHARED
     ${CMAKE_CURRENT_SOURCE_DIR}/pybindings/_training_lib.cpp
   )
+  set_target_properties(_training_lib PROPERTIES CXX_STANDARD 20)
 
   target_include_directories(_training_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(
-    _training_lib PUBLIC -Wno-deprecated-declarations -fPIC -frtti -fexceptions
+    _training_lib
+    PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc
+           /GR
+           /wd4996>
+           $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations
+           -fPIC
+           -frtti
+           -fexceptions>
   )
   target_link_libraries(_training_lib PRIVATE ${_pybind_training_dep_libs})
 
@@ -83,7 +90,7 @@ endif()
 install(
   TARGETS extension_training
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES
   DESTINATION ${_common_include_directories}
 )

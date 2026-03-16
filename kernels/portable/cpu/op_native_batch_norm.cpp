@@ -7,6 +7,7 @@
  */
 
 #include <cmath>
+#include <cstring>
 #include <tuple>
 
 #include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
@@ -102,7 +103,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
   size_t outer = getLeadingDims(in, C_dim);
   size_t inner = getTrailingDims(in, C_dim);
 
-  constexpr auto name = "native_batch_norm_legit_no_training.out";
+  static constexpr auto name = "native_batch_norm_legit_no_training.out";
 
   ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();
@@ -259,13 +260,17 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_stats_out(
       InvalidArgument,
       ret_val);
 
-  constexpr auto name = "_native_batch_norm_legit.no_stats_out";
+  static constexpr auto name = "_native_batch_norm_legit.no_stats_out";
 
   ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
     CTYPE* mean_data = mean_out.mutable_data_ptr<CTYPE>();
     CTYPE* invstd_data = invstd_out.mutable_data_ptr<CTYPE>();
+
+    // Initialize accumulators to zero before accumulating
+    std::memset(mean_data, 0, C * sizeof(CTYPE));
+    std::memset(invstd_data, 0, C * sizeof(CTYPE));
 
     // Compute sum and sum of squares for each channel
     for (size_t b = 0; b < N; ++b) {

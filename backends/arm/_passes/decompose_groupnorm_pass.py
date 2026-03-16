@@ -1,17 +1,21 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import operator
+from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
+from executorch.backends.arm._passes.decompose_var_pass import DecomposeVarPass
+from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
+from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import PassResult
+from executorch.exir.pass_base import ExportPass, PassResult
 
 
 def get_group_norm_decomposition(op) -> tuple:
@@ -35,7 +39,7 @@ def get_group_norm_decomposition(op) -> tuple:
             torch.ops.aten.add.Tensor,
             torch.ops.aten.rsqrt.default,
             torch.ops.aten.mul.Tensor,
-            torch.ops.aten.view_copy.default,
+            torch.ops.aten.reshape.default,
         )
     raise RuntimeError(f"Can't get group_norm composition for op {op}")
 
@@ -57,12 +61,25 @@ class DecomposeGroupNormPass(ArmPass):
     Source: https://pytorch.org/docs/stable/generated/torch.nn.GroupNorm.html
     """
 
+    _passes_required_after: Set[Type[ExportPass]] = {
+        InsertTableOpsPass,
+        DecomposeMeanDimPass,
+        DecomposeVarPass,
+        SizeAdjustInputPass,
+    }
+
+    _TARGET_OPS = {
+        exir_ops.edge.aten.native_group_norm.default,
+        torch.ops.aten.group_norm.default,
+    }
+
     def call(self, graph_module: torch.fx.GraphModule):
         modified = False
         for node in graph_module.graph.nodes:
-            if node.op != "call_function" or node.target not in (
-                exir_ops.edge.aten.native_group_norm.default,
-                torch.ops.aten.group_norm.default,
+            if (
+                node.op != "call_function"
+                or node.target not in DecomposeGroupNormPass._TARGET_OPS
+                or not self.allowed_to_transform(node.meta)
             ):
                 continue
 
@@ -75,13 +92,18 @@ class DecomposeGroupNormPass(ArmPass):
             if isinstance(meta["val"], tuple):
                 shape = meta["val"][0].size()
                 dtype = meta["val"][0].dtype
+                device = meta["val"][0].device
             else:
                 shape = meta["val"].size()
                 dtype = meta["val"].dtype
+                device = meta["val"].device
             match len(args):
                 # MI profile always provides all the args: x, weight, bias, N, C, HxW, group, eps
                 case 8:
                     x, weights, bias, N, C, HxW, group, eps = args
+                # BI profile: affine=[True|False], all args explicit (including cudnn_enabled)
+                case 6:
+                    x, group, weights, bias, eps, _cudnn_enabled = args
                 # BI profile: affine=[True|False], eps!=1e-5
                 case 5:
                     x, group, weights, bias, eps = args
@@ -139,7 +161,7 @@ class DecomposeGroupNormPass(ArmPass):
                     graph_module.graph,
                     full_op,
                     args=(epsilon_reshaped_shape, eps),
-                    kwargs={"dtype": dtype},
+                    kwargs={"dtype": dtype, "device": device},
                     from_node=node,
                 )
                 add0 = create_node(

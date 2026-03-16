@@ -20,6 +20,16 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
+# Threadpool size specifiers. Mutual exclusion is checking in default.cmake.
+# Default to using performance cores if
+# EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES isn't set.
+set(_threadpool_size_flag)
+if(EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES)
+  set(_threadpool_size_flag "EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES")
+else()
+  set(_threadpool_size_flag "EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES")
+endif()
+
 add_library(
   extension_threadpool threadpool.cpp threadpool_guard.cpp thread_parallel.cpp
                        cpuinfo_utils.cpp
@@ -36,14 +46,16 @@ target_include_directories(
     $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include>
     $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include>
 )
-target_compile_definitions(extension_threadpool PUBLIC ET_USE_THREADPOOL)
+target_compile_definitions(
+  extension_threadpool PUBLIC ET_USE_THREADPOOL ${_threadpool_size_flag}
+)
 target_compile_options(extension_threadpool PUBLIC ${_common_compile_options})
 
 # Install libraries
 install(
   TARGETS extension_threadpool
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES
   DESTINATION ${_common_include_directories}
 )

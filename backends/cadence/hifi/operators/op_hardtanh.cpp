@@ -23,7 +23,6 @@ using torch::executor::native::utils::get_scalar_dtype;
 using torch::executor::native::utils::max_override;
 using torch::executor::native::utils::min_override;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -100,4 +99,3 @@ Tensor& hardtanh_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

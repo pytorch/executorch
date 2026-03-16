@@ -10,7 +10,7 @@
 
 #include <xa_nnlib_kernels_api.h>
 
-#include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
+#include <executorch/backends/cadence/common/xt_macros.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -23,7 +23,6 @@ using ::executorch::runtime::canCast;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
 
-namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
@@ -582,4 +581,3 @@ Tensor& sub_scalar_out(
 } // namespace native
 } // namespace G3
 } // namespace impl
-} // namespace cadence

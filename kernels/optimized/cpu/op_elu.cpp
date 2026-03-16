@@ -28,12 +28,9 @@ void elu(
   CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
   using MathT =
       std::conditional_t<c10::is_reduced_floating_point_v<CTYPE>, float, CTYPE>;
-  MathT math_alpha = 0;
-  MathT math_scale = 0;
-  MathT math_input_scale = 0;
-  ET_EXTRACT_SCALAR(alpha, math_alpha);
-  ET_EXTRACT_SCALAR(scale, math_scale);
-  ET_EXTRACT_SCALAR(input_scale, math_input_scale);
+  const auto math_alpha = utils::scalar_to<MathT>(alpha);
+  const auto math_scale = utils::scalar_to<MathT>(scale);
+  const auto math_input_scale = utils::scalar_to<MathT>(input_scale);
   const auto scalar_func =
       at::native::get_scalar_elu_elementwise_func<CTYPE, MathT>(
           math_alpha, math_scale, math_input_scale);
@@ -44,7 +41,7 @@ void elu(
       0,
       out.numel(),
       ::executorch::extension::internal::GRAIN_SIZE,
-      [&](const auto begin, const auto end) {
+      [&](const auto& begin, const auto& end) {
         using Vec = at::vec::Vectorized<CTYPE>;
         const auto vectorized_begin =
             begin + (Vec::size() - begin % Vec::size()) % Vec::size();

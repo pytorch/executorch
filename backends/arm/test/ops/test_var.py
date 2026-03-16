@@ -14,6 +14,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t1 = Tuple[torch.Tensor]  # Input x
@@ -86,21 +87,6 @@ class VarDim(torch.nn.Module):
         ),
     }
 
-    test_parameters_u55_xfails = {
-        "var_3d_dim_neg_2_keep_dim_unbiased": lambda: (
-            torch.rand(1, 50, 10),
-            -2,
-            True,
-            False,
-        ),
-        "var_3d_dim_neg_1_keep_dim_biased": lambda: (
-            torch.rand(1, 50, 10, 20),
-            -1,
-            True,
-            True,
-        ),
-    }
-
     def __init__(self, dim: int = -1, keepdim: bool = True, unbiased: bool = False):
         super().__init__()
         self.dim = dim
@@ -155,6 +141,11 @@ class VarCorrection(torch.nn.Module):
         return x.var(dim=self.dim, keepdim=self.keepdim, correction=self.correction)
 
 
+##########
+## Var ###
+##########
+
+
 @common.parametrize("test_data", Var.test_parameters)
 def test_var_dim_tosa_FP_no_dim(test_data: Tuple):
     test_data, keepdim, correction = test_data()
@@ -188,7 +179,6 @@ def test_var_dim_u55_INT_no_dim(test_data: Tuple):
         (test_data,),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -202,9 +192,41 @@ def test_var_dim_u85_INT_no_dim(test_data: Tuple):
         (test_data,),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
+
+
+@common.parametrize("test_data", Var.test_parameters)
+@common.SkipIfNoModelConverter
+def test_var_dim_vgf_no_quant_no_dim(test_data: Tuple):
+    data, keepdim, correction = test_data()
+    pipeline = VgfPipeline[input_t1](
+        Var(keepdim, correction),
+        (data,),
+        [],
+        [],
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Var.test_parameters)
+@common.SkipIfNoModelConverter
+def test_var_dim_vgf_quant_no_dim(test_data: Tuple):
+    data, keepdim, correction = test_data()
+    pipeline = VgfPipeline[input_t1](
+        Var(keepdim, correction),
+        (data,),
+        [],
+        [],
+        quantize=True,
+    )
+    pipeline.run()
+
+
+#############
+## VarDim ###
+#############
 
 
 @common.parametrize("test_data", VarDim.test_parameters)
@@ -241,7 +263,6 @@ def test_var_dim_u55_INT(test_data: Tuple):
         (test_data,),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -255,9 +276,41 @@ def test_var_dim_u85_INT(test_data: Tuple):
         (test_data,),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
+
+
+@common.parametrize("test_data", VarDim.test_parameters)
+@common.SkipIfNoModelConverter
+def test_var_dim_vgf_no_quant(test_data: Tuple):
+    data, dim, keepdim, unbiased = test_data()
+    pipeline = VgfPipeline[input_t1](
+        VarDim(dim, keepdim, unbiased),
+        (data,),
+        [],
+        [],
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", VarDim.test_parameters)
+@common.SkipIfNoModelConverter
+def test_var_dim_vgf_quant(test_data: Tuple):
+    data, dim, keepdim, unbiased = test_data()
+    pipeline = VgfPipeline[input_t1](
+        VarDim(dim, keepdim, unbiased),
+        (data,),
+        [],
+        [],
+        quantize=True,
+    )
+    pipeline.run()
+
+
+####################
+## VarCorrection ###
+####################
 
 
 @common.parametrize("test_data", VarCorrection.test_parameters)
@@ -284,7 +337,10 @@ def test_var_dim_tosa_INT_correction(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", VarCorrection.test_parameters)
+@common.parametrize(
+    "test_data",
+    VarCorrection.test_parameters,
+)
 @common.XfailIfNoCorstone300
 def test_var_dim_u55_INT_correction(test_data: Tuple):
     test_data, dim, keepdim, correction = test_data()
@@ -293,7 +349,6 @@ def test_var_dim_u55_INT_correction(test_data: Tuple):
         (test_data,),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -307,6 +362,33 @@ def test_var_dim_u85_INT_correction(test_data: Tuple):
         (test_data,),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", VarCorrection.test_parameters)
+@common.SkipIfNoModelConverter
+def test_var_dim_vgf_no_quant_correction(test_data: Tuple):
+    data, dim, keepdim, corr = test_data()
+    pipeline = VgfPipeline[input_t1](
+        VarCorrection(dim, keepdim, corr),
+        (data,),
+        [],
+        [],
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", VarCorrection.test_parameters)
+@common.SkipIfNoModelConverter
+def test_var_dim_vgf_quant_correction(test_data: Tuple):
+    data, dim, keepdim, corr = test_data()
+    pipeline = VgfPipeline[input_t1](
+        VarCorrection(dim, keepdim, corr),
+        (data,),
+        [],
+        [],
+        quantize=True,
     )
     pipeline.run()

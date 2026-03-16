@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <gflags/gflags.h>
-#include <pytorch/tokenizers/llama2c_tokenizer.h>
 #include <iostream>
 
 using executorch::extension::llm::TextLLMRunner;
@@ -46,8 +46,7 @@ int main(int32_t argc, char** argv) {
   int32_t seq_len = FLAGS_seq_len;
 
   std::unique_ptr<tokenizers::Tokenizer> tokenizer =
-      std::make_unique<tokenizers::Llama2cTokenizer>();
-  tokenizer->load(tokenizer_path);
+      executorch::extension::llm::load_tokenizer(tokenizer_path);
 
   auto runner = executorch::extension::llm::create_text_llm_runner(
       model_path, std::move(tokenizer));

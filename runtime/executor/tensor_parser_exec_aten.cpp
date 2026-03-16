@@ -55,15 +55,15 @@ ET_NODISCARD Result<void*> getMemPlannedPtr(
   const uint32_t memory_offset_high = allocation_info->memory_offset_high();
 
   size_t memory_offset = memory_offset_low;
-  if ((sizeof(size_t) > sizeof(uint32_t)) && (memory_offset_high > 0)) {
-    // The compiler should remove this always-true check on 64-bit systems.
+  if constexpr (sizeof(size_t) > sizeof(uint32_t)) {
+    memory_offset |= static_cast<size_t>(memory_offset_high) << 32;
+  } else {
     ET_CHECK_OR_RETURN_ERROR(
-        sizeof(size_t) >= sizeof(uint64_t),
+        memory_offset_high == 0,
         NotSupported,
-        "size_t cannot hold memory offset 0x%08" PRIx32 ".%08" PRIx32,
+        "size_t cannot hold memory offset 0x%08" PRIx32 "%08" PRIx32,
         memory_offset_high,
         memory_offset_low);
-    memory_offset |= static_cast<size_t>(memory_offset_high) << 32;
   }
   return allocator->get_offset_address(memory_id, memory_offset, nbytes);
 }
@@ -158,6 +158,14 @@ NamedData* get_data_by_key(const char* key, Span<NamedData> entries) {
   }
   return nullptr;
 }
+
+// Suppress a GCC 11 false positive -Wstringop-overread triggered by
+// flatbuffers' GetPointer inlining into string_view construction.
+// Guarded to GCC >= 11 since the warning doesn't exist on older GCC or Clang.
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 11
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overread"
+#endif
 
 ET_NODISCARD Result<void*> getTensorDataPtr(
     const executorch_flatbuffer::Tensor* s_tensor,
@@ -258,6 +266,10 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
     return nullptr;
   }
 }
+
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 11
+#pragma GCC diagnostic pop
+#endif
 
 } // namespace deserialization
 } // namespace ET_RUNTIME_NAMESPACE

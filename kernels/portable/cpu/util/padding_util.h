@@ -56,8 +56,9 @@ void pad1d(
     size_t out_i_base = i * out_width;
     size_t in_i_base = i * in_width;
     for (const auto w : c10::irange(out_width)) {
-      out_data[out_i_base + w] =
-          in_data[in_i_base + padding_ix(w, in_width, pad_left)];
+      int64_t in_w_idx = padding_ix(w, in_width, pad_left);
+      ET_CHECK(in_w_idx >= 0 && in_w_idx < in_width);
+      out_data[out_i_base + w] = in_data[in_i_base + in_w_idx];
     }
   }
 }
@@ -85,11 +86,13 @@ void pad2d(
     size_t in_i_base = i * in_height * in_width;
     for (const auto h : c10::irange(out_height)) {
       size_t out_h_base = out_i_base + h * out_width;
-      size_t in_h_base =
-          in_i_base + padding_ix(h, in_height, pad_top) * in_width;
+      int64_t in_h_idx = padding_ix(h, in_height, pad_top);
+      ET_CHECK(in_h_idx >= 0 && in_h_idx < in_height);
+      size_t in_h_base = in_i_base + in_h_idx * in_width;
       for (const auto w : c10::irange(out_width)) {
-        out_data[out_h_base + w] =
-            in_data[in_h_base + padding_ix(w, in_width, pad_left)];
+        int64_t in_w_idx = padding_ix(w, in_width, pad_left);
+        ET_CHECK(in_w_idx >= 0 && in_w_idx < in_width);
+        out_data[out_h_base + w] = in_data[in_h_base + in_w_idx];
       }
     }
   }
@@ -121,15 +124,18 @@ void pad3d(
     size_t in_i_base = i * in_depth * in_height * in_width;
     for (const auto d : c10::irange(out_depth)) {
       size_t out_d_base = out_i_base + d * out_height * out_width;
-      size_t in_d_base =
-          in_i_base + padding_ix(d, in_depth, pad_front) * in_height * in_width;
+      int64_t in_d_base_padding = padding_ix(d, in_depth, pad_front);
+      ET_CHECK(in_d_base_padding >= 0 && in_d_base_padding < in_depth);
+      size_t in_d_base = in_i_base + in_d_base_padding * in_height * in_width;
       for (const auto h : c10::irange(out_height)) {
         size_t out_h_base = out_d_base + h * out_width;
-        size_t in_h_base =
-            in_d_base + padding_ix(h, in_height, pad_top) * in_width;
+        int64_t in_h_base_padding = padding_ix(h, in_height, pad_top);
+        ET_CHECK(in_h_base_padding >= 0 && in_h_base_padding < in_height);
+        size_t in_h_base = in_d_base + in_h_base_padding * in_width;
         for (const auto w : c10::irange(out_width)) {
-          out_data[out_h_base + w] =
-              in_data[in_h_base + padding_ix(w, in_width, pad_left)];
+          int64_t in_w_base_padding = padding_ix(w, in_width, pad_left);
+          ET_CHECK(in_w_base_padding >= 0 && in_w_base_padding < in_width);
+          out_data[out_h_base + w] = in_data[in_h_base + in_w_base_padding];
         }
       }
     }

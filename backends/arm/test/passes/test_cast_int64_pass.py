@@ -21,12 +21,12 @@ class Int64Model(torch.nn.Module):
         "rand": (torch.rand(4),),
     }
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x + 3
 
 
 @common.parametrize("test_data", Int64Model.test_data)
-def test_int64_model(test_data: input_t):
+def test_cast_int64_buffers_to_int32_tosa_FP(test_data: input_t):
     module = Int64Model()
     op_checks = {
         "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1,

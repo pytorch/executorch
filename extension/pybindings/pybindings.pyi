@@ -47,8 +47,10 @@ class ExecuTorchModule:
         inputs: Sequence[Any],  # pyre-ignore[2]: "Any" in parameter type annotations.
         clone_outputs: bool = True,
     ) -> List[Any]: ...
-    # pyre-ignore[3]: "Any" in return type annotations.
-    def plan_execute(self) -> List[Any]: ...
+    # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
+    def plan_execute(
+        self, method_name: str, clone_outputs: bool = True
+    ) -> List[Any]: ...
     # Bundled program methods.
     def load_bundled_input(
         self, bundle: BundledModule, method_name: str, testset_idx: int
@@ -68,6 +70,54 @@ class ExecuTorchModule:
     ) -> None: ...
     def method_meta(self, method_name: str) -> MethodMeta: ...
     def method_names(self) -> List[str]: ...
+
+@experimental("This API is experimental and subject to change without notice.")
+class ExecuTorchProgram:
+    """ExecuTorchProgram is a Python wrapper around a loaded C++ ExecuTorch program.
+
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+
+    def num_methods(self) -> int: ...
+    def get_method_name(self, method_index: int) -> str: ...
+    def load_method(self, method_name: str) -> ExecuTorchMethod: ...
+    def method_meta(self, method_name: str) -> MethodMeta: ...
+    def has_etdump(self) -> bool: ...
+    def write_etdump_result_to_file(
+        self, path: str, debug_buffer_path: Optional[str] = None
+    ) -> None: ...
+
+@experimental("This API is experimental and subject to change without notice.")
+class ExecuTorchMethod:
+    """ExecuTorchMethod is a Python wrapper around a loaded C++ method.
+
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+
+    # pyre-ignore[2]: "Any" in parameter type annotations.
+    def set_inputs(self, inputs: Sequence[Any]) -> None: ...
+    def execute(self) -> None: ...
+    # pyre-ignore[3]: "Any" in return type annotations.
+    def get_outputs(self, clone_outputs: bool = True) -> List[Any]: ...
+    # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
+    def call(
+        self,
+        inputs: Sequence[Any] = ...,  # pyre-ignore[2]
+        clone_outputs: bool = True,
+    ) -> List[Any]: ...
+    # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
+    def __call__(
+        self,
+        inputs: Sequence[Any] = ...,  # pyre-ignore[2]
+        clone_outputs: bool = True,
+    ) -> List[Any]: ...
+    def method_meta(self) -> MethodMeta: ...
+    # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
+    def get_attribute(self, name: str) -> Any: ...
 
 @experimental("This API is experimental and subject to change without notice.")
 class BundledModule:
@@ -133,6 +183,10 @@ class MethodMeta:
         internal buffers"""
         ...
 
+    def num_attributes(self) -> int:
+        """The number of attribute tensors from the method"""
+        ...
+
     def input_tensor_meta(self, index: int) -> TensorInfo:
         """The tensor info for the 'index'th input. Index must be in the interval
         [0, num_inputs()). Raises an IndexError if the index is out of bounds"""
@@ -143,11 +197,20 @@ class MethodMeta:
         [0, num_outputs()). Raises an IndexError if the index is out of bounds"""
         ...
 
+    def attribute_tensor_meta(self, index: int) -> TensorInfo:
+        """The tensor info for the 'index'th attribute. Index must be in the interval
+        [0, num_attributes()). Raises an IndexError if the index is out of bounds"""
+        ...
+
     def __repr__(self) -> str: ...
+
+# Re-export PyDataLoader from the shared module for backward compatibility.
+from executorch.extension.pybindings.data_loader import PyDataLoader as PyDataLoader
 
 @experimental("This API is experimental and subject to change without notice.")
 def _load_for_executorch(
-    path: str,
+    program_path: str,
+    data_path: Optional[str] = None,
     enable_etdump: bool = False,
     debug_buffer_size: int = 0,
     program_verification: Verification = Verification.InternalConsistency,
@@ -159,7 +222,8 @@ def _load_for_executorch(
         This API is experimental and subject to change without notice.
 
     Args:
-        path: File path to the ExecuTorch program as a string.
+        program_path: File path to the ExecuTorch program as a string.
+        data_path: File path to a .ptd file containing data used by the program.
         enable_etdump: If true, enables an ETDump which can store profiling information.
             See documentation at https://pytorch.org/executorch/main/etdump
             for how to use it.
@@ -174,6 +238,7 @@ def _load_for_executorch(
 @experimental("This API is experimental and subject to change without notice.")
 def _load_for_executorch_from_buffer(
     buffer: bytes,
+    data_map_buffer: Optional[bytes] = None,
     enable_etdump: bool = False,
     debug_buffer_size: int = 0,
     program_verification: Verification = Verification.InternalConsistency,
@@ -188,7 +253,10 @@ def _load_for_executorch_from_buffer(
 
 @experimental("This API is experimental and subject to change without notice.")
 def _load_for_executorch_from_bundled_program(
-    module: BundledModule, enable_etdump: bool = False, debug_buffer_size: int = 0
+    module: BundledModule,
+    data_map_buffer: Optional[bytes] = None,
+    enable_etdump: bool = False,
+    debug_buffer_size: int = 0,
 ) -> ExecuTorchModule:
     """Same as _load_for_executorch, but takes a bundled program instead of a file path.
 
@@ -197,6 +265,33 @@ def _load_for_executorch_from_bundled_program(
     .. warning::
 
         This API is experimental and subject to change without notice.
+    """
+    ...
+
+@experimental("This API is experimental and subject to change without notice.")
+def _load_for_executorch_from_data_loader(
+    loader: PyDataLoader,
+    data_path: Optional[str] = None,
+    enable_etdump: bool = False,
+    debug_buffer_size: int = 0,
+) -> ExecuTorchModule:
+    """Load an ExecuTorch Program from a PyDataLoader.
+
+    This function allows external libraries to provide custom data loaders
+    (e.g., for compressed files) and load programs using them.
+
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+
+    Args:
+        loader: A PyDataLoader wrapping a custom DataLoader implementation.
+        data_path: Optional path to a data file (e.g., for external weights).
+        enable_etdump: If true, enables an ETDump which can store profiling information.
+        debug_buffer_size: If non-zero, enables a debug buffer for intermediate results.
+
+    Returns:
+        An ExecuTorchModule ready for execution.
     """
     ...
 
@@ -211,6 +306,20 @@ def _load_bundled_program_from_buffer(
     """
     ...
 
+@experimental("This API is experimental and subject to change without notice.")
+def _load_program(
+    path: str,
+    enable_etdump: bool = False,
+    debug_buffer_size: int = 0,
+    program_verification: Verification = Verification.Minimal,
+) -> ExecuTorchProgram: ...
+@experimental("This API is experimental and subject to change without notice.")
+def _load_program_from_buffer(
+    buffer: bytes,
+    enable_etdump: bool = False,
+    debug_buffer_size: int = 0,
+    program_verification: Verification = Verification.Minimal,
+) -> ExecuTorchProgram: ...
 @experimental("This API is experimental and subject to change without notice.")
 def _is_available(backend_name: str) -> bool:
     """
@@ -267,6 +376,15 @@ def _reset_profile_results() -> None:
 
 @experimental("This API is experimental and subject to change without notice.")
 def _unsafe_reset_threadpool(num_threads: int) -> None:
+    """
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+    ...
+
+@experimental("This API is experimental and subject to change without notice.")
+def _threadpool_get_thread_count() -> int:
     """
     .. warning::
 

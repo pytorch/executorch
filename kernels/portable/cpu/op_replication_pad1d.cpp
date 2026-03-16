@@ -36,7 +36,7 @@ Tensor& replication_pad1d_out(
       out);
 
   ScalarType in_type = in.scalar_type();
-  constexpr auto name = "replication_pad1d.out";
+  static constexpr auto name = "replication_pad1d.out";
 
   ET_SWITCH_ALL_TYPES(in_type, ctx, name, CTYPE, [&] {
     pad1d<CTYPE>(replication_ix, in, out, padding);

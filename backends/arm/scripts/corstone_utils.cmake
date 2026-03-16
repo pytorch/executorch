@@ -1,12 +1,14 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
+  message(STATUS "Fetching Ethos-U content into ${ETHOS_SDK_PATH}")
+
   file(MAKE_DIRECTORY ${ETHOS_SDK_PATH}/../ethos_u)
   include(FetchContent)
-  set(ethos_u_base_tag "25.05")
+  set(ethos_u_base_tag "26.02")
   FetchContent_Declare(
     ethos_u
     GIT_REPOSITORY
@@ -24,7 +26,7 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   FetchContent_MakeAvailable(ethos_u)
   # Patch manifest to remove unused projects.
   set(patch_dir "${ET_DIR_PATH}/examples/arm/ethos-u-setup")
-  set(ethos_u_base_rev "24950bd4381b6c51db0349a229f8ba86b8e1093f")
+  set(ethos_u_base_rev "26.02")
   execute_process(
     COMMAND
       bash -c
@@ -40,7 +42,7 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
     )
   endif()
   # Patch core_software to remove unused projects.
-  set(core_software_base_rev "55904c3da73c876c6d6c58290938ae217a8b94bd")
+  set(core_software_base_rev "26.02")
   execute_process(
     COMMAND
       bash -c
@@ -48,14 +50,13 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
     WORKING_DIRECTORY ${ET_DIR_PATH} COMMAND_ECHO STDOUT
   )
   # Always patch the core_platform repo since this is fast enough.
-  set(core_platform_base_rev "1916a9c984819c35b19c9e5c4c80d47e4e866420")
+  set(core_platform_base_rev "26.02")
   execute_process(
     COMMAND
       bash -c
       "pwd && source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_platform ${core_platform_base_rev} ${patch_dir}"
     WORKING_DIRECTORY ${ET_DIR_PATH} COMMAND_ECHO STDOUT
   )
-
 endfunction()
 
 function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH)

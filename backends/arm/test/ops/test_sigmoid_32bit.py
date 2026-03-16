@@ -4,16 +4,13 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from executorch.backends.arm.quantizer import TOSAQuantizer
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
-from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     OpNotSupportedPipeline,
     TosaPipelineINT,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
-from executorch.backends.xnnpack.test.tester import Quantize
 from torchao.quantization.pt2e import HistogramObserver
 from torchao.quantization.pt2e.quantizer import QuantizationSpec
 
@@ -53,21 +50,11 @@ def _get_32_bit_quant_config():
     return qconfig
 
 
-def get_32bit_sigmoid_quantizer(u55_config=False):
-    tosa_version = conftest.get_option("tosa_version")
-    tosa_profiles = {
-        "1.0": TosaSpecification.create_from_string(
-            "TOSA-1.0+INT" + ("+u55" if u55_config else "")
-        ),
-    }
-
-    quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
-    quantizer.set_global(_get_32_bit_quant_config())
-    quantizer.set_module_type(
+def configure_32bit_sigmoid_quantizer(pipeline):
+    pipeline.quantizer.set_global(_get_32_bit_quant_config())
+    pipeline.quantizer.set_module_type(
         torch.nn.modules.activation.Sigmoid, _get_16_bit_quant_config()
     )
-
-    return Quantize(quantizer, _get_32_bit_quant_config())
 
 
 input_t = tuple[torch.Tensor]
@@ -110,8 +97,9 @@ def test_sigmoid_tosa_INT(test_data):
         Sigmoid.aten_op,
         Sigmoid.exir_op,
         qtol=1,
+        tosa_extensions=["int16"],
     )
-    pipeline.change_args("quantize", get_32bit_sigmoid_quantizer())
+    configure_32bit_sigmoid_quantizer(pipeline)
     pipeline.run()
 
 
@@ -123,12 +111,14 @@ def test_sigmoid_tosa_INT_add_sigmoid(test_data):
         Sigmoid.aten_op,
         Sigmoid.exir_op,
         qtol=1,
+        tosa_extensions=["int16"],
     )
-    pipeline.change_args("quantize", get_32bit_sigmoid_quantizer())
+    configure_32bit_sigmoid_quantizer(pipeline)
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
 def test_sigmoid_u55_INT(test_data):
     pipeline = OpNotSupportedPipeline(
         Sigmoid(),
@@ -136,12 +126,14 @@ def test_sigmoid_u55_INT(test_data):
         {Sigmoid.exir_op: 1},
         quantize=True,
         u55_subset=True,
+        tosa_extensions=["int16"],
     )
-    pipeline.change_args("quantize", get_32bit_sigmoid_quantizer(True))
+    configure_32bit_sigmoid_quantizer(pipeline)
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
 def test_sigmoid_u55_INT_add_sigmoid(test_data):
     pipeline = OpNotSupportedPipeline(
         SigmoidAddSigmoid(),
@@ -150,8 +142,9 @@ def test_sigmoid_u55_INT_add_sigmoid(test_data):
         n_expected_delegates=1,
         quantize=True,
         u55_subset=True,
+        tosa_extensions=["int16"],
     )
-    pipeline.change_args("quantize", get_32bit_sigmoid_quantizer(True))
+    configure_32bit_sigmoid_quantizer(pipeline)
     pipeline.run()
 
 
@@ -163,9 +156,8 @@ def test_sigmoid_u85_INT(test_data):
         (test_data(),),
         Sigmoid.aten_op,
         Sigmoid.exir_op,
-        run_on_fvp=True,
     )
-    pipeline.change_args("quantize", get_32bit_sigmoid_quantizer())
+    configure_32bit_sigmoid_quantizer(pipeline)
     pipeline.run()
 
 
@@ -180,7 +172,6 @@ def test_sigmoid_u85_INT_add_sigmoid(test_data):
         (test_data(),),
         Sigmoid.aten_op,
         Sigmoid.exir_op,
-        run_on_fvp=True,
     )
-    pipeline.change_args("quantize", get_32bit_sigmoid_quantizer())
+    configure_32bit_sigmoid_quantizer(pipeline)
     pipeline.run()

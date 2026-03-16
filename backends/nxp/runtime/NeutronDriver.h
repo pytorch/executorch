@@ -18,22 +18,6 @@ extern "C" {
 
 #include "NeutronErrors.h"
 
-/* Neutron Driver error category codes */
-typedef enum ERROR_CATEGORY_DRIVER {
-  ERROR_CATEGORY_DRIVER_GENERIC, /* Generic error category */
-  ERROR_CATEGORY_DRIVER_UNSUPPORTED, /* Unsupported function */
-  ERROR_CATEGORY_DRIVER_UCODE, /* Microcode bad magic or version incompatible.
-                                */
-  ERROR_CATEGORY_DRIVER_INVALID, /* Invalid arguments */
-  ERROR_CATEGORY_DRIVER_BAD_HANDLE, /* Bad inference handle */
-  ERROR_CATEGORY_DRIVER_NO_MEMORY, /* Not enough memory */
-  ERROR_CATEGORY_DRIVER_INTERNAL_FAULT, /* Internal error */
-  ERROR_CATEGORY_DRIVER_UNKNOWN_ARCH, /* Unknown architecture */
-  ERROR_CATEGORY_DRIVER_TRACE_NOT_RUN, /* Tracing did not run, but trace buffer
-                                          was requested. */
-  ERROR_CATEGORY_DRIVER_TIMEOUT /* Timeout error. */
-} ERROR_CATEGORY_DRIVER;
-
 /// Trace configuration to enable kernel level tracing.
 #define TRACE_CONFIG_KERNEL_LEVEL (1U << 0)
 
@@ -169,6 +153,12 @@ NeutronError neutronCustomExec(
     NeutronModelHandle hdl,
     const NeutronDataConfig* neutron_dcfg);
 
+/// - Setup the input and output data ptr to use Neutron memory area.
+/// - The input and ouput data ptr is stored in neutron_dcfg.
+NeutronError neutronDataSetup(
+    NeutronModelHandle hdl,
+    NeutronDataConfig* neutron_dcfg);
+
 /// - Prepare Neutron execution for a model with the given configuration.
 /// - This function only prepares the execution by transferring the parameters
 /// to the firmware.
@@ -244,6 +234,29 @@ void* neutronMemAlloc(size_t alignment, size_t size);
 /// - Frees the memory buffer pointed to by ptr.
 /// - This function is only available for Neutron-S in the Linux environment.
 void neutronMemFree(void* ptr);
+
+/// - Allocates size bytes large buffer in DDR to be used for specialized
+/// kernels (e.g. batch matmul)
+///   Uses Linux CMA allocator
+NeutronError allocateBuffer(uint64_t size, void** pBuffer, bool userspace);
+
+/// - Frees buffer allocated via allocateBuffer function
+NeutronError releaseBuffer(void* buffer);
+
+/// - Clean/flush cache for DDR allocated buffer
+///   TODO: rename function as "cleanCache" to satisfy neutron-software naming
+///   convention
+NeutronError clean_cache(const void* addr, int size);
+
+/// - Function for calling firmware for specialized kernel (matmul)
+NeutronError matmul(
+    const void* info,
+    int sizeInfo,
+    const void* in,
+    int sizeIn,
+    const void* out,
+    int sizeOut,
+    int idxSlot);
 
 /// Other functions to control the state of driver/firmware.
 #ifdef __cplusplus

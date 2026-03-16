@@ -493,26 +493,36 @@ void test_vulkan_quantize_affine_impl(
   graph.prepack();
 
   // Copy input data to GPU
-  graph.copy_into_staging(
-      r_input.staging, input.const_data_ptr(), input.numel());
+  graph.maybe_cast_and_copy_into_staging(
+      r_input.staging,
+      input.const_data_ptr(),
+      input.numel(),
+      from_at_scalartype(input.scalar_type()));
 
   // Copy scale tensor to GPU
-  graph.copy_into_staging(
-      r_scale.staging, scale_tensor.const_data_ptr(), scale_tensor.numel());
+  graph.maybe_cast_and_copy_into_staging(
+      r_scale.staging,
+      scale_tensor.const_data_ptr(),
+      scale_tensor.numel(),
+      from_at_scalartype(scale_tensor.scalar_type()));
 
   // Copy zero_point tensor to GPU
-  graph.copy_into_staging(
+  graph.maybe_cast_and_copy_into_staging(
       r_zero_point.staging,
       zero_point_tensor.const_data_ptr(),
-      zero_point_tensor.numel());
+      zero_point_tensor.numel(),
+      from_at_scalartype(zero_point_tensor.scalar_type()));
 
   // Execute the graph
   graph.execute();
 
   // Copy output data back to CPU
   at::Tensor vk_out = at::empty_like(reference_out).contiguous();
-  graph.copy_from_staging(
-      staging_out, vk_out.mutable_data_ptr(), vk_out.numel());
+  graph.maybe_cast_and_copy_from_staging(
+      staging_out,
+      vk_out.mutable_data_ptr(),
+      vk_out.numel(),
+      from_at_scalartype(vk_out.scalar_type()));
 
   // Compare outputs
   at::Tensor reference_int = reference_out.to(at::kInt);
@@ -790,26 +800,36 @@ void test_vulkan_dequantize_affine_impl(
   graph.prepack();
 
   // Copy input data to GPU
-  graph.copy_into_staging(
-      r_input.staging, input.const_data_ptr(), input.numel());
+  graph.maybe_cast_and_copy_into_staging(
+      r_input.staging,
+      input.const_data_ptr(),
+      input.numel(),
+      from_at_scalartype(input.scalar_type()));
 
   // Copy scale tensor to GPU
-  graph.copy_into_staging(
-      r_scale.staging, scale_tensor.const_data_ptr(), scale_tensor.numel());
+  graph.maybe_cast_and_copy_into_staging(
+      r_scale.staging,
+      scale_tensor.const_data_ptr(),
+      scale_tensor.numel(),
+      from_at_scalartype(scale_tensor.scalar_type()));
 
   // Copy zero_point tensor to GPU
-  graph.copy_into_staging(
+  graph.maybe_cast_and_copy_into_staging(
       r_zero_point.staging,
       zero_point_tensor.const_data_ptr(),
-      zero_point_tensor.numel());
+      zero_point_tensor.numel(),
+      from_at_scalartype(zero_point_tensor.scalar_type()));
 
   // Execute the graph
   graph.execute();
 
   // Copy output data back to CPU
   at::Tensor vk_out = at::empty_like(reference_out).contiguous();
-  graph.copy_from_staging(
-      staging_out, vk_out.mutable_data_ptr(), vk_out.numel());
+  graph.maybe_cast_and_copy_from_staging(
+      staging_out,
+      vk_out.mutable_data_ptr(),
+      vk_out.numel(),
+      from_at_scalartype(vk_out.scalar_type()));
 
   // Compare outputs
   const bool output_correct =
@@ -1079,8 +1099,11 @@ void test_vulkan_choose_qparams_affine_impl(
   graph.prepack();
 
   // Copy input data to GPU
-  graph.copy_into_staging(
-      r_input.staging, input.const_data_ptr(), input.numel());
+  graph.maybe_cast_and_copy_into_staging(
+      r_input.staging,
+      input.const_data_ptr(),
+      input.numel(),
+      from_at_scalartype(input.scalar_type()));
 
   // Execute the graph
   graph.execute();
@@ -1089,12 +1112,16 @@ void test_vulkan_choose_qparams_affine_impl(
   at::Tensor vk_scale = at::empty_like(reference_scale).contiguous();
   at::Tensor vk_zero_point = at::empty_like(reference_zero_point).contiguous();
 
-  graph.copy_from_staging(
-      staging_scale, vk_scale.mutable_data_ptr(), vk_scale.numel());
-  graph.copy_from_staging(
+  graph.maybe_cast_and_copy_from_staging(
+      staging_scale,
+      vk_scale.mutable_data_ptr(),
+      vk_scale.numel(),
+      from_at_scalartype(vk_scale.scalar_type()));
+  graph.maybe_cast_and_copy_from_staging(
       staging_zero_point,
       vk_zero_point.mutable_data_ptr(),
-      vk_zero_point.numel());
+      vk_zero_point.numel(),
+      from_at_scalartype(vk_zero_point.scalar_type()));
 
   // Compare outputs
   const bool scale_correct =

@@ -1,0 +1,5 @@
+# Partitioner API
+
+The `VgfPartitioner` controls what parts of a model is delegated to the Arm VGF backend. Below is a reference of the various functions the partitioner provides:
+
+$PARTITIONER

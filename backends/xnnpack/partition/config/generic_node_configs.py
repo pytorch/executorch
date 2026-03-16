@@ -380,6 +380,43 @@ class ExpConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32]
 
 
+class ViewCopyConfig(GenericNodePartitionerConfig):
+    target_name = "view_copy.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        XNNPACK's static_reshape only supports 1 dynamic dimension.
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        new_shape = node.args[1]
+
+        # Check for symbolic dims. They aren't lowerable to XNNPACK currently.
+        symbolic_dim_indices = [
+            i for i, d in enumerate(new_shape) if not isinstance(d, int)
+        ]
+        if not all(isinstance(n, int) for n in new_shape):
+            why(
+                node,
+                reason=f"Symbolic reshape is not supported. Output shape is {new_shape} and dims at {symbolic_dim_indices} are symbolic.",
+            )
+            return False
+
+        dynamic_dim_indices = [i for i, d in enumerate(new_shape) if d == -1]
+        if len(dynamic_dim_indices) > 1:
+            why(
+                node,
+                reason=f"Only a single inferred dimension is supported. Output shape is {new_shape} and dims {dynamic_dim_indices} are inferred.",
+            )
+            return False
+
+        return True
+
+
 class FloorConfig(GenericNodePartitionerConfig):
     target_name = "floor.default"
 
@@ -392,6 +429,19 @@ class GeluConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        # XNNPACK does not support GELU for fp16
+        node_val = node.meta.get("val", None)
+        if node_val is not None and isinstance(node_val, torch.Tensor):
+            if node_val.dtype == torch.float16:
+                why(node, reason="GELU does not support fp16")
+                return False
+
+        return True
 
 
 class HardswishConfig(GenericNodePartitionerConfig):
@@ -633,6 +683,42 @@ class BMMConfig(GenericNodePartitionerConfig):
     """
 
     target_name = "bmm.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class SinConfig(GenericNodePartitionerConfig):
+    target_name = "sin.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class CloneDimOrderConfig(GenericNodePartitionerConfig):
+    target_name = "_clone_dim_order.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        # Only partition no-op _clone_dim_order nodes (output dim order = input).
+        # We can relax this in the future.
+        # This is also a conservative check and doesn't consider ambiguity.
+        dim_order = node.kwargs.get("dim_order", None)
+        input_meta = node.args[0].meta["val"]
+        if dim_order is not None and list(input_meta.dim_order()) != dim_order:
+            why(node, reason="Only dim-order preserving clones are supported.")
+            return False
+
+        return True
+
+
+class CosConfig(GenericNodePartitionerConfig):
+    target_name = "cos.default"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]

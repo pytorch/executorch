@@ -3,20 +3,13 @@ from typing import Optional, Tuple
 
 import torch
 
-from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTransform
-from executorch.backends.vulkan._passes import FuseQuantizedOpsTransform
-
-from executorch.backends.vulkan.quantizer.vulkan_quantizer import (
-    get_symmetric_quantization_config,
-    VulkanQuantizer,
-)
+from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
 
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
-from torchao.quantization.linear_quant_modules import Int8DynActInt4WeightQuantizer
 
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.quantization.pt2e.quantizer import Quantizer
@@ -57,7 +50,7 @@ def quantize_and_lower_module(
         _check_ir_validity=False,
     )
 
-    program = torch.export.export_for_training(
+    program = torch.export.export(
         model, sample_inputs, dynamic_shapes=dynamic_shapes, strict=True
     ).module()
 
@@ -94,116 +87,319 @@ def op_node_count(graph_module: torch.fx.GraphModule, canonical_op_name: str) ->
 
 
 class TestVulkanPasses(unittest.TestCase):
+    def test_fuse_rotary_emb(self):
+        """Test conversion of rotary embedding pattern to et_vk.apply_rotary_emb custom op."""
 
-    def test_fuse_int8pack_mm(self):
-        K = 256
-        N = 256
-        model = SingleLinearModule(K, N)
-        sample_inputs = model.get_sample_inputs()
+        class RotaryEmbeddingModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
 
-        quantizer = VulkanQuantizer()
-        quantizer.set_global(
-            get_symmetric_quantization_config(is_dynamic=False, weight_bits=8)
-        )
+            def forward(
+                self,
+                xq: torch.Tensor,
+                xk: torch.Tensor,
+                freqs_cos: torch.Tensor,
+                freqs_sin: torch.Tensor,
+            ):
+                # This implementation matches the apply_rotary_emb function in rope.py
+                # Split into real and imaginary parts
+                xq_r, xq_i = xq.float().reshape(xq.shape[:-1] + (-1, 2)).unbind(-1)
+                xk_r, xk_i = xk.float().reshape(xk.shape[:-1] + (-1, 2)).unbind(-1)
 
-        edge_manager = quantize_and_lower_module(
-            model,
-            sample_inputs,
-            quantizer,
-        )
+                # Reshape frequencies for broadcasting
+                freqs_cos = self._reshape_for_broadcast(freqs_cos, xq_r)
+                freqs_sin = self._reshape_for_broadcast(freqs_sin, xq_r)
 
-        ep = edge_manager._edge_programs["forward"]
-        edge_manager.transform(
-            [
-                AddmmToLinearTransform(),
-                FuseQuantizedOpsTransform(ep),
-            ]
-        )
+                # Apply rotary embedding
+                xq_out_r = xq_r * freqs_cos - xq_i * freqs_sin
+                xq_out_i = xq_r * freqs_sin + xq_i * freqs_cos
+                xk_out_r = xk_r * freqs_cos - xk_i * freqs_sin
+                xk_out_i = xk_r * freqs_sin + xk_i * freqs_cos
 
-        gm = ep.graph_module
+                # Recombine real and imaginary parts
+                xq_out = torch.stack([xq_out_r, xq_out_i], dim=-1).flatten(3)
+                xk_out = torch.stack([xk_out_r, xk_out_i], dim=-1).flatten(3)
 
-        self.assertEqual(op_node_count(gm, "_weight_int8pack_mm.default"), 1)
-        self.assertEqual(op_node_count(gm, "dequantize_per_channel.default"), 0)
+                return xq_out.type_as(xq), xk_out.type_as(xk)
 
-    def test_fuse_linear_qcs4w(self):
-        K = 256
-        N = 256
-        model = SingleLinearModule(K, N)
-        sample_inputs = model.get_sample_inputs()
+            def _reshape_for_broadcast(self, freqs_cis: torch.Tensor, x: torch.Tensor):
+                """Helper function to reshape frequencies for broadcasting"""
+                ndim = x.ndim
+                freqs_cis_ndim = freqs_cis.ndim
+                if freqs_cis_ndim == 3:
+                    # freqs_cis: (seq_len, n_heads, head_dim // 2)
+                    shape = [
+                        d if (i == ndim - 3 or i == ndim - 2 or i == ndim - 1) else 1
+                        for i, d in enumerate(x.shape)
+                    ]
+                else:
+                    # freqs_cis: (seq_len, head_dim // 2)
+                    shape = [
+                        d if i == 1 or i == ndim - 1 else 1
+                        for i, d in enumerate(x.shape)
+                    ]
+                return freqs_cis.view(shape)
 
-        quantizer = VulkanQuantizer()
-        quantizer.set_global(
-            get_symmetric_quantization_config(is_dynamic=False, weight_bits=4)
-        )
+        # Create sample inputs based on the test file
+        batch_size = 1
+        seq_len = 5
+        n_heads = 32
+        n_kv_heads = 8
+        head_dim = 2048
 
-        edge_manager = quantize_and_lower_module(
-            model,
-            sample_inputs,
-            quantizer,
-        )
+        xq = torch.randn(batch_size, seq_len, n_heads, head_dim, dtype=torch.float)
+        xk = torch.randn(batch_size, seq_len, n_kv_heads, head_dim, dtype=torch.float)
+        freqs_cos = torch.randn(seq_len, head_dim // 2, dtype=torch.float)
+        freqs_sin = torch.randn(seq_len, head_dim // 2, dtype=torch.float)
 
-        ep = edge_manager._edge_programs["forward"]
-        edge_manager.transform(
-            [
-                AddmmToLinearTransform(),
-                FuseQuantizedOpsTransform(ep),
-            ]
-        )
+        sample_inputs = (xq, xk, freqs_cos, freqs_sin)
 
-        gm = ep.graph_module
+        model = RotaryEmbeddingModel()
 
-        self.assertEqual(op_node_count(gm, "linear_qcs4w.default"), 1)
-        self.assertEqual(op_node_count(gm, "dequantize_per_channel.default"), 0)
-
-    def test_fuse_linear_qta8a_qga4w(self):
-        """Test fusion of dynamic activation + grouped weight quantized linear (QTA8A_QGA4W)."""
-        K = 256
-        N = 256
-        model = SingleLinearModule(K, N)
-        sample_inputs = model.get_sample_inputs()
-
-        # Use source transform quantizer for dynamic activation + grouped weight quantization
-        quantizer = Int8DynActInt4WeightQuantizer(
-            groupsize=128,  # Group size for 4-bit weights
-            padding_allowed=False,
-            precision=torch.float32,
-            scales_precision=torch.float32,
-            device=torch.device("cpu"),
-        )
-
-        # Apply source transform quantization
-        quantized_model = quantizer.quantize(model)
-
-        # Export the quantized model
+        # Export the model
         edge_compile_config = EdgeCompileConfig(
             _skip_dim_order=False,
             _check_ir_validity=False,
         )
 
-        program = torch.export.export_for_training(
-            quantized_model, sample_inputs, strict=True
-        ).module()
-
-        program = torch.export.export(program, sample_inputs)
+        program = torch.export.export(model, sample_inputs, strict=True)
 
         edge_manager = to_edge(
             program,
             compile_config=edge_compile_config,
         )
 
+        # Apply the rotary embedding pass
         ep = edge_manager._edge_programs["forward"]
-        edge_manager.transform(
-            [
-                AddmmToLinearTransform(),
-                FuseQuantizedOpsTransform(ep),
-            ]
+        rotary_pass = FusePatternsPass()
+        rotary_pass._exported_program = ep
+        result = rotary_pass.call(ep.graph_module)
+
+        # Verify that the pass was successful
+        self.assertTrue(result.modified)
+
+        # Check that the custom op was created
+        gm = ep.graph_module
+        custom_op_count = 0
+        for node in gm.graph.nodes:
+            if (
+                node.op == "call_function"
+                and hasattr(node.target, "__name__")
+                and "apply_rotary_emb" in str(node.target)
+            ):
+                custom_op_count += 1
+
+        # We expect at least one custom op to be created
+        self.assertGreater(custom_op_count, 0)
+
+    def test_fuse_q8ta_linear(self):
+        """Test that sequential quantized linears fuse into q8ta_linear when output quantization is present."""
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+            get_symmetric_quantization_config,
+            XNNPACKQuantizer,
         )
+
+        class TwoLinearModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear1 = torch.nn.Linear(128, 64, bias=False)
+                self.linear2 = torch.nn.Linear(64, 32, bias=False)
+
+            def forward(self, x):
+                return self.linear2(self.linear1(x))
+
+        model = TwoLinearModule()
+        sample_inputs = (torch.randn(4, 128),)
+
+        quantizer = XNNPACKQuantizer()
+        operator_config = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=False,
+        )
+        quantizer.set_global(operator_config)
+
+        edge_program = quantize_and_lower_module(model, sample_inputs, quantizer)
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
 
         gm = ep.graph_module
 
-        # Check that the linear_qta8a_qga4w operator was created
-        self.assertEqual(op_node_count(gm, "linear_qta8a_qga4w.default"), 1)
-        # Check that the original quantization/dequantization nodes were removed
-        self.assertEqual(op_node_count(gm, "quantize_per_token.default"), 0)
-        self.assertEqual(op_node_count(gm, "dequantize_per_channel.default"), 0)
-        self.assertEqual(op_node_count(gm, "linear.default"), 0)
+        # The first linear should fuse to q8ta_linear (has output quantization
+        # from the second linear's input quantize node)
+        q8ta_linear_count = op_node_count(gm, "q8ta_linear.default")
+        self.assertGreaterEqual(
+            q8ta_linear_count,
+            1,
+            "Expected at least one q8ta_linear op from output-quantized linear fusion",
+        )
+
+    def test_fuse_q8ta_linear_gemv(self):
+        """Test that batch-1 quantized linear fuses into q8ta_linear_gemv."""
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+            get_symmetric_quantization_config,
+            XNNPACKQuantizer,
+        )
+
+        class TwoLinearModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear1 = torch.nn.Linear(128, 64, bias=False)
+                self.linear2 = torch.nn.Linear(64, 32, bias=False)
+
+            def forward(self, x):
+                return self.linear2(self.linear1(x))
+
+        model = TwoLinearModule()
+        # Batch size 1 to trigger gemv variant
+        sample_inputs = (torch.randn(1, 128),)
+
+        quantizer = XNNPACKQuantizer()
+        operator_config = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=False,
+        )
+        quantizer.set_global(operator_config)
+
+        edge_program = quantize_and_lower_module(model, sample_inputs, quantizer)
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+
+        gm = ep.graph_module
+
+        # With batch size 1, the first linear should fuse to q8ta_linear_gemv
+        q8ta_linear_gemv_count = op_node_count(gm, "q8ta_linear_gemv.default")
+        self.assertGreaterEqual(
+            q8ta_linear_gemv_count,
+            1,
+            "Expected at least one q8ta_linear_gemv op for batch-1 linear fusion",
+        )
+
+    def test_fuse_three_chained_q8ta_linears(self):
+        """Test that 3 consecutive quantized linears fuse into q8ta_linear ops with
+        correct quant params at each layer boundary.
+
+        Each linear's input scale/zp (args[1], args[2]) must equal its predecessor's
+        output scale/zp (args[6], args[7]). This is a regression test for a bug where
+        topological pattern replacement caused later linears to read scale/zp from the
+        wrong arg position of the already-replaced q8ta_linear node, producing wildly
+        incorrect quantization parameters (outputs saturating to -128/127).
+        """
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+            get_symmetric_quantization_config,
+            XNNPACKQuantizer,
+        )
+
+        class ThreeLinearModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear1 = torch.nn.Linear(256, 128, bias=False)
+                self.linear2 = torch.nn.Linear(128, 64, bias=False)
+                self.linear3 = torch.nn.Linear(64, 32, bias=False)
+
+            def forward(self, x):
+                return self.linear3(self.linear2(self.linear1(x)))
+
+        model = ThreeLinearModule()
+        # Batch size 4 to select q8ta_linear (not the gemv variant)
+        sample_inputs = (torch.randn(4, 256),)
+
+        quantizer = XNNPACKQuantizer()
+        operator_config = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=False,
+        )
+        quantizer.set_global(operator_config)
+
+        edge_program = quantize_and_lower_module(model, sample_inputs, quantizer)
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+
+        gm = ep.graph_module
+
+        q8ta_nodes = [
+            node
+            for node in gm.graph.nodes
+            if get_target_canonical_name(node) == "q8ta_linear.default"
+        ]
+        self.assertGreaterEqual(
+            len(q8ta_nodes),
+            2,
+            "Expected at least 2 q8ta_linear ops from 3 chained quantized linears",
+        )
+
+        # For each consecutive q8ta_linear pair, the boundary scale/zp must be
+        # consistent: linear_i.output_scale == linear_{i+1}.input_scale.
+        # Before the fix, linear_{i+1}.input_scale was incorrectly read from the
+        # replaced q8ta_linear node's input args instead of the dq node's args.
+        for i in range(len(q8ta_nodes) - 1):
+            self.assertEqual(
+                q8ta_nodes[i].args[6],
+                q8ta_nodes[i + 1].args[1],
+                f"q8ta_linear[{i}].output_scale should equal q8ta_linear[{i + 1}].input_scale",
+            )
+            self.assertEqual(
+                q8ta_nodes[i].args[7],
+                q8ta_nodes[i + 1].args[2],
+                f"q8ta_linear[{i}].output_zero_point should equal q8ta_linear[{i + 1}].input_zero_point",
+            )
+
+    def test_fuse_q8ta_linear_gemv_non_aligned_oc(self):
+        """Test that quantized linear with non-aligned output channels (not multiple of 4) fuses correctly."""
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+            get_symmetric_quantization_config,
+            XNNPACKQuantizer,
+        )
+
+        class TwoLinearModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                # Use non-aligned output channels (9 is not a multiple of 4)
+                self.linear1 = torch.nn.Linear(128, 9, bias=False)
+                self.linear2 = torch.nn.Linear(9, 4, bias=False)
+
+            def forward(self, x):
+                return self.linear2(self.linear1(x))
+
+        model = TwoLinearModule()
+        sample_inputs = (torch.randn(1, 128),)
+
+        quantizer = XNNPACKQuantizer()
+        operator_config = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=False,
+        )
+        quantizer.set_global(operator_config)
+
+        edge_program = quantize_and_lower_module(model, sample_inputs, quantizer)
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+
+        gm = ep.graph_module
+
+        # The first linear (OC=9, not multiple of 4) should still fuse
+        q8ta_linear_gemv_count = op_node_count(gm, "q8ta_linear_gemv.default")
+        self.assertGreaterEqual(
+            q8ta_linear_gemv_count,
+            1,
+            "Expected non-aligned OC linear to fuse into q8ta_linear_gemv",
+        )

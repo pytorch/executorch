@@ -44,7 +44,7 @@ class LoadStateDictTest : public ::testing::Test {
         /*offset=*/0,
         FlatTensorHeader::kNumHeadBytes,
         /*segment_info=*/
-        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
 
     ASSERT_EQ(header.error(), Error::Ok);
 

@@ -3,7 +3,10 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_opt
 def _operator_registry_preprocessor_flags():
     max_kernel_num = native.read_config("executorch", "max_kernel_num", None)
     if max_kernel_num != None:
-        return ["-DMAX_KERNEL_NUM=" + max_kernel_num]
+        return select({
+            "DEFAULT": ["-DMAX_KERNEL_NUM=" + max_kernel_num],
+            "ovr_config//build_mode/constraints:arvr_is_host_platform": []
+        })
     elif not runtime.is_oss:
         return select({
             "DEFAULT": [],
@@ -25,10 +28,7 @@ def define_common_targets():
         name = "operator_registry_MAX_NUM_KERNELS_TEST_ONLY",
         srcs = ["operator_registry.cpp"],
         exported_headers = ["operator_registry.h"],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:evalue",
@@ -57,10 +57,7 @@ def define_common_targets():
             name = "operator_registry" + aten_suffix,
             srcs = ["operator_registry.cpp"],
             exported_headers = ["operator_registry.h"],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/core:evalue" + aten_suffix,
@@ -73,12 +70,7 @@ def define_common_targets():
             exported_headers = [
                 "kernel_runtime_context.h",
             ],
-            visibility = [
-                "//executorch/kernels/...",
-                "//executorch/runtime/executor/...",
-                "//executorch/runtime/kernel/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/platform:platform",
@@ -95,12 +87,7 @@ def define_common_targets():
             exported_headers = [
                 "kernel_includes.h",
             ],
-            visibility = [
-                "//executorch/runtime/kernel/...",
-                "//executorch/kernels/...",
-                "//executorch/kernels/prim_ops/...",  # Prim kernels
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 ":kernel_runtime_context" + aten_suffix,
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,

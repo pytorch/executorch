@@ -4,9 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import cast, Dict, List
+from typing import cast, Dict
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import numpy as np
 import torch
@@ -27,20 +27,35 @@ class MeanDim(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
         # mean dims and keep dims
-        mean_dims = cast(List[int], node.args[1])
+        rank = len(input_node.meta["val"].shape)
+
+        if rank == 0:
+            raise RuntimeError(
+                "Mean doesn't support 0d input, please report a bug in https://github.com/pytorch/executorch/issues"
+            )
+
+        dim_arg = node.args[1]
+
+        if dim_arg is None or len(dim_arg) == 0:
+            mean_dims = list(range(rank))  # reduce over all dims
+        elif isinstance(dim_arg, int):
+            mean_dims = [dim_arg]
+        else:
+            mean_dims = list(dim_arg)
+
         mean_dims = [
             mean_dim % len(input_node.meta["val"].shape) for mean_dim in mean_dims
         ]
@@ -55,11 +70,11 @@ class MeanDim(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
-        reduce_mean_op = PyQnnWrapper.PyQnnOpWrapper(
+        reduce_mean_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpReduceMean.op_name,
@@ -68,7 +83,7 @@ class MeanDim(NodeVisitor):
         reduce_mean_op.AddOutputTensors([output_tensor_wrapper])
         reduce_mean_op.AddTensorParam(
             OpReduceMean.param_axes,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(mean_dims_shape),
             mean_dims_shape,
             np.array(mean_dims, dtype=np.uint32),
@@ -78,7 +93,7 @@ class MeanDim(NodeVisitor):
             keep_dims = cast(bool, node.args[2])
             reduce_mean_op.AddScalarParam(
                 OpReduceMean.param_keep_dims,
-                PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
+                PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
                 {QCOM_DATA: keep_dims},
             )
 

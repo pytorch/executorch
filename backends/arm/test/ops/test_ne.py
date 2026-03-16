@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -107,7 +107,12 @@ def test_ne_scalar_tosa_FP(test_module):
 @common.parametrize("test_module", test_data_tensor)
 def test_ne_tensor_tosa_INT(test_module):
     pipeline = TosaPipelineINT[input_t](
-        test_module, test_module.get_inputs(), NotEqual.decomposed_ops, NotEqual.exir_op
+        test_module,
+        test_module.get_inputs(),
+        NotEqual.decomposed_ops,
+        NotEqual.exir_op,
+        frobenius_threshold=None,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -115,7 +120,12 @@ def test_ne_tensor_tosa_INT(test_module):
 @common.parametrize("test_module", test_data_scalar)
 def test_ne_scalar_tosa_INT(test_module):
     pipeline = TosaPipelineINT[input_t](
-        test_module, test_module.get_inputs(), NotEqual.decomposed_ops, NotEqual.exir_op
+        test_module,
+        test_module.get_inputs(),
+        NotEqual.decomposed_ops,
+        NotEqual.exir_op,
+        frobenius_threshold=None,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -159,9 +169,6 @@ def test_ne_scalar_u55_INT(test_module):
 @common.parametrize(
     "test_module",
     test_data_tensor,
-    xfails={
-        "ne_tensor_rank4_randn": "MLETORCH-517: Batch size > 1 not fully supported",
-    },
     strict=False,
 )
 @common.XfailIfNoCorstone320
@@ -171,7 +178,6 @@ def test_ne_tensor_u85_INT(test_module):
         test_module.get_inputs(),
         NotEqual.decomposed_ops,
         NotEqual.decomposed_exir_ops,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -180,7 +186,6 @@ def test_ne_tensor_u85_INT(test_module):
     "test_module",
     test_data_scalar,
     xfails={
-        "ne_scalar_rank4_randn": "MLETORCH-517: Batch size > 1 not fully supported",
         "ne_scalar_rank4_randn_1batch": "MLETORCH-847: Boolean ne result unstable on U85",
     },
     strict=False,
@@ -192,58 +197,57 @@ def test_ne_scalar_u85_INT(test_module):
         test_module.get_inputs(),
         NotEqual.decomposed_ops,
         NotEqual.decomposed_exir_ops,
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_tensor)
 @common.SkipIfNoModelConverter
-def test_ne_tensor_vgf_FP(test_module):
+def test_ne_tensor_vgf_no_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module,
         test_module.get_inputs(),
         NotEqual.aten_op_Tensor,
         NotEqual.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_tensor)
 @common.SkipIfNoModelConverter
-def test_ne_tensor_vgf_INT(test_module):
+def test_ne_tensor_vgf_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module,
         test_module.get_inputs(),
         NotEqual.decomposed_ops,
         NotEqual.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_scalar)
 @common.SkipIfNoModelConverter
-def test_ne_scalar_vgf_FP(test_module):
+def test_ne_scalar_vgf_no_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module,
         test_module.get_inputs(),
         NotEqual.aten_op_Scalar,
         NotEqual.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_scalar)
 @common.SkipIfNoModelConverter
-def test_ne_scalar_vgf_INT(test_module):
+def test_ne_scalar_vgf_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module,
         test_module.get_inputs(),
         NotEqual.decomposed_ops,
         NotEqual.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

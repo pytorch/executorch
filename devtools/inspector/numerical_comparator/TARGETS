@@ -1,15 +1,15 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
 
-python_library(
+runtime.python_library(
     name = "numerical_comparator_base",
     srcs = ["numerical_comparator_base.py"],
     deps = [],
 )
 
-python_library(
+runtime.python_library(
     name = "l1_numerical_comparator",
     srcs = ["l1_numerical_comparator.py"],
     deps = [
@@ -18,7 +18,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "mse_numerical_comparator",
     srcs = ["mse_numerical_comparator.py"],
     deps = [
@@ -27,7 +27,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "snr_numerical_comparator",
     srcs = ["snr_numerical_comparator.py"],
     deps = [
@@ -36,7 +36,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "lib",
     srcs = ["__init__.py"],
     deps = [

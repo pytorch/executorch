@@ -39,17 +39,14 @@ class OnesAdd(torch.nn.Module):
         ),
     }
 
-    test_data_not_delegated: dict[str, test_data_t] = {
+    # Mixed dtypes - the ones op is delegated, but it leads to a non-delegated add op.
+    test_data_mixed_dtypes: dict[str, test_data_t] = {
         "fp32_int64": (lambda: (torch.randn(10),), (10, torch.int64)),
         "fp32_int32": (lambda: (torch.randn(10),), (10, torch.int32)),
-        "int32_int64": (
-            lambda: (torch.randint(0, 10, [10], dtype=torch.int32),),
-            (10, torch.int64),
-        ),
     }
 
 
-@common.parametrize("test_data", OnesAdd.test_data)
+@common.parametrize("test_data", OnesAdd.test_data | OnesAdd.test_data_mixed_dtypes)
 def test_ones_tosa_FP(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = TosaPipelineFP[input_t](
@@ -60,7 +57,7 @@ def test_ones_tosa_FP(test_data: test_data_t):
     pipeline.run()
 
 
-@common.parametrize("test_data", OnesAdd.test_data)
+@common.parametrize("test_data", OnesAdd.test_data | OnesAdd.test_data_mixed_dtypes)
 def test_ones_tosa_INT(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = TosaPipelineINT[input_t](
@@ -68,7 +65,10 @@ def test_ones_tosa_INT(test_data: test_data_t):
         input_data(),
         OnesAdd.aten_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
+    # Pop the quantization check stage if it exists as no
+    # quantization nodes will be present for int + fp inputs.
+    if pipeline.has_stage("check.quant_nodes"):
+        pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -82,7 +82,10 @@ def test_ones_u55_INT(test_data: test_data_t):
         OnesAdd.aten_op,
         use_to_edge_transform_and_lower=True,
     )
-    pipeline.pop_stage("check.quant_nodes")
+    # Pop the quantization check stage if it exists as no
+    # quantization nodes will be present for int + fp inputs.
+    if pipeline.has_stage("check.quant_nodes"):
+        pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -95,47 +98,55 @@ def test_ones_u85_INT(test_data: test_data_t):
         input_data(),
         OnesAdd.aten_op,
         use_to_edge_transform_and_lower=True,
-    ).dump_artifact("to_edge_transform_and_lower")
-    pipeline.pop_stage("check.quant_nodes")
+    )
+    # Pop the quantization check stage if it exists as no
+    # quantization nodes will be present for int + fp inputs.
+    if pipeline.has_stage("check.quant_nodes"):
+        pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
 @common.parametrize(
     "test_data",
-    OnesAdd.test_data_not_delegated,
-    xfails={
-        "fp32_int32": "MLETORCG-716: Do not delegate empty networks to vela",
-        "fp32_int64": "MLETORCG-716: Do not delegate empty networks to vela",
-        "int32_int64": "MLETORCG-716: Do not delegate empty networks to vela",
-    },
+    OnesAdd.test_data_mixed_dtypes,
 )
 def test_ones_tosa_INT_not_delegated(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = OpNotSupportedPipeline[input_t](
-        OnesAdd(*init_data), input_data(), non_delegated_ops={}, quantize=True
+        OnesAdd(*init_data),
+        input_data(),
+        non_delegated_ops={"executorch_exir_dialects_edge__ops_aten_add_Tensor": 1},
+        n_expected_delegates=1,
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", OnesAdd.test_data)
 @common.SkipIfNoModelConverter
-def test_ones_vgf_FP(test_data: test_data_t):
-    input_data, init_data = test_data
-    pipeline = VgfPipeline[input_t](
-        OnesAdd(*init_data), input_data(), OnesAdd.aten_op, tosa_version="TOSA-1.0+FP"
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", OnesAdd.test_data)
-@common.SkipIfNoModelConverter
-def test_ones_vgf_INT(test_data: test_data_t):
+def test_ones_vgf_no_quant(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = VgfPipeline[input_t](
         OnesAdd(*init_data),
         input_data(),
         OnesAdd.aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=False,
     )
-    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+@common.parametrize("test_data", OnesAdd.test_data)
+@common.SkipIfNoModelConverter
+def test_ones_vgf_quant(test_data: test_data_t):
+    input_data, init_data = test_data
+    pipeline = VgfPipeline[input_t](
+        OnesAdd(*init_data),
+        input_data(),
+        OnesAdd.aten_op,
+        quantize=True,
+    )
+    # Pop the quantization check stage if it exists as no
+    # quantization nodes will be present for int + fp inputs.
+    if pipeline.has_stage("check.quant_nodes"):
+        pipeline.pop_stage("check.quant_nodes")
     pipeline.run()

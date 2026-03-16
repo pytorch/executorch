@@ -1,0 +1,47 @@
+Operator,Compute DType,Quantization,Constraints
+_to_dim_order_copy,"fp16, fp32",,no dtype conversion
+abs,"fp16, fp32",,
+add,"fp16, fp32",PT2E: static int8,alpha=1
+avg_pool2d,"fp16, fp32",PT2E: static int8,"ceil_mode=False, count_include_pad=False, divisor_override=pooling_region"
+bmm,"fp16, fp32",,
+cat,"fp16, fp32",PT2E: static int8,
+ceil,"fp16, fp32",,
+clamp,"fp16, fp32",,
+constant_pad_nd,"fp16, fp32",,no negative padding values
+conv1d,"fp16, fp32","PT2E: static or dynamic int8 activations
+8-bit weights, symmetric per-tensor or per-channel",constant weights
+conv2d,"fp16, fp32","PT2E: static or dynamic int8 activations
+8-bit weights, symmetric per-tensor or per-channel",constant weights
+dequantize_per_tensor,"fp16, fp32",,
+div,"fp16, fp32",,
+elu,"fp16, fp32",,
+exp,"fp16, fp32",,
+floor,"fp16, fp32",,
+gelu,"fp16, fp32",,
+hardswish,"fp16, fp32",,
+hardtanh,"fp16, fp32",,
+leaky_relu,"fp16, fp32",,
+linear,"fp16, fp32","PT2E: static or dynamic int8 activations
+8-bit weights, symmetric per-tensor or per-channel
+
+quantize\_: 8-bit dynamic activations
+4-bit groupwise weights",constant weights
+log,"fp16, fp32",,
+max_pool2d,"fp16, fp32",,"stride ≤ kernel_size, ceil_mode only for static shapes"
+maximum,"fp16, fp32",,
+mean,"fp16, fp32",,"4D tensors only; dims=[-2,-1] or [-1,-2]"
+minimum,"fp16, fp32",,
+mul,"fp16, fp32",PT2E: static int8,
+neg,"fp16, fp32",,
+permute_copy,"fp16, fp32",,
+pow,"fp16, fp32",,power=2 only
+quantize_per_tensor,"fp16, fp32",,
+relu,"fp16, fp32",,
+rsqrt,"fp16, fp32",,
+sigmoid,"fp16, fp32",,
+slice_copy,"fp16, fp32",,"no zero-dim tensors, no dynamic shapes"
+softmax,"fp16, fp32",,dim must be last dimension
+sqrt,"fp16, fp32",,
+sub,"fp16, fp32",,alpha=1
+tanh,"fp16, fp32",,
+upsample_bilinear2d,"fp16, fp32",,no dynamic output sizes

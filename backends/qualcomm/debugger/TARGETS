@@ -1,6 +1,6 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-python_library(
+runtime.python_library(
     name = "utils",
     srcs = ["utils.py"],
     deps = [
@@ -9,4 +9,22 @@ python_library(
         "//executorch/backends/qualcomm/aot/python:PyQnnManagerAdaptor",
         "fbsource//third-party/pypi/pandas:pandas",
     ]
+)
+
+runtime.python_library(
+    name = "qnn_intermediate_debugger",
+    srcs = [
+        "format_outputs.py",
+        "metrics_evaluator.py",
+        "qnn_intermediate_debugger.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/qualcomm/_passes:passes",
+        "//executorch/backends/qualcomm/utils:utils",
+        "//executorch/devtools:lib",
+        "//executorch/exir:sym_util",
+        "fbsource//third-party/pypi/graphviz:graphviz",
+        "fbsource//third-party/pypi/pandas:pandas",
+    ],
 )

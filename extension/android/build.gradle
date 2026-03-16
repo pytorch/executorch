@@ -1,12 +1,7 @@
 allprojects {
     buildscript {
         ext {
-            minSdkVersion = 21
-            targetSdkVersion = 34
-            compileSdkVersion = 34
-            buildToolsVersion = '33.0.1'
-
-            fbjniJavaOnlyVersion = "0.5.1"
+            fbjniJavaOnlyVersion = "0.7.0"
             soLoaderNativeLoaderVersion = "0.10.5"
         }
 
@@ -24,7 +19,6 @@ allprojects {
 
     repositories {
         google()
-        jcenter()
         mavenCentral()
     }
 }

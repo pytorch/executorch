@@ -15,6 +15,7 @@ from typing import Callable, Sequence, Type
 import executorch.exir as exir
 import torch
 from executorch.exir import ExecutorchBackendConfig, ExecutorchProgramManager, to_edge
+from executorch.exir.capture._capture import patch_forward
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
 from executorch.exir.passes import (
     DebugPass,
@@ -70,6 +71,7 @@ class ExportedModule:
         export_joint_graph: bool = False,
         external_constants: bool = False,
         export_state_names: bool = False,
+        share_mutable_buffers: bool = False,
     ) -> "ExportedModule":
         """
         Creates a new ExportedModule for the specified module class.
@@ -134,10 +136,13 @@ class ExportedModule:
             # all exported methods must have the same signature so just pick the first one.
             methods[0],
         )
-        trace_inputs: Sequence = get_trace_inputs()
+        inputs = get_trace_inputs()
         method_name_to_args = {}
         for method in methods:
-            method_name_to_args[method] = trace_inputs
+            if hasattr(eager_module, "get_random_inputs_per_method"):
+                # pyre-ignore
+                inputs = eager_module.get_random_inputs_per_method()[method]  # type: ignore[operator]
+            method_name_to_args[method] = inputs
 
         method_name_to_dynamic_shapes = None
         if hasattr(eager_module, "get_dynamic_shapes"):
@@ -149,15 +154,11 @@ class ExportedModule:
                 method_name_to_dynamic_shapes[method] = trace_dynamic_shapes
 
         memory_planning_pass = MemoryPlanningPass(
-            alloc_mutable_buffers=not export_state_names
+            alloc_mutable_buffers=not export_state_names,
+            share_mutable_buffers=share_mutable_buffers,
         )
         if hasattr(eager_module, "get_memory_planning_pass"):
             memory_planning_pass = eager_module.get_memory_planning_pass()  # type: ignore[operator]
-
-        class WrapperModule(nn.Module):
-            def __init__(self, method):
-                super().__init__()
-                self.forward = method
 
         exported_methods = {}
         # These cleanup passes are required to convert the `add` op to its out
@@ -165,7 +166,6 @@ class ExportedModule:
         for method_name, method_input in method_name_to_args.items():
             # if not isinstance(eager_module, torch.nn.Module):
             if export_joint_graph:
-                # _export was having issues with WrapperModule.
                 assert method_name == "forward"
                 ep = _export(
                     eager_module,
@@ -179,16 +179,16 @@ class ExportedModule:
                 )
                 exported_methods[method_name] = _export_forward_backward(ep)
             else:
-                exported_methods[method_name] = export(
-                    eager_module,
-                    method_input,  # type: ignore[arg-type]
-                    dynamic_shapes=(
-                        method_name_to_dynamic_shapes[method_name]
-                        if method_name_to_dynamic_shapes
-                        else None
-                    ),
-                    strict=True,
-                )
+                with patch_forward(eager_module, getattr(eager_module, method_name)):
+                    exported_methods[method_name] = export(
+                        eager_module,
+                        method_input,  # type: ignore[arg-type]
+                        dynamic_shapes=(
+                            method_name_to_dynamic_shapes[method_name]
+                            if method_name_to_dynamic_shapes
+                            else None
+                        ),
+                    )
 
         exec_prog = to_edge(
             exported_methods,
@@ -230,6 +230,6 @@ class ExportedModule:
             methods=methods,
             executorch_program=exec_prog,
             exported_program=exported_program,
-            trace_inputs=trace_inputs,
+            trace_inputs=inputs,
             get_random_inputs_fn=get_random_inputs_fn,
         )

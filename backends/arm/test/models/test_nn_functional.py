@@ -1,10 +1,10 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Tests 10 popular torch.nn.functional not tested in other ways or training
+related.
 
-"""
-Tests 10 popular torch.nn.functional not tested in other ways or training related
 - normalize
 - grid_sample
 - one_hot
@@ -16,6 +16,7 @@ Tests 10 popular torch.nn.functional not tested in other ways or training relate
 - affine_grid
 - max_pool1d
 - threshold
+
 """
 from typing import Callable
 
@@ -81,17 +82,13 @@ input_t = tuple[torch.Tensor]
 @parametrize(
     "test_data",
     module_tests,
-    xfails={
-        "affine_grid": "Int64 input. Partition handling fails since arange int64 output is split between 2 partitions.",
-    },
 )
-def test_nn_functional_FP(test_data):
+def test_nn_functional_tosa_FP(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineFP[input_t](
         module, inputs, "", use_to_edge_transform_and_lower=False
     )
     pipeline.pop_stage("check.aten")
-    pipeline.dump_artifact("to_edge")
     pipeline.pop_stage("check_count.exir")
     try:
         pipeline.run()
@@ -103,23 +100,26 @@ def test_nn_functional_FP(test_data):
             raise e
 
 
-x_fails = {
-    "normalize": "MLETORCH-852: Support aten.index_put.default",
-    "unfold": "Int64 input && MLETORCH-827: Support aten.index.Tensor",
-    "fold": "Int64 input && MLETORCH-827: Support aten.index_put.default",
-}
-
-
-@parametrize("test_data", module_tests, x_fails, strict=False)
-def test_nn_functional_INT(test_data):
+@parametrize(
+    "test_data",
+    module_tests,
+)
+def test_nn_functional_tosa_INT(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineINT[input_t](
-        module, inputs, "", use_to_edge_transform_and_lower=True
+        module,
+        inputs,
+        "",
+        use_to_edge_transform_and_lower=True,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.pop_stage("check.aten")
     pipeline.pop_stage("check_count.exir")
-    pipeline.pop_stage("check.quant_nodes")
-    pipeline.pop_stage("check_not.quant_nodes")
+    if pipeline.has_stage("check.quant_nodes"):
+        pipeline.pop_stage("check.quant_nodes")
+    if pipeline.has_stage("check_not.quant_nodes"):
+        pipeline.pop_stage("check_not.quant_nodes")
     try:
         pipeline.run()
     except RuntimeError as e:

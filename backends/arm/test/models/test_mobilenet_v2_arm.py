@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,12 +10,14 @@ from typing import Tuple
 import pytest
 
 import torch
+from executorch.backends.arm.quantizer import get_symmetric_quantization_config
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 from torchvision import models, transforms  # type: ignore[import-untyped]
@@ -38,9 +40,46 @@ quant_test_data = {
 }
 
 
+def _use_partial_quantizer(pipeline):
+    """Set the pipeline's quantizer to only include Conv2d and ReLU6."""
+    quant_cfg = get_symmetric_quantization_config()
+    pipeline.quantizer.set_global(None)
+    pipeline.quantizer.set_module_type(torch.nn.Conv2d, quant_cfg)
+    pipeline.quantizer.set_module_type(torch.nn.ReLU6, quant_cfg)
+
+
 def test_mv2_tosa_FP():
     pipeline = TosaPipelineFP[input_t](
         mv2, model_inputs, aten_op=[], exir_op=[], use_to_edge_transform_and_lower=True
+    )
+    pipeline.run()
+
+
+def test_mv2_tosa_FP_bf16():
+    bf16_model = models.mobilenetv2.mobilenet_v2(
+        weights=MobileNet_V2_Weights.DEFAULT
+    ).eval()
+    bf16_model = bf16_model.to(torch.bfloat16)
+    bf16_input = normalize(torch.rand((1, 3, 224, 224))).to(torch.bfloat16)
+    pipeline = TosaPipelineFP[input_t](
+        bf16_model,
+        (bf16_input,),
+        aten_op=[],
+        tosa_extensions=["bf16"],
+        atol=6e-02,
+        rtol=6e-02,
+    )
+    pipeline.run()
+
+
+def test_mv2_tosa_FP_channels_last():
+    input_tensor = model_inputs[0].to(memory_format=torch.channels_last)
+    pipeline = TosaPipelineFP[input_t](
+        mv2,
+        (input_tensor,),
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
 
@@ -56,6 +95,8 @@ def test_mv2_tosa_INT(per_channel_quantization):
         per_channel_quantization=per_channel_quantization,
         atol=0.25,
         qtol=1,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -69,7 +110,6 @@ def test_mv2_u55_INT(per_channel_quantization):
         model_inputs,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
         per_channel_quantization=per_channel_quantization,
         atol=0.25,
@@ -87,10 +127,69 @@ def test_mv2_u85_INT(per_channel_quantization):
         model_inputs,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
         per_channel_quantization=per_channel_quantization,
         atol=0.25,
         qtol=1,
     )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@common.parametrize("per_channel_quantization", quant_test_data)
+def test_mv2_vgf_quant(per_channel_quantization):
+    pipeline = VgfPipeline[input_t](
+        mv2,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        per_channel_quantization=per_channel_quantization,
+        atol=0.25,
+        qtol=1,
+        quantize=True,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_mv2_vgf_no_quant():
+    pipeline = VgfPipeline[input_t](
+        mv2,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+def test_mv2_tosa_INT_FP_partial_quant():
+    pipeline = TosaPipelineINT[input_t](
+        mv2,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        tosa_extensions=["FP"],
+        use_to_edge_transform_and_lower=True,
+        atol=0.20,
+        frobenius_threshold=None,
+        cosine_threshold=None,
+    )
+    _use_partial_quantizer(pipeline)
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_mv2_vgf_quant_partial_quant():
+    pipeline = VgfPipeline[input_t](
+        mv2,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        quantize=True,
+        atol=0.10,
+    )
+    _use_partial_quantizer(pipeline)
     pipeline.run()

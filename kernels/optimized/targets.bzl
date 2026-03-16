@@ -13,19 +13,13 @@ def define_common_targets(is_fbcode=False):
 
     runtime.export_file(
         name = "optimized.yaml",
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
         name = "optimized_operators",
         srcs = [],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/kernels/optimized/cpu:cpu_optimized",
         ],
@@ -34,9 +28,7 @@ def define_common_targets(is_fbcode=False):
     et_operator_library(
         name = "optimized_oplist",
         ops_schema_yaml_target = ":optimized.yaml",
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     # Used mainly for operator testing. In practice, a generated lib specific
@@ -50,8 +42,5 @@ def define_common_targets(is_fbcode=False):
         ],
         functions_yaml_target = ":optimized.yaml",
         define_static_targets = True,
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )

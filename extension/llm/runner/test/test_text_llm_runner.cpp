@@ -26,24 +26,33 @@ using executorch::extension::llm::TextTokenGenerator;
 using executorch::runtime::Error;
 using executorch::runtime::Result;
 using executorch::runtime::testing::TensorFactory;
+
+namespace {
 // Mock classes for dependencies
 class MockTokenizer : public ::tokenizers::Tokenizer {
  public:
-  MOCK_METHOD(::tokenizers::Error, load, (const std::string&), ());
-  MOCK_METHOD(bool, is_loaded, (), (const));
+  MOCK_METHOD(::tokenizers::Error, load, (const std::string&), (override));
+  MOCK_METHOD(bool, is_loaded, (), (const, override));
   MOCK_METHOD(
       ::tokenizers::Result<std::vector<uint64_t>>,
       encode,
       (const std::string&, int8_t, int8_t),
-      (const));
+      (const, override));
   MOCK_METHOD(
       ::tokenizers::Result<std::string>,
       decode,
-      (uint64_t, uint64_t),
-      (const));
-  MOCK_METHOD(uint64_t, bos_tok, (), (const));
-  MOCK_METHOD(uint64_t, eos_tok, (), (const));
-  MOCK_METHOD(uint64_t, vocab_size, (), (const));
+      (uint64_t, uint64_t, bool),
+      (const, override));
+  MOCK_METHOD(
+      ::tokenizers::Result<std::string>,
+      id_to_piece,
+      (uint64_t),
+      (const, override));
+  MOCK_METHOD(
+      ::tokenizers::Result<uint64_t>,
+      piece_to_id,
+      (const std::string&),
+      (const, override));
 };
 
 class MockModule : public ::executorch::extension::Module {
@@ -121,13 +130,17 @@ class RunnerTest : public Test {
               std::vector<uint64_t>{1, 2, 3});
         });
 
-    ON_CALL(*tokenizer, decode).WillByDefault([](uint64_t, uint64_t) {
+    ON_CALL(*tokenizer, decode).WillByDefault([](uint64_t, uint64_t, bool) {
       return ::tokenizers::Result<std::string>("token");
     });
 
-    ON_CALL(*tokenizer, bos_tok()).WillByDefault(Return(1));
-    ON_CALL(*tokenizer, eos_tok()).WillByDefault(Return(2));
-    ON_CALL(*tokenizer, vocab_size()).WillByDefault(Return(100));
+    ON_CALL(*tokenizer, id_to_piece).WillByDefault([](uint64_t) {
+      return ::tokenizers::Result<std::string>("piece");
+    });
+
+    ON_CALL(*tokenizer, piece_to_id).WillByDefault([](const std::string&) {
+      return ::tokenizers::Result<uint64_t>(0);
+    });
 
     return tokenizer;
   }
@@ -195,16 +208,20 @@ TEST_F(RunnerTest, GenerateCallsCallbackExactlyMaxNewTokensTimes) {
   auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
 
   // Set up expectations for the tokenizer encode method
-  EXPECT_CALL(*tokenizer, encode(_, _, _))
-      .WillOnce(Return(::tokenizers::Result<std::vector<uint64_t>>(
-          std::vector<uint64_t>{1, 2, 3})));
+  ON_CALL(*tokenizer, encode(_, _, _))
+      .WillByDefault([&](const std::string&, int8_t, int8_t) {
+        return ::tokenizers::Result<std::vector<uint64_t>>(
+            std::vector<uint64_t>{1, 2, 3});
+      });
 
   // Set up expectations for the text prefiller
-  EXPECT_CALL(*text_prefiller, prefill(_, _))
-      .WillOnce(Return(Result<uint64_t>(4)));
+  ON_CALL(*text_prefiller, prefill(_, _))
+      .WillByDefault([&](std::vector<uint64_t>&, int64_t&) {
+        return (Result<uint64_t>(4));
+      });
 
   // Set up expectations for load methods
-  EXPECT_CALL(*text_prefiller, is_loaded()).WillRepeatedly(Return(true));
+  ON_CALL(*text_prefiller, is_loaded()).WillByDefault(Return(true));
 
   std::unique_ptr<executorch::llm::Stats> stats =
       std::make_unique<executorch::llm::Stats>();
@@ -213,14 +230,17 @@ TEST_F(RunnerTest, GenerateCallsCallbackExactlyMaxNewTokensTimes) {
       tokenizer.get(), text_decoder_runner.get(), stats.get());
 
   // Create a Runner with our mocked components
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
   TextLLMRunner runner(
       createDefaultMetadata(),
       std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
-      std::make_unique<MockModule>(),
+      std::move(module),
       std::move(text_decoder_runner),
       std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
           text_prefiller.release()),
-      std::make_unique<executorch::extension::llm::IOManager>(),
+      std::move(io_manager),
       std::move(text_token_generator),
       std::move(stats));
 
@@ -256,15 +276,20 @@ TEST_F(RunnerTest, WarmupCallsGenerateWithWarmingFlag) {
   auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
 
   // Set up expectations for the tokenizer encode method
-  EXPECT_CALL(*tokenizer, encode(_, _, _))
-      .WillOnce(Return(::tokenizers::Result<std::vector<uint64_t>>(
-          std::vector<uint64_t>{1, 2, 3})));
+  ON_CALL(*tokenizer, encode(_, _, _))
+      .WillByDefault([&](const std::string&, int8_t, int8_t) {
+        return ::tokenizers::Result<std::vector<uint64_t>>(
+            std::vector<uint64_t>{1, 2, 3});
+      });
 
   // Set up expectations for the text prefiller
-  EXPECT_CALL(*text_prefiller, prefill(_, _))
-      .WillOnce(Return(Result<uint64_t>(4)));
+  ON_CALL(*text_prefiller, prefill(_, _))
+      .WillByDefault([&](std::vector<uint64_t>&, int64_t&) {
+        return (Result<uint64_t>(4));
+      });
 
-  EXPECT_CALL(*text_prefiller, is_loaded()).WillRepeatedly(Return(true));
+  // Set up expectations for load methods
+  ON_CALL(*text_prefiller, is_loaded()).WillByDefault(Return(true));
 
   std::unique_ptr<executorch::llm::Stats> stats =
       std::make_unique<executorch::llm::Stats>();
@@ -273,14 +298,17 @@ TEST_F(RunnerTest, WarmupCallsGenerateWithWarmingFlag) {
       tokenizer.get(), text_decoder_runner.get(), stats.get());
 
   // Create a Runner with our mocked components
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
   TextLLMRunner runner(
       createDefaultMetadata(),
       std::move(tokenizer),
-      std::make_unique<MockModule>(),
+      std::move(module),
       std::move(text_decoder_runner),
       std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
           text_prefiller.release()),
-      std::make_unique<executorch::extension::llm::IOManager>(),
+      std::move(io_manager),
       std::move(text_token_generator),
       std::move(stats));
 
@@ -308,14 +336,17 @@ TEST_F(RunnerTest, IsLoadedReturnsTrueWhenComponentsInitialized) {
       tokenizer.get(), text_decoder_runner.get(), stats.get());
 
   // Create a Runner with our mocked components
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
   TextLLMRunner runner(
       createDefaultMetadata(),
       std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
-      std::make_unique<MockModule>(),
+      std::move(module),
       std::move(text_decoder_runner),
       std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
           text_prefiller.release()),
-      std::make_unique<executorch::extension::llm::IOManager>(),
+      std::move(io_manager),
       std::move(text_token_generator),
       std::move(stats));
 
@@ -326,58 +357,144 @@ TEST_F(RunnerTest, IsLoadedReturnsTrueWhenComponentsInitialized) {
   EXPECT_TRUE(runner.is_loaded());
 }
 
-// Test that generate_from_pos() errors out when max_new_tokens is negative
-TEST_F(RunnerTest, GenerateFromPosErrorsWithNegativeMaxNewTokens) {
-  // Create mock instances using helper functions
+// Test that prefill() returns the predicted next token
+TEST_F(RunnerTest, PrefillReturnsNextToken) {
   auto tokenizer = createMockTokenizer();
   auto text_decoder_runner = createMockTextDecoderRunner();
   auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
 
-  // Set up expectations for the tokenizer encode method
-  EXPECT_CALL(*tokenizer, encode(_, _, _))
-      .WillOnce(Return(::tokenizers::Result<std::vector<uint64_t>>(
-          std::vector<uint64_t>{1, 2, 3})));
+  ON_CALL(*tokenizer, encode(_, _, _))
+      .WillByDefault([&](const std::string&, int8_t, int8_t) {
+        return ::tokenizers::Result<std::vector<uint64_t>>(
+            std::vector<uint64_t>{1, 2, 3});
+      });
 
-  // Set up expectations for load methods
-  EXPECT_CALL(*text_prefiller, is_loaded()).WillRepeatedly(Return(true));
+  ON_CALL(*text_prefiller, prefill(_, _))
+      .WillByDefault([&](std::vector<uint64_t>& tokens, int64_t& pos) {
+        pos += tokens.size();
+        return Result<uint64_t>(42);
+      });
+
+  ON_CALL(*text_prefiller, is_loaded()).WillByDefault(Return(true));
 
   std::unique_ptr<executorch::llm::Stats> stats =
       std::make_unique<executorch::llm::Stats>();
-  // Create a real TextTokenGenerator
   auto text_token_generator = createTextTokenGenerator(
       tokenizer.get(), text_decoder_runner.get(), stats.get());
 
-  // Create a Runner with our mocked components
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
   TextLLMRunner runner(
-      {
-          {"enable_dynamic_shape", false},
-          {"get_max_seq_len", 10},
-          {"get_max_context_len", 10},
-          {"use_kv_cache", true},
-      },
+      createDefaultMetadata(),
       std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
-      std::make_unique<MockModule>(),
+      std::move(module),
       std::move(text_decoder_runner),
       std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
           text_prefiller.release()),
-      std::make_unique<executorch::extension::llm::IOManager>(),
+      std::move(io_manager),
       std::move(text_token_generator),
       std::move(stats));
 
-  // Load
   runner.load();
 
-  // Set up the generation config with a negative max_new_tokens value
+  auto result = runner.prefill("system prompt", 1, 0);
+  EXPECT_TRUE(result.ok());
+  EXPECT_EQ(result.get(), 42);
+}
+
+// Test the prefill() → generate("") workflow
+TEST_F(RunnerTest, PrefillThenGenerateEmpty) {
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
+
+  ON_CALL(*tokenizer, encode(_, _, _))
+      .WillByDefault([&](const std::string&, int8_t, int8_t) {
+        return ::tokenizers::Result<std::vector<uint64_t>>(
+            std::vector<uint64_t>{1, 2, 3});
+      });
+
+  ON_CALL(*text_prefiller, prefill(_, _))
+      .WillByDefault([&](std::vector<uint64_t>& tokens, int64_t& pos) {
+        pos += tokens.size();
+        return Result<uint64_t>(4);
+      });
+
+  ON_CALL(*text_prefiller, is_loaded()).WillByDefault(Return(true));
+
+  std::unique_ptr<executorch::llm::Stats> stats =
+      std::make_unique<executorch::llm::Stats>();
+  auto text_token_generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), stats.get());
+
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
+  TextLLMRunner runner(
+      createDefaultMetadata(),
+      std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
+      std::move(module),
+      std::move(text_decoder_runner),
+      std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
+          text_prefiller.release()),
+      std::move(io_manager),
+      std::move(text_token_generator),
+      std::move(stats));
+
+  runner.load();
+
+  // Prefill first
+  auto prefill_result = runner.prefill("system prompt", 1, 0);
+  EXPECT_TRUE(prefill_result.ok());
+
+  // Generate with empty prompt — should consume prefill_next_token_
   GenerationConfig config;
   config.max_new_tokens = 5;
   config.echo = false;
 
-  // num_prompt_tokens = 3
-  // max_context_len = 10
-  // start_pos = 8, this should fail because 10 - 8 > 3, even though
-  // config.max_new_tokens = 5 > 3, it's still a failure.
-  Error err = runner.generate_from_pos("test prompt", 8, config);
+  CallbackCounter counter;
+  Error err = runner.generate("", config, [&counter](const std::string& token) {
+    counter.callback(token);
+  });
 
-  // Verify that an InvalidArgument error is returned
-  EXPECT_EQ(err, Error::InvalidArgument);
+  EXPECT_EQ(err, Error::Ok);
+  // First token from prefill + remaining from decode loop
+  EXPECT_EQ(counter.getCount(), config.max_new_tokens);
 }
+
+// Test that generate("") without prior prefill() returns an error
+TEST_F(RunnerTest, GenerateEmptyWithoutPrefillFails) {
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
+
+  ON_CALL(*text_prefiller, is_loaded()).WillByDefault(Return(true));
+
+  std::unique_ptr<executorch::llm::Stats> stats =
+      std::make_unique<executorch::llm::Stats>();
+  auto text_token_generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), stats.get());
+
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
+  TextLLMRunner runner(
+      createDefaultMetadata(),
+      std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
+      std::move(module),
+      std::move(text_decoder_runner),
+      std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
+          text_prefiller.release()),
+      std::move(io_manager),
+      std::move(text_token_generator),
+      std::move(stats));
+
+  runner.load();
+
+  GenerationConfig config;
+  Error err = runner.generate("", config);
+  EXPECT_EQ(err, Error::InvalidState);
+}
+
+} // namespace

@@ -7,7 +7,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 
@@ -32,6 +32,11 @@ class PreprocessResult:
     # but retrieveable by delegates via the NamedDataMap at runtime.
     data_store_output: Optional[NamedDataStoreOutput] = None
 
+    # Optional delegate-specific information that will be added to the
+    # lowered_module.meta field in the graph, but not directly serialized
+    # into the PTE file.
+    _delegate_info_meta: Optional[Any] = None
+
 
 """
 How to create a backend (for example, BackendWithCompilerDemo):
@@ -51,6 +56,22 @@ class BackendDetails(ABC):
     enforced to implement this method.
 
     """
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+        # Allow direct subclasses of BackendDetails
+        if cls.__bases__ == (BackendDetails,):
+            return
+
+        # Forbid subclasses whose ANY parent is already a child of BackendDetails
+        for base in cls.__bases__:
+            if issubclass(base, BackendDetails) and base is not BackendDetails:
+                raise TypeError(
+                    f"ExecuTorch delegate doesn't support nested backend, '{base.__name__}' "
+                    " should be a final backend implementation and should not be subclassed "
+                    f"(attempted by '{cls.__name__}')."
+                )
 
     @staticmethod
     # all backends need to implement this method

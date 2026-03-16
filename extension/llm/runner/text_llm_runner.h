@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -46,6 +47,7 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
    * part of the model
    * @param text_prefiller Component for handling the prefill phase of text
    * generation
+   * @param io_manager Component for handling I/O operations
    * @param text_token_generator Component for generating tokens during the
    * decode phase
    * @param stats Statistics tracking object for performance monitoring
@@ -101,28 +103,32 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
       std::function<void(const Stats&)> stats_callback = {}) override;
 
   /**
-   * @brief Generates text based on the provided prompt and start position
-   *
-   * This method performs text generation using the loaded model. It processes
-   * the input prompt, runs the model in prefill and decode phases using the
-   * start position until max tokens to generate is reached or eos token is
-   * generated, then returns generated text and perf stats through callbacks.
-   *
-   * @param prompt The input text to generate from
-   * @param start_pos The starting position in KV cache of the input
-   * @param config Configuration parameters for text generation (e.g.,
-   * max_new_tokens, temperature)
-   * @param token_callback Function called for each generated token with the
-   * decoded text
-   * @param stats_callback Function called with performance statistics
-   * @return ::executorch::runtime::Error Success or error status
+   * Prefill multimodal inputs into the KV cache without generating.
+   * Only text inputs are processed; non-text inputs are skipped.
+   * @param inputs A vector of MultimodalInput objects.
+   * @param num_bos Number of BOS tokens to prepend during text encoding.
+   * @param num_eos Number of EOS tokens to append during text encoding.
+   * @return The next token predicted after prefill, or an error.
+   *         KV cache position is tracked internally in pos_.
    */
-  ::executorch::runtime::Error generate_from_pos(
+  ::executorch::runtime::Result<uint64_t> prefill(
+      const std::vector<MultimodalInput>& inputs,
+      int32_t num_bos = 0,
+      int32_t num_eos = 0) override;
+
+  /**
+   * Convenience overload: prefill a single text prompt.
+   */
+  ::executorch::runtime::Result<uint64_t>
+  prefill(const std::string& prompt, int32_t num_bos = 0, int32_t num_eos = 0);
+
+  /**
+   * Prefill a text prompt using GenerationConfig.
+   * Deprecated: prefer prefill(prompt, num_bos, num_eos).
+   */
+  ::executorch::runtime::Result<uint64_t> prefill(
       const std::string& prompt,
-      int64_t start_pos,
-      const GenerationConfig& config,
-      std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const Stats&)> stats_callback = {}) override;
+      const GenerationConfig& config);
 
   /**
    * @brief Warms up the model with a sample prompt
@@ -137,6 +143,15 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
   ::executorch::runtime::Error warmup(
       const std::string& prompt,
       int32_t max_new_tokens);
+
+  /**
+   * @brief Remove prefilled tokens and reset start position, and stats.
+   *
+   * This method removes the prefilled tokens from the KV cache and resets the
+   * start position to 0. It also clears the stats for previous runs.
+   */
+  void reset() override;
+
   /**
    * @brief Stops the ongoing text generation process
    *
@@ -168,6 +183,12 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
   // temperature.
   // Deprecated, we should rely on the temperature in GenerationConfig instead.
   float temperature_ = -1.0f;
+
+  // Token predicted by the last prefill() call, consumed by generate("").
+  std::optional<uint64_t> prefill_next_token_;
+
+  // The position in KV cache of the input, starting from 0.
+  int64_t pos_ = 0;
 };
 
 } // namespace executorch::extension::llm

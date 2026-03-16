@@ -8,5 +8,16 @@ runtime.python_test(
     deps = [
         "//executorch/extension/pybindings/test:make_test",
         "//executorch/runtime:runtime",
+        "//executorch/devtools/etdump:serialize",
+    ],
+)
+
+runtime.python_test(
+    name = "test_runtime_etdump_gen",
+    srcs = ["test_runtime_etdump_gen.py"],
+    deps = [
+        "//executorch/extension/pybindings/test:make_test",
+        "//executorch/runtime:runtime",
+        "//executorch/devtools/etdump:serialize",
     ],
 )

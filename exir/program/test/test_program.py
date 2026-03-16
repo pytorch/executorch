@@ -37,6 +37,7 @@ from executorch.extension.pybindings.portable_lib import (
 from torch._export.verifier import Verifier
 from torch.export import Dim, export, ExportedProgram
 from torch.export._trace import _export
+from torch.fx.passes.infra.pass_manager import PassManager
 
 from torch.library import impl, Library
 from torch.nn import functional as F
@@ -470,6 +471,30 @@ class TestProgramManagers(unittest.TestCase):
             torch.ones(1) + 1,  # x + 1
         )
 
+    def test_transform_pass_manager_api(self):
+        edge_manager = to_edge(get_exported_programs(), get_config_methods())
+
+        pm = PassManager()
+        pm.add_pass(AddToMulPassEdge())
+
+        transformed_edge = edge_manager.transform(pm)
+
+        x = torch.ones(1) * 2
+        y = torch.ones(1) * 3
+
+        # x * y + x -> x * y * x
+        self.assertEqual(
+            transformed_edge.exported_program("forward").module()(x, y), x * y * x
+        )
+
+        # x + 1 -> x * 1
+        self.assertEqual(
+            transformed_edge.exported_program("foo").module()(
+                x,
+            ),
+            x * 1,
+        )
+
     def test_edge_to_backend_replaces_subgraph(self):
         edge_manager: EdgeProgramManager = to_edge(
             get_exported_programs(), get_config_methods()
@@ -726,26 +751,20 @@ class TestProgramManagers(unittest.TestCase):
             partitioner=[NonDecompTestPartitioner()],
         )
 
-        def count_nodes(graph_module, target):
-            count = 0
-            for node in graph_module.graph.nodes:
-                if node.op == "call_function" and node.target == target:
-                    count += 1
-            return count
-
         # There should be 1 call_delegate node and 1 node for aten.mm.default for the
         # linear that doesn't have a bias which was decomposed as the partitioner
         # said this node wasn't supported.
         self.assertEqual(
-            count_nodes(
+            self._count_nodes(
                 edge.exported_program().graph_module,
-                torch.ops.higher_order.executorch_call_delegate,
+                [torch.ops.higher_order.executorch_call_delegate],
             ),
             1,
         )
         self.assertEqual(
-            count_nodes(
-                edge.exported_program().graph_module, exir_ops.edge.aten.mm.default
+            self._count_nodes(
+                edge.exported_program().graph_module,
+                [exir_ops.edge.aten.mm.default],
             ),
             1,
         )
@@ -780,6 +799,15 @@ class TestProgramManagers(unittest.TestCase):
         except SpecViolationError:
             self.fail("Should not error out on linalg_vector_norm op")
 
+    @staticmethod
+    def _count_nodes(graph_module, targets):
+        """Count nodes in graph_module whose target matches any in targets."""
+        count = 0
+        for node in graph_module.graph.nodes:
+            if node.op == "call_function" and node.target in targets:
+                count += 1
+        return count
+
     def _test_to_edge_with_preserved_ops(
         self, program, preserved_ops, expected_preserved_ops
     ):
@@ -787,19 +815,12 @@ class TestProgramManagers(unittest.TestCase):
             program, compile_config=EdgeCompileConfig(preserve_ops=preserved_ops)
         )
 
-        def count_nodes(graph_module, target):
-            count = 0
-            for node in graph_module.graph.nodes:
-                if node.op == "call_function" and node.target in target:
-                    count += 1
-            return count
-
-        aten_ops_non_decomposed = count_nodes(
+        aten_ops_non_decomposed = self._count_nodes(
             program.graph_module,
             preserved_ops,
         )
 
-        edge_ops_non_decomposed = count_nodes(
+        edge_ops_non_decomposed = self._count_nodes(
             edge.exported_program().graph_module,
             expected_preserved_ops,
         )
@@ -867,6 +888,40 @@ class TestProgramManagers(unittest.TestCase):
         self._test_to_edge_with_preserved_ops(
             program, ops_not_to_decompose, expected_non_decomposed_edge_ops
         )
+
+    def test_to_edge_transform_and_lower_with_preserve_ops_no_partitioner(self):
+        """Test that preserve_ops works with to_edge_transform_and_lower when
+        no partitioner is provided. This ensures ops like aten.linear.default
+        are not decomposed to addmm even without a partitioner."""
+        model = TestLinear()
+        program = torch.export.export(model, model._get_random_inputs(), strict=True)
+
+        preserved_ops = [torch.ops.aten.linear.default]
+        expected_edge_ops = [exir_ops.edge.aten.linear.default]
+
+        # Verify ops exist in the original program before the API call
+        ops_before = self._count_nodes(program.graph_module, preserved_ops)
+        self.assertEqual(ops_before, 1)
+
+        edge = to_edge_transform_and_lower(
+            program,
+            compile_config=EdgeCompileConfig(
+                preserve_ops=preserved_ops,
+            ),
+        )
+
+        # Verify preserved ops survive after the API call (as edge dialect ops)
+        ops_after = self._count_nodes(
+            edge.exported_program().graph_module, expected_edge_ops
+        )
+        self.assertEqual(ops_before, ops_after)
+
+        # Verify linear was NOT decomposed to addmm
+        addmm_count = self._count_nodes(
+            edge.exported_program().graph_module,
+            [exir_ops.edge.aten.addmm.default],
+        )
+        self.assertEqual(addmm_count, 0)
 
     def test_save_fails(self):
         model = TestLinear()

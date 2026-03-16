@@ -3,6 +3,7 @@
 #  Provided subject to the LICENSE file in the top level directory.
 #
 
+load("@fbsource//xplat/executorch/build:build_variables.bzl", "MPS_BACKEND_BUCK_SRCS")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets(is_xplat = False, platforms = []):
@@ -37,20 +38,8 @@ def define_common_targets(is_xplat = False, platforms = []):
             "runtime/*.h",
             "runtime/operations/*.h",
         ]),
-        "srcs": native.glob([
-            "runtime/*.mm",
-            "runtime/operations/*.mm",
-        ]),
-        "visibility": [
-            "//executorch/backends/apple/...",
-            "//executorch/examples/...",
-            "//executorch/exir/backend:backend_lib",
-            "//executorch/extension/pybindings/...",
-            "//executorch/runtime/backend/...",
-            "//executorch/devtools/runners/...",
-            "//executorch/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        "srcs": MPS_BACKEND_BUCK_SRCS,
+        "visibility": ["PUBLIC"],
         "link_whole": True,
     }
 

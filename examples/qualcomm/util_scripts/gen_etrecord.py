@@ -1,7 +1,10 @@
-import copy
 import os
 
 import torch
+
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 
 from executorch.backends.qualcomm.tests.models import SimpleModel
 from executorch.backends.qualcomm.utils.utils import (
@@ -10,7 +13,7 @@ from executorch.backends.qualcomm.utils.utils import (
     QcomChipset,
     to_edge_transform_and_lower_to_qnn,
 )
-from executorch.devtools import generate_etrecord, Inspector
+from executorch.devtools import Inspector
 from executorch.devtools.inspector._inspector_utils import TimeScale
 from executorch.examples.qualcomm.utils import (
     make_quantizer,
@@ -29,7 +32,9 @@ def main(args):
     pte_filename = "qnn_simple_model"
 
     # Quantize the model
-    quantizer = make_quantizer()
+    quantizer = make_quantizer(
+        backend=QnnExecuTorchBackendType.kHtpBackend, soc_model=args.model
+    )
     prepared = prepare_pt2e(model, quantizer)
     prepared(*sample_input)
     converted = convert_pt2e(prepared)
@@ -46,10 +51,8 @@ def main(args):
         module=converted,
         inputs=sample_input,
         compiler_specs=compiler_specs,
+        generate_etrecord=True,
     )
-
-    # for inspector API
-    edge_copy = copy.deepcopy(edge_prog_mgr)
 
     # store pte file
     exec_prog = edge_prog_mgr.to_executorch()
@@ -64,14 +67,14 @@ def main(args):
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
         device_id=args.device,
         soc_model=args.model,
+        target=args.target,
     )
-    input_list = "input_0_0.raw input_0_1.raw\n"
-    adb.push(inputs=[sample_input], input_list=input_list)
+    adb.push(inputs=[sample_input])
     adb.execute()
 
     # pull etdump back and display the statistics
     adb.pull_etdump(".")
-    generate_etrecord("etrecord.bin", edge_copy, exec_prog)
+    exec_prog.get_etrecord().save("etrecord.bin")
     inspector = Inspector(
         etdump_path="etdump.etdp",
         etrecord="etrecord.bin",

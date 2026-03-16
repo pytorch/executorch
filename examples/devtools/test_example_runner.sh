@@ -8,55 +8,32 @@
 # Test the end-to-end flow of building devtools/example_runner and use it to run
 # an actual model.
 
-
 set -e
 
-# shellcheck source=/dev/null
-source "$(dirname "${BASH_SOURCE[0]}")/../../.ci/scripts/utils.sh"
+SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+readonly SCRIPT_DIR
 
-cmake_install_executorch_devtools_lib() {
-  echo "Installing libexecutorch.a, libportable_kernels.a, libetdump.a, libbundled_program.a"
-  clean_executorch_install_folders
-
-  retry cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DEXECUTORCH_BUILD_DEVTOOLS=ON \
-          -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
-          -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-          -Bcmake-out .
-  cmake --build cmake-out -j9 --target install --config Release
-}
-
-test_cmake_devtools_example_runner() {
-  echo "Exporting MobilenetV2"
-  ${PYTHON_EXECUTABLE} -m examples.devtools.scripts.export_bundled_program --model_name="mv2"
-  local example_dir=examples/devtools
-  local build_dir=cmake-out/${example_dir}
-  CMAKE_PREFIX_PATH="${PWD}/cmake-out/lib/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags"
-  rm -rf ${build_dir}
-  retry cmake \
-        -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-        -B${build_dir} \
-        ${example_dir}
-
-  echo "Building ${example_dir}"
-  cmake --build ${build_dir} -j9 --config Release
-
-  echo 'Running example_runner'
-  ${build_dir}/example_runner --bundled_program_path="./mv2_bundled.bpte"
-}
+readonly EXECUTORCH_ROOT="${SCRIPT_DIR}/../.."
 
 if [[ -z $PYTHON_EXECUTABLE ]];
 then
   PYTHON_EXECUTABLE=python3
 fi
 
-if [[ -z $BUCK ]];
-then
-  BUCK=buck2
-fi
+test_cmake_devtools_example_runner() {
+  cd "${EXECUTORCH_ROOT}"
 
-cmake_install_executorch_devtools_lib
+  echo "Building example_runner using build_example_runner.sh"
+  "${SCRIPT_DIR}/build_example_runner.sh"
+
+  local example_dir=examples/devtools
+  local build_dir=cmake-out/${example_dir}
+
+  echo "Exporting MobilenetV2"
+  ${PYTHON_EXECUTABLE} -m examples.devtools.scripts.export_bundled_program --model_name="mv2"
+
+  echo 'Running example_runner'
+  ${build_dir}/example_runner --bundled_program_path="./mv2_bundled.bpte"
+}
+
 test_cmake_devtools_example_runner

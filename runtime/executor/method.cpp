@@ -127,7 +127,7 @@ class BackendDelegate final {
 
   Error Execute(
       BackendExecutionContext& backend_execution_context,
-      EValue** args) const {
+      Span<EValue*> args) const {
     EXECUTORCH_SCOPE_PROF("delegate_execute");
     return backend_->execute(backend_execution_context, handle_, args);
   }
@@ -407,10 +407,23 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
   auto flatbuffer_values = serialization_plan_->values();
   ET_CHECK_OR_RETURN_ERROR(
       flatbuffer_values != nullptr, InvalidProgram, "Missing values");
-  size_t n_value = flatbuffer_values->size();
+  const size_t n_value = flatbuffer_values->size();
   values_ = memory_manager_->method_allocator()->allocateList<EValue>(n_value);
   if (values_ == nullptr) {
+    ET_LOG(Error, "Failed to allocate values array of size %zu", n_value);
     return Error::MemoryAllocationFailed;
+  }
+  const size_t n_input = inputs_size();
+  if (n_input > 0) {
+    input_set_ =
+        memory_manager_->method_allocator()->allocateList<bool>(n_input);
+    if (input_set_ == nullptr) {
+      ET_LOG(Error, "Failed to allocate input_set array of size %zu", n_input);
+      return Error::MemoryAllocationFailed;
+    }
+    for (size_t i = 0; i < n_input; ++i) {
+      input_set_[i] = false;
+    }
   }
 
   // Count the number of tensors marked as EXTERNAL for this method. The actual
@@ -429,6 +442,10 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
         memory_manager_->method_allocator()->allocateList<NamedData>(
             max_external_constants.get());
     if (external_constants_ == nullptr) {
+      ET_LOG(
+          Error,
+          "Failed to allocate external_constants array of size %zu",
+          max_external_constants.get());
       return Error::MemoryAllocationFailed;
     }
     Error err = parse_external_constants(external_data_map);
@@ -496,8 +513,12 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
               j);
           evalp_list[j] = &values_[static_cast<size_t>(value_index)];
         }
-        new (&values_[i]) EValue(
-            BoxedEvalueList<int64_t>(evalp_list, int_list, items->size()));
+        auto* boxed_list_mem =
+            memory_manager_->method_allocator()
+                ->allocateInstance<BoxedEvalueList<int64_t>>();
+        auto boxed_list = new (boxed_list_mem)
+            BoxedEvalueList<int64_t>(evalp_list, int_list, items->size());
+        new (&values_[i]) EValue(boxed_list);
       } break;
       case executorch_flatbuffer::KernelTypes::BoolList: {
         const auto items =
@@ -514,8 +535,12 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
         // portable here we need to allocate a new array of bool and copy cast
         // the flatbuffer data into it, but because of how exceptionally rare
         // this case is its low prio TODO: jakeszwe
-        new (&values_[i]) EValue(executorch::aten::ArrayRef<bool>(
-            (const bool*)items->data(), items->size()));
+        auto* bool_list_mem =
+            memory_manager_->method_allocator()
+                ->allocateInstance<executorch::aten::ArrayRef<bool>>();
+        auto bool_list = new (bool_list_mem) executorch::aten::ArrayRef<bool>(
+            (const bool*)items->data(), items->size());
+        new (&values_[i]) EValue(bool_list);
       } break;
       case executorch_flatbuffer::KernelTypes::DoubleList: {
         const auto items =
@@ -525,8 +550,12 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
             InvalidProgram,
             "Missing list at index %" ET_PRIsize_t,
             i);
-        new (&values_[i]) EValue(
-            executorch::aten::ArrayRef<double>(items->data(), items->size()));
+        auto* double_list_mem =
+            memory_manager_->method_allocator()
+                ->allocateInstance<executorch::aten::ArrayRef<double>>();
+        auto double_list = new (double_list_mem)
+            executorch::aten::ArrayRef<double>(items->data(), items->size());
+        new (&values_[i]) EValue(double_list);
       } break;
       case executorch_flatbuffer::KernelTypes::String: {
         const auto fb_str =
@@ -537,7 +566,12 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
             InvalidProgram,
             "Missing string at index %" ET_PRIsize_t,
             i);
-        new (&values_[i]) EValue(fb_str->c_str(), fb_str->size());
+        auto* char_list_mem =
+            memory_manager_->method_allocator()
+                ->allocateInstance<executorch::aten::ArrayRef<char>>();
+        auto char_list = new (char_list_mem)
+            executorch::aten::ArrayRef<char>(fb_str->c_str(), fb_str->size());
+        new (&values_[i]) EValue(char_list);
       } break;
       case executorch_flatbuffer::KernelTypes::Tensor: {
         auto t = deserialization::parseTensor(
@@ -577,7 +611,12 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
               static_cast<uint32_t>(tensors.error()));
           return tensors.error();
         }
-        new (&values_[i]) EValue(tensors.get());
+        auto* boxed_tensor_list_mem =
+            memory_manager_->method_allocator()
+                ->allocateInstance<BoxedEvalueList<executorch::aten::Tensor>>();
+        auto boxed_tensor_list = new (boxed_tensor_list_mem)
+            BoxedEvalueList<executorch::aten::Tensor>(std::move(tensors.get()));
+        new (&values_[i]) EValue(boxed_tensor_list);
       } break;
       case executorch_flatbuffer::KernelTypes::OptionalTensorList: {
         const auto items =
@@ -601,7 +640,14 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
               static_cast<uint32_t>(tensors.error()));
           return tensors.error();
         }
-        new (&values_[i]) EValue(tensors.get());
+        auto* boxed_optional_tensor_list_mem =
+            memory_manager_->method_allocator()
+                ->allocateInstance<
+                    BoxedEvalueList<std::optional<executorch::aten::Tensor>>>();
+        auto boxed_optional_tensor_list = new (boxed_optional_tensor_list_mem)
+            BoxedEvalueList<std::optional<executorch::aten::Tensor>>(
+                std::move(tensors.get()));
+        new (&values_[i]) EValue(boxed_optional_tensor_list);
       } break;
       default:
         // flatbuffer enums start at 0, but they generate a hidden NONE enum
@@ -670,7 +716,7 @@ Error Method::resolve_operator(
     size_t kernel_index,
     InstructionArgs args,
     size_t n_args) {
-  // TODO(T153505381, T153506819) Investigate optimizing this function for both
+  // TODO(T153506819) Investigate optimizing this function for both
   // space and time.
 
   // resolve name
@@ -691,9 +737,20 @@ Error Method::resolve_operator(
   }
 
   // resolve tensor meta
-  auto method_allocator = memory_manager_->method_allocator();
-  TensorMeta* meta = method_allocator->allocateList<TensorMeta>(n_args);
+  // Since temp allocator can be freed, we optimistically
+  // try to use that allocator first.
+  auto allocator = memory_manager_->temp_allocator();
+  // However, it does not have to be provided, so if it
+  // is not provided (or an empty one is provided), we
+  // fall back to the method allocator.
+  if (allocator == nullptr || allocator->size() == 0) {
+    allocator = memory_manager_->method_allocator();
+  }
+  TensorMeta* meta = allocator->allocateList<TensorMeta>(n_args);
   if (meta == nullptr) {
+    if (allocator == memory_manager_->temp_allocator()) {
+      memory_manager_->temp_allocator()->reset();
+    }
     return Error::MemoryAllocationFailed;
   }
 
@@ -705,9 +762,11 @@ Error Method::resolve_operator(
       auto tensor = eval->toTensor();
       meta[count].dtype_ = tensor.scalar_type();
       executorch::aten::DimOrderType* dim_order_ptr =
-          method_allocator->allocateList<executorch::aten::DimOrderType>(
-              tensor.dim());
+          allocator->allocateList<executorch::aten::DimOrderType>(tensor.dim());
       if (dim_order_ptr == nullptr) {
+        if (allocator == memory_manager_->temp_allocator()) {
+          memory_manager_->temp_allocator()->reset();
+        }
         return Error::MemoryAllocationFailed;
       }
       size_t size = tensor.dim();
@@ -730,12 +789,21 @@ Error Method::resolve_operator(
   if (!op_function.ok()) {
     ET_LOG(
         Error,
-        "Missing operator: [%zd] %s",
+        "Missing operator: [%" ET_PRIssize_t "] %s",
         static_cast<ssize_t>(op_index),
         operator_name);
+    if (allocator == memory_manager_->temp_allocator()) {
+      memory_manager_->temp_allocator()->reset();
+    }
     return op_function.error();
   }
   kernels[kernel_index] = op_function.get();
+
+  // If we used the temp allocator here, reset it.
+  if (allocator == memory_manager_->temp_allocator()) {
+    memory_manager_->temp_allocator()->reset();
+  }
+
   return Error::Ok;
 }
 
@@ -744,13 +812,15 @@ Result<Method> Method::load(
     const Program* program,
     MemoryManager* memory_manager,
     EventTracer* event_tracer,
-    const NamedDataMap* external_data_map) {
+    const NamedDataMap* external_data_map,
+    const LoadBackendOptionsMap* backend_options) {
   MemoryAllocator* temp_allocator = memory_manager->temp_allocator();
   if (temp_allocator == nullptr) {
     PlatformMemoryAllocator* platform_allocator =
         memory_manager->method_allocator()
             ->allocateInstance<PlatformMemoryAllocator>();
     if (platform_allocator == nullptr) {
+      ET_LOG(Error, "Failed to allocate PlatformMemoryAllocator");
       return Error::MemoryAllocationFailed;
     }
     new (platform_allocator) PlatformMemoryAllocator();
@@ -758,7 +828,7 @@ Result<Method> Method::load(
   }
   Method method(program, memory_manager, event_tracer, temp_allocator);
   ET_LOG(Debug, "Loading method: %s.", s_plan->name()->c_str());
-  Error err = method.init(s_plan, external_data_map);
+  Error err = method.init(s_plan, external_data_map, backend_options);
   if (err != Error::Ok) {
     return err;
   } else {
@@ -769,9 +839,9 @@ Result<Method> Method::load(
 
 Error Method::init(
     executorch_flatbuffer::ExecutionPlan* s_plan,
-    const NamedDataMap* external_data_map) {
-  EXECUTORCH_SCOPE_PROF("Method::init");
-  internal::EventTracerProfileMethodScope event_tracer_profile_scope =
+    const NamedDataMap* external_data_map,
+    const LoadBackendOptionsMap* backend_options) {
+  internal::EventTracerProfileMethodScope event_tracer_scope =
       internal::EventTracerProfileMethodScope(event_tracer_, "Method::init");
   ET_CHECK_OR_RETURN_ERROR(
       // Don't use !initialized() here because we also want to fail on the
@@ -800,6 +870,8 @@ Error Method::init(
     size_t n_delegate = delegates->size();
     delegates_ = method_allocator->allocateList<BackendDelegate>(n_delegate);
     if (delegates_ == nullptr) {
+      ET_LOG(
+          Error, "Failed to allocate delegates array of size %zu", n_delegate);
       return Error::MemoryAllocationFailed;
     }
 
@@ -823,6 +895,7 @@ Error Method::init(
       merged_data_map_ =
           method_allocator->allocateInstance<internal::MergedDataMap>();
       if (merged_data_map_ == nullptr) {
+        ET_LOG(Error, "Failed to allocate MergedDataMap");
         return Error::MemoryAllocationFailed;
       }
       new (merged_data_map_) internal::MergedDataMap(std::move(merged.get()));
@@ -840,11 +913,21 @@ Error Method::init(
 
     for (size_t i = 0; i < n_delegate; ++i) {
       const auto& delegate = *delegates->Get(i);
+
+      // Get per-delegate runtime specs from the LoadBackendOptionsMap if
+      // provided
+      Span<const BackendOption> delegate_runtime_specs;
+      if (backend_options != nullptr && delegate.id() != nullptr) {
+        delegate_runtime_specs =
+            backend_options->get_options(delegate.id()->c_str());
+      }
+
       BackendInitContext backend_init_context(
           method_allocator,
           /*event_tracer=*/event_tracer_,
           /*method_name=*/serialization_plan_->name()->c_str(),
-          /*named_data_map=*/named_data_map);
+          /*named_data_map=*/named_data_map,
+          /*runtime_specs=*/delegate_runtime_specs);
       Error err = BackendDelegate::Init(
           delegate, program_, backend_init_context, &delegates_[i]);
       if (err != Error::Ok) {
@@ -865,6 +948,7 @@ Error Method::init(
     n_chains_ = chains->size();
     chains_ = method_allocator->allocateList<Chain>(n_chains_);
     if (chains_ == nullptr) {
+      ET_LOG(Error, "Failed to allocate chains array of size %zu", n_chains_);
       return Error::MemoryAllocationFailed;
     }
 
@@ -884,11 +968,15 @@ Error Method::init(
       auto chain_instruction_kernels =
           method_allocator->allocateList<OpFunction>(num_instructions);
       if (chain_instruction_kernels == nullptr) {
+        ET_LOG(
+            Error, "Failed to allocate instruction kernels for chain %zu", i);
         return Error::MemoryAllocationFailed;
       }
       auto chain_instruction_arg_lists =
           method_allocator->allocateList<InstructionArgs>(num_instructions);
       if (chain_instruction_arg_lists == nullptr) {
+        ET_LOG(
+            Error, "Failed to allocate instruction arg lists for chain %zu", i);
         return Error::MemoryAllocationFailed;
       }
 
@@ -1022,7 +1110,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
 
   const auto& e = get_value(get_input_index(input_idx));
 
-  if (!e.isTensor() && !e.isScalar()) {
+  if (!(e.isNone() || e.isTensor() || e.isScalar() || e.isString())) {
 #if ET_LOG_ENABLED
     std::array<char, kTagNameBufferSize> tag_name;
     tag_to_string(e.tag, tag_name.data(), tag_name.size());
@@ -1055,7 +1143,9 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
     return Error::InvalidArgument;
   }
 
-  if (e.isTensor()) {
+  if (e.isNone()) {
+    // no-op
+  } else if (e.isTensor()) {
     const auto& t_dst = e.toTensor();
     const auto& t_src = input_evalue.toTensor();
 
@@ -1069,26 +1159,22 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         executorch::runtime::toString(t_src.scalar_type()));
     // Reset the shape for the Method's input as the size of forwarded input
     // tensor for shape dynamism. Also is a safety check if need memcpy.
-    Error err = resize_tensor(t_dst, t_src.sizes());
-    ET_CHECK_OR_RETURN_ERROR(
-        err == Error::Ok,
-        InvalidArgument,
-        "Error setting input %" ET_PRIsize_t ": 0x%" PRIx32,
-        input_idx,
-        static_cast<uint32_t>(err));
-    Error error;
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        resize_tensor(t_dst, t_src.sizes()),
+        "Error resizing tensor at input %" ET_PRIsize_t,
+        input_idx);
     auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
     if (tensor_meta->is_memory_planned()) {
-      error = internal::copy_tensor_data(t_dst, t_src);
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          internal::copy_tensor_data(t_dst, t_src),
+          "Error copying tensor data at input %" ET_PRIsize_t,
+          input_idx);
     } else {
-      error = internal::share_tensor_data(t_dst, t_src);
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          internal::share_tensor_data(t_dst, t_src),
+          "Error sharing tensor data at input %" ET_PRIsize_t,
+          input_idx);
     }
-    ET_CHECK_OR_RETURN_ERROR(
-        error == Error::Ok,
-        InvalidArgument,
-        "Error setting data_ptr %" ET_PRIsize_t ": 0x%" PRIx32,
-        input_idx,
-        static_cast<uint32_t>(error));
     // Prims have to be the same as what was traced
   } else if (e.isInt()) {
     ET_CHECK_OR_RETURN_ERROR(
@@ -1156,35 +1242,23 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
 
     return Error::InvalidArgument;
   }
+  input_set_[input_idx] = true;
+
   return Error::Ok;
 }
 
 ET_NODISCARD Error
 Method::set_inputs(const executorch::aten::ArrayRef<EValue>& input_evalues) {
+  const size_t n_input = inputs_size();
   ET_CHECK_OR_RETURN_ERROR(
-      initialized(),
-      InvalidState,
-      "Inputs can not be set until method has been initialized.");
-
-  ET_CHECK_OR_RETURN_ERROR(
-      step_state_.instr_idx == 0 && step_state_.chain_idx == 0,
-      InvalidState,
-      "Inputs can not be set mid execution.");
-
-  size_t input_size = inputs_size();
-  ET_CHECK_OR_RETURN_ERROR(
-      input_size == input_evalues.size(),
+      input_evalues.size() == n_input,
       InvalidArgument,
-      "The length of given input array (%" ET_PRIsize_t
-      ") must be same as the number of inputs in method (%" ET_PRIsize_t ").",
-      input_evalues.size(),
-      input_size);
-
-  for (size_t i = 0; i < input_size; i++) {
-    Error status = set_input(input_evalues[i], i);
-    if (status != Error::Ok) {
-      return status;
-    }
+      "Invalid number of inputs provided. Expected %" ET_PRIsize_t
+      ", but got %" ET_PRIsize_t,
+      n_input,
+      input_evalues.size());
+  for (size_t i = 0; i < n_input; ++i) {
+    ET_CHECK_OK_OR_RETURN_ERROR(set_input(input_evalues[i], i));
   }
   return Error::Ok;
 }
@@ -1255,20 +1329,17 @@ ET_NODISCARD Error Method::get_outputs(EValue* output_evalues, size_t length) {
       initialized(),
       InvalidState,
       "Outputs can not be retrieved until method has been initialized.");
-
+  const size_t n_output = outputs_size();
   ET_CHECK_OR_RETURN_ERROR(
-      length >= outputs_size(),
+      length >= n_output,
       InvalidArgument,
       "The given array is not large enough to hold all outputs.");
-
-  for (size_t i = 0; i < outputs_size(); i++) {
-    output_evalues[i] = values_[get_output_index(i)];
+  for (size_t i = 0; i < n_output; ++i) {
+    output_evalues[i] = get_output(i);
   }
-
-  for (size_t i = outputs_size(); i < length; i++) {
+  for (size_t i = n_output; i < length; ++i) {
     output_evalues[i] = EValue();
   }
-
   return Error::Ok;
 }
 
@@ -1277,20 +1348,21 @@ ET_NODISCARD Error Method::get_inputs(EValue* input_evalues, size_t length) {
       initialized(),
       InvalidState,
       "Inputs can not be retrieved until method has been initialized.");
-
+  const size_t n_input = inputs_size();
   ET_CHECK_OR_RETURN_ERROR(
-      length >= inputs_size(),
+      length >= n_input,
       InvalidArgument,
       "The given array is not large enough to hold all inputs.");
 
-  for (size_t i = 0; i < inputs_size(); i++) {
+  for (size_t i = 0; i < n_input; ++i) {
     input_evalues[i] = values_[get_input_index(i)];
+    // Accessing inputs this way is deprecated.
+    // We assume the users to be responsible to set the inputs they get.
+    input_set_[i] = true;
   }
-
-  for (size_t i = inputs_size(); i < length; i++) {
+  for (size_t i = n_input; i < length; ++i) {
     input_evalues[i] = EValue();
   }
-
   return Error::Ok;
 }
 
@@ -1370,7 +1442,7 @@ Error Method::execute_instruction() {
           /*method_name=*/serialization_plan_->name()->c_str());
       err = delegates_[delegate_idx].Execute(
           backend_execution_context,
-          chain.argument_lists_[step_state_.instr_idx].data());
+          chain.argument_lists_[step_state_.instr_idx]);
       if (err != Error::Ok) {
         ET_LOG(
             Error,
@@ -1528,6 +1600,11 @@ Error Method::experimental_step() {
   return step();
 }
 
+bool Method::in_progress() const {
+  return (step_state_.chain_idx != 0 || step_state_.instr_idx != 0) &&
+      step_state_.chain_idx < n_chains_;
+}
+
 Error Method::execute() {
   internal::event_tracer_create_event_block(event_tracer_, "Execute");
   EventTracerEntry event_tracer_entry =
@@ -1538,7 +1615,20 @@ Error Method::execute() {
       initialized(),
       NotSupported,
       "Cannot execute until method has been initialized.");
+  ET_CHECK_OR_RETURN_ERROR(
+      !in_progress(), InvalidState, "Method execution is in progress");
+  const size_t n_input = inputs_size();
+  for (size_t i = 0; i < n_input; ++i) {
+    ET_CHECK_OR_RETURN_ERROR(
+        input_set_[i],
+        InvalidArgument,
+        "Input %" ET_PRIsize_t " has not been set.",
+        i);
+  }
   ET_LOG(Debug, "Executing method: %s.", method_meta().name());
+  if (temp_allocator_ != nullptr) {
+    temp_allocator_->reset();
+  }
 
   // Chains are executed sequentially today, but future async designs may
   // branch and run many in parallel or out of order.
@@ -1565,6 +1655,7 @@ Error Method::execute() {
               static_cast<DebugHandle>(step_state_.instr_idx));
       auto status = execute_instruction();
       if (status != Error::Ok) {
+        step_state_ = StepState{0, 0};
         return status;
       }
     }
@@ -1615,10 +1706,16 @@ size_t Method::get_input_index(size_t i) const {
 }
 
 const EValue& Method::get_input(size_t i) const {
+  // Accessing inputs this way is deprecated.
+  // We assume the users to be responsible to set the inputs they get.
+  input_set_[i] = true;
   return get_value(get_input_index(i));
 }
 
 EValue& Method::mutable_input(size_t i) {
+  // Accessing inputs this way is deprecated.
+  // We assume the users to be responsible to set the inputs they get.
+  input_set_[i] = true;
   return mutable_value(get_input_index(i));
 }
 

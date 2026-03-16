@@ -233,6 +233,14 @@ def texel_component_type(dtype: str) -> str:
     raise AssertionError(f"Invalid vec4 type: {vec4_type}")
 
 
+def accum_vec_type(dtype: str) -> str:
+    return texel_type(dtype)
+
+
+def accum_scalar_type(dtype: str) -> str:
+    return texel_component_type(dtype)
+
+
 def texel_load_type(dtype: str, storage_type: str) -> str:
     if storage_type.lower() == "buffer":
         return buffer_gvec_type(dtype, 4)
@@ -414,7 +422,32 @@ def define_active_storage_type(storage_type: str):
         raise AssertionError(f"Invalid storage type: {storage_type}")
 
 
-def define_required_extensions(dtypes: Union[str, List[str]]):
+def define_explicit_type_extensions(dtypes: Union[str, List[str]]):
+    out_str = "\n"
+    dtype_list = dtypes if isinstance(dtypes, list) else [dtypes]
+
+    for dtype in dtype_list:
+        glsl_type = None
+        if dtype == "half":
+            glsl_type = "float16"
+        elif dtype == "double":
+            # We only need to allow float64_t type usage
+            glsl_type = "float64"
+        elif dtype in ["int8", "uint8", "bool"]:
+            glsl_type = "int8"
+        elif dtype in ["int16", "uint16"]:
+            glsl_type = "int16"
+        elif dtype in ["int64", "uint64"]:
+            # We only need to allow int64_t and uint64_t type usage
+            glsl_type = "int64"
+
+        if glsl_type is not None:
+            out_str += f"#extension GL_EXT_shader_explicit_arithmetic_types_{glsl_type} : require\n"
+
+    return out_str
+
+
+def define_required_extensions(storage_type: str, dtypes: Union[str, List[str]]):
     out_str = "\n"
     dtype_list = dtypes if isinstance(dtypes, list) else [dtypes]
 
@@ -437,10 +470,11 @@ def define_required_extensions(dtypes: Union[str, List[str]]):
             # We only need to allow int64_t and uint64_t type usage
             glsl_type = "int64"
 
-        if nbit is not None:
-            out_str += f"#extension GL_EXT_shader_{nbit}_storage : require\n"
-        if glsl_type is not None:
-            out_str += f"#extension GL_EXT_shader_explicit_arithmetic_types_{glsl_type} : require\n"
+        if storage_type.lower() == "buffer":
+            if nbit is not None:
+                out_str += f"#extension GL_EXT_shader_{nbit}_storage : require\n"
+            if glsl_type is not None:
+                out_str += f"#extension GL_EXT_shader_explicit_arithmetic_types_{glsl_type} : require\n"
 
     return out_str
 
@@ -455,6 +489,8 @@ UTILITY_FNS: Dict[str, Any] = {
     "buffer_gvec_type": buffer_gvec_type,
     "texel_type": texel_type,
     "gvec_type": gvec_type,
+    "accum_vec_type": accum_vec_type,
+    "accum_scalar_type": accum_scalar_type,
     "texel_component_type": texel_component_type,
     "texel_load_type": texel_load_type,
     "texel_load_component_type": texel_load_component_type,
@@ -466,6 +502,7 @@ UTILITY_FNS: Dict[str, Any] = {
     "layout_declare_spec_const": layout_declare_spec_const,
     "define_active_storage_type": define_active_storage_type,
     "define_required_extensions": define_required_extensions,
+    "define_explicit_type_extensions": define_explicit_type_extensions,
 }
 
 
@@ -670,7 +707,7 @@ class SPVGenerator:
                 if len(file) > 1:
                     self.template_yaml_files.append(file)
 
-    def generateVariantCombinations(
+    def generateVariantCombinations(  # noqa: C901
         self,
         iterated_params: Dict[str, Any],
         exclude_params: Optional[Set[str]] = None,
@@ -679,7 +716,25 @@ class SPVGenerator:
             exclude_params = set()
         all_iterated_params = []
         for param_name, value_list in iterated_params.items():
-            if param_name not in exclude_params:
+            if re.match(r"^combination\d*$", param_name):
+                param_values = []
+                param_names = value_list["parameter_names"]
+                combos = value_list["combos"]
+                for combo in combos:
+                    parameter_values = combo["parameter_values"]
+                    if "suffix" in combo:
+                        suffix = combo["suffix"]
+                    else:
+                        suffix = ""
+                        for param_value in parameter_values:
+                            if len(str(param_value)) > 0:
+                                suffix += "_" + str(param_value)
+                        suffix = suffix[1:]
+                    param_values.append((param_names, suffix, parameter_values))
+
+                all_iterated_params.append(param_values)
+
+            elif param_name not in exclude_params:
                 param_values = []
                 for value in value_list:
                     if "RANGE" in value:
@@ -713,7 +768,7 @@ class SPVGenerator:
 
         return list(product(*all_iterated_params))
 
-    def parseTemplateYaml(self, yaml_file: str) -> None:
+    def parseTemplateYaml(self, yaml_file: str) -> None:  # noqa: C901
         with open(yaml_file) as f:
             contents = yaml.load(f, Loader=UniqueKeyLoader)
             for template_name, params_dict in contents.items():
@@ -762,10 +817,21 @@ class SPVGenerator:
                                     default_params_copy[key] = variant[key]
 
                             variant_name = variant["NAME"]
-                            for param_value in combination:
-                                default_params_copy[param_value[0]] = param_value[2]
-                                if len(str(param_value[1])) > 0:
-                                    variant_name = f"{variant_name}_{param_value[1]}"
+
+                            for setting in combination:
+                                param_names = setting[0]
+                                suffix = setting[1]
+                                param_values = setting[2]
+                                if isinstance(param_names, list):
+                                    for param_name, param_value in zip(
+                                        param_names, param_values
+                                    ):
+                                        default_params_copy[param_name] = param_value
+                                else:
+                                    default_params_copy[param_names] = param_values
+
+                                if len(str(suffix)) > 0:
+                                    variant_name = f"{variant_name}_{suffix}"
 
                             default_params_copy["NAME"] = variant_name
                             default_params_copy["VARIANT_NAME"] = variant["NAME"]
@@ -853,6 +919,7 @@ class SPVGenerator:
         output_dir: str,
         cache_dir: Optional[str] = None,
         force_rebuild: bool = False,
+        nthreads: int = -1,
     ) -> Dict[str, str]:
         # The key of this dictionary is the full path to a generated source file. The
         # value is a tuple that contains 3 entries:
@@ -956,6 +1023,7 @@ class SPVGenerator:
             with codecs.open(template_file_path, "r", encoding="utf-8") as input_file:
                 input_text = input_file.read()
                 input_text = self.maybe_replace_u16vecn(input_text)
+                print(f"template_file_path: {template_file_path}")
                 output_text = preprocess(input_text, codegen_params)
 
             included_files = get_glsl_includes(output_text)
@@ -1079,12 +1147,21 @@ class SPVGenerator:
             gen_file_meta[gen_out_path] = (file_changed, include_list)
 
         # Parallelize SPIR-V compilation to optimize build time
-        with ThreadPool(os.cpu_count()) as pool:
-            for spv_out_path, glsl_out_path in pool.map(
-                compile_spirv, self.output_file_map.items()
-            ):
-                print(spv_to_glsl_map)
+        # Determine number of threads: -1 means use all CPU cores, 1 means sequential
+        num_processes = os.cpu_count() if nthreads == -1 else nthreads
+
+        if num_processes == 1:
+            # Sequential compilation (single-threaded)
+            for shader_pair in self.output_file_map.items():
+                spv_out_path, glsl_out_path = compile_spirv(shader_pair)
                 spv_to_glsl_map[spv_out_path] = glsl_out_path
+        else:
+            # Parallel compilation
+            with ThreadPool(num_processes) as pool:
+                for spv_out_path, glsl_out_path in pool.map(
+                    compile_spirv, self.output_file_map.items()
+                ):
+                    spv_to_glsl_map[spv_out_path] = glsl_out_path
 
         return spv_to_glsl_map
 
@@ -1104,6 +1181,9 @@ class ShaderInfo:
     requires_shader_int16_ext: bool = False
     requires_16bit_storage_ext: bool = False
     requires_8bit_storage_ext: bool = False
+    requires_integer_dot_product_ext: bool = False
+    requires_shader_int64_ext: bool = False
+    requires_shader_float64_ext: bool = False
 
 
 def getName(filePath: str) -> str:
@@ -1193,7 +1273,7 @@ def determineDescriptorType(lineStr: str) -> str:
     )
 
 
-def getShaderInfo(srcFilePath: str) -> ShaderInfo:
+def getShaderInfo(srcFilePath: str) -> ShaderInfo:  # noqa: C901
     shader_info = ShaderInfo([], [], "")
     with open(srcFilePath) as srcFile:
         for line in srcFile:
@@ -1214,6 +1294,12 @@ def getShaderInfo(srcFilePath: str) -> ShaderInfo:
                     shader_info.requires_16bit_storage_ext = True
                 if "GL_EXT_shader_8bit_storage" in line:
                     shader_info.requires_8bit_storage_ext = True
+                if "GL_EXT_integer_dot_product" in line:
+                    shader_info.requires_integer_dot_product_ext = True
+                if "GL_EXT_shader_explicit_arithmetic_types_int64" in line:
+                    shader_info.requires_shader_int64_ext = True
+                if "GL_EXT_shader_explicit_arithmetic_types_float64" in line:
+                    shader_info.requires_shader_float64_ext = True
 
     return shader_info
 
@@ -1289,6 +1375,9 @@ def generateShaderInfoStr(shader_info: ShaderInfo, name: str, sizeBytes: int) ->
         to_cpp_str(shader_info.requires_shader_int16_ext),
         to_cpp_str(shader_info.requires_16bit_storage_ext),
         to_cpp_str(shader_info.requires_8bit_storage_ext),
+        to_cpp_str(shader_info.requires_integer_dot_product_ext),
+        to_cpp_str(shader_info.requires_shader_int64_ext),
+        to_cpp_str(shader_info.requires_shader_float64_ext),
     ]
 
     shader_info_str = textwrap.indent(
@@ -1393,6 +1482,12 @@ def main(argv: List[str]) -> int:
     parser.add_argument(
         "--env", metavar="KEY=VALUE", nargs="*", help="Set a number of key-value pairs"
     )
+    parser.add_argument(
+        "--nthreads",
+        type=int,
+        default=-1,
+        help="Number of threads for shader compilation. -1 (default) uses all available CPU cores, 1 uses sequential compilation.",
+    )
     options = parser.parse_args()
 
     env = DEFAULT_ENV
@@ -1427,7 +1522,10 @@ def main(argv: List[str]) -> int:
         replace_u16vecn=options.replace_u16vecn,
     )
     output_spv_files = shader_generator.generateSPV(
-        options.output_path, options.tmp_dir_path, options.force_rebuild
+        options.output_path,
+        options.tmp_dir_path,
+        options.force_rebuild,
+        options.nthreads,
     )
 
     genCppFiles(

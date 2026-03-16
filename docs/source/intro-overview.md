@@ -20,7 +20,7 @@ Key value propositions of ExecuTorch are:
 ## Why ExecuTorch?
 
 Supporting on-device AI presents unique challenges with diverse hardware,
-critical power requirements, low/no internet connectivity, and realtime
+critical power requirements, low/no internet connectivity, and real-time
 processing needs. These constraints have historically prevented or slowed down
 the creation of scalable and performant on-device AI solutions. We designed
 ExecuTorch, backed by our industry partners like Meta, Arm, Apple, and Qualcomm,

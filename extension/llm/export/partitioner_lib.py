@@ -1,10 +1,11 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional
+from typing import List, Optional
 
 
 def get_xnnpack_partitioner(dynamic_quant_only_partitioner: bool = True):
@@ -32,7 +33,9 @@ def get_xnnpack_partitioner(dynamic_quant_only_partitioner: bool = True):
 
 
 def get_vulkan_partitioner(
-    dtype_override: Optional[str] = None, enable_dynamic_shape: bool = False
+    dtype_override: Optional[str] = None,
+    enable_dynamic_shape: bool = False,
+    force_fp16: bool = False,
 ):
     assert (
         dtype_override == "fp32" or dtype_override is None
@@ -41,7 +44,9 @@ def get_vulkan_partitioner(
         VulkanPartitioner,
     )
 
-    return VulkanPartitioner({"require_dynamic_shapes": enable_dynamic_shape})
+    return VulkanPartitioner(
+        {"require_dynamic_shapes": enable_dynamic_shape, "force_fp16": force_fp16}
+    )
 
 
 def get_mps_partitioner(use_kv_cache: bool = False):
@@ -57,11 +62,24 @@ def get_mps_partitioner(use_kv_cache: bool = False):
         )
     except ImportError:
         raise ImportError(
-            "Please install the MPS backend follwing https://pytorch.org/executorch/main/backends-mps"
+            "Please install the MPS backend following https://docs.pytorch.org/executorch/main/backends/mps/mps-overview.html"
         )
 
     compile_specs = [CompileSpec("use_fp16", bytes([True]))]
     return MPSPartitioner(compile_specs)  # pyre-fixme[16]
+
+
+def get_openvino_partitioner(device: str):
+    try:
+        from executorch.backends.openvino.partitioner import OpenvinoPartitioner
+        from executorch.exir.backend.backend_details import CompileSpec
+    except ImportError:
+        raise ImportError(
+            "Please install the OpenVINO backend following https://github.com/pytorch/executorch/tree/main/backends/openvino"
+        )
+
+    compile_specs = [CompileSpec("device", device.encode())]
+    return OpenvinoPartitioner(compile_specs)
 
 
 def get_coreml_partitioner(
@@ -81,7 +99,7 @@ def get_coreml_partitioner(
         )
     except ImportError:
         raise ImportError(
-            "Please install the CoreML backend follwing https://pytorch.org/executorch/main/backends-coreml"
+            "Please install the CoreML backend following https://docs.pytorch.org/executorch/main/backends/coreml/coreml-overview.html"
             + "; for buck users, please add example dependancies: //executorch/backends/apple/coreml:backend, and etc"
         )
 
@@ -219,3 +237,32 @@ def get_qnn_partitioner(
         # TODO: if deprecated legacy export, skip_mutable_buffer can be set False
         skip_mutable_buffer=True,
     )
+
+
+def get_tosa_partitioner(version: str):
+    from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+    from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
+
+    compile_spec = TosaCompileSpec(version)
+
+    return TOSAPartitioner(compile_spec)
+
+
+def get_ethosu_partitioner(target: str):
+    from executorch.backends.arm.ethosu.compile_spec import EthosUCompileSpec
+    from executorch.backends.arm.ethosu.partitioner import EthosUPartitioner
+
+    compile_spec = EthosUCompileSpec(target)
+
+    return EthosUPartitioner(compile_spec)
+
+
+def get_vgf_partitioner(
+    compile_spec: Optional[str], compiler_flags: Optional[List[str]]
+):
+    from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
+    from executorch.backends.arm.vgf.partitioner import VgfPartitioner
+
+    compile_spec_obj = VgfCompileSpec(compile_spec, compiler_flags)
+
+    return VgfPartitioner(compile_spec_obj)

@@ -30,35 +30,47 @@ class RemoveRedundantOpsTransform(ExportPass):
         exir_ops.edge.aten.alias.default,
         exir_ops.edge.aten.lift_fresh_copy.default,
         exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+        exir_ops.edge.dim_order_ops._clone_dim_order.default,
+        exir_ops.edge.aten.expand_copy.default,
+        # copy.default(self, src): no-op when src dtype/shape matches self.
+        exir_ops.edge.aten.copy.default,
+    }
+
+    # For these ops the meaningful input is args[1] (src), not args[0] (self).
+    _src_arg1_ops: Set[OpType] = {
+        exir_ops.edge.aten.copy.default,
     }
 
     def __init__(self) -> None:
         super(RemoveRedundantOpsTransform, self).__init__()
 
     def _should_remove(self, node: torch.fx.Node) -> bool:
-        if node.target in self.redundant_ops:
-            return True
+        if node.target not in self.redundant_ops:
+            return False
 
-        # Only remove to_copy if dtype does not change. Otherwise, memory format changes
-        # will be handled internally by the backend.
-        if (
-            node.target == exir_ops.edge.aten._to_copy.default
-            or node.target == torch.ops.aten._to_copy.default
-        ):
-            src_dtype = node.meta["val"].dtype
-            # pyre-ignore
-            dst_dtype = node.args[0].meta["val"].dtype
-            return src_dtype == dst_dtype
+        src_arg_idx = 1 if node.target in self._src_arg1_ops else 0
+        orig_node = node.args[src_arg_idx]
+        assert isinstance(orig_node, torch.fx.Node)
 
-        return False
+        src_dtype = orig_node.meta["val"].dtype
+        dst_dtype = node.meta["val"].dtype
+
+        # Do not remove if the op is converting the dtype.
+        if src_dtype != dst_dtype:
+            return False
+
+        src_shape = orig_node.meta["val"].shape
+        dst_shape = node.meta["val"].shape
+
+        return src_shape == dst_shape
 
     def _remove(self, graph_module: torch.fx.GraphModule) -> None:
         for node in graph_module.graph.nodes:
             if not self._should_remove(node):
                 continue
 
-            with graph_module.graph.inserting_after(node):
-                node.replace_all_uses_with(node.args[0])
+            src_arg_idx = 1 if node.target in self._src_arg1_ops else 0
+            node.replace_all_uses_with(node.args[src_arg_idx])
 
         graph_module.graph.eliminate_dead_code()
 

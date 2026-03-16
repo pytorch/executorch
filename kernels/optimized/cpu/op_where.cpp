@@ -51,7 +51,7 @@ Tensor& opt_where_out(
       const CTYPE_COMPUTE* const data_a = a.const_data_ptr<CTYPE_COMPUTE>();
       const CTYPE_COMPUTE* const data_b = b.const_data_ptr<CTYPE_COMPUTE>();
       const bool* const data_cond = cond.const_data_ptr<bool>();
-      CTYPE_COMPUTE* const data_out = out.data_ptr<CTYPE_COMPUTE>();
+      CTYPE_COMPUTE* const data_out = out.mutable_data_ptr<CTYPE_COMPUTE>();
       executorch::extension::parallel_for(
           0,
           out_numel,

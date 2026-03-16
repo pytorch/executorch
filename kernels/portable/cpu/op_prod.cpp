@@ -32,7 +32,7 @@ Tensor& prod_out(
 
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
-  constexpr auto name = "prod.int_out";
+  static constexpr auto name = "prod.int_out";
 
   ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
     ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
@@ -72,7 +72,7 @@ Tensor& prod_int_out(
 
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
-  constexpr auto name = "prod.int_out";
+  static constexpr auto name = "prod.int_out";
 
   ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
     ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {

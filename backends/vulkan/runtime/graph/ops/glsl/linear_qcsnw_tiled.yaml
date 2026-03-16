@@ -20,6 +20,8 @@ linear_qcsnw_tiled:
         SUFFIX: o4x1
       - VALUE: 2
         SUFFIX: o4x2
+      - VALUE: 3
+        SUFFIX: o4x3
       - VALUE: 4
         SUFFIX: o4x4
   shader_variants:
@@ -35,8 +37,18 @@ linear_qcsnw_tiled:
     - NAME: linear_qcs4w_tiled_texture3d_texture3d_texture2d_texture2d_float
       TILE_TXCOLS: 2
       QUANT_NBITS: 4
+    - NAME: linear_qcs4w_tiled_texture3d_texture3d_buffer_texture2d_float
+      TILE_TXCOLS: 2
+      QUANT_NBITS: 4
+      WEIGHT_STORAGE: buffer
     - NAME: linear_qcs4w_tiled_buffer_buffer_texture2d_texture2d_float
       IN_STORAGE: buffer
       OUT_STORAGE: buffer
+      TILE_TXCOLS: 2
+      QUANT_NBITS: 4
+    - NAME: linear_qcs4w_tiled_buffer_buffer_buffer_texture2d_float
+      IN_STORAGE: buffer
+      OUT_STORAGE: buffer
+      WEIGHT_STORAGE: buffer
       TILE_TXCOLS: 2
       QUANT_NBITS: 4

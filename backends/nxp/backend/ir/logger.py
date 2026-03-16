@@ -1,6 +1,6 @@
 #
 # Copyright 2023 Martin Pavella
-# Copyright 2023 NXP
+# Copyright 2023-2025 NXP
 #
 # License: MIT
 # See the LICENSE_MIT for more details.
@@ -85,18 +85,18 @@ class Code(Enum):
     PREPROCESSING_ERROR = 4
 
     UNSUPPORTED_OPERATOR = 21
-    UNSUPPORTED_ONNX_TYPE = 22
+    # Code 22 was removed.
     UNSUPPORTED_OPERATOR_ATTRIBUTES = 23
     NOT_IMPLEMENTED = 24
 
     INVALID_TYPE = 31
     INVALID_TENSOR_SHAPE = 32
-    INVALID_ONNX_OPERATOR = 33
-    INVALID_ONNX_OPERATOR_ATTRIBUTE = 34
-    INVALID_ONNX_MODEL = 35
+    # Code 33 was removed.
+    INVALID_OPERATOR_ATTRIBUTE = 34
+    INVALID_INPUT_MODEL = 35
 
     CONVERSION_IMPOSSIBLE = 41
-    SHAPE_INFERENCE_ERROR = 42
+    # Code 42 was removed.
     IO_PRESERVATION_ERROR = 43
 
     INVALID_INPUT = 51
@@ -142,8 +142,6 @@ class BasicLoggingContext(LoggingContext):
     """
 
     GLOBAL = LoggingContext("global")
-    SHAPE_INFERENCE = LoggingContext("shape_inference")
-    ONNX_PARSER = LoggingContext("onnx_parser")
     OPERATOR_CONVERSION = LoggingContext("operator_conversion")
     TFLITE_GENERATOR = LoggingContext("tflite_generator")
     QDQ_QUANTIZER = LoggingContext("qdq_quantizer")
@@ -151,7 +149,7 @@ class BasicLoggingContext(LoggingContext):
 
 class NodeLoggingContext(LoggingContext):
     """
-    ONNX node specific context. Logs reported within this context are related to node with index 'node_id'.
+    ExecuTorch node specific context. Logs reported within this context are related to node with index 'node_id'.
     """
 
     def __init__(self, node_id):
@@ -213,7 +211,7 @@ class ConversionLog:
         Return first error log item that belong to node with id 'node_id'. If no error is present
         None is returned instead.
 
-        :param node_id: ONNX node id.
+        :param node_id: ExecuTorch node id.
         :param dict_item: Dictionary item to return from `log`
         :return: Error code or None if there's no error related to node.
         """
@@ -230,7 +228,7 @@ class ConversionLog:
         Return first error code that belong to node with id 'node_id'. If no error is present
         None is returned instead.
 
-        :param node_id: ONNX node id.
+        :param node_id: ExecuTorch node id.
         :return: Error code or None if there's no error related to node.
         """
 
@@ -241,7 +239,7 @@ class ConversionLog:
         Return first error message that belong to node with id 'node_id'. If no error is present
         None is returned instead.
 
-        :param node_id: ONNX node id
+        :param node_id: ExecuTorch node id
         :return: Error message or None if there is no error related to node.
         """
 
@@ -256,7 +254,7 @@ class loggingContext:
     Context manager used to nest logging contexts. Usage:
 
     with loggingContext(BasicLoggingContext.GLOBAL):
-        with loggingContext(BasicLoggingContext.ONNX_PARSER):
+        with loggingContext(BasicLoggingContext.OPERATOR_CONVERSION):
             logger.i("My log") # this log is automatically assigned to both parent contexts
 
     """

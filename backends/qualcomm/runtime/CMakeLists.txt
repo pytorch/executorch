@@ -28,18 +28,18 @@ target_sources(
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnManager.cpp
 )
 
+# qnn_backend_options
+target_sources(
+  qnn_backend_options
+  INTERFACE ${CMAKE_CURRENT_LIST_DIR}/QnnBackendOptions.h
+  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnBackendOptions.cpp
+)
+
 # logging
 target_sources(
   qnn_executorch_logging
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/Logging.h>
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/Logging.cpp
-)
-
-# utils
-target_sources(
-  utils
-  PUBLIC ${CMAKE_CURRENT_LIST_DIR}/Utils.h
-  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/Utils.cpp
 )
 
 # shared_buffer

@@ -12,6 +12,7 @@ import executorch.exir as exir
 
 import torch
 
+from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
@@ -33,7 +34,7 @@ from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.graph_module import _get_submodule, get_control_flow_submodules
 from executorch.exir.lowered_backend_module import get_lowered_submodules
 from functorch.experimental import control_flow
-from torch.export import ExportedProgram
+from torch.export import export, ExportedProgram
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
 
@@ -197,8 +198,11 @@ class Backend1PartitionerDemo(Partitioner):
                     and node.target is torch.ops.higher_order.cond
                 ):
                     # Tag the arguments that take in the submodules to cond
-                    node.args[1].meta["delegation_tag"] = delegation_tag
-                    node.args[2].meta["delegation_tag"] = delegation_tag
+                    arg1, arg2 = node.args[1], node.args[2]
+                    if isinstance(arg1, torch.fx.Node):
+                        arg1.meta["delegation_tag"] = delegation_tag
+                    if isinstance(arg2, torch.fx.Node):
+                        arg2.meta["delegation_tag"] = delegation_tag
                 node.meta["delegation_tag"] = delegation_tag
                 partition_tags[delegation_tag] = self.delegation_spec
         return partition_tags
@@ -218,23 +222,22 @@ class TestNestedBackends(unittest.TestCase):
 
         m = M()
         orig_res = m(*m.get_example_inputs())
-        orig = exir.capture(
-            m,
-            m.get_example_inputs(),
-            exir.CaptureConfig(),
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-
-        partitioned = orig
-        partitioned.exported_program = to_backend(
-            orig.exported_program, Backend1PartitionerDemo()
+        orig = to_edge(
+            export(m, m.get_example_inputs(), strict=True),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
 
-        new_res = partitioned(*m.get_example_inputs())[0]
+        partitioned = orig
+        partitioned._edge_programs["forward"] = to_backend(
+            orig.exported_program(), Backend1PartitionerDemo()
+        )
+
+        new_res = partitioned.exported_program().module()(*m.get_example_inputs())[0]
         self.assertTrue(torch.allclose(orig_res, new_res))
 
         # The toplevel module should have lowered the cond and add op
         toplevel_lowered = get_lowered_submodules(
-            partitioned.exported_program.graph_module
+            partitioned.exported_program().graph_module
         )
         self.assertEqual(len(toplevel_lowered), 1)
         toplevel_lowered = toplevel_lowered[0][1]

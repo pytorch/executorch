@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 from typing import Dict
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import torch
 
@@ -16,7 +16,7 @@ from .qnn_constants import OpElementWiseAnd, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class OpAnd(NodeVisitor):
-    target = ["aten.bitwise_and.Tensor"]
+    target = ["aten.bitwise_and.Tensor", "aten.logical_and.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -24,14 +24,14 @@ class OpAnd(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         out_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
             node,
             out_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         and_output_tensors = [output_tensor_wrapper]
@@ -40,7 +40,7 @@ class OpAnd(NodeVisitor):
         for index in range(2):
             input_node = self.get_node(node.args[index])
             input_tensor = self.get_tensor(input_node, node)
-            tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
+            tensor_type = PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
 
             input_tensor_wrapper = self.define_tensor(
                 input_node,
@@ -50,7 +50,7 @@ class OpAnd(NodeVisitor):
                 nodes_to_wrappers,
             )
             and_input_tensors.append(input_tensor_wrapper)
-        and_op = PyQnnWrapper.PyQnnOpWrapper(
+        and_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpElementWiseAnd.op_name,

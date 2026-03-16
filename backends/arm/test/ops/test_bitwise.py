@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,12 +16,11 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-
 input_t2 = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
 
 
 class BitwiseBinary(torch.nn.Module):
-    test_data: dict[input_t2] = {
+    test_data_non_bool: dict[input_t2] = {
         "zeros": lambda: (
             torch.zeros(1, 10, 10, 10, dtype=torch.int32),
             torch.zeros(1, 10, 10, 10, dtype=torch.int32),
@@ -42,10 +41,6 @@ class BitwiseBinary(torch.nn.Module):
             0xAAAAAAAA * torch.ones(1, 2, 2, 2, dtype=torch.int32),
             0xCCCCCCCC * torch.ones(1, 2, 2, 2, dtype=torch.int32),
         ),
-        "pattern_bool": lambda: (
-            torch.tensor([True, False, True], dtype=torch.bool),
-            torch.tensor([True, True, False], dtype=torch.bool),
-        ),
         "rand_rank2": lambda: (
             torch.randint(-128, 127, (10, 10), dtype=torch.int8),
             torch.randint(-128, 127, (10, 10), dtype=torch.int8),
@@ -56,9 +51,18 @@ class BitwiseBinary(torch.nn.Module):
         ),
     }
 
+    test_data_bool: dict[input_t2] = {
+        "pattern_bool": lambda: (
+            torch.tensor([True, False, True], dtype=torch.bool),
+            torch.tensor([True, True, False], dtype=torch.bool),
+        ),
+    }
+
+    test_data = {**test_data_non_bool, **test_data_bool}
+
 
 class BitwiseBinaryScalar(torch.nn.Module):
-    test_data = {
+    test_data_non_bool = {
         "zeros": lambda: (torch.zeros(1, 10, 10, 10, dtype=torch.int32), 0),
         "ones_int8": lambda: (torch.ones(10, 10, 10, dtype=torch.int8), 1),
         "pattern_int8": lambda: (0xAA * torch.ones(1, 2, 2, 2, dtype=torch.int8), 0x77),
@@ -76,6 +80,15 @@ class BitwiseBinaryScalar(torch.nn.Module):
             -7,
         ),
     }
+
+    test_data_bool = {
+        "pattern_bool": lambda: (
+            torch.tensor([True, False, True], dtype=torch.bool),
+            True,
+        ),
+    }
+
+    test_data = {**test_data_non_bool, **test_data_bool}
 
 
 class And(BitwiseBinary):
@@ -103,27 +116,33 @@ class Or(BitwiseBinary):
 
 
 class AndScalar(BitwiseBinaryScalar):
-    aten_op = "torch.ops.aten.bitwise_and.Scalar"
     # Tensor because it gets converted from Scalar -> Tensor in lowering
+    aten_op = "torch.ops.aten.bitwise_and.Tensor"
+    aten_op_scalar = "torch.ops.aten.bitwise_and.Scalar"
     exir_op = "executorch_exir_dialects_edge__ops_aten_bitwise_and_Tensor"
+    exir_op_scalar = "executorch_exir_dialects_edge__ops_aten_bitwise_and_Scalar"
 
     def forward(self, tensor: torch.Tensor, scalar: int):
         return tensor.bitwise_and(scalar)
 
 
 class XorScalar(BitwiseBinaryScalar):
-    aten_op = "torch.ops.aten.bitwise_xor.Scalar"
     # Tensor because it gets converted from Scalar -> Tensor in lowering
+    aten_op = "torch.ops.aten.bitwise_xor.Tensor"
+    aten_op_scalar = "torch.ops.aten.bitwise_xor.Scalar"
     exir_op = "executorch_exir_dialects_edge__ops_aten_bitwise_xor_Tensor"
+    exir_op_scalar = "executorch_exir_dialects_edge__ops_aten_bitwise_xor_Scalar"
 
     def forward(self, tensor: torch.Tensor, scalar: int):
         return tensor.bitwise_xor(scalar)
 
 
 class OrScalar(BitwiseBinaryScalar):
-    aten_op = "torch.ops.aten.bitwise_or.Scalar"
     # Tensor because it gets converted from Scalar -> Tensor in lowering
+    aten_op = "torch.ops.aten.bitwise_or.Tensor"
+    aten_op_scalar = "torch.ops.aten.bitwise_or.Scalar"
     exir_op = "executorch_exir_dialects_edge__ops_aten_bitwise_or_Tensor"
+    exir_op_scalar = "executorch_exir_dialects_edge__ops_aten_bitwise_or_Scalar"
 
     def forward(self, tensor: torch.Tensor, scalar: int):
         return tensor.bitwise_or(scalar)
@@ -134,13 +153,23 @@ class OrScalar(BitwiseBinaryScalar):
 #########
 
 
-@common.parametrize("test_data", And().test_data)
+@common.parametrize("test_data", And().test_data_non_bool)
 def test_bitwise_and_tensor_tosa_FP(test_data: input_t2):
+    pipeline = OpNotSupportedPipeline[input_t2](
+        And(),
+        test_data(),
+        {And.exir_op: 1},
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", And().test_data_bool)
+def test_bitwise_and_tensor_tosa_FP_bool(test_data: input_t2):
     pipeline = TosaPipelineFP[input_t2](
         And(),
         test_data(),
         And().aten_op,
-        And().exir_op,
+        "executorch_exir_dialects_edge__ops_aten_logical_and_default",
         atol=0,
         rtol=0,
         qtol=0,
@@ -148,13 +177,23 @@ def test_bitwise_and_tensor_tosa_FP(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", AndScalar.test_data)
+@common.parametrize("test_data", AndScalar.test_data_non_bool)
 def test_bitwise_and_scalar_tosa_FP(test_data: input_t2):
+    pipeline = OpNotSupportedPipeline[input_t2](
+        AndScalar(),
+        test_data(),
+        {AndScalar.exir_op_scalar: 1},
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AndScalar.test_data_bool)
+def test_bitwise_and_scalar_tosa_FP_bool(test_data: input_t2):
     pipeline = TosaPipelineFP[input_t2](
         AndScalar(),
         test_data(),
-        AndScalar.aten_op,
-        AndScalar.exir_op,
+        AndScalar.aten_op_scalar,
+        "executorch_exir_dialects_edge__ops_aten_logical_and_default",
         atol=0,
         rtol=0,
         qtol=0,
@@ -173,8 +212,6 @@ def test_bitwise_and_tensor_tosa_INT(test_data: input_t2):
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -189,18 +226,16 @@ def test_bitwise_and_scalar_tosa_INT(test_data: input_t2):
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
-@common.parametrize("test_data", And().test_data)
-def test_bitwise_and_tensor_u55_INT(test_data: input_t2):
+@common.parametrize("test_data", And().test_data_non_bool)
+def test_bitwise_and_tensor_u55_INT_not_delegated(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
         And(),
         test_data(),
-        {And().exir_op: 1},
+        {And.exir_op: 1},
         quantize=True,
         u55_subset=True,
     )
@@ -208,16 +243,16 @@ def test_bitwise_and_tensor_u55_INT(test_data: input_t2):
 
 
 @common.parametrize("test_data", AndScalar.test_data)
-def test_bitwise_and_scalar_u55_INT(test_data: input_t2):
-    # There will be one full op which will be delegated.
-    num_delegates = 1
-    num_exir = 0
+def test_bitwise_and_scalar_u55_INT_not_delegated(test_data: input_t2):
+    # There will be one full op which will be delegated, unless it outputs boolean.
+    test_input = test_data()
+    num_delegates = 0 if test_input[0].dtype == torch.bool else 1
     pipeline = OpNotSupportedPipeline[input_t2](
         AndScalar(),
-        test_data(),
+        test_input,
         {
             AndScalar.exir_op: 1,
-            "executorch_exir_dialects_edge__ops_aten_full_default": num_exir,
+            "executorch_exir_dialects_edge__ops_aten_full_default": 1 - num_delegates,
         },
         num_delegates,
         quantize=True,
@@ -234,13 +269,10 @@ def test_bitwise_and_scalar_u85_INT(test_data: input_t2):
         test_data(),
         AndScalar.aten_op,
         AndScalar.exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -252,19 +284,16 @@ def test_bitwise_and_tensor_u85_INT(test_data: input_t2):
         test_data(),
         And().aten_op,
         And().exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
-@common.parametrize("test_data", And().test_data)
+@common.parametrize("test_data", And().test_data_non_bool)
 @common.SkipIfNoModelConverter
-def test_bitwise_and_tensor_vgf_FP(test_data: input_t2):
+def test_bitwise_and_tensor_vgf_no_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         And(),
         test_data(),
@@ -273,30 +302,30 @@ def test_bitwise_and_tensor_vgf_FP(test_data: input_t2):
         atol=0,
         rtol=0,
         qtol=0,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AndScalar().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_and_scalar_vgf_FP(test_data: input_t2):
+def test_bitwise_and_scalar_vgf_no_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         AndScalar(),
         test_data(),
-        AndScalar().aten_op,
+        AndScalar().aten_op_scalar,
         AndScalar().exir_op,
         atol=0,
         rtol=0,
         qtol=0,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", And().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_and_tensor_vgf_INT(test_data: input_t2):
+def test_bitwise_and_tensor_vgf_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         And(),
         test_data(),
@@ -305,16 +334,14 @@ def test_bitwise_and_tensor_vgf_INT(test_data: input_t2):
         atol=0,
         rtol=0,
         qtol=0,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
 @common.parametrize("test_data", AndScalar().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_and_scalar_vgf_INT(test_data: input_t2):
+def test_bitwise_and_scalar_vgf_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         AndScalar(),
         test_data(),
@@ -323,10 +350,8 @@ def test_bitwise_and_scalar_vgf_INT(test_data: input_t2):
         atol=0,
         rtol=0,
         qtol=0,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -335,13 +360,23 @@ def test_bitwise_and_scalar_vgf_INT(test_data: input_t2):
 #########
 
 
-@common.parametrize("test_data", Xor().test_data)
+@common.parametrize("test_data", Xor().test_data_non_bool)
 def test_bitwise_xor_tensor_tosa_FP(test_data: input_t2):
+    pipeline = OpNotSupportedPipeline[input_t2](
+        Xor(),
+        test_data(),
+        {Xor.exir_op: 1},
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Xor().test_data_bool)
+def test_bitwise_xor_tensor_tosa_FP_bool(test_data: input_t2):
     pipeline = TosaPipelineFP[input_t2](
         Xor(),
         test_data(),
         Xor().aten_op,
-        Xor().exir_op,
+        "executorch_exir_dialects_edge__ops_aten_logical_xor_default",
         atol=0,
         rtol=0,
         qtol=0,
@@ -349,13 +384,23 @@ def test_bitwise_xor_tensor_tosa_FP(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", XorScalar.test_data)
+@common.parametrize("test_data", XorScalar.test_data_non_bool)
 def test_bitwise_xor_scalar_tosa_FP(test_data: input_t2):
+    pipeline = OpNotSupportedPipeline[input_t2](
+        XorScalar(),
+        test_data(),
+        {XorScalar.exir_op_scalar: 1},
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", XorScalar.test_data_bool)
+def test_bitwise_xor_scalar_tosa_FP_bool(test_data: input_t2):
     pipeline = TosaPipelineFP[input_t2](
         XorScalar(),
         test_data(),
-        XorScalar.aten_op,
-        XorScalar.exir_op,
+        XorScalar.aten_op_scalar,
+        "executorch_exir_dialects_edge__ops_aten_logical_xor_default",
         atol=0,
         rtol=0,
         qtol=0,
@@ -374,8 +419,6 @@ def test_bitwise_xor_tensor_tosa_INT(test_data: input_t2):
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -390,13 +433,11 @@ def test_bitwise_xor_scalar_tosa_INT(test_data: input_t2):
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
-@common.parametrize("test_data", Xor().test_data)
-def test_bitwise_xor_tensor_u55_INT(test_data: input_t2):
+@common.parametrize("test_data", Xor().test_data_non_bool)
+def test_bitwise_xor_tensor_u55_INT_not_delegated(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
         Xor(),
@@ -409,16 +450,16 @@ def test_bitwise_xor_tensor_u55_INT(test_data: input_t2):
 
 
 @common.parametrize("test_data", XorScalar.test_data)
-def test_bitwise_xor_scalar_u55_INT(test_data: input_t2):
-    # There will be one full op which will be delegated.
-    num_delegates = 1
-    num_exir = 0
+def test_bitwise_xor_scalar_u55_INT_not_delegated(test_data: input_t2):
+    # There will be one full op which will be delegated, unless it outputs boolean.
+    test_input = test_data()
+    num_delegates = 0 if test_input[0].dtype == torch.bool else 1
     pipeline = OpNotSupportedPipeline[input_t2](
         XorScalar(),
-        test_data(),
+        test_input,
         {
             XorScalar.exir_op: 1,
-            "executorch_exir_dialects_edge__ops_aten_full_default": num_exir,
+            "executorch_exir_dialects_edge__ops_aten_full_default": 1 - num_delegates,
         },
         num_delegates,
         quantize=True,
@@ -435,13 +476,10 @@ def test_bitwise_xor_tensor_u85_INT(test_data: input_t2):
         test_data(),
         Xor().aten_op,
         Xor().exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -453,19 +491,16 @@ def test_bitwise_xor_scalar_u85_INT(test_data: input_t2):
         test_data(),
         XorScalar.aten_op,
         XorScalar.exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
 @common.parametrize("test_data", Xor().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_xor_tensor_vgf_FP(test_data: input_t2):
+def test_bitwise_xor_tensor_vgf_no_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         Xor(),
         test_data(),
@@ -474,30 +509,30 @@ def test_bitwise_xor_tensor_vgf_FP(test_data: input_t2):
         atol=0,
         rtol=0,
         qtol=0,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", XorScalar().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_xor_scalar_vgf_FP(test_data: input_t2):
+def test_bitwise_xor_scalar_vgf_no_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         XorScalar(),
         test_data(),
-        XorScalar().aten_op,
+        XorScalar().aten_op_scalar,
         XorScalar().exir_op,
         atol=0,
         rtol=0,
         qtol=0,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Xor().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_xor_tensor_vgf_INT(test_data: input_t2):
+def test_bitwise_xor_tensor_vgf_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         Xor(),
         test_data(),
@@ -506,16 +541,14 @@ def test_bitwise_xor_tensor_vgf_INT(test_data: input_t2):
         atol=0,
         rtol=0,
         qtol=0,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
 @common.parametrize("test_data", XorScalar().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_xor_scalar_vgf_INT(test_data: input_t2):
+def test_bitwise_xor_scalar_vgf_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         XorScalar(),
         test_data(),
@@ -524,10 +557,8 @@ def test_bitwise_xor_scalar_vgf_INT(test_data: input_t2):
         atol=0,
         rtol=0,
         qtol=0,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -536,13 +567,23 @@ def test_bitwise_xor_scalar_vgf_INT(test_data: input_t2):
 ########
 
 
-@common.parametrize("test_data", Or().test_data)
+@common.parametrize("test_data", Or().test_data_non_bool)
 def test_bitwise_or_tensor_tosa_FP(test_data: input_t2):
+    pipeline = OpNotSupportedPipeline[input_t2](
+        Or(),
+        test_data(),
+        {Or.exir_op: 1},
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Or().test_data_bool)
+def test_bitwise_or_tensor_tosa_FP_bool(test_data: input_t2):
     pipeline = TosaPipelineFP[input_t2](
         Or(),
         test_data(),
         Or().aten_op,
-        Or().exir_op,
+        "executorch_exir_dialects_edge__ops_aten_logical_or_default",
         atol=0,
         rtol=0,
         qtol=0,
@@ -550,13 +591,23 @@ def test_bitwise_or_tensor_tosa_FP(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", OrScalar.test_data)
+@common.parametrize("test_data", OrScalar.test_data_non_bool)
 def test_bitwise_or_scalar_tosa_FP(test_data: input_t2):
+    pipeline = OpNotSupportedPipeline[input_t2](
+        OrScalar(),
+        test_data(),
+        {OrScalar.exir_op_scalar: 1},
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", OrScalar.test_data_bool)
+def test_bitwise_or_scalar_tosa_FP_bool(test_data: input_t2):
     pipeline = TosaPipelineFP[input_t2](
         OrScalar(),
         test_data(),
-        OrScalar.aten_op,
-        OrScalar.exir_op,
+        OrScalar.aten_op_scalar,
+        "executorch_exir_dialects_edge__ops_aten_logical_or_default",
         atol=0,
         rtol=0,
         qtol=0,
@@ -575,8 +626,6 @@ def test_bitwise_or_tensor_tosa_INT(test_data: input_t2):
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -591,13 +640,11 @@ def test_bitwise_or_scalar_tosa_INT(test_data: input_t2):
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
-@common.parametrize("test_data", Or().test_data)
-def test_bitwise_or_tensor_u55_INT(test_data: input_t2):
+@common.parametrize("test_data", Or().test_data_non_bool)
+def test_bitwise_or_tensor_u55_INT_not_delegated(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
         Or(),
@@ -610,16 +657,16 @@ def test_bitwise_or_tensor_u55_INT(test_data: input_t2):
 
 
 @common.parametrize("test_data", OrScalar.test_data)
-def test_bitwise_or_scalar_u55_INT(test_data: input_t2):
-    # There will be one full op which will be delegated.
-    num_delegates = 1
-    num_exir = 0
+def test_bitwise_or_scalar_u55_INT_not_delegated(test_data: input_t2):
+    # There will be one full op which will be delegated, unless it outputs boolean.
+    test_input = test_data()
+    num_delegates = 0 if test_input[0].dtype == torch.bool else 1
     pipeline = OpNotSupportedPipeline[input_t2](
         OrScalar(),
-        test_data(),
+        test_input,
         {
             OrScalar.exir_op: 1,
-            "executorch_exir_dialects_edge__ops_aten_full_default": num_exir,
+            "executorch_exir_dialects_edge__ops_aten_full_default": 1 - num_delegates,
         },
         num_delegates,
         quantize=True,
@@ -636,13 +683,10 @@ def test_bitwise_or_tensor_u85_INT(test_data: input_t2):
         test_data(),
         Or().aten_op,
         Or().exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -654,19 +698,16 @@ def test_bitwise_or_scalar_u85_INT(test_data: input_t2):
         test_data(),
         OrScalar.aten_op,
         OrScalar.exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
 @common.parametrize("test_data", Or().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_or_tensor_vgf_FP(test_data: input_t2):
+def test_bitwise_or_tensor_vgf_no_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         Or(),
         test_data(),
@@ -675,30 +716,30 @@ def test_bitwise_or_tensor_vgf_FP(test_data: input_t2):
         atol=0,
         rtol=0,
         qtol=0,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", OrScalar().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_or_scalar_vgf_FP(test_data: input_t2):
+def test_bitwise_or_scalar_vgf_no_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         OrScalar(),
         test_data(),
-        OrScalar().aten_op,
+        OrScalar().aten_op_scalar,
         OrScalar().exir_op,
         atol=0,
         rtol=0,
         qtol=0,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Or().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_or_tensor_vgf_INT(test_data: input_t2):
+def test_bitwise_or_tensor_vgf_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         Or(),
         test_data(),
@@ -707,16 +748,14 @@ def test_bitwise_or_tensor_vgf_INT(test_data: input_t2):
         atol=0,
         rtol=0,
         qtol=0,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
 @common.parametrize("test_data", OrScalar().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_or_scalar_vgf_INT(test_data: input_t2):
+def test_bitwise_or_scalar_vgf_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         OrScalar(),
         test_data(),
@@ -725,8 +764,6 @@ def test_bitwise_or_scalar_vgf_INT(test_data: input_t2):
         atol=0,
         rtol=0,
         qtol=0,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()

@@ -19,7 +19,6 @@
 
 #include <executorch/backends/cadence/hifi/operators/operators.h>
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -45,7 +44,7 @@ class HiFiQuantizePerTensorTest : public OperatorTest {
       __ET_UNUSED int64_t quant_max,
       ScalarType dtype,
       Tensor& out) {
-    ::cadence::impl::HiFi::native::quantize_per_tensor_out(
+    ::impl::HiFi::native::quantize_per_tensor_out(
         context_, input, scale, zero_point, quant_min, quant_max, dtype, out);
   }
 };
@@ -118,8 +117,8 @@ TEST_F(HiFiQuantizePerTensorTest, CheckSingleElementIntQuantize) {
   constexpr int64_t kQuantMin = std::numeric_limits<int32_t>::min();
   constexpr int64_t kQuantMax = std::numeric_limits<int32_t>::max();
   constexpr float kInputValue = 100.0f;
-  constexpr int32_t kExpectedOutputValue =
-      static_cast<int32_t>(kInputValue / kScale + kZeroPoint);
+  constexpr int32_t kExpectedOutputValue = static_cast<int32_t>(
+      static_cast<double>(kInputValue) / kScale + kZeroPoint);
 
   quantize_per_tensor_out(
       tf.make(sizes, {kInputValue}),
@@ -144,8 +143,8 @@ TEST_F(HiFiQuantizePerTensorTest, CheckSingleElementUInt16Quantize) {
   constexpr int64_t kQuantMin = std::numeric_limits<uint16_t>::min();
   constexpr int64_t kQuantMax = std::numeric_limits<uint16_t>::max();
   constexpr float kInputValue = 100.0f;
-  constexpr uint16_t kExpectedOutputValue =
-      static_cast<uint16_t>(kInputValue / kScale + kZeroPoint);
+  constexpr uint16_t kExpectedOutputValue = static_cast<uint16_t>(
+      static_cast<double>(kInputValue) / kScale + kZeroPoint);
 
   quantize_per_tensor_out(
       tf.make(sizes, {kInputValue}),
@@ -162,4 +161,3 @@ TEST_F(HiFiQuantizePerTensorTest, CheckSingleElementUInt16Quantize) {
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence
