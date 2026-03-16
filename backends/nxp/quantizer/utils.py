@@ -20,6 +20,9 @@ from executorch.backends.nxp.aten_passes.simulated_linear_bn_fusion_passes impor
     AddSimulatedLinearBatchNormFusionQATPass,
     RemoveSimulatedLinearBatchNormFusionQATPass,
 )
+from executorch.backends.transforms.quantize_fused_convbn_bias_pass import (
+    QuantizeFusedConvBnBiasAtenPass,
+)
 from torch import fx
 from torch._ops import OpOverload
 from torch.export import ExportedProgram
@@ -204,5 +207,7 @@ def calibrate_and_quantize(
         m = FuseBatchNormWithLinearPass()(m).graph_module
 
     m = convert_pt2e(m)
+
+    m = QuantizeFusedConvBnBiasAtenPass(default_zero_bias=True)(m).graph_module
 
     return m

@@ -200,6 +200,10 @@ bool out_of_bounds(const TensorIndex tidx, const BufferMetadata meta) {
          any(greaterThanEqual(tidx.data[1], meta.sizes[1]));
 }
 
+bool out_of_bounds(const TensorIndex tidx, const TextureMetadata meta) {
+  return any(greaterThanEqual(ivec4(tidx.data[0]), meta.sizes));
+}
+
 //
 // TensorIndex4D (useful for texture backed tensors)
 //
@@ -622,6 +626,74 @@ int tensor4d_idx_to_texel_idx(
   }
 
   return block_idx;
+}
+
+//
+// 8D block-packed tensor indexing (TensorIndex versions)
+//
+// These functions extend the 4D versions above to handle tensors with up to 8
+// dimensions. Packed dims are guaranteed < 4, so block operations only affect
+// data[0]. Dims 4-7 are non-block batch dimensions.
+//
+
+/*
+ * 8D version of tensor4d_idx_to_block_idx.
+ * Packed dims (< 4) are divided by their block sizes, then all 8 dims
+ * contribute to the linear block index via their strides.
+ */
+int tensor_idx_to_block_idx(
+    const BufferMetadata meta,
+    TensorIndex tidx,
+    const int hashed_layout) {
+  const int inner_dim = get_packed_dim(hashed_layout);
+  const int outer_dim = get_outer_packed_dim(hashed_layout);
+  const int inner_block_size = get_packed_dim_block_size(hashed_layout);
+  const int outer_block_size = get_outer_packed_dim_block_size(hashed_layout);
+
+  // Convert packed dims to block-space coordinates (packed dims always < 4)
+  tidx.data[0][inner_dim] = tidx.data[0][inner_dim] / uint(inner_block_size);
+  tidx.data[0][outer_dim] = tidx.data[0][outer_dim] / uint(outer_block_size);
+
+  // Compute block-space linear index over all 8 dims
+  int block_idx = 0;
+  [[unroll]] for (int d = 0; d < 4; ++d) {
+    block_idx += int(meta.strides[0][d]) * int(tidx.data[0][d]);
+  }
+  [[unroll]] for (int d = 0; d < 4; ++d) {
+    block_idx += int(meta.strides[1][d]) * int(tidx.data[1][d]);
+  }
+  return block_idx;
+}
+
+/*
+ * 8D version of tensor4d_idx_to_intra_block_idx.
+ * Packed dims are always < 4, so only data[0] is accessed.
+ */
+int tensor_idx_to_intra_block_idx(
+    const TensorIndex tidx,
+    const int hashed_layout) {
+  const int inner_dim = get_packed_dim(hashed_layout);
+  const int outer_dim = get_outer_packed_dim(hashed_layout);
+  const int inner_block_size = get_packed_dim_block_size(hashed_layout);
+  const int outer_block_size = get_outer_packed_dim_block_size(hashed_layout);
+
+  const int inner_offset = int(tidx.data[0][inner_dim]) % inner_block_size;
+  const int outer_offset = int(tidx.data[0][outer_dim]) % outer_block_size;
+  return outer_offset * inner_block_size + inner_offset;
+}
+
+/*
+ * 8D version of tensor4d_idx_to_buf_idx.
+ */
+int tensor_idx_to_buf_idx(
+    const BufferMetadata meta,
+    const TensorIndex tidx,
+    const int hashed_layout) {
+  const int block_idx = tensor_idx_to_block_idx(meta, tidx, hashed_layout);
+  const int intra_block_idx =
+      tensor_idx_to_intra_block_idx(tidx, hashed_layout);
+  const int block_numel = get_block_numel(hashed_layout);
+  return block_idx * block_numel + intra_block_idx;
 }
 
 //

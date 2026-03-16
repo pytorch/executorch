@@ -50,6 +50,7 @@ def define_common_targets():
             "ovr_config//os:windows": [":threadpool_lib"],
             "ovr_config//os:android": [":threadpool_lib"],
             "ovr_config//os:iphoneos": [":threadpool_lib"],
+            "ovr_config//runtime:wasm-emscripten": [":threadpool_lib"],
             # Machines without an operating system shouldn't.
             "ovr_config//os:none": ["//executorch/runtime/kernel:thread_parallel_interface"],
             # If we don't know what it is, disable threadpool out of caution.

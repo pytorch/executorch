@@ -27,6 +27,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
     generate_inputs,
+    get_backend_type,
     make_output_dir,
     make_quantizer,
     setup_common_args_and_variables,
@@ -69,11 +70,10 @@ def annotate_custom(gm: torch.fx.GraphModule) -> None:
     This function is specific for custom op.
     The source_fn of the rewritten nn module turns out to be "my_ops.mul3.default"
     """
-    from executorch.backends.qualcomm.quantizer.annotators import _is_annotated
-
     from executorch.backends.qualcomm.quantizer.qconfig import (
         get_ptq_per_channel_quant_config,
     )
+    from executorch.backends.qualcomm.quantizer.rules import _is_annotated
     from torch.fx import Node
     from torchao.quantization.pt2e.quantizer import QuantizationAnnotation
     from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
@@ -196,7 +196,10 @@ def main(args):
         args.build_op_package,
     )
     quantizer = make_quantizer(
-        quant_dtype=quant_dtype, custom_annotations=(annotate_custom,)
+        quant_dtype=quant_dtype,
+        custom_annotations=(annotate_custom,),
+        backend=get_backend_type(args.backend),
+        soc_model=args.model,
     )
 
     build_executorch_binary(

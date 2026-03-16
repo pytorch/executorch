@@ -122,63 +122,102 @@ def get_binary_elementwise_compare_inputs():
 
 @register_test_suite("aten.mm.default")
 def get_mm_inputs():
-    test_suite = VkTestSuite(
-        [
-            ((M1, L), (L, M2)),
-            ((S1, S2), (S2, M)),
-            ((6, 32), (32, 64)),
-        ],
-    )
-    test_suite.prepacked_args = ["mat2"]
-    # ATen matmul doesn't support half
-    test_suite.dtypes = ["at::kFloat"]
-    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
-    test_suite.layouts = [
-        "utils::kWidthPacked",
-        "utils::kChannelsPacked",
+    test_cases = [
+        ((M1, L), (L, M2)),
+        ((S1, S2), (S2, M)),
+        ((6, 32), (32, 64)),
+        ((XS, S1), (S1, XS)),
+        ((S, M1), (M1, S2)),
+        ((M2, S), (S, L)),
+        ((1, S2), (S2, M1)),
+        ((M, 1), (1, S1)),
     ]
-    return test_suite
+
+    # Prepacked mat2 exercises the linear code path
+    prepacked_suite = VkTestSuite(test_cases)
+    prepacked_suite.prepacked_args = ["mat2"]
+    prepacked_suite.dtypes = ["at::kFloat"]
+    prepacked_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    prepacked_suite.layouts = [
+        "utils::kWidthPacked",
+    ]
+    prepacked_suite.test_name_suffix = "prepacked"
+
+    # Non-prepacked mat2 exercises the matmul code path
+    dynamic_suite = VkTestSuite(test_cases)
+    dynamic_suite.dtypes = ["at::kFloat"]
+    dynamic_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    dynamic_suite.layouts = [
+        "utils::kWidthPacked",
+    ]
+    dynamic_suite.test_name_suffix = "dynamic"
+
+    return [prepacked_suite, dynamic_suite]
 
 
 @register_test_suite("aten.bmm.default")
 def get_bmm_inputs():
-    test_suite = VkTestSuite(
-        [
-            ((S, M1, L), (S, L, M2)),
-            ((M, S1, S2), (M, S2, M)),
-            ((4, 6, 32), (4, 32, 16)),
-        ],
-    )
-    test_suite.prepacked_args = ["mat2"]
-    # ATen matmul doesn't support half
-    test_suite.dtypes = ["at::kFloat"]
-    test_suite.layouts = [
-        "utils::kWidthPacked",
-        "utils::kChannelsPacked",
+    test_cases = [
+        ((S, M1, L), (S, L, M2)),
+        ((M, S1, S2), (M, S2, M)),
+        ((4, 6, 32), (4, 32, 16)),
+        ((XS, S, M1), (XS, M1, S2)),
+        ((1, M2, S1), (1, S1, S)),
+        ((S1, XS, M), (S1, M, S2)),
+        ((2, S2, S), (2, S, M1)),
+        ((XS, 1, S1), (XS, S1, 1)),
     ]
-    return test_suite
+
+    # Prepacked mat2 exercises the linear code path
+    prepacked_suite = VkTestSuite(test_cases)
+    prepacked_suite.prepacked_args = ["mat2"]
+    prepacked_suite.dtypes = ["at::kFloat"]
+    prepacked_suite.layouts = [
+        "utils::kWidthPacked",
+    ]
+    prepacked_suite.test_name_suffix = "prepacked"
+
+    # Non-prepacked mat2 exercises the matmul code path
+    dynamic_suite = VkTestSuite(test_cases)
+    dynamic_suite.dtypes = ["at::kFloat"]
+    dynamic_suite.layouts = [
+        "utils::kWidthPacked",
+    ]
+    dynamic_suite.test_name_suffix = "dynamic"
+
+    return [prepacked_suite, dynamic_suite]
 
 
 @register_test_suite("aten.addmm.default")
 def get_addmm_inputs():
-    test_suite = VkTestSuite(
-        [
-            ((1, S), (S1, S), (S, S), 1.0, 1.5),
-            ((S, 1), (S, S1), (S1, S1), 1.0, 1.0),
-            ((M1, M2), (M1, M2), (M2, M2)),
-            ((M1, M2), (M1, M2), (M2, M2), 4.2, 2.3),
-            ((M1, 1), (M1, L), (L, L), 2.0, 3.0),
-            ((M2), (M1, M2), (M2, M2)),
-            ((6, M2), (6, M2), (M2, M2)),
-        ]
-    )
-    # ATen matmul doesn't support half
-    test_suite.dtypes = ["at::kFloat"]
-    test_suite.layouts = [
-        "utils::kWidthPacked",
-        "utils::kChannelsPacked",
+    test_cases = [
+        ((1, S), (S1, S), (S, S), 1.0, 1.5),
+        ((S, 1), (S, S1), (S1, S1), 1.0, 1.0),
+        ((M1, M2), (M1, M2), (M2, M2)),
+        ((M1, M2), (M1, M2), (M2, M2), 4.2, 2.3),
+        ((M1, 1), (M1, L), (L, L), 2.0, 3.0),
+        ((M2), (M1, M2), (M2, M2)),
+        ((6, M2), (6, M2), (M2, M2)),
     ]
-    return test_suite
+
+    # Non-prepacked mat2 exercises the matmul addmm code path
+    dynamic_suite = VkTestSuite(test_cases)
+    dynamic_suite.dtypes = ["at::kFloat"]
+    dynamic_suite.layouts = [
+        "utils::kWidthPacked",
+    ]
+    dynamic_suite.test_name_suffix = "dynamic"
+
+    # Prepacked mat2 exercises the linear code path
+    prepacked_suite = VkTestSuite(test_cases)
+    prepacked_suite.prepacked_args = ["mat2"]
+    prepacked_suite.dtypes = ["at::kFloat"]
+    prepacked_suite.layouts = [
+        "utils::kWidthPacked",
+    ]
+    prepacked_suite.test_name_suffix = "prepacked"
+
+    return [dynamic_suite, prepacked_suite]
 
 
 common_MKN_list = [
@@ -201,7 +240,6 @@ def get_linear_inputs():
     test_suite.dtypes = ["at::kFloat"]
     test_suite.layouts = [
         "utils::kWidthPacked",
-        "utils::kChannelsPacked",
     ]
     test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
     return test_suite
@@ -1588,7 +1626,23 @@ def get_softmax_inputs():
         "utils::kWidthPacked",
         "utils::kChannelsPacked",
     ]
-    return test_suite
+
+    # Large negative values regression test (edgeTAM attention scores that
+    # produced NaN due to missing max-shift in softmax numerics)
+    large_neg_test_suite = VkTestSuite(
+        [
+            ((1, 8, 512, 12), -1, False),
+        ]
+    )
+    large_neg_test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    large_neg_test_suite.data_range = (-1.8e10, -6.5e9)
+    large_neg_test_suite.test_name_suffix = "large_negative"
+    large_neg_test_suite.dtypes = ["at::kFloat"]
+
+    return [test_suite, large_neg_test_suite]
 
 
 @register_test_suite(

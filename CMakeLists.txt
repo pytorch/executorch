@@ -221,6 +221,23 @@ endif()
 
 add_subdirectory(third-party)
 
+# Size-optimized builds disable exceptions, RTTI, and unwind tables.
+# ExecuTorch's runtime uses Result<T>/Error instead of exceptions, so
+# -fno-exceptions is safe. Suppressing .eh_frame via -fno-unwind-tables is safe
+# because exceptions are disabled. Placed after add_subdirectory(third-party) to
+# avoid leaking into third-party configure checks (e.g. gflags).
+if(EXECUTORCH_OPTIMIZE_SIZE
+   AND NOT WIN32
+   AND NOT MSVC
+)
+  set(CMAKE_CXX_FLAGS_RELEASE
+      "${CMAKE_CXX_FLAGS_RELEASE} -fno-exceptions -fno-rtti -fno-asynchronous-unwind-tables -fno-unwind-tables"
+  )
+  set(CMAKE_C_FLAGS_RELEASE
+      "${CMAKE_C_FLAGS_RELEASE} -fno-asynchronous-unwind-tables -fno-unwind-tables"
+  )
+endif()
+
 if(NOT DEFINED FXDIV_SOURCE_DIR)
   set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
       ${CMAKE_POSITION_INDEPENDENT_CODE}
@@ -477,6 +494,9 @@ target_include_directories(
 target_compile_definitions(
   executorch_core PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
 )
+if(NOT EXECUTORCH_ENABLE_LOGGING)
+  target_compile_definitions(executorch_core PUBLIC ET_LOG_ENABLED=0)
+endif()
 target_compile_options(executorch_core PUBLIC ${_common_compile_options})
 if(MAX_KERNEL_NUM)
   target_compile_definitions(
@@ -525,6 +545,9 @@ add_library(executorch ${_executorch__srcs})
 target_link_libraries(executorch PRIVATE executorch_core)
 target_include_directories(executorch PUBLIC ${_common_include_directories})
 target_compile_definitions(executorch PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
+if(NOT EXECUTORCH_ENABLE_LOGGING)
+  target_compile_definitions(executorch PUBLIC ET_LOG_ENABLED=0)
+endif()
 target_compile_options(executorch PUBLIC ${_common_compile_options})
 executorch_target_link_options_shared_lib(executorch)
 
@@ -1043,6 +1066,18 @@ if(EXECUTORCH_BUILD_PYBIND)
     TARGETS portable_lib
     EXPORT ExecuTorchTargets
     LIBRARY DESTINATION executorch/extension/pybindings
+  )
+
+  # pybind data_loader module - provides PyDataLoader type for external
+  # pybinding extensions to create custom data loaders
+  pybind11_add_module(
+    data_loader SHARED extension/pybindings/pybindings_data_loader.cpp
+  )
+  target_include_directories(data_loader PRIVATE ${_common_include_directories})
+  target_compile_options(data_loader PUBLIC ${_pybind_compile_options})
+  target_link_libraries(data_loader PRIVATE executorch)
+  install(TARGETS data_loader
+          LIBRARY DESTINATION executorch/extension/pybindings
   )
 endif()
 

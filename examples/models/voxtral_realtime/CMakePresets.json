@@ -14,12 +14,16 @@
         {
             "name": "voxtral-realtime-cpu",
             "displayName": "Voxtral Realtime runner (CPU)",
-            "inherits": ["voxtral-realtime-base"]
+            "inherits": [
+                "voxtral-realtime-base"
+            ]
         },
         {
             "name": "voxtral-realtime-metal",
             "displayName": "Voxtral Realtime runner (Metal)",
-            "inherits": ["voxtral-realtime-base"],
+            "inherits": [
+                "voxtral-realtime-base"
+            ],
             "cacheVariables": {
                 "EXECUTORCH_BUILD_METAL": "ON"
             },
@@ -28,6 +32,24 @@
                 "type": "equals",
                 "rhs": "Darwin"
             }
+        },
+        {
+            "name": "voxtral-realtime-cuda",
+            "displayName": "Voxtral Realtime runner (CUDA)",
+            "inherits": [
+                "voxtral-realtime-base"
+            ],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_CUDA": "ON"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": [
+                    "Linux",
+                    "Windows"
+                ]
+            }
         }
     ],
     "buildPresets": [
@@ -35,14 +57,26 @@
             "name": "voxtral-realtime-cpu",
             "displayName": "Build Voxtral Realtime runner (CPU)",
             "configurePreset": "voxtral-realtime-cpu",
-            "targets": ["voxtral_realtime_runner"]
+            "targets": [
+                "voxtral_realtime_runner"
+            ]
         },
         {
             "name": "voxtral-realtime-metal",
             "displayName": "Build Voxtral Realtime runner (Metal)",
             "configurePreset": "voxtral-realtime-metal",
             "configuration": "Release",
-            "targets": ["voxtral_realtime_runner"]
+            "targets": [
+                "voxtral_realtime_runner"
+            ]
+        },
+        {
+            "name": "voxtral-realtime-cuda",
+            "displayName": "Build Voxtral Realtime runner (CUDA)",
+            "configurePreset": "voxtral-realtime-cuda",
+            "targets": [
+                "voxtral_realtime_runner"
+            ]
         }
     ],
     "workflowPresets": [
@@ -71,6 +105,20 @@
                 {
                     "type": "build",
                     "name": "voxtral-realtime-metal"
+                }
+            ]
+        },
+        {
+            "name": "voxtral-realtime-cuda",
+            "displayName": "Configure and build Voxtral Realtime runner (CUDA)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "voxtral-realtime-cuda"
+                },
+                {
+                    "type": "build",
+                    "name": "voxtral-realtime-cuda"
                 }
             ]
         }

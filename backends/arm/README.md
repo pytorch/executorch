@@ -51,7 +51,7 @@ backends/arm/
 │   └── quantization_annotator.py  # Defines how operators are annotated for quantization
 │
 ├── runtime/                       # Backends for running inference on target devices
-│   ├── ArmEthosUBackend.cpp
+│   ├── EthosUBackend.cpp
 │   └── VGFBackend.cpp
 │
 ├── scripts/                       # Auxiliary build, dependency installation and utility scripts

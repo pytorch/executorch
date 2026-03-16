@@ -767,6 +767,7 @@ class CustomBuild(build):
 
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_PYBIND"):
             cmake_build_args += ["--target", "portable_lib"]
+            cmake_build_args += ["--target", "data_loader"]
             cmake_build_args += ["--target", "selective_build"]
 
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER"):
@@ -836,6 +837,13 @@ setup(
         BuiltExtension(
             src="_portable_lib.cp*" if _is_windows() else "_portable_lib.*",
             modpath="executorch.extension.pybindings._portable_lib",
+            dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
+        ),
+        # Install the data_loader pybindings extension which provides the
+        # PyDataLoader type for external pybinding extensions.
+        BuiltExtension(
+            src="data_loader.cp*" if _is_windows() else "data_loader.*",
+            modpath="executorch.extension.pybindings.data_loader",
             dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
         ),
         BuiltExtension(
