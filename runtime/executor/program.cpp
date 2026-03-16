@@ -291,6 +291,11 @@ size_t Program::num_methods() const {
 
 Result<const char*> Program::get_method_name(size_t plan_index) const {
   if (plan_index >= this->num_methods()) {
+    ET_LOG(
+        Error,
+        "Plan index %zu >= num methods %zu",
+        plan_index,
+        this->num_methods());
     return Error::InvalidArgument;
   }
   auto internal_program =
@@ -298,6 +303,7 @@ Result<const char*> Program::get_method_name(size_t plan_index) const {
   // We know that the execution plan exists because num_methods() returned > 0.
   auto name = internal_program->execution_plan()->Get(plan_index)->name();
   if (name == nullptr) {
+    ET_LOG(Error, "Execution plan %zu has null name", plan_index);
     return Error::InvalidProgram;
   }
   return name->c_str();
