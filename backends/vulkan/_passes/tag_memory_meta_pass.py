@@ -132,9 +132,10 @@ class TagMemoryMetaPass(ExportPass):
         self.texture_limits = texture_limits
         self.force_fp16 = force_fp16
 
-        # Magic number to limit "lookahead" when tracing through users of an operator
-        # to constrain the representation of its arguments/outputs.
-        self.max_trace_search_depth = None
+        # Limit the total number of nodes explored when tracing through users of
+        # an operator to constrain the representation of its arguments/outputs.
+        # Without a limit, transformer-style graphs cause exponential blowup.
+        self.max_trace_search_depth = 64
 
     def is_valid_op_node(self, node: Any) -> bool:
         """
@@ -261,7 +262,7 @@ class TagMemoryMetaPass(ExportPass):
         current_node: torch.fx.Node,
         arg_i: int,
         arg_repset: utils.TensorRepSet,
-        search_depth: int = 0,
+        search_depth: list[int] | None = None,
     ) -> utils.TensorRepSet:
         """
         Attempts to constrain `arg_repset` based on the required repset of the argument
@@ -305,7 +306,7 @@ class TagMemoryMetaPass(ExportPass):
         self,
         origin_node: torch.fx.Node,
         repset: utils.TensorRepSet,
-        search_depth: int = 0,
+        search_depth: list[int] | None = None,
     ) -> utils.TensorRepSet:
         """
         For an ambiguous repset, try to constrain the repset by tracing the required
@@ -313,9 +314,14 @@ class TagMemoryMetaPass(ExportPass):
         that can be used the longest without needing user nodes to insert a transition
         for its arguments.
         """
-        # Optionally limit the search depth to improve export time
+        # Optionally limit the total number of nodes explored to improve export
+        # time. search_depth is a mutable list so that all branches of a fan-out
+        # share a single counter, preventing exponential blowup.
         if self.max_trace_search_depth is not None:
-            if search_depth > self.max_trace_search_depth:
+            if search_depth is None:
+                search_depth = [self.max_trace_search_depth]
+            search_depth[0] -= 1
+            if search_depth[0] <= 0:
                 return repset
 
         users_to_trace = origin_node.users
@@ -339,7 +345,7 @@ class TagMemoryMetaPass(ExportPass):
 
             if arg_i_in_user is not None:
                 repset = self.constrain_repset_with_user(
-                    usage_node, arg_i_in_user, repset, search_depth + 1
+                    usage_node, arg_i_in_user, repset, search_depth
                 )
 
             if repset.is_constrained():

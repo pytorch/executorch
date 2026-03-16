@@ -16,26 +16,24 @@
 
 namespace vkcompute {
 
-struct PadParam final {
-  int32_t left;
-  int32_t top;
-  int32_t front;
-};
-
-PadParam creat_pad_param(const std::vector<int64_t>& pad) {
-  if (pad.size() == 2) {
-    return PadParam{static_cast<int32_t>(pad[0]), 0, 0};
-  } else if (pad.size() == 4) {
-    return PadParam{
-        static_cast<int32_t>(pad[0]), static_cast<int32_t>(pad[2]), 0};
-  } else if (pad.size() == 6) {
-    return PadParam{
-        static_cast<int32_t>(pad[0]),
-        static_cast<int32_t>(pad[2]),
-        static_cast<int32_t>(pad[4])};
-  } else {
-    VK_THROW("invalid pad form");
+utils::ivec4 create_pad_per_dim(const std::vector<int64_t>& pad) {
+  // pad contains pairs of (before, after) values for each dimension, starting
+  // from the innermost (W). BufferMetadata/TextureMetadata use WHCN order, so
+  // map pad[0]->W, pad[2]->H, pad[4]->C, pad[6]->N.
+  utils::ivec4 pad_per_dim{0, 0, 0, 0};
+  if (pad.size() >= 2) {
+    pad_per_dim[0] = static_cast<int32_t>(pad[0]);
   }
+  if (pad.size() >= 4) {
+    pad_per_dim[1] = static_cast<int32_t>(pad[2]);
+  }
+  if (pad.size() >= 6) {
+    pad_per_dim[2] = static_cast<int32_t>(pad[4]);
+  }
+  if (pad.size() >= 8) {
+    pad_per_dim[3] = static_cast<int32_t>(pad[6]);
+  }
+  return pad_per_dim;
 }
 
 void resize_constant_pad_node(
@@ -63,30 +61,12 @@ void add_constant_pad_nd_node(
     const ValueRef& out) {
   const float fill_value_val = graph.extract_scalar<float>(fill_value_ref);
   const IntListPtr pad_vec = graph.get_int_list(pad);
-  const PadParam pad_param = creat_pad_param(*pad_vec);
+  const utils::ivec4 pad_per_dim = create_pad_per_dim(*pad_vec);
 
   std::string kernel_name = "pad";
   kernel_name.reserve(kShaderNameReserve);
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
-
-  vkapi::ParamsBindList param_ubos;
-  if (graph.is_buffer_storage(out)) {
-    // BufferMetadata stores sizes/strides in WHCN order (flip_and_unsqueeze
-    // reverses from NCHW). Map pad offsets to match: W=0, H=1, C=2.
-    utils::ivec4 pad_per_dim{pad_param.left, pad_param.top, pad_param.front, 0};
-    param_ubos = {
-        graph.buffer_meta_ubo(out),
-        graph.buffer_meta_ubo(in),
-        graph.create_params_buffer(pad_per_dim),
-        graph.create_params_buffer(fill_value_val)};
-  } else {
-    param_ubos = {
-        graph.meta_ubo(out),
-        graph.meta_ubo(in),
-        graph.create_params_buffer(pad_param),
-        graph.create_params_buffer(fill_value_val)};
-  }
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -95,11 +75,14 @@ void add_constant_pad_nd_node(
       default_pick_local_wg_size,
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Parameter buffers
-      param_ubos,
+      {graph.meta_ubo(out),
+       graph.meta_ubo(in),
+       graph.create_params_buffer(pad_per_dim),
+       graph.create_params_buffer(fill_value_val)},
       // Push Constants
       {},
       // Specialization Constants
-      {},
+      {graph.hashed_layout_of(out)},
       // Resize Args
       {pad},
       // Resizing Logic
