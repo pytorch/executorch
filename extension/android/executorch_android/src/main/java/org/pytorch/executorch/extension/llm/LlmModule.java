@@ -507,7 +507,8 @@ public class LlmModule {
 
   private native int prefillImagesInput(int[] image, int width, int height, int channels);
 
-  private native int prefillImagesInputBuffer(ByteBuffer image, int width, int height, int channels);
+  private native int prefillImagesInputBuffer(
+      ByteBuffer image, int width, int height, int channels);
 
   private native int prefillNormalizedImagesInputBuffer(
       ByteBuffer image, int width, int height, int channels);

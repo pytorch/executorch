@@ -240,11 +240,11 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     std::vector<llm::MultimodalInput> inputs;
     inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
     int32_t bos = needs_bos_ ? num_bos_ : 0;
-    needs_bos_ = false;
     auto result = runner_->prefill(inputs, bos, /*num_eos=*/0);
     if (!result.ok()) {
       return static_cast<jint>(result.error());
     }
+    needs_bos_ = false;
     return 0;
   }
 
@@ -274,11 +274,11 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     std::vector<llm::MultimodalInput> inputs;
     inputs.emplace_back(llm::MultimodalInput{std::move(image_runner)});
     int32_t bos = needs_bos_ ? num_bos_ : 0;
-    needs_bos_ = false;
     auto result = runner_->prefill(inputs, bos, /*num_eos=*/0);
     if (!result.ok()) {
       return static_cast<jint>(result.error());
     }
+    needs_bos_ = false;
     return 0;
   }
 
@@ -304,11 +304,11 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     std::vector<llm::MultimodalInput> inputs;
     inputs.emplace_back(llm::MultimodalInput{std::move(image_runner)});
     int32_t bos = needs_bos_ ? num_bos_ : 0;
-    needs_bos_ = false;
     auto result = runner_->prefill(inputs, bos, /*num_eos=*/0);
     if (!result.ok()) {
       return static_cast<jint>(result.error());
     }
+    needs_bos_ = false;
     return 0;
   }
 
@@ -337,11 +337,11 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     std::vector<llm::MultimodalInput> inputs;
     inputs.emplace_back(llm::MultimodalInput{std::move(image_runner)});
     int32_t bos = needs_bos_ ? num_bos_ : 0;
-    needs_bos_ = false;
     auto result = runner_->prefill(inputs, bos, /*num_eos=*/0);
     if (!result.ok()) {
       return static_cast<jint>(result.error());
     }
+    needs_bos_ = false;
     return 0;
   }
 
@@ -371,11 +371,11 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     std::vector<llm::MultimodalInput> inputs;
     inputs.emplace_back(llm::MultimodalInput{std::move(image_runner)});
     int32_t bos = needs_bos_ ? num_bos_ : 0;
-    needs_bos_ = false;
     auto result = runner_->prefill(inputs, bos, /*num_eos=*/0);
     if (!result.ok()) {
       return static_cast<jint>(result.error());
     }
+    needs_bos_ = false;
     return 0;
   }
 
@@ -405,11 +405,11 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     std::vector<llm::MultimodalInput> inputs;
     inputs.emplace_back(llm::MultimodalInput{std::move(audio)});
     int32_t bos = needs_bos_ ? num_bos_ : 0;
-    needs_bos_ = false;
     auto result = runner_->prefill(inputs, bos, /*num_eos=*/0);
     if (!result.ok()) {
       return static_cast<jint>(result.error());
     }
+    needs_bos_ = false;
     return 0;
   }
 
@@ -439,11 +439,11 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     std::vector<llm::MultimodalInput> inputs;
     inputs.emplace_back(llm::MultimodalInput{std::move(audio)});
     int32_t bos = needs_bos_ ? num_bos_ : 0;
-    needs_bos_ = false;
     auto result = runner_->prefill(inputs, bos, /*num_eos=*/0);
     if (!result.ok()) {
       return static_cast<jint>(result.error());
     }
+    needs_bos_ = false;
     return 0;
   }
 
@@ -473,11 +473,11 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     std::vector<llm::MultimodalInput> inputs;
     inputs.emplace_back(llm::MultimodalInput{std::move(audio)});
     int32_t bos = needs_bos_ ? num_bos_ : 0;
-    needs_bos_ = false;
     auto result = runner_->prefill(inputs, bos, /*num_eos=*/0);
     if (!result.ok()) {
       return static_cast<jint>(result.error());
     }
+    needs_bos_ = false;
     return 0;
   }
 
@@ -509,7 +509,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       std::stringstream ss;
       ss << "Failed to load runner: [" << result << "]";
       executorch::jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+          static_cast<uint32_t>(result), ss.str().c_str());
     }
     return result;
   }
