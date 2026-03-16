@@ -19,7 +19,6 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_valid_dtype,
 )
 from executorch.backends.arm.tosa.mapping import TosaArg
-from executorch.backends.arm.tosa.utils import tosa_shape
 
 
 @register_node_visitor
@@ -55,27 +54,13 @@ class ViewVisitor(NodeVisitor):
 
         tosa_graph = cast(ts.TosaSerializer, tosa_graph)
 
-        if len(output.shape) != 0:
-            shape_len = [len(output.shape)]
-            shape_data = list(tosa_shape(output.shape, output.dim_order))
-        else:
-            shape_len = []
-            shape_data = []
-
-        shape = tosa_graph.addConst(
-            shape_len,
-            ts.DType.SHAPE,
-            shape_data,
-            name=output.name + "_shape",
-        )
-
         attr = ts.TosaSerializerAttribute()
         attr.ReshapeAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
             ts.Op.RESHAPE,
-            [inputs[0].name, shape.name],
+            [inputs[0].name, inputs[1].name],
             [output.name],
             attr,
         )
