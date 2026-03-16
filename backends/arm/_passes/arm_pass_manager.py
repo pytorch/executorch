@@ -102,6 +102,7 @@ from executorch.backends.arm._passes import (
     FuseEqualPlaceholdersPass,
     FuseQuantizedActivationPass,
     FuseViewCopyTransformPass,
+    InsertConstShapesPass,
     InsertControlFlowRescalesPass,
     InsertInt32CastsAfterInt64PlaceholdersPass,
     InsertRescaleInt32Pass,
@@ -120,6 +121,7 @@ from executorch.backends.arm._passes import (
     RewriteBoolBitwiseToLogicalPass,
     RewriteBoolToFp32CastViaInt8Pass,
     RewriteConvPass,
+    RewriteHighRankSingletonPermutePass,
     RewriteIndexPutPass,
     RewriteLeLtToGeGtPass,
     RewriteMatmulPass,
@@ -365,6 +367,7 @@ class ArmPassManager(PassManager):
                 CastToInt32Pass(),
                 BroadcastArgsPass(),
                 ConvertPermuteSingletonToViewPass(),
+                RewriteHighRankSingletonPermutePass(),
                 FuseViewCopyTransformPass(),
                 DecomposeConvWithInt16ActivationPass(),
                 DecomposeSumPass(),
@@ -380,6 +383,7 @@ class ArmPassManager(PassManager):
                 RewriteMatmulPass(),
                 RewritePadPass(),
                 RewriteSlicePass(),
+                InsertConstShapesPass(),
             ]
         )
 
