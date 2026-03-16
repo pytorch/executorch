@@ -35,9 +35,12 @@ TEST_F(KernelDoubleRegistrationTest, Basic) {
       "aten::add.out",
       "v1/7;0,1,2,3|7;0,1,2,3|7;0,1,2,3",
       [](KernelRuntimeContext&, Span<EValue*>) {})};
-  Error err = Error::RegistrationAlreadyRegistered;
 
-  ET_EXPECT_DEATH(
-      { (void)register_kernels({kernels}); },
-      std::to_string(static_cast<uint32_t>(err)));
+  // First registration should succeed
+  Error err = register_kernels({kernels});
+  EXPECT_EQ(err, Error::Ok);
+
+  // Second registration should succeed but skip the duplicate
+  err = register_kernels({kernels});
+  EXPECT_EQ(err, Error::Ok);
 }

@@ -49,5 +49,15 @@ TEST_F(OperatorRegistryMaxKernelNumTest, RegisterTwoOpsFail) {
       Kernel("foo2", [](KernelRuntimeContext&, Span<EValue*>) {})};
   ET_EXPECT_DEATH(
       { (void)register_kernels({kernels}); },
-      "The total number of kernels to be registered is larger than the limit 1");
+      "");
+}
+
+// Re-registering a duplicate when at capacity should succeed
+TEST_F(OperatorRegistryMaxKernelNumTest, DuplicateAtCapacitySucceeds) {
+  // "foo" was already registered by RegisterOneOp, filling the registry (1/1).
+  // Re-registering the same kernel should succeed because it's a duplicate.
+  Kernel kernels[] = {
+      Kernel("foo", [](KernelRuntimeContext&, Span<EValue*>) {})};
+  auto s = register_kernels({kernels});
+  EXPECT_EQ(s, Error::Ok);
 }

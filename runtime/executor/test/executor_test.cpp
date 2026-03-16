@@ -173,8 +173,9 @@ TEST_F(ExecutorTest, OpRegistration) {
   auto s2 = register_kernel(Kernel("test_2", test_op));
   ASSERT_EQ(Error::Ok, s1);
   ASSERT_EQ(Error::Ok, s2);
-  ET_EXPECT_DEATH(
-      []() { (void)register_kernel(Kernel("test", test_op)); }(), "");
+  // Duplicate registration should succeed and skip gracefully
+  auto s3 = register_kernel(Kernel("test", test_op));
+  ASSERT_EQ(Error::Ok, s3);
 
   ASSERT_TRUE(registry_has_op_function("test"));
   ASSERT_TRUE(registry_has_op_function("test_2"));

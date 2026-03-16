@@ -54,44 +54,39 @@ Error register_kernels_internal(const Span<const Kernel> kernels) {
   // PAL init, so call it here. It is safe to call multiple times.
   ::et_pal_init();
 
-  if (kernels.size() + num_registered_kernels > kMaxRegisteredKernels) {
-    ET_LOG(
-        Error,
-        "The total number of kernels to be registered is larger than the limit "
-        "%" PRIu32 ". %" PRIu32
-        " kernels are already registered and we're trying to register another "
-        "%" PRIu32 " kernels.",
-        kMaxRegisteredKernels,
-        (uint32_t)num_registered_kernels,
-        (uint32_t)kernels.size());
-    ET_LOG(Error, "======== Kernels already in the registry: ========");
-    for (size_t i = 0; i < num_registered_kernels; i++) {
-      ET_LOG(Error, "%s", registered_kernels[i].name_);
-      ET_LOG_KERNEL_KEY(registered_kernels[i].kernel_key_);
-    }
-    ET_LOG(Error, "======== Kernels being registered: ========");
-    for (size_t i = 0; i < kernels.size(); i++) {
-      ET_LOG(Error, "%s", kernels[i].name_);
-      ET_LOG_KERNEL_KEY(kernels[i].kernel_key_);
-    }
-    return Error::RegistrationExceedingMaxKernels;
-  }
   // for debugging purpose
   ET_UNUSED const char* lib_name =
       et_pal_get_shared_library_name(kernels.data());
 
   for (const auto& kernel : kernels) {
     // Linear search. This is fine if the number of kernels is small.
+    bool is_duplicate = false;
     for (size_t i = 0; i < num_registered_kernels; i++) {
       Kernel k = registered_kernels[i];
       if (strcmp(kernel.name_, k.name_) == 0 &&
           kernel.kernel_key_ == k.kernel_key_) {
-        ET_LOG(Error, "Re-registering %s, from %s", k.name_, lib_name);
+        ET_LOG(
+          Info,
+          "Skipping duplicate registration of %s, from %s",
+          k.name_,
+          lib_name);
         ET_LOG_KERNEL_KEY(k.kernel_key_);
-        return Error::RegistrationAlreadyRegistered;
+        is_duplicate = true;
+        break;
       }
     }
-    registered_kernels[num_registered_kernels++] = kernel;
+    if (!is_duplicate) {
+      if (num_registered_kernels >= kMaxRegisteredKernels) {
+        ET_LOG(
+            Error,
+            "Registry is full: %" PRIu32
+            " kernels registered, cannot add '%s'.",
+            (uint32_t)num_registered_kernels,
+            kernel.name_);
+        return Error::RegistrationExceedingMaxKernels;
+      }
+      registered_kernels[num_registered_kernels++] = kernel;
+    }
   }
   ET_LOG(
       Debug,
@@ -106,8 +101,7 @@ Error register_kernels_internal(const Span<const Kernel> kernels) {
 // Registers the kernels, but panics if an error occurs. Always returns Ok.
 Error register_kernels(const Span<const Kernel> kernels) {
   Error success = register_kernels_internal(kernels);
-  if (success == Error::RegistrationAlreadyRegistered ||
-      success == Error::RegistrationExceedingMaxKernels) {
+  if (success == Error::RegistrationExceedingMaxKernels) {
     ET_CHECK_MSG(
         false,
         "Kernel registration failed with error %" PRIu32
