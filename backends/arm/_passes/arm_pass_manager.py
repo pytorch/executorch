@@ -470,6 +470,7 @@ class ArmPassManager(PassManager):
                 DecomposeLeakyReLUPass(tfa_pass=True),
                 DecomposeLinalgVectorNormPass(tfa_pass=True),
                 DecomposeSqrtPass(tfa_pass=True),
+                DecomposeAdaptiveAvgPool2dPass(tfa_pass=True),
                 DecomposeAvgPool2dPass(tfa_pass=True),
                 DecomposeSoftmaxUnstablePass(tfa_pass=True),
                 DecomposeSoftmaxPass(
