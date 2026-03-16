@@ -25,6 +25,7 @@ Arguments:
                 - Qwen/Qwen3-0.6B
                 - nvidia/parakeet-tdt
                 - facebook/dinov2-small-imagenet1k-1-layer
+                - facebook/dinov3-vits16-pretrain-lvd1689m
                 - mistralai/Voxtral-Mini-4B-Realtime-2602
 
   quant_name  Quantization type (required)
@@ -204,6 +205,19 @@ case "$HF_MODEL" in
     IMAGE_URL="https://github.com/pytorch/hub/raw/master/images/dog.jpg"
     IMAGE_PATH=""
     ;;
+  facebook/dinov3-vits16-pretrain-lvd1689m)
+    MODEL_NAME="dinov3"
+    RUNNER_TARGET="dinov3_runner"
+    RUNNER_PATH="dinov3"
+    EXPECTED_OUTPUT="predictions"
+    PREPROCESSOR=""
+    TOKENIZER_URL=""
+    TOKENIZER_FILE=""
+    AUDIO_URL=""
+    AUDIO_FILE=""
+    IMAGE_URL="https://github.com/pytorch/hub/raw/master/images/dog.jpg"
+    IMAGE_PATH=""
+    ;;
   mistralai/Voxtral-Mini-4B-Realtime-2602)
     MODEL_NAME="voxtral_realtime"
     RUNNER_TARGET="voxtral_realtime_runner"
@@ -218,7 +232,7 @@ case "$HF_MODEL" in
     ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, facebook/dinov3-vits16-pretrain-lvd1689m"
     exit 1
     ;;
 esac
@@ -232,7 +246,7 @@ echo "::group::Prepare $MODEL_NAME Artifacts"
 
 
 # Download tokenizer files (skip for models that bundle tokenizer in export or do not use one)
-if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ] && [ "$MODEL_NAME" != "sortformer" ] && [ "$MODEL_NAME" != "dinov2" ]; then
+if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ] && [ "$MODEL_NAME" != "sortformer" ] && [ "$MODEL_NAME" != "dinov2" ] && [ "$MODEL_NAME" != "dinov3" ]; then
   if [ "$TOKENIZER_FILE" != "" ]; then
     curl -L $TOKENIZER_URL/$TOKENIZER_FILE -o $MODEL_DIR/$TOKENIZER_FILE
   else
@@ -336,6 +350,12 @@ EOF
     fi
     ;;
   dinov2)
+    RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --image_path ${MODEL_DIR}/test_image.jpg"
+    if [ "$DEVICE" = "cuda" ]; then
+      RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
+    fi
+    ;;
+  dinov3)
     RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --image_path ${MODEL_DIR}/test_image.jpg"
     if [ "$DEVICE" = "cuda" ]; then
       RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"

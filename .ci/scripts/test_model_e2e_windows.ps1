@@ -109,8 +109,21 @@ switch ($HfModel) {
         $imageUrl = "https://github.com/pytorch/hub/raw/master/images/dog.jpg"
         $imageFile = "test_image.jpg"
     }
+    "facebook/dinov3-vits16-pretrain-lvd1689m" {
+        $runnerTarget = "dinov3_runner"
+        $runnerPath = "dinov3"
+        $runnerPreset = "dinov3-cuda"
+        $expectedOutput = "predictions"
+        $preprocessor = ""
+        $tokenizerUrl = ""
+        $tokenizerFile = ""
+        $audioUrl = ""
+        $audioFile = ""
+        $imageUrl = "https://github.com/pytorch/hub/raw/master/images/dog.jpg"
+        $imageFile = "test_image.jpg"
+    }
     default {
-        throw "Unsupported model '$HfModel'. Supported: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer"
+        throw "Unsupported model '$HfModel'. Supported: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, facebook/dinov3-vits16-pretrain-lvd1689m"
     }
 }
 
@@ -238,6 +251,13 @@ try {
             }
         }
         "facebook/dinov2-small-imagenet1k-1-layer" {
+            $runnerArgs = @(
+                "--model_path", $modelPte,
+                "--data_path", $cudaBlob,
+                "--image_path", (Join-Path -Path $resolvedModelDir -ChildPath $imageFile)
+            )
+        }
+        "facebook/dinov3-vits16-pretrain-lvd1689m" {
             $runnerArgs = @(
                 "--model_path", $modelPte,
                 "--data_path", $cudaBlob,

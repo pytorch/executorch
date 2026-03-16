@@ -1,0 +1,88 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "dinov3-base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/dinov3",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
+            }
+        },
+        {
+            "name": "dinov3-cuda",
+            "displayName": "DINOv3 runner (CUDA)",
+            "inherits": ["dinov3-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_CUDA": "ON"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
+        },
+        {
+            "name": "dinov3-cuda-debug",
+            "displayName": "DINOv3 runner (CUDA, Debug)",
+            "inherits": ["dinov3-base"],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "EXECUTORCH_BUILD_CUDA": "ON"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "dinov3-cuda",
+            "displayName": "Build DINOv3 runner (CUDA)",
+            "configurePreset": "dinov3-cuda",
+            "configuration": "Release",
+            "targets": ["dinov3_runner"]
+        },
+        {
+            "name": "dinov3-cuda-debug",
+            "displayName": "Build DINOv3 runner (CUDA, Debug)",
+            "configurePreset": "dinov3-cuda-debug",
+            "configuration": "Debug",
+            "targets": ["dinov3_runner"]
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "dinov3-cuda",
+            "displayName": "Configure and build DINOv3 runner (CUDA)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "dinov3-cuda"
+                },
+                {
+                    "type": "build",
+                    "name": "dinov3-cuda"
+                }
+            ]
+        },
+        {
+            "name": "dinov3-cuda-debug",
+            "displayName": "Configure and build DINOv3 runner (CUDA, Debug)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "dinov3-cuda-debug"
+                },
+                {
+                    "type": "build",
+                    "name": "dinov3-cuda-debug"
+                }
+            ]
+        }
+    ]
+}
