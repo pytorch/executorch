@@ -255,10 +255,6 @@ void choose_qparams_per_channel_reference_impl(TestCase& test_case) {
   const ValueSpec& input_spec = test_case.inputs()[idx++];
   const ValueSpec& quant_min_spec = test_case.inputs()[idx++];
   const ValueSpec& quant_max_spec = test_case.inputs()[idx++];
-  const ValueSpec& eps_spec = test_case.inputs()[idx++];
-  const ValueSpec& dtype_spec = test_case.inputs()[idx++];
-  (void)eps_spec; // Unused in reference implementation
-  (void)dtype_spec; // Unused in reference implementation
 
   // Extract output specifications
   ValueSpec& scale_out_spec = test_case.outputs()[0];
