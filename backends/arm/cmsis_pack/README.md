@@ -1,53 +1,67 @@
 # PyTorch::ExecuTorch CMSIS Pack
 
-This directory contains the build scripts and templates to generate the `PyTorch::ExecuTorch` CMSIS Pack.
+Build scripts and templates for the `PyTorch::ExecuTorch` CMSIS Pack.
 
 ## Overview
 
-The ExecuTorch CMSIS Pack provides the ExecuTorch runtime library for embedded systems with all operators exposed as selectable components. This enables fine-grained dependency management where model packs can select only the operators they need.
+The CMSIS Pack packages the ExecuTorch runtime for Arm Cortex-M bare-metal
+targets. Every portable and quantized operator is exposed as a selectable
+CMSIS component, enabling fine-grained code-size control.
 
 ## Structure
 
 ```
-executorch-pack/
-├── build/                  # Generated pack build output
-├── templates/
-│   └── PyTorch.ExecuTorch.pdsc.tpl    # Pack description template
-├── scripts/
-│   ├── build_pack.sh       # Main pack build script
-│   └── generate_components.py  # Operator component generator
+cmsis_pack/
 ├── config/
-│   └── executorch_config.yml   # Build configuration and defines
-└── contributions/
-    └── add/                # Static files to include in pack
-        ├── LICENSE
-        └── Documentation/
+│   └── executorch_config.yml       # Build configuration and defines
+├── contributions/
+│   └── add/                        # Static files included in the pack
+│       ├── LICENSE
+│       └── Documentation/
+├── scripts/
+│   ├── build_pack.sh               # Main entry point
+│   ├── copy_sources.sh             # Collects sources from repo tree
+│   ├── generate_components.py      # Generates per-operator PDSC components
+│   └── generate_register_all_kernels.py  # Generates #ifdef-guarded registrations
+├── stubs/                          # Bare-metal runtime stubs
+│   ├── bare_metal_pal.cpp
+│   ├── cxx_runtime_stubs.cpp
+│   ├── posix_stub.cpp
+│   └── random_ops_stubs.cpp
+└── templates/
+    └── PyTorch.ExecuTorch.pdsc.tpl # Pack description template
 ```
 
 ## Components
 
-The pack provides the following component hierarchy:
+- **Machine Learning::ExecuTorch::Runtime** — Core runtime (always required)
+- **Machine Learning::ExecuTorch::Kernel Utils** — Kernel registration utilities
+- **Machine Learning::ExecuTorch::Operators Portable \*** — Individual portable operators
+- **Machine Learning::ExecuTorch::Operators Quantized \*** — Quantized operators
+- **Machine Learning::ExecuTorch::Backend EthosU** — Ethos-U NPU backend
+- **Machine Learning::ExecuTorch::Backend CortexM** — CMSIS-NN optimized backend
 
-- **Machine Learning::ExecuTorch::Runtime** - Core runtime (always required)
-- **Machine Learning::ExecuTorch::Kernel Utils** - Kernel registration infrastructure
-- **Machine Learning::ExecuTorch::Operators::Portable::*** - Individual portable operators
-- **Machine Learning::ExecuTorch::Operators::Quantized::*** - Quantized operators
-- **Machine Learning::ExecuTorch::Backend::EthosU** - Ethos-U NPU backend (optional)
-- **Machine Learning::ExecuTorch::Backend::CortexM** - Cortex-M optimized backend (optional)
-
-## Building
-
-The pack is built using a Docker container. Build the image from the [cmsis-executorch](https://github.com/Arm-Examples/cmsis-executorch) Dockerfile:
+## Building locally
 
 ```bash
-# Build Docker image locally from remote Dockerfile
-curl -sL https://raw.githubusercontent.com/Arm-Examples/CMSIS-Executorch/main/.docker/Dockerfile | docker build -t executorch-arm-container:latest -
+# 1. Cross-compile ExecuTorch for Cortex-M (generates required headers)
+cmake \
+  -DCMAKE_TOOLCHAIN_FILE=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake \
+  -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON \
+  -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+  -DEXECUTORCH_BUILD_FLATC=ON \
+  -Bcmake-out-arm .
+cmake --build cmake-out-arm --config Release -j$(nproc)
 
-# From repository root, run the build script
-docker run --rm -v $(pwd):/workspace2 executorch-arm-container:latest /workspace2/scripts/build_pack.sh
+# 2. Build the pack
+backends/arm/cmsis_pack/scripts/build_pack.sh \
+  --executorch-root "$(pwd)" \
+  --build-dir cmake-out-arm \
+  --version "$(cat version.txt | sed 's/a0$//')" \
+  --output-dir pack-output
 ```
 
-**Build Versioning**: Each pack build automatically increments a build number using SemVer pre-release format: `MAJOR.MINOR.PATCH-build.BUILD` (e.g., `1.0.0-build.42`). See [BUILD_NUMBER.md](BUILD_NUMBER.md) for details.
+The resulting `.pack` file is a zip archive installable via `cpackget add <file>.pack`.
 
 ## Dependencies
 

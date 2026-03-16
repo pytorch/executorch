@@ -1,114 +1,126 @@
 #!/bin/bash
-# Copy ExecuTorch v1.1.0 sources from Docker container to pack src/
-# This script runs INSIDE the Docker container
+# Copy ExecuTorch sources from the repo tree and CMake build outputs
+# into a flat pack staging directory.
+#
+# Usage:
+#   ./copy_sources.sh --executorch-root <path> --build-dir <path> \
+#                     --pack-staging <path>
 set -e
 
-EXECUTORCH_SRC="/workspace/executorch"
-BUILD_DIR="/workspace2/out"
-PACK_SRC="/workspace2/executorch-pack/src"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PACK_DIR="$(dirname "$SCRIPT_DIR")"
 
-echo "ExecuTorch source version:"
-cd "$EXECUTORCH_SRC" && git describe --tags 2>/dev/null || git log --oneline -1
+# ---------------------------------------------------------------------------
+# Parse arguments
+# ---------------------------------------------------------------------------
+EXECUTORCH_ROOT=""
+BUILD_DIR=""
+PACK_SRC=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --executorch-root) EXECUTORCH_ROOT="$2"; shift 2 ;;
+        --build-dir)      BUILD_DIR="$2";        shift 2 ;;
+        --pack-staging)   PACK_SRC="$2";         shift 2 ;;
+        *) echo "Unknown argument: $1"; exit 1 ;;
+    esac
+done
+
+if [[ -z "$EXECUTORCH_ROOT" || -z "$BUILD_DIR" || -z "$PACK_SRC" ]]; then
+    echo "Usage: $0 --executorch-root <path> --build-dir <path> --pack-staging <path>"
+    exit 1
+fi
+
+echo "ExecuTorch root: $EXECUTORCH_ROOT"
+echo "CMake build dir: $BUILD_DIR"
+echo "Pack staging:    $PACK_SRC"
 echo ""
 
-# Clean and recreate pack source directory
-rm -rf "${PACK_SRC}"
-mkdir -p "${PACK_SRC}"
-
-echo "=== Creating include structure ==="
+# ---------------------------------------------------------------------------
+# Create include / src structure
+# ---------------------------------------------------------------------------
 mkdir -p "${PACK_SRC}/include/executorch"
 
 echo "  Copying runtime sources..."
 mkdir -p "${PACK_SRC}/src/runtime"
-cp -r "${EXECUTORCH_SRC}/runtime/core" "${PACK_SRC}/src/runtime/"
-cp -r "${EXECUTORCH_SRC}/runtime/executor" "${PACK_SRC}/src/runtime/"
-cp -r "${EXECUTORCH_SRC}/runtime/kernel" "${PACK_SRC}/src/runtime/"
-cp -r "${EXECUTORCH_SRC}/runtime/platform" "${PACK_SRC}/src/runtime/"
-cp -r "${EXECUTORCH_SRC}/runtime/backend" "${PACK_SRC}/src/runtime/"
-
-echo "  Copying headers to include path..."
+for d in core executor kernel platform backend; do
+    if [[ -d "${EXECUTORCH_ROOT}/runtime/$d" ]]; then
+        cp -r "${EXECUTORCH_ROOT}/runtime/$d" "${PACK_SRC}/src/runtime/"
+    fi
+done
 cp -r "${PACK_SRC}/src/runtime" "${PACK_SRC}/include/executorch/"
 
 echo "  Copying kernel sources..."
 mkdir -p "${PACK_SRC}/src/kernels"
-cp -r "${EXECUTORCH_SRC}/kernels/portable" "${PACK_SRC}/src/kernels/"
-cp -r "${EXECUTORCH_SRC}/kernels/quantized" "${PACK_SRC}/src/kernels/"
-cp -r "${EXECUTORCH_SRC}/kernels/prim_ops" "${PACK_SRC}/src/kernels/"
+for d in portable quantized prim_ops; do
+    if [[ -d "${EXECUTORCH_ROOT}/kernels/$d" ]]; then
+        cp -r "${EXECUTORCH_ROOT}/kernels/$d" "${PACK_SRC}/src/kernels/"
+    fi
+done
 cp -r "${PACK_SRC}/src/kernels" "${PACK_SRC}/include/executorch/"
 
 echo "  Copying extension sources..."
 mkdir -p "${PACK_SRC}/src/extension"
-cp -r "${EXECUTORCH_SRC}/extension/data_loader" "${PACK_SRC}/src/extension/" 2>/dev/null || true
-cp -r "${EXECUTORCH_SRC}/extension/memory_allocator" "${PACK_SRC}/src/extension/" 2>/dev/null || true
-cp -r "${EXECUTORCH_SRC}/extension/runner_util" "${PACK_SRC}/src/extension/" 2>/dev/null || true
+for d in data_loader memory_allocator runner_util; do
+    if [[ -d "${EXECUTORCH_ROOT}/extension/$d" ]]; then
+        cp -r "${EXECUTORCH_ROOT}/extension/$d" "${PACK_SRC}/src/extension/"
+    fi
+done
 cp -r "${PACK_SRC}/src/extension" "${PACK_SRC}/include/executorch/"
 
 echo "  Copying schema sources..."
 mkdir -p "${PACK_SRC}/src/schema"
-cp "${EXECUTORCH_SRC}/schema/"*.h "${PACK_SRC}/src/schema/" 2>/dev/null || true
-cp "${EXECUTORCH_SRC}/schema/"*.cpp "${PACK_SRC}/src/schema/" 2>/dev/null || true
-cp "${EXECUTORCH_SRC}/schema/"*.fbs "${PACK_SRC}/src/schema/" 2>/dev/null || true
+cp "${EXECUTORCH_ROOT}/schema/"*.h   "${PACK_SRC}/src/schema/" 2>/dev/null || true
+cp "${EXECUTORCH_ROOT}/schema/"*.cpp "${PACK_SRC}/src/schema/" 2>/dev/null || true
+cp "${EXECUTORCH_ROOT}/schema/"*.fbs "${PACK_SRC}/src/schema/" 2>/dev/null || true
 
-echo "  Copying generated schema headers..."
-if [ -d "${BUILD_DIR}/stage1/schema/include/executorch/schema" ]; then
-    cp "${BUILD_DIR}/stage1/schema/include/executorch/schema/"*.h "${PACK_SRC}/src/schema/" 2>/dev/null || true
-fi
+# Generated schema headers from CMake build
+for candidate in \
+    "${BUILD_DIR}/schema/include/executorch/schema" \
+    "${BUILD_DIR}/stage1/schema/include/executorch/schema"; do
+    if [[ -d "$candidate" ]]; then
+        cp "$candidate/"*.h "${PACK_SRC}/src/schema/" 2>/dev/null || true
+        break
+    fi
+done
 cp -r "${PACK_SRC}/src/schema" "${PACK_SRC}/include/executorch/"
 
-echo "  Copying generated headers (flatbuffers)..."
-if [ -d "${BUILD_DIR}/stage1/third-party/flatc_ep/include" ]; then
-    cp -r "${BUILD_DIR}/stage1/third-party/flatc_ep/include/flatbuffers" "${PACK_SRC}/include/"
-fi
+echo "  Copying generated flatbuffers headers..."
+for candidate in \
+    "${BUILD_DIR}/third-party/flatbuffers/include/flatbuffers" \
+    "${BUILD_DIR}/third-party/flatc_ep/include/flatbuffers" \
+    "${BUILD_DIR}/stage1/third-party/flatc_ep/include/flatbuffers"; do
+    if [[ -d "$candidate" ]]; then
+        cp -r "$candidate" "${PACK_SRC}/include/"
+        break
+    fi
+done
 
 echo "  Creating c10 and torch include paths..."
 C10_DIR="${PACK_SRC}/src/runtime/core/portable_type/c10/c10"
 TORCH_DIR="${PACK_SRC}/src/runtime/core/portable_type/c10/torch"
-if [ -d "${C10_DIR}" ]; then
-    cp -r "${C10_DIR}" "${PACK_SRC}/include/"
-fi
-if [ -d "${TORCH_DIR}" ]; then
-    cp -r "${TORCH_DIR}" "${PACK_SRC}/include/"
-fi
+[[ -d "$C10_DIR" ]]   && cp -r "$C10_DIR"   "${PACK_SRC}/include/"
+[[ -d "$TORCH_DIR" ]] && cp -r "$TORCH_DIR" "${PACK_SRC}/include/"
 
 echo "  Copying backend sources..."
 mkdir -p "${PACK_SRC}/src/backends"
-if [ -d "${EXECUTORCH_SRC}/backends/arm" ]; then
-    cp -r "${EXECUTORCH_SRC}/backends/arm" "${PACK_SRC}/src/backends/"
-fi
-if [ -d "${EXECUTORCH_SRC}/backends/cortex_m" ]; then
-    cp -r "${EXECUTORCH_SRC}/backends/cortex_m" "${PACK_SRC}/src/backends/"
-fi
+for backend in arm cortex_m; do
+    if [[ -d "${EXECUTORCH_ROOT}/backends/$backend" ]]; then
+        cp -r "${EXECUTORCH_ROOT}/backends/$backend" "${PACK_SRC}/src/backends/"
+    fi
+done
 cp -r "${PACK_SRC}/src/backends" "${PACK_SRC}/include/executorch/"
-
-echo "  Copying generated registration files..."
-mkdir -p "${PACK_SRC}/generated"
-if [ -d "${BUILD_DIR}/stage2/executorch_selected_kernels" ]; then
-    cp -r "${BUILD_DIR}/stage2/executorch_selected_kernels" "${PACK_SRC}/generated/"
-fi
-
-echo "  Copying kernel registration module..."
-mkdir -p "${PACK_SRC}/src/registration"
-if [ -f "/workspace2/executorch-pack/output/src/registration/RegisterAllKernels.cpp" ]; then
-    cp "/workspace2/executorch-pack/output/src/registration/RegisterAllKernels.cpp" "${PACK_SRC}/src/registration/"
-    echo "    Copied RegisterAllKernels.cpp from executorch-pack/output"
-fi
-
-echo "  Copying operator metadata..."
-if [ -f "${BUILD_DIR}/stage2/assets/meta/selected_operators.yaml" ]; then
-    mkdir -p "${PACK_SRC}/meta"
-    cp "${BUILD_DIR}/stage2/assets/meta/selected_operators.yaml" "${PACK_SRC}/meta/"
-fi
 
 echo "  Copying stubs..."
 mkdir -p "${PACK_SRC}/src/stubs"
-if [ -f "/workspace2/src/posix_stub.cpp" ]; then
-    cp "/workspace2/src/posix_stub.cpp" "${PACK_SRC}/src/stubs/"
+if [[ -d "$PACK_DIR/stubs" ]]; then
+    cp "$PACK_DIR/stubs/"*.cpp "${PACK_SRC}/src/stubs/" 2>/dev/null || true
 fi
-if [ -f "/workspace2/src/random_ops_stubs.cpp" ]; then
-    cp "/workspace2/src/random_ops_stubs.cpp" "${PACK_SRC}/src/stubs/"
-fi
+
+echo "  Preparing registration directory..."
+mkdir -p "${PACK_SRC}/src/registration"
 
 echo ""
 echo "=== Source copy complete ==="
 echo "Total .cpp files: $(find "${PACK_SRC}" -name '*.cpp' | wc -l)"
-echo "Total .h files: $(find "${PACK_SRC}" -name '*.h' | wc -l)"
+echo "Total .h files:   $(find "${PACK_SRC}" -name '*.h'   | wc -l)"
