@@ -384,7 +384,7 @@ public class LlmModule {
    */
   @Experimental
   public long prefillImages(int[] image, int width, int height, int channels) {
-    int nativeResult = appendImagesInput(image, width, height, channels);
+    int nativeResult = prefillImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
@@ -433,7 +433,7 @@ public class LlmModule {
     }
     // slice() so that getDirectBufferAddress on the native side returns a pointer
     // starting at the current position, not the base address.
-    int nativeResult = appendImagesInputBuffer(image.slice(), width, height, channels);
+    int nativeResult = prefillImagesInputBuffer(image.slice(), width, height, channels);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
@@ -499,17 +499,17 @@ public class LlmModule {
     }
     // slice() so that getDirectBufferAddress on the native side returns a pointer
     // starting at the current position, not the base address.
-    int nativeResult = appendNormalizedImagesInputBuffer(image.slice(), width, height, channels);
+    int nativeResult = prefillNormalizedImagesInputBuffer(image.slice(), width, height, channels);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
   }
 
-  private native int appendImagesInput(int[] image, int width, int height, int channels);
+  private native int prefillImagesInput(int[] image, int width, int height, int channels);
 
-  private native int appendImagesInputBuffer(ByteBuffer image, int width, int height, int channels);
+  private native int prefillImagesInputBuffer(ByteBuffer image, int width, int height, int channels);
 
-  private native int appendNormalizedImagesInputBuffer(
+  private native int prefillNormalizedImagesInputBuffer(
       ByteBuffer image, int width, int height, int channels);
 
   /**
@@ -524,14 +524,14 @@ public class LlmModule {
    */
   @Experimental
   public long prefillImages(float[] image, int width, int height, int channels) {
-    int nativeResult = appendNormalizedImagesInput(image, width, height, channels);
+    int nativeResult = prefillNormalizedImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int appendNormalizedImagesInput(
+  private native int prefillNormalizedImagesInput(
       float[] image, int width, int height, int channels);
 
   /**
@@ -546,14 +546,14 @@ public class LlmModule {
    */
   @Experimental
   public long prefillAudio(byte[] audio, int batch_size, int n_bins, int n_frames) {
-    int nativeResult = appendAudioInput(audio, batch_size, n_bins, n_frames);
+    int nativeResult = prefillAudioInput(audio, batch_size, n_bins, n_frames);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int appendAudioInput(byte[] audio, int batch_size, int n_bins, int n_frames);
+  private native int prefillAudioInput(byte[] audio, int batch_size, int n_bins, int n_frames);
 
   /**
    * Prefill the KV cache with the given preprocessed audio input.
@@ -567,14 +567,14 @@ public class LlmModule {
    */
   @Experimental
   public long prefillAudio(float[] audio, int batch_size, int n_bins, int n_frames) {
-    int nativeResult = appendAudioInputFloat(audio, batch_size, n_bins, n_frames);
+    int nativeResult = prefillAudioInputFloat(audio, batch_size, n_bins, n_frames);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int appendAudioInputFloat(
+  private native int prefillAudioInputFloat(
       float[] audio, int batch_size, int n_bins, int n_frames);
 
   /**
@@ -589,14 +589,14 @@ public class LlmModule {
    */
   @Experimental
   public long prefillRawAudio(byte[] audio, int batch_size, int n_channels, int n_samples) {
-    int nativeResult = appendRawAudioInput(audio, batch_size, n_channels, n_samples);
+    int nativeResult = prefillRawAudioInput(audio, batch_size, n_channels, n_samples);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int appendRawAudioInput(
+  private native int prefillRawAudioInput(
       byte[] audio, int batch_size, int n_channels, int n_samples);
 
   /**
@@ -608,7 +608,7 @@ public class LlmModule {
    */
   @Experimental
   public long prefillPrompt(String prompt) {
-    int nativeResult = appendTextInput(prompt);
+    int nativeResult = prefillTextInput(prompt);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
@@ -616,7 +616,7 @@ public class LlmModule {
   }
 
   // returns status
-  private native int appendTextInput(String prompt);
+  private native int prefillTextInput(String prompt);
 
   /**
    * Reset the context of the LLM. This will clear the KV cache and reset the state of the LLM.
