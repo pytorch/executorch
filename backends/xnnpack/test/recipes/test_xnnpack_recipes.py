@@ -42,6 +42,9 @@ class TestXnnpackRecipes(unittest.TestCase):
 
     def tearDown(self) -> None:
         super().tearDown()
+        # Clean up dog.jpg file if it exists (created by some model tests)
+        if os.path.exists("dog.jpg"):
+            os.remove("dog.jpg")
 
     def check_fully_delegated(self, program: Program) -> None:
         instructions = program.execution_plan[0].chains[0].instructions
@@ -260,31 +263,53 @@ class TestXnnpackRecipes(unittest.TestCase):
                 error > sqnr_threshold, f"Model '{model_name}' SQNR check failed"
             )
 
-    def test_all_models_with_recipes(self) -> None:
-        models_to_test = [
-            # Tuple format: (model_name, error tolerance, minimum sqnr)
-            ("linear", 1e-3, 20),
-            ("add", 1e-3, 20),
-            ("add_mul", 1e-3, 20),
-            ("dl3", 1e-3, 20),
-            ("ic3", None, None),
-            ("ic4", 1e-3, 20),
-            ("mv2", 1e-3, None),
-            ("mv3", 1e-3, None),
-            ("resnet18", 1e-3, 20),
-            ("resnet50", 1e-3, 20),
-            ("vit", 1e-1, 10),
-            ("w2l", 1e-3, 20),
-        ]
-        try:
-            for model_name, tolerance, sqnr in models_to_test:
-                with self.subTest(model=model_name):
-                    with torch.no_grad():
-                        self._test_model_with_factory(model_name, tolerance, sqnr)
-        finally:
-            # Clean up dog.jpg file if it exists
-            if os.path.exists("dog.jpg"):
-                os.remove("dog.jpg")
+    def test_linear_model(self) -> None:
+        with torch.no_grad():
+            self._test_model_with_factory("linear", 1e-3, 20)
+
+    def test_add_model(self) -> None:
+        with torch.no_grad():
+            self._test_model_with_factory("add", 1e-3, 20)
+
+    def test_add_mul_model(self) -> None:
+        with torch.no_grad():
+            self._test_model_with_factory("add_mul", 1e-3, 20)
+
+    def test_dl3_model(self) -> None:
+        with torch.no_grad():
+            self._test_model_with_factory("dl3", 1e-3, 20)
+
+    def test_ic3_model(self) -> None:
+        with torch.no_grad():
+            self._test_model_with_factory("ic3", None, None)
+
+    def test_ic4_model(self) -> None:
+        with torch.no_grad():
+            self._test_model_with_factory("ic4", 1e-3, 20)
+
+    def test_mv2_model(self) -> None:
+        with torch.no_grad():
+            self._test_model_with_factory("mv2", 1e-3, None)
+
+    def test_mv3_model(self) -> None:
+        with torch.no_grad():
+            self._test_model_with_factory("mv3", 1e-3, None)
+
+    def test_resnet18_model(self) -> None:
+        with torch.no_grad():
+            self._test_model_with_factory("resnet18", 1e-3, 20)
+
+    def test_resnet50_model(self) -> None:
+        with torch.no_grad():
+            self._test_model_with_factory("resnet50", 1e-3, 20)
+
+    def test_vit_model(self) -> None:
+        with torch.no_grad():
+            self._test_model_with_factory("vit", 1e-1, 10)
+
+    def test_w2l_model(self) -> None:
+        with torch.no_grad():
+            self._test_model_with_factory("w2l", 1e-3, 20)
 
     def test_validate_recipe_kwargs_int4_tensor_with_valid_group_size(
         self,
