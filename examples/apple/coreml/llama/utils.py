@@ -6,6 +6,8 @@
 
 import torch
 
+from executorch.examples.models.llama.lora import LoRALinear
+
 
 class SplitLinearModule(torch.nn.Module):
     def __init__(
@@ -94,7 +96,9 @@ def replace_linear_with_split_linear(
     model, out_target_split_size, out_max_splits, in_target_split_size, in_max_splits=1
 ):
     for name, module in model.named_children():
-        if isinstance(module, torch.nn.Linear):
+        if isinstance(module, LoRALinear):
+            continue
+        elif isinstance(module, torch.nn.Linear):
             assert module.bias is None, "SplitLinearModule does not support bias"
             new_module = SplitLinearModule(
                 module.in_features,
