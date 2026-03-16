@@ -31,6 +31,8 @@ class ScalarsToAttributePass(ArmPass):
         torch.ops.aten.rsub.Scalar,
         torch.ops.aten.mul.Tensor,
         torch.ops.aten.div.Tensor,
+        torch.ops.aten.div_.Tensor,
+        torch.ops.aten.div.Tensor_mode,
     ]
 
     def _convert_scalar_args(
