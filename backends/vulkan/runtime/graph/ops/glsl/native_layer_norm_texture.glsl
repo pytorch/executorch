@@ -41,6 +41,9 @@ layout(push_constant) uniform PRECISION restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+${layout_declare_spec_const(C, "int", "in_layout", "CONTIG_LAYOUT_INT")}
+const lowp int packed_dim = get_packed_dim(in_layout);
+
 #define MAX_WORKGROUP_SIZE 64
 
 // Shared memory factor increases shared memory allocation by a scale that
@@ -57,13 +60,6 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 shared VEC4_T shared_input[offset_pos_index(MAX_WORKGROUP_SIZE * SHARED_MEMORY_FACTOR)];
 
-ivec3 lpos_to_pos(const ivec3 lpos, const ivec4 axis_map) {
-  ivec3 pos;
-  pos[axis_map.x] = lpos.x;
-  pos[axis_map.y] = lpos.y;
-  pos[axis_map.z] = lpos.z;
-  return pos;
-}
 
 // Reduction of shared memory along the workgroup's x dimension.
 void reduce_input(const int width_stride, const int shared_idx_offset) {
@@ -87,7 +83,7 @@ void reduce_input(const int width_stride, const int shared_idx_offset) {
 void reduce_non_packed_dim() {
   const ivec3 lpos = ivec3(gl_GlobalInvocationID);
   const int width = in_meta.sizes.x;
-  ivec3 in_pos = lpos_to_pos(lpos, in_meta.axis_map);
+  ivec3 in_pos = lpos;
 
   const int width_stride = int(gl_WorkGroupSize.x) * SHARED_MEMORY_FACTOR;
 
@@ -104,7 +100,7 @@ void reduce_non_packed_dim() {
   for (int width_offset = 0; width_offset < width;
        width_offset += width_stride) {
     for (int si = 0; si < SHARED_MEMORY_FACTOR; si++) {
-      in_pos[in_meta.axis_map.x] =
+      in_pos[0] =
           width_offset + int(gl_LocalInvocationID.x + si * gl_WorkGroupSize.x);
 
       VEC4_T in_val = VEC4_T(0);
@@ -125,7 +121,7 @@ void reduce_non_packed_dim() {
   for (int width_offset = 0; width_offset < width;
        width_offset += width_stride) {
     for (int si = 0; si < SHARED_MEMORY_FACTOR; si++) {
-      in_pos[in_meta.axis_map.x] =
+      in_pos[0] =
           width_offset + int(gl_LocalInvocationID.x + si * gl_WorkGroupSize.x);
 
       VEC4_T in_val = mean;
@@ -145,27 +141,25 @@ void reduce_non_packed_dim() {
   VEC4_T rstd = pow(var + epsilon, VEC4_T(-0.5));
   VEC4_T offset = -rstd * mean;
 
-  const ivec3 in_lpos = lpos;
-  const ivec3 in_texel_pos = lpos_to_pos(in_lpos, in_meta.axis_map);
-  VEC4_T v = texelFetch(t_in, in_texel_pos, 0);
+  VEC4_T v = texelFetch(t_in, lpos, 0);
   VEC4_T weight = texelFetch(t_weight, ivec3(lpos.x, 0, 0), 0).xxxx;
   VEC4_T bias = texelFetch(t_bias, ivec3(lpos.x, 0, 0), 0).xxxx;
   VEC4_T outtex = (v * rstd + offset) * weight + bias;
 
   if (all(lessThan(lpos, out_meta.limits))) {
-    imageStore(t_out, lpos_to_pos(lpos, out_meta.axis_map), outtex);
+    imageStore(t_out, lpos, outtex);
   }
 
   if (gl_GlobalInvocationID.x == 0) {
-    imageStore(t_mean, lpos_to_pos(lpos, in_meta.axis_map), mean);
-    imageStore(t_rstd, lpos_to_pos(lpos, in_meta.axis_map), rstd);
+    imageStore(t_mean, lpos, mean);
+    imageStore(t_rstd, lpos, rstd);
   }
 }
 
 void reduce_packed_dim() {
   const ivec3 lpos = ivec3(gl_GlobalInvocationID);
   const int width = in_meta.sizes.x;
-  ivec3 in_pos = lpos_to_pos(lpos, in_meta.axis_map);
+  ivec3 in_pos = lpos;
 
   const int width_stride = int(gl_WorkGroupSize.x) * SHARED_MEMORY_FACTOR;
 
@@ -181,7 +175,7 @@ void reduce_packed_dim() {
   T var = T(0);
   const int remain = width & 3;
 
-  const int in_pos_x_limit = out_meta.limits[in_meta.axis_map.x];
+  const int in_pos_x_limit = out_meta.limits[0];
 
   VEC4_T accum = VEC4_T(0);
   for (int width_offset = 0; width_offset <= last_packed_width_index;
@@ -189,7 +183,7 @@ void reduce_packed_dim() {
     for (int si = 0; si < SHARED_MEMORY_FACTOR; si++) {
       const int in_pos_x =
           width_offset + int(gl_LocalInvocationID.x + si * gl_WorkGroupSize.x);
-      in_pos[in_meta.axis_map.x] = in_pos_x;
+      in_pos[0] = in_pos_x;
 
       VEC4_T in_val = VEC4_T(0);
       if (in_pos_x < in_pos_x_limit) {
@@ -221,7 +215,7 @@ void reduce_packed_dim() {
     for (int si = 0; si < SHARED_MEMORY_FACTOR; si++) {
       const int in_pos_x =
           width_offset + int(gl_LocalInvocationID.x + si * gl_WorkGroupSize.x);
-      in_pos[in_meta.axis_map.x] = in_pos_x;
+      in_pos[0] = in_pos_x;
 
       VEC4_T in_val = VEC4_T(mean);
       if (in_pos_x < in_pos_x_limit) {
@@ -248,30 +242,23 @@ void reduce_packed_dim() {
   T rstd = pow(var + T(epsilon), T(-0.5));
   T offset = -rstd * mean;
 
-  const ivec3 in_texel_pos = lpos_to_pos(lpos, in_meta.axis_map);
-  VEC4_T v = texelFetch(t_in, in_texel_pos, 0);
+  VEC4_T v = texelFetch(t_in, lpos, 0);
   VEC4_T weight = texelFetch(t_weight, ivec3(lpos.x, 0, 0), 0);
   VEC4_T bias = texelFetch(t_bias, ivec3(lpos.x, 0, 0), 0);
   VEC4_T outtex = (v * rstd + offset) * weight + bias;
 
   if (all(lessThan(lpos, out_meta.limits))) {
-    imageStore(t_out, lpos_to_pos(lpos, out_meta.axis_map), outtex);
+    imageStore(t_out, lpos, outtex);
   }
 
   if (gl_GlobalInvocationID.x == 0) {
-    imageStore(
-        t_mean,
-        lpos_to_pos(lpos, in_meta.axis_map),
-        VEC4_T(mean));
-    imageStore(
-        t_rstd,
-        lpos_to_pos(lpos, in_meta.axis_map),
-        VEC4_T(rstd));
+    imageStore(t_mean, lpos, VEC4_T(mean));
+    imageStore(t_rstd, lpos, VEC4_T(rstd));
   }
 }
 
 void main() {
-  if (in_meta.packed_dim != 0) {
+  if (packed_dim != 0) {
     reduce_non_packed_dim();
   } else {
     reduce_packed_dim();
