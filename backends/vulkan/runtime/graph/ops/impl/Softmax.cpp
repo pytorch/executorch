@@ -147,7 +147,7 @@ void add_softmax_node(
       group_dim = other_dim_2;
     }
 
-    spec_constants = {graph.packed_dim_of(out), reduce_dim_xyz, group_dim};
+    spec_constants = {graph.hashed_layout_of(out), reduce_dim_xyz, group_dim};
 
     const ValueRef group_dim_xyz_ref =
         graph.get_or_add_value_for_int(group_dim);
