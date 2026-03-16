@@ -263,54 +263,6 @@ class TestXnnpackRecipes(unittest.TestCase):
                 error > sqnr_threshold, f"Model '{model_name}' SQNR check failed"
             )
 
-    def test_linear_model(self) -> None:
-        with torch.no_grad():
-            self._test_model_with_factory("linear", 1e-3, 20)
-
-    def test_add_model(self) -> None:
-        with torch.no_grad():
-            self._test_model_with_factory("add", 1e-3, 20)
-
-    def test_add_mul_model(self) -> None:
-        with torch.no_grad():
-            self._test_model_with_factory("add_mul", 1e-3, 20)
-
-    def test_dl3_model(self) -> None:
-        with torch.no_grad():
-            self._test_model_with_factory("dl3", 1e-3, 20)
-
-    def test_ic3_model(self) -> None:
-        with torch.no_grad():
-            self._test_model_with_factory("ic3", None, None)
-
-    def test_ic4_model(self) -> None:
-        with torch.no_grad():
-            self._test_model_with_factory("ic4", 1e-3, 20)
-
-    def test_mv2_model(self) -> None:
-        with torch.no_grad():
-            self._test_model_with_factory("mv2", 1e-3, None)
-
-    def test_mv3_model(self) -> None:
-        with torch.no_grad():
-            self._test_model_with_factory("mv3", 1e-3, None)
-
-    def test_resnet18_model(self) -> None:
-        with torch.no_grad():
-            self._test_model_with_factory("resnet18", 1e-3, 20)
-
-    def test_resnet50_model(self) -> None:
-        with torch.no_grad():
-            self._test_model_with_factory("resnet50", 1e-3, 20)
-
-    def test_vit_model(self) -> None:
-        with torch.no_grad():
-            self._test_model_with_factory("vit", 1e-1, 10)
-
-    def test_w2l_model(self) -> None:
-        with torch.no_grad():
-            self._test_model_with_factory("w2l", 1e-3, 20)
-
     def test_validate_recipe_kwargs_int4_tensor_with_valid_group_size(
         self,
     ) -> None:
@@ -343,3 +295,34 @@ class TestXnnpackRecipes(unittest.TestCase):
         self.assertIn(
             "Parameter 'group_size' must be an integer, got str: 32", error_msg
         )
+
+
+# (model_name, error tolerance, minimum sqnr)
+_MODELS_TO_TEST = [
+    ("linear", 1e-3, 20),
+    ("add", 1e-3, 20),
+    ("add_mul", 1e-3, 20),
+    ("dl3", 1e-3, 20),
+    ("ic3", None, None),
+    ("ic4", 1e-3, 20),
+    ("mv2", 1e-3, None),
+    ("mv3", 1e-3, None),
+    ("resnet18", 1e-3, 20),
+    ("resnet50", 1e-3, 20),
+    ("vit", 1e-1, 10),
+    ("w2l", 1e-3, 20),
+]
+
+
+def _make_model_test(
+    model_name: str, tolerance: Optional[float], sqnr: Optional[float]
+) -> None:
+    def test_fn(self: TestXnnpackRecipes) -> None:
+        with torch.no_grad():
+            self._test_model_with_factory(model_name, tolerance, sqnr)
+
+    setattr(TestXnnpackRecipes, f"test_{model_name}_model", test_fn)
+
+
+for _name, _tol, _sqnr in _MODELS_TO_TEST:
+    _make_model_test(_name, _tol, _sqnr)
