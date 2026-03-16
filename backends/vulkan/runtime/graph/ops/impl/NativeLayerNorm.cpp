@@ -122,11 +122,10 @@ void add_native_layer_norm_node(
 
   vkapi::ParamsBindList param_ubos = {
       graph.meta_ubo(out_tensor), graph.meta_ubo(in)};
-  vkapi::SpecVarList spec_constants;
+  vkapi::SpecVarList spec_constants = {graph.hashed_layout_of(in)};
 
   if (is_buffer) {
     param_ubos.append(graph.meta_ubo(mean_tensor));
-    spec_constants = {graph.hashed_layout_of(in)};
   }
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
