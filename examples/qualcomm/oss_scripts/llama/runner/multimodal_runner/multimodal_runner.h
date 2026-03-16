@@ -141,16 +141,6 @@ class MultimodalRunner : public executorch::extension::llm::IRunner {
       multimodal_embeddings_dim_order_;
   TensorStruct<float> merged_embeddings_;
 
-  // scale and zero point for quantized KV cache
-  std::vector<float> input_k_cache_scales_;
-  std::vector<T> input_k_cache_zero_points_;
-  std::vector<float> input_v_cache_scales_;
-  std::vector<T> input_v_cache_zero_points_;
-  std::vector<float> output_k_cache_scales_;
-  std::vector<T> output_k_cache_zero_points_;
-  std::vector<float> output_v_cache_scales_;
-  std::vector<T> output_v_cache_zero_points_;
-
   // stats
   executorch::llm::Stats stats_;
 };
