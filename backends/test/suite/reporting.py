@@ -58,6 +58,7 @@ OP_COUNT_IGNORED_OPS = {
 
 
 class TestResult(IntEnum):
+    __test__ = False
     """Represents the result of a test case run, indicating success or a specific failure reason."""
 
     SUCCESS = 0
@@ -151,6 +152,7 @@ class TestResult(IntEnum):
 
 @dataclass
 class TestCaseSummary:
+    __test__ = False
     """
     Contains summary results for the execution of a single test case.
     """
@@ -210,6 +212,8 @@ class TestCaseSummary:
 
 @dataclass
 class TestSessionState:
+    __test__ = False
+
     seed: int
 
     # True if the CSV header has been written to report__path.
