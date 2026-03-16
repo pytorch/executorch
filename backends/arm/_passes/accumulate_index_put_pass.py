@@ -7,6 +7,10 @@ from typing import Set, Type
 import torch
 
 from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.decompose_index_tensor_to_gather_pass import (
+    DecomposeIndexTensorToGatherPass,
+)
+from executorch.backends.arm._passes.rewrite_index_put_pass import RewriteIndexPutPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -33,7 +37,10 @@ class AccumulateIndexPutPass(ArmPass):
     for the index_put op.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {
+        DecomposeIndexTensorToGatherPass,
+        RewriteIndexPutPass,
+    }
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in (aten_ops + edge_ops) or not self.allowed_to_transform(meta):
