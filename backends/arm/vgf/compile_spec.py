@@ -43,9 +43,9 @@ class VgfCompileSpec(ArmCompileSpec):
         if compiler_flags is None:
             compiler_flags = []
         self._set_compile_specs(tosa_spec, compiler_flags)
-        self.validate()
+        self._validate()
 
-    def validate(self):
+    def _validate(self):
         """Validate the configuration against VGF-supported TOSA profiles."""
         tosa_version = self.tosa_spec.version  # type: ignore[attr-defined]
         tosa_profiles = self.tosa_spec.profiles  # type: ignore[attr-defined]

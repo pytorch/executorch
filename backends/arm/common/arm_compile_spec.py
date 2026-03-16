@@ -135,7 +135,7 @@ class ArmCompileSpec(ABC):
             pipeline_config=pipeline_config,
         )
         cls._from_list_hook(compile_spec, unknown_specs)
-        compile_spec.validate()
+        compile_spec._validate()
         return compile_spec
 
     @classmethod
@@ -144,7 +144,7 @@ class ArmCompileSpec(ABC):
         pass
 
     @abstractmethod
-    def validate(self):
+    def _validate(self):
         """Throws an error if the compile spec is not valid."""
 
     def to_list(self):
