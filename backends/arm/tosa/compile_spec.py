@@ -39,8 +39,8 @@ class TosaCompileSpec(ArmCompileSpec):
         return "tosa"
 
     @classmethod
-    def from_list_hook(cls, compile_spec, specs: dict[str, str]):
-        super().from_list_hook(compile_spec, specs)
+    def _from_list_hook(cls, compile_spec, specs: dict[str, str]):
+        super()._from_list_hook(compile_spec, specs)
 
     def _create_default_pipeline_config(self):
         config = super()._create_default_pipeline_config()

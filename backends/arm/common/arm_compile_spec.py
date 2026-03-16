@@ -134,12 +134,12 @@ class ArmCompileSpec(ABC):
             output_order_workaround=output_order_workaround,
             pipeline_config=pipeline_config,
         )
-        cls.from_list_hook(compile_spec, unknown_specs)
+        cls._from_list_hook(compile_spec, unknown_specs)
         compile_spec.validate()
         return compile_spec
 
     @classmethod
-    def from_list_hook(cls, compile_spec, specs: dict[str, str]):  # noqa: B027
+    def _from_list_hook(cls, compile_spec, specs: dict[str, str]):  # noqa: B027
         """Allows subclasses to hook into parsing compile spec lists."""
         pass
 
