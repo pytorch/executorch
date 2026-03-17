@@ -1,4 +1,14 @@
 /**
+ * RFC v1 notes:
+ * - Controller owns interaction state and camera transform.
+ * - `setState` triggers canonical recompute/repaint and emits viewer events.
+ * - Theme/layer/colorBy mutations propagate through store -> minimap -> legend -> canvas.
+ *
+ * UX impact:
+ * - Every interaction path (UI or API) converges on one state pipeline.
+ * - Search, selection, and camera animation remain consistent across embeds.
+ */
+/**
  * ============================================================================
  * CLASS: ViewerController
  * ============================================================================
@@ -115,10 +125,16 @@
  * ============================================================================
  */
 class ViewerController {
-    constructor(viewer) {
+    constructor(viewer, initialState = {}) {
         this.viewer = viewer;
         this.store = viewer.store;
         this.transform = { x: 0, y: 0, k: 1 };
+
+        const initialTheme = initialState.themeName || initialState.theme || 'light';
+        const initialExtensions = initialState.activeExtensions
+            ? new Set(initialState.activeExtensions)
+            : new Set(Object.keys(this.store.extensions));
+        const initialColorBy = initialState.colorBy || 'base';
         
         this.state = {
             hoveredNodeId: null,
@@ -130,23 +146,54 @@ class ViewerController {
             descendants: new Set(),
             searchCandidates: [],
             searchSelectedIndex: -1,
-            highlightAncestors: true,
-            themeName: 'light',
+            highlightAncestors: initialState.highlightAncestors !== false,
+            themeName: initialTheme,
+            uiVisibility: { ...(initialState.uiVisibility || {}) },
             
             // V3 Extensibility State
-            activeExtensions: new Set(Object.keys(this.store.extensions)),
-            colorBy: 'base'
+            activeExtensions: initialExtensions,
+            colorBy: initialColorBy
         };
         
         // Initial computation of the virtual graph
         this.store.computeActiveGraph(this.state.activeExtensions, this.state.colorBy);
     }
     
-    setState(newState) {
-        Object.assign(this.state, newState);
+    snapshotState() {
+        return {
+            hoveredNodeId: this.state.hoveredNodeId,
+            hoveredEdge: this.state.hoveredEdge,
+            selectedNodeId: this.state.selectedNodeId,
+            selectedEdge: this.state.selectedEdge,
+            previewNodeId: this.state.previewNodeId,
+            searchCandidates: this.state.searchCandidates.slice(),
+            searchSelectedIndex: this.state.searchSelectedIndex,
+            highlightAncestors: this.state.highlightAncestors,
+            themeName: this.state.themeName,
+            theme: this.state.themeName,
+            activeExtensions: Array.from(this.state.activeExtensions),
+            colorBy: this.state.colorBy,
+            searchQuery: this.viewer.ui && this.viewer.ui.searchInput ? this.viewer.ui.searchInput.value : "",
+            camera: { ...this.transform },
+            uiVisibility: { ...(this.state.uiVisibility || {}) },
+        };
+    }
+
+    setState(newState, options = {}) {
+        const prev = this.snapshotState();
+
+        const patch = { ...newState };
+        if ('theme' in patch && !('themeName' in patch)) {
+            patch.themeName = patch.theme;
+        }
+        if ('activeExtensions' in patch && !(patch.activeExtensions instanceof Set)) {
+            patch.activeExtensions = new Set(patch.activeExtensions || []);
+        }
+
+        Object.assign(this.state, patch);
         
         // If graph structure or color changed, we must recompute and update UI
-        if ('activeExtensions' in newState || 'colorBy' in newState) {
+        if ('activeExtensions' in patch || 'colorBy' in patch) {
             this.store.computeActiveGraph(this.state.activeExtensions, this.state.colorBy);
             
             if (this.viewer.minimapRenderer) {
@@ -159,8 +206,34 @@ class ViewerController {
                 }
             }
         }
+
+        if ('themeName' in patch || 'theme' in patch) {
+            if (this.viewer.ui) {
+                this.viewer.ui.applyThemeToDOM();
+            }
+            if (this.viewer.minimapRenderer) {
+                this.viewer.minimapRenderer.generateThumbnail();
+            }
+        }
+
+        if (this.viewer.ui) {
+            this.viewer.ui.syncControlsFromState();
+        }
         
         this.viewer.renderAll();
+
+        const next = this.snapshotState();
+        this.viewer._emit('statechange', { prevState: prev, nextState: next, source: options.source || 'api' });
+        if (prev.selectedNodeId !== next.selectedNodeId) {
+            this.viewer._emit('selectionchange', {
+                prevSelection: prev.selectedNodeId,
+                nextSelection: next.selectedNodeId,
+                source: options.source || 'api',
+            });
+        }
+        if (prev.theme !== next.theme) {
+            this.viewer._emit('themechange', { prevTheme: prev.theme, nextTheme: next.theme, source: options.source || 'api' });
+        }
     }
 
     animateToTransform(targetX, targetY, targetK, duration = 300) {
@@ -386,7 +459,7 @@ class ViewerController {
             this.panToNode(nodeId);
             this.viewer.ui.closeSearchMenu();
             this.setState({ searchCandidates: [], searchSelectedIndex: -1, previewNodeId: null });
-            this.viewer.ui.searchInput.value = '';
+            if (this.viewer.ui.searchInput) this.viewer.ui.searchInput.value = '';
         }
     }
 

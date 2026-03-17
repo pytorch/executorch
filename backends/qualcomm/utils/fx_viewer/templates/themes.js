@@ -1,3 +1,13 @@
+/**
+ * Theme token registry.
+ *
+ * Runtime APIs:
+ * - `FXGraphViewer.setTheme(name)` switches active tokens.
+ * - `FXGraphViewer.registerTheme(name, tokens)` adds custom themes.
+ *
+ * UX impact:
+ * - Theme changes affect canvas/minimap/info/taskbar/legend consistently.
+ */
 const THEMES = {
     'light': {
         bg: '#ffffff',

@@ -1,4 +1,13 @@
 /**
+ * RFC v1 notes:
+ * - Minimap can mount in sidebar or externally provided slot.
+ * - Thumbnail regenerates on theme/layer changes and minimap resize.
+ *
+ * UX impact:
+ * - Users keep a stable global graph context even in compact/headless layouts.
+ * - Dragging minimap viewport gives fast navigation for large graphs.
+ */
+/**
  * ============================================================================
  * CLASS: MinimapRenderer
  * ============================================================================
@@ -53,9 +62,10 @@
 class MinimapRenderer {
     constructor(container, viewer) {
         this.viewer = viewer;
+        const mountPoint = container || this.viewer.sidebar || this.viewer.mainArea;
         this.container = document.createElement('div');
         this.container.className = 'fx-minimap-container';
-        this.viewer.sidebar.appendChild(this.container);
+        mountPoint.appendChild(this.container);
         
         this.canvas = document.createElement('canvas');
         this.canvas.className = 'fx-minimap';

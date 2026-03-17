@@ -1,4 +1,14 @@
 /**
+ * RFC v1 notes:
+ * - Stores immutable base graph + mutable extension registry.
+ * - `computeActiveGraph` materializes render-ready virtual nodes per state.
+ * - Runtime APIs (`upsertExtension`, `patchExtensionNodes`, etc.) power dynamic overlays.
+ *
+ * UX impact:
+ * - Slider-driven threshold updates can recolor nodes in-place without re-exporting payloads.
+ * - Layer toggles remain stable because data lives in extension registry, not transient view cache.
+ */
+/**
  * ============================================================================
  * CLASS: GraphDataStore
  * ============================================================================
@@ -180,6 +190,67 @@ class GraphDataStore {
             this.activeNodes.push(virtualNode);
             this.activeNodeMap.set(virtualNode.id, virtualNode);
         });
+    }
+
+    upsertExtension(extensionId, extensionPayload) {
+        if (!extensionId) {
+            throw new Error("upsertExtension requires a non-empty extensionId");
+        }
+        if (!extensionPayload || typeof extensionPayload !== 'object') {
+            throw new Error(`upsertExtension('${extensionId}') requires an object payload`);
+        }
+
+        const previous = this.extensions[extensionId] || {};
+        this.extensions[extensionId] = {
+            name: extensionPayload.name || previous.name || extensionId,
+            legend: Array.isArray(extensionPayload.legend) ? extensionPayload.legend : (previous.legend || []),
+            nodes: extensionPayload.nodes && typeof extensionPayload.nodes === 'object'
+                ? extensionPayload.nodes
+                : (previous.nodes || {}),
+        };
+    }
+
+    removeExtension(extensionId) {
+        if (!extensionId) return;
+        delete this.extensions[extensionId];
+    }
+
+    setExtensionLabel(extensionId, label) {
+        const ext = this.extensions[extensionId];
+        if (!ext) return;
+        ext.name = label || ext.name;
+    }
+
+    patchExtensionNodes(extensionId, patchByNodeId) {
+        if (!extensionId || !patchByNodeId || typeof patchByNodeId !== 'object') return;
+        const ext = this.extensions[extensionId];
+        if (!ext) {
+            this.upsertExtension(extensionId, { name: extensionId, nodes: {} });
+        }
+
+        const target = this.extensions[extensionId];
+        if (!target.nodes) target.nodes = {};
+
+        Object.entries(patchByNodeId).forEach(([nodeId, patch]) => {
+            const prev = target.nodes[nodeId] || {};
+            const next = { ...prev, ...patch };
+            if (patch && patch.info && typeof patch.info === 'object') {
+                next.info = { ...(prev.info || {}), ...patch.info };
+            }
+            if (patch && patch.tooltip && Array.isArray(patch.tooltip)) {
+                next.tooltip = patch.tooltip.slice();
+            }
+            if (patch && patch.label_append && Array.isArray(patch.label_append)) {
+                next.label_append = patch.label_append.slice();
+            }
+            target.nodes[nodeId] = next;
+        });
+    }
+
+    setExtensionLegend(extensionId, legend) {
+        const ext = this.extensions[extensionId];
+        if (!ext) return;
+        ext.legend = Array.isArray(legend) ? legend : [];
     }
 
     getAncestors(nodeId) {

@@ -1,4 +1,13 @@
 /**
+ * RFC v1 notes:
+ * - Canvas renderer subscribes to controller/store state and paints the active graph view.
+ * - Uses `ResizeObserver` + window resize to handle host container size changes.
+ *
+ * UX impact:
+ * - Resizable host panes in harness/embeds immediately trigger crisp canvas redraw.
+ * - Camera pan/zoom and hover/select feedback remain smooth under dynamic layouts.
+ */
+/**
  * ============================================================================
  * CLASS: CanvasRenderer
  * ============================================================================
@@ -98,15 +107,28 @@ class CanvasRenderer {
         
         this.resize();
         window.addEventListener('resize', () => this.resize());
+        this._resizeObserver = null;
+        if (typeof ResizeObserver !== 'undefined') {
+            this._resizeObserver = new ResizeObserver(() => this.resize());
+            this._resizeObserver.observe(this.canvasContainer);
+        }
         this.setupEvents();
     }
     
     resize() {
         const dpr = window.devicePixelRatio || 1;
         const rect = this.canvasContainer.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return;
         this.canvas.width = rect.width * dpr;
         this.canvas.height = rect.height * dpr;
         this.viewer.renderAll();
+    }
+
+    destroy() {
+        if (this._resizeObserver) {
+            this._resizeObserver.disconnect();
+            this._resizeObserver = null;
+        }
     }
     
     setupEvents() {
