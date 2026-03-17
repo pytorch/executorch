@@ -276,19 +276,22 @@ def linear_dq8ca_q4gsw(
 
 
 name = "linear_q4gsw"
-lib.define(f"""
+lib.define(
+    f"""
             {name}(
                 Tensor self,
                 Tensor weights,
                 Tensor weight_scales,
                 int group_size,
                 Tensor? bias = None) -> Tensor
-            """)
+            """
+)
 lib.impl(name, linear_q4gsw, "CompositeExplicitAutograd")
 linear_qc4w_op = getattr(getattr(torch.ops, namespace), name)
 
 name = "linear_dq8ca_q4gsw"
-lib.define(f"""
+lib.define(
+    f"""
             {name}(
                 Tensor input,
                 Tensor input_scales,
@@ -298,7 +301,8 @@ lib.define(f"""
                 Tensor weight_scales,
                 int group_size,
                 Tensor? bias = None) -> Tensor
-            """)
+            """
+)
 lib.impl(name, linear_dq8ca_q4gsw, "CompositeExplicitAutograd")
 linear_dq8ca_q4gsw_op = getattr(getattr(torch.ops, namespace), name)
 
@@ -336,7 +340,8 @@ def linear_q8ta_q8csw(
 
 
 name = "linear_q8ta_q8csw"
-lib.define(f"""
+lib.define(
+    f"""
     {name}(
         Tensor x,
         float input_scale,
@@ -345,7 +350,8 @@ lib.define(f"""
         Tensor weight_sums,
         Tensor weight_scales,
         Tensor? bias = None) -> Tensor
-    """)
+    """
+)
 lib.impl(name, linear_q8ta_q8csw, "CompositeExplicitAutograd")
 qa_q8csw_linear = getattr(getattr(torch.ops, namespace), name)
 
@@ -396,7 +402,8 @@ def q8ta_linear(
 
 
 name = "q8ta_linear"
-lib.define(f"""
+lib.define(
+    f"""
     {name}(
         Tensor x,
         float input_scale,
@@ -408,7 +415,8 @@ lib.define(f"""
         int output_zero_point,
         Tensor? bias = None,
         str activation = "none") -> Tensor
-    """)
+    """
+)
 lib.impl(name, q8ta_linear, "CompositeExplicitAutograd")
 q8ta_linear_op = getattr(getattr(torch.ops, namespace), name)
 
@@ -459,7 +467,8 @@ def q8ta_linear_gemv(
 
 
 name = "q8ta_linear_gemv"
-lib.define(f"""
+lib.define(
+    f"""
     {name}(
         Tensor x,
         float input_scale,
@@ -471,7 +480,8 @@ lib.define(f"""
         int output_zero_point,
         Tensor? bias = None,
         str activation = "none") -> Tensor
-    """)
+    """
+)
 lib.impl(name, q8ta_linear_gemv, "CompositeExplicitAutograd")
 q8ta_linear_gemv_op = getattr(getattr(torch.ops, namespace), name)
 
@@ -549,7 +559,8 @@ def q8ta_conv2d(
 
 
 name = "q8ta_conv2d"
-lib.define(f"""
+lib.define(
+    f"""
     {name}(
         Tensor x,
         float input_scale,
@@ -566,13 +577,15 @@ lib.define(f"""
         SymInt[] dilation,
         SymInt groups,
         str activation) -> Tensor
-    """)
+    """
+)
 lib.impl(name, q8ta_conv2d, "CompositeExplicitAutograd")
 q8ta_conv2d_op = getattr(getattr(torch.ops, namespace), name)
 
 
 name = "q8ta_conv2d_pw"
-lib.define(f"""
+lib.define(
+    f"""
     {name}(
         Tensor x,
         float input_scale,
@@ -589,7 +602,8 @@ lib.define(f"""
         SymInt[] dilation,
         SymInt groups,
         str activation) -> Tensor
-    """)
+    """
+)
 lib.impl(name, q8ta_conv2d, "CompositeExplicitAutograd")
 q8ta_conv2d_pw_op = getattr(getattr(torch.ops, namespace), name)
 
@@ -647,7 +661,8 @@ def q8ta_conv2d_dw(
 
 
 name = "q8ta_conv2d_dw"
-lib.define(f"""
+lib.define(
+    f"""
     {name}(
         Tensor x,
         float input_scale,
@@ -664,7 +679,8 @@ lib.define(f"""
         SymInt[] dilation,
         SymInt groups,
         str activation) -> Tensor
-    """)
+    """
+)
 lib.impl(name, q8ta_conv2d_dw, "CompositeExplicitAutograd")
 conv2d_q8ta_q8csw_dw_op = getattr(getattr(torch.ops, namespace), name)
 
@@ -743,7 +759,8 @@ def q8ta_conv2d_transposed(
 
 
 name = "q8ta_conv2d_transposed"
-lib.define(f"""
+lib.define(
+    f"""
     {name}(
         Tensor x,
         float input_scale,
@@ -761,7 +778,8 @@ lib.define(f"""
         SymInt[] dilation,
         SymInt groups,
         str activation) -> Tensor
-    """)
+    """
+)
 lib.impl(name, q8ta_conv2d_transposed, "CompositeExplicitAutograd")
 q8ta_conv2d_transposed_op = getattr(getattr(torch.ops, namespace), name)
 
