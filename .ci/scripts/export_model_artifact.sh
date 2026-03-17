@@ -25,6 +25,7 @@ Arguments:
                  - nvidia/diar_streaming_sortformer_4spk-v2
                  - nvidia/parakeet-tdt
                  - facebook/dinov2-small-imagenet1k-1-layer
+                 - facebook/dinov3-vits16-pretrain-lvd1689m
 
   quant_name   Quantization type (optional, default: non-quantized)
                Options:
@@ -176,6 +177,14 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  facebook/dinov3-vits16-pretrain-lvd1689m)
+    MODEL_NAME="dinov3"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   mistralai/Voxtral-Mini-4B-Realtime-2602)
     MODEL_NAME="voxtral_realtime"
     TASK=""
@@ -186,7 +195,7 @@ case "$HF_MODEL" in
     ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, facebook/dinov3-vits16-pretrain-lvd1689m"
     exit 1
     ;;
 esac
@@ -309,6 +318,24 @@ if [ "$MODEL_NAME" = "dinov2" ]; then
   python -m executorch.examples.models.dinov2.export_dinov2 \
       --backend "$DEVICE" \
       --output-dir "${OUTPUT_DIR}"
+
+  test -f "${OUTPUT_DIR}/model.pte"
+  if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
+    test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  fi
+  ls -al "${OUTPUT_DIR}"
+  echo "::endgroup::"
+  exit 0
+fi
+
+# DINOv3 uses a custom export script (random weights since classifier head is untrained)
+if [ "$MODEL_NAME" = "dinov3" ]; then
+  pip install -r examples/models/dinov3/install_requirements.txt
+
+  python -m executorch.examples.models.dinov3.export_dinov3 \
+      --backend "$DEVICE" \
+      --output-dir "${OUTPUT_DIR}" \
+      --random-weights
 
   test -f "${OUTPUT_DIR}/model.pte"
   if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
