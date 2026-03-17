@@ -13,11 +13,12 @@ class DecomposeLinearPass(ExportPass):
     """
     Decompose aten.linear into matmul + add to avoid addmm.
 
-    For 2D inputs, we unsqueeze to 3D before decomposition to force the matmul
-    code path instead of addmm. The C++ implementation of aten.linear directly
-    calls addmm for 2D inputs with bias, which would require implementing
+    For 2D inputs with bias, we unsqueeze to 3D before decomposition to force
+    the matmul code path instead of addmm. The C++ implementation of aten.linear
+    directly calls addmm for 2D inputs with bias, which would require implementing
     aoti_torch_mps_addmm_out. By unsqueezing to 3D, we force the matmul path,
-    then squeeze back to 2D.
+    then squeeze back to 2D. For 2D inputs without bias, Metal already supports
+    aoti_torch_mps_mm_out, so no unsqueeze is needed.
     """
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
@@ -61,11 +62,13 @@ class DecomposeLinearPass(ExportPass):
                         unsqueeze_op = torch.ops.aten.unsqueeze.default
                         squeeze_op = torch.ops.aten.squeeze.dims
 
-                    # Check if input is 2D
-                    needs_unsqueeze = False
-                    if hasattr(input_node, "meta") and "val" in input_node.meta:
-                        if len(input_node.meta["val"].shape) == 2:
-                            needs_unsqueeze = True
+                    # Unsqueeze to 3D only for 2D inputs with bias, to avoid addmm
+                    needs_unsqueeze = (
+                        bias_node is not None
+                        and hasattr(input_node, "meta")
+                        and "val" in input_node.meta
+                        and len(input_node.meta["val"].shape) == 2
+                    )
 
                     # Unsqueeze 2D input to 3D: (M, K) -> (1, M, K)
                     current_input = input_node
