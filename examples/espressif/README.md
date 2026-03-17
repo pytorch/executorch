@@ -135,11 +135,13 @@ ExecuTorch needs to be cross-compiled for the ESP32 target (Xtensa architecture)
 export IDF_TARGET=esp32s3  # or esp32
 
 # Configure ExecuTorch build for ESP32
+#Make sure to adjust the list of ops for your model or alter to use one of the selective build methods
 cmake --preset esp-baremetal -B cmake-out-esp \
     -DCMAKE_TOOLCHAIN_FILE=$IDF_PATH/tools/cmake/toolchain-${IDF_TARGET}.cmake \
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_DEVTOOLS=ON \
-    -DEXECUTORCH_SELECT_OPS_LIST="aten::add.out,aten::mul.out" \
+    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=OFF \
+    -DEXECUTORCH_SELECT_OPS_LIST="aten::add.out," \
     .
 
 cmake --build cmake-out-esp -j$(nproc)

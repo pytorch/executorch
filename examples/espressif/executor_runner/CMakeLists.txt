@@ -127,8 +127,7 @@ if(ESP_PLATFORM)
   list(APPEND esp_runner_libs
     extension_runner_util
     executorch
-    portable_kernels
-    portable_ops_lib
+    executorch_selected_kernels
   )
 
   if(TARGET xnnpack_backend)
