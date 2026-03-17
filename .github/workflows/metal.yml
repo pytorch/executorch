@@ -113,7 +113,8 @@ jobs:
 
         # Isolate Inductor cache per job to prevent PCH mtime conflicts between
         # parallel matrix jobs running on the same runner.
-        export TORCHINDUCTOR_CACHE_DIR="${RUNNER_TEMP}/inductor_cache"
+        INDUCTOR_CACHE_DIR=$(mktemp -d "${RUNNER_TEMP}/inductor_cache_XXXXXX")
+        export TORCHINDUCTOR_CACHE_DIR="${INDUCTOR_CACHE_DIR}"
         ${CONDA_RUN} bash .ci/scripts/export_model_artifact.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
 
   test-model-metal-e2e:
