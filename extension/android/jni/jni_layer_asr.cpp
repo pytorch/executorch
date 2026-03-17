@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-#include <executorch/extension/asr/runner/runner.h>
+#include <executorch/extension/asr/runner/seq2seq_runner.h>
 #include <executorch/extension/llm/runner/wav_loader.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
@@ -33,7 +33,7 @@ namespace {
 
 // Handle struct that holds both the ASR runner and optional preprocessor
 struct AsrModuleHandle {
-  std::unique_ptr<asr::AsrRunner> runner;
+  std::unique_ptr<asr::Seq2SeqRunner> runner;
   std::unique_ptr<Module> preprocessor;
 };
 
@@ -118,7 +118,7 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeCreate(
     auto handle = std::make_unique<AsrModuleHandle>();
 
     // Create the ASR runner
-    handle->runner = std::make_unique<asr::AsrRunner>(
+    handle->runner = std::make_unique<asr::Seq2SeqRunner>(
         modelPathStr, dataPathOpt, tokenizerPathStr);
 
     // Create the preprocessor module if path is provided
@@ -299,7 +299,7 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
   }
 
   // Build config
-  asr::AsrTranscribeConfig config;
+  asr::Seq2SeqConfig config;
   config.max_new_tokens = static_cast<int64_t>(maxNewTokens);
   config.temperature = temperature;
   config.decoder_start_token_id = static_cast<int64_t>(decoderStartTokenId);

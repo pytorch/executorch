@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 #
-# ASR runner for models like Whisper
+# ASR runners for Seq2Seq (e.g. Whisper) and Transducer (e.g. Parakeet) models
 #
 # ### Editing this file ###
 #
@@ -26,7 +26,9 @@ set(runner_deps executorch_core extension_module extension_tensor
 )
 
 # Define runner library
-add_library(extension_asr_runner STATIC runner.cpp)
+add_library(extension_asr_runner STATIC seq2seq_runner.cpp
+                                        transducer_runner.cpp
+)
 target_include_directories(
   extension_asr_runner INTERFACE ${_common_include_directories}
 )

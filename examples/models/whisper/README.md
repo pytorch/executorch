@@ -1,7 +1,7 @@
 # Whisper Runner
 
 This directory hosts a lightweight C++ helper that drives Whisper models
-exported to ExecuTorch. The `AsrRunner` owns the `Module` instance that
+exported to ExecuTorch. The `Seq2SeqRunner` owns the `Module` instance that
 wraps a bundled `.pte` program and optional `.ptd` weight file, loads the
 `encoder` and `text_decoder` methods, and exposes a `transcribe()` loop that
 streams decoded text pieces through a callback.

@@ -69,6 +69,7 @@ endif()
 list(
   APPEND
   link_libraries
+  extension_asr_runner
   extension_llm_runner
   extension_module
   extension_data_loader
