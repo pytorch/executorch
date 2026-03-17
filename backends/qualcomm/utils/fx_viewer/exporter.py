@@ -288,7 +288,10 @@ class FXGraphExporter:
 
         (function() {{
             try {{
-                const viewer = new FXGraphViewer('{container_id}', graphPayload);
+                const viewer = FXGraphViewer.create({{
+                    payload: graphPayload,
+                    mount: {{ root: '#{container_id}' }},
+                }});
                 viewer.init();
                 window.fxViewer = viewer;
             }} catch (e) {{
@@ -336,7 +339,10 @@ class FXGraphExporter:
         window.onload = function() {{
             const overlay = document.getElementById('loading-overlay');
             try {{
-                const viewer = new FXGraphViewer('graph-viewer-container', graphPayload);
+                const viewer = FXGraphViewer.create({{
+                    payload: graphPayload,
+                    mount: {{ root: '#graph-viewer-container' }},
+                }});
                 viewer.init();
                 overlay.style.display = 'none';
                 window.fxViewer = viewer;

@@ -1,5 +1,16 @@
 
 /**
+ * RFC v1 notes:
+ * - UI is a state adapter, not an independent state owner.
+ * - `syncControlsFromState()` keeps API-driven updates visible in controls.
+ * - `setControlVisibility()` supports host-level chrome toggling.
+ * - Optional fullscreen button bridges UI and `viewer.enterFullscreen()/exitFullscreen()`.
+ *
+ * UX impact:
+ * - External JS can change theme/layers/colorBy and users see matching control state.
+ * - Host can hide toolbar/search/layer UI for focused debugging surfaces.
+ */
+/**
  * ============================================================================
  * CLASS: UIManager
  * ============================================================================
@@ -54,80 +65,247 @@
  * ============================================================================
  */
 class UIManager {
-    constructor(container, viewer) {
+    constructor(container, viewer, options = {}) {
         this.container = container;
         this.viewer = viewer;
         this.controller = viewer.controller;
+        this.options = options;
+        this.controls = {
+            toolbar: true,
+            search: true,
+            layers: true,
+            colorBy: true,
+            theme: true,
+            legend: true,
+            zoomButtons: true,
+            fullscreenButton: false,
+            clearButton: true,
+            highlightButton: true,
+            ...(options.controls || {}),
+        };
+        this.mounts = options.mounts || {};
+        this.layerCheckboxes = new Map();
+        this.colorByRadios = new Map();
         this.buildUI();
     }
 
     buildUI() {
-        // Taskbar
         this.taskbar = document.createElement('div');
         this.taskbar.className = 'fx-taskbar';
-        
-        const searchContainer = document.createElement('div');
-        searchContainer.className = 'fx-search-container';
-        
-        this.searchInput = document.createElement('input');
-        this.searchInput.className = 'fx-search-input';
-        this.searchInput.placeholder = 'Search nodes (fuzzy)...';
-        
-        this.searchMenu = document.createElement('div');
-        this.searchMenu.className = 'fx-search-menu';
-        
-        searchContainer.appendChild(this.searchInput);
-        searchContainer.appendChild(this.searchMenu);
-        
-        // Layers Dropdown
-        const layersContainer = document.createElement('div');
-        layersContainer.style.position = 'relative';
-        layersContainer.style.marginLeft = '10px';
-        
-        const btnLayers = document.createElement('button');
-        btnLayers.className = 'fx-button';
-        btnLayers.innerHTML = '&#x1F4DA; Layers';
-        
-        const layersMenu = document.createElement('div');
-        layersMenu.className = 'fx-layers-menu';
-        
-        // Build Layers Menu HTML
-        let layersHtml = `<div style="padding: 5px; font-weight: bold; border-bottom: 1px solid #ccc;">Extensions</div>`;
-        for (const [extId, extData] of Object.entries(this.viewer.store.extensions)) {
-            layersHtml += `
-                <label style="display: block; padding: 5px; cursor: pointer;">
-                    <input type="checkbox" class="fx-layer-checkbox" value="${extId}" checked>
-                    ${extData.name}
-                </label>
-            `;
+
+        this.searchContainer = null;
+        this.layersContainer = null;
+        this.layersMenu = null;
+        this.themeSelect = null;
+        this.btnHighlight = null;
+        this.btnZoomFit = null;
+        this.btnFullscreen = null;
+        this.btnClear = null;
+
+        if (this.controls.search) {
+            this.searchContainer = document.createElement('div');
+            this.searchContainer.className = 'fx-search-container';
+
+            this.searchInput = document.createElement('input');
+            this.searchInput.className = 'fx-search-input';
+            this.searchInput.placeholder = 'Search nodes (fuzzy)...';
+
+            this.searchMenu = document.createElement('div');
+            this.searchMenu.className = 'fx-search-menu';
+
+            this.searchContainer.appendChild(this.searchInput);
+            this.searchContainer.appendChild(this.searchMenu);
+            this.taskbar.appendChild(this.searchContainer);
+        } else {
+            this.searchInput = null;
+            this.searchMenu = null;
         }
-        
-        layersHtml += `<div style="padding: 5px; font-weight: bold; border-bottom: 1px solid #ccc; margin-top: 10px;">Color By</div>`;
-        layersHtml += `
-            <label style="display: block; padding: 5px; cursor: pointer;">
-                <input type="radio" name="fx-color-by" value="base" checked>
-                Base Graph
-            </label>
-        `;
-        for (const [extId, extData] of Object.entries(this.viewer.store.extensions)) {
-            if (extData.legend && extData.legend.length > 0) {
+
+        if (this.controls.layers || this.controls.colorBy) {
+            this.layersContainer = document.createElement('div');
+            this.layersContainer.style.position = 'relative';
+            this.layersContainer.style.marginLeft = '10px';
+
+            this.btnLayers = document.createElement('button');
+            this.btnLayers.className = 'fx-button';
+            this.btnLayers.innerHTML = '&#x1F4DA; Layers';
+
+            this.layersMenu = document.createElement('div');
+            this.layersMenu.className = 'fx-layers-menu';
+            this.rebuildLayersMenu();
+
+            this.btnLayers.onclick = () => {
+                this.layersMenu.style.display = this.layersMenu.style.display === 'block' ? 'none' : 'block';
+            };
+
+            this.layersContainer.appendChild(this.btnLayers);
+            this.layersContainer.appendChild(this.layersMenu);
+            this.taskbar.appendChild(this.layersContainer);
+        }
+
+        if (this.controls.highlightButton) {
+            this.btnHighlight = document.createElement('button');
+            this.btnHighlight.className = 'fx-button active';
+            this.btnHighlight.innerHTML = '&#x1F517;';
+            this.btnHighlight.title = 'Toggle Highlight Ancestors/Descendants';
+            this.btnHighlight.onclick = () => {
+                this.controller.state.highlightAncestors = !this.controller.state.highlightAncestors;
+                this.btnHighlight.classList.toggle('active', this.controller.state.highlightAncestors);
+                this.controller.setState({});
+            };
+            this.taskbar.appendChild(this.btnHighlight);
+        }
+
+        if (this.controls.zoomButtons) {
+            this.btnZoomFit = document.createElement('button');
+            this.btnZoomFit.className = 'fx-button';
+            this.btnZoomFit.innerHTML = '&#x26F6;';
+            this.btnZoomFit.title = 'Zoom to Fit';
+            this.btnZoomFit.onclick = () => this.controller.zoomToFit();
+            this.taskbar.appendChild(this.btnZoomFit);
+        }
+
+        if (this.controls.fullscreenButton) {
+            this.btnFullscreen = document.createElement('button');
+            this.btnFullscreen.className = 'fx-button';
+            this.btnFullscreen.innerHTML = '&#x26F6;';
+            this.btnFullscreen.title = 'Enter Fullscreen';
+            this.btnFullscreen.onclick = async () => {
+                if (document.fullscreenElement) {
+                    await this.viewer.exitFullscreen();
+                } else {
+                    await this.viewer.enterFullscreen();
+                }
+                this.syncFullscreenButton();
+            };
+            this.taskbar.appendChild(this.btnFullscreen);
+            document.addEventListener('fullscreenchange', () => this.syncFullscreenButton());
+        }
+
+        if (this.controls.clearButton) {
+            this.btnClear = document.createElement('button');
+            this.btnClear.className = 'fx-button';
+            this.btnClear.innerHTML = '&#x2716;';
+            this.btnClear.title = 'Clear Selection';
+            this.btnClear.onclick = () => {
+                if (this.searchInput) this.searchInput.value = '';
+                this.controller.handleSearch('');
+                this.controller.clearSelection();
+            };
+            this.taskbar.appendChild(this.btnClear);
+        }
+
+        if (this.controls.theme) {
+            this.themeSelect = document.createElement('select');
+            this.themeSelect.className = 'fx-select';
+            this.themeSelect.innerHTML = `<option value="light">&#x2600; Light</option><option value="dark">&#x1F319; Dark</option>`;
+            this.themeSelect.onchange = (e) => {
+                this.controller.setState({ themeName: e.target.value });
+            };
+            this.taskbar.appendChild(this.themeSelect);
+        }
+
+        this.infoPanel = document.createElement('div');
+        this.infoPanel.className = 'fx-info-panel';
+        this.infoPanel.innerHTML = '<div style="color: #888; text-align: center; margin-top: 20px;">No node selected<br><br>Hover or click a node</div>';
+
+        this.legendOverlay = document.createElement('div');
+        this.legendOverlay.className = 'fx-legend-overlay';
+
+        const toolbarContainer = this.mounts.toolbarContainer || this.container;
+        const legendContainer = this.mounts.legendContainer || this.container;
+        const infoContainer = this.mounts.infoContainer || this.viewer.sidebar || this.container;
+        if (this.controls.toolbar) {
+            toolbarContainer.appendChild(this.taskbar);
+        }
+        if (this.controls.legend) {
+            legendContainer.appendChild(this.legendOverlay);
+        } else {
+            this.legendOverlay.style.display = 'none';
+        }
+        infoContainer.appendChild(this.infoPanel);
+
+        this.applyThemeToDOM();
+        this.renderLegend();
+
+        if (this.searchInput) {
+            this.searchInput.addEventListener('input', (e) => {
+                this.controller.handleSearch(e.target.value);
+                this.searchMenu.style.display = e.target.value ? 'block' : 'none';
+            });
+
+            this.searchInput.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    this.controller.handleSearchNavigate(1);
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    this.controller.handleSearchNavigate(-1);
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.controller.handleSearchSelect();
+                }
+            });
+        }
+
+        document.addEventListener('click', (e) => {
+            if (this.searchContainer && !this.searchContainer.contains(e.target)) {
+                this.closeSearchMenu();
+                if (this.controller.state.searchCandidates.length > 0) {
+                    this.controller.setState({ searchCandidates: [], searchSelectedIndex: -1, previewNodeId: null });
+                }
+            }
+            if (this.layersContainer && !this.layersContainer.contains(e.target)) {
+                this.layersMenu.style.display = 'none';
+            }
+        });
+
+        this.syncControlsFromState();
+        this.syncFullscreenButton();
+    }
+
+    rebuildLayersMenu() {
+        if (!this.layersMenu) return;
+        this.layerCheckboxes.clear();
+        this.colorByRadios.clear();
+        const radioName = `fx-color-by-${this.viewer.containerId || 'viewer'}`;
+
+        let layersHtml = '';
+        if (this.controls.layers) {
+            layersHtml += `<div style="padding: 5px; font-weight: bold; border-bottom: 1px solid #ccc;">Extensions</div>`;
+            for (const [extId, extData] of Object.entries(this.viewer.store.extensions)) {
                 layersHtml += `
                     <label style="display: block; padding: 5px; cursor: pointer;">
-                        <input type="radio" name="fx-color-by" value="${extId}">
+                        <input type="checkbox" class="fx-layer-checkbox" value="${extId}">
                         ${extData.name}
                     </label>
                 `;
             }
         }
-        layersMenu.innerHTML = layersHtml;
-        layersContainer.appendChild(btnLayers);
-        layersContainer.appendChild(layersMenu);
 
-        // Layers Event Listeners
-        btnLayers.onclick = () => {
-            layersMenu.style.display = layersMenu.style.display === 'block' ? 'none' : 'block';
-        };
-        layersMenu.querySelectorAll('.fx-layer-checkbox').forEach(cb => {
+        if (this.controls.colorBy) {
+            layersHtml += `<div style="padding: 5px; font-weight: bold; border-bottom: 1px solid #ccc; margin-top: 10px;">Color By</div>`;
+            layersHtml += `
+                <label style="display: block; padding: 5px; cursor: pointer;">
+                    <input type="radio" name="${radioName}" value="base">
+                    Base Graph
+                </label>
+            `;
+            for (const [extId, extData] of Object.entries(this.viewer.store.extensions)) {
+                if (extData.legend && extData.legend.length > 0) {
+                    layersHtml += `
+                        <label style="display: block; padding: 5px; cursor: pointer;">
+                            <input type="radio" name="${radioName}" value="${extId}">
+                            ${extData.name}
+                        </label>
+                    `;
+                }
+            }
+        }
+
+        this.layersMenu.innerHTML = layersHtml;
+        this.layersMenu.querySelectorAll('.fx-layer-checkbox').forEach(cb => {
+            this.layerCheckboxes.set(cb.value, cb);
             cb.onchange = (e) => {
                 const active = new Set(this.controller.state.activeExtensions);
                 if (e.target.checked) active.add(e.target.value);
@@ -135,102 +313,64 @@ class UIManager {
                 this.controller.setState({ activeExtensions: active });
             };
         });
-        layersMenu.querySelectorAll('input[type="radio"]').forEach(radio => {
+        this.layersMenu.querySelectorAll('input[type="radio"]').forEach(radio => {
+            this.colorByRadios.set(radio.value, radio);
             radio.onchange = (e) => {
                 this.controller.setState({ colorBy: e.target.value });
             };
         });
-        
-        const btnHighlight = document.createElement('button');
-        btnHighlight.className = 'fx-button active';
-        btnHighlight.innerHTML = '&#x1F517;'; // Link symbol
-        btnHighlight.title = 'Toggle Highlight Ancestors/Descendants';
-        btnHighlight.onclick = () => {
-            this.controller.state.highlightAncestors = !this.controller.state.highlightAncestors;
-            btnHighlight.classList.toggle('active', this.controller.state.highlightAncestors);
-            this.controller.setState({});
-        };
+    }
 
-        const btnZoomFit = document.createElement('button');
-        btnZoomFit.className = 'fx-button';
-        btnZoomFit.innerHTML = '&#x26F6;'; // Square with four arrows
-        btnZoomFit.title = 'Zoom to Fit';
-        btnZoomFit.onclick = () => this.controller.zoomToFit();
-        
-        const btnClear = document.createElement('button');
-        btnClear.className = 'fx-button';
-        btnClear.innerHTML = '&#x2716;'; // Heavy multiplication x
-        btnClear.title = 'Clear Selection';
-        btnClear.onclick = () => {
-            this.searchInput.value = '';
-            this.controller.handleSearch('');
-            this.controller.clearSelection();
-        };
+    syncControlsFromState() {
+        const state = this.controller.state;
+        if (this.themeSelect) {
+            this.themeSelect.value = state.themeName;
+        }
+        if (this.btnHighlight) {
+            this.btnHighlight.classList.toggle('active', !!state.highlightAncestors);
+        }
+        if (this.layerCheckboxes.size > 0) {
+            this.layerCheckboxes.forEach((checkbox, extId) => {
+                checkbox.checked = state.activeExtensions.has(extId);
+            });
+        }
+        if (this.colorByRadios.size > 0) {
+            this.colorByRadios.forEach((radio, extId) => {
+                radio.checked = extId === state.colorBy;
+            });
+        }
+    }
 
-        const themeSelect = document.createElement('select');
-        themeSelect.className = 'fx-select';
-        themeSelect.innerHTML = `<option value="light">&#x2600; Light</option><option value="dark">&#x1F319; Dark</option>`;
-        themeSelect.onchange = (e) => {
-            this.controller.setState({ themeName: e.target.value });
-            this.applyThemeToDOM();
-        };
+    setControlVisibility(flags = {}) {
+        if ('toolbar' in flags && this.taskbar) {
+            this.taskbar.style.display = flags.toolbar ? '' : 'none';
+        }
+        if ('search' in flags && this.searchContainer) {
+            this.searchContainer.style.display = flags.search ? '' : 'none';
+        }
+        if ('layers' in flags && this.layersContainer) {
+            this.layersContainer.style.display = flags.layers ? '' : 'none';
+        }
+        if ('theme' in flags && this.themeSelect) {
+            this.themeSelect.style.display = flags.theme ? '' : 'none';
+        }
+        if ('legend' in flags && this.legendOverlay) {
+            this.legendOverlay.style.display = flags.legend ? '' : 'none';
+        }
+        if ('fullscreenButton' in flags && this.btnFullscreen) {
+            this.btnFullscreen.style.display = flags.fullscreenButton ? '' : 'none';
+        }
+    }
 
-        this.taskbar.appendChild(searchContainer);
-        this.taskbar.appendChild(layersContainer);
-        this.taskbar.appendChild(btnHighlight);
-        this.taskbar.appendChild(btnZoomFit);
-        this.taskbar.appendChild(btnClear);
-        this.taskbar.appendChild(themeSelect);
-        
-        // Info Panel
-        this.infoPanel = document.createElement('div');
-        this.infoPanel.className = 'fx-info-panel';
-        this.infoPanel.innerHTML = '<div style="color: #888; text-align: center; margin-top: 20px;">No node selected<br><br>Hover or click a node</div>';
-        
-        // Legend Overlay
-        this.legendOverlay = document.createElement('div');
-        this.legendOverlay.className = 'fx-legend-overlay';
-        
-        this.container.appendChild(this.taskbar);
-        this.container.appendChild(this.legendOverlay);
-        this.viewer.sidebar.appendChild(this.infoPanel);
-        
-        this.applyThemeToDOM();
-        this.renderLegend();
-        
-        // Events
-        this.searchInput.addEventListener('input', (e) => {
-            this.controller.handleSearch(e.target.value);
-            this.searchMenu.style.display = e.target.value ? 'block' : 'none';
-        });
-        
-        this.searchInput.addEventListener('keydown', (e) => {
-            if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                this.controller.handleSearchNavigate(1);
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                this.controller.handleSearchNavigate(-1);
-            } else if (e.key === 'Enter') {
-                e.preventDefault();
-                this.controller.handleSearchSelect();
-            }
-        });
-
-        document.addEventListener('click', (e) => {
-            if (!searchContainer.contains(e.target)) {
-                this.closeSearchMenu();
-                if (this.controller.state.searchCandidates.length > 0) {
-                    this.controller.setState({ searchCandidates: [], searchSelectedIndex: -1, previewNodeId: null });
-                }
-            }
-            if (!layersContainer.contains(e.target)) {
-                layersMenu.style.display = 'none';
-            }
-        });
+    syncFullscreenButton() {
+        if (!this.btnFullscreen) return;
+        const active = !!document.fullscreenElement;
+        this.btnFullscreen.title = active ? 'Exit Fullscreen' : 'Enter Fullscreen';
+        this.btnFullscreen.innerHTML = active ? '&#x2715;' : '&#x26F6;';
     }
 
     renderLegend() {
+        if (!this.controls.legend || !this.legendOverlay) return;
         const colorBy = this.controller.state.colorBy;
         let legendData = [];
         let title = "Legend";
@@ -283,16 +423,24 @@ class UIManager {
         this.viewer.wrapper.style.setProperty('--fx-ui-hover', theme.uiHover);
         this.viewer.wrapper.style.backgroundColor = theme.bg;
         this.viewer.wrapper.style.color = theme.text;
-        this.viewer.sidebar.style.backgroundColor = theme.bg;
-        this.viewer.sidebar.style.borderLeftColor = theme.uiBorder;
-        
-        this.taskbar.style.backgroundColor = theme.uiBg;
-        this.taskbar.style.borderColor = theme.uiBorder;
-        this.searchMenu.style.backgroundColor = theme.uiBg;
-        this.searchMenu.style.borderColor = theme.uiBorder;
-        
-        this.legendOverlay.style.backgroundColor = theme.legendBg;
-        this.legendOverlay.style.borderColor = theme.uiBorder;
+        if (this.viewer.sidebar) {
+            this.viewer.sidebar.style.backgroundColor = theme.bg;
+            this.viewer.sidebar.style.borderLeftColor = theme.uiBorder;
+        }
+
+        if (this.taskbar) {
+            this.taskbar.style.backgroundColor = theme.uiBg;
+            this.taskbar.style.borderColor = theme.uiBorder;
+        }
+        if (this.searchMenu) {
+            this.searchMenu.style.backgroundColor = theme.uiBg;
+            this.searchMenu.style.borderColor = theme.uiBorder;
+        }
+
+        if (this.legendOverlay) {
+            this.legendOverlay.style.backgroundColor = theme.legendBg;
+            this.legendOverlay.style.borderColor = theme.uiBorder;
+        }
 
         this.infoPanel.style.backgroundColor = theme.bg;
         
@@ -320,10 +468,11 @@ class UIManager {
     }
 
     closeSearchMenu() {
-        this.searchMenu.style.display = 'none';
+        if (this.searchMenu) this.searchMenu.style.display = 'none';
     }
 
     updateSearchResults(candidates, selectedIndex) {
+        if (!this.searchMenu) return;
         this.searchMenu.innerHTML = '';
         if (candidates.length === 0) return;
         this.searchMenu.style.display = 'block';
@@ -343,6 +492,7 @@ class UIManager {
     }
 
     updateSearchActiveItem(selectedIndex) {
+        if (!this.searchMenu) return;
         Array.from(this.searchMenu.children).forEach((item, idx) => {
             if (idx === selectedIndex) {
                 item.classList.add('active');
@@ -357,6 +507,7 @@ class UIManager {
     }
 
     renderSearchCandidatesChunk(candidates, selectedIndex, start=0, end=50) {
+        if (!this.searchMenu) return;
         const theme = THEMES[this.controller.state.themeName];
         for (let idx = start; idx < Math.min(end, candidates.length); idx++) {
             const cand = candidates[idx];
