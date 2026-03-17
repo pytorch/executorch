@@ -257,7 +257,10 @@ def test_clamp_vgf_quant(test_data):
     pipeline.run()
 
 
-aten_op_tensor = "torch.ops.aten.clamp.Tensor"
+aten_op_tensor = [
+    "torch.ops.aten.clamp.Tensor",
+    "torch.ops.dim_order_ops._to_dim_order_copy.default",
+]
 exir_op_tensor = "executorch_exir_dialects_edge__ops_aten_clamp_Tensor"
 
 test_data_suite_tensor_FP = {
