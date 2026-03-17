@@ -90,6 +90,29 @@ Note: Files ending with `.bin ` do not support graph visualization in qairt_visu
 For more details, visit the [QAIRT Visualizer](https://pypi.org/project/qairt-visualizer/).
 
 
+# Observatory (GraphView Minimal, RFC-aligned)
+
+A new, review-focused Observatory implementation is available under:
+
+`backends/qualcomm/debugger/observatory`
+
+Key properties:
+1. Uses RFC-style view contracts: `ViewBlock`, `ViewList`, and `GraphView`.
+2. Keeps UI behavior close to legacy observatory while splitting JS into topic files.
+3. Supports ETRecord auto-collection through context-managed monkey patching.
+4. Migrates minimal built-in lenses for v1: metadata and stack trace (plus canonical graph lens).
+
+Quick demo:
+
+```bash
+source ~/executorch/.venv/bin/activate
+source ~/executorch/qairt/2.37.0.250724/bin/envsetup.sh
+export PYTHONPATH=~/
+python backends/qualcomm/debugger/observatory/examples/demo_graphview_accuracy_compare.py \
+    --model toy --output-dir /tmp/observatory_graphview_demo
+```
+
+
 # ExecuTorch QNN Intermediate Output Debugger
 
 ExecuTorch QNN Intermediate Output Debugger is a tool that helps users debug intermediate output accuracy by comparing CPU outputs with QNN outputs. This tool offers a variety of output formats and flexibility for users to define their own metrics when debugging.
