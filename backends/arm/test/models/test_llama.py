@@ -102,11 +102,11 @@ class TestLlama:
         return llama_model, llama_inputs, llama_meta
 
 
-def _use_partial_quantizer(pipeline):
+def _use_partial_quantizer(pipeline, eps=2**-16):
     """Set the pipeline's quantizer to only include Linear layers."""
     pipeline.quantizer.set_global(None)
     pipeline.quantizer.set_module_type(
-        torch.nn.Linear, get_symmetric_quantization_config()
+        torch.nn.Linear, get_symmetric_quantization_config(eps=eps)
     )
 
 
@@ -209,12 +209,11 @@ def test_llama_tosa_INT_FP_partial_quant():
             tosa_extensions=["FP"],
             # Due to a few outliers, atol must be set high
             atol=1.1,
-            # TODO(MLETORCH-1875): reduce tolerance
-            qtol=75,
+            qtol=1,
             frobenius_threshold=None,
             cosine_threshold=None,
         )
-        _use_partial_quantizer(pipeline)
+        _use_partial_quantizer(pipeline, eps=2**-12)
         pipeline.run()
 
 
@@ -234,8 +233,7 @@ def test_llama_vgf_quant_partial_quant():
             quantize=True,
             # Due to a few outliers, atol must be set high
             atol=1.1,
-            # TODO(MLETORCH-1875): reduce tolerance
-            qtol=75,
+            qtol=1,
         )
-        _use_partial_quantizer(pipeline)
+        _use_partial_quantizer(pipeline, eps=2**-12)
         pipeline.run()
