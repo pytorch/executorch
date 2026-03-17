@@ -476,35 +476,70 @@ class TOSAQuantizer(Quantizer):
 
     @global_config.setter
     def global_config(self, value: Optional[QuantizationConfig]) -> None:
-        self.quantizer.global_config = value
+        if isinstance(self.quantizer, _TOSAQuantizerV1):
+            self.quantizer.global_config = value
+        else:
+            raise NotImplementedError(
+                "Composable quantizer does not allow setting global_config directly. Please use set_global() instead."
+            )
 
     @property
     def io_config(self):
-        return getattr(self.quantizer, "io_config", None)
+        if isinstance(self.quantizer, _TOSAQuantizerV1):
+            return self.quantizer.io_config
+        else:
+            raise NotImplementedError(
+                "Composable quantizer does not allow accessing io_config."
+            )
 
     @io_config.setter
     def io_config(self, value: Optional[QuantizationConfig]) -> None:
-        self.quantizer.io_config = value
+        if isinstance(self.quantizer, _TOSAQuantizerV1):
+            self.quantizer.io_config = value
+        else:
+            raise NotImplementedError(
+                "Composable quantizer does not allow setting io_config directly. Please use set_io() instead."
+            )
 
     @property
     def module_type_config(self):
-        return getattr(self.quantizer, "module_type_config", {})
+        if isinstance(self.quantizer, _TOSAQuantizerV1):
+            return self.quantizer.module_type_config
+        else:
+            raise NotImplementedError(
+                "Composable quantizer does not allow accessing module_type_config."
+            )
 
     @module_type_config.setter
     def module_type_config(
         self, value: Dict[Callable, Optional[QuantizationConfig]]
     ) -> None:
-        self.quantizer.module_type_config = value
+        if isinstance(self.quantizer, _TOSAQuantizerV1):
+            self.quantizer.module_type_config = value
+        else:
+            raise NotImplementedError(
+                "Composable quantizer does not allow setting module_type_config directly. Please use set_module_type() instead."
+            )
 
     @property
     def module_name_config(self):
-        return getattr(self.quantizer, "module_name_config", {})
+        if isinstance(self.quantizer, _TOSAQuantizerV1):
+            return getattr(self.quantizer, "module_name_config", {})
+        else:
+            raise NotImplementedError(
+                "Composable quantizer does not allow accessing module_name_config."
+            )
 
     @module_name_config.setter
     def module_name_config(
         self, value: Dict[str, Optional[QuantizationConfig]]
     ) -> None:
-        self.quantizer.module_name_config = value
+        if isinstance(self.quantizer, _TOSAQuantizerV1):
+            self.quantizer.module_name_config = value
+        else:
+            raise NotImplementedError(
+                "Composable quantizer does not allow setting module_name_config directly. Please use set_module_name() instead."
+            )
 
     def set_global(
         self, quantization_config: Optional[QuantizationConfig]
