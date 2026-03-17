@@ -1,13 +1,4 @@
 /**
- * RFC v1 notes:
- * - Canvas renderer subscribes to controller/store state and paints the active graph view.
- * - Uses `ResizeObserver` + window resize to handle host container size changes.
- *
- * UX impact:
- * - Resizable host panes in harness/embeds immediately trigger crisp canvas redraw.
- * - Camera pan/zoom and hover/select feedback remain smooth under dynamic layouts.
- */
-/**
  * ============================================================================
  * CLASS: CanvasRenderer
  * ============================================================================

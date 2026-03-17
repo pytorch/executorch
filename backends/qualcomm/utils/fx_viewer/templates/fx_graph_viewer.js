@@ -1,21 +1,3 @@
-/**
- * FXGraphViewer / FXGraphCompare (RFC v1 runtime facade)
- *
- * Public surface implemented here:
- * - Construction: `FXGraphViewer.create(config)` and compatibility constructor.
- * - State: `getState`, `setState`, `replaceState`, `batch`.
- * - Viewer actions: theme/layer/colorBy/selection/navigation/layout/fullscreen.
- * - Runtime layer mutation: upsert/remove/patch/label/color-rule.
- * - Events: statechange, selectionchange, themechange, layoutchange, error.
- * - Compare orchestration: `FXGraphCompare` with selection/theme/layer/camera sync.
- *
- * UX impact by command:
- * - `setTheme` updates canvas/minimap/UI tokens immediately.
- * - `setLayers` / `setColorBy` recompute active graph and legend coloring.
- * - `patchLayerNodes` enables slider-style dynamic recoloring by node id.
- * - `setLayout` and slot-mounted rendering allow headless or split embedding.
- * - `enterFullscreen`/`exitFullscreen` support both API buttons and taskbar control.
- */
 class FXGraphViewer {
     static create(config) {
         return new FXGraphViewer(config);
