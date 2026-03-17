@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>fx_viewer Unified API Harness</title>
+  <style>
+    :root { --bg: #f8fafc; --panel: #ffffff; --border: #d1d5db; --text: #111827; --muted: #6b7280; }
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: var(--bg); color: var(--text); font-family: ui-sans-serif, -apple-system, Segoe UI, sans-serif; }
+    .page { display: grid; grid-template-rows: auto 1fr; height: 100vh; }
+    .topbar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .desc { color: var(--muted); font-size: 13px; }
+    .body { display: grid; grid-template-columns: minmax(360px, 36vw) 1fr; gap: 10px; padding: 10px; min-height: 0; height: 100%; box-sizing: border-box; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; min-height: 0; }
+    .card-h { padding: 8px 10px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 13px; }
+    .card-b { padding: 10px; overflow: auto; min-height: 0; }
+    .left { display: grid; grid-template-rows: 56px 1fr 1fr 120px; gap: 10px; min-height: 0; }
+    .editor {
+      width: 100%;
+      height: 100%;
+      min-height: 220px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      box-sizing: border-box;
+      padding: 8px;
+      font-size: 12px;
+      line-height: 1.45;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      resize: vertical;
+      overflow: auto;
+      white-space: pre;
+    }
+    #outcomeHost { width: 100%; height: 100%; min-height: 320px; min-width: 420px; resize: both; overflow: auto; border: 1px dashed #cbd5e1; border-radius: 8px; box-sizing: border-box; background: #fff; }
+    #sandbox { width: 100%; height: 100%; min-height: 0; }
+    #logBox { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: pre-wrap; }
+    button, select { font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <strong>fx_viewer Unified API Harness</strong>
+      <label>Testcase
+        <select id="caseSelect"></select>
+      </label>
+      <button id="runBtn">Run</button>
+      <button id="restoreBtn">Restore Template</button>
+      <button id="resetBtn">Reset Runtime</button>
+      <div id="caseDesc" class="desc"></div>
+    </div>
+
+    <div class="body">
+      <div class="left">
+        <div class="card"><div class="card-b" id="metaBox"></div></div>
+        <div class="card"><div class="card-h">HTML Input (Editable)</div><div class="card-b"><textarea id="htmlCode" class="editor"></textarea></div></div>
+        <div class="card"><div class="card-h">JS API Input (Editable)</div><div class="card-b"><textarea id="jsCode" class="editor"></textarea></div></div>
+        <div class="card"><div class="card-h">Run Log</div><div class="card-b" id="logBox"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h">Outcome (Resizable Host)</div>
+        <div class="card-b" style="height: calc(100% - 40px);"><div id="outcomeHost"><div id="sandbox"></div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const PAYLOADS = __PAYLOADS_JSON__;
+    const TEST_CASES = __TEST_CASES_JSON__;
+  </script>
+  <script>
+__VIEWER_JS_BUNDLE__
+  </script>
+  <script>
+    const caseSelect = document.getElementById('caseSelect');
+    const caseDesc = document.getElementById('caseDesc');
+    const metaBox = document.getElementById('metaBox');
+    const htmlCode = document.getElementById('htmlCode');
+    const jsCode = document.getElementById('jsCode');
+    const logBox = document.getElementById('logBox');
+    const sandbox = document.getElementById('sandbox');
+
+    const caseDrafts = new Map(TEST_CASES.map((tc) => [tc.id, { html: tc.html, js: tc.js }]));
+    let runtime = { viewers: [], compares: [], cleanup: null };
+
+    function appendLog(msg) {
+      logBox.textContent += `${msg}\n`;
+    }
+
+    function currentCase() {
+      const id = caseSelect.value;
+      return TEST_CASES.find((c) => c.id === id) || TEST_CASES[0];
+    }
+
+    function resetRuntime() {
+      if (runtime.cleanup) {
+        try { runtime.cleanup(); } catch (e) { console.warn('cleanup failed', e); }
+      }
+      runtime.compares.forEach((c) => { try { c.destroy && c.destroy(); } catch (e) {} });
+      runtime.viewers.forEach((v) => { try { v.destroy && v.destroy(); } catch (e) {} });
+      runtime = { viewers: [], compares: [], cleanup: null };
+      sandbox.innerHTML = '';
+      logBox.textContent = '';
+    }
+
+    function renderCaseMeta(tc) {
+      caseDesc.textContent = tc.description;
+      metaBox.innerHTML = `<div><strong>${tc.title}</strong></div><div class="desc" style="margin-top:4px;">${tc.description}</div><div class="desc" style="margin-top:4px;">profile=${PAYLOADS.meta && PAYLOADS.meta.profile ? PAYLOADS.meta.profile : 'unknown'}</div>`;
+      const draft = caseDrafts.get(tc.id) || { html: tc.html, js: tc.js };
+      htmlCode.value = draft.html;
+      jsCode.value = draft.js;
+    }
+
+    function runCurrentCase() {
+      const tc = currentCase();
+      resetRuntime();
+
+      const htmlSource = htmlCode.value;
+      const jsSource = jsCode.value;
+      caseDrafts.set(tc.id, { html: htmlSource, js: jsSource });
+      sandbox.innerHTML = htmlSource;
+
+      const api = {
+        payloads: PAYLOADS,
+        registerViewer(v) { runtime.viewers.push(v); return v; },
+        registerCompare(c) { runtime.compares.push(c); return c; },
+        setCleanup(fn) { runtime.cleanup = fn; },
+        log(msg) { appendLog(msg); },
+      };
+
+      try {
+        const fn = new Function('api', jsSource);
+        const ret = fn(api);
+        if (typeof ret === 'function') runtime.cleanup = ret;
+        appendLog(`PASS: ${tc.id}`);
+      } catch (err) {
+        console.error(err);
+        appendLog(`FAIL: ${tc.id} -> ${err.message}`);
+      }
+    }
+
+    function restoreCurrentTemplate() {
+      const tc = currentCase();
+      htmlCode.value = tc.html;
+      jsCode.value = tc.js;
+      caseDrafts.set(tc.id, { html: tc.html, js: tc.js });
+      appendLog(`Restored template for ${tc.id}`);
+    }
+
+    TEST_CASES.forEach((tc) => {
+      const opt = document.createElement('option');
+      opt.value = tc.id;
+      opt.textContent = tc.title;
+      caseSelect.appendChild(opt);
+    });
+
+    htmlCode.addEventListener('input', () => {
+      const tc = currentCase();
+      caseDrafts.set(tc.id, { html: htmlCode.value, js: jsCode.value });
+    });
+    jsCode.addEventListener('input', () => {
+      const tc = currentCase();
+      caseDrafts.set(tc.id, { html: htmlCode.value, js: jsCode.value });
+    });
+
+    caseSelect.addEventListener('change', () => renderCaseMeta(currentCase()));
+    document.getElementById('runBtn').addEventListener('click', runCurrentCase);
+    document.getElementById('restoreBtn').addEventListener('click', restoreCurrentTemplate);
+    document.getElementById('resetBtn').addEventListener('click', resetRuntime);
+
+    renderCaseMeta(currentCase());
+    runCurrentCase();
+  </script>
+</body>
+</html>
