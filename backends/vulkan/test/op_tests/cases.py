@@ -2031,6 +2031,7 @@ def get_expand_inputs():
     )
     test_suite.storage_types = [
         "utils::kBuffer",
+        "utils::kTexture3D",
     ]
     test_suite.layouts = [
         "utils::kWidthPacked",
