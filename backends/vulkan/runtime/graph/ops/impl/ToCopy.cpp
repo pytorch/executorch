@@ -30,8 +30,8 @@ bool is_float_type(vkapi::ScalarType dtype) {
 }
 
 void add_to_copy_node(ComputeGraph& graph, ValueRef in, ValueRef out) {
-  vkapi::ScalarType in_dtype = graph.dtype_of(in);
-  vkapi::ScalarType out_dtype = graph.dtype_of(out);
+  const vkapi::ScalarType in_dtype = graph.dtype_of(in);
+  const vkapi::ScalarType out_dtype = graph.dtype_of(out);
 
   // Same-dtype or float<->half conversions can use BlitNode
   if (in_dtype == out_dtype ||
