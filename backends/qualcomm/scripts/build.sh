@@ -41,6 +41,8 @@ usage() {
   echo "QNN SDK and Android NDK will be auto-downloaded if not set."
   echo "To use a custom SDK, export QNN_SDK_ROOT=/path/to/qnn_sdk"
   echo "To use a custom NDK, export ANDROID_NDK_ROOT=/path/to/android_ndkXX"
+  echo "(or export TOOLCHAIN_ROOT_HOST=/path/to/sysroots/xx_host, "
+  echo "TOOLCHAIN_ROOT_TARGET=/path/to/sysroots/xx_target for linux embedded with --enable_linux_embedded)"
   echo ""
   echo "e.g.: executorch$ ./backends/qualcomm/scripts/build.sh --skip_x86_64"
   exit 1
@@ -143,7 +145,14 @@ if [ "$BUILD_ANDROID" = true ]; then
     CMAKE_PREFIX_PATH="${BUILD_ROOT};${BUILD_ROOT}/third-party/gflags;"
 
     # DSP_TYPE variable only matters when building direct_mode.
-    # Ignore the variable for traditional mode. 
+    # Ignore the variable for traditional mode.
+
+    if [ "$BUILD_HEXAGON" = "true" ]; then
+        DIRECT_MODE_FLAG="-DBUILD_DIRECT_MODE=ON"
+    else
+        DIRECT_MODE_FLAG="-DBUILD_DIRECT_MODE=OFF"
+    fi
+
     cmake $PRJ_ROOT/$EXAMPLE_ROOT \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
         -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
@@ -157,6 +166,7 @@ if [ "$BUILD_ANDROID" = true ]; then
         -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
         -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
         -DDSP_TYPE=$DSP_TYPE \
+        $DIRECT_MODE_FLAG \
         -B$EXAMPLE_ROOT
 
     cmake --build $EXAMPLE_ROOT -j$BUILD_JOB_NUMBER

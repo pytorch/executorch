@@ -79,21 +79,9 @@ target_include_directories(
 )
 
 # Custom ops that are needed to run the test model.
-add_library(
-  custom_ops
-  "quantized_add_out.cpp"
-  "quantized_linear_out.cpp"
-  "quantized_conv2d_nchw_out.cpp"
-  "quantized_conv2d_nhwc_out.cpp"
-  "quantized_relu_out.cpp"
-  "quantized_layer_norm.cpp"
-  "quantize_per_tensor.cpp"
-  "quantized_fully_connected_out.cpp"
-  "dequantize_per_tensor.cpp"
-  "quantized_matmul_out.cpp"
-  "op_requantize_out.cpp"
-  "im2row_out.cpp"
-)
+file(GLOB custom_ops_srcs "*.cpp")
+add_library(custom_ops ${custom_ops_srcs})
+
 target_include_directories(
   custom_ops PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
                     ${_common_include_directories}

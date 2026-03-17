@@ -23,6 +23,7 @@ if not logger.handlers:
     _handler.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(_handler)
     logger.setLevel(logging.INFO)
+    logger.propagate = False
 
 PKG_ROOT = pathlib.Path(__file__).parent.parent
 
@@ -320,6 +321,10 @@ def _download_qnn_sdk(
     if not is_linux_x86():
         logger.info("[QNN] Skipping Qualcomm SDK (only supported on Linux x86).")
         return None
+
+    if dst_folder.exists() and any(dst_folder.iterdir()):
+        logger.info(f"[QNN] Using cached QNN SDK v{QNN_VERSION} at {dst_folder}")
+        return dst_folder
 
     logger.info(f"[QNN] Downloading Qualcomm AI Runtime SDK v{QNN_VERSION}...")
 

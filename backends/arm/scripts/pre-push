@@ -157,9 +157,15 @@ for COMMIT in ${COMMITS}; do
     SUBJECT=$(echo "$COMMIT_MSG" | head -n1)
     BODY=$(echo "$COMMIT_MSG" | tail -n +2)
 
-    # Check subject length (72 chars)
+    # Check subject length (72 chars), except for revert commits.
+    is_revert_commit=false
+    if [[ "$SUBJECT" =~ ^(Arm\ backend:\ )?Revert(\ |$) ]]; then
+        is_revert_commit=true
+    fi
+
     SUBJECT_MAX_LEN=72
-    if [ ${#SUBJECT} -gt ${SUBJECT_MAX_LEN} ]; then
+    if [ ${#SUBJECT} -gt ${SUBJECT_MAX_LEN} ] && \
+        [[ $is_revert_commit == false ]]; then
         echo -e "${ERROR} Subject exceeds ${SUBJECT_MAX_LEN} characters:"\
             "'${SUBJECT}'" >&2
 
@@ -216,7 +222,8 @@ for COMMIT in ${COMMITS}; do
     fi
 
     # Require 'Arm backend: ' prefix when the commit only touches Arm backend/examples files
-    if [[ $only_arm_changes == true && $has_arm_backend_prefix == false ]]; then
+    if [[ $only_arm_changes == true && $has_arm_backend_prefix == false && \
+        $is_revert_commit == false ]]; then
         echo -e "${ERROR} Subject must start with 'Arm backend: ' when only backends/arm or examples/arm files are modified." >&2
         FAILED=1
     fi

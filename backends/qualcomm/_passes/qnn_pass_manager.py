@@ -53,6 +53,7 @@ from executorch.backends.qualcomm._passes import (
     RemoveRedundancy,
     ReplaceArangeArgs,
     ReplaceInfValues,
+    ResolveDebugHandle,
     TagQuantIO,
 )
 from executorch.backends.qualcomm._passes.utils import (
@@ -107,6 +108,7 @@ def get_capture_program_passes():
         (Remove0DTensor, True),
         (RemoveRedundancy, True),
         (TagQuantIO, False),
+        (ResolveDebugHandle, True),
     ]
 
     passes = OrderedDict()
@@ -175,6 +177,9 @@ class QnnPassManager(PassManager):
             if "edge_program" in kwargs:
                 kwargs["edge_program"] = exported_program
             self.add_pass(p(**kwargs))
+        assert isinstance(
+            self.passes[-1], ResolveDebugHandle
+        ), "Please ensure ResolveDebugHandle is the last executed edge pass."
         return self.passes
 
     def transform_for_to_edge_pipeline(
