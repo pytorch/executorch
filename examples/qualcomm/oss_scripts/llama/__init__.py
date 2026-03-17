@@ -242,7 +242,7 @@ class Llama3_2_1B_Instruct(LLMModelConfig):
     instruct_model = False
     num_sharding = 1
     masked_softmax = False
-    seq_mse_candidates = 1000
+    seq_mse_candidates = 50
     r1 = False
     r2 = False
     r3 = False
@@ -453,7 +453,7 @@ class Qwen3_0_6B(LLMModelConfig):
     instruct_model = True
     num_sharding = 1
     masked_softmax = True
-    seq_mse_candidates = 1000
+    seq_mse_candidates = 50
     r1 = False
     r2 = False
     r3 = False
