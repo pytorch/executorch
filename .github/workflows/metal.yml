@@ -111,6 +111,12 @@ jobs:
         ${CONDA_RUN} pip list
         echo "::endgroup::"
 
+        # Isolate Inductor cache and precompiled headers (PCH) per job to prevent
+        # PCH mtime conflicts between parallel matrix jobs on the same runner.
+        # TORCHINDUCTOR_CACHE_DIR isolates the code cache; setting TMPDIR isolates
+        # the PCH dir, which PyTorch derives from tempfile.gettempdir() independently.
+        export TMPDIR=$(mktemp -d "${RUNNER_TEMP}/tmpdir_XXXXXX")
+        export TORCHINDUCTOR_CACHE_DIR=$(mktemp -d "${RUNNER_TEMP}/inductor_cache_XXXXXX")
         ${CONDA_RUN} bash .ci/scripts/export_model_artifact.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
 
   test-model-metal-e2e:
