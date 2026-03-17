@@ -60,6 +60,19 @@ def _is_noop_detach_copy(node: torch.fx.Node) -> bool:
     return node.target == exir_ops.edge.aten.detach_copy.default
 
 
+def _is_noop_as_strided_copy(node: torch.fx.Node) -> bool:
+    if node.target != exir_ops.edge.aten.as_strided_copy.default:
+        return False
+    else:
+        input_tensor = get_first_fake_tensor(ensure_type(torch.fx.Node, node.args[0]))
+        output_tensor = get_first_fake_tensor(node)
+        return (
+            input_tensor.shape == output_tensor.shape
+            and input_tensor.stride() == output_tensor.stride()
+            and input_tensor.storage_offset() == output_tensor.storage_offset()
+        )
+
+
 def _is_noop_to_dim_order_copy(node: torch.fx.node.Node) -> bool:
     if node.target != exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
         return False
@@ -263,6 +276,7 @@ class TOSAPartitioner(Partitioner):
                 or _is_noop_detach_copy(node)
                 or _is_noop_to_dim_order_copy(node)
                 or _is_view_copy(node)
+                or _is_noop_as_strided_copy(node)
                 or node.target in Q_OPS
                 or node.target in DQ_OPS
                 for node in partition.nodes
