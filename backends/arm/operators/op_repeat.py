@@ -19,7 +19,6 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_valid_dtype,
 )
 from executorch.backends.arm.tosa.mapping import TosaArg
-from executorch.backends.arm.tosa.utils import tosa_shape
 
 
 @register_node_visitor
@@ -53,25 +52,13 @@ class RepeatVisitor(NodeVisitor):
             self.tosa_spec,
         )
 
-        multiples = inputs[1].special
-
-        if len(multiples) == 0:
-            raise ValueError(f"Length of multiples argument is 0: {inputs[1]}!")
-
-        multiple_shapes = tosa_graph.addConst(
-            (len(multiples),),
-            ts.DType.SHAPE,
-            list(tosa_shape(multiples, output.dim_order)),
-            name=output.name + "_multiples",
-        )
-
         attr = ts.TosaSerializerAttribute()
         attr.TileAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
             ts.Op.TILE,
-            [inputs[0].name, multiple_shapes.name],
+            [inputs[0].name, inputs[1].name],
             [output.name],
             attr,
         )
