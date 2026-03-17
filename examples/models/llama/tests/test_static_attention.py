@@ -6,6 +6,7 @@ from collections import Counter, defaultdict
 import torch
 from executorch.examples.models.llama.attention import AttentionMHA
 from executorch.examples.models.llama.llama_transformer import construct_transformer
+from executorch.examples.models.llama.lora import LoRALinear
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import Rope
 from executorch.examples.models.llama.static_attention import (
@@ -361,3 +362,99 @@ class StaticAttentionTest(unittest.TestCase):
             static_transformer, example_inputs
         ).module()
         non_batched_gm.load_state_dict(batched_gm.state_dict())
+
+    def test_lora_split_mha_raises(self):
+        config = ModelArgs(
+            dim=64,
+            n_heads=4,
+            n_kv_heads=2,
+            max_seq_len=8,
+            r=4,
+            lora_alpha=8,
+            target_modules=["q_proj"],
+        )
+        layer_id = 0
+        rope = Rope(config)
+        attn_mha = AttentionMHA(config, layer_id, rope)
+        with self.assertRaises(ValueError):
+            StaticAttention.from_attention_mha(attn_mha, split_mha=True)
+
+    def test_lora_without_cache(self):
+        torch.manual_seed(42)
+        config = ModelArgs(
+            dim=64,
+            n_heads=4,
+            n_kv_heads=2,
+            max_seq_len=8,
+            r=4,
+            lora_alpha=8,
+            target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+        )
+        layer_id = 0
+        rope = Rope(config)
+        attn_mha = AttentionMHA(config, layer_id, rope).eval()
+
+        self.assertIsInstance(attn_mha.wq, LoRALinear)
+        self.assertIsInstance(attn_mha.wk, LoRALinear)
+        self.assertIsInstance(attn_mha.wv, LoRALinear)
+        self.assertIsInstance(attn_mha.wo, LoRALinear)
+
+        static_attn = StaticAttention.from_attention_mha(
+            attn_mha, split_mha=False
+        ).eval()
+
+        self.assertIsInstance(static_attn.wqs[0], LoRALinear)
+        self.assertIsInstance(static_attn.wks[0], LoRALinear)
+        self.assertIsInstance(static_attn.wvs[0], LoRALinear)
+        self.assertIsInstance(static_attn.wo, LoRALinear)
+
+        x = torch.rand(1, config.max_seq_len, config.dim)
+        freqs_cos, freqs_sin = rope.get_freqs(None, config.max_seq_len)
+        expected, _ = attn_mha(x, freqs_cos, freqs_sin)
+
+        mask = torch.triu(
+            torch.full((1, config.max_seq_len, config.max_seq_len), float("-inf")),
+            diagonal=1,
+        )
+        y, _ = static_attn(x, freqs_cos, freqs_sin, masks={0: mask})
+        self.assertTrue(torch.isclose(y, expected, rtol=1e-3).all())
+
+    def test_lora_partial_projections(self):
+        torch.manual_seed(42)
+        config = ModelArgs(
+            dim=64,
+            n_heads=4,
+            n_kv_heads=2,
+            max_seq_len=8,
+            r=4,
+            lora_alpha=8,
+            target_modules=["q_proj", "v_proj"],
+        )
+        layer_id = 0
+        rope = Rope(config)
+        attn_mha = AttentionMHA(config, layer_id, rope).eval()
+
+        self.assertIsInstance(attn_mha.wq, LoRALinear)
+        self.assertIsInstance(attn_mha.wk, torch.nn.Linear)
+        self.assertIsInstance(attn_mha.wv, LoRALinear)
+        self.assertIsInstance(attn_mha.wo, torch.nn.Linear)
+
+        static_attn = StaticAttention.from_attention_mha(
+            attn_mha, split_mha=False
+        ).eval()
+
+        self.assertIsInstance(static_attn.wqs[0], LoRALinear)
+        self.assertIsInstance(static_attn.wks[0], torch.nn.Linear)
+        self.assertIsInstance(static_attn.wvs[0], LoRALinear)
+        self.assertIsInstance(static_attn.wo, torch.nn.Linear)
+
+        x = torch.rand(1, config.max_seq_len, config.dim)
+        freqs_cos, freqs_sin = rope.get_freqs(None, config.max_seq_len)
+        expected, _ = attn_mha(x, freqs_cos, freqs_sin)
+
+        mask = torch.triu(
+            torch.full((1, config.max_seq_len, config.max_seq_len), float("-inf")),
+            diagonal=1,
+        )
+        y, _ = static_attn(x, freqs_cos, freqs_sin, masks={0: mask})
+        self.assertTrue(torch.isclose(y, expected, rtol=1e-3).all())
