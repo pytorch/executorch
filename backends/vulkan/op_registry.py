@@ -1285,7 +1285,7 @@ def register_index_tensor():
 @update_features(exir_ops.edge.aten.arange.start_step)
 def register_arange():
     return OpFeatures(
-        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_T,
     )
 
@@ -1321,7 +1321,7 @@ def register_constant_pad_nd():
 )
 def register_full_cpp_ops():
     return OpFeatures(
-        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
     )
 
