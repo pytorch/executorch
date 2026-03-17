@@ -1419,11 +1419,20 @@ def register_repeat():
 
 @update_features(exir_ops.edge.aten.embedding.default)
 def register_embedding():
+    def check_embedding_weight_size(node: torch.fx.Node) -> bool:
+        weight = node.args[0]
+        if isinstance(weight, torch.fx.Node) and utils.is_tensor_node(weight):
+            numel = weight.meta["val"].numel()
+            if numel > utils.DEFAULT_BUFFER_LIMIT:
+                return False
+        return True
+
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=[utils.FP_T, utils.INT_T],
         supports_prepacking=True,
         supports_resize=True,
+        are_node_inputs_supported_fn=check_embedding_weight_size,
     )
 
 
