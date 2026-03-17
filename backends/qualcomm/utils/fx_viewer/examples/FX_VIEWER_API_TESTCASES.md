@@ -1,6 +1,7 @@
-# FX Viewer API Harness Testcases
+# FX Viewer API Harness: Tutorial Testcases
 
-This document tracks testcase intent and API coverage for the unified harness.
+This document is a learning guide for the unified harness.
+Read top-to-bottom and run cases in order.
 
 ## Harness Outputs
 
@@ -10,28 +11,123 @@ This document tracks testcase intent and API coverage for the unified harness.
 Portable harness requires no Qualcomm SDK.
 Qualcomm harness requires QAIRT/QNN environment.
 
-## Testcases
+## Learning Order
 
-1. `topology_split`
-- Goal: baseline split viewer using structural extensions.
-- APIs: `create`, `init`, `setLayers`, `setColorBy`.
+### Level 1: API Fundamentals
 
-2. `headless_slots`
-- Goal: host-controlled layout with external slots and dynamic recoloring.
-- APIs: `create` with `mount.slots`, `patchLayerNodes`, `setColorBy`.
+1. `js_01_create_init_destroy`
+- Purpose: learn viewer lifecycle.
+- Target APIs: `FXGraphViewer.create`, `init`, `destroy`, `getState`.
+- What to try:
+1. Click `Create + Init`.
+2. Click `Destroy`.
+3. Repeat and observe state panel.
 
-3. `accuracy_dynamic`
-- Goal: real per-layer accuracy debug controls (threshold/theme/focus).
-- APIs: `setTheme`, `selectNode`, `patchLayerNodes`, `setColorBy`.
+2. `js_02_state_theme`
+- Purpose: understand state-driven controls.
+- Target APIs: `getState`, `setState`, `setTheme`.
+- What to try:
+1. Switch light/dark theme.
+2. Toggle highlight mode.
+3. Watch `getState()` snapshot update.
 
-4. `fullscreen_toolbar`
-- Goal: demonstrate fullscreen integration in UI + direct API calls.
-- APIs: `layout.fullscreen.button`, `enterFullscreen`, `exitFullscreen`.
+3. `js_03_selection_camera`
+- Purpose: learn navigation semantics.
+- Target APIs: `selectNode`, `animateToNode`, `panToNode`, `zoomToFit`, `clearSelection`.
+- What to try:
+1. Use each button and compare motion behavior.
+2. Confirm clear-selection resets visual focus.
 
-5. `compare_sync`
-- Goal: compare orchestration with sync toggles.
-- APIs: `FXGraphCompare.create`, `setSync`, `setCompact`.
+4. `js_04_layers_colorby`
+- Purpose: separate "active layers" from "color source".
+- Target APIs: `setLayers`, `setColorBy`.
+- What to try:
+1. Disable one layer and keep colorBy on the other.
+2. Set colorBy to `base` and compare legend.
 
-6. `qualcomm_metadata` (Qualcomm harness only)
-- Goal: expose Qualcomm PTQ metadata next to real graph payload.
-- APIs: `create`, metadata-driven host composition.
+5. `js_05_runtime_mutation`
+- Purpose: mutate overlays at runtime.
+- Target APIs: `upsertLayer`, `patchLayerNodes`, `setLayerLabel`, `setColorRule`, `removeLayer`.
+- What to try:
+1. Move threshold slider.
+2. Rename layer.
+3. Apply color rule function.
+4. Remove layer and revert to base.
+
+6. `js_06_layout_slots`
+- Purpose: embed UI components in external host divs.
+- Target APIs: `mount.slots`, `setLayout`, `setUIVisibility`.
+- What to try:
+1. Toggle info/minimap visibility.
+2. Hide/show toolbar chrome.
+3. Inspect slot ownership behavior.
+
+7. `js_07_events`
+- Purpose: subscribe to viewer events from host code.
+- Target APIs: `on`, `off` with `statechange`, `selectionchange`, `themechange`, `layoutchange`.
+- What to try:
+1. Trigger events with buttons.
+2. Click `Unsubscribe Events`.
+3. Confirm log no longer updates.
+
+8. `js_08_compare_basics`
+- Purpose: first compare orchestration flow.
+- Target APIs: `FXGraphCompare.create`, `setSync`, `setCompact`, `setColumns`.
+- What to try:
+1. Toggle selection/theme sync.
+2. Change compact mode.
+3. Change compare columns.
+
+### Level 2: Interesting Combinations
+
+9. `adv_01_accuracy_dynamic`
+- Purpose: real per-layer accuracy workflow with host controls.
+- Target APIs: `setTheme`, `patchLayerNodes`, `setColorBy`, `selectNode`.
+- What to try:
+1. Adjust severity percentile.
+2. Focus highest-severity node.
+
+10. `adv_02_headless_slots_slider`
+- Purpose: host-owned layout + slot embedding + dynamic recolor.
+- Target APIs: `mount.slots`, `patchLayerNodes`, `setColorBy`.
+- What to try:
+1. Drag threshold slider.
+2. Check info/minimap/legend in external panes.
+
+11. `adv_03_fullscreen_toolbar`
+- Purpose: fullscreen via both toolbar and direct API.
+- Target APIs: `layout.fullscreen.button`, `enterFullscreen`, `exitFullscreen`.
+- What to try:
+1. Enter/exit fullscreen from side buttons.
+2. Use taskbar fullscreen toggle too.
+
+### Level 3: Current Mixed Demo
+
+12. `js_99_combo_mixed`
+- Purpose: demonstrate a realistic mixed usage pattern.
+- Target APIs: compare sync, runtime mutation, event subscriptions, theme control, camera APIs.
+- What to try:
+1. Toggle compare sync flags.
+2. Move threshold slider.
+3. Focus worst node.
+4. Run scripted sequence.
+
+### Qualcomm-only
+
+13. `qualcomm_metadata`
+- Purpose: inspect Qualcomm PTQ metadata beside rendered graph.
+- Target APIs: `create` plus host metadata composition.
+
+## How to Learn Effectively
+
+1. Run one testcase at a time.
+2. Edit JS pane in small changes and rerun.
+3. Keep the "Target APIs" list in view while editing.
+4. Move to the next level only after you can explain current behavior.
+
+## Common Mistakes
+
+1. Using `setColorBy(layer)` when that layer is not active.
+2. Forgetting to call `init()` after `create()`.
+3. Patching a layer that has not been added via `upsertLayer`.
+4. Assuming compare sync covers all dimensions when only selection is enabled.

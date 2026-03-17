@@ -53,6 +53,9 @@ Main exporter methods:
 3. `export_js(container_id)`
 4. `export_html(path)`
 
+Python tutorial:
+1. `backends/qualcomm/utils/fx_viewer/examples/PYTHON_API_TUTORIAL.md`
+
 ## JS API (Runtime)
 
 Construction:
@@ -126,7 +129,7 @@ Files:
 1. Generator: `backends/qualcomm/utils/fx_viewer/examples/generate_api_test_harness.py`
 2. Template: `backends/qualcomm/utils/fx_viewer/examples/harness_template.html`
 3. Testcases: `backends/qualcomm/utils/fx_viewer/examples/harness_testcases.py`
-4. Testcase reference: `backends/qualcomm/utils/fx_viewer/examples/FX_VIEWER_API_TESTCASES.md`
+4. Tutorial testcase guide: `backends/qualcomm/utils/fx_viewer/examples/FX_VIEWER_API_TESTCASES.md`
 
 Generate harnesses:
 
@@ -139,6 +142,11 @@ python backends/qualcomm/utils/fx_viewer/examples/generate_api_test_harness.py
 Generated outputs:
 1. `fx_viewer_api_test_harness_portable.html`
 2. `fx_viewer_api_test_harness_qualcomm.html`
+
+Suggested learning order:
+1. JS beginner ladder (`js_01` ... `js_08` in testcase guide).
+2. Advanced combos (`adv_01` ... `adv_03`).
+3. Final mixed demo (`js_99_combo_mixed`).
 
 ## Testing
 
