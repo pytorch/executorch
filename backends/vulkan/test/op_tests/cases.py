@@ -11,7 +11,6 @@ from typing import Callable
 
 from executorch.backends.vulkan.test.op_tests.utils.test_suite import VkTestSuite
 
-
 # Prime numbers dim sizes for testing
 XL = 113
 L = 89
@@ -1898,14 +1897,22 @@ def get_constant_pad_nd_inputs():
         [
             ([S1, S2], [1, 1], 24.0),
             ([M, M1, M2], [2, 2], 23.2),
-            ([L, M, M1, M2], [3, 5], 12.2),
+            ([S2, M, M1, M2], [3, 5], 12.2),
             ([S1, S2], [1, 1, 1, 1], 24.0),
             ([M, M1, M2], [2, 2, 2, 2], 23.2),
-            ([L, M, M1, M2], [3, 5, 3, 5], 12.2),
+            ([S2, M, M1, M2], [3, 5, 3, 5], 12.2),
             ([M, M1, M2], [1, 2, 3, 4, 5, 6], 23.2),
-            ([L, M, M1, M2], [3, 3, 3, 3, 3, 3], 12.2),
+            ([S2, M, M1, M2], [3, 3, 3, 3, 3, 3], 12.2),
         ]
     )
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = [
+        "utils::kTexture3D",
+        "utils::kBuffer",
+    ]
     return test_suite
 
 
