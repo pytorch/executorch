@@ -2,6 +2,10 @@
 # Copy ExecuTorch sources from the repo tree and CMake build outputs
 # into a flat pack staging directory.
 #
+# Only .cpp, .h, .c, .fbs, and .yaml files are kept.  Test directories,
+# Python files, build-system files, and other non-essential assets are
+# stripped to match the curated set produced by the legacy Docker workflow.
+#
 # Usage:
 #   ./copy_sources.sh --executorch-root <path> --build-dir <path> \
 #                     --pack-staging <path>
@@ -37,6 +41,34 @@ echo "Pack staging:    $PACK_SRC"
 echo ""
 
 # ---------------------------------------------------------------------------
+# Helper: strip non-essential files after a bulk cp -r
+# Removes test dirs, Python, build-system files, __pycache__, etc.
+# ---------------------------------------------------------------------------
+strip_non_essential() {
+    local dir="$1"
+    # Remove test directories
+    find "$dir" -type d \( -name 'test' -o -name 'tests' -o -name 'testing_util' \
+        -o -name '__pycache__' \) -exec rm -rf {} + 2>/dev/null || true
+    # Remove non-source files
+    find "$dir" -type f \( \
+        -name '*.py' -o -name '*.pyc' -o -name '*.pyi' \
+        -o -name '*.sh' -o -name '*.bat' \
+        -o -name '*.bzl' -o -name 'TARGETS' -o -name 'BUCK' \
+        -o -name 'CMakeLists.txt' -o -name '*.cmake' \
+        -o -name 'BUILD' -o -name 'BUILD.bazel' \
+        -o -name '*.md' -o -name '*.rst' -o -name '*.txt' \
+        -o -name '*.toml' -o -name '*.cfg' -o -name '*.ini' \
+        -o -name '*.json' -o -name '*.lock' \
+        -o -name '.gitignore' -o -name '.clang-format' \
+        -o -name 'Makefile' \
+    \) -delete 2>/dev/null || true
+    # Remove *_test.cpp files
+    find "$dir" -type f -name '*_test.cpp' -delete 2>/dev/null || true
+    # Remove empty directories left behind
+    find "$dir" -type d -empty -delete 2>/dev/null || true
+}
+
+# ---------------------------------------------------------------------------
 # Create include / src structure
 # ---------------------------------------------------------------------------
 mkdir -p "${PACK_SRC}/include/executorch"
@@ -48,6 +80,7 @@ for d in core executor kernel platform backend; do
         cp -r "${EXECUTORCH_ROOT}/runtime/$d" "${PACK_SRC}/src/runtime/"
     fi
 done
+strip_non_essential "${PACK_SRC}/src/runtime"
 cp -r "${PACK_SRC}/src/runtime" "${PACK_SRC}/include/executorch/"
 
 echo "  Copying kernel sources..."
@@ -57,6 +90,7 @@ for d in portable quantized prim_ops; do
         cp -r "${EXECUTORCH_ROOT}/kernels/$d" "${PACK_SRC}/src/kernels/"
     fi
 done
+strip_non_essential "${PACK_SRC}/src/kernels"
 cp -r "${PACK_SRC}/src/kernels" "${PACK_SRC}/include/executorch/"
 
 echo "  Copying extension sources..."
@@ -66,6 +100,7 @@ for d in data_loader memory_allocator runner_util; do
         cp -r "${EXECUTORCH_ROOT}/extension/$d" "${PACK_SRC}/src/extension/"
     fi
 done
+strip_non_essential "${PACK_SRC}/src/extension"
 cp -r "${PACK_SRC}/src/extension" "${PACK_SRC}/include/executorch/"
 
 echo "  Copying schema sources..."
@@ -103,12 +138,22 @@ TORCH_DIR="${PACK_SRC}/src/runtime/core/portable_type/c10/torch"
 [[ -d "$TORCH_DIR" ]] && cp -r "$TORCH_DIR" "${PACK_SRC}/include/"
 
 echo "  Copying backend sources..."
-mkdir -p "${PACK_SRC}/src/backends"
-for backend in arm cortex_m; do
-    if [[ -d "${EXECUTORCH_ROOT}/backends/$backend" ]]; then
-        cp -r "${EXECUTORCH_ROOT}/backends/$backend" "${PACK_SRC}/src/backends/"
+mkdir -p "${PACK_SRC}/src/backends/arm"
+mkdir -p "${PACK_SRC}/src/backends/cortex_m"
+
+# Arm backend: only the runtime directory (EthosUBackend, VelaBinStream)
+if [[ -d "${EXECUTORCH_ROOT}/backends/arm/runtime" ]]; then
+    cp -r "${EXECUTORCH_ROOT}/backends/arm/runtime" "${PACK_SRC}/src/backends/arm/"
+fi
+
+# Cortex-M backend: ops and cortex_m_ops_lib
+for d in ops cortex_m_ops_lib; do
+    if [[ -d "${EXECUTORCH_ROOT}/backends/cortex_m/$d" ]]; then
+        cp -r "${EXECUTORCH_ROOT}/backends/cortex_m/$d" "${PACK_SRC}/src/backends/cortex_m/"
     fi
 done
+
+strip_non_essential "${PACK_SRC}/src/backends"
 cp -r "${PACK_SRC}/src/backends" "${PACK_SRC}/include/executorch/"
 
 echo "  Copying stubs..."
