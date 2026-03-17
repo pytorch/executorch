@@ -51,7 +51,7 @@ examples/espressif/
     ├── CMakeLists.txt           # ESP-IDF project file
     ├── sdkconfig.defaults       # Default ESP-IDF configuration
     ├── sdkconfig.defaults.esp32s3  # ESP32-S3 specific config
-    ├── partitions.csv  # Adjusted partition table to increase app size
+    ├── partitions.csv  # Example partition table; adjust app partition size for your board and model
     └── main/
         ├── CMakeLists.txt       # Main component
         └── main.cpp             # Entry point

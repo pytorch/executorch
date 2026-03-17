@@ -37,6 +37,7 @@ if(ESP_PLATFORM)
     REQUIRES
       esp_timer
       esp_system
+      spiffs
   )
 
   # ExecuTorch pre-built library paths
@@ -135,7 +136,7 @@ if(ESP_PLATFORM)
   endif()
 
   if(EXECUTORCH_ENABLE_EVENT_TRACER)
-    target_compile_definitions(${COMPONENT_LIB} PUBLIC -DET_EVENT_TRACER_ENABLED)
+    target_compile_definitions(${COMPONENT_LIB} PUBLIC ET_EVENT_TRACER_ENABLED)
     list(APPEND esp_runner_libs etdump flatccrt)
   endif()
 
@@ -157,15 +158,15 @@ if(ESP_PLATFORM)
   endif()
 
   if(ET_LOG_DUMP_INPUT)
-    target_compile_definitions(${COMPONENT_LIB} PUBLIC -DET_LOG_DUMP_INPUT)
+    target_compile_definitions(${COMPONENT_LIB} PUBLIC ET_LOG_DUMP_INPUT)
   endif()
 
   if(ET_LOG_DUMP_OUTPUT)
-    target_compile_definitions(${COMPONENT_LIB} PUBLIC -DET_LOG_DUMP_OUTPUT)
+    target_compile_definitions(${COMPONENT_LIB} PUBLIC ET_LOG_DUMP_OUTPUT)
   endif()
 
   if(ET_BUNDLE_IO)
-    target_compile_definitions(${COMPONENT_LIB} PUBLIC -DET_BUNDLE_IO)
+    target_compile_definitions(${COMPONENT_LIB} PUBLIC ET_BUNDLE_IO)
   endif()
 
   if(ET_ATOL)
@@ -177,12 +178,12 @@ if(ESP_PLATFORM)
   endif()
 
   if(ET_DUMP_OUTPUTS)
-    target_compile_definitions(${COMPONENT_LIB} PUBLIC -DET_DUMP_OUTPUTS)
+    target_compile_definitions(${COMPONENT_LIB} PUBLIC ET_DUMP_OUTPUTS)
   endif()
 
   if(ET_DUMP_INTERMEDIATE_OUTPUTS)
     target_compile_definitions(
-      ${COMPONENT_LIB} PUBLIC -DET_DUMP_INTERMEDIATE_OUTPUTS
+      ${COMPONENT_LIB} PUBLIC ET_DUMP_INTERMEDIATE_OUTPUTS
     )
   endif()
 
@@ -295,7 +296,7 @@ else()
   endif()
 
   if(ET_LOG_DUMP_OUTPUT)
-    target_compile_definitions(esp_executor_runner PUBLIC -DET_LOG_DUMP_OUTPUT)
+    target_compile_definitions(esp_executor_runner PUBLIC ET_LOG_DUMP_OUTPUT)
   endif()
 
   add_dependencies(esp_executor_runner gen_model_header)
