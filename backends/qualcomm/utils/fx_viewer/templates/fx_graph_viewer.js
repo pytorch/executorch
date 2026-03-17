@@ -672,14 +672,21 @@ class FXGraphViewer {
         });
     }
 
+    _refreshAfterLayerMutation({ rebuildMenu = false } = {}) {
+        this._refreshLayerControls({ rebuildMenu });
+        this.controller.setState({}, { source: 'api' });
+    }
+
+    _refreshLayerControls({ rebuildMenu = false } = {}) {
+        if (!this.ui) return;
+        if (rebuildMenu) this.ui.rebuildLayersMenu();
+        this.ui.syncControlsFromState();
+        this.ui.renderLegend();
+    }
+
     upsertLayer(layerId, layerPayload) {
         this.store.upsertExtension(layerId, layerPayload);
-        if (this.ui) {
-            this.ui.rebuildLayersMenu();
-            this.ui.syncControlsFromState();
-            this.ui.renderLegend();
-        }
-        this.controller.setState({}, { source: 'api' });
+        this._refreshAfterLayerMutation({ rebuildMenu: true });
     }
 
     removeLayer(layerId) {
@@ -688,25 +695,17 @@ class FXGraphViewer {
         active.delete(layerId);
         const nextColorBy = this.controller.state.colorBy === layerId ? 'base' : this.controller.state.colorBy;
         this.controller.setState({ activeExtensions: active, colorBy: nextColorBy }, { source: 'api' });
-        if (this.ui) {
-            this.ui.rebuildLayersMenu();
-            this.ui.syncControlsFromState();
-            this.ui.renderLegend();
-        }
+        this._refreshLayerControls({ rebuildMenu: true });
     }
 
     patchLayerNodes(layerId, patchByNodeId) {
         this.store.patchExtensionNodes(layerId, patchByNodeId);
-        this.controller.setState({}, { source: 'api' });
+        this._refreshAfterLayerMutation();
     }
 
     setLayerLabel(layerId, label) {
         this.store.setExtensionLabel(layerId, label);
-        if (this.ui) {
-            this.ui.rebuildLayersMenu();
-            this.ui.syncControlsFromState();
-            this.ui.renderLegend();
-        }
+        this._refreshAfterLayerMutation({ rebuildMenu: true });
     }
 
     setColorRule(layerId, colorRule) {
@@ -720,7 +719,7 @@ class FXGraphViewer {
                     nodeData.fill_color = nextColor;
                 }
             });
-            this.controller.setState({}, { source: 'api' });
+            this._refreshAfterLayerMutation();
             return;
         }
 
@@ -737,7 +736,7 @@ class FXGraphViewer {
                 });
                 if (chosen) nodeData.fill_color = chosen;
             });
-            this.controller.setState({}, { source: 'api' });
+            this._refreshAfterLayerMutation();
         }
     }
 
