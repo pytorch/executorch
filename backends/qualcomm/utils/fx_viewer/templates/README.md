@@ -1,59 +1,54 @@
-# PyTorch FX Graph Viewer JS (Split Modules)
+# fx_viewer JS Runtime (RFC v1)
 
-## Description
-This folder contains the split JavaScript runtime for the FX viewer used by `fx_viewer/exporter.py`.
+This folder contains the browser runtime used by `FXGraphExporter`.
 
-Current JS implementation provides a **standalone, embeddable, and highly interactive HTML5 Canvas viewer** for visualizing large-scale **PyTorch FX computational graphs**.  
-It is designed with a **modular architecture** to handle **thousands of nodes and edges** smoothly, without external dependencies.
+## Runtime Model
 
-The viewer renders a graph payload with:
-- main canvas graph renderer
-- minimap
-- search
-- info panel
-- extension layer toggles/color-by
+1. `FXGraphViewer` is the facade and public API.
+2. `ViewerController` is the interaction/state controller.
+3. `GraphDataStore` owns base + extension data and composes active virtual nodes.
+4. Renderers (`CanvasRenderer`, `MinimapRenderer`) paint from controller/store state.
+5. `UIManager` is a state adapter for taskbar/search/layers/info/legend controls.
+6. `FXGraphCompare` orchestrates multi-view compare and synchronization.
 
-## User Interactions & UX Features
+## Public API (Implemented)
 
-- **Interactive Canvas**  
-  Users can drag to pan and use the mouse wheel to zoom.
+Construction:
+1. `FXGraphViewer.create(config)`
 
-- **Smart Minimap**  
-  A collapsible right-sidebar minimap shows a bird’s-eye view of the entire graph.  
-  Users can drag a viewport box within the minimap to pan.
+State/events:
+1. `getState`, `setState`, `replaceState`, `batch`
+2. `on`, `off`
 
-- **Selection Mode**  
-  Clicking a node or edge isolates its execution flow.  
-  Immediate inputs/outputs are highlighted while unrelated branches are dimmed.
+Viewer actions:
+1. `setTheme`, `setLayers`, `setColorBy`
+2. `selectNode`, `clearSelection`, `search`
+3. `zoomToFit`, `panToNode`, `animateToNode`
+4. `setUIVisibility`, `setLayout`
+5. `enterFullscreen`, `exitFullscreen`, `destroy`
 
-- **Info Panel**  
-  Selecting or hovering over an element reveals PyTorch metadata  
-  (tensor shape, dtype, target) in a scrollable panel with clickable links to jump to connected nodes.
+Layer mutation:
+1. `upsertLayer`, `removeLayer`, `patchLayerNodes`, `setLayerLabel`, `setColorRule`
 
-- **Fuzzy Search**  
-  A robust search bar allows querying nodes by ID, op type, or meta attributes,  
-  featuring keyboard navigation and instant camera teleportation.
+Compare:
+1. `FXGraphCompare.create({ viewers, layout, sync })`
+2. `setColumns`, `setCompact`, `setSync`, `destroy`
 
-- **Theme Engine**  
-  Seamless toggling between optimized **Light** and **Dark** mode palettes.
+## Config Precedence
 
-- **Extensibility**  
-  Supports custom overlays via the Python `GraphExtension` API.  
-  Users can toggle data layers on/off and switch coloring modes via the Layers Menu.
+1. `mount.slots.*` (placement) has highest precedence.
+2. Explicit `layout.*` overrides preset defaults.
+3. `layout.preset` fills missing values.
+4. Built-in defaults are last fallback.
 
+## Key UX Behaviors
 
-## Files and Responsibilities
-- `themes.js`: shared theme tokens (`THEMES`).
-- `graph_data_store.js`: payload normalization, adjacency, active virtual-node composition.
-- `search_engine.js`: fuzzy search over active nodes.
-- `view_controller.js`: state machine and interaction orchestration.
-- `canvas_renderer.js`: primary graph rendering + mouse interactions.
-- `minimap_renderer.js`: minimap rendering + navigation.
-- `ui_manager.js`: taskbar/search/layers/info panel/legend DOM.
-- `fx_graph_viewer.js`: top-level facade (`FXGraphViewer`) and layout shell.
+1. API-driven changes reflect in UI controls (`theme/layers/colorBy` sync).
+2. Host container resize triggers canvas resize (`ResizeObserver`).
+3. Headless slots support custom HTML controls around GraphView.
+4. Optional taskbar fullscreen button is enabled via `layout.fullscreen.button`.
 
 ## Script Load Order
-Load in dependency order:
 
 1. `themes.js`
 2. `graph_data_store.js`
@@ -63,66 +58,3 @@ Load in dependency order:
 6. `minimap_renderer.js`
 7. `ui_manager.js`
 8. `fx_graph_viewer.js`
-
-## Payload Contract
-Expected input to `new FXGraphViewer(containerId, payload)`:
-
-```js
-{
-  base: {
-    legend: [{ label, color }],
-    nodes: [{ id, label, x, y, width, height, info, tooltip, fill_color? }],
-    edges: [{ v, w, points? }]
-  },
-  extensions: {
-    [extId]: {
-      name: string,
-      legend: [{ label, color }],
-      nodes: {
-        [nodeId]: {
-          info?: object,
-          tooltip?: string[],
-          label_append?: string[],
-          fill_color?: string
-        }
-      }
-    }
-  }
-}
-```
-
-## Public JS API
-Primary API is on `FXGraphViewer`:
-
-- `new FXGraphViewer(containerId, payload)`: construct viewer in target container.
-- `viewer.init()`: initialize thumbnail + first fit/position.
-- `viewer.renderAll()`: force redraw canvas and minimap.
-- `viewer.selectNode(nodeId)`: select + center on node.
-- `viewer.search(query)`: run search and populate search UI.
-
-## Embedding Example (Split JS)
-```html
-<div id="graph-viewer-container" style="width:100vw;height:100vh;"></div>
-<script>const graphPayload = /* injected JSON */;</script>
-<script src="./themes.js"></script>
-<script src="./graph_data_store.js"></script>
-<script src="./search_engine.js"></script>
-<script src="./view_controller.js"></script>
-<script src="./canvas_renderer.js"></script>
-<script src="./minimap_renderer.js"></script>
-<script src="./ui_manager.js"></script>
-<script src="./fx_graph_viewer.js"></script>
-<script>
-  const viewer = new FXGraphViewer("graph-viewer-container", graphPayload);
-  viewer.init();
-  window.fxViewer = viewer;
-</script>
-```
-
-## Maintenance Notes
-- Keep module boundaries strict: avoid cross-calling renderers from each other; route through `ViewerController`/`FXGraphViewer`.
-- Prefer payload compatibility over UI-only changes; Python exporter and JS contract must stay aligned.
-- If adding a new feature, document:
-  - state shape changes (`ViewerController.state`)
-  - payload schema changes (`GraphDataStore`)
-  - UX wiring (`UIManager` events)
