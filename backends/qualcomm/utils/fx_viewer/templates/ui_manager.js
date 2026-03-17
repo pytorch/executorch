@@ -1,16 +1,5 @@
 
 /**
- * RFC v1 notes:
- * - UI is a state adapter, not an independent state owner.
- * - `syncControlsFromState()` keeps API-driven updates visible in controls.
- * - `setControlVisibility()` supports host-level chrome toggling.
- * - Optional fullscreen button bridges UI and `viewer.enterFullscreen()/exitFullscreen()`.
- *
- * UX impact:
- * - External JS can change theme/layers/colorBy and users see matching control state.
- * - Host can hide toolbar/search/layer UI for focused debugging surfaces.
- */
-/**
  * ============================================================================
  * CLASS: UIManager
  * ============================================================================

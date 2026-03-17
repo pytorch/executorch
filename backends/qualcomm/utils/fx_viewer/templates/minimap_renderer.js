@@ -1,13 +1,4 @@
 /**
- * RFC v1 notes:
- * - Minimap can mount in sidebar or externally provided slot.
- * - Thumbnail regenerates on theme/layer changes and minimap resize.
- *
- * UX impact:
- * - Users keep a stable global graph context even in compact/headless layouts.
- * - Dragging minimap viewport gives fast navigation for large graphs.
- */
-/**
  * ============================================================================
  * CLASS: MinimapRenderer
  * ============================================================================

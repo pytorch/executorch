@@ -22,11 +22,11 @@ import torch
 
 
 from executorch.backends.qualcomm.utils.fx_viewer import (
-        CategoricalColorRule,
-        FXGraphExporter,
-        GraphExtension,
-        GraphNode,
-        NumericColorRule,
+    CategoricalColorRule,
+    FXGraphExporter,
+    GraphExtension,
+    GraphNode,
+    NumericColorRule,
 )
 
 

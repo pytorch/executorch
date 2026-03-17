@@ -1,14 +1,4 @@
 /**
- * RFC v1 notes:
- * - Stores immutable base graph + mutable extension registry.
- * - `computeActiveGraph` materializes render-ready virtual nodes per state.
- * - Runtime APIs (`upsertExtension`, `patchExtensionNodes`, etc.) power dynamic overlays.
- *
- * UX impact:
- * - Slider-driven threshold updates can recolor nodes in-place without re-exporting payloads.
- * - Layer toggles remain stable because data lives in extension registry, not transient view cache.
- */
-/**
  * ============================================================================
  * CLASS: GraphDataStore
  * ============================================================================

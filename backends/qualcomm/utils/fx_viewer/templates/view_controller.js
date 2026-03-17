@@ -1,14 +1,4 @@
 /**
- * RFC v1 notes:
- * - Controller owns interaction state and camera transform.
- * - `setState` triggers canonical recompute/repaint and emits viewer events.
- * - Theme/layer/colorBy mutations propagate through store -> minimap -> legend -> canvas.
- *
- * UX impact:
- * - Every interaction path (UI or API) converges on one state pipeline.
- * - Search, selection, and camera animation remain consistent across embeds.
- */
-/**
  * ============================================================================
  * CLASS: ViewerController
  * ============================================================================
