@@ -79,6 +79,15 @@ class UIManager {
         this.buildUI();
     }
 
+    _createTaskbarButton({ html, title, onClick, className = 'fx-button' }) {
+        const btn = document.createElement('button');
+        btn.className = className;
+        btn.innerHTML = html;
+        if (title) btn.title = title;
+        if (typeof onClick === 'function') btn.onclick = onClick;
+        return btn;
+    }
+
     buildUI() {
         this.taskbar = document.createElement('div');
         this.taskbar.className = 'fx-taskbar';
@@ -116,9 +125,9 @@ class UIManager {
             this.layersContainer.style.position = 'relative';
             this.layersContainer.style.marginLeft = '10px';
 
-            this.btnLayers = document.createElement('button');
-            this.btnLayers.className = 'fx-button';
-            this.btnLayers.innerHTML = '&#x1F4DA; Layers';
+            this.btnLayers = this._createTaskbarButton({
+                html: '&#x1F4DA; Layers',
+            });
 
             this.layersMenu = document.createElement('div');
             this.layersMenu.className = 'fx-layers-menu';
@@ -134,56 +143,56 @@ class UIManager {
         }
 
         if (this.controls.highlightButton) {
-            this.btnHighlight = document.createElement('button');
-            this.btnHighlight.className = 'fx-button active';
-            this.btnHighlight.innerHTML = '&#x1F517;';
-            this.btnHighlight.title = 'Toggle Highlight Ancestors/Descendants';
-            this.btnHighlight.onclick = () => {
-                this.controller.state.highlightAncestors = !this.controller.state.highlightAncestors;
-                this.btnHighlight.classList.toggle('active', this.controller.state.highlightAncestors);
-                this.controller.setState({});
-            };
+            this.btnHighlight = this._createTaskbarButton({
+                html: '&#x1F517;',
+                title: 'Toggle Highlight Ancestors/Descendants',
+                className: 'fx-button active',
+                onClick: () => {
+                    this.controller.state.highlightAncestors = !this.controller.state.highlightAncestors;
+                    this.btnHighlight.classList.toggle('active', this.controller.state.highlightAncestors);
+                    this.controller.setState({});
+                },
+            });
             this.taskbar.appendChild(this.btnHighlight);
         }
 
         if (this.controls.zoomButtons) {
-            this.btnZoomFit = document.createElement('button');
-            this.btnZoomFit.className = 'fx-button';
-            this.btnZoomFit.innerHTML = '&#x26F6;';
-            this.btnZoomFit.title = 'Zoom to Fit';
-            this.btnZoomFit.onclick = () => this.controller.zoomToFit();
+            this.btnZoomFit = this._createTaskbarButton({
+                html: '&#x26F6;',
+                title: 'Zoom to Fit',
+                onClick: () => this.controller.zoomToFit(),
+            });
             this.taskbar.appendChild(this.btnZoomFit);
         }
 
         if (this.controls.fullscreenButton) {
-            this.btnFullscreen = document.createElement('button');
-            this.btnFullscreen.className = 'fx-button';
-            this.btnFullscreen.innerHTML = '&#x26F6;';
-            this.btnFullscreen.title = 'Enter Fullscreen';
-            this.btnFullscreen.onclick = async () => {
-                if (document.fullscreenElement) {
-                    await this.viewer.exitFullscreen();
-                } else {
-                    await this.viewer.enterFullscreen();
-                }
-                this.syncFullscreenButton();
-            };
+            this.btnFullscreen = this._createTaskbarButton({
+                html: '&#x26F6;',
+                title: 'Enter Fullscreen',
+                onClick: async () => {
+                    if (document.fullscreenElement) {
+                        await this.viewer.exitFullscreen();
+                    } else {
+                        await this.viewer.enterFullscreen();
+                    }
+                    this.syncFullscreenButton();
+                },
+            });
             this.taskbar.appendChild(this.btnFullscreen);
             this._onFullscreenChange = () => this.syncFullscreenButton();
-            document.addEventListener('fullscreenchange', this._onFullscreenChange);
-            this._teardownFns.push(() => document.removeEventListener('fullscreenchange', this._onFullscreenChange));
+            fxOn(this._teardownFns, document, 'fullscreenchange', this._onFullscreenChange);
         }
 
         if (this.controls.clearButton) {
-            this.btnClear = document.createElement('button');
-            this.btnClear.className = 'fx-button';
-            this.btnClear.innerHTML = '&#x2716;';
-            this.btnClear.title = 'Clear Selection';
-            this.btnClear.onclick = () => {
-                if (this.searchInput) this.searchInput.value = '';
-                this.controller.handleSearch('');
-                this.controller.clearSelection();
-            };
+            this.btnClear = this._createTaskbarButton({
+                html: '&#x2716;',
+                title: 'Clear Selection',
+                onClick: () => {
+                    if (this.searchInput) this.searchInput.value = '';
+                    this.controller.handleSearch('');
+                    this.controller.clearSelection();
+                },
+            });
             this.taskbar.appendChild(this.btnClear);
         }
 
@@ -221,12 +230,12 @@ class UIManager {
         this.renderLegend();
 
         if (this.searchInput) {
-            this.searchInput.addEventListener('input', (e) => {
+            fxOn(this._teardownFns, this.searchInput, 'input', (e) => {
                 this.controller.handleSearch(e.target.value);
                 this.searchMenu.style.display = e.target.value ? 'block' : 'none';
             });
 
-            this.searchInput.addEventListener('keydown', (e) => {
+            fxOn(this._teardownFns, this.searchInput, 'keydown', (e) => {
                 if (e.key === 'ArrowDown') {
                     e.preventDefault();
                     this.controller.handleSearchNavigate(1);
@@ -251,8 +260,7 @@ class UIManager {
                 this.layersMenu.style.display = 'none';
             }
         };
-        document.addEventListener('click', this._onDocumentClick);
-        this._teardownFns.push(() => document.removeEventListener('click', this._onDocumentClick));
+        fxOn(this._teardownFns, document, 'click', this._onDocumentClick);
 
         this.syncControlsFromState();
         this.syncFullscreenButton();
@@ -660,12 +668,7 @@ class UIManager {
     }
 
     destroy() {
-        while (this._teardownFns.length > 0) {
-            const off = this._teardownFns.pop();
-            try {
-                off();
-            } catch (_) {}
-        }
+        fxOffAll(this._teardownFns);
         if (this.taskbar && this.taskbar.parentNode) this.taskbar.parentNode.removeChild(this.taskbar);
         if (this.legendOverlay && this.legendOverlay.parentNode) this.legendOverlay.parentNode.removeChild(this.legendOverlay);
         if (this.infoPanel && this.infoPanel.parentNode) this.infoPanel.parentNode.removeChild(this.infoPanel);

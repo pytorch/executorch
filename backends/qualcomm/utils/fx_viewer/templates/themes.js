@@ -1,3 +1,26 @@
+function fxOn(teardownFns, target, eventName, handler, options) {
+    if (!target || !target.addEventListener || !target.removeEventListener) return;
+    target.addEventListener(eventName, handler, options);
+    teardownFns.push(() => target.removeEventListener(eventName, handler, options));
+}
+
+function fxOffAll(teardownFns) {
+    while (teardownFns.length > 0) {
+        const off = teardownFns.pop();
+        try {
+            off();
+        } catch (_) {}
+    }
+}
+
+const FX_COMPARE_COMPACT_LAYOUT_PATCH = Object.freeze({
+    panels: Object.freeze({
+        sidebar: Object.freeze({ visible: false }),
+        minimap: Object.freeze({ visible: false }),
+        info: Object.freeze({ visible: false }),
+    }),
+});
+
 const THEMES = {
     'light': {
         bg: '#ffffff',

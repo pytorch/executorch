@@ -222,12 +222,6 @@ class FXGraphViewer {
         return out;
     }
 
-    _addListener(target, eventName, handler, options) {
-        if (!target || !target.addEventListener || !target.removeEventListener) return;
-        target.addEventListener(eventName, handler, options);
-        this._teardownFns.push(() => target.removeEventListener(eventName, handler, options));
-    }
-
     _injectStyles() {
         if (document.getElementById('fx-viewer-styles')) return;
         const style = document.createElement('style');
@@ -325,7 +319,7 @@ class FXGraphViewer {
             document.body.style.cursor = 'col-resize';
             e.preventDefault();
         };
-        this._addListener(this.resizer, 'mousedown', onResizerMouseDown);
+        fxOn(this._teardownFns, this.resizer, 'mousedown', onResizerMouseDown);
 
         if (this.resizerH) {
             const onResizerHMouseDown = (e) => {
@@ -335,7 +329,7 @@ class FXGraphViewer {
                 document.body.style.cursor = 'row-resize';
                 e.preventDefault();
             };
-            this._addListener(this.resizerH, 'mousedown', onResizerHMouseDown);
+            fxOn(this._teardownFns, this.resizerH, 'mousedown', onResizerHMouseDown);
         }
 
         const onWindowMouseMove = (e) => {
@@ -364,7 +358,7 @@ class FXGraphViewer {
                 this.renderAll();
             }
         };
-        this._addListener(window, 'mousemove', onWindowMouseMove);
+        fxOn(this._teardownFns, window, 'mousemove', onWindowMouseMove);
 
         const onWindowMouseUp = () => {
             if (isResizing) {
@@ -378,7 +372,7 @@ class FXGraphViewer {
                 document.body.style.cursor = '';
             }
         };
-        this._addListener(window, 'mouseup', onWindowMouseUp);
+        fxOn(this._teardownFns, window, 'mouseup', onWindowMouseUp);
 
         const onResizerDblClick = () => {
             if (this.config.layout?.panels?.sidebar?.collapsible === false) return;
@@ -388,7 +382,7 @@ class FXGraphViewer {
                 this.renderAll();
             });
         };
-        this._addListener(this.resizer, 'dblclick', onResizerDblClick);
+        fxOn(this._teardownFns, this.resizer, 'dblclick', onResizerDblClick);
     }
 
     applyLayout(layoutPatch) {
@@ -748,12 +742,7 @@ class FXGraphViewer {
         if (this.ui && this.ui.destroy) {
             this.ui.destroy();
         }
-        while (this._teardownFns.length > 0) {
-            const off = this._teardownFns.pop();
-            try {
-                off();
-            } catch (_) {}
-        }
+        fxOffAll(this._teardownFns);
         if (this.wrapper && this.wrapper.parentNode) {
             this.wrapper.parentNode.removeChild(this.wrapper);
         }
@@ -897,7 +886,7 @@ class FXGraphCompare {
                 if (!this._compactSnapshots.has(viewer)) {
                     this._compactSnapshots.set(viewer, JSON.parse(JSON.stringify(viewer.config.layout || {})));
                 }
-                viewer.setLayout({ panels: { sidebar: { visible: false }, minimap: { visible: false }, info: { visible: false } } });
+                viewer.setLayout(FX_COMPARE_COMPACT_LAYOUT_PATCH);
                 return;
             }
             if (this._compactSnapshots.has(viewer)) {
