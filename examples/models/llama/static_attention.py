@@ -13,6 +13,7 @@ from executorch.examples.models.llama.attention import (
     ForwardOptions,
     register_attention,
 )
+from executorch.examples.models.llama.lora import LoRALinear
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import Rope
 
@@ -861,6 +862,17 @@ class StaticAttention(Attention):
         rms_norm_class=torch.nn.RMSNorm,
         **kwargs: Any,
     ) -> "StaticAttention":
+        has_lora = any(
+            isinstance(proj, LoRALinear)
+            for proj in [other.wq, other.wk, other.wv, other.wo]
+        )
+
+        if has_lora and split_mha:
+            raise ValueError(
+                "split_mha=True is not supported when the source AttentionMHA "
+                "contains LoRALinear modules. Use split_mha=False instead."
+            )
+
         config = ModelArgs(
             dim=other.dim,
             n_layers=1,  # Not used in attention layer
@@ -882,6 +894,49 @@ class StaticAttention(Attention):
             split_mha=split_mha,
             **kwargs,
         )
+
+        # Replace nn.Linear with LoRALinear where the source uses LoRA.
+        if has_lora:
+            for attr, proj, in_dim, out_dim, bias in [
+                (
+                    "wqs",
+                    other.wq,
+                    other.dim,
+                    other.n_heads * other.head_dim,
+                    other.attention_qkv_bias,
+                ),
+                (
+                    "wks",
+                    other.wk,
+                    other.dim,
+                    other.n_kv_heads * other.head_dim,
+                    other.attention_qkv_bias,
+                ),
+                (
+                    "wvs",
+                    other.wv,
+                    other.dim,
+                    other.n_kv_heads * other.head_dim,
+                    other.attention_qkv_bias,
+                ),
+            ]:
+                if isinstance(proj, LoRALinear):
+                    getattr(instance, attr)[0] = LoRALinear(
+                        in_dim=in_dim,
+                        out_dim=out_dim,
+                        rank=proj.rank,
+                        alpha=proj.alpha,
+                        use_bias=bias,
+                    )
+            if isinstance(other.wo, LoRALinear):
+                instance.wo = LoRALinear(
+                    in_dim=other.n_heads * other.head_dim,
+                    out_dim=other.dim,
+                    rank=other.wo.rank,
+                    alpha=other.wo.alpha,
+                    use_bias=other.wo.use_bias,
+                )
+
         instance.load_weights_from_attention_mha(other, rms_norm_class=rms_norm_class)
 
         return instance
@@ -1120,7 +1175,7 @@ class StaticAttention(Attention):
             self.wks[0].load_state_dict(other.wk.state_dict())
             self.wvs[0].load_state_dict(other.wv.state_dict())
 
-        self.wo.weight.data.copy_(other.wo.weight)  # pyre-ignore[6]
+        self.wo.load_state_dict(other.wo.state_dict())
 
         if other.use_qk_norm:
             self.use_qk_norm = True
