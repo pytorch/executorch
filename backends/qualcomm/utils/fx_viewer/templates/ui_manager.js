@@ -70,6 +70,7 @@ class UIManager {
         this.viewer = viewer;
         this.controller = viewer.controller;
         this.options = options;
+        this._teardownFns = [];
         this.controls = {
             toolbar: true,
             search: true,
@@ -179,7 +180,9 @@ class UIManager {
                 this.syncFullscreenButton();
             };
             this.taskbar.appendChild(this.btnFullscreen);
-            document.addEventListener('fullscreenchange', () => this.syncFullscreenButton());
+            this._onFullscreenChange = () => this.syncFullscreenButton();
+            document.addEventListener('fullscreenchange', this._onFullscreenChange);
+            this._teardownFns.push(() => document.removeEventListener('fullscreenchange', this._onFullscreenChange));
         }
 
         if (this.controls.clearButton) {
@@ -248,7 +251,7 @@ class UIManager {
             });
         }
 
-        document.addEventListener('click', (e) => {
+        this._onDocumentClick = (e) => {
             if (this.searchContainer && !this.searchContainer.contains(e.target)) {
                 this.closeSearchMenu();
                 if (this.controller.state.searchCandidates.length > 0) {
@@ -258,7 +261,9 @@ class UIManager {
             if (this.layersContainer && !this.layersContainer.contains(e.target)) {
                 this.layersMenu.style.display = 'none';
             }
-        });
+        };
+        document.addEventListener('click', this._onDocumentClick);
+        this._teardownFns.push(() => document.removeEventListener('click', this._onDocumentClick));
 
         this.syncControlsFromState();
         this.syncFullscreenButton();
@@ -663,5 +668,17 @@ class UIManager {
 
     hideInfoPanel() {
         this.infoPanel.innerHTML = '<div style="color: #888; text-align: center; margin-top: 20px;">No node selected<br><br>Hover or click a node</div>';
+    }
+
+    destroy() {
+        while (this._teardownFns.length > 0) {
+            const off = this._teardownFns.pop();
+            try {
+                off();
+            } catch (_) {}
+        }
+        if (this.taskbar && this.taskbar.parentNode) this.taskbar.parentNode.removeChild(this.taskbar);
+        if (this.legendOverlay && this.legendOverlay.parentNode) this.legendOverlay.parentNode.removeChild(this.legendOverlay);
+        if (this.infoPanel && this.infoPanel.parentNode) this.infoPanel.parentNode.removeChild(this.infoPanel);
     }
 }

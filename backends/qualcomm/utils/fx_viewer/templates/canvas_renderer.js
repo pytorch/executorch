@@ -90,6 +90,7 @@ class CanvasRenderer {
     constructor(container, viewer) {
         this.container = container;
         this.viewer = viewer;
+        this._teardownFns = [];
         
         this.canvasContainer = document.createElement('div');
         this.canvasContainer.style.width = '100%';
@@ -106,7 +107,9 @@ class CanvasRenderer {
         this.lastMousePos = { x: 0, y: 0 };
         
         this.resize();
-        window.addEventListener('resize', () => this.resize());
+        this._onWindowResize = () => this.resize();
+        window.addEventListener('resize', this._onWindowResize);
+        this._teardownFns.push(() => window.removeEventListener('resize', this._onWindowResize));
         this._resizeObserver = null;
         if (typeof ResizeObserver !== 'undefined') {
             this._resizeObserver = new ResizeObserver(() => this.resize());
@@ -129,16 +132,24 @@ class CanvasRenderer {
             this._resizeObserver.disconnect();
             this._resizeObserver = null;
         }
+        while (this._teardownFns.length > 0) {
+            const off = this._teardownFns.pop();
+            try {
+                off();
+            } catch (_) {}
+        }
     }
     
     setupEvents() {
-        this.canvas.addEventListener('mousedown', (e) => {
+        const onMouseDown = (e) => {
             this.isDragging = true;
             this.dragMoved = false;
             this.lastMousePos = { x: e.clientX, y: e.clientY };
-        });
+        };
+        this.canvas.addEventListener('mousedown', onMouseDown);
+        this._teardownFns.push(() => this.canvas.removeEventListener('mousedown', onMouseDown));
         
-        window.addEventListener('mousemove', (e) => {
+        const onMouseMove = (e) => {
             if (this.isDragging) {
                 const dx = e.clientX - this.lastMousePos.x;
                 const dy = e.clientY - this.lastMousePos.y;
@@ -160,13 +171,17 @@ class CanvasRenderer {
                 
                 this.detectHover(graphX, graphY);
             }
-        });
+        };
+        window.addEventListener('mousemove', onMouseMove);
+        this._teardownFns.push(() => window.removeEventListener('mousemove', onMouseMove));
         
-        window.addEventListener('mouseup', () => {
+        const onMouseUp = () => {
             this.isDragging = false;
-        });
+        };
+        window.addEventListener('mouseup', onMouseUp);
+        this._teardownFns.push(() => window.removeEventListener('mouseup', onMouseUp));
         
-        this.canvas.addEventListener('wheel', (e) => {
+        const onWheel = (e) => {
             e.preventDefault();
             const zoomIntensity = 0.1;
             const wheel = e.deltaY < 0 ? 1 : -1;
@@ -185,13 +200,17 @@ class CanvasRenderer {
             transform.y = mouseY - graphY * transform.k;
             
             this.viewer.renderAll();
-        }, { passive: false });
+        };
+        this.canvas.addEventListener('wheel', onWheel, { passive: false });
+        this._teardownFns.push(() => this.canvas.removeEventListener('wheel', onWheel));
         
-        this.canvas.addEventListener('click', (e) => {
+        const onClick = (e) => {
             if (this.dragMoved) return;
             const state = this.viewer.controller.state;
             this.viewer.controller.handleClick(state.hoveredNodeId, state.hoveredEdge);
-        });
+        };
+        this.canvas.addEventListener('click', onClick);
+        this._teardownFns.push(() => this.canvas.removeEventListener('click', onClick));
     }
 
     detectHover(graphX, graphY) {

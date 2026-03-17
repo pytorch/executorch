@@ -31,12 +31,14 @@ class FXGraphViewer {
     constructor(arg1, arg2) {
         this._listeners = new Map();
         this._layoutState = {};
+        this._teardownFns = [];
 
         this.config = this._normalizeConfig(arg1, arg2);
         this.containerId = this.config._resolved.root.id || 'fx-viewer-root';
         this.rootContainer = this.config._resolved.root;
         this._injectStyles();
         this._buildShell();
+        this.config._resolved.slots = this._resolveSlots((this.config.mount && this.config.mount.slots) || {});
 
         this.store = new GraphDataStore(this.config.payload);
         this.searchEngine = new SearchEngine(this.store);
@@ -115,13 +117,7 @@ class FXGraphViewer {
         const mergedState = this._deepMerge(presetDefaults.state, config.state || {});
 
         const slots = (config.mount && config.mount.slots) || {};
-        const resolvedSlots = {
-            canvas: this._resolveElement(slots.canvas),
-            toolbar: this._resolveElement(slots.toolbar),
-            info: this._resolveElement(slots.info),
-            minimap: this._resolveElement(slots.minimap),
-            legend: this._resolveElement(slots.legend),
-        };
+        const resolvedSlots = this._resolveSlots(slots);
 
         if (Array.isArray(mergedState.activeExtensions)) {
             mergedState.activeExtensions = mergedState.activeExtensions.slice();
@@ -151,6 +147,16 @@ class FXGraphViewer {
         }
         if (ref instanceof HTMLElement) return ref;
         return null;
+    }
+
+    _resolveSlots(slots) {
+        return {
+            canvas: this._resolveElement(slots.canvas),
+            toolbar: this._resolveElement(slots.toolbar),
+            info: this._resolveElement(slots.info),
+            minimap: this._resolveElement(slots.minimap),
+            legend: this._resolveElement(slots.legend),
+        };
     }
 
     _presetDefaults(preset) {
@@ -234,6 +240,12 @@ class FXGraphViewer {
         return out;
     }
 
+    _addListener(target, eventName, handler, options) {
+        if (!target || !target.addEventListener || !target.removeEventListener) return;
+        target.addEventListener(eventName, handler, options);
+        this._teardownFns.push(() => target.removeEventListener(eventName, handler, options));
+    }
+
     _injectStyles() {
         if (document.getElementById('fx-viewer-styles')) return;
         const style = document.createElement('style');
@@ -275,10 +287,12 @@ class FXGraphViewer {
 
     _buildShell() {
         const root = this.rootContainer;
-        root.innerHTML = '';
+        const oldWrappers = root.querySelectorAll(':scope > .fx-viewer-wrapper[data-fx-viewer-owned="true"]');
+        oldWrappers.forEach((node) => node.remove());
 
         this.wrapper = document.createElement('div');
         this.wrapper.className = 'fx-viewer-wrapper';
+        this.wrapper.dataset.fxViewerOwned = 'true';
         root.appendChild(this.wrapper);
 
         this.mainArea = document.createElement('div');
@@ -322,25 +336,27 @@ class FXGraphViewer {
 
         if (!this.resizer) return;
 
-        this.resizer.addEventListener('mousedown', (e) => {
+        const onResizerMouseDown = (e) => {
             if (!this._isSidebarVisible() || this.config.layout?.panels?.sidebar?.resizable === false) return;
             isResizing = true;
             this.resizer.classList.add('dragging');
             document.body.style.cursor = 'col-resize';
             e.preventDefault();
-        });
+        };
+        this._addListener(this.resizer, 'mousedown', onResizerMouseDown);
 
         if (this.resizerH) {
-            this.resizerH.addEventListener('mousedown', (e) => {
+            const onResizerHMouseDown = (e) => {
                 if (this.config.layout?.panels?.minimap?.resizable === false) return;
                 isResizingH = true;
                 this.resizerH.classList.add('dragging');
                 document.body.style.cursor = 'row-resize';
                 e.preventDefault();
-            });
+            };
+            this._addListener(this.resizerH, 'mousedown', onResizerHMouseDown);
         }
 
-        window.addEventListener('mousemove', (e) => {
+        const onWindowMouseMove = (e) => {
             if (isResizing) {
                 const containerRect = this.wrapper.getBoundingClientRect();
                 let newWidth = containerRect.right - e.clientX;
@@ -365,9 +381,10 @@ class FXGraphViewer {
                 this.minimapRenderer.generateThumbnail();
                 this.renderAll();
             }
-        });
+        };
+        this._addListener(window, 'mousemove', onWindowMouseMove);
 
-        window.addEventListener('mouseup', () => {
+        const onWindowMouseUp = () => {
             if (isResizing) {
                 isResizing = false;
                 this.resizer.classList.remove('dragging');
@@ -378,16 +395,18 @@ class FXGraphViewer {
                 this.resizerH.classList.remove('dragging');
                 document.body.style.cursor = '';
             }
-        });
+        };
+        this._addListener(window, 'mouseup', onWindowMouseUp);
 
-        this.resizer.addEventListener('dblclick', () => {
+        const onResizerDblClick = () => {
             if (this.config.layout?.panels?.sidebar?.collapsible === false) return;
             this.sidebar.classList.toggle('collapsed');
             requestAnimationFrame(() => {
                 this.canvasRenderer.resize();
                 this.renderAll();
             });
-        });
+        };
+        this._addListener(this.resizer, 'dblclick', onResizerDblClick);
     }
 
     applyLayout(layoutPatch) {
@@ -630,8 +649,8 @@ class FXGraphViewer {
 
     setUIVisibility(flags = {}) {
         if (!this.ui) return;
-        this.ui.setControlVisibility(flags);
         const prev = this.getState();
+        this.ui.setControlVisibility(flags);
         this.controller.state.uiVisibility = {
             ...(this.controller.state.uiVisibility || {}),
             ...flags,
@@ -739,8 +758,23 @@ class FXGraphViewer {
 
     destroy() {
         this._listeners.clear();
-        if (this.rootContainer) {
-            this.rootContainer.innerHTML = '';
+        if (this.canvasRenderer && this.canvasRenderer.destroy) {
+            this.canvasRenderer.destroy();
+        }
+        if (this.minimapRenderer && this.minimapRenderer.destroy) {
+            this.minimapRenderer.destroy();
+        }
+        if (this.ui && this.ui.destroy) {
+            this.ui.destroy();
+        }
+        while (this._teardownFns.length > 0) {
+            const off = this._teardownFns.pop();
+            try {
+                off();
+            } catch (_) {}
+        }
+        if (this.wrapper && this.wrapper.parentNode) {
+            this.wrapper.parentNode.removeChild(this.wrapper);
         }
     }
 }
@@ -773,23 +807,26 @@ class FXGraphCompare {
         }
         this._guards = new WeakSet();
         this._offs = [];
+        this._compactSnapshots = new WeakMap();
 
         this._wireSelectionSync();
         this._wireStateSync();
         this._applyColumns();
-        if (this.layout.compact) {
-            this.viewers.forEach((v) => {
-                v.setLayout({ panels: { sidebar: { visible: false }, minimap: { visible: false }, info: { visible: false } } });
-            });
-        }
+        this._applyCompact(this.layout.compact);
     }
 
     _wireSelectionSync() {
         this.viewers.forEach((viewer) => {
             const off = viewer.on('selectionchange', (evt) => {
                 if (!this.sync.selection) return;
-                if (!evt.nextSelection) return;
                 if (this._guards.has(viewer)) return;
+                if (!evt.nextSelection) {
+                    this.viewers.forEach((other) => {
+                        if (other === viewer) return;
+                        this._applyGuarded(other, () => other.clearSelection());
+                    });
+                    return;
+                }
 
                 this.viewers.forEach((other) => {
                     if (other === viewer) return;
@@ -850,13 +887,7 @@ class FXGraphCompare {
 
     setCompact(compact) {
         this.layout.compact = !!compact;
-        this.viewers.forEach((v) => {
-            if (this.layout.compact) {
-                v.setLayout({ panels: { sidebar: { visible: false }, minimap: { visible: false }, info: { visible: false } } });
-            } else {
-                v.setLayout({ panels: { sidebar: { visible: true }, minimap: { visible: true }, info: { visible: true } } });
-            }
-        });
+        this._applyCompact(this.layout.compact);
     }
 
     setSync(syncPatch = {}) {
@@ -877,6 +908,22 @@ class FXGraphCompare {
         this.container.style.display = 'grid';
         this.container.style.gridTemplateColumns = `repeat(${this.layout.columns}, minmax(320px, 1fr))`;
         this.container.style.gap = this.container.style.gap || '10px';
+    }
+
+    _applyCompact(compact) {
+        this.viewers.forEach((viewer) => {
+            if (compact) {
+                if (!this._compactSnapshots.has(viewer)) {
+                    this._compactSnapshots.set(viewer, JSON.parse(JSON.stringify(viewer.config.layout || {})));
+                }
+                viewer.setLayout({ panels: { sidebar: { visible: false }, minimap: { visible: false }, info: { visible: false } } });
+                return;
+            }
+            if (this._compactSnapshots.has(viewer)) {
+                viewer.setLayout(this._compactSnapshots.get(viewer));
+                this._compactSnapshots.delete(viewer);
+            }
+        });
     }
 
     destroy() {
