@@ -392,6 +392,12 @@ def make_linear_q4gsw_op(
         force_update=True,
     )
 
+    # Pad bias to multiple of 4 if present
+    if match.bias_node is not None:
+        bias_tensor = get_param_tensor(ep, match.bias_node)
+        if bias_tensor is not None:
+            utils.align_width_and_update_state_dict(ep, match.bias_node, bias_tensor)
+
     with graph_module.graph.inserting_before(match.output_node):
         linear_q4gsw_node = graph_module.graph.create_node(
             "call_function",
@@ -439,6 +445,12 @@ def make_linear_dq8ca_q4gsw_op(
         align_to=1,
         force_update=True,
     )
+
+    # Pad bias to multiple of 4 if present
+    if match.bias_node is not None:
+        bias_tensor = get_param_tensor(ep, match.bias_node)
+        if bias_tensor is not None:
+            utils.align_width_and_update_state_dict(ep, match.bias_node, bias_tensor)
 
     first_graph_node = list(graph_module.graph.nodes)[0]
     with graph_module.graph.inserting_before(first_graph_node):
