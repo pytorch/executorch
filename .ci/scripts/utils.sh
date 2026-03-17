@@ -84,11 +84,11 @@ dedupe_macos_loader_path_rpaths() {
 
 install_domains() {
   echo "Install torchvision and torchaudio"
-  pip install --force-reinstall torchvision==0.26.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/test/cpu
+  pip install --force-reinstall --no-cache-dir torchvision==0.26.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/test/cpu
 }
 
 install_pytorch_and_domains() {
-  pip install --force-reinstall torch==2.11.0 torchvision==0.26.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/test/cpu
+  pip install --force-reinstall --no-cache-dir torch==2.11.0 torchvision==0.26.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/test/cpu
 }
 
 build_executorch_runner_buck2() {
