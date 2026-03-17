@@ -28,6 +28,12 @@ void resize_expand_node(
   const std::vector<int64_t> target_sizes =
       graph->extract_int_or_symint_list(size_ref);
 
+  VK_CHECK_COND(
+      target_sizes.size() >= in_sizes.size(),
+      "expand: target sizes must have at least as many dims as input");
+  VK_CHECK_COND(
+      !target_sizes.empty(), "expand: target sizes must not be empty");
+
   const size_t dim_offset = target_sizes.size() - in_sizes.size();
   std::vector<int64_t> out_sizes(target_sizes.size());
   for (size_t i = 0; i < target_sizes.size(); i++) {
