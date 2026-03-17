@@ -145,7 +145,7 @@ ThreadPool* get_threadpool() {
      * tricky to detect if we are running under tsan, for now capping the
      * default threadcount to the tsan limit unconditionally.
      */
-    constexpr unsigned int tsan_thread_limit = 63;
+    constexpr long unsigned int tsan_thread_limit = 63;
     return std::min(result, tsan_thread_limit);
   })();
 
