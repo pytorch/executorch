@@ -758,6 +758,10 @@ def get_native_layer_norm_inputs():
         "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
+    test_suite.storage_types = [
+        "utils::kTexture3D",
+        "utils::kBuffer",
+    ]
     return test_suite
 
 
