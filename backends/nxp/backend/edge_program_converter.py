@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
+
 import executorch.backends.nxp.backend.ir.logger as logger
 import flatbuffers
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
@@ -31,17 +33,20 @@ functions_converters = {
     exir_ops.edge.aten.add.Tensor: AddTensorConverter,  # noqa F405
     exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,  # noqa F405
     exir_ops.edge.aten.cat.default: CatConverter,  # noqa F405
+    exir_ops.edge.aten.clamp.default: ClampConverter,  # noqa F405
     exir_ops.edge.aten.clone.default: CloneConverter,  # noqa F405
     exir_ops.edge.dim_order_ops._clone_dim_order.default: CloneConverter,  # noqa F405
     exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter,  # noqa F405
     exir_ops.edge.aten.convolution.default: ConvolutionConverter,  # noqa F405
     exir_ops.edge.aten.hardtanh.default: HardTanhConverter,  # noqa F405
-    exir_ops.edge.aten.max_pool2d.default: MaxPool2dConverter,  # noqa F405
+    exir_ops.edge.aten.leaky_relu.default: LeakyReluConverter,  # noqa F405
+    exir_ops.edge.aten.max_pool2d_with_indices.default: MaxPool2DWithIndicesConverter,  # noqa F405
     exir_ops.edge.aten.mean.dim: MeanDimConverter,  # noqa F405
     exir_ops.edge.aten.mm.default: MMConverter,  # noqa F405
     exir_ops.edge.aten.mul.Tensor: MulTensorConverter,  # noqa F405
     exir_ops.edge.aten.neg.default: NegConverter,  # noqa F405
     exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,  # noqa F405
+    exir_ops.edge.aten.prelu.default: PReLUConverter,  # noqa F405
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
     exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
     exir_ops.edge.aten.slice_copy.Tensor: SliceTensorConverter,  # noqa F405
@@ -54,13 +59,16 @@ functions_converters = {
 }
 
 
+NXP_PROCESSED_TAG = "NXP_PROCESSED_TAG"
+
+
 class EdgeProgramToIRConverter:
     """
     Converter from convertion of ExportedProgram in Edge dialect to IR (TFLite Flatbuffers).
     """
 
     _default_conversion_config = ConversionConfig()
-    _default_target_spec = NeutronTargetSpec("imxrt700", "SDK_25_12")
+    _default_target_spec = NeutronTargetSpec("imxrt700")
     _default_delegation_options = CustomDelegationOptions()
 
     def convert_program(
@@ -156,6 +164,11 @@ class EdgeProgramToIRConverter:
                 if node.target in qdq_related_functions and "cluster" in node.meta:
                     # Skip (De)Quantize nodes that were already processed
                     pass
+                elif node.target == operator.getitem and node.meta.get(
+                    NXP_PROCESSED_TAG, False
+                ):
+                    # The node was already processed alongside the Q/DQ ops.
+                    pass
                 elif node.target in functions_converters:
                     functions_converters[node.target](conversion_context).convert(node)
                 else:
@@ -206,8 +219,12 @@ class EdgeProgramToIRConverter:
                         result_map[input_spec.arg.name] = param
 
                     else:
-                        # There is no data available.
-                        continue
+                        logger.w(
+                            f"No real or post-quantization data found for '{input_spec.target}'. "
+                            f"Using a FakeTensor."
+                        )
+                        param = edge_program.state_dict[input_spec.target]
+                        result_map[input_spec.arg.name] = param
 
         return result_map
 
@@ -257,9 +274,8 @@ class EdgeProgramToIRConverter:
     def _convert_qdq_cluster_q_dq_nodes(
         self, nodes: list[Node], conversion_context: ConversionContext
     ):
-        """
-        Go through program and convert De(Quantize) nodes that are part of the QDQ cluster into
-        tensors.
+        """Go through the program and convert [De]Quantize nodes that are part of a QDQ cluster into tensors.
+            Also convert related `GetItem` nodes to NO-OPs, which just propagate the quantization.
 
         :param nodes: Program's nodes.
         :param conversion_context: ConversionContext instance.
@@ -278,3 +294,14 @@ class EdgeProgramToIRConverter:
                 and part_of_qdq_cluster
             ):
                 qdq_q_ops_converters[node.target](conversion_context).convert(node)
+
+        # Usually, `getitem` nodes are a part of a "foreign" QDQ cluster. They consume the output of the main compute
+        #  operator, and they are followed by a `Quantize` operator, which specifies the output quantization parameters
+        #  of the cluster. So the input of the `GetItem` is float32, and the output is quantized. Due to how the Neutron
+        #  IR represents quantization, the quantization parameters must be propagated from the output to the input.
+        for node in nodes:
+            if node.target == operator.getitem:
+                # Convert the builtin function into a "NO-OP" in the IR, and propagate the quantization parameters in
+                #  reverse.
+                GetItemConverter(conversion_context).convert(node)  # noqa: F405
+                node.meta[NXP_PROCESSED_TAG] = True

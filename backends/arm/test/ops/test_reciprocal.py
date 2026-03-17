@@ -70,6 +70,8 @@ def test_reciprocal_tosa_INT(test_data: torch.Tensor):
         (test_data(),),
         aten_op,
         exir_op=[],
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,5 +9,14 @@ git rev-list --format=%s --max-count=1 HEAD | grep -q WIP && exit 0
 
 # Check 2: lintunner on latest patch.
 lintrunner -a --revision 'HEAD^' --skip MYPY
-commit_files=$(git diff-tree --no-commit-id --name-only --diff-filter=M HEAD -r)
-git add $commit_files || true
+
+# Re-stage only paths that were already staged before lintrunner ran.
+# This preserves lint fixes for files the user intended to commit, and avoids
+# accidentally staging unrelated working-tree changes during commit --amend.
+staged_files=$(git diff --cached --name-only --diff-filter=ACMR)
+while IFS= read -r path; do
+    [ -z "${path}" ] && continue
+    if [ -f "${path}" ]; then
+        git add -- "${path}" || true
+    fi
+done <<< "${staged_files}"

@@ -63,6 +63,8 @@ def main(args):
         QnnExecuTorchBackendType.kHtpBackend: make_quantizer(
             quant_dtype=QuantDtype.use_16a16w,
             eps=2**-20,
+            backend=backend,
+            soc_model=args.model,
         ),
     }[backend]
     build_executorch_binary(
@@ -92,9 +94,8 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
         target=args.target,
-        backend=backend,
     )
-    adb.push(inputs=inputs)
+    adb.push(inputs=inputs, backends={backend})
     adb.execute()
 
     # collect output data

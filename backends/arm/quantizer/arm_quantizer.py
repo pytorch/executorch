@@ -24,8 +24,11 @@ from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.common.arm_compile_spec import (
     ArmCompileSpec,
 )  # isort: skip
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_cond_while_submodules_nested,
+    is_submodule_node,
+)
 from executorch.backends.arm.vgf import VgfCompileSpec
-from executorch.exir.graph_module import get_cond_while_submodules
 
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e import (
@@ -73,6 +76,7 @@ def get_symmetric_quantization_config(
     act_qmax: int = 127,
     weight_qmin: int = -127,
     weight_qmax: int = 127,
+    eps: float = 2**-16,
 ) -> QuantizationConfig:
     """Create symmetric quantization config for activations and weights.
 
@@ -92,7 +96,7 @@ def get_symmetric_quantization_config(
         bias.
 
     """
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
+    extra_args: Dict[str, Any] = {"eps": eps}
     if is_qat:
         if is_dynamic:
             act_observer_or_fake_quant_ctr = FakeQuantize
@@ -644,9 +648,14 @@ class TOSAQuantizer(Quantizer):
         model: GraphModule,
         calibration_samples: list[tuple],
         is_qat: bool = False,
+        fold_quantize: bool = True,
     ):
         """Quantizes a GraphModule in a way such that conditional submodules are
         handled properly.
+
+        Note: torchao's prepare_pt2e and convert_pt2e natively handle
+        while_loop body_fn submodules, so we only manually process cond
+        branches and while_loop cond_fn here.
 
         Args:
             model (GraphModule): The model to quantize.
@@ -655,6 +664,8 @@ class TOSAQuantizer(Quantizer):
                 model with submodules, at least one sample per code path is
                 needed.
             is_qat (bool): Whether to do quantization aware training or not.
+            fold_quantize (bool): Enables or disables constant folding when quantization
+                is completed.
 
         Returns:
             GraphModule: The quantized model.
@@ -663,15 +674,40 @@ class TOSAQuantizer(Quantizer):
         prepare_fn = prepare_qat_pt2e if is_qat else prepare_pt2e
 
         prepared = prepare_fn(model, self)
-        for name, submodule, _ in get_cond_while_submodules(prepared):
+        # Prepare conditional submodules (e.g., if/while bodies)
+        # prepare only cond branches and while_loop cond_fn
+        for name, submodule, _ in get_cond_while_submodules_nested(
+            prepared, apply_quantization=True
+        ):
             prepared.set_submodule(name, prepare_fn(submodule, self), strict=True)
+            for submodule_node in submodule.graph.nodes:
+                if is_submodule_node(submodule_node):
+                    for nested_name, nested_sub, _ in get_cond_while_submodules_nested(
+                        submodule, apply_quantization=True
+                    ):
+                        prepared.set_submodule(
+                            nested_name, prepare_fn(nested_sub, self), strict=True
+                        )
+
         for inp in calibration_samples:
             prepared(*inp)
 
-        for name, submodule, _ in get_cond_while_submodules(prepared):
-            prepared.set_submodule(name, convert_pt2e(submodule), strict=True)
-        converted = convert_pt2e(prepared)
-        return converted
+        # Prepare conditional submodules (e.g., if/while bodies)
+        # convert only cond branches and while_loop cond_fn
+        for _, submodule, _ in get_cond_while_submodules_nested(
+            prepared, apply_quantization=True
+        ):
+            converted = convert_pt2e(submodule)
+            for submodule_node in submodule.graph.nodes:
+                if is_submodule_node(submodule_node):
+                    for nested_name, nested_sub, _ in get_cond_while_submodules_nested(
+                        submodule, apply_quantization=True
+                    ):
+                        converted.set_submodule(
+                            nested_name, convert_pt2e(nested_sub), strict=True
+                        )
+
+        return convert_pt2e(prepared)
 
 
 class EthosUQuantizer(TOSAQuantizer):

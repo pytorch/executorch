@@ -82,6 +82,8 @@ def main(args):
         QnnExecuTorchBackendType.kHtpBackend: make_quantizer(
             quant_dtype=QuantDtype.use_16a8w,
             eps=2**-20,
+            backend=backend,
+            soc_model=args.model,
         ),
     }[backend]
     build_executorch_binary(
@@ -114,7 +116,6 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
         target=args.target,
-        backend=backend,
     )
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
@@ -136,7 +137,7 @@ def main(args):
     )
     sample_input = tuple(sample_input.values())
     golden = module(*sample_input)[0]
-    adb.push(inputs=[sample_input])
+    adb.push(inputs=[sample_input], backends={backend})
     adb.execute()
     adb.pull(host_output_path=args.artifact)
 
@@ -148,7 +149,7 @@ def main(args):
     print(f"QNN output: {tokenizer.batch_decode(predictions.argmax(axis=2))}")
 
     # accuracy analysis
-    adb.push(inputs=inputs)
+    adb.push(inputs=inputs, backends={backend})
     adb.execute()
     adb.pull(host_output_path=args.artifact)
     goldens, predictions = [], []

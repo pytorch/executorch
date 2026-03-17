@@ -121,9 +121,22 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
-        name = "op_quantized_conv1d",
-        srcs = ["op_quantized_conv1d.cpp"],
-        exported_headers = ["op_quantized_conv1d.h"],
+        name = "op_quantized_conv1d_ncl",
+        srcs = ["op_quantized_conv1d_ncl.cpp"],
+        exported_headers = ["op_quantized_conv1d_ncl.h"],
+        platforms = CXX,
+        deps = [
+            ":cadence_type_util",
+            "//executorch/backends/cadence/generic/kernels:cadence_kernels",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_conv1d_nlc",
+        srcs = ["op_quantized_conv1d_nlc.cpp"],
+        exported_headers = ["op_quantized_conv1d_nlc.h"],
         platforms = CXX,
         deps = [
             ":cadence_type_util",

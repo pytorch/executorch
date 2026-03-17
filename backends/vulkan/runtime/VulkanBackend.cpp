@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/vulkan/runtime/ResolveLayouts.h>
 #include <executorch/backends/vulkan/runtime/VulkanDelegateHeader.h>
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
 
@@ -32,6 +33,7 @@
 #include <cstring>
 #include <memory>
 #include <type_traits>
+#include <unordered_map>
 #include <vector>
 
 namespace executorch {
@@ -144,6 +146,15 @@ utils::GPUMemoryLayout get_memory_layout(
       return utils::kPackedInt8_4W4C;
     case vkgraph::VkMemoryLayout::PACKED_INT8_4H4W:
       return utils::kPackedInt8_4H4W;
+    case vkgraph::VkMemoryLayout::PACKED_INT8_4W:
+      return utils::kPackedInt8_4W;
+    case vkgraph::VkMemoryLayout::PACKED_INT8_4C:
+      return utils::kPackedInt8_4C;
+    case vkgraph::VkMemoryLayout::PACKED_INT8_4C1W:
+      return utils::kPackedInt8_4C1W;
+    case vkgraph::VkMemoryLayout::PACKED_INT8_CONV2D:
+      // Fallback for unresolved dynamic layout
+      return utils::kPackedInt8_4C1W;
     default:
       break;
   }
@@ -201,6 +212,8 @@ class GraphBuilder {
   std::vector<FreeableBuffer> loaded_buffers_from_map_;
 
   std::vector<ValueRef> ref_mapping_;
+  std::unordered_map<uint32_t, vkgraph::VkMemoryLayout>
+      memory_layout_overrides_;
 
  public:
   explicit GraphBuilder(
@@ -213,7 +226,13 @@ class GraphBuilder {
         constant_data_(constant_data),
         named_data_map_(named_data_map),
         loaded_buffers_from_map_(),
-        ref_mapping_() {}
+        ref_mapping_(),
+        memory_layout_overrides_() {}
+
+  void resolve_layouts() {
+    resolve_memory_layouts(
+        flatbuffer_, compute_graph_, memory_layout_overrides_);
+  }
 
   void resize(uint32_t size) {
     ref_mapping_.resize(size, INT32_MAX);
@@ -231,6 +250,21 @@ class GraphBuilder {
     return ref_mapping_[fb_id];
   }
 
+  utils::GPUMemoryLayout get_resolved_memory_layout(
+      const uint32_t fb_id,
+      VkTensorPtr tensor_fb,
+      const std::vector<int64_t>& dims_vector) {
+    auto it = memory_layout_overrides_.find(fb_id);
+    if (it != memory_layout_overrides_.end()) {
+      return get_memory_layout(it->second);
+    }
+
+    if (tensor_fb->memory_layout() == vkgraph::VkMemoryLayout::DEFAULT_LAYOUT) {
+      return compute_graph_->suggested_memory_layout(dims_vector);
+    }
+    return get_memory_layout(tensor_fb->memory_layout());
+  }
+
   void add_tensor_to_graph(const uint32_t fb_id, VkTensorPtr tensor_fb) {
     const vkapi::ScalarType& dtype = get_scalar_type(tensor_fb->datatype());
     utils::StorageType storage_type =
@@ -242,9 +276,7 @@ class GraphBuilder {
     const std::vector<int64_t> dims_vector(dims_fb->cbegin(), dims_fb->cend());
 
     utils::GPUMemoryLayout memory_layout =
-        tensor_fb->memory_layout() == vkgraph::VkMemoryLayout::DEFAULT_LAYOUT
-        ? compute_graph_->suggested_memory_layout(dims_vector)
-        : get_memory_layout(tensor_fb->memory_layout());
+        get_resolved_memory_layout(fb_id, tensor_fb, dims_vector);
 
     ValueRef ref;
     if (tensor_fb->constant_id() >= 0) {
@@ -589,6 +621,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     GraphBuilder builder(
         compute_graph, flatbuffer_graph, constant_data, named_data_map);
 
+    builder.resolve_layouts();
     builder.build_graph();
 
     compute_graph->prepare();
@@ -639,6 +672,21 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
 
     const size_t num_inputs = compute_graph->inputs().size();
     bool should_propagate_resize = false;
+#ifdef ET_EVENT_TRACER_ENABLED
+    runtime::EventTracer* event_tracer = context.event_tracer();
+    runtime::EventTracerEntry overall_event_tracer_entry =
+        event_tracer_start_profiling_delegate(
+            event_tracer,
+            "ETVK_EXECUTE",
+            /* delegate_debug_id = */ -1);
+#endif // ET_EVENT_TRACER_ENABLED
+#ifdef ET_EVENT_TRACER_ENABLED
+    runtime::EventTracerEntry copy_inputs_event_tracer_entry =
+        event_tracer_start_profiling_delegate(
+            event_tracer,
+            "ETVK_COPY_INPUTS",
+            /* delegate_debug_id = */ -1);
+#endif // ET_EVENT_TRACER_ENABLED
     for (size_t i = 0; i < num_inputs; i++) {
       const ValueRef iref = compute_graph->inputs()[i].value;
       if (compute_graph->val_is_tensor(iref)) {
@@ -667,13 +715,61 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
             compute_graph->get_val_type(iref));
       }
     }
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_end_profiling_delegate(
+        event_tracer, copy_inputs_event_tracer_entry);
+#endif // ET_EVENT_TRACER_ENABLED
 
     if (should_propagate_resize || compute_graph->has_data_dependent_shapes()) {
+#ifdef ET_EVENT_TRACER_ENABLED
+      runtime::EventTracerEntry resize_event_tracer_entry =
+          event_tracer_start_profiling_delegate(
+              event_tracer,
+              "ETVK_RESIZE",
+              /* delegate_debug_id = */ -1);
+#endif // ET_EVENT_TRACER_ENABLED
       compute_graph->propagate_resize();
+#ifdef ET_EVENT_TRACER_ENABLED
+      event_tracer_end_profiling_delegate(
+          event_tracer, resize_event_tracer_entry);
+#endif // ET_EVENT_TRACER_ENABLED
     }
 
+#ifdef ET_EVENT_TRACER_ENABLED
+    runtime::EventTracerEntry execute_event_tracer_entry =
+        event_tracer_start_profiling_delegate(
+            event_tracer,
+            "ETVK_COMPUTE_GRAPH_EXECUTE",
+            /* delegate_debug_id = */ -1);
+#endif // ET_EVENT_TRACER_ENABLED
     compute_graph->execute();
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_end_profiling_delegate(
+        event_tracer, execute_event_tracer_entry);
+#endif // ET_EVENT_TRACER_ENABLED
 
+#ifdef ET_EVENT_TRACER_ENABLED
+    compute_graph->context()->querypool().extract_results();
+    for (const auto& r :
+         compute_graph->context()->querypool().get_shader_timestamp_data()) {
+      std::string event_name = "{" + r.kernel_name +
+          ", \"dispatch_id\": " + std::to_string(r.dispatch_id) + "}";
+      event_tracer_log_profiling_delegate(
+          event_tracer,
+          event_name.c_str(),
+          /* delegate_debug_id = */ -1,
+          r.start_time_ns,
+          r.end_time_ns);
+    }
+#endif // ET_EVENT_TRACER_ENABLED
+
+#ifdef ET_EVENT_TRACER_ENABLED
+    runtime::EventTracerEntry copy_outputs_event_tracer_entry =
+        event_tracer_start_profiling_delegate(
+            event_tracer,
+            "ETVK_COPY_OUTPUTS",
+            /* delegate_debug_id = */ -1);
+#endif // ET_EVENT_TRACER_ENABLED
     for (size_t i = 0; i < compute_graph->outputs().size(); i++) {
       const size_t o = i + num_inputs;
       const ValueRef oref = compute_graph->outputs()[i].value;
@@ -699,21 +795,14 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
             compute_graph->get_val_type(oref));
       }
     }
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_end_profiling_delegate(
+        event_tracer, copy_outputs_event_tracer_entry);
+#endif // ET_EVENT_TRACER_ENABLED
 
 #ifdef ET_EVENT_TRACER_ENABLED
-    runtime::EventTracer* event_tracer = context.event_tracer();
-    compute_graph->context()->querypool().extract_results();
-    for (const auto& r :
-         compute_graph->context()->querypool().get_shader_timestamp_data()) {
-      std::string event_name = "{" + r.kernel_name +
-          ", \"dispatch_id\": " + std::to_string(r.dispatch_id) + "}";
-      event_tracer_log_profiling_delegate(
-          event_tracer,
-          event_name.c_str(),
-          /* delegate_debug_id = */ -1,
-          r.start_time_ns,
-          r.end_time_ns);
-    }
+    event_tracer_end_profiling_delegate(
+        event_tracer, overall_event_tracer_entry);
 #endif // ET_EVENT_TRACER_ENABLED
 
     return Error::Ok;

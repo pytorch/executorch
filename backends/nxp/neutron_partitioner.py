@@ -8,7 +8,7 @@
 import logging
 import operator
 from dataclasses import dataclass
-from typing import final, Mapping
+from typing import Callable, final, Mapping
 
 import torch
 
@@ -23,6 +23,7 @@ from executorch.backends.nxp.backend.edge_helper import (
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
+from executorch.backends.nxp.backend.ir import logger
 from executorch.backends.nxp.backend.ir.converter.node_converter import is_not_qdq_node
 from torch.export.exported_program import ExportedProgram
 from torch.fx import Graph
@@ -75,13 +76,15 @@ class QDQClusterRecognizer:
 
     AUXILIARY_OPS = [
         operator.getitem,
-        exir_ops.edge.aten.view_copy.default,
-        exir_ops.edge.aten.permute_copy.default,
+        exir_ops.edge.aten.clone.default,
         exir_ops.edge.aten.hardtanh.default,
+        exir_ops.edge.aten.permute_copy.default,
         exir_ops.edge.aten.relu.default,
         exir_ops.edge.aten.sigmoid.default,
+        exir_ops.edge.aten.squeeze_copy.dims,
         exir_ops.edge.aten.tanh.default,
-        exir_ops.edge.aten.clone.default,
+        exir_ops.edge.aten.unsqueeze_copy.default,
+        exir_ops.edge.aten.view_copy.default,
         exir_ops.edge.dim_order_ops._clone_dim_order.default,
     ]
 
@@ -203,18 +206,20 @@ supported_ops = {
     exir_ops.edge.aten.add.Tensor: AddTensorConverter,  # noqa F405
     exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,  # noqa F405
     exir_ops.edge.aten.cat.default: CatConverter,  # noqa F405
+    exir_ops.edge.aten.clamp.default: ClampConverter,  # noqa F405
     exir_ops.edge.aten.clone.default: CloneConverter,  # noqa F405
     exir_ops.edge.dim_order_ops._clone_dim_order.default: CloneConverter,  # noqa F405
     exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter,  # noqa F405
     exir_ops.edge.aten.convolution.default: ConvolutionConverter,  # noqa F405
     exir_ops.edge.aten.hardtanh.default: HardTanhConverter,  # noqa F405
-    exir_ops.edge.aten.max_pool2d.default: MaxPool2dConverter,  # noqa F405
-    exir_ops.edge.aten.max_pool2d_with_indices.default: MaxPool2dConverter,  # noqa F405
+    exir_ops.edge.aten.leaky_relu.default: LeakyReluConverter,  # noqa F405
+    exir_ops.edge.aten.max_pool2d_with_indices.default: MaxPool2DWithIndicesConverter,  # noqa F405
     exir_ops.edge.aten.mean.dim: MeanDimConverter,  # noqa F405
     exir_ops.edge.aten.mm.default: MMConverter,  # noqa F405
     exir_ops.edge.aten.mul.Tensor: MulTensorConverter,  # noqa F405
     exir_ops.edge.aten.neg.default: NegConverter,  # noqa F405
     exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,  # noqa F405
+    exir_ops.edge.aten.prelu.default: PReLUConverter,  # noqa F405
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
     exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
     exir_ops.edge.aten.slice_copy.Tensor: SliceTensorConverter,  # noqa F405
@@ -319,6 +324,8 @@ class NeutronPartitioner(Partitioner):
         neutron_target_spec: NeutronTargetSpec,
         custom_delegation_options: CustomDelegationOptions | None = None,
         post_quantization_state_dict: dict[str, Parameter] | None = None,
+        preserve_ops: list[torch._ops.OpOverload] | None = None,
+        check_op_support: Callable[[torch.fx.Node], bool] | None = None,
     ) -> None:
         """Class responsible for identifying partitions suited for delegation to the eIQ Neutron NPU.
 
@@ -337,6 +344,8 @@ class NeutronPartitioner(Partitioner):
         )
         self.neutron_target_spec = neutron_target_spec
         self.post_quantization_state_dict = post_quantization_state_dict
+        self.preserve_ops = preserve_ops or []
+        self.check_op_support = check_op_support
 
     @staticmethod
     def _partition_contains_compute_nodes(
@@ -425,7 +434,7 @@ class NeutronPartitioner(Partitioner):
 
         graph_module.recompile()
 
-        operators_not_to_delegate = self.delegation_spec[1][4].value.decode().split(",")
+        operators_not_to_delegate = self.delegation_spec[1][3].value.decode().split(",")
         logging.info(f"Operators not to delegate: {operators_not_to_delegate}")
 
         parameters_mapping = EdgeProgramToIRConverter.map_inputs_to_parameters(
@@ -478,3 +487,58 @@ class NeutronPartitioner(Partitioner):
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags
         )
+
+    def ops_to_not_decompose(
+        self,
+        ep: ExportedProgram,
+    ) -> tuple[list[torch._ops.OpOverload], Callable[[torch.fx.Node], bool] | None]:
+        """
+        Method to determine which operators SHOULD NOT be decomposed to edge dialect.
+
+        The method returns:
+            a list of operators NOT to decompose
+            optional callable - filter
+        If the operator is in the list and the evaluation of the callable is True (or the callable is not specified),
+        the operator should not be decomposed (i.e. it truly belongs to the list). Otherwise, it should be decomposed.
+        """
+
+        # The parameters_mapping will only contain `FakeTensor` objects since the partitioning is done with a "Fake model".
+        # If a node is selected to not be decomposed and it requires the real static parameters in its 'is_supported_*' methods,
+        # the state dict from the quantized model will need to be provided here.
+        parameters_mapping = EdgeProgramToIRConverter.map_inputs_to_parameters(ep)
+        aten_op_to_converter = {}
+        for exir_op, converter in supported_ops.items():
+            aten_op_to_converter[exir_op._op] = converter
+
+        # determine node format so it can be checked if the nodes are delegable
+        NodeFormatInference(ep, only_for_op_support_check=True).identify_node_formats()
+
+        def check_op_support_extended(node: torch.fx.Node):
+            # if the operator should not be preserved, then it should be decomposed
+            if node.target not in self.preserve_ops:
+                return False
+
+            # if the converter for the node does not exist, the operator should be decomposed
+            node_converter = aten_op_to_converter.get(node.target)
+            if node_converter is None:
+                logger.w(
+                    f"Node of target {str(node.target)} might be decomposed to other edge operators "
+                    + "because no appropriate NodeConverter exists."
+                )
+                return False
+
+            delegable = node_converter.is_supported(
+                node,
+                self.neutron_target_spec,
+                parameters_mapping,
+                self.custom_delegation_options,
+            )
+
+            # if the node is delegable and the base check_op callable determines the node should not be decomposed,
+            # then do not decompose
+            base_check_op = (
+                True if self.check_op_support is None else self.check_op_support(node)
+            )
+            return delegable and base_check_op
+
+        return self.preserve_ops, check_op_support_extended

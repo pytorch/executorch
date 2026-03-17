@@ -12,16 +12,13 @@ from multiprocessing.connection import Client
 import numpy as np
 import torch
 
-from executorch.backends.qualcomm.quantizer.annotators import (
-    QuantizationConfig,
-    QuantizationSpec,
-)
 from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
     PerChannelParamObserver,
 )
 from executorch.backends.qualcomm.quantizer.qconfig import (
     _derived_bias_quant_spec,
     MovingAverageMinMaxObserver,
+    QuantizationConfig,
 )
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
@@ -40,6 +37,7 @@ from executorch.examples.qualcomm.utils import (
     SimpleADB,
     topk_accuracy,
 )
+from torchao.quantization.pt2e.quantizer import QuantizationSpec
 
 
 def get_instance(repo_path: str, checkpoint_path: str):
@@ -72,8 +70,12 @@ def main(args):
 
     pte_filename = "fastvit_qnn"
 
-    def get_custom_quantizer():
-        quantizer = make_quantizer(quant_dtype=QuantDtype.use_8a8w)
+    def get_custom_quantizer(backend, soc_model):
+        quantizer = make_quantizer(
+            quant_dtype=QuantDtype.use_8a8w,
+            backend=backend,
+            soc_model=soc_model,
+        )
 
         # there are lots of outliers appearing in fastvit parameters
         # we need to apply special configuration to saturate their impact
@@ -116,7 +118,7 @@ def main(args):
     backend = get_backend_type(args.backend)
     quantizer = {
         QnnExecuTorchBackendType.kGpuBackend: None,
-        QnnExecuTorchBackendType.kHtpBackend: get_custom_quantizer(),
+        QnnExecuTorchBackendType.kHtpBackend: get_custom_quantizer(backend, args.model),
     }[backend]
     build_executorch_binary(
         convert_linear_to_conv2d(get_instance(args.oss_repo, args.pretrained_weight)),
@@ -145,9 +147,8 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
         target=args.target,
-        backend=backend,
     )
-    adb.push(inputs=inputs)
+    adb.push(inputs=inputs, backends={backend})
     adb.execute()
 
     # collect output data

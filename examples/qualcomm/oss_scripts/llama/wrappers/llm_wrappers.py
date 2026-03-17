@@ -22,10 +22,8 @@ from executorch.backends.qualcomm._passes.utils import (
     get_passes_dependency_for_capture_program,
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
-from executorch.backends.qualcomm.quantizer.custom_annotation import (
-    annotate_prefill_kv_output,
-)
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
@@ -73,7 +71,6 @@ from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe impo
 from executorch.examples.qualcomm.oss_scripts.llama.wrappers.base_component import (
     Component,
     get_model_specific_kwargs,
-    is_node_src_start_with_name,
     log_info,
     Mode,
     process_model_args,
@@ -350,41 +347,6 @@ class TextDecoder(Component):
                             self.meta["get_logits_zero_point"] = output_node.args[2]
                             break
 
-    def _save_input_kv_cache_quant_attrs(self):
-        input_kv_cache_shape = {
-            # single head, k input
-            (
-                self.meta["get_head_dim"],
-                self.meta["get_max_context_len"] - self.meta["get_ar_len"],
-            ),
-            # single head, v input
-            (
-                self.meta["get_max_context_len"] - self.meta["get_ar_len"],
-                self.meta["get_head_dim"],
-            ),
-        }
-
-        idx = 0
-        for node in self.decoder.graph.nodes:
-            if (
-                node.op == "placeholder"
-                and len(users := list(node.users)) == 1
-                and "val" in node.meta
-                and node.meta["val"].size()[-2:] in input_kv_cache_shape
-            ):
-                scale_cache_name = f"get_k_scale_input_{idx}"
-                zero_point_cache_name = f"get_k_zero_point_input_{idx}"
-                if idx >= self.meta["get_n_layers"]:
-                    scale_cache_name = (
-                        f"get_v_scale_input_{idx % self.meta['get_n_layers']}"
-                    )
-                    zero_point_cache_name = (
-                        f"get_v_zero_point_input_{idx % self.meta['get_n_layers']}"
-                    )
-                self.meta[scale_cache_name] = users[0].args[1]
-                self.meta[zero_point_cache_name] = users[0].args[2]
-                idx += 1
-
     def _save_output_kv_cache_quant_attrs(self):
         k_idx = 0
         v_idx = 0
@@ -402,14 +364,6 @@ class TextDecoder(Component):
                     node.args[4],
                     str(node.args[5]),
                 ]
-                if is_node_src_start_with_name(cache_output_node, "k_"):
-                    self.meta[f"get_k_scale_output_{k_idx}"] = node.args[1]
-                    self.meta[f"get_k_zero_point_output_{k_idx}"] = node.args[2]
-                    k_idx += 1
-                elif is_node_src_start_with_name(cache_output_node, "v_"):
-                    self.meta[f"get_v_scale_output_{v_idx}"] = node.args[1]
-                    self.meta[f"get_v_zero_point_output_{v_idx}"] = node.args[2]
-                    v_idx += 1
 
     def _tag_ios(self, node, fixed_point_type):
         atten_mask_shape = {
@@ -572,16 +526,16 @@ class TextDecoder(Component):
                 VISION_ENCODER
             ].calibration_data.intermediate_outputs[0]
 
-        quantizer = make_quantizer()
-        for custom_annotation in data.custom_annotation:
-            self.quant_recipe.recipe.custom_quant_annotations.append(custom_annotation)
-        quantizer.recipe = self.quant_recipe
+        quantizer = make_quantizer(backend=data.backend, soc_model=data.soc_model)
+        quantizer.set_recipe(self.quant_recipe.recipe)
 
         text_embedding_quantizer = make_quantizer(
             quant_dtype=QuantDtype.use_16a8w,
             per_channel_conv=True,
             per_channel_linear=True,
             act_observer=MinMaxObserver,
+            backend=data.backend,
+            soc_model=data.soc_model,
         )
 
         with torch.no_grad():
@@ -597,21 +551,28 @@ class TextDecoder(Component):
             self.decoder = torch.export.export(
                 self.decoder, self.export_input, strict=True
             ).module()
+
             self.decoder = prepare_pt2e(self.decoder, quantizer)
             if self.apply_embedding:
                 self.tok_embedding = prepare_pt2e(
                     self.tok_embedding, text_embedding_quantizer
                 )
 
-            # start calibration
-            self._calibrate(
-                model=self.decoder,
-                tokenizer=data.tokenizer,
-                event="prepare_pt2e",
-                user_calibration_data=data.calibration_data.datasets,
-                tok_embedding=self.tok_embedding,
-                intermediate_outputs=image_embedding,
-            )
+            # start calibration (only for kv mode or prefill mode without kv cache)
+            if self.mode == Mode.DECODE or not self.model_args.use_kv_cache:
+                self._calibrate(
+                    model=self.decoder,
+                    tokenizer=data.tokenizer,
+                    event="prepare_pt2e",
+                    user_calibration_data=data.calibration_data.datasets,
+                    tok_embedding=self.tok_embedding,
+                    intermediate_outputs=image_embedding,
+                )
+            else:
+                # one dummy inference to remove affine observer
+                # error happened in convert_pt2e
+                self.decoder(*self.export_input)
+
             self.decoder = convert_pt2e(self.decoder)
 
             # Saving Decode QDQ Model EP for SQNR evaluation
@@ -626,7 +587,7 @@ class TextDecoder(Component):
             if self.apply_embedding:
                 self.tok_embedding = convert_pt2e(self.tok_embedding)
 
-            if self.control_args.verbose:
+            if self.control_args.verbose and self.mode == Mode.DECODE:
                 if self.apply_embedding:
                     image_embedding = request.method_data[
                         VISION_ENCODER
@@ -643,31 +604,8 @@ class TextDecoder(Component):
         # save logit's quantization attributes to meta
         self._save_logits_quant_attrs()
 
-        # save output KV cache's quantization attributes to meta for attention sink and multimodal
+        # save output KV cache's quantization attributes to meta for attention sink
         self._save_output_kv_cache_quant_attrs()
-
-        # LLM: propagate kv cache quantization attributes for prefill model
-        if not self.apply_embedding:
-            if self.mode == Mode.DECODE:
-                kv_quant_attrs, output_indices = {}, 0
-                for node in self.decoder.graph.nodes:
-                    if node.op == "output":
-                        for output in node.args[0]:
-                            kv_quant_attrs[output_indices] = output.args[1:]
-                            output_indices += 1
-                        break
-
-                data.custom_annotation += (
-                    partial(
-                        annotate_prefill_kv_output,
-                        kv_quant_attrs=kv_quant_attrs,
-                    ),
-                )
-        # MultiModal: save kv cache IO quantization attributes to requant kv cache from prefill output scale/zero_point to decode input scale/zero_point
-        else:
-            # save input kv cache's quantization attributes to meta
-            if self.mode == Mode.DECODE:
-                self._save_input_kv_cache_quant_attrs()
 
         # setup quantized IO
         self.passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
@@ -709,43 +647,118 @@ class HybridTextDecoder(Component):
 
         self.apply_embedding = apply_embedding
 
+    def _encoding_override(self, decode_model, prefill_model):  # noqa: C901
+        pbq_target = {
+            torch.ops.torchao.dequantize_affine,
+            torch.ops.torchao.quantize_affine,
+        }
+        pcq_target = {
+            torch.ops.quantized_decomposed.dequantize_per_channel.default,
+            torch.ops.quantized_decomposed.quantize_per_channel.default,
+        }
+        ptq_target = {
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            torch.ops.quantized_decomposed.quantize_per_tensor.default,
+        }
+        qdq_target = pbq_target | pcq_target | ptq_target
+
+        def compare_nodes(decode_node, prefill_node):
+            def info(node):
+                return node.name + (
+                    str(node.meta["nn_module_stack"].values())
+                    if node.op == "call_function"
+                    else ""
+                )
+
+            assert info(decode_node) == info(
+                prefill_node
+            ), f"found unmatched order for ops: {decode_node} va {prefill_node}"
+
+        def resolve_param_target(node):
+            return (
+                node
+                if node.op == "call_function" and node.target not in qdq_target
+                else resolve_param_target(list(node.users)[0])
+            )
+
+        def activation_override(decode_node, prefill_node):
+            for decode_user, prefill_user in zip(
+                list(decode_node.users), list(prefill_node.users)
+            ):
+                assert decode_user.target == prefill_user.target, (
+                    "found unmatched targets: "
+                    f"{decode_user.target} vs {prefill_user.target}"
+                )
+                if decode_user.target in qdq_target:
+                    prefill_user.args = (prefill_user.args[0], *decode_user.args[1:])
+                    activation_override(decode_user, prefill_user)
+
+        def parameter_override(decode_node, prefill_node):
+            setattr(
+                prefill_model,
+                prefill_node.target,
+                getattr(decode_model, decode_node.target),
+            )
+            # scale / zero point are part of op's attributes
+            if list(decode_node.users)[0].target in ptq_target:
+                activation_override(decode_node, prefill_node)
+
+        # copy encoding for hybrid mode
+        parameters = [
+            {
+                n: resolve_param_target(n)
+                for n in model.graph.nodes
+                if n.op == "get_attr"
+            }
+            for model in (decode_model, prefill_model)
+        ]
+        activations = [
+            [
+                n
+                for n in model.graph.nodes
+                if n.target not in qdq_target
+                and n.op in {"call_function", "placeholder"}
+            ]
+            for model in (decode_model, prefill_model)
+        ]
+        # check topology order by node name & nn_module_stack
+        for act_decode, act_prefill in zip(*activations):
+            compare_nodes(act_decode, act_prefill)
+
+        for op_decode, op_prefill in zip(*[p.values() for p in parameters]):
+            compare_nodes(op_decode, op_prefill)
+        # perform encoding override
+        for act_decode, act_prefill in zip(*activations):
+            activation_override(act_decode, act_prefill)
+
+        for param_decode, param_prefill in zip(*[p.keys() for p in parameters]):
+            parameter_override(param_decode, param_prefill)
+
+        prefill_model.recompile()
+
     @log_info
     def compile(self, request: Request):  # noqa: C901
-        # force overriding frozen parameters here for model quantizing under seq mse scenario
-        # this will make weight sharing work properly
-        if self.config.seq_mse_candidates != 0 and self.control_args.model_mode != "kv":
-            decode, prefill = self.decode.decoder, self.prefill.decoder
-            override_nodes = {
-                str(node.meta["nn_module_stack"].values()): node
-                for node in prefill.graph.nodes
-                if node.target == torch.ops.aten.conv2d.default
-            }
-            indices_map = {
-                # (affine_tensor, group_size, scales, zero_points, dtype, min, max)
-                torch.ops.torchao.dequantize_affine: [0, 2, 3],
-                # (per_channel_tensor, scales, zero_points, dim, dtype, min, max)
-                torch.ops.quantized_decomposed.dequantize_per_channel.default: [
-                    0,
-                    1,
-                    2,
-                ],
-                # should not need to worry about per-tensor case
-            }
-            for node in decode.graph.nodes:
-                if node.target == torch.ops.aten.conv2d.default:
-                    if target_node := override_nodes.get(
-                        str(node.meta["nn_module_stack"].values())
-                    ):
-                        # arguments of conv: (input, weight, bias)
-                        for i, dq_node in enumerate(node.args[1:]):
-                            for index in indices_map[dq_node.target]:
-                                setattr(
-                                    prefill,
-                                    target_node.args[i + 1].args[index].target,
-                                    getattr(decode, dq_node.args[index].target),
-                                )
-                    else:
-                        raise RuntimeError("failed to override quantization attribute")
+        # perform encoding override for hybrid mode
+        # ---
+        # theoretically decode & prefill model should share the same encoding
+        # given that they are using the identical calibration dataset.
+        #
+        # however, pytorch will use different computaion kernels for different
+        # workloads (AR1 vs ARN) which will introduce some numerical discrepancy.
+        #
+        # here we use a mechanism to make sure the encoding align correctly and
+        # save AoT quantization time as well.
+        # ---
+        if self.prefill.decoder is not None and self.prefill.model_args.use_kv_cache:
+            self._encoding_override(
+                decode_model=self.decode.decoder,
+                prefill_model=self.prefill.decoder,
+            )
+            if self.apply_embedding:
+                self._encoding_override(
+                    decode_model=self.decode.tok_embedding,
+                    prefill_model=self.prefill.tok_embedding,
+                )
 
         # prepare lowering tok_embedding if applicable
         if self.apply_embedding:
@@ -818,15 +831,15 @@ class HybridTextDecoder(Component):
             module=dict(zip(graph_names, [model.decoder for model in models])),
             inputs=dict(zip(graph_names, example_inputs)),
             compiler_specs=dict(zip(graph_names, data.compile_spec)),
-            constant_methods={**self.prefill.meta, **self.decode.meta},
+            constant_methods={**self.decode.meta},
             dep_table=dict(zip(graph_names, [model.dep_table for model in models])),
             passes_job=dict(zip(graph_names, [model.passes_job for model in models])),
             skip_node_op_set={"llama.fallback.default"},
         )
 
-        if self.config.num_sharding > 1 and self.control_args.model_mode == "kv":
-            # weight-sharing based context binaries cannot be opened in x86 host
-            update_spill_fill_size(edge_prog_mgr.exported_program("kv_forward"))
+        if self.config.num_sharding > 1:
+            for graph_name in graph_names:
+                update_spill_fill_size(edge_prog_mgr.exported_program(graph_name))
 
         if self.control_args.verbose:
             for ep in edge_prog_mgr._edge_programs.values():
@@ -906,8 +919,10 @@ class Modality(Component):
         with torch.no_grad():
             self.model = torch.export.export(self.model, self.example_input).module()
 
-            quantizer = make_quantizer()
-            quantizer.recipe = self.quant_recipe
+            quantizer = make_quantizer(
+                backend=request_data.backend, soc_model=request_data.soc_model
+            )
+            quantizer.set_recipe(self.quant_recipe.recipe)
             self.model = prepare_pt2e(self.model, quantizer)
 
             # calibration
@@ -995,6 +1010,8 @@ class MultiModalManager(Component):
         self,
         calibration_data: Dict[str, List[Any]],
         tokenizer,
+        backend,
+        soc_model,
     ):
         quantize_request = Request(
             inspect.currentframe().f_code.co_name,
@@ -1004,6 +1021,8 @@ class MultiModalManager(Component):
                         datasets=calibration_data[m]
                     ),
                     tokenizer=tokenizer,
+                    backend=backend,
+                    soc_model=soc_model,
                 )
                 for m in self._modalities
             },

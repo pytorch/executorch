@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any
+from typing import Any, Optional, TYPE_CHECKING
 
 import torch
 from executorch.devtools.inspector._inspector_utils import convert_to_float_tensor
@@ -12,9 +12,17 @@ from executorch.devtools.inspector.numerical_comparator.numerical_comparator_bas
     NumericalComparatorBase,
 )
 
+if TYPE_CHECKING:
+    from executorch.devtools.inspector._inspector import Inspector
+
 
 class L1Comparator(NumericalComparatorBase):
-    def compare(self, a: Any, b: Any) -> float:
+    """L1 (sum of absolute differences) comparator for numerical discrepancy detection."""
+
+    def __init__(self, inspector: Optional["Inspector"] = None) -> None:
+        super().__init__(inspector)
+
+    def element_compare(self, a: Any, b: Any) -> float:
         """Sum up all these element-wise absolute differences between two tensors."""
 
         t_a = convert_to_float_tensor(a)

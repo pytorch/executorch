@@ -131,7 +131,7 @@ def quantize(  # noqa C901
         if verbose:
             print("quantized model:", model)
         return model
-    elif qmode == "8da4w":
+    elif qmode in ("8da4w", "8da8w"):
         if group_size is None:
             # TODO: Default value for group size for 8da4w. Need this here for refactor, will clean this up.
             group_size = 128
@@ -169,11 +169,12 @@ def quantize(  # noqa C901
                 is_linear or is_lora_linear
             ) and has_shape_compatible_with_group_size
 
+        weight_dtype = torch.int4 if qmode == "8da4w" else torch.int8
         quantize_(
             model,
             Int8DynamicActivationIntxWeightConfig(
                 # pyre-ignore[16]
-                weight_dtype=torch.int4,
+                weight_dtype=weight_dtype,
                 weight_granularity=(
                     PerAxis(0) if group_size == 0 else PerGroup(group_size)
                 ),

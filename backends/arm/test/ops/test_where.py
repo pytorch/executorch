@@ -12,6 +12,7 @@ from executorch.backends.arm.quantizer import (
 )
 
 from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.quantize import ArmQuantize
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     OpNotSupportedPipeline,
@@ -19,7 +20,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-from executorch.backends.xnnpack.test.tester.tester import Quantize
 
 aten_op = "torch.ops.aten.where.self"
 exir_op = "executorch_exir_dialects_edge__ops_aten_where_self"
@@ -175,13 +175,13 @@ test_modules_common = {
     "two_dim_scalar_cond": lambda: two_dim_scalar_cond,
     "three_dim_scalar_cond": lambda: three_dim_scalar_cond,
     "float32_scalar_cond": lambda: float32_scalar_cond,
-    "const_float32": lambda: const_float32,
 }
 
 test_modules_FP = {
     **test_modules_common,
     "float32_tensor_cond_tuple_dtype_bool": lambda: float32_tensor_cond_tuple_dtype_bool,
     "float16_tensor_cond": lambda: float16_tensor_cond,
+    "const_float32": lambda: const_float32,
 }
 
 test_modules_FP_bf16 = {
@@ -235,6 +235,16 @@ def test_where_self_tosa_INT(test_module):
     pipeline.run()
 
 
+def test_where_self_tosa_INT_constant():
+    test_module = const_float32
+    pipeline = TosaPipelineINT[input_t](
+        test_module,
+        test_module.get_inputs(),
+        [],  # No where op expected as the condition is constant and can be folded into the other two inputs
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_module", test_modules_INT)
 @common.XfailIfNoCorstone300
 def test_where_self_u55_INT_not_delegated(test_module):
@@ -259,7 +269,7 @@ def test_where_self_u55_INT_not_delegated(test_module):
         u55_subset=True,
     )
     pipeline.change_args(
-        "quantize", Quantize(quantizer, get_symmetric_quantization_config())
+        "quantize", ArmQuantize(quantizer, get_symmetric_quantization_config())
     )
     pipeline.run()
 

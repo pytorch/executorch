@@ -204,6 +204,31 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_library(
+        name = "quantize_fused_convbn_bias_pass",
+        srcs = ["quantize_fused_convbn_bias_pass.py"],
+        visibility = ["PUBLIC"],
+        deps = [
+            "//caffe2:torch",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_quantize_fused_convbn_bias_pass",
+        srcs = [
+            "test/test_quantize_fused_convbn_bias_pass.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":quantize_fused_convbn_bias_pass",
+            "//executorch/backends/arm/quantizer:lib",
+            "//executorch/backends/arm/test:common",
+            "//executorch/backends/arm/tosa:tosa",
+            "//executorch/kernels/quantized:custom_ops_generated_lib",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
+
     runtime.python_test(
         name = "test_duplicate_dynamic_quant_chain",
         srcs = [

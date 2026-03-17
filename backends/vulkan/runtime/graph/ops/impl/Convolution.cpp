@@ -367,7 +367,21 @@ utils::uvec3 conv2d_global_wg_size(
   utils::uvec3 wg_size = create_conv2d_global_wg_size(
       *graph, method, out, weight_data, stride_equals_dilation);
 
-  if (method == Conv2dMethod::Depthwise || method == Conv2dMethod::Pointwise) {
+  if (method == Conv2dMethod::Depthwise) {
+    // The output_tile shaders (conv2d_dw_output_tile,
+    // conv2d_dw_sned_output_tile) use a 2D dispatch: (x_tile, y_tile) packed
+    // into glb_x, channel in glb_y. The base conv2d_dw shader uses a 1D
+    // dispatch: all (x, y, channel) packed into glb_x. For the base shader, we
+    // must use {W*H*C_packed, 1, 1}.
+    const bool uses_output_tile =
+        shader.kernel_name.find("_output_tile") != std::string::npos;
+    if (uses_output_tile) {
+      wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1};
+    } else {
+      const utils::uvec3 base_extents = graph->create_global_wg_size(out);
+      wg_size = {base_extents[0] * base_extents[1] * base_extents[2], 1, 1};
+    }
+  } else if (method == Conv2dMethod::Pointwise) {
     wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1};
 
     if (shader.kernel_name.find("s1p0") != std::string::npos) {
@@ -562,29 +576,45 @@ void add_conv2d_node(
         PushConstantDataInfo(&param, sizeof(param)),
     };
   } else if (method == Conv2dMethod::Depthwise) {
-    const utils::ivec4 kernel_param_size_stride = {
-        kernel_params.kernel_size[0],
-        kernel_params.kernel_size[1],
-        kernel_params.stride[0],
-        kernel_params.stride[1]};
+    // output_tile variants use push constants; the base conv2d_dw shader uses
+    // UBOs. Distinguish by checking if "_output_tile" is in the shader name.
+    const bool uses_output_tile =
+        shader.kernel_name.find("_output_tile") != std::string::npos;
 
-    const utils::ivec4 kernel_param_pad_dial = {
-        kernel_params.padding[0],
-        kernel_params.padding[1],
-        kernel_params.dilation[0],
-        kernel_params.dilation[1]};
+    if (uses_output_tile) {
+      const utils::ivec4 kernel_param_size_stride = {
+          kernel_params.kernel_size[0],
+          kernel_params.kernel_size[1],
+          kernel_params.stride[0],
+          kernel_params.stride[1]};
 
-    push_constants = {
-        graph.logical_limits_pc_of(out),
-        graph.sizes_pc_of(in),
-        PushConstantDataInfo(
-            &kernel_param_size_stride, sizeof(kernel_param_size_stride)),
-        PushConstantDataInfo(
-            &kernel_param_pad_dial, sizeof(kernel_param_pad_dial)),
-        PushConstantDataInfo(
-            &extra_params, sizeof(extra_params), sizeof(utils::ivec4)),
-        PushConstantDataInfo(&out_params, sizeof(out_params)),
-    };
+      const utils::ivec4 kernel_param_pad_dial = {
+          kernel_params.padding[0],
+          kernel_params.padding[1],
+          kernel_params.dilation[0],
+          kernel_params.dilation[1]};
+
+      push_constants = {
+          graph.logical_limits_pc_of(out),
+          graph.sizes_pc_of(in),
+          PushConstantDataInfo(
+              &kernel_param_size_stride, sizeof(kernel_param_size_stride)),
+          PushConstantDataInfo(
+              &kernel_param_pad_dial, sizeof(kernel_param_pad_dial)),
+          PushConstantDataInfo(
+              &extra_params, sizeof(extra_params), sizeof(utils::ivec4)),
+          PushConstantDataInfo(&out_params, sizeof(out_params)),
+      };
+    } else {
+      // Base conv2d_dw shader uses UBOs, same as SlidingWindow case
+      param_buffers = {
+          graph.logical_limits_ubo(out),
+          graph.sizes_ubo(in),
+          graph.create_params_buffer(kernel_params),
+          graph.create_params_buffer(extra_params),
+          graph.create_params_buffer(out_params),
+      };
+    }
   } else {
     param_buffers = {
         graph.logical_limits_ubo(out),

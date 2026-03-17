@@ -232,7 +232,13 @@ class Whisper:
             ).module()
 
     def quantize(
-        self, calibration_inputs, quant_dtype, tokenizer, custom_annotations=()
+        self,
+        backend,
+        soc_model,
+        calibration_inputs,
+        quant_dtype,
+        tokenizer,
+        custom_annotations=(),
     ):
         self.quant_dtype = quant_dtype
         self.has_quant_io = True
@@ -245,6 +251,8 @@ class Whisper:
             act_observer=MinMaxObserver,
             custom_annotations=custom_annotations,
             eps=2**-20,
+            backend=backend,
+            soc_model=soc_model,
         )
 
         with torch.no_grad():
@@ -386,7 +394,7 @@ def compile_whisper(args, inputs):
     }[backend]
     whisper.prepare_model()
     if quant_type:
-        whisper.quantize(inputs, quant_type, tokenizer)
+        whisper.quantize(backend, args.model, inputs, quant_type, tokenizer)
 
     whisper.lowering_modules(
         args.artifact,
@@ -469,10 +477,9 @@ def inference_whisper(args, inputs, target):
             shared_buffer=args.shared_buffer,
             target=args.target,
             runner="examples/qualcomm/oss_scripts/whisper/qnn_whisper_runner",
-            backend=backend,
         )
         # No pregen inputs, input_list is not required
-        adb.push(inputs=inputs, files=[tokenizer_json])
+        adb.push(inputs=inputs, files=[tokenizer_json], backends={backend})
         adb.execute(custom_runner_cmd=runner_cmd)
 
         adb.pull(host_output_path=args.artifact, callback=post_process)

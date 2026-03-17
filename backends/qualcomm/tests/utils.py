@@ -29,6 +29,7 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_ZERO_POINT,
 )
 from executorch.backends.qualcomm.utils.utils import (
+    get_qnn_context_binary_alignment,
     get_soc_to_chipset_map,
     to_edge_transform_and_lower_to_qnn,
 )
@@ -185,6 +186,7 @@ class TestQNN(unittest.TestCase):
     inference_speed: float = 0.0
     inference_speed_output_path = "outputs/inference_speed.txt"
     static_llm_eval_method = ""
+    direct_build_folder: str = ""
 
     @classmethod
     def setUpClass(cls):
@@ -193,6 +195,7 @@ class TestQNN(unittest.TestCase):
             adb = SimpleADB(
                 qnn_sdk=os.getenv("QNN_SDK_ROOT"),
                 build_path=cls.build_folder,
+                direct_mode_build_path=cls.direct_build_folder,
                 pte_path=[],
                 workspace="/data/local/tmp/qnn_executorch_test",
                 device_id=cls.device,
@@ -202,6 +205,7 @@ class TestQNN(unittest.TestCase):
                 target=cls.target,
             )
             adb.push(
+                backends={get_backend_type(cls.backend)},
                 init_env=True,
             )
 
@@ -420,7 +424,7 @@ class TestQNN(unittest.TestCase):
                     "--method_index",
                     str(method_index),
                 ]
-                if expected_intermediate_events != -1:
+                if self.dump_intermediate_outputs:
                     cmd.append("--dump_intermediate_outputs")
                 cmd += extra_cmds.split()
 
@@ -484,16 +488,14 @@ class TestQNN(unittest.TestCase):
                 adb = SimpleADB(
                     qnn_sdk=os.getenv("QNN_SDK_ROOT"),
                     build_path=self.build_folder,
+                    direct_mode_build_path=self.direct_build_folder,
                     pte_path=pte_fname,
                     workspace="/data/local/tmp/qnn_executorch_test",
                     device_id=self.device,
                     host_id=self.host,
                     soc_model=self.model,
                     error_only=self.error_only,
-                    dump_intermediate_outputs=(
-                        True if expected_intermediate_events != -1 else False
-                    ),
-                    backend=get_backend_type(self.backend),
+                    dump_intermediate_outputs=self.dump_intermediate_outputs,
                     expected_input_shape=(
                         (tensor.shape for tensor in processed_inputs)
                         if check_io_shape
@@ -510,6 +512,7 @@ class TestQNN(unittest.TestCase):
                     inputs=[processed_inputs],
                     files=op_package_paths,
                     init_env=False,
+                    backends={get_backend_type(self.backend)},
                 )
                 adb.extra_cmds += extra_cmds
                 if save_inference_speed:
@@ -583,6 +586,8 @@ class TestQNN(unittest.TestCase):
             qnn_intermediate_debugger.set_edge_module(edge_module=edge_module)
             qnn_intermediate_debugger.intermediate_output_module(*sample_inputs)
 
+        # Don't allocate if shared_buffer enabled or using direct_mode
+        allocate_io = not (self.shared_buffer or self.direct_build_folder)
         exec_prog = delegated_program.to_executorch(
             exir.ExecutorchBackendConfig(
                 # For shared buffer, user must pass the memory address
@@ -590,9 +595,10 @@ class TestQNN(unittest.TestCase):
                 # Therefore, won't want to pre-allocate
                 # by memory manager in runtime.
                 memory_planning_pass=MemoryPlanningPass(
-                    alloc_graph_input=not self.shared_buffer,
-                    alloc_graph_output=not self.shared_buffer,
+                    alloc_graph_input=allocate_io,
+                    alloc_graph_output=allocate_io,
                 ),
+                segment_alignment=get_qnn_context_binary_alignment(),
             )
         )
 
@@ -653,6 +659,8 @@ class TestQNN(unittest.TestCase):
             per_channel_conv=is_conv_per_channel,
             per_channel_linear=is_linear_per_channel,
             submodule_qconfig_list=submodule_qconfig_list,
+            backend=get_backend_type(self.backend),
+            soc_model=self.model,
         )
         if block_size_map is not None:
             quantizer.set_block_size_map(block_size_map)
@@ -693,6 +701,8 @@ class TestQNN(unittest.TestCase):
             per_channel_linear=is_linear_per_channel,
             is_qat=True,
             submodule_qconfig_list=submodule_qconfig_list,
+            backend=get_backend_type(self.backend),
+            soc_model=self.model,
         )
         if block_size_map is not None:
             quantizer.set_block_size_map(block_size_map)
@@ -722,6 +732,7 @@ class TestQNN(unittest.TestCase):
         adb = SimpleADB(
             qnn_sdk=os.getenv("QNN_SDK_ROOT"),
             build_path=self.build_folder,
+            direct_mode_build_path=self.direct_build_folder,
             pte_path=pte_fname,
             workspace="/data/local/tmp/qnn_executorch_test",
             device_id=self.device,

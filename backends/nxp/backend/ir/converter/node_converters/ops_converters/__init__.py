@@ -16,6 +16,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.cat_converter import (
     CatConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.clamp_converter import (
+    ClampConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.clone_converter import (
     CloneConverter,
 )
@@ -25,11 +28,17 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.convolution_converter import (
     ConvolutionConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.getitem_converter import (
+    GetItemConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.hardtanh_converter import (
     HardTanhConverter,
 )
-from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.max_pool_2d_converter import (
-    MaxPool2dConverter,
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.leaky_relu_converter import (
+    LeakyReluConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.max_pool2d_with_indices_converter import (
+    MaxPool2DWithIndicesConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.mean_dim_converter import (
     MeanDimConverter,
@@ -45,6 +54,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.permute_copy_converter import (
     PermuteCopyConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.prelu_converter import (
+    PReLUConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.qdq_dequantize_converter import (
     QDQPerChannelDequantizeConverter,
@@ -88,16 +100,20 @@ __all__ = [
     "AddTensorConverter",
     "AvgPool2dConverter",
     "CatConverter",
+    "ClampConverter",
     "CloneConverter",
     "ConstantPadNDConverter",
     "ConvolutionConverter",
+    "GetItemConverter",
     "HardTanhConverter",
-    "MaxPool2dConverter",
+    "LeakyReluConverter",
+    "MaxPool2DWithIndicesConverter",
     "MeanDimConverter",
     "MMConverter",
     "MulTensorConverter",
     "NegConverter",
     "PermuteCopyConverter",
+    "PReLUConverter",
     "QDQPerChannelDequantizeConverter",
     "QDQPerTensorDequantizeConverter",
     "QDQQuantizeConverter",

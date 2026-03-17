@@ -68,6 +68,7 @@ target_include_directories(
 )
 target_compile_definitions(
   optimized_kernels PRIVATE "ET_USE_PYTORCH_HEADERS=ET_HAS_EXCEPTIONS"
+                            POCKETFFT_USE_POSIX_MEMALIGN
 )
 target_link_libraries(
   optimized_kernels PUBLIC executorch_core cpublas extension_threadpool

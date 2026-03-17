@@ -33,7 +33,8 @@ VERBS="Add|Fix|Update|Refactor|Improve|Remove|Change|Implement|Create|Modify|"\
 "Handle|Ignore|Interpret|Instantiate|Invoke|Limit|Load|Modify|Permit|Print|"\
 "Profile|Recalculate|Reconstruct|Redefine|Redesign|Reevaluate|Relocate|Remap|"\
 "Render|Reposition|Request|Revert|Sanitize|Specify|Strengthen|Stub|Substitute|"\
-"Tag|Tweak|Unify|Unlock|Unset|Use|Validate|Verify|Rename|Relax|Format"
+"Tag|Tweak|Unify|Unlock|Unset|Use|Validate|Verify|Rename|Relax|Format|Don't|"\
+"Consolidate|Review"
 
 # Remote branch
 REMOTE=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null)
@@ -98,32 +99,52 @@ for COMMIT in ${COMMITS}; do
     # most of the time.
     echo -e "${INFO} License check"
 
+    # Check only files with content changes.
+    # Skip pure moves/renames (R100) where file content is unchanged.
+    license_files=()
+    while IFS=$'\t' read -r status path1 path2; do
+        case "$status" in
+            A|M)
+                license_files+=("$path1")
+                ;;
+            R100)
+                ;;
+            R*)
+                license_files+=("$path2")
+                ;;
+        esac
+    done < <(git diff-tree --no-commit-id --name-status --diff-filter=AMR -r -M ${COMMIT})
+
     current_year=$(date +%Y)
     failed_license_check=false
-    for commited_file in $commit_files; do
+    for committed_file in "${license_files[@]}"; do
         # Skip files with certain extensions
-        if [[ "$commited_file" == *.md || "$commited_file" == *.md.in ]]; then
-            echo -e "${INFO} Skipping license check for ${commited_file} (excluded extension)"
-            continue
-        fi
+        case "$committed_file" in
+            *.md|*.md.in|*.json|*.yml|*.yaml|*.cmake|*.patch|.gitignore)
+                echo -e "${INFO} Skipping license check for ${committed_file} (excluded extension)"
+                continue
+                ;;
+        esac
 
-        file_header=$(head "$commited_file")
+        file_header=$(head "$committed_file")
         if ! echo "$file_header" | grep -qi "Arm"; then
-            echo -e "${WARNING} No Arm copyright header in ${commited_file}"\
+            echo -e "${WARNING} No Arm copyright header in ${committed_file}"\
             " (skipping license year check)"
             continue
         fi
 
         if ! echo "$file_header" | grep -q "$current_year Arm"; then
-            echo -e "${ERROR} Header in $commited_file did not contain"\
+            echo -e "${ERROR} Header in $committed_file did not contain"\
             "'$current_year Arm'"
             failed_license_check=true
         else
-            echo -e "${SUCCESS} $commited_file passed license check"
+            echo -e "${SUCCESS} $committed_file passed license check"
         fi
     done
 
-    if [[ $failed_license_check == true ]]; then
+    if [[ ${#license_files[@]} -eq 0 ]]; then
+        echo -e "${INFO} No files with content changes to check"
+    elif [[ $failed_license_check == true ]]; then
         FAILED=1
     else
         echo -e "${SUCCESS} All files passed license check"
@@ -136,9 +157,15 @@ for COMMIT in ${COMMITS}; do
     SUBJECT=$(echo "$COMMIT_MSG" | head -n1)
     BODY=$(echo "$COMMIT_MSG" | tail -n +2)
 
-    # Check subject length (72 chars)
+    # Check subject length (72 chars), except for revert commits.
+    is_revert_commit=false
+    if [[ "$SUBJECT" =~ ^(Arm\ backend:\ )?Revert(\ |$) ]]; then
+        is_revert_commit=true
+    fi
+
     SUBJECT_MAX_LEN=72
-    if [ ${#SUBJECT} -gt ${SUBJECT_MAX_LEN} ]; then
+    if [ ${#SUBJECT} -gt ${SUBJECT_MAX_LEN} ] && \
+        [[ $is_revert_commit == false ]]; then
         echo -e "${ERROR} Subject exceeds ${SUBJECT_MAX_LEN} characters:"\
             "'${SUBJECT}'" >&2
 
@@ -178,8 +205,8 @@ for COMMIT in ${COMMITS}; do
 
     # Determine whether all modifications are under backends/arm or examples/arm
     only_arm_changes=true
-    for commited_file in $commit_files; do
-        if [[ $commited_file != backends/arm/* && $commited_file != examples/arm/* ]]; then
+    for committed_file in $commit_files; do
+        if [[ $committed_file != backends/arm/* && $committed_file != examples/arm/* ]]; then
             only_arm_changes=false
             break
         fi
@@ -195,7 +222,8 @@ for COMMIT in ${COMMITS}; do
     fi
 
     # Require 'Arm backend: ' prefix when the commit only touches Arm backend/examples files
-    if [[ $only_arm_changes == true && $has_arm_backend_prefix == false ]]; then
+    if [[ $only_arm_changes == true && $has_arm_backend_prefix == false && \
+        $is_revert_commit == false ]]; then
         echo -e "${ERROR} Subject must start with 'Arm backend: ' when only backends/arm or examples/arm files are modified." >&2
         FAILED=1
     fi

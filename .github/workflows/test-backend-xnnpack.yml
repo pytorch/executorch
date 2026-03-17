@@ -12,6 +12,9 @@ on:
     paths:
       - .github/workflows/test-backend-xnnpack.yml
       - .github/workflows/_test_backend.yml
+      - .ci/scripts/test_backend.sh
+      - backends/test/harness/**
+      - backends/test/suite/**
   workflow_dispatch:
 
 concurrency:

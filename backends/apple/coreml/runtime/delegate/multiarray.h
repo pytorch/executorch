@@ -85,7 +85,7 @@ public:
         bool is_packed() const noexcept;
 
         // Resizes memory layout
-        // New shape must be the same dimension and no larger than current shape in all dimensions
+        // New shape must be the same rank as the current shape
         // New format is contiguous
         void resize(const std::vector<size_t>& shape);
 

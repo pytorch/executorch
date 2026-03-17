@@ -105,3 +105,40 @@ install(
   PUBLIC_HEADER
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/kernels/portable/
 )
+
+# Build the portable custom ops AOT library for registering custom ops into
+# PyTorch. Requires find_package(Torch), which must be called at root scope
+# before this subdirectory is processed. Not targeting ARM_BAREMETAL as aot_lib
+# depends on incompatible libraries
+if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT AND NOT EXECUTORCH_BUILD_ARM_BAREMETAL)
+  set(_custom_ops_yaml "${CMAKE_CURRENT_SOURCE_DIR}/custom_ops.yaml")
+  set(_portable_custom_ops "aten::allclose.out" "aten::allclose.Tensor")
+  gen_selected_ops(
+    LIB_NAME "portable_custom_ops_aot_lib" ROOT_OPS ${_portable_custom_ops}
+  )
+  generate_bindings_for_kernels(
+    LIB_NAME "portable_custom_ops_aot_lib" CUSTOM_OPS_YAML
+    "${_custom_ops_yaml}"
+  )
+  set(_portable_custom_ops_sources
+      "${CMAKE_CURRENT_SOURCE_DIR}/cpu/op_allclose.cpp"
+      "${EXECUTORCH_ROOT}/runtime/core/exec_aten/util/tensor_util_aten.cpp"
+  )
+  gen_custom_ops_aot_lib(
+    LIB_NAME "portable_custom_ops_aot_lib" KERNEL_SOURCES
+    ${_portable_custom_ops_sources}
+  )
+  target_include_directories(
+    portable_custom_ops_aot_lib PRIVATE ${_common_include_directories}
+  )
+
+  if(APPLE)
+    set(RPATH "@loader_path/../../extensions/pybindings")
+  else()
+    set(RPATH "\$ORIGIN/../../extensions/pybindings")
+  endif()
+  set_target_properties(
+    portable_custom_ops_aot_lib PROPERTIES BUILD_RPATH ${RPATH} INSTALL_RPATH
+                                                                ${RPATH}
+  )
+endif()

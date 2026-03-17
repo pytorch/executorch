@@ -14,6 +14,7 @@ from executorch.backends.cadence.aot.utils import (
     get_conv1d_output_size,
     get_conv2d_output_size,
     get_im2row_output_size,
+    is_depthwise_conv,
 )
 from executorch.exir.scalar_type import ScalarType
 from torch._meta_registrations import _linalg_svd_meta
@@ -225,6 +226,30 @@ lib.define(
     "quantized_conv2d_nhwc.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
+    "quantized_conv1d_ncl(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_conv1d_ncl.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_conv1d_ncl.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_conv1d_ncl.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_conv1d_nlc(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_conv1d_nlc.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_conv1d_nlc.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_conv1d_nlc.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
     "quantized_conv2d_nchw(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Z)"
 )
 lib.define(
@@ -295,30 +320,6 @@ lib.define(
 )
 lib.define(
     "quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
-)
-lib.define(
-    "quantized_conv1d_ncl_asym8sxsym8s_asym8s.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
-)
-lib.define(
-    "quantized_conv1d_ncl_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
-)
-lib.define(
-    "quantized_conv1d_ncl_asym8uxsym8u_asym8u.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
-)
-lib.define(
-    "quantized_conv1d_ncl_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
-)
-lib.define(
-    "quantized_conv1d_nlc_asym8sxsym8s_asym8s.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
-)
-lib.define(
-    "quantized_conv1d_nlc_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
-)
-lib.define(
-    "quantized_conv1d_nlc_asym8uxsym8u_asym8u.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
-)
-lib.define(
-    "quantized_conv1d_nlc_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
@@ -444,6 +445,13 @@ lib.define(
 )
 lib.define(
     "rope.out(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
+    "rope_rotate_stacked_halves(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos) -> (Tensor out)"
+)
+lib.define(
+    "rope_rotate_stacked_halves.out(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 lib.define(
@@ -1028,12 +1036,20 @@ def quantized_conv2d_nhwc_meta(
     out_multiplier: torch.Tensor,
     out_shift: torch.Tensor,
 ) -> torch.Tensor:
-    out_channels, *kernel_size, _ = weight.shape
-
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
     assert len(in_size) > 2
     assert len(in_size) < 6
+
+    # Determine weight layout based on depthwise vs regular conv.
+    in_channels = in_size[-1]
+    if is_depthwise_conv(groups, in_channels):
+        # Depthwise conv: weight is [*kernel_size, OC]
+        *kernel_size, out_channels = weight.shape
+    else:
+        # 1D conv: weight is [OC, K, IC]
+        # 2D regular conv: weight is [OC, KH, KW, IC]
+        out_channels, *kernel_size, _ = weight.shape
 
     # Compute the output tensor size
     output_size = (
@@ -1050,6 +1066,154 @@ def quantized_conv2d_nhwc_meta(
         else get_conv2d_output_size(
             in_size, out_channels, stride, padding, dilation, kernel_size, True
         )
+    )
+
+    return input.new_empty(output_size, dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_conv1d_ncl")
+def quantized_conv1d_ncl_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: Tuple[int],
+    padding: Tuple[int],
+    dilation: Tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: torch.Tensor,
+    bias_scale: torch.Tensor,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+) -> torch.Tensor:
+    # NCL format: input is [N, C, L], weight is [OC, IC/groups, K]
+    out_channels, _, kernel_size = weight.shape
+
+    in_size = input.shape
+    assert len(in_size) == 3
+
+    # Compute the output tensor size for 1D conv (NCL format, channel_last=False)
+    output_size = get_conv1d_output_size(
+        in_size,
+        out_channels,
+        stride[-1],
+        padding[-1],
+        dilation[-1],
+        kernel_size,
+        False,
+    )
+
+    return input.new_empty(output_size, dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_conv1d_ncl.per_tensor")
+def quantized_conv1d_ncl_per_tensor_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: Tuple[int],
+    padding: Tuple[int],
+    dilation: Tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: int,
+    bias_scale: float,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    # NCL format: input is [N, C, L], weight is [OC, IC/groups, K]
+    out_channels, _, kernel_size = weight.shape
+
+    in_size = input.shape
+    assert len(in_size) == 3
+
+    # Compute the output tensor size for 1D conv (NCL format, channel_last=False)
+    output_size = get_conv1d_output_size(
+        in_size,
+        out_channels,
+        stride[-1],
+        padding[-1],
+        dilation[-1],
+        kernel_size,
+        False,
+    )
+
+    return input.new_empty(output_size, dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_conv1d_nlc")
+def quantized_conv1d_nlc_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: Tuple[int],
+    padding: Tuple[int],
+    dilation: Tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: torch.Tensor,
+    bias_scale: torch.Tensor,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+) -> torch.Tensor:
+    # NLC format: input is [N, L, C], weight is [OC, K, IC/groups]
+    out_channels, kernel_size, _ = weight.shape
+
+    in_size = input.shape
+    assert len(in_size) == 3
+
+    # Compute the output tensor size for 1D conv (NLC format, channel_last=True)
+    output_size = get_conv1d_output_size(
+        in_size,
+        out_channels,
+        stride[-1],
+        padding[-1],
+        dilation[-1],
+        kernel_size,
+        True,
+    )
+
+    return input.new_empty(output_size, dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_conv1d_nlc.per_tensor")
+def quantized_conv1d_nlc_per_tensor_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: Tuple[int],
+    padding: Tuple[int],
+    dilation: Tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: int,
+    bias_scale: float,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    # NLC format: input is [N, L, C], weight is [OC, K, IC/groups]
+    out_channels, kernel_size, _ = weight.shape
+
+    in_size = input.shape
+    assert len(in_size) == 3
+
+    # Compute the output tensor size for 1D conv (NLC format, channel_last=True)
+    output_size = get_conv1d_output_size(
+        in_size,
+        out_channels,
+        stride[-1],
+        padding[-1],
+        dilation[-1],
+        kernel_size,
+        True,
     )
 
     return input.new_empty(output_size, dtype=input.dtype)
@@ -1160,12 +1324,28 @@ def quantized_conv2d_nhwc_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
-    out_channels, *kernel_size, _ = weight.shape
-
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
     assert len(in_size) > 2
-    assert len(in_size) < 6
+    assert len(in_size) < 5
+
+    # Determine weight layout based on depthwise vs regular conv.
+    in_channels = in_size[-1]
+    depthwise = is_depthwise_conv(groups, in_channels)
+    if len(in_size) == 3:
+        if len(weight.shape) == 2:
+            assert depthwise
+            *kernel_size, out_channels = weight.shape
+        else:
+            out_channels, *kernel_size, _ = weight.shape
+    elif len(in_size) == 4:
+        if len(weight.shape) == 3:
+            assert depthwise
+            *kernel_size, out_channels = weight.shape
+        else:
+            out_channels, *kernel_size, _ = weight.shape
+    else:
+        raise ValueError("Unsupported input tensor size")
 
     # Compute the output tensor size
     output_size = (
@@ -1307,12 +1487,21 @@ def quantized_conv2d_nhwc_asym8sxsym8s_asym8s_per_tensor_meta(
         and weight.dtype == torch.int8
         and bias.dtype == torch.int32
     )
-    out_channels, *kernel_size, _ = weight.shape
-
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
     assert len(in_size) > 2
     assert len(in_size) < 6
+
+    # Determine weight layout based on depthwise vs regular conv.
+    in_channels = in_size[-1]
+    if is_depthwise_conv(groups, in_channels):
+        *kernel_size, out_channels = weight.shape
+    elif len(in_size) == 3:
+        # 1D conv: weight is [OC, K, IC]
+        out_channels, *kernel_size, _ = weight.shape
+    else:
+        # 2D regular conv: weight is [OC, KH, KW, IC]
+        out_channels, *kernel_size, _ = weight.shape
 
     # Compute the output tensor size
     output_size = (
@@ -1356,12 +1545,21 @@ def quantized_conv2d_nhwc_asym8uxsym8u_asym8u_per_tensor_meta(
         and weight.dtype == torch.uint8
         and bias.dtype == torch.int32
     )
-    out_channels, *kernel_size, _ = weight.shape
-
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
     assert len(in_size) > 2
     assert len(in_size) < 6
+
+    # Determine weight layout based on depthwise vs regular conv.
+    in_channels = in_size[-1]
+    if is_depthwise_conv(groups, in_channels):
+        *kernel_size, out_channels = weight.shape
+    elif len(in_size) == 3:
+        # 1D conv: weight is [OC, K, IC]
+        out_channels, *kernel_size, _ = weight.shape
+    else:
+        # 2D regular conv: weight is [OC, KH, KW, IC]
+        out_channels, *kernel_size, _ = weight.shape
 
     # Compute the output tensor size
     output_size = (
@@ -1705,12 +1903,13 @@ def quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
         and weight.dtype == torch.int8
         and bias.dtype == torch.int32
     )
-    out_channels, *kernel_size, _ = weight.shape
-
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
     assert len(in_size) > 2
     assert len(in_size) < 6
+    # Depthwise weight is always [*kernel_size, OC]:
+    # 2D: [KH, KW, OC], 1D: [K, OC]
+    *kernel_size, out_channels = weight.shape
 
     # Compute the output tensor size
     output_size = (
@@ -1756,12 +1955,13 @@ def quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
         and weight.dtype == torch.uint8
         and bias.dtype == torch.int32
     )
-    out_channels, *kernel_size, _ = weight.shape
-
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
     assert len(in_size) > 2
     assert len(in_size) < 6
+    # Depthwise weight is always [*kernel_size, OC]:
+    # 2D: [KH, KW, OC], 1D: [K, OC]
+    *kernel_size, out_channels = weight.shape
 
     # Compute the output tensor size
     output_size = (
@@ -2545,6 +2745,33 @@ def rope_meta(
     return input.new_empty(input.shape, dtype=input.dtype)
 
 
+@register_fake("cadence::rope_rotate_stacked_halves")
+def rope_rotate_stacked_halves_meta(
+    input: torch.Tensor,
+    sin_tensor: torch.Tensor,
+    cos_tensor: torch.Tensor,
+    pos: Optional[torch.Tensor],
+) -> torch.Tensor:
+    input_shape = list(input.shape)
+    assert (
+        len(input_shape) in (4, 5) and input_shape[0] == 1
+    ), f"input shape {input_shape} must be (1, seq, h, hd) or (1, seq, h, 2, hd / 2)"
+    seq = input_shape[1]
+    h = input_shape[2]
+    hd = prod(input_shape) / (seq * h)
+    sin_shape = list(sin_tensor.shape)
+    cos_shape = list(cos_tensor.shape)
+    assert sin_shape == cos_shape, f"{sin_shape=} must be same as {cos_shape}"
+    assert (
+        len(sin_shape) == 2 and sin_shape[-1] == hd // 2
+    ), f"{sin_shape=} must be [seq, hd/2]"
+    if pos is not None:
+        assert (
+            len(pos.shape) == 1 and pos.shape[0] == seq
+        ), f"{pos.shape} must be [{seq}]"
+    return input.new_empty(input.shape, dtype=input.dtype)
+
+
 @register_fake("cadence::idma_copy")
 def copy_idma_copy_impl(
     src: torch.Tensor,
@@ -2593,150 +2820,6 @@ def roi_align_box_processor_meta(
     aligned: bool,
 ) -> torch.Tensor:
     return rois.new_empty((rois.shape[0], 80), dtype=torch.uint8)
-
-
-@register_fake("cadence::quantized_conv1d_ncl_asym8sxsym8s_asym8s.per_tensor")
-def quantized_conv1d_ncl_asym8sxsym8s_asym8s_per_tensor_meta(
-    input: torch.Tensor,
-    weight: torch.Tensor,
-    bias: torch.Tensor,
-    stride: Tuple[int],
-    padding: Tuple[int],
-    dilation: Tuple[int],
-    groups: int,
-    in_zero_point: int,
-    weight_zero_point: int,
-    bias_scale: float,
-    output_scale: float,
-    output_zero_point: int,
-    out_multiplier: int,
-    out_shift: int,
-) -> torch.Tensor:
-    assert input.dim() == 3 and weight.dim() == 3
-    assert (
-        input.dtype == torch.int8
-        and weight.dtype == torch.int8
-        and bias.dtype == torch.int32
-    )
-    out_channels, _, kernel_size = weight.shape
-    output_size = get_conv1d_output_size(
-        input.shape,
-        out_channels,
-        stride[1],
-        padding[1],
-        dilation[1],
-        kernel_size,
-        False,
-    )
-    return input.new_empty(output_size, dtype=input.dtype)
-
-
-@register_fake("cadence::quantized_conv1d_ncl_asym8uxsym8u_asym8u.per_tensor")
-def quantized_conv1d_ncl_asym8uxsym8u_asym8u_per_tensor_meta(
-    input: torch.Tensor,
-    weight: torch.Tensor,
-    bias: torch.Tensor,
-    stride: Tuple[int],
-    padding: Tuple[int],
-    dilation: Tuple[int],
-    groups: int,
-    in_zero_point: int,
-    weight_zero_point: int,
-    bias_scale: float,
-    output_scale: float,
-    output_zero_point: int,
-    out_multiplier: int,
-    out_shift: int,
-) -> torch.Tensor:
-    assert input.dim() == 3 and weight.dim() == 3
-    assert (
-        input.dtype == torch.uint8
-        and weight.dtype == torch.uint8
-        and bias.dtype == torch.int32
-    )
-    out_channels, _, kernel_size = weight.shape
-    output_size = get_conv1d_output_size(
-        input.shape,
-        out_channels,
-        stride[1],
-        padding[1],
-        dilation[1],
-        kernel_size,
-        False,
-    )
-    return input.new_empty(output_size, dtype=input.dtype)
-
-
-@register_fake("cadence::quantized_conv1d_nlc_asym8sxsym8s_asym8s.per_tensor")
-def quantized_conv1d_nlc_asym8sxsym8s_asym8s_per_tensor_meta(
-    input: torch.Tensor,
-    weight: torch.Tensor,
-    bias: torch.Tensor,
-    stride: Tuple[int],
-    padding: Tuple[int],
-    dilation: Tuple[int],
-    groups: int,
-    in_zero_point: int,
-    weight_zero_point: int,
-    bias_scale: float,
-    output_scale: float,
-    output_zero_point: int,
-    out_multiplier: int,
-    out_shift: int,
-) -> torch.Tensor:
-    assert input.dim() == 3 and weight.dim() == 3
-    assert (
-        input.dtype == torch.int8
-        and weight.dtype == torch.int8
-        and bias.dtype == torch.int32
-    )
-    out_channels, kernel_size, _ = weight.shape
-    output_size = get_conv1d_output_size(
-        input.shape,
-        out_channels,
-        stride[1],
-        padding[1],
-        dilation[1],
-        kernel_size,
-        True,
-    )
-    return input.new_empty(output_size, dtype=input.dtype)
-
-
-@register_fake("cadence::quantized_conv1d_nlc_asym8uxsym8u_asym8u.per_tensor")
-def quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor_meta(
-    input: torch.Tensor,
-    weight: torch.Tensor,
-    bias: torch.Tensor,
-    stride: Tuple[int],
-    padding: Tuple[int],
-    dilation: Tuple[int],
-    groups: int,
-    in_zero_point: int,
-    weight_zero_point: int,
-    bias_scale: float,
-    output_scale: float,
-    output_zero_point: int,
-    out_multiplier: int,
-    out_shift: int,
-) -> torch.Tensor:
-    assert input.dim() == 3 and weight.dim() == 3
-    assert (
-        input.dtype == torch.uint8
-        and weight.dtype == torch.uint8
-        and bias.dtype == torch.int32
-    )
-    out_channels, kernel_size, _ = weight.shape
-    output_size = get_conv1d_output_size(
-        input.shape,
-        out_channels,
-        stride[1],
-        padding[1],
-        dilation[1],
-        kernel_size,
-        True,
-    )
-    return input.new_empty(output_size, dtype=input.dtype)
 
 
 @register_fake("cadence::_softmax_f32_f32")

@@ -85,10 +85,12 @@ def main(args):
     # Skip lowering/compilation if using pre-generated PTE
     if not args.pre_gen_pte:
         # lower to QNN
-        def get_custom_quantizer():
+        def get_custom_quantizer(backend, soc_model):
             quantizer = make_quantizer(
                 quant_dtype=QuantDtype.use_16a16w,
                 eps=2**-20,
+                backend=backend,
+                soc_model=soc_model,
             )
             quantizer.add_custom_quant_annotations((annotate_eurobert,))
             return quantizer
@@ -96,7 +98,9 @@ def main(args):
         backend = get_backend_type(args.backend)
         quantizer = {
             QnnExecuTorchBackendType.kGpuBackend: None,
-            QnnExecuTorchBackendType.kHtpBackend: get_custom_quantizer(),
+            QnnExecuTorchBackendType.kHtpBackend: get_custom_quantizer(
+                backend, args.model
+            ),
         }[backend]
         with torch.no_grad():
             build_executorch_binary(
@@ -131,10 +135,9 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
         target=args.target,
-        backend=backend,
     )
     output_data_folder = f"{args.artifact}/outputs"
-    make_output_dir(output_data_folder)
+    make_output_dir(output_data_folder, backends={backend})
 
     # accuracy analysis
     adb.push(inputs=inputs)

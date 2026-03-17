@@ -31,11 +31,11 @@ aware training using the ArmQuantizer.
 
 There is an easy to use example flow to compile your PyTorch model to a PTE file for the Arm backend called `aot_arm_compiler.py`
 that you can use to generate PTE files, it can generate PTE files for the supported targets `-t` or even non delegated (Cortex-M)
-using different memory modes and can both use a python file as input or just use the models from examples/models with `--model_input`.
+using different memory modes and can both use a python file as input or just use the models from examples/models with `--model_name`.
 It also supports generating Devtools artifacts like BundleIO BPTE files, and ETRecords. Run it with `--help` to check its capabilities.
 
 You point out the model to convert with `--model_name=<MODELNAME/FILE>` It supports running a model from examples/models or models
-from a python file if you just specify `ModelUnderTest` and `ModelInput` in it.
+from a python file if you just specify `ModelUnderTest` and `ModelInputs` in it.
 
 ```
 $ python3 -m examples.arm.aot_arm_compiler --help
@@ -67,7 +67,7 @@ The `aot_arm_compiler.py` is called from the scripts below so you don't need to,
 ## ExecuTorch on Arm Ethos-U55/U65 and U85
 
 This example code will help you get going with the Corstone&trade;-300/320 platforms and
-run on the FVP and can be used a a starting guide in your porting to your board/HW
+run on the FVP and can be used a starting guide in your porting to your board/HW
 
 We will start from a PyTorch model in python, export it, convert it to a `.pte`
 file - A binary format adopted by ExecuTorch. Then we will take the `.pte`
@@ -151,3 +151,11 @@ $ ./examples/arm/run.sh --model_name=mv2 --target=ethos-u55-128 --no_delegate
 We also have a [tutorial](https://pytorch.org/executorch/stable/backends-arm-ethos-u) explaining the steps performed in these
 scripts, expected results, possible problems and more. It is a step-by-step guide
 you can follow to better understand this delegate.
+
+### Project Templates
+
+These project templates provide alternative starting points with different toolchains and build systems:
+
+- [CMSIS-Executorch Project Template](https://github.com/Arm-Examples/cmsis-executorch) — Docker-based build environment with Keil Studio/VS Code integration, automated CI/CD, and AVH simulation support.
+
+- [ExecuTorch on Zephyr RTOS with CMSIS](https://github.com/Arm-Examples/cmsis-zephyr-executorch) — ExecuTorch on Arm Cortex-M with Ethos-U NPU using Zephyr RTOS and CMSIS Toolbox.

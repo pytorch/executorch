@@ -13,10 +13,10 @@ import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
-import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
 import org.pytorch.executorch.EValue;
+import org.pytorch.executorch.ExecuTorchRuntime;
 import org.pytorch.executorch.Tensor;
 import org.pytorch.executorch.annotations.Experimental;
 
@@ -53,14 +53,8 @@ public class TrainingModule {
    * @return new {@link TrainingModule} object which owns the model module.
    */
   public static TrainingModule load(final String modelPath, final String dataPath) {
-    File modelFile = new File(modelPath);
-    if (!modelFile.canRead() || !modelFile.isFile()) {
-      throw new RuntimeException("Cannot load model path!! " + modelPath);
-    }
-    File dataFile = new File(dataPath);
-    if (!dataFile.canRead() || !dataFile.isFile()) {
-      throw new RuntimeException("Cannot load data path!! " + dataPath);
-    }
+    ExecuTorchRuntime.validateFilePath(modelPath, "model path");
+    ExecuTorchRuntime.validateFilePath(dataPath, "data path");
     return new TrainingModule(modelPath, dataPath);
   }
 
@@ -72,10 +66,7 @@ public class TrainingModule {
    * @return new {@link TrainingModule} object which owns the model module.
    */
   public static TrainingModule load(final String modelPath) {
-    File modelFile = new File(modelPath);
-    if (!modelFile.canRead() || !modelFile.isFile()) {
-      throw new RuntimeException("Cannot load model path!! " + modelPath);
-    }
+    ExecuTorchRuntime.validateFilePath(modelPath, "model path");
     return new TrainingModule(modelPath, "");
   }
 
