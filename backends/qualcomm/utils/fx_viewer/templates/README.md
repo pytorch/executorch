@@ -1,4 +1,4 @@
-# fx_viewer JS Runtime (RFC v1)
+# fx_viewer JS Runtime
 
 This folder contains the browser runtime used by `FXGraphExporter`.
 
@@ -11,10 +11,22 @@ This folder contains the browser runtime used by `FXGraphExporter`.
 5. `UIManager` is a state adapter for taskbar/search/layers/info/legend controls.
 6. `FXGraphCompare` orchestrates multi-view compare and synchronization.
 
+## Files and Responsibilities
+
+1. `themes.js`: shared theme tokens (`THEMES`).
+2. `graph_data_store.js`: payload normalization, topology cache, virtual-node composition.
+3. `search_engine.js`: fuzzy search over active nodes.
+4. `view_controller.js`: state machine and interaction orchestration.
+5. `canvas_renderer.js`: primary graph rendering + canvas interactions.
+6. `minimap_renderer.js`: minimap rendering + minimap navigation.
+7. `ui_manager.js`: taskbar/search/layers/info panel/legend DOM.
+8. `fx_graph_viewer.js`: top-level facade (`FXGraphViewer`) and compare orchestration (`FXGraphCompare`).
+
 ## Public API (Implemented)
 
 Construction:
 1. `FXGraphViewer.create(config)`
+2. Compatibility constructor: `new FXGraphViewer(containerId, payload)`
 
 State/events:
 1. `getState`, `setState`, `replaceState`, `batch`
@@ -41,12 +53,33 @@ Compare:
 3. `layout.preset` fills missing values.
 4. Built-in defaults are last fallback.
 
-## Key UX Behaviors
+## Payload Contract
 
-1. API-driven changes reflect in UI controls (`theme/layers/colorBy` sync).
-2. Host container resize triggers canvas resize (`ResizeObserver`).
-3. Headless slots support custom HTML controls around GraphView.
-4. Optional taskbar fullscreen button is enabled via `layout.fullscreen.button`.
+Runtime input payload:
+
+```js
+{
+  base: {
+    legend: [{ label, color }],
+    nodes: [{ id, label, x, y, width, height, info, tooltip, fill_color? }],
+    edges: [{ v, w, points? }]
+  },
+  extensions: {
+    [extId]: {
+      name: string,
+      legend: [{ label, color }],
+      nodes: {
+        [nodeId]: {
+          info?: object,
+          tooltip?: string[],
+          label_append?: string[],
+          fill_color?: string
+        }
+      }
+    }
+  }
+}
+```
 
 ## Script Load Order
 
@@ -58,3 +91,9 @@ Compare:
 6. `minimap_renderer.js`
 7. `ui_manager.js`
 8. `fx_graph_viewer.js`
+
+## Maintenance Notes
+
+1. Keep module boundaries strict; route orchestration through controller/facade.
+2. Preserve payload compatibility when adding UI/runtime features.
+3. If state shape changes, update docs and relevant contracts in this folder.
