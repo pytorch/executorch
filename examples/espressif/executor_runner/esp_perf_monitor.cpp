@@ -12,14 +12,11 @@
 #if defined(ESP_PLATFORM)
 
 #include <esp_cpu.h>
-#include <esp_log.h>
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <executorch/runtime/platform/log.h>
 
 namespace {
-
-static const char* TAG = "esp_perf_monitor";
 
 uint64_t start_cycle_count = 0;
 int64_t start_time_us = 0;
@@ -40,6 +37,30 @@ void StopMeasurements(int num_inferences) {
 
   ET_LOG(Info, "Profiler report:");
   ET_LOG(Info, "Number of inferences: %d", num_inferences);
+
+  // Guard against division by zero or invalid counts when computing
+  // per-inference metrics.
+  if (num_inferences <= 0) {
+    ET_LOG(
+        Info,
+        "Total CPU cycles: %" PRIu64 " (per-inference metrics not computed)",
+        total_cycles);
+    ET_LOG(
+        Info,
+        "Total wall time: %" PRId64 " us (per-inference metrics not computed)",
+        total_time_us);
+    // Log ESP32 system memory info
+    ET_LOG(
+        Info,
+        "Free heap: %lu bytes",
+        static_cast<unsigned long>(esp_get_free_heap_size()));
+    ET_LOG(
+        Info,
+        "Min free heap ever: %lu bytes",
+        static_cast<unsigned long>(esp_get_minimum_free_heap_size()));
+    return;
+  }
+
   ET_LOG(
       Info,
       "Total CPU cycles: %" PRIu64 " (%.2f per inference)",

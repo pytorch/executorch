@@ -35,7 +35,8 @@
  *                                 buffer in the log.
  * ET_DUMP_INTERMEDIATE_OUTPUTS  - Collect and print intermediate outputs.
  * ET_DEBUG_BUFFER_SIZE          - Override size of memory area used by
- *                                 ET_DUMP_OUTPUTS / ET_DUMP_INTERMEDIATE_OUTPUTS.
+ *                                 ET_DUMP_OUTPUTS /
+ * ET_DUMP_INTERMEDIATE_OUTPUTS.
  *
  * ESP32 Memory Notes:
  *   - ESP32 has ~520KB internal SRAM, optionally 4-8MB PSRAM.
@@ -180,25 +181,23 @@ using torch::executor::etdump_result;
 static const size_t method_allocation_pool_size =
     ET_ESP_METHOD_ALLOCATOR_POOL_SIZE;
 static uint8_t __attribute__((aligned(16)))
-    method_allocation_pool[ET_ESP_METHOD_ALLOCATOR_POOL_SIZE]
-    EXT_RAM_BSS_ATTR;
+method_allocation_pool[ET_ESP_METHOD_ALLOCATOR_POOL_SIZE] EXT_RAM_BSS_ATTR;
 
 static const size_t temp_allocation_pool_size =
     ET_ESP_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE;
 static uint8_t __attribute__((aligned(16)))
-    temp_allocation_pool[ET_ESP_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE]
-    EXT_RAM_BSS_ATTR;
+temp_allocation_pool[ET_ESP_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE] EXT_RAM_BSS_ATTR;
 #else
 // Internal SRAM allocation
 static const size_t method_allocation_pool_size =
     ET_ESP_METHOD_ALLOCATOR_POOL_SIZE;
-static uint8_t __attribute__((aligned(16)))
-    method_allocation_pool[ET_ESP_METHOD_ALLOCATOR_POOL_SIZE];
+static uint8_t __attribute__((
+    aligned(16))) method_allocation_pool[ET_ESP_METHOD_ALLOCATOR_POOL_SIZE];
 
 static const size_t temp_allocation_pool_size =
     ET_ESP_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE;
-static uint8_t __attribute__((aligned(16)))
-    temp_allocation_pool[ET_ESP_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE];
+static uint8_t __attribute__((
+    aligned(16))) temp_allocation_pool[ET_ESP_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE];
 #endif
 
 #if defined(FILESYSTEM_LOAD)
@@ -242,8 +241,7 @@ void et_pal_init(void) {
   ET_LOG(
       Info,
       "PSRAM available. Free PSRAM: %lu bytes.",
-      static_cast<unsigned long>(
-          heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
+      static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
 #endif
 #endif
 }
@@ -414,9 +412,7 @@ Error prepare_input_tensors(Method& method, MemoryAllocator& allocator) {
 #undef HANDLE_SCALAR_TYPE
         default:
           ET_LOG(
-              Error,
-              "Unhandled ScalarType %s",
-              toString(tensor.scalar_type()));
+              Error, "Unhandled ScalarType %s", toString(tensor.scalar_type()));
           err = Error::InvalidArgument;
           break;
       }
@@ -438,11 +434,7 @@ std::pair<char*, size_t> load_file_from_fs(
     MemoryAllocator& allocator) {
   FILE* fp = fopen(filepath, "rb");
   if (!fp) {
-    ET_LOG(
-        Fatal,
-        "Could not open file %s (errno: %d)",
-        filepath,
-        errno);
+    ET_LOG(Fatal, "Could not open file %s (errno: %d)", filepath, errno);
     return std::make_pair(nullptr, 0);
   }
 
@@ -593,13 +585,11 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
   ET_LOG(Info, "Running method %s", ctx.method_name);
 
   Result<MethodMeta> method_meta = program.method_meta(ctx.method_name);
-  if (!method_meta.ok()) {
-    ET_LOG(
-        Info,
-        "Failed to get method_meta for %s: 0x%x",
-        ctx.method_name,
-        (unsigned int)method_meta.error());
-  }
+  ET_CHECK_MSG(
+      method_meta.ok(),
+      "Failed to get method_meta for %s: 0x%x",
+      ctx.method_name,
+      (unsigned int)method_meta.error());
 
   ET_LOG(
       Info,
@@ -730,10 +720,12 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
   } else
 #endif
   {
-    Error status =
-        ::prepare_input_tensors(*ctx.method.value(), ctx.method_allocator.value());
+    Error status = ::prepare_input_tensors(
+        *ctx.method.value(), ctx.method_allocator.value());
     ET_CHECK_MSG(
-        status == Error::Ok, "Failed to prepare inputs 0x%" PRIx32, static_cast<long unsigned int>(status));
+        status == Error::Ok,
+        "Failed to prepare inputs 0x%" PRIx32,
+        static_cast<long unsigned int>(status));
   }
 
 #if defined(ET_LOG_DUMP_INPUT)
@@ -750,19 +742,26 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
           if (tensor.scalar_type() == ScalarType::Int) {
             printf(
                 "Input[%d][%d]: (int) %d\n",
-                i, j, tensor.const_data_ptr<int>()[j]);
+                i,
+                j,
+                tensor.const_data_ptr<int>()[j]);
           } else if (tensor.scalar_type() == ScalarType::Float) {
             printf(
                 "Input[%d][%d]: (float) %f\n",
-                i, j, tensor.const_data_ptr<float>()[j]);
+                i,
+                j,
+                tensor.const_data_ptr<float>()[j]);
           } else if (tensor.scalar_type() == ScalarType::Char) {
             printf(
                 "Input[%d][%d]: (char) %d\n",
-                i, j, tensor.const_data_ptr<int8_t>()[j]);
+                i,
+                j,
+                tensor.const_data_ptr<int8_t>()[j]);
           } else if (tensor.scalar_type() == ScalarType::Bool) {
             printf(
                 "Input[%d][%d]: (bool) %s (0x%x)\n",
-                i, j,
+                i,
+                j,
                 tensor.const_data_ptr<int8_t>()[j] ? "true" : "false",
                 tensor.const_data_ptr<int8_t>()[j]);
           }
@@ -840,8 +839,7 @@ void log_mem_status(RunnerContext& ctx) {
   ET_LOG(
       Info,
       "ESP free PSRAM:            %lu bytes",
-      static_cast<unsigned long>(
-          heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
+      static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
 #endif
 #endif
 
@@ -877,19 +875,26 @@ void print_outputs(RunnerContext& ctx) {
         if (tensor.scalar_type() == ScalarType::Int) {
           printf(
               "Output[%d][%d]: (int) %d\n",
-              i, j, tensor.const_data_ptr<int>()[j]);
+              i,
+              j,
+              tensor.const_data_ptr<int>()[j]);
         } else if (tensor.scalar_type() == ScalarType::Float) {
           printf(
               "Output[%d][%d]: (float) %f\n",
-              i, j, tensor.const_data_ptr<float>()[j]);
+              i,
+              j,
+              tensor.const_data_ptr<float>()[j]);
         } else if (tensor.scalar_type() == ScalarType::Char) {
           printf(
               "Output[%d][%d]: (char) %d\n",
-              i, j, tensor.const_data_ptr<int8_t>()[j]);
+              i,
+              j,
+              tensor.const_data_ptr<int8_t>()[j]);
         } else if (tensor.scalar_type() == ScalarType::Bool) {
           printf(
               "Output[%d][%d]: (bool) %s (0x%x)\n",
-              i, j,
+              i,
+              j,
               tensor.const_data_ptr<int8_t>()[j] ? "true " : "false",
               tensor.const_data_ptr<int8_t>()[j]);
         }
@@ -975,7 +980,7 @@ bool verify_result(RunnerContext& ctx, const void* model_pte) {
 }
 
 bool run_model(RunnerContext& ctx, const void* model_pte) {
-  Error status;
+  Error status = Error::Ok;
   ET_LOG(Info, "Starting running %d inferences...", num_inferences);
   int n = 0;
   StartMeasurements();

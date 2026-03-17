@@ -8,20 +8,14 @@
 /*
  * Example ESP-IDF main component.
  *
- * The actual app_main() is defined in esp_executor_runner.cpp.
- * This file can be used to add project-specific initialization
- * or to override the default behavior.
+ * The app_main() defined below performs optional initialization and then
+ * calls executor_runner_main().
  *
- * If you want to customize the runner, you can:
- * 1. Remove app_main() from esp_executor_runner.cpp (remove ESP_PLATFORM guard)
- * 2. Define your own app_main() here that calls executor_runner_main()
+ * If you want to customize the runner behavior, you can modify the
+ * app_main() implementation here (e.g., add initialization or cleanup)
+ * while still delegating to executor_runner_main().
  */
 
-// The app_main() entry point is provided by esp_executor_runner.cpp
-// when built with ESP_PLATFORM defined.
-//
-// Alternatively, uncomment below to define your own entry point:
-//
 
 #include <stdio.h>
 #include "sdkconfig.h"

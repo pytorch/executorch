@@ -88,7 +88,7 @@ with open("simple_add.pte", "wb") as f:
 ```bash
 python3 examples/espressif/executor_runner/pte_to_header.py \
     --pte simple_add.pte \
-    --outdir examples/espressif/project/build/model/
+    --outdir examples/espressif/project/
 ```
 
 ### 3. Build with ESP-IDF
