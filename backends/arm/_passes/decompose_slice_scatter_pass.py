@@ -41,12 +41,16 @@ def _get_slice_scatter_decomposition(op) -> tuple:
 
 def _fixup_start(start, dim_size: int) -> int:
     s = 0 if start is None else int(start)
-    return max(0, min(s % dim_size if s < 0 else s, dim_size))
+    if s < 0:
+        s += dim_size
+    return max(0, min(s, dim_size))
 
 
 def _fixup_end(end, dim_size: int) -> int:
     e = dim_size if end is None else int(end)
-    return max(0, min(e % dim_size if e < 0 else e, dim_size))
+    if e < 0:
+        e += dim_size
+    return max(0, min(e, dim_size))
 
 
 class DecomposeSliceScatterPass(ArmPass):
@@ -131,31 +135,34 @@ class DecomposeSliceScatterPass(ArmPass):
 
         # ---- fast path: contiguous update (step == 1) ----
         if step == 1:
-            # prefix = input[..., :start_i, ...] along dim_norm
-            prefix = super().call_operator(
-                slice_copy_op,
-                (input, dim_norm, 0, start_i, 1),
-                {},
-                meta,
-                updated=True,
+            prefix = None
+            suffix = None
+
+            # prefix = input[..., :start_i, ...] along dim_norm (only if non-empty)
+            if start_i > 0:
+                prefix = super().call_operator(
+                    slice_copy_op,
+                    (input, dim_norm, 0, start_i, 1),
+                    {},
+                    meta,
+                    updated=True,
+                )
+
+            # suffix = input[..., end_i:, ...] along dim_norm (only if non-empty)
+            if end_i < dim_size:
+                suffix = super().call_operator(
+                    slice_copy_op,
+                    (input, dim_norm, end_i, dim_size, 1),
+                    {},
+                    meta,
+                    updated=True,
+                )
+
+            parts = [x for x in (prefix, src, suffix) if x is not None]
+
+            return super().call_operator(
+                cat_op, (parts, dim_norm), {}, meta, updated=True
             )
-            # suffix = input[..., end_i:, ...] along dim_norm
-            suffix = super().call_operator(
-                slice_copy_op,
-                (input, dim_norm, end_i, dim_size, 1),
-                {},
-                meta,
-                updated=True,
-            )
-            # concat(prefix, src, suffix) along dim_norm
-            updated = super().call_operator(
-                cat_op,
-                ([prefix, src, suffix], dim_norm),
-                {},
-                meta,
-                updated=True,
-            )
-            return updated
 
         # ---- general path: strided update (step > 1) ----
         # Move updated dim to front to use a single index tensor.
