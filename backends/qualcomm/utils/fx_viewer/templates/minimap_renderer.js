@@ -77,8 +77,7 @@ class MinimapRenderer {
             this.generateThumbnail();
             this.render();
         };
-        window.addEventListener('resize', this._onWindowResize);
-        this._teardownFns.push(() => window.removeEventListener('resize', this._onWindowResize));
+        fxOn(this._teardownFns, window, 'resize', this._onWindowResize);
         
         this.setupEvents();
     }
@@ -153,20 +152,17 @@ class MinimapRenderer {
             this.isDragging = true;
             this.handleDrag(e);
         };
-        this.canvas.addEventListener('mousedown', onMouseDown);
-        this._teardownFns.push(() => this.canvas.removeEventListener('mousedown', onMouseDown));
+        fxOn(this._teardownFns, this.canvas, 'mousedown', onMouseDown);
 
         const onMouseMove = (e) => {
             if (this.isDragging) this.handleDrag(e);
         };
-        window.addEventListener('mousemove', onMouseMove);
-        this._teardownFns.push(() => window.removeEventListener('mousemove', onMouseMove));
+        fxOn(this._teardownFns, window, 'mousemove', onMouseMove);
 
         const onMouseUp = () => {
             this.isDragging = false;
         };
-        window.addEventListener('mouseup', onMouseUp);
-        this._teardownFns.push(() => window.removeEventListener('mouseup', onMouseUp));
+        fxOn(this._teardownFns, window, 'mouseup', onMouseUp);
         
         const onWheel = (e) => {
             e.preventDefault();
@@ -188,8 +184,7 @@ class MinimapRenderer {
             
             this.viewer.renderAll();
         };
-        this.canvas.addEventListener('wheel', onWheel, { passive: false });
-        this._teardownFns.push(() => this.canvas.removeEventListener('wheel', onWheel));
+        fxOn(this._teardownFns, this.canvas, 'wheel', onWheel, { passive: false });
     }
     
     handleDrag(e) {
@@ -282,11 +277,6 @@ class MinimapRenderer {
     }
 
     destroy() {
-        while (this._teardownFns.length > 0) {
-            const off = this._teardownFns.pop();
-            try {
-                off();
-            } catch (_) {}
-        }
+        fxOffAll(this._teardownFns);
     }
 }

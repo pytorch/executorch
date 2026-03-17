@@ -22,29 +22,12 @@ This folder contains the browser runtime used by `FXGraphExporter`.
 7. `ui_manager.js`: taskbar/search/layers/info panel/legend DOM.
 8. `fx_graph_viewer.js`: top-level facade (`FXGraphViewer`) and compare orchestration (`FXGraphCompare`).
 
-## Public API (Implemented)
+## Public API
 
-Construction:
-1. `FXGraphViewer.create(config)`
-2. Compatibility constructor: `new FXGraphViewer(containerId, payload)`
+The canonical API reference is maintained in:
+1. `backends/qualcomm/utils/fx_viewer/README.md` (`JS API (Runtime)` section)
 
-State/events:
-1. `getState`, `setState`, `replaceState`, `batch`
-2. `on`, `off`
-
-Viewer actions:
-1. `setTheme`, `setLayers`, `setColorBy`
-2. `selectNode`, `clearSelection`, `search`
-3. `zoomToFit`, `panToNode`, `animateToNode`
-4. `setUIVisibility`, `setLayout`
-5. `enterFullscreen`, `exitFullscreen`, `destroy`
-
-Layer mutation:
-1. `upsertLayer`, `removeLayer`, `patchLayerNodes`, `setLayerLabel`, `setColorRule`
-
-Compare:
-1. `FXGraphCompare.create({ viewers, layout, sync })`
-2. `setColumns`, `setCompact`, `setSync`, `destroy`
+This file focuses on runtime internals, file responsibilities, and script load order.
 
 ## Config Precedence
 
