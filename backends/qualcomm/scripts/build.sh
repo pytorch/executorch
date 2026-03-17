@@ -66,11 +66,11 @@ BUILD_JOB_NUMBER="16"
 # Default to use CDSP for now
 DSP_TYPE=3
 
-if [ -z PYTHON_EXECUTABLE ]; then
+if [ -z "$PYTHON_EXECUTABLE" ]; then
   PYTHON_EXECUTABLE="python3"
 fi
 
-if [ -z BUCK2 ]; then
+if [ -z "$BUCK2" ]; then
   BUCK2="buck2"
 fi
 
