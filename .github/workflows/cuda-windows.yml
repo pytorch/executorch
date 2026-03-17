@@ -47,6 +47,9 @@ jobs:
           - model_repo: "mistralai"
             model_name: "Voxtral-Mini-4B-Realtime-2602"
             quant: "quantized-int4-tile-packed"
+          - model_repo: "facebook"
+            model_name: "dinov2-small-imagenet1k-1-layer"
+            quant: "non-quantized"
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
@@ -83,12 +86,15 @@ jobs:
         PYTHON_EXECUTABLE=python ./install_executorch.sh
         echo "::endgroup::"
 
-        echo "::group::Setup Huggingface"
-        pip install -U "huggingface_hub[cli]<1.0" accelerate
-        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
-        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
-        pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
-        echo "::endgroup::"
+        # Setup Huggingface only for models that need it (not dinov2)
+        if [ "${{ matrix.model_name }}" != "dinov2-small-imagenet1k-1-layer" ]; then
+          echo "::group::Setup Huggingface"
+          pip install -U "huggingface_hub[cli]<1.0" accelerate
+          huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+          OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+          pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+          echo "::endgroup::"
+        fi
 
         VR_MODE=""
         if [ "${{ matrix.model_name }}" = "Voxtral-Mini-4B-Realtime-2602" ]; then
@@ -122,6 +128,9 @@ jobs:
           - model_repo: "mistralai"
             model_name: "Voxtral-Mini-4B-Realtime-2602"
             quant: "quantized-int4-tile-packed"
+          - model_repo: "facebook"
+            model_name: "dinov2-small-imagenet1k-1-layer"
+            quant: "non-quantized"
     with:
       timeout: 240
       runner: windows.g5.4xlarge.nvidia.gpu
