@@ -139,6 +139,9 @@ from .rewrite_bool_to_fp32_cast_via_int8_pass import (  # noqa
     RewriteBoolToFp32CastViaInt8Pass,
 )
 from .rewrite_conv_pass import RewriteConvPass  # noqa
+from .rewrite_high_rank_singleton_permute_pass import (  # noqa
+    RewriteHighRankSingletonPermutePass,
+)
 from .rewrite_index_put_pass import RewriteIndexPutPass  # noqa
 from .rewrite_le_lt_to_ge_gt_pass import RewriteLeLtToGeGtPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
@@ -156,4 +159,13 @@ from .replace_inf_and_limit_values_pass import (  # noqa  # usort: skip
 from .control_flow_const_inline import (  # noqa  # usort: skip
     ControlFlowConstInlinePass,
 )
-from .arm_pass_manager import ArmPassManager  # noqa  # usort: skip
+
+# Import all subpackages to allow extensions to patch classes
+import importlib  # noqa: E402
+import pkgutil  # noqa: E402
+
+for _, _modname, _ispkg in pkgutil.iter_modules(__path__, __name__ + "."):
+    if _ispkg:
+        importlib.import_module(_modname)
+
+from .arm_pass_manager import ArmPassManager  # noqa
