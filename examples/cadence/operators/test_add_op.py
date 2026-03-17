@@ -65,7 +65,7 @@ class ATenOpTestCases(unittest.TestCase):
 
         model.eval()
         export_and_run_model(
-            model, (X, Y), file_name=self._testMethodName, run_and_compare=False
+            model, (X, Y), file_name=self._testMethodName
         )
 
     # pyre-fixme[16]: Module `parameterized.parameterized` has no attribute `expand`.
@@ -115,7 +115,7 @@ class ATenOpTestCases(unittest.TestCase):
 
         model.eval()
         export_and_run_model(
-            model, (X, Y), file_name=self._testMethodName, run_and_compare=False
+            model, (X, Y), file_name=self._testMethodName
         )
 
 
