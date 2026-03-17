@@ -1,0 +1,350 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+<title>RFC_FX_VIEWER_API_INTERFACE.html</title>
+<meta http-equiv="Content-Type" content="application/xhtml+xml;charset=utf-8"/>
+<link rel="stylesheet" type="text/css" media="all" href="https://cdn.jsdelivr.net/npm/github-markdown-css/github-markdown.min.css"  />
+<link rel="stylesheet" type="text/css" media="all" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release/build/styles/github.min.css"  /><meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no'><style> body { box-sizing: border-box; max-width: 740px; width: 100%; margin: 40px auto; padding: 0 10px; } </style><script id='MathJax-script' async src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js'></script><script src='https://cdn.jsdelivr.net/gh/highlightjs/cdn-release/build/highlight.min.js'></script><script>document.addEventListener('DOMContentLoaded', () => { document.body.classList.add('markdown-body'); document.querySelectorAll('pre[lang] > code').forEach((code) => { code.classList.add(code.parentElement.lang); }); document.querySelectorAll('pre > code').forEach((code) => { hljs.highlightBlock(code); }); });</script>
+</head>
+
+<body>
+
+<h1>RFC: fx_viewer API Interface v1 (Breaking)</h1>
+
+<p>Date: 2026-03-13 <br />
+Status: Draft for review <br />
+Owners: Qualcomm Executorch debugging team <br />
+Scope: <code>backends/qualcomm/utils/fx_viewer</code> public JavaScript API and embedding contract</p>
+
+<h2>1. Abstract</h2>
+
+<p>This RFC defines a breaking v1 API for <code>fx_viewer</code> so it can be used consistently in:</p>
+
+<ol>
+<li>Standalone graph/accuracy demos.</li>
+<li>Observatory GraphView integration.</li>
+</ol>
+
+<p>The v1 design is state-driven, layout-composable, compare-native, and explicit about ownership/override rules.</p>
+
+<h2>2. Background</h2>
+
+<h3>2.1 What is <code>fx_viewer</code></h3>
+
+<p><code>fx_viewer</code> renders FX graph payloads (<code>base</code> graph + optional extension layers) with interactive controls (selection, search, theme, color-by, minimap, info panel).</p>
+
+<h3>2.2 What is Observatory (<code>debugging_utils</code>)</h3>
+
+<p>Observatory captures and organizes multiple debug records across compilation/runtime stages using a lens framework and report UI.</p>
+
+<h3>2.3 Why this RFC</h3>
+
+<p>Current integration works but requires ad-hoc JS/DOM coupling for layout, compare sync, and dynamic per-layer coloring. v1 makes these capabilities first-class.</p>
+
+<h2>3. Problem Statement</h2>
+
+<ol>
+<li>External API updates can desync built-in controls.</li>
+<li>Layout shell and graph core are tightly coupled.</li>
+<li>Host custom controls (sliders/jump links) lack stable contracts.</li>
+<li>Compare orchestration is duplicated per demo.</li>
+</ol>
+
+<h2>4. Goals</h2>
+
+<ol>
+<li>Single source of truth state.</li>
+<li>Unified layout config with strict precedence rules.</li>
+<li>Explicit host/viewer ownership rules.</li>
+<li>Clear JS API categories.</li>
+<li>First-class runtime data/layer mutation.</li>
+<li>First-class N-view compare + sync.</li>
+</ol>
+
+<h2>5. Non-Goals</h2>
+
+<ol>
+<li>Backward compatibility with old APIs.</li>
+<li>Observatory backend schema details.</li>
+<li>Large-graph performance redesign.</li>
+</ol>
+
+<h2>6. Unified Config Model</h2>
+
+<p><code>FXGraphViewer.create(...)</code> accepts one normalized config shape.</p>
+
+<p><code>ts
+const viewer = FXGraphViewer.create({
+  payload,
+  mount: {
+    root: "#graph-root",
+    slots: {
+      canvas: "#canvas-slot",
+      toolbar: "#toolbar-slot",
+      info: "#info-slot",
+      minimap: "#minimap-slot",
+      legend: "#legend-slot",
+    },
+  },
+  layout: {
+    preset: "split", // split | compact | headless | custom
+    panels: {
+      sidebar: { visible: true, width: 420, resizable: true, collapsible: true },
+      info: { visible: true, dock: "sidebar" },
+      minimap: { visible: true, dock: "sidebar", height: 240, resizable: true },
+      legend: { visible: true, dock: "toolbar" },
+    },
+    fullscreen: { enabled: true, button: true },
+  },
+  ui: {
+    controls: {
+      toolbar: true,
+      search: true,
+      layers: true,
+      colorBy: true,
+      theme: true,
+      minimapToggle: true,
+      zoomButtons: true,
+      clearSelection: true,
+    },
+  },
+  state: {
+    theme: "light",
+    activeExtensions: ["per_layer_accuracy"],
+    colorBy: "per_layer_accuracy",
+    selectedNodeId: null,
+    searchQuery: "",
+    highlightAncestors: true,
+  },
+});
+</code></p>
+
+<h2>7. Precedence and Ownership Rules</h2>
+
+<h2>7.1 Precedence (highest to lowest)</h2>
+
+<ol>
+<li>Explicit <code>mount.slots.*</code> (placement owner).</li>
+<li>Explicit <code>layout.*</code> fields (behavior/visibility/dock defaults).</li>
+<li><code>layout.preset</code> defaults.</li>
+<li>Internal built-in defaults.</li>
+</ol>
+
+<p>Interpretation:</p>
+
+<ol>
+<li>If <code>mount.slots.info</code> is given, info panel mounts there even if preset is <code>split</code>.</li>
+<li>Preset cannot override explicit slot placement.</li>
+<li>Explicit layout fields override preset behavior values.</li>
+</ol>
+
+<h2>7.2 Ownership</h2>
+
+<ol>
+<li>Host owns slot nodes (<code>#info-slot</code>, <code>#minimap-slot</code>, etc).</li>
+<li>Viewer never overwrites host attributes/classes/styles on slot nodes.</li>
+<li>Viewer creates and owns child nodes mounted inside slot nodes.</li>
+<li>If slot is absent, viewer creates and owns container nodes in preset/custom layout shell.</li>
+</ol>
+
+<h2>7.3 HTML attribute behavior</h2>
+
+<ol>
+<li>Host HTML attributes are preserved.</li>
+<li>Viewer style/classes apply to viewer-owned descendants.</li>
+<li>Host can style slot containers; viewer guarantees stable mount points.</li>
+</ol>
+
+<h2>8. Presets</h2>
+
+<p><code>preset</code> is a layout baseline recipe only.</p>
+
+<ol>
+<li><code>split</code>: canvas + sidebar defaults.</li>
+<li><code>compact</code>: minimal chrome, graph-first.</li>
+<li><code>headless</code>: no shell; host provides slots.</li>
+<li><code>custom</code>: no defaults; all structure explicit.</li>
+</ol>
+
+<p>Rule: preset fills missing layout values only.</p>
+
+<h2>9. Public JS API (Categorized)</h2>
+
+<h2>9.1 State APIs</h2>
+
+<p><code>ts
+viewer.getState(): ViewerState;
+viewer.setState(patch: Partial&lt;ViewerState&gt;, opts?: { source?: "api" | "ui" | "system" }): void;
+viewer.replaceState(next: ViewerState, opts?: { source?: "api" | "ui" | "system" }): void;
+viewer.batch(fn: () =&gt; void): void; // coalesce redraw/events
+</code></p>
+
+<h2>9.2 Data/Layer Mutation APIs (runtime)</h2>
+
+<p><code>ts
+viewer.upsertLayer(layerId: string, layerPayload: LayerPayload): void;
+viewer.removeLayer(layerId: string): void;
+viewer.patchLayerNodes(layerId: string, patchByNodeId: Record&lt;string, NodePatch&gt;): void;
+viewer.setColorRule(layerId: string, colorRule: ColorRule): void;
+viewer.setLayerLabel(layerId: string, label: string): void;
+</code></p>
+
+<p>Use these for slider-driven threshold coloring or dynamic labels. Do not mutate transient renderer-only state.</p>
+
+<h2>9.3 Selection/Camera APIs</h2>
+
+<p><code>ts
+viewer.selectNode(nodeId: string, opts?: { animate?: boolean; center?: boolean; durationMs?: number }): void;
+viewer.clearSelection(): void;
+viewer.panToNode(nodeId: string): void;
+viewer.animateToNode(nodeId: string, opts?: { durationMs?: number; easing?: string; k?: number }): void;
+viewer.zoomToFit(): void;
+</code></p>
+
+<h2>9.4 Appearance/UI APIs</h2>
+
+<p><code>ts
+viewer.setTheme(themeName: string): void;
+viewer.setLayers(layerIds: string[]): void;
+viewer.setColorBy(layerId: string): void;
+viewer.setUIVisibility(flags: Partial&lt;UIVisibility&gt;): void;
+</code></p>
+
+<h2>9.5 Layout APIs</h2>
+
+<p><code>ts
+viewer.setLayout(layoutPatch: Partial&lt;LayoutConfig&gt;): void;
+viewer.enterFullscreen(): void;
+viewer.exitFullscreen(): void;
+</code></p>
+
+<h2>9.6 Lifecycle and Events</h2>
+
+<p><code>ts
+viewer.on("statechange", (e) =&gt; {});
+viewer.on("selectionchange", (e) =&gt; {});
+viewer.on("layoutchange", (e) =&gt; {});
+viewer.on("themechange", (e) =&gt; {});
+viewer.on("error", (e) =&gt; {});
+viewer.destroy(): void;
+</code></p>
+
+<p>All events include <code>source</code>, <code>timestamp</code>, and relevant previous/next snapshots.</p>
+
+<h2>10. Runtime Mutation Semantics (Dynamic threshold use case)</h2>
+
+<p>Goal: support real-time slider callbacks that update node color/severity by node id.</p>
+
+<p>Rules:</p>
+
+<ol>
+<li>Mutate layer registry (<code>upsertLayer</code>, <code>patchLayerNodes</code>, <code>setColorRule</code>), not transient active node cache.</li>
+<li>Layer toggle off/on must preserve patched values.</li>
+<li><code>setColorBy(layerId)</code> should immediately use latest patched values.</li>
+<li>Prefer <code>batch(...)</code> for smooth updates.</li>
+</ol>
+
+<p>Example:</p>
+
+<p><code>ts
+slider.oninput = (threshold) =&gt; {
+  const patch = computePatch(threshold); // nodeId -&gt; { value, color, label }
+  viewer.batch(() =&gt; {
+    viewer.patchLayerNodes("per_layer_accuracy", patch);
+    viewer.setColorBy("per_layer_accuracy");
+  });
+};
+</code></p>
+
+<h2>11. UI Synchronization Contract</h2>
+
+<p>Built-in UI is a pure state adapter.</p>
+
+<ol>
+<li>API updates must always reflect in UI controls.</li>
+<li>UI interaction must always dispatch state mutations, never direct renderer mutations.</li>
+<li>No hidden UI-only state for theme/layers/colorBy/search.</li>
+</ol>
+
+<p>This closes the current drift issue.</p>
+
+<h2>12. Compare API</h2>
+
+<p>```ts
+const compare = FXGraphCompare.create({
+  viewers: [viewerA, viewerB, viewerC],
+  layout: { columns: 2, compact: true },
+  sync: { selection: true, camera: false, theme: false, layers: false },
+});</p>
+
+<p>compare.setColumns(3);
+compare.setSync({ selection: true, camera: true });
+compare.destroy();
+```</p>
+
+<p>Semantics:</p>
+
+<ol>
+<li>Source-guarded propagation avoids loops.</li>
+<li>Selection sync applies only when target viewer has the node id.</li>
+<li>Viewers remain independently usable outside compare orchestration.</li>
+</ol>
+
+<h2>13. Breaking Changes</h2>
+
+<p>Removed in v1:</p>
+
+<ol>
+<li>Legacy ad-hoc constructor mutation paths.</li>
+<li>Direct DOM poking as integration contract.</li>
+<li>Non-state-backed control update paths.</li>
+</ol>
+
+<h2>14. Implementation Plan</h2>
+
+<ol>
+<li>Add <code>ViewerStateStore</code> (schema + reducer/actions + event bus).</li>
+<li>Add <code>LayoutManager</code> (preset resolution + ownership + docking + splitters).</li>
+<li>Refactor <code>UIManager</code> into state subscriber/dispatcher.</li>
+<li>Add <code>LayerRegistry</code> mutation APIs.</li>
+<li>Add <code>FXGraphCompare</code> orchestrator.</li>
+<li>Migrate templates to v1-only paths.</li>
+</ol>
+
+<h2>15. Testing Plan</h2>
+
+<ol>
+<li>Precedence tests: slot/layout/preset conflict resolution.</li>
+<li>Ownership tests: host attributes preserved; viewer children mounted correctly.</li>
+<li>UI sync tests: API-driven theme/layer/colorBy reflected in controls.</li>
+<li>Runtime mutation tests: slider-style patch updates persist across layer toggles.</li>
+<li>Compare tests: sync propagation and loop prevention.</li>
+<li>E2E demo tests: standalone accuracy view + split/compact/headless embeddings.</li>
+</ol>
+
+<h2>16. Risks and Mitigations</h2>
+
+<ol>
+<li>Risk: complexity increase from flexibility.
+Mitigation: strict normalized config + validation errors.</li>
+<li>Risk: regressions during migration.
+Mitigation: interaction snapshot coverage for default exports.</li>
+<li>Risk: unclear host/viewer responsibilities.
+Mitigation: explicit ownership rules and precedence docs (Sections 7 and 6).</li>
+</ol>
+
+<h2>17. Expected Outcome</h2>
+
+<ol>
+<li>Lens and demo authors get one clear API model.</li>
+<li>Dynamic per-layer coloring/labels from JS becomes official and stable.</li>
+<li>Layout composition is powerful without DOM hacks.</li>
+<li>Compare/sync capabilities are reusable instead of reimplemented.</li>
+</ol>
+
+</body>
+</html>
