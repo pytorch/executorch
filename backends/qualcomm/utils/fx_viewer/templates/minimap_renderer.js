@@ -62,6 +62,7 @@
 class MinimapRenderer {
     constructor(container, viewer) {
         this.viewer = viewer;
+        this._teardownFns = [];
         const mountPoint = container || this.viewer.sidebar || this.viewer.mainArea;
         this.container = document.createElement('div');
         this.container.className = 'fx-minimap-container';
@@ -80,11 +81,13 @@ class MinimapRenderer {
         this.isDragging = false;
         
         this.resize();
-        window.addEventListener('resize', () => {
+        this._onWindowResize = () => {
             this.resize();
             this.generateThumbnail();
             this.render();
-        });
+        };
+        window.addEventListener('resize', this._onWindowResize);
+        this._teardownFns.push(() => window.removeEventListener('resize', this._onWindowResize));
         
         this.setupEvents();
     }
@@ -155,18 +158,26 @@ class MinimapRenderer {
     }
     
     setupEvents() {
-        this.canvas.addEventListener('mousedown', (e) => {
+        const onMouseDown = (e) => {
             this.isDragging = true;
             this.handleDrag(e);
-        });
-        window.addEventListener('mousemove', (e) => {
+        };
+        this.canvas.addEventListener('mousedown', onMouseDown);
+        this._teardownFns.push(() => this.canvas.removeEventListener('mousedown', onMouseDown));
+
+        const onMouseMove = (e) => {
             if (this.isDragging) this.handleDrag(e);
-        });
-        window.addEventListener('mouseup', () => {
+        };
+        window.addEventListener('mousemove', onMouseMove);
+        this._teardownFns.push(() => window.removeEventListener('mousemove', onMouseMove));
+
+        const onMouseUp = () => {
             this.isDragging = false;
-        });
+        };
+        window.addEventListener('mouseup', onMouseUp);
+        this._teardownFns.push(() => window.removeEventListener('mouseup', onMouseUp));
         
-        this.canvas.addEventListener('wheel', (e) => {
+        const onWheel = (e) => {
             e.preventDefault();
             const zoomIntensity = 0.1;
             const wheel = e.deltaY < 0 ? 1 : -1;
@@ -185,7 +196,9 @@ class MinimapRenderer {
             transform.y = mouseY - graphY * transform.k;
             
             this.viewer.renderAll();
-        }, { passive: false });
+        };
+        this.canvas.addEventListener('wheel', onWheel, { passive: false });
+        this._teardownFns.push(() => this.canvas.removeEventListener('wheel', onWheel));
     }
     
     handleDrag(e) {
@@ -275,5 +288,14 @@ class MinimapRenderer {
         this.ctx.strokeRect(mx, my, mw, mh);
         this.ctx.fillStyle = theme.minimapBox;
         this.ctx.fillRect(mx, my, mw, mh);
+    }
+
+    destroy() {
+        while (this._teardownFns.length > 0) {
+            const off = this._teardownFns.pop();
+            try {
+                off();
+            } catch (_) {}
+        }
     }
 }
