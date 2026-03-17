@@ -1345,7 +1345,7 @@ def get_repeat_inputs():
         "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
-    test_suite_2d.storage_types = ["utils::kTexture3D"]
+    test_suite_2d.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     test_suite_2d.data_gen = "make_seq_tensor"
     test_suite_2d.dtypes = ["at::kFloat"]
     test_suite_2d.test_name_suffix = "2d"
@@ -1390,7 +1390,7 @@ def get_repeat_inputs():
         "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
-    test_suite_3d.storage_types = ["utils::kTexture3D"]
+    test_suite_3d.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     test_suite_3d.data_gen = "make_seq_tensor"
     test_suite_3d.dtypes = ["at::kFloat"]
     test_suite_3d.test_name_suffix = "3d"
