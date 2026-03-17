@@ -59,7 +59,7 @@ examples/espressif/
 
 ## Quick Start
 
-Following example was only tested on a ESP32-S3 dev board with 8MB Octal PSRAM. One will need to adjust the sdk config to adjust fora specific board.
+The following example has been tested only on an ESP32-S3 dev board with 8 MB of Octal PSRAM. You may need to adjust the `sdkconfig` file for your specific board.
 
 ### 1. Export a simple model
 
