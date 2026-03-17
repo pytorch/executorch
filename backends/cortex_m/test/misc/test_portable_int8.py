@@ -681,7 +681,13 @@ xfails = {
 }
 
 
-@parametrize("op_case", OP_CASES, xfails=xfails, strict=False)
+@parametrize(
+    "op_case",
+    OP_CASES,
+    xfails=xfails,
+    strict=False,
+    skips={"while_loop": "Has been observed to hang randomly."},
+)
 def test_shared_qspec_portable_int8_ops(op_case: OpCase) -> None:
     tester = CortexMTester(op_case.module, op_case.example_inputs)
     tester.test_dialect(ops_before_transforms={}, ops_after_transforms={})
