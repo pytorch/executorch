@@ -102,7 +102,7 @@ VoxtralRealtimeModel
       attention: LMAttention
         wq/wk/wv/wo: Linear (no bias)
         kv_cache: KVCache (XNNPACK) or StaticKVCache (Metal/CUDA)
-        sdpa: SDPA (XNNPACK) or MetalSDPA (Metal) or CudaSDPA (CUDA)
+        sdpa: SDPA (XNNPACK) or MetalSDPA (Metal) or StandardSDPA (CUDA)
       ffn_norm: RMSNorm
       ada_rms_norm_t_cond: Sequential(Linear, GELU, Linear)
       feed_forward: LMMLP (w1/w2/w3)
@@ -116,7 +116,7 @@ StreamingAudioEncoderExport
   enc_norm: RMSNorm (shared from encoder.norm)
   adapter: AudioLanguageAdapter (shared from model.adapter)
   kv_caches: 32x EncoderRingKVCache (XNNPACK) or StandardEncoderRingKVCache (Metal/CUDA)
-  sdpa: SDPA (XNNPACK) or StandardEncoderSDPA (Metal/CUDA)
+  sdpa: SDPA (XNNPACK) or MetalSDPA (Metal, transpose_kv=True) or StandardSDPA (CUDA, transpose_kv=True)
   inv_freq: RoPE inverse frequencies (owned, on-the-fly computation)
 ```
 
@@ -164,10 +164,12 @@ Handles GQA expansion internally and upcasts to float32.
 
 **Metal:** `MetalSDPA` uses `torch.ops.aten._scaled_dot_product_attention_math_for_mps`
 which handles GQA natively via `gqa_factor`, avoiding the memory bandwidth
-overhead of `repeat_interleave`. Uses explicit additive attention masks.
-AOTInductor has compatibility issues with the `custom_sdpa` custom op.
+overhead of `repeat_interleave`. Uses explicit additive attention masks
+that must match the Q/K/V dtype (the kernel reads masks as `device T*`).
+Used for both decoder (GQA, `transpose_kv=False`) and streaming encoder
+(no GQA, `transpose_kv=True`).
 
-**CUDA:** `CudaSDPA` uses `F.scaled_dot_product_attention` with
+**CUDA:** `StandardSDPA` uses `F.scaled_dot_product_attention` with
 `repeat_interleave` for GQA expansion (32 query heads / 8 KV heads = 4x).
 Uses boolean attention masks (`True`=attend, `False`=masked) as required
 by the Triton SDPA kernel. The CUDA backend's Triton SDPA replacement
@@ -183,7 +185,7 @@ pass optimizes the attention kernel at compile time.
 require when using `[B, H, S, D]` attention with `[B, S, H, D]` cache.
 
 **Metal/CUDA:** Q/K/V projections still produce `[B, T, H, D]`, but
-`StaticKVCache` stores `[B, H, S, D]` and `MetalSDPA`/`CudaSDPA` transpose q to
+`StaticKVCache` stores `[B, H, S, D]` and `MetalSDPA`/`StandardSDPA` transpose q to
 `[B, H, T, D]` for the SDPA kernel, then transpose back.
 
 ### Adaptive RMSNorm
@@ -225,9 +227,13 @@ mel_chunk (1, 128, 8) + enc_input_pos (4,)
 **XNNPACK/Portable:** Uses `EncoderRingKVCache` (`update_cache_with_indices`
 custom op) and `SDPA` (`custom_sdpa`).
 
-**Metal/CUDA:** Uses `StandardEncoderRingKVCache` (`index_copy_`-based ring
-buffer) and `StandardEncoderSDPA` (`F.scaled_dot_product_attention` with
-explicit sliding window masks) — AOTI-compatible patterns avoiding custom ops.
+**Metal:** Uses `StandardEncoderRingKVCache` (`index_copy_`-based ring
+buffer) and `MetalSDPA` (native MPS SDPA kernel with `transpose_kv=True`).
+Masks are created in the model dtype to match the kernel's `device T*` expectation.
+
+**CUDA:** Uses `StandardEncoderRingKVCache` and `StandardSDPA`
+(`F.scaled_dot_product_attention` with `transpose_kv=True` and explicit
+sliding window masks).
 
 ### Streaming decode loop
 
