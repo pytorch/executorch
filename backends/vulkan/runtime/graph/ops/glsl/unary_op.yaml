@@ -46,3 +46,6 @@ unary_op:
       OPERATOR: leaky_relu(X, A)
     - NAME: round
       OPERATOR: round(X)
+    - NAME: bitwise_not_uint8
+      OPERATOR: 1 - X
+      DTYPE: uint8
