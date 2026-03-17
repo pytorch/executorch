@@ -102,6 +102,7 @@ from executorch.backends.arm._passes import (
     FuseEqualPlaceholdersPass,
     FuseQuantizedActivationPass,
     FuseViewCopyTransformPass,
+    InsertConstShapesPass,
     InsertControlFlowRescalesPass,
     InsertInt32CastsAfterInt64PlaceholdersPass,
     InsertRescaleInt32Pass,
@@ -380,6 +381,7 @@ class ArmPassManager(PassManager):
                 RewriteMatmulPass(),
                 RewritePadPass(),
                 RewriteSlicePass(),
+                InsertConstShapesPass(),
             ]
         )
 
