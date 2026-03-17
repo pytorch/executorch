@@ -166,6 +166,8 @@ def main(args):
         QnnExecuTorchBackendType.kHtpBackend: make_quantizer(
             quant_dtype=QuantDtype.use_8a8w,
             per_channel_linear=True,
+            backend=backend,
+            soc_model=args.model,
         ),
     }[backend]
     build_executorch_binary(

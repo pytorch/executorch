@@ -339,6 +339,10 @@ check_required_options_on(
 )
 
 check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_QNN REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_required_options_on(
   IF_ON EXECUTORCH_ENABLE_BUNDLE_IO REQUIRES EXECUTORCH_BUILD_DEVTOOLS
 )
 
