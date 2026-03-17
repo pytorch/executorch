@@ -2522,20 +2522,20 @@ class TestEmit(unittest.TestCase):
     def test_emit_device_info_propagated_to_serialized_tensor(self) -> None:
         """Verify that device info from PropagateDevicePass flows through
         the emitter into ExtraTensorInfo.device_type on serialized tensors."""
-        from executorch.exir.backend.compile_spec_schema import CompileSpec
         from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
             generate_pattern_op_partitions,
         )
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
         from executorch.exir.backend.partitioner import (
             DelegationSpec,
             Partitioner,
             PartitionResult,
         )
-        from executorch.exir.passes.propagate_device_pass import (
-            TARGET_DEVICE_COMPILE_SPEC_KEY,
-        )
         from executorch.exir.backend.test.backend_with_compiler_demo import (
             BackendWithCompilerDemo,
+        )
+        from executorch.exir.passes.propagate_device_pass import (
+            TARGET_DEVICE_COMPILE_SPEC_KEY,
         )
         from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
@@ -2590,9 +2590,7 @@ class TestEmit(unittest.TestCase):
         plan = program.execution_plan[0]
         self.assertGreater(len(plan.delegates), 0)
 
-        tensor_values = [
-            v.val for v in plan.values if isinstance(v.val, Tensor)
-        ]
+        tensor_values = [v.val for v in plan.values if isinstance(v.val, Tensor)]
         cuda_tensors = [
             t
             for t in tensor_values
@@ -2608,7 +2606,8 @@ class TestEmit(unittest.TestCase):
 
     def test_emit_cpu_tensors_no_extra_device_info(self) -> None:
         """When all tensors are on CPU (default), ExtraTensorInfo should NOT be
-        created solely for device info — it should remain None for activation tensors."""
+        created solely for device info — it should remain None for activation tensors.
+        """
 
         class Model(torch.nn.Module):
             def forward(self, a, b):
@@ -2625,9 +2624,7 @@ class TestEmit(unittest.TestCase):
         program = et_prog._emitter_output.program
 
         plan = program.execution_plan[0]
-        tensor_values = [
-            v.val for v in plan.values if isinstance(v.val, Tensor)
-        ]
+        tensor_values = [v.val for v in plan.values if isinstance(v.val, Tensor)]
         cuda_tensors = [
             t
             for t in tensor_values
