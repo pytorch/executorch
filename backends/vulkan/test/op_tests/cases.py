@@ -1167,14 +1167,13 @@ def get_embedding_inputs():
         Test(weight=[10, 9], indices=[[1, 2, 3], [1, 2, 3], [1, 2, 3], [1, 2, 3]]),
     ]
 
-    # Channels packed test cases currently fail on Mac, so they are not included.
-    # However the test case definition is kept for later debugging.
     test_suite_cpack = VkTestSuite(
         [tuple(tc) + (-1, "false", "false") for tc in test_cases]
     )
 
     test_suite_cpack.dtypes = ["at::kFloat"]
     test_suite_cpack.layouts = ["utils::kChannelsPacked"]
+    test_suite_cpack.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
     test_suite_cpack.test_name_suffix = "cpacked"
 
     test_suite_wpack = VkTestSuite(
@@ -1186,7 +1185,7 @@ def get_embedding_inputs():
     test_suite_wpack.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
     test_suite_wpack.test_name_suffix = "wpacked"
 
-    return test_suite_wpack
+    return [test_suite_cpack, test_suite_wpack]
 
 
 @register_test_suite("aten.gather.default")
