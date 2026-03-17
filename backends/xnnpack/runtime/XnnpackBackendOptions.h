@@ -45,8 +45,7 @@ class XnnpackBackendOptions {
   XNNWorkspaceManager workspace_manager_;
 
 #ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
-  std::atomic<WorkspaceSharingMode> sharing_mode_{
-      WorkspaceSharingMode::Global};
+  std::atomic<WorkspaceSharingMode> sharing_mode_{WorkspaceSharingMode::Global};
 #else
   std::atomic<WorkspaceSharingMode> sharing_mode_{
       WorkspaceSharingMode::Disabled};

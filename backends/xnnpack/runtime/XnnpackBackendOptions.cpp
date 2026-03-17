@@ -48,8 +48,7 @@ Error XnnpackBackendOptions::set_option(const BackendOption& option) {
       ET_LOG(Error, "XNNPACK workspace sharing mode must be an integer.");
       return Error::InvalidArgument;
     }
-    if (*val < 0 ||
-        *val >= static_cast<int>(WorkspaceSharingMode::Count)) {
+    if (*val < 0 || *val >= static_cast<int>(WorkspaceSharingMode::Count)) {
       ET_LOG(
           Error,
           "XNNPACK workspace sharing mode must be between 0 and %d, inclusive, but was %d.",
@@ -82,7 +81,8 @@ XnnpackBackendOptions::resolve_sharing_mode(
     const ET_RUNTIME_NAMESPACE::BackendInitContext& context) const {
   auto global_mode = sharing_mode_.load();
   int raw_mode = resolve_option<int>(
-      context, workspace_sharing_mode_option_key,
+      context,
+      workspace_sharing_mode_option_key,
       static_cast<int>(global_mode));
   if (raw_mode < 0 ||
       raw_mode >= static_cast<int>(WorkspaceSharingMode::Count)) {
