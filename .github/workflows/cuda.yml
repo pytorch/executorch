@@ -9,11 +9,18 @@
 name: Test CUDA Builds
 
 on:
-  pull_request:
   push:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/cuda/*
+  pull_request:
+    paths:
+      - .github/workflows/cuda.yml
+      - backends/cuda/**
+      - backends/aoti/**
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
