@@ -839,6 +839,7 @@ def get_full_inputs():
             ([L, M, M1, M2], 2.72),
         ]
     )
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     return test_suite
 
 
@@ -873,6 +874,7 @@ def get_ones_inputs():
             ([L, M, M1, M2]),
         ]
     )
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     return test_suite
 
 
@@ -1886,7 +1888,12 @@ def get_arange_inputs():
     )
 
     test_suite.layouts = [
+        "utils::kWidthPacked",
         "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = [
+        "utils::kTexture3D",
+        "utils::kBuffer",
     ]
     return test_suite
 
