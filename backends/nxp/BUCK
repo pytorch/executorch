@@ -75,7 +75,6 @@ fbcode_target(_kind = runtime.python_library,
         "nxp_backend.py",
         "neutron_partitioner.py",
         "neutron_node_extraction.py",
-        "neutron_pass_manager.py",
     ],
     deps = [
         ":neutron_sdk",

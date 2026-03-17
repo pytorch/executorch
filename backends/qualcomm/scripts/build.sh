@@ -127,6 +127,13 @@ if [ "$BUILD_ANDROID" = true ]; then
 
     # DSP_TYPE variable only matters when building direct_mode.
     # Ignore the variable for traditional mode. 
+
+    if [ "$BUILD_HEXAGON" = "true" ]; then
+        DIRECT_MODE_FLAG="-DBUILD_DIRECT_MODE=ON"
+    else
+        DIRECT_MODE_FLAG="-DBUILD_DIRECT_MODE=OFF"
+    fi
+
     cmake $PRJ_ROOT/$EXAMPLE_ROOT \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
         -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
@@ -140,6 +147,7 @@ if [ "$BUILD_ANDROID" = true ]; then
         -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
         -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
         -DDSP_TYPE=$DSP_TYPE \
+        $DIRECT_MODE_FLAG \
         -B$EXAMPLE_ROOT
 
     cmake --build $EXAMPLE_ROOT -j$BUILD_JOB_NUMBER

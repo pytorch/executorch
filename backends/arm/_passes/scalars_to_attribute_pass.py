@@ -8,10 +8,11 @@ from typing import cast, Set, Type, Union
 
 import torch
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_cond_while_submodules_nested,
+    get_first_fake_tensor,
+)
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
-from executorch.exir.graph_module import get_cond_while_submodules
-
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
@@ -26,14 +27,10 @@ class ScalarsToAttributePass(ArmPass):
 
     targeted_ops = [
         torch.ops.aten.add.Tensor,
-        torch.ops.aten.add_.Tensor,
         torch.ops.aten.sub.Tensor,
-        torch.ops.aten.sub_.Tensor,
         torch.ops.aten.rsub.Scalar,
         torch.ops.aten.mul.Tensor,
-        torch.ops.aten.mul_.Tensor,
         torch.ops.aten.div.Tensor,
-        torch.ops.aten.div_.Tensor,
     ]
 
     def _convert_scalar_args(
@@ -99,7 +96,7 @@ class ScalarsToAttributePass(ArmPass):
         """Apply scalar argument conversion on subgraphs of control-flow
         nodes.
         """
-        for _, submodule, _ in get_cond_while_submodules(graph_module):
+        for _, submodule, _ in get_cond_while_submodules_nested(graph_module):
             for submodule_node in submodule.graph.nodes:
                 # use aten.full.default for scalar constants in control subgraphs
                 self._convert_scalar_args(submodule, submodule_node)
