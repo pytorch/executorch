@@ -29,11 +29,6 @@
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/llm/runner/wav_loader.h>
-#ifdef EXECUTORCH_FB_BUCK
-#include <unicode.h>
-#else
-#include <executorch/extension/llm/tokenizers/third-party/llama.cpp-unicode/include/unicode.h>
-#endif
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/core/evalue.h>
