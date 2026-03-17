@@ -73,6 +73,16 @@ void apply_weight_scales_and_biases(
   }
 }
 
+void add_bias_to_out_tile(
+    inout FPOutTile tile,
+    const FPPerOutChannelParams bias) {
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      tile.data[m][n4] = tile.data[m][n4] + bias.data[n4];
+    }
+  }
+}
+
 void accumulate_out_tile_with_out_tile(
     inout FPOutTile accum,
     const FPOutTile other) {
