@@ -107,7 +107,7 @@ class ArmPass(ExportPass):
         return result
 
     def call_shape_operator(
-        self, op, args: tuple, kwargs: dict, meta: NodeMetadata, update: bool
+        self, op, args: tuple, kwargs: dict, meta: NodeMetadata, updated: bool = True
     ) -> ProxyValue:
         """Call operator for shape-producing operators.
 
@@ -123,4 +123,4 @@ class ArmPass(ExportPass):
         shape_meta.data = dict(meta.data)
         shape_meta.data[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.SHAPE
         # Call the super (ArmPass) call operator with updated meta
-        return self.call_operator(op, args, kwargs, shape_meta, update)
+        return self.call_operator(op, args, kwargs, shape_meta, updated)

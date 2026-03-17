@@ -7,8 +7,15 @@ from executorch.backends.qualcomm._passes import (
     InsertReshapeForReduceOps,
     RemoveRedundancy,
 )
-
+from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.tests.models import TopKandIndex
+from executorch.backends.qualcomm.utils.utils import (
+    generate_htp_compiler_spec,
+    generate_qnn_executorch_compiler_spec,
+    to_edge_transform_and_lower_to_qnn,
+)
 from executorch.exir import to_edge
+from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
@@ -149,6 +156,56 @@ class TestPasses(unittest.TestCase):
                 torch.allclose(out, *ref, rtol=1e-6, atol=1e-6),
                 f"Output {i} mismatch: got {out}, expected {ref}",
             )
+
+    def test_resolve_debug_handle(self):
+        name_handle_map = {
+            "aten_topk_default": 1,
+            "getitem": 1,
+            "getitem_1": 1,
+            "aten_view_copy_default": 2,
+            "aten_index_tensor": 3,
+            "aten_add_tensor": 4,
+        }
+        module = TopKandIndex()  # noqa: F405
+        sample_input = (torch.randn(3, 10),)
+
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        compiler_spec = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,  # Random soc_model
+            backend_options=backend_options,
+            dump_intermediate_outputs=True,
+        )
+
+        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            module,
+            sample_input,
+            compiler_spec,
+            generate_etrecord=True,
+        )
+        exec_prog_mgr = edge_prog_mgr.to_executorch()
+        etrecord = exec_prog_mgr.get_etrecord()
+        debug_handle_size = len(etrecord._debug_handle_map["forward"][0])
+        self.assertEqual(
+            len(name_handle_map),
+            debug_handle_size,
+            f"Number of handles does not match, expecting: {len(name_handle_map)}, but get: {debug_handle_size}",
+        )
+        after_edge_pass_ep = etrecord.graph_map["edge_after_transform/forward"]
+
+        for node in after_edge_pass_ep.graph.nodes:
+            if node.name in name_handle_map:
+                expected_handle = name_handle_map.pop(node.name)
+                node_handle = node.meta[DEBUG_HANDLE_KEY]
+                self.assertEqual(
+                    expected_handle,
+                    node_handle,
+                    f"{node.name} is expecting a handle id {expected_handle}, but got {node_handle}.",
+                )
+        self.assertEqual(
+            len(name_handle_map),
+            0,
+            f"Following nodes did not find a match in the graph: {name_handle_map.keys()}",
+        )
 
 
 if __name__ == "__main__":

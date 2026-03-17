@@ -12,7 +12,10 @@ import numpy as np
 
 import torch
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -257,7 +260,11 @@ def main(args):
             for input in inputs:
                 gm(*input)
 
-        quantizer = make_quantizer(quant_dtype=quant_dtype)
+        quantizer = make_quantizer(
+            quant_dtype=quant_dtype,
+            backend=QnnExecuTorchBackendType.kHtpBackend,
+            soc_model=args.model,
+        )
         backend_options = generate_htp_compiler_spec(quant_dtype is not None)
         compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=getattr(QcomChipset, args.model),

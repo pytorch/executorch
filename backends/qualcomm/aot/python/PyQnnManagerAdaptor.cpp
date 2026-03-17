@@ -163,8 +163,10 @@ std::string GetQnnSdkBuildId(std::string library_path) {
   if (err != QNN_SUCCESS || id == nullptr) {
     throw std::runtime_error("Failed to get QNN backend build ID");
   }
+  // Copy id to avoid dangling pointer.
+  std::string build_id(id);
   qnn_loaded_backend.Unload();
-  return std::string(id);
+  return build_id;
 }
 
 py::array_t<char> StripProtocol(const py::bytes& preprocessed_binary) {
