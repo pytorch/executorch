@@ -34,7 +34,6 @@ fbcode_target(_kind = runtime.python_library,
         "//caffe2:torch",
         "//executorch/exir/backend:utils",
         "//executorch/exir/backend/canonical_partitioners:duplicate_constant_node_pass",
-        "//executorch/exir/passes:propagate_device_pass",
     ],
 )
 
