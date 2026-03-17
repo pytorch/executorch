@@ -51,12 +51,15 @@ examples/espressif/
     ├── CMakeLists.txt           # ESP-IDF project file
     ├── sdkconfig.defaults       # Default ESP-IDF configuration
     ├── sdkconfig.defaults.esp32s3  # ESP32-S3 specific config
+    ├── partitions.csv  # Adjusted partition table to increase app size
     └── main/
         ├── CMakeLists.txt       # Main component
-        └── main.cpp             # Entry point (optional override)
+        └── main.cpp             # Entry point
 ```
 
 ## Quick Start
+
+Following example was only tested on a ESP32-S3 dev board with 8MB Octal PSRAM. One will need to adjust the sdk config to adjust fora specific board.
 
 ### 1. Export a simple model
 
@@ -112,16 +115,37 @@ idf.py -p /dev/ttyUSB0 flash monitor
 
 You should see output like:
 ```
-I [executorch] ExecuTorch ESP32 Executor Runner starting...
-I [executorch] ESP32 ExecuTorch runner initialized. Free heap: 300000 bytes.
-I [executorch] PTE Model data loaded. Size: 1234 bytes.
-I [executorch] Model buffer loaded, has 1 methods
-I [executorch] Running method forward
-I [executorch] Starting running 1 inferences...
-I [executorch] Profiler report:
-I [executorch] Total wall time: 1234 us (1234.00 us per inference)
-I [executorch] 1 inferences finished
-I [executorch] Program complete.
+Starting executorch runner !
+I [executorch:esp_executor_runner.cpp:237 et_pal_init()] ESP32 ExecuTorch runner initialized. Free heap: 6097812 bytes.
+I [executorch:esp_executor_runner.cpp:242 et_pal_init()] PSRAM available. Free PSRAM: 5764716 bytes.
+I [executorch:esp_executor_runner.cpp:1047 executor_runner_main()] PTE @ 0x3c05f9f0 [----ET12]
+I [executorch:esp_executor_runner.cpp:568 runner_init()] PTE Model data loaded. Size: 952 bytes.
+I [executorch:esp_executor_runner.cpp:583 runner_init()] Model buffer loaded, has 1 methods
+I [executorch:esp_executor_runner.cpp:593 runner_init()] Running method forward
+I [executorch:esp_executor_runner.cpp:604 runner_init()] Setup Method allocator pool. Size: 2097152 bytes.
+I [executorch:esp_executor_runner.cpp:620 runner_init()] Setting up planned buffer 0, size 64.
+I [executorch:esp_executor_runner.cpp:716 runner_init()] Method 'forward' loaded.
+I [executorch:esp_executor_runner.cpp:718 runner_init()] Preparing inputs...
+I [executorch:esp_executor_runner.cpp:780 runner_init()] Input prepared.
+I [executorch:esp_executor_runner.cpp:979 run_model()] Starting running 1 inferences...
+I [executorch:esp_perf_monitor.cpp:41 StopMeasurements()] Profiler report:
+I [executorch:esp_perf_monitor.cpp:42 StopMeasurements()] Number of inferences: 1
+I [executorch:esp_perf_monitor.cpp:43 StopMeasurements()] Total CPU cycles: 49545 (49545.00 per inference)
+I [executorch:esp_perf_monitor.cpp:48 StopMeasurements()] Total wall time: 205 us (205.00 us per inference)
+I [executorch:esp_perf_monitor.cpp:53 StopMeasurements()] Average inference time: 0.205 ms
+I [executorch:esp_perf_monitor.cpp:59 StopMeasurements()] Free heap: 6097576 bytes
+I [executorch:esp_perf_monitor.cpp:63 StopMeasurements()] Min free heap ever: 6097576 bytes
+I [executorch:esp_executor_runner.cpp:999 run_model()] 1 inferences finished
+I [executorch:esp_executor_runner.cpp:867 print_outputs()] 1 outputs: 
+Output[0][0]: (float) 2.000000
+Output[0][1]: (float) 2.000000
+Output[0][2]: (float) 2.000000
+Output[0][3]: (float) 2.000000
+Output[0][4]: (float) 2.000000
+Output[0][5]: (float) 2.000000
+Output[0][6]: (float) 2.000000
+Output[0][7]: (float) 2.000000
+
 ```
 
 ## Cross-Compiling ExecuTorch
