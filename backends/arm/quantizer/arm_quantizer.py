@@ -474,6 +474,38 @@ class TOSAQuantizer(Quantizer):
     def global_config(self):
         return self.quantizer.global_config
 
+    @global_config.setter
+    def global_config(self, value: Optional[QuantizationConfig]) -> None:
+        self.quantizer.global_config = value
+
+    @property
+    def io_config(self):
+        return getattr(self.quantizer, "io_config", None)
+
+    @io_config.setter
+    def io_config(self, value: Optional[QuantizationConfig]) -> None:
+        self.quantizer.io_config = value
+
+    @property
+    def module_type_config(self):
+        return getattr(self.quantizer, "module_type_config", {})
+
+    @module_type_config.setter
+    def module_type_config(
+        self, value: Dict[Callable, Optional[QuantizationConfig]]
+    ) -> None:
+        self.quantizer.module_type_config = value
+
+    @property
+    def module_name_config(self):
+        return getattr(self.quantizer, "module_name_config", {})
+
+    @module_name_config.setter
+    def module_name_config(
+        self, value: Dict[str, Optional[QuantizationConfig]]
+    ) -> None:
+        self.quantizer.module_name_config = value
+
     def set_global(
         self, quantization_config: Optional[QuantizationConfig]
     ) -> TOSAQuantizer:

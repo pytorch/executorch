@@ -45,6 +45,8 @@ runtime.python_library(
     srcs = ["arm_quantizer_utils.py"],
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/arm:common",
+        "//executorch/backends/arm:constants",
         ":quantization_config",
         "//pytorch/ao:torchao",
     ],
