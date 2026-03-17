@@ -573,6 +573,9 @@ class ComputeGraph final {
     if (value.isBool()) {
       return static_cast<T>(value.toBool());
     }
+    if (value.isSymInt()) {
+      return utils::safe_downcast<T>(read_symint(idx));
+    }
     VK_THROW("Cannot extract scalar from Value with type ", value.type());
   }
 
