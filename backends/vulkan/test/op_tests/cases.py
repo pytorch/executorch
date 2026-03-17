@@ -1627,6 +1627,7 @@ def get_softmax_inputs():
         "utils::kWidthPacked",
         "utils::kChannelsPacked",
     ]
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
 
     # Large negative values regression test (edgeTAM attention scores that
     # produced NaN due to missing max-shift in softmax numerics)
@@ -1639,6 +1640,7 @@ def get_softmax_inputs():
         "utils::kWidthPacked",
         "utils::kChannelsPacked",
     ]
+    large_neg_test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     large_neg_test_suite.data_range = (-1.8e10, -6.5e9)
     large_neg_test_suite.test_name_suffix = "large_negative"
     large_neg_test_suite.dtypes = ["at::kFloat"]
