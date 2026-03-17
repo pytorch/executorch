@@ -105,9 +105,10 @@ def test_mv2_tosa_INT(per_channel_quantization):
 @common.XfailIfNoCorstone300
 @common.parametrize("per_channel_quantization", quant_test_data)
 def test_mv2_u55_INT(per_channel_quantization):
+    input_tensor = model_inputs[0].to(memory_format=torch.channels_last)
     pipeline = EthosU55PipelineINT[input_t](
         mv2,
-        model_inputs,
+        (input_tensor,),
         aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
@@ -122,9 +123,10 @@ def test_mv2_u55_INT(per_channel_quantization):
 @common.XfailIfNoCorstone320
 @common.parametrize("per_channel_quantization", quant_test_data)
 def test_mv2_u85_INT(per_channel_quantization):
+    input_tensor = model_inputs[0].to(memory_format=torch.channels_last)
     pipeline = EthosU85PipelineINT[input_t](
         mv2,
-        model_inputs,
+        (input_tensor,),
         aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
