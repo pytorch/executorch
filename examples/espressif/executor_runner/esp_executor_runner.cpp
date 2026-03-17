@@ -54,6 +54,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <algorithm>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -72,6 +73,7 @@
 #include "esp_perf_monitor.h"
 
 #if defined(ESP_PLATFORM)
+#include <esp_cpu.h>
 #include <esp_heap_caps.h>
 #include <esp_log.h>
 #include <esp_system.h>
@@ -438,29 +440,53 @@ std::pair<char*, size_t> load_file_from_fs(
     return std::make_pair(nullptr, 0);
   }
 
-  fseek(fp, 0, SEEK_END);
+  if (fseek(fp, 0, SEEK_END) != 0) {
+    ET_LOG(
+        Fatal, "Failed to seek to end of file %s (errno: %d)", filepath, errno);
+    fclose(fp);
+    return std::make_pair(nullptr, 0);
+  }
   auto file_size = ftell(fp);
-  fseek(fp, 0, SEEK_SET);
+  if (file_size <= 0) {
+    ET_LOG(
+        Fatal,
+        "Failed to determine valid size for file %s (size: %ld, errno: %d)",
+        filepath,
+        static_cast<long>(file_size),
+        errno);
+    fclose(fp);
+    return std::make_pair(nullptr, 0);
+  }
 
-  char* buffer = static_cast<char*>(allocator.allocate(file_size));
+  if (fseek(fp, 0, SEEK_SET) != 0) {
+    ET_LOG(
+        Fatal,
+        "Failed to seek to beginning of file %s (errno: %d)",
+        filepath,
+        errno);
+    fclose(fp);
+    return std::make_pair(nullptr, 0);
+  }
+  const size_t size = static_cast<size_t>(file_size);
+  char* buffer = static_cast<char*>(allocator.allocate(size));
   if (buffer == nullptr) {
     ET_LOG(
         Fatal,
         "Failed to allocate %lu bytes for file %s",
-        static_cast<unsigned long>(file_size),
+        static_cast<unsigned long>(size),
         filepath);
     fclose(fp);
     return std::make_pair(nullptr, 0);
   }
 
-  auto read_size = fread(buffer, 1, file_size, fp);
-  if (read_size != static_cast<size_t>(file_size)) {
+  auto read_size = fread(buffer, 1, size, fp);
+  if (read_size != size) {
     ET_LOG(
         Info,
         "Partial read of %s: got %lu of %lu bytes",
         filepath,
         static_cast<unsigned long>(read_size),
-        static_cast<unsigned long>(file_size));
+        static_cast<unsigned long>(size));
   }
   fclose(fp);
   return std::make_pair(buffer, read_size);
@@ -568,7 +594,7 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
       program_result.ok(),
       "Program loading failed @ %p: 0x%" PRIx32,
       program_data,
-      static_cast<unsigned long>(program_result.error()));
+      static_cast<uint32_t>(program_result.error()));
   ctx.program.reset(std::move(program_result.get()));
   Program& program = ctx.program.value();
 
@@ -725,7 +751,7 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
     ET_CHECK_MSG(
         status == Error::Ok,
         "Failed to prepare inputs 0x%" PRIx32,
-        static_cast<long unsigned int>(status));
+        static_cast<uint32_t>(status));
   }
 
 #if defined(ET_LOG_DUMP_INPUT)
@@ -981,10 +1007,18 @@ bool verify_result(RunnerContext& ctx, const void* model_pte) {
 
 bool run_model(RunnerContext& ctx, const void* model_pte) {
   Error status = Error::Ok;
+  if (num_inferences <= 0) {
+    ET_LOG(
+        Info,
+        "num_inferences (%d) <= 0; skipping model execution.",
+        num_inferences);
+    // Nothing to run; treat as a no-op run.
+    return true;
+  }
   ET_LOG(Info, "Starting running %d inferences...", num_inferences);
-  int n = 0;
+  int successful_inferences = 0;
   StartMeasurements();
-  for (n = 0; n < num_inferences; n++) {
+  for (int n = 0; n < num_inferences; n++) {
     ET_LOG(Debug, "Running inference number %d", n);
     status = ctx.method.value()->execute();
     if (status != Error::Ok) {
@@ -992,8 +1026,11 @@ bool run_model(RunnerContext& ctx, const void* model_pte) {
     }
     // Reset the temporary allocator between inferences
     ctx.temp_allocator.reset(temp_allocation_pool_size, temp_allocation_pool);
+    successful_inferences++;
   }
-  StopMeasurements(n);
+  if (successful_inferences > 0) {
+    StopMeasurements(successful_inferences);
+  }
 
   ET_CHECK_MSG(
       status == Error::Ok,
@@ -1001,7 +1038,7 @@ bool run_model(RunnerContext& ctx, const void* model_pte) {
       ctx.method_name,
       static_cast<unsigned long>(status));
 
-  ET_LOG(Info, "%d inferences finished", num_inferences);
+  ET_LOG(Info, "%d inferences finished", successful_inferences);
   print_outputs(ctx);
   bool model_ok = verify_result(ctx, model_pte);
   ET_LOG(Info, "Model run: %d", model_ok);

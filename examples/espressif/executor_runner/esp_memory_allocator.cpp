@@ -13,16 +13,11 @@ EspMemoryAllocator::EspMemoryAllocator(uint32_t size, uint8_t* base_address)
 void* EspMemoryAllocator::allocate(size_t size, size_t alignment) {
   void* ret = executorch::runtime::MemoryAllocator::allocate(size, alignment);
   if (ret != nullptr) {
-    // Align with the same code as in MemoryAllocator::allocate() to keep
-    // used_ "in sync". As alignment is expected to be power of 2 (checked by
-    // MemoryAllocator::allocate()) we can check if the lower bits
-    // (same as alignment - 1) is zero or not.
-    if ((size & (alignment - 1)) == 0) {
-      // Already aligned.
-      used_ += size;
-    } else {
-      used_ = (used_ | (alignment - 1)) + 1 + size;
-    }
+    // Keep used_ in sync with the underlying MemoryAllocator by computing it
+    // from the returned pointer and requested size, which implicitly includes
+    // any padding/alignment the base allocator applied.
+    uint8_t* end_ptr = static_cast<uint8_t*>(ret) + size;
+    used_ = static_cast<size_t>(end_ptr - base_address());
   }
   return ret;
 }
