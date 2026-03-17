@@ -63,11 +63,17 @@ Result<::executorch::aten::ScalarType> get_input_scalar_type(
 TransducerRunner::TransducerRunner(
     const std::string& module_path,
     const std::string& tokenizer_path,
-    TransducerConfig config)
+    TransducerConfig config,
+    std::optional<std::string> data_path)
     : module_path_(module_path),
       tokenizer_path_(tokenizer_path),
       config_(std::move(config)) {
-  module_ = std::make_unique<Module>(module_path_, Module::LoadMode::Mmap);
+  if (data_path.has_value() && !data_path->empty()) {
+    module_ = std::make_unique<Module>(
+        module_path_, *data_path, Module::LoadMode::Mmap);
+  } else {
+    module_ = std::make_unique<Module>(module_path_, Module::LoadMode::Mmap);
+  }
 }
 
 bool TransducerRunner::is_loaded() const {

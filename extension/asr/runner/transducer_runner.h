@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -68,7 +69,8 @@ class ET_EXPERIMENTAL TransducerRunner {
   TransducerRunner(
       const std::string& module_path,
       const std::string& tokenizer_path,
-      TransducerConfig config);
+      TransducerConfig config,
+      std::optional<std::string> data_path = std::nullopt);
 
   bool is_loaded() const;
 

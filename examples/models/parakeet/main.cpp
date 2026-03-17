@@ -139,8 +139,12 @@ int main(int argc, char** argv) {
   // Start with defaults; we'll update config after querying constant_methods.
   executorch::extension::asr::TransducerConfig tdt_config;
   tdt_config.durations = {0, 1, 2, 3, 4};
+  std::optional<std::string> data_path_opt;
+  if (!FLAGS_data_path.empty()) {
+    data_path_opt = FLAGS_data_path;
+  }
   executorch::extension::asr::TransducerRunner runner(
-      FLAGS_model_path, FLAGS_tokenizer_path, tdt_config);
+      FLAGS_model_path, FLAGS_tokenizer_path, tdt_config, data_path_opt);
 
   auto load_err = runner.load();
   if (load_err != Error::Ok) {
