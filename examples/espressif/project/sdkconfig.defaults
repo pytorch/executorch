@@ -45,7 +45,7 @@ CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 # Disable task watchdog for long-running inference
 CONFIG_ESP_TASK_WDT_EN=n
 
-
+# ─── Custom partition table to be adjusted for larger builds ───
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
