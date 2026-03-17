@@ -2,7 +2,11 @@
 
 #include <exception>
 
+#ifdef EXECUTORCH_FB_BUCK
+#include <unicode.h>
+#else
 #include <executorch/extension/llm/tokenizers/third-party/llama.cpp-unicode/include/unicode.h>
+#endif
 #include <executorch/runtime/platform/log.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
@@ -36,7 +40,11 @@ bool is_special_token(const std::string& token) {
   if (token.rfind("##", 0) == 0) {
     return true;
   }
+#ifdef EXECUTORCH_FB_BUCK
+  if (token.rfind("\xe2\x96\x81", 0) == 0) {
+#else
   if (token.rfind(u8"▁", 0) == 0) {
+#endif
     return true;
   }
   if (is_whitespace_only(token)) {
