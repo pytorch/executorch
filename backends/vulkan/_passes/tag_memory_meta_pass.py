@@ -302,7 +302,7 @@ class TagMemoryMetaPass(ExportPass):
             current_node, arg_repset, search_depth
         )
 
-    def trace_node_users_to_constrain_repset(
+    def trace_node_users_to_constrain_repset(  # noqa: C901
         self,
         origin_node: torch.fx.Node,
         repset: utils.TensorRepSet,
