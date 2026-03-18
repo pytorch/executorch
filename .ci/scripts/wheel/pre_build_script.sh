@@ -21,12 +21,20 @@ if [[ "$(uname -m)" == "aarch64" ]]; then
     echo "the file $file has been modified for atomic to use full path"
 fi
 
+# Initialize submodules here instead of during checkout so we can use OpenSSL
+# on Windows (schannel fails with SEC_E_ILLEGAL_MESSAGE on some gitlab hosts).
+UNAME_S=$(uname -s)
+if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
+  git -c http.sslBackend=openssl submodule update --init
+else
+  git submodule update --init
+fi
+
 # Clone nested submodules for tokenizers - this is a workaround for recursive
 # submodule clone failing due to path length limitations on Windows. Eventually,
 # we should update the core job in test-infra to enable long paths before
 # checkout to avoid needing to do this.
 pushd extension/llm/tokenizers
-UNAME_S=$(uname -s)
 if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
   git -c http.sslBackend=openssl submodule update --init
 else
