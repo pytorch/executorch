@@ -11,25 +11,26 @@ CMSIS component, enabling fine-grained code-size control.
 ## Structure
 
 ```
-cmsis_pack/
-├── config/
-│   └── executorch_config.yml       # Build configuration and defines
-├── contributions/
-│   └── add/                        # Static files included in the pack
-│       ├── LICENSE
-│       └── Documentation/
-├── scripts/
-│   ├── build_pack.sh               # Main entry point
-│   ├── copy_sources.sh             # Collects sources from repo tree
-│   ├── generate_components.py      # Generates per-operator PDSC components
-│   └── generate_register_all_kernels.py  # Generates #ifdef-guarded registrations
-├── stubs/                          # Bare-metal runtime stubs
-│   ├── bare_metal_pal.cpp
-│   ├── cxx_runtime_stubs.cpp
-│   ├── posix_stub.cpp
-│   └── random_ops_stubs.cpp
-└── templates/
-    └── PyTorch.ExecuTorch.pdsc.tpl # Pack description template
+backends/arm/
+├── cmsis_pack/
+│   ├── config/
+│   │   └── executorch_config.yml       # Build configuration and defines
+│   ├── contributions/
+│   │   └── add/                        # Static files included in the pack
+│   │       ├── LICENSE
+│   │       └── Documentation/
+│   ├── stubs/                          # Bare-metal runtime stubs
+│   │   ├── bare_metal_pal.cpp
+│   │   ├── cxx_runtime_stubs.cpp
+│   │   ├── posix_stub.cpp
+│   │   └── random_ops_stubs.cpp
+│   └── templates/
+│       └── PyTorch.ExecuTorch.pdsc.tpl # Pack description template
+└── scripts/
+    ├── build_cmsis_pack.sh                       # Main entry point
+    ├── copy_cmsis_pack_sources.sh                # Collects sources from repo tree
+    ├── generate_cmsis_pack_components.py          # Generates per-operator PDSC components
+    └── generate_cmsis_pack_register_all_kernels.py  # Generates #ifdef-guarded registrations
 ```
 
 ## Components
@@ -54,7 +55,7 @@ cmake \
 cmake --build cmake-out-arm --config Release -j$(nproc)
 
 # 2. Build the pack
-backends/arm/cmsis_pack/scripts/build_pack.sh \
+backends/arm/scripts/build_cmsis_pack.sh \
   --executorch-root "$(pwd)" \
   --build-dir cmake-out-arm \
   --version "$(cat version.txt | sed 's/a0$//')" \

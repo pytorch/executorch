@@ -12,7 +12,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PACK_DIR="$(dirname "$SCRIPT_DIR")"
+PACK_DIR="$(dirname "$SCRIPT_DIR")/cmsis_pack"
 
 # ---------------------------------------------------------------------------
 # Parse arguments

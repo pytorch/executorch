@@ -28,6 +28,10 @@ on:
     paths:
       - .github/workflows/build-cmsis-pack.yml
       - backends/arm/cmsis_pack/**
+      - backends/arm/scripts/build_cmsis_pack.sh
+      - backends/arm/scripts/copy_cmsis_pack_sources.sh
+      - backends/arm/scripts/generate_cmsis_pack_components.py
+      - backends/arm/scripts/generate_cmsis_pack_register_all_kernels.py
   workflow_dispatch:
     inputs:
       version_override:
@@ -92,7 +96,7 @@ jobs:
         echo "::endgroup::"++++++++++++++++++++++++++++++++++++++++++++++++++0  
 
         echo "::group::Build CMSIS Pack"
-        backends/arm/cmsis_pack/scripts/build_pack.sh \
+        backends/arm/scripts/build_cmsis_pack.sh \
           --executorch-root "$(pwd)" \
           --build-dir "${CMAKE_BUILD_DIR}" \
           --version "${PACK_VERSION}" \

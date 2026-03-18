@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PACK_ROOT="$(dirname "$SCRIPT_DIR")"
+PACK_ROOT="$(dirname "$SCRIPT_DIR")/cmsis_pack"
 
 # ---------------------------------------------------------------------------
 # Parse arguments
@@ -59,14 +59,14 @@ mkdir -p "$PACK_BUILD"
 
 # Step 1: Copy sources from the repo / build tree into the pack layout
 echo "=== Step 1: Copying sources ==="
-"$SCRIPT_DIR/copy_sources.sh" \
+"$SCRIPT_DIR/copy_cmsis_pack_sources.sh" \
     --executorch-root "$EXECUTORCH_ROOT" \
     --build-dir "$BUILD_DIR" \
     --pack-staging "$PACK_BUILD"
 
 # Step 2: Generate RegisterAllKernels.cpp with #ifdef-guarded registrations
 echo "=== Step 2: Generating RegisterAllKernels.cpp ==="
-python3 "$SCRIPT_DIR/generate_register_all_kernels.py" \
+python3 "$SCRIPT_DIR/generate_cmsis_pack_register_all_kernels.py" \
     --source-dir "$PACK_BUILD" \
     --output "$PACK_BUILD/src/registration/RegisterAllKernels.cpp"
 
@@ -75,7 +75,7 @@ echo "=== Step 3: Generating PDSC with operator components ==="
 TEMPLATE="$PACK_ROOT/templates/PyTorch.ExecuTorch.pdsc.tpl"
 PDSC_OUT="$PACK_BUILD/PyTorch.ExecuTorch.pdsc"
 
-python3 "$SCRIPT_DIR/generate_components.py" \
+python3 "$SCRIPT_DIR/generate_cmsis_pack_components.py" \
     --source-dir "$PACK_BUILD" \
     --template "$TEMPLATE" \
     --pdsc-output "$PDSC_OUT" \
