@@ -1765,6 +1765,14 @@ class PReLUPerChannel(torch.nn.Module):
         return self.prelu(x)
 
 
+class Reciprocal(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.reciprocal(x)
+
+
 class Relu(torch.nn.Module):
     def __init__(self):
         super().__init__()
