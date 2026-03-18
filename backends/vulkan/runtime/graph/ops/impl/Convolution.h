@@ -38,4 +38,22 @@ void conv2d_pw_impl(
     const float out_min_val,
     const float out_max_val);
 
+void conv2d_dw_impl(
+    ComputeGraph& graph,
+    const ValueRef in,
+    const ValueRef weight_data,
+    const ValueRef bias,
+    const ValueRef stride,
+    const ValueRef padding,
+    const ValueRef dilation,
+    const ValueRef out,
+    const bool clamp_out,
+    const float out_min_val,
+    const float out_max_val);
+
+void resize_conv2d_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args);
+
 } // namespace vkcompute
