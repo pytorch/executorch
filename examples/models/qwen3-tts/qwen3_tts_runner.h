@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -35,11 +36,22 @@ struct CodeGenerationArgs {
   float repetition_penalty = -1.0f;
 };
 
+struct BucketModel {
+  int codes_len;
+  std::unique_ptr<::executorch::extension::Module> module;
+};
+
 class Qwen3TTSRunner {
  public:
+  // Single-model mode (backward compat).
   Qwen3TTSRunner(
       const std::string& model_path,
       const std::string& data_path = "");
+
+  // Multi-bucket mode: loads all models from a directory containing
+  // export_manifest.json with a "buckets" array.
+  static std::unique_ptr<Qwen3TTSRunner> from_model_dir(
+      const std::string& model_dir);
 
   int output_sample_rate() const {
     return output_sample_rate_;
@@ -47,6 +59,10 @@ class Qwen3TTSRunner {
 
   int fixed_codes_len() const {
     return fixed_codes_len_;
+  }
+
+  bool is_bucketed() const {
+    return !bucket_models_.empty();
   }
 
   bool run_code_generation(const CodeGenerationArgs& args) const;
@@ -72,9 +88,20 @@ class Qwen3TTSRunner {
       const std::vector<float>& waveform) const;
 
  private:
+  Qwen3TTSRunner() = default;
+
+  // Select the smallest bucket >= codes_len. Returns nullptr if none fits.
+  ::executorch::extension::Module* select_bucket(int32_t codes_len,
+                                                  int32_t* bucket_codes_len) const;
+
+  // Single-model mode.
   std::unique_ptr<::executorch::extension::Module> module_;
-  int output_sample_rate_ = 24000;
   int fixed_codes_len_ = -1;
+
+  // Multi-bucket mode: sorted ascending by codes_len.
+  std::vector<BucketModel> bucket_models_;
+
+  int output_sample_rate_ = 24000;
 };
 
 } // namespace qwen3_tts

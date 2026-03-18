@@ -18,6 +18,11 @@
 
 DEFINE_string(model_path, "model.pte", "Path to qwen3-tts decoder model (.pte).");
 DEFINE_string(
+    model_dir,
+    "",
+    "Directory containing bucketed .pte files and export_manifest.json. "
+    "If set, overrides --model_path and enables multi-bucket mode.");
+DEFINE_string(
     data_path,
     "",
     "Path to optional data file (.ptd) for delegate data.");
@@ -64,7 +69,18 @@ DEFINE_double(
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-  qwen3_tts::Qwen3TTSRunner runner(FLAGS_model_path, FLAGS_data_path);
+  std::unique_ptr<qwen3_tts::Qwen3TTSRunner> runner_ptr;
+  if (!FLAGS_model_dir.empty()) {
+    runner_ptr = qwen3_tts::Qwen3TTSRunner::from_model_dir(FLAGS_model_dir);
+    if (!runner_ptr) {
+      ET_LOG(Error, "Failed to load bucketed models from: %s", FLAGS_model_dir.c_str());
+      return 1;
+    }
+  } else {
+    runner_ptr = std::make_unique<qwen3_tts::Qwen3TTSRunner>(
+        FLAGS_model_path, FLAGS_data_path);
+  }
+  auto& runner = *runner_ptr;
 
   std::string codes_path = FLAGS_codes_path;
   std::filesystem::path tmp_codes;

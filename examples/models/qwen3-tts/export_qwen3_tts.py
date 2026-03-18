@@ -49,6 +49,13 @@ def parse_args() -> argparse.Namespace:
         help="Static codec sequence length used for export.",
     )
     parser.add_argument(
+        "--bucket-sizes",
+        type=str,
+        default=None,
+        help="Comma-separated list of bucket sizes to export (e.g. '75,150,300,600,1200'). "
+        "Each bucket produces a separate model_{size}.pte file. Overrides --fixed-codes-len.",
+    )
+    parser.add_argument(
         "--dtype",
         choices=["fp32", "bf16"],
         default="fp32",
@@ -109,6 +116,39 @@ def lower_to_executorch(programs, constant_methods: dict, backend: str):
     )
 
 
+def export_single_bucket(
+    module,
+    metadata: DecoderExportMetadata,
+    codes_len: int,
+    backend: str,
+    output_dir: Path,
+    model_filename: str = "model.pte",
+) -> Path:
+    sample_codes = make_sample_codes(
+        codebook_size=metadata.codebook_size,
+        num_quantizers=metadata.num_quantizers,
+        code_len=codes_len,
+    )
+    programs = {
+        "decode_codes": export(
+            module,
+            (sample_codes,),
+            strict=True,
+        )
+    }
+
+    constant_methods = metadata.to_constant_methods()
+    constant_methods["fixed_codes_len"] = int(codes_len)
+
+    et_prog = lower_to_executorch(
+        programs, constant_methods=constant_methods, backend=backend
+    )
+    model_path = output_dir / model_filename
+    with model_path.open("wb") as f:
+        et_prog.write_to_file(f)
+    return model_path
+
+
 def main() -> None:
     args = parse_args()
     output_dir = args.output_dir.resolve()
@@ -136,45 +176,60 @@ def main() -> None:
             qlinear_packing_format=args.qlinear_packing_format,
         )
 
-    sample_codes = make_sample_codes(
-        codebook_size=metadata.codebook_size,
-        num_quantizers=metadata.num_quantizers,
-        code_len=args.fixed_codes_len,
-    )
-    programs = {
-        "decode_codes": export(
-            module,
-            (sample_codes,),
-            strict=True,
+    bucket_sizes = None
+    if args.bucket_sizes is not None:
+        bucket_sizes = sorted(int(s.strip()) for s in args.bucket_sizes.split(","))
+
+    if bucket_sizes is not None:
+        bucket_manifest = {
+            "backend": args.backend,
+            "dtype": args.dtype,
+            "qlinear": args.qlinear,
+            "qlinear_group_size": args.qlinear_group_size,
+            "qlinear_packing_format": args.qlinear_packing_format,
+            "source_converted_dir": str(converted_dir),
+            "buckets": [],
+        }
+        for size in bucket_sizes:
+            print(f"\n--- Exporting bucket: codes_len={size} ---")
+            filename = f"model_{size}.pte"
+            model_path = export_single_bucket(
+                module, metadata, size, args.backend, output_dir, filename
+            )
+            bucket_manifest["buckets"].append({
+                "codes_len": size,
+                "model_path": str(model_path),
+                "model_filename": filename,
+            })
+            print(f"Saved model: {model_path}")
+
+        manifest_path = output_dir / "export_manifest.json"
+        with manifest_path.open("w", encoding="utf-8") as f:
+            json.dump(bucket_manifest, f, indent=2, sort_keys=True)
+        print(f"\nSaved manifest: {manifest_path}")
+        print(f"Exported {len(bucket_sizes)} buckets: {bucket_sizes}")
+    else:
+        model_path = export_single_bucket(
+            module, metadata, args.fixed_codes_len, args.backend, output_dir
         )
-    }
 
-    constant_methods = metadata.to_constant_methods()
-    constant_methods["fixed_codes_len"] = int(args.fixed_codes_len)
+        export_manifest = {
+            "backend": args.backend,
+            "dtype": args.dtype,
+            "qlinear": args.qlinear,
+            "qlinear_group_size": args.qlinear_group_size,
+            "qlinear_packing_format": args.qlinear_packing_format,
+            "fixed_codes_len": args.fixed_codes_len,
+            "source_converted_dir": str(converted_dir),
+            "model_path": str(model_path),
+            "constant_methods": metadata.to_constant_methods(),
+        }
+        manifest_path = output_dir / "export_manifest.json"
+        with manifest_path.open("w", encoding="utf-8") as f:
+            json.dump(export_manifest, f, indent=2, sort_keys=True)
 
-    et_prog = lower_to_executorch(
-        programs, constant_methods=constant_methods, backend=args.backend
-    )
-    model_path = output_dir / "model.pte"
-    with model_path.open("wb") as f:
-        et_prog.write_to_file(f)
-
-    export_manifest = {
-        "backend": args.backend,
-        "dtype": args.dtype,
-        "qlinear": args.qlinear,
-        "qlinear_group_size": args.qlinear_group_size,
-        "qlinear_packing_format": args.qlinear_packing_format,
-        "fixed_codes_len": args.fixed_codes_len,
-        "source_converted_dir": str(converted_dir),
-        "model_path": str(model_path),
-        "constant_methods": constant_methods,
-    }
-    with (output_dir / "export_manifest.json").open("w", encoding="utf-8") as f:
-        json.dump(export_manifest, f, indent=2, sort_keys=True)
-
-    print(f"Saved model: {model_path}")
-    print(f"Saved manifest: {output_dir / 'export_manifest.json'}")
+        print(f"Saved model: {model_path}")
+        print(f"Saved manifest: {manifest_path}")
 
 
 if __name__ == "__main__":

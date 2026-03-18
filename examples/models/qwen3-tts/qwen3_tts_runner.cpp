@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -101,6 +102,126 @@ Qwen3TTSRunner::Qwen3TTSRunner(
       fixed_codes_len_);
 }
 
+std::unique_ptr<Qwen3TTSRunner> Qwen3TTSRunner::from_model_dir(
+    const std::string& model_dir) {
+  std::filesystem::path dir_path(model_dir);
+  auto manifest_path = dir_path / "export_manifest.json";
+  std::ifstream manifest_file(manifest_path);
+  if (!manifest_file.good()) {
+    ET_LOG(
+        Error,
+        "Could not open export_manifest.json in: %s",
+        model_dir.c_str());
+    return nullptr;
+  }
+
+  std::string manifest_str(
+      (std::istreambuf_iterator<char>(manifest_file)),
+      std::istreambuf_iterator<char>());
+  manifest_file.close();
+
+  // Minimal JSON parsing for the buckets array.
+  // Look for "buckets" key and extract codes_len + model_filename pairs.
+  auto runner = std::unique_ptr<Qwen3TTSRunner>(new Qwen3TTSRunner());
+
+  // Parse buckets from manifest JSON.
+  // Expected format: {"buckets": [{"codes_len": N, "model_filename": "model_N.pte"}, ...]}
+  std::vector<std::pair<int, std::string>> buckets;
+  size_t buckets_pos = manifest_str.find("\"buckets\"");
+  if (buckets_pos == std::string::npos) {
+    ET_LOG(Error, "No 'buckets' key found in export_manifest.json");
+    return nullptr;
+  }
+
+  // Find each bucket entry.
+  size_t search_pos = buckets_pos;
+  while (true) {
+    size_t cl_pos = manifest_str.find("\"codes_len\"", search_pos);
+    if (cl_pos == std::string::npos)
+      break;
+
+    // Extract codes_len value.
+    size_t colon = manifest_str.find(':', cl_pos + 11);
+    if (colon == std::string::npos)
+      break;
+    size_t num_start = manifest_str.find_first_of("0123456789", colon);
+    if (num_start == std::string::npos)
+      break;
+    size_t num_end = manifest_str.find_first_not_of("0123456789", num_start);
+    int codes_len = std::stoi(manifest_str.substr(num_start, num_end - num_start));
+
+    // Extract model_filename value.
+    size_t fn_pos = manifest_str.find("\"model_filename\"", cl_pos);
+    if (fn_pos == std::string::npos)
+      break;
+    size_t fn_colon = manifest_str.find(':', fn_pos + 16);
+    size_t fn_quote1 = manifest_str.find('"', fn_colon + 1);
+    size_t fn_quote2 = manifest_str.find('"', fn_quote1 + 1);
+    if (fn_quote1 == std::string::npos || fn_quote2 == std::string::npos)
+      break;
+    std::string filename =
+        manifest_str.substr(fn_quote1 + 1, fn_quote2 - fn_quote1 - 1);
+
+    buckets.emplace_back(codes_len, filename);
+    search_pos = fn_quote2 + 1;
+  }
+
+  if (buckets.empty()) {
+    ET_LOG(Error, "No buckets parsed from export_manifest.json");
+    return nullptr;
+  }
+
+  // Sort by codes_len ascending.
+  std::sort(buckets.begin(), buckets.end());
+
+  ET_LOG(Info, "Loading %zu bucket models from: %s", buckets.size(), model_dir.c_str());
+  for (const auto& [codes_len, filename] : buckets) {
+    auto pte_path = (dir_path / filename).string();
+    ET_LOG(Info, "  bucket codes_len=%d -> %s", codes_len, pte_path.c_str());
+
+    BucketModel bm;
+    bm.codes_len = codes_len;
+    bm.module = std::make_unique<::executorch::extension::Module>(
+        pte_path, ::executorch::extension::Module::LoadMode::Mmap);
+    auto load_error = bm.module->load();
+    ET_CHECK_MSG(
+        load_error == Error::Ok,
+        "Failed to load bucket model: %s",
+        pte_path.c_str());
+
+    // Read sample rate from the first model.
+    if (runner->bucket_models_.empty()) {
+      std::vector<EValue> empty;
+      auto sr_result = bm.module->execute("output_sample_rate", empty);
+      if (sr_result.ok()) {
+        runner->output_sample_rate_ =
+            static_cast<int>(sr_result.get()[0].toInt());
+      }
+    }
+
+    runner->bucket_models_.push_back(std::move(bm));
+  }
+
+  ET_LOG(
+      Info,
+      "Loaded %zu buckets, output_sample_rate=%d",
+      runner->bucket_models_.size(),
+      runner->output_sample_rate_);
+  return runner;
+}
+
+::executorch::extension::Module* Qwen3TTSRunner::select_bucket(
+    int32_t codes_len,
+    int32_t* bucket_codes_len) const {
+  for (const auto& bm : bucket_models_) {
+    if (bm.codes_len >= codes_len) {
+      *bucket_codes_len = bm.codes_len;
+      return bm.module.get();
+    }
+  }
+  return nullptr;
+}
+
 bool Qwen3TTSRunner::run_code_generation(const CodeGenerationArgs& args) const {
   std::ostringstream cmd;
   cmd << shell_quote(args.python_executable) << " "
@@ -187,7 +308,34 @@ bool Qwen3TTSRunner::decode_codes(
     std::vector<float>* waveform) const {
   int32_t effective_len = codes_len;
   std::vector<int64_t> effective_codes = codes;
-  if (fixed_codes_len_ > 0) {
+
+  // Determine which module to use and what padded length to target.
+  ::executorch::extension::Module* target_module = nullptr;
+  if (!bucket_models_.empty()) {
+    int32_t bucket_len = 0;
+    target_module = select_bucket(codes_len, &bucket_len);
+    if (target_module == nullptr) {
+      ET_LOG(
+          Error,
+          "codes_len (%d) exceeds largest bucket (%d). Re-export with larger bucket.",
+          static_cast<int>(codes_len),
+          bucket_models_.back().codes_len);
+      return false;
+    }
+    ET_LOG(
+        Info,
+        "Bucket selection: codes_len=%d -> bucket=%d (%.1fx padding)",
+        static_cast<int>(codes_len),
+        static_cast<int>(bucket_len),
+        static_cast<float>(bucket_len) / static_cast<float>(codes_len));
+    if (codes_len < bucket_len) {
+      effective_len = bucket_len;
+      effective_codes.resize(
+          static_cast<size_t>(bucket_len) * static_cast<size_t>(num_quantizers),
+          static_cast<int64_t>(-1));
+    }
+  } else if (fixed_codes_len_ > 0) {
+    target_module = module_.get();
     if (codes_len > fixed_codes_len_) {
       ET_LOG(
           Error,
@@ -202,6 +350,8 @@ bool Qwen3TTSRunner::decode_codes(
           static_cast<size_t>(fixed_codes_len_) * static_cast<size_t>(num_quantizers),
           static_cast<int64_t>(-1));
     }
+  } else {
+    target_module = module_.get();
   }
 
   auto codes_tensor = from_blob(
@@ -210,7 +360,7 @@ bool Qwen3TTSRunner::decode_codes(
       ::executorch::aten::ScalarType::Long);
 
   auto result =
-      module_->execute("decode_codes", std::vector<EValue>{*codes_tensor});
+      target_module->execute("decode_codes", std::vector<EValue>{*codes_tensor});
   if (!result.ok()) {
     ET_LOG(Error, "decode_codes execution failed.");
     return false;
