@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Convolution.h>
+
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
@@ -480,6 +482,22 @@ void add_conv2d_node(
 
   const Conv2dMethod method =
       get_conv2d_method(graph, weight_data, groups_val, transposed_val);
+
+  // Use tiled path for all pointwise conv2d
+  if (method == Conv2dMethod::Pointwise) {
+    return conv2d_pw_impl(
+        graph,
+        in,
+        weight_data,
+        bias,
+        stride,
+        padding,
+        out,
+        transposed_val,
+        clamp_out,
+        out_min_val,
+        out_max_val);
+  }
 
   ValueRef arg_weight = prepack_weights(graph, weight_data, method);
   ValueRef arg_bias = prepack_biases(
