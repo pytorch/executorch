@@ -91,7 +91,7 @@ if __name__ == "__main__":
             fw.write("0x" + hexstream[i : i + 2] + ", ")
 
         fw.write("\n};\n")
-        print(
-            f"Input: {args.pte} with {len(data)} bytes. "
-            f"Output: {outfile} with {os.path.getsize(outfile)} bytes."
-        )
+    print(
+        f"Input: {args.pte} with {len(data)} bytes. "
+        f"Output: {outfile} with {os.path.getsize(outfile)} bytes."
+    )
