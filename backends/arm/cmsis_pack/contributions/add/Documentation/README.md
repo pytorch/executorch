@@ -47,8 +47,8 @@ For automatic operator selection, use a Model Pack generated from your `.pte` fi
 Alternatively, manually add required operators:
 ```yaml
 components:
-  - component: Machine Learning:ExecuTorch:Operators::Portable::add
-  - component: Machine Learning:ExecuTorch:Operators::Portable::mul
+  - component: Machine Learning:ExecuTorch Operators:Portable add
+  - component: Machine Learning:ExecuTorch Operators:Portable mul
   # ... other operators used by your model
 ```
 

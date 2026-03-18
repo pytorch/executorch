@@ -36,8 +36,8 @@ cmsis_pack/
 
 - **Machine Learning::ExecuTorch::Runtime** — Core runtime (always required)
 - **Machine Learning::ExecuTorch::Kernel Utils** — Kernel registration utilities
-- **Machine Learning::ExecuTorch::Operators Portable \*** — Individual portable operators
-- **Machine Learning::ExecuTorch::Operators Quantized \*** — Quantized operators
+- **Machine Learning::ExecuTorch Operators::Portable \*** — Individual portable operators
+- **Machine Learning::ExecuTorch Operators::Quantized \*** — Quantized operators
 - **Machine Learning::ExecuTorch::Backend EthosU** — Ethos-U NPU backend
 - **Machine Learning::ExecuTorch::Backend CortexM** — CMSIS-NN optimized backend
 
