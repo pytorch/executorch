@@ -1,5 +1,7 @@
 # ExecuTorch Executor Runner for Espressif ESP32/ESP32-S3
 
+> **:warning: <span style="color:red">**This example is not tested in CI. Use at your own risk.**</span>**
+
 This example demonstrates how to run an ExecuTorch model on Espressif ESP32 and
 ESP32-S3 microcontrollers. It is based on the
 [Arm Cortex-M executor runner](../arm/executor_runner/) and adapted for the
