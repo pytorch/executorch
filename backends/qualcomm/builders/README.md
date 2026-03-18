@@ -422,7 +422,7 @@ Please help update following table if you are contributing new operators:
 | ElementWiseSquaredDifference | &cross; |
 | ElementWiseSquareRoot | &check; |
 | ElementWiseSubtract | &check; |
-| ElementWiseUnary | &cross; |
+| ElementWiseUnary | &check; |
 | ElementWiseXor | &check; |
 | Elu | &check; |
 | ExpandDims | &check; |
