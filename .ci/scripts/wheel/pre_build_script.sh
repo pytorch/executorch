@@ -26,7 +26,12 @@ fi
 # we should update the core job in test-infra to enable long paths before
 # checkout to avoid needing to do this.
 pushd extension/llm/tokenizers
-git submodule update --init
+UNAME_S=$(uname -s)
+if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
+  git -c http.sslBackend=openssl submodule update --init
+else
+  git submodule update --init
+fi
 popd
 
 # On Windows, enable symlinks and re-checkout the current revision to create
