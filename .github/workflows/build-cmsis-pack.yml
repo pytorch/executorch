@@ -18,6 +18,7 @@ on:
     paths:
       - .github/workflows/build-cmsis-pack.yml
       - backends/arm/cmsis_pack/**
+      - backends/arm/scripts/cmsis_pack/**
       - backends/arm/runtime/**
       - backends/cortex_m/**
       - kernels/portable/**
@@ -28,6 +29,7 @@ on:
     paths:
       - .github/workflows/build-cmsis-pack.yml
       - backends/arm/cmsis_pack/**
+      - backends/arm/scripts/cmsis_pack/**
   workflow_dispatch:
     inputs:
       version_override:
@@ -92,7 +94,7 @@ jobs:
         echo "::endgroup::"++++++++++++++++++++++++++++++++++++++++++++++++++0  
 
         echo "::group::Build CMSIS Pack"
-        backends/arm/cmsis_pack/scripts/build_pack.sh \
+        backends/arm/scripts/cmsis_pack/build_pack.sh \
           --executorch-root "$(pwd)" \
           --build-dir "${CMAKE_BUILD_DIR}" \
           --version "${PACK_VERSION}" \
