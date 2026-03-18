@@ -30,6 +30,7 @@
   <taxonomy>
     <description Cclass="Machine Learning">Software Components for Machine Learning</description>
     <description Cclass="Machine Learning" Cgroup="ExecuTorch">ExecuTorch PyTorch Edge Runtime</description>
+    <description Cclass="Machine Learning" Cgroup="ExecuTorch Operators">ExecuTorch Operator Components</description>
   </taxonomy>
 
   <conditions>

@@ -96,7 +96,7 @@ def generate_operator_component(op: OperatorComponent, version_placeholder: str,
     # Include category in define to avoid conflicts between portable/quantized ops with same name
     define_name = f"RTE_ML_EXECUTORCH_OP_{op.category.upper()}_{op.name.upper()}"
     
-    component_xml = f'''    <component Cclass="Machine Learning" Cgroup="ExecuTorch" Csub="Operators {op.category} {op.name}" Cversion="{version_placeholder}" condition="{op.condition_id}">
+    component_xml = f'''    <component Cclass="Machine Learning" Cgroup="ExecuTorch Operators" Csub="{op.category} {op.name}" Cversion="{version_placeholder}" condition="{op.condition_id}">
       <description>ExecuTorch {op.category} Operator: {op.name}</description>
       <RTE_Components_h>
         #define {define_name}     /* ExecuTorch op_{op.name} */
