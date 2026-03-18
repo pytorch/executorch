@@ -754,7 +754,7 @@ class TOSAQuantizer(Quantizer):
                         f"Quantizer detected operator {node.name} with different device inputs: {devices}."
                     )
 
-    def quantize_with_submodules(
+    def _quantize_with_submodules(
         self,
         model: GraphModule,
         calibration_samples: list[tuple],
