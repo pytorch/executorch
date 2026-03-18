@@ -25,3 +25,6 @@ conv2d_dw_output_tile:
     - NAME: conv2d_dw_output_tile_5x5_clamp
       OPERATOR: clamp(X, A, B)
       TILE_SIZE: 5
+    - NAME: conv2d_dw_output_tile_3x3_b1x1
+      BATCH_SIZE_X: 1
+      BATCH_SIZE_Y: 1
