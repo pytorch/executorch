@@ -671,6 +671,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     ComputeGraph* compute_graph = static_cast<ComputeGraph*>(handle);
 
     const size_t num_inputs = compute_graph->inputs().size();
+    const size_t num_outputs = compute_graph->outputs().size();
     bool should_propagate_resize = false;
 #ifdef ET_EVENT_TRACER_ENABLED
     runtime::EventTracer* event_tracer = context.event_tracer();
@@ -770,14 +771,13 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
             "ETVK_COPY_OUTPUTS",
             /* delegate_debug_id = */ -1);
 #endif // ET_EVENT_TRACER_ENABLED
-    for (size_t i = 0; i < compute_graph->outputs().size(); i++) {
-      const size_t o = i + num_inputs;
+    const size_t output_offset = args.size() - num_outputs;
+    for (size_t i = 0; i < num_outputs; i++) {
+      const size_t o = output_offset + i;
       const ValueRef oref = compute_graph->outputs()[i].value;
       if (compute_graph->val_is_tensor(oref)) {
         VK_CHECK_COND(args[o]->isTensor());
         maybe_resize_output(compute_graph, i, args[o]->toTensor());
-        // args holds inputs directly followed by outputs, so the i'th output
-        // for compute_graph corresponds to the o'th arg
         compute_graph->maybe_cast_and_copy_from_staging(
             compute_graph->outputs()[i].staging,
             args[o]->toTensor().mutable_data_ptr(),
