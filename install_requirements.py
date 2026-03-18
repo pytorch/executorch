@@ -55,12 +55,14 @@ def install_requirements(use_pytorch_nightly):
     # Install the requirements for core ExecuTorch package.
     # `--extra-index-url` tells pip to look for package
     # versions on the provided URL if they aren't available on the default URL.
+    # Use --no-cache-dir to avoid stale cache issues with mutable test wheels.
     subprocess.run(
         [
             sys.executable,
             "-m",
             "pip",
             "install",
+            "--no-cache-dir",
             "-r",
             "requirements-dev.txt",
             *TORCH_PACKAGE,
@@ -122,6 +124,7 @@ def install_optional_example_requirements(use_pytorch_nightly):
             "-m",
             "pip",
             "install",
+            "--no-cache-dir",
             *DOMAIN_LIBRARIES,
             "--extra-index-url",
             torch_url,
