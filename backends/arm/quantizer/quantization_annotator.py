@@ -703,13 +703,10 @@ def get_quant_properties(  # noqa: C901
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in (
         torch.ops.aten.add.Tensor,
-        torch.ops.aten.add_.Tensor,
         torch.ops.aten.sub.Tensor,
-        torch.ops.aten.sub_.Tensor,
         torch.ops.aten.mm.default,
         torch.ops.aten.bmm.default,
         torch.ops.aten.mul.Tensor,
-        torch.ops.aten.mul_.Tensor,
     ):
         quant_properties.quant_inputs = [
             _QuantProperty(0, input_act_qspec),

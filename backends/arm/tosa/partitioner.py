@@ -260,6 +260,7 @@ class TOSAPartitioner(Partitioner):
                 _is_noop_clone(node)
                 or _is_noop_alias_copy(node)
                 or _is_noop_expand(node)
+                or _is_noop_detach_copy(node)
                 or _is_noop_to_dim_order_copy(node)
                 or _is_view_copy(node)
                 or node.target in Q_OPS
