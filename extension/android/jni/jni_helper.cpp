@@ -35,6 +35,115 @@ void throwExecutorchException(uint32_t errorCode, const std::string& details) {
   facebook::jni::throwNewJavaException(exception.get());
 }
 
+void setExecutorchPendingException(
+    JNIEnv* env,
+    uint32_t errorCode,
+    const std::string& details) {
+  if (!env) {
+    return;
+  }
+  if (env->ExceptionCheck()) {
+    // Preserve any preexisting pending exception; do not overwrite it here.
+    return;
+  }
+
+  jclass exceptionClass =
+      env->FindClass("org/pytorch/executorch/ExecutorchRuntimeException");
+  if (env->ExceptionCheck()) {
+    if (exceptionClass) {
+      env->DeleteLocalRef(exceptionClass);
+    }
+    // Preserve the original exception; do not clear or overwrite it.
+    return;
+  }
+
+  if (!exceptionClass) {
+    // FindClass failed. It should have set a pending exception; leave it as is.
+    return;
+  }
+
+  jmethodID factoryMethod = env->GetStaticMethodID(
+      exceptionClass,
+      "makeExecutorchException",
+      "(ILjava/lang/String;)Ljava/lang/RuntimeException;");
+  if (env->ExceptionCheck()) {
+    // Preserve the original exception; do not overwrite it.
+    env->DeleteLocalRef(exceptionClass);
+    return;
+  }
+
+  if (!factoryMethod) {
+    // Factory unavailable; try the (int, String) constructor directly so
+    // callers still receive a structured ExecutorchRuntimeException.
+    jmethodID ctor =
+        env->GetMethodID(exceptionClass, "<init>", "(ILjava/lang/String;)V");
+    if (!env->ExceptionCheck() && ctor) {
+      jstring jDetails = env->NewStringUTF(details.c_str());
+      if (!env->ExceptionCheck() && jDetails) {
+        jobject exObj = env->NewObject(
+            exceptionClass, ctor, static_cast<jint>(errorCode), jDetails);
+        if (!env->ExceptionCheck() && exObj) {
+          env->Throw(reinterpret_cast<jthrowable>(exObj));
+          env->DeleteLocalRef(exObj);
+        }
+        env->DeleteLocalRef(jDetails);
+      }
+    } else {
+      // Clear any NoSuchMethodError from GetMethodID before falling back.
+      if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+      }
+      jclass runtimeExClass = env->FindClass("java/lang/RuntimeException");
+      if (!env->ExceptionCheck() && runtimeExClass) {
+        env->ThrowNew(runtimeExClass, details.c_str());
+        env->DeleteLocalRef(runtimeExClass);
+      }
+    }
+    env->DeleteLocalRef(exceptionClass);
+    return;
+  }
+
+  jstring jDetails = env->NewStringUTF(details.c_str());
+  if (env->ExceptionCheck()) {
+    // Preserve the original exception; do not overwrite it.
+    if (jDetails) {
+      env->DeleteLocalRef(jDetails);
+    }
+    env->DeleteLocalRef(exceptionClass);
+    return;
+  }
+
+  if (!jDetails) {
+    // NewStringUTF returned null without setting an exception; fall back to
+    // a standard RuntimeException since ExecutorchRuntimeException lacks a
+    // (String) ctor.
+    jclass runtimeExClass = env->FindClass("java/lang/RuntimeException");
+    if (!env->ExceptionCheck() && runtimeExClass) {
+      env->ThrowNew(runtimeExClass, details.c_str());
+      env->DeleteLocalRef(runtimeExClass);
+    }
+    env->DeleteLocalRef(exceptionClass);
+    return;
+  }
+
+  auto exception = static_cast<jthrowable>(env->CallStaticObjectMethod(
+      exceptionClass, factoryMethod, static_cast<jint>(errorCode), jDetails));
+  if (env->ExceptionCheck() || !exception) {
+    // If a Java exception was thrown, it is already pending; just clean up.
+    if (exception) {
+      env->DeleteLocalRef(exception);
+    }
+    env->DeleteLocalRef(jDetails);
+    env->DeleteLocalRef(exceptionClass);
+    return;
+  }
+
+  env->Throw(exception);
+  env->DeleteLocalRef(exception);
+  env->DeleteLocalRef(jDetails);
+  env->DeleteLocalRef(exceptionClass);
+}
+
 bool utf8_check_validity(const char* str, size_t length) {
   for (size_t i = 0; i < length; ++i) {
     uint8_t byte = static_cast<uint8_t>(str[i]);
