@@ -24,6 +24,8 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     LayerNormPattern,
     LinearPattern,
     MatmulPattern,
+    MaxPool2dPattern,
+    MaxPool2dWithoutIndicesPattern,
     MixedW8A32ConvPattern,
     MixedW8A32GruPattern,
     MixedW8A32LinearPattern,
@@ -227,6 +229,8 @@ def get_cadence_default_quantizers() -> List[Quantizer]:
         CadenceAtenQuantizer(Conv2dPattern(), qconfig_A8W8sym),
         CadenceAtenQuantizer(LinearPattern(), qconfig_A8W8),
         CadenceAtenQuantizer(MatmulPattern(), qconfig_A8W8),
+        CadenceAtenQuantizer(MaxPool2dPattern(), qconfig_A8W8),
+        CadenceAtenQuantizer(MaxPool2dWithoutIndicesPattern(), qconfig_A8W8),
         CadenceAtenQuantizer(ReluPattern0(), qconfig_A8W8),
         CadenceAtenQuantizer(ReluPattern1(), qconfig_A8W8),
     ]
