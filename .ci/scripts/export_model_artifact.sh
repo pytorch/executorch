@@ -373,6 +373,7 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   fi
   # Copy tokenizer from downloaded model weights
   cp "$LOCAL_MODEL_DIR/tekken.json" "${OUTPUT_DIR}/tekken.json"
+  rm -rf "$LOCAL_MODEL_DIR"
   ls -al "${OUTPUT_DIR}"
   echo "::endgroup::"
   exit 0
