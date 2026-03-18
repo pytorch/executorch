@@ -236,7 +236,9 @@ for COMMIT in ${COMMITS}; do
     line_number=2 # Subject + 1 empty line
     failed_body_check=false
     while IFS= read -r line; do
-        if [ ${#line} -gt ${BODY_MAX_LEN} ]; then
+        # Ignore URLs when checking line length
+        line_without_urls=$(echo "$line" | sed -E 's_https?://[^[:space:]]+__g')
+        if [ ${#line_without_urls} -gt ${BODY_MAX_LEN} ]; then
             echo -e "${ERROR} Line ${line_number} in body exceeds"\
                 "${BODY_MAX_LEN} characters: '$line'" >&2
 
