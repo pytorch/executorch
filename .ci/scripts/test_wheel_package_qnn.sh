@@ -167,8 +167,8 @@ PY
 # )
   echo "=== [$LABEL] Install torch==${TORCH_VERSION} ==="
 
-  # Install torchao based on the pinned PyTorch version
-  "$PIPBIN" install torch=="${TORCH_VERSION}" --index-url "https://download.pytorch.org/whl/test"
+  # Install torch based on the pinned PyTorch version, preferring the PyTorch test index
+  "$PIPBIN" install torch=="${TORCH_VERSION}" --extra-index-url "https://download.pytorch.org/whl/test"
   "$PIPBIN" install wheel
 
   # Install torchao based on the pinned commit from third-party/ao submodule
