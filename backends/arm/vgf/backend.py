@@ -72,7 +72,7 @@ class VgfBackend(BackendDetails):
 
         """
         compile_flags = compile_spec.compiler_flags
-        artifact_path = compile_spec.get_intermediate_path()
+        artifact_path = compile_spec._get_intermediate_path()
         # Pass on the TOSA flatbuffer to the vgf compiler.
         binary = vgf_compile(tosa_flatbuffer, compile_flags, artifact_path, tag_name)
         return binary
