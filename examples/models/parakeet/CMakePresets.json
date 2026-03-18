@@ -55,6 +55,19 @@
                 "type": "equals",
                 "rhs": "Darwin"
             }
+        },
+        {
+            "name": "parakeet-vulkan",
+            "displayName": "Parakeet runner (Vulkan)",
+            "inherits": ["parakeet-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_VULKAN": "ON"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
         }
     ],
     "buildPresets": [
@@ -83,6 +96,13 @@
             "name": "parakeet-metal",
             "displayName": "Build Parakeet runner (Metal)",
             "configurePreset": "parakeet-metal",
+            "configuration": "Release",
+            "targets": ["parakeet_runner"]
+        },
+        {
+            "name": "parakeet-vulkan",
+            "displayName": "Build Parakeet runner (Vulkan)",
+            "configurePreset": "parakeet-vulkan",
             "configuration": "Release",
             "targets": ["parakeet_runner"]
         }
@@ -141,6 +161,20 @@
                 {
                     "type": "build",
                     "name": "parakeet-metal"
+                }
+            ]
+        },
+        {
+            "name": "parakeet-vulkan",
+            "displayName": "Configure and build Parakeet runner (Vulkan)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "parakeet-vulkan"
+                },
+                {
+                    "type": "build",
+                    "name": "parakeet-vulkan"
                 }
             ]
         }
