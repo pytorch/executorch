@@ -125,6 +125,7 @@ from executorch.backends.arm._passes import (
     RewriteConvPass,
     RewriteHighRankSingletonPermutePass,
     RewriteIndexPutPass,
+    RewriteInplaceArithmeticPass,
     RewriteLeLtToGeGtPass,
     RewriteMatmulPass,
     RewritePadPass,
@@ -553,6 +554,7 @@ class ArmPassManager(PassManager):
                 DecomposeFloorDividePass(tfa_pass=True),
                 DecomposeDivTensorModePass(tfa_pass=True),
                 DecomposeWhereScalarOtherPass(tfa_pass=True),
+                RewriteInplaceArithmeticPass(tfa_pass=True),
             ]
         )
 

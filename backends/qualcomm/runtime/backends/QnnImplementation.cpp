@@ -65,7 +65,7 @@ const QnnInterface_t* QnnImplementation::StartBackend(
 #else
   // If the library is already loaded, return the handle.
   std::unique_ptr<void, DlCloser> lib_handle(
-      dlopen(lib_path.c_str(), RTLD_NOW | RTLD_NOLOAD));
+      dlopen(lib_path.c_str(), RTLD_NOW | RTLD_NOLOAD | RTLD_GLOBAL));
   if (!lib_handle) {
     lib_handle = std::unique_ptr<void, DlCloser>(
         dlopen(lib_path.c_str(), RTLD_NOW | RTLD_GLOBAL));
