@@ -148,7 +148,7 @@ TestCase create_test_case_from_config(
       input_dtype,
       storage_type,
       utils::kWidthPacked,
-      DataGenType::ZEROS);
+      config.has_bias ? DataGenType::RANDOM : DataGenType::ZEROS);
   bias.set_constant(true);
   if (!config.has_bias) {
     bias.set_none(true);
@@ -237,9 +237,10 @@ std::vector<TestCase> generate_quantized_linear_test_cases() {
       {32, 64, 32, 16},
       {32, 128, 64, 32},
       {32, 256, 128, 64},
-      // No bias tests
-      {32, 128, 64, 32, false},
-      {32, 256, 128, 64, false},
+      // With bias
+      {4, 64, 32, 16, true},
+      {4, 128, 64, 32, true},
+      {32, 128, 64, 32, true},
       // Performance test cases
       {1, 2048, 2048, 128},
       {128, 2048, 2048, 128},
