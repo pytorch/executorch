@@ -4,16 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-arange:
+native_layer_norm_texture:
   parameter_names_with_default_values:
-    NDIM: 3
-    DTYPE: int32
-    STORAGE: texture3d
-    PACKING: C_packed
+    DTYPE: float
   generate_variant_forall:
     DTYPE:
       - VALUE: half
       - VALUE: float
-      - VALUE: int32
   shader_variants:
-    - NAME: arange
+    - NAME: native_layer_norm_texture3d

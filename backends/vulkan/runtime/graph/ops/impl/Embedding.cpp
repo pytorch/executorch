@@ -111,9 +111,7 @@ void add_embedding_legacy_node(
       // Push Constants
       {},
       // Specialization Constants
-      {graph.hashed_layout_of(out),
-       graph.hashed_layout_of(in),
-       graph.hashed_layout_of(weight)},
+      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
       // Resize Args
       {},
       // Resizing Logic
