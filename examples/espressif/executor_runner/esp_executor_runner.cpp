@@ -70,11 +70,11 @@
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
 
+#include "esp_executor_runner.h"
 #include "esp_memory_allocator.h"
 #include "esp_perf_monitor.h"
 
 #if defined(ESP_PLATFORM)
-#include <esp_cpu.h>
 #include <esp_heap_caps.h>
 #include <esp_log.h>
 #include <esp_system.h>
@@ -229,84 +229,6 @@ static const int num_inferences = ET_NUM_INFERENCES;
 #else
 static const int num_inferences = 10;
 #endif
-
-/**
- * ESP-IDF platform adaptation layer (et_pal) implementations.
- */
-
-void et_pal_init(void) {
-#if defined(ESP_PLATFORM)
-  ET_LOG(
-      Info,
-      "ESP32 ExecuTorch runner initialized. Free heap: %lu bytes.",
-      static_cast<unsigned long>(esp_get_free_heap_size()));
-#if defined(CONFIG_SPIRAM)
-  ET_LOG(
-      Info,
-      "PSRAM available. Free PSRAM: %lu bytes.",
-      static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
-#endif
-#endif
-}
-
-ET_NORETURN void et_pal_abort(void) {
-#if defined(ESP_PLATFORM)
-  esp_restart();
-#else
-  abort();
-#endif
-  // Should never reach here
-  while (1) {
-  }
-}
-
-et_timestamp_t et_pal_current_ticks(void) {
-#if defined(ESP_PLATFORM)
-  return (et_timestamp_t)esp_cpu_get_cycle_count();
-#else
-  return 0;
-#endif
-}
-
-et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
-  // ESP32 default clock is 240MHz, ESP32-S3 is 240MHz
-  // 1 tick = 1/240MHz = ~4.167ns
-  // Return ratio: multiply ticks by 1000 and divide by 240 to get ns
-  // This gives approximately correct ns values at 240MHz
-  return {1000, 240};
-}
-
-/**
- * Emit a log message via platform output.
- * On ESP32, this goes to the UART serial console.
- */
-void et_pal_emit_log_message(
-    ET_UNUSED et_timestamp_t timestamp,
-    et_pal_log_level_t level,
-    const char* filename,
-    ET_UNUSED const char* function,
-    size_t line,
-    const char* message,
-    ET_UNUSED size_t length) {
-  printf(
-      "%c [executorch:%s:%lu %s()] %s\n",
-      level,
-      filename,
-      static_cast<unsigned long>(line),
-      function,
-      message);
-  fflush(stdout);
-}
-
-/**
- * Dynamic memory allocators - not used in this example.
- * On ESP32, heap_caps_malloc could be used here if needed.
- */
-void* et_pal_allocate(ET_UNUSED size_t size) {
-  return nullptr;
-}
-
-void et_pal_free(ET_UNUSED void* ptr) {}
 
 namespace {
 
@@ -1059,35 +981,40 @@ bool run_model(RunnerContext& ctx, const void* model_pte) {
 
 } // namespace
 
-/**
- * Main entry point for the ESP32 executor runner.
- *
- * On ESP-IDF, this is called from app_main() (see below).
- * The function can also be compiled for host testing without ESP-IDF.
- */
-void executor_runner_main(void) {
+// =====================================================================
+// Global runner state -- shared by the public et_runner_* API and by
+// executor_runner_main() for its multi-inference demo loop.
+// =====================================================================
+
+static RunnerContext g_runner_ctx;
+static bool g_runner_initialized = false;
+
+// Maximum number of input/output tensors handled in the public API.
+static const size_t kMaxInputOutputs = 16;
+
+// =====================================================================
+// Public API
+// =====================================================================
+
+bool et_runner_init(void) {
   executorch::runtime::runtime_init();
 
   size_t pte_size;
 
 #if defined(FILESYSTEM_LOAD)
 #if defined(ESP_PLATFORM)
-  // Initialize SPIFFS for model loading
   if (!init_spiffs("/spiffs", "storage")) {
     ET_LOG(Fatal, "Failed to initialize SPIFFS. Cannot load model.");
-    return;
+    return false;
   }
 #endif
-
-  // Load model from filesystem
-  // Use a temporary allocator for the file loading
   EspMemoryAllocator file_allocator(
       method_allocation_pool_size, method_allocation_pool);
   auto [buffer, buffer_size] =
       load_file_from_fs("/spiffs/model.pte", file_allocator);
   if (buffer == nullptr) {
     ET_LOG(Fatal, "Failed to load model from filesystem.");
-    return;
+    return false;
   }
   model_pte = buffer;
   model_pte_size = buffer_size;
@@ -1095,6 +1022,189 @@ void executor_runner_main(void) {
 #else
   pte_size = sizeof(model_pte);
 #endif
+
+  runner_init(g_runner_ctx, pte_size);
+  g_runner_initialized = g_runner_ctx.method->ok();
+  return g_runner_initialized;
+}
+
+bool et_runner_set_input(
+    size_t input_idx,
+    const void* data,
+    size_t num_bytes) {
+  if (!g_runner_initialized) {
+    ET_LOG(Error, "Runner not initialized. Call et_runner_init() first.");
+    return false;
+  }
+
+  Method& method = *g_runner_ctx.method.value();
+  const size_t num_inputs = method.inputs_size();
+
+  if (input_idx >= num_inputs) {
+    ET_LOG(
+        Error,
+        "Input index %lu out of range (num_inputs=%lu).",
+        static_cast<unsigned long>(input_idx),
+        static_cast<unsigned long>(num_inputs));
+    return false;
+  }
+  if (num_inputs > kMaxInputOutputs) {
+    ET_LOG(
+        Error,
+        "Model has too many inputs (%lu > %lu).",
+        static_cast<unsigned long>(num_inputs),
+        static_cast<unsigned long>(kMaxInputOutputs));
+    return false;
+  }
+
+  // get_inputs() returns shallow copies whose data pointers alias the
+  // method's internal tensor storage, allowing direct writes.
+  EValue input_evalues[kMaxInputOutputs];
+  Error status = method.get_inputs(input_evalues, num_inputs);
+  if (status != Error::Ok) {
+    ET_LOG(
+        Error,
+        "get_inputs() failed with status 0x%" PRIx32,
+        static_cast<uint32_t>(status));
+    return false;
+  }
+
+  if (!input_evalues[input_idx].isTensor()) {
+    ET_LOG(
+        Error,
+        "Input %lu is not a Tensor.",
+        static_cast<unsigned long>(input_idx));
+    return false;
+  }
+
+  Tensor& tensor = input_evalues[input_idx].toTensor();
+  const size_t tensor_bytes = tensor.nbytes();
+  if (num_bytes > tensor_bytes) {
+    ET_LOG(
+        Error,
+        "Input %lu: provided %lu bytes exceeds tensor capacity %lu bytes.",
+        static_cast<unsigned long>(input_idx),
+        static_cast<unsigned long>(num_bytes),
+        static_cast<unsigned long>(tensor_bytes));
+    return false;
+  }
+
+  memcpy(tensor.mutable_data_ptr(), data, num_bytes);
+  return true;
+}
+
+bool et_runner_execute(void) {
+  if (!g_runner_initialized) {
+    ET_LOG(Error, "Runner not initialized. Call et_runner_init() first.");
+    return false;
+  }
+
+  Method& method = *g_runner_ctx.method.value();
+  Error status = method.execute();
+  // Reset the temporary allocator so it is ready for the next inference.
+  g_runner_ctx.temp_allocator.reset(
+      temp_allocation_pool_size, temp_allocation_pool);
+  if (status != Error::Ok) {
+    ET_LOG(
+        Error,
+        "execute() failed with status 0x%" PRIx32,
+        static_cast<uint32_t>(status));
+    return false;
+  }
+  return true;
+}
+
+bool et_runner_get_output(
+    size_t output_idx,
+    void* buffer,
+    size_t buffer_bytes,
+    size_t* out_num_elements) {
+  if (!g_runner_initialized) {
+    ET_LOG(Error, "Runner not initialized. Call et_runner_init() first.");
+    return false;
+  }
+
+  Method& method = *g_runner_ctx.method.value();
+  const size_t num_outputs = method.outputs_size();
+
+  if (output_idx >= num_outputs) {
+    ET_LOG(
+        Error,
+        "Output index %lu out of range (num_outputs=%lu).",
+        static_cast<unsigned long>(output_idx),
+        static_cast<unsigned long>(num_outputs));
+    return false;
+  }
+  if (num_outputs > kMaxInputOutputs) {
+    ET_LOG(
+        Error,
+        "Model has too many outputs (%lu > %lu).",
+        static_cast<unsigned long>(num_outputs),
+        static_cast<unsigned long>(kMaxInputOutputs));
+    return false;
+  }
+
+  EValue output_evalues[kMaxInputOutputs];
+  Error status = method.get_outputs(output_evalues, num_outputs);
+  if (status != Error::Ok) {
+    ET_LOG(
+        Error,
+        "get_outputs() failed with status 0x%" PRIx32,
+        static_cast<uint32_t>(status));
+    return false;
+  }
+
+  if (!output_evalues[output_idx].isTensor()) {
+    ET_LOG(
+        Error,
+        "Output %lu is not a Tensor.",
+        static_cast<unsigned long>(output_idx));
+    return false;
+  }
+
+  Tensor tensor = output_evalues[output_idx].toTensor();
+  const size_t tensor_bytes = tensor.nbytes();
+  if (buffer_bytes < tensor_bytes) {
+    ET_LOG(
+        Error,
+        "Output %lu: buffer too small (%lu bytes < %lu bytes required).",
+        static_cast<unsigned long>(output_idx),
+        static_cast<unsigned long>(buffer_bytes),
+        static_cast<unsigned long>(tensor_bytes));
+    return false;
+  }
+
+  memcpy(buffer, tensor.const_data_ptr(), tensor_bytes);
+  if (out_num_elements != nullptr) {
+    *out_num_elements = static_cast<size_t>(tensor.numel());
+  }
+  return true;
+}
+
+size_t et_runner_inputs_size(void) {
+  if (!g_runner_initialized) {
+    return 0;
+  }
+  return (*g_runner_ctx.method.value()).inputs_size();
+}
+
+size_t et_runner_outputs_size(void) {
+  if (!g_runner_initialized) {
+    return 0;
+  }
+  return (*g_runner_ctx.method.value()).outputs_size();
+}
+
+/**
+ * Main entry point for the ESP32 executor runner.
+ *
+ * On ESP-IDF, this is called from app_main() (see below).
+ * The function can also be compiled for host testing without ESP-IDF.
+ */
+void executor_runner_main(void) {
+  if (!et_runner_init()) {
+    return;
+  }
 
   // Log the PTE magic bytes for quick sanity check
   ET_LOG(
@@ -1106,13 +1216,11 @@ void executor_runner_main(void) {
       model_pte[6],
       model_pte[7]);
 
-  RunnerContext ctx;
-  runner_init(ctx, pte_size);
-  bool model_ok = run_model(ctx, model_pte);
+  bool model_ok = run_model(g_runner_ctx, model_pte);
   ET_LOG(Info, "Model run: %d", model_ok);
 
-  log_mem_status(ctx);
-  write_etdump(ctx);
+  log_mem_status(g_runner_ctx);
+  write_etdump(g_runner_ctx);
 
   ET_CHECK_MSG(model_ok == true, "Problem running model");
 

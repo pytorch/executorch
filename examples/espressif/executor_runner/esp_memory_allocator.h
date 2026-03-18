@@ -9,7 +9,6 @@
 
 #include <executorch/runtime/core/memory_allocator.h>
 
-using executorch::runtime::MemoryAllocator;
 
 /**
  * Custom allocator for Espressif ESP32/ESP32-S3 targets that tracks

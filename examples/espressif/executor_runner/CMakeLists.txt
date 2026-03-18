@@ -30,6 +30,7 @@ if(ESP_PLATFORM)
   idf_component_register(
     SRCS
       "esp_executor_runner.cpp"
+      "esp_pal.cpp"
       "esp_memory_allocator.cpp"
       "esp_perf_monitor.cpp"
     INCLUDE_DIRS
@@ -59,7 +60,7 @@ if(ESP_PLATFORM)
   )
 
   set(ET_NUM_INFERENCES
-      "1"
+      "10"
       CACHE STRING "Number of inferences to run"
   )
   option(ET_LOG_DUMP_INPUT "Dump input in log" OFF)
@@ -266,6 +267,7 @@ else()
   target_sources(
     esp_executor_runner PRIVATE
       esp_executor_runner.cpp
+      esp_pal.cpp
       esp_perf_monitor.cpp
       esp_memory_allocator.cpp
   )
