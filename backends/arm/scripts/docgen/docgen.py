@@ -123,8 +123,8 @@ def generate_document(job: DocumentationJob):
 
     content = content.replace(job.placeholder, job.replacement_text)
 
-    # Remove multiple new lines at end of document if it exists
-    if content.endswith("\n\n"):
+    # Normalize generated docs to a single trailing newline.
+    while content.endswith("\n\n"):
         content = content.removesuffix("\n")
 
     with open(job.output_path, "w") as f:
