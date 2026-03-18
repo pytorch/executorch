@@ -327,7 +327,7 @@ def register_to_copy():
 )
 def register_softmax_cpp_ops():
     return OpFeatures(
-        inputs_storage=utils.ANY_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
     )
