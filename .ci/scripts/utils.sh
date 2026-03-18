@@ -53,7 +53,7 @@ dedupe_macos_loader_path_rpaths() {
   pushd ..
   torch_lib_dir=$(python -c "import importlib.util; print(importlib.util.find_spec('torch').submodule_search_locations[0])")/lib
   popd
-  
+
   if [[ -z "${torch_lib_dir}" || ! -d "${torch_lib_dir}" ]]; then
     return
   fi
@@ -141,9 +141,9 @@ install_pytorch_and_domains() {
 
   dedupe_macos_loader_path_rpaths
   # Grab the pinned audio and vision commits from PyTorch
-  TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
+  TORCHAUDIO_VERSION=release/2.11
   export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
+  TORCHVISION_VERSION=release/0.26
   export TORCHVISION_VERSION
 
   install_domains

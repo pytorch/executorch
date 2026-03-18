@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/embedding_processor.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/tok_embedding_processor.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
@@ -19,11 +19,11 @@ using executorch::runtime::TensorInfo;
 
 namespace example {
 
-EmbeddingProcessor::EmbeddingProcessor(
-    EmbeddingRunner* embedding_runner,
+TokenEmbeddingProcessor::TokenEmbeddingProcessor(
+    TokenEmbeddingRunner* tok_embedding_runner,
     const std::string& method_name,
     Metadata metadata)
-    : embedding_runner_(embedding_runner),
+    : tok_embedding_runner_(tok_embedding_runner),
       method_name_(method_name),
       metadata_(metadata) {
   input_toks_.size = metadata_.ar_len * sizeof(int64_t);
@@ -31,7 +31,7 @@ EmbeddingProcessor::EmbeddingProcessor(
   prompt_embeddings_.size = 0; // Will be set in prefill()
 }
 
-void EmbeddingProcessor::init_io(
+void TokenEmbeddingProcessor::init_io(
     IMemAlloc* buffer_manager,
     Result<MethodMeta> method_meta) {
   input_tensors_.reserve(method_meta->num_inputs());
@@ -73,7 +73,7 @@ void EmbeddingProcessor::init_io(
   }
 }
 
-void EmbeddingProcessor::update_prompt_embedding(
+void TokenEmbeddingProcessor::update_prompt_embedding(
     int32_t num_prompt_tokens,
     int64_t prompt_pos) {
   for (int i = 0; i < metadata_.ar_len; i++) {
@@ -86,7 +86,8 @@ void EmbeddingProcessor::update_prompt_embedding(
   }
 }
 
-void EmbeddingProcessor::prefill(const std::vector<uint64_t>& prompt_tokens) {
+void TokenEmbeddingProcessor::prefill(
+    const std::vector<uint64_t>& prompt_tokens) {
   int64_t prompt_pos = 0;
   int32_t num_prompt_tokens = prompt_tokens.size();
   prompt_embeddings_.size =
@@ -99,19 +100,18 @@ void EmbeddingProcessor::prefill(const std::vector<uint64_t>& prompt_tokens) {
   // Create TensorImpl for prompt_embeddings_ with shape [1, num_prompt_tokens,
   // dim] Store sizes and dim_order as member variables to keep them
   // alive
-  prompt_embeddings_sizes_ = {1, num_prompt_tokens, metadata_.embedding_dim};
-  prompt_embeddings_dim_order_ = {0, 1, 2};
+  std::vector<TensorImpl::SizesType> sizes = {
+      1, num_prompt_tokens, metadata_.embedding_dim};
   prompt_embeddings_.tensor = std::make_unique<TensorImpl>(
       executorch::aten::ScalarType::Float,
-      prompt_embeddings_sizes_.size(),
-      prompt_embeddings_sizes_.data(),
-      prompt_embeddings_.data,
-      prompt_embeddings_dim_order_.data());
+      sizes.size(),
+      sizes.data(),
+      prompt_embeddings_.data);
 
   int num_iters = 1 + ((num_prompt_tokens - 1) / metadata_.ar_len);
 
   ET_CHECK_MSG(
-      embedding_runner_->set_outputs(method_name_, output_tensors_) ==
+      tok_embedding_runner_->set_outputs(method_name_, output_tensors_) ==
           executorch::runtime::Error::Ok,
       "Failed to set output tensor for module %s",
       method_name_.c_str());
@@ -119,7 +119,7 @@ void EmbeddingProcessor::prefill(const std::vector<uint64_t>& prompt_tokens) {
   for (int32_t i = 0; i < num_iters; ++i) {
     prepare_io(prompt_tokens, prompt_pos);
 
-    embedding_runner_->step(method_name_, inputs_);
+    tok_embedding_runner_->step(method_name_, inputs_);
 
     // Update prompt_embedding
     update_prompt_embedding(num_prompt_tokens, prompt_pos);
@@ -128,7 +128,7 @@ void EmbeddingProcessor::prefill(const std::vector<uint64_t>& prompt_tokens) {
   }
 }
 
-void EmbeddingProcessor::prepare_io(
+void TokenEmbeddingProcessor::prepare_io(
     const std::vector<uint64_t>& prompt_tokens,
     int64_t prompt_pos) {
   for (int i = 0; i < metadata_.ar_len; i++) {
