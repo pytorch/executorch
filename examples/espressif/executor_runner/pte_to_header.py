@@ -69,9 +69,9 @@ if __name__ == "__main__":
         # No section attribute - let the linker/compiler decide placement.
         # On ESP32 with PSRAM, the compiler/linker or EXT_RAM_BSS_ATTR
         # in the code handles placement.
-        attr = "__attribute__((aligned(16))) const unsigned char "
+        attr = "__attribute__((aligned(16))) static const unsigned char "
     else:
-        attr = f'__attribute__((section("{args.section}"), aligned(16))) const unsigned char '
+        attr = f'__attribute__((section("{args.section}"), aligned(16))) static const unsigned char '
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
     with open(args.pte, "rb") as fr, open(outfile, "w") as fw:

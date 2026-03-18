@@ -18,7 +18,7 @@
 
 namespace {
 
-uint64_t start_cycle_count = 0;
+uint32_t start_cycle_count = 0;
 int64_t start_time_us = 0;
 
 } // namespace
@@ -29,10 +29,11 @@ void StartMeasurements() {
 }
 
 void StopMeasurements(int num_inferences) {
-  uint64_t end_cycle_count = esp_cpu_get_cycle_count();
+  uint32_t end_cycle_count = esp_cpu_get_cycle_count();
   int64_t end_time_us = esp_timer_get_time();
 
-  uint64_t total_cycles = end_cycle_count - start_cycle_count;
+  uint32_t delta_cycles = end_cycle_count - start_cycle_count;
+  uint64_t total_cycles = static_cast<uint64_t>(delta_cycles);
   int64_t total_time_us = end_time_us - start_time_us;
 
   ET_LOG(Info, "Profiler report:");

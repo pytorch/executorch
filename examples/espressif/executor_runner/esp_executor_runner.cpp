@@ -54,6 +54,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <algorithm>
 #include <memory>
 #include <type_traits>
@@ -226,7 +227,7 @@ static const float et_rtol = 0.01;
 #if defined(ET_NUM_INFERENCES)
 static const int num_inferences = ET_NUM_INFERENCES;
 #else
-static const int num_inferences = 1;
+static const int num_inferences = 10;
 #endif
 
 /**
@@ -482,11 +483,13 @@ std::pair<char*, size_t> load_file_from_fs(
   auto read_size = fread(buffer, 1, size, fp);
   if (read_size != size) {
     ET_LOG(
-        Info,
+        Fatal,
         "Partial read of %s: got %lu of %lu bytes",
         filepath,
         static_cast<unsigned long>(read_size),
         static_cast<unsigned long>(size));
+    fclose(fp);
+    return std::make_pair(nullptr, 0);
   }
   fclose(fp);
   return std::make_pair(buffer, read_size);
@@ -756,7 +759,7 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
 
 #if defined(ET_LOG_DUMP_INPUT)
   {
-    std::vector<EValue> inputs((*ctx.method.value())->inputs_size());
+    std::vector<EValue> inputs(ctx.method.value()->inputs_size());
     ET_LOG(Info, "%lu inputs: ", static_cast<unsigned long>(inputs.size()));
     Error status = ctx.method.value()->get_inputs(inputs.data(), inputs.size());
     ET_CHECK(status == Error::Ok);
@@ -947,9 +950,17 @@ void write_etdump(RunnerContext& ctx) {
 #if defined(FILESYSTEM_LOAD) && defined(ESP_PLATFORM)
     const char* etdump_filename = "/spiffs/etdump.bin";
     ET_LOG(Info, "Writing etdump to file: %s", etdump_filename);
-    FILE* f = fopen(etdump_filename, "w+");
+    FILE* f = fopen(etdump_filename, "wb");
     if (f) {
-      fwrite((uint8_t*)result.buf, 1, result.size, f);
+      size_t bytes_written = fwrite((uint8_t*)result.buf, 1, result.size, f);
+      if (bytes_written != result.size) {
+        ET_LOG(
+            Error,
+            "Failed to write complete ETDump data to %s (wrote %lu of %lu bytes)",
+            etdump_filename,
+            static_cast<unsigned long>(bytes_written),
+            static_cast<unsigned long>(result.size));
+      }
       fclose(f);
     } else {
       ET_LOG(Error, "Could not open %s for writing", etdump_filename);
