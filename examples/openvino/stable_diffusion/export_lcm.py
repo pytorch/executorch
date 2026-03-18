@@ -174,7 +174,7 @@ class LCMOpenVINOExporter:
         quantized_model = quantize_model(
             model,
             mode=QuantizationMode.INT8_TRANSFORMER,
-            calibration_dataset=calibration_dataset,
+            calibration_dataset=calibration_dataset,  # type: ignore[arg-type]
             smooth_quant=True,
         )
         # Re-export the transformed torch.fx.GraphModule to ExportedProgram
