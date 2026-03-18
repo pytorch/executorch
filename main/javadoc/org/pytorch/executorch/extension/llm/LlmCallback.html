@@ -162,6 +162,14 @@ public interface <span class="typeNameLabel"><a href=LlmCallback.html>LlmCallbac
                                             <td class="colLast">Called when the statistics for the generate() is available.</td>
                                         </tr>
                                         
+                                        <tr id="i2" class="altColor">
+                                            <td class="colFirst"><code>void</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=LlmCallback.html#onError(int,String)>onError</a>(int errorCode, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> message) </code>
+                                            </th>
+                                            <td class="colLast">Called when an error occurs during generate().</td>
+                                        </tr>
+                                        
                                         </tbody>
                                     </table>
                                 </div>
@@ -223,7 +231,7 @@ public interface <span class="typeNameLabel"><a href=LlmCallback.html>LlmCallbac
                                     <!--   -->
                                 </a>
                                 <ul class=
-                                              "blockListLast"
+                                              "blockList"
                                           >
                                     <li class="blockList">
                                         <h4>onStats</h4>
@@ -235,6 +243,34 @@ public interface <span class="typeNameLabel"><a href=LlmCallback.html>LlmCallbac
                                             
                                             
                                             <dd><code>stats</code> - JSON string containing the statistics for the generate()</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="onError(int,String)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockListLast"
+                                          >
+                                    <li class="blockList">
+                                        <h4>onError</h4>
+                                        <pre class="methodSignature"> void <a href=LlmCallback.html#onError(int,String)>onError</a>(int errorCode, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> message)</pre>
+                                        <div class="block"><p>Called when an error occurs during generate().</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>errorCode</code> - Error code from the ExecuTorch runtime (see )</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>message</code> - Human-readable error description</dd>
                                             
                                             
                                         </dl>
