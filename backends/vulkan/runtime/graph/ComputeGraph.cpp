@@ -725,6 +725,9 @@ void ComputeGraph::set_symint(const ValueRef idx, const int32_t val) {
 }
 
 int32_t ComputeGraph::read_symint(const ValueRef idx) {
+  if (values_.at(idx).isInt()) {
+    return static_cast<int32_t>(values_.at(idx).toInt());
+  }
   return get_symint(idx)->get();
 }
 

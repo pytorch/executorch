@@ -146,6 +146,7 @@ from .rewrite_high_rank_singleton_permute_pass import (  # noqa
     RewriteHighRankSingletonPermutePass,
 )
 from .rewrite_index_put_pass import RewriteIndexPutPass  # noqa
+from .rewrite_inplace_arithmetic_pass import RewriteInplaceArithmeticPass  # noqa
 from .rewrite_le_lt_to_ge_gt_pass import RewriteLeLtToGeGtPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
 from .rewrite_pad import RewritePadPass  # noqa

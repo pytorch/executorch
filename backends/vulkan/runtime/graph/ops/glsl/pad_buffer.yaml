@@ -1,14 +1,11 @@
-repeat:
+pad_buffer:
   parameter_names_with_default_values:
     DTYPE: float
-    NDIM: 3
-    STORAGE: texture3d
   generate_variant_forall:
     DTYPE:
-      - VALUE: half
       - VALUE: float
+      - VALUE: half
       - VALUE: int32
-      - VALUE: int8
       - VALUE: uint8
   shader_variants:
-    - NAME: repeat
+    - NAME: pad_buffer

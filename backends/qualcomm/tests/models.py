@@ -1897,11 +1897,11 @@ class UpsampleNearest2D(torch.nn.Module):
 
 
 class RmsNorm(torch.nn.Module):
-    def __init__(self, eps=None):
+    def __init__(self, eps=None, elementwise_affine=True):
         super().__init__()
-        self.rms = torch.nn.RMSNorm([4])
+        self.rms = torch.nn.RMSNorm([4], elementwise_affine=elementwise_affine)
         if eps:
-            self.rms = torch.nn.RMSNorm([4], eps)
+            self.rms = torch.nn.RMSNorm([4], eps, elementwise_affine=elementwise_affine)
 
     def forward(self, x):
         return self.rms(x)
