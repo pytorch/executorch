@@ -238,7 +238,7 @@ class ArmCompileSpec(ABC):
             config.disable_masked_softmax()
         return config
 
-    def get_intermediate_path(self) -> str | None:
+    def _get_intermediate_path(self) -> str | None:
         """Gets the path used for dumping intermediate results such as tosa and
         pte.
 

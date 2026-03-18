@@ -65,15 +65,6 @@ Args:
 - **output_path**: Path to dump intermediate results to.
 
 ```python
-def VgfCompileSpec.get_intermediate_path(self) -> str | None:
-```
-Gets the path used for dumping intermediate results such as tosa and
-pte.
-
-Returns:
-    Path where intermediate results are saved.
-
-```python
 def VgfCompileSpec.get_output_order_workaround(self) -> bool:
 ```
 Gets whether the output order workaround is being applied.

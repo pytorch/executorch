@@ -204,7 +204,7 @@ class TOSABackend(BackendDetails):
 
         """
         # if a debug/test build capture output files from TOSA stage
-        artifact_path = compile_spec.get_intermediate_path()
+        artifact_path = compile_spec._get_intermediate_path()
         tosa_spec = compile_spec.tosa_spec
         dump_debug_info = compile_spec.tosa_debug_mode
         debug_hook = None
@@ -332,7 +332,7 @@ class TOSABackend(BackendDetails):
         """
         tosa_spec = compile_spec.tosa_spec
         node_to_id_map = _annotate_external_ids(graph_module.graph)
-        artifact_path = compile_spec.get_intermediate_path()
+        artifact_path = compile_spec._get_intermediate_path()
         output_order_workaround = compile_spec.get_output_order_workaround()
 
         # TODO: Fix the need to lazily import this.
@@ -436,7 +436,7 @@ class TOSABackend(BackendDetails):
         tosa_compile_spec.set_pass_pipeline_config(pipeline_config)
         return (
             tosa_compile_spec.dump_intermediate_artifacts_to(
-                compile_spec.get_intermediate_path()
+                compile_spec._get_intermediate_path()
             )
             .dump_debug_info(compile_spec.tosa_debug_mode)
             .set_output_order_workaround(compile_spec.output_order_workaround)
