@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Convolution.h>
+
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
@@ -137,18 +139,6 @@ vkapi::ShaderInfo get_conv2d_shader(
   switch (method) {
     case Conv2dMethod::Depthwise:
       kernel_name = "conv2d_dw";
-      if (!prepack_weights) {
-        if (!stride_equals_dilation) {
-          kernel_name += "_sned";
-        }
-        const auto& weight_sizes = graph.get_tref(weight)->sizes;
-        if (weight_sizes.at(2) == 3 && weight_sizes.at(3) == 3) {
-          kernel_name += "_output_tile_3x3";
-        }
-        if (weight_sizes.at(2) == 5 && weight_sizes.at(3) == 5) {
-          kernel_name += "_output_tile_5x5";
-        }
-      }
       break;
     case Conv2dMethod::Pointwise:
       if (prepack_weights) {
@@ -294,17 +284,6 @@ Conv2dMethod get_conv2d_method(
   return Conv2dMethod::SlidingWindow;
 }
 
-utils::uvec2 get_conv2d_dw_dispatch_divisor(
-    const std::vector<int64_t>& weight_sizes) {
-  if (weight_sizes.at(2) == 3 && weight_sizes.at(3) == 3) {
-    return {4u, 2u};
-  }
-  if (weight_sizes.at(2) == 5 && weight_sizes.at(3) == 5) {
-    return {4u, 2u};
-  }
-  return {4u, 2u};
-}
-
 utils::uvec3 create_conv2d_global_wg_size(
     ComputeGraph& graph,
     const Conv2dMethod method,
@@ -317,14 +296,6 @@ utils::uvec3 create_conv2d_global_wg_size(
         utils::div_up(image_extents[0u], 1u),
         utils::div_up(image_extents[1u], 4u),
         image_extents[2u]};
-  } else if (method == Conv2dMethod::Depthwise && stride_equals_dilation) {
-    const utils::uvec3 image_extents = graph.create_global_wg_size(out);
-    const utils::uvec2 div =
-        get_conv2d_dw_dispatch_divisor(graph.get_tref(weight_data)->sizes);
-    return {
-        utils::div_up(image_extents[0], div[0]),
-        utils::div_up(image_extents[1], div[1]),
-        image_extents[2]};
   } else {
     return graph.create_global_wg_size(out);
   }
@@ -341,10 +312,7 @@ utils::uvec3 conv2d_global_wg_size(
 
   // Determine method from shader name
   Conv2dMethod method;
-  if (shader.kernel_name.find("conv2d_dw") != std::string::npos) {
-    method = Conv2dMethod::Depthwise;
-  } else if (
-      shader.kernel_name.find("conv2d_pw") != std::string::npos ||
+  if (shader.kernel_name.find("conv2d_pw") != std::string::npos ||
       (shader.kernel_name.find("conv2d") != std::string::npos &&
        shader.kernel_name.find("conv_transpose2d") == std::string::npos)) {
     // Check if it's pointwise by examining weight sizes
@@ -367,21 +335,7 @@ utils::uvec3 conv2d_global_wg_size(
   utils::uvec3 wg_size = create_conv2d_global_wg_size(
       *graph, method, out, weight_data, stride_equals_dilation);
 
-  if (method == Conv2dMethod::Depthwise) {
-    // The output_tile shaders (conv2d_dw_output_tile,
-    // conv2d_dw_sned_output_tile) use a 2D dispatch: (x_tile, y_tile) packed
-    // into glb_x, channel in glb_y. The base conv2d_dw shader uses a 1D
-    // dispatch: all (x, y, channel) packed into glb_x. For the base shader, we
-    // must use {W*H*C_packed, 1, 1}.
-    const bool uses_output_tile =
-        shader.kernel_name.find("_output_tile") != std::string::npos;
-    if (uses_output_tile) {
-      wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1};
-    } else {
-      const utils::uvec3 base_extents = graph->create_global_wg_size(out);
-      wg_size = {base_extents[0] * base_extents[1] * base_extents[2], 1, 1};
-    }
-  } else if (method == Conv2dMethod::Pointwise) {
+  if (method == Conv2dMethod::Pointwise) {
     wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1};
 
     if (shader.kernel_name.find("s1p0") != std::string::npos) {
@@ -404,10 +358,7 @@ utils::uvec3 conv2d_local_wg_size(
 
   // Determine method from shader name
   Conv2dMethod method;
-  if (shader.kernel_name.find("conv2d_dw") != std::string::npos) {
-    method = Conv2dMethod::Depthwise;
-  } else if (
-      shader.kernel_name.find("conv2d_pw") != std::string::npos ||
+  if (shader.kernel_name.find("conv2d_pw") != std::string::npos ||
       (shader.kernel_name.find("conv2d") != std::string::npos &&
        shader.kernel_name.find("conv_transpose2d") == std::string::npos)) {
     method = Conv2dMethod::Pointwise;
@@ -425,8 +376,6 @@ utils::uvec3 conv2d_local_wg_size(
       local_wg_size_y = 2;
     }
     return {64 / local_wg_size_y, local_wg_size_y, 1};
-  } else if (method == Conv2dMethod::Depthwise) {
-    return {64, 1, 1};
   } else {
     return graph->create_local_wg_size(global_workgroup_size);
   }
@@ -481,6 +430,37 @@ void add_conv2d_node(
   const Conv2dMethod method =
       get_conv2d_method(graph, weight_data, groups_val, transposed_val);
 
+  // Use tiled path for all pointwise conv2d
+  if (method == Conv2dMethod::Pointwise) {
+    return conv2d_pw_impl(
+        graph,
+        in,
+        weight_data,
+        bias,
+        stride,
+        padding,
+        out,
+        transposed_val,
+        clamp_out,
+        out_min_val,
+        out_max_val);
+  }
+
+  if (method == Conv2dMethod::Depthwise) {
+    return conv2d_dw_impl(
+        graph,
+        in,
+        weight_data,
+        bias,
+        stride,
+        padding,
+        dilation,
+        out,
+        clamp_out,
+        out_min_val,
+        out_max_val);
+  }
+
   ValueRef arg_weight = prepack_weights(graph, weight_data, method);
   ValueRef arg_bias = prepack_biases(
       graph,
@@ -529,101 +509,13 @@ void add_conv2d_node(
       stride_equals_dilation,
       stride_1_padding_0);
 
-  utils::uvec3 wg_size = create_conv2d_global_wg_size(
-      graph, method, out, weight_data, stride_equals_dilation);
-
-  utils::uvec3 local_wg_size;
-  if (method == Conv2dMethod::Depthwise || method == Conv2dMethod::Pointwise) {
-    wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1};
-  }
-
-  if (method == Conv2dMethod::Pointwise) {
-    uint32_t local_wg_size_y = 1;
-    if (wg_size[1] % 8 == 0) {
-      local_wg_size_y = 8;
-    } else if (wg_size[1] % 4 == 0) {
-      local_wg_size_y = 4;
-    } else if (wg_size[1] % 2 == 0) {
-      local_wg_size_y = 2;
-    }
-    local_wg_size = {64 / local_wg_size_y, local_wg_size_y, 1};
-  } else if (method == Conv2dMethod::Depthwise) {
-    local_wg_size = {64, 1, 1};
-  } else {
-    local_wg_size = graph.create_local_wg_size(wg_size);
-  }
-
-  vkapi::ParamsBindList param_buffers;
-  std::vector<PushConstantDataInfo> push_constants;
-  if (method == Conv2dMethod::Pointwise) {
-    const utils::ivec4 kernel_param_stride_pad = {
-        kernel_params.stride[0],
-        kernel_params.stride[1],
-        kernel_params.padding[0],
-        kernel_params.padding[1],
-    };
-
-    struct Conv2dPWParams final {
-      int in_group_size;
-      int dummy_padding;
-      OutputParams out_params;
-    } param{extra_params.in_group_size, 0, out_params};
-
-    push_constants = {
-        graph.logical_limits_pc_of(out),
-        PushConstantDataInfo(
-            &kernel_param_stride_pad, sizeof(kernel_param_stride_pad)),
-        PushConstantDataInfo(&param, sizeof(param)),
-    };
-  } else if (method == Conv2dMethod::Depthwise) {
-    // output_tile variants use push constants; the base conv2d_dw shader uses
-    // UBOs. Distinguish by checking if "_output_tile" is in the shader name.
-    const bool uses_output_tile =
-        shader.kernel_name.find("_output_tile") != std::string::npos;
-
-    if (uses_output_tile) {
-      const utils::ivec4 kernel_param_size_stride = {
-          kernel_params.kernel_size[0],
-          kernel_params.kernel_size[1],
-          kernel_params.stride[0],
-          kernel_params.stride[1]};
-
-      const utils::ivec4 kernel_param_pad_dial = {
-          kernel_params.padding[0],
-          kernel_params.padding[1],
-          kernel_params.dilation[0],
-          kernel_params.dilation[1]};
-
-      push_constants = {
-          graph.logical_limits_pc_of(out),
-          graph.sizes_pc_of(in),
-          PushConstantDataInfo(
-              &kernel_param_size_stride, sizeof(kernel_param_size_stride)),
-          PushConstantDataInfo(
-              &kernel_param_pad_dial, sizeof(kernel_param_pad_dial)),
-          PushConstantDataInfo(
-              &extra_params, sizeof(extra_params), sizeof(utils::ivec4)),
-          PushConstantDataInfo(&out_params, sizeof(out_params)),
-      };
-    } else {
-      // Base conv2d_dw shader uses UBOs, same as SlidingWindow case
-      param_buffers = {
-          graph.logical_limits_ubo(out),
-          graph.sizes_ubo(in),
-          graph.create_params_buffer(kernel_params),
-          graph.create_params_buffer(extra_params),
-          graph.create_params_buffer(out_params),
-      };
-    }
-  } else {
-    param_buffers = {
-        graph.logical_limits_ubo(out),
-        graph.sizes_ubo(in),
-        graph.create_params_buffer(kernel_params),
-        graph.create_params_buffer(extra_params),
-        graph.create_params_buffer(out_params),
-    };
-  }
+  vkapi::ParamsBindList param_buffers = {
+      graph.logical_limits_ubo(out),
+      graph.sizes_ubo(in),
+      graph.create_params_buffer(kernel_params),
+      graph.create_params_buffer(extra_params),
+      graph.create_params_buffer(out_params),
+  };
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -635,7 +527,7 @@ void add_conv2d_node(
       // Shader params buffers
       param_buffers,
       // Push Constants
-      push_constants,
+      {},
       // Specialization Constants
       {utils::safe_downcast<int32_t>(groups_val)},
       // Resize Args

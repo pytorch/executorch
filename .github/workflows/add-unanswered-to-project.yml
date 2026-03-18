@@ -50,10 +50,10 @@ jobs:
               "Jerry-Ge", "gggekov", "fumchin", "wwwind", "benkli01", "Tessil", "maddun01", "Michiel-Olieslagers", "armwaheed", "agrima1304", 
               "emmakujala", "annietllnd", "MatthiasHertel80", "AlexTawseArm", "jmahbs", "morgolock", "Christoffer-JL", "ArmRyan", "xingguo01", 
               "tgonzalezorlandoarm", "chizkiyahu", "sarah-blades", "itsMarco-G", "usamahz", "haowhsu-quic", "shewu-quic", "winskuo-quic", 
-              "chunit-quic", "DannyYuyang-quic", "chuntl", "thchenqti", "jethroqti", "chenweng-quic", "cymbalrush", "DenisVieriu97", "billmguo", 
-              "StrycekSimon", "jirioc", "robert-kalmar", "skywall", "MartinPavella", "roman-janik-nxp", "novak-vaclav", "neuropilot-captain", 
-              "dijopaul", "cad-rlc", "cad-audio", "ynimmaga", "daniil-lyakhov", "emmanuel-ferdman", "cavusmustafa", "anzr299", "suryasidd", 
-              "Jiseong-oh", "alexdean08",
+              "chunit-quic", "DannyYuyang-quic", "chuntl", "thchenqti", "jethroqti", "chenweng-quic", "qti-horodnic", "qti-mmadhava", "quic-boyuc",
+              "cymbalrush", "DenisVieriu97", "billmguo", "StrycekSimon", "jirioc", "robert-kalmar", "skywall", "MartinPavella", "roman-janik-nxp", 
+              "novak-vaclav", "neuropilot-captain", "dijopaul", "cad-rlc", "cad-audio", "ynimmaga", "daniil-lyakhov", "emmanuel-ferdman", 
+              "cavusmustafa", "anzr299", "suryasidd", "Jiseong-oh", "alexdean08",
               // explicitly include the dependabot bot login seen in PRs
               "dependabot[bot]"
             ]);
