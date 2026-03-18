@@ -176,12 +176,17 @@ class TestPasses(unittest.TestCase):
             dump_intermediate_outputs=True,
         )
 
-        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
-            module,
-            sample_input,
-            compiler_spec,
-            generate_etrecord=True,
-        )
+        try:
+            edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+                module,
+                sample_input,
+                compiler_spec,
+                generate_etrecord=True,
+            )
+        except RuntimeError as e:
+            if "QNN" in str(e) or "qnn" in str(e):
+                self.skipTest(f"QNN SDK not available: {e}")
+            raise
         exec_prog_mgr = edge_prog_mgr.to_executorch()
         etrecord = exec_prog_mgr.get_etrecord()
         debug_handle_size = len(etrecord._debug_handle_map["forward"][0])
