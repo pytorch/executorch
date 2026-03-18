@@ -113,6 +113,23 @@ class ToTosaMemoryFormatPass(ArmPass):
             inverse[axis] = idx
         return tuple(inverse)
 
+    def _infer_dim_order_for_node(
+        self, node: torch.fx.Node, node_data: torch.Tensor, spatial_rank: int
+    ) -> tuple[int, ...]:
+        rank = node_data.dim()
+
+        # Inputs and outputs preserve their externally-declared dim order.
+        if _is_input(node, self.exported_program) or node.op == "output":
+            return node_data.dim_order()
+
+        # Conv transpose weights are serialized in OHWI layout.
+        if rank == 4 and _is_transpose_conv2d_weight(node):
+            return (1, 2, 3, 0)
+
+        if rank >= 4:
+            return self._channels_last_order(rank, spatial_rank)
+        return tuple(range(rank))
+
     def _initial_spatial_rank(self, node: torch.fx.Node) -> int:
         """Infer the initial spatial rank based on the current rank, input node
         spatial ranks and node target. A spatial dimension includes Height,
@@ -329,19 +346,11 @@ class ToTosaMemoryFormatPass(ArmPass):
 
         """
         for node in graph_module.graph.nodes:
-            # call_function and placeholder allowed due to
-            # index.Tensor being able to come in as both
             if node.op != "call_function":
                 continue
 
             # Transpose views
-            elif node.target in (
-                exir_ops.edge.aten.view_copy.default,
-                exir_ops.edge.aten.index.Tensor,
-            ):
-                # For index.Tensor:
-                #   If we want to support 4D indexing tensors this logic
-                #   should be updated.
+            elif node.target == exir_ops.edge.aten.view_copy.default:
                 input_node = node.args[0]
                 input_shape = input_node.meta["val"].shape
                 output_shape = node.meta["val"].shape
@@ -467,15 +476,7 @@ class ToTosaMemoryFormatPass(ArmPass):
                 continue
             node_data = get_first_fake_tensor(node).data
             spatial_rank = node.meta["tosa_spatial_rank"]
-            if _is_input(node, self.exported_program) or node.op == "output":
-                dim_order = node_data.dim_order()
-            else:
-                if node_data.dim() == 4 and _is_transpose_conv2d_weight(node):
-                    dim_order = (1, 2, 3, 0)
-                elif node_data.dim() >= 4:
-                    dim_order = self._channels_last_order(node_data.dim(), spatial_rank)
-                else:
-                    dim_order = tuple(range(node_data.dim()))  # type: ignore[assignment]
+            dim_order = self._infer_dim_order_for_node(node, node_data, spatial_rank)
             node.meta["tosa_dim_order"] = dim_order
 
         # Insert TOSA transposes to convert between (N)NCHW and (N)NHWC format.
