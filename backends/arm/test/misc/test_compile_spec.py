@@ -32,14 +32,14 @@ def test_compile_spec_u55_INT():
 def test_ethos_u55_defaults_to_stable_softmax_u55_INT():
     """Test that EthosUCompileSpec for U55 defaults to STABLE softmax config."""
     compile_spec = EthosUCompileSpec("ethos-u55-128")
-    pipeline_config = compile_spec.get_pass_pipeline_config()
+    pipeline_config = compile_spec._get_pass_pipeline_config()
     assert pipeline_config.softmax == SoftmaxDecompositionConfig.STABLE
 
 
 def test_ethos_u85_defaults_to_masked_softmax_u85_INT():
     """Test that EthosUCompileSpec for U85 defaults to MASKED softmax config."""
     compile_spec = EthosUCompileSpec("ethos-u85-256")
-    pipeline_config = compile_spec.get_pass_pipeline_config()
+    pipeline_config = compile_spec._get_pass_pipeline_config()
     assert pipeline_config.softmax == SoftmaxDecompositionConfig.MASKED
 
 

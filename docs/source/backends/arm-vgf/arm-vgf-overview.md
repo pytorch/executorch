@@ -70,14 +70,6 @@ def VgfCompileSpec.get_output_order_workaround(self) -> bool:
 Gets whether the output order workaround is being applied.
 
 ```python
-def VgfCompileSpec.get_pass_pipeline_config(self) -> executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig:
-```
-Returns configuration that controls how the Arm pass pipeline should
-behave.
-
-Subclasses may override to tweak defaults for specific targets.
-
-```python
 def VgfCompileSpec.set_output_order_workaround(self, output_order_workaround: bool):
 ```
 Sets whether to apply the output order workaround.

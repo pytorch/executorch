@@ -431,7 +431,7 @@ class TOSABackend(BackendDetails):
 
         """
 
-        pipeline_config = compile_spec.get_pass_pipeline_config()
+        pipeline_config = compile_spec._get_pass_pipeline_config()
         tosa_compile_spec = TosaCompileSpec(compile_spec.tosa_spec)
         tosa_compile_spec.set_pass_pipeline_config(pipeline_config)
         return (

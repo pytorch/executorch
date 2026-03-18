@@ -211,7 +211,7 @@ class ArmCompileSpec(ABC):
             )
         return compile_spec
 
-    def get_pass_pipeline_config(self) -> ArmPassPipelineConfig:
+    def _get_pass_pipeline_config(self) -> ArmPassPipelineConfig:
         """Returns configuration that controls how the Arm pass pipeline should
         behave.
 
