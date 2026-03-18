@@ -33,9 +33,9 @@ if(NOT DEFINED QNN_SDK_ROOT AND DEFINED ENV{QNN_SDK_ROOT})
   )
 endif()
 
-# Auto-download QNN SDK when QNN_SDK_ROOT was not provided externally.
-# The SDK is cached in ~/.cache/executorch/qnn/ so it survives build dir cleans
-# and is shared across editable installs, build.sh, and wheel builds.
+# Auto-download QNN SDK when QNN_SDK_ROOT was not provided externally. The SDK
+# is cached in ~/.cache/executorch/qnn/ so it survives build dir cleans and is
+# shared across editable installs, build.sh, and wheel builds.
 if(NOT DEFINED QNN_SDK_ROOT)
   message(STATUS "QNN_SDK_ROOT not set. Auto-downloading QNN SDK...")
   execute_process(
@@ -49,8 +49,8 @@ if(NOT DEFINED QNN_SDK_ROOT)
     ERROR_VARIABLE _qnn_sdk_download_error
     OUTPUT_STRIP_TRAILING_WHITESPACE
   )
-  if(NOT _qnn_sdk_download_result EQUAL 0 OR _qnn_sdk_download_output
-                                             STREQUAL ""
+  if(NOT _qnn_sdk_download_result EQUAL 0 OR _qnn_sdk_download_output STREQUAL
+                                             ""
   )
     message(
       FATAL_ERROR
