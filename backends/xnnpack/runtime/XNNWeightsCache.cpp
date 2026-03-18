@@ -207,9 +207,10 @@ size_t XNNWeightsCache::look_up_or_insert(
   size_t offset = context->look_up(context, cache_key);
 
   // XNNPACK can call this with ptr==nullptr when it previously hit the cache
-  // and skipped packing. We can't validate against the ptr contents in this case,
-  // so just return the offset. This might actually be a bug in XNNPACK since
-  // calling look_up_or_insert with ptr==nullptr doesn't really make sense...
+  // and skipped packing. We can't validate against the ptr contents in this
+  // case, so just return the offset. This might actually be a bug in XNNPACK
+  // since calling look_up_or_insert with ptr==nullptr doesn't really make
+  // sense...
   if (ptr == nullptr) {
     return offset;
   }
