@@ -214,6 +214,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.gt.Tensor, gt);
   VK_REGISTER_OP(aten.ge.Tensor, ge);
   VK_REGISTER_OP(aten.bitwise_and.Tensor, bitwise_and);
+  VK_REGISTER_OP(aten.logical_and.default, bitwise_and);
 }
 
 } // namespace vkcompute

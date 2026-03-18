@@ -91,7 +91,7 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral_realtime-cuda voxtral_realtime-cpu voxtral_realtime-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral_realtime-cuda voxtral_realtime-cpu voxtral_realtime-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
@@ -109,6 +109,7 @@ help:
 	@echo "  parakeet-cuda-debug - Build Parakeet runner with CUDA backend (debug mode)"
 	@echo "  parakeet-cpu        - Build Parakeet runner with CPU backend"
 	@echo "  parakeet-metal      - Build Parakeet runner with Metal backend (macOS only)"
+	@echo "  parakeet-vulkan     - Build Parakeet runner with Vulkan backend"
 	@echo "  dinov2-cuda         - Build DINOv2 runner with CUDA backend"
 	@echo "  dinov2-cuda-debug   - Build DINOv2 runner with CUDA backend (debug mode)"
 	@echo "  sortformer-cuda     - Build Sortformer runner with CUDA backend"
@@ -217,6 +218,15 @@ parakeet-metal:
 	cmake --workflow --preset llm-metal-stats
 	@echo "==> Building Parakeet runner with Metal..."
 	cd examples/models/parakeet && cmake --workflow --preset parakeet-metal
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
+
+parakeet-vulkan:
+	@echo "==> Building and installing ExecuTorch with Vulkan..."
+	cmake --workflow --preset llm-debug-vulkan
+	@echo "==> Building Parakeet runner with Vulkan..."
+	cd examples/models/parakeet && cmake --workflow --preset parakeet-vulkan
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
