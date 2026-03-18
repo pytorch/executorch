@@ -111,6 +111,7 @@ from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
 from .fuse_view_copy_transform_pass import FuseViewCopyTransformPass  # noqa
 from .insert_const_shapes import InsertConstShapesPass  # noqa
+from .insert_dynamic_padding import InsertDynamicPaddingPass  # noqa
 from .insert_int32_casts_after_int64_placeholders import (  # noqa
     InsertInt32CastsAfterInt64PlaceholdersPass,
 )
@@ -145,6 +146,7 @@ from .rewrite_high_rank_singleton_permute_pass import (  # noqa
     RewriteHighRankSingletonPermutePass,
 )
 from .rewrite_index_put_pass import RewriteIndexPutPass  # noqa
+from .rewrite_inplace_arithmetic_pass import RewriteInplaceArithmeticPass  # noqa
 from .rewrite_le_lt_to_ge_gt_pass import RewriteLeLtToGeGtPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
 from .rewrite_pad import RewritePadPass  # noqa

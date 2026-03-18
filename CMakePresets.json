@@ -218,6 +218,21 @@
       }
     },
     {
+      "name": "llm-debug-vulkan",
+      "displayName": "LLM debug build with Vulkan",
+      "inherits": [
+        "llm-debug"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_VULKAN": "ON"
+      },
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Windows"]
+      }
+    },
+    {
       "name": "llm-metal-stats",
       "displayName": "LLM Metal build with stats collection and logging",
       "inherits": [
@@ -363,6 +378,15 @@
       "jobs": 0
     },
     {
+      "name": "llm-debug-vulkan-install",
+      "displayName": "Build and install LLM extension debug artifacts (Vulkan)",
+      "configurePreset": "llm-debug-vulkan",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
       "name": "llm-metal-stats-install",
       "displayName": "Build and install LLM extension artifacts with Metal stats",
       "configurePreset": "llm-metal-stats",
@@ -454,6 +478,20 @@
         {
           "type": "build",
           "name": "llm-debug-metal-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-debug-vulkan",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with Vulkan enabled (Debug)",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-debug-vulkan"
+        },
+        {
+          "type": "build",
+          "name": "llm-debug-vulkan-install"
         }
       ]
     },

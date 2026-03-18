@@ -27,14 +27,10 @@ class ScalarsToAttributePass(ArmPass):
 
     targeted_ops = [
         torch.ops.aten.add.Tensor,
-        torch.ops.aten.add_.Tensor,
         torch.ops.aten.sub.Tensor,
-        torch.ops.aten.sub_.Tensor,
         torch.ops.aten.rsub.Scalar,
         torch.ops.aten.mul.Tensor,
-        torch.ops.aten.mul_.Tensor,
         torch.ops.aten.div.Tensor,
-        torch.ops.aten.div_.Tensor,
     ]
 
     def _convert_scalar_args(
