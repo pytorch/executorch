@@ -96,6 +96,96 @@ class Qwen35AttentionTest(unittest.TestCase):
         state_after_reset = attn.recurrent_state.clone()
         self.assertTrue(torch.allclose(state_after_first, state_after_reset, atol=1e-5))
 
+    def _make_deltanet_pair(self, chunk_size, seq_len):
+        """Build two identical gated_deltanet layers: one chunked, one sequential."""
+        torch.manual_seed(42)
+        base_args = {
+            "use_kv_cache": True,
+            "use_q_gate": True,
+            "linear_conv_kernel_dim": 4,
+            "linear_key_head_dim": 4,
+            "linear_value_head_dim": 4,
+            "linear_num_key_heads": 2,
+            "linear_num_value_heads": 4,
+        }
+        args_seq = self._make_args(**base_args, deltanet_chunk_size=None)
+        args_chunk = self._make_args(**base_args, deltanet_chunk_size=chunk_size)
+        rope = Rope(args_seq)
+
+        attn_seq = ATTENTION_REGISTRY["gated_deltanet"](args_seq, 0, rope)
+        attn_chunk = ATTENTION_REGISTRY["gated_deltanet"](args_chunk, 0, rope)
+        attn_chunk.load_state_dict(attn_seq.state_dict())
+        attn_seq.eval()
+        attn_chunk.eval()
+
+        x = torch.randn(1, seq_len, args_seq.dim)
+        dummy_freq = torch.zeros(1, 1)
+        return attn_seq, attn_chunk, x, dummy_freq
+
+    def test_chunked_deltanet_matches_sequential(self):
+        attn_seq, attn_chunk, x, dummy_freq = self._make_deltanet_pair(
+            chunk_size=4, seq_len=12
+        )
+        out_seq, _ = attn_seq(x, dummy_freq, dummy_freq)
+        out_chunk, _ = attn_chunk(x, dummy_freq, dummy_freq)
+
+        self.assertTrue(
+            torch.allclose(out_seq, out_chunk, atol=1e-5),
+            f"Max diff: {(out_seq - out_chunk).abs().max().item()}",
+        )
+        self.assertTrue(
+            torch.allclose(
+                attn_seq.recurrent_state, attn_chunk.recurrent_state, atol=1e-5
+            ),
+            "Recurrent states diverged.",
+        )
+
+    def test_chunked_deltanet_non_divisible_seq_len(self):
+        attn_seq, attn_chunk, x, dummy_freq = self._make_deltanet_pair(
+            chunk_size=4, seq_len=7
+        )
+        out_seq, _ = attn_seq(x, dummy_freq, dummy_freq)
+        out_chunk, _ = attn_chunk(x, dummy_freq, dummy_freq)
+
+        self.assertTrue(
+            torch.allclose(out_seq, out_chunk, atol=1e-5),
+            f"Max diff: {(out_seq - out_chunk).abs().max().item()}",
+        )
+        self.assertTrue(
+            torch.allclose(
+                attn_seq.recurrent_state, attn_chunk.recurrent_state, atol=1e-5
+            ),
+            "Recurrent states diverged for non-divisible seq_len.",
+        )
+
+    def test_chunked_deltanet_export(self):
+        torch.manual_seed(42)
+        args = self._make_args(
+            use_kv_cache=True,
+            use_q_gate=True,
+            linear_conv_kernel_dim=4,
+            linear_key_head_dim=4,
+            linear_value_head_dim=4,
+            linear_num_key_heads=2,
+            linear_num_value_heads=4,
+            deltanet_chunk_size=4,
+        )
+        rope = Rope(args)
+        attn = ATTENTION_REGISTRY["gated_deltanet"](args, 0, rope)
+        attn.eval()
+
+        x = torch.randn(1, 8, args.dim)
+        dummy_freq = torch.zeros(1, 1)
+        try:
+            exported = torch.export.export(
+                attn,
+                (x, dummy_freq, dummy_freq),
+                strict=False,
+            )
+            self.assertIsNotNone(exported)
+        except Exception as e:
+            self.fail(f"torch.export.export failed with chunked deltanet: {e}")
+
     def test_gated_deltanet_no_input_pos_does_not_leak_state(self):
         torch.manual_seed(0)
         args = self._make_args(

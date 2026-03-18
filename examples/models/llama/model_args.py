@@ -50,6 +50,7 @@ class ModelArgs:
     linear_value_head_dim: Optional[int] = None
     linear_num_key_heads: Optional[int] = None
     linear_num_value_heads: Optional[int] = None
+    deltanet_chunk_size: Optional[int] = None
     # Qwen3.5 RMSNorm uses (1 + weight) scaling.
     rms_norm_add_unit_offset: bool = False
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
