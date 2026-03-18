@@ -1868,6 +1868,35 @@ def rms_norm(
     return W * nn.RMSNorm(list(normalized_shape), eps=eps, dtype=X.dtype)(X)
 
 
+@impl_tracked(m, "quantized_max_pool2d")
+def quantized_max_pool2d(
+    input: torch.Tensor,
+    kernel_size: list[int],
+    stride: list[int],
+    padding: list[int],
+    dilation: list[int],
+    ceil_mode: bool,
+) -> torch.Tensor:
+    """
+    Quantized max pooling operation.
+
+    Max pooling is order-preserving, so max(a, b) in the quantized domain gives
+    the same result as quantizing max(dequant(a), dequant(b)) when using the same
+    scale/zero_point. This means we can perform max pooling directly on quantized
+    integer values without dequantization/requantization.
+    """
+    # Directly apply max_pool2d on quantized values
+    # Since max is order-preserving, the result is correct without any dequant/requant
+    return F.max_pool2d(
+        input,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        ceil_mode=ceil_mode,
+    )
+
+
 @impl_tracked(m, "where_Scalar")
 def where_Scalar(
     condition: torch.Tensor,

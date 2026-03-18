@@ -71,6 +71,14 @@ class ExecuTorchLlmCallbackJni
         facebook::jni::make_jstring(
             executorch::extension::llm::stats_to_json_string(result)));
   }
+
+  void onError(int errorCode, const std::string& message) const {
+    static auto cls = ExecuTorchLlmCallbackJni::javaClassStatic();
+    static const auto on_error_method =
+        cls->getMethod<void(jint, facebook::jni::local_ref<jstring>)>(
+            "onError");
+    on_error_method(self(), errorCode, facebook::jni::make_jstring(message));
+  }
 };
 
 class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
@@ -198,6 +206,17 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jfloat temperature,
       jint num_bos,
       jint num_eos) {
+    Error err = Error::Ok;
+    if (!prompt) {
+      err = Error::InvalidArgument;
+      if (callback) {
+        callback->onError(
+            static_cast<int>(err),
+            "generate() failed: prompt must not be null");
+      }
+      return static_cast<jint>(err);
+    }
+
     float effective_temperature = temperature >= 0 ? temperature : temperature_;
     std::string token_buffer;
     auto token_callback = [callback, &token_buffer](const std::string& token) {
@@ -209,26 +228,53 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       }
       std::string result = token_buffer;
       token_buffer.clear();
-      callback->onResult(result);
+      if (callback) {
+        callback->onResult(result);
+      }
     };
 
     if (!runner_) {
-      return static_cast<jint>(Error::InvalidState);
+      err = Error::InvalidState;
+      if (callback) {
+        callback->onError(
+            static_cast<int>(err), "generate() failed: runner not initialized");
+      }
+      return static_cast<jint>(err);
     }
-    executorch::extension::llm::GenerationConfig config{
-        .echo = static_cast<bool>(echo),
-        .seq_len = seq_len,
-        .temperature = effective_temperature,
-        .num_bos = needs_bos_ ? num_bos_ : 0,
-        .num_eos = num_eos,
-    };
-    auto err = runner_->generate(
-        prompt->toStdString(),
-        config,
-        token_callback,
-        [callback](const llm::Stats& result) { callback->onStats(result); });
-    if (err == Error::Ok) {
-      needs_bos_ = false;
+
+    try {
+      executorch::extension::llm::GenerationConfig config{
+          .echo = static_cast<bool>(echo),
+          .seq_len = seq_len,
+          .temperature = effective_temperature,
+          .num_bos = needs_bos_ ? num_bos_ : 0,
+          .num_eos = num_eos,
+      };
+      err = runner_->generate(
+          prompt->toStdString(),
+          config,
+          token_callback,
+          [callback](const llm::Stats& result) {
+            if (callback) {
+              callback->onStats(result);
+            }
+          });
+      if (err == Error::Ok) {
+        needs_bos_ = false;
+      }
+      if (err != Error::Ok && callback) {
+        callback->onError(
+            static_cast<int>(err),
+            "generate() failed with error code " +
+                std::to_string(static_cast<int>(err)));
+      }
+    } catch (const std::exception& e) {
+      if (callback) {
+        callback->onError(
+            static_cast<int>(Error::Internal),
+            std::string("generate() threw: ") + e.what());
+      }
+      return static_cast<jint>(Error::Internal);
     }
     return static_cast<jint>(err);
   }
