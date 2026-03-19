@@ -3,8 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Tuple
-
 import torch
 from executorch.backends.arm._passes import InsertInt32CastsAfterInt64PlaceholdersPass
 
@@ -122,6 +120,96 @@ test_data_suite_fp = {
         ),
         0,
     ),
+    "broadcast_values_scalar": (
+        lambda: (
+            torch.zeros((3, 4), dtype=torch.float32),
+            (torch.tensor([0, 2], dtype=torch.int64),),
+            torch.tensor([5.0], dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
+    "broadcast_values_scalar_0d": (
+        lambda: (
+            torch.zeros((3, 4), dtype=torch.float32),
+            (torch.tensor([0, 2], dtype=torch.int64),),
+            torch.tensor(5.0, dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
+    "broadcast_values_vector": (
+        lambda: (
+            torch.zeros((3, 4), dtype=torch.float32),
+            (torch.tensor([0, 2], dtype=torch.int64),),
+            torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
+    "broadcast_values_with_implicit_w_and_c": (
+        lambda: (
+            torch.zeros((5, 2), dtype=torch.float32),
+            (torch.tensor([0, 2], dtype=torch.int64),),
+            torch.tensor([10.0, 20.0], dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
+    "none_indices": (
+        lambda: (
+            torch.ones((5, 3, 2, 2), dtype=torch.float32),
+            (torch.IntTensor([2, 3, 0]), None),
+            torch.zeros(1),
+            False,
+        ),
+        0,
+    ),
+    "none_indices_2": (
+        lambda: (
+            torch.ones((5, 3, 2, 2), dtype=torch.float32),
+            (None, torch.IntTensor([2, 0]), None),
+            torch.rand(2, 2, 2),
+            False,
+        ),
+        0,
+    ),
+    "none_indices_3": (
+        lambda: (
+            torch.ones((5, 3, 2, 2), dtype=torch.float32),
+            (None, torch.IntTensor([2, 1, 0]), None, None),
+            torch.zeros(1),
+            False,
+        ),
+        0,
+    ),
+    "none_indices_4": (
+        lambda: (
+            torch.ones((5, 3, 2, 2), dtype=torch.float32),
+            (
+                None,
+                torch.IntTensor(
+                    [
+                        2,
+                    ]
+                ),
+                None,
+                torch.IntTensor([0]),
+            ),
+            torch.zeros(1, 5, 2),
+            False,
+        ),
+        0,
+    ),
+    "none_indices_5": (
+        lambda: (
+            torch.ones((5, 3, 2, 2), dtype=torch.float32),
+            (None, torch.IntTensor([2, 0]), None, torch.IntTensor([0])),
+            torch.zeros(2, 1, 2),
+            False,
+        ),
+        0,
+    ),
 }
 test_data_int = {
     "rank3_zeros_int8": (
@@ -190,10 +278,12 @@ class IndexPut(torch.nn.Module):
         z: torch.Tensor,
         acc: bool,
     ):
-        return torch.index_put(x, indices=y, values=z, accumulate=acc)
+        # Needs to use aten op directly to allow None indices.
+        return torch.ops.aten.index_put.default(x, indices=y, values=z, accumulate=acc)
 
 
-input_t = Tuple[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, bool], int]
+input_t = tuple[tuple[torch.Tensor, torch.Tensor, torch.Tensor, bool], int]
+input_no_indices_t = tuple[torch.Tensor, torch.Tensor]
 
 xfails = {
     "same_index": "MLETORCH-1596: index_put with repeated indices not supported",
@@ -243,7 +333,11 @@ def test_index_put_u55_INT(test_module: input_t):
 
 
 @common.XfailIfNoCorstone320
-@common.parametrize("test_module", test_data_suite_fp | test_data_int)
+@common.parametrize(
+    "test_module",
+    test_data_suite_fp | test_data_int,
+    xfails={"none_indices_4": "Incorrect numerical behavior: MLBEDSW-11589"},
+)
 def test_index_put_u85_INT(test_module: input_t):
     """same_index test case already supported on u85 even though it is not
     supported by TOSA spec.

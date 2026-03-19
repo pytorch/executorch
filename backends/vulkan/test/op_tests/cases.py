@@ -11,7 +11,6 @@ from typing import Callable
 
 from executorch.backends.vulkan.test.op_tests.utils.test_suite import VkTestSuite
 
-
 # Prime numbers dim sizes for testing
 XL = 113
 L = 89
@@ -759,6 +758,10 @@ def get_native_layer_norm_inputs():
         "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
+    test_suite.storage_types = [
+        "utils::kTexture3D",
+        "utils::kBuffer",
+    ]
     return test_suite
 
 
@@ -840,6 +843,7 @@ def get_full_inputs():
             ([L, M, M1, M2], 2.72),
         ]
     )
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     return test_suite
 
 
@@ -874,6 +878,7 @@ def get_ones_inputs():
             ([L, M, M1, M2]),
         ]
     )
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     return test_suite
 
 
@@ -1162,14 +1167,13 @@ def get_embedding_inputs():
         Test(weight=[10, 9], indices=[[1, 2, 3], [1, 2, 3], [1, 2, 3], [1, 2, 3]]),
     ]
 
-    # Channels packed test cases currently fail on Mac, so they are not included.
-    # However the test case definition is kept for later debugging.
     test_suite_cpack = VkTestSuite(
         [tuple(tc) + (-1, "false", "false") for tc in test_cases]
     )
 
     test_suite_cpack.dtypes = ["at::kFloat"]
     test_suite_cpack.layouts = ["utils::kChannelsPacked"]
+    test_suite_cpack.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
     test_suite_cpack.test_name_suffix = "cpacked"
 
     test_suite_wpack = VkTestSuite(
@@ -1181,7 +1185,7 @@ def get_embedding_inputs():
     test_suite_wpack.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
     test_suite_wpack.test_name_suffix = "wpacked"
 
-    return test_suite_wpack
+    return [test_suite_cpack, test_suite_wpack]
 
 
 @register_test_suite("aten.gather.default")
@@ -1340,7 +1344,7 @@ def get_repeat_inputs():
         "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
-    test_suite_2d.storage_types = ["utils::kTexture3D"]
+    test_suite_2d.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     test_suite_2d.data_gen = "make_seq_tensor"
     test_suite_2d.dtypes = ["at::kFloat"]
     test_suite_2d.test_name_suffix = "2d"
@@ -1385,7 +1389,7 @@ def get_repeat_inputs():
         "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
-    test_suite_3d.storage_types = ["utils::kTexture3D"]
+    test_suite_3d.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     test_suite_3d.data_gen = "make_seq_tensor"
     test_suite_3d.dtypes = ["at::kFloat"]
     test_suite_3d.test_name_suffix = "3d"
@@ -1626,6 +1630,7 @@ def get_softmax_inputs():
         "utils::kWidthPacked",
         "utils::kChannelsPacked",
     ]
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
 
     # Large negative values regression test (edgeTAM attention scores that
     # produced NaN due to missing max-shift in softmax numerics)
@@ -1638,6 +1643,7 @@ def get_softmax_inputs():
         "utils::kWidthPacked",
         "utils::kChannelsPacked",
     ]
+    large_neg_test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     large_neg_test_suite.data_range = (-1.8e10, -6.5e9)
     large_neg_test_suite.test_name_suffix = "large_negative"
     large_neg_test_suite.dtypes = ["at::kFloat"]
@@ -1887,7 +1893,12 @@ def get_arange_inputs():
     )
 
     test_suite.layouts = [
+        "utils::kWidthPacked",
         "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = [
+        "utils::kTexture3D",
+        "utils::kBuffer",
     ]
     return test_suite
 
@@ -1898,14 +1909,22 @@ def get_constant_pad_nd_inputs():
         [
             ([S1, S2], [1, 1], 24.0),
             ([M, M1, M2], [2, 2], 23.2),
-            ([L, M, M1, M2], [3, 5], 12.2),
+            ([S2, M, M1, M2], [3, 5], 12.2),
             ([S1, S2], [1, 1, 1, 1], 24.0),
             ([M, M1, M2], [2, 2, 2, 2], 23.2),
-            ([L, M, M1, M2], [3, 5, 3, 5], 12.2),
+            ([S2, M, M1, M2], [3, 5, 3, 5], 12.2),
             ([M, M1, M2], [1, 2, 3, 4, 5, 6], 23.2),
-            ([L, M, M1, M2], [3, 3, 3, 3, 3, 3], 12.2),
+            ([S2, M, M1, M2], [3, 3, 3, 3, 3, 3], 12.2),
         ]
     )
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = [
+        "utils::kTexture3D",
+        "utils::kBuffer",
+    ]
     return test_suite
 
 
@@ -2017,6 +2036,7 @@ def get_expand_inputs():
     )
     test_suite.storage_types = [
         "utils::kBuffer",
+        "utils::kTexture3D",
     ]
     test_suite.layouts = [
         "utils::kWidthPacked",
