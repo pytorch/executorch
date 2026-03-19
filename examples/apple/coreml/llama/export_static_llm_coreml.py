@@ -353,7 +353,7 @@ _TARGET_MODULE_TO_ATTR = {
 }
 
 
-def _prepare_model(model, args, float_dtype, skip_split_names=None):
+def _prepare_eager_model(model, args, float_dtype, skip_split_names=None):
     """Apply splitting, quantization, and graph breaks to a model.
 
     This is shared across base and adapter models so the same transformations
@@ -601,7 +601,7 @@ def main():
         }
         print(f"\nSkipping split for LoRA-targeted modules: {skip_split_names}")
 
-    model = _prepare_model(model, args, float_dtype, skip_split_names=skip_split_names)
+    model = _prepare_eager_model(model, args, float_dtype, skip_split_names=skip_split_names)
 
     # Load adapter models
     lora_models = {}
@@ -616,7 +616,7 @@ def main():
                 adapter_checkpoint=adapter_ckpt,
                 adapter_config=adapter_cfg,
             )
-            lora_model = _prepare_model(
+            lora_model = _prepare_eager_model(
                 lora_model, args, float_dtype, skip_split_names=skip_split_names
             )
             lora_models[name] = lora_model
