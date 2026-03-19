@@ -25,7 +25,6 @@ from executorch.backends.cadence.aot.pass_utils import (
 from executorch.backends.cadence.aot.remove_ops import (
     CadenceRemoveNops,
     RemoveNopSliceOrViewOpPass,
-    RemovePermutesAroundElementwiseOps,
     RemoveRedundantOps,
 )
 from executorch.backends.cadence.aot.reorder_ops import CadenceReorderOpsInGraph
@@ -90,7 +89,6 @@ def get_passes_in_default_order() -> list[Type[ExportPass]]:
         CadenceSimplifyOpsInGraph.passes,
         FinalizePipeline,
         FuseFullThenReshapePass,
-        RemovePermutesAroundElementwiseOps,
         FuseTransposeOrPermuteOpPairsPass,
         RemoveNopSliceOrViewOpPass,
         CompileTimeTypeDispatchPass,
