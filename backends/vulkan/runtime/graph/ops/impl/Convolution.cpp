@@ -675,6 +675,53 @@ void conv(ComputeGraph& graph, const std::vector<ValueRef>& args) {
           true);
     }
   } else {
+    // Conv1d path
+    if (graph.packed_dim_of(args[0]) == WHCN::kHeightDim) {
+      // Height-packed: route to optimized conv1d implementations
+      const auto weight_sizes = graph.sizes_of(args[1]);
+      const int64_t groups_val = graph.get_int(args[8]);
+      const bool is_pointwise = weight_sizes.at(2) == 1;
+      const bool is_depthwise =
+          groups_val == weight_sizes.at(0) && weight_sizes.at(1) == 1;
+
+      if (args.size() == 10) {
+        // Non-clamp path
+        if (is_pointwise) {
+          VK_GET_OP_FN("et_vk.conv1d_pw.default")
+          (graph,
+           {args[0],
+            args[1],
+            args[2],
+            args[3],
+            args[4],
+            args[5],
+            args[8],
+            args[9]});
+        } else if (is_depthwise) {
+          VK_GET_OP_FN("et_vk.conv1d_dw.default")
+          (graph,
+           {args[0],
+            args[1],
+            args[2],
+            args[3],
+            args[4],
+            args[5],
+            args[8],
+            args[9]});
+        } else {
+          VK_THROW(
+              "Height-packed conv1d only supports pointwise (K=1) or "
+              "depthwise (groups=C)");
+        }
+      } else {
+        // conv_with_clamp: fall back to channels-packed path for now
+        // (height-packed implementations don't support clamp yet)
+        VK_THROW("Height-packed conv1d does not support conv_with_clamp yet");
+      }
+      return;
+    }
+
+    // Existing channels-packed fallback
     if (args.size() == 10) {
       // ordinary conv1d
       return add_conv1d_node(
