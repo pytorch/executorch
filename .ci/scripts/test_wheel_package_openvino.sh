@@ -4,12 +4,7 @@
 # Builds the ExecuTorch wheel with OpenVINO support, installs it into both
 # a conda env and a Python venv, and runs smoke tests verifying that the
 # OpenVINO backend is registered and can export a simple model.
-#
-# Usage:
-#   ./.ci/scripts/test_wheel_package_openvino.sh <python_version>
-#
-# Example:
-#   ./.ci/scripts/test_wheel_package_openvino.sh 3.11
+
 
 set -e
 set -x
