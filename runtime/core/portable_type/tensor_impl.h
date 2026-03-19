@@ -191,7 +191,7 @@ class TensorImpl {
     return device_.type();
   }
 
-  /// Returns the device index, or -1 if default/unspecified.
+  /// Returns the device index, or 0 if default/unspecified.
   DeviceIndex device_index() const {
     return device_.index();
   }
