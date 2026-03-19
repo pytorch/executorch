@@ -300,6 +300,7 @@ fbcode_target(_kind = runtime.python_library,
     ],
     typing = True,
     deps = [
+        ":fuse_ops",
         ":ops_registrations",
         "//caffe2:torch",
         "//executorch/backends/cadence/aot:pass_utils",
