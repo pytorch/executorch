@@ -337,22 +337,6 @@ def dump_error_output(
     logger.error(f"{atol=}, {rtol=}, {qtol=}")
 
 
-if __name__ == "__main__":
-    """This is expected to produce the example output of print_diff."""
-    torch.manual_seed(0)
-    a = torch.rand(3, 3, 2, 2) * 0.01
-    b = a.clone().detach()
-    logger.info(b)
-
-    # Errors in all channels in element (1,1)
-    a[1, :, 1, 1] = 0
-    # Errors in (0,0) and (1,1) in channel 1
-    a[2, 1, 1, 1] = 0
-    a[2, 1, 0, 0] = 0
-
-    print_error_diffs(a, b)
-
-
 def compare_rel_frobenius_and_cosine_similarity(
     reference_output: torch.Tensor,
     test_output: torch.Tensor,
@@ -452,3 +436,19 @@ def compare_rel_frobenius_and_cosine_similarity(
             f"Tensor-wise comparison failed: Cosine similarity {cosine_similarity} is below threshold {cosine_threshold}."
             f" (Relative frobenius error: {relative_frobenius_error}, threshold {frobenius_threshold})."
         )
+
+
+if __name__ == "__main__":
+    """This is expected to produce the example output of print_diff."""
+    torch.manual_seed(0)
+    a = torch.rand(3, 3, 2, 2) * 0.01
+    b = a.clone().detach()
+    logger.info(b)
+
+    # Errors in all channels in element (1,1)
+    a[1, :, 1, 1] = 0
+    # Errors in (0,0) and (1,1) in channel 1
+    a[2, 1, 1, 1] = 0
+    a[2, 1, 0, 0] = 0
+
+    print_error_diffs(a, b)
