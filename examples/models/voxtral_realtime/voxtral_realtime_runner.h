@@ -171,8 +171,10 @@ class StreamingSession {
   // Process one 80ms step from the audio buffer.
   bool try_process_step();
 
-  // Run one audio-conditioned decoder step (token_embed + audio_embed -> logits).
-  bool decode_step(const ::executorch::extension::TensorPtr& audio_embeds_tensor);
+  // Run one audio-conditioned decoder step
+  // (token_embed + audio_embed -> logits).
+  bool decode_step(
+      const ::executorch::extension::TensorPtr& audio_embeds_tensor);
 };
 
 } // namespace voxtral_realtime

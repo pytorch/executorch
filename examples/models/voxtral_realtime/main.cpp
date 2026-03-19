@@ -172,7 +172,8 @@ int main(int argc, char** argv) {
     ET_CHECK_MSG(
         runner.is_streaming(),
         "Model was not exported with --streaming. Re-export with --streaming flag.");
-    auto session = runner.create_streaming_session(make_streaming_config(), token_cb);
+    auto session =
+        runner.create_streaming_session(make_streaming_config(), token_cb);
 
     // Drain any audio that buffered in stdin during model loading/warmup.
     // Without this, piped audio (e.g., from ffmpeg) accumulates while the
@@ -223,7 +224,8 @@ int main(int argc, char** argv) {
     ET_LOG(Info, "Loading audio from: %s", FLAGS_audio_path.c_str());
     auto audio_data =
         ::executorch::extension::llm::load_wav_audio_data(FLAGS_audio_path);
-    auto session = runner.create_streaming_session(make_streaming_config(), token_cb);
+    auto session =
+        runner.create_streaming_session(make_streaming_config(), token_cb);
 
     const int64_t chunk_size = 1280;
     for (int64_t offset = 0; offset < static_cast<int64_t>(audio_data.size());

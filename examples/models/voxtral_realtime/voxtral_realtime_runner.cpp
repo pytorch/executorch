@@ -79,8 +79,7 @@ int64_t compute_delay_steps(
   if (transcription_delay_ms <= 0 || sample_rate <= 0 || step_samples <= 0) {
     return 0;
   }
-  const double step_ms =
-      1000.0 * static_cast<double>(step_samples) /
+  const double step_ms = 1000.0 * static_cast<double>(step_samples) /
       static_cast<double>(sample_rate);
   return static_cast<int64_t>(
       std::ceil(static_cast<double>(transcription_delay_ms) / step_ms));
@@ -689,7 +688,8 @@ bool StreamingSession::decode_step(const TensorPtr& audio_embeds_tensor) {
   auto& audio_embeds = *audio_embeds_tensor;
   if (model_dtype == ::executorch::aten::ScalarType::BFloat16) {
     auto* out = input_embeds_->mutable_data_ptr<::executorch::aten::BFloat16>();
-    const auto* af = audio_embeds.const_data_ptr<::executorch::aten::BFloat16>();
+    const auto* af =
+        audio_embeds.const_data_ptr<::executorch::aten::BFloat16>();
     const auto* tf = tok_embed.const_data_ptr<::executorch::aten::BFloat16>();
     for (int64_t i = 0; i < dim; i++) {
       out[i] = ::executorch::aten::BFloat16(
@@ -756,7 +756,8 @@ int StreamingSession::flush() {
         (((remaining + step - 1) / step) + right_pad_audio_steps) * step +
         right_lookahead;
     const int64_t silence_padded_samples = pad_to - remaining;
-    std::vector<float> silence(static_cast<size_t>(silence_padded_samples), 0.0f);
+    std::vector<float> silence(
+        static_cast<size_t>(silence_padded_samples), 0.0f);
     audio_buf_.insert(audio_buf_.end(), silence.begin(), silence.end());
 
     // Guaranteed to terminate b/c each call to try_process_step() consumes a
