@@ -92,9 +92,8 @@ table ExtraTensorInfo {
   device_type: DeviceType = CPU;
 
   // [Optional] The device index for multi-device scenarios (e.g., cuda:0, cuda:1).
-  // A value of -1 indicates the default device. Defaults to -1 for backward
-  // compatibility.
-  device_index: byte = -1;
+  // Defaults to 0 (the first device of the given type).
+  device_index: byte = 0;
 }
 
 table Tensor {

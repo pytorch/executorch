@@ -23,6 +23,7 @@ from executorch.exir.backend.partitioner import (
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
+from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes.propagate_device_pass import (
@@ -124,23 +125,26 @@ def _lower_model_with_partitioner(
     inputs: tuple,
     partitioner: Partitioner,
 ) -> List[torch.fx.GraphModule]:
-    """Lower a model through both export pipelines and return the graph modules.
+    """Lower a model through both export pipelines, run to_executorch, and
+    return the graph modules.
 
     Returns a list of (pipeline_name, graph_module) pairs for both:
-      1. to_edge → to_backend
-      2. to_edge_transform_and_lower
+      1. to_edge → to_backend → to_executorch
+      2. to_edge_transform_and_lower → to_executorch
     """
     ep = export(model, inputs)
     ep_copied = deepcopy(ep)
 
-    # Pipeline 1: to_edge → to_backend
-    edge = to_edge(ep, compile_config=EdgeCompileConfig(_check_ir_validity=False))
-    lowered_1 = edge.to_backend(partitioner)
-    gm_1 = lowered_1.exported_program().graph_module
+    # Pipeline 1: to_edge → to_backend → to_executorch
+    edge_1 = to_edge(ep, compile_config=EdgeCompileConfig(_check_ir_validity=False))
+    lowered_1 = edge_1.to_backend(partitioner)
+    et_1 = lowered_1.to_executorch(ExecutorchBackendConfig(emit_stacktrace=False))
+    gm_1 = et_1.exported_program().graph_module
 
-    # Pipeline 2: to_edge_transform_and_lower
+    # Pipeline 2: to_edge_transform_and_lower → to_executorch
     edge_2 = to_edge_transform_and_lower(ep_copied, partitioner=[partitioner])
-    gm_2 = edge_2.exported_program().graph_module
+    et_2 = edge_2.to_executorch(ExecutorchBackendConfig(emit_stacktrace=False))
+    gm_2 = et_2.exported_program().graph_module
 
     return [
         ("to_edge+to_backend", gm_1),
@@ -187,6 +191,41 @@ class TestPropagateDevicePass(unittest.TestCase):
                     f"[{pipeline}] Should have at least one delegate call node",
                 )
 
+    def test_delegate_input_specs_get_device(self):
+        """
+        Delegate input TensorSpecs should also have device == CUDA when
+        partitioner includes target_device CompileSpec.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b)
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+
+        for pipeline, gm in _lower_model_with_partitioner(
+            model, inputs, DeviceAwarePartitioner("cuda:0")
+        ):
+            with self.subTest(pipeline=pipeline):
+                for node in gm.graph.nodes:
+                    if (
+                        node.op == "call_function"
+                        and node.target == executorch_call_delegate
+                    ):
+                        # args[0] is get_attr for the lowered module; args[1:]
+                        # are the actual tensor inputs to the delegate.
+                        for arg in node.args[1:]:
+                            if isinstance(arg, torch.fx.Node):
+                                spec = arg.meta.get("spec")
+                                if isinstance(spec, TensorSpec):
+                                    self.assertEqual(
+                                        spec.device,
+                                        DeviceType.CUDA,
+                                        f"[{pipeline}] Delegate input {arg.name} "
+                                        f"should have device CUDA",
+                                    )
+
     def test_non_delegated_nodes_remain_cpu(self):
         """
         Non-delegated nodes should retain device == CPU.
@@ -206,17 +245,28 @@ class TestPropagateDevicePass(unittest.TestCase):
         ):
             with self.subTest(pipeline=pipeline):
                 for node in gm.graph.nodes:
-                    if (
-                        node.op == "call_function"
-                        and node.target != executorch_call_delegate
-                    ):
-                        spec = node.meta.get("spec")
-                        if isinstance(spec, TensorSpec):
-                            self.assertEqual(
-                                spec.device,
-                                DeviceType.CPU,
-                                f"[{pipeline}] Non-delegated node {node.name} should remain on CPU",
-                            )
+                    if node.op != "call_function":
+                        continue
+                    # Skip delegate call nodes
+                    if node.target == executorch_call_delegate:
+                        continue
+                    # Skip getitem nodes that extract from a delegate call
+                    if node.target == operator.getitem:
+                        source = node.args[0]
+                        if (
+                            isinstance(source, torch.fx.Node)
+                            and source.op == "call_function"
+                            and source.target == executorch_call_delegate
+                        ):
+                            continue
+
+                    spec = node.meta.get("spec")
+                    if isinstance(spec, TensorSpec):
+                        self.assertEqual(
+                            spec.device,
+                            DeviceType.CPU,
+                            f"[{pipeline}] Non-delegated node {node.name} should remain on CPU",
+                        )
 
     def test_no_device_spec_remains_cpu(self):
         """

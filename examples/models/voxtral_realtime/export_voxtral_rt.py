@@ -18,19 +18,19 @@ With --streaming, produces a streaming .pte instead:
 
 Backend support:
   - XNNPACK (default): Uses custom SDPA op (torch.ops.llama.custom_sdpa) for optimal performance
-  - Metal/AOTI: Uses MetalSDPA (_scaled_dot_product_attention_math_for_mps) for text_decoder
-                and StandardEncoderSDPA (F.scaled_dot_product_attention) for streaming encoder,
-                avoiding custom_sdpa which is incompatible with AOTI. Uses Dim.AUTO for audio
-                encoder dynamic shapes (explicit bounds cause issues with AOTI).
-  - CUDA/AOTI: Uses CudaSDPA (F.scaled_dot_product_attention with GQA expansion) for text_decoder
-               and StandardEncoderSDPA for streaming encoder. Compiles to CUDA kernels via
-               AOTInductor. Supports int4 quantization via _weight_int4pack_mm fallback kernel.
+  - Metal/AOTI: Uses MetalSDPA (_scaled_dot_product_attention_math_for_mps) for both text_decoder
+                and streaming encoder (transpose_kv=True), avoiding custom_sdpa which is
+                incompatible with AOTI. Uses Dim.AUTO for audio encoder dynamic shapes
+                (explicit bounds cause issues with AOTI).
+  - CUDA/AOTI: Uses StandardSDPA (F.scaled_dot_product_attention with GQA expansion) for
+               text_decoder and streaming encoder (transpose_kv=True). Compiles to CUDA kernels
+               via AOTInductor. Supports int4 quantization via _weight_int4pack_mm fallback kernel.
   - Portable: Uses custom SDPA like XNNPACK
 
 Usage:
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --streaming
-    python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend metal
+    python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend metal --dtype bf16 --qlinear-encoder fpa4w --qlinear fpa4w
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend cuda --qlinear 4w
 """
 
@@ -394,10 +394,10 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
 
         # Run decompositions for Metal backend
         updated_programs = {}
+        decomp_table = torch.export.default_decompositions()
+        decomp_table[torch.ops.aten.linear.default] = _linear_bias_decomposition
         for key, ep in programs.items():
-            updated_programs[key] = ep.run_decompositions(
-                {torch.ops.aten.linear.default: _linear_bias_decomposition}
-            )
+            updated_programs[key] = ep.run_decompositions(decomp_table)
         programs = updated_programs
 
         partitioner = {}

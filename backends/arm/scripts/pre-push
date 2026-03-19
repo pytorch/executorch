@@ -21,6 +21,55 @@ WARNING="${YELLOW}[WARNING]${RESET}"
 ERROR="${RED}[ERROR]${RESET}"
 SUCCESS="${GREEN}[SUCCESS]${RESET}"
 
+DOCGEN_OUTPUTS=(
+    "docs/source/backends/arm-ethos-u/arm-ethos-u-overview.md"
+    "docs/source/backends/arm-ethos-u/arm-ethos-u-partitioner.md"
+    "docs/source/backends/arm-ethos-u/arm-ethos-u-quantization.md"
+    "docs/source/backends/arm-ethos-u/tutorials/ethos-u-getting-started.md"
+    "docs/source/backends/arm-vgf/arm-vgf-overview.md"
+    "docs/source/backends/arm-vgf/arm-vgf-partitioner.md"
+    "docs/source/backends/arm-vgf/arm-vgf-quantization.md"
+    "docs/source/backends/arm-vgf/tutorials/vgf-getting-started.md"
+)
+
+RUN_DOCGEN=0
+
+is_docgen_trigger_file() {
+    local file_path="$1"
+    case "${file_path}" in
+        backends/arm/common/arm_compile_spec.py|\
+        backends/arm/ethosu/*.py|\
+        backends/arm/quantizer/*.py|\
+        backends/arm/scripts/docgen/*|\
+        backends/arm/tosa/partitioner.py|\
+        backends/arm/vgf/*.py|\
+        examples/arm/ethos_u_minimal_example.ipynb|\
+        examples/arm/vgf_minimal_example.ipynb)
+            return 0
+            ;;
+    esac
+    return 1
+}
+
+run_docgen_check() {
+    echo -e "${INFO} Running Arm docgen"
+    env/bin/python backends/arm/scripts/docgen/docgen.py
+    if [[ $? -ne 0 ]]; then
+        echo -e "${ERROR} Failed to run Arm docgen"
+        FAILED=1
+        return
+    fi
+
+    if ! git diff --quiet HEAD -- "${DOCGEN_OUTPUTS[@]}"; then
+        echo -e "${ERROR} Arm docgen updated generated documentation." >&2
+        echo -e "${INFO} Review and commit the regenerated docs before pushing."
+        git diff HEAD -- "${DOCGEN_OUTPUTS[@]}"
+        FAILED=1
+    else
+        echo -e "${SUCCESS} Arm docgen OK"
+    fi
+}
+
 # This list of imperative verbs was compiled from the entire list of Executorch
 # commits. It should be fairly exhaustive, but add more verbs if you find one
 # that's missing.
@@ -92,6 +141,14 @@ for COMMIT in ${COMMITS}; do
 
     commit_files=$(git diff-tree --no-commit-id --name-only \
         --diff-filter=ACMR ${COMMIT} -r)
+    if [[ $RUN_DOCGEN -eq 0 ]]; then
+        for committed_file in $commit_files; do
+            if is_docgen_trigger_file "${committed_file}"; then
+                RUN_DOCGEN=1
+                break
+            fi
+        done
+    fi
 
     # Check license headers
     # We do a simple check of if all committed headers contain
@@ -157,9 +214,15 @@ for COMMIT in ${COMMITS}; do
     SUBJECT=$(echo "$COMMIT_MSG" | head -n1)
     BODY=$(echo "$COMMIT_MSG" | tail -n +2)
 
-    # Check subject length (72 chars)
+    # Check subject length (72 chars), except for revert commits.
+    is_revert_commit=false
+    if [[ "$SUBJECT" =~ ^(Arm\ backend:\ )?Revert(\ |$) ]]; then
+        is_revert_commit=true
+    fi
+
     SUBJECT_MAX_LEN=72
-    if [ ${#SUBJECT} -gt ${SUBJECT_MAX_LEN} ]; then
+    if [ ${#SUBJECT} -gt ${SUBJECT_MAX_LEN} ] && \
+        [[ $is_revert_commit == false ]]; then
         echo -e "${ERROR} Subject exceeds ${SUBJECT_MAX_LEN} characters:"\
             "'${SUBJECT}'" >&2
 
@@ -216,7 +279,8 @@ for COMMIT in ${COMMITS}; do
     fi
 
     # Require 'Arm backend: ' prefix when the commit only touches Arm backend/examples files
-    if [[ $only_arm_changes == true && $has_arm_backend_prefix == false ]]; then
+    if [[ $only_arm_changes == true && $has_arm_backend_prefix == false && \
+        $is_revert_commit == false ]]; then
         echo -e "${ERROR} Subject must start with 'Arm backend: ' when only backends/arm or examples/arm files are modified." >&2
         FAILED=1
     fi
@@ -250,6 +314,12 @@ for COMMIT in ${COMMITS}; do
 
     echo "" # Newline to visually separate commit processing
 done
+
+if [[ $RUN_DOCGEN -eq 1 ]]; then
+    run_docgen_check
+else
+    echo -e "${INFO} Skipping Arm docgen (no public API inputs changed)"
+fi
 
 if [[ $FAILED ]]; then
     echo -e "${INFO} Fix your commit message errors with"\

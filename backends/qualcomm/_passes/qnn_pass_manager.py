@@ -29,6 +29,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeLinalgVectorNorm,
     DecomposeMaxPool3d,
     DecomposeMinMaxDim,
+    DecomposeReciprocal,
     DecomposeRoll,
     DecomposeSilu,
     DecomposeThreshold,
@@ -53,6 +54,7 @@ from executorch.backends.qualcomm._passes import (
     RemoveRedundancy,
     ReplaceArangeArgs,
     ReplaceInfValues,
+    ResolveDebugHandle,
     TagQuantIO,
 )
 from executorch.backends.qualcomm._passes.utils import (
@@ -107,6 +109,7 @@ def get_capture_program_passes():
         (Remove0DTensor, True),
         (RemoveRedundancy, True),
         (TagQuantIO, False),
+        (ResolveDebugHandle, True),
     ]
 
     passes = OrderedDict()
@@ -175,6 +178,9 @@ class QnnPassManager(PassManager):
             if "edge_program" in kwargs:
                 kwargs["edge_program"] = exported_program
             self.add_pass(p(**kwargs))
+        assert isinstance(
+            self.passes[-1], ResolveDebugHandle
+        ), "Please ensure ResolveDebugHandle is the last executed edge pass."
         return self.passes
 
     def transform_for_to_edge_pipeline(
@@ -215,6 +221,10 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeEinsum())
         self.add_pass(DecomposeExpM1())
         self.add_pass(DecomposeGlu())
+        # HTP and GPU doesn't support ElementWiseUnary with operation=reciprocal
+        # Decompose Reciprocal into Div for these 2 backend
+        # TODO: Skip this pass for CPU backend (Dependency: Backend-aware passes manager)
+        self.add_pass(DecomposeReciprocal())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(ReplaceInfValues())
         self.add_pass(LiftConstantScalarOperands())
@@ -238,6 +248,10 @@ class QnnPassManager(PassManager):
         # This pass is needed before to_edge pipeline to avoid mixed type for div operator with RemoveMixedTypeOperators pass.
         self.add_pass(DecomposeFloorDivide())
         self.add_pass(DecomposeWrapWithAutocast())
+        # HTP and GPU doesn't support ElementWiseUnary with operation=reciprocal
+        # Decompose Reciprocal into Div for these 2 backend
+        # TODO: Skip this pass for CPU backend (Dependency: Backend-aware passes manager)
+        self.add_pass(DecomposeReciprocal())
         # this pass will rewrite state_dict, it needs to be accomplished before
         # to_edge_transform_and_lower
         self.add_pass(CanonicalizeConv(exported_program))

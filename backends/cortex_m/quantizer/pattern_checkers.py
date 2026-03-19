@@ -7,6 +7,7 @@ from typing import cast
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm.quantizer.arm_quantizer_utils import PatternCheck
 from executorch.backends.cortex_m.passes.passes_utils import (
     coerce_int_pair,
     is_channel_broadcast,
@@ -18,73 +19,7 @@ from executorch.backends.cortex_m.quantizer.quantization_configs import (
     CortexMQuantizationConfig,
 )
 from torch.fx import Node
-from torchao.quantization.pt2e.quantizer import (
-    QuantizationSpecBase,
-    SharedQuantizationSpec,
-)
-
-
-class PatternCheck:
-    """
-    Base class for pattern checks.
-
-    PatternChecks are used to define which which patterns are supported for quantization.
-    For example, ADD in the Cortex-M backend does not support general broadcasting, so
-    a PatternCheck can be used to filter out such patterns. They also only support per
-    tensor quantization, so the PatternCheck filters out quantization configs that use
-    per channel quantization.
-    """
-
-    @classmethod
-    def is_per_tensor(cls, qspec: QuantizationSpecBase | None) -> bool:
-        """
-        Returns true if the given quantization spec is per-tensor, otherwise false.
-        """
-        if not isinstance(qspec, QuantizationSpecBase):
-            return False
-        return qspec.qscheme in (torch.per_tensor_affine, torch.per_tensor_symmetric)
-
-    @classmethod
-    def is_per_channel(cls, qspec: QuantizationSpecBase | None) -> bool:
-        """
-        Returns true if the given quantization spec is per-channel, otherwise false.
-        """
-        if not isinstance(qspec, QuantizationSpecBase):
-            return False
-        return qspec.qscheme in (torch.per_channel_affine, torch.per_channel_symmetric)
-
-    @classmethod
-    def is_int8_activations(
-        cls, qconfig: CortexMQuantizationConfig, output_node: Node | None = None
-    ) -> bool:
-        """
-        Returns true if the given quantization spec uses int8 quantization, otherwise false.
-
-        Output node is required for determining output quantization spec for some ops, otherwise it can be left as None.
-        """
-        input_qspec = qconfig.get_input_act_qspec()
-        output_qspec = qconfig.get_output_act_qspec(output_node)
-        if not isinstance(input_qspec, QuantizationSpecBase) or not isinstance(
-            output_qspec, QuantizationSpecBase
-        ):
-            return False
-        return input_qspec.dtype == torch.int8 and output_qspec.dtype == torch.int8
-
-    @classmethod
-    def check_pattern(cls, pattern: list[Node]) -> bool:
-        """
-        Returns true if the given pattern is supported, otherwise false.
-        """
-        return True
-
-    @classmethod
-    def check_quantization_config(
-        cls, pattern: list[Node], quantization_config: CortexMQuantizationConfig
-    ) -> bool:
-        """
-        Returns true if the given quantization config is supported for a given node pattern, otherwise false.
-        """
-        return True
+from torchao.quantization.pt2e.quantizer import SharedQuantizationSpec
 
 
 class CortexMAddMulCheck(PatternCheck):
