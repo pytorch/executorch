@@ -390,6 +390,13 @@ class OpInstanceNorm:
 
 
 @dataclass(init=False, frozen=True)
+class OpIsInf:
+    op_name: str = "IsInf"
+    param_detect_negative = "detect_negative"
+    param_detect_positive = "detect_positive"
+
+
+@dataclass(init=False, frozen=True)
 class OpLayerNorm:
     op_name: str = "LayerNorm"
     param_epsilon = "epsilon"

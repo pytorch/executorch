@@ -439,6 +439,7 @@ Please help update following table if you are contributing new operators:
 | GroupNorm | &check; |
 | HardSwish | &check; |
 | InstanceNorm | &check; |
+| IsInf | &check; |
 | L2Norm | &cross; |
 | LayerNorm | &check; |
 | LogSoftmax | &check; |
