@@ -62,6 +62,12 @@ enum TensorDataLocation : byte {
   EXTERNAL = 1,
 }
 
+// Device type enum indicating where a tensor resides or should be allocated.
+enum DeviceType : byte {
+  CPU = 0,
+  CUDA = 1,
+}
+
 // Table to put additional information about tensors in that is not applicable
 // to the vast majority of tensors in the vast majority of programs.
 table ExtraTensorInfo {
@@ -80,6 +86,14 @@ table ExtraTensorInfo {
   //   must be non-empty, and is used as a key to find the tensor's external
   //   data. Tensor.data_buffer_idx is ignored.
   location: TensorDataLocation;
+
+  // [Optional] The device type where this tensor resides or should be allocated.
+  // Defaults to CPU for backward compatibility with existing PTE files.
+  device_type: DeviceType = CPU;
+
+  // [Optional] The device index for multi-device scenarios (e.g., cuda:0, cuda:1).
+  // Defaults to 0 (the first device of the given type).
+  device_index: byte = 0;
 }
 
 table Tensor {
