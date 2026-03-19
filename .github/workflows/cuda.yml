@@ -126,7 +126,13 @@ jobs:
         cmake --workflow --preset default
         popd
 
-        # Run CUDA backend Python tests, overrides addopts so that we don't run all tests in pytest.ini
+        # Install flash-linear-attention for chunk_gated_delta_rule triton kernel tests
+        pip install "flash-linear-attention==0.4.2"
+
+        # Build executor_runner (needed by CUDA backend e2e tests)
+        cmake --build cmake-out --target executor_runner
+
+        # Run CUDA backend Python tests
         python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts="
 
   export-model-cuda-artifact:
