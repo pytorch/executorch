@@ -36,6 +36,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceLinearWithFullyConnectedOpPass,
     ReplaceLogicalNotBooleanWhereWithWherePass,
     ReplaceMatmulWithTransposedMatmulPass,
+    ReplaceMaxPool2dWithChannelLastMaxPool2dPass,
     ReplaceMMWithAddMMPass,
     ReplaceMulTensorWithMulAndFullOpsPass,
     ReplaceNopTransposeOrPermuteWithViewPass,
@@ -2583,6 +2584,59 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         self.assertEqual(
             count_node(gm_after_pass, exir_ops.edge.aten.transpose_copy.int),
             3,
+        )
+
+
+class TestReplaceMaxPool2dWithChannelLastMaxPool2dPass(unittest.TestCase):
+    def test_replace_max_pool2d_nchw_with_nhwc(self) -> None:
+        # Create a graph with a single quantized_max_pool2d_nchw node.
+        x = torch.randint(0, 100, (1, 3, 8, 8), dtype=torch.int8)
+        gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.cadence.quantized_max_pool2d_nchw.default,
+            args=(x, [2, 2], [2, 2], [0, 0], [1, 1], False),
+        )
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.quantized_max_pool2d_nchw.default), 1
+        )
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
+
+        # Deepcopy before the pass
+        original = copy.deepcopy(gm)
+
+        # Apply replacement pass.
+        p = ReplaceMaxPool2dWithChannelLastMaxPool2dPass()
+        result = p.call(gm)
+        self.assertTrue(result.modified)
+        gm_after_replacement = result.graph_module
+
+        # Check that replacement was made.
+        self.assertEqual(
+            count_node(
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_max_pool2d_nhwc.default,
+            ),
+            1,
+        )
+        self.assertEqual(
+            count_node(
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_max_pool2d_nchw.default,
+            ),
+            0,
+        )
+        # Two permutes: one for input NCHW->NHWC, one for output NHWC->NCHW
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default),
+            2,
+        )
+
+        # Validate numerical accuracy
+        validate(
+            original,
+            gm_after_replacement,
+            (x,),
+            "ReplaceMaxPool2dWithChannelLastMaxPool2dPass",
         )
 
 
