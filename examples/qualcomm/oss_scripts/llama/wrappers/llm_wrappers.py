@@ -7,6 +7,8 @@ import argparse
 import inspect
 import json
 import logging
+import os
+import time
 import types
 
 from functools import partial
@@ -49,9 +51,9 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     DECODE_QDQ_FILENAME,
     DECODER_GRAPH_NAMES,
     TEXT_DECODER,
-    TEXT_EMBEDDING,
-    TEXT_EMBEDDING_GRAPH_NAMES,
     TEXT_ENCODER,
+    TOK_EMBEDDING,
+    TOK_EMBEDDING_GRAPH_NAMES,
     VISION_ENCODER,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
@@ -60,7 +62,9 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
 from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_quant_recipe import (
     EncoderQuantRecipe,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.model.embedding import TextEmbedding
+from executorch.examples.qualcomm.oss_scripts.llama.model.embedding import (
+    TokenEmbedding,
+)
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
     LlamaModel,
     ModelArgs,
@@ -110,7 +114,6 @@ class TextDecoder(Component):
         )
 
         # For multimodal embedding
-        self._modality_placeholder_token_id = None
         self.apply_embedding = apply_embedding
         self.tok_embedding_passes_job = (
             get_capture_program_passes() if apply_embedding else None
@@ -273,7 +276,7 @@ class TextDecoder(Component):
             auto_model = AutoModel.from_pretrained(
                 self.config.repo_id, _attn_implementation="eager"
             )
-            tok_embedding = TextEmbedding(
+            tok_embedding = TokenEmbedding(
                 auto_model.get_input_embeddings().to(torch.float32),
                 self.model_args.max_batch_size,
                 self.model_args.ar_len,
@@ -412,6 +415,63 @@ class TextDecoder(Component):
 
         return quant_io_type
 
+    def _auto_tune_calibration_threads(self):
+        """Find the optimal thread count for calibration via quick microbenchmark.
+
+        AR1 decode calibration is SGEMV-dominated (memory-bandwidth-bound).
+        The default thread count (os.cpu_count()) is typically far too high,
+        causing massive OpenMP sync overhead. This runs a few forward passes
+        at candidate thread counts and picks the fastest.
+        """
+        # Use sched_getaffinity when available — it respects cgroup/taskset
+        # constraints (e.g. containers), unlike os.cpu_count() which returns
+        # the host total regardless of pinning.
+        available = (
+            len(os.sched_getaffinity(0))
+            if hasattr(os, "sched_getaffinity")
+            else (os.cpu_count() or 1)
+        )
+        baseline = min(torch.get_num_threads(), available)
+        # Sample fractions of the thread ceiling from low through the
+        # bandwidth-saturation knee up to the current default.
+        fractions = (1 / 8, 1 / 4, 3 / 8, 1 / 2, 2 / 3, 3 / 4, 1.0)
+        candidates = sorted(
+            {1, baseline} | {max(1, round(baseline * f)) for f in fractions}
+        )
+        original = torch.get_num_threads()
+        best_threads, best_time = original, float("inf")
+        try:
+            for n_threads in candidates:
+                torch.set_num_threads(n_threads)
+                try:
+                    with torch.no_grad():
+                        self.decoder(*self.export_input)  # warmup
+                        t0 = time.perf_counter()
+                        for _ in range(3):
+                            self.decoder(*self.export_input)
+                        elapsed = time.perf_counter() - t0
+                    if elapsed < best_time:
+                        best_threads, best_time = n_threads, elapsed
+                except Exception:
+                    logging.debug("Auto-tune: threads=%d failed, skipping", n_threads)
+                    continue
+        finally:
+            torch.set_num_threads(original)
+        if best_time == float("inf"):
+            logging.warning(
+                "Auto-tune: all candidates %s failed, falling back to %d threads",
+                candidates,
+                baseline,
+            )
+            return baseline
+        logging.info(
+            "Auto-tune calibration threads: tested %s, best=%d (%.1fms/fwd)",
+            candidates,
+            best_threads,
+            best_time / 3 * 1000,
+        )
+        return best_threads
+
     def _calibrate(
         self,
         model,
@@ -470,16 +530,15 @@ class TextDecoder(Component):
             else None
         )
         # check user's prompt which helps calibrate special token
-        for prompt in user_calibration_data:
+        for turn in zip(intermediate_outputs, user_calibration_data):
+            hidden_states, prompt = turn
             graph_module_inference(
                 use_kv_cache=self.meta["get_use_kv_cache"],
                 get_example_inputs=self.get_example_inputs,
-                hidden_states=intermediate_outputs,  # hidden_states for multimodal
+                hidden_states=hidden_states,  # hidden_states for multimodal
                 module=model,
                 tok_embedding=tok_embedding,
-                modality_placeholder_token_id=self.meta.get(
-                    "modality_placeholder_token_id", None
-                ),
+                image_token_id=self.meta.get("image_token_id", None),
                 tokenizer=tokenizer,
                 ar_len=self.meta["get_ar_len"],
                 max_seq_len=self.meta["get_max_context_len"],
@@ -518,18 +577,25 @@ class TextDecoder(Component):
             )
 
         data = request.method_data[TEXT_DECODER]
-
-        image_embedding = None
-        if self.apply_embedding:
-            # For demo: get first data now
-            image_embedding = request.method_data[
-                VISION_ENCODER
-            ].calibration_data.intermediate_outputs[0]
+        audio_turns = request.method_data[
+            AUDIO_ENCODER
+        ].calibration_data.intermediate_outputs
+        vision_turns = request.method_data[
+            VISION_ENCODER
+        ].calibration_data.intermediate_outputs
+        if audio_turns is None:
+            audio_turns = [[] for _ in range(len(data.calibration_data.datasets))]
+        if vision_turns is None:
+            vision_turns = [[] for _ in range(len(data.calibration_data.datasets))]
+        intermediate_outputs = [
+            [*audio_turn, *vision_turn]
+            for audio_turn, vision_turn in zip(audio_turns, vision_turns)
+        ]
 
         quantizer = make_quantizer(backend=data.backend, soc_model=data.soc_model)
         quantizer.set_recipe(self.quant_recipe.recipe)
 
-        text_embedding_quantizer = make_quantizer(
+        tok_embedding_quantizer = make_quantizer(
             quant_dtype=QuantDtype.use_16a8w,
             per_channel_conv=True,
             per_channel_linear=True,
@@ -552,22 +618,40 @@ class TextDecoder(Component):
                 self.decoder, self.export_input, strict=True
             ).module()
 
+            # Auto-tune thread count BEFORE prepare_pt2e so the benchmark
+            # runs on the exported model without observers — no risk of
+            # polluting observer state with synthetic inputs.
+            if self.mode == Mode.DECODE or not self.model_args.use_kv_cache:
+                calib_threads = getattr(self.control_args, "calibration_num_threads", 0)
+                if calib_threads <= 0:
+                    calib_threads = self._auto_tune_calibration_threads()
+
             self.decoder = prepare_pt2e(self.decoder, quantizer)
             if self.apply_embedding:
                 self.tok_embedding = prepare_pt2e(
-                    self.tok_embedding, text_embedding_quantizer
+                    self.tok_embedding, tok_embedding_quantizer
                 )
 
             # start calibration (only for kv mode or prefill mode without kv cache)
             if self.mode == Mode.DECODE or not self.model_args.use_kv_cache:
-                self._calibrate(
-                    model=self.decoder,
-                    tokenizer=data.tokenizer,
-                    event="prepare_pt2e",
-                    user_calibration_data=data.calibration_data.datasets,
-                    tok_embedding=self.tok_embedding,
-                    intermediate_outputs=image_embedding,
+                original_threads = torch.get_num_threads()
+                torch.set_num_threads(calib_threads)
+                logging.info(
+                    "Calibration using %d threads (was %d)",
+                    calib_threads,
+                    original_threads,
                 )
+                try:
+                    self._calibrate(
+                        model=self.decoder,
+                        tokenizer=data.tokenizer,
+                        event="prepare_pt2e",
+                        user_calibration_data=data.calibration_data.datasets,
+                        tok_embedding=self.tok_embedding,
+                        intermediate_outputs=intermediate_outputs,
+                    )
+                finally:
+                    torch.set_num_threads(original_threads)
             else:
                 # one dummy inference to remove affine observer
                 # error happened in convert_pt2e
@@ -589,16 +673,16 @@ class TextDecoder(Component):
 
             if self.control_args.verbose and self.mode == Mode.DECODE:
                 if self.apply_embedding:
-                    image_embedding = request.method_data[
+                    qdq_intermediate_outputs = request.method_data[
                         VISION_ENCODER
-                    ].calibration_data.qdq_intermediate_outputs[0]
+                    ].calibration_data.qdq_intermediate_outputs
                 self._calibrate(
                     model=self.decoder,
                     tokenizer=data.tokenizer,
                     event="convert_pt2e",
                     user_calibration_data=data.calibration_data.datasets,
                     tok_embedding=self.tok_embedding,
-                    intermediate_outputs=image_embedding,
+                    intermediate_outputs=qdq_intermediate_outputs,
                 )
 
         # save logit's quantization attributes to meta
@@ -762,14 +846,14 @@ class HybridTextDecoder(Component):
 
         # prepare lowering tok_embedding if applicable
         if self.apply_embedding:
-            tok_embedding_data = request.method_data[TEXT_EMBEDDING]
+            tok_embedding_data = request.method_data[TOK_EMBEDDING]
             models = [
                 d for d in [self.decode, self.prefill] if d.tok_embedding is not None
             ]
             tok_embedding_example_inputs = [
                 m.tok_embedding_export_input for m in models if m is not None
             ]  # tokens
-            tok_embedding_graph_names = TEXT_EMBEDDING_GRAPH_NAMES[: len(models)]
+            tok_embedding_graph_names = TOK_EMBEDDING_GRAPH_NAMES[: len(models)]
 
         # prepare lowering decoder
         data = request.method_data[TEXT_DECODER]
@@ -820,7 +904,7 @@ class HybridTextDecoder(Component):
             tok_embedding_exec_prog_mgr = tok_embedding_edge_prog_mgr.to_executorch(
                 executorch_config
             )
-            data = request.method_data[TEXT_EMBEDDING]
+            data = request.method_data[TOK_EMBEDDING]
             with open(
                 f"{self.control_args.artifact}/{data.pte_filename}.pte", "wb"
             ) as file:
@@ -884,7 +968,6 @@ class Modality(Component):
             self.model = self.model.eval()
             self.model.load_state_dict(auto_model.state_dict(), strict=False)
             self.example_input = self.model.get_example_inputs()
-            self.preprocess = self.model.preprocess
 
             # set quant recipe
             self.quant_recipe: EncoderQuantRecipe = (
@@ -911,13 +994,30 @@ class Modality(Component):
         ) as file:
             exec_prog_mgr.write_to_file(file)
 
+    def _calibrate(self, model, calibration_datasets):
+        outputs = []
+        for turn in calibration_datasets:
+            outputs_each_turn = [model(*data) for data in turn]
+            outputs.append(outputs_each_turn)
+        return outputs
+
     def quantize(self, request: Request):
-        if self.model is None or self.quant_recipe is None:
+        if self.model is None:
             return
 
         request_data = request.method_data[self.modality]
+        calibration_datasets = request_data.calibration_data.datasets
+
         with torch.no_grad():
             self.model = torch.export.export(self.model, self.example_input).module()
+
+            if request_data.skip_quantize:
+                logging.info(f"skipping encoder quantization for {self.modality}")
+                intermediate_outputs = self._calibrate(self.model, calibration_datasets)
+                request_data.calibration_data.intermediate_outputs = (
+                    intermediate_outputs
+                )
+                return
 
             quantizer = make_quantizer(
                 backend=request_data.backend, soc_model=request_data.soc_model
@@ -925,26 +1025,17 @@ class Modality(Component):
             quantizer.set_recipe(self.quant_recipe.recipe)
             self.model = prepare_pt2e(self.model, quantizer)
 
-            # calibration
-            intermediate_outputs = []
-            for data in request_data.calibration_data.datasets:
-                output = self.model(*self.preprocess(data))
-                intermediate_outputs.append(
-                    (output,) if isinstance(output, torch.Tensor) else output
-                )
-            # update intermediate outputs for next modality
+            # start calibration
+            intermediate_outputs = self._calibrate(self.model, calibration_datasets)
             request_data.calibration_data.intermediate_outputs = intermediate_outputs
 
             self.model = convert_pt2e(self.model)
 
-            qdq_intermediate_outputs = []
+            # QDQ inference
             if self.control_args.verbose:
-                for data in request_data.calibration_data.datasets:
-                    output = self.model(*self.preprocess(data))
-                    qdq_intermediate_outputs.append(
-                        (output,) if isinstance(output, torch.Tensor) else output
-                    )
-                # update qdq intermediate outputs for next modality
+                qdq_intermediate_outputs = self._calibrate(
+                    self.model, calibration_datasets
+                )
                 request_data.calibration_data.qdq_intermediate_outputs = (
                     qdq_intermediate_outputs
                 )
@@ -976,7 +1067,7 @@ class MultiModalManager(Component):
             AUDIO_ENCODER,
             TEXT_ENCODER,
             VISION_ENCODER,
-            TEXT_EMBEDDING,
+            TOK_EMBEDDING,
             TEXT_DECODER,
         ]
         # build dependency chain
@@ -1009,6 +1100,7 @@ class MultiModalManager(Component):
     def quantize(
         self,
         calibration_data: Dict[str, List[Any]],
+        skip_quantize: Dict[str, bool],
         tokenizer,
         backend,
         soc_model,
@@ -1020,6 +1112,7 @@ class MultiModalManager(Component):
                     calibration_data=Request.CalibrationData(
                         datasets=calibration_data[m]
                     ),
+                    skip_quantize=skip_quantize.get(m, False),
                     tokenizer=tokenizer,
                     backend=backend,
                     soc_model=soc_model,

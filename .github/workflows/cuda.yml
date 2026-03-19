@@ -9,11 +9,18 @@
 name: Test CUDA Builds
 
 on:
-  pull_request:
   push:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/cuda/*
+  pull_request:
+    paths:
+      - .github/workflows/cuda.yml
+      - backends/cuda/**
+      - backends/aoti/**
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
@@ -119,7 +126,13 @@ jobs:
         cmake --workflow --preset default
         popd
 
-        # Run CUDA backend Python tests, overrides addopts so that we don't run all tests in pytest.ini
+        # Install flash-linear-attention for chunk_gated_delta_rule triton kernel tests
+        pip install "flash-linear-attention==0.4.2"
+
+        # Build executor_runner (needed by CUDA backend e2e tests)
+        cmake --build cmake-out --target executor_runner
+
+        # Run all CUDA backend Python tests (including chunk_gated_delta e2e)
         python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts="
 
   export-model-cuda-artifact:

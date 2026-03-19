@@ -11,7 +11,9 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <sys/mman.h>
 #include <unistd.h>
+#include <cerrno>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -247,7 +249,41 @@ class ET_EXPERIMENTAL MetalBackend final
     ET_LOG(Info, "MetalBackend::init - so_blob_key: %s", so_blob_key.c_str());
 
     const NamedDataMap* named_data_map = context.get_named_data_map();
-    ET_LOG(Info, "MetalBackend::init - Got named data map: %p", named_data_map);
+    ET_CHECK_OR_RETURN_ERROR(
+        named_data_map != nullptr,
+        Internal,
+        "MetalBackend requires a NamedDataMap for weight loading");
+
+    // Prefetch the weights blob — trigger async readahead so pages are
+    // resident by the time update_constants_from_blob memcpy's them.
+    // This overlaps disk I/O with the .so write + dlopen (~200ms).
+    std::string weights_blob_key =
+        method_name.empty() ? "weights_blob" : method_name + "_weights_blob";
+    {
+      auto prefetch_buf = named_data_map->get_data(weights_blob_key.c_str());
+      if (prefetch_buf.ok() && prefetch_buf->data() != nullptr) {
+        // Align address down to page boundary (madvise requires it).
+        uintptr_t addr = reinterpret_cast<uintptr_t>(prefetch_buf->data());
+        size_t page_size = getpagesize();
+        uintptr_t aligned_addr = addr & ~(page_size - 1);
+        size_t aligned_size = prefetch_buf->size() + (addr - aligned_addr);
+        int ret = madvise(
+            reinterpret_cast<void*>(aligned_addr), aligned_size, MADV_WILLNEED);
+        if (ret != 0) {
+          ET_LOG(
+              Info,
+              "MetalBackend::init - madvise(MADV_WILLNEED) failed for %s: %s",
+              weights_blob_key.c_str(),
+              strerror(errno));
+        } else {
+          ET_LOG(
+              Info,
+              "MetalBackend::init - Prefetching %s (%.1f MB)",
+              weights_blob_key.c_str(),
+              prefetch_buf->size() / (1024.0 * 1024.0));
+        }
+      }
+    }
 
     ET_LOG(
         Info,
@@ -344,9 +380,8 @@ class ET_EXPERIMENTAL MetalBackend final
 
     handle->container_handle = container_handle;
 
-    // Look into named data map for constant data
-    std::string weights_blob_key =
-        method_name.empty() ? "weights_blob" : method_name + "_weights_blob";
+    // Look into named data map for constant data (key computed above for
+    // prefetch)
     auto buffer_res = named_data_map->get_data(weights_blob_key.c_str());
     if (buffer_res.ok() && handle->update_constants_from_blob != nullptr) {
       ET_LOG(Info, "Found %s in named data map", weights_blob_key.c_str());

@@ -63,7 +63,7 @@ class ExtraTensorInfo:
     fully_qualified_name: Optional[str] = None
     location: TensorDataLocation = TensorDataLocation.SEGMENT
     device_type: DeviceType = DeviceType.CPU
-    device_index: int = -1
+    device_index: int = 0
 
 
 @dataclass
