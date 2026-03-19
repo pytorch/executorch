@@ -45,11 +45,12 @@ functionally_equivalent_op_targets: Dict[EdgeOpOverload, EdgeOpOverload] = {
 }
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceLogicalNotBooleanWhereWithWherePass(RemoveOrReplacePassInterface):
     """
     A where op with a logical_not and a boolean tensor can be replaced
     by a where op with flipped inputs and the initial boolean tensor.
+    This is an optimization that simplifies the graph.
     """
 
     @property
@@ -88,10 +89,11 @@ class ReplaceLogicalNotBooleanWhereWithWherePass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceSafeSoftmaxWithSoftmax(RemoveOrReplacePassInterface):  # keep
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class ReplaceSafeSoftmaxWithSoftmax(RemoveOrReplacePassInterface):
     """
-    Replace _safe_softmax with _softmax
+    Replace _safe_softmax with _softmax.
+    This is an optimization - both ops are functionally equivalent for inference.
     """
 
     @property
@@ -169,11 +171,11 @@ class ReplacePT2DequantWithCadenceDequantPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceSqueezeAndUnsqueezeWithViewPass(RemoveOrReplacePassInterface):
     """
     When the shape is static, replace squeeze_copy and unsqueeze_copy ops with
-    view_copy op
+    view_copy op. This is an optimization that reduces op variety in the graph.
     """
 
     @property
@@ -206,11 +208,12 @@ class ReplaceSqueezeAndUnsqueezeWithViewPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceFunctionallyEquivalentOpTargets(RemoveOrReplacePassInterface):
     """
     Replace an op with a functionally equivalent op by just switching the op
     target, but without incurring any change to the op args.
+    This is an optimization that normalizes the graph to use canonical op variants.
     """
 
     @property
@@ -275,11 +278,12 @@ class ReplaceSelectWithViewOpPass(RemoveOrReplacePassInterface):
         return False
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceMMWithAddMMPass(RemoveOrReplacePassInterface):
     """
     This pass replaces mm with addmm by introducing a zero bias.
-    mm is not supported, so this is an opt_level=0 pass.
+    This is an optimization - mm has a portable kernel fallback, but addmm
+    may be more efficient on some backends.
     """
 
     @property
@@ -471,11 +475,12 @@ class ReplacePermuteWithTransposePass(RemoveOrReplacePassInterface):
         return False
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceConvolutionOptionalArgsWithConcreteArgsPass(RemoveOrReplacePassInterface):
     """
     Replace optional tensors with concrete tensors. Currently, we
     replace the optional bias tensor with a zero tensor.
+    This is an optimization that simplifies kernel dispatch.
     """
 
     @property
@@ -528,11 +533,12 @@ class ReplaceConvolutionOptionalArgsWithConcreteArgsPass(RemoveOrReplacePassInte
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceRepeatWithCatPass(RemoveOrReplacePassInterface):
     """
     Replace repeat op as successive cat ops along different dimensions.
-    repeat is not supported, so this is an opt_level=0 pass.
+    This is an optimization - repeat has a portable kernel fallback, but
+    cat may be more efficient on some backends.
     """
 
     @property
@@ -1831,11 +1837,12 @@ class ReplaceLinearWithFullyConnectedOpPass(RemoveOrReplacePassInterface):
 register_cadence_pass(CadencePassAttribute(opt_level=0))(ReplaceScalarWithTensorArgPass)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceScalarTensorWithFullPass(RemoveOrReplacePassInterface):
     """
     aten.scalar_tensor can be replaced by aten.full with a shape of [1].
-    scalar_tensor is not supported, so this is an opt_level=0 pass.
+    This is an optimization - scalar_tensor has a portable kernel fallback,
+    but using full may reduce op variety in the graph.
     """
 
     @property
@@ -1860,11 +1867,12 @@ class ReplaceScalarTensorWithFullPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceFullLikeWithFullPass(RemoveOrReplacePassInterface):
     """
     aten.full_like can be replaced by aten.full with the shape of the arg tensor.
-    full_like is not supported, so this is an opt_level=0 pass.
+    This is an optimization - full_like has a portable kernel fallback,
+    but using full may reduce op variety in the graph.
     """
 
     @property
@@ -1888,11 +1896,12 @@ class ReplaceFullLikeWithFullPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceInfArgInFullWithValuePass(RemoveOrReplacePassInterface):
     """
     aten.full allows "-inf" and "inf" as inputs. The profiler cannot
     handle that, so replace them with the maximum value of the type.
+    This is an optimization for tooling compatibility, not runtime correctness.
     """
 
     @property
@@ -2066,7 +2075,7 @@ class ReplaceIm2RowWithViewPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceEmptyTensorsWithFullPass(ExportPass):
     """Replaces nodes that produce empty tensors with full nodes."""
 
@@ -2279,11 +2288,12 @@ class ReplacePowWithMulPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceMatmulWithTransposedMatmulPass(RemoveOrReplacePassInterface):
     """
     For certain backends, we have efficient kernels for transposed matmul. We
     replace AxB with AxB' for such backends.
+    This is a performance optimization.
     """
 
     @property
