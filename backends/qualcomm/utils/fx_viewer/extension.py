@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Dict, Any, Callable, Optional
 import warnings
 
 from .color_rules import ColorRule
+from .models import GraphExtensionNodePayload, GraphExtensionPayload
 
 
 class GraphExtension:
@@ -66,17 +68,17 @@ class GraphExtension:
 
         return result
 
-    def build(self) -> Dict[str, Any]:
+    def build_payload(self) -> GraphExtensionPayload:
         node_colors = {}
         legend = []
 
         if self.color_rule:
             node_colors, legend = self.color_rule.apply(self.nodes_data)
 
-        compiled_nodes = {}
+        compiled_nodes: Dict[str, GraphExtensionNodePayload] = {}
 
         for node_id, data in self.nodes_data.items():
-            compiled = {"info": data}
+            compiled = GraphExtensionNodePayload(info=data)
 
             if self.label_formatter:
                 lines = self._format_lines(
@@ -86,7 +88,7 @@ class GraphExtension:
                     kind="label",
                 )
                 if lines:
-                    compiled["label_append"] = lines
+                    compiled.label_append = lines
 
             if self.tooltip_formatter:
                 lines = self._format_lines(
@@ -96,15 +98,20 @@ class GraphExtension:
                     kind="tooltip",
                 )
                 if lines:
-                    compiled["tooltip"] = lines
+                    compiled.tooltip = lines
 
             if node_id in node_colors:
-                compiled["fill_color"] = node_colors[node_id]
+                compiled.fill_color = node_colors[node_id]
 
             compiled_nodes[node_id] = compiled
 
-        return {
-            "name": self.name,
-            "legend": legend,
-            "nodes": compiled_nodes,
-        }
+        return GraphExtensionPayload(
+            id=self.id,
+            name=self.name,
+            legend=legend,
+            nodes=compiled_nodes,
+        )
+
+    def build(self) -> Dict[str, Any]:
+        """Backward-compatible dict payload export."""
+        return asdict(self.build_payload())

@@ -4,8 +4,20 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+"""Observatory runtime core.
+
+Lifecycle summary:
+1. Runtime capture: `observe -> digest`.
+2. Analysis: per-lens `analyze(records, config)`.
+3. Assembly: merge frontend blocks + graph assets/layers.
+4. Rendering/export: JSON and HTML reports.
+
+The runtime enforces strict typed interfaces from `interfaces.py`.
+"""
+
 from __future__ import annotations
 
+import base64
 import copy
 import json
 import logging
@@ -26,10 +38,11 @@ from .interfaces import (
     Frontend,
     Lens,
     ObservationContext,
+    RecordAnalysis,
     RecordDigest,
     SessionResult,
-    ViewBlock,
     ViewList,
+    validate_view_list,
 )
 
 
@@ -45,6 +58,8 @@ class Observatory:
 
     @classmethod
     def register_lens(cls, lens_cls: Type[Lens]) -> None:
+        """Register lens class and run one-time setup."""
+
         if lens_cls in cls._lens_registry:
             return
         cls._lens_registry.append(lens_cls)
@@ -55,6 +70,8 @@ class Observatory:
 
     @classmethod
     def _ensure_default_lenses(cls) -> None:
+        """Lazy-register built-in lenses for the minimal observatory runtime."""
+
         if cls._lenses_initialized:
             return
 
@@ -68,14 +85,15 @@ class Observatory:
         cls._lenses_initialized = True
 
     @classmethod
-    def _merge_session_data(cls, target: Dict[str, Any], source: Optional[Dict[str, Any]]) -> None:
-        if source:
-            target.update(source)
-
-    @classmethod
     @contextmanager
     def enable_context(cls, config: Optional[Dict[str, Any]] = None) -> ContextManager[None]:
-        """Enable observation context with optional nested overrides."""
+        """Enable observation context with nested config overrides.
+
+        Session hooks run once per outermost context:
+        1. On first enter, auto-collection patches are installed and
+           `on_session_start` hooks are called.
+        2. On last exit, `on_session_end` hooks are called and patches removed.
+        """
 
         cls._ensure_default_lenses()
 
@@ -125,12 +143,16 @@ class Observatory:
 
     @classmethod
     def _get_current_context(cls) -> Optional[ObservationContext]:
+        """Return current observation context or None if disabled."""
+
         if not cls._config_stack:
             return None
         return ObservationContext(config=cls._config_stack[-1])
 
     @classmethod
     def ignore_graphs(cls, names: List[str]) -> None:
+        """Ignore future collect calls with matching names and drop existing records."""
+
         for name in names:
             cls._ignored_graphs.add(name)
             if name in cls._records:
@@ -138,6 +160,13 @@ class Observatory:
 
     @classmethod
     def collect(cls, name: str, artifact: Any) -> None:
+        """Capture one record across all registered lenses.
+
+        Notes:
+        1. No-op when context is disabled.
+        2. Record name is exposed via `context.shared_state['record_name']`.
+        """
+
         if any(ignored in name for ignored in cls._ignored_graphs):
             return
 
@@ -177,6 +206,8 @@ class Observatory:
 
     @classmethod
     def clear(cls) -> None:
+        """Clear records/session state and reset lens runtime state."""
+
         cls._records.clear()
         cls._session_result = SessionResult()
         ETRecordAutoCollector.uninstall()
@@ -189,25 +220,21 @@ class Observatory:
 
     @staticmethod
     def _serialize_view_list(result: Any) -> Optional[Dict[str, Any]]:
+        """Validate and serialize frontend return values."""
+
         if result is None:
             return None
 
-        if isinstance(result, ViewBlock):
-            result = ViewList(blocks=[result])
-
         if not isinstance(result, ViewList):
-            raise TypeError(f"Frontend must return ViewList or ViewBlock, got {type(result)}")
+            raise TypeError(f"Frontend must return ViewList, got {type(result)}")
 
-        blocks = []
-        for block in result.blocks:
-            if not isinstance(block, ViewBlock):
-                raise TypeError(f"ViewList.blocks must contain ViewBlock, got {type(block)}")
-            blocks.append(asdict(block))
-
-        return {"blocks": blocks}
+        validate_view_list(result)
+        return {"blocks": [asdict(block) for block in result.blocks]}
 
     @classmethod
     def _safe_frontend_call(cls, lens_name: str, method: Any, *args: Any, **kwargs: Any) -> Optional[Dict[str, Any]]:
+        """Run frontend method with error isolation and fallback error block."""
+
         try:
             result = method(*args, **kwargs)
             return cls._serialize_view_list(result)
@@ -219,21 +246,25 @@ class Observatory:
                 exc,
                 traceback.format_exc(),
             )
-            error_block = ViewBlock(
-                id="frontend_error",
-                title="Frontend Error",
-                type="html",
-                record={
-                    "content": (
-                        '<div style="color:var(--error-color);padding:1rem;border:1px solid var(--error-color);'
-                        'border-radius:4px;background:var(--error-bg);">'
-                        f"<strong>Error:</strong> {str(exc)}</div>"
-                    )
-                },
-                compare={"mode": "disabled"},
-                order=999,
-            )
-            return {"blocks": [asdict(error_block)]}
+            return {
+                "blocks": [
+                    {
+                        "id": "frontend_error",
+                        "title": "Frontend Error",
+                        "type": "html",
+                        "record": {
+                            "content": (
+                                '<div style="color:var(--error-color);padding:1rem;border:1px solid var(--error-color);'
+                                'border-radius:4px;background:var(--error-bg);">'
+                                f"<strong>Error:</strong> {str(exc)}</div>"
+                            )
+                        },
+                        "compare": {"mode": "disabled"},
+                        "order": 999,
+                        "collapsible": True,
+                    }
+                ]
+            }
 
     @classmethod
     def _generate_report_payload(
@@ -243,6 +274,8 @@ class Observatory:
         config: Dict[str, Any],
         lens_registry: List[Type[Lens]],
     ) -> Dict[str, Any]:
+        """Build full report payload including graph assets/layers and views."""
+
         analysis_results: Dict[str, AnalysisResult] = {
             lens.get_name(): lens.analyze(records, config) for lens in lens_registry
         }
@@ -260,6 +293,13 @@ class Observatory:
                 resources["js"].append(res["js"])
             if res.get("css"):
                 resources["css"].append(res["css"])
+
+        resources["js"] = [
+            base64.b64encode(s.encode("utf-8")).decode("ascii") for s in resources["js"]
+        ]
+        resources["css"] = [
+            base64.b64encode(s.encode("utf-8")).decode("ascii") for s in resources["css"]
+        ]
 
         graph_hub = GraphHub()
         serialized_records = []
@@ -281,36 +321,23 @@ class Observatory:
                     continue
 
                 analysis = analysis_results.get(lens_name, AnalysisResult())
+                record_analysis: RecordAnalysis | None = analysis.per_record_data.get(record.name)
                 analysis_ctx = {
                     "global": analysis.global_data,
-                    "record": analysis.per_record_data.get(record.name),
+                    "record": (record_analysis.data if record_analysis else {}),
                 }
 
-                if isinstance(digest, dict) and digest.get("graph_ref") and isinstance(digest.get("base"), dict):
+                graph_ref = record.name
+                # extract graph data from graph Lense
+                if lens_name == "graph":
+                    assert isinstance(digest, dict) and isinstance(digest.get("base"), dict), "[Observatory] error validating graph lense output."
+                    assert digest["graph_ref"] == graph_ref, "[Observatory] graph ref should be consistant with record name"
                     graph_hub.register_asset(
-                        str(digest["graph_ref"]),
+                        graph_ref,
                         digest["base"],
                         digest.get("meta", {}),
                     )
-
-                graph_ref = record.name
-                if isinstance(digest, dict) and digest.get("graph_ref"):
-                    graph_ref = str(digest["graph_ref"])
-
-                try:
-                    layers = lens.contribute_graph_layers(
-                        digest,
-                        {
-                            "record_name": record.name,
-                            "record_index": i,
-                        },
-                        {
-                            "graph_ref": graph_ref,
-                        },
-                    )
-                    graph_hub.add_layers(graph_ref, lens_name, layers)
-                except Exception as exc:
-                    logging.error("[Observatory] Lens %s graph layer contribution failed: %s", lens_name, exc)
+                graph_hub.add_analysis_layers(graph_ref, lens_name, record_analysis)
 
                 frontend = lens.get_frontend_spec()
                 try:
@@ -361,7 +388,16 @@ class Observatory:
             "resources": resources,
             "records": serialized_records,
             "dashboard": dashboard_views,
-            "analysis_results": {k: asdict(v) for k, v in analysis_results.items()},
+            "analysis_results": {
+                key: {
+                    "global_data": value.global_data,
+                    "per_record_data": {
+                        rec_name: {"data": rec_analysis.data}
+                        for rec_name, rec_analysis in value.per_record_data.items()
+                    },
+                }
+                for key, value in analysis_results.items()
+            },
             "session": {
                 "start_data": session.start_data,
                 "end_data": session.end_data,
@@ -377,6 +413,8 @@ class Observatory:
         title: str = "Observatory Report",
         config: Optional[Dict[str, Any]] = None,
     ) -> None:
+        """Export collected records to HTML report."""
+
         if not cls._records:
             logging.warning("[Observatory] No records collected, skipping HTML export")
             return
@@ -393,7 +431,7 @@ class Observatory:
 
         from .html_template import get_html_template
 
-        json_data = json.dumps(payload, default=str)
+        json_data = json.dumps(payload, default=str).replace("</", "<\\/")
         html_content = get_html_template(title, json_data)
 
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
@@ -404,6 +442,8 @@ class Observatory:
 
     @classmethod
     def export_json(cls, output_path: str) -> None:
+        """Export raw records/session data as JSON."""
+
         if not cls._records:
             logging.warning("[Observatory] No records collected, skipping JSON export")
             return
@@ -426,6 +466,8 @@ class Observatory:
         title: str = "Observatory Report",
         config: Optional[Dict[str, Any]] = None,
     ) -> None:
+        """Generate HTML report from previously exported raw JSON."""
+
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
@@ -444,7 +486,7 @@ class Observatory:
 
         from .html_template import get_html_template
 
-        json_data = json.dumps(payload, default=str)
+        json_data = json.dumps(payload, default=str).replace("</", "<\\/")
         html_content = get_html_template(title, json_data)
 
         os.makedirs(os.path.dirname(html_path) or ".", exist_ok=True)

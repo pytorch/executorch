@@ -14,7 +14,17 @@ from typing import Any, Dict, List, Optional
 
 import torch
 
-from ..interfaces import AnalysisResult, Frontend, Lens, ObservationContext, RecordDigest, ViewBlock, ViewList
+from ..interfaces import (
+    AnalysisResult,
+    Frontend,
+    Lens,
+    ObservationContext,
+    RecordAnalysis,
+    RecordDigest,
+    TableBlock,
+    TableRecordSpec,
+    ViewList,
+)
 
 
 class MetadataLens(Lens):
@@ -67,7 +77,7 @@ class MetadataLens(Lens):
 
     @staticmethod
     def analyze(records: List[RecordDigest], config: Dict[str, Any]) -> AnalysisResult:
-        diffs: Dict[str, Dict[str, int]] = {}
+        per_record: Dict[str, RecordAnalysis] = {}
 
         for i in range(len(records) - 1):
             def _count(rec: RecordDigest) -> int:
@@ -79,20 +89,20 @@ class MetadataLens(Lens):
 
             before = _count(records[i])
             after = _count(records[i + 1])
-            diffs[records[i + 1].name] = {"node_diff": after - before}
+            per_record[records[i + 1].name] = RecordAnalysis(
+                data={"node_diff": after - before}
+            )
 
-        return AnalysisResult(per_record_data=diffs)
+        return AnalysisResult(per_record_data=per_record)
 
     class MetadataFrontend(Frontend):
         def dashboard(self, start, end, analysis, records) -> Optional[ViewList]:
             return ViewList(
                 blocks=[
-                    ViewBlock(
+                    TableBlock(
                         id="metadata_dashboard",
                         title="Session Metadata",
-                        type="table",
-                        record={"data": start or {}},
-                        compare={"mode": "disabled"},
+                        record=TableRecordSpec(data=start or {}),
                         order=0,
                     )
                 ]
@@ -104,14 +114,13 @@ class MetadataLens(Lens):
             node_diff = record_analysis.get("node_diff", 0)
             if node_diff:
                 data["nodes_change"] = f"{node_diff:+d}"
+
             return ViewList(
                 blocks=[
-                    ViewBlock(
+                    TableBlock(
                         id="metadata_record",
                         title="Metadata",
-                        type="table",
-                        record={"data": data},
-                        compare={"mode": "auto"},
+                        record=TableRecordSpec(data=data),
                         order=0,
                     )
                 ]

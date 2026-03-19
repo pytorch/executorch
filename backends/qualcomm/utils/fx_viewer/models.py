@@ -36,6 +36,26 @@ class BaseGraphPayload:
 
 
 @dataclass
+class GraphExtensionNodePayload:
+    """Wire-format extension node schema."""
+
+    info: dict[str, Any] = field(default_factory=dict)
+    tooltip: list[str] = field(default_factory=list)
+    label_append: list[str] = field(default_factory=list)
+    fill_color: str | None = None
+
+
+@dataclass
+class GraphExtensionPayload:
+    """Wire-format extension layer schema."""
+
+    id: str
+    name: str
+    legend: list[dict[str, str]] = field(default_factory=list)
+    nodes: dict[str, GraphExtensionNodePayload] = field(default_factory=dict)
+
+
+@dataclass
 class GraphPayload:
     base: BaseGraphPayload
-    extensions: dict[str, Any]
+    extensions: dict[str, GraphExtensionPayload]

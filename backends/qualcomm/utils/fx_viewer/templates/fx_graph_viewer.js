@@ -905,3 +905,8 @@ class FXGraphCompare {
         this._offs = [];
     }
 }
+
+if (typeof globalThis !== 'undefined') {
+    globalThis.FXGraphViewer = FXGraphViewer;
+    globalThis.FXGraphCompare = FXGraphCompare;
+}

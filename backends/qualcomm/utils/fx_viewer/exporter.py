@@ -15,7 +15,13 @@ from .extension import GraphExtension
 from .grandalf.layouts import SugiyamaLayout
 from .grandalf.routing import route_with_lines
 from .grandalf.utils.nx import convert_nextworkx_graph_to_grandalf
-from .models import BaseGraphPayload, GraphEdge, GraphNode, GraphPayload
+from .models import (
+    BaseGraphPayload,
+    GraphEdge,
+    GraphExtensionPayload,
+    GraphNode,
+    GraphPayload,
+)
 
 
 class FXGraphExporter:
@@ -237,9 +243,9 @@ class FXGraphExporter:
             edges=edges,
         )
 
-    def _build_extensions_payload(self) -> dict[str, Any]:
+    def _build_extensions_payload(self) -> dict[str, GraphExtensionPayload]:
         print("Compiling extension payloads...")
-        return {ext.id: ext.build() for ext in self.extensions}
+        return {ext.id: ext.build_payload() for ext in self.extensions}
 
     def generate_json_payload(self) -> Dict[str, Any]:
         nodes, edges = self._extract_graph()
@@ -273,7 +279,9 @@ class FXGraphExporter:
             path = os.path.join(template_dir, filename)
             with open(path, "r") as f:
                 chunks.append(f"\n// ---- {filename} ----\n")
+                chunks.append(f'console.log("Successfully Loaded {path}")')
                 chunks.append(f.read())
+            
         return "\n".join(chunks)
 
     def export_js(self, container_id: str) -> str:

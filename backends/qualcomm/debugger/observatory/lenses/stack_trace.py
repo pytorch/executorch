@@ -11,7 +11,7 @@ import logging
 import os
 from typing import Any, Dict, List
 
-from ..interfaces import Frontend, Lens, ObservationContext, ViewBlock, ViewList
+from ..interfaces import Frontend, HtmlBlock, HtmlRecordSpec, Lens, ObservationContext, ViewList
 from ..utils import get_git_info, get_repo_root, is_in_repo
 
 
@@ -77,12 +77,10 @@ class StackTraceLens(Lens):
             if not digest:
                 return ViewList(
                     blocks=[
-                        ViewBlock(
+                        HtmlBlock(
                             id="stack_trace_record",
                             title="Stack Trace",
-                            type="html",
-                            record={"content": "<div>No stack trace available</div>"},
-                            compare={"mode": "auto"},
+                            record=HtmlRecordSpec(content="<div>No stack trace available</div>"),
                             order=40,
                         )
                     ]
@@ -115,12 +113,10 @@ class StackTraceLens(Lens):
 
             return ViewList(
                 blocks=[
-                    ViewBlock(
+                    HtmlBlock(
                         id="stack_trace_record",
                         title="Stack Trace",
-                        type="html",
-                        record={"content": "".join(html)},
-                        compare={"mode": "auto"},
+                        record=HtmlRecordSpec(content="".join(html)),
                         order=40,
                     )
                 ]

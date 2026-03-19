@@ -76,13 +76,35 @@
     return table;
   }
 
-  function mountGraphViewer(root, graphRecord, viewerOptions) {
-    if (!window.FXGraphViewer || !graphRecord || !graphRecord.graph_ref) {
-      root.innerHTML = '<div style="color:red">FXGraphViewer unavailable or graph_ref missing.</div>';
+  function resolveViewerCtor() {
+    if (typeof FXGraphViewer !== 'undefined') return FXGraphViewer;
+    if (window && window.FXGraphViewer) return window.FXGraphViewer;
+    return null;
+  }
+
+  function resolveGraphRef(graphRecord, fallbackGraphRef) {
+    if (!graphRecord || typeof graphRecord !== 'object') return fallbackGraphRef || '';
+    return (
+      graphRecord.graph_ref ||
+      graphRecord.graphRef ||
+      graphRecord.record_name ||
+      graphRecord.recordName ||
+      fallbackGraphRef ||
+      ''
+    );
+  }
+
+  function mountGraphViewer(root, graphRecord, viewerOptions, fallbackGraphRef) {
+    const ViewerCtor = resolveViewerCtor();
+    const graphRef = resolveGraphRef(graphRecord, fallbackGraphRef);
+
+    if (!ViewerCtor || !graphRef) {
+      const reason = !ViewerCtor ? 'FXGraphViewer unavailable' : 'graph_ref missing';
+      root.innerHTML = `<div style="color:red">${reason}.</div>`;
       return null;
     }
 
-    const payload = buildViewerPayload(graphRecord.graph_ref);
+    const payload = buildViewerPayload(graphRef);
     const defaultLayers = Array.isArray(graphRecord.default_layers) ? graphRecord.default_layers : [];
     const defaultColorBy = graphRecord.default_color_by || (defaultLayers.length > 0 ? defaultLayers[0] : 'base');
 
@@ -91,7 +113,7 @@
     if (layoutMode === 'compare_compact') preset = 'compact';
     if (layoutMode === 'headless') preset = 'headless';
 
-    const viewer = FXGraphViewer.create({
+    const viewer = ViewerCtor.create({
       payload,
       mount: { root },
       layout: { preset },
@@ -154,7 +176,8 @@
       graphRoot.style.borderRadius = '8px';
       graphRoot.style.overflow = 'hidden';
       content.appendChild(graphRoot);
-      mountGraphViewer(graphRoot, block.record || {}, (block.record && block.record.viewer_options) || {});
+      const fallbackGraphRef = (context && context.record && context.record.name) || '';
+      mountGraphViewer(graphRoot, block.record || {}, (block.record && block.record.viewer_options) || {}, fallbackGraphRef);
     } else {
       content.innerHTML = `<div style="color:red">Unsupported block type: ${escapeHtml(block.type || '')}</div>`;
     }
@@ -276,8 +299,9 @@
     content.appendChild(split);
   }
 
-  function renderCustomCompare(content, entries, compareSpec, lensName, blockId) {
-    const jsFunc = compareSpec.js_func || compareSpec.record_js_func || '';
+  function renderCustomCompare(content, entries, compareSpec, sampleBlock, lensName, blockId) {
+    const recordJsFunc = sampleBlock && sampleBlock.record && sampleBlock.record.js_func;
+    const jsFunc = compareSpec.js_func || recordJsFunc || '';
     const fn = resolveFunction(jsFunc);
     if (!fn) {
       content.innerHTML = `<div style="color:red">Function ${escapeHtml(jsFunc)} not found</div>`;
@@ -342,20 +366,23 @@
       pane.appendChild(root);
 
       const options = Object.assign({}, (entry.block && entry.block.record && entry.block.record.viewer_options) || {}, compareSpec.viewer_options_compare || {});
-      const viewer = mountGraphViewer(root, entry.block.record || {}, options);
+      const fallbackGraphRef = (entry.record && entry.record.name) || '';
+      const viewer = mountGraphViewer(root, entry.block.record || {}, options, fallbackGraphRef);
       if (viewer) viewers.push(viewer);
 
       split.appendChild(pane);
     }
 
-    if (viewers.length > 1 && window.FXGraphCompare && typeof FXGraphCompare.create === 'function') {
+    const hasCompareCtor = typeof FXGraphCompare !== 'undefined' || !!(window && window.FXGraphCompare);
+    if (viewers.length > 1 && hasCompareCtor) {
+      const CompareCtor = typeof FXGraphCompare !== 'undefined' ? FXGraphCompare : window.FXGraphCompare;
       const syncConfig = {
         selection: syncEnabledByDefault,
         camera: false,
         theme: false,
         layers: false,
       };
-      const compare = FXGraphCompare.create({
+      const compare = CompareCtor.create({
         viewers,
         layout: { columns: Math.min(maxParallel, viewers.length), compact: true },
         sync: syncConfig,
@@ -428,7 +455,7 @@
       } else if (sample.type === 'graph' && mode === 'auto') {
         renderGraphCompare(content, entries, compareSpec);
       } else if (mode === 'custom') {
-        renderCustomCompare(content, entries, compareSpec, lensName, sample.id);
+        renderCustomCompare(content, entries, compareSpec, sample, lensName, sample.id);
       } else {
         content.innerHTML = `<p>Compare mode '${escapeHtml(mode)}' for block type '${escapeHtml(sample.type)}' is not supported in minimal runtime.</p>`;
       }

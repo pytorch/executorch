@@ -39,12 +39,16 @@ def get_html_template(title: str, payload_json: str) -> str:
             const res = window.OBSERVATORY_DATA.resources;
             if (res.css && res.css.length > 0) {{
                 const style = document.createElement('style');
-                style.textContent = res.css.join('\n');
+                style.textContent = res.css.map(function(s) {{
+                    try {{ return atob(s); }} catch(_) {{ return s; }}
+                }}).join('\\n');
                 document.head.appendChild(style);
             }}
             if (res.js && res.js.length > 0) {{
                 const script = document.createElement('script');
-                script.textContent = res.js.join(';\n');
+                script.textContent = res.js.map(function(s) {{
+                    try {{ return atob(s); }} catch(_) {{ return s; }}
+                }}).join(';\\n');
                 document.body.appendChild(script);
             }}
         }}

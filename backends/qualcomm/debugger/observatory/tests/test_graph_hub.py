@@ -5,6 +5,11 @@
 # LICENSE file in the root directory of this source tree.
 
 from executorch.backends.qualcomm.debugger.observatory.graph_hub import GraphHub
+from executorch.backends.qualcomm.debugger.observatory.interfaces import RecordAnalysis
+from executorch.backends.qualcomm.utils.fx_viewer import (
+    GraphExtensionNodePayload,
+    GraphExtensionPayload,
+)
 
 
 def test_graph_hub_register_and_layers() -> None:
@@ -14,18 +19,21 @@ def test_graph_hub_register_and_layers() -> None:
         base_payload={"legend": [], "nodes": [{"id": "n0"}], "edges": []},
         meta={"record_name": "r0"},
     )
-    hub.add_layers(
-        "r0",
-        "accuracy",
-        [
-            {
-                "id": "error",
-                "name": "Error",
-                "legend": [{"label": "L", "color": "#000"}],
-                "nodes": {"n0": {"fill_color": "#000"}},
-            }
-        ],
+    analysis = RecordAnalysis()
+    analysis.add_graph_layer(
+        "error",
+        GraphExtensionPayload(
+            id="error",
+            name="Error",
+            legend=[{"label": "L", "color": "#000"}],
+            nodes={
+                "n0": GraphExtensionNodePayload(
+                    fill_color="#000",
+                )
+            },
+        ),
     )
+    hub.add_analysis_layers("r0", "accuracy", analysis)
 
     payload = hub.build_payload()
     assert "r0" in payload["graph_assets"]
