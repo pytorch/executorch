@@ -10,19 +10,26 @@ aten.clamp.default,int8,static int8,"Bounds = (-1, 1) or (0, 1) or (0, 6) or (0,
 aten.clone.default,int8,static int8,
 aten.constant_pad_nd.default,int8,static int8,"H or W padding only"
 aten.convolution.default,int8,static int8,"1D or 2D convolution, constant weights, groups=1 or groups=channels_count (depthwise)"
+aten.dim_order_ops._clone_dim_order.default,,, "See aten.clone.default"
 aten.div.Tensor,int8,static int8,"divisor - static tensor or scalar value, one dimension must satisfy %8 = 0 or scalar division (all dims = 1)"
 aten.hardtanh.default,int8,static int8,"supported ranges: <0,6>, <-1, 1>, <0,1>, <0,inf>"
 aten.leaky_relu.default,int8,static int8,
-aten.max_pool2d.default,int8,static int8,"dilation=1, ceil_mode=False"
-aten.max_pool2d_with_indices.default,int8,static int8,"dilation=1, ceil_mode=False"
+aten.max_pool1d.default,int8,static int8,"dilation=1, ceil_mode=False, channels%8=0, batch_size=1, stride_h=1 or 2"
+aten.max_pool2d.default,int8,static int8,"dilation=1, ceil_mode=False, channels%8=0, batch_size=1, stride_h=1 or 2"
+aten.max_pool2d_with_indices.default,int8,static int8,"dilation=1, ceil_mode=False, channels%8=0, batch_size=1, stride_h=1 or 2"
 aten.mean.dim,int8,static int8,"4D tensor only, dims = [-1,-2] or [-2,-1]"
 aten.mul.Tensor, int8, static int8, "tensor-size % 8 = 0"
 aten.mm.default,int8,static int8,"2D tensor only"
 aten.neg.default,int8,static int8,
+aten.permute_copy.default,int8, static int8, "Only specific transpositions supported, see backends/nxp/backend/ir/converter/node_converters/ops_converters/permute_copy_converter.py"
+aten.prelu.default, int8, static int8, "rank = 4, channels % 8 = 0, flat input size / channels <= 4096"
 aten.relu.default,int8,static int8,
 aten.sigmoid.default,int8,static int8,
 aten.slice_copy.Tensor, int8, static int8
-aten.softmax.default, int8, static int8, "rank > 1, channels % 8 = 0, channels < 2048, flat input size / channels <= 4096, flat input size <= 524288"
+aten._softmax.default, int8, static int8, "rank > 1, channels % 8 = 0, channels < 2048, flat input size / channels <= 4096, flat input size <= 524288"
+aten.split.default,N/A, N/A, "transforming split -> getitem to slice, see aten.slice_copy.Tensor"
+aten.split.Tensor,N/A, N/A, "transforming split -> getitem to slice, see aten.slice_copy.Tensor"
+aten.split_with_sizes.default,N/A, N/A, "transforming split -> getitem to slice, see aten.slice_copy.Tensor"
 aten.squeeze.default,int8,static int8,
 aten.squeeze.dim,int8,static int8,
 aten.squeeze.dims,int8,static int8,
