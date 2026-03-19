@@ -204,9 +204,10 @@ def build_payload() -> dict:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate observatory UI harness HTML")
+    default_output = os.path.join(os.path.dirname(__file__), "observatory_ui_harness.html")
     parser.add_argument(
         "--output",
-        default="backends/qualcomm/debugger/observatory/examples/observatory_ui_harness.html",
+        default=default_output,
     )
     return parser.parse_args()
 

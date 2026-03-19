@@ -34,11 +34,19 @@ import torch
 
 from executorch.backends.qualcomm.debugger.observatory import Observatory
 from executorch.backends.qualcomm.debugger.observatory.interfaces import (
+    AnalysisResult,
     Frontend,
     Lens,
     ObservationContext,
-    ViewBlock,
+    RecordAnalysis,
+    RecordDigest,
+    TableBlock,
+    TableRecordSpec,
     ViewList,
+)
+from executorch.backends.qualcomm.utils.fx_viewer import (
+    GraphExtensionNodePayload,
+    GraphExtensionPayload,
 )
 
 
@@ -68,36 +76,59 @@ class AccuracyLayerLens(Lens):
         return observation
 
     @classmethod
-    def contribute_graph_layers(cls, digest: Any, context: Dict[str, Any], graph_context: Dict[str, Any]):
-        if not digest:
-            return []
-        return [
-            {
-                "id": "accuracy/error",
-                "name": "Accuracy Error",
-                "legend": digest.get("legend", []),
-                "nodes": digest.get("nodes", {}),
+    def analyze(cls, records: list[RecordDigest], config: Dict[str, Any]) -> AnalysisResult:
+        per_record: Dict[str, RecordAnalysis] = {}
+        for record in records:
+            digest = record.data.get(cls.get_name())
+            if not isinstance(digest, dict):
+                continue
+
+            nodes_payload: Dict[str, GraphExtensionNodePayload] = {}
+            for node_id, node_value in (digest.get("nodes") or {}).items():
+                if not isinstance(node_value, dict):
+                    continue
+                nodes_payload[node_id] = GraphExtensionNodePayload(
+                    info=node_value.get("info") or {},
+                    tooltip=node_value.get("tooltip") or [],
+                    label_append=node_value.get("label_append") or [],
+                    fill_color=node_value.get("fill_color"),
+                )
+
+            extension_payload = GraphExtensionPayload(
+                id="error",
+                name="Accuracy Error",
+                legend=digest.get("legend") or [],
+                nodes=nodes_payload,
+            )
+
+            summary = {
+                "nodes_with_metrics": len(nodes_payload),
+                "max_mse": digest.get("max_mse", 0.0),
+                "mean_mse": digest.get("mean_mse", 0.0),
             }
-        ]
+
+            record_analysis = RecordAnalysis(data=summary)
+            record_analysis.add_graph_layer("error", extension_payload)
+            per_record[record.name] = record_analysis
+
+        return AnalysisResult(per_record_data=per_record)
 
     class AccuracyFrontend(Frontend):
         def record(self, digest, analysis, context):
             if not digest:
                 return None
 
-            summary = {
+            summary = (analysis or {}).get("record") or {
                 "nodes_with_metrics": len((digest.get("nodes") or {}).keys()),
                 "max_mse": digest.get("max_mse", 0.0),
                 "mean_mse": digest.get("mean_mse", 0.0),
             }
             return ViewList(
                 blocks=[
-                    ViewBlock(
+                    TableBlock(
                         id="accuracy_summary",
                         title="Accuracy Summary",
-                        type="table",
-                        record={"data": summary},
-                        compare={"mode": "auto"},
+                        record=TableRecordSpec(data=summary),
                         order=20,
                     )
                 ]

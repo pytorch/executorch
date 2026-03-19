@@ -6,7 +6,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List
+from dataclasses import asdict
+from typing import Any, Dict
+
+from .interfaces import RecordAnalysis
 
 
 class GraphHub:
@@ -24,20 +27,35 @@ class GraphHub:
             "meta": meta or {},
         }
 
-    def add_layers(self, graph_ref: str, lens_name: str, layers: Iterable[Dict[str, Any]]) -> None:
-        if not graph_ref:
+    def add_analysis_layers(
+        self,
+        graph_ref: str,
+        lens_name: str,
+        analysis: RecordAnalysis | None,
+    ) -> None:
+        """Merge per-record analysis graph layers into hub storage.
+
+        Layer IDs are namespaced internally as `<lens_name>/<layer_key>`.
+        """
+
+        if not graph_ref or analysis is None:
             return
+
         slot = self._graph_layers.setdefault(graph_ref, {})
-        for layer in layers or []:
-            layer_id = str(layer.get("id") or "").strip()
-            if not layer_id:
+        for layer_key, contribution in analysis.graph_layers.items():
+            if not layer_key.strip():
                 continue
-            if "/" not in layer_id:
-                layer_id = f"{lens_name}/{layer_id}"
-            slot[layer_id] = {
-                "name": layer.get("name", layer_id),
-                "legend": layer.get("legend", []),
-                "nodes": layer.get("nodes", {}),
+
+            payload = contribution.to_payload()
+            namespaced_id = f"{lens_name}/{layer_key}"
+
+            slot[namespaced_id] = {
+                "name": payload.name,
+                "legend": payload.legend,
+                "nodes": {
+                    node_id: asdict(node_payload)
+                    for node_id, node_payload in payload.nodes.items()
+                },
             }
 
     def get_asset(self, graph_ref: str) -> Dict[str, Any]:

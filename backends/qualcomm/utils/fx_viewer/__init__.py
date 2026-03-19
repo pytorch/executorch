@@ -1,7 +1,14 @@
 from .color_rules import ColorRule, CategoricalColorRule, NumericColorRule
 from .exporter import FXGraphExporter
 from .extension import GraphExtension
-from .models import BaseGraphPayload, GraphEdge, GraphNode, GraphPayload
+from .models import (
+    BaseGraphPayload,
+    GraphEdge,
+    GraphExtensionNodePayload,
+    GraphExtensionPayload,
+    GraphNode,
+    GraphPayload,
+)
 
 __all__ = [
     "FXGraphExporter",
@@ -12,5 +19,7 @@ __all__ = [
     "GraphNode",
     "GraphEdge",
     "BaseGraphPayload",
+    "GraphExtensionNodePayload",
+    "GraphExtensionPayload",
     "GraphPayload",
 ]
