@@ -7,6 +7,7 @@ from typing import cast
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm.quantizer.arm_quantizer_utils import PatternCheck
 from executorch.backends.cortex_m.passes.passes_utils import (
     coerce_int_pair,
     is_channel_broadcast,
@@ -18,73 +19,7 @@ from executorch.backends.cortex_m.quantizer.quantization_configs import (
     CortexMQuantizationConfig,
 )
 from torch.fx import Node
-from torchao.quantization.pt2e.quantizer import (
-    QuantizationSpecBase,
-    SharedQuantizationSpec,
-)
-
-
-class PatternCheck:
-    """
-    Base class for pattern checks.
-
-    PatternChecks are used to define which which patterns are supported for quantization.
-    For example, ADD in the Cortex-M backend does not support general broadcasting, so
-    a PatternCheck can be used to filter out such patterns. They also only support per
-    tensor quantization, so the PatternCheck filters out quantization configs that use
-    per channel quantization.
-    """
-
-    @classmethod
-    def is_per_tensor(cls, qspec: QuantizationSpecBase | None) -> bool:
-        """
-        Returns true if the given quantization spec is per-tensor, otherwise false.
-        """
-        if not isinstance(qspec, QuantizationSpecBase):
-            return False
-        return qspec.qscheme in (torch.per_tensor_affine, torch.per_tensor_symmetric)
-
-    @classmethod
-    def is_per_channel(cls, qspec: QuantizationSpecBase | None) -> bool:
-        """
-        Returns true if the given quantization spec is per-channel, otherwise false.
-        """
-        if not isinstance(qspec, QuantizationSpecBase):
-            return False
-        return qspec.qscheme in (torch.per_channel_affine, torch.per_channel_symmetric)
-
-    @classmethod
-    def is_int8_activations(
-        cls, qconfig: CortexMQuantizationConfig, output_node: Node | None = None
-    ) -> bool:
-        """
-        Returns true if the given quantization spec uses int8 quantization, otherwise false.
-
-        Output node is required for determining output quantization spec for some ops, otherwise it can be left as None.
-        """
-        input_qspec = qconfig.get_input_act_qspec()
-        output_qspec = qconfig.get_output_act_qspec(output_node)
-        if not isinstance(input_qspec, QuantizationSpecBase) or not isinstance(
-            output_qspec, QuantizationSpecBase
-        ):
-            return False
-        return input_qspec.dtype == torch.int8 and output_qspec.dtype == torch.int8
-
-    @classmethod
-    def check_pattern(cls, pattern: list[Node]) -> bool:
-        """
-        Returns true if the given pattern is supported, otherwise false.
-        """
-        return True
-
-    @classmethod
-    def check_quantization_config(
-        cls, pattern: list[Node], quantization_config: CortexMQuantizationConfig
-    ) -> bool:
-        """
-        Returns true if the given quantization config is supported for a given node pattern, otherwise false.
-        """
-        return True
+from torchao.quantization.pt2e.quantizer import SharedQuantizationSpec
 
 
 class CortexMAddMulCheck(PatternCheck):
@@ -291,8 +226,7 @@ class CortexMAvgPool2DCheck(PatternCheck):
             return False
         node = pattern[0]
         ceil_mode = cast(bool, node.args[4]) if len(node.args) > 4 else False
-        count_include_pad = cast(bool, node.args[5]) if len(node.args) > 5 else True
-        return not (ceil_mode or count_include_pad)
+        return not ceil_mode
 
     @classmethod
     def check_quantization_config(
@@ -310,6 +244,33 @@ class CortexMAvgPool2DCheck(PatternCheck):
             output_qspec
         )
         return is_int8 and is_per_tensor
+
+
+class CortexMBmmCheck(PatternCheck):
+
+    @classmethod
+    def check_pattern(cls, pattern):
+        for node in pattern:
+            if len(node.all_input_nodes) == 2:
+                t1 = get_first_fake_tensor(node.all_input_nodes[0])
+                t2 = get_first_fake_tensor(node.all_input_nodes[1])
+                if t1.dim() != 3 or t2.dim() != 3:
+                    return False
+                if t1.shape[0] != t2.shape[0]:
+                    return False
+                if t1.shape[2] != t2.shape[1]:
+                    return False
+        return True
+
+    @classmethod
+    def check_quantization_config(
+        cls, pattern: list[Node], quantization_config: CortexMQuantizationConfig
+    ):
+        is_per_tensor = PatternCheck.is_per_tensor(
+            quantization_config.get_input_act_qspec()
+        ) and PatternCheck.is_per_tensor(quantization_config.get_output_act_qspec())
+        is_int8 = cls.is_int8_activations(quantization_config)
+        return is_per_tensor and is_int8
 
 
 class CortexMMaxPool2DCheck(PatternCheck):

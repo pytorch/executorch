@@ -86,13 +86,23 @@ class SharedParamsForType(QuantizationRule):
         first_quantization = shared_tensors[0].quantization
 
         # Check quantization values (scales & zero-points)
-        scales_same = all(
-            first_quantization.scale == t.quantization.scale for t in shared_tensors[1:]
-        )
-        zp_same = all(
-            first_quantization.zero_point == t.quantization.zero_point
-            for t in shared_tensors[1:]
-        )
+        try:
+            scales_same = all(
+                first_quantization.scale == t.quantization.scale
+                for t in shared_tensors[1:]
+            )
+            zp_same = all(
+                first_quantization.zero_point == t.quantization.zero_point
+                for t in shared_tensors[1:]
+            )
+        except AttributeError:
+            # Common error when one of the tensors is not quantized.
+            logger.w(
+                f"NXP backend: The Neutron IR operator {op.builtin_options} is not quantized correctly. "
+                "Please report this."
+            )
+            return False
+
         return scales_same and zp_same
 
     def __str__(self):

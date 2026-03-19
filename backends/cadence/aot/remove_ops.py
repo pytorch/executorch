@@ -14,6 +14,8 @@ import executorch.backends.cadence.aot.ops_registrations  # noqa: F401
 
 import torch
 import torch.fx
+
+from executorch.backends.cadence.aot.fuse_ops import FuseTransposeOrPermuteOpPairsPass
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
     get_arg,
@@ -21,7 +23,6 @@ from executorch.backends.cadence.aot.pass_utils import (
     RemoveOrReplacePassInterface,
     set_arg,
 )
-
 from executorch.backends.cadence.aot.simplify_ops import SimplifySliceOpPass
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
@@ -33,7 +34,7 @@ from executorch.exir.passes import dead_code_elimination_pass
 from torch.fx.node import Node
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveCloneOpsTransformImported(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         finalize_passes: List[PassType] = [
@@ -44,7 +45,7 @@ class RemoveCloneOpsTransformImported(ExportPass):
         return result
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveDetachCopyPass(RemoveOrReplacePassInterface):
     @property
     def targets(self) -> list[EdgeOpOverload]:
@@ -66,7 +67,7 @@ class RemoveRedundantOps:
     ]
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveZeroSizedCatArgsPass(RemoveOrReplacePassInterface):
     @property
     def targets(self) -> list[EdgeOpOverload]:
@@ -120,11 +121,11 @@ class RemoveZeroSizedCatArgsPass(RemoveOrReplacePassInterface):
         return False
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveNopExpandOpPass(RemoveOrReplacePassInterface):
     """
     For an expand op, if the operator shape matches the expand shape, then the
-    expand is a nop.
+    expand is a nop. This is an optimization that removes unnecessary ops.
     """
 
     @property
@@ -143,9 +144,9 @@ class RemoveNopExpandOpPass(RemoveOrReplacePassInterface):
         return False
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveToOpsPass(RemoveOrReplacePassInterface):
-    # aten.to.* as of now are all nops
+    # aten.to.* ops are no-ops in inference - this is an optimization
     @property
     def targets(self) -> list[EdgeOpOverload]:
         return [
@@ -264,11 +265,11 @@ class RemoveContiguousOpPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveAliasCopyOpPass(RemoveOrReplacePassInterface):
     """
-
     alias_copy is a no-op and can be removed.
+    This is an optimization that removes unnecessary ops.
     """
 
     @property
@@ -412,6 +413,9 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         exir_ops.edge.cadence.quantize_per_tensor.default,
         exir_ops.edge.cadence.dequantize_per_tensor.default,
+        exir_ops.edge.cadence.quantized_relu.per_tensor,
+        exir_ops.edge.cadence.requantize.per_tensor,
+        exir_ops.edge.cadence.quantized_add.per_tensor,
         # Ops that require special handling.
         exir_ops.edge.aten.cat.default,
         exir_ops.edge.aten.mean.dim,
@@ -804,6 +808,7 @@ class CommonRemovePasses:
         RemoveToOpsPass,
         RemoveZeroSizedCatArgsPass,
         RemovePermutesAroundElementwiseOps,
+        FuseTransposeOrPermuteOpPairsPass,
         RemoveSqueezeViewBeforeElementwiseOps,
         RemoveCatFromSliceCopyPass,
         RemoveCloneOpsTransformImported,

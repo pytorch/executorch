@@ -371,9 +371,11 @@ def make_quantizer(
     act_symmetric=False,
     is_qat=False,
     submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
+    backend=QnnExecuTorchBackendType.kHtpBackend,
+    soc_model="SM8750",
     eps=None,
 ):
-    quantizer = QnnQuantizer()
+    quantizer = QnnQuantizer(backend=backend, soc_model=getattr(QcomChipset, soc_model))
     quantizer.add_custom_quant_annotations(custom_annotations)
     quantizer.set_default_quant_config(
         quant_dtype,
@@ -530,14 +532,19 @@ def build_executorch_binary(
         captured_model = torch.export.export(model, inputs, strict=False).module()
         if qat_training_data:
             quantizer = custom_quantizer or make_quantizer(
-                quant_dtype=quant_dtype, is_qat=True
+                quant_dtype=quant_dtype,
+                is_qat=True,
+                backend=backend,
+                soc_model=soc_model,
             )
             # qat training
             annotated_model = qat_train(
                 model, captured_model, quantizer, qat_training_data
             )
         else:
-            quantizer = custom_quantizer or make_quantizer(quant_dtype=quant_dtype)
+            quantizer = custom_quantizer or make_quantizer(
+                quant_dtype=quant_dtype, backend=backend, soc_model=soc_model
+            )
             # ptq calibration
             with torch.no_grad():
                 annotated_model = ptq_calibrate(captured_model, quantizer, dataset)
@@ -1067,13 +1074,18 @@ def parse_skip_delegation_node(args):
     return skip_node_id_set, skip_node_op_set
 
 
-def generate_inputs(dest_path: str, file_name: str, inputs=None):
+def generate_inputs(
+    dest_path: str,
+    input_list_filename: str,
+    inputs=None,
+    prefix_input_filename: str = "",
+):
     input_list_file = None
     input_files = []
 
     def prepare_input_file(tensor, fd, index, sub_index):
         # transform torch.Tensor to raw file
-        input_file_name = f"input_{index}_{sub_index}.raw"
+        input_file_name = f"{prefix_input_filename}_input_{index}_{sub_index}.raw"
         input_file_path = f"{dest_path}/{input_file_name}"
         if not isinstance(tensor, torch.Tensor):
             tensor = torch.tensor(tensor)
@@ -1086,7 +1098,7 @@ def generate_inputs(dest_path: str, file_name: str, inputs=None):
 
     # Prepare input data
     if inputs is not None:
-        input_list_file = f"{dest_path}/{file_name}"
+        input_list_file = f"{dest_path}/{input_list_filename}"
 
         with open(input_list_file, "w") as f:
             for idx, data in enumerate(inputs):

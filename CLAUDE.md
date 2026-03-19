@@ -6,6 +6,7 @@
 - `/building` - Build runners or C++ libs
 - `/profile` - Profile execution
 - `/cortex-m` - Build, test, or develop the Cortex-M backend
+- `/binary-size` - Analyze and reduce binary size
 
 Reference docs in `.claude/`: backends, runtime-api, quantization, llm-export, faq, tokenizers
 

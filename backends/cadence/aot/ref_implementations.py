@@ -29,7 +29,6 @@ except (OSError, RuntimeError):
     )
     if custom_libs:
         torch.ops.load_library(str(custom_libs[0]))
-    del Path
 
 # Registry to track all ops with reference implementations
 _REGISTERED_REF_IMPLEMENTATIONS: set[str] = set()
@@ -767,9 +766,9 @@ def quantized_conv_per_tensor(
     input_tensor: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
-    stride: tuple[int, int],
-    padding: tuple[int, int],
-    dilation: tuple[int, int],
+    stride: tuple[int, ...],
+    padding: tuple[int, ...],
+    dilation: tuple[int, ...],
     groups: int,
     in_zero_point: int,
     weight_zero_point: int,
@@ -885,6 +884,194 @@ def quantized_conv2d_nchw_per_tensor(
         output_zero_point,
         out_multiplier,
         out_shift,
+    )
+
+
+@impl_tracked(m, "quantized_conv1d_ncl.per_tensor")
+def quantized_conv1d_ncl_per_tensor(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int],
+    padding: tuple[int],
+    dilation: tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: int,
+    bias_scale: float,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    """
+    Quantized 1D convolution operation in NCL (channels-first) format.
+
+    Args:
+        - input_tensor (Tensor): The activations tensor in [N, C, L] format
+        - weight (Tensor): The weight tensor in [OC, IC/groups, K] format
+        - bias (Tensor): The bias tensor
+        - stride (Tuple[int]): The stride of the convolution
+        - padding (Tuple[int]): The padding of the convolution
+        - dilation (Tuple[int]): The dilation of the convolution
+        - groups (int): The number of groups
+        - in_zero_point (int): The quantized mapping of zero for the input
+        - weight_zero_point (int): The quantized mapping of zero for the weight
+        - bias_scale (float): The quantized bias scale
+        - output_scale (float): The scale of the output
+        - output_zero_point (int): The zero point of the output
+        - out_multiplier (int): Unused
+        - out_shift (int): Unused
+    """
+    if not input_tensor.is_contiguous(memory_format=torch.contiguous_format):
+        raise ValueError("Input tensor must be in NCL format")
+    return quantized_conv_per_tensor(
+        input_tensor,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        weight_zero_point,
+        bias_scale,
+        output_scale,
+        output_zero_point,
+        out_multiplier,
+        out_shift,
+    )
+
+
+@impl_tracked(m, "quantized_conv1d_ncl")
+def quantized_conv1d_ncl(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int],
+    padding: tuple[int],
+    dilation: tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: torch.Tensor,
+    bias_scale: torch.Tensor,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+) -> torch.Tensor:
+    return quantized_conv1d_ncl_per_tensor(
+        input_tensor,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        int(weight_zero_point.item()),
+        float(bias_scale.item()),
+        output_scale,
+        output_zero_point,
+        int(out_multiplier.item()),
+        int(out_shift.item()),
+    )
+
+
+@impl_tracked(m, "quantized_conv1d_nlc.per_tensor")
+def quantized_conv1d_nlc_per_tensor(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int],
+    padding: tuple[int],
+    dilation: tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: int,
+    bias_scale: float,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    """
+    Quantized 1D convolution operation in NLC (channels-last) format.
+
+    Args:
+        - input_tensor (Tensor): The activations tensor in [N, L, C] format
+        - weight (Tensor): The weight tensor in [OC, K, IC/groups] format
+        - bias (Tensor): The bias tensor
+        - stride (Tuple[int]): The stride of the convolution
+        - padding (Tuple[int]): The padding of the convolution
+        - dilation (Tuple[int]): The dilation of the convolution
+        - groups (int): The number of groups
+        - in_zero_point (int): The quantized mapping of zero for the input
+        - weight_zero_point (int): The quantized mapping of zero for the weight
+        - bias_scale (float): The quantized bias scale
+        - output_scale (float): The scale of the output
+        - output_zero_point (int): The zero point of the output
+        - out_multiplier (int): Unused
+        - out_shift (int): Unused
+    """
+    # Convert NLC to NCL for processing
+    input_ncl = input_tensor.permute(0, 2, 1).contiguous()
+    # Convert weight from [OC, K, IC/groups] to [OC, IC/groups, K]
+    weight_ncl = weight.permute(0, 2, 1).contiguous()
+
+    result_ncl = quantized_conv_per_tensor(
+        input_ncl,
+        weight_ncl,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        weight_zero_point,
+        bias_scale,
+        output_scale,
+        output_zero_point,
+        out_multiplier,
+        out_shift,
+    )
+
+    # Convert result back to NLC format
+    return result_ncl.permute(0, 2, 1).contiguous()
+
+
+@impl_tracked(m, "quantized_conv1d_nlc")
+def quantized_conv1d_nlc(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int],
+    padding: tuple[int],
+    dilation: tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: torch.Tensor,
+    bias_scale: torch.Tensor,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+) -> torch.Tensor:
+    return quantized_conv1d_nlc_per_tensor(
+        input_tensor,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        int(weight_zero_point.item()),
+        float(bias_scale.item()),
+        output_scale,
+        output_zero_point,
+        int(out_multiplier.item()),
+        int(out_shift.item()),
     )
 
 
@@ -1344,26 +1531,6 @@ def quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor() -> (
 ): ...
 
 
-@impl_tracked(m, "quantized_conv1d_ncl_asym8sxsym8s_asym8s.per_tensor")
-@quantized_conv_variant("nchw", torch.int8, torch.int8, is_1d=True)
-def quantized_conv1d_ncl_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
-
-
-@impl_tracked(m, "quantized_conv1d_ncl_asym8uxsym8u_asym8u.per_tensor")
-@quantized_conv_variant("nchw", torch.uint8, torch.uint8, is_1d=True)
-def quantized_conv1d_ncl_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
-
-
-@impl_tracked(m, "quantized_conv1d_nlc_asym8sxsym8s_asym8s.per_tensor")
-@quantized_conv_variant("nhwc", torch.int8, torch.int8, is_1d=True)
-def quantized_conv1d_nlc_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
-
-
-@impl_tracked(m, "quantized_conv1d_nlc_asym8uxsym8u_asym8u.per_tensor")
-@quantized_conv_variant("nhwc", torch.uint8, torch.uint8, is_1d=True)
-def quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
-
-
 @impl_tracked(m, "conv1d")
 def conv1d(
     input_tensor: torch.Tensor,
@@ -1699,6 +1866,66 @@ def rms_norm(
     eps: float,
 ) -> torch.Tensor:
     return W * nn.RMSNorm(list(normalized_shape), eps=eps, dtype=X.dtype)(X)
+
+
+@impl_tracked(m, "quantized_max_pool2d_nchw")
+def quantized_max_pool2d_nchw(
+    input: torch.Tensor,
+    kernel_size: list[int],
+    stride: list[int],
+    padding: list[int],
+    dilation: list[int],
+    ceil_mode: bool,
+) -> torch.Tensor:
+    """
+    Quantized max pooling operation.
+
+    Max pooling is order-preserving, so max(a, b) in the quantized domain gives
+    the same result as quantizing max(dequant(a), dequant(b)) when using the same
+    scale/zero_point. This means we can perform max pooling directly on quantized
+    integer values without dequantization/requantization.
+    """
+    # Directly apply max_pool2d on quantized values
+    # Since max is order-preserving, the result is correct without any dequant/requant
+    return F.max_pool2d(
+        input,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        ceil_mode=ceil_mode,
+    )
+
+
+@impl_tracked(m, "quantized_max_pool2d_nhwc")
+def quantized_max_pool2d_nhwc(
+    input: torch.Tensor,
+    kernel_size: list[int],
+    stride: list[int],
+    padding: list[int],
+    dilation: list[int],
+    ceil_mode: bool,
+) -> torch.Tensor:
+    """
+    Quantized max pooling in NHWC layout.
+
+    Converts NHWC→NCHW, performs max pooling, then converts back NCHW→NHWC.
+    """
+    # Convert NHWC [N, H, W, C] to NCHW [N, C, H, W]
+    input_nchw = input.permute(0, 3, 1, 2).contiguous()
+
+    # Call the NCHW version
+    output_nchw = quantized_max_pool2d_nchw(
+        input_nchw,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        ceil_mode=ceil_mode,
+    )
+
+    # Convert NCHW [N, C, H_out, W_out] back to NHWC [N, H_out, W_out, C]
+    return output_nchw.permute(0, 2, 3, 1).contiguous()
 
 
 @impl_tracked(m, "where_Scalar")
