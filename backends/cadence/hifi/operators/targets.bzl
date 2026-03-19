@@ -633,6 +633,16 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "op_quantized_max_pool2d_nhwc",
+        srcs = ["op_quantized_max_pool2d_nhwc.cpp"],
+        exported_headers = ["operators.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS,
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
         name = "op_quantized_relu_asym8s_asym8s_per_tensor_out",
         srcs = ["op_quantized_relu_asym8s_asym8s_per_tensor_out.cpp"],
         exported_headers = ["operators.h"],
