@@ -9,3 +9,12 @@ from executorch.backends.cuda.triton.kernels.sdpa import sdpa
 __all__ = [
     "sdpa",
 ]
+
+try:
+    from executorch.backends.cuda.triton.kernels.chunk_gated_delta_rule import (  # noqa: F401
+        chunk_gated_delta_rule,
+    )
+
+    __all__.append("chunk_gated_delta_rule")
+except ImportError:
+    pass

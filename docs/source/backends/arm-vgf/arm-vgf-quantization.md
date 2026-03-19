@@ -44,7 +44,7 @@ Args:
         targets.
 
 ```python
-def VgfQuantizer.quantize_with_submodules(self, model: 'GraphModule', calibration_samples: 'list[tuple]', is_qat: 'bool' = False):
+def VgfQuantizer.quantize_with_submodules(self, model: 'GraphModule', calibration_samples: 'list[tuple]', is_qat: 'bool' = False, fold_quantize: 'bool' = True):
 ```
 Quantizes a GraphModule in a way such that conditional submodules are
 handled properly.
@@ -60,6 +60,8 @@ Args:
         model with submodules, at least one sample per code path is
         needed.
 - **is_qat (bool)**: Whether to do quantization aware training or not.
+- **fold_quantize (bool)**: Enables or disables constant folding when quantization
+        is completed.
 
 Returns:
 - **GraphModule**: The quantized model.
