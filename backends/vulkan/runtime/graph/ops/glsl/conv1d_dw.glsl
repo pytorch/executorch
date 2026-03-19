@@ -39,6 +39,8 @@ layout(push_constant) uniform restrict Block {
   int stride;
   int padding;
   int dilation;
+  float output_min;
+  float output_max;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -85,6 +87,8 @@ void main() {
   sum += texelFetch(t_bias, ivec3(c4, 0, 0), 0);
 #endif
 #endif
+
+  sum = clamp(sum, VEC4_T(output_min), VEC4_T(output_max));
 
 #ifdef BUFFER
   t_out[(n * L_out + l_out) * C4 + c4] = sum;

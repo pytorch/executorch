@@ -684,39 +684,42 @@ void conv(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       const bool is_depthwise =
           groups_val == weight_sizes.at(0) && weight_sizes.at(1) == 1;
 
+      // Build unified 10-arg vector:
+      //   in, weight, bias, stride, padding, dilation, groups,
+      //   output_min, output_max, out
+      // For non-clamp (args.size() == 10): output_min/max = kDummyValueRef
+      // For clamp (args.size() == 12): output_min/max from args[9]/args[10]
+      ValueRef output_min = kDummyValueRef;
+      ValueRef output_max = kDummyValueRef;
+      ValueRef out;
       if (args.size() == 10) {
-        // Non-clamp path
-        if (is_pointwise) {
-          VK_GET_OP_FN("et_vk.conv1d_pw.default")
-          (graph,
-           {args[0],
-            args[1],
-            args[2],
-            args[3],
-            args[4],
-            args[5],
-            args[8],
-            args[9]});
-        } else if (is_depthwise) {
-          VK_GET_OP_FN("et_vk.conv1d_dw.default")
-          (graph,
-           {args[0],
-            args[1],
-            args[2],
-            args[3],
-            args[4],
-            args[5],
-            args[8],
-            args[9]});
-        } else {
-          VK_THROW(
-              "Height-packed conv1d only supports pointwise (K=1) or "
-              "depthwise (groups=C)");
-        }
+        out = args[9];
       } else {
-        // conv_with_clamp: fall back to channels-packed path for now
-        // (height-packed implementations don't support clamp yet)
-        VK_THROW("Height-packed conv1d does not support conv_with_clamp yet");
+        output_min = args[9];
+        output_max = args[10];
+        out = args[11];
+      }
+
+      std::vector<ValueRef> conv1d_args = {
+          args[0],
+          args[1],
+          args[2],
+          args[3],
+          args[4],
+          args[5],
+          args[8],
+          output_min,
+          output_max,
+          out};
+
+      if (is_pointwise) {
+        VK_GET_OP_FN("et_vk.conv1d_pw.default")(graph, conv1d_args);
+      } else if (is_depthwise) {
+        VK_GET_OP_FN("et_vk.conv1d_dw.default")(graph, conv1d_args);
+      } else {
+        VK_THROW(
+            "Height-packed conv1d only supports pointwise (K=1) or "
+            "depthwise (groups=C)");
       }
       return;
     }
