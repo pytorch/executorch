@@ -98,7 +98,6 @@ class VoxtralRealtimeRunner {
   int64_t conv2_pad_ = 2;
 
   // Raw audio samples per streaming step (sampling_rate / frame_rate = 1280)
-  int64_t sample_rate_ = 16000;
   int64_t step_samples_ = 1280;
 
   // STFT overlap for streaming mel computation (read from model metadata).
@@ -106,9 +105,8 @@ class VoxtralRealtimeRunner {
   int64_t stft_right_lookahead_ = 40;
   int64_t mel_skip_frames_ = 2;
 
-  // Streaming tokenizer metadata (from tekken.json audio section, if present).
-  int64_t transcription_delay_ms_ = 0;
-  int64_t flush_right_pad_steps_ = 0;
+  // Streaming transcription delay in steps (read from model metadata).
+  int64_t delay_tokens_ = 6;
 
   // Tokenizer special tokens
   uint64_t bos_id_ = 1;

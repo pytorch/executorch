@@ -8,11 +8,8 @@
 
 #include "voxtral_realtime_runner.h"
 
-#include <cmath>
 #include <cstring>
 #include <ctime>
-#include <fstream>
-#include <optional>
 #include <vector>
 
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
@@ -20,72 +17,14 @@
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/log.h>
-#include <nlohmann/json.hpp>
 
 using ::executorch::extension::from_blob;
 using ::executorch::extension::Module;
 using ::executorch::extension::TensorPtr;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
-using json = nlohmann::json;
 
 namespace voxtral_realtime {
-
-namespace {
-
-struct TokenizerAudioMetadata {
-  int64_t transcription_delay_ms = 0;
-};
-
-std::optional<TokenizerAudioMetadata> load_tokenizer_audio_metadata(
-    const std::string& tokenizer_path) {
-  std::ifstream file(tokenizer_path);
-  if (!file.good()) {
-    ET_LOG(
-        Info,
-        "Tokenizer audio metadata unavailable: failed to open %s",
-        tokenizer_path.c_str());
-    return std::nullopt;
-  }
-
-  try {
-    json parsed = json::parse(file);
-    if (!parsed.contains("audio") || !parsed["audio"].is_object()) {
-      return std::nullopt;
-    }
-
-    const auto& audio = parsed["audio"];
-    TokenizerAudioMetadata metadata;
-    if (audio.contains("transcription_delay_ms") &&
-        audio["transcription_delay_ms"].is_number()) {
-      metadata.transcription_delay_ms =
-          audio["transcription_delay_ms"].get<int64_t>();
-    }
-    return metadata;
-  } catch (const std::exception& error) {
-    ET_LOG(
-        Error,
-        "Failed to parse tokenizer audio metadata from %s: %s",
-        tokenizer_path.c_str(),
-        error.what());
-    return std::nullopt;
-  }
-}
-
-int64_t compute_delay_steps(
-    int64_t transcription_delay_ms,
-    int64_t sample_rate,
-    int64_t step_samples) {
-  if (transcription_delay_ms <= 0 || sample_rate <= 0 || step_samples <= 0) {
-    return 0;
-  }
-  const double step_ms = 1000.0 * static_cast<double>(step_samples) /
-      static_cast<double>(sample_rate);
-  return static_cast<int64_t>(
-      std::ceil(static_cast<double>(transcription_delay_ms) / step_ms));
-}
-
-} // namespace
 
 VoxtralRealtimeRunner::VoxtralRealtimeRunner(
     const std::string& model_path,
@@ -152,9 +91,6 @@ VoxtralRealtimeRunner::VoxtralRealtimeRunner(
   if (streaming_val.ok() && streaming_val.get()[0].toInt() == 1) {
     is_streaming_ = true;
 
-    auto sr = model_->execute("sample_rate", empty);
-    if (sr.ok())
-      sample_rate_ = sr.get()[0].toInt();
     auto nmb = model_->execute("num_mel_bins", empty);
     if (nmb.ok())
       num_mel_bins_ = nmb.get()[0].toInt();
@@ -188,6 +124,10 @@ VoxtralRealtimeRunner::VoxtralRealtimeRunner(
     if (msf.ok())
       mel_skip_frames_ = msf.get()[0].toInt();
 
+    auto dt = model_->execute("delay_tokens", empty);
+    if (dt.ok())
+      delay_tokens_ = dt.get()[0].toInt();
+
     ET_LOG(
         Info,
         "Streaming: chunk_mel=%ld, max_enc=%ld, enc_dim=%ld",
@@ -202,24 +142,6 @@ VoxtralRealtimeRunner::VoxtralRealtimeRunner(
   ET_CHECK_MSG(tokenizer_ != nullptr, "Failed to load tokenizer.");
   bos_id_ = tokenizer_->bos_tok();
   eos_id_ = tokenizer_->eos_tok();
-
-  auto tokenizer_audio = load_tokenizer_audio_metadata(tokenizer_path);
-  if (is_streaming_) {
-    ET_CHECK_MSG(
-        tokenizer_audio.has_value(),
-        "Streaming mode requires tokenizer audio metadata in %s.",
-        tokenizer_path.c_str());
-
-    transcription_delay_ms_ = tokenizer_audio->transcription_delay_ms;
-    flush_right_pad_steps_ = compute_delay_steps(
-        transcription_delay_ms_, sample_rate_, step_samples_);
-
-    ET_LOG(
-        Info,
-        "Tokenizer audio: delay_ms=%ld, flush_right_pad_steps=%ld",
-        static_cast<long>(transcription_delay_ms_),
-        static_cast<long>(flush_right_pad_steps_));
-  }
 
   // Separate .pte that converts raw 16kHz audio waveform to mel spectrogram
   // (1, 128, T_mel). Exported from extension/audio/mel_spectrogram.py.
@@ -746,7 +668,7 @@ int StreamingSession::flush() {
   if (remaining > 0 && !eos_reached_) {
     const int64_t step = runner_.step_samples_;
     const int64_t right_lookahead = runner_.stft_right_lookahead_;
-    const int64_t right_pad_audio_steps = runner_.flush_right_pad_steps_;
+    const int64_t right_pad_audio_steps = runner_.delay_tokens_;
 
     // Stay on the normal audio-conditioned path through the final partial
     // step, the preprocessor look-ahead, and the model's transcription delay.
