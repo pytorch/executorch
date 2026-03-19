@@ -16,13 +16,12 @@ VmaAllocationCreateFlags test_host_cached_available(
   VkPhysicalDeviceMemoryProperties mem_props;
   vkGetPhysicalDeviceMemoryProperties(physical_device, &mem_props);
 
-  VkMemoryPropertyFlags const flags = mem_props.memoryTypes->propertyFlags;
-
-  bool const host_visible = flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-  bool const host_cached = flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
-
-  if (host_visible && host_cached) {
-    return VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+  for (uint32_t i = 0; i < mem_props.memoryTypeCount; i++) {
+    VkMemoryPropertyFlags flags = mem_props.memoryTypes[i].propertyFlags;
+    if ((flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
+        (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)) {
+      return VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+    }
   }
 
   return VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
