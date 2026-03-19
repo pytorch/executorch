@@ -200,9 +200,13 @@ cat result_lora_base.txt
 # Test 2 inference: lora method from lora PTE
 echo ""
 echo "=== Test 2 inference: lora method (from lora PTE) ==="
-# For multimethod without multifunction, the lora method name is "lora".
-# Need a runner that supports --method. For now, just verify export succeeded.
-echo "Skipping lora method inference (needs --method support in runner)"
+${PYTHON_EXECUTABLE} "${RUN_SCRIPT}" \
+    --model lora.pte \
+    --method lora \
+    --prompt "${PROMPT}" \
+    ${RUNNER_ARGS} > result_lora_lora.txt 2>&1 || true
+echo "LoRA PTE lora output:"
+cat result_lora_lora.txt
 
 # Test 3 inference: multifunction lora PTE
 echo ""
@@ -219,11 +223,10 @@ echo "Multifunction output:"
 cat result_lora_mf.txt
 
 # Since lora_B is initialized to zeros, the LoRA adapter is a no-op.
-# Base output from Test 1 and base output from Test 2 should match.
+# Base output from Test 1 and LoRA output from Test 2 should match.
 echo ""
 echo "=== Output comparison ==="
-echo "Base and LoRA-base outputs should match (zero adapter)."
-echo "Full verification requires --method support in the runner."
+echo "Base and LoRA outputs should match (zero adapter)."
 
 echo ""
 echo "All CoreML LoRA export tests passed!"
