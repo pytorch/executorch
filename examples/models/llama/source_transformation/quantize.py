@@ -146,6 +146,9 @@ def quantize(  # noqa C901
         def filter_fn(m, fqn):
             if not isinstance(m, nn.Linear):
                 return False
+            parts = fqn.split(".")
+            if "lora_a" in parts or "lora_b" in parts:
+                return False
             if group_size == 0:
                 return True
             return m.weight.shape[1] % group_size == 0
