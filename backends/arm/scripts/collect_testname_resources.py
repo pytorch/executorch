@@ -61,6 +61,7 @@ _CUSTOM_EDGE_OPS = [
     "upsample_nearest2d.vec",
     "index_put.default",
     "conv_transpose2d.default",
+    "index_copy.default",
 ]
 _ALL_EDGE_OPS = _SAMPLE_INPUT.keys() | _CUSTOM_EDGE_OPS
 
@@ -138,9 +139,16 @@ def _collect_arm_models(models_md: pathlib.Path) -> set[str]:
 def _normalize_op_name(edge_name: str) -> str:
     op, overload = edge_name.split(".")
 
+    # There are ops where we want to keep "copy" in the name
+    # Add them in this list as we encounter them
+    ignore_copy_list = {"index_copy"}
+
     op = op.lower()
     op = op.removeprefix("_")
-    op = op.removesuffix("_copy")
+
+    if op not in ignore_copy_list:
+        op = op.removesuffix("_copy")
+
     op = op.removesuffix("_with_indices")
 
     overload = overload.lower()

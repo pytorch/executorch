@@ -73,7 +73,6 @@ def annotate_custom(gm: torch.fx.GraphModule) -> None:
     from executorch.backends.qualcomm.quantizer.qconfig import (
         get_ptq_per_channel_quant_config,
     )
-    from executorch.backends.qualcomm.quantizer.rules import _is_annotated
     from torch.fx import Node
     from torchao.quantization.pt2e.quantizer import QuantizationAnnotation
     from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
@@ -84,7 +83,7 @@ def annotate_custom(gm: torch.fx.GraphModule) -> None:
             continue
 
         # skip annotation if it is already annotated
-        if _is_annotated([node]):
+        if Q_ANNOTATION_KEY in node.meta and node.meta[Q_ANNOTATION_KEY]._annotated:
             continue
 
         input_qspec_map = {}

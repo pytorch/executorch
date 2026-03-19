@@ -101,11 +101,13 @@ def test_debug_log_level(caplog):
         add_node,
         {add_node.args[0]: INT8_WEIGHT_PER_TENSOR_QSPEC, add_node.args[1]: None},
         None,
+        is_quantized=True,
     )
     mark_node_as_annotated(
         relu_node,
         {},
         INT8_ACTIVATION_PER_CHANNEL_QSPEC,
+        is_quantized=True,
     )
     quantizer1.report_accept([add_node, relu_node])
     quantizer2.report_reject(
@@ -128,8 +130,8 @@ Supported operators and patterns defined by dummy.support
 
        NODE NAME    INPUT QSPEC MAP                  OUTPUT QSPEC MAP
    --  -----------  -------------------------------  ---------------------------------
-   ╒   add          x: INT8_WEIGHT_PER_TENSOR_QSPEC  None
-   |                y: None
+   ╒   add          x: INT8_WEIGHT_PER_TENSOR_QSPEC  NO_QSPEC
+   |                y: NO_QSPEC
    ╘   relu                                          INT8_ACTIVATION_PER_CHANNEL_QSPEC
 ----------------------------------------------------------------------------------------------------
 DummyQuantizer using dummy nodes
