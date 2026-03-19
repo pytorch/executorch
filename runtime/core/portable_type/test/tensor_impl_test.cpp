@@ -505,8 +505,8 @@ TEST_F(TensorImplTest, TestDefaultDeviceIsCPU) {
   TensorImpl t(ScalarType::Float, 2, sizes, data);
 
   EXPECT_EQ(t.device_type(), DeviceType::CPU);
-  EXPECT_EQ(t.device_index(), -1);
-  EXPECT_EQ(t.device(), Device(DeviceType::CPU, -1));
+  EXPECT_EQ(t.device_index(), 0);
+  EXPECT_EQ(t.device(), Device(DeviceType::CPU, 0));
 }
 
 TEST_F(TensorImplTest, TestExplicitCPUDevice) {

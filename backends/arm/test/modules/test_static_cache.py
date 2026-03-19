@@ -147,7 +147,15 @@ def test_static_cache_u55_INT(test_data):
 
 
 @common.XfailIfNoCorstone320
-@common.parametrize("test_data", test_configs)
+@common.parametrize(
+    "test_data",
+    test_configs,
+    xfails={
+        "multihead_attention": "Incorrect numerical behavior: MLBEDSW-11589",
+        "grouped_query_attention": "Incorrect numerical behavior: MLBEDSW-11589",
+        "multi_query_attention": "Incorrect numerical behavior: MLBEDSW-11589",
+    },
+)
 def test_static_cache_u85_INT(test_data):
     module = StaticCacheModule(test_data).eval()
     pipeline = EthosU85PipelineINT[input_t](

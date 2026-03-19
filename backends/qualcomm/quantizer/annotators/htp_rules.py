@@ -1289,7 +1289,6 @@ class RmsNorm(GeneralOpDef):
             return
 
         act_node = node.args[0]
-        weight_node = node.args[2]
 
         # TODO current only support 16a16w
         annotate_input_qspec_map(
@@ -1298,11 +1297,13 @@ class RmsNorm(GeneralOpDef):
             quantization_config.input_activation,
         )
 
-        annotate_input_qspec_map(
-            node,
-            weight_node,
-            quantization_config.input_activation,
-        )
+        if len(node.args) > 2 and node.args[2] is not None:
+            weight_node = node.args[2]
+            annotate_input_qspec_map(
+                node,
+                weight_node,
+                quantization_config.input_activation,
+            )
         nodes_to_mark_annotated = [node]
         annotate_output_qspec(node, quantization_config.output_activation)
         _mark_nodes_as_annotated(nodes_to_mark_annotated)
