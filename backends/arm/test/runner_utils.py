@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import subprocess  # nosec B404 - invoked only for trusted toolchain binaries
+import sys
 import tempfile
 from pathlib import Path
 
@@ -364,7 +365,7 @@ def run_vkml_emulation_layer(
         cmd_line += input_string
     cmd_line = cmd_line.split()
 
-    result = _run_cmd(cmd_line)
+    result = _run_cmd(cmd_line, env=_get_vkml_runtime_env())
 
     # TODO: Add regex to check for error or fault messages in stdout from Emulation Layer
     result_stdout = result.stdout.decode()  # noqa: F841
@@ -590,7 +591,80 @@ def save_bytes(
     return file_path
 
 
-def _run_cmd(cmd: List[str], check=True) -> subprocess.CompletedProcess[bytes]:
+def _prepend_env_path(existing: str | None, value: str) -> str:
+    if not existing:
+        return value
+
+    parts = [part for part in existing.split(os.path.pathsep) if part]
+    if value in parts:
+        return existing
+    return os.path.pathsep.join([value, *parts])
+
+
+def _find_local_vulkan_sdk_root() -> Path | None:
+    repo_root = Path(__file__).resolve().parents[3]
+    sdk_base_dir = repo_root / "examples/arm/arm-scratch/vulkan_sdk"
+    if not sdk_base_dir.is_dir():
+        return None
+
+    if sys.platform == "darwin":
+        candidates = sorted(
+            path for path in sdk_base_dir.glob("*/macOS") if path.is_dir()
+        )
+    else:
+        arch = os.uname().machine
+        arch_aliases = [arch]
+        if arch == "arm64":
+            arch_aliases.append("aarch64")
+        candidates = sorted(
+            path
+            for alias in arch_aliases
+            for path in sdk_base_dir.glob(f"*/{alias}")
+            if path.is_dir()
+        )
+
+    if not candidates:
+        return None
+    return candidates[-1]
+
+
+def _get_vkml_runtime_env() -> dict[str, str]:
+    """Return an environment with the Vulkan runtime variables needed for
+    VKML.
+    """
+    env = os.environ.copy()
+    sdk_root = _find_local_vulkan_sdk_root()
+    if sdk_root is None:
+        return env
+
+    env["VULKAN_SDK"] = str(sdk_root)
+    env["PATH"] = _prepend_env_path(env.get("PATH"), str(sdk_root / "bin"))
+
+    if sys.platform == "darwin":
+        env["DYLD_LIBRARY_PATH"] = _prepend_env_path(
+            env.get("DYLD_LIBRARY_PATH"), str(sdk_root / "lib")
+        )
+        moltenvk_icd = sdk_root / "share/vulkan/icd.d/MoltenVK_icd.json"
+        if moltenvk_icd.is_file():
+            env["VK_DRIVER_FILES"] = _prepend_env_path(
+                env.get("VK_DRIVER_FILES"), str(moltenvk_icd)
+            )
+        else:
+            logger.debug(
+                "MoltenVK ICD file not found at %s; leaving VK_DRIVER_FILES unset.",
+                moltenvk_icd,
+            )
+    else:
+        env["LD_LIBRARY_PATH"] = _prepend_env_path(
+            env.get("LD_LIBRARY_PATH"), str(sdk_root / "lib")
+        )
+
+    return env
+
+
+def _run_cmd(
+    cmd: List[str], check=True, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[bytes]:
     """Run a command and check for errors.
 
     Args:
@@ -599,7 +673,7 @@ def _run_cmd(cmd: List[str], check=True) -> subprocess.CompletedProcess[bytes]:
     """
     try:
         result = subprocess.run(  # nosec B603 - cmd constructed from trusted inputs
-            cmd, check=check, capture_output=True
+            cmd, check=check, capture_output=True, env=env
         )
         return result
     except subprocess.CalledProcessError as e:

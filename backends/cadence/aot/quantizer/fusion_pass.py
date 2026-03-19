@@ -6,10 +6,12 @@
 
 # pyre-strict
 
-from typing import Any, cast, Dict, List, Tuple
+import operator as op_module
+from typing import Any, cast, Dict, List, Optional, Tuple
 
 import torch
 from executorch.backends.cadence.aot.compiler_utils import get_shape
+from executorch.backends.cadence.aot.pass_utils import get_arg
 from executorch.backends.cadence.aot.quantizer.patterns import (
     AddmmPattern,
     AddPattern,
@@ -24,6 +26,8 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     LayerNormPattern,
     LinearPattern,
     MatmulPattern,
+    MaxPool2dPattern,
+    MaxPool2dWithoutIndicesPattern,
     MixedW8A32ConvPattern,
     MixedW8A32GruPattern,
     MixedW8A32LinearPattern,
@@ -457,6 +461,34 @@ def get_args_and_kwargs_mixed_w8a32_conv(
     return args, kwargs
 
 
+def get_args_and_kwargs_max_pool2d(
+    inputs_inputs: List[fx.Node],
+    op_node: fx.Node,
+) -> Tuple[Tuple[ArgsType, ...], Dict[str, ArgsType]]:
+    """
+    Returns the args and kwargs for the max_pool2d replacement op.
+
+    Max pooling is order-preserving, so we can perform the max operation
+    directly on quantized values without any requantization.
+    """
+    # Get the pooling parameters from the original op node using get_arg
+    kernel_size = get_arg(op_node, "kernel_size", Optional[list[int]]) or [1, 1]
+    stride = get_arg(op_node, "stride", Optional[list[int]]) or kernel_size
+    padding = get_arg(op_node, "padding", Optional[list[int]]) or [0, 0]
+    dilation = get_arg(op_node, "dilation", Optional[list[int]]) or [1, 1]
+    ceil_mode = get_arg(op_node, "ceil_mode", Optional[bool]) or False
+
+    args = (inputs_inputs[0],)
+    kwargs = {
+        "kernel_size": kernel_size,
+        "stride": stride,
+        "padding": padding,
+        "dilation": dilation,
+        "ceil_mode": ceil_mode,
+    }
+    return args, kwargs
+
+
 def get_args_and_kwargs_mixed_w8a32_gru(
     graph_module: GraphModule,
     other_inputs: List[fx.Node],
@@ -549,6 +581,16 @@ class QuantFusion(ExportPass):
 
                 assert op_node is not None, "op_node is None"
                 quant_node = list(op_node.users.keys())[0]
+                # For ops that return tuples (e.g., max_pool2d_with_indices),
+                # traverse through the getitem to find the actual quant node
+                if quant_node.target is op_module.getitem:
+                    assert (
+                        len(quant_node.args) >= 2 and quant_node.args[1] == 0
+                    ), f"Expected getitem[0] for the values output, but got getitem[{quant_node.args[1] if len(quant_node.args) >= 2 else '?'}]"
+                    assert (
+                        len(list(quant_node.users.keys())) > 0
+                    ), "getitem node has no users"
+                    quant_node = list(quant_node.users.keys())[0]
 
                 with graph_module.graph.inserting_after(op_node):
                     args = tuple(
@@ -695,6 +737,13 @@ class QuantFusion(ExportPass):
                             dequants_weights,
                             bias_inputs,
                             dequants_biases,
+                            op_node,
+                        )
+                    elif isinstance(
+                        pattern, (MaxPool2dPattern, MaxPool2dWithoutIndicesPattern)
+                    ):
+                        args, kwargs = get_args_and_kwargs_max_pool2d(
+                            inputs_inputs,
                             op_node,
                         )
 

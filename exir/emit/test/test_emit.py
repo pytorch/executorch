@@ -2597,11 +2597,11 @@ class TestEmit(unittest.TestCase):
             if t.extra_tensor_info is not None
             and t.extra_tensor_info.device_type == schema.DeviceType.CUDA
         ]
-        # add(a, b) produces 1 delegate output tensor that should be CUDA
+        # add(a, b) has 2 delegate inputs + 1 delegate output = 3 CUDA tensors
         self.assertEqual(
             len(cuda_tensors),
-            1,
-            f"Expected exactly 1 CUDA tensor for delegated add, got {len(cuda_tensors)}",
+            3,
+            f"Expected exactly 3 CUDA tensors (2 inputs + 1 output for delegated add), got {len(cuda_tensors)}",
         )
 
     def test_emit_cpu_tensors_no_extra_device_info(self) -> None:
