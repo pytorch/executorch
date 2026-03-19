@@ -22,6 +22,10 @@ microphone input).
 
 https://github.com/user-attachments/assets/44717dc5-777f-4710-ad55-5ec4fa04b9c4
 
+Also, try a sample [standalone macOS app](https://github.com/meta-pytorch/executorch-examples/tree/main/voxtral_realtime/macos) to do real time transcription.
+
+https://github.com/user-attachments/assets/a89677ef-8309-426e-a2f4-6d1ea8494b99
+
 ## Prerequisites
 
 - ExecuTorch installed from source (see [building from source](../../../docs/source/using-executorch-building-from-source.md))
@@ -57,6 +61,10 @@ python -m executorch.extension.audio.mel_spectrogram \
 
 Export produces a single `.pte` containing the audio encoder, text decoder,
 and token embedding.
+
+> [!TIP]
+> Mistral has already published pre-exported `.pte` files for select backends, including macOS Metal, on their [HuggingFace Hub](https://huggingface.co/mistral-labs/Voxtral-Mini-4B-Realtime-2602-Executorch).
+
 
 ```bash
 python export_voxtral_rt.py \
