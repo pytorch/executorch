@@ -367,52 +367,6 @@ class TestCudaExport(unittest.TestCase):
             "Expected at least one delegate in the execution plan",
         )
 
-        # Find all serialized tensors with CUDA device type
-        cuda_tensors = []
-        for value in plan.values:
-            if isinstance(value.val, schema.Tensor):
-                tensor = value.val
-                if (
-                    tensor.extra_tensor_info is not None
-                    and tensor.extra_tensor_info.device_type == schema.DeviceType.CUDA
-                ):
-                    cuda_tensors.append(tensor)
-
-        # The add operation produces 1 output tensor that should be tagged as CUDA
-        # because it's a delegate output from the CUDA backend
-        self.assertGreater(
-            len(cuda_tensors),
-            0,
-            "Expected at least 1 tensor with CUDA device type for delegate output. "
-            "Device info should be propagated from CudaPartitioner through "
-            "PropagateDevicePass to the serialized tensor.",
-        )
-
-    def test_input_tensors_remain_cpu_device(self):
-        """
-        Test that input tensors (not delegate outputs) remain on CPU device.
-
-        Input tensors are provided by the user and are not produced by delegates,
-        so they should not be tagged with CUDA device info. Only delegate outputs
-        should have device info propagated.
-        """
-        from executorch.exir import schema
-
-        class AddModule(torch.nn.Module):
-            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-                return x + y
-
-        module = AddModule()
-        module.eval()
-        inputs = (torch.randn(2, 3), torch.randn(2, 3))
-
-        # Export to CUDA
-        edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
-        et_prog = edge_program_manager.to_executorch()
-        program = et_prog._emitter_output.program
-
-        plan = program.execution_plan[0]
-
         # Count tensors by device type
         cpu_tensors = []
         cuda_tensors = []
@@ -429,17 +383,14 @@ class TestCudaExport(unittest.TestCase):
                     # Either no extra_tensor_info or device_type is CPU (default)
                     cpu_tensors.append(tensor)
 
-        # We should have both CPU tensors (inputs) and CUDA tensors (delegate outputs)
-        # The exact count depends on the model structure, but:
-        # - Inputs should be CPU (2 input tensors)
-        # - Delegate outputs should be CUDA (1 output tensor)
-        self.assertGreater(
+        # Both input and output tensors should be on CUDA device for now.
+        self.assertEqual(
             len(cpu_tensors),
             0,
-            "Expected CPU tensors for model inputs",
+            "All tensors are on CUDA device..",
         )
         self.assertGreater(
             len(cuda_tensors),
-            0,
+            3,
             "Expected CUDA tensors for delegate outputs",
         )
