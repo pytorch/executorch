@@ -56,10 +56,14 @@ $if HAS_BIAS:
     int weight_B;
     float alpha;
     float beta;
+    float output_min;
+    float output_max;
   };
 $else:
   layout(push_constant) uniform restrict Block {
     int weight_B;
+    float output_min;
+    float output_max;
   };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -189,6 +193,14 @@ void main() {
     }
   }
 #endif
+
+  // Apply activation clamp
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      out_tile.data[m][n4] =
+          clamp(out_tile.data[m][n4], VEC4_T(output_min), VEC4_T(output_max));
+    }
+  }
 
   store_output_tile_with_checks(out_tile, n4_start, m_start, b, N4, M);
 }

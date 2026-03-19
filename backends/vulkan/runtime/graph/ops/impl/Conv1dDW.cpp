@@ -16,6 +16,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
+#include <limits>
+
 namespace vkcompute {
 
 void resize_conv1d_dw_node(
@@ -48,6 +50,11 @@ struct Conv1dDWParams final {
   int32_t dilation;
 };
 
+struct Conv1dDWClampParams final {
+  float output_min;
+  float output_max;
+};
+
 utils::uvec3 pick_conv1d_dw_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -74,7 +81,9 @@ void add_conv1d_dw_node(
     const ValueRef stride_ref,
     const ValueRef padding_ref,
     const ValueRef dilation_ref,
-    const ValueRef out) {
+    const ValueRef out,
+    const float output_min = std::numeric_limits<float>::lowest(),
+    const float output_max = std::numeric_limits<float>::max()) {
   VK_CHECK_COND(graph.packed_dim_of(in) == WHCN::kHeightDim);
   VK_CHECK_COND(graph.packed_dim_of(out) == WHCN::kHeightDim);
 
@@ -103,6 +112,11 @@ void add_conv1d_dw_node(
       utils::safe_downcast<int32_t>(dilation_val),
   };
 
+  Conv1dDWClampParams clamp_params{
+      output_min,
+      output_max,
+  };
+
   std::string kernel_name = has_bias ? "conv1d_dw_bias" : "conv1d_dw";
   kernel_name.reserve(kShaderNameReserve);
   add_storage_type_suffix(kernel_name, storage_type);
@@ -123,7 +137,8 @@ void add_conv1d_dw_node(
       // Shader params buffers
       {graph.sizes_ubo(in), graph.sizes_ubo(out)},
       // Push Constants
-      {PushConstantDataInfo(&params, sizeof(Conv1dDWParams))},
+      {PushConstantDataInfo(&params, sizeof(Conv1dDWParams)),
+       PushConstantDataInfo(&clamp_params, sizeof(Conv1dDWClampParams))},
       // Specialization Constants
       {},
       // Resize Args
@@ -132,17 +147,38 @@ void add_conv1d_dw_node(
       resize_conv1d_dw_node));
 }
 
+// Args: in, weight, bias, stride, padding, dilation, groups,
+//       output_min, output_max, out
+// output_min and output_max may be kDummyValueRef (no clamp).
 void conv1d_dw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  // args: in, weight, bias, stride, padding, dilation, groups, out
   ValueRef in = args[0];
   ValueRef weight = args[1];
   ValueRef bias = args[2];
   ValueRef stride = args[3];
   ValueRef padding = args[4];
   ValueRef dilation = args[5];
-  ValueRef out = args[7];
+  ValueRef out = args[9];
 
-  add_conv1d_dw_node(graph, in, weight, bias, stride, padding, dilation, out);
+  float output_min = std::numeric_limits<float>::lowest();
+  float output_max = std::numeric_limits<float>::max();
+  if (is_valid(args[7])) {
+    output_min = graph.extract_scalar<float>(args[7]);
+  }
+  if (is_valid(args[8])) {
+    output_max = graph.extract_scalar<float>(args[8]);
+  }
+
+  add_conv1d_dw_node(
+      graph,
+      in,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      out,
+      output_min,
+      output_max);
 }
 
 REGISTER_OPERATORS {
