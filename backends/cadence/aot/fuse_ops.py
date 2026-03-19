@@ -1170,7 +1170,10 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
             return False
 
         # checking that permut2(permut1(identity)) == identity, modulo unitary dimensions
-        input_shape = cast(torch.fx.Node, producer.args[0]).meta["val"].shape
+        producer_input = cast(torch.fx.Node, producer.args[0])
+        if "val" not in producer_input.meta:
+            return False
+        input_shape = producer_input.meta["val"].shape
         ident_dims = list(range(len(input_shape)))
         # this mapping helps to handle both transpose and permutations
         f: dict[Any, Callable] = {
