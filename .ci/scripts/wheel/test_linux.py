@@ -24,6 +24,11 @@ if __name__ == "__main__":
         ), f"QnnBackend not found in registered backends: {registered}"
         print("✓ QnnBackend is registered")
 
+        assert (
+            "OpenvinoBackend" in registered
+        ), f"OpenvinoBackend not found in registered backends: {registered}"
+        print("OpenvinoBackend is registered")
+
     test_base.run_tests(
         model_tests=[
             test_base.ModelTest(

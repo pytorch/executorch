@@ -62,3 +62,11 @@ if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
   echo "QNN_SDK_ROOT=${QNN_SDK_ROOT}" >> "${GITHUB_ENV}"
   echo "QNN SDK downloaded to ${QNN_SDK_ROOT}"
 fi
+
+# Install OpenVINO on Linux x86_64 and source its setupvars.sh so the wheel
+# build can include the OpenVINO backend.
+if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+  source "${GITHUB_WORKSPACE}/${REPOSITORY}/backends/openvino/scripts/install_openvino.sh"
+  install_openvino
+  echo "OpenVINO_DIR=${OpenVINO_DIR}" >> "${GITHUB_ENV}"
+fi

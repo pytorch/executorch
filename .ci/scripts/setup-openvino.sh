@@ -10,16 +10,9 @@ set -ex
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-# Download and install OpenVINO from release packages
-OPENVINO_VERSION="2025.3"
-OPENVINO_BUILD="2025.3.0.19807.44526285f24"
-OPENVINO_URL="https://storage.openvinotoolkit.org/repositories/openvino/packages/${OPENVINO_VERSION}/linux/openvino_toolkit_ubuntu22_${OPENVINO_BUILD}_x86_64.tgz"
+source "$(dirname "${BASH_SOURCE[0]}")/../../backends/openvino/scripts/install_openvino.sh"
+install_openvino
 
-curl -Lo /tmp/openvino_toolkit.tgz --retry 3 --fail ${OPENVINO_URL}
-tar -xzf /tmp/openvino_toolkit.tgz
-mv openvino_toolkit_ubuntu22_${OPENVINO_BUILD}_x86_64 openvino
-
-source openvino/setupvars.sh
 cd backends/openvino
 pip install -r requirements.txt
 cd scripts

@@ -717,6 +717,15 @@ class CustomBuild(build):
                 f"-DQNN_SDK_ROOT={qnn_sdk_root}",
             ]
 
+        # Check if OpenVINO is available (via OpenVINO_DIR env var set by
+        # setupvars.sh), and if so, enable building the OpenVINO backend by
+        # default.
+        openvino_dir = os.environ.get("OpenVINO_DIR", "").strip()
+        if openvino_dir and install_utils.is_cmake_option_on(
+            cmake_configuration_args, "EXECUTORCH_BUILD_OPENVINO", default=True
+        ):
+            cmake_configuration_args += ["-DEXECUTORCH_BUILD_OPENVINO=ON"]
+
         with Buck2EnvironmentFixer():
             # Generate the cmake cache from scratch to ensure that the cache state
             # is predictable.
@@ -789,6 +798,9 @@ class CustomBuild(build):
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
             cmake_build_args += ["--target", "custom_ops_aot_lib"]
             cmake_build_args += ["--target", "quantized_ops_aot_lib"]
+
+        if cmake_cache.is_enabled("EXECUTORCH_BUILD_OPENVINO"):
+            cmake_build_args += ["--target", "openvino_backend"]
 
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_QNN"):
             cmake_build_args += ["--target", "qnn_executorch_backend"]
