@@ -24,6 +24,7 @@ from .decompose_glu import DecomposeGlu
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
 from .decompose_maxpool3d import DecomposeMaxPool3d
 from .decompose_minmaxdim import DecomposeMinMaxDim
+from .decompose_reciprocal import DecomposeReciprocal
 from .decompose_roll import DecomposeRoll
 from .decompose_silu import DecomposeSilu
 from .decompose_threshold import DecomposeThreshold
@@ -48,6 +49,7 @@ from .remove_0d_tensor import Remove0DTensor
 from .remove_redundancy import RemoveRedundancy
 from .replace_arange_args import ReplaceArangeArgs
 from .replace_inf_values import ReplaceInfValues
+from .resolve_debug_handle import ResolveDebugHandle
 from .seq_mse import SeqMSE
 from .tag_quant_io import TagQuantIO
 
@@ -72,6 +74,7 @@ __all__ = [
     DecomposeLinalgVectorNorm,
     DecomposeMaxPool3d,
     DecomposeMinMaxDim,
+    DecomposeReciprocal,
     DecomposeRoll,
     DecomposeSilu,
     DecomposeThreshold,
@@ -96,6 +99,7 @@ __all__ = [
     RemoveRedundancy,
     ReplaceArangeArgs,
     ReplaceInfValues,
+    ResolveDebugHandle,
     SeqMSE,
     TagQuantIO,
 ]

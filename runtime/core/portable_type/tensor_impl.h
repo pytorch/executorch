@@ -112,7 +112,7 @@ class TensorImpl {
       StridesType* strides = nullptr,
       TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC,
       DeviceType device_type = DeviceType::CPU,
-      DeviceIndex device_index = -1);
+      DeviceIndex device_index = 0);
 
   /**
    * Returns the size of the tensor in bytes.

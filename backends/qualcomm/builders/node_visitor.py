@@ -59,6 +59,7 @@ QNN_QUANT_TYPE_MAP = {
 }
 QNN_TENSOR_TYPE_MAP = {
     torch.bool: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
+    torch.float16: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_FLOAT_16,
     torch.float32: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
     # Note that there is no float64 tensor data type in Qnn.
     torch.float64: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
