@@ -16,6 +16,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
+#include <limits>
+
 namespace vkcompute {
 
 // Minimum number of thread groups to target for good GPU occupancy.
@@ -117,11 +119,15 @@ void resize_conv1d_pw_node(
 
 struct Conv1dPWIntParams final {
   int32_t weight_B;
+  float output_min;
+  float output_max;
 };
 
 struct Conv1dPWBiasParams final {
   float alpha;
   float beta;
+  float output_min;
+  float output_max;
 };
 
 vkapi::ShaderInfo pick_conv1d_pw_shader(
@@ -181,7 +187,9 @@ void add_conv1d_pw_node(
     const ValueRef in,
     const ValueRef weight_data,
     const ValueRef bias,
-    const ValueRef out) {
+    const ValueRef out,
+    const float output_min = std::numeric_limits<float>::lowest(),
+    const float output_max = std::numeric_limits<float>::max()) {
   VK_CHECK_COND(graph.packed_dim_of(in) == WHCN::kHeightDim);
   VK_CHECK_COND(graph.packed_dim_of(out) == WHCN::kHeightDim);
 
@@ -199,20 +207,21 @@ void add_conv1d_pw_node(
   ValueRef C_out_ref = graph.add_scalar(C_out);
   ValueRef has_bias_ref = graph.add_scalar(has_bias);
 
-  Conv1dPWIntParams int_params{1};
-  Conv1dPWBiasParams bias_params{1.0f, 1.0f};
+  Conv1dPWIntParams int_params{1, output_min, output_max};
+  Conv1dPWBiasParams bias_params{1.0f, 1.0f, output_min, output_max};
 
   std::vector<ValueRef> read_inputs = {in, packed_weight};
   if (has_bias) {
     read_inputs.push_back(packed_bias);
   }
 
-  std::vector<PushConstantDataInfo> push_constants = {
-      PushConstantDataInfo(&int_params, sizeof(Conv1dPWIntParams)),
-  };
+  std::vector<PushConstantDataInfo> push_constants;
   if (has_bias) {
     push_constants.push_back(
         PushConstantDataInfo(&bias_params, sizeof(Conv1dPWBiasParams)));
+  } else {
+    push_constants.push_back(
+        PushConstantDataInfo(&int_params, sizeof(Conv1dPWIntParams)));
   }
 
   vkapi::ParamsBindList shader_params = {
@@ -240,12 +249,14 @@ void add_conv1d_pw_node(
       resize_conv1d_pw_node));
 }
 
+// Args: in, weight, bias, stride, padding, dilation, groups,
+//       output_min, output_max, out
+// output_min and output_max may be kDummyValueRef (no clamp).
 void conv1d_pw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  // args: in, weight, bias, stride, padding, dilation, groups, out
   ValueRef in = args[0];
   ValueRef weight = args[1];
   ValueRef bias = args[2];
-  ValueRef out = args[7];
+  ValueRef out = args[9];
 
   const std::vector<int64_t> weight_sizes = graph.sizes_of(weight);
   VK_CHECK_COND(
@@ -253,7 +264,16 @@ void conv1d_pw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   VK_CHECK_COND(
       graph.get_int(args[6]) == 1, "conv1d_pw only supports groups=1");
 
-  add_conv1d_pw_node(graph, in, weight, bias, out);
+  float output_min = std::numeric_limits<float>::lowest();
+  float output_max = std::numeric_limits<float>::max();
+  if (is_valid(args[7])) {
+    output_min = graph.extract_scalar<float>(args[7]);
+  }
+  if (is_valid(args[8])) {
+    output_max = graph.extract_scalar<float>(args[8]);
+  }
+
+  add_conv1d_pw_node(graph, in, weight, bias, out, output_min, output_max);
 }
 
 REGISTER_OPERATORS {

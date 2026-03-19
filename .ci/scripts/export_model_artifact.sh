@@ -221,8 +221,8 @@ case "$QUANT_NAME" in
     EXTRA_ARGS="--qlinear fpa4w --qlinear_encoder fpa4w"
     ;;
   quantized-8da4w)
-    if [ "$DEVICE" != "xnnpack" ]; then
-      echo "Error: quantized-8da4w is only supported with xnnpack device"
+    if [ "$DEVICE" != "xnnpack" ] && [ "$DEVICE" != "vulkan" ]; then
+      echo "Error: quantized-8da4w is only supported with xnnpack or vulkan device"
       exit 1
     fi
     EXTRA_ARGS="--qlinear 8da4w --qlinear_group_size 32 --qlinear_encoder 8da4w --qlinear_encoder_group_size 32"

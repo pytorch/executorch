@@ -1340,10 +1340,10 @@ jobs:
         .ci/scripts/setup-linux.sh --build-tool "cmake"
 
         # Export parakeet with Vulkan backend
-        source .ci/scripts/export_model_artifact.sh vulkan "nvidia/parakeet-tdt" "non-quantized" "${RUNNER_ARTIFACT_DIR}"
+        bash .ci/scripts/export_model_artifact.sh vulkan "nvidia/parakeet-tdt" "quantized-8da4w" "${RUNNER_ARTIFACT_DIR}"
 
         # Build runner and test e2e
-        source .ci/scripts/test_model_e2e.sh vulkan "nvidia/parakeet-tdt" "non-quantized" "${RUNNER_ARTIFACT_DIR}"
+        bash .ci/scripts/test_model_e2e.sh vulkan "nvidia/parakeet-tdt" "quantized-8da4w" "${RUNNER_ARTIFACT_DIR}"
 
   test-coreml-bc-macos:
     name: test-coreml-bc-macos (${{ matrix.runner }})
