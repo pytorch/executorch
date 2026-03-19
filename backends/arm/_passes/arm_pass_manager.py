@@ -111,6 +111,7 @@ from executorch.backends.arm._passes import (
     InsertTableOpsPass,
     MatchArgDtypePass,
     MatchArgRanksPass,
+    NormalizeIndexPutBoolIndexTensorPass,
     NormalizeIndexPutNoneIndicesPass,
     NormalizeWhileInitialArgsPass,
     PromoteBoolOperandsPass,
@@ -447,6 +448,7 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 NormalizeIndexPutNoneIndicesPass(),
+                NormalizeIndexPutBoolIndexTensorPass(),
                 RewriteIndexPutPass(),
                 RewriteBoolBitwiseToLogicalPass(),
                 DecomposeRemainderPass(),

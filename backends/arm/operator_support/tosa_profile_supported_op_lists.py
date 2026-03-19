@@ -123,7 +123,6 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.bitwise_not.default,
     exir_ops.edge.aten.copy.default,
     exir_ops.edge.aten.tan.default,
-    exir_ops.edge.aten.index_put.default,
     exir_ops.edge.aten.silu.default,
     exir_ops.edge.aten.detach_copy.default,
 }
@@ -248,7 +247,6 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.copy.default,
     exir_ops.edge.aten.floor_divide.default,
     exir_ops.edge.aten.tan.default,
-    exir_ops.edge.aten.index_put.default,
     exir_ops.edge.aten.detach_copy.default,
 }
 
