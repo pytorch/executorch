@@ -25,8 +25,12 @@ namespace voxtral_realtime {
 // audio and text embeddings at each position (element-wise add), while
 // MultimodalRunner concatenates modality segments sequentially.
 
-struct TranscribeConfig {
+struct OfflineTranscribeConfig {
   int max_new_tokens = 500;
+  float temperature = 0.0f; // 0 = greedy
+};
+
+struct StreamingTranscribeConfig {
   float temperature = 0.0f; // 0 = greedy
 };
 
@@ -47,14 +51,14 @@ class VoxtralRealtimeRunner {
   int transcribe(
       const float* audio_data,
       int64_t num_samples,
-      const TranscribeConfig& config,
+      const OfflineTranscribeConfig& config,
       TokenCallback token_cb);
 
   // Streaming transcription: processes raw audio incrementally via
   // StreamingSession. Requires a model exported with --streaming and
   // a streaming preprocessor .pte.
   std::unique_ptr<StreamingSession> create_streaming_session(
-      const TranscribeConfig& config,
+      const StreamingTranscribeConfig& config,
       TokenCallback token_cb);
 
   int64_t max_seq_len() const {
@@ -94,12 +98,17 @@ class VoxtralRealtimeRunner {
   int64_t conv2_pad_ = 2;
 
   // Raw audio samples per streaming step (sampling_rate / frame_rate = 1280)
+  int64_t sample_rate_ = 16000;
   int64_t step_samples_ = 1280;
 
   // STFT overlap for streaming mel computation (read from model metadata).
   int64_t stft_left_overlap_ = 320;
   int64_t stft_right_lookahead_ = 40;
   int64_t mel_skip_frames_ = 2;
+
+  // Streaming tokenizer metadata (from tekken.json audio section, if present).
+  int64_t transcription_delay_ms_ = 0;
+  int64_t flush_right_pad_steps_ = 0;
 
   // Tokenizer special tokens
   uint64_t bos_id_ = 1;
@@ -121,16 +130,16 @@ class StreamingSession {
  public:
   StreamingSession(
       VoxtralRealtimeRunner& runner,
-      TranscribeConfig config,
+      StreamingTranscribeConfig config,
       TokenCallback token_cb);
 
   // Feed raw audio (16kHz float32). Processes as many complete 80ms steps
   // as possible. Returns number of new tokens generated.
   int feed_audio(const float* data, int64_t num_samples);
 
-  // Signal end of audio. Pads last partial step, then generates remaining
-  // text-only tokens until EOS or max_new_tokens. Returns total tokens
-  // generated across the entire session.
+  // Signal end of audio. Pads the unfinished tail with silence so the final
+  // partial step and model delay drain through the normal audio-conditioned
+  // streaming path, then returns the total tokens generated for the session.
   int flush();
 
   int total_tokens() const {
@@ -139,7 +148,6 @@ class StreamingSession {
 
  private:
   VoxtralRealtimeRunner& runner_;
-  TranscribeConfig config_;
   TokenCallback token_cb_;
 
   // Raw audio accumulation buffer
@@ -163,11 +171,8 @@ class StreamingSession {
   // Process one 80ms step from the audio buffer.
   bool try_process_step();
 
-  // Run one decoder step (token_embed + optional audio_embed -> logits).
-  // audio_embeds_tensor is the output from encode_audio_chunk, or nullptr
-  // for text-only decoding after audio ends.
-  bool decode_step(
-      const ::executorch::extension::TensorPtr* audio_embeds_tensor);
+  // Run one audio-conditioned decoder step (token_embed + audio_embed -> logits).
+  bool decode_step(const ::executorch::extension::TensorPtr& audio_embeds_tensor);
 };
 
 } // namespace voxtral_realtime

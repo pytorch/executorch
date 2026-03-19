@@ -8,8 +8,11 @@
 
 #include "voxtral_realtime_runner.h"
 
+#include <cmath>
 #include <cstring>
 #include <ctime>
+#include <fstream>
+#include <optional>
 #include <vector>
 
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
@@ -17,14 +20,73 @@
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/log.h>
+#include <nlohmann/json.hpp>
 
 using ::executorch::extension::from_blob;
 using ::executorch::extension::Module;
 using ::executorch::extension::TensorPtr;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
+using json = nlohmann::json;
 
 namespace voxtral_realtime {
+
+namespace {
+
+struct TokenizerAudioMetadata {
+  int64_t transcription_delay_ms = 0;
+};
+
+std::optional<TokenizerAudioMetadata> load_tokenizer_audio_metadata(
+    const std::string& tokenizer_path) {
+  std::ifstream file(tokenizer_path);
+  if (!file.good()) {
+    ET_LOG(
+        Info,
+        "Tokenizer audio metadata unavailable: failed to open %s",
+        tokenizer_path.c_str());
+    return std::nullopt;
+  }
+
+  try {
+    json parsed = json::parse(file);
+    if (!parsed.contains("audio") || !parsed["audio"].is_object()) {
+      return std::nullopt;
+    }
+
+    const auto& audio = parsed["audio"];
+    TokenizerAudioMetadata metadata;
+    if (audio.contains("transcription_delay_ms") &&
+        audio["transcription_delay_ms"].is_number()) {
+      metadata.transcription_delay_ms =
+          audio["transcription_delay_ms"].get<int64_t>();
+    }
+    return metadata;
+  } catch (const std::exception& error) {
+    ET_LOG(
+        Error,
+        "Failed to parse tokenizer audio metadata from %s: %s",
+        tokenizer_path.c_str(),
+        error.what());
+    return std::nullopt;
+  }
+}
+
+int64_t compute_delay_steps(
+    int64_t transcription_delay_ms,
+    int64_t sample_rate,
+    int64_t step_samples) {
+  if (transcription_delay_ms <= 0 || sample_rate <= 0 || step_samples <= 0) {
+    return 0;
+  }
+  const double step_ms =
+      1000.0 * static_cast<double>(step_samples) /
+      static_cast<double>(sample_rate);
+  return static_cast<int64_t>(
+      std::ceil(static_cast<double>(transcription_delay_ms) / step_ms));
+}
+
+} // namespace
 
 VoxtralRealtimeRunner::VoxtralRealtimeRunner(
     const std::string& model_path,
@@ -91,6 +153,9 @@ VoxtralRealtimeRunner::VoxtralRealtimeRunner(
   if (streaming_val.ok() && streaming_val.get()[0].toInt() == 1) {
     is_streaming_ = true;
 
+    auto sr = model_->execute("sample_rate", empty);
+    if (sr.ok())
+      sample_rate_ = sr.get()[0].toInt();
     auto nmb = model_->execute("num_mel_bins", empty);
     if (nmb.ok())
       num_mel_bins_ = nmb.get()[0].toInt();
@@ -139,6 +204,24 @@ VoxtralRealtimeRunner::VoxtralRealtimeRunner(
   bos_id_ = tokenizer_->bos_tok();
   eos_id_ = tokenizer_->eos_tok();
 
+  auto tokenizer_audio = load_tokenizer_audio_metadata(tokenizer_path);
+  if (is_streaming_) {
+    ET_CHECK_MSG(
+        tokenizer_audio.has_value(),
+        "Streaming mode requires tokenizer audio metadata in %s.",
+        tokenizer_path.c_str());
+
+    transcription_delay_ms_ = tokenizer_audio->transcription_delay_ms;
+    flush_right_pad_steps_ = compute_delay_steps(
+        transcription_delay_ms_, sample_rate_, step_samples_);
+
+    ET_LOG(
+        Info,
+        "Tokenizer audio: delay_ms=%ld, flush_right_pad_steps=%ld",
+        static_cast<long>(transcription_delay_ms_),
+        static_cast<long>(flush_right_pad_steps_));
+  }
+
   // Separate .pte that converts raw 16kHz audio waveform to mel spectrogram
   // (1, 128, T_mel). Exported from extension/audio/mel_spectrogram.py.
   if (!preprocessor_path.empty()) {
@@ -158,8 +241,7 @@ VoxtralRealtimeRunner::VoxtralRealtimeRunner(
     std::vector<float> dummy_audio(static_cast<size_t>(step_samples_), 0.0f);
 
     if (is_streaming_) {
-      TranscribeConfig warmup_config;
-      warmup_config.max_new_tokens = 1;
+      StreamingTranscribeConfig warmup_config;
       auto session =
           create_streaming_session(warmup_config, [](const std::string&) {});
       session->feed_audio(dummy_audio.data(), step_samples_);
@@ -291,7 +373,7 @@ TensorPtr VoxtralRealtimeRunner::convert_to_model_dtype(TensorPtr tensor) {
 int VoxtralRealtimeRunner::transcribe(
     const float* audio_data,
     int64_t num_samples,
-    const TranscribeConfig& config,
+    const OfflineTranscribeConfig& config,
     TokenCallback token_cb) {
   // --- Step 1: Preprocess raw audio to mel spectrogram ---
   ET_CHECK_MSG(preprocessor_ != nullptr, "No preprocessor provided.");
@@ -423,7 +505,7 @@ int VoxtralRealtimeRunner::transcribe(
 
 std::unique_ptr<StreamingSession>
 VoxtralRealtimeRunner::create_streaming_session(
-    const TranscribeConfig& config,
+    const StreamingTranscribeConfig& config,
     TokenCallback token_cb) {
   ET_CHECK_MSG(is_streaming_, "Model was not exported with --streaming.");
   ET_CHECK_MSG(
@@ -434,10 +516,9 @@ VoxtralRealtimeRunner::create_streaming_session(
 
 StreamingSession::StreamingSession(
     VoxtralRealtimeRunner& runner,
-    TranscribeConfig config,
+    StreamingTranscribeConfig config,
     TokenCallback token_cb)
     : runner_(runner),
-      config_(config),
       token_cb_(std::move(token_cb)),
       prev_token_(runner.bos_id_),
       sampler_(
@@ -452,9 +533,9 @@ StreamingSession::StreamingSession(
 int StreamingSession::feed_audio(const float* data, int64_t num_samples) {
   audio_buf_.insert(audio_buf_.end(), data, data + num_samples);
 
-  int new_tokens = 0;
+  const int generated_before = num_generated_;
   while (!eos_reached_ && try_process_step()) {
-    new_tokens++;
+    // num_generated_ is updated inside try_process_step()
   }
 
   // Trim consumed audio to bound memory growth. Keep stft_left_overlap_
@@ -467,7 +548,7 @@ int StreamingSession::feed_audio(const float* data, int64_t num_samples) {
     samples_consumed_ -= keep_from;
   }
 
-  return new_tokens;
+  return num_generated_ - generated_before;
 }
 
 bool StreamingSession::try_process_step() {
@@ -586,10 +667,10 @@ bool StreamingSession::try_process_step() {
   samples_consumed_ += step;
 
   // --- Decode one step ---
-  return decode_step(&audio_embeds_ptr);
+  return decode_step(audio_embeds_ptr);
 }
 
-bool StreamingSession::decode_step(const TensorPtr* audio_embeds_tensor) {
+bool StreamingSession::decode_step(const TensorPtr& audio_embeds_tensor) {
   const int64_t dim = runner_.dim_;
   const auto model_dtype = runner_.model_dtype_;
 
@@ -603,33 +684,24 @@ bool StreamingSession::decode_step(const TensorPtr* audio_embeds_tensor) {
   ET_CHECK_MSG(tok_result.ok(), "token_embedding failed.");
   auto tok_embed = tok_result.get()[0].toTensor();
 
-  // Sum audio + token embeddings (or token-only if no audio).
+  // Sum audio + token embeddings.
   // Reuses pre-allocated input_embeds_ buffer (no per-token allocation).
-  if (audio_embeds_tensor != nullptr) {
-    auto& audio_embeds = **audio_embeds_tensor;
-    if (model_dtype == ::executorch::aten::ScalarType::BFloat16) {
-      auto* out =
-          input_embeds_->mutable_data_ptr<::executorch::aten::BFloat16>();
-      const auto* af =
-          audio_embeds.const_data_ptr<::executorch::aten::BFloat16>();
-      const auto* tf = tok_embed.const_data_ptr<::executorch::aten::BFloat16>();
-      for (int64_t i = 0; i < dim; i++) {
-        out[i] = ::executorch::aten::BFloat16(
-            static_cast<float>(af[i]) + static_cast<float>(tf[i]));
-      }
-    } else {
-      auto* out = input_embeds_->mutable_data_ptr<float>();
-      const auto* af = audio_embeds.const_data_ptr<float>();
-      const auto* tf = tok_embed.const_data_ptr<float>();
-      for (int64_t i = 0; i < dim; i++) {
-        out[i] = af[i] + tf[i];
-      }
+  auto& audio_embeds = *audio_embeds_tensor;
+  if (model_dtype == ::executorch::aten::ScalarType::BFloat16) {
+    auto* out = input_embeds_->mutable_data_ptr<::executorch::aten::BFloat16>();
+    const auto* af = audio_embeds.const_data_ptr<::executorch::aten::BFloat16>();
+    const auto* tf = tok_embed.const_data_ptr<::executorch::aten::BFloat16>();
+    for (int64_t i = 0; i < dim; i++) {
+      out[i] = ::executorch::aten::BFloat16(
+          static_cast<float>(af[i]) + static_cast<float>(tf[i]));
     }
   } else {
-    std::memcpy(
-        input_embeds_->mutable_data_ptr(),
-        tok_embed.const_data_ptr(),
-        static_cast<size_t>(dim) * input_embeds_->element_size());
+    auto* out = input_embeds_->mutable_data_ptr<float>();
+    const auto* af = audio_embeds.const_data_ptr<float>();
+    const auto* tf = tok_embed.const_data_ptr<float>();
+    for (int64_t i = 0; i < dim; i++) {
+      out[i] = af[i] + tf[i];
+    }
   }
 
   auto cache_pos =
@@ -669,29 +741,28 @@ int StreamingSession::flush() {
   }
   flushed_ = true;
 
-  // Pad with silence so any remaining audio (including partial steps and
-  // the right look-ahead for the last complete step) can be processed.
   const int64_t remaining =
       static_cast<int64_t>(audio_buf_.size()) - samples_consumed_;
   if (remaining > 0 && !eos_reached_) {
     const int64_t step = runner_.step_samples_;
     const int64_t right_lookahead = runner_.stft_right_lookahead_;
-    // Pad to next full step + right look-ahead
-    int64_t pad_to = ((remaining + step - 1) / step) * step + right_lookahead;
-    std::vector<float> silence(static_cast<size_t>(pad_to - remaining), 0.0f);
+    const int64_t right_pad_audio_steps = runner_.flush_right_pad_steps_;
+
+    // Stay on the normal audio-conditioned path through the final partial
+    // step, the preprocessor look-ahead, and the model's transcription delay.
+    // Matches vLLM flush behavior:
+    // https://github.com/vllm-project/vllm/blob/2f9f946/vllm/model_executor/models/voxtral_realtime.py#L239-L270
+    int64_t pad_to =
+        (((remaining + step - 1) / step) + right_pad_audio_steps) * step +
+        right_lookahead;
+    const int64_t silence_padded_samples = pad_to - remaining;
+    std::vector<float> silence(static_cast<size_t>(silence_padded_samples), 0.0f);
     audio_buf_.insert(audio_buf_.end(), silence.begin(), silence.end());
 
+    // Guaranteed to terminate b/c each call to try_process_step() consumes a
+    // fixed number of audio samples and the padded audio buffer is finite.
     while (!eos_reached_ && try_process_step()) {
     }
-  }
-
-  // Text-only decoding after audio ends.
-  const int64_t max_text_steps = std::min(
-      static_cast<int64_t>(config_.max_new_tokens) - num_generated_,
-      runner_.max_seq_len_ - dec_pos_);
-
-  for (int64_t i = 0; i < max_text_steps && !eos_reached_; i++) {
-    decode_step(nullptr);
   }
 
   return num_generated_;
