@@ -172,7 +172,7 @@ def test_noop_partitions__add_mul_sub_div__forced_delegation():
 
     with pytest.raises(
         RuntimeError,
-        match="Model converted with neutron-converter has `2` operators instead of `1`.",
+        match="Model converted with neutron-converter does not contain a NeutronGraph node.",
     ):
         to_quantized_edge_program(
             module, input_shape, custom_delegation_options=cdo

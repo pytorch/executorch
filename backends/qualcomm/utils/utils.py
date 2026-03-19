@@ -134,10 +134,6 @@ class _AnnotationSkipper(OperatorSupportBase):
         return True
 
 
-def qnn_capture_config():
-    return exir.CaptureConfig(enable_aot=True)
-
-
 def qnn_edge_config() -> exir.EdgeCompileConfig:
     return exir.EdgeCompileConfig(
         _check_ir_validity=False,
