@@ -8,6 +8,7 @@ from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
     conv3d,
     depthwise_conv2d,
     gather,
+    identity,
     matmul,
     pad,
     rescale,

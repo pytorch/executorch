@@ -53,6 +53,7 @@ from . import (  # noqa
     op_tosa_conv3d,
     op_tosa_depthwise_conv2d,
     op_tosa_gather,
+    op_tosa_identity,
     op_tosa_matmul,
     op_tosa_pad,
     op_tosa_rescale,
