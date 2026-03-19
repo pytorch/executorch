@@ -401,6 +401,27 @@ table ExecutionPlan {
   // constants memory buffer size, and ignore non_const_buffer_sizes[0].
   non_const_buffer_sizes: [int64];
 
+  // [Optional] Per-buffer device mapping, parallel to non_const_buffer_sizes.
+  // Each entry maps a non-constant buffer to the device where it should be
+  // allocated. For CPU-only programs, this field is absent and all buffers
+  // default to CPU, ensuring zero regression.
+  non_const_buffer_device: [NonConstBufferDevice];
+
+}
+
+// Maps a non-constant buffer to the device where it should be allocated.
+// When present as part of ExecutionPlan.non_const_buffer_device, each entry
+// describes the device placement for the corresponding planned memory buffer.
+// For CPU-only programs, this table is absent (all buffers default to CPU).
+table NonConstBufferDevice {
+  // Index into the non_const_buffer_sizes list.
+  buffer_idx: int;
+
+  // The device type for this buffer (CPU, CUDA, etc.).
+  device_type: DeviceType = CPU;
+
+  // The device index for multi-device scenarios (e.g., cuda:0, cuda:1).
+  device_index: byte = 0;
 }
 
 // Constant tensor data stored directly in the flatbuffer.

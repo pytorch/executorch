@@ -38,7 +38,9 @@ from executorch.exir.schema import (
     ContainerMetadata,
     DataLocation,
     DataSegment,
+    DeviceType,
     ExecutionPlan,
+    NonConstBufferDevice,
     Program,
     SubsegmentOffsets,
 )
@@ -476,6 +478,32 @@ class TestProgram(unittest.TestCase):
         self.assert_programs_equal(
             program, deserialize_pte_binary(flatbuffer_from_py).program
         )
+
+    def test_round_trip_with_non_const_buffer_device(self) -> None:
+        """Tests that non_const_buffer_device survives round-trip
+        serialization/deserialization. This verifies the schema extension
+        for per-buffer device mapping works correctly.
+        """
+        program = get_test_program()
+        program.execution_plan[0].non_const_buffer_device = [
+            NonConstBufferDevice(buffer_idx=0, device_type=DeviceType.CPU, device_index=0),
+            NonConstBufferDevice(buffer_idx=1, device_type=DeviceType.CUDA, device_index=0),
+        ]
+        flatbuffer_from_py = bytes(serialize_pte_binary(pte_file=PTEFile(program)))
+        self.assert_programs_equal(
+            program, deserialize_pte_binary(flatbuffer_from_py).program
+        )
+
+    def test_round_trip_without_non_const_buffer_device(self) -> None:
+        """Tests backward compatibility: a program without non_const_buffer_device
+        (the default) round-trips correctly and the field remains None.
+        """
+        program = get_test_program()
+        self.assertIsNone(program.execution_plan[0].non_const_buffer_device)
+        flatbuffer_from_py = bytes(serialize_pte_binary(pte_file=PTEFile(program)))
+        deserialized = deserialize_pte_binary(flatbuffer_from_py).program
+        self.assert_programs_equal(program, deserialized)
+        self.assertIsNone(deserialized.execution_plan[0].non_const_buffer_device)
 
     def test_round_trip_no_segments_and_no_header(self) -> None:
         """Tests that a Program serialized with extract_delegate_segments=True
