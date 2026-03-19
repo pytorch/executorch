@@ -191,6 +191,41 @@ class TestPropagateDevicePass(unittest.TestCase):
                     f"[{pipeline}] Should have at least one delegate call node",
                 )
 
+    def test_delegate_input_specs_get_device(self):
+        """
+        Delegate input TensorSpecs should also have device == CUDA when
+        partitioner includes target_device CompileSpec.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b)
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+
+        for pipeline, gm in _lower_model_with_partitioner(
+            model, inputs, DeviceAwarePartitioner("cuda:0")
+        ):
+            with self.subTest(pipeline=pipeline):
+                for node in gm.graph.nodes:
+                    if (
+                        node.op == "call_function"
+                        and node.target == executorch_call_delegate
+                    ):
+                        # args[0] is get_attr for the lowered module; args[1:]
+                        # are the actual tensor inputs to the delegate.
+                        for arg in node.args[1:]:
+                            if isinstance(arg, torch.fx.Node):
+                                spec = arg.meta.get("spec")
+                                if isinstance(spec, TensorSpec):
+                                    self.assertEqual(
+                                        spec.device,
+                                        DeviceType.CUDA,
+                                        f"[{pipeline}] Delegate input {arg.name} "
+                                        f"should have device CUDA",
+                                    )
+
     def test_non_delegated_nodes_remain_cpu(self):
         """
         Non-delegated nodes should retain device == CPU.
