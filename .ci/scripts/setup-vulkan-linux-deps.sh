@@ -45,5 +45,15 @@ install_vulkan_sdk() {
 
 VULKAN_SDK_VERSION="1.4.321.1"
 
-install_swiftshader
+# Parse arguments: --gpu skips SwiftShader (use NVIDIA driver's Vulkan ICD instead)
+USE_GPU=false
+for arg in "$@"; do
+  case $arg in
+    --gpu) USE_GPU=true ;;
+  esac
+done
+
+if [ "$USE_GPU" = false ]; then
+  install_swiftshader
+fi
 install_vulkan_sdk "${VULKAN_SDK_VERSION}"
