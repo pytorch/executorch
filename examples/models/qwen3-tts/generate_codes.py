@@ -39,12 +39,71 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-p", type=float, default=None)
     parser.add_argument("--temperature", type=float, default=None)
     parser.add_argument("--repetition-penalty", type=float, default=None)
+    parser.add_argument(
+        "--trim-silence",
+        action="store_true",
+        help="Trim leading silence codes. In streaming mode, the model generates "
+        "~N silent codes (where N ≈ text token count) before speech begins. "
+        "This decodes a small chunk to detect where speech starts and strips "
+        "the silent prefix, saving compute in the downstream decoder.",
+    )
+    parser.add_argument(
+        "--trim-threshold",
+        type=float,
+        default=0.005,
+        help="RMS threshold for silence detection (default: 0.005).",
+    )
     return parser.parse_args()
 
 
 def _default_reference_audio(duration_sec: float = 1.0, sample_rate: int = 24000):
     wav = np.zeros(int(duration_sec * sample_rate), dtype=np.float32)
     return wav, sample_rate
+
+
+def _trim_silent_prefix(
+    codes: torch.Tensor,
+    model,
+    metadata_decoder_config=None,
+    threshold: float = 0.005,
+    upsample_rate: int = 1920,
+    sample_rate: int = 24000,
+    chunk_size: int = 5,
+) -> torch.Tensor:
+    """Trim leading silent codes by decoding small chunks and checking RMS energy.
+
+    In streaming mode, the talker generates ~N silent codes (N ≈ text token count)
+    while absorbing text before producing speech. This function finds where speech
+    starts by decoding codes in small chunks and checking audio energy.
+
+    Returns the trimmed codes tensor [T', Q] with silent prefix removed.
+    """
+    t_len, n_q = codes.shape
+    if t_len <= chunk_size:
+        return codes
+
+    decoder = model.model.talker.speech_tokenizer.decoder
+    speech_start = 0
+
+    for start in range(0, t_len - chunk_size + 1, chunk_size):
+        end = min(start + chunk_size, t_len)
+        chunk = codes[start:end].unsqueeze(0)
+        chunk_clamped = torch.clamp(chunk, min=0)
+        with torch.no_grad():
+            wav = decoder(chunk_clamped.transpose(1, 2)).squeeze()
+        rms = torch.sqrt(torch.mean(wav**2)).item()
+        if rms > threshold:
+            speech_start = max(0, start - 1)
+            break
+    else:
+        return codes
+
+    if speech_start > 0:
+        print(
+            f"Trimmed {speech_start} silent codes "
+            f"({speech_start * upsample_rate / sample_rate:.1f}s silence)"
+        )
+    return codes[speech_start:]
 
 
 def _build_ref_ids(
@@ -106,6 +165,12 @@ def main() -> None:
         **gen_kwargs,
     )
     codes = talker_codes_list[0].detach().cpu()
+
+    if args.trim_silence:
+        codes = _trim_silent_prefix(
+            codes, model, metadata_decoder_config=None, threshold=args.trim_threshold
+        )
+
     write_codes_binary(args.output_codes, codes)
 
     meta = {
@@ -119,6 +184,7 @@ def main() -> None:
         ),
         "ref_audio_provided": args.ref_audio is not None,
         "non_streaming_mode": args.non_streaming_mode,
+        "trim_silence": args.trim_silence,
     }
     meta_path = args.output_meta or args.output_codes.with_suffix(".json")
     with meta_path.open("w", encoding="utf-8") as f:

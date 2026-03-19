@@ -80,6 +80,25 @@ target_include_directories(qwen3_tts_runner PUBLIC ${_common_include_directories
 target_link_libraries(qwen3_tts_runner PUBLIC ${_link_libraries})
 target_compile_options(qwen3_tts_runner PUBLIC ${_common_compile_options})
 
+# Unified runner: single .pte with all methods (text -> audio).
+add_executable(
+  qwen3_tts_unified_runner main_unified.cpp qwen3_tts_unified_runner.cpp
+)
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  target_link_options_gc_sections(qwen3_tts_unified_runner)
+  if(NOT APPLE AND NOT MSVC)
+    target_link_options(qwen3_tts_unified_runner PRIVATE "LINKER:-s")
+  endif()
+endif()
+
+target_include_directories(
+  qwen3_tts_unified_runner PUBLIC ${_common_include_directories}
+)
+target_link_libraries(qwen3_tts_unified_runner PUBLIC ${_link_libraries})
+target_compile_options(
+  qwen3_tts_unified_runner PUBLIC ${_common_compile_options}
+)
+
 if(MSVC AND EXECUTORCH_BUILD_CUDA)
   add_custom_command(
     TARGET qwen3_tts_runner
