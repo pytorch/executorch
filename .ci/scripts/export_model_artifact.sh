@@ -334,6 +334,7 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
     VR_QUANT_ARGS="--qlinear-encoder 8da4w --qlinear 8da4w --qlinear-group-size 32 --qembedding 8w"
   elif [ "$QUANT_NAME" = "quantized-int4-metal" ]; then
     VR_QUANT_ARGS="--qlinear-encoder fpa4w --qlinear fpa4w"
+    VR_DTYPE_ARGS="--dtype bf16"
   elif [ "$QUANT_NAME" = "quantized-int4-tile-packed" ]; then
     VR_QUANT_ARGS="--qlinear-encoder 4w --qlinear-encoder-packing-format tile_packed_to_4d --qlinear 4w --qlinear-packing-format tile_packed_to_4d --qembedding 8w"
     VR_DTYPE_ARGS="--dtype bf16"
@@ -373,6 +374,7 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   fi
   # Copy tokenizer from downloaded model weights
   cp "$LOCAL_MODEL_DIR/tekken.json" "${OUTPUT_DIR}/tekken.json"
+  rm -rf "$LOCAL_MODEL_DIR"
   ls -al "${OUTPUT_DIR}"
   echo "::endgroup::"
   exit 0

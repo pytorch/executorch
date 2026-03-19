@@ -85,14 +85,43 @@ def _set_device_on_spec(
     spec.device = device_type
 
 
+def _tag_specs_with_device(
+    specs: object,
+    device_type: schema.DeviceType,
+) -> bool:
+    """Apply device annotation to a TensorSpec or a collection of TensorSpecs.
+
+    Args:
+        specs: A TensorSpec, a tuple/list of TensorSpecs, or None.
+        device_type: The target device type to set.
+
+    Returns:
+        True if any spec was modified, False otherwise.
+    """
+    if specs is None:
+        return False
+    if isinstance(specs, TensorSpec):
+        _set_device_on_spec(specs, device_type)
+        return True
+    if isinstance(specs, (tuple, list)):
+        changed = False
+        for s in specs:
+            if isinstance(s, TensorSpec):
+                _set_device_on_spec(s, device_type)
+                changed = True
+        return changed
+    return False
+
+
 class PropagateDevicePass(PassBase):
     """
     After to_backend, walk the graph and set device metadata on TensorSpecs
     based on partitioner-assigned delegation info.
 
     Rules:
-    1. Delegated nodes: Output tensors of a delegate call are marked with the
-       target device derived from the delegate's CompileSpec (key="target_device").
+    1. Delegated nodes: Input and output tensors of a delegate call are marked
+       with the target device derived from the delegate's CompileSpec
+       (key="target_device").
     2. Non-delegated nodes: Remain on CPU (default).
     3. Getitem nodes that extract from a delegate call inherit the device from
        the delegate call's output spec at the corresponding index.
@@ -112,19 +141,18 @@ class PropagateDevicePass(PassBase):
 
                 target_device_type, _device_index = result
 
-                # Mark all output TensorSpecs of this delegate call node
-                specs = node.meta.get("spec")
-                if specs is None:
-                    continue
+                # Tag delegate input tensors.
+                # args[0] is the get_attr node for the lowered module; skip it.
+                for arg in node.args[1:]:
+                    if isinstance(arg, torch.fx.Node):
+                        changed |= _tag_specs_with_device(
+                            arg.meta.get("spec"), target_device_type
+                        )
 
-                if isinstance(specs, TensorSpec):
-                    _set_device_on_spec(specs, target_device_type)
-                    changed = True
-                elif isinstance(specs, (tuple, list)):
-                    for s in specs:
-                        if isinstance(s, TensorSpec):
-                            _set_device_on_spec(s, target_device_type)
-                            changed = True
+                # Tag delegate output tensors.
+                changed |= _tag_specs_with_device(
+                    node.meta.get("spec"), target_device_type
+                )
 
                 logger.debug(
                     "PropagateDevicePass: set device=%s on delegate node %s "

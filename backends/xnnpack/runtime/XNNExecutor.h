@@ -53,6 +53,10 @@ class XNNExecutor {
     return packed_data_names_;
   }
 
+  inline bool uses_weight_cache() const {
+    return !packed_data_names_.empty();
+  }
+
   inline std::shared_ptr<XNNWorkspace> get_workspace() {
     return workspace_;
   }
