@@ -6,7 +6,7 @@
 
 # pyre-strict
 
-from math import prod
+from math import ceil, prod
 from typing import Callable, Optional, Tuple
 
 import torch
@@ -211,6 +211,13 @@ lib.define(
 )
 lib.define(
     "quantized_relu.out(Tensor X, Tensor X_zero_point, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor (a!)"
+)
+
+lib.define(
+    "quantized_max_pool2d(Tensor input, int[] kernel_size, int[] stride, int[] padding, int[] dilation, bool ceil_mode) -> Tensor"
+)
+lib.define(
+    "quantized_max_pool2d.out(Tensor input, int[] kernel_size, int[] stride, int[] padding, int[] dilation, bool ceil_mode, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 lib.define(
@@ -2268,6 +2275,47 @@ def quantized_relu_asym8u_asym8u_per_tensor_meta(
     out_shift: int,
 ) -> torch.Tensor:
     return input.new_empty(input.size(), dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_max_pool2d")
+def quantized_max_pool2d_meta(
+    input: torch.Tensor,
+    kernel_size: list[int],
+    stride: list[int],
+    padding: list[int],
+    dilation: list[int],
+    ceil_mode: bool,
+) -> torch.Tensor:
+    assert (
+        len(kernel_size) == 2
+    ), f"kernel_size must have 2 elements, got {len(kernel_size)}"
+    assert len(stride) == 2, f"stride must have 2 elements, got {len(stride)}"
+    assert len(padding) == 2, f"padding must have 2 elements, got {len(padding)}"
+    assert len(dilation) == 2, f"dilation must have 2 elements, got {len(dilation)}"
+    assert (
+        len(input.size()) == 4
+    ), f"input must be 4D (N, C, H, W), got {len(input.size())}D"
+
+    batch = input.size(0)
+    channels = input.size(1)
+    height_in = input.size(2)
+    width_in = input.size(3)
+
+    height_out_raw = (
+        height_in + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1
+    ) / stride[0] + 1
+    width_out_raw = (
+        width_in + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1
+    ) / stride[1] + 1
+
+    if ceil_mode:
+        height_out = ceil(height_out_raw)
+        width_out = ceil(width_out_raw)
+    else:
+        height_out = int(height_out_raw)
+        width_out = int(width_out_raw)
+
+    return input.new_empty([batch, channels, height_out, width_out], dtype=input.dtype)
 
 
 @register_fake("cadence::fully_connected")

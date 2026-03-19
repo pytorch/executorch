@@ -111,6 +111,7 @@ from executorch.backends.arm._passes import (
     InsertTableOpsPass,
     MatchArgDtypePass,
     MatchArgRanksPass,
+    NormalizeIndexPutNoneIndicesPass,
     NormalizeWhileInitialArgsPass,
     PromoteBoolOperandsPass,
     QuantizeClampArgumentsPass,
@@ -124,6 +125,7 @@ from executorch.backends.arm._passes import (
     RewriteConvPass,
     RewriteHighRankSingletonPermutePass,
     RewriteIndexPutPass,
+    RewriteInplaceArithmeticPass,
     RewriteLeLtToGeGtPass,
     RewriteMatmulPass,
     RewritePadPass,
@@ -444,6 +446,7 @@ class ArmPassManager(PassManager):
         # Node transformation passes (post scalar-removal)
         self.add_passes(
             [
+                NormalizeIndexPutNoneIndicesPass(),
                 RewriteIndexPutPass(),
                 RewriteBoolBitwiseToLogicalPass(),
                 DecomposeRemainderPass(),
@@ -551,6 +554,7 @@ class ArmPassManager(PassManager):
                 DecomposeFloorDividePass(tfa_pass=True),
                 DecomposeDivTensorModePass(tfa_pass=True),
                 DecomposeWhereScalarOtherPass(tfa_pass=True),
+                RewriteInplaceArithmeticPass(tfa_pass=True),
             ]
         )
 
