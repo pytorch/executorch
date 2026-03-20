@@ -18,13 +18,13 @@ With --streaming, produces a streaming .pte instead:
 
 Backend support:
   - XNNPACK (default): Uses custom SDPA op (torch.ops.llama.custom_sdpa) for optimal performance
-  - Metal/AOTI: Uses MetalSDPA (_scaled_dot_product_attention_math_for_mps) for text_decoder
-                and StandardEncoderSDPA (F.scaled_dot_product_attention) for streaming encoder,
-                avoiding custom_sdpa which is incompatible with AOTI. Uses Dim.AUTO for audio
-                encoder dynamic shapes (explicit bounds cause issues with AOTI).
-  - CUDA/AOTI: Uses CudaSDPA (F.scaled_dot_product_attention with GQA expansion) for text_decoder
-               and StandardEncoderSDPA for streaming encoder. Compiles to CUDA kernels via
-               AOTInductor. Supports int4 quantization via _weight_int4pack_mm fallback kernel.
+  - Metal/AOTI: Uses MetalSDPA (_scaled_dot_product_attention_math_for_mps) for both text_decoder
+                and streaming encoder (transpose_kv=True), avoiding custom_sdpa which is
+                incompatible with AOTI. Uses Dim.AUTO for audio encoder dynamic shapes
+                (explicit bounds cause issues with AOTI).
+  - CUDA/AOTI: Uses StandardSDPA (F.scaled_dot_product_attention with GQA expansion) for
+               text_decoder and streaming encoder (transpose_kv=True). Compiles to CUDA kernels
+               via AOTInductor. Supports int4 quantization via _weight_int4pack_mm fallback kernel.
   - Portable: Uses custom SDPA like XNNPACK
 
 Usage:
