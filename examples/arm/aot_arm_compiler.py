@@ -1071,12 +1071,6 @@ if __name__ == "__main__":  # noqa: C901
             os.makedirs(args.output, exist_ok=True)
             output_file_name = os.path.join(args.output, output_file_name)
 
-    if args.bundleio or args.etrecord:
-        etrecord_file_name = os.path.splitext(output_file_name)[0] + "_etrecord.bin"
-        # Generate ETRecord
-        generate_etrecord(etrecord_file_name, edge_program_manager_copy, exec_prog)
-        print(f"ETRecord saved as {etrecord_file_name}")
-
     if args.bundleio:
         # Realize the quantization impact on numerics when generating reference output
         reference_model = original_model if not model_quant else model_quant
@@ -1085,3 +1079,11 @@ if __name__ == "__main__":  # noqa: C901
     else:
         save_pte_program(exec_prog, output_file_name)
         print(f"PTE file saved as {output_file_name}")
+
+    if args.bundleio or args.etrecord:
+        etrecord_file_name = os.path.splitext(output_file_name)[0] + "_etrecord.bin"
+        try:
+            generate_etrecord(etrecord_file_name, edge_program_manager_copy, exec_prog)
+            print(f"ETRecord saved as {etrecord_file_name}")
+        except Exception as e:
+            logging.warning(f"ETRecord generation failed (non-fatal): {e}")
