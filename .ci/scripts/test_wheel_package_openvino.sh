@@ -19,8 +19,10 @@ PYTHON_VERSION=${1:-3.11}
 cat > "/tmp/script_openvino_wheel_test.py" << 'EOF'
 import torch
 from torch.export import export
-from executorch.backends.openvino.partitioner import OpenVINOPartitioner
+from executorch.backends.openvino.partitioner import OpenvinoPartitioner
 from executorch.exir import to_edge_transform_and_lower
+from executorch.exir.backend.backend_details import CompileSpec
+from executorch.exir.backend.utils import format_delegated_graph
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.extension.export_util.utils import save_pte_program
 
@@ -42,14 +44,15 @@ example_inputs = model.get_example_inputs()
 
 exported = export(model, example_inputs, strict=True)
 
+compile_spec = [CompileSpec("device", b"CPU")]
 edge = to_edge_transform_and_lower(
     exported,
-    partitioner=[OpenVINOPartitioner()],
+    partitioner=[OpenvinoPartitioner(compile_spec)],
 )
 
 # Verify OpenVINO delegation occurred
-graph_str = str(edge.exported_program().graph_module)
-assert "executorch_call_delegate" in graph_str, \
+output_graph = format_delegated_graph(edge.exported_program().graph_module)
+assert "OpenvinoBackend" in output_graph, \
     "Expected OpenVINO delegation but no delegate call found in graph"
 print("OpenVINO delegation successful")
 
