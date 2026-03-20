@@ -23,12 +23,10 @@ from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
 from torch.fx.node import Argument
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class DecomposeAtenApproxGeluPass(ExportPass):
     """
-    Decompose the aten gelu op with an approximate arg to a series of simpler ops.
-    This is an optimization - gelu has a portable kernel fallback, but decomposing
-    may be more efficient on some backends.
+    Decompose the aten gelu op with an approximate arg to a series of simpler ops
     """
 
     def call_operator(

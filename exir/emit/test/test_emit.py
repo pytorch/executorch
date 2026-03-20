@@ -2603,6 +2603,13 @@ class TestEmit(unittest.TestCase):
             3,
             f"Expected exactly 3 CUDA tensors (2 inputs + 1 output for delegated add), got {len(cuda_tensors)}",
         )
+        # Verify device_index is also correctly serialized (cuda:0 → index 0)
+        for t in cuda_tensors:
+            self.assertEqual(
+                t.extra_tensor_info.device_index,
+                0,
+                "CUDA tensor device_index should be 0 for cuda:0",
+            )
 
     def test_emit_cpu_tensors_no_extra_device_info(self) -> None:
         """When all tensors are on CPU (default), ExtraTensorInfo should NOT be
