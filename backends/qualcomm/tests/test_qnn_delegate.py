@@ -1251,6 +1251,63 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_is_inf(self):
+        module = IsInf()  # noqa: F405
+        sample_input = (
+            torch.tensor(
+                [
+                    1.1,
+                    float("inf"),
+                    -float("inf"),
+                    0.0,
+                    float("nan"),
+                    0.6,
+                    float("nan"),
+                    -5.0,
+                ],
+                dtype=torch.float16,
+            ),
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_is_nan(self):
+        module = IsNan()  # noqa: F405
+        sample_inputs = [
+            (
+                torch.tensor(
+                    [
+                        -2.0,
+                        float("nan"),
+                        -float("nan"),
+                        0.2,
+                        float("inf"),
+                        3.2,
+                        float("nan"),
+                        -float("inf"),
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            (
+                torch.tensor(
+                    [
+                        -0.234,
+                        -float("nan"),
+                        float("nan"),
+                        -float("inf"),
+                        3.2,
+                        float("nan"),
+                        1.26,
+                        float("inf"),
+                    ],
+                    dtype=torch.float16,
+                ),
+            ),
+        ]
+
+        for sample_input in sample_inputs:
+            self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_interpolate_bicubic(self):
         modules = [
             ResizeBicubic([2, 2], None, False),  # noqa: F405
@@ -1605,6 +1662,29 @@ class TestQNNFloatingPointOperator(TestQNN):
                     with self.subTest(i=index):
                         index += 1
                         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_rand(self):
+        sample_inputs = [
+            (torch.randn(3, 4, 5),),
+            (torch.randn(2, 8),),
+            (
+                torch.randn(
+                    10,
+                ),
+            ),
+            (torch.randn(1, 3, 32, 32),),
+        ]
+        for i, sample_input in enumerate(sample_inputs):
+            with self.subTest(i=i):
+                module = Rand()  # noqa: F405
+                self.lower_module_and_test_output(
+                    module, sample_input, assert_output_equal=False
+                )
+
+    def test_qnn_backend_reciprocal(self):
+        module = Reciprocal()  # noqa: F405
+        sample_input = (torch.randn([2, 2, 2, 2]),)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_relu(self):
         module = Relu()  # noqa: F405
@@ -3930,6 +4010,31 @@ class TestQNNQuantizedOperator(TestQNN):
                         index += 1
                         module = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_rand(self):
+        sample_inputs = [
+            (torch.randn(3, 4, 5),),
+            (torch.randn(2, 8),),
+            (
+                torch.randn(
+                    10,
+                ),
+            ),
+            (torch.randn(1, 3, 32, 32),),
+        ]
+        for i, sample_input in enumerate(sample_inputs):
+            with self.subTest(i=i):
+                module = Rand()  # noqa: F405
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(
+                    module, sample_input, assert_output_equal=False
+                )
+
+    def test_qnn_backend_reciprocal(self):
+        module = Reciprocal()  # noqa: F405
+        sample_input = (torch.randn([2, 5, 1, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_relu(self):
         module = Relu()  # noqa: F405
@@ -6705,7 +6810,7 @@ class TestExampleMultimodalityScript(TestQNN):
         sm8650_token_rate: float
         sm8750_token_rate: float
         encoder_pte_size: float
-        text_embedding_pte_size: float
+        tok_embedding_pte_size: float
         decoder_pte_size: float
 
     @dataclass(frozen=True)
@@ -6721,7 +6826,7 @@ class TestExampleMultimodalityScript(TestQNN):
                 sm8650_token_rate=50,
                 sm8750_token_rate=55,
                 encoder_pte_size=110_000_000,  # 110MB
-                text_embedding_pte_size=100_000_000,  # 100MB
+                tok_embedding_pte_size=100_000_000,  # 100MB
                 decoder_pte_size=400_000_000,  # 400MB
                 image_path="https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg",  # New York Bay
                 golden_image_feature="city",
@@ -6731,7 +6836,7 @@ class TestExampleMultimodalityScript(TestQNN):
                 sm8650_token_rate=11,
                 sm8750_token_rate=13,
                 encoder_pte_size=425_000_000,  # 425MB
-                text_embedding_pte_size=300_000_000,  # 300MB
+                tok_embedding_pte_size=300_000_000,  # 300MB
                 decoder_pte_size=550_000_000,  # 550 MB
                 image_path="http://images.cocodataset.org/val2017/000000039769.jpg",  # Two cats lying on a blanket
                 golden_image_feature="cats",
@@ -6803,16 +6908,16 @@ class TestExampleMultimodalityScript(TestQNN):
                     print(f"Answer: {model_out}")
                 if not self.enable_x86_64:
                     encoder_pte_size = msg["encoder_pte_size"]
-                    text_embedding_pte_size = msg["text_embedding_pte_size"]
+                    tok_embedding_pte_size = msg["tok_embedding_pte_size"]
                     decoder_pte_size = msg["pte_size"]
                     self.assertLessEqual(encoder_pte_size, vlm_specs.encoder_pte_size)
                     self.assertLessEqual(
-                        text_embedding_pte_size, vlm_specs.text_embedding_pte_size
+                        tok_embedding_pte_size, vlm_specs.tok_embedding_pte_size
                     )
                     self.assertLessEqual(decoder_pte_size, vlm_specs.decoder_pte_size)
                     print(f"Encoder PTE Size: {encoder_pte_size} bytes")
-                    print(f"Text Embedding PTE Size: {text_embedding_pte_size} bytes")
-                    print(f"Decoder PTE Size: {decoder_pte_size} bytes")
+                    print(f"Token Embedding PTE Size: {tok_embedding_pte_size} bytes")
+                    print(f"Text Decoder PTE Size: {decoder_pte_size} bytes")
 
                 attr_name = f"{self.model.lower()}_token_rate"
                 if (

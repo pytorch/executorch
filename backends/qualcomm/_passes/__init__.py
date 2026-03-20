@@ -24,6 +24,7 @@ from .decompose_glu import DecomposeGlu
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
 from .decompose_maxpool3d import DecomposeMaxPool3d
 from .decompose_minmaxdim import DecomposeMinMaxDim
+from .decompose_reciprocal import DecomposeReciprocal
 from .decompose_roll import DecomposeRoll
 from .decompose_silu import DecomposeSilu
 from .decompose_threshold import DecomposeThreshold
@@ -73,6 +74,7 @@ __all__ = [
     DecomposeLinalgVectorNorm,
     DecomposeMaxPool3d,
     DecomposeMinMaxDim,
+    DecomposeReciprocal,
     DecomposeRoll,
     DecomposeSilu,
     DecomposeThreshold,

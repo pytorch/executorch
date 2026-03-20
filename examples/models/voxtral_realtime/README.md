@@ -84,6 +84,7 @@ python export_voxtral_rt.py \
 python export_voxtral_rt.py \
     --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
     --backend metal \
+    --dtype bf16 \
     --streaming \
     --output-dir ./voxtral_rt_exports \
     --qlinear-encoder fpa4w \
