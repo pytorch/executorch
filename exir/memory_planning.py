@@ -28,6 +28,7 @@ from typing import (
 import torch
 from executorch.exir import memory
 from executorch.exir.control_flow import while_loop as exir_while
+from executorch.exir.schema import DeviceType, NonConstBufferDevice
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.error import internal_assert, InternalError
 from executorch.exir.operator.convert import is_inplace_variant, is_out_variant
@@ -1211,9 +1212,18 @@ def apply_algo(
     alloc_graph_input: bool = True,
     alloc_graph_output: bool = True,
     alloc_mutable_buffers: bool = True,
+    enable_non_cpu_memory_planning: bool = False,
 ) -> list[int]:
     """
     Recursively apply algo to graph_module and its submodules for control flow.
+
+    Partitions specs by device type and device idx, and runs the memory planning
+    algorithm independently per device, then merges results into separate buffers.
+    This ensures device memory and CPU memory are never mixed.
+
+    When enable_non_cpu_memory_planning is False (default), all specs are planned
+    into a single CPU memory pool regardless of their device attribute. This
+    preserves the legacy behavior. Set to True to enable per-device partitioning.
 
     Algo implementation should handle one of two meta entries for submodules:
     1. input_mem_buffer_sizes: List of int offset bytes. Memory allocated by
@@ -1229,18 +1239,19 @@ def apply_algo(
     `operand` arg. The memory for operands is unused.
     """
     # Extract the nodes and their lifespans from the graph_module
-    # Difficult to just filter the list of specs returned by this due to
-    # how we flag trainable weights.
     _ = update_all_tensors_lifetime(graph_module, graph_signature)
 
-    # Filter specs based on alloc_graph_input and alloc_graph_output
-    specs = collect_specs_from_nodes(
-        graph_module.graph.nodes,
-        graph_signature,
-        do_assertion=False,
-        ignore_graph_input=not alloc_graph_input,
-        ignore_graph_output=not alloc_graph_output,
-        ignore_mutable_buffers=not alloc_mutable_buffers,
+    # Collect and materialize specs into a set so we can iterate multiple
+    # times and partition by device.
+    all_specs: set[TensorSpec] = set(
+        collect_specs_from_nodes(
+            graph_module.graph.nodes,
+            graph_signature,
+            do_assertion=False,
+            ignore_graph_input=not alloc_graph_input,
+            ignore_graph_output=not alloc_graph_output,
+            ignore_mutable_buffers=not alloc_mutable_buffers,
+        )
     )
 
     # Get temporary specs for submodules to set aside space during execution
@@ -1249,29 +1260,78 @@ def apply_algo(
         algo, graph_module, alignment, graph_signature
     )
 
-    # Update `input_mem_buffer_sizes` in graph_module. This will allow existing
-    # algos to work using `input_mem_buffer_sizes` or use
-    # `non_const_buffer_sizes` directly.
-    # pyre-ignore[16]: `torch.fx.GraphModule` has no attribute `input_mem_buffer_sizes`.
-    graph_module.input_mem_buffer_sizes = submodule_bufsizes
-
     # Get extra padding for XNNPACK if needed
     extra_padding = 0
     if _contains_xnnpack_delegate(graph_module):
         extra_padding = 64
 
-    # Pass the filtered specs to the algorithm
-    bufsizes: list[int] = algo(
-        alignment,
-        specs,
-        graph_module,
-        graph_signature,
-        extra_padding,
+    # 1. Partition specs by device
+    specs_by_device: dict[DeviceType, set[TensorSpec]] = defaultdict(set)
+    if enable_non_cpu_memory_planning:
+        for spec in all_specs:
+            specs_by_device[spec.device].add(spec)
+    else:
+        # Legacy behavior: all specs planned into CPU memory regardless of device
+        specs_by_device[DeviceType.CPU] = all_specs
+
+    # 2. Plan each device independently
+    global_bufsizes: list[int] = [0]  # index 0 reserved for constants
+    buffer_device_types: list[DeviceType] = [DeviceType.CPU]
+
+    # Process CPU first (if present), then other devices sorted by enum value
+    device_order = sorted(
+        specs_by_device.keys(),
+        key=lambda d: (d != DeviceType.CPU, d.value),
     )
 
-    # pyre-ignore[6]: Incompatible parameter type [6]
-    # In call `insert_calls_to_free`, for 2nd positional argument, expected `Set[TensorSpec]` but got `Iterable[TensorSpec]`
-    insert_calls_to_free(graph_module, specs)
+    for device_type in device_order:
+        device_specs = specs_by_device[device_type]
 
-    graph_module.meta.update({"non_const_buffer_sizes": bufsizes})
-    return bufsizes
+        # Only apply submodule pre-allocation for CPU specs; device buffers
+        # do not share memory space with CPU submodule arenas.
+        # pyre-ignore[16]: `torch.fx.GraphModule` has no attribute `input_mem_buffer_sizes`.
+        graph_module.input_mem_buffer_sizes = (
+            submodule_bufsizes if device_type == DeviceType.CPU else []
+        )
+
+        # Run algorithm independently on this device's specs
+        device_bufsizes = algo(
+            alignment, device_specs, graph_module, graph_signature, extra_padding
+        )
+
+        # Calculate base mem_id in global space
+        base_mem_id = len(global_bufsizes)
+
+        # Append buffer sizes (skip index 0 which is constants placeholder)
+        global_bufsizes.extend(device_bufsizes[1:])
+
+        # Track device type for each new buffer slot
+        for _ in device_bufsizes[1:]:
+            buffer_device_types.append(device_type)
+
+        # Remap spec mem_ids from algo-local to global.
+        # The algorithm assigns mem_id starting from 1; remap to global position.
+        for spec in device_specs:
+            if spec.mem_id is not None:
+                spec.mem_id = (spec.mem_id - 1) + base_mem_id
+
+    # Ensure backward compatibility: at least [0, 0] when no specs exist
+    if len(global_bufsizes) < 2:
+        global_bufsizes.append(0)
+        buffer_device_types.append(DeviceType.CPU)
+
+    # 3. Insert free calls and build device buffer mapping
+    insert_calls_to_free(graph_module, all_specs)
+
+    has_device_buffers = any(dt != DeviceType.CPU for dt in buffer_device_types)
+    non_const_buffer_device: Optional[list[NonConstBufferDevice]] = None
+    if has_device_buffers:
+        non_const_buffer_device = [
+            NonConstBufferDevice(buffer_idx=i, device_type=dt, device_index=0)
+            for i, dt in enumerate(buffer_device_types)
+        ]
+
+    graph_module.meta["non_const_buffer_sizes"] = global_bufsizes
+    if non_const_buffer_device is not None:
+        graph_module.meta["non_const_buffer_device"] = non_const_buffer_device
+    return global_bufsizes

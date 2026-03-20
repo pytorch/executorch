@@ -115,5 +115,11 @@ class ExecutorchBackendConfig:
     # If set to true, we run quant fusion and constant propagation passes
     do_quant_fusion_and_const_prop: bool = False
 
-    # Experimental: If set to true, we run a pass to reinplace ops in the graph.
+    # If set to true, we run a pass to reinplace ops in the graph.
     run_reinplace_pass: bool = False
+
+    # When True, memory planning partitions specs by device and runs the
+    # algorithm independently per device, producing separate buffers for CPU
+    # vs. accelerator memory.  Default False preserves the legacy behavior
+    # where all tensors are planned into CPU memory regardless of device.
+    enable_non_cpu_memory_planning: bool = False
