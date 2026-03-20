@@ -80,20 +80,24 @@ def _get_target_device_from_compile_specs(
 def _set_device_on_spec(
     spec: TensorSpec,
     device_type: schema.DeviceType,
+    device_index: int = 0,
 ) -> None:
     """Set the device attribute on a TensorSpec."""
     spec.device = device_type
+    spec.device_index = device_index
 
 
 def _tag_specs_with_device(
     specs: object,
     device_type: schema.DeviceType,
+    device_index: int = 0,
 ) -> bool:
     """Apply device annotation to a TensorSpec or a collection of TensorSpecs.
 
     Args:
         specs: A TensorSpec, a tuple/list of TensorSpecs, or None.
         device_type: The target device type to set.
+        device_index: The device index (e.g., 0 for cuda:0, 1 for cuda:1).
 
     Returns:
         True if any spec was modified, False otherwise.
@@ -101,13 +105,13 @@ def _tag_specs_with_device(
     if specs is None:
         return False
     if isinstance(specs, TensorSpec):
-        _set_device_on_spec(specs, device_type)
+        _set_device_on_spec(specs, device_type, device_index)
         return True
     if isinstance(specs, (tuple, list)):
         changed = False
         for s in specs:
             if isinstance(s, TensorSpec):
-                _set_device_on_spec(s, device_type)
+                _set_device_on_spec(s, device_type, device_index)
                 changed = True
         return changed
     return False
@@ -139,19 +143,23 @@ class PropagateDevicePass(PassBase):
                 if result is None:
                     continue
 
-                target_device_type, _device_index = result
+                target_device_type, device_index = result
 
                 # Tag delegate input tensors.
                 # args[0] is the get_attr node for the lowered module; skip it.
                 for arg in node.args[1:]:
                     if isinstance(arg, torch.fx.Node):
                         changed |= _tag_specs_with_device(
-                            arg.meta.get("spec"), target_device_type
+                            arg.meta.get("spec"),
+                            target_device_type,
+                            device_index,
                         )
 
                 # Tag delegate output tensors.
                 changed |= _tag_specs_with_device(
-                    node.meta.get("spec"), target_device_type
+                    node.meta.get("spec"),
+                    target_device_type,
+                    device_index,
                 )
 
                 logger.debug(
@@ -185,7 +193,11 @@ class PropagateDevicePass(PassBase):
                     ):
                         source_spec = source_specs[idx]
                         if isinstance(source_spec, TensorSpec):
-                            _set_device_on_spec(spec, source_spec.device)
-                            changed = True
+                              _set_device_on_spec(
+                                  spec,
+                                  source_spec.device,
+                                  source_spec.device_index,
+                              )
+                              changed = True
 
         return PassResult(graph_module, changed)

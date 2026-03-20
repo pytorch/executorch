@@ -63,6 +63,7 @@ enum TensorDataLocation : byte {
 }
 
 // Device type enum indicating where a tensor resides or should be allocated.
+// Please keep this in sync with executorch/runtime/core/portable_type/device.h
 enum DeviceType : byte {
   CPU = 0,
   CUDA = 1,
