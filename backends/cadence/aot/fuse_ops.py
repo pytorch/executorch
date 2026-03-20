@@ -22,7 +22,6 @@ import torch
 import torch.fx
 from executorch.backends.cadence.aot.compiler_utils import (
     broadcastable,
-    get_cascaded_ops,
     get_permuted_dims,
     get_scale,
     get_tensor_from_attr,
@@ -581,7 +580,8 @@ class FuseQuantizedBatchNormWithConv(RemoveOrReplacePassInterface):
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseCascadedTransposeOrPermuteOps(RemoveOrReplacePassInterface):
     """
-    Fuse a cascaded chain of transpose and permute ops
+    Fuse a chain of transpose and permute ops into a single permute or a no-op.
+    Handles branches and chains permutes.
     """
 
     transpose_or_permute_target = {
@@ -594,55 +594,39 @@ class FuseCascadedTransposeOrPermuteOps(RemoveOrReplacePassInterface):
         return list(self.transpose_or_permute_target)
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
-        # Get the cascaded chain of transpose/permute ops starting at node
-        cascaded_transpose_or_permute_ops = get_cascaded_ops(
-            [node], self.transpose_or_permute_target
-        )
-        # The chain must have more than 1 node
-        if len(cascaded_transpose_or_permute_ops) == 1:
+        # Fuse with the parent node if it's also a permute or a transpose. Since the
+        # pass interface traverses all ops in order the pass will properly fuse a chain
+        # of permutes.
+        parent_node = get_arg(node, "input", torch.fx.Node)
+        if parent_node.target not in self.transpose_or_permute_target:
             return False
+        input_of_parent = get_arg(parent_node, "input", torch.fx.Node)
 
-        # Get shape from node metadata
-        val = node.meta.get("val")
-        if val is None:
-            return False
-        out_shape = val.shape
-        out_dims = len(out_shape)
+        # Compute combined effect of permutes.
+        dims = list(range(node.meta["val"].ndim))
 
-        # This is the trivial dimension order
-        dims = list(range(out_dims))
-        # Compute the effect of the chain on dims
-        for tp in cascaded_transpose_or_permute_ops:
-            dims = (
-                get_transposed_dims(tp, dims)
-                if tp.target == exir_ops.edge.aten.transpose_copy.int
-                else get_permuted_dims(tp, dims)
-            )
-
-        graph = node.graph
-
-        # In case the permute chain cancelled each other, the final dims will
-        # be the same as the initial order. In that case, the chain was nop.
-        # Otherwise create a new permute op that encompasses the effect of the
-        # chain.
-        if dims == list(range(out_dims)):
-            cascaded_transpose_or_permute_ops[-1].replace_all_uses_with(
-                cast(torch.fx.Node, node.args[0])
-            )
+        if parent_node.target == exir_ops.edge.aten.transpose_copy.int:
+            dims = get_transposed_dims(parent_node, dims)
         else:
-            with graph.inserting_before(cascaded_transpose_or_permute_ops[-1]):
-                new_permute = graph.call_function(
+            dims = get_permuted_dims(parent_node, dims)
+
+        if node.target == exir_ops.edge.aten.transpose_copy.int:
+            dims = get_transposed_dims(node, dims)
+        else:
+            dims = get_permuted_dims(node, dims)
+
+        # If combined effect is identity replace the node with input.
+        if dims == sorted(dims):
+            node.replace_all_uses_with(input_of_parent)
+        else:
+            with node.graph.inserting_before(node):
+                new_permute = node.graph.call_function(
                     exir_ops.edge.aten.permute_copy.default,
-                    args=(node.args[0], dims),
+                    args=(input_of_parent, dims),
                 )
-                new_permute.meta = cascaded_transpose_or_permute_ops[-1].meta
-            cascaded_transpose_or_permute_ops[-1].replace_all_uses_with(new_permute)
+                new_permute.meta = node.meta
+            node.replace_all_uses_with(new_permute)
 
-        # Now erase the chain (except the first node which will be handled by the interface)
-        for tp in reversed(cascaded_transpose_or_permute_ops[1:]):
-            graph.erase_node(tp)
-
-        # Return True to indicate the first node in the chain should be removed
         return True
 
 
@@ -1170,10 +1154,7 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
             return False
 
         # checking that permut2(permut1(identity)) == identity, modulo unitary dimensions
-        producer_input = cast(torch.fx.Node, producer.args[0])
-        if "val" not in producer_input.meta:
-            return False
-        input_shape = producer_input.meta["val"].shape
+        input_shape = cast(torch.fx.Node, producer.args[0]).meta["val"].shape
         ident_dims = list(range(len(input_shape)))
         # this mapping helps to handle both transpose and permutations
         f: dict[Any, Callable] = {
