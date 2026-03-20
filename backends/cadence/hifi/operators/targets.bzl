@@ -369,7 +369,9 @@ def define_common_targets():
         srcs = ["op_quantized_conv1d_ncl.cpp"],
         exported_headers = ["operators.h"],
         platforms = CXX,
-        deps = COMMON_DEPS,
+        deps = COMMON_DEPS + [
+            "//executorch/backends/cadence/generic/operators:op_quantized_conv1d_ncl",
+        ],
         visibility = ["PUBLIC"],
         compatible_with = ["ovr_config//cpu:xtensa"],
     )
@@ -379,7 +381,9 @@ def define_common_targets():
         srcs = ["op_quantized_conv1d_nlc.cpp"],
         exported_headers = ["operators.h"],
         platforms = CXX,
-        deps = COMMON_DEPS,
+        deps = COMMON_DEPS + [
+            "//executorch/backends/cadence/generic/operators:op_quantized_conv1d_nlc",
+        ],
         visibility = ["PUBLIC"],
         compatible_with = ["ovr_config//cpu:xtensa"],
     )
@@ -628,16 +632,6 @@ def define_common_targets():
         deps = COMMON_DEPS + [
             "//executorch/backends/cadence/generic/operators:op_quantized_matmul",
         ],
-        visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
-    )
-
-    runtime.cxx_library(
-        name = "op_quantized_max_pool2d_nhwc",
-        srcs = ["op_quantized_max_pool2d_nhwc.cpp"],
-        exported_headers = ["operators.h"],
-        platforms = CXX,
-        deps = COMMON_DEPS,
         visibility = ["PUBLIC"],
         compatible_with = ["ovr_config//cpu:xtensa"],
     )
