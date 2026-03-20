@@ -154,17 +154,21 @@ def load_model(
         checkpoint = checkpoint["model"]
 
     # Rename attention weight keys for static attention:
-    # wq.* -> wqs.0.*, wk.* -> wks.0.*, wv.* -> wvs.0.*
+    # wq.weight -> wqs.0.weight, wk.weight -> wks.0.weight, wv.weight -> wvs.0.weight
     # LoRALinear._load_from_state_dict remaps weight -> linear.weight automatically.
     for i in range(len(model.layers)):
-        prefix = f"layers.{i}.attention"
-        for old_proj, new_proj in [("wq", "wqs.0"), ("wk", "wks.0"), ("wv", "wvs.0")]:
-            for key in list(checkpoint.keys()):
-                old_prefix = f"{prefix}.{old_proj}."
-                if key.startswith(old_prefix):
-                    suffix = key[len(old_prefix):]
-                    new_key = f"{prefix}.{new_proj}.{suffix}"
-                    checkpoint[new_key] = checkpoint.pop(key)
+        if f"layers.{i}.attention.wq.weight" in checkpoint:
+            checkpoint[f"layers.{i}.attention.wqs.0.weight"] = checkpoint.pop(
+                f"layers.{i}.attention.wq.weight"
+            )
+        if f"layers.{i}.attention.wk.weight" in checkpoint:
+            checkpoint[f"layers.{i}.attention.wks.0.weight"] = checkpoint.pop(
+                f"layers.{i}.attention.wk.weight"
+            )
+        if f"layers.{i}.attention.wv.weight" in checkpoint:
+            checkpoint[f"layers.{i}.attention.wvs.0.weight"] = checkpoint.pop(
+                f"layers.{i}.attention.wv.weight"
+            )
 
     if adapter_checkpoint is not None:
         from executorch.examples.models.llama.convert_weights import (
@@ -172,20 +176,14 @@ def load_model(
         )
 
         adapter_weights = load_and_convert_unsloth_to_meta(adapter_checkpoint)
-        # Rename adapter keys for static attention the same way
+        # Rename adapter keys: wq.lora_*.weight -> wqs.0.lora_*.weight
         for i in range(len(model.layers)):
-            prefix = f"layers.{i}.attention"
-            for old_proj, new_proj in [
-                ("wq", "wqs.0"),
-                ("wk", "wks.0"),
-                ("wv", "wvs.0"),
-            ]:
-                for key in list(adapter_weights.keys()):
-                    old_prefix = f"{prefix}.{old_proj}."
-                    if key.startswith(old_prefix):
-                        suffix = key[len(old_prefix):]
-                        new_key = f"{prefix}.{new_proj}.{suffix}"
-                        adapter_weights[new_key] = adapter_weights.pop(key)
+            for old_proj, new_proj in [("wq", "wqs.0"), ("wk", "wks.0"), ("wv", "wvs.0")]:
+                for suffix in ["lora_a.weight", "lora_b.weight"]:
+                    old_key = f"layers.{i}.attention.{old_proj}.{suffix}"
+                    if old_key in adapter_weights:
+                        new_key = f"layers.{i}.attention.{new_proj}.{suffix}"
+                        adapter_weights[new_key] = adapter_weights.pop(old_key)
 
         checkpoint.update(adapter_weights)
 
