@@ -171,12 +171,18 @@ ThreadPool* get_threadpool() {
 }
 
 pthreadpool_t get_pthreadpool() {
+#if defined(WIN32)
+  // pthreadpool's condvar-based synchronization on Windows can deadlock
+  // with multiple threads. Return nullptr so XNNPACK runs single-threaded.
+  return nullptr;
+#else
   if (NoThreadPoolGuard::is_enabled()) {
     return nullptr;
   }
   ThreadPool* const threadpool = get_threadpool();
   ET_CHECK_MSG(threadpool, "Failed to acquire an instance of ThreadPool!");
   return threadpool->threadpool_.get();
+#endif
 }
 
 } // namespace executorch::extension::threadpool
