@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import gzip
 import json
 import logging
 import os
@@ -266,6 +267,35 @@ class Observatory:
                 ]
             }
 
+    @staticmethod
+    def _encode_html_blocks(serialized_records: list, dashboard: dict) -> None:
+        """Base64-encode HtmlBlock.content strings in-place to prevent JSON corruption."""
+
+        def _encode_blocks(blocks: list) -> None:
+            for block in blocks:
+                if block.get("type") == "html":
+                    content = (block.get("record") or {}).get("content", "")
+                    if content:
+                        block["record"]["content"] = base64.b64encode(
+                            content.encode("utf-8")
+                        ).decode("ascii")
+
+        for record in serialized_records:
+            for view in (record.get("views") or {}).values():
+                _encode_blocks(view.get("blocks") or [])
+        for view in dashboard.values():
+            _encode_blocks(view.get("blocks") or [])
+
+    @staticmethod
+    def _compress_payload(json_data: str, threshold: int = 8192) -> tuple:
+        """Gzip+base64 compress JSON payload if above threshold bytes."""
+
+        raw = json_data.encode("utf-8")
+        if len(raw) >= threshold:
+            compressed = gzip.compress(raw, compresslevel=6)
+            return base64.b64encode(compressed).decode("ascii"), True
+        return json_data, False
+
     @classmethod
     def _generate_report_payload(
         cls,
@@ -384,7 +414,7 @@ class Observatory:
 
         graph_payload = graph_hub.build_payload()
 
-        return {
+        payload = {
             "resources": resources,
             "records": serialized_records,
             "dashboard": dashboard_views,
@@ -405,6 +435,9 @@ class Observatory:
             "graph_assets": graph_payload["graph_assets"],
             "graph_layers": graph_payload["graph_layers"],
         }
+
+        Observatory._encode_html_blocks(serialized_records, dashboard_views)
+        return payload
 
     @classmethod
     def export_html_report(
@@ -432,7 +465,8 @@ class Observatory:
         from .html_template import get_html_template
 
         json_data = json.dumps(payload, default=str).replace("</", "<\\/")
-        html_content = get_html_template(title, json_data)
+        payload_str, is_compressed = Observatory._compress_payload(json_data)
+        html_content = get_html_template(title, payload_str, is_compressed=is_compressed)
 
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
@@ -487,7 +521,8 @@ class Observatory:
         from .html_template import get_html_template
 
         json_data = json.dumps(payload, default=str).replace("</", "<\\/")
-        html_content = get_html_template(title, json_data)
+        payload_str, is_compressed = Observatory._compress_payload(json_data)
+        html_content = get_html_template(title, payload_str, is_compressed=is_compressed)
 
         os.makedirs(os.path.dirname(html_path) or ".", exist_ok=True)
         with open(html_path, "w", encoding="utf-8") as f:

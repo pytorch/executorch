@@ -65,7 +65,9 @@ class HtmlRecordSpec:
     """Record payload for an HTML block.
 
     Args:
-        content: Raw HTML fragment rendered into block content container.
+        content: Raw HTML fragment. In the report payload this field is
+            base64-encoded to prevent special characters from corrupting
+            the JSON embedding. The runtime decodes it before innerHTML assignment.
     """
 
     content: str = ""

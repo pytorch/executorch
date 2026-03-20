@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 
@@ -150,7 +151,10 @@ def build_payload() -> dict:
     blocks_record_1["blocks"][2]["record"]["graph_ref"] = "record_1"
 
     resources = {
-        "js": [FXGraphExporter._load_viewer_js_bundle(), _custom_js()],
+        "js": [
+            base64.b64encode(s.encode("utf-8")).decode("ascii")
+            for s in [FXGraphExporter._load_viewer_js_bundle(), _custom_js()]
+        ],
         "css": [],
     }
 
