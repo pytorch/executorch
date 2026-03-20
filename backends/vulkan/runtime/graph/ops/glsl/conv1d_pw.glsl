@@ -51,20 +51,11 @@ ${layout_declare_ubo(B, "ivec4", "out_sizes")}
 $if HAS_BIAS:
   ${layout_declare_ubo(B, "ivec4", "bias_sizes")}
 
-$if HAS_BIAS:
-  layout(push_constant) uniform restrict Block {
-    int weight_B;
-    float alpha;
-    float beta;
-    float output_min;
-    float output_max;
-  };
-$else:
-  layout(push_constant) uniform restrict Block {
-    int weight_B;
-    float output_min;
-    float output_max;
-  };
+layout(push_constant) uniform restrict Block {
+  int weight_B;
+  float output_min;
+  float output_max;
+};
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -188,8 +179,7 @@ void main() {
 #endif
     }
     [[unroll]] for (int m = 0; m < TILE_M; ++m) {
-      out_tile.data[m][n4] =
-          VEC4_T(alpha) * out_tile.data[m][n4] + VEC4_T(beta) * bias_val;
+      out_tile.data[m][n4] = out_tile.data[m][n4] + bias_val;
     }
   }
 #endif
