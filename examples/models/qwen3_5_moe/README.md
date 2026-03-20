@@ -32,7 +32,7 @@ recommended — the model is too large to fit in VRAM at bf16.
 
 ```bash
 python export.py \
-    --model-dir ~/models/Qwen3.5-MoE-A3B \
+    --model-dir ~/models/Qwen3.5-35B-A3B \
     --output-dir ./qwen35_moe_exports \
     --qlinear 4w \
     --qembedding 8w
@@ -73,7 +73,7 @@ The runner requires:
 cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner \
     --model_path qwen35_moe_exports/model.pte \
     --data_path qwen35_moe_exports/aoti_cuda_blob.ptd \
-    --tokenizer_path ~/models/Qwen3.5-MoE-A3B/tokenizer.json \
+    --tokenizer_path ~/models/Qwen3.5-35B-A3B/tokenizer.json \
     --prompt "The meaning of life is" \
     --max_new_tokens 128
 ```

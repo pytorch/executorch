@@ -12,7 +12,7 @@ import os
 import torch
 import torch.nn as nn
 
-from executorch.examples.models.qwen3_5_moe.model import FullAttention, Qwen35MoE
+from executorch.examples.models.qwen3_5_moe.model import Qwen35MoE
 
 
 # ---------------------------------------------------------------------------
@@ -129,13 +129,16 @@ def _materialize_buffers(model, config):
     Replaces meta buffers with real tensors on CPU, recomputes RoPE
     inv_freq and causal masks.
     """
+    # State buffers (KV cache, conv/recurrent state) are bf16 to match
+    # compute dtype. Masks stay bool, inv_freq stays float32.
     for fqn, buf in list(model.named_buffers()):
         if buf.device.type == "meta":
+            dtype = torch.bfloat16 if buf.dtype != torch.bool else torch.bool
             parts = fqn.rsplit(".", 1)
             parent = model.get_submodule(parts[0]) if len(parts) > 1 else model
             parent.register_buffer(
                 parts[-1],
-                torch.zeros(buf.shape, dtype=buf.dtype, device="cpu"),
+                torch.zeros(buf.shape, dtype=dtype, device="cpu"),
             )
 
     # Recompute RoPE inv_freq (zero-fill above is wrong for these)
@@ -153,7 +156,7 @@ def _materialize_buffers(model, config):
 
     # Recompute causal masks for full attention layers
     for layer in model.layers:
-        if isinstance(layer.attn, FullAttention):
+        if hasattr(layer.attn, "mask"):
             mask = torch.tril(
                 torch.ones(config.max_seq_len, config.max_seq_len, dtype=torch.bool)
             )
