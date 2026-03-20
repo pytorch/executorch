@@ -541,7 +541,6 @@ def main():
 
     args = parser.parse_args()
 
-    # Compute cache length
     has_adapters = args.adapter is not None
 
     print("Export mode:")
@@ -559,6 +558,7 @@ def main():
     print(f"\tLinear quantize: {args.linear_quantize}")
     print(f"\tDtype: {args.dtype}")
 
+    # Compute cache length
     cache_len = args.max_context_len - args.input_len
     print("\nGeneration configuration:")
     print(f"\tMax context length: {args.max_context_len}")
@@ -691,17 +691,22 @@ def main():
             float_dtype,
         )
 
+        # Combine metadata - shared values go without prefix,
+        # method-specific values get prefixed.
         constant_methods = {
+            # Shared metadata (same for both methods)
             "vocab_size": decode_metadata["vocab_size"],
             "head_dim": decode_metadata["head_dim"],
             "n_heads_per_cache": decode_metadata["n_heads_per_cache"],
             "freqs_cos": decode_metadata["freqs_cos"],
             "freqs_sin": decode_metadata["freqs_sin"],
+            # Decode-specific metadata (forward method)
             "decode_input_len": decode_metadata["forward_input_len"],
             "decode_freqs_cos_input_index": decode_metadata["freqs_cos_input_index"],
             "decode_freqs_sin_input_index": decode_metadata["freqs_sin_input_index"],
             "decode_mask_specs": decode_metadata["mask_specs"],
             "decode_kv_cache_specs": decode_metadata["kv_cache_specs"],
+            # Prefill-specific metadata
             "prefill_input_len": prefill_metadata["forward_input_len"],
             "prefill_freqs_cos_input_index": prefill_metadata["freqs_cos_input_index"],
             "prefill_freqs_sin_input_index": prefill_metadata["freqs_sin_input_index"],
