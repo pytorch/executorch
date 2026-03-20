@@ -440,6 +440,7 @@ Please help update following table if you are contributing new operators:
 | HardSwish | &check; |
 | InstanceNorm | &check; |
 | IsInf | &check; |
+| IsNan | &check; |
 | L2Norm | &cross; |
 | LayerNorm | &check; |
 | LogSoftmax | &check; |
@@ -457,6 +458,7 @@ Please help update following table if you are contributing new operators:
 | PoolMax2d | &check; |
 | Prelu | &check; |
 | Quantize | &check; |
+| Rand | &check; |
 | ReduceMax | &check; |
 | ReduceMean | &check; |
 | ReduceMin | &check; |
