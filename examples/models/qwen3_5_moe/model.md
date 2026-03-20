@@ -73,9 +73,10 @@ memory (~1x model size instead of ~3x):
    each shard, remapping checkpoint keys inline.
 3. **`assign=True` state dict loading** — replaces meta tensors by reference
    instead of copying into pre-allocated storage. No duplication.
-4. **Post-load fixups** — materialize remaining meta buffers (KV caches,
-   conv/recurrent state as zeros), recompute RoPE frequency tables and
-   causal masks.
+4. **Buffers stay on meta** — KV caches, conv/recurrent state, causal masks,
+   and RoPE tables remain on meta device. They are materialized in
+   `export.py` before `torch.export` (which requires real tensors for
+   in-place buffer ops).
 
 ## Expert Weight Structure
 
@@ -96,10 +97,11 @@ all groups → cat → gather correct expert per slot.
 
 `export.py` is split into `load_and_quantize()` and `export_and_lower()`.
 
-Quantization is done layer-by-layer on CUDA: each layer is moved to CUDA,
-quantized (tinygemm int4 packing requires CUDA), then moved back to CPU.
-Peak GPU memory is ~1 bf16 layer at a time. The model stays on CPU —
-`torch.export` traces the graph without executing ops.
+Quantization is done layer-by-layer on CUDA: each layer's parameters (not
+meta buffers) are moved to CUDA, quantized (tinygemm int4 packing requires
+CUDA), then moved back to CPU. Peak GPU memory is ~1 bf16 layer at a time.
+The model stays on CPU — `torch.export` traces the graph without executing
+ops.
 
 With `--qlinear 4w --qembedding 8w`:
 
@@ -113,12 +115,6 @@ With `--qlinear 4w --qembedding 8w`:
 Embedding and lm_head are untied before quantization since they require
 different quantization formats (embedding uses index lookup, lm_head uses
 matmul).
-
-### Causal mask dtype
-
-`layer.to(dtype=torch.bfloat16)` converts bool causal masks to bf16,
-breaking `F.scaled_dot_product_attention` masking. Bool masks are
-reconstructed after the dtype conversion.
 
 ## Weight Mapping
 

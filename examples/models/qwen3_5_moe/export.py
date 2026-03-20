@@ -3,7 +3,7 @@ Export Qwen 3.5 MoE to ExecuTorch .pte format (CUDA only).
 
 Usage:
   python export.py --model-dir /path/to/Qwen3.5-MoE-A3B
-  python export.py --model-dir /path/to/model --qlinear 4w --qlinear-packing-format tile_packed_to_4d
+  python export.py --model-dir /path/to/model --qlinear 4w
 """
 
 import argparse
@@ -43,13 +43,31 @@ def load_and_quantize(args):
     return model, config
 
 
+def _to_device_skip_meta(module, device, dtype=None):
+    """Move submodules to device, skipping any that have meta-device buffers.
+
+    Uses module.to() on leaf submodules (not p.data = p.data.to()) to
+    correctly handle tensor subclasses like Int4TilePackedTo4dTensor.
+    """
+    for _, submod in module.named_modules():
+        has_meta = any(
+            b.device.type == "meta" for _, b in submod.named_buffers(recurse=False)
+        )
+        if has_meta:
+            continue
+        if list(submod.parameters(recurse=False)):
+            if dtype:
+                submod.to(device=device, dtype=dtype)
+            else:
+                submod.to(device=device)
+
+
 def _quantize(model, config, args):
     """Quantize layer-by-layer on CUDA, keeping the model on CPU.
 
-    Each layer is moved to CUDA for quantization (tinygemm int4 packing
-    requires CUDA), then moved back to CPU. The quantized model stays on
-    CPU — torch.export traces the graph without executing ops, so CUDA
-    is not needed. Peak GPU memory is ~1 bf16 layer at a time.
+    Only submodules without meta buffers are moved to CUDA. The quantized
+    model stays on CPU — torch.export traces the graph without executing
+    ops, so CUDA is not needed. Peak GPU memory is ~1 bf16 layer at a time.
     """
     from executorch.extension.llm.export.quantize import quantize_model_
 
@@ -58,17 +76,19 @@ def _quantize(model, config, args):
     if model.lm_head.weight.data_ptr() == model.embed_tokens.weight.data_ptr():
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
 
-    # Quantize transformer layers
+    # Quantize transformer layers (skip meta buffers when moving to CUDA)
     for i, layer in enumerate(model.layers):
-        layer.to(device="cuda", dtype=torch.bfloat16)
+        _to_device_skip_meta(layer, device="cuda", dtype=torch.bfloat16)
         if args.qlinear:
             quantize_model_(
                 layer,
                 qlinear_config=args.qlinear,
                 qlinear_group_size=args.qlinear_group_size,
-                qlinear_packing_format=args.qlinear_packing_format,
+                qlinear_packing_format=(
+                    "tile_packed_to_4d" if args.qlinear == "4w" else None
+                ),
             )
-        layer.to(device="cpu")
+        _to_device_skip_meta(layer, device="cpu")
         torch.cuda.empty_cache()
         print(f"  Quantized layer {i + 1}/{config.num_hidden_layers}", end="\r")
     print()
@@ -82,7 +102,9 @@ def _quantize(model, config, args):
             wrapper,
             qlinear_config=args.qlinear,
             qlinear_group_size=args.qlinear_group_size,
-            qlinear_packing_format=args.qlinear_packing_format,
+            qlinear_packing_format=(
+                "tile_packed_to_4d" if args.qlinear == "4w" else None
+            ),
         )
         model.lm_head = wrapper.lm_head
         model.lm_head.to(device="cpu")
@@ -100,16 +122,40 @@ def _quantize(model, config, args):
     if args.qlinear:
         print(f"Quantized linear layers ({args.qlinear})")
 
-    # Restore bool causal masks (layer.to(dtype=bf16) converts bool masks
-    # to float, which breaks F.scaled_dot_product_attention masking)
+
+def _materialize_buffers(model, config):
+    """Materialize meta-device buffers before torch.export.
+
+    Replaces meta buffers with real tensors on CPU, recomputes RoPE
+    inv_freq and causal masks.
+    """
+    for fqn, buf in list(model.named_buffers()):
+        if buf.device.type == "meta":
+            parts = fqn.rsplit(".", 1)
+            parent = model.get_submodule(parts[0]) if len(parts) > 1 else model
+            parent.register_buffer(
+                parts[-1],
+                torch.zeros(buf.shape, dtype=buf.dtype, device="cpu"),
+            )
+
+    # Recompute RoPE inv_freq (zero-fill above is wrong for these)
+    for layer in model.layers:
+        if hasattr(layer.attn, "rotary_emb"):
+            rope = layer.attn.rotary_emb
+            inv_freq = 1.0 / (
+                config.rope_theta
+                ** (
+                    torch.arange(0, rope.rotary_dim, 2, dtype=torch.float32)
+                    / rope.rotary_dim
+                )
+            )
+            rope.inv_freq = inv_freq
+
+    # Recompute causal masks for full attention layers
     for layer in model.layers:
         if isinstance(layer.attn, FullAttention):
             mask = torch.tril(
-                torch.ones(
-                    config.max_seq_len,
-                    config.max_seq_len,
-                    dtype=torch.bool,
-                )
+                torch.ones(config.max_seq_len, config.max_seq_len, dtype=torch.bool)
             )
             layer.attn.register_buffer("mask", mask)
 
@@ -236,12 +282,6 @@ def main():
         help="Group size for linear quantization.",
     )
     parser.add_argument(
-        "--qlinear-packing-format",
-        default=None,
-        choices=["tile_packed_to_4d"],
-        help="Packing format for 4w quantization (CUDA: tile_packed_to_4d).",
-    )
-    parser.add_argument(
         "--qembedding", default=None, choices=["8w"], help="Quantize embedding layers."
     )
     args = parser.parse_args()
@@ -250,6 +290,7 @@ def main():
     import executorch.backends.cuda.triton.kernels  # noqa: F401
 
     model, config = load_and_quantize(args)
+    _materialize_buffers(model, config)
     export_and_lower(model, config, args)
 
 

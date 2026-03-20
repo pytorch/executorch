@@ -18,7 +18,8 @@ loads the `.pte`, `.ptd`, and a HuggingFace tokenizer, then generates text.
 
 - ExecuTorch installed from source (see [building from source](../../../docs/source/using-executorch-building-from-source.md))
 - [safetensors](https://pypi.org/project/safetensors/) (`pip install safetensors`)
-- NVIDIA GPU with CUDA toolkit
+- NVIDIA GPU with CUDA toolkit (tested on A100 80GB)
+- Python dependencies: `pip install -r requirements.txt` (installs FLA / Flash Linear Attention)
 - Model weights downloaded from HuggingFace. The directory should contain
   `config.json`, `model.safetensors.index.json`, safetensors shards, and
   `tokenizer.json`.
@@ -34,7 +35,6 @@ python export.py \
     --model-dir ~/models/Qwen3.5-MoE-A3B \
     --output-dir ./qwen35_moe_exports \
     --qlinear 4w \
-    --qlinear-packing-format tile_packed_to_4d \
     --qembedding 8w
 ```
 
@@ -47,7 +47,6 @@ python export.py \
 | `--max-seq-len` | `4096` | KV cache length |
 | `--qlinear` | (none) | Linear layer quantization: `4w`, `8w`, `8da4w`, `8da8w` |
 | `--qlinear-group-size` | `32` | Group size for linear quantization |
-| `--qlinear-packing-format` | (none) | Packing format for 4w: `tile_packed_to_4d` |
 | `--qembedding` | (none) | Embedding quantization: `8w` |
 
 ## Build

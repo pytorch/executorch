@@ -135,8 +135,8 @@ jobs:
         # Run CUDA backend Python tests
         python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts="
 
-        # Build Qwen3.5 MoE runner
-        make qwen3_5_moe-cuda
+        # Build Qwen3.5 MoE runner (ExecuTorch already built above)
+        cd examples/models/qwen3_5_moe && cmake --workflow --preset qwen3-5-moe-cuda
 
   export-model-cuda-artifact:
     name: export-model-cuda-artifact

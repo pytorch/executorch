@@ -17,10 +17,7 @@
 #include <vector>
 
 DEFINE_string(model_path, "", "Model .pte file path.");
-DEFINE_string(
-    data_path,
-    "",
-    "Comma-separated data files (.ptd) for CUDA backend.");
+DEFINE_string(data_path, "", "Data file (.ptd) for CUDA backend.");
 DEFINE_string(tokenizer_path, "", "HuggingFace tokenizer.json path.");
 DEFINE_string(prompt, "Hello", "Prompt text.");
 DEFINE_double(temperature, 0.8, "Sampling temperature (0 = greedy).");

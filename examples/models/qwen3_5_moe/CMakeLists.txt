@@ -31,11 +31,6 @@ set(link_libraries executorch gflags)
 list(APPEND link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)
 executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 
-# Needed for cpuinfo where it uses android specific log lib
-if(ANDROID)
-  list(APPEND link_libraries log)
-endif()
-
 # Extensions
 list(
   APPEND
@@ -50,9 +45,7 @@ list(
 # CUDA backend (required)
 find_package(CUDAToolkit REQUIRED)
 list(APPEND link_libraries aoti_cuda_backend)
-if(NOT MSVC)
-  executorch_target_link_options_shared_lib(aoti_cuda_backend)
-endif()
+executorch_target_link_options_shared_lib(aoti_cuda_backend)
 
 # Tokenizer
 list(APPEND link_libraries tokenizers::tokenizers)
@@ -65,18 +58,5 @@ target_link_libraries(qwen3_5_moe_runner PUBLIC ${link_libraries})
 
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(qwen3_5_moe_runner)
-  if(NOT APPLE AND NOT MSVC)
-    target_link_options(qwen3_5_moe_runner PRIVATE "LINKER:-s")
-  endif()
-endif()
-
-# On Windows, copy required DLLs to the executable directory
-if(MSVC AND EXECUTORCH_BUILD_CUDA)
-  add_custom_command(
-    TARGET qwen3_5_moe_runner
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:aoti_cuda_shims>
-            $<TARGET_FILE_DIR:qwen3_5_moe_runner>
-    COMMENT "Copying aoti_cuda_shims.dll to qwen3_5_moe_runner directory"
-  )
+  target_link_options(qwen3_5_moe_runner PRIVATE "LINKER:-s")
 endif()

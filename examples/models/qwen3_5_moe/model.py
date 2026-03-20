@@ -381,9 +381,10 @@ class GatedDeltaNet(nn.Module):
         beta = b.sigmoid()
         g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
 
-        # FLA Triton kernel
-        state = self.recurrent_state[:B].clone()
-        output, state = torch.ops.triton.chunk_gated_delta_rule(q, k, v, g, beta, state)
+        # FLA Triton kernel (returns final_state separately, does not mutate initial_state)
+        output, state = torch.ops.triton.chunk_gated_delta_rule(
+            q, k, v, g, beta, self.recurrent_state[:B]
+        )
 
         with torch.no_grad():
             self.recurrent_state[:B].copy_(state)
@@ -577,38 +578,6 @@ class Qwen35MoE(nn.Module):
             state_dict, strict=False, assign=True
         )
         del state_dict
-
-        # Materialize remaining meta-device buffers (KV caches, conv/recurrent
-        # state, causal masks, RoPE inv_freq) as zeros on CPU
-        for fqn, buf in list(model.named_buffers()):
-            if buf.device.type == "meta":
-                parts = fqn.rsplit(".", 1)
-                parent = model.get_submodule(parts[0]) if len(parts) > 1 else model
-                parent.register_buffer(
-                    parts[-1],
-                    torch.zeros(buf.shape, dtype=buf.dtype, device="cpu"),
-                )
-
-        # Recompute RoPE inv_freq (zero-fill above is wrong for these)
-        for layer in model.layers:
-            if hasattr(layer.attn, "rotary_emb"):
-                rope = layer.attn.rotary_emb
-                inv_freq = 1.0 / (
-                    config.rope_theta
-                    ** (
-                        torch.arange(0, rope.rotary_dim, 2, dtype=torch.float32)
-                        / rope.rotary_dim
-                    )
-                )
-                rope.inv_freq = inv_freq
-
-        # Recompute causal masks for full attention layers
-        for layer in model.layers:
-            if isinstance(layer.attn, FullAttention):
-                mask = torch.tril(
-                    torch.ones(config.max_seq_len, config.max_seq_len, dtype=torch.bool)
-                )
-                layer.attn.register_buffer("mask", mask)
 
         # Validate
         runtime_prefixes = (
