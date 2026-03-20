@@ -339,19 +339,7 @@ def _get_metadata(model_args, example_inputs, input_len, cache_len, float_dtype)
     }
 
 
-_TARGET_MODULE_TO_ATTR = {
-    "q_proj": "wqs",
-    "k_proj": "wks",
-    "v_proj": "wvs",
-    "o_proj": "wo",
-    "output_proj": "wo",
-    "gate_proj": "w1",
-    "up_proj": "w3",
-    "down_proj": "w2",
-}
-
-
-def _prepare_eager_model(model, args, float_dtype, skip_split_names=None):
+def _transform_eager_model(model, args, float_dtype):
     """Apply splitting, quantization, and graph breaks to a model.
 
     This is shared across base and adapter models so the same transformations
@@ -369,7 +357,6 @@ def _prepare_eager_model(model, args, float_dtype, skip_split_names=None):
             out_max_splits=args.max_splits,
             in_target_split_size=1,
             in_max_splits=1,
-            skip_names=skip_split_names,
         )
 
     if args.embedding_quantize:
@@ -584,22 +571,7 @@ def main():
 
     float_dtype = {"fp16": torch.float16, "fp32": torch.float32}[args.dtype]
 
-    # Compute skip_split_names: union of all adapter target_modules mapped to
-    # model attribute names. Both base and adapter models skip splitting these
-    # so POSITIONAL weight sharing can deduplicate the base weights.
-    skip_split_names = None
-    if has_adapters:
-        all_targets = set()
-        for _, _, adapter_cfg in args.adapter:
-            with open(adapter_cfg, "r") as f:
-                cfg = json.loads(f.read())
-            all_targets.update(cfg.get("target_modules", []))
-        skip_split_names = {
-            _TARGET_MODULE_TO_ATTR[t] for t in all_targets if t in _TARGET_MODULE_TO_ATTR
-        }
-        print(f"\nSkipping split for LoRA-targeted modules: {skip_split_names}")
-
-    model = _prepare_eager_model(model, args, float_dtype, skip_split_names=skip_split_names)
+    model = _transform_eager_model(model, args, float_dtype)
 
     # Load adapter models
     lora_models = {}
@@ -614,9 +586,7 @@ def main():
                 adapter_checkpoint=adapter_ckpt,
                 adapter_config=adapter_cfg,
             )
-            lora_model = _prepare_eager_model(
-                lora_model, args, float_dtype, skip_split_names=skip_split_names
-            )
+            lora_model = _transform_eager_model(lora_model, args, float_dtype)
             lora_models[name] = lora_model
 
     def _export_model(m, inputs, label="model"):
