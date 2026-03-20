@@ -148,10 +148,12 @@ def replace_quantized_embedding_patterns(
         repacked = unpacked.to(torch.uint8) + 8
         weight_tensor = repacked[:, 1::2] << 4 | repacked[:, ::2]
         # Update the state dict with repacked tensor
-        for key, value in ep.state_dict.items():
-            if value.data_ptr() == get_param_tensor(ep, match.weight_node).data_ptr():
-                ep.state_dict[key] = weight_tensor
-                break
+        original_weight = get_param_tensor(ep, match.weight_node)
+        if original_weight is not None:
+            for key, value in ep.state_dict.items():
+                if value.data_ptr() == original_weight.data_ptr():
+                    ep.state_dict[key] = weight_tensor
+                    break
 
     # Compute group_size from weight and scales shapes
     embed_dim = weight_tensor.shape[1] * 2  # packed, 2 values per byte
