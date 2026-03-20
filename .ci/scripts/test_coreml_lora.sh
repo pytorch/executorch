@@ -129,35 +129,37 @@ echo "  Base:                ${BASE_SIZE} bytes"
 echo "  Base + LoRA:         ${LORA_SIZE} bytes"
 echo "  Base + LoRA + MF:    ${LORA_MF_SIZE} bytes"
 
-# LoRA overhead should be small relative to base size.
-# With lora_B initialized to zeros, the adapter weights are tiny.
-LORA_OVERHEAD=$((LORA_SIZE - BASE_SIZE))
-echo "  LoRA overhead:       ${LORA_OVERHEAD} bytes"
+# LoRA PTE size should be close to base size.
+# skip_split_names prevents splitting LoRA-targeted modules (for POSITIONAL
+# weight sharing), so lora.pte may be slightly smaller than base.pte.
+LORA_DIFF=$((LORA_SIZE - BASE_SIZE))
+if [[ ${LORA_DIFF} -lt 0 ]]; then
+  ABS_LORA_DIFF=$((-LORA_DIFF))
+else
+  ABS_LORA_DIFF=${LORA_DIFF}
+fi
+echo "  LoRA size difference: ${LORA_DIFF} bytes"
 
-# Multifunction should add negligible overhead over LoRA
-# (POSITIONAL sharing deduplicates base weights).
-MF_OVERHEAD=$((LORA_MF_SIZE - LORA_SIZE))
-echo "  Multifunction overhead: ${MF_OVERHEAD} bytes"
-
-# LoRA PTE should be larger than base (adapter weights add some size).
-if [[ ${LORA_SIZE} -le ${BASE_SIZE} ]]; then
-  echo "FAIL: lora.pte (${LORA_SIZE}) should be larger than base.pte (${BASE_SIZE})"
+MAX_LORA_DIFF=$((BASE_SIZE / 10))
+if [[ ${ABS_LORA_DIFF} -gt ${MAX_LORA_DIFF} ]]; then
+  echo "FAIL: LoRA size difference ${LORA_DIFF} exceeds 10% of base size ${BASE_SIZE}"
   cleanup_files
   exit 1
 fi
 
-# LoRA overhead should be less than 10% of base size.
-MAX_LORA_OVERHEAD=$((BASE_SIZE / 10))
-if [[ ${LORA_OVERHEAD} -gt ${MAX_LORA_OVERHEAD} ]]; then
-  echo "FAIL: LoRA overhead ${LORA_OVERHEAD} exceeds 10% of base size ${BASE_SIZE}"
-  cleanup_files
-  exit 1
+# Multifunction PTE should be close to LoRA PTE size.
+# POSITIONAL sharing deduplicates base weights across methods.
+MF_DIFF=$((LORA_MF_SIZE - LORA_SIZE))
+if [[ ${MF_DIFF} -lt 0 ]]; then
+  ABS_MF_DIFF=$((-MF_DIFF))
+else
+  ABS_MF_DIFF=${MF_DIFF}
 fi
+echo "  Multifunction difference: ${MF_DIFF} bytes"
 
-# Multifunction overhead should be less than 5% of base size.
-MAX_MF_OVERHEAD=$((BASE_SIZE / 20))
-if [[ ${MF_OVERHEAD} -gt ${MAX_MF_OVERHEAD} ]]; then
-  echo "FAIL: Multifunction overhead ${MF_OVERHEAD} exceeds 5% of base size ${BASE_SIZE}"
+MAX_MF_DIFF=$((BASE_SIZE / 20))
+if [[ ${ABS_MF_DIFF} -gt ${MAX_MF_DIFF} ]]; then
+  echo "FAIL: Multifunction difference ${MF_DIFF} exceeds 5% of base size ${BASE_SIZE}"
   cleanup_files
   exit 1
 fi
