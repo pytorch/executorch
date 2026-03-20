@@ -6,31 +6,36 @@ The Arm&reg; Cortex&reg;-M backend accelerates quantized model execution on Arm 
 
 The backend targets Arm Cortex-M CPUs via CMSIS-NN, which provides optimized kernel implementations for three instruction set variants:
 
-| Variant | Description | Example CPUs |
-|---------|-------------|--------------|
-| MVE (Helium) | Vector extensions for Arm-M | Cortex-M55, Cortex-M85 |
-| DSP | DSP extension instructions | Cortex-M4, Cortex-M7, Cortex-M33 |
-| Pure C | Reference C implementation | Any Cortex-M |
+| Variant      | Description                 | Example CPUs       | Supported |
+|--------------|-----------------------------|--------------------|-----------|
+| MVE (Helium) | M-profile Vector extensions | Cortex-M55, M85    | ✅        |
+| DSP          | DSP extension instructions  | Cortex-M4, M7, M33 | ⬜        |
+| Pure C       | Reference C implementation  | Any Cortex-M       | ⬜        |
 
-Testing has only been done with MVE targets (Cortex-M55, Cortex-M85). DSP and pure C CMSIS-NN kernels might work as well since the same CMSIS-NN API is used across all variants, but is unverified at this point.
+DSP and pure C variants use the same CMSIS-NN API and may work, but have not been tested.
 
 ## CMSIS-NN Supported Operators
 
-| Operator | 8w8a | 8w16a | 4w8a |
-|---|---|---|---|
-| Conv2D | ✅ | ⬜ | ⬜ |
-| DepthwiseConv2D | ✅ | ⬜ | ⬜ |
-| TransposeConv2D | ✅ | ⬜ | ⬜ |
-| Fully Connected | ✅ | ⬜ | ⬜ |
-| Batch Matmul | ✅ | ⬜ | ⬜ |
-| Add | ✅ | ⬜ | N/A |
-| Mul | ✅ | ⬜ | N/A |
-| MaxPooling | ✅ | ⬜ | N/A |
-| AvgPooling | ✅ | ⬜ | N/A |
-| Softmax | ✅ | ⬜ | N/A |
-| Pad | ✅ | ⬜ | N/A |
-| LSTM | ⬜ | ⬜ | ⬜ |
-| SVDF | ⬜ | ⬜ | ⬜ |
+The backend pass pipeline replaces quantized ATen operators with [CMSIS-NN](https://arm-software.github.io/CMSIS-NN/latest/) kernel calls. See the [CMSIS-NN API documentation](https://arm-software.github.io/CMSIS-NN/latest/modules.html) for the full list of available kernels.
+
+| ATen Op                        | CMSIS-NN Kernel        | 8w8a | 8w16a | 4w8a |
+|--------------------------------|------------------------|------|-------|------|
+| `aten.convolution`             | `arm_convolve`         | ✅   | ⬜    | ⬜   |
+| `aten.convolution` (depthwise) | `arm_depthwise_conv`   | ✅   | ⬜    | ⬜   |
+| `aten.convolution` (transposed)| `arm_transpose_conv`   | ✅   | ⬜    | ⬜   |
+| `aten.linear`                  | `arm_fully_connected`  | ✅   | ⬜    | ⬜   |
+| `aten.bmm`                     | `arm_batch_matmul`     | ✅   | ⬜    | ⬜   |
+| `aten.add`                     | `arm_elementwise_add`  | ✅   | ⬜    | N/A  |
+| `aten.mul`                     | `arm_elementwise_mul`  | ✅   | ⬜    | N/A  |
+| `aten.max_pool2d`              | `arm_max_pool`         | ✅   | ⬜    | N/A  |
+| `aten.avg_pool2d`              | `arm_avgpool`          | ✅   | ⬜    | N/A  |
+| `aten._softmax`                | `arm_softmax`          | ✅   | ⬜    | N/A  |
+| `aten.minimum`                 | `arm_minimum`          | ✅   | ⬜    | N/A  |
+| `aten.maximum`                 | `arm_maximum`          | ✅   | ⬜    | N/A  |
+| `aten.permute_copy`            | `arm_transpose`        | ✅   | ⬜    | N/A  |
+| `aten.constant_pad_nd`         | `arm_pad`              | ✅   | ⬜    | N/A  |
+| —                              | LSTM                   | ⬜   | ⬜    | ⬜   |
+| —                              | SVDF                   | ⬜   | ⬜    | ⬜   |
 
 ## Quantization Support
 
