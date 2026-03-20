@@ -10,6 +10,8 @@
     toArraySet,
     buildViewerPayload,
     destroyGraphRuntime,
+    buildViewerCacheKey,
+    evictViewerCache,
   } = OBS.utils;
 
   function createSection(title, storageKey, collapsible) {
@@ -94,7 +96,21 @@
     );
   }
 
-  function mountGraphViewer(root, graphRecord, viewerOptions, fallbackGraphRef) {
+  function mountGraphViewer(root, graphRecord, viewerOptions, fallbackGraphRef, cacheKey) {
+    // Cache hit: reattach existing live viewer
+    if (cacheKey && state.viewerCache.has(cacheKey)) {
+      const entry = state.viewerCache.get(cacheKey);
+      entry.lastAccessed = Date.now();
+      root.appendChild(entry.wrapper);
+      requestAnimationFrame(() => {
+        try { entry.viewer.canvasRenderer.resize(); } catch (_) {}
+        try { entry.viewer.renderAll(); } catch (_) {}
+      });
+      state.mountedViewers.push(entry.viewer);
+      return entry.viewer;
+    }
+
+    // Cache miss: create new viewer
     const ViewerCtor = resolveViewerCtor();
     const graphRef = resolveGraphRef(graphRecord, fallbackGraphRef);
 
@@ -117,22 +133,26 @@
       payload,
       mount: { root },
       layout: { preset },
-      state: {
-        activeExtensions: defaultLayers,
-        colorBy: defaultColorBy,
-      },
+      state: { activeExtensions: defaultLayers, colorBy: defaultColorBy },
     });
-    viewer.init();
+
+    // FIX: defer init() until after browser layout pass so getBoundingClientRect() is valid
+    requestAnimationFrame(() => viewer.init());
 
     if ((viewerOptions || {}).sidebar_mode === 'hidden' && typeof viewer.setLayout === 'function') {
-      try {
-        viewer.setLayout({ panels: { sidebar: { visible: false } } });
-      } catch (_e) {}
+      try { viewer.setLayout({ panels: { sidebar: { visible: false } } }); } catch (_e) {}
     }
     if ((viewerOptions || {}).minimap_mode === 'off' && typeof viewer.setUIVisibility === 'function') {
-      try {
-        viewer.setUIVisibility({ minimapToggle: false });
-      } catch (_e) {}
+      try { viewer.setUIVisibility({ minimapToggle: false }); } catch (_e) {}
+    }
+
+    if (cacheKey) {
+      evictViewerCache();
+      state.viewerCache.set(cacheKey, {
+        viewer,
+        wrapper: viewer.wrapper,
+        lastAccessed: Date.now(),
+      });
     }
 
     state.mountedViewers.push(viewer);
@@ -180,7 +200,11 @@
       graphRoot.style.overflow = 'hidden';
       content.appendChild(graphRoot);
       const fallbackGraphRef = (context && context.record && context.record.name) || '';
-      mountGraphViewer(graphRoot, block.record || {}, (block.record && block.record.viewer_options) || {}, fallbackGraphRef);
+      const recordIndex = (context && context.index !== undefined) ? context.index : -1;
+      const cacheKey = (recordIndex >= 0)
+        ? buildViewerCacheKey('single', recordIndex, lensName, block.id || block.type)
+        : null;
+      mountGraphViewer(graphRoot, block.record || {}, (block.record && block.record.viewer_options) || {}, fallbackGraphRef, cacheKey);
     } else {
       content.innerHTML = `<div style="color:red">Unsupported block type: ${escapeHtml(block.type || '')}</div>`;
     }
@@ -329,7 +353,7 @@
     }
   }
 
-  function renderGraphCompare(content, entries, compareSpec) {
+  function renderGraphCompare(content, entries, compareSpec, lensName, blockId) {
     const maxParallel = Math.max(1, Number(compareSpec.max_parallel || 2));
     const syncEnabledByDefault = compareSpec.sync_toggle !== false;
     const selected = entries.slice(0, maxParallel);
@@ -348,6 +372,9 @@
     const split = document.createElement('div');
     split.className = 'split-view';
     content.appendChild(split);
+
+    const snapKey = buildViewerCacheKey('compare', null, lensName, blockId);
+    const snap = state.compareStateCache.get(snapKey);
 
     const viewers = [];
     for (const entry of selected) {
@@ -372,8 +399,40 @@
 
       const options = Object.assign({}, (entry.block && entry.block.record && entry.block.record.viewer_options) || {}, compareSpec.viewer_options_compare || {});
       const fallbackGraphRef = (entry.record && entry.record.name) || '';
-      const viewer = mountGraphViewer(root, entry.block.record || {}, options, fallbackGraphRef);
-      if (viewer) viewers.push(viewer);
+      const viewer = mountGraphViewer(root, entry.block.record || {}, options, fallbackGraphRef, null);
+
+      if (viewer) {
+        requestAnimationFrame(() => {
+          if (snap) {
+            if (Array.isArray(snap.activeExtensions) && typeof viewer.setLayers === 'function') {
+              try { viewer.setLayers(snap.activeExtensions); } catch (_) {}
+            }
+            if (snap.colorBy && typeof viewer.setColorBy === 'function') {
+              try { viewer.setColorBy(snap.colorBy); } catch (_) {}
+            }
+            if (snap.selectedNodeId && viewer.store && viewer.store.activeNodeMap && viewer.store.activeNodeMap.has(snap.selectedNodeId)) {
+              try { viewer.selectNode(snap.selectedNodeId, { animate: true }); } catch (_) {}
+            } else if (snap.camera && typeof viewer.setState === 'function') {
+              try { viewer.setState({ camera: snap.camera }); } catch (_) {}
+            }
+          }
+
+          if (typeof viewer.on === 'function') {
+            viewer.on('statechange', () => {
+              try {
+                const s = viewer.getState();
+                state.compareStateCache.set(snapKey, {
+                  camera: s.camera,
+                  selectedNodeId: s.selectedNodeId || null,
+                  activeExtensions: s.activeExtensions || [],
+                  colorBy: s.colorBy || 'base',
+                });
+              } catch (_) {}
+            });
+          }
+        });
+        viewers.push(viewer);
+      }
 
       split.appendChild(pane);
     }
@@ -458,7 +517,7 @@
       } else if (sample.type === 'html' && mode === 'auto') {
         renderHtmlCompare(content, entries);
       } else if (sample.type === 'graph' && mode === 'auto') {
-        renderGraphCompare(content, entries, compareSpec);
+        renderGraphCompare(content, entries, compareSpec, lensName, sample.id);
       } else if (mode === 'custom') {
         renderCustomCompare(content, entries, compareSpec, sample, lensName, sample.id);
       } else {

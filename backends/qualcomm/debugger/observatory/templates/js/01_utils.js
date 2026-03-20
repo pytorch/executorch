@@ -90,6 +90,31 @@
     };
   }
 
+  const MAX_CACHED_VIEWERS = 10;
+
+  function buildViewerCacheKey(mode, recordIndex, lensName, blockId) {
+    if (mode === 'single') {
+      return `single:${recordIndex}:${lensName}:${blockId}`;
+    }
+    return `compare:${lensName}:${blockId}`;
+  }
+
+  function evictViewerCache() {
+    if (state.viewerCache.size < MAX_CACHED_VIEWERS) return;
+    let oldestKey = null, oldestTime = Infinity;
+    for (const [k, entry] of state.viewerCache) {
+      if (entry.lastAccessed < oldestTime) {
+        oldestTime = entry.lastAccessed;
+        oldestKey = k;
+      }
+    }
+    if (oldestKey) {
+      const entry = state.viewerCache.get(oldestKey);
+      try { entry.viewer.destroy(); } catch (_) {}
+      state.viewerCache.delete(oldestKey);
+    }
+  }
+
   function destroyGraphRuntime() {
     for (const compare of state.mountedCompares) {
       try {
@@ -99,9 +124,10 @@
     state.mountedCompares = [];
 
     for (const viewer of state.mountedViewers) {
-      try {
-        if (viewer && typeof viewer.destroy === 'function') viewer.destroy();
-      } catch (_e) {}
+      if (!viewer) continue;
+      if (viewer.wrapper && viewer.wrapper.parentNode) {
+        viewer.wrapper.parentNode.removeChild(viewer.wrapper);
+      }
     }
     state.mountedViewers = [];
   }
@@ -116,5 +142,8 @@
     toArraySet,
     buildViewerPayload,
     destroyGraphRuntime,
+    buildViewerCacheKey,
+    evictViewerCache,
+    MAX_CACHED_VIEWERS,
   };
 })();
