@@ -129,7 +129,11 @@ ThreadPool* get_threadpool() {
   }
 
   static const int num_threads = ([]() {
-#if defined(EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES)
+#if defined(WIN32)
+    // pthreadpool's condvar-based synchronization on Windows can deadlock
+    // with multiple threads. Force single-threaded until this is resolved.
+    auto result = 1u;
+#elif defined(EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES)
     // Use threads=cores.
     auto result = cpuinfo_get_processors_count();
 #else
