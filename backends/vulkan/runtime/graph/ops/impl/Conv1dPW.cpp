@@ -117,15 +117,8 @@ void resize_conv1d_pw_node(
   graph->virtual_resize(out, {N_batch, C_out, L});
 }
 
-struct Conv1dPWIntParams final {
+struct Conv1dPWParams final {
   int32_t weight_B;
-  float output_min;
-  float output_max;
-};
-
-struct Conv1dPWBiasParams final {
-  float alpha;
-  float beta;
   float output_min;
   float output_max;
 };
@@ -207,8 +200,7 @@ void add_conv1d_pw_node(
   ValueRef C_out_ref = graph.add_scalar(C_out);
   ValueRef has_bias_ref = graph.add_scalar(has_bias);
 
-  Conv1dPWIntParams int_params{1, output_min, output_max};
-  Conv1dPWBiasParams bias_params{1.0f, 1.0f, output_min, output_max};
+  Conv1dPWParams params{1, output_min, output_max};
 
   std::vector<ValueRef> read_inputs = {in, packed_weight};
   if (has_bias) {
@@ -216,13 +208,8 @@ void add_conv1d_pw_node(
   }
 
   std::vector<PushConstantDataInfo> push_constants;
-  if (has_bias) {
-    push_constants.push_back(
-        PushConstantDataInfo(&bias_params, sizeof(Conv1dPWBiasParams)));
-  } else {
-    push_constants.push_back(
-        PushConstantDataInfo(&int_params, sizeof(Conv1dPWIntParams)));
-  }
+  push_constants.push_back(
+      PushConstantDataInfo(&params, sizeof(Conv1dPWParams)));
 
   vkapi::ParamsBindList shader_params = {
       graph.sizes_ubo(in), graph.sizes_ubo(out)};

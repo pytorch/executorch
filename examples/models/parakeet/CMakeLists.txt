@@ -40,11 +40,21 @@ if(TARGET optimized_native_cpu_ops_lib)
   endif()
 endif()
 
-# CPU-only builds need quantized and custom ops
-if(NOT EXECUTORCH_BUILD_CUDA)
-  list(APPEND link_libraries quantized_ops_lib custom_ops)
-  executorch_target_link_options_shared_lib(quantized_ops_lib)
-  executorch_target_link_options_shared_lib(custom_ops)
+# Quantized and custom ops
+if(TARGET quantized_ops_lib)
+  list(APPEND link_libraries quantized_ops_lib)
+  get_target_property(_is_imported quantized_ops_lib IMPORTED)
+  if(NOT _is_imported)
+    executorch_target_link_options_shared_lib(quantized_ops_lib)
+  endif()
+endif()
+
+if(TARGET custom_ops)
+  list(APPEND link_libraries custom_ops)
+  get_target_property(_is_imported custom_ops IMPORTED)
+  if(NOT _is_imported)
+    executorch_target_link_options_shared_lib(custom_ops)
+  endif()
 endif()
 
 # XNNPACK
