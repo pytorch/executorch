@@ -498,6 +498,13 @@ class OpQuantize:
 
 
 @dataclass(init=False, frozen=True)
+class OpRandomUniformLike:
+    op_name: str = "RandomUniformLike"
+    param_low: str = "low"
+    param_high: str = "high"
+
+
+@dataclass(init=False, frozen=True)
 class OpReduceMax:
     op_name: str = "ReduceMax"
     param_axes: str = "axes"
