@@ -309,7 +309,7 @@ def _get_metadata(model_args, example_inputs, input_len, cache_len, float_dtype)
     }
 
 
-def _prepare_eager_model(model, args, float_dtype):
+def _transform_eager_model(model, args, float_dtype):
     """Apply splitting, quantization, and graph breaks to a model."""
     model = model.to(float_dtype).eval()
 
@@ -505,7 +505,7 @@ def main():
     print(f"Model loaded: {model_args.n_layers} layers, {model_args.dim} dim")
 
     float_dtype = {"fp16": torch.float16, "fp32": torch.float32}[args.dtype]
-    model = _prepare_eager_model(model, args, float_dtype)
+    model = _transform_eager_model(model, args, float_dtype)
 
     if args.multifunction:
         # Multifunction mode: separate prefill and decode graphs with weight sharing
