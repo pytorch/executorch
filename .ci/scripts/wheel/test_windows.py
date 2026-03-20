@@ -16,6 +16,7 @@ from executorch.examples.xnnpack.quantization.utils import quantize as quantize_
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
+    _unsafe_reset_threadpool,
 )
 from test_base import ModelTest
 
@@ -42,6 +43,10 @@ def test_model_xnnpack(model: Model, quantize: bool) -> None:
             _check_ir_validity=False,
         ),
     ).to_executorch()
+
+    # pthreadpool's condvar-based synchronization on Windows can deadlock
+    # with multiple threads. Force single-threaded execution.
+    _unsafe_reset_threadpool(2)
 
     loaded_model = _load_for_executorch_from_buffer(lowered.buffer)
     et_outputs = loaded_model([*example_inputs])
