@@ -27,7 +27,7 @@ using ::executorch::runtime::KernelRuntimeContext;
 namespace {
 
 template <typename T>
-void quantized_max_pool2d_nchw_impl(
+void quantized_max_pool2d_impl(
     const Tensor& input,
     IntArrayRef kernel_size,
     IntArrayRef stride,
@@ -98,7 +98,7 @@ void quantized_max_pool2d_nchw_impl(
 
 } // namespace
 
-Tensor& quantized_max_pool2d_nchw_out(
+Tensor& quantized_max_pool2d_out(
     ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& input,
     IntArrayRef kernel_size,
@@ -107,9 +107,9 @@ Tensor& quantized_max_pool2d_nchw_out(
     IntArrayRef dilation,
     bool ceil_mode,
     Tensor& output) {
-#define typed_quantized_max_pool2d_nchw(ctype, dtype)                      \
+#define typed_quantized_max_pool2d(ctype, dtype)                           \
   case ScalarType::dtype: {                                                \
-    quantized_max_pool2d_nchw_impl<ctype>(                                 \
+    quantized_max_pool2d_impl<ctype>(                                      \
         input, kernel_size, stride, padding, dilation, ceil_mode, output); \
     break;                                                                 \
   }
@@ -117,14 +117,14 @@ Tensor& quantized_max_pool2d_nchw_out(
   ScalarType dtype = input.scalar_type();
   // NOLINTBEGIN(clang-diagnostic-switch-enum)
   switch (dtype) {
-    ET_FORALL_CADENCE_QUANTIZED_TYPES(typed_quantized_max_pool2d_nchw)
+    ET_FORALL_CADENCE_QUANTIZED_TYPES(typed_quantized_max_pool2d)
     default:
       ET_DCHECK_MSG(
           false, "Unhandled dtype %s", torch::executor::toString(dtype));
   }
     // NOLINTEND(clang-diagnostic-switch-enum)
 
-#undef typed_quantized_max_pool2d_nchw
+#undef typed_quantized_max_pool2d
   return output;
 }
 

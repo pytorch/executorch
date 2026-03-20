@@ -25,11 +25,10 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import Node
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class SimplifySliceOpPass(RemoveOrReplacePassInterface):
     """
     Simplify the start and end indices of slice and slice_scatter ops.
-    This is an optimization that normalizes slice indices for easier processing.
     """
 
     def adjust_slice_range(

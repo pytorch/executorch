@@ -15,7 +15,7 @@ namespace impl {
 namespace generic {
 namespace native {
 
-::executorch::aten::Tensor& quantized_max_pool2d_nchw_out(
+::executorch::aten::Tensor& quantized_max_pool2d_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& input,
     ::executorch::aten::IntArrayRef kernel_size,
