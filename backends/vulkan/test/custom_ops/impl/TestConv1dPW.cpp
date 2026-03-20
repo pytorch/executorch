@@ -14,7 +14,29 @@ namespace vkcompute {
 
 void test_conv1d_pw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // args: in, weight, bias, stride, padding, dilation, groups, out
-  VK_GET_OP_FN("et_vk.conv1d_pw.default")(graph, args);
+  const ValueRef input = args.at(0);
+  const ValueRef weight = args.at(1);
+  const ValueRef bias = args.at(2);
+  const ValueRef stride = args.at(3);
+  const ValueRef padding = args.at(4);
+  const ValueRef dilation = args.at(5);
+  const ValueRef groups = args.at(6);
+  const ValueRef out = args.at(7);
+
+  // conv1d_pw expects: in, weight, bias, stride, padding, dilation, groups,
+  //                    output_min, output_max, out
+  VK_GET_OP_FN("et_vk.conv1d_pw.default")
+  (graph,
+   {input,
+    weight,
+    bias,
+    stride,
+    padding,
+    dilation,
+    groups,
+    kDummyValueRef,
+    kDummyValueRef,
+    out});
 }
 
 REGISTER_OPERATORS {
