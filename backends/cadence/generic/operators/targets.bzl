@@ -226,18 +226,6 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
-        name = "op_quantized_max_pool2d_nhwc",
-        srcs = ["op_quantized_max_pool2d_nhwc.cpp"],
-        exported_headers = ["op_quantized_max_pool2d_nhwc.h"],
-        platforms = CXX,
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-            ":cadence_type_util",
-        ],
-        visibility = ["PUBLIC"],
-    )
-
-    runtime.cxx_library(
         name = "op_quantized_matmul",
         srcs = ["op_quantized_matmul.cpp"],
         exported_headers = ["op_quantized_matmul.h"],
