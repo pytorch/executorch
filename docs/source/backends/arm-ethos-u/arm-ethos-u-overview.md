@@ -83,11 +83,6 @@ Returns:
     Path where intermediate results are saved.
 
 ```python
-def EthosUCompileSpec.get_output_format() -> str:
-```
-Return the artifact format emitted by this compile spec.
-
-```python
 def EthosUCompileSpec.get_output_order_workaround(self) -> bool:
 ```
 Gets whether the output order workaround is being applied.
