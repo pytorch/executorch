@@ -297,6 +297,23 @@ bool ComputeGraph::is_valid_value_idx(const ValueRef idx) const noexcept {
   return idx >= 0 && idx < static_cast<int>(values_.size());
 }
 
+ValueRef ComputeGraph::get_cached_prepack(
+    const ValueRef input,
+    const std::string& kernel_name) const {
+  auto it = prepack_cache_.find({input, kernel_name});
+  if (it != prepack_cache_.end()) {
+    return it->second;
+  }
+  return kDummyValueRef;
+}
+
+void ComputeGraph::cache_prepack(
+    const ValueRef input,
+    const std::string& kernel_name,
+    const ValueRef prepacked) {
+  prepack_cache_.emplace(std::make_pair(input, kernel_name), prepacked);
+}
+
 std::vector<int64_t> ComputeGraph::sizes_of(const ValueRef idx) const {
   const Value& val = values_.at(idx);
   if (val.isTensor()) {
