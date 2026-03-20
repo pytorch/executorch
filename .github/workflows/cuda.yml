@@ -132,7 +132,7 @@ jobs:
         # Build executor_runner (needed by CUDA backend e2e tests)
         cmake --build cmake-out --target executor_runner
 
-        # Run all CUDA backend Python tests (including chunk_gated_delta e2e)
+        # Run CUDA backend Python tests
         python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts="
 
   export-model-cuda-artifact:
