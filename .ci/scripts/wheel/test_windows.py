@@ -46,7 +46,7 @@ def test_model_xnnpack(model: Model, quantize: bool) -> None:
 
     # pthreadpool's condvar-based synchronization on Windows can deadlock
     # with multiple threads. Force single-threaded execution.
-    _unsafe_reset_threadpool(1)
+    _unsafe_reset_threadpool(2)
 
     loaded_model = _load_for_executorch_from_buffer(lowered.buffer)
     et_outputs = loaded_model([*example_inputs])
