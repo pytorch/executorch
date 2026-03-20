@@ -155,7 +155,10 @@
       };
       header.appendChild(copyBtn);
     } else if (block.type === 'html') {
-      content.innerHTML = (block.record && block.record.content) || '';
+      const raw = (block.record && block.record.content) || '';
+      let decoded = raw;
+      try { decoded = atob(raw); } catch(_) {}
+      content.innerHTML = decoded;
     } else if (block.type === 'custom') {
       const jsFunc = block.record && block.record.js_func;
       const fn = resolveFunction(jsFunc);
@@ -289,9 +292,11 @@
       h3.appendChild(span);
       pane.appendChild(h3);
 
-      const html = (entry.block && entry.block.record && entry.block.record.content) || '';
+      const raw = (entry.block && entry.block.record && entry.block.record.content) || '';
+      let decoded = raw;
+      try { decoded = atob(raw); } catch(_) {}
       const div = document.createElement('div');
-      div.innerHTML = html;
+      div.innerHTML = decoded;
       pane.appendChild(div);
       split.appendChild(pane);
     }
