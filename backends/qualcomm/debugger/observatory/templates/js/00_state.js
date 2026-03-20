@@ -10,6 +10,8 @@
     selectedIndices: new Set(),
     mountedViewers: [],
     mountedCompares: [],
+    viewerCache: new Map(),
+    compareStateCache: new Map(),
   };
 
   OBS.app = document.getElementById('app');

@@ -279,7 +279,6 @@ class FXGraphExporter:
             path = os.path.join(template_dir, filename)
             with open(path, "r") as f:
                 chunks.append(f"\n// ---- {filename} ----\n")
-                chunks.append(f'console.log("Successfully Loaded {path}")')
                 chunks.append(f.read())
             
         return "\n".join(chunks)

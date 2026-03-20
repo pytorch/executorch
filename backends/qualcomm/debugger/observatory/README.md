@@ -901,3 +901,74 @@ GraphView(
 
 See:
 1. `examples/OBSERVATORY_UI_TESTCASES.md`
+
+## 12. Performance Notes — Viewer Lifecycle and Caching
+
+### 12.1 Single-record viewers: live DOM cache with LRU eviction
+
+Single-record graph blocks use a **live viewer cache** keyed by
+`(recordIndex, lensName, blockId)`.
+
+On first visit a `FXGraphViewer` instance is created and its DOM wrapper is stored in
+`state.viewerCache`. On return visit the existing wrapper is re-appended to the new
+container via `appendChild` (moves the DOM node, no clone). The viewer's full state —
+camera pan/zoom, selected node, active extension layers, colorBy, search query — is
+preserved exactly as left. No `init()`, no `computeActiveGraph()`, no re-layout.
+
+On navigate away `destroyGraphRuntime()` detaches the wrapper from the DOM but does
+**not** call `viewer.destroy()`. The viewer stays alive in memory.
+
+**LRU eviction**: the cache holds at most `MAX_CACHED_VIEWERS = 10` live viewers. When
+the cap is reached, the least-recently-accessed viewer is destroyed and removed. For a
+typical report with 5 records × 2 graph blocks = 10 viewers, nothing is ever evicted.
+
+**Memory budget per cached viewer** (approximate, 1200×640 viewport, dpr=2):
+
+| Component | Size |
+|---|---|
+| Canvas pixel buffer | ~12 MB |
+| Node/edge JS objects (3600 nodes) | ~2 MB |
+| DOM elements | ~0.1 MB |
+| **Total** | **~14 MB** |
+
+10 cached viewers ≈ 140 MB. For reports with more records, the LRU cap bounds memory use.
+
+### 12.2 Compare-mode viewers: state-snapshot cache
+
+Compare-mode viewers are **always freshly created** on each visit. Keeping multiple
+side-by-side viewers alive simultaneously would multiply the memory cost above by the
+number of panes, with limited benefit since compare views are typically visited briefly.
+
+Instead, a lightweight **state snapshot** is saved to `state.compareStateCache` whenever
+any compare viewer's state changes. The snapshot stores:
+`{ camera: {x,y,k}, selectedNodeId, activeExtensions, colorBy }` — a few bytes per block.
+
+Cache key: `"compare:<lensName>:<blockId>"` — intentionally **not** keyed by pool
+composition or graphRef. Consequences:
+
+- Adding or removing records from the compare pool restores the same camera and layers.
+- Switching from single-record mode back to compare mode restores the compare state.
+- All viewers in the same compare block share one snapshot (they are synced via
+  `FXGraphCompare` anyway, so their states converge).
+
+On re-entry, each new viewer is seeded from the snapshot in priority order:
+1. `selectedNodeId` present and node exists in graph → `selectNode` + animate.
+2. `camera` present, no node selection → `setState({ camera })` to restore pan/zoom.
+3. No snapshot → `init()` runs normally (zoom-to-fit or first-node centering).
+
+Layers (`activeExtensions`, `colorBy`) are always restored from the snapshot when
+available, regardless of which priority path is taken for camera/selection.
+
+### 12.3 Section collapse state
+
+Section open/close state is persisted to `localStorage` under key
+`graphCollectorViewPrefs` as `"${lensName}:${blockId}" → bool`. This is independent of
+the viewer cache and survives full page reloads.
+
+### 12.4 Trade-off summary
+
+| Scenario | Approach | Memory | Switch-back latency |
+|---|---|---|---|
+| Single-record graph block | Live DOM cache + LRU | ~14 MB/viewer, cap 10 | ~0 ms (rAF resize only) |
+| Compare graph block | State-snapshot + fresh create | ~bytes/block | ~50–200 ms (create + init) |
+| Section collapse | localStorage | 0 | 0 |
