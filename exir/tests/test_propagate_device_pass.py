@@ -382,6 +382,75 @@ class TestPropagateDevicePass(unittest.TestCase):
         spec = TensorSpec.from_tensor(cpu_tensor)
         self.assertEqual(spec.device, DeviceType.CPU)
 
+    def test_delegate_output_specs_get_device_index(self):
+        """
+        Delegate output TensorSpecs should have the correct device_index
+        when partitioner specifies e.g., cuda:1.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b)
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+
+        for pipeline, gm in _lower_model_with_partitioner(
+            model, inputs, DeviceAwarePartitioner("cuda:1")
+        ):
+            with self.subTest(pipeline=pipeline):
+                for node in gm.graph.nodes:
+                    if (
+                        node.op == "call_function"
+                        and node.target == executorch_call_delegate
+                    ):
+                        specs = node.meta.get("spec")
+                        self.assertIsNotNone(specs)
+                        if isinstance(specs, TensorSpec):
+                            self.assertEqual(specs.device, DeviceType.CUDA)
+                            self.assertEqual(specs.device_index, 1)
+                        elif isinstance(specs, (tuple, list)):
+                            for s in specs:
+                                if isinstance(s, TensorSpec):
+                                    self.assertEqual(s.device, DeviceType.CUDA)
+                                    self.assertEqual(s.device_index, 1)
+
+    def test_delegate_input_specs_get_device_index(self):
+        """
+        Delegate input TensorSpecs should also carry the correct device_index.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b)
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+
+        for pipeline, gm in _lower_model_with_partitioner(
+            model, inputs, DeviceAwarePartitioner("cuda:1")
+        ):
+            with self.subTest(pipeline=pipeline):
+                for node in gm.graph.nodes:
+                    if (
+                        node.op == "call_function"
+                        and node.target == executorch_call_delegate
+                    ):
+                        for arg in node.args[1:]:
+                            if isinstance(arg, torch.fx.Node):
+                                spec = arg.meta.get("spec")
+                                if isinstance(spec, TensorSpec):
+                                    self.assertEqual(spec.device, DeviceType.CUDA)
+                                    self.assertEqual(spec.device_index, 1)
+
+    def test_cpu_specs_have_device_index_zero(self):
+        """
+        Non-delegated CPU specs should have device_index == 0.
+        """
+        spec = TensorSpec(dtype=torch.float32, shape=torch.Size([2, 3]))
+        self.assertEqual(spec.device, DeviceType.CPU)
+        self.assertEqual(spec.device_index, 0)
+
     def test_tensorspec_default_device_is_cpu(self):
         """
         A TensorSpec created directly should default to CPU.
