@@ -13,6 +13,7 @@
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/extension/named_data_map/merged_data_map.h>
+#include <executorch/runtime/executor/pal_dynamic_allocator.h>
 #include <executorch/runtime/platform/runtime.h>
 
 namespace executorch {
@@ -389,8 +390,13 @@ runtime::Error Module::load_method(
       planned_memory = method_holder.planned_memory->planned_memory.get();
     }
 
+    method_holder.dynamic_allocator =
+        std::make_unique<runtime::PalDynamicAllocator>();
     method_holder.memory_manager = std::make_unique<runtime::MemoryManager>(
-        memory_allocator_.get(), planned_memory, temp_allocator_.get());
+        memory_allocator_.get(),
+        planned_memory,
+        temp_allocator_.get(),
+        method_holder.dynamic_allocator.get());
     auto res_method = program_->load_method(
         method_name.c_str(),
         method_holder.memory_manager.get(),

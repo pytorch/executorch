@@ -1502,6 +1502,14 @@ Error Method::execute_instruction() {
       // at init time.
       auto free_call = instruction->instr_args_as_FreeCall();
       auto t = values_[free_call->value_index()].toTensor();
+      // For DYNAMIC_UNBOUND tensors, actually free the dynamically allocated
+      // memory rather than just nulling the pointer.
+      auto* impl = t.unsafeGetTensorImpl();
+      if (impl->dynamic_allocator() != nullptr &&
+          impl->mutable_data() != nullptr) {
+        impl->dynamic_allocator()->free(impl->mutable_data());
+        impl->set_capacity_bytes(0);
+      }
       internal::reset_data_ptr(t);
     } break;
     default:
@@ -1776,6 +1784,20 @@ EventTracer* Method::get_event_tracer() {
 }
 
 Method::~Method() {
+  // Free any dynamically allocated tensor memory (DYNAMIC_UNBOUND).
+  if (values_ != nullptr) {
+    for (size_t i = 0; i < n_value_; ++i) {
+      if (values_[i].isTensor()) {
+        auto* impl = values_[i].toTensor().unsafeGetTensorImpl();
+        if (impl->dynamic_allocator() != nullptr &&
+            impl->mutable_data() != nullptr) {
+          impl->dynamic_allocator()->free(impl->mutable_data());
+          impl->set_data(nullptr);
+          impl->set_capacity_bytes(0);
+        }
+      }
+    }
+  }
   // Destroy the values. It's necessary in ATen mode, where the refcount of
   // Tensors needs to be decremented properly.
   if (values_ != nullptr) {

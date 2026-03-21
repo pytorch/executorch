@@ -419,6 +419,15 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--lazy_kv_cache",
+        action="store_true",
+        default=False,
+        help="Mark KV cache buffers as DYNAMIC_UNBOUND so they are allocated "
+        "lazily at runtime instead of at load time. Reduces initial memory "
+        "usage when max_context_length is large.",
+    )
+
+    parser.add_argument(
         "--local_global_attention",
         type=parse_list_of_ints,
         default=None,
@@ -1361,6 +1370,13 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     additional_passes = []
     if llm_config.base.model_class.value in TORCHTUNE_DEFINED_MODELS:
         additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
+
+    if llm_config.export.lazy_kv_cache:
+        from executorch.exir.passes.mark_dynamic_unbound_pass import (
+            MarkDynamicUnboundPass,
+        )
+
+        additional_passes.append(MarkDynamicUnboundPass())
 
     # export_to_edge
     builder_manager = _prepare_for_llama_export(llm_config)

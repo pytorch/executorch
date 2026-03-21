@@ -113,10 +113,57 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
       }
 
       break;
-    case TensorShapeDynamism::DYNAMIC_BOUND:
-      // TODO(T175194371): Unbounded dynamic tensor resizing is not yet
-      // supported: treat them as upper-bounded.
     case TensorShapeDynamism::DYNAMIC_UNBOUND: {
+      const auto new_numel = compute_numel(new_sizes.data(), dim_);
+
+      ET_CHECK_OR_RETURN_ERROR(
+          static_cast<size_t>(new_numel) <= numel_bound_,
+          NotSupported,
+          "Attempted to resize a dynamic unbound tensor beyond its ceiling of %zu elements to %zu elements.",
+          numel_bound_,
+          new_numel);
+
+      const size_t needed_bytes =
+          static_cast<size_t>(new_numel) * elementSize(type_);
+      // If capacity_bytes_ is 0 but data_ is non-null, the buffer is
+      // externally managed (e.g., stack-allocated in tests). Use the
+      // original numel bound as the effective capacity.
+      const size_t effective_capacity = capacity_bytes_ > 0
+          ? capacity_bytes_
+          : static_cast<size_t>(numel_bound_) * elementSize(type_);
+      if (needed_bytes > effective_capacity) {
+        ET_CHECK_OR_RETURN_ERROR(
+            dynamic_allocator_ != nullptr,
+            NotSupported,
+            "DYNAMIC_UNBOUND tensor needs reallocation but has no DynamicAllocator");
+        size_t actual_size = 0;
+        void* new_data = dynamic_allocator_->reallocate(
+            data_,
+            capacity_bytes_,
+            needed_bytes,
+            alignof(std::max_align_t),
+            &actual_size);
+        ET_CHECK_OR_RETURN_ERROR(
+            new_data != nullptr,
+            MemoryAllocationFailed,
+            "Failed to reallocate DYNAMIC_UNBOUND tensor to %zu bytes",
+            needed_bytes);
+        data_ = new_data;
+        capacity_bytes_ = actual_size;
+      }
+
+      if (strides_ && dim_order_) {
+        auto error =
+            dim_order_to_stride(new_sizes.data(), dim_order_, dim_, strides_);
+        if (error != Error::Ok) {
+          return error;
+        }
+      }
+      numel_ = new_numel;
+      std::copy(new_sizes.begin(), new_sizes.end(), sizes_);
+    } break;
+
+    case TensorShapeDynamism::DYNAMIC_BOUND: {
       const auto new_numel = compute_numel(new_sizes.data(), dim_);
 
       ET_CHECK_OR_RETURN_ERROR(

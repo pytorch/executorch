@@ -25,6 +25,7 @@ def define_common_targets():
                 "//executorch/extension/data_loader:mmap_data_loader",
                 "//executorch/extension/flat_tensor:flat_tensor_data_map" + aten_suffix,
                 "//executorch/extension/named_data_map:merged_data_map" + aten_suffix,
+                "//executorch/runtime/executor:pal_dynamic_allocator",
             ],
             exported_deps = [
                 "//executorch/runtime/executor:program_no_prim_ops" + aten_suffix,
