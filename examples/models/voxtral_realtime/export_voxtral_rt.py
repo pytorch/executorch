@@ -30,7 +30,7 @@ Backend support:
 Usage:
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --streaming
-    python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend metal
+    python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend metal --dtype bf16 --qlinear-encoder fpa4w --qlinear fpa4w
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend cuda --qlinear 4w
 """
 
@@ -394,10 +394,10 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
 
         # Run decompositions for Metal backend
         updated_programs = {}
+        decomp_table = torch.export.default_decompositions()
+        decomp_table[torch.ops.aten.linear.default] = _linear_bias_decomposition
         for key, ep in programs.items():
-            updated_programs[key] = ep.run_decompositions(
-                {torch.ops.aten.linear.default: _linear_bias_decomposition}
-            )
+            updated_programs[key] = ep.run_decompositions(decomp_table)
         programs = updated_programs
 
         partitioner = {}
@@ -599,6 +599,8 @@ def main():
         )
     else:
         programs, metadata = export_all(model, args.max_seq_len, **quant_args)
+
+    metadata["delay_tokens"] = args.delay_tokens
 
     # Lower
     et = lower_to_executorch(programs, metadata, backend=args.backend)

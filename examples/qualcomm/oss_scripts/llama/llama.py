@@ -528,10 +528,19 @@ def _build_parser():
 
     parser.add_argument("-v", "--verbose", action="store_true")
 
+    parser.add_argument(
+        "--calibration_num_threads",
+        type=int,
+        default=0,
+        help="Thread count for calibration forward passes. 0 = auto-tune (default).",
+    )
+
     return parser
 
 
 def export_llama(args) -> None:
+    if args.calibration_num_threads < 0:
+        raise ValueError("--calibration_num_threads must be >= 0")
     if args.compile_only and args.pre_gen_pte:
         raise RuntimeError("Cannot set both compile_only and pre_gen_pte as true")
     if (TASKS_EVAL or SQNR_EVAL) in args.eval_methods and args.model_mode not in {
