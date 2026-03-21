@@ -573,7 +573,10 @@ def pad_meta(
     output_shape = list(input.shape)
     for i in range(rank):
         output_shape[i] += pre_pad[offset + i] + post_pad[offset + i]
-    return torch.empty(output_shape, dtype=input.dtype, device=input.device)
+    result = torch.empty(output_shape, dtype=input.dtype, device=input.device)
+    if input.is_contiguous(memory_format=torch.channels_last):
+        result = result.to(memory_format=torch.channels_last)
+    return result
 
 
 @impl(lib, "pad", "CompositeExplicitAutograd")

@@ -48,24 +48,42 @@ Tensor& pad_out(
     return out;
   }
 
+  // arm_pad_s8 processes data in {n, h, w, c} order where c is the
+  // fastest-varying (innermost) dimension. Use dim_order to permute
+  // logical sizes and padding into physical memory order so this holds
+  // for both contiguous and channels_last tensors.
   const size_t offset = kMaxSupportedDims - rank;
-
-  cmsis_nn_dims input_dims = {1, 1, 1, 1};
-  int32_t* d = &input_dims.n;
+  int32_t logical_dims[kMaxSupportedDims] = {1, 1, 1, 1};
   for (size_t i = 0; i < rank; ++i) {
-    d[offset + i] = static_cast<int32_t>(input.size(i));
+    logical_dims[offset + i] = static_cast<int32_t>(input.size(i));
   }
 
+  int32_t physical_dims[kMaxSupportedDims];
+  int32_t physical_pre[kMaxSupportedDims];
+  int32_t physical_post[kMaxSupportedDims];
+
+  // Leading virtual dims (for rank < 4) are always identity-ordered.
+  for (size_t i = 0; i < offset; ++i) {
+    physical_dims[i] = 1;
+    physical_pre[i] = static_cast<int32_t>(pre_pad[i]);
+    physical_post[i] = static_cast<int32_t>(post_pad[i]);
+  }
+
+  // Permute the real dims according to dim_order.
+  const auto dim_order = input.dim_order();
+  for (size_t i = 0; i < rank; ++i) {
+    const size_t logical_idx = offset + dim_order[i];
+    physical_dims[offset + i] = logical_dims[logical_idx];
+    physical_pre[offset + i] = static_cast<int32_t>(pre_pad[logical_idx]);
+    physical_post[offset + i] = static_cast<int32_t>(post_pad[logical_idx]);
+  }
+
+  cmsis_nn_dims input_dims = {
+      physical_dims[0], physical_dims[1], physical_dims[2], physical_dims[3]};
   cmsis_nn_dims cmsis_pre_pad = {
-      static_cast<int32_t>(pre_pad[0]),
-      static_cast<int32_t>(pre_pad[1]),
-      static_cast<int32_t>(pre_pad[2]),
-      static_cast<int32_t>(pre_pad[3])};
+      physical_pre[0], physical_pre[1], physical_pre[2], physical_pre[3]};
   cmsis_nn_dims cmsis_post_pad = {
-      static_cast<int32_t>(post_pad[0]),
-      static_cast<int32_t>(post_pad[1]),
-      static_cast<int32_t>(post_pad[2]),
-      static_cast<int32_t>(post_pad[3])};
+      physical_post[0], physical_post[1], physical_post[2], physical_post[3]};
 
   const int8_t* input_data = input.const_data_ptr<int8_t>();
   int8_t* output_data = out.mutable_data_ptr<int8_t>();
