@@ -122,15 +122,16 @@ lib.define(
     "quantized_add("
     "Tensor self, int self_zero_point, int self_multiplier, int self_shift, "
     "Tensor other, int other_zero_point, int other_multiplier, int other_shift, "
-    "int output_zero_point, int output_multiplier, int output_shift) -> Tensor"
+    "int output_zero_point, int output_multiplier, int output_shift, "
+    "int activation_min, int activation_max) -> Tensor"
 )
 
-# Define the operator schema with multipliers and shifts (11 args + out tensor)
 lib.define(
     "quantized_add.out("
     "Tensor self, int self_zero_point, int self_multiplier, int self_shift, "
     "Tensor other, int other_zero_point, int other_multiplier, int other_shift, "
     "int output_zero_point, int output_multiplier, int output_shift, "
+    "int activation_min, int activation_max, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
@@ -148,6 +149,8 @@ def quantized_add_meta(
     output_zero_point: int,
     output_multiplier: int,
     output_shift: int,
+    activation_min: int,
+    activation_max: int,
 ) -> torch.Tensor:
     assert self.shape == other.shape or is_channel_broadcast(self, other), (
         "Cortex-M quantized_add: broadcasting is not yet supported except for channel dim — "
@@ -173,6 +176,8 @@ def quantized_add_impl(
     output_zero_point: int,
     output_multiplier: int,
     output_shift: int,
+    activation_min: int,
+    activation_max: int,
 ) -> torch.Tensor:
     assert self.shape == other.shape or is_channel_broadcast(self, other), (
         "Cortex-M quantized_add: broadcasting is not yet supported except for channel dim — "
@@ -186,7 +191,7 @@ def quantized_add_impl(
 
     result_fp = self_fp + other_fp
     result_quantized = requantize_cmsis(result_fp, output_multiplier, output_shift)
-    result = torch.clamp(result_quantized + output_zero_point, -128, 127).to(torch.int8)
+    result = torch.clamp(result_quantized + output_zero_point, activation_min, activation_max).to(torch.int8)
     return result
 
 
