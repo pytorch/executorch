@@ -267,7 +267,6 @@ def export_and_lower(model, config, args):
         to_edge_transform_and_lower,
     )
     from executorch.exir.passes import MemoryPlanningPass
-    from torch._inductor.decomposition import conv1d_to_conv2d
     from torch.export import Dim, export
 
     # Coordinate descent recompiles each kernel trying config perturbations,
@@ -292,11 +291,6 @@ def export_and_lower(model, config, args):
             strict=True,
         )
     print("Export successful!")
-
-    # conv1d → conv2d decomposition (required for CUDA backend)
-    exported = exported.run_decompositions(
-        {torch.ops.aten.conv1d.default: conv1d_to_conv2d}
-    )
 
     # Lower with CUDA backend
     print("Lowering to ExecuTorch with CUDA...")
