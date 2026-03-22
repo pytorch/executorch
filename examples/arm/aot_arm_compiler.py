@@ -1086,4 +1086,9 @@ if __name__ == "__main__":  # noqa: C901
             generate_etrecord(etrecord_file_name, edge_program_manager_copy, exec_prog)
             print(f"ETRecord saved as {etrecord_file_name}")
         except Exception as e:
-            logging.warning(f"ETRecord generation failed (non-fatal): {e}")
+            # Treat ETRecord failures as non-fatal only when generated as a side-effect
+            # of --bundleio. When --etrecord is explicitly requested, fail loudly.
+            if args.bundleio and not args.etrecord:
+                logging.warning(f"ETRecord generation failed (non-fatal): {e}")
+            else:
+                raise

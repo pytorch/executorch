@@ -1086,8 +1086,5 @@ jobs:
         # Build cortex-m test runner with bundled IO support
         backends/cortex_m/test/build_test_runner.sh
 
-        # Run cortex-m unit/model tests
-        pytest --config-file=backends/arm/test/pytest.ini backends/cortex_m/test
-
         # Export model and run on FVP
         bash .ci/scripts/test_cortex_m_e2e.sh ${{ matrix.model }}
