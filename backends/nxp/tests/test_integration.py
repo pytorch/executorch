@@ -47,7 +47,7 @@ def test_cifarnet(use_qat):
     delegation_info = get_delegation_info(exec_prog.exported_program().graph_module)
     assert delegation_info.num_delegated_subgraphs == 1
     assert delegation_info.num_non_delegated_nodes == 11
-    assert delegation_info.num_delegated_nodes == 45
+    assert delegation_info.num_delegated_nodes == 36
 
     nodes = list(exec_prog.exported_program().graph.nodes)
     assert nodes[2].name == "quantized_decomposed_quantize_per_tensor_default"

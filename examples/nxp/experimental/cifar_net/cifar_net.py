@@ -13,7 +13,6 @@ import numpy as np
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
 
@@ -27,14 +26,21 @@ logger.setLevel(logging.INFO)
 
 class CifarNet(model_base.EagerModelBase):
 
-    def __init__(self, batch_size: int = 1, pth_file: str | None = None):
+    def __init__(
+        self,
+        batch_size: int = 1,
+        pth_file: str | None = None,
+    ):
         self.batch_size = batch_size
         self.pth_file = pth_file or os.path.join(
             os.path.dirname(__file__), "cifar_net.pth"
         )
 
     def get_eager_model(self) -> torch.nn.Module:
-        return get_model(self.batch_size, state_dict_file=self.pth_file)
+        return get_model(
+            self.batch_size,
+            state_dict_file=self.pth_file,
+        )
 
     def get_example_inputs(self) -> Tuple[torch.Tensor]:
         tl = get_test_loader()
@@ -59,24 +65,21 @@ class CifarNetModel(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.conv1 = nn.Conv2d(3, 32, 5)
-        self.conv2 = nn.Conv2d(32, 32, 5)
-        self.conv3 = nn.Conv2d(32, 64, 5)
+        self.conv1 = nn.Conv2d(3, 32, 5, padding=2)
+        self.conv2 = nn.Conv2d(32, 32, 5, padding=2)
+        self.conv3 = nn.Conv2d(32, 64, 5, padding=2)
         self.pool1 = nn.MaxPool2d(2, 2)
         self.pool2 = nn.MaxPool2d(1, 2)
         self.fc = nn.Linear(1024, 10)
         self.softmax = nn.Softmax(1)
 
     def forward(self, x):
-        x = F.pad(x, (2, 2, 2, 2))
         x = self.conv1(x)
         x = self.pool1(x)
 
-        x = F.pad(x, (2, 2, 2, 2))
         x = self.conv2(x)
         x = self.pool1(x)
 
-        x = F.pad(x, (2, 2, 2, 2))
         x = self.conv3(x)
         x = self.pool2(x)
 
