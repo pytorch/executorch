@@ -37,7 +37,36 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM ON)
   if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|i.86)$")
-    set_overridable_option(EXECUTORCH_BUILD_QNN ON)
+    # Auto-enable QNN on Linux x86 when the SDK is available. - QNN_SDK_ROOT set
+    # explicitly → always enable - GitHub Actions CI → skip (avoids flaky 1.3GB
+    # downloads) - Otherwise → probe the download server; skip gracefully when
+    # unreachable (e.g. devvms without proxy configured)
+    if(DEFINED QNN_SDK_ROOT OR DEFINED ENV{QNN_SDK_ROOT})
+      set_overridable_option(EXECUTORCH_BUILD_QNN ON)
+    elseif("$ENV{GITHUB_ACTIONS}" STREQUAL "true")
+      message(STATUS "GitHub Actions CI detected: skipping QNN auto-download. "
+                     "Set QNN_SDK_ROOT or -DEXECUTORCH_BUILD_QNN=ON to enable."
+      )
+    else()
+      execute_process(
+        COMMAND
+          ${PYTHON_EXECUTABLE}
+          ${CMAKE_CURRENT_LIST_DIR}/../../../backends/qualcomm/scripts/download_qnn_sdk.py
+          --check
+        RESULT_VARIABLE _qnn_available
+        OUTPUT_QUIET ERROR_QUIET
+        TIMEOUT 10
+      )
+      if(_qnn_available EQUAL 0)
+        set_overridable_option(EXECUTORCH_BUILD_QNN ON)
+      else()
+        message(
+          STATUS "QNN SDK not cached and download server unreachable. "
+                 "Skipping QNN backend. Set QNN_SDK_ROOT or use "
+                 "-DEXECUTORCH_BUILD_QNN=ON with network access to enable."
+        )
+      endif()
+    endif()
   endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
                                                "WIN32"
