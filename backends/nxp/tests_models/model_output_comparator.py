@@ -104,6 +104,7 @@ class ClassificationAccuracyOutputComparator(BaseOutputComparator):
 
         :param class_dict: Dictionary mapping class names to class indices.
         :param tolerance: Tolerance threshold for accuracy comparison.
+                            Used for checking `baseline_acc + tolerance < finetuned_acc`.
         """
         self.tolerance = tolerance
         self.inv_class_dict = {v: k for k, v in class_dict.items()}
@@ -177,11 +178,12 @@ class ClassificationAccuracyOutputComparator(BaseOutputComparator):
         baseline_accuracy = baseline_total_correct / total_samples
         finetuned_accuracy = finetuned_total_correct / total_samples
 
-        if baseline_accuracy > (finetuned_accuracy + self.tolerance):
+        if (baseline_accuracy + self.tolerance) > finetuned_accuracy:
             raise AssertionError(
-                f"Finetuned model accuracy ({finetuned_accuracy} + tolerance {self.tolerance}) < baseline accuracy ({baseline_accuracy}). "
+                f"Finetuned model accuracy ({finetuned_accuracy} < baseline accuracy + tolerance "
+                + f"({baseline_accuracy} + {self.tolerance}). "
                 + "This might be a sign that something is not working properly. "
-                + "Hint: Try adjusting training hyperparameters."
+                + "Hint: Try adjusting training hyperparameters or select negative tolerance."
             )
 
     def compare_sample(
