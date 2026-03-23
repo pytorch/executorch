@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import urllib.request
 import zipfile
 from typing import Dict, List, Optional, Tuple
@@ -203,7 +204,7 @@ def _stream_to_file(
     downloaded = archive_path.stat().st_size if archive_path.exists() else 0
     headers = {"Range": f"bytes={downloaded}-"} if downloaded > 0 else {}
 
-    with session.get(url, stream=True, headers=headers) as r:
+    with session.get(url, stream=True, headers=headers, timeout=(30, 60)) as r:
         if r.status_code == 200 and downloaded > 0:
             downloaded = 0  # Server doesn't support Range — restart
         r.raise_for_status()
@@ -235,12 +236,17 @@ def _stream_to_file(
         if total:
             _progress_newline()
 
+    if total > 0 and downloaded < total:
+        raise requests.exceptions.ConnectionError(
+            f"Incomplete download: {downloaded}/{total} bytes"
+        )
+
     logger.info("[QNN] Download complete.")
     return True
 
 
 def _download_archive(
-    url: str, archive_path: pathlib.Path, max_retries: int = 3
+    url: str, archive_path: pathlib.Path, max_retries: int = 5
 ) -> bool:
     """Streaming download with retry + resume on mid-stream failures."""
     logger.debug("Archive will be saved to: %s", archive_path)
@@ -265,10 +271,12 @@ def _download_archive(
         ) as e:
             _progress_newline()
             if attempt < max_retries:
+                backoff = min(2 ** (attempt - 1), 30)
                 logger.warning(
                     f"[QNN] Download interrupted: {type(e).__name__}. "
-                    f"Retrying ({attempt}/{max_retries})..."
+                    f"Retrying in {backoff}s ({attempt}/{max_retries})..."
                 )
+                time.sleep(backoff)
             else:
                 logger.error(f"[QNN] Download failed after {max_retries} attempts: {e}")
                 return False
@@ -279,6 +287,20 @@ def _download_archive(
 
     if not archive_path.exists() or archive_path.stat().st_size == 0:
         logger.error("[QNN] Downloaded file is empty or missing!")
+        return False
+
+    # Validate archive integrity — catches truncation and corruption that
+    # size checks alone would miss (e.g. no Content-Length, or bit flips).
+    try:
+        if url.endswith(".zip"):
+            with zipfile.ZipFile(archive_path, "r"):
+                pass  # Reading central directory is enough to detect truncation
+        elif url.endswith((".tar.gz", ".tgz")):
+            with tarfile.open(archive_path, "r:gz"):
+                pass
+    except (zipfile.BadZipFile, tarfile.TarError) as e:
+        logger.error(f"[QNN] Downloaded archive is corrupt: {e}")
+        archive_path.unlink(missing_ok=True)
         return False
 
     return True
@@ -748,6 +770,37 @@ def install_qnn_sdk() -> bool:
     return _ensure_libcxx_stack() and _ensure_qnn_sdk_lib()
 
 
+def _check_sdk_available() -> int:
+    """Return 0 if the SDK is cached or the download server is reachable, 1 otherwise.
+
+    Uses requests.head() so HTTPS_PROXY env vars are respected — devvms behind
+    a proxy will succeed when the proxy is configured, and gracefully fail when
+    it is not.
+    """
+    if not is_linux_x86():
+        return 1
+
+    try:
+        sdk_dir = _get_sdk_dir()
+        if sdk_dir.exists() and any(sdk_dir.iterdir()):
+            return 0
+    except Exception:
+        pass
+
+    try:
+        r = requests.head(
+            "https://softwarecenter.qualcomm.com",
+            timeout=5,
+            allow_redirects=True,
+        )
+        if r.status_code < 500:
+            return 0
+    except requests.exceptions.RequestException:
+        pass
+
+    return 1
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Helper utility for Qualcomm SDK staging."
@@ -768,7 +821,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         action="store_true",
         help="Ensure the SDK and runtime libraries are staged and loaded.",
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Exit 0 if the SDK is cached or the download host is reachable, "
+        "1 otherwise. Does not download anything.",
+    )
     args = parser.parse_args(argv)
+
+    if args.check:
+        return _check_sdk_available()
 
     # When --print-sdk-path is used, stdout must contain ONLY the SDK path.
     # Redirect all logger and progress output to stderr.
