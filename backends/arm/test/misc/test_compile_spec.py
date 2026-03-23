@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,7 +10,7 @@ from executorch.backends.arm.vgf import VgfCompileSpec
 from pytest import raises
 
 
-def test_ethos_u_compile_spec_no_target():
+def test_compile_spec_u55_INT():
     compile_spec = (
         EthosUCompileSpec("ethos-u55", extra_flags=["--my-flag"])
         .dump_intermediate_artifacts_to("my_path")
@@ -29,21 +29,21 @@ def test_ethos_u_compile_spec_no_target():
         EthosUCompileSpec.from_list(spec_list)
 
 
-def test_ethos_u55_defaults_to_stable_softmax():
+def test_ethos_u55_defaults_to_stable_softmax_u55_INT():
     """Test that EthosUCompileSpec for U55 defaults to STABLE softmax config."""
     compile_spec = EthosUCompileSpec("ethos-u55-128")
     pipeline_config = compile_spec.get_pass_pipeline_config()
     assert pipeline_config.softmax == SoftmaxDecompositionConfig.STABLE
 
 
-def test_ethos_u85_defaults_to_stable_softmax():
+def test_ethos_u85_defaults_to_masked_softmax_u85_INT():
     """Test that EthosUCompileSpec for U85 defaults to MASKED softmax config."""
     compile_spec = EthosUCompileSpec("ethos-u85-256")
     pipeline_config = compile_spec.get_pass_pipeline_config()
     assert pipeline_config.softmax == SoftmaxDecompositionConfig.MASKED
 
 
-def test_vgf_compile_spec_no_target():
+def test_compile_spec_vgf_no_quant():
     compile_spec = (
         VgfCompileSpec(compiler_flags=["--my-flag"])
         .dump_intermediate_artifacts_to("my_path")
@@ -61,7 +61,7 @@ def test_vgf_compile_spec_no_target():
         EthosUCompileSpec.from_list(spec_list)
 
 
-def test_tosa_compile_spec_no_target():
+def test_compile_spec_tosa_INT():
     compile_spec = TosaCompileSpec("TOSA-1.0+INT")
     spec_list = compile_spec.to_list()
 
