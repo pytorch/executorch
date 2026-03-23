@@ -236,6 +236,38 @@ def meta_without_qparams(meta: NodeMetadata) -> NodeMetadata:
     return NodeMetadata(plain_meta_dict)
 
 
+def insert_scalar(
+    graph: torch.fx.Graph,
+    value: int | float,
+    meta: NodeMetadata | dict,
+    from_node: torch.fx.Node,
+    is_tfa_pass: bool = False,
+) -> torch.fx.Node | int | float:
+    """Insert an `aten.full` scalar node for direct graph-rewrite passes."""
+
+    if is_tfa_pass:
+        return value
+
+    kwargs = {}
+    val = None
+    if "val" in meta:
+        val = meta["val"]
+        if isinstance(val, tuple):
+            val = val[0]
+        kwargs = {"device": val.device, "dtype": val.dtype}
+
+    scalar = create_node(
+        graph=graph,
+        op_target=exir_ops.edge.aten.full.default,
+        args=((1,), value),
+        kwargs=kwargs,
+        from_node=from_node,
+    )
+    if val is not None:
+        scalar.meta["val"] = torch.full((1,), value, **kwargs)
+    return scalar
+
+
 def get_first_fake_tensor(node: torch.fx.Node) -> FakeTensor:
     """Returns a FakeTensor from the meta field of 'node'.
 
