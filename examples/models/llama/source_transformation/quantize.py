@@ -144,30 +144,14 @@ def quantize(  # noqa C901
         from torchao.utils import unwrap_tensor_subclass
 
         def filter_fn(m, fqn):
-            # Check if it's a regular nn.Linear
-            is_linear = isinstance(m, nn.Linear)
-
-            # Check if it's a LoRALinear (which has a base weight parameter to quantize)
-            is_lora_linear = False
-            try:
-                from executorch.examples.models.llama.lora import LoRALinear
-
-                is_lora_linear = isinstance(m, LoRALinear)
-            except ImportError:
-                pass
-
-            # Check if the weight shape is compatible with group size
-            has_shape_compatible_with_group_size = False
-            if is_linear or is_lora_linear:
-                if group_size == 0:
-                    has_shape_compatible_with_group_size = True
-                else:
-                    has_shape_compatible_with_group_size = (
-                        m.weight.shape[1] % group_size == 0
-                    )
-            return (
-                is_linear or is_lora_linear
-            ) and has_shape_compatible_with_group_size
+            if not isinstance(m, nn.Linear):
+                return False
+            parts = fqn.split(".")
+            if "lora_a" in parts or "lora_b" in parts:
+                return False
+            if group_size == 0:
+                return True
+            return m.weight.shape[1] % group_size == 0
 
         weight_dtype = torch.int4 if qmode == "8da4w" else torch.int8
         quantize_(
