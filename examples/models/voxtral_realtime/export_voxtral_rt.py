@@ -600,6 +600,8 @@ def main():
     else:
         programs, metadata = export_all(model, args.max_seq_len, **quant_args)
 
+    metadata["delay_tokens"] = args.delay_tokens
+
     # Lower
     et = lower_to_executorch(programs, metadata, backend=args.backend)
 

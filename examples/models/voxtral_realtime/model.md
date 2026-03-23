@@ -248,8 +248,9 @@ runner (`StreamingSession::decode_step`) then:
 3. Feeds the combined embedding to `text_decoder` at the current position
 4. Samples one token from the output logits
 
-After audio ends, `flush()` continues text-only decoding (token
-embedding only, no audio) until EOS or max tokens.
+After audio ends, `flush()` pads the unfinished tail with silence and keeps
+running the same audio-conditioned streaming path until the final partial
+step and transcription delay are drained.
 
 ### Conv state management
 
