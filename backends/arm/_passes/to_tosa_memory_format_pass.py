@@ -436,6 +436,9 @@ class ToTosaMemoryFormatPass(ArmPass):
                     raise RuntimeError(
                         f"Conflicting dim orders {arg.meta['tosa_dim_order']} and {dim_order} for shape node {arg.name}"
                     )
+                if node.target == exir_ops.backend.tosa.RESIZE.default:
+                    # RESIZE's shape input is expected to be in HW order, so we need to override the dim order to be the identity for it regardless of the user node's dim order.
+                    dim_order = tuple(range(len(arg.meta["val"])))
                 arg.meta["tosa_dim_order"] = dim_order
                 self._propagate_dim_order_to_shape_args(arg)
 
