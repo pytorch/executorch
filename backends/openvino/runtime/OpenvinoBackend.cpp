@@ -181,21 +181,21 @@ void OpenvinoBackend::destroy(exr::DelegateHandle* handle) const {
 }
 
 ov::element::Type OpenvinoBackend::convert_to_openvino_type(
-    exa::ScalarType scalar_type) const {
+    exat::ScalarType scalar_type) const {
   switch (scalar_type) {
-    case exa::ScalarType::Float:
+    case exat::ScalarType::Float:
       return ov::element::f32;
-    case exa::ScalarType::Half:
+    case exat::ScalarType::Half:
       return ov::element::f16;
-    case exa::ScalarType::Int:
+    case exat::ScalarType::Int:
       return ov::element::i32;
-    case exa::ScalarType::Char:
+    case exat::ScalarType::Char:
       return ov::element::i8;
-    case exa::ScalarType::Byte:
+    case exat::ScalarType::Byte:
       return ov::element::u8;
-    case exa::ScalarType::Long:
+    case exat::ScalarType::Long:
       return ov::element::i64;
-    case exa::ScalarType::Bool:
+    case exat::ScalarType::Bool:
       return ov::element::boolean;
     default:
       throw std::runtime_error("Unsupported scalar type");
