@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
+import operator
 from copy import copy
 from typing import cast, Dict, Optional, Set, Tuple, Type
 
@@ -34,10 +35,44 @@ class InsertRescalePass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
+    def _ensure_uint8_io_only(self, graph_module: GraphModule) -> None:
+        """Ensure uint8 tensors only appear at IO boundaries.
+
+        TOSA has no true uint8 tensor type; unsigned semantics are carried via
+        RESCALE input/output flags. If uint8 appears for other nodes, it means
+        unsigned data leaked past IO.
+
+        """
+        for node in graph_module.graph.nodes:
+            meta_val = node.meta.get("val")
+            if not isinstance(meta_val, torch.Tensor):
+                continue
+            if meta_val.dtype != torch.uint8:
+                continue
+            if node.op in ("placeholder", "output"):
+                continue
+            if node.op == "call_function" and node.target == operator.getitem:
+                if all(user.op == "output" for user in node.users):
+                    continue
+            if (
+                node.op == "call_function"
+                and node.target == exir_ops.backend.tosa.RESCALE.default
+            ):
+                continue
+            raise ValueError(
+                f"Found internal uint8 tensor at node {node.name} "
+                f"({node.target}). Uint8 is only allowed at IO boundaries."
+            )
+
     def fold_dq_q_to_rescale(self, node: Node, user: Node, graph_module: GraphModule):
         dq_args = QuantArgs.from_operator(node.target, node.args)
         q_args = QuantArgs.from_operator(user.target, user.args)
         new_scale = dq_args.scale / q_args.scale
+        input_unsigned = dq_args.dtype == torch.uint8
+        output_unsigned = q_args.dtype == torch.uint8
+        # TOSA has no true uint8 tensors; unsigned semantics are handled via
+        # the RESCALE flags, so uint8 does not propagate as a tensor dtype.
+        output_dtype = torch.int8 if output_unsigned else q_args.dtype
 
         with graph_module.graph.inserting_before(node):
             rescale_node = create_node(
@@ -45,11 +80,15 @@ class InsertRescalePass(ArmPass):
                 exir_ops.backend.tosa.RESCALE.default,
                 (
                     node.all_input_nodes[0],
-                    q_args.dtype,
+                    output_dtype,
                     [new_scale],
                     dq_args.zp,
                     q_args.zp,
                 ),
+                kwargs={
+                    "input_unsigned": input_unsigned,
+                    "output_unsigned": output_unsigned,
+                },
             )
             rescale_node.meta = copy(user.meta)
             user.replace_all_uses_with(rescale_node)
@@ -73,6 +112,9 @@ class InsertRescalePass(ArmPass):
         graph_module = super().call(graph_module).graph_module
         graph_module.recompile()
         return PassResult(graph_module, modified)
+
+    def ensures(self, graph_module: GraphModule) -> None:
+        self._ensure_uint8_io_only(graph_module)
 
 
 class InsertRescaleInt32Pass(ArmPass):
