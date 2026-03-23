@@ -1,5 +1,9 @@
 # Arm Cortex-M Backend
 
+:::{note}
+This backend is a work-in-progress proof of concept. It is not intended for production use, and APIs may change without notice.
+:::
+
 The Arm&reg; Cortex&reg;-M backend accelerates quantized model execution on Arm Cortex-M CPUs using [CMSIS-NN](https://arm-software.github.io/CMSIS-NN/latest/) optimized kernels. Unlike delegate-based backends, it operates as an operator library: quantized subgraphs are replaced with CMSIS-NN accelerated kernels during the pass-lowering stage, while unsupported operators fall back to portable fp32 kernels.
 
 ## Target Support
@@ -44,7 +48,7 @@ The Cortex-M backend currently implements **symmetric INT8 (8w8a)** quantization
 - **Per-tensor** quantization for all other supported operators.
 - **Shared quantization parameters** for data-movement operators (e.g. reshape, permute) to avoid unnecessary requantization.
 
-CMSIS-NN also supports INT4 weights with INT8 activations (4w8a) and INT8 weights with INT16 activations (8w16a), but the corresponding quantizer configuration and operator implementations are not yet integrated.
+CMSIS-NN also supports INT4 weights with INT8 activations (4w8a), INT8 weights with INT16 activations (8w16a), and per-channel quantization for fully connected layers, but the corresponding quantizer configurations and operator implementations are not yet integrated.
 
 ## Tutorial
 
