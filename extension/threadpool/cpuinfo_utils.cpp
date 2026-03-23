@@ -123,7 +123,7 @@ uint32_t _get_num_performant_cores() {
   uint32_t num_possible_cores = cpuinfo_get_processors_count();
   if (num_possible_cores != cpu_midrs->size()) {
     ET_LOG(Info, "CPU info and manual query on # of cpus dont match.");
-    return 0;
+    return num_possible_cores / 2;
   }
   for (const auto i : c10::irange(cpu_midrs->size())) {
     uint32_t masked_midr = (*cpu_midrs)[i] & RIVISION_MASK;
