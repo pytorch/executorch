@@ -135,6 +135,9 @@ jobs:
         # Run CUDA backend Python tests
         python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts="
 
+        # Run quantize roundtrip tests (Qwen 3.5 MoE save/load prequantized)
+        python -m pytest examples/models/qwen3_5_moe/test_quantize_roundtrip.py -v -o "addopts="
+
         # Build Qwen3.5 MoE runner (ExecuTorch already built above)
         cd examples/models/qwen3_5_moe && cmake --workflow --preset qwen3-5-moe-cuda
 
