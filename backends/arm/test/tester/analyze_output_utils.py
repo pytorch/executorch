@@ -350,8 +350,8 @@ def compare_rel_frobenius_and_cosine_similarity(
     Cosine similarity test: The cosine similiarity of the flattened reference and test tensor. Closer to 1 is better.
 
     If clean_reference is set to True the following is done to the reference :
-        - NaN-values will be set to 0
-        - Inf values will be set to max/min representable by the dtype * quantization scale
+        - NaN-values will be set to 0.0
+        - Inf values will be set to max/min representable by the (dtype - zp) * scale
         - Values lower than the scale will be set to 0.0
     If the reference is all zeros, the function returns without testing.
 
@@ -374,10 +374,15 @@ def compare_rel_frobenius_and_cosine_similarity(
                 if isinstance(scale, torch.Tensor)
                 else float(scale)
             )
-            dtype_info = torch.iinfo(quantization_parameters.dtype)
             assert quant_scale_for_guards is not None
-            posinf_value = float(dtype_info.max) * quant_scale_for_guards
-            neginf_value = float(dtype_info.min) * quant_scale_for_guards
+            posinf_value = (
+                float(quantization_parameters.qmax - quantization_parameters.zp)
+                * quant_scale_for_guards
+            )
+            neginf_value = (
+                float(quantization_parameters.qmin - quantization_parameters.zp)
+                * quant_scale_for_guards
+            )
             reference_output = reference_output.where(
                 torch.abs(reference_output) >= scale, 0.0
             )
