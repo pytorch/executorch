@@ -14,8 +14,8 @@
 set -eux
 
 MODEL=$1
+mkdir -p "./cortex_m_e2e/${MODEL}"
 WORK_DIR=$(realpath "./cortex_m_e2e/${MODEL}")
-mkdir -p "${WORK_DIR}"
 
 echo "=== Exporting ${MODEL} with cortex-m55+int8 ==="
 python -m examples.arm.aot_arm_compiler \
@@ -35,6 +35,10 @@ test -f "${ELF}" || { echo "FAIL: executor runner not found at ${ELF}"; exit 1; 
 
 LOG_FILE=$(mktemp)
 
+# Create a tiny dummy input file — the runner requires -i but BundleIO
+# ignores it and uses the embedded test inputs instead.
+dd if=/dev/zero of="${WORK_DIR}/dummy.bin" bs=4 count=1 2>/dev/null
+
 echo "=== Running ${MODEL} on Corstone-300 FVP ==="
 FVP_Corstone_SSE-300_Ethos-U55 \
     -C ethosu.num_macs=128 \
@@ -47,7 +51,7 @@ FVP_Corstone_SSE-300_Ethos-U55 \
     -C cpu0.semihosting-heap_limit=0 \
     -C "cpu0.semihosting-cwd=${WORK_DIR}" \
     -C "ethosu.extra_args='--fast'" \
-    -C "cpu0.semihosting-cmd_line='executor_runner -m ${MODEL}.bpte -i ${MODEL}.bpte -o /dev/null'" \
+    -C "cpu0.semihosting-cmd_line='executor_runner -m ${MODEL}.bpte -i dummy.bin -o out'" \
     -a "${ELF}" \
     --timelimit 300 2>&1 | tee "${LOG_FILE}" || true
 
@@ -65,7 +69,7 @@ if grep -q "Test_result: FAIL" "${LOG_FILE}"; then
     exit 1
 fi
 
-if grep -qE "^(F|E|\[critical\]|Hard fault)" "${LOG_FILE}"; then
+if grep -qE "(^[EF][: ].*$)|(^.*Hard fault.*$)|(^.*Assertion.*$)" "${LOG_FILE}"; then
     echo "FAIL: ${MODEL} FVP run hit a fatal error"
     rm "${LOG_FILE}"
     exit 1
