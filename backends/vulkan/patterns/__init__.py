@@ -10,7 +10,11 @@ import executorch.backends.vulkan.patterns.quantized_binary  # noqa
 
 import executorch.backends.vulkan.patterns.quantized_convolution  # noqa
 
+import executorch.backends.vulkan.patterns.quantized_embedding  # noqa
+
 import executorch.backends.vulkan.patterns.quantized_linear  # noqa
+
+import executorch.backends.vulkan.patterns.quantized_unary  # noqa
 
 import executorch.backends.vulkan.patterns.rope  # noqa
 

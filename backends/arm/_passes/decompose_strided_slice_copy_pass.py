@@ -43,8 +43,8 @@ def _fixup_end(end, dim_size):
 
 
 class DecomposeStridedSliceCopyPass(ArmPass):
-    """
-    Decompose edge.aten.slice_copy.Tensor with non-unit step into supported ops.
+    """Decompose edge.aten.slice_copy.Tensor with non-unit step into supported
+    ops.
 
     Given:
         out = slice_copy(x, dim, start, end, step)   with step > 1
@@ -57,6 +57,7 @@ class DecomposeStridedSliceCopyPass(ArmPass):
       5) out = view_copy(y3, ...)                    # collapse the singleton dim
 
     This implements "take every step-th element" using only unit-step slice + reshape.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()

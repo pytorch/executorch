@@ -46,7 +46,7 @@ if [[ "$FLOW" == *qnn* ]]; then
     export LD_LIBRARY_PATH"=$QNN_X86_LIB_DIR:$QNN_SDK_ROOT/lib/x86_64-linux-clang/:${LD_LIBRARY_PATH:-}"
 
     # TODO Get SDK root from install scripts
-    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=$QNN_SDK_ROOT"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=$QNN_SDK_ROOT -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON"
 fi
 
 if [[ "$FLOW" == *vulkan* ]]; then
@@ -85,7 +85,10 @@ else
 fi
 CMAKE_ARGS="$EXTRA_BUILD_ARGS" ${CONDA_RUN_CMD} $SETUP_SCRIPT --build-tool cmake --build-mode Release --editable true
 
+GOLDEN_DIR="${ARTIFACT_DIR}/golden-artifacts"
+export GOLDEN_ARTIFACTS_DIR="${GOLDEN_DIR}"
+
 EXIT_CODE=0
-${CONDA_RUN_CMD} pytest -c /dev/nul -n auto backends/test/suite/$SUITE/ -m flow_$FLOW --json-report --json-report-file="$REPORT_FILE" || EXIT_CODE=$?
+${CONDA_RUN_CMD} pytest -c /dev/null -n auto backends/test/suite/$SUITE/ -m flow_$FLOW --json-report --json-report-file="$REPORT_FILE" || EXIT_CODE=$?
 # Generate markdown summary.
 ${CONDA_RUN_CMD} python -m executorch.backends.test.suite.generate_markdown_summary_json "$REPORT_FILE" > ${GITHUB_STEP_SUMMARY:-"step_summary.md"} --exit-code $EXIT_CODE

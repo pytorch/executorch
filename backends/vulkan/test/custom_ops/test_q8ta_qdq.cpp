@@ -104,10 +104,12 @@ TestCase create_test_case_from_config(
 std::vector<TestCase> generate_q_dq_8bit_easy_cases() {
   std::vector<TestCase> test_cases;
 
-  // Single simple configuration for debugging
-  QDQ8BitConfig config = {
-      {1, 16, 16, 16}, // shape: [N, C, H, W]
-      "ACCU", // test_case_name
+  std::vector<std::vector<int64_t>> shapes = {
+      {1, 16, 16, 16}, // 4D: [N, C, H, W]
+      {1, 144}, // 2D: exercises block config with ndim < 4
+      {1, 90}, // 2D: matches skin_seg model's keypoint/bbox tensor sizes
+      {2, 1, 3, 16, 16}, // 5D: exercises high-dim batch support
+      {2, 1, 1, 4, 8, 16}, // 6D: exercises high-dim batch support
   };
 
   // FP memory layouts to test
@@ -129,21 +131,24 @@ std::vector<TestCase> generate_q_dq_8bit_easy_cases() {
   std::vector<vkapi::ScalarType> float_types = {vkapi::kFloat};
 
   // Generate test cases for each combination
-  for (const auto& fp_layout : fp_layouts) {
-    for (const auto& quant_layout : quant_layouts) {
-      for (const auto& storage_type : storage_types) {
-        for (const auto& input_dtype : float_types) {
-          test_cases.push_back(create_test_case_from_config(
-              config, storage_type, input_dtype, fp_layout, quant_layout));
-          // For 4W4C layout, also test with legacy implementation
-          if (quant_layout == utils::kPackedInt8_4W4C) {
+  for (const auto& shape : shapes) {
+    QDQ8BitConfig config = {shape, "ACCU"};
+    for (const auto& fp_layout : fp_layouts) {
+      for (const auto& quant_layout : quant_layouts) {
+        for (const auto& storage_type : storage_types) {
+          for (const auto& input_dtype : float_types) {
             test_cases.push_back(create_test_case_from_config(
-                config,
-                storage_type,
-                input_dtype,
-                fp_layout,
-                quant_layout,
-                /*impl_selector=*/"legacy_4w4c"));
+                config, storage_type, input_dtype, fp_layout, quant_layout));
+            // For 4W4C layout, also test with legacy implementation
+            if (quant_layout == utils::kPackedInt8_4W4C) {
+              test_cases.push_back(create_test_case_from_config(
+                  config,
+                  storage_type,
+                  input_dtype,
+                  fp_layout,
+                  quant_layout,
+                  /*impl_selector=*/"legacy_4w4c"));
+            }
           }
         }
       }
@@ -159,6 +164,20 @@ std::vector<TestCase> generate_q_dq_8bit_test_cases() {
 
   // Shapes to test (no layout specified - will be combined with all layouts)
   std::vector<std::vector<int64_t>> shapes = {
+      // 1D tensors
+      {144},
+      {90},
+
+      // 2D tensors (exercises block config with ndim < 4)
+      {1, 144},
+      {1, 90},
+      {1, 4},
+      {3, 32},
+
+      // 3D tensors
+      {1, 16, 32},
+      {1, 3, 64},
+
       // Small test cases for correctness
       {1, 3, 16, 16},
       {1, 8, 32, 32},
@@ -182,6 +201,14 @@ std::vector<TestCase> generate_q_dq_8bit_test_cases() {
       {1, 64, 128, 128},
       {1, 32, 64, 64},
       {1, 128, 56, 56},
+
+      // 5D tensors (high-dim batch support)
+      {2, 1, 3, 16, 16},
+      {1, 2, 8, 8, 8},
+
+      // 6D tensors (high-dim batch support)
+      {2, 1, 1, 4, 8, 16},
+      {1, 1, 2, 3, 8, 8},
   };
 
   // FP memory layouts to test
@@ -217,9 +244,15 @@ std::vector<TestCase> generate_q_dq_8bit_test_cases() {
       }
     }
 
+    // Skip texture3d for high-dim tensors (textures are limited to 4D)
+    const bool is_highdim = shape.size() > 4;
+    const auto& effective_storage_types = is_highdim
+        ? std::vector<utils::StorageType>{utils::kBuffer}
+        : storage_types;
+
     for (const auto& fp_layout : fp_layouts) {
       for (const auto& quant_layout : quant_layouts) {
-        for (const auto& storage_type : storage_types) {
+        for (const auto& storage_type : effective_storage_types) {
           QDQ8BitConfig config;
           config.shape = shape;
           config.test_case_name = prefix;
@@ -227,7 +260,8 @@ std::vector<TestCase> generate_q_dq_8bit_test_cases() {
           test_cases.push_back(create_test_case_from_config(
               config, storage_type, vkapi::kFloat, fp_layout, quant_layout));
           // For 4W4C layout, also test with legacy implementation
-          if (fp_layout == utils::kChannelsPacked &&
+          // (legacy path doesn't support high-dim tensors)
+          if (!is_highdim && fp_layout == utils::kChannelsPacked &&
               quant_layout == utils::kPackedInt8_4W4C) {
             test_cases.push_back(create_test_case_from_config(
                 config,

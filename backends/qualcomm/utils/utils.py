@@ -134,10 +134,6 @@ class _AnnotationSkipper(OperatorSupportBase):
         return True
 
 
-def qnn_capture_config():
-    return exir.CaptureConfig(enable_aot=True)
-
-
 def qnn_edge_config() -> exir.EdgeCompileConfig:
     return exir.EdgeCompileConfig(
         _check_ir_validity=False,
@@ -244,7 +240,12 @@ def update_spill_fill_size(
                     qnn_mgr = PyQnnManagerAdaptor.QnnManager(
                         m.compile_specs[0].value, m.processed_bytes
                     )
-                    assert qnn_mgr.Init().value == 0, "failed to load context binary"
+                    assert (
+                        qnn_mgr.InitBackend().value == 0
+                    ), "failed to initialize backend"
+                    assert (
+                        qnn_mgr.InitContextCache().value == 0
+                    ), "failed to init context cache"
                     max_sf_buf_size = max(
                         max_sf_buf_size, qnn_mgr.GetSpillFillBufferSize()
                     )
@@ -256,7 +257,8 @@ def update_spill_fill_size(
             qnn_mgr = PyQnnManagerAdaptor.QnnManager(
                 module.compile_specs[0].value, module.processed_bytes
             )
-            assert qnn_mgr.Init().value == 0, "failed to load context binary"
+            assert qnn_mgr.InitBackend().value == 0, "failed to initialize backend"
+            assert qnn_mgr.InitContextCache().value == 0, "failed to init context cache"
             spill_fill_size = qnn_mgr.GetSpillFillBufferSize()
             qnn_mgr.Destroy()
             return spill_fill_size, {
@@ -991,6 +993,7 @@ def generate_htp_compiler_spec(
     use_dlbc: bool = False,
     use_multi_contexts: bool = False,
     use_weight_sharing: bool = False,
+    use_slc_allocator: bool = False,
 ) -> QnnExecuTorchBackendOptions:
     """
     Helper function generating backend options for QNN HTP
@@ -1006,6 +1009,9 @@ def generate_htp_compiler_spec(
             could be re-used across all the splits.
         use_weight_sharing: Used with multiple_graphs, where model size will be
             reduced when operations have the same weights across multiple graphs.
+        use_slc_allocator: Allows user to enable the usage of the System Level Cache Allocator for a given graph.
+            It will help the by reducing overall bandwith on the use case.
+            The feature is only supported by specific SOCs.
 
     Returns:
         QnnExecuTorchHtpBackendOptions: backend options for QNN HTP.
@@ -1023,6 +1029,7 @@ def generate_htp_compiler_spec(
     htp_options.use_multi_contexts = use_multi_contexts
     htp_options.use_weight_sharing = use_weight_sharing
     htp_options.use_dlbc = use_dlbc
+    htp_options.use_slc_allocator = use_slc_allocator
     return QnnExecuTorchBackendOptions(
         backend_type=QnnExecuTorchBackendType.kHtpBackend,
         htp_options=htp_options,
@@ -1296,9 +1303,29 @@ def is_qnn_sdk_version_less_than(target_version):
         current_major, current_minor = map(int, match.groups()[:2])
     else:
         raise ValueError(
-            f"Failed to get current major and minor version from QNN sdk Build id {current_version}"
+            f"Failed to get current major and minor version from QNN SDK Build id {current_version}"
         )
 
     target_major, target_minor = map(int, target_version.split(".")[:2])
 
     return current_major == target_major and current_minor < target_minor
+
+
+def is_qnn_sdk_version_greater_than(target_version):
+    current_version = get_sdk_build_id()
+
+    match = re.search(r"v(\d+)\.(\d+)", current_version)
+    if match:
+        current_major, current_minor = map(int, match.groups()[:2])
+    else:
+        raise ValueError(
+            f"Failed to get current major and minor version from QNN SDK Build id {current_version}"
+        )
+
+    target_major, target_minor = map(int, target_version.split(".")[:2])
+
+    return current_major == target_major and current_minor > target_minor
+
+
+def get_qnn_context_binary_alignment() -> int:
+    return PyQnnManagerAdaptor.GetQNNCtxBinAlignment()

@@ -71,7 +71,12 @@ class QnnBackendUnifiedRegistry {
   QnnBackendUnifiedRegistry& operator=(const QnnBackendUnifiedRegistry&) =
       delete;
 
+#ifdef __hexagon__
+  // For macro, refer to executorch/backends/qualcomm/CMakeLists.txt
+  static constexpr const char* htp_library_name_ = HEXAGON_LIB;
+#else
   static constexpr const char* htp_library_name_ = "libQnnHtp.so";
+#endif
   static constexpr const char* gpu_library_name_ = "libQnnGpu.so";
   static constexpr const char* dsp_library_name_ = "libQnnDsp.so";
 

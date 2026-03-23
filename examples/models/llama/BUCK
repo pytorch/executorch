@@ -225,6 +225,7 @@ fbcode_target(_kind = runtime.python_library,
     visibility = ["//executorch/..."],
     deps = [
         "//caffe2:torch",
+        ":transformer_modules",
     ],
 )
 

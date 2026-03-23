@@ -7,10 +7,8 @@
 set -u
 EIQ_PYPI_URL="${EIQ_PYPI_URL:-https://eiq.nxp.com/repository}"
 
-# Install neutron-converter
-pip install --index-url ${EIQ_PYPI_URL} neutron_converter_SDK_25_12
-
-pip install --index-url ${EIQ_PYPI_URL} eiq_neutron_sdk==2.2.2 eiq_nsys
+# Install eIQ Neutron dependencies - SDK and simulator
+pip install --index-url ${EIQ_PYPI_URL} eiq-neutron-sdk==3.0.1 eiq_nsys
 
 # Get the directory of the current script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

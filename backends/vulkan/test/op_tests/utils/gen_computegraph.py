@@ -26,6 +26,7 @@ from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
     OPT_LAYOUT,
     OPT_MEMORY_FORMAT,
     OPT_SCALAR_TYPE,
+    OPT_TENSOR_LIST,
     STRING,
     TENSOR_VECTOR,
     THREE_TENSOR_TUPLE,
@@ -86,7 +87,7 @@ class ValueRef:
 
 ValueRefList = Union[ValueRef, List[ValueRef]]
 
-InableCppType = frozenset([AT_TENSOR, AT_TENSOR_LIST])
+InableCppType = frozenset([AT_TENSOR, AT_TENSOR_LIST, OPT_TENSOR_LIST])
 
 
 class ComputeGraphGen:
@@ -313,7 +314,7 @@ class ComputeGraphGen:
             return ret_str
 
         cpp_type = "IOValueRef" if (ref.is_in or ref.requires_prepack) else "ValueRef"
-        if ref.src_cpp_type == AT_TENSOR_LIST:
+        if ref.src_cpp_type in (AT_TENSOR_LIST, OPT_TENSOR_LIST):
             ret_str = f"std::vector<IOValueRef> {ref.name}_io_value_refs;\n"
             ret_str += f"std::vector<ValueRef> {ref.name}_value_refs;\n"
             return ret_str
@@ -409,6 +410,25 @@ class ComputeGraphGen:
             ret_str += "}\n"
             ret_str += f"ValueRef {ref.name} = {self.graph}{self.dot}add_value_list(std::move({ref.name}_value_refs));\n"
             return ret_str
+        elif ref.src_cpp_type == OPT_TENSOR_LIST:
+            assert ref.is_in, "OPT_TENSOR_LIST must be an input"
+            ret_str = ""
+            if include_declarations:
+                ret_str += f"std::vector<IOValueRef> {ref.name}_io_value_refs;\n"
+                ret_str += f"std::vector<ValueRef> {ref.name}_value_refs;\n"
+            ret_str += f"for (int i=0; i < (int){ref.src_cpp_name}.size(); i++) {{\n"
+            ret_str += (
+                f"  IOValueRef io_value_ref = {self.graph}{self.dot}add_input_tensor(\n"
+            )
+            ret_str += f"      {ref.src_cpp_name}[i]->sizes().vec(),\n"
+            ret_str += (
+                f"      from_at_scalartype({ref.src_cpp_name}[i]->scalar_type())); \n"
+            )
+            ret_str += f"  {ref.name}_value_refs.emplace_back(io_value_ref.value);\n"
+            ret_str += f"  {ref.name}_io_value_refs.emplace_back(io_value_ref);\n"
+            ret_str += "}\n"
+            ret_str += f"ValueRef {ref.name} = {self.graph}{self.dot}add_value_list(std::move({ref.name}_value_refs));\n"
+            return ret_str
         elif ref.src_cpp_type == TENSOR_VECTOR:
             ret_str = ""
             if include_declarations:
@@ -491,7 +511,7 @@ ValueRef out_ref = {self.graph}{self.dot}add_value_list(std::move({ref.value_lis
 
         for aten_arg in self.args:
             ref = self.refs[aten_arg.name]
-            if ref.src_cpp_type == AT_TENSOR_LIST:
+            if ref.src_cpp_type in (AT_TENSOR_LIST, OPT_TENSOR_LIST):
                 # Special case. Underlying tensors are input tensors, but the
                 # container itself is just a normal value.
                 op_create_code += f"{ref.name}, "
@@ -553,9 +573,19 @@ for (int i=0; i<out.size(); i++) {{
             ret_str += f"{ref.src_cpp_name}.sizes().vec());\n"
         elif ref.src_cpp_type == AT_TENSOR_LIST:
             ret_str = ""
-            ret_str += f"for (int i=0; i < {ref.name}_io_value_refs.size(); i++) {{\n"
+            ret_str += (
+                f"for (int i=0; i < (int){ref.name}_io_value_refs.size(); i++) {{\n"
+            )
             ret_str += f"  {self.graph}{self.dot}virtual_resize({ref.name}_io_value_refs[i].value, "
             ret_str += f"{ref.src_cpp_name}[i].sizes().vec());\n"
+            ret_str += "}\n"
+        elif ref.src_cpp_type == OPT_TENSOR_LIST:
+            ret_str = ""
+            ret_str += (
+                f"for (int i=0; i < (int){ref.name}_io_value_refs.size(); i++) {{\n"
+            )
+            ret_str += f"  {self.graph}{self.dot}virtual_resize({ref.name}_io_value_refs[i].value, "
+            ret_str += f"{ref.src_cpp_name}[i]->sizes().vec());\n"
             ret_str += "}\n"
         else:
             raise AssertionError(f"{ref.src_cpp_type} not expected")
@@ -577,12 +607,25 @@ for (int i=0; i<out.size(); i++) {{
             ret_str += f"from_at_scalartype({ref.src_cpp_name}.scalar_type()));\n"
         elif ref.src_cpp_type == AT_TENSOR_LIST:
             ret_str = ""
-            ret_str += f"for (int i=0; i < {ref.name}_io_value_refs.size(); i++) {{\n"
+            ret_str += (
+                f"for (int i=0; i < (int){ref.name}_io_value_refs.size(); i++) {{\n"
+            )
             ret_str += f"  {self.graph}{self.dot}maybe_cast_and_copy_into_staging("
             ret_str += f"{ref.name}_io_value_refs[i].staging, "
             ret_str += f"{ref.src_cpp_name}[i].const_data_ptr(), "
             ret_str += f"{ref.src_cpp_name}[i].numel(), "
             ret_str += f"from_at_scalartype({ref.src_cpp_name}[i].scalar_type()));\n"
+            ret_str += "}\n"
+        elif ref.src_cpp_type == OPT_TENSOR_LIST:
+            ret_str = ""
+            ret_str += (
+                f"for (int i=0; i < (int){ref.name}_io_value_refs.size(); i++) {{\n"
+            )
+            ret_str += f"  {self.graph}{self.dot}maybe_cast_and_copy_into_staging("
+            ret_str += f"{ref.name}_io_value_refs[i].staging, "
+            ret_str += f"{ref.src_cpp_name}[i]->const_data_ptr(), "
+            ret_str += f"{ref.src_cpp_name}[i]->numel(), "
+            ret_str += f"from_at_scalartype({ref.src_cpp_name}[i]->scalar_type()));\n"
             ret_str += "}\n"
         else:
             raise AssertionError(f"{ref.src_cpp_type} not expected")

@@ -12,6 +12,7 @@ from executorch.backends.arm.quantizer import (
 )
 
 from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.quantize import ArmQuantize
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     OpNotSupportedPipeline,
@@ -19,7 +20,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-from executorch.backends.xnnpack.test.tester.tester import Quantize
 
 aten_op = "torch.ops.aten.where.self"
 exir_op = "executorch_exir_dialects_edge__ops_aten_where_self"
@@ -269,7 +269,7 @@ def test_where_self_u55_INT_not_delegated(test_module):
         u55_subset=True,
     )
     pipeline.change_args(
-        "quantize", Quantize(quantizer, get_symmetric_quantization_config())
+        "quantize", ArmQuantize(quantizer, get_symmetric_quantization_config())
     )
     pipeline.run()
 

@@ -79,6 +79,10 @@ define_overridable_option(
   "Build the optimized ops library for AOT export usage" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT
+  "Build the portable custom ops library for AOT export usage" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_ASR_RUNNER "Build the ASR runner extension" BOOL
   OFF
 )
@@ -332,6 +336,10 @@ define_overridable_option(
 
 check_required_options_on(
   IF_ON EXECUTORCH_ENABLE_EVENT_TRACER REQUIRES EXECUTORCH_BUILD_DEVTOOLS
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_QNN REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
 )
 
 check_required_options_on(

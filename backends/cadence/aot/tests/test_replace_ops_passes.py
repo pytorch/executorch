@@ -2159,6 +2159,236 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
             "ReplaceConvWithChannelLastConvPass",
         )
 
+    def create_1d_conv_with_single_input_channel_graph_module(
+        self,
+    ) -> Tuple[Tuple[torch.Tensor, ...], torch.fx.GraphModule]:
+        """Helper to create a regular 1D quantized conv with in_channels=1, groups=1.
+
+        This configuration (groups == in_channels == 1) must NOT be classified as
+        depthwise. It is a regular convolution that happens to have a single input
+        channel, e.g. Silero VAD's learned STFT conv.
+
+        Input shape: [N, C, L] = [1, 1, 576] (NCHW)
+        Weight shape: [OC, IC, K] = [258, 1, 256]
+        """
+        in_channels = 1
+        out_channels = 258
+        kernel_size = 256
+        x = torch.randint(0, 100, (1, in_channels, 576), dtype=torch.int32)
+        w = torch.randint(
+            0, 100, (out_channels, in_channels, kernel_size), dtype=torch.int32
+        )
+        b = torch.randn(out_channels)
+        stride = (1, 1)
+        padding = (0, 0)
+        dilation = (1, 1)
+        groups = 1
+        input_zero_point = 0
+        w_zero_point = 0
+        b_scale = 10
+        out_scale = 1
+        out_zero_point = 0
+        out_multiplier = 5
+        out_shift = 5
+        args = (
+            x,
+            w,
+            b,
+            stride,
+            padding,
+            dilation,
+            groups,
+            input_zero_point,
+            w_zero_point,
+            b_scale,
+            out_scale,
+            out_zero_point,
+            out_multiplier,
+            out_shift,
+        )
+        placeholders = (x, w, b)
+        gm = single_op_builder(
+            placeholders=placeholders,
+            op=exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
+            args=args,
+        )
+        return placeholders, gm
+
+    def test_1d_conv_single_input_channel_not_depthwise(self) -> None:
+        """Test that a regular 1D conv with in_channels=1 is NOT treated as depthwise.
+
+        Regression test: when groups == in_channels == 1, the conv is regular (not
+        depthwise). The weight should be converted via the regular NHWC path
+        [OC, IC, K] -> [OC, K, IC], NOT the depthwise path [OC, 1, K] -> [K, OC].
+        """
+        placeholders, gm = self.create_1d_conv_with_single_input_channel_graph_module()
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor), 1
+        )
+
+        p = ReplaceConvWithChannelLastConvPass()
+        gm_after_replacement = p.call(gm).graph_module
+
+        self.assertEqual(
+            count_node(
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
+            ),
+            1,
+        )
+
+        # For 1D conv, the pass uses transpose_copy.int (not permute_copy)
+        # because _change_nchw_to_nhwc calls _transpose_dims for 3D tensors.
+        # 3 transpose_copy ops: input, weight, output. NO squeeze_copy.
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.transpose_copy.int),
+            3,
+        )
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.squeeze_copy.dim),
+            0,
+            "Regular conv with in_channels=1 must NOT have squeeze_copy (not depthwise)",
+        )
+
+        # Verify weight shape is 3D [OC, K, IC] (regular NHWC), not 2D [K, OC] (depthwise)
+        for node in gm_after_replacement.graph.nodes:
+            if node.target != exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor:
+                continue
+            weight_node = node.args[1]
+            weight_shape = weight_node.meta["val"].shape
+            self.assertEqual(
+                len(weight_shape),
+                3,
+                f"Regular 1D conv weight should be 3D [OC, K, IC], got {len(weight_shape)}D",
+            )
+            # Original weight: [258, 1, 256] (OC, IC, K)
+            # Expected after regular NHWC transform: [258, 256, 1] (OC, K, IC)
+            self.assertEqual(weight_shape[0], 258)  # OC
+            self.assertEqual(weight_shape[1], 256)  # K
+            self.assertEqual(weight_shape[2], 1)  # IC
+
+        validate(
+            gm,
+            gm_after_replacement,
+            placeholders,
+            "ReplaceConvWithChannelLastConvPass",
+        )
+
+    def create_1d_depthwise_convolution_graph_module(
+        self,
+    ) -> Tuple[Tuple[torch.Tensor, ...], torch.fx.GraphModule]:
+        """Helper to create a 1D depthwise convolution node.
+
+        For depthwise convolution, groups == input_channels > 1.
+        Input shape: [N, C, L] = [1, 8, 64] (NCHW)
+        Weight shape: [OC, 1, K] = [8, 1, 3]
+        """
+        in_channels = 8
+        out_channels = 8
+        kernel_size = 3
+        x = torch.randint(0, 100, (1, in_channels, 64), dtype=torch.int32)
+        w = torch.randint(0, 100, (out_channels, 1, kernel_size), dtype=torch.int32)
+        b = torch.randn(out_channels)
+        stride = (1, 1)
+        padding = (1, 1)
+        dilation = (1, 1)
+        groups = in_channels
+        input_zero_point = 0
+        w_zero_point = 0
+        b_scale = 10
+        out_scale = 1
+        out_zero_point = 0
+        out_multiplier = 5
+        out_shift = 5
+        args = (
+            x,
+            w,
+            b,
+            stride,
+            padding,
+            dilation,
+            groups,
+            input_zero_point,
+            w_zero_point,
+            b_scale,
+            out_scale,
+            out_zero_point,
+            out_multiplier,
+            out_shift,
+        )
+        placeholders = (x, w, b)
+        gm = single_op_builder(
+            placeholders=placeholders,
+            op=exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
+            args=args,
+        )
+        return placeholders, gm
+
+    def test_1d_depthwise_convolution_weight_shape(self) -> None:
+        """Test that 1D depthwise conv weight is transformed to [K, OC] format.
+
+        For 1D depthwise conv with groups == in_channels > 1, the weight should be
+        transformed from [OC, 1, K] to [K, OC] (2D) via permute_copy + squeeze_copy.
+        """
+        placeholders, gm = self.create_1d_depthwise_convolution_graph_module()
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor), 1
+        )
+
+        p = ReplaceConvWithChannelLastConvPass()
+        gm_after_replacement = p.call(gm).graph_module
+
+        self.assertEqual(
+            count_node(
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
+            ),
+            1,
+        )
+
+        # For 1D depthwise:
+        # - Input/output: transpose_copy.int (2 ops, for 3D NCHW<->NHWC)
+        # - Weight: permute_copy.default + squeeze_copy.dim (depthwise layout)
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.transpose_copy.int),
+            2,
+        )
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default),
+            1,
+        )
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.squeeze_copy.dim),
+            1,
+        )
+
+        for node in gm_after_replacement.graph.nodes:
+            if node.target != exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor:
+                continue
+            weight_node = node.args[1]
+            self.assertEqual(
+                weight_node.target,
+                exir_ops.edge.aten.squeeze_copy.dim,
+                "1D depthwise conv weight should be processed by squeeze_copy",
+            )
+            weight_shape = weight_node.meta["val"].shape
+            self.assertEqual(
+                len(weight_shape),
+                2,
+                f"1D depthwise weight should be 2D [K, OC], got {len(weight_shape)}D",
+            )
+            # Original weight: [8, 1, 3] (OC, 1, K)
+            # Expected after depthwise transform: [3, 8] (K, OC)
+            self.assertEqual(weight_shape[0], 3)  # K
+            self.assertEqual(weight_shape[1], 8)  # OC
+
+        validate(
+            gm,
+            gm_after_replacement,
+            placeholders,
+            "ReplaceConvWithChannelLastConvPass",
+        )
+
     def create_slice_graph(
         self,
         input_shape: Sequence[int],

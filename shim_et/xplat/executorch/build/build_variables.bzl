@@ -36,6 +36,7 @@ PROGRAM_NO_PRIM_OPS_SRCS = [
     "method.cpp",
     "method_meta.cpp",
     "program.cpp",
+    "program_validation.cpp",
     "tensor_parser_exec_aten.cpp",
 ]
 
@@ -474,6 +475,7 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/XNNPACKBackend.cpp",
     "runtime/XNNWeightsCache.cpp",
     "runtime/XNNWorkspaceManager.cpp",
+    "runtime/XnnpackBackendOptions.cpp",
     "runtime/profiling/XNNProfiler.cpp",
 ]
 

@@ -61,10 +61,6 @@ dependencies=[
   "packaging",
   "pandas>=2.2.2; python_version >= '3.10'",
   "parameterized",
-  "pytest<9.0",
-  "pytest-xdist",
-  "pytest-rerunfailures==15.1",
-  "pytest-json-report",
   "pytorch-tokenizers",
   "pyyaml",
   "ruamel.yaml",
@@ -113,6 +109,8 @@ license-files = ["LICENSE"]
 [tool.setuptools.package-data]
 # TODO(dbort): Prune /test[s]/ dirs, /third-party/ dirs, yaml files that we
 # don't need.
+# TODO(RobertKalmar): When test[s] dirs pruned the PROJECT_DIR resolution in backends.nxp.tests_models.config.py can
+#  avoid exporting and reading env variable.
 "*" = [
   # Some backends like XNNPACK need their .fbs files.
   "*.fbs",

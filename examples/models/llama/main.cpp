@@ -9,6 +9,7 @@
 
 #include <executorch/examples/models/llama/runner/runner.h>
 #include <gflags/gflags.h>
+#include <fstream>
 #include <sstream>
 #include <vector>
 
@@ -34,6 +35,10 @@ DEFINE_string(
 DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 
 DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
+DEFINE_string(
+    prompt_file,
+    "",
+    "Optional path to a file containing the prompt. If set, this overrides --prompt.");
 
 DEFINE_double(
     temperature,
@@ -102,6 +107,17 @@ std::vector<std::string> parseStringList(const std::string& input) {
   return result;
 }
 
+bool readFileToString(const std::string& path, std::string& out) {
+  std::ifstream file(path, std::ios::in | std::ios::binary);
+  if (!file) {
+    return false;
+  }
+  std::ostringstream ss;
+  ss << file.rdbuf();
+  out = ss.str();
+  return true;
+}
+
 int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -114,7 +130,18 @@ int32_t main(int32_t argc, char** argv) {
 
   const char* tokenizer_path = FLAGS_tokenizer_path.c_str();
 
+  std::string prompt_storage;
   const char* prompt = FLAGS_prompt.c_str();
+  if (!FLAGS_prompt_file.empty()) {
+    if (!readFileToString(FLAGS_prompt_file, prompt_storage)) {
+      ET_LOG(
+          Error,
+          "Failed to read prompt file at path: %s",
+          FLAGS_prompt_file.c_str());
+      return 1;
+    }
+    prompt = prompt_storage.c_str();
+  }
 
   float temperature = FLAGS_temperature;
 

@@ -16,7 +16,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 
 
 class IndexTensorTestCommon:
-    """Class containing constants common between the tests"""
+    """Class containing constants common between the tests."""
 
     aten_op = "torch.ops.aten.index.Tensor"
     exir_op = "executorch_exir_dialects_edge__ops_aten_index_Tensor"
@@ -34,10 +34,9 @@ input_params = Tuple[torch.Tensor, Tuple[torch.Tensor]]
 
 
 class IndexTensor_Ellipsis(torch.nn.Module):
-    """
-    There are technical limitations with torch/export as it does not support
-    the ellipsis class and as such the forward function has been crafted
-    to circumvent that limitation.
+    """There are technical limitations with torch/export as it does not support
+    the ellipsis class and as such the forward function has been crafted to
+    circumvent that limitation.
     """
 
     # xfail - ellipsis unsupported
@@ -130,10 +129,9 @@ def test_index_tensor_tosa_INT_ellipsis(test_data: input_params):
 
 
 class IndexTensor_Slice(torch.nn.Module):
-    """
-    There are technical limitations with Dynamo as it does not support the
-    slice class and as such the forward function has been crafted
-    to circumvent that limitation.
+    """There are technical limitations with Dynamo as it does not support the
+    slice class and as such the forward function has been crafted to circumvent
+    that limitation.
     """
 
     # xfail - None unsupported
@@ -320,6 +318,28 @@ class IndexTensor(torch.nn.Module):
                 torch.randint(2, size=(15,), dtype=torch.int32),
             ),
         ),
+        "test_1d_rank4_index": (
+            torch.rand(12),
+            (torch.randint(12, size=(1, 2, 1, 3), dtype=torch.int32),),
+        ),
+        "test_2d_rank4_broadcastable_indices": (
+            torch.rand(4, 6),
+            (
+                torch.randint(4, size=(1, 2, 1, 1), dtype=torch.int32),
+                torch.randint(6, size=(1, 1, 3, 1), dtype=torch.int32),
+            ),
+        ),
+        "test_1d_high_rank_index": (
+            torch.rand(24),
+            (torch.randint(24, size=(1, 1, 2, 1, 3), dtype=torch.int32),),
+        ),
+        "test_2d_high_rank_broadcastable_indices": (
+            torch.rand(4, 5),
+            (
+                torch.randint(4, size=(1, 2, 1, 1, 1), dtype=torch.int32),
+                torch.randint(5, size=(1, 1, 3, 1, 1), dtype=torch.int32),
+            ),
+        ),
     }
     test_data_bf16: dict[input_params] = {
         "test_2d_1_idx_bf16": (
@@ -471,7 +491,7 @@ def test_index_tensor_tosa_INT_none(test_data: input_params):
 @common.parametrize("test_data", IndexTensor.test_data)
 @common.XfailIfNoCorstone300
 def test_index_tensor_u55_INT_not_delegated(test_data: input_params):
-    """Ethos-U55 backend BI pipeline test for index.Tensor"""
+    """Ethos-U55 backend BI pipeline test for index.Tensor."""
     test_input = test_data
     with torch.no_grad():
         OpNotSupportedPipeline[input_params](

@@ -654,21 +654,13 @@ static Kernel prim_ops[] = {
 #if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
     defined(INCLUDE_EXECUTORCH_PRIM_ET_COPY_INDEX_TENSOR)
     // executorch_prim::et_copy_index.tensor(tensor, tensor) -> tensor
-    Kernel(
-        "executorch_prim::et_copy_index.tensor",
-        [](KernelRuntimeContext& context, Span<EValue*> stack) {
-          et_copy_index(context, stack);
-        }),
+    Kernel("executorch_prim::et_copy_index.tensor", et_copy_index),
 #endif
 
 #if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
     defined(INCLUDE_EXECUTORCH_PRIM_ET_VIEW_DEFAULT)
     // executorch_prim::et_view.default(Tensor, int[]) -> Tensor
-    Kernel(
-        "executorch_prim::et_view.default",
-        [](KernelRuntimeContext& context, Span<EValue*> stack) {
-          et_view(context, stack);
-        }),
+    Kernel("executorch_prim::et_view.default", et_view),
 #endif
 
 };

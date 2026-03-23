@@ -21,6 +21,25 @@
 namespace vkcompute {
 namespace vkapi {
 
+namespace {
+
+DeviceType determine_device_type(const std::string& device_name) {
+  if (device_name.find("adreno") != std::string::npos) {
+    return DeviceType::ADRENO;
+  } else if (device_name.find("swiftshader") != std::string::npos) {
+    return DeviceType::SWIFTSHADER;
+  } else if (device_name.find("nvidia") != std::string::npos) {
+    return DeviceType::NVIDIA;
+  } else if (
+      device_name.find("mali") != std::string::npos ||
+      device_name.find("immortalis") != std::string::npos) {
+    return DeviceType::MALI;
+  }
+  return DeviceType::UNKNOWN;
+}
+
+} // namespace
+
 PhysicalDevice::PhysicalDevice(
     VkInstance instance_handle,
     VkPhysicalDevice physical_device_handle)
@@ -51,6 +70,14 @@ PhysicalDevice::PhysicalDevice(
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_PROPERTIES_KHR,
           nullptr},
 #endif
+#ifdef VK_KHR_cooperative_matrix
+      cooperative_matrix_features{
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR},
+#endif /* VK_KHR_cooperative_matrix */
+#ifdef VK_NV_cooperative_matrix2
+      cooperative_matrix2_features{
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_2_FEATURES_NV},
+#endif /* VK_NV_cooperative_matrix2 */
       queue_families{},
       num_compute_queues(0),
       api_version_major(0),
@@ -118,15 +145,7 @@ PhysicalDevice::PhysicalDevice(
       device_name.begin(),
       [](unsigned char c) { return std::tolower(c); });
 
-  if (device_name.find("adreno") != std::string::npos) {
-    device_type = DeviceType::ADRENO;
-  } else if (device_name.find("swiftshader") != std::string::npos) {
-    device_type = DeviceType::SWIFTSHADER;
-  } else if (device_name.find("nvidia") != std::string::npos) {
-    device_type = DeviceType::NVIDIA;
-  } else if (device_name.find("mali") != std::string::npos) {
-    device_type = DeviceType::MALI;
-  }
+  device_type = determine_device_type(device_name);
 }
 
 void PhysicalDevice::query_extensions_vk_1_0() {
@@ -246,6 +265,16 @@ void PhysicalDevice::query_extensions_vk_1_1() {
   extension_list_top = &shader_int_dot_product_features;
 #endif /* VK_KHR_shader_integer_dot_product */
 
+#ifdef VK_KHR_cooperative_matrix
+  cooperative_matrix_features.pNext = extension_list_top;
+  extension_list_top = &cooperative_matrix_features;
+#endif /* VK_KHR_cooperative_matrix */
+
+#ifdef VK_NV_cooperative_matrix2
+  cooperative_matrix2_features.pNext = extension_list_top;
+  extension_list_top = &cooperative_matrix2_features;
+#endif /* VK_NV_cooperative_matrix2 */
+
   features2.pNext = extension_list_top;
 
   vkGetPhysicalDeviceFeatures2(handle, &features2);
@@ -270,6 +299,17 @@ void PhysicalDevice::query_extensions_vk_1_1() {
 #endif /* VK_KHR_shader_integer_dot_product */
 
   vkGetPhysicalDeviceProperties2(handle, &properties2);
+}
+
+void PhysicalDevice::override_device_name(const std::string& new_name) {
+  device_name = new_name;
+  std::transform(
+      device_name.begin(),
+      device_name.end(),
+      device_name.begin(),
+      [](unsigned char c) { return std::tolower(c); });
+
+  device_type = determine_device_type(device_name);
 }
 
 //

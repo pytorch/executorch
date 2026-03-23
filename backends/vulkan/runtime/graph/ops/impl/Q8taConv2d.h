@@ -9,9 +9,17 @@
 #pragma once
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
 
 namespace vkcompute {
+
+enum class ActivationType : uint32_t {
+  kNone = 0,
+  kRelu = 1,
+};
+
+ActivationType activation_type_from_string(const std::string& activation);
 
 bool q8ta_conv2d_check_packed_dim_info(const api::PackedDimInfo& info);
 
@@ -58,6 +66,7 @@ void add_q8ta_conv2d_dw_node(
     const ValueRef padding,
     const ValueRef dilation,
     const ValueRef groups,
+    const uint32_t activation_type,
     const ValueRef packed_int8_output);
 
 void add_conv2d_dw_q8ta_q8csw_q8to_4w4c_node(
@@ -97,6 +106,7 @@ void add_q8ta_conv2d_node(
     const ValueRef padding,
     const ValueRef dilation,
     const ValueRef groups,
+    const uint32_t activation_type,
     const ValueRef packed_int8_output);
 
 void add_q8ta_conv2d_pw_node(
@@ -111,8 +121,35 @@ void add_q8ta_conv2d_pw_node(
     const ValueRef output_zp,
     const ValueRef bias_data,
     const ValueRef packed_bias,
-    const ValueRef packed_int8_output);
+    const uint32_t activation_type,
+    const ValueRef packed_int8_output,
+    const int32_t groups = 1);
+
+std::vector<int64_t> calculate_q8ta_im2col_sizes(
+    ComputeGraph* graph,
+    const ValueRef& input,
+    const ValueRef& output,
+    const ValueRef& kernel_size,
+    const ValueRef& groups);
+
+void add_q8ta_im2col_node(
+    ComputeGraph& graph,
+    const ValueRef packed_int8_input,
+    const ValueRef kernel_size,
+    const ValueRef stride,
+    const ValueRef padding,
+    const ValueRef dilation,
+    const ValueRef groups,
+    const ValueRef packed_int8_output,
+    const ValueRef packed_int8_im2col,
+    const int32_t zp);
 
 void q8ta_conv2d_im2col(ComputeGraph& graph, const std::vector<ValueRef>& args);
+
+// Transposed convolution
+
+void q8ta_conv2d_transposed(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args);
 
 } // namespace vkcompute

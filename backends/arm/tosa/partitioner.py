@@ -18,7 +18,10 @@ from itertools import count
 from typing import Callable, List, Optional, Sequence, Tuple
 
 import torch
-from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_cond_while_submodules_nested,
+    get_first_fake_tensor,
+)
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
 )
@@ -37,7 +40,6 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data, WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.graph_module import get_cond_while_submodules
 from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
@@ -72,6 +74,10 @@ def _is_noop_expand(node: torch.fx.node.Node) -> bool:
     else:
         multiples, changes_rank = calculate_multiples(node.args)
     return all(m == 1 for m in multiples) and not changes_rank
+
+
+def _is_view_copy(node: torch.fx.node.Node) -> bool:
+    return node.target == exir_ops.edge.aten.view_copy.default
 
 
 def is_partitioned(
@@ -215,7 +221,7 @@ class TOSAPartitioner(Partitioner):
         tags: set[str] = set()
         if tag_iterator is None:
             tag_iterator = count(0)
-        for _, submodule, _ in get_cond_while_submodules(module):
+        for _, submodule, _ in get_cond_while_submodules_nested(module):
             submodule_tags = self._tag_module(
                 submodule, containing_program, reporter, tag_iterator
             )
@@ -249,17 +255,19 @@ class TOSAPartitioner(Partitioner):
                     reporter,
                 )
 
-            is_noop_partition = all(
+            # Check whether the partition contains only no-op or non-computational ops. Such partitions don't make sense to delegate, and in the worst case may be optimized away during lowering, which can break compilation."
+            is_nocompute_partition = all(
                 _is_noop_clone(node)
                 or _is_noop_alias_copy(node)
-                or _is_noop_detach_copy(node)
                 or _is_noop_expand(node)
+                or _is_noop_detach_copy(node)
                 or _is_noop_to_dim_order_copy(node)
+                or _is_view_copy(node)
                 or node.target in Q_OPS
                 or node.target in DQ_OPS
                 for node in partition.nodes
             )
-            if is_noop_partition:
+            if is_nocompute_partition:
                 reject_partition(
                     "Partition contained only ops which are removed in the TOSA lowering, leading to an empty partition.",
                     partition,

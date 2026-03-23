@@ -159,6 +159,8 @@ def update_features(aten_op):
         torch.ops.aten.sym_size.int,
         operator.add,
         operator.sub,
+        operator.floordiv,
+        operator.mul,
         operator.lt,
         operator.gt,
         operator.ge,
@@ -167,6 +169,9 @@ def update_features(aten_op):
         # Guard and assert ops
         torch.ops.aten._assert_scalar.default,
         torch.ops.aten.sym_constrain_range_for_size.default,
+        # copy.default is a no-op when src dtype matches dst dtype; removed by
+        # RemoveRedundantOpsTransform before execution.
+        exir_ops.edge.aten.copy.default,
     ]
 )
 def register_ephemeral_ops():
@@ -231,6 +236,19 @@ def register_clamp():
         exir_ops.edge.aten.div.Tensor,
         exir_ops.edge.aten.div.Tensor_mode,
         exir_ops.edge.aten.pow.Tensor_Tensor,
+    ]
+)
+def register_binaryop_cpp_ops():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features(
+    [
         exir_ops.edge.aten.eq.Tensor,
         exir_ops.edge.aten.lt.Tensor,
         exir_ops.edge.aten.le.Tensor,
@@ -238,10 +256,46 @@ def register_clamp():
         exir_ops.edge.aten.ge.Tensor,
     ]
 )
-def register_binaryop_cpp_ops():
+def register_comparison_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_T,
+        outputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+# =============================================================================
+# BinaryOp.cpp (bitwise)
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.bitwise_and.Tensor)
+def register_bitwise_and():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features(exir_ops.edge.aten.bitwise_not.default)
+def register_bitwise_not():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features(exir_ops.edge.aten.logical_and.default)
+def register_logical_and():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.BOOL_T,
         supports_resize=True,
         supports_highdim=True,
     )
@@ -269,16 +323,22 @@ def register_pow_tensor_scalar():
 
 @update_features(exir_ops.edge.aten._to_copy.default)
 def register_to_copy():
-    def check_to_copy_node(node: torch.fx.Node) -> bool:
-        # Only single-arg _to_copy is supported
-        return len(node.args) == 1
+    def pick_to_copy_storage(
+        node: torch.fx.Node,
+    ) -> Tuple[utils.TensorRepSet, utils.TensorRepSet]:
+        in_dtype = node.args[0].meta["val"].dtype  # type: ignore[union-attr]
+        out_dtype = node.meta["val"].dtype
+        fp_types = {torch.float16, torch.float32}
+        if in_dtype in fp_types and out_dtype in fp_types:
+            return utils.ANY_STORAGE, utils.ANY_STORAGE
+        return utils.CONTIGUOUS_BUFFER, utils.CONTIGUOUS_BUFFER
 
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
-        inputs_dtypes=utils.FP_T,
-        outputs_dtypes=utils.FP_T,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        outputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
-        are_node_inputs_supported_fn=check_to_copy_node,
+        pick_io_storage_fn=pick_to_copy_storage,
     )
 
 
@@ -295,7 +355,7 @@ def register_to_copy():
 )
 def register_softmax_cpp_ops():
     return OpFeatures(
-        inputs_storage=utils.ANY_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
     )
@@ -450,6 +510,7 @@ def register_quantize_per_tensor():
         outputs_storage=[
             utils.PACKED_INT8_BUFFER,
         ],
+        supports_highdim=True,
     )
 
 
@@ -467,6 +528,7 @@ def register_dequantize_per_tensor():
         outputs_storage=[
             utils.CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER,
         ],
+        supports_highdim=True,
     )
 
 
@@ -514,7 +576,19 @@ def register_q8ta_add():
 
 
 # =============================================================================
-# Reduce.cpp
+# Q8taUnary.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.q8ta_relu.default)
+def register_q8ta_relu():
+    return OpFeatures(
+        inputs_storage=utils.PACKED_INT8_BUFFER,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
 # =============================================================================
 
 
@@ -659,8 +733,9 @@ def register_reduce_cpp_ops():
 )
 def register_argreduce_cpp_ops():
     return OpFeatures(
-        inputs_storage=utils.ANY_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_T,
+        outputs_dtypes=utils.INT_T,
         supports_resize=True,
         supports_highdim=True,
         are_node_inputs_supported_fn=is_reduce_node_supported,
@@ -794,7 +869,7 @@ def register_q8ta_conv_pw_op():
 def register_q8ta_conv2d_ops():
     return OpFeatures(
         inputs_storage=[
-            utils.PACKED_INT8_4C1W_BUFFER,  # input
+            utils.PACKED_INT8_CONV2D_BUFFER,  # input
             utils.NO_STORAGE,  # input_scale (non tensor)
             utils.NO_STORAGE,  # input_zero_point (non tensor)
             utils.NO_STORAGE,  # weight (prepacked)
@@ -812,6 +887,90 @@ def register_q8ta_conv2d_ops():
         ],
         outputs_storage=[
             utils.PACKED_INT8_CHANNELS_PACKED_BUFFER,
+        ],
+        supports_resize=False,
+        supports_prepacking=True,
+    )
+
+
+@update_features(
+    [
+        exir_ops.edge.et_vk.q8ta_conv2d_transposed.default,
+    ]
+)
+def register_q8ta_conv2d_transposed_op():
+    return OpFeatures(
+        inputs_storage=[
+            utils.PACKED_INT8_CONV2D_BUFFER,  # input
+            utils.NO_STORAGE,  # input_scale (non tensor)
+            utils.NO_STORAGE,  # input_zero_point (non tensor)
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # weight_sums (prepacked)
+            utils.NO_STORAGE,  # weight_scales (prepacked)
+            utils.NO_STORAGE,  # output_scale (non tensor)
+            utils.NO_STORAGE,  # output_zero_point (non tensor)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # kernel_size (non tensor)
+            utils.NO_STORAGE,  # stride (non tensor)
+            utils.NO_STORAGE,  # padding (non tensor)
+            utils.NO_STORAGE,  # output_padding (non tensor)
+            utils.NO_STORAGE,  # dilation (non tensor)
+            utils.NO_STORAGE,  # groups (non tensor)
+            utils.NO_STORAGE,  # activation (non tensor)
+        ],
+        outputs_storage=[
+            utils.PACKED_INT8_CHANNELS_PACKED_BUFFER,
+        ],
+        supports_resize=False,
+        supports_prepacking=True,
+    )
+
+
+# =============================================================================
+# Q8taLinear.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.q8ta_linear.default)
+def register_q8ta_linear():
+    return OpFeatures(
+        inputs_storage=[
+            utils.PACKED_INT8_4H4W_BUFFER,  # input
+            utils.NO_STORAGE,  # input_scale (non tensor)
+            utils.NO_STORAGE,  # input_zero_point (non tensor)
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # weight_sums (prepacked)
+            utils.NO_STORAGE,  # weight_scales (prepacked)
+            utils.NO_STORAGE,  # output_scale (non tensor)
+            utils.NO_STORAGE,  # output_zero_point (non tensor)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # activation (non tensor)
+        ],
+        outputs_storage=[
+            utils.PACKED_INT8_4H4W_BUFFER,
+        ],
+        supports_resize=False,
+        supports_prepacking=True,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.q8ta_linear_gemv.default)
+def register_q8ta_linear_gemv():
+    return OpFeatures(
+        inputs_storage=[
+            utils.PACKED_INT8_4W_BUFFER,  # input
+            utils.NO_STORAGE,  # input_scale (non tensor)
+            utils.NO_STORAGE,  # input_zero_point (non tensor)
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # weight_sums (prepacked)
+            utils.NO_STORAGE,  # weight_scales (prepacked)
+            utils.NO_STORAGE,  # output_scale (non tensor)
+            utils.NO_STORAGE,  # output_zero_point (non tensor)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # activation (non tensor)
+        ],
+        outputs_storage=[
+            utils.PACKED_INT8_4W_BUFFER,
         ],
         supports_resize=False,
         supports_prepacking=True,
@@ -989,7 +1148,7 @@ def register_gather():
 @update_features(exir_ops.edge.aten.expand_copy.default)
 def register_expand_copy():
     return OpFeatures(
-        inputs_storage=utils.ANY_BUFFER,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=False,
         supports_highdim=True,
@@ -1095,6 +1254,58 @@ def register_index_select():
 
 
 # =============================================================================
+# Where.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.where.self)
+def register_where():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=[utils.BOOL_T, utils.FP_T, utils.FP_T],
+        outputs_dtypes=utils.FP_T,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
+# IndexTensor.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.index.Tensor)
+def register_index_tensor():
+    def check_index_tensor_node(node: torch.fx.Node) -> bool:
+        self_arg = node.args[0]
+        indices = node.args[1]
+
+        # Only support 1D self tensor
+        if not isinstance(self_arg, torch.fx.Node):
+            return False
+        self_val = self_arg.meta.get("val", None)
+        if self_val is None:
+            return False
+        if len(self_val.size()) != 1:
+            return False
+
+        # Only support exactly one non-None index tensor
+        if not isinstance(indices, (list, tuple)):
+            return False
+        non_none = [idx for idx in indices if idx is not None]
+        if len(non_none) != 1:
+            return False
+
+        return True
+
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_T,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_index_tensor_node,
+    )
+
+
+# =============================================================================
 # Arange.cpp
 # =============================================================================
 
@@ -1102,7 +1313,7 @@ def register_index_select():
 @update_features(exir_ops.edge.aten.arange.start_step)
 def register_arange():
     return OpFeatures(
-        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_T,
     )
 
@@ -1115,8 +1326,9 @@ def register_arange():
 @update_features(exir_ops.edge.aten.constant_pad_nd.default)
 def register_constant_pad_nd():
     return OpFeatures(
-        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
     )
 
 
@@ -1137,7 +1349,7 @@ def register_constant_pad_nd():
 )
 def register_full_cpp_ops():
     return OpFeatures(
-        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
     )
 
@@ -1152,6 +1364,7 @@ def register_scalar_tensor():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
         inputs_dtypes=utils.FP_INT_T,
+        supports_resize=True,
     )
 
 
@@ -1194,7 +1407,7 @@ def register_grid_priors():
 @update_features(exir_ops.edge.aten.repeat.default)
 def register_repeat():
     return OpFeatures(
-        inputs_storage=utils.ANY_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
     )
 
@@ -1206,9 +1419,50 @@ def register_repeat():
 
 @update_features(exir_ops.edge.aten.embedding.default)
 def register_embedding():
+    def check_embedding_weight_size(node: torch.fx.Node) -> bool:
+        weight = node.args[0]
+        if isinstance(weight, torch.fx.Node) and utils.is_tensor_node(weight):
+            numel = weight.meta["val"].numel()
+            if numel > utils.DEFAULT_BUFFER_LIMIT:
+                return False
+        return True
+
     return OpFeatures(
-        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=[utils.FP_T, utils.INT_T],
+        supports_prepacking=True,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_embedding_weight_size,
+    )
+
+
+# =============================================================================
+# EmbeddingQ4gsw (Quantized Embedding)
+# =============================================================================
+
+
+@update_features(exir_ops.edge.quantized_decomposed.embedding_4bit.dtype)
+def register_quantized_decomposed_embedding_4bit():
+    def check_embedding_4bit_weight_size(node: torch.fx.Node) -> bool:
+        weight = node.args[0]
+        if isinstance(weight, torch.fx.Node) and utils.is_tensor_node(weight):
+            numel = weight.meta["val"].numel()
+            if numel > utils.DEFAULT_BUFFER_LIMIT:
+                return False
+        return True
+
+    return OpFeatures(
+        inputs_storage=utils.ANY_BUFFER,
+        supports_prepacking=True,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_embedding_4bit_weight_size,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.embedding_q4gsw.default)
+def register_embedding_q4gsw():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
         supports_prepacking=True,
         supports_resize=True,
     )
@@ -1221,25 +1475,11 @@ def register_embedding():
 
 @update_features(exir_ops.edge.aten._native_batch_norm_legit_no_training.default)
 def register_native_batch_norm_legit_no_training():
-    def check_batch_norm_node(node: torch.fx.Node) -> bool:
-        x = node.args[0]
-        if not isinstance(x, torch.fx.Node):
-            return False
-        x_val = x.meta.get("val", None)
-        if x_val is None:
-            return False
-        x_shape = x_val.size()
-        # Only support 4-D input tensors since this is a restriction enforced by the
-        # operator implementation.
-        # TODO(ssjia): Add shape agnostic support for batch norm
-        return len(x_shape) == 4
-
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
         inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
         supports_resize=True,
-        are_node_inputs_supported_fn=check_batch_norm_node,
     )
 
 
@@ -1270,7 +1510,7 @@ def register_native_group_norm():
 @update_features(exir_ops.edge.aten.native_layer_norm.default)
 def register_native_layer_norm():
     return OpFeatures(
-        inputs_storage=utils.ANY_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
         supports_resize=True,

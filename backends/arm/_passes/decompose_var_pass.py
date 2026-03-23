@@ -26,7 +26,6 @@ def get_var_decomposition(op) -> tuple:
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.mul.Tensor,
             exir_ops.edge.aten.sum.dim_IntList,
-            exir_ops.edge.aten.full.default,
         )
     if op in (torch.ops.aten.var.correction, torch.ops.aten.var.dim):
         return (
@@ -34,7 +33,6 @@ def get_var_decomposition(op) -> tuple:
             torch.ops.aten.sub.Tensor,
             torch.ops.aten.mul.Tensor,
             torch.ops.aten.sum.dim_IntList,
-            torch.ops.aten.full,
         )
     raise RuntimeError(f"Can't get var decomposition for op {op}")
 
@@ -73,7 +71,6 @@ class DecomposeVarPass(ArmPass):
         if shape == []:
             shape = [1 for _ in input_shape]
 
-        dtype = meta["val"].dtype
         # Get dim from args based on argument type
         dim = get_node_arg(args, key=list, default_value=list(range(len(shape))))
 
@@ -92,18 +89,17 @@ class DecomposeVarPass(ArmPass):
         for d in dim:
             N *= input_shape[d]
 
-        mean_op, diff_op, mul_op, sum_op, full_op = get_var_decomposition(op)
+        mean_op, diff_op, mul_op, sum_op = get_var_decomposition(op)
         mean = super().call_operator(mean_op, (x, dim, True), {}, meta, True)
         diff = super().call_operator(diff_op, (x, mean), {}, meta, True)
         squared_diff = super().call_operator(mul_op, (diff, diff), {}, meta, True)
         sum = super().call_operator(
             sum_op, (squared_diff, dim, keepdim), {}, meta, True
         )
-        full = super().call_operator(
-            full_op,
-            ([], 1 / max(0, N - correction)),
-            {"dtype": dtype, "device": x.data.device},
+        return super().call_operator(
+            mul_op,
+            (sum, super().call_scalar(1 / max(0, N - correction), meta)),
+            {},
             meta,
             True,
         )
-        return super().call_operator(mul_op, (sum, full), {}, meta, True)

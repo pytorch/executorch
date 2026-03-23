@@ -175,7 +175,9 @@ def test_clamp_u55_INT(test_data):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_clamp_u55_INT_16a8w(test_data):
-    """Test clamp operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test clamp operation with 16A8W quantization on U55 (16-bit activations,
+    8-bit weights)
+    """
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
     pipeline = EthosU55PipelineINT[input_t](
@@ -208,7 +210,9 @@ def test_clamp_u85_INT(test_data):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_clamp_u85_INT_16a8w(test_data):
-    """Test clamp operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test clamp operation with 16A8W quantization on U85 (16-bit activations,
+    8-bit weights)
+    """
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
     pipeline = EthosU85PipelineINT[input_t](
@@ -253,7 +257,9 @@ def test_clamp_vgf_quant(test_data):
     pipeline.run()
 
 
-aten_op_tensor = "torch.ops.aten.clamp.Tensor"
+aten_op_tensor = [
+    "torch.ops.aten.clamp.Tensor",
+]
 exir_op_tensor = "executorch_exir_dialects_edge__ops_aten_clamp_Tensor"
 
 test_data_suite_tensor_FP = {
@@ -409,10 +415,22 @@ def test_clamp_tosa_INT_tensor(test_data):
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
 
+    # Check that int64 inputs are cast to int32 in the tfa pipeline
+    if any(
+        t.dtype == torch.int64
+        for t in (input_tensor, min_val, max_val)
+        if isinstance(t, torch.Tensor)
+    ):
+        aten_op = aten_op_tensor + [
+            "torch.ops.dim_order_ops._to_dim_order_copy.default"
+        ]
+    else:
+        aten_op = aten_op_tensor
+
     pipeline = TosaPipelineINT[input_t](
         model,
         (input_tensor,),
-        aten_op_tensor,
+        aten_op,
         exir_op_tensor,
     )
     pipeline.run()
@@ -453,7 +471,9 @@ def test_clamp_u55_INT_tensor(test_data):
 @common.parametrize("test_data", test_data_suite_tensor_INT32)
 @common.XfailIfNoCorstone300
 def test_clamp_u55_INT_16a8w_tensor(test_data):
-    """Test clamp operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test clamp operation with 16A8W quantization on U55 (16-bit activations,
+    8-bit weights)
+    """
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
     pipeline = EthosU55PipelineINT[input_t](
@@ -486,7 +506,9 @@ def test_clamp_u85_INT_tensor(test_data):
 @common.parametrize("test_data", test_data_suite_tensor_INT32)
 @common.XfailIfNoCorstone320
 def test_clamp_u85_INT_16a8w_tensor(test_data):
-    """Test clamp operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test clamp operation with 16A8W quantization on U85 (16-bit activations,
+    8-bit weights)
+    """
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
     pipeline = EthosU85PipelineINT[input_t](

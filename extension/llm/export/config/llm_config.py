@@ -44,11 +44,15 @@ class ModelType(str, Enum):
     qwen3_0_6b = "qwen3_0_6b"
     qwen3_1_7b = "qwen3_1_7b"
     qwen3_4b = "qwen3_4b"
+    qwen3_5_0_8b = "qwen3_5_0_8b"
+    qwen3_5_2b = "qwen3_5_2b"
+    qwen3_5_4b = "qwen3_5_4b"
     phi_4_mini = "phi_4_mini"
     smollm2 = "smollm2"
     lfm2_350m = "lfm2_350m"
     lfm2_700m = "lfm2_700m"
     lfm2_1_2b = "lfm2_1_2b"
+    lfm2_5_1_2b = "lfm2_5_1_2b"
 
 
 class PreqMode(str, Enum):
@@ -303,6 +307,9 @@ class MultimethodLoraConfig:
     Attributes:
         methods: Dict mapping method names to optional LoRA configs.
             Empty dict disables multimethod_lora export.
+        share_mutable_buffers: Whether to share mutable buffers across methods.
+            If True, sets all mutable buffers to mem_id=2. Mutable buffers with
+            the same FQN (fully qualified name) will have the same offset.
 
     Example:
         MultimethodLoraConfig(methods={
@@ -312,6 +319,7 @@ class MultimethodLoraConfig:
     """
 
     methods: Dict[str, Optional[LoraConfig]] = field(default_factory=dict)
+    share_mutable_buffers: bool = False
 
     @property
     def enabled(self) -> bool:
@@ -347,6 +355,8 @@ class Pt2eQuantize(str, Enum):
     coreml_baseline_8a_c4w = "coreml_baseline_8a_c4w"
     vulkan_8w = "vulkan_8w"
     tosa_8a8w = "tosa_8a8w"
+    ethosu_8a8w = "ethosu_8a8w"
+    vgf_8a8w = "vgf_8a8w"
 
 
 class SpinQuant(str, Enum):
@@ -519,8 +529,9 @@ class OpenvinoConfig:
 
     enabled: bool = False
     device: str = "CPU"
-    nncf_compression: bool = False
     nncf_compression_group_size: int = 32
+    openvino_awq: bool = False
+    openvino_scale_estimation: bool = False
 
 
 @dataclass
@@ -544,6 +555,29 @@ class TosaConfig:
 
 
 @dataclass
+class EthosUConfig:
+    """
+    Configures the Ethos-U backend.
+    """
+
+    enabled: bool = False
+    target: str = "ethos-u85-128"  # Default target, can be overridden.
+    memory_mode: str = "default"
+    system_config: str = "default"
+
+
+@dataclass
+class VgfConfig:
+    """
+    Configures the VGF backend.
+    """
+
+    enabled: bool = False
+    compile_spec: Optional[str] = "TOSA-1.0+INT"
+    compiler_flags: List[str] = field(default_factory=list)
+
+
+@dataclass
 class BackendConfig:
     """
     Configures which backends should be used and how the backends
@@ -558,6 +592,8 @@ class BackendConfig:
     openvino: OpenvinoConfig = field(default_factory=OpenvinoConfig)
     torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
     tosa: TosaConfig = field(default_factory=TosaConfig)
+    ethosu: EthosUConfig = field(default_factory=EthosUConfig)
+    vgf: VgfConfig = field(default_factory=VgfConfig)
 
 
 ################################################################################
@@ -735,8 +771,12 @@ class LlmConfig:
             llm_config.backend.openvino.enabled = args.openvino
         if hasattr(args, "openvino_device"):
             llm_config.backend.openvino.device = args.openvino_device
-        if hasattr(args, "nncf_compression"):
-            llm_config.backend.openvino.nncf_compression = args.nncf_compression
+        if hasattr(args, "openvino_awq"):
+            llm_config.backend.openvino.openvino_awq = args.openvino_awq
+        if hasattr(args, "openvino_scale_estimation"):
+            llm_config.backend.openvino.openvino_scale_estimation = (
+                args.openvino_scale_estimation
+            )
         if hasattr(args, "group_size") and args.group_size:
             llm_config.backend.openvino.nncf_compression_group_size = args.group_size
 
