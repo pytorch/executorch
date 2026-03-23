@@ -27,6 +27,7 @@ from executorch.backends.apple.mps.serialization.mps_graph_serialize import (
     convert_to_flatbuffer,
 )
 from executorch.exir._serialize._program import Cord
+from executorch.exir._warnings import deprecated
 
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -43,8 +44,23 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
+@deprecated(
+    "The MPS backend is deprecated and will be removed in ExecuTorch 1.5. "
+    "Use the CoreML backend for iOS/macOS GPU acceleration, or the Metal "
+    "backend for macOS desktop GPU workloads. "
+    "See https://docs.pytorch.org/executorch/main/backends-overview.html "
+    "for migration guidance.",
+    category=FutureWarning,
+)
 @final
 class MPSBackend(BackendDetails):
+    """MPS backend for Apple GPU acceleration via MPSGraph.
+
+    .. warning::
+
+        ``MPSBackend`` is deprecated and will be removed in ExecuTorch 1.5.
+        Use ``CoreMLBackend`` (iOS/macOS) or the Metal backend (macOS) instead.
+    """
     @staticmethod
     def slice_len_max(s):
         assert s.start is not None

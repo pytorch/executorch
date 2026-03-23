@@ -1,5 +1,13 @@
 # MPS Backend
 
+:::{warning}
+**Deprecated:** The MPS backend is deprecated as of ExecuTorch 1.3 and will be
+removed in ExecuTorch 1.5. Please migrate to the
+[CoreML backend](../coreml/coreml-overview.md) for iOS/macOS GPU acceleration,
+or the [Metal backend](../../../../desktop/README.md) for macOS desktop GPU
+workloads.
+:::
+
 MPS delegate is the ExecuTorch solution to take advantage of Apple's GPU for on-device ML using the [MPS Graph](https://developer.apple.com/documentation/metalperformanceshadersgraph/mpsgraph?language=objc) framework and tuned kernels provided by [MPS](https://developer.apple.com/documentation/metalperformanceshaders?language=objc).
 
 ## Target Requirements
