@@ -29,6 +29,9 @@ import os
 import torch
 
 from executorch.backends.qualcomm.debugger.observatory import Observatory
+from executorch.backends.qualcomm.debugger.observatory.lenses.pipeline_graph_collector import (
+    PipelineGraphCollectorLens,
+)
 from executorch.devtools.etrecord import ETRecord
 
 
@@ -58,6 +61,7 @@ def main() -> None:
     exported_program = torch.export.export(model, sample_inputs, strict=False)
 
     Observatory.clear()
+    Observatory.register_lens(PipelineGraphCollectorLens)
 
     with Observatory.enable_context():
         # No manual Observatory.collect call here.
