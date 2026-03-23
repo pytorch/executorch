@@ -56,6 +56,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <algorithm>
+#include <cinttypes>
+#include <cstring>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -1028,10 +1030,7 @@ bool et_runner_init(void) {
   return g_runner_initialized;
 }
 
-bool et_runner_set_input(
-    size_t input_idx,
-    const void* data,
-    size_t num_bytes) {
+bool et_runner_set_input(size_t input_idx, const void* data, size_t num_bytes) {
   if (!g_runner_initialized) {
     ET_LOG(Error, "Runner not initialized. Call et_runner_init() first.");
     return false;
@@ -1086,6 +1085,19 @@ bool et_runner_set_input(
         static_cast<unsigned long>(input_idx),
         static_cast<unsigned long>(num_bytes),
         static_cast<unsigned long>(tensor_bytes));
+    return false;
+  }
+  // Treat zero-length input as a no-op.
+  if (num_bytes == 0) {
+    return true;
+  }
+  // For non-zero length, the input data pointer must be non-null.
+  if (data == nullptr) {
+    ET_LOG(
+        Error,
+        "Input %lu: data pointer is null for non-zero num_bytes (%lu).",
+        static_cast<unsigned long>(input_idx),
+        static_cast<unsigned long>(num_bytes));
     return false;
   }
 

@@ -58,7 +58,7 @@ et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
   uint32_t cpu_freq_hz;
   if (esp_clk_tree_src_get_freq_hz(SOC_MOD_CLK_CPU, ESP_CLK_TREE_SRC_FREQ_PRECISION_CACHED, &cpu_freq_hz) ==
       ESP_OK) {
-    return {1000000, cpu_freq_hz};
+    return {1000000000u, cpu_freq_hz};
   }
 #endif
   return {1000, 240}; // Default to 240 MHz if we can't get the actual frequency
@@ -68,7 +68,7 @@ void et_pal_emit_log_message(
     ET_UNUSED et_timestamp_t timestamp,
     et_pal_log_level_t level,
     const char* filename,
-    ET_UNUSED const char* function,
+    const char* function,
     size_t line,
     const char* message,
     ET_UNUSED size_t length) {
