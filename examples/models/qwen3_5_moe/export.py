@@ -12,7 +12,7 @@ import os
 import torch
 import torch.nn as nn
 
-from executorch.examples.models.qwen3_5_moe.model import Qwen35MoE
+from executorch.examples.models.qwen3_5_moe.model import FusedMoEExperts, Qwen35MoE
 
 
 # ---------------------------------------------------------------------------
@@ -43,6 +43,89 @@ def load_and_quantize(args):
     return model, config
 
 
+def _quantize_experts_int4(model, config, group_size=32, use_hqq=False):
+    """Quantize expert weights to packed INT4 for the fused MoE kernel.
+
+    Two quantization methods:
+      --hqq: HQQ (Half-Quadratic Quantization) iteratively refines scales
+             via least-squares for better accuracy (slower).
+      default: Standard min/max symmetric quantization (faster).
+
+    Converts w1_weight [E, N, K] and w2_weight [E, N, K] to:
+      w1 [E, N, K//2] int8 packed, w1_scale [E, N, K//gs] bf16
+      w2 [E, N, K//2] int8 packed, w2_scale [E, N, K//gs] bf16
+    """
+    if use_hqq:
+        from torchao.quantization.quant_primitives import (
+            _choose_qparams_and_quantize_scale_only_hqq,
+        )
+    else:
+        from torchao.quantization.quant_primitives import (
+            choose_qparams_affine,
+            MappingType,
+            quantize_affine,
+        )
+
+    method = "HQQ" if use_hqq else "min/max"
+
+    for i, layer in enumerate(model.layers):
+        experts = layer.mlp.experts
+        if not isinstance(experts, FusedMoEExperts):
+            continue
+
+        experts.group_size = group_size
+        for name in ("w1_weight", "w2_weight"):
+            w = getattr(experts, name).data.float()
+            E, N, K = w.shape
+
+            if use_hqq:
+                qdata, scale = _choose_qparams_and_quantize_scale_only_hqq(
+                    w.view(E * N, K),
+                    block_size=[1, group_size],
+                    qmin=-8,
+                    qmax=7,
+                )
+                int_data = qdata.to(torch.int8).view(E, N, K)
+                scale = scale.view(E, N, -1)
+            else:
+                block_size = (1, 1, group_size)
+                scale, zero_point = choose_qparams_affine(
+                    w,
+                    MappingType.SYMMETRIC,
+                    block_size,
+                    target_dtype=torch.int8,
+                    quant_min=-8,
+                    quant_max=7,
+                )
+                int_data = quantize_affine(
+                    w,
+                    block_size,
+                    scale,
+                    zero_point,
+                    output_dtype=torch.int8,
+                    quant_min=-8,
+                    quant_max=7,
+                )
+                scale = scale.reshape(E, N, -1)
+
+            # Pack two int4 values per byte: even K -> low nibble, odd K -> high nibble
+            uint4 = (int_data + 8).to(torch.int16)  # shift to unsigned [0, 15]
+            low = uint4[:, :, 0::2]
+            high = uint4[:, :, 1::2]
+            packed = (low | (high << 4)).to(torch.int8)  # [E, N, K//2]
+
+            buf_name = name.replace("_weight", "")
+            experts.register_buffer(buf_name, packed)
+            experts.register_buffer(f"{buf_name}_scale", scale.to(torch.bfloat16))
+            delattr(experts, name)
+
+        print(
+            f"  Quantized experts (INT4 {method}) layer {i + 1}/{config.num_hidden_layers}",
+            end="\r",
+        )
+    print()
+
+
 def _to_device_skip_meta(module, device, dtype=None):
     """Move submodules to device, skipping any that have meta-device buffers.
 
@@ -70,6 +153,10 @@ def _quantize(model, config, args):
     ops, so CUDA is not needed. Peak GPU memory is ~1 bf16 layer at a time.
     """
     from executorch.extension.llm.export.quantize import quantize_model_
+
+    # Quantize MoE expert weights (packed INT4 for fused_moe kernel)
+    if args.qlinear:
+        _quantize_experts_int4(model, config, args.qlinear_group_size, use_hqq=args.hqq)
 
     # Untie lm_head/embedding so they can be quantized independently:
     # embedding uses index lookup (8w), lm_head uses matmul (4w).
@@ -287,7 +374,15 @@ def main():
     parser.add_argument(
         "--qembedding", default=None, choices=["8w"], help="Quantize embedding layers."
     )
+    parser.add_argument(
+        "--hqq",
+        action="store_true",
+        help="Use HQQ scale-only optimization for expert quantization (slower, better accuracy).",
+    )
     args = parser.parse_args()
+
+    if args.hqq and not args.qlinear:
+        parser.error("--hqq requires --qlinear")
 
     # Register FLA Triton kernel
     import executorch.backends.cuda.triton.kernels  # noqa: F401
