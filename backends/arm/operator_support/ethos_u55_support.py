@@ -191,7 +191,6 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.logical_or.default,
         exir_ops.edge.aten.logical_xor.default,
         exir_ops.edge.aten.logical_not.default,
-        exir_ops.edge.aten.amin.default,  # REDUCE_MIN
         exir_ops.edge.aten.conv3d.default,  # CONV3D
         exir_ops.edge.aten.conv3d.padding,  # CONV3D (deprecated alias)
         exir_ops.edge.aten.eq.Tensor,
