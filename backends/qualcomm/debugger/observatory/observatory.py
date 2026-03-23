@@ -32,7 +32,6 @@ from typing import Any, ContextManager, Dict, List, Optional, Set, Type
 
 from executorch.backends.qualcomm.utils.fx_viewer.exporter import FXGraphExporter
 
-from .auto_collect import ETRecordAutoCollector
 from .graph_hub import GraphHub
 from .interfaces import (
     AnalysisResult,
@@ -116,7 +115,6 @@ class Observatory:
         hook_ctx = ObservationContext(config=context_config)
 
         if is_outermost_start:
-            ETRecordAutoCollector.install(cls.collect)
             for lens in cls._lens_registry:
                 try:
                     data = lens.on_session_start(hook_ctx)
@@ -138,7 +136,6 @@ class Observatory:
                             cls._session_result.end_data[lens.get_name()] = data
                     except Exception as exc:
                         logging.error("[Observatory] Lens %s failed on_session_end: %s", lens, exc)
-                ETRecordAutoCollector.uninstall()
 
             cls._config_stack.pop()
 
@@ -211,7 +208,6 @@ class Observatory:
 
         cls._records.clear()
         cls._session_result = SessionResult()
-        ETRecordAutoCollector.uninstall()
 
         for lens in cls._lens_registry:
             try:
