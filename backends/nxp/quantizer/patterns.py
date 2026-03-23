@@ -324,7 +324,16 @@ class SubTensorPattern(QuantizationPattern):
         )
 
 
-class AvgPoolPattern(SharedSpecPattern):
+class AvgPool1DPattern(SharedSpecPattern):
+    """
+    Quantizer for AvgPool1D operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.avg_pool1d.default]
+
+
+class AvgPool2DPattern(SharedSpecPattern):
     """
     Quantizer for AvgPool2D operator.
     """
@@ -729,10 +738,15 @@ class LinearPattern(QuantizationPattern):
         )
 
 
-class MaxPoolPattern(SharedSpecPattern):
-    """
-    Quantizer for MaxPool2D operator.
-    """
+class MaxPool1DPattern(SharedSpecPattern):
+    """Quantizer for the MaxPool1D operator."""
+
+    def partition_types(self):
+        return [torch.ops.aten.max_pool1d.default]
+
+
+class MaxPool2DPattern(SharedSpecPattern):
+    """Quantizer for the MaxPool2D operator."""
 
     def partition_types(self):
         return [torch.ops.aten.max_pool2d.default]

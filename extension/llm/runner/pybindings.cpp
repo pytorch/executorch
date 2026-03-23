@@ -121,8 +121,8 @@ class PyTextLLMRunner {
     }
     {
       py::gil_scoped_release release;
-      Error error = runner_->prefill(prompt, config);
-      THROW_IF_ERROR(error, "Prefill failed");
+      auto result = runner_->prefill(prompt, config.num_bos, config.num_eos);
+      THROW_IF_ERROR(result.error(), "Prefill failed");
     }
   }
 
@@ -234,8 +234,8 @@ class PyMultimodalRunner {
     }
     {
       py::gil_scoped_release release;
-      Error error = runner_->prefill(inputs);
-      THROW_IF_ERROR(error, "Prefill failed");
+      auto result = runner_->prefill(inputs, 0, 0);
+      THROW_IF_ERROR(result.error(), "Prefill failed");
     }
   }
 

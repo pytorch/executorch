@@ -10,6 +10,7 @@ package org.pytorch.executorch.extension.llm;
 
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
+import java.nio.ByteBuffer;
 import java.util.List;
 import org.pytorch.executorch.ExecuTorchRuntime;
 import org.pytorch.executorch.annotations.Experimental;
@@ -365,7 +366,6 @@ public class LlmModule {
       float temperature,
       int numBos,
       int numEos) {
-    prefillPrompt(prompt);
     if (image != null) {
       prefillImages(image, width, height, channels);
     }
@@ -373,128 +373,243 @@ public class LlmModule {
   }
 
   /**
-   * Prefill a multimodal Module with the given images input.
+   * Prefill the KV cache with the given image input.
    *
    * @param image Input image as a byte array
    * @param width Input image width
    * @param height Input image height
    * @param channels Input image number of channels
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
+   * @return 0 on success
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
   public long prefillImages(int[] image, int width, int height, int channels) {
-    int nativeResult = appendImagesInput(image, width, height, channels);
+    int nativeResult = prefillImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int appendImagesInput(int[] image, int width, int height, int channels);
+  /**
+   * Prefill a multimodal Module with the given image input via a direct ByteBuffer. The buffer data
+   * is accessed directly without JNI array copies, unlike {@link #prefillImages(int[], int, int,
+   * int)}. The ByteBuffer must contain raw uint8 pixel data in CHW format with at least channels *
+   * height * width bytes remaining. Only the first channels * height * width bytes from the
+   * buffer's current position are read; the position of the original ByteBuffer is not modified.
+   *
+   * @param image Input image as a direct ByteBuffer containing uint8 pixel data
+   * @param width Input image width
+   * @param height Input image height
+   * @param channels Input image number of channels
+   * @throws IllegalArgumentException if the ByteBuffer is not direct or has insufficient remaining
+   *     bytes
+   * @throws RuntimeException if the prefill failed
+   */
+  @Experimental
+  public void prefillImages(ByteBuffer image, int width, int height, int channels) {
+    if (!image.isDirect()) {
+      throw new IllegalArgumentException("Input ByteBuffer must be direct.");
+    }
+    long expectedBytes;
+    try {
+      long pixels = Math.multiplyExact((long) width, (long) height);
+      expectedBytes = Math.multiplyExact(pixels, (long) channels);
+    } catch (ArithmeticException ex) {
+      throw new IllegalArgumentException(
+          "width*height*channels is too large and overflows the allowed range.", ex);
+    }
+    if (width <= 0
+        || height <= 0
+        || channels <= 0
+        || expectedBytes > Integer.MAX_VALUE
+        || image.remaining() < expectedBytes) {
+      throw new IllegalArgumentException(
+          "ByteBuffer remaining ("
+              + image.remaining()
+              + ") must be at least width*height*channels ("
+              + expectedBytes
+              + ").");
+    }
+    // slice() so that getDirectBufferAddress on the native side returns a pointer
+    // starting at the current position, not the base address.
+    int nativeResult = prefillImagesInputBuffer(image.slice(), width, height, channels);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+    }
+  }
 
   /**
-   * Prefill a multimodal Module with the given images input.
+   * Prefill a multimodal Module with the given normalized image input via a direct ByteBuffer. The
+   * buffer data is accessed directly without JNI array copies, unlike {@link
+   * #prefillImages(float[], int, int, int)}. The ByteBuffer must contain normalized float pixel
+   * data in CHW format with at least channels * height * width * 4 bytes remaining. Only the first
+   * channels * height * width floats from the buffer's current position are consumed. The buffer
+   * must use the platform's native byte order (set via {@code
+   * buffer.order(ByteOrder.nativeOrder())}).
+   *
+   * @param image Input normalized image as a direct ByteBuffer containing float pixel data in
+   *     native byte order
+   * @param width Input image width
+   * @param height Input image height
+   * @param channels Input image number of channels
+   * @throws IllegalArgumentException if the ByteBuffer is not direct, has insufficient remaining
+   *     bytes, is not float-aligned, or does not use native byte order
+   * @throws RuntimeException if the prefill failed
+   */
+  @Experimental
+  public void prefillNormalizedImage(ByteBuffer image, int width, int height, int channels) {
+    if (!image.isDirect()) {
+      throw new IllegalArgumentException("Input ByteBuffer must be direct.");
+    }
+    if (image.order() != java.nio.ByteOrder.nativeOrder()) {
+      throw new IllegalArgumentException(
+          "Input ByteBuffer must use native byte order (ByteOrder.nativeOrder()).");
+    }
+    if (image.position() % Float.BYTES != 0) {
+      throw new IllegalArgumentException(
+          "Input ByteBuffer position (" + image.position() + ") must be 4-byte aligned.");
+    }
+    final long expectedBytes;
+    try {
+      int wh = Math.multiplyExact(width, height);
+      long whc = Math.multiplyExact((long) wh, (long) channels);
+      long totalBytes = Math.multiplyExact(whc, (long) Float.BYTES);
+      if (totalBytes > Integer.MAX_VALUE) {
+        throw new IllegalArgumentException(
+            "ByteBuffer size (width*height*channels*4) exceeds Integer.MAX_VALUE bytes: "
+                + totalBytes);
+      }
+      expectedBytes = totalBytes;
+    } catch (ArithmeticException e) {
+      throw new IllegalArgumentException(
+          "Overflow while computing width*height*channels*4 for ByteBuffer size.", e);
+    }
+    if (width <= 0 || height <= 0 || channels <= 0 || image.remaining() < expectedBytes) {
+      throw new IllegalArgumentException(
+          "ByteBuffer remaining ("
+              + image.remaining()
+              + ") must be at least width*height*channels*4 ("
+              + expectedBytes
+              + ").");
+    }
+    if (image.remaining() % Float.BYTES != 0) {
+      throw new IllegalArgumentException(
+          "ByteBuffer remaining (" + image.remaining() + ") must be a multiple of 4 (float size).");
+    }
+    // slice() so that getDirectBufferAddress on the native side returns a pointer
+    // starting at the current position, not the base address.
+    int nativeResult = prefillNormalizedImagesInputBuffer(image.slice(), width, height, channels);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+    }
+  }
+
+  private native int prefillImagesInput(int[] image, int width, int height, int channels);
+
+  private native int prefillImagesInputBuffer(
+      ByteBuffer image, int width, int height, int channels);
+
+  private native int prefillNormalizedImagesInputBuffer(
+      ByteBuffer image, int width, int height, int channels);
+
+  /**
+   * Prefill the KV cache with the given normalized image input.
    *
    * @param image Input normalized image as a float array
    * @param width Input image width
    * @param height Input image height
    * @param channels Input image number of channels
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
+   * @return 0 on success
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
   public long prefillImages(float[] image, int width, int height, int channels) {
-    int nativeResult = appendNormalizedImagesInput(image, width, height, channels);
+    int nativeResult = prefillNormalizedImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int appendNormalizedImagesInput(
+  private native int prefillNormalizedImagesInput(
       float[] image, int width, int height, int channels);
 
   /**
-   * Prefill a multimodal Module with the given audio input.
+   * Prefill the KV cache with the given preprocessed audio input.
    *
    * @param audio Input preprocessed audio as a byte array
    * @param batch_size Input batch size
    * @param n_bins Input number of bins
    * @param n_frames Input number of frames
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
+   * @return 0 on success
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
   public long prefillAudio(byte[] audio, int batch_size, int n_bins, int n_frames) {
-    int nativeResult = appendAudioInput(audio, batch_size, n_bins, n_frames);
+    int nativeResult = prefillAudioInput(audio, batch_size, n_bins, n_frames);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int appendAudioInput(byte[] audio, int batch_size, int n_bins, int n_frames);
+  private native int prefillAudioInput(byte[] audio, int batch_size, int n_bins, int n_frames);
 
   /**
-   * Prefill a multimodal Module with the given audio input.
+   * Prefill the KV cache with the given preprocessed audio input.
    *
    * @param audio Input preprocessed audio as a float array
    * @param batch_size Input batch size
    * @param n_bins Input number of bins
    * @param n_frames Input number of frames
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
+   * @return 0 on success
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
   public long prefillAudio(float[] audio, int batch_size, int n_bins, int n_frames) {
-    int nativeResult = appendAudioInputFloat(audio, batch_size, n_bins, n_frames);
+    int nativeResult = prefillAudioInputFloat(audio, batch_size, n_bins, n_frames);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int appendAudioInputFloat(float[] audio, int batch_size, int n_bins, int n_frames);
+  private native int prefillAudioInputFloat(
+      float[] audio, int batch_size, int n_bins, int n_frames);
 
   /**
-   * Prefill a multimodal Module with the given raw audio input.
+   * Prefill the KV cache with the given raw audio input.
    *
    * @param audio Input raw audio as a byte array
    * @param batch_size Input batch size
    * @param n_channels Input number of channels
    * @param n_samples Input number of samples
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
+   * @return 0 on success
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
   public long prefillRawAudio(byte[] audio, int batch_size, int n_channels, int n_samples) {
-    int nativeResult = appendRawAudioInput(audio, batch_size, n_channels, n_samples);
+    int nativeResult = prefillRawAudioInput(audio, batch_size, n_channels, n_samples);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int appendRawAudioInput(
+  private native int prefillRawAudioInput(
       byte[] audio, int batch_size, int n_channels, int n_samples);
 
   /**
-   * Prefill a multimodal Module with the given text input.
+   * Prefill the KV cache with the given text prompt.
    *
    * @param prompt The text prompt to prefill.
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
+   * @return 0 on success
    * @throws RuntimeException if the prefill failed
    */
   @Experimental
   public long prefillPrompt(String prompt) {
-    int nativeResult = appendTextInput(prompt);
+    int nativeResult = prefillTextInput(prompt);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
@@ -502,7 +617,7 @@ public class LlmModule {
   }
 
   // returns status
-  private native int appendTextInput(String prompt);
+  private native int prefillTextInput(String prompt);
 
   /**
    * Reset the context of the LLM. This will clear the KV cache and reset the state of the LLM.

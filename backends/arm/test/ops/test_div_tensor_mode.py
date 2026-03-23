@@ -19,7 +19,9 @@ input_tt = Tuple[torch.Tensor, torch.Tensor]
 
 
 class DivTensorModeFloat(torch.nn.Module):
-    """torch.div(x, y, rounding_mode=mode) with mode in {None, "floor", "trunc"}."""
+    """torch.div(x, y, rounding_mode=mode) with mode in {None, "floor",
+    "trunc"}.
+    """
 
     aten_ops = ["aten.div.Tensor_mode"]
     aten_ops_int = ["aten.mul.Tensor", "aten.reciprocal.default"]

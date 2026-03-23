@@ -14,16 +14,14 @@ import math
 import operator
 from collections import deque
 from numbers import Number
-from typing import Any, Callable, cast
+from typing import Any, Callable, cast, Optional, override
 
 # Import these for the cadence function signatures.
 import executorch.backends.cadence.aot.ops_registrations  # noqa: F401
-
 import torch
 import torch.fx
 from executorch.backends.cadence.aot.compiler_utils import (
     broadcastable,
-    get_cascaded_ops,
     get_permuted_dims,
     get_scale,
     get_tensor_from_attr,
@@ -32,6 +30,8 @@ from executorch.backends.cadence.aot.compiler_utils import (
 )
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
+    get_arg,
+    HierarchicalInplacePassInterface,
     register_cadence_pass,
     RemoveOrReplacePassInterface,
 )
@@ -39,7 +39,15 @@ from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes.cse_pass import CSEPass
 from torch.nn.utils.fusion import fuse_conv_bn_weights
+
+
+def get_tensor_arg(node: torch.fx.Node, arg_name: str) -> torch.Tensor:
+    graph_module = node.graph.owning_module
+    tensor = get_tensor_from_attr(graph_module, get_arg(node, arg_name, torch.fx.Node))
+    assert isinstance(tensor, torch.Tensor), f"{arg_name} must be present"
+    return tensor
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
@@ -194,7 +202,7 @@ class FuseMMWithAdd(RemoveOrReplacePassInterface):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class FuseBatchNormWithConv(ExportPass):
+class FuseBatchNormWithConv(RemoveOrReplacePassInterface):
     """
     This pass fuses a conv op with batchnorm if the following two conditions
     are met:
@@ -203,104 +211,146 @@ class FuseBatchNormWithConv(ExportPass):
     in the graph.
     """
 
-    def fuse_batch_norm_with_conv(self, graph_module: torch.fx.GraphModule) -> None:
-        graph = graph_module.graph
-        for conv in graph.nodes:
-            # We want to discover a chain of conv1d -> batch_norm.
-            # Only proceed if the current node is a conv1d node, and has a single
-            # user/successor.
-            if (
-                conv.target != exir_ops.edge.aten.convolution.default
-                or len(conv.users) != 1
-            ):
-                continue
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.convolution.default]
 
-            # The single user of conv op must be batch_norm. If not, bail.
-            bn = list(conv.users.keys())[0]
-            if bn.target != exir_ops.edge.aten.native_batch_norm.default:
-                continue
-
-            # All the users of batchnorm node must be getitem ops. batchnorm
-            # returns a 3-element tuple. Each user must only access the first
-            # element of the tuple.
-            if [
-                (user.target == operator.getitem and user.args[1] == 0)
-                for user in bn.users
-            ].count(False):
-                continue
-
-            # Check that the weights for conv1d and batchnorm are both params
-            if [node.op == "get_attr" for node in {conv.args[1], bn.args[1]}].count(
-                False
-            ):
-                continue
-
-            # Get the parameters from conv op
-            assert len(conv.args) == 9
-            conv_weight = get_tensor_from_attr(graph_module, conv.args[1])
-            assert isinstance(conv_weight, torch.Tensor)
-            conv_bias = get_tensor_from_attr(graph_module, conv.args[2])
-            transpose = conv.args[6]
-
-            # Get the parameters from the batchnorm op
-            assert len(bn.args) == 8
-            bn_weight = get_tensor_from_attr(graph_module, bn.args[1])
-            bn_bias = get_tensor_from_attr(graph_module, bn.args[2])
-            running_mean = get_tensor_from_attr(graph_module, bn.args[3])
-            assert isinstance(running_mean, torch.Tensor)
-            running_var = get_tensor_from_attr(graph_module, bn.args[4])
-            assert isinstance(running_var, torch.Tensor)
-            eps = bn.args[-1]
-
-            # Compute the updated weight and bias after fusing conv op
-            # with batchnorm op.
-            fused_weight, fused_bias = fuse_conv_bn_weights(
-                conv_weight,
-                conv_bias,
-                running_mean,
-                running_var,
-                eps,
-                bn_weight,
-                bn_bias,
-                transpose,
-            )
-
-            # Modify the graph by updating the weight and bias of conv op
-            # with the fused weight and bias params, and replacing all the users
-            # of getitem(batchnorm) with the conv op.
-            with graph.inserting_before(conv):
-                fused_weight_name = f"_fused_with_bn_weight_{self.counter}"
-                graph_module.register_parameter(fused_weight_name, fused_weight)
-                fused_weight_node = graph.get_attr(fused_weight_name)
-                fused_bias_name = f"_fused_with_bn_bias_{self.counter}"
-                graph_module.register_parameter(fused_bias_name, fused_bias)
-                fused_bias_node = graph.get_attr(fused_bias_name)
-
-            # Update the weight and bias of conv op
-            conv_args = list(conv.args)
-            conv_args[1] = fused_weight_node
-            conv_args[2] = fused_bias_node
-            conv.args = tuple(conv_args)
-            # Remove any use of batchnorm from the graph
-            for user in bn.users:
-                assert user.target == operator.getitem
-                user.replace_all_uses_with(conv)
-            self.counter += 1
-
-        graph_module.recompile()
-
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.counter = 0
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        self.fuse_batch_norm_with_conv(graph_module)
-        result = super().call(graph_module)
-        return result
+    def _get_batchnorm_user(self, conv_node: torch.fx.Node) -> Optional[torch.fx.Node]:
+        """
+        Check if conv has a single user that is batch_norm, and all batch_norm
+        users only access the first tuple element. Returns the bn node or None.
+        """
+        if len(conv_node.users) != 1:
+            return None
+
+        bn = list(conv_node.users.keys())[0]
+        if bn.target != exir_ops.edge.aten.native_batch_norm.default:
+            return None
+
+        # All the users of batchnorm node must be getitem ops accessing
+        # the first element of the tuple.
+        for user in bn.users:
+            if user.target != operator.getitem or user.args[1] != 0:
+                return None
+
+        return bn
+
+    def _weights_are_params(
+        self, conv_node: torch.fx.Node, bn_node: torch.fx.Node
+    ) -> bool:
+        """Check that the weights for conv and batchnorm are both get_attr nodes."""
+        conv_weight_node = get_arg(conv_node, "weight", torch.fx.Node)
+        bn_weight_node = get_arg(bn_node, "weight", torch.fx.Node)
+        return all(arg.op == "get_attr" for arg in {conv_weight_node, bn_weight_node})
+
+    def _extract_conv_params(
+        self, conv_node: torch.fx.Node
+    ) -> tuple[torch.Tensor, Optional[torch.Tensor], bool]:
+        """Extract weight, bias, and transpose flag from conv node."""
+        conv_weight = get_tensor_arg(conv_node, "weight")
+        # conv_bias is truly optional - fusion function handles None
+        graph_module = conv_node.graph.owning_module
+        conv_bias = get_tensor_from_attr(
+            graph_module, cast(Optional[torch.fx.Node], get_arg(conv_node, "bias"))
+        )
+        transpose = get_arg(conv_node, "transposed", bool)
+        return conv_weight, conv_bias, transpose
+
+    def _extract_batchnorm_params(
+        self,
+        bn_node: torch.fx.Node,
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        float,
+    ]:
+        """Extract weight, bias, running_mean, running_var, and eps from batchnorm node."""
+        assert len(bn_node.args) == 8
+        bn_weight = get_tensor_arg(bn_node, "weight")
+        bn_bias = get_tensor_arg(bn_node, "bias")
+        running_mean = get_tensor_arg(bn_node, "running_mean")
+        running_var = get_tensor_arg(bn_node, "running_var")
+        eps = get_arg(bn_node, "eps", float)
+        return bn_weight, bn_bias, running_mean, running_var, eps
+
+    def _update_graph_with_fused_params(
+        self,
+        graph_module: torch.fx.GraphModule,
+        graph: torch.fx.Graph,
+        conv_node: torch.fx.Node,
+        bn_node: torch.fx.Node,
+        fused_weight: torch.nn.Parameter,
+        fused_bias: torch.nn.Parameter,
+    ) -> None:
+        """Register fused params and update the graph to use them."""
+        with graph.inserting_before(conv_node):
+            fused_weight_name = f"_fused_with_bn_weight_{self.counter}"
+            graph_module.register_parameter(fused_weight_name, fused_weight)
+            fused_weight_node = graph.get_attr(fused_weight_name)
+            fused_bias_name = f"_fused_with_bn_bias_{self.counter}"
+            graph_module.register_parameter(fused_bias_name, fused_bias)
+            fused_bias_node = graph.get_attr(fused_bias_name)
+
+        # Update the weight and bias of conv op
+        conv_args = list(conv_node.args)
+        conv_args[1] = fused_weight_node
+        conv_args[2] = fused_bias_node
+        conv_node.args = tuple(conv_args)
+
+        # Remove any use of batchnorm from the graph
+        for user in bn_node.users:
+            assert user.target == operator.getitem
+            user.replace_all_uses_with(conv_node)
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        graph_module = node.graph.owning_module
+        assert graph_module is not None
+        graph = node.graph
+
+        # Validate conv-bn pattern
+        bn = self._get_batchnorm_user(node)
+        if bn is None:
+            return False
+
+        if not self._weights_are_params(node, bn):
+            return False
+
+        # Extract conv parameters
+        conv_weight, conv_bias, transpose = self._extract_conv_params(node)
+
+        # Extract batchnorm parameters
+        bn_weight, bn_bias, running_mean, running_var, eps = (
+            self._extract_batchnorm_params(bn)
+        )
+
+        # Compute fused weights
+        fused_weight, fused_bias = fuse_conv_bn_weights(
+            conv_weight,
+            conv_bias,
+            running_mean,
+            running_var,
+            eps,
+            bn_weight,
+            bn_bias,
+            transpose,
+        )
+
+        # Update the graph
+        self._update_graph_with_fused_params(
+            graph_module, graph, node, bn, fused_weight, fused_bias
+        )
+        self.counter += 1
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class FuseQuantizedBatchNormWithConv(ExportPass):
+class FuseQuantizedBatchNormWithConv(RemoveOrReplacePassInterface):
     """
     This pass fuses a quantized::conv op with quantized::batchnorm if the
     following two conditions are met:
@@ -308,159 +358,230 @@ class FuseQuantizedBatchNormWithConv(ExportPass):
     2. The outputs of both ops are quantized with same scale and zero_point
     """
 
-    def fuse_quantized_batch_norm_with_conv(
-        self, graph_module: torch.fx.GraphModule
-    ) -> None:
-        graph = graph_module.graph
-        for conv in graph.nodes:
-            # We want to discover a chain of quantized::conv1d ->
-            # quantized::batch_norm. Only proceed if the current node is a
-            # quantized::conv node, and has a single user/successor.
-            if (
-                conv.target
-                not in {
-                    exir_ops.edge.quantized.conv1d.default,
-                    exir_ops.edge.quantized.conv2d.new,
-                }
-                or len(conv.users) != 1
-            ):
-                continue
+    _CONV_TARGETS = {
+        exir_ops.edge.quantized.conv1d.default,
+        exir_ops.edge.quantized.conv2d.new,
+    }
+    _BN_TARGETS = {
+        exir_ops.edge.quantized.batch_norm1d.default,
+        exir_ops.edge.quantized.batch_norm2d.default,
+    }
 
-            # The single user of conv op must be batch_norm. If not, bail.
-            bn = list(conv.users.keys())[0]
-            if bn.target not in {
-                exir_ops.edge.quantized.batch_norm1d.default,
-                exir_ops.edge.quantized.batch_norm2d.default,
-            }:
-                continue
-
-            # The outputs of conv and bn must both have same scale and zero_point
-            if not math.isclose(
-                conv.args[-2], bn.args[-2], rel_tol=1e-05, abs_tol=1e-05
-            ):
-                continue
-            if conv.args[-1] != bn.args[-1]:
-                continue
-
-            # The weight and bias of quantized::conv op are packed in the second
-            # arg. Unpack them.
-            assert conv.args[1].op == "get_attr"
-            packed_args = getattr(graph_module, conv.args[1].target)
-            conv_weight_tensor, conv_bias_tensor = packed_args.unpack()
-            # Assert that we have discovered the conv op's weight and bias tensors
-            assert isinstance(conv_weight_tensor, torch.Tensor)
-            assert conv_bias_tensor is None or isinstance(
-                conv_bias_tensor, torch.Tensor
-            )
-
-            # Get the scale, zero_point, and dtype of convolution weight
-            assert conv_weight_tensor.is_quantized
-            per_tensor_quantization = (
-                conv_weight_tensor.qscheme() == torch.per_tensor_affine
-            )
-            weight_dtype = conv_weight_tensor.dtype
-            weight_scale = get_scale(conv_weight_tensor)
-            weight_zero_point = get_zero_point(conv_weight_tensor, reduce=False)
-            weight_axis = (
-                0
-                if per_tensor_quantization
-                else conv_weight_tensor.q_per_channel_axis()
-            )
-            # Dequantize the convolution weight
-            conv_weight_tensor = conv_weight_tensor.dequantize()
-
-            # Get the parameters from the batchnorm op
-            assert len(bn.args) == 8
-            (bn_weight, bn_bias, running_mean, running_var, eps) = bn.args[1:6]
-            # Get the tensors from the batchnorm args
-            bn_weight_tensor = get_tensor_from_attr(graph_module, bn_weight)
-            bn_bias_tensor = get_tensor_from_attr(graph_module, bn_bias)
-            running_mean_tensor = get_tensor_from_attr(graph_module, running_mean)
-            running_var_tensor = get_tensor_from_attr(graph_module, running_var)
-
-            # Assert that we have discovered the batch_norm op's tensors
-            assert bn_weight_tensor is None or isinstance(
-                bn_weight_tensor, torch.Tensor
-            )
-            assert bn_bias_tensor is None or isinstance(bn_bias_tensor, torch.Tensor)
-            assert isinstance(running_mean_tensor, torch.Tensor)
-            assert isinstance(running_var_tensor, torch.Tensor)
-
-            # Get the fused weights and bias
-            fused_weight, fused_bias = fuse_conv_bn_weights(
-                conv_weight_tensor,
-                conv_bias_tensor,
-                running_mean_tensor,
-                running_var_tensor,
-                eps,
-                bn_weight_tensor,
-                bn_bias_tensor,
-                transpose=False,
-            )
-
-            # Requantize the fused weight with the scale and zero point of the
-            # quantized::conv's weight
-            if per_tensor_quantization:
-                fused_weight = torch.quantize_per_tensor(
-                    fused_weight,
-                    weight_scale.item(),
-                    cast(int, weight_zero_point.item()),
-                    weight_dtype,
-                )
-            else:
-                fused_weight = torch.quantize_per_channel(
-                    fused_weight,
-                    weight_scale,
-                    weight_zero_point,
-                    weight_axis,
-                    weight_dtype,
-                )
-
-            # Now that we have the fused weight and bias, pack them for the
-            # quantized::conv.
-            stride = packed_args.stride()
-            padding = packed_args.padding()
-            dilation = packed_args.dilation()
-            groups = packed_args.groups()
-            args = (fused_weight, fused_bias, stride, padding, dilation, groups)
-            packed_args = (
-                exir_ops.edge.quantized.conv1d_prepack(*args)
-                if conv.target == exir_ops.edge.quantized.conv1d.default
-                else exir_ops.edge.quantized.conv2d_prepack(*args)
-            )
-
-            # Modify the graph by updating the weight and bias of conv op
-            # with the fused weight and bias params, and replacing all the users
-            # of batchnorm with the conv op.
-            conv_args = list(conv.args)
-            conv_args[1] = packed_args
-            conv.args = tuple(conv_args)
-            bn.replace_all_uses_with(conv)
-            graph.erase_node(bn)
-            self.counter += 1
-
-        # Note: there is a quantized.conv2d.new operator in the resulting graph
-        # that takes a torch.classes.quantized.Conv2dPackedParamsBase as one of the input
-        # this prevents us to directly call graph_module.recompile().
-        # pyre-fixme[16]: `GraphModule` has no attribute `_code`.
-        # pyre-fixme[16]: Item `Tensor` of `Tensor | Module` has no attribute
-        #  `python_code`.
-        graph_module._code = graph_module._graph.python_code(root_module="self").src
-
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.counter = 0
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        self.fuse_quantized_batch_norm_with_conv(graph_module)
-        result = super().call(graph_module)
-        return result
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return self._CONV_TARGETS
+
+    def _get_batchnorm_user(self, conv_node: torch.fx.Node) -> Optional[torch.fx.Node]:
+        """
+        Check if conv has a single user that is quantized batch_norm with
+        matching output scale/zero_point. Returns the bn node or None.
+        """
+        if len(conv_node.users) != 1:
+            return None
+
+        bn = list(conv_node.users.keys())[0]
+        if bn.target not in self._BN_TARGETS:
+            return None
+
+        # The outputs of conv and bn must both have same scale and zero_point
+        if not math.isclose(
+            cast(float, get_arg(conv_node, "output_scale")),
+            cast(float, get_arg(bn, "output_scale")),
+            rel_tol=1e-05,
+            abs_tol=1e-05,
+        ):
+            return None
+        if get_arg(conv_node, "output_zero_point") != get_arg(bn, "output_zero_point"):
+            return None
+
+        return bn
+
+    def _unpack_conv_weights(
+        self, graph_module: torch.fx.GraphModule, conv_node: torch.fx.Node
+    ) -> tuple[torch.Tensor, Optional[torch.Tensor], Any]:
+        """
+        Unpack quantized conv's packed arguments.
+        Returns (weight_tensor, bias_tensor, packed_args).
+        """
+        conv_packed_arg_node = get_arg(conv_node, "packed_weight", torch.fx.Node)
+        assert conv_packed_arg_node.op == "get_attr"
+        packed_args = getattr(graph_module, conv_packed_arg_node.target)
+        weight_tensor, bias_tensor = packed_args.unpack()
+
+        assert isinstance(weight_tensor, torch.Tensor)
+        return weight_tensor, bias_tensor, packed_args
+        assert bias_tensor is None or isinstance(bias_tensor, torch.Tensor)
+
+        return weight_tensor, bias_tensor, packed_args
+
+    def _get_weight_quant_params(
+        self, weight_tensor: torch.Tensor
+    ) -> tuple[bool, Any, torch.Tensor, torch.Tensor, int]:
+        """
+        Extract quantization parameters from the weight tensor.
+        Returns (per_tensor_quantization, dtype, scale, zero_point, axis).
+        """
+        assert weight_tensor.is_quantized
+        per_tensor_quantization = weight_tensor.qscheme() == torch.per_tensor_affine
+        dtype = weight_tensor.dtype
+        scale = get_scale(weight_tensor)
+        zero_point = get_zero_point(weight_tensor, reduce=False)
+        axis = 0 if per_tensor_quantization else weight_tensor.q_per_channel_axis()
+        return per_tensor_quantization, dtype, scale, zero_point, axis
+
+    def _extract_batchnorm_params(
+        self,
+        bn_node: torch.fx.Node,
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        float,
+    ]:
+        """
+        Extract weight, bias, mean, var, and eps from quantized batchnorm node.
+
+        Expected schema:
+        quantized::batch_norm1d(Tensor qx, Tensor? weight, Tensor? bias,
+                               Tensor mean, Tensor var, float eps,
+                               float output_scale, int output_zero_point) -> Tensor
+        """
+        assert len(bn_node.args) == 8
+
+        from executorch.exir.dialects.edge._ops import EdgeOpOverload
+
+        assert isinstance(
+            bn_node.target, EdgeOpOverload
+        ), f"Expected EdgeOpOverload, got {type(bn_node.target)}"
+
+        # Extract parameters by name (not by index for maintainability)
+        # The get_arg function handles normalization of positional args to kwargs
+        bn_weight = get_tensor_arg(bn_node, "weight")
+        bn_bias = get_tensor_arg(bn_node, "bias")
+        running_mean = get_tensor_arg(bn_node, "mean")
+        running_var = get_tensor_arg(bn_node, "var")
+        eps = get_arg(bn_node, "eps", float)
+
+        return bn_weight, bn_bias, running_mean, running_var, eps
+
+    def _requantize_fused_weight(
+        self,
+        fused_weight: torch.Tensor,
+        per_tensor_quantization: bool,
+        dtype: Any,
+        scale: torch.Tensor,
+        zero_point: torch.Tensor,
+        axis: int,
+    ) -> torch.Tensor:
+        """Requantize the fused weight with the original quantization params."""
+        if per_tensor_quantization:
+            return torch.quantize_per_tensor(
+                fused_weight,
+                scale.item(),
+                cast(int, zero_point.item()),
+                dtype,
+            )
+        else:
+            return torch.quantize_per_channel(
+                fused_weight,
+                scale,
+                zero_point,
+                axis,
+                dtype,
+            )
+
+    def _pack_and_update_graph(
+        self,
+        graph: torch.fx.Graph,
+        conv_node: torch.fx.Node,
+        bn_node: torch.fx.Node,
+        fused_weight: torch.Tensor,
+        fused_bias: torch.Tensor,
+        packed_args: Any,
+    ) -> None:
+        """Pack the fused weights and update the graph."""
+        stride = packed_args.stride()
+        padding = packed_args.padding()
+        dilation = packed_args.dilation()
+        groups = packed_args.groups()
+        args = (fused_weight, fused_bias, stride, padding, dilation, groups)
+
+        new_packed_args = (
+            exir_ops.edge.quantized.conv1d_prepack(*args)
+            if conv_node.target == exir_ops.edge.quantized.conv1d.default
+            else exir_ops.edge.quantized.conv2d_prepack(*args)
+        )
+
+        conv_args = list(conv_node.args)
+        conv_args[1] = new_packed_args
+        conv_node.args = tuple(conv_args)
+        bn_node.replace_all_uses_with(conv_node)
+        graph.erase_node(bn_node)
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        graph_module = node.graph.owning_module
+        assert graph_module is not None
+        graph = node.graph
+
+        # Validate quantized conv-bn pattern
+        bn = self._get_batchnorm_user(node)
+        if bn is None:
+            return False
+
+        # Unpack quantized conv weights and get quantization params
+        conv_weight, conv_bias, packed_args = self._unpack_conv_weights(
+            graph_module, node
+        )
+        per_tensor_quant, weight_dtype, weight_scale, weight_zero_point, weight_axis = (
+            self._get_weight_quant_params(conv_weight)
+        )
+        conv_weight_dequant = conv_weight.dequantize()
+
+        # Extract batchnorm parameters
+        bn_weight, bn_bias, running_mean, running_var, eps = (
+            self._extract_batchnorm_params(bn)
+        )
+
+        # Compute fused weights
+        fused_weight, fused_bias = fuse_conv_bn_weights(
+            conv_weight_dequant,
+            conv_bias,
+            running_mean,
+            running_var,
+            eps,
+            bn_weight,
+            bn_bias,
+            transpose=False,
+        )
+
+        # Requantize fused weight
+        fused_weight = self._requantize_fused_weight(
+            fused_weight,
+            per_tensor_quant,
+            weight_dtype,
+            weight_scale,
+            weight_zero_point,
+            weight_axis,
+        )
+
+        # Pack and update the graph
+        self._pack_and_update_graph(
+            graph, node, bn, fused_weight, fused_bias, packed_args
+        )
+        self.counter += 1
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseCascadedTransposeOrPermuteOps(RemoveOrReplacePassInterface):
     """
-    Fuse a cascaded chain of transpose and permute ops
+    Fuse a chain of transpose and permute ops into a single permute or a no-op.
+    Handles branches and chains permutes.
     """
 
     transpose_or_permute_target = {
@@ -473,55 +594,39 @@ class FuseCascadedTransposeOrPermuteOps(RemoveOrReplacePassInterface):
         return list(self.transpose_or_permute_target)
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
-        # Get the cascaded chain of transpose/permute ops starting at node
-        cascaded_transpose_or_permute_ops = get_cascaded_ops(
-            [node], self.transpose_or_permute_target
-        )
-        # The chain must have more than 1 node
-        if len(cascaded_transpose_or_permute_ops) == 1:
+        # Fuse with the parent node if it's also a permute or a transpose. Since the
+        # pass interface traverses all ops in order the pass will properly fuse a chain
+        # of permutes.
+        parent_node = get_arg(node, "input", torch.fx.Node)
+        if parent_node.target not in self.transpose_or_permute_target:
             return False
+        input_of_parent = get_arg(parent_node, "input", torch.fx.Node)
 
-        # Get shape from node metadata
-        val = node.meta.get("val")
-        if val is None:
-            return False
-        out_shape = val.shape
-        out_dims = len(out_shape)
+        # Compute combined effect of permutes.
+        dims = list(range(node.meta["val"].ndim))
 
-        # This is the trivial dimension order
-        dims = list(range(out_dims))
-        # Compute the effect of the chain on dims
-        for tp in cascaded_transpose_or_permute_ops:
-            dims = (
-                get_transposed_dims(tp, dims)
-                if tp.target == exir_ops.edge.aten.transpose_copy.int
-                else get_permuted_dims(tp, dims)
-            )
-
-        graph = node.graph
-
-        # In case the permute chain cancelled each other, the final dims will
-        # be the same as the initial order. In that case, the chain was nop.
-        # Otherwise create a new permute op that encompasses the effect of the
-        # chain.
-        if dims == list(range(out_dims)):
-            cascaded_transpose_or_permute_ops[-1].replace_all_uses_with(
-                cast(torch.fx.Node, node.args[0])
-            )
+        if parent_node.target == exir_ops.edge.aten.transpose_copy.int:
+            dims = get_transposed_dims(parent_node, dims)
         else:
-            with graph.inserting_before(cascaded_transpose_or_permute_ops[-1]):
-                new_permute = graph.call_function(
+            dims = get_permuted_dims(parent_node, dims)
+
+        if node.target == exir_ops.edge.aten.transpose_copy.int:
+            dims = get_transposed_dims(node, dims)
+        else:
+            dims = get_permuted_dims(node, dims)
+
+        # If combined effect is identity replace the node with input.
+        if dims == sorted(dims):
+            node.replace_all_uses_with(input_of_parent)
+        else:
+            with node.graph.inserting_before(node):
+                new_permute = node.graph.call_function(
                     exir_ops.edge.aten.permute_copy.default,
-                    args=(node.args[0], dims),
+                    args=(input_of_parent, dims),
                 )
-                new_permute.meta = cascaded_transpose_or_permute_ops[-1].meta
-            cascaded_transpose_or_permute_ops[-1].replace_all_uses_with(new_permute)
+                new_permute.meta = node.meta
+            node.replace_all_uses_with(new_permute)
 
-        # Now erase the chain (except the first node which will be handled by the interface)
-        for tp in reversed(cascaded_transpose_or_permute_ops[1:]):
-            graph.erase_node(tp)
-
-        # Return True to indicate the first node in the chain should be removed
         return True
 
 
@@ -1152,6 +1257,25 @@ class FuseFullThenReshapePass(RemoveOrReplacePassInterface):
         node.replace_all_uses_with(new_full_node)
 
         return True
+
+
+class HierarchicalCSEPass(HierarchicalInplacePassInterface):
+    """
+    A hierarchical Common Subexpression Elimination (CSE) pass that recursively
+    processes all submodules in a GraphModule hierarchy.
+
+    This pass applies CSE to the main graph and all nested subgraphs, ensuring
+    that redundant computations are eliminated at all levels of the module hierarchy.
+    """
+
+    @override
+    def _apply_flat_inplace(self, graph_module) -> bool:
+        # Call the CSE pass on the main graph, which performs CSE without recursing.
+        result = CSEPass().call(graph_module)
+        assert (
+            result.graph_module is graph_module
+        ), f"Only in-place modification is allowed, but got {result.graph_module}"
+        return result.modified
 
 
 class CadenceFuseOpsInGraph:

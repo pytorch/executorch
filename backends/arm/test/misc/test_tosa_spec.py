@@ -71,7 +71,7 @@ test_invalid_strings = [
 
 
 class TestTosaSpecification(unittest.TestCase):
-    """Tests the TOSA specification class"""
+    """Tests the TOSA specification class."""
 
     @parameterized.expand(test_valid_strings)  # type: ignore[misc]
     def test_version_string_no_target(self, version_string: str, expected_type):
@@ -125,7 +125,7 @@ class TestTosaSpecification(unittest.TestCase):
 
 
 class TestTosaSpecMapping(unittest.TestCase):
-    """Tests the TosaSpecMapping class"""
+    """Tests the TosaSpecMapping class."""
 
     def test_mapping_no_target(self):
         mapping = TosaSpecMapping()

@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/vulkan/runtime/ResolveLayouts.h>
 #include <executorch/backends/vulkan/runtime/VulkanDelegateHeader.h>
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
 
@@ -32,6 +33,7 @@
 #include <cstring>
 #include <memory>
 #include <type_traits>
+#include <unordered_map>
 #include <vector>
 
 namespace executorch {
@@ -146,7 +148,12 @@ utils::GPUMemoryLayout get_memory_layout(
       return utils::kPackedInt8_4H4W;
     case vkgraph::VkMemoryLayout::PACKED_INT8_4W:
       return utils::kPackedInt8_4W;
+    case vkgraph::VkMemoryLayout::PACKED_INT8_4C:
+      return utils::kPackedInt8_4C;
     case vkgraph::VkMemoryLayout::PACKED_INT8_4C1W:
+      return utils::kPackedInt8_4C1W;
+    case vkgraph::VkMemoryLayout::PACKED_INT8_CONV2D:
+      // Fallback for unresolved dynamic layout
       return utils::kPackedInt8_4C1W;
     default:
       break;
@@ -205,6 +212,8 @@ class GraphBuilder {
   std::vector<FreeableBuffer> loaded_buffers_from_map_;
 
   std::vector<ValueRef> ref_mapping_;
+  std::unordered_map<uint32_t, vkgraph::VkMemoryLayout>
+      memory_layout_overrides_;
 
  public:
   explicit GraphBuilder(
@@ -217,7 +226,13 @@ class GraphBuilder {
         constant_data_(constant_data),
         named_data_map_(named_data_map),
         loaded_buffers_from_map_(),
-        ref_mapping_() {}
+        ref_mapping_(),
+        memory_layout_overrides_() {}
+
+  void resolve_layouts() {
+    resolve_memory_layouts(
+        flatbuffer_, compute_graph_, memory_layout_overrides_);
+  }
 
   void resize(uint32_t size) {
     ref_mapping_.resize(size, INT32_MAX);
@@ -235,6 +250,21 @@ class GraphBuilder {
     return ref_mapping_[fb_id];
   }
 
+  utils::GPUMemoryLayout get_resolved_memory_layout(
+      const uint32_t fb_id,
+      VkTensorPtr tensor_fb,
+      const std::vector<int64_t>& dims_vector) {
+    auto it = memory_layout_overrides_.find(fb_id);
+    if (it != memory_layout_overrides_.end()) {
+      return get_memory_layout(it->second);
+    }
+
+    if (tensor_fb->memory_layout() == vkgraph::VkMemoryLayout::DEFAULT_LAYOUT) {
+      return compute_graph_->suggested_memory_layout(dims_vector);
+    }
+    return get_memory_layout(tensor_fb->memory_layout());
+  }
+
   void add_tensor_to_graph(const uint32_t fb_id, VkTensorPtr tensor_fb) {
     const vkapi::ScalarType& dtype = get_scalar_type(tensor_fb->datatype());
     utils::StorageType storage_type =
@@ -246,9 +276,7 @@ class GraphBuilder {
     const std::vector<int64_t> dims_vector(dims_fb->cbegin(), dims_fb->cend());
 
     utils::GPUMemoryLayout memory_layout =
-        tensor_fb->memory_layout() == vkgraph::VkMemoryLayout::DEFAULT_LAYOUT
-        ? compute_graph_->suggested_memory_layout(dims_vector)
-        : get_memory_layout(tensor_fb->memory_layout());
+        get_resolved_memory_layout(fb_id, tensor_fb, dims_vector);
 
     ValueRef ref;
     if (tensor_fb->constant_id() >= 0) {
@@ -593,6 +621,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     GraphBuilder builder(
         compute_graph, flatbuffer_graph, constant_data, named_data_map);
 
+    builder.resolve_layouts();
     builder.build_graph();
 
     compute_graph->prepare();
@@ -642,6 +671,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     ComputeGraph* compute_graph = static_cast<ComputeGraph*>(handle);
 
     const size_t num_inputs = compute_graph->inputs().size();
+    const size_t num_outputs = compute_graph->outputs().size();
     bool should_propagate_resize = false;
 #ifdef ET_EVENT_TRACER_ENABLED
     runtime::EventTracer* event_tracer = context.event_tracer();
@@ -741,14 +771,13 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
             "ETVK_COPY_OUTPUTS",
             /* delegate_debug_id = */ -1);
 #endif // ET_EVENT_TRACER_ENABLED
-    for (size_t i = 0; i < compute_graph->outputs().size(); i++) {
-      const size_t o = i + num_inputs;
+    const size_t output_offset = args.size() - num_outputs;
+    for (size_t i = 0; i < num_outputs; i++) {
+      const size_t o = output_offset + i;
       const ValueRef oref = compute_graph->outputs()[i].value;
       if (compute_graph->val_is_tensor(oref)) {
         VK_CHECK_COND(args[o]->isTensor());
         maybe_resize_output(compute_graph, i, args[o]->toTensor());
-        // args holds inputs directly followed by outputs, so the i'th output
-        // for compute_graph corresponds to the o'th arg
         compute_graph->maybe_cast_and_copy_from_staging(
             compute_graph->outputs()[i].staging,
             args[o]->toTensor().mutable_data_ptr(),

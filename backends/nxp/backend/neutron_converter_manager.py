@@ -3,10 +3,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import importlib
 import logging
 import multiprocessing
-import pkgutil
+import os
+
+try:
+    from eiq_neutron_sdk import neutron_converter, neutron_library_utils
+except ImportError:
+    raise RuntimeError(
+        "eIQ Neutron SDK not found. To install it, run 'examples/nxp/setup.sh'."
+    )
 
 
 def convert_unsafe(neutron_converter, tflite_model, cctx, queue):
@@ -28,58 +34,46 @@ class NeutronConverterManager:
 
     def __init__(
         self,
-        neutron_converter_flavor: str = "SDK_25_12",
+        dump_kernel_selection_code: bool = False,
     ):
+        self.dump_kernel_selection_code = dump_kernel_selection_code
 
-        neutron_converter_modules = [
-            module.name
-            for module in pkgutil.iter_modules()
-            if module.name.startswith("neutron_converter")
-        ]
-
-        requested_module_name = f"neutron_converter_{neutron_converter_flavor}"
-        if requested_module_name not in neutron_converter_modules:
-            if len(neutron_converter_modules) > 0:
-                raise RuntimeError(
-                    f"Neutron Converter module with flavor '{neutron_converter_flavor}' "
-                    f"not found. Available modules: {neutron_converter_modules}."
-                )
-            else:
-                raise RuntimeError(
-                    f"Neutron Converter module with flavor '{neutron_converter_flavor}' "
-                    f"not found. Install 'neutron_converter_[flavor]' Python package."
-                )
-
-        self.neutron_converter = importlib.import_module(
-            f"{requested_module_name}.neutron_converter"
-        )
-        self.neutron_library_utils = importlib.import_module(
-            f"{requested_module_name}.neutron_library_utils"
-        )
+    @staticmethod
+    def _rename_partition_kernel_selection_file(delegation_tag):
+        try:
+            base_name = "_kernel_selection.c"
+            os.rename(base_name, f"_kernel_selection_{delegation_tag}.c")
+        except OSError:
+            logging.error("Failed to rename partition kernel selection file.")
 
     def get_converter(self):
-        return self.neutron_converter
+        return neutron_converter
 
     def get_library_utils(self):
-        return self.neutron_library_utils
+        return neutron_library_utils
 
     def verify_target(self, target: str):
-        if not self.neutron_library_utils.isNeutronTarget(target):
+        if not neutron_library_utils.isNeutronTarget(target):
             valid_targets = [
-                target.name for target in self.neutron_library_utils.getNeutronTargets()
+                target.name for target in neutron_library_utils.getNeutronTargets()
             ]
             raise ValueError(
                 f"Target `{target}` is not a valid target. Must be one of `{valid_targets}`."
             )
 
     def convert(
-        self, tflite_model: bytes, target: str, fetch_constants_to_sram: bool = False
+        self,
+        tflite_model: bytes,
+        target: str,
+        delegation_tag: str,
+        fetch_constants_to_sram: bool = False,
     ) -> bytes:
         """
         Call Neutron Converter.
 
         :param tflite_model: A generic TFLite model to be converted.
         :param target: The target platform.
+        :param delegation_tag: The delegation tag of model partition.
         :param fetch_constants_to_sram: Add microcode that fetches weights from external memory.
         This allows running models which do not fit into SRAM. Applies to Neutron-C only (microcontrollers).
 
@@ -88,13 +82,14 @@ class NeutronConverterManager:
         # Neutron converter crashes if we provide invalid target -> verify.
         self.verify_target(target)
 
-        cctx = self.neutron_converter.CompilationContext()
-        cctx.targetOpts = self.neutron_converter.getNeutronTarget(target)
+        cctx = neutron_converter.CompilationContext()
+        cctx.targetOpts = neutron_converter.getNeutronTarget(target)
         cctx.compilationOpts.minNumOpsPerGraph = 1
         cctx.compilationOpts.excludeGraphPasses = (
             "HoistSliceAboveTranspose,MergeTranspose"
         )
         cctx.compilationOpts.fetchConstantsToSRAM = fetch_constants_to_sram
+        cctx.compilationOpts.dumpKernelSelectionCode = self.dump_kernel_selection_code
 
         # Try to use multiprocessing for isolation, but fall back to direct execution
         # if the environment doesn't support it (e.g., in sandcastle/build environments)
@@ -105,7 +100,7 @@ class NeutronConverterManager:
 
             process = multiprocessing.Process(
                 target=convert_unsafe,
-                args=(self.neutron_converter, tflite_model, cctx, queue),
+                args=(neutron_converter, tflite_model, cctx, queue),
             )
             process.start()
             process.join()  # waits until the subprocess is complete
@@ -123,8 +118,8 @@ class NeutronConverterManager:
             logging.warning(
                 f"Multiprocessing not available ({e}), running neutron converter directly"
             )
-            model_converted = self.neutron_converter.convertModel(
-                list(tflite_model), cctx
-            )
+            model_converted = neutron_converter.convertModel(list(tflite_model), cctx)
+        if self.dump_kernel_selection_code:
+            self._rename_partition_kernel_selection_file(delegation_tag)
 
         return bytes(model_converted)

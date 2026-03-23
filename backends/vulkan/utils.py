@@ -91,6 +91,8 @@ class DtypeSetList:
         # Broadcasting: single set applies to all positions
         if idx > 0 and len(self.vals) == 1:
             return self.vals[0]
+        if idx >= len(self.vals):
+            return set()
         return self.vals[idx]
 
     def is_empty(self) -> bool:
@@ -606,6 +608,7 @@ all_quantized_memory_layouts: Set[VkMemoryLayout] = {
     VkMemoryLayout.PACKED_INT8_4H4W,
     VkMemoryLayout.PACKED_INT8_4W,
     VkMemoryLayout.PACKED_INT8_4C1W,
+    VkMemoryLayout.PACKED_INT8_CONV2D,
 }
 
 universal_memory_layout_set: Set[VkMemoryLayout] = (
@@ -622,6 +625,7 @@ _LAYOUT_TO_PACKED_DIM: Dict[VkMemoryLayout, int] = {
     VkMemoryLayout.PACKED_INT8_4W4C: 2,
     VkMemoryLayout.PACKED_INT8_4H4W: 0,
     VkMemoryLayout.PACKED_INT8_4C1W: 2,
+    VkMemoryLayout.PACKED_INT8_CONV2D: 2,
 }
 
 
@@ -686,6 +690,11 @@ class PackedDimInfo:
                 packed_dim=2,
                 packed_dim_block_size=4 if is_buffer else 16,
             )
+        elif memory_layout == VkMemoryLayout.PACKED_INT8_CONV2D:
+            return cls(
+                packed_dim=2,
+                packed_dim_block_size=4,
+            )
         else:
             raise ValueError(f"Unknown memory layout: {memory_layout}")
 
@@ -742,6 +751,10 @@ def required_image_extents(sizes: torch.Size, layout: VkMemoryLayout) -> ImageEx
     elif layout == VkMemoryLayout.PACKED_INT8_4H4W:
         height = (height + 3) // 4
         width = (width + 3) // 4
+    elif layout == VkMemoryLayout.PACKED_INT8_CONV2D:
+        # Use conservative extents (same as 4W4C) since this is buffer-only
+        width = (width + 3) // 4
+        channels = (channels + 3) // 4
     else:
         raise RuntimeError(f"Unsupported memory layout {layout}")
 
@@ -1175,8 +1188,15 @@ PACKED_INT8_4H4W_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4H4W}, set())
 PACKED_INT8_4W_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4W}, set())
 PACKED_INT8_4C1W_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4C1W}, set())
 
+PACKED_INT8_CONV2D_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_CONV2D}, set())
+
 PACKED_INT8_CHANNELS_PACKED_BUFFER = TensorRepSet(
-    {VkMemoryLayout.PACKED_INT8_4W4C, VkMemoryLayout.PACKED_INT8_4C1W}, set()
+    {
+        VkMemoryLayout.PACKED_INT8_4W4C,
+        VkMemoryLayout.PACKED_INT8_4C1W,
+        VkMemoryLayout.PACKED_INT8_CONV2D,
+    },
+    set(),
 )
 
 
@@ -1209,8 +1229,9 @@ class TensorRepSetList:
     def __getitem__(self, idx: int) -> TensorRepSet:
         if idx > 0 and len(self) == 1:
             return self.vals[0]
-        else:
-            return self.vals[idx]
+        if idx >= len(self.vals):
+            return set()
+        return self.vals[idx]
 
     def __setitem__(self, idx: int, val: TensorRepSet) -> None:
         if idx > 0 and len(self.vals) == 1:

@@ -4,15 +4,14 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
-"""
-Tests for the max_pool1d operation.
+"""Tests for the max_pool1d operation.
 
 In PyTorch, max_pool1d may be decomposed internally into a sequence of
 operations (e.g., unsqueeze -> max_pool2d_with_indices -> getitem -> squeeze),
 but this test focuses on ensuring that the max_pool1d aten op is correctly
-lowered/quantized and delegated to the expected edge dialect op on the
-Arm backend (U55/U85).
+lowered/quantized and delegated to the expected edge dialect op on the Arm
+backend (U55/U85).
+
 """
 
 from typing import Callable, Tuple
@@ -153,7 +152,8 @@ def test_max_pool2d_vgf_no_quant(test_data: Callable):
 @common.parametrize("test_data", test_data_suite_all)
 @pytest.mark.xfail(reason="MaxPool1D not yet supported", strict=False)
 @common.SkipIfNoModelConverter
-def test_max_pool2d_vgf_quant(test_data: Callable):
+@pytest.mark.xfail(reason="Quantized MaxPool1D not yet supported in VGF", strict=False)
+def test_max_pool2d_vgf_quant_decomposed(test_data: Callable):
     """Test max_pool1d with VGF pipeline (quantized)."""
     test_data, model_params = test_data()
     pipeline = VgfPipeline[input_t1](

@@ -25,8 +25,12 @@ namespace voxtral_realtime {
 // audio and text embeddings at each position (element-wise add), while
 // MultimodalRunner concatenates modality segments sequentially.
 
-struct TranscribeConfig {
+struct OfflineTranscribeConfig {
   int max_new_tokens = 500;
+  float temperature = 0.0f; // 0 = greedy
+};
+
+struct StreamingTranscribeConfig {
   float temperature = 0.0f; // 0 = greedy
 };
 
@@ -40,20 +44,21 @@ class VoxtralRealtimeRunner {
       const std::string& model_path,
       const std::string& tokenizer_path,
       const std::string& preprocessor_path = "",
+      const std::string& data_path = "",
       bool warmup = true);
 
   // Offline transcription: full encoder first, then step-by-step decode.
   int transcribe(
       const float* audio_data,
       int64_t num_samples,
-      const TranscribeConfig& config,
+      const OfflineTranscribeConfig& config,
       TokenCallback token_cb);
 
   // Streaming transcription: processes raw audio incrementally via
   // StreamingSession. Requires a model exported with --streaming and
   // a streaming preprocessor .pte.
   std::unique_ptr<StreamingSession> create_streaming_session(
-      const TranscribeConfig& config,
+      const StreamingTranscribeConfig& config,
       TokenCallback token_cb);
 
   int64_t max_seq_len() const {
@@ -78,6 +83,11 @@ class VoxtralRealtimeRunner {
   int64_t vocab_size_ = 131072;
   int64_t dim_ = 3072;
 
+  // Model dtype detected from method metadata (input_tensor_meta).
+  // Defaults to Float; set to BFloat16 if the model expects bf16 inputs.
+  ::executorch::aten::ScalarType model_dtype_ =
+      ::executorch::aten::ScalarType::Float;
+
   // Streaming metadata (from constant_methods, if present)
   bool is_streaming_ = false;
   int64_t num_mel_bins_ = 128;
@@ -95,6 +105,9 @@ class VoxtralRealtimeRunner {
   int64_t stft_right_lookahead_ = 40;
   int64_t mel_skip_frames_ = 2;
 
+  // Streaming transcription delay in steps (read from model metadata).
+  int64_t delay_tokens_ = 6;
+
   // Tokenizer special tokens
   uint64_t bos_id_ = 1;
   uint64_t eos_id_ = 2;
@@ -103,6 +116,10 @@ class VoxtralRealtimeRunner {
   ::executorch::extension::TensorPtr run_preprocessor(
       const float* audio,
       int64_t num_samples);
+
+  // Convert a tensor to model_dtype_ if needed (e.g., fp32 mel -> bf16).
+  ::executorch::extension::TensorPtr convert_to_model_dtype(
+      ::executorch::extension::TensorPtr tensor);
 };
 
 // Streaming session: accepts raw audio incrementally via feed_audio(),
@@ -111,16 +128,16 @@ class StreamingSession {
  public:
   StreamingSession(
       VoxtralRealtimeRunner& runner,
-      TranscribeConfig config,
+      StreamingTranscribeConfig config,
       TokenCallback token_cb);
 
   // Feed raw audio (16kHz float32). Processes as many complete 80ms steps
   // as possible. Returns number of new tokens generated.
   int feed_audio(const float* data, int64_t num_samples);
 
-  // Signal end of audio. Pads last partial step, then generates remaining
-  // text-only tokens until EOS or max_new_tokens. Returns total tokens
-  // generated across the entire session.
+  // Signal end of audio. Pads the unfinished tail with silence so the final
+  // partial step and model delay drain through the normal audio-conditioned
+  // streaming path, then returns the total tokens generated for the session.
   int flush();
 
   int total_tokens() const {
@@ -129,16 +146,13 @@ class StreamingSession {
 
  private:
   VoxtralRealtimeRunner& runner_;
-  TranscribeConfig config_;
   TokenCallback token_cb_;
 
   // Raw audio accumulation buffer
   std::vector<float> audio_buf_;
   int64_t samples_consumed_ = 0;
 
-  // Encoder streaming state
-  std::vector<float> conv1_state_;
-  std::vector<float> conv2_state_;
+  // Encoder streaming state (conv states are now internal buffers)
   int64_t enc_frame_pos_ = 0;
 
   // Decoder state
@@ -149,13 +163,16 @@ class StreamingSession {
   bool flushed_ = false;
 
   ::executorch::extension::llm::Sampler sampler_;
-  std::vector<float> input_embeds_buf_;
+  ::executorch::extension::TensorPtr input_embeds_;
+  std::vector<float> logits_fp32_buf_;
 
   // Process one 80ms step from the audio buffer.
   bool try_process_step();
 
-  // Run one decoder step (token_embed + optional audio_embed -> logits).
-  bool decode_step(const float* audio_embeds);
+  // Run one audio-conditioned decoder step
+  // (token_embed + audio_embed -> logits).
+  bool decode_step(
+      const ::executorch::extension::TensorPtr& audio_embeds_tensor);
 };
 
 } // namespace voxtral_realtime

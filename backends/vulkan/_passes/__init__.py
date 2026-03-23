@@ -11,6 +11,9 @@ from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
 from executorch.backends.vulkan._passes.fuse_quantized_ops import (
     FuseQuantizedOpsTransform,
 )
+from executorch.backends.vulkan._passes.insert_dtype_promotion import (
+    InsertDtypePromotionPass,
+)
 from executorch.backends.vulkan._passes.insert_prepack_nodes import insert_prepack_nodes
 from executorch.backends.vulkan._passes.remove_asserts import (
     remove_asserts,
@@ -28,6 +31,7 @@ __all__ = [
     "FoldQDQPass",
     "FusePatternsPass",
     "FuseQuantizedOpsTransform",
+    "InsertDtypePromotionPass",
     "insert_prepack_nodes",
     "remove_asserts",
     "RemoveAssertsTransform",

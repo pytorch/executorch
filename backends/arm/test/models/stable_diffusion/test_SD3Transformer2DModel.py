@@ -25,9 +25,11 @@ input_t4 = Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
 
 
 class TestSD3Transformer2DModel:
-    """
-    Test class of AutoenSD3Transformer2DModelcoderKL.
-    SD3Transformer2DModel is the transformer model used by Stable Diffusion 3.5 Medium
+    """Test class of AutoenSD3Transformer2DModelcoderKL.
+
+    SD3Transformer2DModel is the transformer model used by Stable Diffusion 3.5
+    Medium
+
     """
 
     # Adjust nbr below as we increase op support.
