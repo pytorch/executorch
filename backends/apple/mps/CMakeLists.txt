@@ -5,9 +5,9 @@
 
 cmake_minimum_required(VERSION 3.19)
 
-message(WARNING
-    "[DEPRECATED] The MPS backend is deprecated and will be removed in "
-    "ExecuTorch 1.5. Please migrate to CoreML or the Metal backend."
+message(
+  WARNING "[DEPRECATED] The MPS backend is deprecated and will be removed in "
+          "ExecuTorch 1.5. Please migrate to CoreML or the Metal backend."
 )
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)

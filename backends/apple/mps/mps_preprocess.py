@@ -3,6 +3,17 @@
 #  Provided subject to the LICENSE file in the top level directory.
 #
 import logging
+import warnings
+
+warnings.warn(
+    "The MPS backend is deprecated and will be removed in ExecuTorch 1.5. "
+    "Use the CoreML backend for iOS/macOS GPU acceleration, or the Metal "
+    "backend for macOS desktop GPU workloads. "
+    "See https://docs.pytorch.org/executorch/main/backends-overview.html "
+    "for migration guidance.",
+    FutureWarning,
+    stacklevel=2,
+)
 from typing import ClassVar, Dict, final, List, Tuple
 
 import torch
@@ -61,6 +72,7 @@ class MPSBackend(BackendDetails):
         ``MPSBackend`` is deprecated and will be removed in ExecuTorch 1.5.
         Use ``CoreMLBackend`` (iOS/macOS) or the Metal backend (macOS) instead.
     """
+
     @staticmethod
     def slice_len_max(s):
         assert s.start is not None

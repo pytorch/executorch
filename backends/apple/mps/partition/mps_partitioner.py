@@ -4,6 +4,16 @@
 #
 
 import logging
+import warnings
+
+warnings.warn(
+    "The MPS partitioner is deprecated and will be removed in ExecuTorch 1.5. "
+    "Use CoreMLPartitioner for iOS/macOS GPU acceleration instead. "
+    "See https://docs.pytorch.org/executorch/main/backends-overview.html "
+    "for migration guidance.",
+    FutureWarning,
+    stacklevel=2,
+)
 from typing import Any, cast, Dict, List, Union
 
 import torch
