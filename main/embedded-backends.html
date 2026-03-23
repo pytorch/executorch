@@ -60,7 +60,7 @@
     <link rel="icon" href="_static/executorch-chip-logo.svg"/>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Cadence Xtensa Backend" href="embedded-cadence.html" />
+    <link rel="next" title="Arm Cortex-M Backend" href="embedded-arm-cortex-m.html" />
     <link rel="prev" title="Managing Tensor Memory in C++" href="extension-tensor.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -660,6 +660,12 @@ document.write(`
               <li class=" ">
                 <a class="nav-link dropdown-item nav-internal" href="backends/arm-ethos-u/arm-ethos-u-overview.html">
                   Arm Ethos-U Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/arm-cortex-m/arm-cortex-m-overview.html">
+                  Arm Cortex-M Backend
                 </a>
               </li>
             
@@ -1316,6 +1322,12 @@ document.write(`
               </li>
             
               <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/arm-cortex-m/arm-cortex-m-overview.html">
+                  Arm Cortex-M Backend
+                </a>
+              </li>
+            
+              <li class=" ">
                 <a class="nav-link dropdown-item nav-internal" href="backends/arm-vgf/arm-vgf-overview.html">
                   Arm VGF Backend
                 </a>
@@ -1812,6 +1824,7 @@ document.write(`
 <li class="toctree-l2"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
 <li class="toctree-l2"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
 <li class="toctree-l2 current active has-children"><a class="current reference internal" href="#">Backends</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="embedded-arm-cortex-m.html">Arm Cortex-M Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="embedded-cadence.html">Cadence Xtensa Backend</a></li>
 <li class="toctree-l3 has-children"><a class="reference internal" href="embedded-nxp.html">NXP eIQ Neutron Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
 </ul>
@@ -1943,6 +1956,12 @@ document.write(`
 <li><p><a class="reference internal" href="embedded-cadence.html"><span class="doc">Cadence Xtensa Backend</span></a> — Cadence Xtensa DSP processors</p></li>
 </ul>
 </section>
+<section id="cpu-acceleration">
+<h2>CPU Acceleration<a class="headerlink" href="#cpu-acceleration" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="embedded-arm-cortex-m.html"><span class="doc">Arm Cortex-M Backend</span></a> — Arm Cortex-M CMSIS-NN acceleration</p></li>
+</ul>
+</section>
 <section id="npu-acceleration">
 <h2>NPU Acceleration<a class="headerlink" href="#npu-acceleration" title="Link to this heading">#</a></h2>
 <ul class="simple">
@@ -2006,11 +2025,11 @@ document.write(`
       </div>
     </a>
     <a class="right-next"
-       href="embedded-cadence.html"
+       href="embedded-arm-cortex-m.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Cadence Xtensa Backend</p>
+        <p class="prev-next-title">Arm Cortex-M Backend</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -2045,11 +2064,11 @@ document.write(`
       </div>
     </a>
     <a class="right-next"
-       href="embedded-cadence.html"
+       href="embedded-arm-cortex-m.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Cadence Xtensa Backend</p>
+        <p class="prev-next-title">Arm Cortex-M Backend</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -2072,6 +2091,7 @@ document.write(`
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dsp-acceleration">DSP Acceleration</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#cpu-acceleration">CPU Acceleration</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#npu-acceleration">NPU Acceleration</a></li>
 </ul>
   </nav></div>
@@ -2298,7 +2318,7 @@ document.write(`
        "headline": "Backends",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
        "url": "/embedded-backends.html",
-       "articleBody": "Backends# Available hardware acceleration backends for embedded systems. DSP Acceleration# Cadence Xtensa Backend \u2014 Cadence Xtensa DSP processors NPU Acceleration# \u003cno title\u003e \u2014 ARM Ethos-U NPU acceleration NXP eIQ Neutron Backend \u2014 NXP eIQ Neutron Backend",
+       "articleBody": "Backends# Available hardware acceleration backends for embedded systems. DSP Acceleration# Cadence Xtensa Backend \u2014 Cadence Xtensa DSP processors CPU Acceleration# Arm Cortex-M Backend \u2014 Arm Cortex-M CMSIS-NN acceleration NPU Acceleration# \u003cno title\u003e \u2014 ARM Ethos-U NPU acceleration NXP eIQ Neutron Backend \u2014 NXP eIQ Neutron Backend",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
