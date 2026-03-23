@@ -229,7 +229,6 @@ class NodeVisitor:
         # Memory layout of QNN conv weight always ends in Output. Like conv2d is HWIO
         if user_0.target in {
             exir_ops.edge.aten.convolution.default,
-            exir_ops.edge.aten.embedding.default,
         }:
             quant_config[QCOM_AXIS] = node.meta["val"].dim() - 1
         else:
