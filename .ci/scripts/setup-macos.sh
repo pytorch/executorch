@@ -130,9 +130,9 @@ install_pytorch_and_domains
 # We build PyTorch from source here instead of using nightly. This allows CI to test against
 # the pinned commit from PyTorch
 if [[ "$EDITABLE" == "true" ]]; then
-  install_executorch --use-pt-pinned-commit --editable
+  install_executorch --editable
 else
-  install_executorch --use-pt-pinned-commit
+  install_executorch
 fi
 build_executorch_runner "${BUILD_TOOL}" "${BUILD_MODE}"
 
