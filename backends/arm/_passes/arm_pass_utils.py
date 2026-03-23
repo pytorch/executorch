@@ -14,6 +14,7 @@ import torch
 import torch.fx
 from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.common.type import ensure_type
+from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -169,6 +170,30 @@ def create_node(
 
     if quantize and q_params:
         return insert_q_dq_pair(graph, node, q_params, from_node)
+    return node
+
+
+def create_shape_node(
+    graph: torch.fx.Graph,
+    op_target: EdgeOpOverload,
+    args: tuple = (),
+    kwargs: Optional[dict] = None,
+    from_node: Optional[torch.fx.Node] = None,
+):
+    """Adds a shape node to 'graph'.
+
+    graph.inserting_before/after() should be used before the call to decide
+    where to insert the node.
+
+    """
+    node = create_node(
+        graph=graph,
+        op_target=op_target,
+        args=args,
+        kwargs=kwargs,
+        from_node=from_node,
+    )
+    node.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.SHAPE
     return node
 
 
