@@ -14,8 +14,9 @@ be delegated to the TOSA backend. Use this module to:
 """
 
 import logging
+import operator
 from itertools import count
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import Callable, cast, List, Optional, Sequence, Tuple
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import (
@@ -220,6 +221,49 @@ class TOSAPartitioner(Partitioner):
                         del node.meta["delegation_tag"]
                         break
 
+    def _partition_has_invalid_uint8(self, partition: Partition, tag: str) -> bool:
+        """Return True if any uint8 appears outside allowed IO nodes.
+
+        TOSA does not have a true uint8 tensor type. Unsigned semantics are only
+        allowed at IO boundaries and are carried via RESCALE flags. If a
+        partition contains uint8 in any other node, it will fail later in
+        lowering, so reject the partition here.
+
+        """
+        for node in partition.nodes:
+            if not is_partitioned(node, tag):
+                # Ignore nodes that were de-tagged after boundary processing.
+                continue
+            dtype: Optional[torch.dtype] = None
+            meta_val = node.meta.get("val")
+            if isinstance(meta_val, torch.Tensor):
+                dtype = meta_val.dtype
+            else:
+                dtype = cast(Optional[torch.dtype], node.meta.get("dtype"))
+                if dtype is None:
+                    try:
+                        dtype = get_first_fake_tensor(node).dtype
+                    except (AttributeError, KeyError, RuntimeError, ValueError):
+                        dtype = None
+            if dtype is None:
+                continue
+            if dtype != torch.uint8:
+                continue
+
+            is_allowed = node.op in ("placeholder", "output")
+            is_output_only_getitem = (
+                node.op == "call_function"
+                and node.target == operator.getitem
+                and len(node.users) > 0
+                and all(user.op == "output" for user in node.users)
+            )
+            # Allow uint8 on Q/DQ nodes that mediate IO quantization.
+            is_allowed = is_allowed or is_output_only_getitem
+            is_allowed = is_allowed or node.target in Q_OPS or node.target in DQ_OPS
+            if not is_allowed:
+                return True
+        return False
+
     def _tag_module(  # noqa
         self,
         module: GraphModule,
@@ -284,6 +328,15 @@ class TOSAPartitioner(Partitioner):
                     tag,
                     reporter,
                 )
+
+            if self._partition_has_invalid_uint8(partition, tag):
+                reject_partition(
+                    "Partition contained internal uint8 tensors. Uint8 is only supported at IO boundaries for TOSA backends.",
+                    partition,
+                    reporter,
+                )
+                tags.remove(tag)
+                continue
 
             # Check whether the partition contains only no-op or non-computational ops. Such partitions don't make sense to delegate, and in the worst case may be optimized away during lowering, which can break compilation."
             is_nocompute_partition = all(
