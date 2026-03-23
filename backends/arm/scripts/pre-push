@@ -53,7 +53,7 @@ is_docgen_trigger_file() {
 
 run_docgen_check() {
     echo -e "${INFO} Running Arm docgen"
-    env/bin/python backends/arm/scripts/docgen/docgen.py
+    python backends/arm/scripts/docgen/docgen.py
     if [[ $? -ne 0 ]]; then
         echo -e "${ERROR} Failed to run Arm docgen"
         FAILED=1
