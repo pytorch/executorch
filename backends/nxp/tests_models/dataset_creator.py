@@ -100,7 +100,13 @@ class RandomDatasetCreator(DatasetCreator):
                     case _:
                         raise ValueError(f"Unsupported dim_order: {spec.dim_order}")
 
-                sample_vector = rng.random(np.prod(shape), spec.type).reshape(shape)
+                if spec.type == np.int8:
+                    sample_vector = (
+                        rng.random(np.prod(shape), "float32").reshape(shape) * 256 - 128
+                    ).astype("int8")
+                else:
+                    sample_vector = rng.random(np.prod(shape), spec.type).reshape(shape)
+
                 sample_vector.tofile(
                     os.path.join(sample_dir, f"{str(spec_idx).zfill(2)}.bin")
                 )
