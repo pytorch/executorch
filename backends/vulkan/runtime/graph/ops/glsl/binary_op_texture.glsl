@@ -56,6 +56,8 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 ${layout_declare_spec_const(C, "int", "out_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "in_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "other_layout", "CONTIG_LAYOUT_INT")}
+${layout_declare_spec_const(C, "int", "in_broadcast_packed_dim", "0")}
+${layout_declare_spec_const(C, "int", "other_broadcast_packed_dim", "0")}
 
 void main() {
   const ivec3 out_pos = ivec3(gl_GlobalInvocationID);
@@ -64,43 +66,32 @@ void main() {
     return;
   }
 
-  const int out_packed_dim = get_packed_dim(out_layout);
   TensorIndex4D out_tidx =
       texture_pos_to_tensor4d_idx_simple(outp, out_pos, out_layout);
 
-  VEC4_OUT_T outtex = VEC4_OUT_T(0);
+  // Broadcast: clamp each tensor index to input sizes
+  TensorIndex4D in_tidx;
+  in_tidx.data = min(out_tidx.data, inp.sizes - 1);
+  ivec3 in_pos =
+      tensor4d_idx_to_texel_pos_simple(inp, in_tidx, in_layout);
+  VEC4_T in_texel = texelFetch(t_in, in_pos, 0);
 
-  // Use safe_idx/safe_set to avoid dynamic UBO ivec4 indexing, which crashes
-  // the Adreno 740 SPIR-V compiler when the index is a specialization constant.
-  int limit = min(
-      4,
-      safe_idx(outp.sizes, out_packed_dim) -
-          safe_idx(out_tidx.data, out_packed_dim));
-  for (int comp = 0; comp < limit; comp++) {
-    TensorIndex4D in_tidx;
-    in_tidx.data = min(out_tidx.data, inp.sizes - 1);
-    TextureElementIndex in_elem =
-        tensor4d_idx_to_texture_element_idx_simple(
-            inp, in_tidx, in_layout);
-    VEC4_T in_texel = texelFetch(t_in, in_elem.pos, 0);
+  TensorIndex4D other_tidx;
+  other_tidx.data = min(out_tidx.data, otherp.sizes - 1);
+  ivec3 other_pos =
+      tensor4d_idx_to_texel_pos_simple(otherp, other_tidx, other_layout);
+  VEC4_T other_texel = texelFetch(t_other, other_pos, 0);
 
-    TensorIndex4D other_tidx;
-    other_tidx.data = min(out_tidx.data, otherp.sizes - 1);
-    TextureElementIndex other_elem =
-        tensor4d_idx_to_texture_element_idx_simple(
-            otherp, other_tidx, other_layout);
-    VEC4_T other_texel = texelFetch(t_other, other_elem.pos, 0);
-
-    outtex[comp] = T(op(
-        in_texel[in_elem.comp],
-        other_texel[other_elem.comp],
-        alpha));
-
-    safe_set(
-        out_tidx.data,
-        out_packed_dim,
-        safe_idx(out_tidx.data, out_packed_dim) + 1);
+  // Handle scalar broadcasting along packed dim: when input has size 1 along
+  // the packed dim, only component 0 is valid — replicate it across all lanes.
+  if (in_broadcast_packed_dim > 0) {
+    in_texel = VEC4_T(in_texel.x);
   }
+  if (other_broadcast_packed_dim > 0) {
+    other_texel = VEC4_T(other_texel.x);
+  }
+
+  VEC4_OUT_T outtex = VEC4_OUT_T(op(in_texel, other_texel, alpha));
 
   imageStore(t_out, out_pos, outtex);
 }
