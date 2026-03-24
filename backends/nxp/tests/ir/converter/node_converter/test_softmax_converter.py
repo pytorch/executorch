@@ -85,7 +85,7 @@ def test_softmax_delegation(input_shape, dim: int, mocker):
 
     # Verify correct behavior of the converted NeutronIR model.
     intermediate_ep = converter_spy.call_args.args[1]
-    neutron_ir_model, _ = converter_spy.spy_return
+    neutron_ir_model, *_ = converter_spy.spy_return
     input_data = random_input_data(input_shape)
 
     # Make sure the tested program contains the `softmax`, and its input has the expected rank.
@@ -121,7 +121,7 @@ def test_softmax_delegation__channel_first(input_shape, dim: int, mocker):
 
     # Verify correct behavior of the converted NeutronIR model.
     intermediate_ep = converter_spy.call_args.args[1]
-    neutron_ir_model, _ = converter_spy.spy_return
+    neutron_ir_model, *_ = converter_spy.spy_return
     input_data = random_input_data(input_shape)
 
     # Make sure the tested program contains the `softmax`.

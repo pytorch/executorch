@@ -59,7 +59,7 @@ def test_convert_bmm__supported(mocker, input_shape_x1, input_shape_x2, use_qat)
 
     # Verify correct behavior of the converted NeutronIR model.
     intermediate_ep = converter_spy.call_args.args[1]
-    neutron_ir_model, _ = converter_spy.spy_return
+    neutron_ir_model, *_ = converter_spy.spy_return
 
     input_data_1 = (
         np.random.random(input_shape_x1).astype(np.float32) * 256.0 - 128.0

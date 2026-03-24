@@ -68,6 +68,7 @@ class NeutronConverterManager:
         delegation_tag: str,
         fetch_constants_to_sram: bool = False,
         use_new_flow_neutron_c: bool = False,
+        use_profiling: bool = False,
     ) -> bytes:
         """
         Call Neutron Converter.
@@ -77,6 +78,7 @@ class NeutronConverterManager:
         :param delegation_tag: The delegation tag of model partition.
         :param fetch_constants_to_sram: Add microcode that fetches weights from external memory.
         :param use_new_flow_neutron_c: Enable experimental MLIR-based flow for Neutron-C with improved INT8 operator support.
+        :param use_profiling: Enable profiling for neutron delegated model.
         This allows running models which do not fit into SRAM. Applies to Neutron-C only (microcontrollers).
 
         :return: TFLite model with Neutron microcode as bytes.
@@ -94,6 +96,13 @@ class NeutronConverterManager:
         cctx.compilationOpts.dumpKernelSelectionCode = self.dump_kernel_selection_code
         if hasattr(cctx.compilationOpts, "useNewFlowNeutronC"):
             cctx.compilationOpts.useNewFlowNeutronC = use_new_flow_neutron_c
+
+        if use_profiling:
+            cctx.compilationOpts.useProfiling = use_profiling
+            cctx.compilationOpts.dumpAfterImport = "console"
+            cctx.compilationOpts.dumpAfterGenerate = "console"
+            cctx.compilationOpts.verbose = True
+            #cctx.compilationOpts.dumpGraphs = 1
 
         # Try to use multiprocessing for isolation, but fall back to direct execution
         # if the environment doesn't support it (e.g., in sandcastle/build environments)

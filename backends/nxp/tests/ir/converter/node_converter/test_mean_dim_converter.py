@@ -64,7 +64,7 @@ def test_mean_dim_conv_quant_conversion(
     assert any("lowered_module" in n.name for n in ep.graph.nodes)
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -112,7 +112,7 @@ def test_mean_dim_linear_unsupported_quant_conversion(
     assert nodes[6].target.__name__ == "aten.mean.dim"
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -160,7 +160,7 @@ def test_mean_dim_conv_unsupported_quant_conversion(
     assert nodes[6].target.__name__ == "aten.mean.dim"
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -201,7 +201,7 @@ def test_mean_dim__formatless__supported(
     assert any("lowered_module" in n.name for n in ep.graph.nodes)
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]

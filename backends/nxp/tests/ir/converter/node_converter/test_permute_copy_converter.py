@@ -141,7 +141,7 @@ class TestPermuteCopyConversion(unittest.TestCase):
             )
 
             # Capture generated model
-            tflite_flatbuffers_model, io_formats = converter_spy.calls[-1].return_value
+            tflite_flatbuffers_model, *_ = converter_spy.calls[-1].return_value
 
             # Capture converted program
             exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
@@ -187,7 +187,7 @@ class TestPermuteCopyConversion(unittest.TestCase):
             )
 
             # Capture generated model
-            tflite_flatbuffers_model, io_formats = converter_spy.calls[-1].return_value
+            tflite_flatbuffers_model, *_ = converter_spy.calls[-1].return_value
 
             # Capture converted program
             exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
@@ -285,7 +285,7 @@ class TestPermuteCopyConversion(unittest.TestCase):
             )
 
             # Capture generated model
-            tflite_flatbuffers_model, io_formats = converter_spy.calls[-1].return_value
+            tflite_flatbuffers_model, *_ = converter_spy.calls[-1].return_value
 
             # Capture converted program
             exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
@@ -361,7 +361,7 @@ class TestPermuteCopyConversion(unittest.TestCase):
             )
 
             # Capture generated model
-            tflite_flatbuffers_model, io_formats = converter_spy.calls[-1].return_value
+            tflite_flatbuffers_model, *_ = converter_spy.calls[-1].return_value
 
             # Capture converted program
             exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
