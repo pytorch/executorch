@@ -198,7 +198,6 @@ capability to avoid "invalid device function" errors (the `int4mm` kernels
 require SM 80+).
 
 ```powershell
-$env:CMAKE_CUDA_ARCHITECTURES="80;86;89;90;120"
 cmake --workflow --preset llm-release-cuda
 Push-Location examples/models/voxtral_realtime
 cmake --workflow --preset voxtral-realtime-cuda
@@ -269,7 +268,7 @@ Ctrl+C stops recording and flushes remaining text.
 | `--preprocessor_path` | (none) | Path to mel preprocessor `.pte` |
 | `--audio_path` | (none) | Path to 16kHz mono WAV file |
 | `--temperature` | `0.0` | Sampling temperature (0 = greedy) |
-| `--max_new_tokens` | `500` | Maximum tokens to generate |
+| `--offline_max_new_tokens` | `500` | Offline-only: maximum extra tokens after audio embeddings are exhausted |
 | `--streaming` | off | Use streaming transcription (from WAV file) |
 | `--mic` | off | Live microphone mode (reads raw f32le PCM from stdin) |
 | `--mic_chunk_ms` | `80` | Mic read chunk size in ms (multiples of 80 recommended) |

@@ -507,6 +507,7 @@ _one_to_one = {
     torch.ops.aten.asinh.default,
     torch.ops.aten.cosh.default,
     torch.ops.aten.cumsum.default,
+    torch.ops.aten.remainder.Scalar,
     torch.ops.aten.tan.default,
 }
 

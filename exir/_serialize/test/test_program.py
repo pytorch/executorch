@@ -486,8 +486,12 @@ class TestProgram(unittest.TestCase):
         """
         program = get_test_program()
         program.execution_plan[0].non_const_buffer_device = [
-            NonConstBufferDevice(buffer_idx=0, device_type=DeviceType.CPU, device_index=0),
-            NonConstBufferDevice(buffer_idx=1, device_type=DeviceType.CUDA, device_index=0),
+            NonConstBufferDevice(
+                buffer_idx=0, device_type=DeviceType.CPU, device_index=0
+            ),
+            NonConstBufferDevice(
+                buffer_idx=1, device_type=DeviceType.CUDA, device_index=0
+            ),
         ]
         flatbuffer_from_py = bytes(serialize_pte_binary(pte_file=PTEFile(program)))
         self.assert_programs_equal(

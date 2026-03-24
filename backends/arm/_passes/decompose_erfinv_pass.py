@@ -26,7 +26,6 @@ def get_erfinv_decomposition(op) -> tuple:
     if op in edge_erfinv_ops:
         # Ordered by first use in call_operator below.
         return (
-            exir_ops.edge.aten.full_like.default,
             exir_ops.edge.aten.lt.Tensor,
             exir_ops.edge.aten.where.self,
             exir_ops.edge.aten.abs.default,
@@ -140,7 +139,6 @@ class DecomposeErfinvPass(ArmPass):
         x = args[0]
 
         (
-            op_full_like,
             op_lt_t,
             op_where,
             op_abs,
@@ -179,12 +177,10 @@ class DecomposeErfinvPass(ArmPass):
         CORR_MAX = 0.5
         TWO_OVER_SQRT_PI = 1.1283791670955126
 
-        # ---- zeros / ones (tensor-shaped) ----
-        zeros = super().call_operator(op_full_like, (x, 0.0), {}, meta, updated=True)
-        ones = super().call_operator(op_full_like, (x, 1.0), {}, meta, updated=True)
-        neg_ones = super().call_operator(
-            op_full_like, (x, -1.0), {}, meta, updated=True
-        )
+        # ---- zeros / ones constants ----
+        zeros = super().call_scalar(0.0, meta)
+        ones = super().call_scalar(1.0, meta)
+        neg_ones = super().call_scalar(-1.0, meta)
 
         # ---- s = sign(x): -1 for x<0 else +1 ----
         x_lt0 = super().call_operator(op_lt_t, (x, zeros), {}, meta, updated=True)
