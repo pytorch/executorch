@@ -50,9 +50,7 @@ TensorImpl::TensorImpl(
     void* data,
     DimOrderType* dim_order,
     StridesType* strides,
-    TensorShapeDynamism dynamism,
-    DeviceType device_type,
-    DeviceIndex device_index)
+    TensorShapeDynamism dynamism)
     : sizes_(sizes),
       dim_order_(dim_order),
       strides_(strides),
@@ -61,8 +59,7 @@ TensorImpl::TensorImpl(
       numel_(compute_numel(sizes, dim)),
       numel_bound_(numel_),
       type_(type),
-      shape_dynamism_(dynamism),
-      device_(device_type, device_index) {
+      shape_dynamism_(dynamism) {
   ET_CHECK_MSG(
       isValid(type_), "Invalid type %" PRId8, static_cast<int8_t>(type_));
   ET_CHECK_MSG(dim_ >= 0, "Dimension must be non-negative, got %zd", dim_);
