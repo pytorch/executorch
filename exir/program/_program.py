@@ -849,9 +849,6 @@ def edge_to_executorch_passes(
         # there exists an unbacked symint operation.
         *config.passes,
         SpecPropPass(),
-        # Propagate device metadata (e.g., CUDA) from delegate CompileSpecs onto
-        # TensorSpecs. Must run after SpecPropPass so specs are freshly created
-        # with correct shapes.
         PropagateDevicePass(),
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),

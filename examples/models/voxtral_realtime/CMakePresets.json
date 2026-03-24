@@ -57,6 +57,7 @@
             "name": "voxtral-realtime-cpu",
             "displayName": "Build Voxtral Realtime runner (CPU)",
             "configurePreset": "voxtral-realtime-cpu",
+            "configuration": "Release",
             "targets": [
                 "voxtral_realtime_runner"
             ]
@@ -73,6 +74,7 @@
         {
             "name": "voxtral-realtime-cuda",
             "displayName": "Build Voxtral Realtime runner (CUDA)",
+            "configuration": "Release",
             "configurePreset": "voxtral-realtime-cuda",
             "targets": [
                 "voxtral_realtime_runner"
