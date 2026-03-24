@@ -535,6 +535,12 @@ def _build_parser():
         help="Thread count for calibration forward passes. 0 = auto-tune (default).",
     )
 
+    parser.add_argument(
+        "--quant_recipe_suggestion",
+        action="store_true",
+        help="Enable automatic quant recipe suggestion in PTQ",
+    )
+
     return parser
 
 
