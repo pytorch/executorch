@@ -8,7 +8,13 @@ In this tutorial we will walk you through the process of getting setup to build 
 - **Fusion G3 DSPs**: General-purpose AI acceleration
 - **Vision P-Series DSPs**: Specialized for computer vision and CNN workloads
 
-In addition to the chip, the HiFi4 Neural Network Library ([nnlib](https://github.com/foss-xtensa/nnlib-hifi4)) offers an optimized set of library functions commonly used in NN processing that we utilize in this example to demonstrate how common operations can be accelerated.
+```{note}
+The Cadence DSP backends can only be compiled using the Xtensa toolchain (xt-clang cross-compiler). They cannot be built with standard host x86 compilers (gcc, clang) — the Xtensa toolchain is required for cross-compilation targeting any Cadence DSP family.
+```
+
+Each DSP family has a corresponding Neural Network Library (nnlib) with optimized primitives:
+- **HiFi**: [nnlib-hifi4](https://github.com/foss-xtensa/nnlib-hifi4)
+- **Fusion G3**: [nnlib-FusionG3](https://github.com/foss-xtensa/nnlib-FusionG3/)
 
 For an overview of the Cadence ExecuTorch integration with performance benchmarks, see the blog post: [Running Optimized PyTorch Models on Cadence DSPs with ExecuTorch](https://community.cadence.com/cadence_blogs_8/b/ip/posts/running-optimized-pytorch-models-on-cadence-dsps-with-executorch).
 
@@ -50,7 +56,8 @@ In order to be able to succesfully build and run ExecuTorch on a Xtensa HiFi4 DS
     - Download this SDK to your Linux machine, extract it and take a note of the path where you store it. You'll need this later.
 - [Xtensa compiler](https://tensilicatools.com/platform/i-mx-rt600/)
     - Download this to your Linux machine. This is needed to build ExecuTorch for the HiFi4 DSP.
-- For cases with optimized kernels, the [nnlib repo](https://github.com/foss-xtensa/nnlib-hifi4).
+- For HiFi optimized kernels, the [nnlib-hifi4 repo](https://github.com/foss-xtensa/nnlib-hifi4).
+- For Fusion G3 optimized kernels, the [nnlib-FusionG3 repo](https://github.com/foss-xtensa/nnlib-FusionG3/).
 
 ## Setting up Developer Environment
 
@@ -278,7 +285,9 @@ The Cadence backend supports multiple DSP families:
 - **Vision P-Series DSPs**: Core `VANILLA_VISION`, enable with `-DEXECUTORCH_VISION_OPT=ON`
 ```
 
-***Step 2***. Clone the [nnlib repo](https://github.com/foss-xtensa/nnlib-hifi4), which contains optimized kernels and primitives for HiFi4 DSPs, with `git clone git@github.com:foss-xtensa/nnlib-hifi4.git`.
+***Step 2***. Clone the appropriate nnlib repo for your target DSP:
+- For **HiFi**: `git clone git@github.com:foss-xtensa/nnlib-hifi4.git`
+- For **Fusion G3**: `git clone git@github.com:foss-xtensa/nnlib-FusionG3.git`
 
 ***Step 3***. Run the CMake build.
 In order to run the CMake build, you need the path to the following:
