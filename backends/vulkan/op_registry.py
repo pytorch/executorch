@@ -1125,6 +1125,20 @@ def register_clone_dim_order():
     )
 
 
+# alias_copy is a no-op identity operation (same as clone/alias). It is removed
+# by RemoveRedundantOpsTransform during preprocess, so the C++ runtime never sees
+# it. Registering it here ensures the partitioner delegates it to Vulkan rather
+# than creating partition boundaries that break the graph.
+@update_features(exir_ops.edge.aten.alias_copy.default)
+def register_alias_copy():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
 # =============================================================================
 # Gather.cpp
 # =============================================================================
