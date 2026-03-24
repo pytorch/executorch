@@ -303,6 +303,28 @@ void xa_opt_quantized_conv2d_nhwc(
     if (groups == input_channels) {
       WORD32 channels_multiplier = out_channels / input_channels;
 
+      // The NNLib depthwise function expects weights in [KH, KW, OC] layout.
+      // When is_depthwise is false, the weight is 4D [OC, KH, KW, IC/G] and
+      // needs to be rearranged from [OC, KH, KW] to [KH, KW, OC].
+      WORD8* p_kernel_dw = p_kernel;
+      if (!is_depthwise) {
+        WORD32 weight_size = kernel_height * kernel_width * out_channels;
+        p_kernel_dw =
+            (WORD8*)kernels::allocate_temp_memory(ctx, weight_size);
+        for (WORD32 oc = 0; oc < out_channels; oc++) {
+          for (WORD32 kh = 0; kh < kernel_height; kh++) {
+            for (WORD32 kw = 0; kw < kernel_width; kw++) {
+              p_kernel_dw
+                  [kh * kernel_width * out_channels + kw * out_channels + oc] =
+                      p_kernel
+                          [oc * kernel_height * kernel_width * kernel_channels +
+                           kh * kernel_width * kernel_channels +
+                           kw * kernel_channels];
+            }
+          }
+        }
+      }
+
       scratch_size = xa_nn_conv2d_depthwise_getsize(
           input_height,
           input_width,
@@ -332,7 +354,7 @@ void xa_opt_quantized_conv2d_nhwc(
 
         xa_nn_conv2d_depthwise_per_chan_sym8sxasym8s(
             out_batch,
-            p_kernel,
+            p_kernel_dw,
             in_batch,
             p_bias,
             input_height,
