@@ -1,0 +1,53 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+binary_op_texture:
+  parameter_names_with_default_values:
+    OPERATOR: X + A * Y
+    NDIM: 3
+    DTYPE: float
+    PACKING: C_packed
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: half
+      - VALUE: float
+      - VALUE: int32
+  shader_variants:
+    - NAME: binary_add_texture3d
+    - NAME: binary_sub_texture3d
+      OPERATOR: X - A * Y
+    - NAME: binary_mul_texture3d
+      OPERATOR: X * Y
+    - NAME: binary_div_texture3d
+      OPERATOR: X / Y
+    - NAME: binary_pow_texture3d
+      OPERATOR: pow(float(X), float(Y))
+    - NAME: binary_floor_divide_texture3d
+      OPERATOR: floor(X / Y)
+    - NAME: binary_minimum_texture3d
+      OPERATOR: min(X, Y)
+    - NAME: binary_eq_int32_texture3d
+      OPERATOR: X == Y
+      DTYPE: int32
+    - NAME: binary_eq_texture3d
+      OPERATOR: abs(X - Y) < 1e-5
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+          - VALUE: float
+    - NAME: binary_lt_texture3d
+      OPERATOR: X < Y
+    - NAME: binary_le_texture3d
+      OPERATOR: X <= Y
+    - NAME: binary_gt_texture3d
+      OPERATOR: X > Y
+    - NAME: binary_ge_texture3d
+      OPERATOR: X >= Y
+    - NAME: binary_bitwise_and_texture3d
+      OPERATOR: X & Y
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: uint8
