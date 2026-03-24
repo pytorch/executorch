@@ -59,6 +59,9 @@ ${layout_declare_spec_const(C, "int", "other_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "in_broadcast_packed_dim", "0")}
 ${layout_declare_spec_const(C, "int", "other_broadcast_packed_dim", "0")}
 
+$if MASK_PADDING:
+  #define MASK_PADDING
+
 void main() {
   const ivec3 out_pos = ivec3(gl_GlobalInvocationID);
 
@@ -92,6 +95,34 @@ void main() {
   }
 
   VEC4_OUT_T outtex = VEC4_OUT_T(op(in_texel, other_texel, alpha));
+
+#ifdef MASK_PADDING
+  {
+    const int out_packed_dim = get_packed_dim(out_layout);
+    const int packed_dim_size = safe_idx(outp.sizes, out_packed_dim);
+    const int nspill = packed_dim_size % 4;
+
+    if (nspill > 0) {
+      const int texels_per_batch = (packed_dim_size + 3) / 4;
+      int packed_pos;
+      if (out_packed_dim == 0) {
+        packed_pos = out_pos.x;
+      } else if (out_packed_dim == 1) {
+        packed_pos = out_pos.y;
+      } else {
+        packed_pos = out_pos.z;
+      }
+      const bool is_last_texel =
+          (packed_pos % texels_per_batch) == (texels_per_batch - 1);
+
+      if (is_last_texel) {
+        [[unroll]] for (int i = nspill; i < 4; i++) {
+          outtex[i] = 0;
+        }
+      }
+    }
+  }
+#endif
 
   imageStore(t_out, out_pos, outtex);
 }
