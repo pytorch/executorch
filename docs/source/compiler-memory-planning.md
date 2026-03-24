@@ -82,7 +82,45 @@ program = edge_program.to_executorch(
         )
 ```
 
+> **Note:** Custom pool passes that pre-assign `mem_id` are not yet compatible
+> with `enable_non_cpu_memory_planning=True`.  When per-device planning is
+> enabled, device buffers are appended after the CPU buffers in the global
+> `bufsizes` array.  If a custom pass has already set `mem_id` values (e.g.
+> `mem_id=2` or `mem_id=3`), those slots may collide with the device-buffer
+> slots, leading to incorrect memory layout.  If both features are enabled
+> simultaneously, `apply_algo` will raise a `NotImplementedError`.
+
 Users attempting to write a custom memory planning algorithm should start by looking at [the greedy algorithm's implementation](https://github.com/pytorch/executorch/blob/d62c41ca86435e5316e7ed292b6d68aff27a2fb7/exir/memory_planning.py#L459C1-L459C12).
+
+## Device-Aware Memory Planning
+
+When `enable_non_cpu_memory_planning=True` is set on `ExecutorchBackendConfig`,
+the memory planning pass partitions tensor specs by their device type and runs
+the planning algorithm independently for each device.  This produces separate
+memory buffers for each device (e.g. CPU vs. CUDA), ensuring that device memory
+and host memory are never mixed.
+
+```python
+program = edge_program.to_executorch(
+            exir.ExecutorchBackendConfig(
+                enable_non_cpu_memory_planning=True,
+            )
+        )
+```
+
+The resulting `bufsizes` array layout depends on which devices are present:
+
+| Scenario | bufsizes | Description |
+|---|---|---|
+| CPU only | `[0, cpu_size]` | Same as legacy behavior |
+| CUDA only | `[0, cuda_size]` | Buffer 1 is CUDA, no wasted CPU slot |
+| CPU + CUDA | `[0, cpu_size, cuda_size]` | Buffer 1 is CPU, buffer 2 is CUDA |
+
+**Current limitations:**
+- Not compatible with custom pool passes that pre-assign `spec.mem_id` (see note above).
+- Submodule buffer sizes (from control-flow submodules like `cond`/`while`/`map`)
+  are applied only to the CPU partition.  This is safe today because on-device
+  tensors only appear as delegate blob I/O, never inside control-flow submodules.
 
 ## Debugging Tool
 
