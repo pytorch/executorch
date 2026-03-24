@@ -221,7 +221,7 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
 
     def _tosa_dispatch(self, lowered_backend_module: LoweredBackendModule, inputs):
         tosa_buffer = lowered_backend_module.processed_bytes
-        compile_spec = TosaCompileSpec.from_list(lowered_backend_module.compile_specs)
+        compile_spec = TosaCompileSpec._from_list(lowered_backend_module.compile_specs)
 
         output_node = lowered_backend_module.original_module.graph.output_node()
         return run_tosa_graph(tosa_buffer, compile_spec.tosa_spec, inputs, output_node)
