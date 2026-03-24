@@ -12,14 +12,17 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
+#include <limits>
 #include <numeric>
 #include <random>
 #include <string>
 #include <vector>
 
+#include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/log.h>
@@ -30,6 +33,12 @@ namespace {
 using ::executorch::extension::from_blob;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
+
+constexpr int kAssistantRoleTokenCount = 3;
+constexpr int kFirstTextTokenCount = 1;
+constexpr int kTextOnlyCodecPrefixTokenCount = 5;
+constexpr int kTextOnlyCombinedPrefixTokenCount =
+    kTextOnlyCodecPrefixTokenCount - 1;
 
 template <typename T>
 float to_float(T value) {
@@ -70,6 +79,34 @@ void extract_float_tensor(
   }
 }
 
+std::string build_assistant_prompt_text(const std::string& text) {
+  return std::string("<|im_start|>assistant\n") + text +
+      "<|im_end|>\n<|im_start|>assistant\n";
+}
+
+void copy_token_slice(
+    const std::vector<float>& flat_embeds,
+    int token_start,
+    int token_count,
+    int dim,
+    std::vector<float>* out) {
+  const size_t start = static_cast<size_t>(token_start) * dim;
+  const size_t end = start + static_cast<size_t>(token_count) * dim;
+  out->assign(flat_embeds.begin() + start, flat_embeds.begin() + end);
+}
+
+void extract_last_token_slice(
+    const std::vector<float>& flat_values,
+    int token_count,
+    int stride,
+    std::vector<float>* out) {
+  const size_t start =
+      static_cast<size_t>(token_count - 1) * static_cast<size_t>(stride);
+  out->assign(
+      flat_values.begin() + start,
+      flat_values.begin() + start + static_cast<size_t>(stride));
+}
+
 } // namespace
 
 Qwen3TTSUnifiedRunner::Qwen3TTSUnifiedRunner(
@@ -86,14 +123,25 @@ Qwen3TTSUnifiedRunner::Qwen3TTSUnifiedRunner(
   load_metadata();
   load_methods();
 
+  if (!tokenizer_path.empty()) {
+    ET_LOG(Info, "Loading tokenizer from: %s", tokenizer_path.c_str());
+    tokenizer_ =
+        ::executorch::extension::llm::load_tokenizer(tokenizer_path);
+    if (tokenizer_ == nullptr) {
+      ET_LOG(Error, "Failed to load tokenizer: %s", tokenizer_path.c_str());
+    }
+  }
+
   ET_LOG(
       Info,
       "Unified runner: sample_rate=%d max_seq_len=%d talker_dim=%d "
-      "num_code_groups=%d",
+      "num_code_groups=%d text_prompt_prefill=%d tokenizer=%s",
       output_sample_rate_,
       max_seq_len_,
       talker_dim_,
-      num_code_groups_);
+      num_code_groups_,
+      text_prompt_prefill_token_count_,
+      tokenizer_ ? "loaded" : "none");
 }
 
 void Qwen3TTSUnifiedRunner::load_metadata() {
@@ -111,6 +159,35 @@ void Qwen3TTSUnifiedRunner::load_metadata() {
   try_int("num_code_groups", &num_code_groups_);
   try_int("num_quantizers", &num_quantizers_);
   try_int("codebook_size", &codebook_size_);
+  try_int("text_prompt_min_token_count", &text_prompt_min_token_count_);
+  try_int("text_prompt_prefill_token_count", &text_prompt_prefill_token_count_);
+  try_int(
+      "text_prompt_prefill_token_count_with_language",
+      &text_prompt_prefill_token_count_with_language_);
+  try_int(
+      "text_prompt_trailing_template_token_count",
+      &text_prompt_trailing_template_token_count_);
+
+  auto try_int64 = [&](const char* name, int64_t* out) {
+    auto result = module_->execute(name, empty);
+    if (result.ok()) {
+      *out = result.get()[0].toInt();
+    }
+  };
+  try_int64("tts_pad_token_id", &tts_pad_id_);
+  try_int64("tts_bos_token_id", &tts_bos_id_);
+  try_int64("tts_eod_token_id", &tts_eod_id_);
+  try_int64("codec_pad_id", &codec_pad_id_);
+  try_int64("codec_bos_id", &codec_bos_id_);
+  try_int64("codec_eos_id", &codec_eos_id_);
+  try_int64("codec_think_id", &codec_think_id_);
+  try_int64("codec_language_english_id", &codec_language_english_id_);
+  try_int64("codec_nothink_id", &codec_nothink_id_);
+  try_int64("codec_think_bos_id", &codec_think_bos_id_);
+  try_int64("codec_think_eos_id", &codec_think_eos_id_);
+  try_int64("im_start_token_id", &im_start_id_);
+  try_int64("assistant_token_id", &assistant_id_);
+  try_int64("newline_token_id", &newline_id_);
 }
 
 void Qwen3TTSUnifiedRunner::load_methods() {
@@ -261,6 +338,34 @@ bool Qwen3TTSUnifiedRunner::run_cp_head(
   return true;
 }
 
+bool Qwen3TTSUnifiedRunner::run_cp_generate(
+    const std::vector<float>& talker_hidden,
+    const std::vector<float>& code_0_embed,
+    std::vector<float>* cp_logits_flat,
+    std::vector<float>* embed_sum) {
+  if (!ensure_method("cp_generate")) return false;
+  auto hidden_tensor = from_blob(
+      const_cast<float*>(talker_hidden.data()),
+      {1, 1, talker_dim_},
+      ::executorch::aten::ScalarType::Float);
+  auto embed_tensor = from_blob(
+      const_cast<float*>(code_0_embed.data()),
+      {1, 1, talker_dim_},
+      ::executorch::aten::ScalarType::Float);
+
+  std::vector<EValue> inputs = {
+      EValue(*hidden_tensor), EValue(*embed_tensor)};
+  auto result = module_->execute("cp_generate", inputs);
+  if (!result.ok()) {
+    ET_LOG(Error, "cp_generate execution failed.");
+    return false;
+  }
+  auto outputs = result.get();
+  extract_float_tensor(outputs[0].toTensor(), cp_logits_flat);
+  extract_float_tensor(outputs[1].toTensor(), embed_sum);
+  return true;
+}
+
 bool Qwen3TTSUnifiedRunner::run_decode_audio(
     const std::vector<int64_t>& codes,
     int32_t codes_len,
@@ -307,63 +412,190 @@ int64_t Qwen3TTSUnifiedRunner::sample_token(
     const std::vector<float>& logits,
     int vocab_size,
     float temperature,
-    int top_k) {
+    int top_k,
+    float top_p) {
+  return sample_token(
+      logits,
+      vocab_size,
+      temperature,
+      top_k,
+      top_p,
+      1.0f,
+      nullptr,
+      nullptr,
+      -1);
+}
+
+int64_t Qwen3TTSUnifiedRunner::sample_token(
+    const std::vector<float>& logits,
+    int vocab_size,
+    float temperature,
+    int top_k,
+    float top_p,
+    float repetition_penalty,
+    const std::vector<int64_t>* generated_tokens,
+    const std::vector<int64_t>* suppress_tokens,
+    int64_t eos_token_id) {
+  std::vector<float> adjusted(logits.begin(), logits.begin() + vocab_size);
+
+  if (generated_tokens != nullptr && repetition_penalty > 1.0f) {
+    std::vector<int64_t> unique_tokens = *generated_tokens;
+    std::sort(unique_tokens.begin(), unique_tokens.end());
+    unique_tokens.erase(
+        std::unique(unique_tokens.begin(), unique_tokens.end()),
+        unique_tokens.end());
+    for (int64_t token : unique_tokens) {
+      if (token < 0 || token >= vocab_size) {
+        continue;
+      }
+      float& value = adjusted[static_cast<size_t>(token)];
+      value = value < 0.0f ? value * repetition_penalty
+                           : value / repetition_penalty;
+    }
+  }
+
+  if (suppress_tokens != nullptr) {
+    const float kNegInf = -std::numeric_limits<float>::infinity();
+    for (int64_t token : *suppress_tokens) {
+      if (token < 0 || token >= vocab_size) {
+        continue;
+      }
+      adjusted[static_cast<size_t>(token)] = kNegInf;
+    }
+  }
+
+  const bool preserve_eos = eos_token_id >= 0 && eos_token_id < vocab_size;
+  const float preserved_eos_logit =
+      preserve_eos ? adjusted[static_cast<size_t>(eos_token_id)]
+                   : -std::numeric_limits<float>::infinity();
+
   if (temperature <= 0.0f || temperature < 1e-6f) {
-    // Greedy: argmax.
     return static_cast<int64_t>(
-        std::max_element(logits.begin(), logits.begin() + vocab_size) -
-        logits.begin());
+        std::max_element(adjusted.begin(), adjusted.end()) - adjusted.begin());
   }
 
-  // Apply temperature.
-  std::vector<float> scaled(logits.begin(), logits.begin() + vocab_size);
-  for (auto& v : scaled) {
-    v /= temperature;
-  }
-
-  // Softmax.
-  float max_val = *std::max_element(scaled.begin(), scaled.end());
-  float sum = 0.0f;
-  for (auto& v : scaled) {
-    v = std::exp(v - max_val);
-    sum += v;
-  }
-  for (auto& v : scaled) {
-    v /= sum;
-  }
-
-  // Top-k filtering.
   if (top_k > 0 && top_k < vocab_size) {
-    std::vector<std::pair<float, int>> indexed(vocab_size);
+    std::vector<std::pair<float, int>> indexed;
+    indexed.reserve(vocab_size);
     for (int i = 0; i < vocab_size; ++i) {
-      indexed[i] = {scaled[i], i};
+      float value = adjusted[static_cast<size_t>(i)];
+      if (!std::isfinite(value)) {
+      continue;
     }
-    std::partial_sort(
-        indexed.begin(),
-        indexed.begin() + top_k,
-        indexed.end(),
-        [](const auto& a, const auto& b) { return a.first > b.first; });
-    std::vector<float> topk_probs(top_k);
-    std::vector<int> topk_indices(top_k);
-    float topk_sum = 0.0f;
-    for (int i = 0; i < top_k; ++i) {
-      topk_probs[i] = indexed[i].first;
-      topk_indices[i] = indexed[i].second;
-      topk_sum += topk_probs[i];
+      indexed.push_back({value, i});
     }
-    for (auto& p : topk_probs) {
-      p /= topk_sum;
+    if (static_cast<int>(indexed.size()) > top_k) {
+      std::partial_sort(
+          indexed.begin(),
+          indexed.begin() + top_k,
+          indexed.end(),
+          [](const auto& a, const auto& b) { return a.first > b.first; });
+      std::vector<char> keep(vocab_size, 0);
+      for (int i = 0; i < top_k; ++i) {
+        keep[static_cast<size_t>(indexed[i].second)] = 1;
+      }
+      for (int i = 0; i < vocab_size; ++i) {
+        if (!keep[static_cast<size_t>(i)]) {
+          adjusted[static_cast<size_t>(i)] =
+              -std::numeric_limits<float>::infinity();
+        }
+      }
     }
-
-    // Sample.
-    static std::mt19937 gen(42);
-    std::discrete_distribution<int> dist(topk_probs.begin(), topk_probs.end());
-    return static_cast<int64_t>(topk_indices[dist(gen)]);
   }
 
-  // Sample from full distribution.
+  if (top_p > 0.0f && top_p < 1.0f) {
+    float max_val = -std::numeric_limits<float>::infinity();
+    for (int i = 0; i < vocab_size; ++i) {
+      float value = adjusted[static_cast<size_t>(i)];
+      if (std::isfinite(value)) {
+        max_val = std::max(max_val, value);
+      }
+    }
+    if (std::isfinite(max_val)) {
+      std::vector<std::pair<float, int>> indexed;
+      indexed.reserve(vocab_size);
+      float total = 0.0f;
+      for (int i = 0; i < vocab_size; ++i) {
+        float value = adjusted[static_cast<size_t>(i)];
+        if (!std::isfinite(value)) {
+          continue;
+        }
+        const float prob = std::exp(value - max_val);
+        indexed.push_back({prob, i});
+        total += prob;
+      }
+      if (total > 0.0f) {
+        for (auto& [prob, idx] : indexed) {
+          prob /= total;
+        }
+        std::sort(
+            indexed.begin(),
+            indexed.end(),
+            [](const auto& a, const auto& b) { return a.first > b.first; });
+
+        std::vector<char> keep(vocab_size, 0);
+        float cumulative = 0.0f;
+        for (const auto& [prob, idx] : indexed) {
+          if (prob <= 0.0f) {
+            continue;
+          }
+          keep[static_cast<size_t>(idx)] = 1;
+          cumulative += prob;
+          if (cumulative >= top_p) {
+            break;
+          }
+        }
+        for (int i = 0; i < vocab_size; ++i) {
+          if (!keep[static_cast<size_t>(i)]) {
+            adjusted[static_cast<size_t>(i)] =
+                -std::numeric_limits<float>::infinity();
+          }
+        }
+      }
+    }
+  }
+
+  if (preserve_eos && std::isfinite(preserved_eos_logit)) {
+    adjusted[static_cast<size_t>(eos_token_id)] = preserved_eos_logit;
+  }
+
+  std::vector<float> scaled(adjusted.begin(), adjusted.end());
+  for (auto& v : scaled) {
+    if (std::isfinite(v)) {
+      v /= temperature;
+    }
+  }
+
+  float max_val = -std::numeric_limits<float>::infinity();
+  for (float value : scaled) {
+    if (std::isfinite(value)) {
+      max_val = std::max(max_val, value);
+    }
+  }
+
+  std::vector<float> probs(vocab_size, 0.0f);
+  float sum = 0.0f;
+  if (std::isfinite(max_val)) {
+    for (int i = 0; i < vocab_size; ++i) {
+      float value = scaled[static_cast<size_t>(i)];
+      if (!std::isfinite(value)) {
+        continue;
+      }
+      const float prob = std::exp(value - max_val);
+      probs[static_cast<size_t>(i)] = prob;
+      sum += prob;
+    }
+  }
+  if (sum <= 0.0f) {
+    return static_cast<int64_t>(
+        std::max_element(adjusted.begin(), adjusted.end()) - adjusted.begin());
+  }
+  for (auto& prob : probs) {
+    prob /= sum;
+  }
+
   static std::mt19937 gen(42);
-  std::discrete_distribution<int> dist(scaled.begin(), scaled.end());
+  std::discrete_distribution<int> dist(probs.begin(), probs.end());
   return static_cast<int64_t>(dist(gen));
 }
 
@@ -414,6 +646,23 @@ void Qwen3TTSUnifiedRunner::warmup_decode() {
   if (!ensure_method("decode_audio")) return;
 }
 
+void Qwen3TTSUnifiedRunner::warmup_all() {
+  ensure_method("encode_text");
+  ensure_method("talker");
+  ensure_method("codec_embed");
+  ensure_method("code_predictor");
+  ensure_method("cp_head");
+  ET_LOG(Info, "Warming up code_predictor + cp_head...");
+  std::vector<float> dummy_cp_input(static_cast<size_t>(talker_dim_) * 2, 0.0f);
+  std::vector<int64_t> dummy_cp_pos = {0, 1};
+  std::vector<float> dummy_cp_hidden;
+  std::vector<float> dummy_cp_logits;
+  if (run_code_predictor(dummy_cp_input, 2, dummy_cp_pos, &dummy_cp_hidden)) {
+    run_cp_head(dummy_cp_hidden, 0, &dummy_cp_logits);
+  }
+  ensure_method("decode_audio");
+}
+
 bool Qwen3TTSUnifiedRunner::decode_codes_file(
     const std::string& codes_path,
     std::vector<float>* waveform) {
@@ -435,33 +684,412 @@ bool Qwen3TTSUnifiedRunner::decode_codes_file(
 // Full text-to-audio pipeline (placeholder for tokenizer integration)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Embedding helpers
+// ---------------------------------------------------------------------------
+
+bool Qwen3TTSUnifiedRunner::get_text_embed(
+    int64_t token_id,
+    std::vector<float>* embed) {
+  std::vector<int64_t> ids = {token_id};
+  std::vector<float> projected;
+  if (!run_encode_text(ids, &projected)) {
+    return false;
+  }
+  *embed = std::move(projected);
+  return true;
+}
+
+void Qwen3TTSUnifiedRunner::vec_add(
+    std::vector<float>& dst,
+    const std::vector<float>& src) {
+  for (size_t i = 0; i < dst.size() && i < src.size(); ++i) {
+    dst[i] += src[i];
+  }
+}
+
+void Qwen3TTSUnifiedRunner::vec_zero(std::vector<float>& v) {
+  std::fill(v.begin(), v.end(), 0.0f);
+}
+
+// ---------------------------------------------------------------------------
+// Full text-to-audio pipeline
+// ---------------------------------------------------------------------------
+
 bool Qwen3TTSUnifiedRunner::synthesize(
     const std::string& text,
     const std::string& language,
     const SynthesizeConfig& config,
     std::vector<float>* waveform) {
-  // TODO: Integrate tiktoken tokenizer for text tokenization.
-  // For now, this method demonstrates the pipeline using the .pte methods.
-  // The full pipeline requires:
-  // 1. Tokenize text (tiktoken C++)
-  // 2. encode_text(token_ids) -> projected text embeddings
-  // 3. Assemble composite prefill (codec control tokens + projected text)
-  // 4. talker(prefill) -> logits, hidden
-  // 5. Autoregressive loop:
-  //    a. Sample code_0 from logits
-  //    b. codec_embed(code_0, group=0) -> main embed
-  //    c. code_predictor(prefill=[hidden, main_embed])
-  //    d. For i in 1..15: cp_head -> sample code_i, codec_embed -> embed,
-  //       code_predictor(step)
-  //    e. Sum all 16 embeddings + next text embed -> next input
-  //    f. talker(decode_step) -> next logits, hidden
-  // 6. decode_audio(accumulated codes) -> waveform
+  if (!tokenizer_) {
+    ET_LOG(
+        Error,
+        "Tokenizer not loaded. Provide --tokenizer_path for text synthesis.");
+    return false;
+  }
 
+  std::string language_lower = language;
+  std::transform(
+      language_lower.begin(),
+      language_lower.end(),
+      language_lower.begin(),
+      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  const bool use_language_prefix = language_lower == "english";
+  if (!language.empty() && language_lower != "auto" && !use_language_prefix) {
+    ET_LOG(
+        Info,
+        "Language '%s' is not implemented in the unified text-only path yet; "
+        "continuing with the default text-only contract.",
+        language.c_str());
+  } else if (use_language_prefix) {
+    ET_LOG(
+        Info,
+        "Using English language-conditioned codec prefix (language_id=%lld).",
+        static_cast<long long>(codec_language_english_id_));
+  }
+
+  // 1. Tokenize the assistant-wrapped prompt. This mirrors the upstream helper
+  // and the mlx-audio reference path for text-only prompting.
+  auto prompt_text = build_assistant_prompt_text(text);
+  auto encode_result = tokenizer_->encode(prompt_text, /*bos=*/0, /*eos=*/0);
+  if (!encode_result.ok()) {
+    ET_LOG(Error, "Failed to tokenize assistant prompt text.");
+    return false;
+  }
+  auto prompt_token_ids_raw = encode_result.get();
+  std::vector<int64_t> prompt_token_ids(
+      prompt_token_ids_raw.begin(), prompt_token_ids_raw.end());
+  const int prompt_token_count = static_cast<int>(prompt_token_ids.size());
+  ET_LOG(Info, "Tokenized assistant prompt: %d tokens", prompt_token_count);
+  if (prompt_token_count < text_prompt_min_token_count_) {
+    ET_LOG(
+        Error,
+        "Assistant prompt is too short (%d tokens, need at least %d).",
+        prompt_token_count,
+        text_prompt_min_token_count_);
+    return false;
+  }
+
+  std::vector<float> prompt_embeds_flat;
+  if (!run_encode_text(prompt_token_ids, &prompt_embeds_flat)) {
+    return false;
+  }
+  if (static_cast<int>(prompt_embeds_flat.size()) !=
+      prompt_token_count * talker_dim_) {
+    ET_LOG(
+        Error,
+        "encode_text returned unexpected size: got %zu, expected %d.",
+        prompt_embeds_flat.size(),
+        prompt_token_count * talker_dim_);
+    return false;
+  }
+
+  // 2. Split prompt embeddings following the text-only contract:
+  //    role = first 3 tokens, first_text = token 3, trailing = tokens 4:-5 + tts_eos.
+  std::vector<float> role_embed;
+  copy_token_slice(
+      prompt_embeds_flat,
+      0,
+      kAssistantRoleTokenCount,
+      talker_dim_,
+      &role_embed);
+
+  std::vector<float> first_text_embed;
+  copy_token_slice(
+      prompt_embeds_flat,
+      kAssistantRoleTokenCount,
+      kFirstTextTokenCount,
+      talker_dim_,
+      &first_text_embed);
+
+  // 3. Get text-side special embeddings in one batch.
+  std::vector<int64_t> tts_special_ids = {tts_bos_id_, tts_eod_id_, tts_pad_id_};
+  std::vector<float> tts_special_flat;
+  if (!run_encode_text(tts_special_ids, &tts_special_flat)) {
+    return false;
+  }
+  std::vector<float> tts_bos_embed;
+  copy_token_slice(tts_special_flat, 0, 1, talker_dim_, &tts_bos_embed);
+  std::vector<float> tts_eos_embed;
+  copy_token_slice(tts_special_flat, 1, 1, talker_dim_, &tts_eos_embed);
+  std::vector<float> tts_pad_embed;
+  copy_token_slice(tts_special_flat, 2, 1, talker_dim_, &tts_pad_embed);
+
+  const int trailing_prompt_token_count =
+      prompt_token_count - kAssistantRoleTokenCount - kFirstTextTokenCount -
+      text_prompt_trailing_template_token_count_ + 1;
+  std::vector<std::vector<float>> trailing_text_embeds;
+  trailing_text_embeds.reserve(static_cast<size_t>(trailing_prompt_token_count));
+  for (int i = kAssistantRoleTokenCount + kFirstTextTokenCount;
+       i < prompt_token_count - text_prompt_trailing_template_token_count_;
+       ++i) {
+    std::vector<float> token_embed;
+    copy_token_slice(prompt_embeds_flat, i, 1, talker_dim_, &token_embed);
+    trailing_text_embeds.push_back(std::move(token_embed));
+  }
+  trailing_text_embeds.push_back(tts_eos_embed);
+
+  // 4. Get codec control embeddings for the text-only prefix.
+  std::vector<float> codec_nothink_embed, codec_think_embed, codec_think_bos_embed;
+  std::vector<float> codec_language_embed, codec_think_eos_embed;
+  std::vector<float> codec_pad_embed, codec_bos_embed;
+  if (use_language_prefix) {
+    if (!run_codec_embed(codec_think_id_, 0, &codec_think_embed)) {
+      return false;
+    }
+    if (!run_codec_embed(
+            codec_language_english_id_, 0, &codec_language_embed)) {
+      return false;
+    }
+  } else if (!run_codec_embed(codec_nothink_id_, 0, &codec_nothink_embed)) {
+    return false;
+  }
+  if (!run_codec_embed(codec_think_bos_id_, 0, &codec_think_bos_embed))
+    return false;
+  if (!run_codec_embed(codec_think_eos_id_, 0, &codec_think_eos_embed))
+    return false;
+  if (!run_codec_embed(codec_pad_id_, 0, &codec_pad_embed)) return false;
+  if (!run_codec_embed(codec_bos_id_, 0, &codec_bos_embed)) return false;
+
+  const int prefill_len = use_language_prefix
+      ? text_prompt_prefill_token_count_with_language_
+      : text_prompt_prefill_token_count_;
+  if (static_cast<int>(trailing_text_embeds.size()) != trailing_prompt_token_count) {
+    ET_LOG(
+        Error,
+        "Trailing prompt split mismatch: expected=%d got=%zu.",
+        trailing_prompt_token_count,
+        trailing_text_embeds.size());
+    return false;
+  }
+  if (config.max_new_tokens < trailing_prompt_token_count) {
+    ET_LOG(
+        Error,
+        "max_new_tokens=%d is too small to consume the trailing prompt budget=%d.",
+        config.max_new_tokens,
+        trailing_prompt_token_count);
+    return false;
+  }
+  if (prefill_len + config.max_new_tokens > max_seq_len_) {
+    ET_LOG(
+        Error,
+        "Prompt budget exceeds talker max_seq_len: prefill=%d max_new_tokens=%d "
+        "max_seq_len=%d.",
+        prefill_len,
+        config.max_new_tokens,
+        max_seq_len_);
+    return false;
+  }
+
+  // 5. Build composite prefill embeddings.
+  //    Text-only schedule:
+  //    pos 0-2: role tokens from the assistant-wrapped prompt
+  //    auto:    pos 3-5 = tts_pad + codec_nothink/think_bos/think_eos,
+  //             pos 6 = tts_bos + codec_pad, pos 7 = first_text + codec_bos
+  //    English: pos 3-6 = tts_pad + codec_think/think_bos/lang/think_eos,
+  //             pos 7 = tts_bos + codec_pad, pos 8 = first_text + codec_bos
+  int dim = talker_dim_;
+
+  std::vector<float> prefill_embeds(prefill_len * dim, 0.0f);
+  auto set_pos = [&](int pos, const std::vector<float>& v) {
+    std::copy(v.begin(), v.begin() + dim, prefill_embeds.begin() + pos * dim);
+  };
+  auto add_pos = [&](int pos, const std::vector<float>& v) {
+    for (int i = 0; i < dim; ++i) {
+      prefill_embeds[pos * dim + i] += v[i];
+    }
+  };
+
+  // Role tokens.
+  for (int i = 0; i < kAssistantRoleTokenCount; ++i) {
+    std::vector<float> token_embed;
+    copy_token_slice(role_embed, i, 1, dim, &token_embed);
+    set_pos(i, token_embed);
+  }
+
+  // Combined codec/text prefix.
+  if (use_language_prefix) {
+    set_pos(3, tts_pad_embed);
+    add_pos(3, codec_think_embed);
+    set_pos(4, tts_pad_embed);
+    add_pos(4, codec_think_bos_embed);
+    set_pos(5, tts_pad_embed);
+    add_pos(5, codec_language_embed);
+    set_pos(6, tts_pad_embed);
+    add_pos(6, codec_think_eos_embed);
+    set_pos(7, tts_bos_embed);
+    add_pos(7, codec_pad_embed);
+    set_pos(8, first_text_embed);
+    add_pos(8, codec_bos_embed);
+  } else {
+    set_pos(3, tts_pad_embed);
+    add_pos(3, codec_nothink_embed);
+    set_pos(4, tts_pad_embed);
+    add_pos(4, codec_think_bos_embed);
+    set_pos(5, tts_pad_embed);
+    add_pos(5, codec_think_eos_embed);
+    set_pos(6, tts_bos_embed);
+    add_pos(6, codec_pad_embed);
+    set_pos(7, first_text_embed);
+    add_pos(7, codec_bos_embed);
+  }
+
+  // 6. Run talker prefill.
+  std::vector<int64_t> prefill_pos(prefill_len);
+  std::iota(prefill_pos.begin(), prefill_pos.end(), 0);
+
+  std::vector<float> logits, hidden;
+  if (!run_talker(prefill_embeds, prefill_len, prefill_pos, &logits, &hidden)) {
+    return false;
+  }
+  ET_LOG(Info, "Talker prefill done (seq_len=%d)", prefill_len);
+
+  // 7. Autoregressive generation loop.
+  std::vector<std::vector<int64_t>> all_codes;
+  std::vector<int64_t> generated_code_0_tokens;
+  std::vector<int64_t> suppress_tokens;
+  suppress_tokens.reserve(1024);
+  for (int token_id = talker_vocab_size_ - 1024; token_id < talker_vocab_size_;
+       ++token_id) {
+    if (token_id != codec_eos_id_) {
+      suppress_tokens.push_back(token_id);
+    }
+  }
+  int talker_pos = prefill_len;
+  int trailing_idx = 0;
+
+  for (int step = 0; step < config.max_new_tokens; ++step) {
+    int64_t code_0 = sample_token(
+        logits,
+        talker_vocab_size_,
+        config.temperature,
+        config.top_k,
+        config.top_p,
+        config.repetition_penalty,
+        &generated_code_0_tokens,
+        &suppress_tokens,
+        codec_eos_id_);
+
+    if (code_0 == codec_eos_id_) {
+      ET_LOG(Info, "EOS at step %d", step);
+      break;
+    }
+    if (code_0 < 0 || code_0 >= codebook_size_) {
+      ET_LOG(
+          Error,
+          "Talker produced invalid primary codec id %lld at step %d",
+          static_cast<long long>(code_0),
+          step);
+      return false;
+    }
+    generated_code_0_tokens.push_back(code_0);
+
+    std::vector<float> main_embed;
+    if (!run_codec_embed(code_0, 0, &main_embed)) return false;
+
+    std::vector<int64_t> step_codes(num_code_groups_);
+    step_codes[0] = code_0;
+    std::vector<float> next_input_embed = main_embed;
+
+    std::vector<float> cp_prefill(static_cast<size_t>(talker_dim_) * 2);
+    std::copy(hidden.begin(), hidden.end(), cp_prefill.begin());
+    std::copy(main_embed.begin(), main_embed.end(), cp_prefill.begin() + talker_dim_);
+    std::vector<int64_t> cp_pos = {0, 1};
+    std::vector<float> cp_hidden;
+    if (!run_code_predictor(cp_prefill, 2, cp_pos, &cp_hidden)) {
+      return false;
+    }
+
+    for (int g = 0; g < num_code_groups_ - 1; ++g) {
+      std::vector<float> cp_logits;
+      if (!run_cp_head(cp_hidden, g, &cp_logits)) {
+        return false;
+      }
+      int64_t code = sample_token(
+          cp_logits,
+          codebook_size_,
+          config.temperature,
+          config.top_k,
+          config.top_p);
+      if (code < 0 || code >= codebook_size_) {
+        ET_LOG(
+            Error,
+            "Code predictor produced invalid codec id %lld at step %d group %d",
+            static_cast<long long>(code),
+            step,
+            g + 1);
+        return false;
+      }
+      step_codes[g + 1] = code;
+
+      std::vector<float> code_embed;
+      if (!run_codec_embed(code, g + 1, &code_embed)) {
+        return false;
+      }
+      vec_add(next_input_embed, code_embed);
+
+      if (g + 1 < num_code_groups_ - 1) {
+        std::vector<int64_t> cp_step_pos = {static_cast<int64_t>(g + 2)};
+        if (!run_code_predictor(code_embed, 1, cp_step_pos, &cp_hidden)) {
+          return false;
+        }
+      }
+    }
+
+    all_codes.push_back(step_codes);
+
+    if (trailing_idx < static_cast<int>(trailing_text_embeds.size())) {
+      vec_add(next_input_embed, trailing_text_embeds[trailing_idx]);
+      ++trailing_idx;
+    } else {
+      vec_add(next_input_embed, tts_pad_embed);
+    }
+
+    std::vector<int64_t> step_pos = {static_cast<int64_t>(talker_pos)};
+    if (!run_talker(next_input_embed, 1, step_pos, &logits, &hidden)) {
+      return false;
+    }
+    ++talker_pos;
+
+    if ((step + 1) % 10 == 0) {
+      ET_LOG(Info, "  Step %d/%d (pos=%d)", step + 1, config.max_new_tokens,
+             talker_pos);
+    }
+  }
+
+  int n_codes = static_cast<int>(all_codes.size());
   ET_LOG(
-      Error,
-      "Full text-to-audio synthesis not yet implemented. "
-      "Use --codes_path with precomputed codes for now.");
-  return false;
+      Info,
+      "Generated %d codec steps (%d text tokens consumed)",
+      n_codes,
+      trailing_idx + kFirstTextTokenCount);
+
+  if (n_codes == 0) {
+    ET_LOG(Error, "No codes generated.");
+    return false;
+  }
+
+  // 8. Flatten codes to [n_codes, num_code_groups] and decode audio.
+  std::vector<int64_t> flat_codes(
+      static_cast<size_t>(n_codes) * num_code_groups_);
+  for (int t = 0; t < n_codes; ++t) {
+    for (int g = 0; g < num_code_groups_; ++g) {
+      int64_t code = all_codes[t][g];
+      if (code < 0 || code >= codebook_size_) {
+        ET_LOG(
+            Error,
+            "Invalid decoder code %lld at frame %d group %d",
+            static_cast<long long>(code),
+            t,
+            g);
+        return false;
+      }
+      flat_codes[t * num_code_groups_ + g] = code;
+    }
+  }
+
+  ET_LOG(Info, "Decoding %d codes to audio...", n_codes);
+  return run_decode_audio(flat_codes, n_codes, num_code_groups_, waveform);
 }
 
 // ---------------------------------------------------------------------------

@@ -272,7 +272,7 @@ qwen3-tts-cpu:
 	cd examples/models/qwen3-tts && cmake --workflow --preset qwen3-tts-cpu
 	@echo ""
 	@echo "✓ Build complete!"
-	@echo "  Binary: cmake-out/examples/models/qwen3-tts/qwen3_tts_runner"
+	@echo "  Binary: cmake-out/examples/models/qwen3-tts/qwen3_tts_unified_runner"
 
 silero-vad-cpu:
 	@echo "==> Building and installing ExecuTorch..."

@@ -6,6 +6,51 @@ from typing import Dict, List, Tuple
 
 import torch
 import torch.nn as nn
+from transformers import modeling_rope_utils as hf_rope_utils
+from transformers.utils import generic as hf_generic
+
+if not hasattr(hf_generic, "check_model_inputs"):
+    def _identity_check_model_inputs(*args, **kwargs):
+        def decorator(fn):
+            return fn
+
+        return decorator
+
+    hf_generic.check_model_inputs = _identity_check_model_inputs
+
+if "default" not in hf_rope_utils.ROPE_INIT_FUNCTIONS:
+    def _compute_default_rope_parameters(config, device=None, seq_len=None, layer_type=None):
+        if hasattr(config, "standardize_rope_params"):
+            config.standardize_rope_params()
+        rope_parameters = getattr(config, "rope_parameters", None)
+        if rope_parameters is None:
+            base = getattr(config, "rope_theta", 10000.0)
+            partial_rotary_factor = getattr(config, "partial_rotary_factor", 1.0)
+        else:
+            rope_parameters = (
+                rope_parameters[layer_type] if layer_type is not None else rope_parameters
+            )
+            base = rope_parameters.get("rope_theta", getattr(config, "rope_theta", 10000.0))
+            partial_rotary_factor = rope_parameters.get(
+                "partial_rotary_factor",
+                getattr(config, "partial_rotary_factor", 1.0),
+            )
+        head_dim = getattr(config, "head_dim", None) or (
+            config.hidden_size // config.num_attention_heads
+        )
+        dim = int(head_dim * partial_rotary_factor)
+        inv_freq = 1.0 / (
+            base
+            ** (
+                torch.arange(0, dim, 2, dtype=torch.int64).to(
+                    device=device, dtype=torch.float
+                )
+                / dim
+            )
+        )
+        return inv_freq, 1.0
+
+    hf_rope_utils.ROPE_INIT_FUNCTIONS["default"] = _compute_default_rope_parameters
 
 from qwen_tts.core.tokenizer_12hz.configuration_qwen3_tts_tokenizer_v2 import (
     Qwen3TTSTokenizerV2DecoderConfig,

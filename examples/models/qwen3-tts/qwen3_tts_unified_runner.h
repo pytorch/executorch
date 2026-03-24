@@ -14,6 +14,7 @@
 #include <vector>
 
 #include <executorch/extension/module/module.h>
+#include <pytorch/tokenizers/tokenizer.h>
 
 namespace qwen3_tts {
 
@@ -22,13 +23,8 @@ struct SynthesizeConfig {
   float temperature = 1.0f;
   int top_k = -1;
   float top_p = -1.0f;
-  float repetition_penalty = -1.0f;
+  float repetition_penalty = 1.05f;
 };
-
-typedef void (*audio_callback_t)(
-    const float* samples,
-    int64_t num_samples,
-    void* user_data);
 
 class Qwen3TTSUnifiedRunner {
  public:
@@ -40,6 +36,7 @@ class Qwen3TTSUnifiedRunner {
   int max_seq_len() const { return max_seq_len_; }
   int num_code_groups() const { return num_code_groups_; }
   bool is_loaded() const { return module_ != nullptr; }
+  bool has_tokenizer() const { return tokenizer_ != nullptr; }
 
   // Full text-to-audio pipeline.
   bool synthesize(
@@ -53,8 +50,9 @@ class Qwen3TTSUnifiedRunner {
       const std::string& codes_path,
       std::vector<float>* waveform);
 
-  // Pre-load and warm up decode_audio method (XNNPACK init).
+  // Pre-load and warm up methods.
   void warmup_decode();
+  void warmup_all();
 
   bool write_wav_file(
       const std::string& output_wav_path,
@@ -89,6 +87,13 @@ class Qwen3TTSUnifiedRunner {
       int64_t head_idx,
       std::vector<float>* logits);
 
+  // Fused 15-step code predictor (replaces 15x code_predictor + cp_head calls).
+  bool run_cp_generate(
+      const std::vector<float>& talker_hidden,
+      const std::vector<float>& code_0_embed,
+      std::vector<float>* cp_logits_flat,
+      std::vector<float>* embed_sum);
+
   bool run_decode_audio(
       const std::vector<int64_t>& codes,
       int32_t codes_len,
@@ -101,18 +106,37 @@ class Qwen3TTSUnifiedRunner {
       int32_t* codes_len,
       int32_t* num_quantizers) const;
 
+  // Embedding helpers for synthesize().
+  bool get_text_embed(int64_t token_id, std::vector<float>* embed);
+  void vec_add(std::vector<float>& dst, const std::vector<float>& src);
+  void vec_zero(std::vector<float>& v);
+
   int64_t sample_token(
       const std::vector<float>& logits,
       int vocab_size,
       float temperature,
-      int top_k);
+      int top_k,
+      float top_p);
+
+  int64_t sample_token(
+      const std::vector<float>& logits,
+      int vocab_size,
+      float temperature,
+      int top_k,
+      float top_p,
+      float repetition_penalty,
+      const std::vector<int64_t>* generated_tokens,
+      const std::vector<int64_t>* suppress_tokens,
+      int64_t eos_token_id);
 
   void load_metadata();
   void load_methods();
   bool ensure_method(const std::string& method_name);
 
   std::unique_ptr<::executorch::extension::Module> module_;
+  std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
 
+  // Model metadata (from constant_methods).
   int output_sample_rate_ = 24000;
   int max_seq_len_ = 256;
   int talker_vocab_size_ = 3072;
@@ -120,6 +144,26 @@ class Qwen3TTSUnifiedRunner {
   int num_code_groups_ = 16;
   int num_quantizers_ = 16;
   int codebook_size_ = 2048;
+  int text_prompt_min_token_count_ = 9;
+  int text_prompt_prefill_token_count_ = 8;
+  int text_prompt_prefill_token_count_with_language_ = 9;
+  int text_prompt_trailing_template_token_count_ = 5;
+
+  // Special token IDs.
+  int64_t tts_pad_id_ = 151671;
+  int64_t tts_bos_id_ = 151672;
+  int64_t tts_eod_id_ = 151673;
+  int64_t codec_pad_id_ = 2148;
+  int64_t codec_bos_id_ = 2149;
+  int64_t codec_eos_id_ = 2150;
+  int64_t codec_think_id_ = 2154;
+  int64_t codec_language_english_id_ = 2050;
+  int64_t codec_nothink_id_ = 2155;
+  int64_t codec_think_bos_id_ = 2156;
+  int64_t codec_think_eos_id_ = 2157;
+  int64_t im_start_id_ = 151644;
+  int64_t assistant_id_ = 77091;
+  int64_t newline_id_ = 198;
 };
 
 } // namespace qwen3_tts

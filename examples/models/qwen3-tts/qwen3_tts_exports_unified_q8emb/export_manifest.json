@@ -1,0 +1,25 @@
+{
+  "backend": "xnnpack",
+  "dtype": "fp32",
+  "max_seq_len": 256,
+  "methods": [
+    "encode_text",
+    "talker",
+    "code_predictor",
+    "codec_embed",
+    "cp_head",
+    "cp_generate",
+    "decode_audio"
+  ],
+  "model_type": "qwen3_tts_unified",
+  "num_code_groups": 16,
+  "prompt_contract": "assistant_chat_text_v1",
+  "qembedding": "8w",
+  "qlinear": "8da4w",
+  "requires_tokenizer": true,
+  "supports_text_only_synthesis": true,
+  "supports_voice_clone_synthesis": false,
+  "text_prompt_min_token_count": 9,
+  "text_prompt_prefill_token_count": 8,
+  "text_prompt_trailing_template_token_count": 5
+}

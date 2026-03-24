@@ -1,64 +1,39 @@
-## Qwen3-TTS (XNNPACK)
+## Qwen3-TTS
 
-ExecuTorch implementation of `Qwen/Qwen3-TTS-12Hz-0.6B-Base` with XNNPACK backend.
+ExecuTorch implementation of `Qwen/Qwen3-TTS-12Hz-0.6B-Base`.
 
-Two deployment modes:
+Supports three backends: **XNNPACK** (CPU), **Metal/AOTI** (Apple GPU), and **portable** (fallback).
 
-1. **Unified single-PTE** (recommended for mobile): one `model.pte` with all
-   pipeline stages (text encoding, talker, code predictor, decoder). Single file
-   deployment with a C++ runner.
-2. **Multi-file** (legacy): separate `.pte` files for decoder/talker/code predictor.
+### Performance
 
-### Performance (Apple Silicon CPU, 8da4w quantized)
+| Backend | 26 codes decode | Realtime | Export time |
+|---------|----------------|----------|-------------|
+| XNNPACK (8da4w quantized) | **728 ms** | 2.9x RT | ~20 min |
+| Metal/AOTI (fp32) | **728 ms** | 2.9x RT | ~8 min |
+| Portable (no backend) | 72,761 ms | 0.03x RT | ~2 min |
 
-| Mode | Input | Decode time | Audio | Realtime factor |
-|---|---|---|---|---|
-| Unified (28 speech codes) | trimmed codes | **0.8s** | 2.2s | 2.8x RT |
-| Unified (91 raw codes) | full codes | **2.0s** | 7.3s | 3.6x RT |
+Model load + warmup: ~5-7s (one-time at startup).
 
-Model load + XNNPACK warmup: ~6s (one-time at app startup).
+### Model Sizes
 
-### Model sizes
-
-| Config | Size | Notes |
-|---|---|---|
-| 8da4w + 4w embedding | **1,027 MB** | Recommended for mobile |
-| 8da4w + 8w embedding | 1,176 MB | Better quality |
-| 8da4w (no emb quant) | 2,065 MB | Full precision embeddings |
-
-## Files
-
-**Export:**
-- `export_unified.py`: single-PTE multi-method export (recommended)
-- `export_qwen3_tts.py`: decoder-only export (legacy bucketed)
-- `export_talker.py`: talker/code predictor export (legacy)
-
-**Runner:**
-- `main_unified.cpp`, `qwen3_tts_unified_runner.*`: unified C++ runner
-- `main.cpp`, `qwen3_tts_runner.*`: legacy decoder-only runner
-
-**Model preparation:**
-- `convert_weights.py`: converts HF snapshot into decoder/talker artifacts
-- `convert_talker_weights.py`: converts talker weights to Meta/Llama format
-- `generate_codes.py`: generates codec tokens from text (Python)
-- `model.py`: decoder export wrapper and binary codec I/O
-
-**Config:**
-- `config/talker_config.json`: talker architecture (28L, dim=1024)
-- `config/code_predictor_config.json`: code predictor architecture (5L, dim=1024)
+| Config | Size |
+|--------|------|
+| XNNPACK 8da4w + 4w embedding | **1,027 MB** |
+| XNNPACK 8da4w (no emb quant) | 2,065 MB |
+| Metal fp32 (mixed w/ XNNPACK decoder) | 4,636 MB |
 
 ## Prerequisites
 
 ```bash
 conda activate executorch
 pip install qwen-tts
+
+# For Metal backend only:
+sudo mkdir -p /opt/llvm-openmp/lib
+sudo ln -sf /opt/homebrew/Cellar/libomp/*/lib/libomp.dylib /opt/llvm-openmp/lib/libomp.dylib
 ```
 
-Access to `Qwen/Qwen3-TTS-12Hz-0.6B-Base` on Hugging Face.
-
-## Quick Start (Unified)
-
-### 1) Convert weights
+## 1) Convert Weights
 
 ```bash
 python examples/models/qwen3-tts/convert_weights.py \
@@ -72,75 +47,145 @@ python examples/models/qwen3-tts/convert_talker_weights.py \
   --output-dir examples/models/qwen3-tts/qwen3_tts_artifacts/talker_converted
 ```
 
-### 2) Export unified model
+## 2) Export
+
+### XNNPACK (CPU, quantized — recommended for mobile)
 
 ```bash
 python examples/models/qwen3-tts/export_unified.py \
   --converted-dir examples/models/qwen3-tts/qwen3_tts_artifacts \
   --talker-dir examples/models/qwen3-tts/qwen3_tts_artifacts/talker_converted \
-  --output-dir examples/models/qwen3-tts/qwen3_tts_exports_unified \
-  --backend xnnpack --qlinear 8da4w --qembedding 4w
+  --output-dir examples/models/qwen3-tts/qwen3_tts_exports_xnnpack \
+  --backend xnnpack --qlinear 8da4w
 ```
 
-This produces a single `model.pte` (~1 GB) containing 6 methods:
-`encode_text`, `talker`, `code_predictor`, `codec_embed`, `cp_head`, `decode_audio`.
+### Metal/AOTI (Apple GPU — recommended for Mac)
 
-### 3) Generate test codes
+```bash
+python examples/models/qwen3-tts/export_unified.py \
+  --converted-dir examples/models/qwen3-tts/qwen3_tts_artifacts \
+  --talker-dir examples/models/qwen3-tts/qwen3_tts_artifacts/talker_converted \
+  --output-dir examples/models/qwen3-tts/qwen3_tts_exports_metal \
+  --backend metal --dtype fp32
+```
+
+Metal exports talker/code predictor to GPU, decoder stays on XNNPACK CPU
+(Metal lacks `cumsum` fallback needed by the decoder).
+
+### Portable (no acceleration — for debugging)
+
+```bash
+python examples/models/qwen3-tts/export_unified.py \
+  --converted-dir examples/models/qwen3-tts/qwen3_tts_artifacts \
+  --talker-dir examples/models/qwen3-tts/qwen3_tts_artifacts/talker_converted \
+  --output-dir examples/models/qwen3-tts/qwen3_tts_exports_portable \
+  --backend portable --dtype fp32
+```
+
+## 3) Generate Test Codes
 
 ```bash
 python examples/models/qwen3-tts/generate_codes.py \
   --model-id-or-path Qwen/Qwen3-TTS-12Hz-0.6B-Base \
   --text "Hello from ExecuTorch." \
-  --output-codes /tmp/test_codes.bin \
-  --trim-silence
+  --output-codes /tmp/hello_codes.bin
 ```
 
-### 4) Build runner
+## 4) Build Runner
 
 ```bash
-make qwen3-tts-cpu
+cmake --build cmake-out/examples/models/qwen3-tts --target qwen3_tts_unified_runner
 ```
 
-### 5) Run
+The runner automatically links XNNPACK and Metal backends if built.
+
+## 5) Run
+
+### XNNPACK decode
+
+```bash
+cmake-out/examples/models/qwen3-tts/qwen3_tts_unified_runner \
+  --model_path examples/models/qwen3-tts/qwen3_tts_exports_xnnpack/model.pte \
+  --codes_path /tmp/hello_codes.bin \
+  --output_wav /tmp/hello_xnnpack.wav
+```
+
+### XNNPACK text-only end to end
 
 ```bash
 cmake-out/examples/models/qwen3-tts/qwen3_tts_unified_runner \
   --model_path examples/models/qwen3-tts/qwen3_tts_exports_unified/model.pte \
-  --codes_path /tmp/test_codes.bin \
-  --output_wav output.wav
+  --tokenizer_path examples/models/qwen3-tts/qwen3-tts-12Hz-0.6B-Base/tokenizer.json \
+  --text "Hello from ExecuTorch." \
+  --max_new_tokens 200 \
+  --output_wav /tmp/hello_text.wav
 ```
 
-The runner automatically trims leading silence and reports decode performance.
+### Metal decode
+
+```bash
+cmake-out/examples/models/qwen3-tts/qwen3_tts_unified_runner \
+  --model_path examples/models/qwen3-tts/qwen3_tts_exports_metal/model.pte \
+  --codes_path /tmp/hello_codes.bin \
+  --output_wav /tmp/hello_metal.wav
+```
+
+### Play output
+
+```bash
+afplay /tmp/hello_xnnpack.wav
+afplay /tmp/hello_metal.wav
+```
 
 ## Architecture
 
-The unified `.pte` contains 6 named methods following the
-[Parakeet multi-method pattern](../parakeet/):
+Single `model.pte` with 7 named methods:
 
-```
-text → tokenize → encode_text → projected embeddings
-  → assemble composite prefill (codec control + text embeddings)
-  → talker(prefill) → logits, hidden
-  → loop until EOS:
-      sample code_0, embed via codec_embed(group=0)
-      code_predictor(prefill=[hidden, embed])
-      for i in 1..15:
-          cp_head(hidden, i-1) → sample code_i
-          codec_embed(code_i, group=i) → embed
-          code_predictor(step)
-      sum all 16 embeds + text embed → next input
-      talker(decode_step) → next logits, hidden
-  → decode_audio(codes) → waveform → WAV
-```
+| Method | Backend | Purpose |
+|--------|---------|---------|
+| `encode_text` | Metal/XNNPACK | Text tokens → projected embeddings |
+| `talker` | Metal/XNNPACK | 28-layer transformer with KV cache |
+| `code_predictor` | Metal/XNNPACK | 5-layer sub-talker with KV cache |
+| `codec_embed` | Portable | Codec token embedding lookup |
+| `cp_head` | Metal/XNNPACK | Per-group LM head selection |
+| `cp_generate` | Metal/XNNPACK | Fused 15-step code predictor (7121 nodes) |
+| `decode_audio` | XNNPACK | Vocoder: codes → waveform (dynamic shapes) |
+
+The runner calls `decode_audio` for codes→audio (decode-only mode) or orchestrates
+all methods for text-only full text→audio synthesis through the assistant-wrapped
+prompt contract used by the Python helper.
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `export_unified.py` | Multi-method export (XNNPACK/Metal/portable) |
+| `main_unified.cpp` | CLI runner with decode-only and text modes |
+| `qwen3_tts_unified_runner.*` | C++ runner with lazy loading and warmup |
+| `generate_codes.py` | Python talker: text → codec tokens |
+| `convert_weights.py` | HF → ExecuTorch weight conversion |
+| `convert_talker_weights.py` | Talker weights to Llama format |
+| `model.py` | Export wrappers and binary codec I/O |
+| `metal_benchmark.md` | Metal backend benchmark results |
+| `single_export.md` | Development progress log |
 
 ## Notes
 
-- The decoder uses dynamic shapes (no bucketing needed). The `CausalConvNet`
-  padding was patched to use integer ceiling division instead of `math.ceil`
-  for `torch.export` compatibility.
-- XNNPACK delegate initialization has a one-time ~5s cost per method on first
-  call. The runner handles this via `warmup_decode()` during model loading.
-- Leading silence in streaming mode codes is automatically trimmed by the
-  runner (`--trim_silence`, default on).
-- Full text-to-audio synthesis (`--text` mode) requires tiktoken C++ tokenizer
-  integration (not yet implemented). Use `generate_codes.py` for now.
+- The decoder uses dynamic shapes with patched `CausalConvNet` padding
+  (`math.ceil` → integer ceiling division for `torch.export` compatibility).
+- XNNPACK has a one-time ~5s warmup per method on first call. The runner
+  handles this via `warmup_decode()` during model loading.
+- Leading silence is automatically trimmed (`--trim_silence`, default on).
+- Text-only `--text` mode now runs directly in `qwen3_tts_unified_runner` with
+  dynamic prompt length, explicit prompt-budget checks, and assistant-wrapped
+  prompt formatting aligned to `generate_codes.py`.
+- The recommended tokenizer path for local bring-up is
+  `examples/models/qwen3-tts/qwen3-tts-12Hz-0.6B-Base/tokenizer.json`.
+- Unified export manifests now record the text prompt contract and the current
+  7-method surface, including `cp_generate`.
+- Text mode still requires an external tokenizer path; tokenizer packaging is
+  tracked in `TODO.md`.
+- Metal/AOTI uses AOTInductor to compile graphs into `.so` with Metal kernels.
+  Export takes ~8 min but runtime is GPU-accelerated.
+- Voice clone / `ref_audio` / `ref_text`, full ICL prompting, and full sampling
+  parity remain deferred. See `TODO.md` for the no-compromise backlog.

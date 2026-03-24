@@ -453,3 +453,291 @@ each chunk independently (simpler but less efficient).
   Options: batched/parallel inner loop, model distillation, or fewer code groups
 - [ ] Text embedding + text_projection in C++ (currently requires Python)
 - [ ] Prefill export (dynamic shape or bucketed) for prompt processing
+
+## 2026-03-23
+
+### 9) Unified text-only prompt-contract rewrite
+
+Goal: internalize the text-only `generate_codes.py` prompt semantics into
+`qwen3_tts_unified_runner` so the unified C++ binary can accept direct text
+input with dynamic prompt length instead of the previous fixed 8-slot
+approximation.
+
+Changes landed in source:
+
+- Added a shared prompt-contract helper (`text_prompt_contract.py`) with tests
+  for:
+  - assistant-wrapped prompt formatting
+  - prompt embedding split (`role`, `first_text`, `trailing + tts_eos`)
+  - prompt-budget validation (`prefill`, `max_new_tokens`, `max_seq_len`)
+- Rewrote `qwen3_tts_unified_runner.cpp` to:
+  - tokenize the assistant-wrapped prompt instead of raw text
+  - run `encode_text` over the whole prompt once
+  - fold the first text token into prefill
+  - feed trailing text hidden states during autoregressive decode
+  - enforce prompt-budget guardrails before generation
+- Updated the unified runner CLI to:
+  - reject ambiguous `--codes_path` + `--text` usage
+  - require `--tokenizer_path` for text mode
+  - wire `top_p` consistently through the public interface
+- Synced unified export manifests and export metadata with the current 7-method
+  surface, including `cp_generate` and the text-prompt contract fields.
+- Added `TODO.md` as the explicit no-compromise backlog.
+
+Verification:
+
+Prompt/metadata/runner-contract tests:
+
+```bash
+python -m unittest \
+  examples.models.qwen3-tts.tests.test_unified_prompt_flow \
+  examples.models.qwen3-tts.tests.test_unified_metadata \
+  examples.models.qwen3-tts.tests.test_unified_runner_contract
+```
+
+Result: **PASS** (`11 tests`)
+
+Unified runner rebuild:
+
+```bash
+cmake --build cmake-out/examples/models/qwen3-tts --target qwen3_tts_unified_runner
+```
+
+Result: **PASS**
+
+Tokenizer materialization for text-mode verification:
+
+```bash
+python - <<'PY'
+from transformers import AutoTokenizer
+from pathlib import Path
+out_dir = Path('examples/models/qwen3-tts/tokenizer_cache')
+out_dir.mkdir(parents=True, exist_ok=True)
+tok = AutoTokenizer.from_pretrained('Qwen/Qwen3-TTS-12Hz-0.6B-Base', trust_remote_code=True)
+tok.save_pretrained(out_dir)
+print(out_dir / 'tokenizer.json')
+PY
+```
+
+Result: **PASS** (`examples/models/qwen3-tts/tokenizer_cache/tokenizer.json`)
+
+Text-mode smoke run against the existing checked-in unified artifact:
+
+```bash
+cmake-out/examples/models/qwen3-tts/qwen3_tts_unified_runner \
+  --model_path examples/models/qwen3-tts/qwen3_tts_exports_unified/model.pte \
+  --tokenizer_path examples/models/qwen3-tts/tokenizer_cache/tokenizer.json \
+  --text "Hello from ExecuTorch." \
+  --max_new_tokens 128 \
+  --output_wav /tmp/qwen3_tts_short.wav
+```
+
+Result: **FAIL (stale artifact)**
+
+- The updated runner successfully reached the new assistant-wrapped prompt path
+  and completed talker prefill.
+- The existing `model.pte` is stale: it does **not** contain `cp_generate` and
+  does **not** expose the new prompt-contract constant methods.
+- A fresh unified re-export is required before the text-only end-to-end path can
+  be verified against a current artifact.
+
+Follow-up:
+
+- Re-export `qwen3_tts_exports_unified/model.pte` from the updated
+  `export_unified.py`.
+- Re-run short and longer text prompts through `qwen3_tts_unified_runner`.
+- Confirm the fresh artifact exposes `cp_generate` and the prompt-contract
+  metadata methods.
+
+### 10) Fresh unified export + real CLI verification
+
+Tokenizer source requested for runtime verification:
+
+- `examples/models/qwen3-tts/qwen3-tts-12Hz-0.6B-Base`
+
+Tokenizer materialization:
+
+```bash
+python - <<'PY'
+from transformers import AutoTokenizer
+from pathlib import Path
+model_dir = Path('examples/models/qwen3-tts/qwen3-tts-12Hz-0.6B-Base')
+tok = AutoTokenizer.from_pretrained(model_dir, trust_remote_code=True)
+tok.save_pretrained(model_dir)
+print(model_dir / 'tokenizer.json')
+PY
+```
+
+Result: **PASS**
+
+- Wrote `examples/models/qwen3-tts/qwen3-tts-12Hz-0.6B-Base/tokenizer.json`
+- Note: Transformers warns about the Mistral regex path here, but the
+  ExecuTorch tokenizer loader successfully falls back to PCRE2 at runtime.
+
+Makefile runner build requested by user:
+
+```bash
+make qwen3-tts-cpu
+```
+
+Result: **PASS**
+
+- `CMakePresets.json` was updated so the `qwen3-tts-cpu` workflow builds
+  `qwen3_tts_unified_runner` instead of the legacy `qwen3_tts_runner`.
+- `Makefile` was updated so the success message points at the unified binary.
+
+Fresh unified export:
+
+```bash
+conda run -n executorch python examples/models/qwen3-tts/export_unified.py \
+  --converted-dir examples/models/qwen3-tts/qwen3_tts_artifacts \
+  --talker-dir examples/models/qwen3-tts/qwen3_tts_artifacts/talker_converted \
+  --output-dir examples/models/qwen3-tts/qwen3_tts_exports_unified \
+  --backend xnnpack \
+  --qlinear 8da4w
+```
+
+Result: **PASS** (`elapsed ~24.0 min`)
+
+- Saved fresh `qwen3_tts_exports_unified/model.pte` (`2378.5 MB`)
+- Saved fresh `qwen3_tts_exports_unified/export_manifest.json`
+- Verified source export includes `cp_generate` and the prompt-contract fields.
+
+#### 10.1 Short real CLI run
+
+```bash
+cmake-out/examples/models/qwen3-tts/qwen3_tts_unified_runner \
+  --model_path examples/models/qwen3-tts/qwen3_tts_exports_unified/model.pte \
+  --tokenizer_path examples/models/qwen3-tts/qwen3-tts-12Hz-0.6B-Base/tokenizer.json \
+  --text "Hello from ExecuTorch." \
+  --max_new_tokens 128 \
+  --output_wav /tmp/qwen3_tts_short.wav
+```
+
+Result: **PASS** (`elapsed ~28.2s`)
+
+- Prompt token count: `15`
+- Generated codes: `128`
+- Output wav: `/tmp/qwen3_tts_short.wav`
+- Samples written: `245760` at `24000 Hz`
+
+#### 10.2 Longer real CLI run
+
+```bash
+cmake-out/examples/models/qwen3-tts/qwen3_tts_unified_runner \
+  --model_path examples/models/qwen3-tts/qwen3_tts_exports_unified/model.pte \
+  --tokenizer_path examples/models/qwen3-tts/qwen3-tts-12Hz-0.6B-Base/tokenizer.json \
+  --text "ExecuTorch now runs the unified Qwen3 TTS path directly in C plus plus, with the assistant prompt built inside the runner, dynamic prompt length handling, and a fused code predictor path for end to end synthesis on XNNPACK." \
+  --max_new_tokens 192 \
+  --output_wav /tmp/qwen3_tts_long.wav
+```
+
+Result: **PASS** (`elapsed ~33.5s`)
+
+- Prompt token count: `58`
+- Generated codes: `192`
+- Output wav: `/tmp/qwen3_tts_long.wav`
+- Samples written: `368640` at `24000 Hz`
+
+#### 10.3 Prompt-budget guardrail check
+
+```bash
+cmake-out/examples/models/qwen3-tts/qwen3_tts_unified_runner \
+  --model_path examples/models/qwen3-tts/qwen3_tts_exports_unified/model.pte \
+  --tokenizer_path examples/models/qwen3-tts/qwen3-tts-12Hz-0.6B-Base/tokenizer.json \
+  --text "ExecuTorch now runs the unified Qwen3 TTS path directly in C plus plus, with the assistant prompt built inside the runner, dynamic prompt length handling, and a fused code predictor path for end to end synthesis on XNNPACK." \
+  --max_new_tokens 16 \
+  --output_wav /tmp/qwen3_tts_guardrail.wav
+```
+
+Result: **EXPECTED FAIL**
+
+- The runner rejected the request with:
+  `max_new_tokens=16 is too small to consume the trailing prompt budget=50.`
+- This confirms the dynamic prompt-budget guardrail is active in the real CLI.
+
+### 11) Quality remediation: codec IDs, sampler parity, and fixed voice artifact
+
+Root-cause fixes landed after comparing the unified runner against the MLX
+Qwen3-TTS reference:
+
+- Corrected unified export/runtime metadata to use the real codec control token
+  IDs (`2148..2157`) instead of the stale `4196..4205` band.
+- Updated the C++ runner to extract the last-token talker/code-predictor state
+  after prefill instead of reusing the first token.
+- Suppressed the talker special-token band (`[vocab_size - 1024, vocab_size)`)
+  during `code_0` sampling while still allowing `codec_eos_id`.
+- Removed the silent decoder clamp-to-zero fallback for invalid codec IDs and
+  now fail loudly if the talker/code-predictor produces an out-of-range code.
+- Restored closer MLX sampling parity for the text path:
+  `temperature=0.9`, `top_k=50`, `top_p=1.0`, `repetition_penalty=1.05`.
+- Switched the runtime path away from greedy fused `cp_generate` rollout and
+  back to the stochastic `code_predictor` + `cp_head` loop for the 15 sub-code
+  groups.
+
+Focused regression tests:
+
+```bash
+python -m unittest \
+  examples.models.qwen3-tts.tests.test_unified_prompt_flow \
+  examples.models.qwen3-tts.tests.test_unified_metadata \
+  examples.models.qwen3-tts.tests.test_unified_runner_contract \
+  examples.models.qwen3-tts.tests.test_unified_quality_contract
+```
+
+Result: **PASS**
+
+- Ran `17` tests, all passing.
+
+Fresh rebuild:
+
+```bash
+make qwen3-tts-cpu
+```
+
+Result: **PASS** (`elapsed ~52.9s`)
+
+- Built `cmake-out/examples/models/qwen3-tts/qwen3_tts_unified_runner`
+
+Fresh export after quality fixes:
+
+```bash
+conda run -n executorch python examples/models/qwen3-tts/export_unified.py \
+  --converted-dir examples/models/qwen3-tts/qwen3_tts_artifacts \
+  --talker-dir examples/models/qwen3-tts/qwen3_tts_artifacts/talker_converted \
+  --output-dir examples/models/qwen3-tts/qwen3_tts_exports_unified \
+  --backend xnnpack \
+  --qlinear 8da4w
+```
+
+Result: **PASS** (`elapsed ~24.0 min`)
+
+- Saved fresh `examples/models/qwen3-tts/qwen3_tts_exports_unified/model.pte`
+- Saved fresh `examples/models/qwen3-tts/qwen3_tts_exports_unified/export_manifest.json`
+- Verified manifest now records:
+  `codec_pad_id=2148`, `codec_bos_id=2149`, `codec_eos_id=2150`,
+  `codec_nothink_id=2155`, `codec_think_bos_id=2156`,
+  `codec_think_eos_id=2157`
+
+Fixed-voice validation artifact:
+
+```bash
+./cmake-out/examples/models/qwen3-tts/qwen3_tts_unified_runner \
+  --model_path examples/models/qwen3-tts/qwen3_tts_exports_unified/model.pte \
+  --tokenizer_path examples/models/qwen3-tts/qwen3-tts-12Hz-0.6B-Base/tokenizer.json \
+  --text "ExecuTorch now runs the unified Qwen3 TTS path directly in C plus plus with corrected codec control tokens, special token suppression, and sampling that is aligned more closely with the reference implementation." \
+  --max_new_tokens 192 \
+  --temperature 0.9 \
+  --top_k 50 \
+  --top_p 1.0 \
+  --repetition_penalty 1.05 \
+  --output_wav examples/models/qwen3-tts/output_text_fixed_quality.wav
+```
+
+Result: **PASS** (`elapsed ~37.9s`)
+
+- Prompt token count: `49`
+- Generated codes: `192`
+- Output wav:
+  `examples/models/qwen3-tts/output_text_fixed_quality.wav`
+- Samples written: `368640` at `24000 Hz`

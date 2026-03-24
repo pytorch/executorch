@@ -94,7 +94,15 @@ endif()
 target_include_directories(
   qwen3_tts_unified_runner PUBLIC ${_common_include_directories}
 )
-target_link_libraries(qwen3_tts_unified_runner PUBLIC ${_link_libraries})
+target_link_libraries(
+  qwen3_tts_unified_runner PUBLIC ${_link_libraries} extension_llm_runner
+)
+
+# Metal/AOTI backend for GPU acceleration.
+if(EXECUTORCH_BUILD_METAL)
+  target_link_libraries(qwen3_tts_unified_runner PUBLIC metal_backend)
+  executorch_target_link_options_shared_lib(metal_backend)
+endif()
 target_compile_options(
   qwen3_tts_unified_runner PUBLIC ${_common_compile_options}
 )

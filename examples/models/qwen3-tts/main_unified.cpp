@@ -41,6 +41,8 @@ DEFINE_string(language, "English", "Language for synthesis.");
 DEFINE_int32(max_new_tokens, 200, "Max codec tokens to generate.");
 DEFINE_double(temperature, 1.0, "Sampling temperature.");
 DEFINE_int32(top_k, -1, "Top-k sampling.");
+DEFINE_double(top_p, -1.0, "Top-p sampling. Values <= 0 disable nucleus filtering.");
+DEFINE_double(repetition_penalty, 1.05, "Repetition penalty for talker code_0 sampling.");
 DEFINE_bool(
     trim_silence,
     true,
@@ -53,6 +55,19 @@ DEFINE_double(
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
+  if (!FLAGS_codes_path.empty() && !FLAGS_text.empty()) {
+    ET_LOG(Error, "Provide either --codes_path or --text, not both.");
+    return 1;
+  }
+  if (FLAGS_codes_path.empty() && FLAGS_text.empty()) {
+    ET_LOG(Error, "Either --codes_path or --text must be provided.");
+    return 1;
+  }
+  if (!FLAGS_text.empty() && FLAGS_tokenizer_path.empty()) {
+    ET_LOG(Error, "--text requires --tokenizer_path.");
+    return 1;
+  }
+
   auto t_start = std::chrono::steady_clock::now();
 
   qwen3_tts::Qwen3TTSUnifiedRunner runner(
@@ -61,6 +76,8 @@ int main(int argc, char** argv) {
   // Pre-load and warm up methods that will be used.
   if (!FLAGS_codes_path.empty()) {
     runner.warmup_decode();
+  } else if (!FLAGS_text.empty()) {
+    runner.warmup_all();
   }
 
   auto t_loaded = std::chrono::steady_clock::now();
@@ -97,14 +114,13 @@ int main(int argc, char** argv) {
     config.max_new_tokens = FLAGS_max_new_tokens;
     config.temperature = static_cast<float>(FLAGS_temperature);
     config.top_k = FLAGS_top_k;
+    config.top_p = static_cast<float>(FLAGS_top_p);
+    config.repetition_penalty = static_cast<float>(FLAGS_repetition_penalty);
 
     if (!runner.synthesize(FLAGS_text, FLAGS_language, config, &waveform)) {
       ET_LOG(Error, "Synthesis failed.");
       return 1;
     }
-  } else {
-    ET_LOG(Error, "Either --codes_path or --text must be provided.");
-    return 1;
   }
 
   // Trim leading silence.

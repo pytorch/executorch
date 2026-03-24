@@ -82,15 +82,18 @@ def _trim_silent_prefix(
     if t_len <= chunk_size:
         return codes
 
-    decoder = model.model.talker.speech_tokenizer.decoder
     speech_start = 0
-
     for start in range(0, t_len - chunk_size + 1, chunk_size):
         end = min(start + chunk_size, t_len)
-        chunk = codes[start:end].unsqueeze(0)
+        chunk = codes[start:end]
         chunk_clamped = torch.clamp(chunk, min=0)
         with torch.no_grad():
-            wav = decoder(chunk_clamped.transpose(1, 2)).squeeze()
+            wav = model.model.speech_tokenizer.decode(
+                chunk_clamped.unsqueeze(0).transpose(1, 2)
+            )
+            if isinstance(wav, (list, tuple)):
+                wav = wav[0]
+            wav = wav.squeeze()
         rms = torch.sqrt(torch.mean(wav**2)).item()
         if rms > threshold:
             speech_start = max(0, start - 1)
