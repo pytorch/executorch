@@ -7,7 +7,7 @@ import warnings
 
 warnings.warn(
     "The executorch.backends.apple.mps.partition package is deprecated and will "
-    "be removed in ExecuTorch 1.5. Use "
+    "be removed in ExecuTorch 1.4. Use "
     "executorch.backends.apple.coreml.partition instead.",
     FutureWarning,
     stacklevel=2,

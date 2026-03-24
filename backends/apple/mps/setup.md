@@ -1,7 +1,7 @@
 # Building and Running ExecuTorch with MPS Backend
 
-> **⚠️ Deprecated:** The MPS backend is deprecated as of ExecuTorch 1.3 and will
-> be removed in ExecuTorch 1.5. Please migrate to the
+> **⚠️ Deprecated:** The MPS backend is deprecated as of ExecuTorch 1.2 and will
+> be removed in ExecuTorch 1.4. Please migrate to the
 > [CoreML backend](../coreml/) for iOS/macOS GPU acceleration, or the
 > [Metal backend](../../../desktop/) for macOS desktop GPU workloads.
 

@@ -119,7 +119,7 @@ class TestMPSDeprecation(unittest.TestCase):
             self.assertTrue(len(future_warnings) > 0)
             message = str(future_warnings[-1].message)
             self.assertIn(
-                "1.5",
+                "1.4",
                 message,
-                "Deprecation warning should mention the removal version (1.5)",
+                "Deprecation warning should mention the removal version (1.4)",
             )

@@ -6,7 +6,7 @@ import logging
 import warnings
 
 warnings.warn(
-    "The MPS backend is deprecated and will be removed in ExecuTorch 1.5. "
+    "The MPS backend is deprecated and will be removed in ExecuTorch 1.4. "
     "Use the CoreML backend for iOS/macOS GPU acceleration, or the Metal "
     "backend for macOS desktop GPU workloads. "
     "See https://docs.pytorch.org/executorch/main/backends-overview.html "
@@ -56,7 +56,7 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
 @deprecated(
-    "The MPS backend is deprecated and will be removed in ExecuTorch 1.5. "
+    "The MPS backend is deprecated and will be removed in ExecuTorch 1.4. "
     "Use the CoreML backend for iOS/macOS GPU acceleration, or the Metal "
     "backend for macOS desktop GPU workloads. "
     "See https://docs.pytorch.org/executorch/main/backends-overview.html "
@@ -69,7 +69,7 @@ class MPSBackend(BackendDetails):
 
     .. warning::
 
-        ``MPSBackend`` is deprecated and will be removed in ExecuTorch 1.5.
+        ``MPSBackend`` is deprecated and will be removed in ExecuTorch 1.4.
         Use ``CoreMLBackend`` (iOS/macOS) or the Metal backend (macOS) instead.
     """
 

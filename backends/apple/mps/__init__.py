@@ -7,7 +7,7 @@ import warnings
 
 warnings.warn(
     "The executorch.backends.apple.mps package is deprecated and will be "
-    "removed in ExecuTorch 1.5. Use executorch.backends.apple.coreml instead.",
+    "removed in ExecuTorch 1.4. Use executorch.backends.apple.coreml instead.",
     FutureWarning,
     stacklevel=2,
 )

@@ -137,7 +137,7 @@ if __name__ == "__main__":  # noqa: C901
 
     warnings.warn(
         "The MPS example script is deprecated and will be removed in "
-        "ExecuTorch 1.5. Please use the CoreML backend examples instead.",
+        "ExecuTorch 1.4. Please use the CoreML backend examples instead.",
         FutureWarning,
         stacklevel=1,
     )

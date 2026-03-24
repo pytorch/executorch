@@ -4,7 +4,7 @@
 
 set -e
 
-echo "WARNING: The MPS backend is deprecated and will be removed in ExecuTorch 1.5."
+echo "WARNING: The MPS backend is deprecated and will be removed in ExecuTorch 1.4."
 echo "Please migrate to CoreML or the Metal backend."
 echo ""
 

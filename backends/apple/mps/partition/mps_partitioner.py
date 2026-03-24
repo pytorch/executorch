@@ -7,7 +7,7 @@ import logging
 import warnings
 
 warnings.warn(
-    "The MPS partitioner is deprecated and will be removed in ExecuTorch 1.5. "
+    "The MPS partitioner is deprecated and will be removed in ExecuTorch 1.4. "
     "Use CoreMLPartitioner for iOS/macOS GPU acceleration instead. "
     "See https://docs.pytorch.org/executorch/main/backends-overview.html "
     "for migration guidance.",
@@ -63,7 +63,7 @@ class MPSOperatorSupport(OperatorSupportBase):
 
 
 @deprecated(
-    "The MPS partitioner is deprecated and will be removed in ExecuTorch 1.5. "
+    "The MPS partitioner is deprecated and will be removed in ExecuTorch 1.4. "
     "Use CoreMLPartitioner for iOS/macOS GPU acceleration instead. "
     "See https://docs.pytorch.org/executorch/main/backends-overview.html "
     "for migration guidance.",
@@ -74,7 +74,7 @@ class MPSPartitioner(Partitioner):
 
     .. warning::
 
-        ``MPSPartitioner`` is deprecated and will be removed in ExecuTorch 1.5.
+        ``MPSPartitioner`` is deprecated and will be removed in ExecuTorch 1.4.
         Use ``CoreMLPartitioner`` instead.
     """
 

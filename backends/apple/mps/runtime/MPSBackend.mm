@@ -46,7 +46,7 @@ class MPSBackend final : public ::executorch::runtime::BackendInterface {
       ArrayRef<CompileSpec> compile_specs) const override {
     ET_LOG(
         Info,
-        "The MPS backend is deprecated and will be removed in ExecuTorch 1.5. "
+        "The MPS backend is deprecated and will be removed in ExecuTorch 1.4. "
         "Please migrate to CoreML or the Metal backend.");
 
     auto executor = context.get_runtime_allocator()->allocateInstance<mps::delegate::MPSExecutor>();
