@@ -4,6 +4,19 @@ load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "no
 load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
 
 fbcode_target(_kind = python_binary,
+    name = "extract_coreml_models",
+    srcs = [
+        "extract_coreml_models.py",
+    ],
+    main_function = "executorch.examples.apple.coreml.scripts.extract_coreml_models.main",
+    deps = [
+        "//executorch/backends/apple/coreml:executorchcoreml",
+        "//executorch/exir:schema",
+        "//executorch/exir/_serialize:lib",
+    ],
+)
+
+fbcode_target(_kind = python_binary,
     name = "export",
     srcs = [
         "export.py",

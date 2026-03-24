@@ -864,6 +864,10 @@ void compute_weight_sums_4bit_grouped(
     int64_t out_features,
     int64_t group_size);
 
+// Half-precision conversion utilities
+uint16_t float_to_half(float value);
+float half_to_float(uint16_t half_val);
+
 // Setup compute graph based on TestCase and operation name
 ComputeGraph setup_compute_graph(TestCase& test_case, std::string op_name);
 
