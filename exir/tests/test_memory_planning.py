@@ -1301,14 +1301,25 @@ class TestDeviceAwareMemoryPlanning(unittest.TestCase):
         gm, gs = self._prepare_model()
 
         algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
-        bufsizes = apply_algo(
-            algo, gm, 16, gs, enable_non_cpu_memory_planning=True
-        )
+        bufsizes = apply_algo(algo, gm, 16, gs, enable_non_cpu_memory_planning=True)
 
         # The CUDA spec is the only tensor in its buffer
         self.assertEqual(bufsizes[0], 0)  # constants
         self.assertGreater(bufsizes[1], 0)  # CPU activations
         self.assertNotIn("non_const_buffer_device", gm.meta)
+
+    def test_custom_pool_with_device_planning_raises(self) -> None:
+        """Pre-assigned mem_ids + enable_non_cpu_memory_planning raises."""
+        gm, gs = self._prepare_model()
+        specs = self._get_planned_specs(gm, gs)
+
+        # Pre-assign a custom mem_id AND set a non-CPU device
+        specs[0].mem_id = 3
+        specs[-1].device = DeviceType.CUDA
+
+        algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
+        with self.assertRaises(NotImplementedError):
+            apply_algo(algo, gm, 16, gs, enable_non_cpu_memory_planning=True)
 
     def test_all_cuda_no_wasted_slots(self) -> None:
         """CUDA-only specs produce [0, X] with CUDA at buffer index 1."""
@@ -1324,12 +1335,13 @@ class TestDeviceAwareMemoryPlanning(unittest.TestCase):
         self.assertEqual(len(bufsizes), 2)
         self.assertEqual(bufsizes[0], 0)
         self.assertGreater(bufsizes[1], 0)
-        # Device mapping should be present
+        # Device mapping should only contain non-CPU entries
         self.assertIn("non_const_buffer_device", gm.meta)
         device_map = gm.meta["non_const_buffer_device"]
-        self.assertEqual(len(device_map), 2)
-        self.assertEqual(device_map[0].device_type, DeviceType.CPU)  # constants
-        self.assertEqual(device_map[1].device_type, DeviceType.CUDA)
+        self.assertEqual(len(device_map), 1)
+        self.assertEqual(device_map[0].buffer_idx, 1)
+        self.assertEqual(device_map[0].device_type, DeviceType.CUDA)
+        self.assertEqual(device_map[0].device_index, 0)
 
     def test_mixed_cpu_cuda_separate_buffers(self) -> None:
         """CPU specs at mem_id=1, CUDA specs at mem_id=2, separate sizes."""
@@ -1355,9 +1367,13 @@ class TestDeviceAwareMemoryPlanning(unittest.TestCase):
 
         # CPU specs should have mem_id=1, CUDA specs should have mem_id=2
         for spec in cpu_specs:
-            self.assertEqual(spec.mem_id, 1, f"CPU spec has wrong mem_id: {spec.mem_id}")
+            self.assertEqual(
+                spec.mem_id, 1, f"CPU spec has wrong mem_id: {spec.mem_id}"
+            )
         for spec in cuda_specs:
-            self.assertEqual(spec.mem_id, 2, f"CUDA spec has wrong mem_id: {spec.mem_id}")
+            self.assertEqual(
+                spec.mem_id, 2, f"CUDA spec has wrong mem_id: {spec.mem_id}"
+            )
 
     def test_mem_offset_correct_after_remap(self) -> None:
         """After remapping, mem_offset is relative to its own buffer."""
@@ -1369,9 +1385,7 @@ class TestDeviceAwareMemoryPlanning(unittest.TestCase):
         cuda_spec.device = DeviceType.CUDA
 
         algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
-        bufsizes = apply_algo(
-            algo, gm, 16, gs, enable_non_cpu_memory_planning=True
-        )
+        bufsizes = apply_algo(algo, gm, 16, gs, enable_non_cpu_memory_planning=True)
 
         # The CUDA spec is the only tensor in its buffer, so offset should be 0
         self.assertEqual(cuda_spec.mem_offset, 0)
@@ -1410,6 +1424,54 @@ class TestDeviceAwareMemoryPlanning(unittest.TestCase):
             cpu_mem_ids.isdisjoint(cuda_mem_ids),
             f"CPU {cpu_mem_ids} and CUDA {cuda_mem_ids} should not share buffers",
         )
+
+    def test_different_device_indices_separate_buffers(self) -> None:
+        """CUDA:0 and CUDA:1 specs get separate buffers."""
+        gm, gs = self._prepare_model()
+        specs = self._get_planned_specs(gm, gs)
+        self.assertGreaterEqual(len(specs), 3)
+
+        # specs[0] → CUDA:0, specs[1] → CUDA:1, rest → CPU
+        specs[0].device = DeviceType.CUDA
+        specs[0].device_index = 0
+        specs[1].device = DeviceType.CUDA
+        specs[1].device_index = 1
+
+        algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
+        bufsizes = apply_algo(algo, gm, 16, gs, enable_non_cpu_memory_planning=True)
+
+        # [constants, cpu, cuda:0, cuda:1]
+        self.assertEqual(len(bufsizes), 4)
+
+        # CUDA:0 and CUDA:1 should have different mem_ids
+        self.assertNotEqual(specs[0].mem_id, specs[1].mem_id)
+        # Both should differ from the CPU spec
+        self.assertNotEqual(specs[0].mem_id, specs[2].mem_id)
+        self.assertNotEqual(specs[1].mem_id, specs[2].mem_id)
+
+        # Device mapping should only contain non-CPU entries with correct indices
+        device_map = gm.meta["non_const_buffer_device"]
+        for entry in device_map:
+            self.assertEqual(entry.device_type, DeviceType.CUDA)
+        cuda_indices = sorted(e.device_index for e in device_map)
+        self.assertEqual(cuda_indices, [0, 1])
+
+    def test_device_index_propagated(self) -> None:
+        """NonConstBufferDevice entries carry the actual device_index, not 0."""
+        gm, gs = self._prepare_model()
+        specs = self._get_planned_specs(gm, gs)
+
+        # Set the first spec to CUDA device index 3
+        specs[0].device = DeviceType.CUDA
+        specs[0].device_index = 3
+
+        algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
+        apply_algo(algo, gm, 16, gs, enable_non_cpu_memory_planning=True)
+
+        device_map = gm.meta["non_const_buffer_device"]
+        self.assertEqual(len(device_map), 1)
+        self.assertEqual(device_map[0].device_type, DeviceType.CUDA)
+        self.assertEqual(device_map[0].device_index, 3)
 
     def test_disabled_falls_back_to_cpu(self) -> None:
         """With enable_non_cpu_memory_planning=False (default), CUDA specs are

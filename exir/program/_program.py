@@ -849,9 +849,6 @@ def edge_to_executorch_passes(
         # there exists an unbacked symint operation.
         *config.passes,
         SpecPropPass(),
-        # Propagate device metadata (e.g., CUDA) from delegate CompileSpecs onto
-        # TensorSpecs. Must run after SpecPropPass so specs are freshly created
-        # with correct shapes.
         PropagateDevicePass(),
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
@@ -1791,13 +1788,13 @@ class EdgeProgramManager:
                 )
             else:
                 memory_planning_pass = config.memory_planning_pass
-            # TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work
             # Propagate enable_non_cpu_memory_planning from the top-level config
             # to the pass instance so that device-aware partitioning is applied.
             if hasattr(memory_planning_pass, "enable_non_cpu_memory_planning"):
                 memory_planning_pass.enable_non_cpu_memory_planning = (
                     config.enable_non_cpu_memory_planning
                 )
+            # TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work
             if hasattr(memory_planning_pass, "run"):
                 new_gm_res = memory_planning_pass.run(new_gm, new_signature)
             else:
