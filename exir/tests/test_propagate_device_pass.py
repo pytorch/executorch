@@ -483,6 +483,32 @@ class TestPropagateDevicePass(unittest.TestCase):
         self.assertEqual(dt, DeviceType.CPU)
         self.assertEqual(idx, 0)
 
+    def test_parse_device_spec_value_unknown_raises(self):
+        """
+        _parse_device_spec_value should raise ValueError for unknown device types.
+        """
+        with self.assertRaises(ValueError):
+            _parse_device_spec_value(b"tpu:0")
+
+        with self.assertRaises(ValueError):
+            _parse_device_spec_value(b"unknown")
+
+    def test_parse_device_spec_value_case_insensitive(self):
+        """
+        _parse_device_spec_value should match device names case-insensitively.
+        """
+        dt, idx = _parse_device_spec_value(b"CUDA:0")
+        self.assertEqual(dt, DeviceType.CUDA)
+        self.assertEqual(idx, 0)
+
+        dt, idx = _parse_device_spec_value(b"CPU")
+        self.assertEqual(dt, DeviceType.CPU)
+        self.assertEqual(idx, 0)
+
+        dt, idx = _parse_device_spec_value(b"Cuda:2")
+        self.assertEqual(dt, DeviceType.CUDA)
+        self.assertEqual(idx, 2)
+
     def test_get_target_device_from_compile_specs(self):
         """
         _get_target_device_from_compile_specs should correctly extract device info.

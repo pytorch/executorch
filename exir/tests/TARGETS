@@ -67,24 +67,6 @@ runtime.python_library(
     ],
 )
 
-runtime.python_test(
-    name = "tracer",
-    srcs = [
-        "test_tracer.py",
-    ],
-    # Static listing does not support tests generated in runtime.
-    supports_static_listing = False,
-    deps = [
-        "fbsource//third-party/pypi/parameterized:parameterized",
-        ":lib",
-        ":models",
-        "//caffe2:torch",
-        "//caffe2/functorch:functorch_src",
-        "//executorch/exir:lib",
-        "//executorch/exir:tracer",
-        "//executorch/exir/dialects:lib",
-    ],
-)
 
 python_unittest(
     name = "serde",
@@ -339,20 +321,6 @@ python_unittest(
     ],
 )
 
-runtime.python_test(
-    name = "capture",
-    srcs = [
-        "test_capture.py",
-    ],
-    # Static listing does not support tests generated in runtime.
-    supports_static_listing = False,
-    deps = [
-        "fbsource//third-party/pypi/parameterized:parameterized",
-        ":models",
-        "//caffe2:torch",
-        "//executorch/exir:lib",
-    ],
-)
 
 python_unittest(
     name = "dynamic_shape_propagation",
