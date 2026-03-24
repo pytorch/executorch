@@ -37,6 +37,8 @@ Error XnnpackBackendOptions::get_option(BackendOption& option) const {
     option.value = static_cast<int>(sharing_mode_.load());
   } else if (strcmp(option.key, weight_cache_option_key) == 0) {
     option.value = weight_cache_enabled_.load();
+  } else if (strcmp(option.key, use_graph_runtime_option_key) == 0) {
+    option.value = use_graph_runtime_.load();
   }
   return Error::Ok;
 }
@@ -66,6 +68,14 @@ Error XnnpackBackendOptions::set_option(const BackendOption& option) {
     }
     ET_LOG(Debug, "Setting XNNPACK weight cache enabled to %d.", *val);
     weight_cache_enabled_.store(*val);
+  } else if (strcmp(option.key, use_graph_runtime_option_key) == 0) {
+    auto* val = std::get_if<bool>(&option.value);
+    if (!val) {
+      ET_LOG(Error, "XNNPACK use_graph_runtime must be a bool.");
+      return Error::InvalidArgument;
+    }
+    ET_LOG(Debug, "Setting XNNPACK use_graph_runtime to %d.", *val);
+    use_graph_runtime_.store(*val);
   }
   return Error::Ok;
 }
@@ -94,6 +104,12 @@ XnnpackBackendOptions::resolve_sharing_mode(
     return runtime::Error::InvalidArgument;
   }
   return static_cast<WorkspaceSharingMode>(raw_mode);
+}
+
+bool XnnpackBackendOptions::resolve_graph_runtime(
+    const ET_RUNTIME_NAMESPACE::BackendInitContext& context) const {
+  return resolve_option<bool>(
+      context, use_graph_runtime_option_key, use_graph_runtime_.load());
 }
 
 WorkspaceSharingMode XnnpackBackendOptions::get_sharing_mode() const {

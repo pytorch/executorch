@@ -38,6 +38,12 @@ def define_common_targets():
             srcs = XNNPACK_BACKEND_BUCK_SRCS,
             headers = native.glob([
                 "runtime/*.h",
+                "runtime/core/*.h",
+                "runtime/executor/*.h",
+                "runtime/graph/*.h",
+                "runtime/kernels/**/*.h",
+                "runtime/operators/*.h",
+                "runtime/plan/*.h",
                 "runtime/profiling/*.h",
             ]),
             visibility = ["PUBLIC"],

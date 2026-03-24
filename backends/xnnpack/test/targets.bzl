@@ -101,3 +101,52 @@ def define_common_targets():
                 "//executorch/backends/xnnpack:xnnpack_backend",
             ],
     )
+
+    runtime.cxx_test(
+        name = "test_graph_builder",
+        srcs = ["runtime/test_graph_builder.cpp"],
+        deps = [
+            "//executorch/backends/xnnpack:xnnpack_backend",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "test_partition",
+        srcs = ["runtime/test_partition.cpp"],
+        deps = [
+            "//executorch/backends/xnnpack:xnnpack_backend",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "test_schedule",
+        srcs = ["runtime/test_schedule.cpp"],
+        deps = [
+            "//executorch/backends/xnnpack:xnnpack_backend",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "test_shape_env",
+        srcs = ["runtime/test_shape_env.cpp"],
+        deps = [
+            "//executorch/backends/xnnpack:xnnpack_backend",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "test_quant_params",
+        srcs = ["runtime/test_quant_params.cpp"],
+        deps = [
+            "//executorch/backends/xnnpack:xnnpack_backend",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "test_e2e",
+        srcs = ["runtime/test_e2e.cpp"],
+        deps = [
+            third_party_dep("XNNPACK"),
+            "//executorch/backends/xnnpack:xnnpack_backend",
+        ],
+    )
