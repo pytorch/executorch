@@ -39,6 +39,10 @@ class SplitVisitor(NodeVisitor):
             )
             all_output_tensors.append(output_id)
 
+        for user in node.users.keys():
+            if user.target.__name__ == "getitem" and len(user.args) > 1:
+                vals_to_ids[user] = all_output_tensors[user.args[1]]
+
         axis = node.args[2] if len(node.args) > 2 else 0
 
         params = {}

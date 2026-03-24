@@ -72,7 +72,7 @@ class Conv2dVisitor(NodeVisitor):
         params["explicit_padding"] = explicit_padding
         params["in_channels"] = input_shape[1]
         params["out_channels"] = kernel_shape[0] * kernel_shape[1] * groups
-        params["out_channels"] //= input_shape[1] * input_shape[0]
+        params["out_channels"] //= input_shape[1]
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 

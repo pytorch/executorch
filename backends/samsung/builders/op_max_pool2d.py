@@ -75,10 +75,6 @@ class MaxPool2dVisitor(NodeVisitor):
         params["dilation_w"] = dilation[1]
         self._update_params_qdtype(node, params)
 
-        if len(node.args) > 5:
-            ceil_mode = cast(bool, node.args[5])
-            assert not ceil_mode, "Not support ceil_mode = True."
-
         if not is_indices:
             output_id = self.define_tensor(
                 node,

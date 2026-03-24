@@ -304,23 +304,12 @@ int main(int argc, char** argv) {
     status = method->execute();
   }
 
-  // Run the model.
-  ET_LOG(Info, "Start 1st inference.");
-  auto before_exec = std::chrono::high_resolution_clock::now();
-  status = method->execute();
-  auto after_exec = std::chrono::high_resolution_clock::now();
-  double interval_1st_infs =
-      std::chrono::duration_cast<std::chrono::microseconds>(
-          after_exec - before_exec)
-          .count() /
-      1000.0;
-
   ET_LOG(Info, "Start inference.");
-  before_exec = std::chrono::high_resolution_clock::now();
+  auto before_exec = std::chrono::high_resolution_clock::now();
   for (int i = 0; i < FLAGS_num_executions; ++i) {
     status = method->execute();
   }
-  after_exec = std::chrono::high_resolution_clock::now();
+  auto after_exec = std::chrono::high_resolution_clock::now();
   double interval_infs = std::chrono::duration_cast<std::chrono::microseconds>(
                              after_exec - before_exec)
                              .count() /
@@ -331,11 +320,8 @@ int main(int argc, char** argv) {
     std::ofstream fout(output_file_name);
     fout << "init: " + std::to_string(interval_init)
          << "\nload: " + std::to_string(interval_load)
-         << "\n1st: " + std::to_string(interval_1st_infs)
          << "\navg: " +
-            std::to_string(
-                (interval_infs + interval_1st_infs) /
-                ((float)FLAGS_num_executions + 1.f))
+            std::to_string(interval_infs / (float)FLAGS_num_executions)
          << std::endl;
     fout.close();
   }

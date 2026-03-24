@@ -7,6 +7,7 @@ from executorch.backends.samsung.builders.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.samsung.builders.utils import get_tensor
 from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 
 
@@ -28,7 +29,10 @@ class ReshapeVisitor(NodeVisitor):
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
-        new_shape = node.args[1]
+        # node.args[1] may contain "sym_size"
+        tensor = get_tensor(self.exported_program, node)
+        shape = [1] if len(tensor.size()) == 0 else list(tensor.size())
+
         enn_graph.define_op(
-            node.name, "RESHAPE", [input_id], [output_id], {"new_shape": new_shape}
+            node.name, "RESHAPE", [input_id], [output_id], {"new_shape": shape}
         )

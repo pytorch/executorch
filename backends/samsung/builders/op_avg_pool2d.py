@@ -52,10 +52,6 @@ class AvgPool2dVisitor(NodeVisitor):
         params["explicit_padding"] = explicit_padding
         self._update_params_qdtype(node, params)
 
-        if len(node.args) > 4:
-            ceil_mode = cast(bool, node.args[4])
-            assert not ceil_mode, "Not support ceil_mode = True."
-
         if len(node.args) > 5:
             params["count_include_pad"] = cast(bool, node.args[5])
         else:
