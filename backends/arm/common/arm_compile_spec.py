@@ -117,9 +117,9 @@ class ArmCompileSpec(ABC):
             raise ValueError("No tosa_spec in compile spec.")
         if output_format is None:
             raise ValueError("No output_format in compile spec.")
-        if output_format != cls.get_output_format():
+        if output_format != cls._get_output_format():
             raise ValueError(
-                f"Incorrect output format '{output_format}' for {cls.__name__}, expected '{cls.get_output_format()}'"
+                f"Incorrect output format '{output_format}' for {cls.__name__}, expected '{cls._get_output_format()}'"
             )
         if compiler_flags is None:
             compiler_flags = []
@@ -134,17 +134,17 @@ class ArmCompileSpec(ABC):
             output_order_workaround=output_order_workaround,
             pipeline_config=pipeline_config,
         )
-        cls.from_list_hook(compile_spec, unknown_specs)
-        compile_spec.validate()
+        cls._from_list_hook(compile_spec, unknown_specs)
+        compile_spec._validate()
         return compile_spec
 
     @classmethod
-    def from_list_hook(cls, compile_spec, specs: dict[str, str]):  # noqa: B027
+    def _from_list_hook(cls, compile_spec, specs: dict[str, str]):  # noqa: B027
         """Allows subclasses to hook into parsing compile spec lists."""
         pass
 
     @abstractmethod
-    def validate(self):
+    def _validate(self):
         """Throws an error if the compile spec is not valid."""
 
     def to_list(self):
@@ -170,7 +170,7 @@ class ArmCompileSpec(ABC):
         # Add output format to identify kind of compile spec.
         compile_spec.append(
             CompileSpec(
-                ArmCompileSpec._OUTPUT_FORMAT_KEY, self.get_output_format().encode()
+                ArmCompileSpec._OUTPUT_FORMAT_KEY, self._get_output_format().encode()
             )
         )
 
@@ -285,5 +285,5 @@ class ArmCompileSpec(ABC):
 
     @classmethod
     @abstractmethod
-    def get_output_format(cls) -> str:
+    def _get_output_format(cls) -> str:
         """Returns a constant string that is the output format of the class."""

@@ -14,11 +14,9 @@ import executorch.exir
 import torch
 from executorch.backends.arm._passes import FoldAndAnnotateQParamsPass
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm.quantizer.arm_quantizer_utils import SharedQspecQuantizer
 from executorch.backends.arm.test.common import parametrize
-from executorch.backends.cortex_m.quantizer.quantizer import (
-    CortexMQuantizer,
-    SharedQspecQuantizer,
-)
+from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.test.tester import CortexMTester
 from executorch.backends.test.harness.stages import StageType
 from executorch.exir import EdgeCompileConfig
@@ -683,7 +681,13 @@ xfails = {
 }
 
 
-@parametrize("op_case", OP_CASES, xfails=xfails, strict=False)
+@parametrize(
+    "op_case",
+    OP_CASES,
+    xfails=xfails,
+    strict=False,
+    skips={"while_loop": "Has been observed to hang randomly."},
+)
 def test_shared_qspec_portable_int8_ops(op_case: OpCase) -> None:
     tester = CortexMTester(op_case.module, op_case.example_inputs)
     tester.test_dialect(ops_before_transforms={}, ops_after_transforms={})

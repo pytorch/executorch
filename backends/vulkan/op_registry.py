@@ -159,6 +159,8 @@ def update_features(aten_op):
         torch.ops.aten.sym_size.int,
         operator.add,
         operator.sub,
+        operator.floordiv,
+        operator.mul,
         operator.lt,
         operator.gt,
         operator.ge,
@@ -279,6 +281,26 @@ def register_bitwise_and():
     )
 
 
+@update_features(exir_ops.edge.aten.bitwise_not.default)
+def register_bitwise_not():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features(exir_ops.edge.aten.logical_and.default)
+def register_logical_and():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
 # =============================================================================
 # BinaryScalarOp.cpp
 # =============================================================================
@@ -301,16 +323,22 @@ def register_pow_tensor_scalar():
 
 @update_features(exir_ops.edge.aten._to_copy.default)
 def register_to_copy():
-    def check_to_copy_node(node: torch.fx.Node) -> bool:
-        # Only single-arg _to_copy is supported
-        return len(node.args) == 1
+    def pick_to_copy_storage(
+        node: torch.fx.Node,
+    ) -> Tuple[utils.TensorRepSet, utils.TensorRepSet]:
+        in_dtype = node.args[0].meta["val"].dtype  # type: ignore[union-attr]
+        out_dtype = node.meta["val"].dtype
+        fp_types = {torch.float16, torch.float32}
+        if in_dtype in fp_types and out_dtype in fp_types:
+            return utils.ANY_STORAGE, utils.ANY_STORAGE
+        return utils.CONTIGUOUS_BUFFER, utils.CONTIGUOUS_BUFFER
 
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
-        inputs_dtypes=utils.FP_INT_T,
-        outputs_dtypes=utils.FP_INT_T,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        outputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
-        are_node_inputs_supported_fn=check_to_copy_node,
+        pick_io_storage_fn=pick_to_copy_storage,
     )
 
 
@@ -327,7 +355,7 @@ def register_to_copy():
 )
 def register_softmax_cpp_ops():
     return OpFeatures(
-        inputs_storage=utils.ANY_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
     )
@@ -705,7 +733,7 @@ def register_reduce_cpp_ops():
 )
 def register_argreduce_cpp_ops():
     return OpFeatures(
-        inputs_storage=utils.ANY_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_T,
         outputs_dtypes=utils.INT_T,
         supports_resize=True,
@@ -1120,7 +1148,7 @@ def register_gather():
 @update_features(exir_ops.edge.aten.expand_copy.default)
 def register_expand_copy():
     return OpFeatures(
-        inputs_storage=utils.ANY_BUFFER,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=False,
         supports_highdim=True,
@@ -1285,7 +1313,7 @@ def register_index_tensor():
 @update_features(exir_ops.edge.aten.arange.start_step)
 def register_arange():
     return OpFeatures(
-        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_T,
     )
 
@@ -1298,8 +1326,9 @@ def register_arange():
 @update_features(exir_ops.edge.aten.constant_pad_nd.default)
 def register_constant_pad_nd():
     return OpFeatures(
-        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
     )
 
 
@@ -1320,7 +1349,7 @@ def register_constant_pad_nd():
 )
 def register_full_cpp_ops():
     return OpFeatures(
-        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
     )
 
@@ -1335,6 +1364,7 @@ def register_scalar_tensor():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
         inputs_dtypes=utils.FP_INT_T,
+        supports_resize=True,
     )
 
 
@@ -1377,7 +1407,7 @@ def register_grid_priors():
 @update_features(exir_ops.edge.aten.repeat.default)
 def register_repeat():
     return OpFeatures(
-        inputs_storage=utils.ANY_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
     )
 
@@ -1389,9 +1419,50 @@ def register_repeat():
 
 @update_features(exir_ops.edge.aten.embedding.default)
 def register_embedding():
+    def check_embedding_weight_size(node: torch.fx.Node) -> bool:
+        weight = node.args[0]
+        if isinstance(weight, torch.fx.Node) and utils.is_tensor_node(weight):
+            numel = weight.meta["val"].numel()
+            if numel > utils.DEFAULT_BUFFER_LIMIT:
+                return False
+        return True
+
     return OpFeatures(
-        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=[utils.FP_T, utils.INT_T],
+        supports_prepacking=True,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_embedding_weight_size,
+    )
+
+
+# =============================================================================
+# EmbeddingQ4gsw (Quantized Embedding)
+# =============================================================================
+
+
+@update_features(exir_ops.edge.quantized_decomposed.embedding_4bit.dtype)
+def register_quantized_decomposed_embedding_4bit():
+    def check_embedding_4bit_weight_size(node: torch.fx.Node) -> bool:
+        weight = node.args[0]
+        if isinstance(weight, torch.fx.Node) and utils.is_tensor_node(weight):
+            numel = weight.meta["val"].numel()
+            if numel > utils.DEFAULT_BUFFER_LIMIT:
+                return False
+        return True
+
+    return OpFeatures(
+        inputs_storage=utils.ANY_BUFFER,
+        supports_prepacking=True,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_embedding_4bit_weight_size,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.embedding_q4gsw.default)
+def register_embedding_q4gsw():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
         supports_prepacking=True,
         supports_resize=True,
     )
@@ -1439,7 +1510,7 @@ def register_native_group_norm():
 @update_features(exir_ops.edge.aten.native_layer_norm.default)
 def register_native_layer_norm():
     return OpFeatures(
-        inputs_storage=utils.ANY_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
         supports_resize=True,

@@ -83,11 +83,6 @@ Returns:
     Path where intermediate results are saved.
 
 ```python
-def EthosUCompileSpec.get_output_format() -> str:
-```
-Return the artifact format emitted by this compile spec.
-
-```python
 def EthosUCompileSpec.get_output_order_workaround(self) -> bool:
 ```
 Gets whether the output order workaround is being applied.
@@ -136,6 +131,14 @@ For more information on quantization, see [Quantization](arm-ethos-u-quantizatio
 An example runtime application is available in [examples/arm/executor_runner](https://github.com/pytorch/executorch/blob/main/examples/arm/executor_runner/), and the steps requried for building and deploying it on a FVP it is explained in the previously mentioned [Arm Ethos-U Backend Tutorial](https://docs.pytorch.org/executorch/stable/tutorial-arm-ethos-u.html).
 The example application is recommended to use for testing basic functionality of your lowered models, as well as a starting point for developing runtime integrations for your own targets.
 For an in-depth explanation of the architecture of the executor_runner and the steps required for doing such an integration, please refer to [Ethos-U porting guide](https://github.com/pytorch/executorch/blob/main/examples/arm/ethos-u-porting-guide.md).
+
+### Example: Image classification flow
+
+[`examples/arm/image_classification_example_ethos_u`](https://github.com/pytorch/executorch/tree/main/examples/arm/image_classification_example_ethos_u)
+contains a complete DeiT-based export and runtime walkthrough. The README shows
+how to run `model_export/export_deit.py`, build the sample firmware, and convert
+test images into C arrays so the workflow described in this guide can be tried
+end to end.
 
 ### Ethos-U memory modes
 
@@ -228,6 +231,7 @@ ExecuTorch for the Ethos-U backend, you automatically install the compiler conta
 **→{doc}`/backends/arm-ethos-u/U55_op_support` — Ethos-U55 supported operators.**
 
 **→{doc}`/backends/arm-ethos-u/U85_op_support` — Ethos-U85 supported operators.**
+
 
 ```{toctree}
 :maxdepth: 2

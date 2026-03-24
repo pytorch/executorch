@@ -9,11 +9,18 @@
 name: Test CUDA Builds
 
 on:
-  pull_request:
   push:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/cuda/*
+  pull_request:
+    paths:
+      - .github/workflows/cuda.yml
+      - backends/cuda/**
+      - backends/aoti/**
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
@@ -119,8 +126,20 @@ jobs:
         cmake --workflow --preset default
         popd
 
-        # Run CUDA backend Python tests, overrides addopts so that we don't run all tests in pytest.ini
+        # Install flash-linear-attention for chunk_gated_delta_rule triton kernel tests
+        pip install "flash-linear-attention==0.4.2"
+
+        # Build executor_runner (needed by CUDA backend e2e tests)
+        cmake --build cmake-out --target executor_runner
+
+        # Run CUDA backend Python tests
         python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts="
+
+        # Run quantize roundtrip tests (Qwen 3.5 MoE save/load prequantized)
+        python -m pytest examples/models/qwen3_5_moe/test_quantize_roundtrip.py -v -o "addopts="
+
+        # Build Qwen3.5 MoE runner (ExecuTorch already built above)
+        cd examples/models/qwen3_5_moe && cmake --workflow --preset qwen3-5-moe-cuda
 
   export-model-cuda-artifact:
     name: export-model-cuda-artifact
@@ -151,6 +170,8 @@ jobs:
             name: "Qwen3-0.6B"
           - repo: "nvidia"
             name: "parakeet-tdt"
+          - repo: "facebook"
+            name: "dinov2-small-imagenet1k-1-layer"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -179,6 +200,15 @@ jobs:
               repo: "nvidia"
               name: "diar_streaming_sortformer_4spk-v2"
             quant: "quantized-int4-weight-only"
+          # DINOv2 currently supports only non-quantized export
+          - model:
+              repo: "facebook"
+              name: "dinov2-small-imagenet1k-1-layer"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "facebook"
+              name: "dinov2-small-imagenet1k-1-layer"
+            quant: "quantized-int4-weight-only"
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
@@ -198,8 +228,8 @@ jobs:
         ./install_executorch.sh
         echo "::endgroup::"
 
-        # Setup Huggingface only for models that need it (not parakeet)
-        if [ "${{ matrix.model.name }}" != "parakeet-tdt" ]; then
+        # Setup Huggingface only for models that need it (not parakeet or dinov2)
+        if [ "${{ matrix.model.name }}" != "parakeet-tdt" ] && [ "${{ matrix.model.name }}" != "dinov2-small-imagenet1k-1-layer" ]; then
           echo "::group::Setup Huggingface"
           pip install -U "huggingface_hub[cli]<1.0" accelerate
           huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
@@ -235,6 +265,8 @@ jobs:
             name: "gemma-3-4b-it"
           - repo: "nvidia"
             name: "parakeet-tdt"
+          - repo: "facebook"
+            name: "dinov2-small-imagenet1k-1-layer"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -262,6 +294,15 @@ jobs:
           - model:
               repo: "nvidia"
               name: "diar_streaming_sortformer_4spk-v2"
+            quant: "quantized-int4-weight-only"
+          # DINOv2 currently supports only non-quantized export
+          - model:
+              repo: "facebook"
+              name: "dinov2-small-imagenet1k-1-layer"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "facebook"
+              name: "dinov2-small-imagenet1k-1-layer"
             quant: "quantized-int4-weight-only"
     with:
       timeout: 90

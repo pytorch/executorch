@@ -13,6 +13,7 @@ from executorch.examples.models.llama.attention import (
     ForwardOptions,
     register_attention,
 )
+from executorch.examples.models.llama.lora import LoRALinear
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import Rope
 
@@ -811,38 +812,46 @@ class StaticAttention(Attention):
                 [StaticVCache(layer_id, i) for i in range(self.n_kv_heads)]
             )
         else:
-            self.wqs = nn.ModuleList(
-                [
-                    nn.Linear(
-                        self.dim,
-                        self.head_dim * self.n_heads,
-                        bias=self.attention_qkv_bias,
+            has_lora = config.target_modules is not None
+            _PROJ_TARGET = {
+                "wqs": ("q_proj", self.dim, self.head_dim * self.n_heads),
+                "wks": ("k_proj", self.dim, self.head_dim * self.n_kv_heads),
+                "wvs": ("v_proj", self.dim, self.head_dim * self.n_kv_heads),
+            }
+            for attr, (target, in_dim, out_dim) in _PROJ_TARGET.items():
+                if has_lora and target in config.target_modules:
+                    proj = LoRALinear(
+                        in_dim=in_dim,
+                        out_dim=out_dim,
+                        rank=config.r,
+                        alpha=config.lora_alpha,
+                        use_bias=self.attention_qkv_bias,
                     )
-                ]
-            )
-            self.wks = nn.ModuleList(
-                [
-                    nn.Linear(
-                        self.dim,
-                        self.head_dim * self.n_kv_heads,
-                        bias=self.attention_qkv_bias,
-                    )
-                ]
-            )
-            self.wvs = nn.ModuleList(
-                [
-                    nn.Linear(
-                        self.dim,
-                        self.head_dim * self.n_kv_heads,
-                        bias=self.attention_qkv_bias,
-                    )
-                ]
-            )
+                else:
+                    proj = nn.Linear(in_dim, out_dim, bias=self.attention_qkv_bias)
+                setattr(self, attr, nn.ModuleList([proj]))
 
             self.k_caches = nn.ModuleList([StaticKCache(layer_id, 0)])
             self.v_caches = nn.ModuleList([StaticVCache(layer_id, 0)])
 
-        self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
+        wo_use_lora = (
+            not self.split_mha
+            and config.target_modules is not None
+            and (
+                "output_proj" in config.target_modules
+                or "o_proj" in config.target_modules
+            )
+        )
+        if wo_use_lora:
+            self.wo = LoRALinear(
+                in_dim=self.n_heads * self.head_dim,
+                out_dim=self.dim,
+                rank=config.r,
+                alpha=config.lora_alpha,
+                use_bias=False,
+            )
+        else:
+            self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
         self.rope = _Rope(rope.params)
         self.layer_id = layer_id
 
@@ -861,6 +870,17 @@ class StaticAttention(Attention):
         rms_norm_class=torch.nn.RMSNorm,
         **kwargs: Any,
     ) -> "StaticAttention":
+        has_lora = any(
+            isinstance(proj, LoRALinear)
+            for proj in [other.wq, other.wk, other.wv, other.wo]
+        )
+
+        if has_lora and split_mha:
+            raise ValueError(
+                "split_mha=True is not supported when the source AttentionMHA "
+                "contains LoRALinear modules. Use split_mha=False instead."
+            )
+
         config = ModelArgs(
             dim=other.dim,
             n_layers=1,  # Not used in attention layer
@@ -882,6 +902,49 @@ class StaticAttention(Attention):
             split_mha=split_mha,
             **kwargs,
         )
+
+        # Replace nn.Linear with LoRALinear where the source uses LoRA.
+        if has_lora:
+            for attr, proj, in_dim, out_dim, bias in [
+                (
+                    "wqs",
+                    other.wq,
+                    other.dim,
+                    other.n_heads * other.head_dim,
+                    other.attention_qkv_bias,
+                ),
+                (
+                    "wks",
+                    other.wk,
+                    other.dim,
+                    other.n_kv_heads * other.head_dim,
+                    other.attention_qkv_bias,
+                ),
+                (
+                    "wvs",
+                    other.wv,
+                    other.dim,
+                    other.n_kv_heads * other.head_dim,
+                    other.attention_qkv_bias,
+                ),
+            ]:
+                if isinstance(proj, LoRALinear):
+                    getattr(instance, attr)[0] = LoRALinear(
+                        in_dim=in_dim,
+                        out_dim=out_dim,
+                        rank=proj.rank,
+                        alpha=proj.alpha,
+                        use_bias=bias,
+                    )
+            if isinstance(other.wo, LoRALinear):
+                instance.wo = LoRALinear(
+                    in_dim=other.n_heads * other.head_dim,
+                    out_dim=other.dim,
+                    rank=other.wo.rank,
+                    alpha=other.wo.alpha,
+                    use_bias=other.wo.use_bias,
+                )
+
         instance.load_weights_from_attention_mha(other, rms_norm_class=rms_norm_class)
 
         return instance
@@ -1120,7 +1183,7 @@ class StaticAttention(Attention):
             self.wks[0].load_state_dict(other.wk.state_dict())
             self.wvs[0].load_state_dict(other.wv.state_dict())
 
-        self.wo.weight.data.copy_(other.wo.weight)  # pyre-ignore[6]
+        self.wo.load_state_dict(other.wo.state_dict())
 
         if other.use_qk_norm:
             self.use_qk_norm = True

@@ -42,37 +42,6 @@ class Mode(Enum):
     DECODE = 2
 
 
-def is_node_src_start_with_name(node: torch.fx.Node, prefix: str) -> bool:
-    """
-    Return True if any NodeSource in node.meta['from_node']
-    has a `name` starting with `prefix`.
-    """
-
-    def has_source_name_prefix(
-        node_src: torch.fx.traceback.NodeSource, prefix: str
-    ) -> bool:
-
-        name = getattr(node_src, "name", None)
-        if isinstance(name, str) and name.startswith(prefix):
-            return True
-
-        children = getattr(node_src, "from_node", None)
-        if not children:
-            return False
-
-        for src in children:
-            if has_source_name_prefix(src, prefix):
-                return True
-
-        return False
-
-    node_srcs = node.meta.get("from_node", None)
-    if not node_srcs:
-        return False
-
-    return any(has_source_name_prefix(node_src, prefix) for node_src in node_srcs)
-
-
 def log_info(func):
     class TimeIt:
         def __init__(self, event):
@@ -153,27 +122,24 @@ def process_model_args(
 def get_model_specific_kwargs(control_args: argparse.Namespace, config: LLMModelConfig):
     """
     Retrieve model-specific config required for Static LLaMA.
-        This method handles architecture-specific requirements for both Vision-Language Models (VLMs)
-        and Language-only Models (LLMs), extracting necessary config from HuggingFace configs.
+    This method handles architecture-specific requirements for both Vision-Language Models (VLMs)
+    and Language-only Models (LLMs), extracting necessary config from HuggingFace configs.
 
     """
     kwargs = {}
-
     # Vision-Language Model (VLM)
     # For multimodal models, we need the special token ID that represents image placeholders
     # in the input sequence. This token is used to mark positions where image embeddings
     # should be inserted during inference.
     if hasattr(config, VISION_ENCODER):
         hf_config = AutoConfig.from_pretrained(config.repo_id)
-        kwargs["modality_placeholder_token_id"] = hf_config.image_token_id
-
+        kwargs["image_token_id"] = hf_config.image_token_id
     # TODO: Support Audio modality
-    elif hasattr(config, AUDIO_ENCODER):
+    if hasattr(config, AUDIO_ENCODER):
         raise NotImplementedError(
             "Audio encoder modality is not currently supported. "
-            "Please provide a valid modality_placeholder_token_id in kwargs."
+            "Please provide a valid audio_token_id in kwargs."
         )
-
     return kwargs
 
 
@@ -204,6 +170,7 @@ class Request:
         custom_annotation: Any = ()
         calibration_data: Request.CalibrationData = None
         tokenizer: callable = None
+        skip_quantize: bool = False
         backend: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend
         soc_model: str = "SM8750"
 

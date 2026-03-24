@@ -37,4 +37,14 @@ public interface LlmCallback {
    */
   @DoNotStrip
   default void onStats(String stats) {}
+
+  /**
+   * Called when an error occurs during generate().
+   *
+   * @param errorCode Error code from the ExecuTorch runtime (see {@link
+   *     org.pytorch.executorch.ExecutorchRuntimeException})
+   * @param message Human-readable error description
+   */
+  @DoNotStrip
+  default void onError(int errorCode, String message) {}
 }

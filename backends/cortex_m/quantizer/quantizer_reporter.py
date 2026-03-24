@@ -2,8 +2,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-"""
-Contains classes for reporting quantization decisions made by Quantizers.
+"""Contains classes for reporting quantization decisions made by Quantizers.
 
 Basic useage:
 1. Implement the QuantizerReporterUser API for all quantizers intending to use the reporter.
@@ -11,57 +10,70 @@ Basic useage:
 3. After annotation, log the report using QuantizerReporter.log_quantizer_report(model).
 
 Logs a summary report at INFO level, and a detailed node-per-node report at DEBUG level.
+
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, NamedTuple, Optional
+from importlib import import_module
+from typing import Any, Callable, cast, Dict, List, NamedTuple, Optional
 
-from executorch.backends.cortex_m.quantizer.quantization_configs import (
-    __name__ as quantization_configs_module,
-    INT8_ACTIVATION_PER_CHANNEL_QSPEC,
-    INT8_ACTIVATION_PER_TENSOR_QSPEC,
-    INT8_PER_CHANNEL_CONFIG,
-    INT8_PER_TENSOR_CONFIG,
-    INT8_WEIGHT_PER_CHANNEL_QSPEC,
-    INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC,
-    INT8_WEIGHT_PER_TENSOR_QSPEC,
-    SOFTMAX_OUTPUT_FIXED_QSPEC,
-)
-from tabulate import tabulate
 from torch.fx import GraphModule, Node
-from torchao.quantization.pt2e.quantizer import Quantizer
+from torchao.quantization.pt2e.quantizer import (
+    DerivedQuantizationSpec,
+    QuantizationAnnotation,
+    QuantizationSpec,
+    QuantizationSpecBase,
+    SharedQuantizationSpec,
+)
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 logger = logging.getLogger(__name__)
+tabulate = cast(Callable[..., str], import_module("tabulate").tabulate)
 
 # Look-up dicts used to get human readable names for supported quantization configs and specs
-SUPPORTED_QCONFIGS = {
-    INT8_PER_CHANNEL_CONFIG: f"{quantization_configs_module}.INT8_PER_CHANNEL_QCONFIG",
-    INT8_PER_TENSOR_CONFIG: f"{quantization_configs_module}.INT8_PER_TENSOR_QCONFIG",
-}
-
-
-SUPPORTED_QSPECS = {
-    INT8_ACTIVATION_PER_TENSOR_QSPEC: "INT8_ACTIVATION_PER_TENSOR_QSPEC",
-    INT8_ACTIVATION_PER_CHANNEL_QSPEC: "INT8_ACTIVATION_PER_CHANNEL_QSPEC",
-    INT8_WEIGHT_PER_TENSOR_QSPEC: "INT8_WEIGHT_PER_TENSOR_QSPEC",
-    INT8_WEIGHT_PER_CHANNEL_QSPEC: "INT8_WEIGHT_PER_CHANNEL_QSPEC",
-    INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC: "INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC",
-    SOFTMAX_OUTPUT_FIXED_QSPEC: "SOFTMAX_OUTPUT_FIXED_QSPEC",
-    None: "None",
-}
+SUPPORTED_QCONFIGS: dict[Any, str] = {}
+SUPPORTED_QSPECS: dict[QuantizationSpecBase | None, str] = {}
 
 
 def _qspec_repr(qspec):
-    return SUPPORTED_QSPECS.get(qspec, "CUSTOM_QSPEC")
+    """Get a human readable representation of QuantizationSpecs.
+
+    Note that the observer_or_fake_quant_ctr field is created dynamically with
+    the qspec so two qspecs created at different times will not evaluate as
+    equal. Therefore a custom comparison is required.
+
+    #TODO: Clean up qconfig/ qspec string representation logic in cortex_m/arm
+    backend.
+
+    """
+    if isinstance(qspec, SharedQuantizationSpec):
+        return "SHARED_QSPEC"
+    elif isinstance(qspec, DerivedQuantizationSpec):
+        return "DERIVED_QSPEC"
+    elif qspec is None:
+        return "NO_QSPEC"
+    elif isinstance(qspec, QuantizationSpec):
+        for key, val in SUPPORTED_QSPECS.items():
+            if type(qspec) is not type(key):
+                continue
+            if qspec.dtype != key.dtype:
+                continue
+            if qspec.quant_min != key.quant_min:
+                continue
+            if qspec.quant_max != key.quant_max:
+                continue
+            if qspec.qscheme != key.qscheme:
+                continue
+            if qspec.is_dynamic != key.is_dynamic:
+                continue
+            return val
+    return "UNREGISTERED_QSPEC"
 
 
 class QuantizerInfo(NamedTuple):
-    """
-    NamedTuple storing information about a Quantizer.
-    """
+    """NamedTuple storing information about a Quantizer."""
 
     name: str
     targeted_nodes_description: str
@@ -70,9 +82,7 @@ class QuantizerInfo(NamedTuple):
 
 
 class NodeQSpecReport(NamedTuple):
-    """
-    NamedTuple storing annotation info for a single node.
-    """
+    """NamedTuple storing annotation info for a single node."""
 
     name: str
     qspec_input_map_lines: List[str]
@@ -80,26 +90,24 @@ class NodeQSpecReport(NamedTuple):
 
 
 class AnnotatedPatternReport(NamedTuple):
-    """
-    NamedTuple storing annotation info for a pattern of nodes.
-    """
+    """NamedTuple storing annotation info for a pattern of nodes."""
 
     nodes: List[NodeQSpecReport]
 
 
 class RejectedPatternReport(NamedTuple):
-    """
-    NamedTuple storing rejection info for a pattern of nodes.
-    """
+    """NamedTuple storing rejection info for a pattern of nodes."""
 
     node_names: List[str]
     rejection_reason: str
 
 
 class QuantizerReport:
-    """
-    Reporter class for collecting and generating quantization reports from a single Quantizer.
+    """Reporter class for collecting and generating quantization reports from a
+    single Quantizer.
+
     Used by the QuantizerReporter to aggregate reports from multiple Quantizers.
+
     """
 
     _PREVIOUS_ANNOTATION_REJECT_REASON = "Tried annotating already quantized node."
@@ -130,8 +138,8 @@ class QuantizerReport:
         )
 
     def report_accept(self, pattern: List[Node]) -> None:
-        """
-        Stores an AnnotatedPatternReport containing info about the accepted pattern.
+        """Stores an AnnotatedPatternReport containing info about the accepted
+        pattern.
         """
         node_reports = []
         for node in pattern:
@@ -139,7 +147,13 @@ class QuantizerReport:
                 raise ValueError(
                     "Node {node.name} reported as annotated but has no quantization annotation."
                 )
-            annotation = node.meta.get(Q_ANNOTATION_KEY)
+            annotation = cast(
+                QuantizationAnnotation | None, node.meta.get(Q_ANNOTATION_KEY)
+            )
+            if annotation is None:
+                raise ValueError(
+                    f"Node {node.name} was reported as annotated but annotation metadata is missing."
+                )
             qspec_input_map_lines = [
                 f"{node.name}: {_qspec_repr(qspec)}"
                 for node, qspec in annotation.input_qspec_map.items()
@@ -156,8 +170,8 @@ class QuantizerReport:
         self.accepted_patterns.append(AnnotatedPatternReport(node_reports))
 
     def report_reject(self, pattern, reason):
-        """
-        Stores an RejectedPatternReport containing info about the rejected pattern.
+        """Stores an RejectedPatternReport containing info about the rejected
+        pattern.
         """
         self.rejected_patterns.append(
             RejectedPatternReport([node.name for node in pattern], reason)
@@ -278,19 +292,21 @@ class QuantizerReport:
 
 
 class QuantizerReporter:
-    """
-    Reporter class for collecting and generating quantization reports from Quantizers
-    inheriting from QuantizerReporterUser.
+    """Reporter class for collecting and generating quantization reports from
+    Quantizers inheriting from QuantizerReporterUser.
     """
 
-    def __init__(self, quantizers: List[QuantizerReporterUser]):
-        self.quantizers: Dict[Quantizer, QuantizerReport] = {}
+    def __init__(
+        self,
+        quantizers: List[QuantizerReporterUser],
+        report_title: str = "QUANTIZATION REPORT",
+    ):
+        self.quantizers: Dict[QuantizerReporterUser, QuantizerReport] = {}
+        self.report_title = report_title
         self.set_quantizers(quantizers)
 
     def set_quantizers(self, quantizers: List[QuantizerReporterUser]) -> None:
-        """
-        Registers quantizers to report their quantization decisions.
-        """
+        """Registers quantizers to report their quantization decisions."""
 
         self.quantizers = {}
         for quantizer in quantizers:
@@ -306,8 +322,8 @@ class QuantizerReporter:
     def report_reject(
         self, quantizer: QuantizerReporterUser, pattern: List[Node], reason: str
     ):
-        """
-        Reports a node pattern rejected by a quantizer with a given reason.
+        """Reports a node pattern rejected by a quantizer with a given
+        reason.
         """
         quantizer_entry = self.quantizers.get(quantizer, None)
         if quantizer_entry is not None:
@@ -322,9 +338,7 @@ class QuantizerReporter:
         quantizer: QuantizerReporterUser,
         pattern: List[Node],
     ):
-        """
-        Reports a node pattern accepted by a quantizer.
-        """
+        """Reports a node pattern accepted by a quantizer."""
         quantizer_entry = self.quantizers.get(quantizer, None)
         if quantizer_entry is not None:
             quantizer_entry.report_accept(pattern)
@@ -334,11 +348,12 @@ class QuantizerReporter:
             )
 
     def log_quantizer_report(self, model: Optional[GraphModule] = None):
-        """
-        Logs the quantization report for all registered quantizers.
+        """Logs the quantization report for all registered quantizers.
 
-        If the logger is set to DEBUG level, a node-per-node report is generated and
-        logged at DEBUG level. Otherwise, a summary report is logged at INFO level.
+        If the logger is set to DEBUG level, a node-per-node report is generated
+        and logged at DEBUG level. Otherwise, a summary report is logged at INFO
+        level.
+
         """
         extended_report = logger.isEnabledFor(logging.DEBUG)
 
@@ -351,13 +366,16 @@ class QuantizerReporter:
     def get_quantization_report(
         self, model: Optional[GraphModule], extended_report: bool
     ) -> str:
-        """
-        Generates the quantization report for all registered quantizers
-        """
+        """Generates the quantization report for all registered quantizers."""
         report_rows: List[str] = []
         separator = "-" * 100
         report_rows.append(separator)
-        report_rows.append(" " * 39 + " QUANTIZATION REPORT " + " " * 40)
+        assert (
+            len(self.report_title) < 100
+        ), "Report title must be less than 100 characters to be properly formatted in the report header."
+        pre_pad = (100 - len(self.report_title)) // 2
+        post_pad = 100 - len(self.report_title) - pre_pad
+        report_rows.append(" " * pre_pad + f"{self.report_title}" + " " * post_pad)
         report_rows.append(separator)
 
         for report in self.quantizers.values():
@@ -373,12 +391,15 @@ class QuantizerReporter:
     def unannotated_nodes_report(
         self, model: Optional[GraphModule], extended_report: bool
     ) -> List[str]:
+        """Generates the quantization report for all non-annotated nodes in the
+        model.
         """
-        Generates the quantization report for all non-annotated nodes in the model.
-        """
-        non_quantized_nodes = [
-            node for node in model.graph.nodes if Q_ANNOTATION_KEY not in node.meta
-        ]
+        if model is None:
+            non_quantized_nodes: list[Node] = []
+        else:
+            non_quantized_nodes = [
+                node for node in model.graph.nodes if Q_ANNOTATION_KEY not in node.meta
+            ]
 
         rows = []
         if extended_report:
@@ -400,38 +421,36 @@ class QuantizerReporter:
 
 
 class QuantizerReporterUser:
-    """
-    Mixin class for Quantizers, to be used with QuantizerReporter.
+    """Mixin class for Quantizers, to be used with QuantizerReporter.
 
-    Handles reporter registration and ensures that that the quantizer does not crash
-    without a reporter registred
+    Handles reporter registration and ensures that that the quantizer does not
+    crash without a reporter registred
+
     """
 
     def __init__(self):
-        self.reporter: QuantizerReporter = None
+        self.reporter: Optional[QuantizerReporter] = None
 
     def register_reporter(self, reporter: QuantizerReporter) -> None:
-        """
-        Used by QuantizerReporter to register itself with the Quantizer.
-        """
+        """Used by QuantizerReporter to register itself with the Quantizer."""
         self.reporter = reporter
 
     def report_reject(self, pattern: List[Node], reason: str) -> None:
-        """
-        Reports a node pattern rejected by a quantizer, if a reporter is registered.
+        """Reports a node pattern rejected by a quantizer, if a reporter is
+        registered.
         """
         if self.reporter is not None:
             self.reporter.report_reject(self, pattern, reason)
 
     def report_accept(self, pattern: List[Node]) -> None:
-        """
-        Reports a node pattern accepted by a quantizer, if a reporter is registered.
+        """Reports a node pattern accepted by a quantizer, if a reporter is
+        registered.
         """
         if self.reporter is not None:
             self.reporter.report_accept(self, pattern)
 
     def get_quantizer_info(self) -> "QuantizerInfo":
-        """
-        Returns a QuantizerInfo NamedTuple with information about the quantizer.
+        """Returns a QuantizerInfo NamedTuple with information about the
+        quantizer.
         """
         raise NotImplementedError("Quantizer must implement get_quantizer_info method.")

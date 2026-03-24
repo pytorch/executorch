@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
-from typing import Dict, Sequence
+from typing import cast, Dict, Optional
 
 import torch
 from executorch.backends.cortex_m.passes.passes_utils import (
@@ -22,7 +22,6 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
 from torch.fx.node import Argument
-from torch.nn.modules.utils import _pair
 
 
 class QuantizedOpFusionPass(ExportPass):
@@ -183,72 +182,32 @@ class QuantizedOpFusionPass(ExportPass):
 
         return exir_ops.edge.cortex_m.softmax.default, new_args
 
+    def _to_int_pair(
+        self, value: Argument, default: Optional[tuple[int, int]]
+    ) -> tuple[int, int]:
+        if value is None:
+            assert default is not None, "Expected default sequence for normalization"
+            return (default[0], default[1])
+
+        try:
+            int_pair = cast(tuple[int, int], value)
+            return int_pair
+        except Exception:
+            raise ValueError(f"Expected a tuple of two integers, got {value}")
+
     def _unwrap_argument(self, arg: Argument) -> Argument:
         if isinstance(arg, ProxyValue):
             return arg.data
         return arg
 
-    def _resolve_default(
-        self, raw: Argument, default: Sequence[int] | None
-    ) -> Argument:
-        if raw is None:
-            if default is None:
-                raise RuntimeError("Expected default sequence for normalization")
-            return default
-        return raw
-
-    def _coerce_to_int_list(self, raw: Argument) -> list[int]:
-        if isinstance(raw, ProxyValue):
-            raw = raw.data
-        if isinstance(raw, torch.Tensor):
-            return [int(v) for v in raw.flatten().tolist()]
-        if isinstance(raw, (list, tuple, torch.Size)):
-            return [int(v) for v in raw]
-        if isinstance(raw, (int, bool)):
-            return [int(raw)]
-
-        try:
-            first, second = _pair(raw)
-        except TypeError as err:
-            raise RuntimeError(
-                f"Unsupported argument for pair normalization: {raw}"
-            ) from err
-        return [int(first), int(second)]
-
-    def _normalize_int_pair(
-        self, items: list[int], default: Sequence[int] | None
-    ) -> list[int]:
-        if not items:
-            if default is None:
-                raise RuntimeError("Cannot normalize empty sequence without default")
-            items = [int(v) for v in default]
-
-        if len(items) == 1:
-            return [items[0], items[0]]
-        if len(items) != 2:
-            raise RuntimeError(
-                f"Unsupported sequence length for pair normalization: {items}"
-            )
-        return [items[0], items[1]]
-
-    def _to_int_pair(self, value: Argument, default: Sequence[int] | None) -> list[int]:
-        raw = self._unwrap_argument(value)
-        raw = self._resolve_default(raw, default)
-        items = self._coerce_to_int_list(raw)
-        return self._normalize_int_pair(items, default)
-
     def _to_bool(self, value: Argument, default: bool) -> bool:
-        raw = self._unwrap_argument(value)
-        if isinstance(raw, bool):
-            return raw
-        if isinstance(raw, int):
-            return bool(raw)
-        if isinstance(raw, torch.Tensor):
-            try:
-                return bool(int(raw.item()))
-            except Exception:
-                return default
-        return default
+        if value is None:
+            return default
+        try:
+            bool_value = cast(bool, value)
+            return bool_value
+        except Exception:
+            raise ValueError(f"Expected a boolean value, got {value}")
 
     def _get_max_pool2d_replacement(self, args, meta):
         input_qparams = meta["input_qparams"].get(0)
@@ -292,7 +251,7 @@ class QuantizedOpFusionPass(ExportPass):
         ceil_mode_arg = args[5] if len(args) > 5 else False
         ceil_mode = self._to_bool(ceil_mode_arg, False)
 
-        if dilation != [1, 1] or ceil_mode:
+        if dilation != (1, 1) or ceil_mode:
             return exir_ops.edge.aten.max_pool2d.default, args
 
         quantized_op = getattr(exir_ops.edge.cortex_m, "quantized_max_pool2d", None)
