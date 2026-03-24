@@ -601,8 +601,6 @@ def main():
         print(ep)
         return ep
 
-    use_multimethod = args.multifunction or has_adapters
-
     if args.multifunction:
         # Multifunction mode: separate prefill and decode graphs with weight sharing
         # Both methods use the same cache_len (decode's cache size) so they can share
@@ -685,8 +683,8 @@ def main():
         }
         if has_adapters:
             constant_methods["has_lora"] = True
-    elif has_adapters:
-        # Adapter-only mode (no multifunction): base + adapter methods, same seqlen
+    else:
+        # Fixed seqlen mode: base + optional adapter methods
         print(f"\nCreating example inputs (seqlen={args.input_len})...")
         example_inputs, example_cache_len = _create_example_inputs(
             model_args, args.input_len, args.max_context_len, float_dtype
@@ -702,20 +700,8 @@ def main():
         constant_methods = _get_metadata(
             model_args, example_inputs, args.input_len, example_cache_len, float_dtype
         )
-        constant_methods["has_lora"] = True
-    else:
-        # Single method mode: fixed seqlen with generate_full_logits=True for lookahead
-        print(f"\nCreating example inputs (seqlen={args.input_len})...")
-        example_inputs, example_cache_len = _create_example_inputs(
-            model_args, args.input_len, args.max_context_len, float_dtype
-        )
-
-        ep = _export_model(model, example_inputs, "model")
-
-        print("\nGenerating metadata for C++ runner...")
-        constant_methods = _get_metadata(
-            model_args, example_inputs, args.input_len, example_cache_len, float_dtype
-        )
+        if has_adapters:
+            constant_methods["has_lora"] = True
 
     # Setup CoreML partitioner
     print("\nSetting up CoreML partitioner...")
@@ -728,7 +714,7 @@ def main():
         compute_unit=ct.ComputeUnit.CPU_AND_NE,
         model_type=CoreMLBackend.MODEL_TYPE.MODEL,
     )
-    if use_multimethod:
+    if len(methods) > 1:
         compile_specs.append(
             CoreMLBackend.generate_multimethod_weight_sharing_strategy_compile_spec(
                 MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL
@@ -743,29 +729,19 @@ def main():
     # Lower to edge
     print("\nLowering to edge...")
     edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
-    if use_multimethod:
-        edge_manager = to_edge_transform_and_lower(
-            methods,
-            partitioner=[partitioner],
-            constant_methods=constant_methods,
-            compile_config=edge_compile_config,
-        )
-        for method_name in methods:
-            print(f"\nDelegated program ({method_name}):")
-            print(
-                format_delegated_graph(
-                    edge_manager.exported_program(method_name).graph_module
-                )
+    edge_manager = to_edge_transform_and_lower(
+        methods,
+        partitioner=[partitioner],
+        constant_methods=constant_methods,
+        compile_config=edge_compile_config,
+    )
+    for method_name in methods:
+        print(f"\nDelegated program ({method_name}):")
+        print(
+            format_delegated_graph(
+                edge_manager.exported_program(method_name).graph_module
             )
-    else:
-        edge_manager = to_edge_transform_and_lower(
-            ep,
-            partitioner=[partitioner],
-            constant_methods=constant_methods,
-            compile_config=edge_compile_config,
         )
-        print("\nDelegated program:")
-        print(format_delegated_graph(edge_manager.exported_program().graph_module))
 
     # Convert to ExecuTorch
     print("\nConverting to ExecuTorch...")

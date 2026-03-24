@@ -188,7 +188,7 @@ class ArmPassManager(PassManager):
         """
         skip_set: set[type] = set()
 
-        config = override_config or self.compile_spec.get_pass_pipeline_config()
+        config = override_config or self.compile_spec._get_pass_pipeline_config()
         logger.debug(f"Skip Config: {config}")
 
         match config.softmax:
@@ -557,6 +557,12 @@ class ArmPassManager(PassManager):
                 DecomposeDivTensorModePass(tfa_pass=True),
                 DecomposeWhereScalarOtherPass(tfa_pass=True),
                 RewriteInplaceArithmeticPass(tfa_pass=True),
+                DecomposeAddSubAlphaPass(tfa_pass=True),
+                DecomposeLeakyReLUPass(tfa_pass=True),
+                DecomposeGroupNormPass(tfa_pass=True),
+                DecomposeLayerNormPass(tfa_pass=True),
+                DecomposeVarPass(tfa_pass=True),
+                DecomposeMeanDimPass(graph_module, self.tosa_spec, tfa_pass=True),
             ]
         )
 
@@ -573,16 +579,10 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 NormalizeWhileInitialArgsPass(use_exir_clone=False, tfa_pass=True),
-                DecomposeAddSubAlphaPass(tfa_pass=True),
-                DecomposeGroupNormPass(tfa_pass=True),
-                DecomposeLayerNormPass(tfa_pass=True),
-                DecomposeVarPass(tfa_pass=True),
-                DecomposeMeanDimPass(graph_module, self.tosa_spec, tfa_pass=True),
                 DecomposeNotEqualPass(tfa_pass=True),
                 DecomposeCosineSimilarityPass(tfa_pass=True),
                 DecomposeGluPass(tfa_pass=True),
                 DecomposeDivPass(tfa_pass=True),
-                DecomposeLeakyReLUPass(tfa_pass=True),
                 DecomposeLinalgVectorNormPass(tfa_pass=True),
                 DecomposeSqrtPass(tfa_pass=True),
                 DecomposeAdaptiveAvgPool2dPass(tfa_pass=True),

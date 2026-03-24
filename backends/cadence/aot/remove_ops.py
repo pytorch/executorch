@@ -14,6 +14,8 @@ import executorch.backends.cadence.aot.ops_registrations  # noqa: F401
 
 import torch
 import torch.fx
+
+from executorch.backends.cadence.aot.fuse_ops import FuseTransposeOrPermuteOpPairsPass
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
     get_arg,
@@ -21,7 +23,6 @@ from executorch.backends.cadence.aot.pass_utils import (
     RemoveOrReplacePassInterface,
     set_arg,
 )
-
 from executorch.backends.cadence.aot.simplify_ops import SimplifySliceOpPass
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
@@ -412,6 +413,9 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         exir_ops.edge.cadence.quantize_per_tensor.default,
         exir_ops.edge.cadence.dequantize_per_tensor.default,
+        exir_ops.edge.cadence.quantized_relu.per_tensor,
+        exir_ops.edge.cadence.requantize.per_tensor,
+        exir_ops.edge.cadence.quantized_add.per_tensor,
         # Ops that require special handling.
         exir_ops.edge.aten.cat.default,
         exir_ops.edge.aten.mean.dim,
@@ -804,6 +808,7 @@ class CommonRemovePasses:
         RemoveToOpsPass,
         RemoveZeroSizedCatArgsPass,
         RemovePermutesAroundElementwiseOps,
+        FuseTransposeOrPermuteOpPairsPass,
         RemoveSqueezeViewBeforeElementwiseOps,
         RemoveCatFromSliceCopyPass,
         RemoveCloneOpsTransformImported,
