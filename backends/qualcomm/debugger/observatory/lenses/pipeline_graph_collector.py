@@ -39,6 +39,7 @@ class PipelineGraphCollectorLens(Lens):
     _installed: bool = False
     _originals: Dict[str, Any] = {}
     _collect_fn: Optional[Callable[[str, Any], None]] = None
+    _last_export_inputs: Optional[tuple] = None
 
     @classmethod
     def get_name(cls) -> str:
@@ -65,6 +66,7 @@ class PipelineGraphCollectorLens(Lens):
     @classmethod
     def clear(cls) -> None:
         cls._uninstall_all()
+        cls._last_export_inputs = None
 
     @classmethod
     def observe(cls, artifact: Any, context: ObservationContext) -> Any:
@@ -94,6 +96,9 @@ class PipelineGraphCollectorLens(Lens):
             def patched_export(*args, **kwargs):
                 result = original(*args, **kwargs)
                 try:
+                    # torch.export.export(mod, args, ...) — args[1] is the input tuple
+                    if len(args) >= 2:
+                        cls._last_export_inputs = args[1]
                     cls._collect_fn("Exported Float", result)
                 except Exception as exc:
                     logging.debug(
@@ -325,5 +330,6 @@ class PipelineGraphCollectorLens(Lens):
 
         cls._originals.clear()
         cls._collect_fn = None
+        cls._last_export_inputs = None
         cls._installed = False
         logging.info("[PipelineGraphCollector] Uninstalled all patches")
