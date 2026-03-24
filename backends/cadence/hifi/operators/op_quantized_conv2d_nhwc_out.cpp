@@ -166,7 +166,8 @@ void xa_opt_quantized_conv2d_nhwc(
   bool conv1d = input.dim() == 3;
   constexpr int kNnlibMaxDim = 4;
 
-  if (input.scalar_type() == ScalarType::Char) {
+  if (input.scalar_type() == ScalarType::Char ||
+      input.scalar_type() == ScalarType::Byte) {
     WORD8* __restrict__ p_out =
         (WORD8* __restrict__)out.mutable_data_ptr<int8_t>();
     WORD8* __restrict__ p_inp =
