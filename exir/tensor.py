@@ -366,6 +366,18 @@ def make_tensor_value(
     tensor_size = to_list(spec.shape)
     tensor_dim_order = to_list(spec.dim_order)
 
+    extra_tensor_info = spec.extra_tensor_info
+    # Propagate device from TensorSpec into ExtraTensorInfo for serialization.
+    if spec.device != schema.DeviceType.CPU:
+        if extra_tensor_info is None:
+            extra_tensor_info = schema.ExtraTensorInfo(
+                device_type=spec.device,
+                device_index=spec.device_index,
+            )
+        else:
+            extra_tensor_info.device_type = spec.device
+            extra_tensor_info.device_index = spec.device_index
+
     flatbuffer_tensor = schema.Tensor(
         scalar_type=scalar_type_enum(spec.scalar_type),
         # The runtime currently only supports tensors with offsets of zero.
@@ -377,7 +389,7 @@ def make_tensor_value(
         allocation_info=allocation_info,
         layout=layout_enum(spec.layout),
         shape_dynamism=spec.shape_dynamism,
-        extra_tensor_info=spec.extra_tensor_info,
+        extra_tensor_info=extra_tensor_info,
     )
     return flatbuffer_tensor
 
