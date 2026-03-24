@@ -30,22 +30,22 @@ binary_op_texture:
     - NAME: binary_minimum_texture3d
       OPERATOR: min(X, Y)
     - NAME: binary_eq_int32_texture3d
-      OPERATOR: X == Y
+      OPERATOR: equal(X, Y)
       DTYPE: int32
     - NAME: binary_eq_texture3d
-      OPERATOR: abs(X - Y) < 1e-5
+      OPERATOR: lessThan(abs(X - Y), VEC4_T(1e-5))
       generate_variant_forall:
         DTYPE:
           - VALUE: half
           - VALUE: float
     - NAME: binary_lt_texture3d
-      OPERATOR: X < Y
+      OPERATOR: lessThan(X, Y)
     - NAME: binary_le_texture3d
-      OPERATOR: X <= Y
+      OPERATOR: lessThanEqual(X, Y)
     - NAME: binary_gt_texture3d
-      OPERATOR: X > Y
+      OPERATOR: greaterThan(X, Y)
     - NAME: binary_ge_texture3d
-      OPERATOR: X >= Y
+      OPERATOR: greaterThanEqual(X, Y)
     - NAME: binary_bitwise_and_texture3d
       OPERATOR: X & Y
       generate_variant_forall:

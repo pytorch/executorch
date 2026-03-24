@@ -82,6 +82,15 @@ void add_binary_op_node(
   vkapi::ParamsBindList ubos = {
       graph.meta_ubo(out), graph.meta_ubo(arg1), graph.meta_ubo(arg2)};
 
+  // Detect packed-dim broadcasting for texture path
+  int32_t in_broadcast_packed = 0;
+  int32_t other_broadcast_packed = 0;
+  if (!graph.is_buffer_storage(out)) {
+    in_broadcast_packed = is_packed_dim_broadcasted(graph, out, arg1) ? 1 : 0;
+    other_broadcast_packed =
+        is_packed_dim_broadcasted(graph, out, arg2) ? 1 : 0;
+  }
+
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
@@ -96,7 +105,9 @@ void add_binary_op_node(
       // Specialization Constants
       {graph.hashed_layout_of(out),
        graph.hashed_layout_of(arg1),
-       graph.hashed_layout_of(arg2)},
+       graph.hashed_layout_of(arg2),
+       in_broadcast_packed,
+       other_broadcast_packed},
       // Resize Args
       {},
       // Resizing Logic
