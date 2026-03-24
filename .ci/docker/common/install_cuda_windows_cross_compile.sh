@@ -48,19 +48,22 @@ get_torch_cuda_version() {
 }
 
 install_windows_cuda() {
-    # Get CUDA version from torch
-    TORCH_CUDA_VERSION=$(get_torch_cuda_version)
+    # Use CUDA_VERSION env var if set (from Docker build arg), otherwise query PyTorch
+    if [ -n "${CUDA_VERSION:-}" ]; then
+        echo "Using CUDA version from environment: ${CUDA_VERSION}"
+        CUDA_MAJOR_MINOR=$(echo "${CUDA_VERSION}" | cut -d. -f1,2)
+    else
+        TORCH_CUDA_VERSION=$(get_torch_cuda_version)
 
-    if [ -z "${TORCH_CUDA_VERSION}" ] || [ "${TORCH_CUDA_VERSION}" = "None" ]; then
-        echo "ERROR: Could not detect CUDA version from PyTorch."
-        echo "Make sure PyTorch with CUDA support is installed before running this script."
-        exit 1
+        if [ -z "${TORCH_CUDA_VERSION}" ] || [ "${TORCH_CUDA_VERSION}" = "None" ]; then
+            echo "ERROR: Could not detect CUDA version from PyTorch."
+            echo "Make sure PyTorch with CUDA support is installed or set CUDA_VERSION."
+            exit 1
+        fi
+
+        echo "Detected PyTorch CUDA version: ${TORCH_CUDA_VERSION}"
+        CUDA_MAJOR_MINOR=$(echo "${TORCH_CUDA_VERSION}" | cut -d. -f1,2)
     fi
-
-    echo "Detected PyTorch CUDA version: ${TORCH_CUDA_VERSION}"
-
-    # Extract major.minor version (e.g., "12.8" from "12.8.1" or "12.8")
-    CUDA_MAJOR_MINOR=$(echo "${TORCH_CUDA_VERSION}" | cut -d. -f1,2)
 
     # Look up the full version and driver version
     if [ -z "${CUDA_DRIVER_MAP[${CUDA_MAJOR_MINOR}]}" ]; then
