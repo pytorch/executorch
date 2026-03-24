@@ -80,6 +80,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.repeat.default,
     exir_ops.edge.aten.reciprocal.default,
     exir_ops.edge.aten.relu.default,
+    exir_ops.edge.aten.remainder.Scalar,
     exir_ops.edge.aten.remainder.Tensor,
     exir_ops.edge.aten.rsqrt.default,
     exir_ops.edge.aten.select_copy.int,
