@@ -1437,6 +1437,38 @@ def register_embedding():
 
 
 # =============================================================================
+# EmbeddingQ4gsw (Quantized Embedding)
+# =============================================================================
+
+
+@update_features(exir_ops.edge.quantized_decomposed.embedding_4bit.dtype)
+def register_quantized_decomposed_embedding_4bit():
+    def check_embedding_4bit_weight_size(node: torch.fx.Node) -> bool:
+        weight = node.args[0]
+        if isinstance(weight, torch.fx.Node) and utils.is_tensor_node(weight):
+            numel = weight.meta["val"].numel()
+            if numel > utils.DEFAULT_BUFFER_LIMIT:
+                return False
+        return True
+
+    return OpFeatures(
+        inputs_storage=utils.ANY_BUFFER,
+        supports_prepacking=True,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_embedding_4bit_weight_size,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.embedding_q4gsw.default)
+def register_embedding_q4gsw():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        supports_prepacking=True,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
 # BatchNorm.cpp
 # =============================================================================
 

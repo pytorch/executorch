@@ -11,6 +11,7 @@ import torch
 from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     NeutronAtenPassManager,
 )
+from executorch.backends.nxp.backend.graph_utils import batch_norm_target_ops
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import (
     AddMMConverter,
     MMConverter,
@@ -26,9 +27,10 @@ from executorch.backends.nxp.tests.executors import (
     graph_contains_any_of_ops,
     OverrideTargetSupportCheck,
 )
-
-from executorch.backends.nxp.tests.models import ConvBNModule
-from torch import nn
+from executorch.backends.nxp.tests.models import (
+    ConvBatchNormModule,
+    LinearBatchNormModule,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -37,69 +39,11 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-class BatchNormModule(torch.nn.Module):
-    def __init__(self, input_rank: int, num_features: int, eps: float = 1e-5):
-        super().__init__()
-        match input_rank - 2:
-            case 1:
-                self.batch_norm = nn.BatchNorm1d(num_features, eps)
-            case 2:
-                self.batch_norm = nn.BatchNorm2d(num_features, eps)
-            case 3:
-                self.batch_norm = nn.BatchNorm3d(num_features, eps)
-            case _:
-                raise ValueError
-        self.eval()
-
-    def forward(self, x):
-        return self.batch_norm(x)
-
-
-class ConvBatchNormModule(torch.nn.Module):
-    def __init__(
-        self, bias: bool, input_rank: int, num_features: int, eps: float = 1e-5
-    ):
-        super().__init__()
-        self.conv = torch.nn.Conv2d(
-            in_channels=num_features,
-            out_channels=num_features,
-            kernel_size=3,
-            bias=bias,
-        )
-        self.batch_norm = BatchNormModule(input_rank, num_features, eps)
-        self.eval()
-
-    def forward(self, x):
-        x = self.conv(x)
-        return self.batch_norm(x)
-
-
-class LinearBatchNormModule(torch.nn.Module):
-    def __init__(
-        self,
-        bias: bool,
-        input_rank: int,
-        fc_in_features: int,
-        fc_out_features: int,
-        eps: float = 1e-5,
-    ):
-        super().__init__()
-        self.linear = torch.nn.Linear(fc_in_features, fc_out_features, bias=bias)
-        self.batch_norm = BatchNormModule(input_rank, fc_out_features, eps)
-        self.eval()
-
-    def forward(self, x):
-        x = self.linear(x)
-        return self.batch_norm(x)
-
-
 @pytest.mark.parametrize(
     "bias", [True, False], ids=lambda x: "Bias" if x else "No bias"
 )
-@pytest.mark.parametrize(
-    "input_shape", [[4, 6, 8], [2, 4, 6, 8]], ids=lambda x: f"{len(x)}D"
-)
-def test_batch_norm_conv_fusing(bias: bool, input_shape: list[int]):
+def test_batch_norm_conv_fusing(bias: bool):
+    input_shape = [2, 4, 6, 8]
     example_input = (torch.ones(*input_shape),)
 
     module = ConvBatchNormModule(bias, len(input_shape), 4)
@@ -107,26 +51,19 @@ def test_batch_norm_conv_fusing(bias: bool, input_shape: list[int]):
     og_module = program.module()
 
     pm = NeutronAtenPassManager(neutron_target_spec)
-    graph_module_out = pm(deepcopy(program.module())).graph_module
+    transformed_module = pm(deepcopy(program.module())).graph_module
 
     # Make sure the fusion worked.
-    og_nodes = list(program.graph.nodes)
-    transformed_nodes = list(graph_module_out.graph.nodes)
+    assert graph_contains_any_of_ops(program.graph, batch_norm_target_ops)
 
-    assert any(
-        node.op == "call_function" and node.target.__name__ == "batch_norm.default"
-        for node in og_nodes
-    )
-
-    assert not any(
-        node.op == "call_function" and "batch_norm" in node.target.__name__
-        for node in transformed_nodes
+    assert not graph_contains_any_of_ops(
+        transformed_module.graph, batch_norm_target_ops
     )
 
     # Verify that the behavior has not changed.
     input_data = torch.randn(input_shape, dtype=torch.float32)
     out1 = og_module(input_data).detach().numpy()
-    out2 = graph_module_out(input_data).detach().numpy()
+    out2 = transformed_module(input_data).detach().numpy()
     torch.testing.assert_close(out1, out2)
 
 
@@ -134,10 +71,12 @@ def test_batch_norm_conv_fusing(bias: bool, input_shape: list[int]):
     "bias", [True, False], ids=lambda x: "Bias" if x else "No bias"
 )
 def test_batch_norm_linear_fusing(bias: bool):
-    input_shape = (2, 4, 6, 8)
+    input_shape = (2, 4)
     example_input = (torch.ones(*input_shape),)
 
-    module = LinearBatchNormModule(bias, 4, input_shape[-1], input_shape[1])
+    module = LinearBatchNormModule(
+        bias, 2, input_shape[-1], input_shape[1], input_shape[1]
+    )
     program = torch.export.export(module, example_input, strict=True)
     og_module = program.module()
 
@@ -145,18 +84,15 @@ def test_batch_norm_linear_fusing(bias: bool):
     graph_module_out = pm(deepcopy(program.module())).graph_module
 
     # Make sure the fusion worked.
-    og_nodes = list(og_module.graph.nodes)
-    transformed_nodes = list(graph_module_out.graph.nodes)
-
-    assert any(
-        node.op == "call_function" and node.target.__name__ == "linear.default"
-        for node in og_nodes
+    assert graph_contains_any_of_ops(
+        graph_module_out.graph,
+        [
+            torch.ops.aten.addmm.default,
+            torch.ops.aten.linear.default,
+        ],
     )
 
-    assert not any(
-        node.op == "call_function" and "batch_norm" in node.target.__name__
-        for node in transformed_nodes
-    )
+    assert not graph_contains_any_of_ops(graph_module_out.graph, batch_norm_target_ops)
 
     # Verify that the behavior has not changed.
     input_data = torch.randn(input_shape, dtype=torch.float32)
@@ -170,18 +106,14 @@ def test_batch_norm_linear_fusing(bias: bool):
 )
 def test_batch_norm_conv_fusing__full_pipeline__1d(bias: bool):
     input_shape = [4, 6, 8]
-    module = ConvBatchNormModule(bias, len(input_shape), 4)
+    module = ConvBatchNormModule(bias, len(input_shape), 6)
 
     edge_program = to_quantized_edge_program(
         module, tuple(input_shape)
     ).exported_program()
-    nodes = list(edge_program.graph.nodes)
 
-    assert len(nodes) == 13
-    assert not any(
-        node.op == "call_function" and "batch_norm" in node.target.__name__
-        for node in nodes
-    )
+    assert len(edge_program.graph.nodes) == 15
+    assert not graph_contains_any_of_ops(edge_program.graph, batch_norm_target_ops)
 
 
 @pytest.mark.parametrize(
@@ -194,21 +126,19 @@ def test_batch_norm_conv_fusing__full_pipeline__2d(bias: bool):
     edge_program = to_quantized_edge_program(
         module, tuple(input_shape)
     ).exported_program()
-    nodes = list(edge_program.graph.nodes)
 
-    assert len(nodes) == 7
-    assert not any(
-        node.op == "call_function" and "batch_norm" in node.target.__name__
-        for node in nodes
-    )
+    assert len(edge_program.graph.nodes) == 7
+    assert not graph_contains_any_of_ops(edge_program.graph, batch_norm_target_ops)
 
 
 @pytest.mark.parametrize(
     "bias", [True, False], ids=lambda x: "Bias" if x else "No bias"
 )
 def test_batch_norm_linear_fusing__full_pipeline(bias: bool):
-    input_shape = (2, 4, 6, 8)
-    module = LinearBatchNormModule(bias, 4, input_shape[-1], input_shape[1])
+    input_shape = (2, 4)
+    module = LinearBatchNormModule(
+        bias, 2, input_shape[-1], input_shape[1], input_shape[1]
+    )
 
     # Don't delegate the Linear node, because there seems to be a bug with the NeutronConverter/NeutronPartitioner.
     #  But that doesn't affect the validity of this test.
@@ -227,30 +157,60 @@ def test_batch_norm_linear_fusing__full_pipeline(bias: bool):
                 edge_program = to_quantized_edge_program(
                     module, tuple(input_shape)
                 ).exported_program()
-                nodes = list(edge_program.graph.nodes)
 
-    assert len(nodes) == 18
-    assert not any(
-        node.op == "call_function" and "batch_norm" in node.target.__name__
-        for node in nodes
-    )
+    assert len(edge_program.graph.nodes) == 12
+    assert not graph_contains_any_of_ops(edge_program.graph, batch_norm_target_ops)
 
 
 @pytest.mark.parametrize(
-    "conv_module",
-    ["conv2d"],
+    "bias", [True, False], ids=lambda x: "Bias" if x else "No bias"
 )
-def test_biasless_convbn_fusion_qat(
-    conv_module,
+@pytest.mark.parametrize(
+    "input_shape",
+    [[4, 6, 8], [2, 4, 6, 8], [2, 4, 6, 8, 10]],
+    ids=lambda x: f"{len(x)}D",
+)
+@pytest.mark.parametrize("use_qat", [False, True], ids=lambda x: "QAT" if x else "PTQ")
+def test_batch_norm_linear_incompatible__full_pipeline(
+    bias: bool, input_shape: list[int], use_qat: bool
 ):
-    if conv_module.startswith("conv1d"):
-        input_shape = (1, 3, 32)
-    elif conv_module.startswith("conv2d"):
-        input_shape = (1, 3, 32, 32)
-    else:  # conv3d
-        input_shape = (1, 3, 32, 32, 32)
+    if not use_qat:
+        pytest.skip("Fusion done by `prepare_pt2e` itself. This is a bug in TorchAO.")
 
-    model = ConvBNModule(conv_module, conv_bias=False, bn_affine=True)
+    module = LinearBatchNormModule(
+        bias, len(input_shape), input_shape[-1], input_shape[1], input_shape[1]
+    )
+
+    # Don't delegate the Linear node, because there seems to be a bug with the NeutronConverter/NeutronPartitioner.
+    #  But that doesn't affect the validity of this test.
+    def unsupported_target(*_):  # Accept all input arguments and return `False`.
+        return False
+
+    with OverrideTargetSupportCheck(
+        AddMMConverter, new_target_support_check=unsupported_target
+    ):
+        with OverrideTargetSupportCheck(
+            MMConverter, new_target_support_check=unsupported_target
+        ):
+            with OverrideTargetSupportCheck(
+                ViewCopyConverter, new_target_support_check=unsupported_target
+            ):
+                edge_program = to_quantized_edge_program(
+                    module, tuple(input_shape), use_qat=use_qat
+                ).exported_program()
+
+    expected_num_of_nodes = 20 if bias else 18
+    assert len(edge_program.graph.nodes) == expected_num_of_nodes
+    assert graph_contains_any_of_ops(edge_program.graph, batch_norm_target_ops)
+
+
+def test_biasless_convbn_fusion_qat():
+    input_shape = (1, 3, 3, 3)
+    model = ConvBatchNormModule(
+        bias=False,
+        input_rank=len(input_shape),
+        num_features=3,
+    )
 
     edge_program = to_quantized_edge_program(
         model, input_shape, use_qat=True, use_neutron_for_format_conversion=False
