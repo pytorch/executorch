@@ -203,6 +203,14 @@ public class <span class="typeNameLabel"><a href=LlmModuleConfig.Builder.html>Ll
                                         </tr>
                                         
                                         <tr id="i7" class="rowColor">
+                                            <td class="colFirst"><code><a href=LlmModuleConfig.Builder.html>LlmModuleConfig.Builder</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=LlmModuleConfig.Builder.html#loadMode(int)>loadMode</a>(int loadMode) </code>
+                                            </th>
+                                            <td class="colLast">Sets the load mode for the model file.</td>
+                                        </tr>
+                                        
+                                        <tr id="i8" class="altColor">
                                             <td class="colFirst"><code><a href=LlmModuleConfig.html>LlmModuleConfig</a></code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModuleConfig.Builder.html#build()>build</a>() </code>
@@ -403,6 +411,30 @@ public class <span class="typeNameLabel"><a href=LlmModuleConfig.Builder.html>Ll
                                             
                                             
                                             <dd><code>numEos</code> - number of EOS tokens</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="loadMode(int)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>loadMode</h4>
+                                        <pre class="methodSignature"> <a href=LlmModuleConfig.Builder.html>LlmModuleConfig.Builder</a> <a href=LlmModuleConfig.Builder.html#loadMode(int)>loadMode</a>(int loadMode)</pre>
+                                        <div class="block"><p>Sets the load mode for the model file. Defaults to <a href=LlmModuleConfig.html#LOAD_MODE_MMAP>LOAD_MODE_MMAP</a> (mmap withoutmlock), which avoids pinning model pages in RAM.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>loadMode</code> - One of LOAD_MODE_FILE, LOAD_MODE_MMAP, LOAD_MODE_MMAP_USE_MLOCK,LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS</dd>
                                             
                                             
                                         </dl>

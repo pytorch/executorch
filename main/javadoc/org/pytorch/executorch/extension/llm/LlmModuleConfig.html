@@ -207,18 +207,48 @@ public class <span class="typeNameLabel"><a href=LlmModuleConfig.html>LlmModuleC
                                         </tr>
                                         
                                         <tr class="rowColor">
-                                            <td class="colFirst"><code>public final static int</code></td>
-                                            <th class="colSecond" scope="row"><code><a href=LlmModuleConfig.html#MODEL_TYPE_TEXT>MODEL_TYPE_TEXT</a></code></th>
+                                            <td class="colFirst"><code>private final int</code></td>
+                                            <th class="colSecond" scope="row"><code><a href=LlmModuleConfig.html#loadMode>loadMode</a></code></th>
                                             <td class="colLast"></td>
                                         </tr>
                                         
                                         <tr class="altColor">
                                             <td class="colFirst"><code>public final static int</code></td>
-                                            <th class="colSecond" scope="row"><code><a href=LlmModuleConfig.html#MODEL_TYPE_TEXT_VISION>MODEL_TYPE_TEXT_VISION</a></code></th>
+                                            <th class="colSecond" scope="row"><code><a href=LlmModuleConfig.html#LOAD_MODE_FILE>LOAD_MODE_FILE</a></code></th>
                                             <td class="colLast"></td>
                                         </tr>
                                         
                                         <tr class="rowColor">
+                                            <td class="colFirst"><code>public final static int</code></td>
+                                            <th class="colSecond" scope="row"><code><a href=LlmModuleConfig.html#LOAD_MODE_MMAP>LOAD_MODE_MMAP</a></code></th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
+                                        <tr class="altColor">
+                                            <td class="colFirst"><code>public final static int</code></td>
+                                            <th class="colSecond" scope="row"><code><a href=LlmModuleConfig.html#LOAD_MODE_MMAP_USE_MLOCK>LOAD_MODE_MMAP_USE_MLOCK</a></code></th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
+                                        <tr class="rowColor">
+                                            <td class="colFirst"><code>public final static int</code></td>
+                                            <th class="colSecond" scope="row"><code><a href=LlmModuleConfig.html#LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS>LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS</a></code></th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
+                                        <tr class="altColor">
+                                            <td class="colFirst"><code>public final static int</code></td>
+                                            <th class="colSecond" scope="row"><code><a href=LlmModuleConfig.html#MODEL_TYPE_TEXT>MODEL_TYPE_TEXT</a></code></th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
+                                        <tr class="rowColor">
+                                            <td class="colFirst"><code>public final static int</code></td>
+                                            <th class="colSecond" scope="row"><code><a href=LlmModuleConfig.html#MODEL_TYPE_TEXT_VISION>MODEL_TYPE_TEXT_VISION</a></code></th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
+                                        <tr class="altColor">
                                             <td class="colFirst"><code>public final static int</code></td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModuleConfig.html#MODEL_TYPE_MULTIMODAL>MODEL_TYPE_MULTIMODAL</a></code></th>
                                             <td class="colLast"></td>
@@ -312,6 +342,14 @@ public class <span class="typeNameLabel"><a href=LlmModuleConfig.html>LlmModuleC
                                         </tr>
                                         
                                         <tr id="i7" class="rowColor">
+                                            <td class="colFirst"><code>int</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=LlmModuleConfig.html#getLoadMode()>getLoadMode</a>() </code>
+                                            </th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
+                                        <tr id="i8" class="altColor">
                                             <td class="colFirst"><code>static <a href=LlmModuleConfig.Builder.html>LlmModuleConfig.Builder</a></code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModuleConfig.html#create()>create</a>() </code>
@@ -451,6 +489,21 @@ public class <span class="typeNameLabel"><a href=LlmModuleConfig.html>LlmModuleC
                                     <li class="blockList">
                                         <h4>getNumEos</h4>
                                         <pre class="methodSignature"> int <a href=LlmModuleConfig.html#getNumEos()>getNumEos</a>()</pre>
+                                        <div class="block"></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="getLoadMode()">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>getLoadMode</h4>
+                                        <pre class="methodSignature"> int <a href=LlmModuleConfig.html#getLoadMode()>getLoadMode</a>()</pre>
                                         <div class="block"></div>
                                         
                                         <!-- TODO missing return annotation -->
