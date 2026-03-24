@@ -102,8 +102,8 @@
         const rows = Object.entries(rec.diff_index)
           .map(([key, val]) => {
             const text = String(val);
-            const plusMatch = text.match(/\+(\d+)/);
-            const minusMatch = text.match(/-(\d+)/);
+            const plusMatch  = text.match(/\+((?:\d+\.?\d*)|(?:\.\d+))/);
+            const minusMatch = text.match(/-((?:\d+\.?\d*)|(?:\.\d+))/);
             let stats = '';
             if (plusMatch || minusMatch) {
               if (plusMatch) stats += `<span class="stat-add">+${plusMatch[1]}</span>`;
