@@ -24,22 +24,31 @@ logger: logging.Logger = logging.getLogger(__name__)
 # with this key and a value encoding the device string (e.g., b"cuda:0").
 TARGET_DEVICE_COMPILE_SPEC_KEY = "target_device"
 
-# Mapping from torch.device type strings to schema.DeviceType.
-_DEVICE_STR_TO_ET_DEVICE: dict[str, schema.DeviceType] = {
-    "cpu": schema.DeviceType.CPU,
-    "cuda": schema.DeviceType.CUDA,
-}
-
 
 def _parse_device_spec_value(value: bytes) -> tuple[schema.DeviceType, int]:
     """
     Parse a target_device CompileSpec value (e.g., b"cuda:0") into
     (DeviceType, device_index).
+
+    The type portion is matched case-insensitively against schema.DeviceType
+    member names (e.g., "cpu", "cuda").  Raises ValueError for unknown types.
     """
-    device_str = value.decode("utf-8")
-    torch_device = torch.device(device_str)
-    device_type = _DEVICE_STR_TO_ET_DEVICE.get(torch_device.type, schema.DeviceType.CPU)
-    device_index = torch_device.index if torch_device.index is not None else 0
+    device_str = value.decode("utf-8").strip().lower()
+    if ":" in device_str:
+        type_str, index_str = device_str.split(":", 1)
+        device_index = int(index_str)
+    else:
+        type_str = device_str
+        device_index = 0
+    device_type = next(
+        (dt for dt in schema.DeviceType if dt.name.lower() == type_str),
+        None,
+    )
+    if device_type is None:
+        valid = ", ".join(dt.name for dt in schema.DeviceType)
+        raise ValueError(
+            f"Unknown device type '{type_str}'. Valid types: {valid}"
+        )
     return device_type, device_index
 
 
@@ -193,11 +202,11 @@ class PropagateDevicePass(PassBase):
                     ):
                         source_spec = source_specs[idx]
                         if isinstance(source_spec, TensorSpec):
-                              _set_device_on_spec(
-                                  spec,
-                                  source_spec.device,
-                                  source_spec.device_index,
-                              )
-                              changed = True
+                            _set_device_on_spec(
+                                spec,
+                                source_spec.device,
+                                source_spec.device_index,
+                            )
+                            changed = True
 
         return PassResult(graph_module, changed)

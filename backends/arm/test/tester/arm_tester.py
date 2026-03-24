@@ -1226,7 +1226,7 @@ def _get_tosa_operator_distribution(
             raise NotImplementedError("Can not get operator distribution for VGF.")
         else:
             raise NotImplementedError(
-                f"Unknown output format '{compile_spec.get_output_format()}'."
+                f"Unknown output format '{compile_spec._get_output_format()}'."
             )
         id += 1
     if id == 0:

@@ -111,6 +111,7 @@ class _ViewSpec(TensorSpec):
             "dtype",  # property
             "extra_tensor_info",  # property
             "device",
+            "device_index",
         ]
 
         # Make sure _self_fields and _base_fields are disjoint
