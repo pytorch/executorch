@@ -56,6 +56,9 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 ${layout_declare_spec_const(C, "int", "out_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "in_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "other_layout", "CONTIG_LAYOUT_INT")}
+// Unused by buffer path, declared for spec constant ID consistency with texture
+${layout_declare_spec_const(C, "int", "in_broadcast_packed_dim", "0")}
+${layout_declare_spec_const(C, "int", "other_broadcast_packed_dim", "0")}
 
 void main() {
   const uint out_bufi = gl_GlobalInvocationID.x;
