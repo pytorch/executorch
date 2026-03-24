@@ -223,7 +223,7 @@ class FXGraphExporter:
             edge_map[key].points = points
 
     def _build_base_payload(self, nodes: dict[str, GraphNode], edges: list[GraphEdge]) -> BaseGraphPayload:
-        print("Compiling base graph payload...")
+        print("[FX Graph Viewer] Compiling base graph payload...")
 
         base_color_input = {node_id: node.info for node_id, node in nodes.items()}
         base_colors: dict[str, str] = {}
@@ -244,7 +244,7 @@ class FXGraphExporter:
         )
 
     def _build_extensions_payload(self) -> dict[str, GraphExtensionPayload]:
-        print("Compiling extension payloads...")
+        print("[ FX Graph Viewer ] Compiling extension payloads...")
         return {ext.id: ext.build_payload() for ext in self.extensions}
 
     def generate_json_payload(self) -> Dict[str, Any]:

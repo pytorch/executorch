@@ -17,14 +17,21 @@ Lazy configuration (on first "Exported Float" observe):
   - Extracts float model from ExportedProgram
   - Uses captured dataset (primary) or sample input from PipelineGraphCollectorLens (fallback)
   - Auto-detects task type, post_process, and metrics
-  - Computes golden outputs for PSNR/CosineSimilarity
+  - Computes golden outputs for PSNR/CosineSimilarity/MSE/AbsErr
+
+Per-sample statistics (when dataset has >1 sample):
+  - Each metric emits mean (primary), min, max, and worst_idx in the digest
+  - worst_idx is determined by each metric's higher_is_better direction
+  - AccuracyLens._worst_indices exposes {metric_name: index} as class-level state
+    so future lenses (e.g., per-layer accuracy) can read the worst input index
+    during their own observe() call without re-running inference
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Protocol
+from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 import torch
@@ -44,7 +51,7 @@ from ..interfaces import (
 
 
 # ---------------------------------------------------------------------------
-# Data model classes
+# Data model
 # ---------------------------------------------------------------------------
 
 
@@ -60,12 +67,54 @@ class PrecomputedOutputs:
                 self.outputs = [torch.from_numpy(o) for o in self.outputs]
 
 
-class Metric(Protocol):
-    def calculate(self, predictions: List[torch.Tensor]) -> float: ...
-    def name(self) -> str: ...
+# ---------------------------------------------------------------------------
+# Metric base class
+# ---------------------------------------------------------------------------
 
 
-class TopKAccuracy:
+class Metric:
+    """Base class for accuracy metrics.
+
+    Subclasses implement calculate_per_sample() which returns one scalar per
+    input sample.  The base class derives the aggregate mean and provides
+    worst_index() using the metric's built-in direction knowledge.
+
+    higher_is_better controls worst-case direction:
+      True  → worst = argmin  (PSNR, cosine_sim, TopK — lower means worse quality)
+      False → worst = argmax  (MSE, AbsErr — higher means worse quality)
+    """
+
+    higher_is_better: bool = True
+
+    def name(self) -> str:
+        raise NotImplementedError
+
+    def calculate_per_sample(self, predictions: List[torch.Tensor]) -> List[float]:
+        raise NotImplementedError
+
+    def calculate(self, predictions: List[torch.Tensor]) -> float:
+        values = self.calculate_per_sample(predictions)
+        return float(np.mean(values)) if values else 0.0
+
+    def worst_index(self, per_sample: List[float]) -> int:
+        if not per_sample:
+            return 0
+        if self.higher_is_better:
+            return int(np.argmin(per_sample))
+        else:
+            return int(np.argmax(per_sample))
+
+
+# ---------------------------------------------------------------------------
+# Metric implementations
+# ---------------------------------------------------------------------------
+
+
+class TopKAccuracy(Metric):
+    """Classification accuracy: fraction of samples where true label is in top-k."""
+
+    higher_is_better = True
+
     def __init__(self, targets: List[Any], k: int = 1):
         self.targets = targets
         self.k = k
@@ -73,11 +122,8 @@ class TopKAccuracy:
     def name(self) -> str:
         return f"top_{self.k}"
 
-    def calculate(self, predictions: List[torch.Tensor]) -> float:
-        correct = 0
-        total = len(predictions)
-        if total == 0:
-            return 0.0
+    def calculate_per_sample(self, predictions: List[torch.Tensor]) -> List[float]:
+        values = []
         for pred, target in zip(predictions, self.targets):
             if not isinstance(pred, torch.Tensor):
                 pred = torch.tensor(pred)
@@ -86,32 +132,50 @@ class TopKAccuracy:
             if pred.dim() == 2:
                 pred = pred.squeeze(0)
             _, indices = pred.topk(self.k)
-            if target.view(-1) in indices:
-                correct += 1
-        return (correct / total) * 100.0
+            values.append(100.0 if target.view(-1) in indices else 0.0)
+        return values
+
+    def calculate(self, predictions: List[torch.Tensor]) -> float:
+        values = self.calculate_per_sample(predictions)
+        return float(np.mean(values)) if values else 0.0
 
 
-class CosineSimilarity:
+class CosineSimilarity(Metric):
+    """Cosine similarity between predictions and golden outputs."""
+
+    higher_is_better = True
+
     def __init__(self, golden_outputs: List[torch.Tensor]):
         self.golden = golden_outputs
 
     def name(self) -> str:
         return "cosine_sim"
 
-    def calculate(self, predictions: List[torch.Tensor]) -> float:
+    def calculate_per_sample(self, predictions: List[torch.Tensor]) -> List[float]:
         if not self.golden or len(predictions) != len(self.golden):
-            return 0.0
-        sims = []
+            return []
+        values = []
         for p, g in zip(predictions, self.golden):
             p_flat = p.flatten().float()
             g_flat = g.flatten().float()
-            sims.append(
+            values.append(
                 F.cosine_similarity(p_flat.unsqueeze(0), g_flat.unsqueeze(0)).item()
             )
-        return float(np.mean(sims))
+        return values
 
 
-class PSNR:
+class PSNR(Metric):
+    """Peak Signal-to-Noise Ratio, capped at MAX_PSNR for UI consistency.
+
+    Raw PSNR above MAX_PSNR (e.g., 128 dB for near-zero error) is not
+    meaningfully different from perfect match, so we clamp to MAX_PSNR.
+    This gives a uniform ceiling: perfect match → MAX_PSNR, real degradation
+    → actual dB value below MAX_PSNR.
+    """
+
+    higher_is_better = True
+    MAX_PSNR = 100.0
+
     def __init__(self, golden_outputs: List[torch.Tensor]):
         self.golden = golden_outputs
         self.max_val = (
@@ -121,27 +185,69 @@ class PSNR:
     def name(self) -> str:
         return "psnr"
 
-    def calculate(self, predictions: List[torch.Tensor]) -> float:
+    def calculate_per_sample(self, predictions: List[torch.Tensor]) -> List[float]:
         if not self.golden or len(predictions) != len(self.golden):
-            return 0.0
-        psnrs = []
+            return []
+        values = []
         for p, g in zip(predictions, self.golden):
             mse = F.mse_loss(p.float(), g.float())
             if mse == 0:
-                psnrs.append(float("inf"))
+                values.append(self.MAX_PSNR)
             else:
-                psnrs.append(
+                db = (
                     20
                     * torch.log10(
                         torch.tensor(self.max_val) / torch.sqrt(mse)
                     ).item()
                 )
-        valid = [x for x in psnrs if x != float("inf")]
-        return float(np.mean(valid)) if valid else 100.0
+                values.append(min(db, self.MAX_PSNR))
+        return values
 
 
-class MaskedTokenAccuracy:
+class MSE(Metric):
+    """Mean Squared Error per sample.  Lower is better (higher_is_better=False)."""
+
+    higher_is_better = False
+
+    def __init__(self, golden_outputs: List[torch.Tensor]):
+        self.golden = golden_outputs
+
+    def name(self) -> str:
+        return "mse"
+
+    def calculate_per_sample(self, predictions: List[torch.Tensor]) -> List[float]:
+        if not self.golden or len(predictions) != len(self.golden):
+            return []
+        return [
+            F.mse_loss(p.float(), g.float()).item()
+            for p, g in zip(predictions, self.golden)
+        ]
+
+
+class AbsErr(Metric):
+    """Mean Absolute Error per sample.  Lower is better (higher_is_better=False)."""
+
+    higher_is_better = False
+
+    def __init__(self, golden_outputs: List[torch.Tensor]):
+        self.golden = golden_outputs
+
+    def name(self) -> str:
+        return "abs_err"
+
+    def calculate_per_sample(self, predictions: List[torch.Tensor]) -> List[float]:
+        if not self.golden or len(predictions) != len(self.golden):
+            return []
+        return [
+            torch.mean(torch.abs(p.float() - g.float())).item()
+            for p, g in zip(predictions, self.golden)
+        ]
+
+
+class MaskedTokenAccuracy(Metric):
     """Token-level accuracy for MLM models, filtering by ignore_index (-100)."""
+
+    higher_is_better = True
 
     def __init__(self, targets: List[torch.Tensor], ignore_index: int = -100):
         self.targets = targets
@@ -150,8 +256,8 @@ class MaskedTokenAccuracy:
     def name(self) -> str:
         return "masked_token_accuracy"
 
-    def calculate(self, predictions: List[torch.Tensor]) -> float:
-        correct, total = 0, 0
+    def calculate_per_sample(self, predictions: List[torch.Tensor]) -> List[float]:
+        values = []
         for pred, target in zip(predictions, self.targets):
             if not isinstance(target, torch.Tensor):
                 target = torch.tensor(target)
@@ -161,18 +267,24 @@ class MaskedTokenAccuracy:
                 if t.item() != self.ignore_index
             ]
             if not indices:
+                values.append(0.0)
                 continue
             if pred.dim() >= 2:
                 pred_tokens = pred.view(-1, pred.shape[-1]).argmax(dim=-1)
             else:
                 pred_tokens = pred.view(-1)
-            for i in indices:
-                if i < len(pred_tokens) and pred_tokens[i].item() == target.view(-1)[
-                    i
-                ].item():
-                    correct += 1
-            total += len(indices)
-        return (correct / total) * 100.0 if total > 0 else 0.0
+            correct = sum(
+                1
+                for i in indices
+                if i < len(pred_tokens)
+                and pred_tokens[i].item() == target.view(-1)[i].item()
+            )
+            values.append((correct / len(indices)) * 100.0)
+        return values
+
+    def calculate(self, predictions: List[torch.Tensor]) -> float:
+        values = self.calculate_per_sample(predictions)
+        return float(np.mean(values)) if values else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -184,22 +296,39 @@ class Evaluator:
     def __init__(
         self,
         dataset: List[Any],
-        metrics: List[Any],
+        metrics: List[Metric],
         post_process: Optional[Callable] = None,
     ):
         self.dataset = dataset
         self.metrics = metrics
         self.post_process = post_process or (lambda x: x)
 
-    def evaluate(self, model: Any) -> Dict[str, float]:
+    def evaluate(self, model: Any) -> Dict[str, Any]:
+        """Run inference and compute all metrics.
+
+        For each metric, always emits the mean value under the metric name.
+        When dataset has >1 sample, also emits:
+          {name}_min, {name}_max  — range across samples
+          {name}_worst_idx        — index of the worst-performing sample
+                                    (argmin for higher_is_better, argmax otherwise)
+        """
         predictions = self.run_inference(model, self.dataset)
-        results = {}
+        results: Dict[str, Any] = {"_num_samples": len(predictions)}
         for metric in self.metrics:
+            name = metric.name()
             try:
-                results[metric.name()] = metric.calculate(predictions)
+                per_sample = metric.calculate_per_sample(predictions)
+                if not per_sample:
+                    results[name] = 0.0
+                    continue
+                results[name] = round(float(np.mean(per_sample)), 4)
+                if len(per_sample) > 1:
+                    results[f"{name}_min"] = round(float(min(per_sample)), 4)
+                    results[f"{name}_max"] = round(float(max(per_sample)), 4)
+                    results[f"{name}_worst_idx"] = metric.worst_index(per_sample)
             except Exception as e:
-                logging.error("Metric %s failed: %s", metric.name(), e)
-                results[metric.name()] = f"error: {e}"
+                logging.error("Metric %s failed: %s", name, e)
+                results[name] = f"error: {e}"
         return results
 
     def run_inference(self, model: Any, dataset: List[Any]) -> List[torch.Tensor]:
@@ -215,18 +344,28 @@ class StandardEvaluator(Evaluator):
         predictions = []
         is_ep = hasattr(model, "module") and callable(model.module)
         executable = model.module() if is_ep else model
-        for inputs in dataset:
-            args = inputs if isinstance(inputs, (tuple, list)) else (inputs,)
-            raw_out = executable(*args)
-            out = self.post_process(raw_out)
-            if isinstance(out, torch.Tensor):
-                out = out.detach().cpu()
-            predictions.append(out)
+        # torch.no_grad() matches _compute_golden_outputs — without it the
+        # autograd context can cause subtle numerical differences vs golden.
+        with torch.no_grad():
+            for inputs in dataset:
+                args = inputs if isinstance(inputs, (tuple, list)) else (inputs,)
+                raw_out = executable(*args)
+                out = self.post_process(raw_out)
+                if isinstance(out, torch.Tensor):
+                    out = out.detach().cpu()
+                predictions.append(out)
         return predictions
 
 
 class MLMEvaluator(Evaluator):
-    """Evaluator for masked language models with -100 masking."""
+    """Evaluator for masked language models with -100 masking.
+
+    Uses self.post_process (from _auto_detect_post_process) to extract logits,
+    keeping the inference path consistent with how golden outputs are computed
+    in _compute_golden_outputs.  An earlier version had hardcoded
+    ``out.logits if hasattr(out, "logits") else out`` which diverged from the
+    golden computation and produced wrong PSNR/cosine for HuggingFace models.
+    """
 
     def run_inference(self, model: Any, dataset: List[Any]) -> List[torch.Tensor]:
         if isinstance(model, PrecomputedOutputs):
@@ -234,13 +373,14 @@ class MLMEvaluator(Evaluator):
         predictions = []
         is_ep = hasattr(model, "module") and callable(model.module)
         executable = model.module() if is_ep else model
-        for inputs in dataset:
-            args = inputs if isinstance(inputs, (tuple, list)) else (inputs,)
-            out = executable(*args)
-            logits = out.logits if hasattr(out, "logits") else out
-            if isinstance(logits, torch.Tensor):
-                logits = logits.detach().cpu()
-            predictions.append(logits)
+        with torch.no_grad():
+            for inputs in dataset:
+                args = inputs if isinstance(inputs, (tuple, list)) else (inputs,)
+                raw_out = executable(*args)
+                out = self.post_process(raw_out)
+                if isinstance(out, torch.Tensor):
+                    out = out.detach().cpu()
+                predictions.append(out)
         return predictions
 
 
@@ -255,17 +395,31 @@ class AccuracyLens(Lens):
     Configures itself lazily when it first observes the "Exported Float" record,
     extracting the float model from the ExportedProgram and building an evaluator
     with captured dataset + auto-detected metrics.
+
+    Cross-lens data sharing:
+      _worst_indices is a class-level dict {metric_name: worst_input_index} updated
+      after every evaluate() call.  Future lenses (e.g., per-layer accuracy) can
+      read it during their own observe() to focus analysis on the worst input:
+
+        from .accuracy import AccuracyLens
+        worst = AccuracyLens._worst_indices.get("psnr")  # int or None
+
+      This follows the same pattern as PipelineGraphCollectorLens._last_export_inputs.
+      Lenses run in registration order, so AccuracyLens must be registered before
+      any lens that reads _worst_indices.
     """
 
     _installed: bool = False
     _originals: Dict[str, Any] = {}
 
+    _float_model: Any = None  # cached GraphModule from "Exported Float" ExportedProgram
     _captured_dataset: Optional[List[Any]] = None
     _captured_targets: Optional[List[Any]] = None
     _golden_outputs: Optional[List[torch.Tensor]] = None
     _post_process: Optional[Callable] = None
     _evaluator: Optional[Evaluator] = None
     _task_type: Optional[str] = None  # "classification", "mlm", or None
+    _worst_indices: Dict[str, int] = {}  # {metric_name: worst_input_index}
 
     @classmethod
     def get_name(cls) -> str:
@@ -276,6 +430,7 @@ class AccuracyLens(Lens):
         if cls._installed:
             return
         cls._install_dataset_patches()
+        cls._install_build_executorch_binary_patch()
         cls._installed = True
 
     @classmethod
@@ -290,12 +445,14 @@ class AccuracyLens(Lens):
 
     @classmethod
     def _clear_state(cls) -> None:
+        cls._float_model = None
         cls._captured_dataset = None
         cls._captured_targets = None
         cls._golden_outputs = None
         cls._post_process = None
         cls._evaluator = None
         cls._task_type = None
+        cls._worst_indices = {}
 
     @classmethod
     def observe(cls, artifact: Any, context: ObservationContext) -> Any:
@@ -316,11 +473,29 @@ class AccuracyLens(Lens):
         ):
             return None
 
+        # For "Exported Float", use the cached GraphModule instead of the raw
+        # ExportedProgram.  ExportedProgram.module() creates a NEW GraphModule
+        # via copy.deepcopy(graph) + _unlift on every call.  If we let the
+        # evaluator call .module() again it would produce a second instance
+        # whose outputs may differ from the golden outputs (computed from the
+        # first instance) due to floating-point non-determinism in the
+        # unlifting/recompilation path.  Reusing the same GraphModule
+        # guarantees golden == prediction → PSNR=MAX_PSNR, cosine=1.0.
+        eval_artifact = artifact
+        if record_name == "Exported Float" and cls._float_model is not None:
+            eval_artifact = cls._float_model
+
         try:
-            metrics = evaluator.evaluate(artifact)
+            raw = evaluator.evaluate(eval_artifact)
+            # Update class-level worst indices for cross-lens access
+            cls._worst_indices = {
+                k[: -len("_worst_idx")]: v
+                for k, v in raw.items()
+                if k.endswith("_worst_idx")
+            }
             return {
                 k: round(v, 4) if isinstance(v, float) else v
-                for k, v in metrics.items()
+                for k, v in raw.items()
             }
         except Exception as e:
             logging.error("[AccuracyLens] Evaluation failed: %s", e)
@@ -343,6 +518,8 @@ class AccuracyLens(Lens):
             if i > 0:
                 prev = records[i - 1].data.get("accuracy", {})
                 for key in digest:
+                    if key.startswith("_"):
+                        continue
                     if (
                         isinstance(digest.get(key), (int, float))
                         and isinstance(prev.get(key), (int, float))
@@ -360,16 +537,6 @@ class AccuracyLens(Lens):
     # ------------------------------------------------------------------
     # Auto-configuration helpers
     # ------------------------------------------------------------------
-
-    @classmethod
-    def _detect_task_type(cls, targets: List[Any]) -> str:
-        if not targets:
-            return "unknown"
-        sample = targets[0]
-        if isinstance(sample, torch.Tensor):
-            if sample.dim() >= 1 and (sample == -100).any():
-                return "mlm"
-        return "classification"
 
     @classmethod
     def _auto_detect_post_process(cls, model: Any, dataset: List[Any]) -> Callable:
@@ -405,18 +572,26 @@ class AccuracyLens(Lens):
 
     @classmethod
     def _configure_from_float_model(cls, artifact: Any) -> None:
-        """Lazily configure evaluator from the "Exported Float" ExportedProgram."""
+        """Lazily configure evaluator from the "Exported Float" ExportedProgram.
+
+        Caches the extracted GraphModule as _float_model so that observe() can
+        reuse it for the "Exported Float" evaluation instead of calling
+        artifact.module() a second time (which would create a different
+        GraphModule instance and risk numerical mismatch with golden outputs).
+        """
         try:
             is_ep = hasattr(artifact, "module") and callable(artifact.module)
             model = artifact.module() if is_ep else artifact
+            cls._float_model = model
 
             # Primary: captured dataset from dataset loader patches
             # Fallback: sample input from PipelineGraphCollectorLens
-            dataset = cls._captured_dataset
-            if dataset is None:
+            if cls._captured_dataset is None:
                 from .pipeline_graph_collector import PipelineGraphCollectorLens
 
                 sample_inputs = PipelineGraphCollectorLens._last_export_inputs
+                # cls._captured_dataset might already be captured
+                # from dataloader patching in _install_dataset_patches
                 if sample_inputs is not None:
                     dataset = [sample_inputs]
                     cls._captured_dataset = dataset
@@ -424,14 +599,13 @@ class AccuracyLens(Lens):
                         "[AccuracyLens] Using sample input from torch.export.export as fallback dataset"
                     )
 
-            if dataset is None:
+            if cls._captured_dataset is None:
                 logging.debug("[AccuracyLens] No dataset available, skipping auto-config")
                 return
 
-            cls._task_type = cls._detect_task_type(cls._captured_targets or [])
-            cls._post_process = cls._auto_detect_post_process(model, dataset)
+            cls._post_process = cls._auto_detect_post_process(model, cls._captured_dataset)
             cls._golden_outputs = cls._compute_golden_outputs(
-                model, dataset, cls._post_process
+                model, cls._captured_dataset, cls._post_process
             )
             cls._evaluator = cls._build_default_evaluator()
             if cls._evaluator:
@@ -446,6 +620,7 @@ class AccuracyLens(Lens):
     @classmethod
     def _build_default_evaluator(cls) -> Optional[Evaluator]:
         if cls._captured_dataset is None:
+            logging.info("[AccuracyLens] Unable to auto build evaluator because no dataset is captured")
             return None
 
         dataset = cls._captured_dataset
@@ -453,9 +628,14 @@ class AccuracyLens(Lens):
         golden = cls._golden_outputs
         task_type = cls._task_type
 
-        metrics: List[Any] = []
+        metrics: List[Metric] = []
         if golden:
-            metrics.extend([PSNR(golden), CosineSimilarity(golden)])
+            metrics.extend([
+                PSNR(golden),
+                CosineSimilarity(golden),
+                MSE(golden),
+                AbsErr(golden),
+            ])
 
         if task_type == "classification" and targets:
             metrics.extend([TopKAccuracy(targets, k=1), TopKAccuracy(targets, k=5)])
@@ -479,6 +659,9 @@ class AccuracyLens(Lens):
 
     @classmethod
     def _install_dataset_patches(cls) -> None:
+        # get target (model output GT) and task_type (classification, mlm)
+        # from dataset function
+        # `get_imagenet_dataset` and `get_masked_language_model_dataset`
         try:
             import executorch.examples.qualcomm.utils as utils_module
 
@@ -490,6 +673,7 @@ class AccuracyLens(Lens):
                 def patched_imagenet(*args, **kwargs):
                     inputs, targets = original(*args, **kwargs)
                     cls._captured_targets = targets
+                    cls._task_type = "classification"
                     logging.info(
                         "[AccuracyLens] Captured ImageNet targets (%d samples)",
                         len(targets),
@@ -507,6 +691,7 @@ class AccuracyLens(Lens):
                 def patched_mlm(*args, **kwargs):
                     inputs, targets = original_mlm(*args, **kwargs)
                     cls._captured_targets = targets
+                    cls._task_type = "mlm"
                     logging.info(
                         "[AccuracyLens] Captured MLM targets (%d samples)",
                         len(targets),
@@ -521,6 +706,54 @@ class AccuracyLens(Lens):
             logging.debug(
                 "[AccuracyLens] qualcomm utils not available, skipping dataset patches"
             )
+
+
+    @classmethod
+    def _install_build_executorch_binary_patch(cls) -> None:
+        # We want to get input dataset (loaded from imagenet or masked_language_model)
+        # The only reason why we need to patch this function is that
+        # 
+        # The `input` data from dataset function
+        # `get_imagenet_dataset` and `get_masked_language_model_dataset` 
+        # might be further post_processed before feeding to model or qantizer
+        # See oss_scripts/roberta.py for example
+        try:
+            import executorch.examples.qualcomm.utils as utils_module
+
+            # get_imagenet_dataset
+            if hasattr(utils_module, "build_executorch_binary"):
+                original = utils_module.build_executorch_binary
+                cls._originals["build_executorch_binary"] = original
+
+                def patched_build_executorch_binary(*args, **kwargs):
+                    if len(args) >=5:
+                        dataset = args[4]
+                        logging.info(
+                            "[AccuracyLens] Captured inputs dataset from build_executorch_binary (%d samples)",
+                            len(dataset),
+                        )
+                    elif "dataset" in kwargs:
+                        dataset = kwargs["dataset"]
+                        logging.info(
+                            "[AccuracyLens] Captured inputs dataset from build_executorch_binary (%d samples)",
+                            len(dataset),
+                        )
+                    else:
+                        dataset = None
+                        logging.info(
+                            "[AccuracyLens] Unable to get dataset from build_executorch_binary"
+                        )
+                        
+                    cls._captured_dataset = dataset
+                    return original(*args, **kwargs)
+
+                utils_module.build_executorch_binary = patched_build_executorch_binary
+                logging.info("[AccuracyLens] Installed patch: build_executorch_binary")
+        except ImportError:
+            logging.debug(
+                "[AccuracyLens] qualcomm utils not available, skipping build_executorch_binary patches"
+            )
+
 
     @classmethod
     def _uninstall_all(cls) -> None:
@@ -550,25 +783,58 @@ class _AccuracyFrontend(Frontend):
     ) -> Optional[ViewList]:
         if not digest or not isinstance(digest, dict):
             return None
-        data = {}
+
+        # Partition digest keys into three groups:
+        #   primary  — mean metric values (no suffix)
+        #   stats    — per-sample min/max (_min / _max suffix)
+        #   worst    — worst-case input indices (_worst_idx suffix)
+        num_samples = digest.get("_num_samples", 1)
+        primary_data = {}
+        stats_data = {}
+        worst_data = {}
         for k, v in digest.items():
-            data[k] = v
-        record_analysis = analysis.get("record", {})
-        for k, v in record_analysis.items():
-            if k.endswith("_diff"):
-                metric = k.replace("_diff", "")
-                if metric in data:
-                    data[f"{metric} (diff)"] = f"{v:+.4f}" if isinstance(v, float) else v
-        return ViewList(
-            blocks=[
+            if k.startswith("_"):
+                continue  # internal keys (_num_samples, etc.)
+            if k.endswith("_worst_idx"):
+                worst_data[k[: -len("_worst_idx")]] = v
+            elif k.endswith("_min") or k.endswith("_max"):
+                stats_data[k] = v
+            else:
+                primary_data[k] = v
+
+        n = f"{num_samples} sample{'s' if num_samples != 1 else ''}"
+        blocks = [
+            TableBlock(
+                id="accuracy_table",
+                title=f"Accuracy ({n})",
+                record=TableRecordSpec(data=primary_data),
+                order=20,
+            )
+        ]
+
+        # Per-sample min/max table: only present when >1 sample was evaluated.
+        if stats_data:
+            blocks.append(
                 TableBlock(
-                    id="accuracy_table",
-                    title="Accuracy",
-                    record=TableRecordSpec(data=data),
-                    order=20,
+                    id="accuracy_stats_table",
+                    title=f"Per-Sample Stats ({n})",
+                    record=TableRecordSpec(data=stats_data),
+                    order=21,
                 )
-            ]
-        )
+            )
+
+        # Worst input index table: only present when >1 sample was evaluated.
+        if worst_data:
+            blocks.append(
+                TableBlock(
+                    id="accuracy_worst_idx_table",
+                    title=f"Worst Input Index ({n})",
+                    record=TableRecordSpec(data=worst_data),
+                    order=22,
+                )
+            )
+
+        return ViewList(blocks=blocks)
 
     def check_index_diffs(
         self, prev_digest: Any, curr_digest: Any, analysis: Dict[str, Any]
@@ -576,14 +842,20 @@ class _AccuracyFrontend(Frontend):
         result = {}
         if not prev_digest or not curr_digest:
             return result
-        for key in ["psnr", "top_1", "top_5", "cosine_sim", "masked_token_accuracy"]:
+        for key in [
+            "psnr", "cosine_sim", "mse", "abs_err",
+            "top_1", "top_5", "masked_token_accuracy",
+        ]:
             if key in prev_digest and key in curr_digest:
                 prev_val = prev_digest[key]
                 curr_val = curr_digest[key]
                 if isinstance(prev_val, (int, float)) and isinstance(
                     curr_val, (int, float)
                 ):
-                    result[key] = f"{curr_val - prev_val:+.2f}"
+                    if abs(curr_val - prev_val) < 0.0001:
+                        continue
+                    result[key] = f"{curr_val - prev_val:+.4f}"
+                breakpoint()
         return result
 
     def check_badges(
