@@ -4,10 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from executorch.backends.cuda.triton.kernels.fused_moe import fused_moe
 from executorch.backends.cuda.triton.kernels.sdpa import sdpa
+from executorch.backends.cuda.triton.kernels.topk import topk
 
 __all__ = [
+    "fused_moe",
     "sdpa",
+    "topk",
 ]
 
 try:

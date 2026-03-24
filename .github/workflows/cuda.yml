@@ -132,8 +132,11 @@ jobs:
         # Build executor_runner (needed by CUDA backend e2e tests)
         cmake --build cmake-out --target executor_runner
 
-        # Run all CUDA backend Python tests (including chunk_gated_delta e2e)
+        # Run CUDA backend Python tests
         python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts="
+
+        # Build Qwen3.5 MoE runner (ExecuTorch already built above)
+        cd examples/models/qwen3_5_moe && cmake --workflow --preset qwen3-5-moe-cuda
 
   export-model-cuda-artifact:
     name: export-model-cuda-artifact
