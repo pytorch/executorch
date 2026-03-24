@@ -11,6 +11,8 @@
 import logging
 import os
 import struct
+import tempfile
+from contextlib import contextmanager
 from typing import final
 
 import numpy as np
@@ -26,6 +28,8 @@ from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfi
 from executorch.backends.nxp.backend.neutron_converter_manager import (
     NeutronConverterManager,
 )
+
+from executorch.backends.nxp.backend.neutron_map import NeutronMap
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.neutron_node_extraction import (
     extract_artifacts_from_neutron_node,
@@ -54,6 +58,7 @@ class NeutronCompileSpecBuilder:
         self.use_neutron_for_format_conversion = True
         self.fetch_constants_to_sram = False
         self.dump_kernel_selection_code = False
+        self.use_profiling = False
 
     def _replace_colons(self, operator: str) -> str:
         """
@@ -70,6 +75,7 @@ class NeutronCompileSpecBuilder:
         use_neutron_for_format_conversion: bool = True,
         fetch_constants_to_sram: bool = False,
         dump_kernel_selection_code: bool = False,
+        use_profiling: bool = False,
     ) -> "NeutronCompileSpecBuilder":
         """Generate compile spec for Neutron NPU
 
@@ -83,6 +89,7 @@ class NeutronCompileSpecBuilder:
         :param fetch_constants_to_sram: If True, the Neutron Converter will insert microinstructions to prefetch weights
                                      from FLASH to SRAM. This should be used when the whole model does not fit into SRAM.
         :param dump_kernel_selection_code: Whether Neutron converter dumps kernel selection code.
+        :param use_profiling: If true Neutron Converter will enable profiling for neutron delegated model
         :return: self for method chaining
         """
 
@@ -106,6 +113,7 @@ class NeutronCompileSpecBuilder:
         self.use_neutron_for_format_conversion = use_neutron_for_format_conversion
         self.fetch_constants_to_sram = fetch_constants_to_sram
         self.dump_kernel_selection_code = dump_kernel_selection_code
+        self.use_profiling = use_profiling
 
         return self
 
@@ -135,6 +143,10 @@ class NeutronCompileSpecBuilder:
                     "dump_kernel_selection_code",
                     f"{self.dump_kernel_selection_code}".encode(),
                 ),
+                CompileSpec(
+                    "use_profiling",
+                    f"{self.use_profiling}".encode(),
+                ),
             ]
 
         return self.compile_spec
@@ -149,6 +161,7 @@ def generate_neutron_compile_spec(
     use_neutron_for_format_conversion: bool = True,
     fetch_constants_to_sram: bool = False,
     dump_kernel_selection_code: bool = False,
+    use_profiling: bool = False,
 ) -> list[CompileSpec]:
     return (
         NeutronCompileSpecBuilder()
@@ -160,9 +173,34 @@ def generate_neutron_compile_spec(
             use_neutron_for_format_conversion=use_neutron_for_format_conversion,
             fetch_constants_to_sram=fetch_constants_to_sram,
             dump_kernel_selection_code=dump_kernel_selection_code,
+            use_profiling=use_profiling,
         )
         .build()
     )
+
+
+@contextmanager
+def capture_fd_output():
+    tmp = tempfile.TemporaryFile()
+
+    # Save original stdout / stderr
+    original_stdout_fd = os.dup(1)
+    original_stderr_fd = os.dup(2)
+
+    try:
+        # Redirect fd=1 and fd=2 to temp file
+        os.dup2(tmp.fileno(), 1)
+        os.dup2(tmp.fileno(), 2)
+
+        yield tmp  # give access to the temp file
+
+    finally:
+        # Restore original fds
+        os.dup2(original_stdout_fd, 1)
+        os.dup2(original_stderr_fd, 2)
+
+        os.close(original_stdout_fd)
+        os.close(original_stderr_fd)
 
 
 @final
@@ -185,6 +223,7 @@ class NeutronBackend(BackendDetails):
         use_neutron_for_format_conversion = None
         fetch_constants_to_sram = False
         dump_kernel_selection_code = None
+        use_profiling = False
         for spec in compile_spec:
             if spec.key == "output_format":
                 output_format = spec.value.decode()
@@ -200,6 +239,8 @@ class NeutronBackend(BackendDetails):
                 fetch_constants_to_sram = spec.value.decode() == "True"
             if spec.key == "dump_kernel_selection_code":
                 dump_kernel_selection_code = spec.value.decode() == "True"
+            if spec.key == "use_profiling":
+                use_profiling = spec.value.decode() == "True"
 
         # Check that the output format is set in the compile spec
         if not output_format:
@@ -229,19 +270,32 @@ class NeutronBackend(BackendDetails):
                 if use_neutron_for_format_conversion is not None
                 else {}
             )
-            tflite_model, io_formats = EdgeProgramToIRConverter().convert_program(
+            (
+                tflite_model,
+                io_formats,
+                edge_to_tflite_map,
+            ) = EdgeProgramToIRConverter().convert_program(
                 edge_program,
                 neutron_target_spec=NeutronTargetSpec(target),
                 conversion_config=conversion_config,
                 custom_delegation_options=CustomDelegationOptions(),
             )
 
-            neutron_model = NeutronConverterManager(dump_kernel_selection_code).convert(
+            with capture_fd_output() as tmp:
+                neutron_model = NeutronConverterManager(
+                    dump_kernel_selection_code
+                ).convert(
                 tflite_model,
                 target,
                 delegation_tag,
                 fetch_constants_to_sram,
+                    use_profiling,
             )
+                tmp.seek(0)
+                log_output = tmp.read().decode()
+            # Get mapping from tflite to neutron
+            map = NeutronMap(log_output, edge_to_tflite_map)
+            neutron_to_edge_map = map.get_neutron_to_edge_map()
 
             # Dump the tflite file if intermediates_dir is set
             if intermediates_dir != "None":
@@ -265,7 +319,9 @@ class NeutronBackend(BackendDetails):
         else:
             raise RuntimeError(f"Unknown format {output_format}")
 
-        return PreprocessResult(processed_bytes=binary)
+        return PreprocessResult(
+            processed_bytes=binary, debug_handle_map=neutron_to_edge_map
+        )
 
 
 class PayloadComposer:
