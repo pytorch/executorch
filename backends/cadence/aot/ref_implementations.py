@@ -403,6 +403,67 @@ def quantized_add_asym8uxasym8u_asym8u_per_tensor(
     )
 
 
+@impl_tracked(m, "quantized_mul.per_tensor")
+def quantized_mul_per_tensor(
+    X: torch.Tensor,
+    X_scale: float,
+    X_zero_point: int,
+    Y: torch.Tensor,
+    Y_scale: float,
+    Y_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    """
+    Multiplies two quantized tensors and returns another quantized tensor. The intuition
+    is that we want dequant(out) ~= dequant(X) * dequant(Y)
+
+    If we do that math, we get
+    out_scale(out - out_zero_point) = X_scale(X - X_zero_point) * Y_scale(Y - Y_zero_point)
+
+    Rearranging, we get
+    out = (X_scale(X - X_zero_point) * Y_scale(Y - Y_zero_point)) / out_scale + out_zero_point
+
+    Args:
+        - X: The first operand
+        - X_scale: The ratio between the sizes of X's floating point and quantized
+            ranges
+        - X_zero_point: The quantized mapping of zero for X
+        - Y: The second operand
+        - Y_scale: The ratio between the sizes of Y's floating point and quantized
+            ranges
+        - Y_zero_point: The quantized mapping of zero for Y
+        - out_scale: The ratio between the sizes of the output's floating point and
+            quantized ranges
+        - out_zero_point: The quantized mapping of zero for the output
+    """
+    supported_dtypes = [torch.int8, torch.uint8]
+    if X.dtype != Y.dtype:
+        raise ValueError("X and Y dtypes need to match")
+
+    dtype = X.dtype
+    if dtype not in supported_dtypes:
+        raise ValueError(
+            f"X and Y dtypes need to be in {supported_dtypes}. Got {dtype}"
+        )
+
+    if dtype == torch.uint8:
+        X = X.to(torch.int8)
+        Y = Y.to(torch.int8)
+
+    dequant_X = X_scale * (X - X_zero_point)
+    dequant_Y = Y_scale * (Y - Y_zero_point)
+
+    return quantize_per_tensor(
+        dequant_X * dequant_Y,
+        out_scale,
+        out_zero_point,
+        torch.iinfo(dtype).min,
+        torch.iinfo(dtype).max,
+        dtype,
+    )
+
+
 def quantized_linear_common(
     src: torch.Tensor,
     weight: torch.Tensor,

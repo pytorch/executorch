@@ -2715,6 +2715,48 @@ class TestRefImplementations(unittest.TestCase):
             out_zero_point,
         )
 
+    @expand(
+        [
+            # X=5, zp=4 → dequant=0.8*(5-4)=0.8; Y=5, zp=4 → dequant=0.8
+            # mul=0.64; quantize: round(0.64/0.8)+4=1+4=5
+            ("int8", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 5, torch.int8),
+            ("uint8", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 5, torch.uint8),
+        ]
+    )
+    def test_quantized_mul(
+        self,
+        name: str,
+        X: int,
+        X_scale: float,
+        X_zero_point: int,
+        Y: int,
+        Y_scale: float,
+        Y_zero_point: int,
+        out_scale: float,
+        out_zero_point: int,
+        expected_value: int,
+        dtype: torch.dtype,
+    ) -> None:
+        X_tensor = torch.tensor([X], dtype=dtype)
+        Y_tensor = torch.tensor([Y], dtype=dtype)
+        expected_output = torch.tensor([expected_value], dtype=dtype)
+
+        output = torch.ops.cadence.quantized_mul.per_tensor(
+            X_tensor,
+            X_scale,
+            X_zero_point,
+            Y_tensor,
+            Y_scale,
+            Y_zero_point,
+            out_scale,
+            out_zero_point,
+        )
+
+        self.assertTrue(
+            torch.equal(output, expected_output),
+            f"Values don't match in {name}: got {output}, expected {expected_output}",
+        )
+
     def test_requantize(self) -> None:
         # Test requantize (default variant), just to make sure it runs since wrapper around per_tensor variant
         input_tensor = torch.tensor([[1, 2], [3, 4]], dtype=torch.int8)
