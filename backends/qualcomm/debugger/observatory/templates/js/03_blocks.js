@@ -132,8 +132,8 @@
     const viewer = ViewerCtor.create({
       payload,
       mount: { root },
-      layout: { preset },
-      state: { activeExtensions: defaultLayers, colorBy: defaultColorBy },
+      layout: { preset, fullscreen: { button: true } },
+      state: { activeExtensions: defaultLayers, colorBy: defaultColorBy, themeName: state.theme },
     });
 
     // FIX: defer init() until after browser layout pass so getBoundingClientRect() is valid
@@ -410,10 +410,15 @@
             if (snap.colorBy && typeof viewer.setColorBy === 'function') {
               try { viewer.setColorBy(snap.colorBy); } catch (_) {}
             }
-            if (snap.selectedNodeId && viewer.store && viewer.store.activeNodeMap && viewer.store.activeNodeMap.has(snap.selectedNodeId)) {
+            const nodeExists = snap.selectedNodeId &&
+              viewer.store && viewer.store.activeNodeMap &&
+              viewer.store.activeNodeMap.has(snap.selectedNodeId);
+            if (nodeExists) {
               try { viewer.selectNode(snap.selectedNodeId, { animate: true }); } catch (_) {}
-            } else if (snap.camera && typeof viewer.setState === 'function') {
-              try { viewer.setState({ camera: snap.camera }); } catch (_) {}
+            } else {
+              // zoomToFit is always safer than restoring a camera position that may
+              // point to empty space in a different record's graph layout.
+              try { viewer.zoomToFit(); } catch (_) {}
             }
           }
 
@@ -421,11 +426,13 @@
             viewer.on('statechange', () => {
               try {
                 const s = viewer.getState();
+                const prev = state.compareStateCache.get(snapKey) || {};
                 state.compareStateCache.set(snapKey, {
                   camera: s.camera,
-                  selectedNodeId: s.selectedNodeId || null,
-                  activeExtensions: s.activeExtensions || [],
-                  colorBy: s.colorBy || 'base',
+                  // Preserve a selection set by any viewer; don't overwrite with null
+                  selectedNodeId: s.selectedNodeId || prev.selectedNodeId || null,
+                  activeExtensions: s.activeExtensions || prev.activeExtensions || [],
+                  colorBy: s.colorBy || prev.colorBy || 'base',
                 });
               } catch (_) {}
             });

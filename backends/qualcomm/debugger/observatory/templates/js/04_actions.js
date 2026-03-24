@@ -10,6 +10,21 @@
     localStorage.setItem('graphCollectorTheme', theme);
     const icon = document.querySelector('.theme-icon');
     if (icon) icon.textContent = theme === 'dark' ? '☀️' : '🌙';
+
+    // Sync theme to all mounted fx_viewer instances
+    for (const viewer of (state.mountedViewers || [])) {
+      try {
+        if (typeof viewer.setTheme === 'function') viewer.setTheme(theme);
+      } catch (_) {}
+    }
+    for (const compare of (state.mountedCompares || [])) {
+      try {
+        if (typeof compare.setSync === 'function') compare.setSync({ theme: false });
+        for (const v of (compare.viewers || [])) {
+          if (typeof v.setTheme === 'function') v.setTheme(theme);
+        }
+      } catch (_) {}
+    }
   }
 
   function toggleTheme() {

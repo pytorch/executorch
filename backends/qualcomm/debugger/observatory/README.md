@@ -948,13 +948,21 @@ composition or graphRef. Consequences:
 
 - Adding or removing records from the compare pool restores the same camera and layers.
 - Switching from single-record mode back to compare mode restores the compare state.
-- All viewers in the same compare block share one snapshot (they are synced via
-  `FXGraphCompare` anyway, so their states converge).
+
+**Merge-on-write for `selectedNodeId`**: all viewers in the same compare block share one
+snapshot and each registers a `statechange` listener that writes to it. To prevent a
+viewer with no selection (e.g. viewer B panning after viewer A selected a node) from
+overwriting the saved selection with `null`, the write is a **merge**: `selectedNodeId`
+is only updated when the incoming value is non-null. `camera`, `activeExtensions`, and
+`colorBy` are always overwritten with the latest value. The selection is cleared from the
+snapshot only when another viewer explicitly selects a different node.
 
 On re-entry, each new viewer is seeded from the snapshot in priority order:
-1. `selectedNodeId` present and node exists in graph → `selectNode` + animate.
-2. `camera` present, no node selection → `setState({ camera })` to restore pan/zoom.
-3. No snapshot → `init()` runs normally (zoom-to-fit or first-node centering).
+1. `selectedNodeId` present and node exists in **this viewer's** graph →
+   `selectNode(id, { animate: true })`.
+2. Node not found in this viewer's graph (different record) or no selection →
+   `zoomToFit()`.
+3. No snapshot at all → `init()` runs normally (zoom-to-fit or first-node centering).
 
 Layers (`activeExtensions`, `colorBy`) are always restored from the snapshot when
 available, regardless of which priority path is taken for camera/selection.

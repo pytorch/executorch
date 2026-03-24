@@ -6,6 +6,7 @@
   function renderLayout() {
     const icon = state.theme === 'dark' ? '☀️' : '🌙';
     OBS.app.innerHTML = `
+      <div class="header-trigger"></div>
       <header>
         <div class="header-content">
           <h1>${escapeHtml(state.data.title || 'Observatory Report')}</h1>
@@ -20,6 +21,7 @@
         </div>
       </header>
       <div class="container">
+        <div class="index-pane-trigger"></div>
         <nav class="index-pane">
           <div class="index-header" id="index-header">
             <h2>Collected Graphs (${(state.data.records || []).length})</h2>
