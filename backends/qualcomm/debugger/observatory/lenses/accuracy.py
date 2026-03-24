@@ -6,25 +6,25 @@
 
 """Accuracy Evaluation Lens — auto-captures datasets and evaluates model accuracy.
 
-This lens patches dataset loaders and build functions to transparently capture
-evaluation data, then runs accuracy metrics on collected model artifacts.
+This lens patches dataset loaders to transparently capture evaluation data, then
+lazily configures an evaluator when the first "Exported Float" record is observed.
 
 Patches installed on session start:
   - get_imagenet_dataset: captures (inputs, targets) for ImageNet classification
   - get_masked_language_model_dataset: captures (inputs, targets) for MLM tasks
-  - build_executorch_binary: captures float model + dataset references
 
-Auto-configuration:
-  - Detects task type (classification vs MLM) from target format
-  - Auto-selects metrics (TopK, PSNR, CosineSimilarity, MaskedTokenAccuracy)
-  - Auto-detects post_process function from model output type
+Lazy configuration (on first "Exported Float" observe):
+  - Extracts float model from ExportedProgram
+  - Uses captured dataset (primary) or sample input from PipelineGraphCollectorLens (fallback)
+  - Auto-detects task type, post_process, and metrics
+  - Computes golden outputs for PSNR/CosineSimilarity
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Protocol, Union
+from typing import Any, Callable, Dict, List, Optional, Protocol
 
 import numpy as np
 import torch
@@ -250,12 +250,16 @@ class MLMEvaluator(Evaluator):
 
 
 class AccuracyLens(Lens):
-    """Evaluates model accuracy at each collected pipeline stage."""
+    """Evaluates model accuracy at each collected pipeline stage.
+
+    Configures itself lazily when it first observes the "Exported Float" record,
+    extracting the float model from the ExportedProgram and building an evaluator
+    with captured dataset + auto-detected metrics.
+    """
 
     _installed: bool = False
     _originals: Dict[str, Any] = {}
 
-    _captured_model: Any = None
     _captured_dataset: Optional[List[Any]] = None
     _captured_targets: Optional[List[Any]] = None
     _golden_outputs: Optional[List[torch.Tensor]] = None
@@ -272,7 +276,6 @@ class AccuracyLens(Lens):
         if cls._installed:
             return
         cls._install_dataset_patches()
-        cls._install_build_binary_patch()
         cls._installed = True
 
     @classmethod
@@ -287,7 +290,6 @@ class AccuracyLens(Lens):
 
     @classmethod
     def _clear_state(cls) -> None:
-        cls._captured_model = None
         cls._captured_dataset = None
         cls._captured_targets = None
         cls._golden_outputs = None
@@ -297,6 +299,12 @@ class AccuracyLens(Lens):
 
     @classmethod
     def observe(cls, artifact: Any, context: ObservationContext) -> Any:
+        record_name = context.shared_state.get("record_name", "")
+
+        # Lazily configure evaluator on first "Exported Float" record
+        if record_name == "Exported Float" and cls._evaluator is None:
+            cls._configure_from_float_model(artifact)
+
         acc_config = context.config.get("accuracy", {})
         evaluator = acc_config.get("evaluator") or cls._evaluator
         if not evaluator:
@@ -396,6 +404,46 @@ class AccuracyLens(Lens):
         return golden
 
     @classmethod
+    def _configure_from_float_model(cls, artifact: Any) -> None:
+        """Lazily configure evaluator from the "Exported Float" ExportedProgram."""
+        try:
+            is_ep = hasattr(artifact, "module") and callable(artifact.module)
+            model = artifact.module() if is_ep else artifact
+
+            # Primary: captured dataset from dataset loader patches
+            # Fallback: sample input from PipelineGraphCollectorLens
+            dataset = cls._captured_dataset
+            if dataset is None:
+                from .pipeline_graph_collector import PipelineGraphCollectorLens
+
+                sample_inputs = PipelineGraphCollectorLens._last_export_inputs
+                if sample_inputs is not None:
+                    dataset = [sample_inputs]
+                    cls._captured_dataset = dataset
+                    logging.info(
+                        "[AccuracyLens] Using sample input from torch.export.export as fallback dataset"
+                    )
+
+            if dataset is None:
+                logging.debug("[AccuracyLens] No dataset available, skipping auto-config")
+                return
+
+            cls._task_type = cls._detect_task_type(cls._captured_targets or [])
+            cls._post_process = cls._auto_detect_post_process(model, dataset)
+            cls._golden_outputs = cls._compute_golden_outputs(
+                model, dataset, cls._post_process
+            )
+            cls._evaluator = cls._build_default_evaluator()
+            if cls._evaluator:
+                logging.info(
+                    "[AccuracyLens] Auto-configured %s evaluator with %d metrics",
+                    cls._task_type,
+                    len(cls._evaluator.metrics),
+                )
+        except Exception as e:
+            logging.warning("[AccuracyLens] Auto-config from float model failed: %s", e)
+
+    @classmethod
     def _build_default_evaluator(cls) -> Optional[Evaluator]:
         if cls._captured_dataset is None:
             return None
@@ -472,58 +520,6 @@ class AccuracyLens(Lens):
         except ImportError:
             logging.debug(
                 "[AccuracyLens] qualcomm utils not available, skipping dataset patches"
-            )
-
-    @classmethod
-    def _install_build_binary_patch(cls) -> None:
-        try:
-            import executorch.examples.qualcomm.utils as utils_module
-
-            if not hasattr(utils_module, "build_executorch_binary"):
-                return
-
-            original = utils_module.build_executorch_binary
-            cls._originals["build_executorch_binary"] = original
-
-            def patched_build(model, inputs, soc_model, file_name, dataset, **kwargs):
-                cls._captured_model = model
-                if cls._captured_dataset is None:
-                    cls._captured_dataset = (
-                        dataset if isinstance(dataset, list) else None
-                    )
-
-                result = original(model, inputs, soc_model, file_name, dataset, **kwargs)
-
-                # Auto-configure evaluator after build completes
-                if cls._evaluator is None and cls._captured_dataset is not None:
-                    try:
-                        cls._task_type = cls._detect_task_type(
-                            cls._captured_targets or []
-                        )
-                        cls._post_process = cls._auto_detect_post_process(
-                            model, cls._captured_dataset
-                        )
-                        cls._golden_outputs = cls._compute_golden_outputs(
-                            model, cls._captured_dataset, cls._post_process
-                        )
-                        cls._evaluator = cls._build_default_evaluator()
-                        if cls._evaluator:
-                            logging.info(
-                                "[AccuracyLens] Auto-configured %s evaluator with %d metrics",
-                                cls._task_type,
-                                len(cls._evaluator.metrics),
-                            )
-                    except Exception as e:
-                        logging.warning(
-                            "[AccuracyLens] Auto-config failed: %s", e
-                        )
-                return result
-
-            utils_module.build_executorch_binary = patched_build
-            logging.info("[AccuracyLens] Installed patch: build_executorch_binary")
-        except ImportError:
-            logging.debug(
-                "[AccuracyLens] qualcomm utils not available, skipping build patch"
             )
 
     @classmethod
