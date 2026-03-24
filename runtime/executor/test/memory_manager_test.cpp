@@ -17,6 +17,8 @@ using namespace ::testing;
 using executorch::runtime::HierarchicalAllocator;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::MemoryManager;
+using executorch::runtime::Span;
+using executorch::runtime::etensor::DeviceType;
 
 TEST(MemoryManagerTest, MinimalCtor) {
   MemoryAllocator method_allocator(0, nullptr);
@@ -92,4 +94,46 @@ TEST(MemoryManagerTest, CtorWithSameAllocator) {
           /*non_constant_allocator=*/&planned_memory,
           /*temp_allocator=*/&method_allocator),
       "cannot be the same");
+}
+
+TEST(MemoryManagerTest, ThreeArgCtorHasNoDeviceMemory) {
+  MemoryAllocator method_allocator(0, nullptr);
+  HierarchicalAllocator planned_memory({});
+  MemoryAllocator temp_allocator(0, nullptr);
+
+  MemoryManager mm(&method_allocator, &planned_memory, &temp_allocator);
+
+  EXPECT_FALSE(mm.has_device_memory());
+  EXPECT_EQ(mm.planned_buffer_devices().size(), 0);
+}
+
+TEST(MemoryManagerTest, FourArgCtorWithDeviceMetadata) {
+  MemoryAllocator method_allocator(0, nullptr);
+  HierarchicalAllocator planned_memory({});
+  MemoryAllocator temp_allocator(0, nullptr);
+
+  // 3 buffers: CPU, CUDA, CPU
+  DeviceType devices[] = {DeviceType::CPU, DeviceType::CUDA, DeviceType::CPU};
+  Span<const DeviceType> device_span(devices, 3);
+
+  MemoryManager mm(
+      &method_allocator, &planned_memory, &temp_allocator, device_span);
+
+  EXPECT_EQ(mm.method_allocator(), &method_allocator);
+  EXPECT_EQ(mm.planned_memory(), &planned_memory);
+  EXPECT_EQ(mm.temp_allocator(), &temp_allocator);
+  EXPECT_TRUE(mm.has_device_memory());
+  EXPECT_EQ(mm.planned_buffer_devices().size(), 3);
+  EXPECT_EQ(mm.planned_buffer_devices()[0], DeviceType::CPU);
+  EXPECT_EQ(mm.planned_buffer_devices()[1], DeviceType::CUDA);
+  EXPECT_EQ(mm.planned_buffer_devices()[2], DeviceType::CPU);
+}
+
+TEST(MemoryManagerTest, MinimalCtorHasNoDeviceMemory) {
+  MemoryAllocator method_allocator(0, nullptr);
+
+  MemoryManager mm(&method_allocator);
+
+  EXPECT_FALSE(mm.has_device_memory());
+  EXPECT_EQ(mm.planned_buffer_devices().size(), 0);
 }
