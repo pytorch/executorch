@@ -5,7 +5,7 @@
 
 
 from dataclasses import dataclass
-from typing import Iterator, List, Optional
+from typing import cast, Iterator, List, Optional
 
 from executorch.backends.arm.quantizer.arm_quantizer_utils import PatternCheck
 
@@ -56,7 +56,7 @@ class PatternMatcher:
         self,
         match: List[Node],
         quantization_config: QuantizationConfig,
-    ) -> Optional[PatternMatchResult]:
+    ) -> PatternMatchResult:
         """Returns a PatternMatchResult when the pattern structurally matches,
         with status indicating accept/reject.
 
@@ -78,7 +78,7 @@ class PatternMatcher:
                 node.meta[self.Q_PATTERN_MATCHED_KEY] = True
             return PatternMatchResult(match, True)
 
-        key = tuple([n.target for n in match])
+        key = tuple(cast(OpOverload, n.target) for n in match)
         pattern_checker = self.support_dict.get(key, None)
 
         if pattern_checker is not None:
@@ -118,7 +118,7 @@ class PatternMatcher:
         """Returns the longest accepted match starting at the first node of the
         queue as well as longer rejected matches.
         """
-        matches = []
+        matches: list[PatternMatchResult] = []
         accepted = False
         max_match_length = len(node_queue)
 
