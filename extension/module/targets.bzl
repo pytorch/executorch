@@ -28,6 +28,7 @@ def define_common_targets():
             ],
             exported_deps = [
                 "//executorch/runtime/executor:program_no_prim_ops" + aten_suffix,
+                "//executorch/runtime/core:device_memory_buffer",
             ],
         )
 

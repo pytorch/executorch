@@ -13,6 +13,7 @@
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/extension/named_data_map/merged_data_map.h>
+#include <executorch/runtime/core/device_memory_buffer.h>
 #include <executorch/runtime/platform/runtime.h>
 
 namespace executorch {
@@ -314,6 +315,45 @@ Module::make_planned_memory_with_shared_arenas(
   return planned;
 }
 
+std::unique_ptr<Module::PlannedMemory>
+Module::make_planned_memory_with_devices(
+    const ET_RUNTIME_NAMESPACE::MethodMeta& method_meta) {
+  auto planned = std::make_unique<PlannedMemory>();
+  const size_t num_buffers = method_meta.num_memory_planned_buffers();
+  planned->planned_buffers.reserve(num_buffers);
+  planned->planned_spans.reserve(num_buffers);
+
+  for (size_t i = 0; i < num_buffers; ++i) {
+    auto size = method_meta.memory_planned_buffer_size(i);
+    ET_CHECK_MSG(size.ok(), "Failed to get buffer size for index %zu", i);
+    auto device = method_meta.memory_planned_buffer_device(i);
+    ET_CHECK_MSG(device.ok(), "Failed to get buffer device for index %zu", i);
+
+    if (device->is_cpu()) {
+      planned->planned_buffers.emplace_back(size.get());
+      planned->planned_spans.emplace_back(
+          planned->planned_buffers.back().data(), size.get());
+    } else {
+      // Allocate device memory via DeviceAllocator and store the RAII buffer.
+      planned->planned_buffers.emplace_back(); // empty CPU placeholder
+      auto dmb = runtime::DeviceMemoryBuffer::create(
+          size.get(), device->type(), device->index());
+      ET_CHECK_MSG(
+          dmb.ok(),
+          "Failed to allocate device memory for buffer %zu (device_type=%d)",
+          i,
+          static_cast<int>(device->type()));
+      planned->planned_spans.emplace_back(dmb->as_span());
+      planned->device_buffers.push_back(std::move(dmb.get()));
+    }
+  }
+
+  planned->planned_memory =
+      std::make_unique<runtime::HierarchicalAllocator>(runtime::Span(
+          planned->planned_spans.data(), planned->planned_spans.size()));
+  return planned;
+}
+
 runtime::Result<std::vector<size_t>> Module::get_mem_planned_buffer_sizes(
     const std::string& method_name) {
   auto meta_res = program_->method_meta(method_name.c_str());
@@ -365,10 +405,54 @@ runtime::Error Module::load_method(
     MethodHolder method_holder;
 
     if (!planned_memory) {
-      if (!share_memory_arenas_) {
+      // Check if any buffers need device memory allocation.
+      auto meta_res = program_->method_meta(method_name.c_str());
+      ET_CHECK_OK_OR_RETURN_ERROR(meta_res.error());
+      auto& meta = meta_res.get();
+
+      bool has_device_buffers = false;
+      for (size_t i = 0; i < meta.num_memory_planned_buffers(); ++i) {
+        auto dev = meta.memory_planned_buffer_device(i);
+        if (dev.ok() && !dev->is_cpu()) {
+          has_device_buffers = true;
+          break;
+        }
+      }
+
+      if (has_device_buffers) {
+        // Device memory with shared arenas is not yet supported.
+        ET_CHECK_OR_RETURN_ERROR(
+            !share_memory_arenas_,
+            NotSupported,
+            "Device memory buffers are not yet compatible with "
+            "share_memory_arenas. Please disable share_memory_arenas "
+            "when using models with device-planned memory.");
+
+        // Device-aware path: allocate CPU and device buffers, build metadata.
+        method_holder.planned_memory =
+            make_planned_memory_with_devices(meta);
+
+        // Build per-buffer device type array for MemoryManager metadata.
+        for (size_t i = 0; i < meta.num_memory_planned_buffers(); ++i) {
+          auto dev = meta.memory_planned_buffer_device(i);
+          method_holder.buffer_devices.push_back(
+              dev.ok() ? dev->type()
+                       : runtime::etensor::DeviceType::CPU);
+        }
+        planned_memory = method_holder.planned_memory->planned_memory.get();
+
+        method_holder.memory_manager = std::make_unique<runtime::MemoryManager>(
+            memory_allocator_.get(),
+            planned_memory,
+            temp_allocator_.get(),
+            runtime::Span<const runtime::etensor::DeviceType>(
+                method_holder.buffer_devices.data(),
+                method_holder.buffer_devices.size()));
+      } else if (!share_memory_arenas_) {
         auto sizes_res = get_mem_planned_buffer_sizes(method_name);
         ET_CHECK_OK_OR_RETURN_ERROR(sizes_res.error());
         method_holder.planned_memory = make_planned_memory(sizes_res.get());
+        planned_memory = method_holder.planned_memory->planned_memory.get();
       } else {
         auto sizes_res = get_mem_planned_buffer_sizes(method_name);
         ET_CHECK_OK_OR_RETURN_ERROR(sizes_res.error());
@@ -385,12 +469,14 @@ runtime::Error Module::load_method(
         }
         method_holder.planned_memory =
             make_planned_memory_with_shared_arenas(sizes, shared_arenas_);
+        planned_memory = method_holder.planned_memory->planned_memory.get();
       }
-      planned_memory = method_holder.planned_memory->planned_memory.get();
     }
 
-    method_holder.memory_manager = std::make_unique<runtime::MemoryManager>(
-        memory_allocator_.get(), planned_memory, temp_allocator_.get());
+    if (!method_holder.memory_manager) {
+      method_holder.memory_manager = std::make_unique<runtime::MemoryManager>(
+          memory_allocator_.get(), planned_memory, temp_allocator_.get());
+    }
     auto res_method = program_->load_method(
         method_name.c_str(),
         method_holder.memory_manager.get(),
