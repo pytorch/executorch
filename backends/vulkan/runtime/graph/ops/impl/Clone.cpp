@@ -87,12 +87,12 @@ void add_image_to_buffer_node(
       default_pick_local_wg_size,
       // Input and Outputs
       {{buffer, vkapi::kWrite}, {image, vkapi::kRead}},
-      // Parameter Buffers
+      // Parameter Buffers: TextureMetadata for image, BufferMetadata for buffer
+      {graph.texture_meta_ubo(image), graph.buffer_meta_ubo(buffer)},
+      // Push Constants: none
       {},
-      // Push Constants
-      {graph.sizes_pc_of(image), graph.strides_pc_of(buffer)},
-      // Specialization Constants
-      {graph.hashed_layout_of(image)},
+      // Specialization Constants: image layout + buffer layout
+      {graph.hashed_layout_of(image), graph.hashed_layout_of(buffer)},
       // Resize Args
       {},
       // Resizing Logic
@@ -115,12 +115,12 @@ void add_buffer_to_image_node(
       default_pick_local_wg_size,
       // Input and Outputs
       {{image, vkapi::kWrite}, {buffer, vkapi::kRead}},
-      // Parameter Buffers
+      // Parameter Buffers: TextureMetadata for image, BufferMetadata for buffer
+      {graph.texture_meta_ubo(image), graph.buffer_meta_ubo(buffer)},
+      // Push Constants: none
       {},
-      // Push Constants
-      {graph.sizes_pc_of(image), graph.strides_pc_of(buffer)},
-      // Specialization Constants
-      {graph.hashed_layout_of(image)},
+      // Specialization Constants: image layout, transpose_hw=0, buffer layout
+      {graph.hashed_layout_of(image), int32_t(0), graph.hashed_layout_of(buffer)},
       // Resize Args
       {},
       // Resizing Logic

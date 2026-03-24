@@ -2194,8 +2194,8 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       vkapi::kFloat,
       /*shared_object_idx = */ 4);
 
-  // +2: t.sizes_ubo() for each staging shader
-  expected_vma_allocation_count += 2;
+  // +4: t.sizes_ubo() + t.texture_meta_ubo() for each staging shader (2 inputs)
+  expected_vma_allocation_count += 4;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   ValueRef c = graph.add_tensor(
@@ -2214,8 +2214,8 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       vkapi::kFloat,
       /*shared_object_idx = */ 2);
 
-  // +1: t.sizes_ubo() uniform buffer for staging shader
-  expected_vma_allocation_count += 1;
+  // +2: t.sizes_ubo() + t.texture_meta_ubo() for staging shader
+  expected_vma_allocation_count += 2;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   ValueRef e = graph.add_tensor(
@@ -2233,8 +2233,8 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   out.value = e;
   out.staging = graph.set_output_tensor(out.value);
 
-  // +1: staging buffer input tensor
-  expected_vma_allocation_count += 1;
+  // +2: staging buffer + t.texture_meta_ubo() for output tensor
+  expected_vma_allocation_count += 2;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   graph.prepare();
