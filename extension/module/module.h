@@ -16,6 +16,8 @@
 
 #include <executorch/runtime/executor/program.h>
 
+#include <executorch/runtime/core/device_memory_buffer.h>
+
 #ifdef USE_ATEN_LIB
 #define ET_MODULE_NAMESPACE module::aten
 #else // !USE_ATEN_LIB
@@ -682,12 +684,15 @@ class Module {
     std::vector<std::vector<uint8_t>> planned_buffers;
     std::vector<runtime::Span<uint8_t>> planned_spans;
     std::unique_ptr<runtime::HierarchicalAllocator> planned_memory;
+    std::vector<runtime::DeviceMemoryBuffer> device_buffers;
   };
   std::unique_ptr<PlannedMemory> make_planned_memory(
       const std::vector<size_t>& buffer_sizes);
   std::unique_ptr<PlannedMemory> make_planned_memory_with_shared_arenas(
       const std::vector<size_t>& buffer_sizes,
       std::vector<std::vector<uint8_t>>& shared_arenas);
+  std::unique_ptr<PlannedMemory> make_planned_memory_with_devices(
+      const ET_RUNTIME_NAMESPACE::MethodMeta& method_meta);
   runtime::Result<std::vector<size_t>> get_mem_planned_buffer_sizes(
       const std::string& method_name);
   runtime::Result<std::vector<size_t>> get_max_mem_planned_buffer_sizes();
@@ -696,6 +701,7 @@ class Module {
     std::unique_ptr<PlannedMemory> planned_memory;
     std::unique_ptr<runtime::MemoryManager> memory_manager;
     std::unique_ptr<Method> method;
+    std::vector<runtime::etensor::DeviceType> buffer_devices;
   };
 
   std::string file_path_;
