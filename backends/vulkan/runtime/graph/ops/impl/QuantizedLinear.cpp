@@ -256,6 +256,19 @@ ValueRef prepack_quantized_linear_weight(
     storage_type = utils::kBuffer;
   }
 
+  std::string kernel_name = weight_quant_config.nbits == 4
+      ? "pack_q4_linear_weight"
+      : "pack_q8_linear_weight";
+  add_storage_type_suffix(kernel_name, storage_type);
+
+  // Check prepack cache before creating a new prepack node. This avoids
+  // allocating a duplicate output tensor when the same weight data has already
+  // been prepacked with the same kernel (e.g. tied embedding/linear weights).
+  ValueRef cached = graph.get_cached_prepack(qmat2_data, kernel_name);
+  if (is_valid(cached)) {
+    return cached;
+  }
+
   ValueRef qmat2 = graph.add_tensor(
       qmat2_sizes, vkcompute::vkapi::kInt, storage_type, utils::kWidthPacked);
 
@@ -273,11 +286,6 @@ ValueRef prepack_quantized_linear_weight(
         1u};
   }
 
-  std::string kernel_name = weight_quant_config.nbits == 4
-      ? "pack_q4_linear_weight"
-      : "pack_q8_linear_weight";
-  add_storage_type_suffix(kernel_name, storage_type);
-
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
@@ -294,6 +302,7 @@ ValueRef prepack_quantized_linear_weight(
       {graph.sizes_pc_of(qmat2),
        PushConstantDataInfo(&orig_sizes, sizeof(utils::ivec2))}));
 
+  graph.cache_prepack(qmat2_data, kernel_name, qmat2);
   return qmat2;
 }
 

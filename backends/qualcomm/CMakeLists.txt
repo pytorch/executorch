@@ -33,53 +33,40 @@ if(NOT DEFINED QNN_SDK_ROOT AND DEFINED ENV{QNN_SDK_ROOT})
   )
 endif()
 
-# Last-resort fallback: download during cmake configure when building wheels and
-# QNN_SDK_ROOT was not provided externally.
-if(NOT DEFINED QNN_SDK_ROOT AND EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
-  set(_qnn_default_sdk_dir "${CMAKE_CURRENT_BINARY_DIR}/sdk/qnn")
-
-  if(EXISTS "${_qnn_default_sdk_dir}" AND EXISTS "${_qnn_default_sdk_dir}/lib")
-    message(STATUS "Found cached Qualcomm SDK at ${_qnn_default_sdk_dir}")
-    set(QNN_SDK_ROOT
-        ${_qnn_default_sdk_dir}
-        CACHE PATH "Qualcomm SDK root directory" FORCE
-    )
-  else()
-    message(STATUS "Downloading Qualcomm SDK (fallback)")
-    execute_process(
-      COMMAND
-        ${PYTHON_EXECUTABLE}
-        ${EXECUTORCH_SOURCE_DIR}/backends/qualcomm/scripts/download_qnn_sdk.py
-        --dst-folder ${_qnn_default_sdk_dir} --print-sdk-path
-      WORKING_DIRECTORY ${EXECUTORCH_SOURCE_DIR}
-      RESULT_VARIABLE _qnn_sdk_download_result
-      OUTPUT_VARIABLE _qnn_sdk_download_output
-      ERROR_VARIABLE _qnn_sdk_download_error
-      OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    if(NOT _qnn_sdk_download_result EQUAL 0 OR _qnn_sdk_download_output
-                                               STREQUAL ""
-    )
-      message(
-        FATAL_ERROR
-          "Failed to download Qualcomm SDK. stdout: ${_qnn_sdk_download_output}\n"
-          "stderr: ${_qnn_sdk_download_error}"
-      )
-    endif()
-    set(QNN_SDK_ROOT
-        ${_qnn_sdk_download_output}
-        CACHE PATH "Qualcomm SDK root directory" FORCE
+# Auto-download QNN SDK when QNN_SDK_ROOT was not provided externally. The SDK
+# is cached in ~/.cache/executorch/qnn/ so it survives build dir cleans and is
+# shared across editable installs, build.sh, and wheel builds.
+if(NOT DEFINED QNN_SDK_ROOT)
+  message(STATUS "QNN_SDK_ROOT not set. Auto-downloading QNN SDK...")
+  execute_process(
+    COMMAND
+      ${PYTHON_EXECUTABLE}
+      ${EXECUTORCH_SOURCE_DIR}/backends/qualcomm/scripts/download_qnn_sdk.py
+      --print-sdk-path
+    WORKING_DIRECTORY ${EXECUTORCH_SOURCE_DIR}
+    RESULT_VARIABLE _qnn_sdk_download_result
+    OUTPUT_VARIABLE _qnn_sdk_download_output
+    ERROR_VARIABLE _qnn_sdk_download_error
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  if(NOT _qnn_sdk_download_result EQUAL 0 OR _qnn_sdk_download_output STREQUAL
+                                             ""
+  )
+    message(
+      FATAL_ERROR
+        "Failed to download Qualcomm SDK.\n"
+        "stderr: ${_qnn_sdk_download_error}\n"
+        "Set QNN_SDK_ROOT manually, e.g. cmake <..> -DQNN_SDK_ROOT=<...>"
     )
   endif()
+  set(QNN_SDK_ROOT
+      ${_qnn_sdk_download_output}
+      CACHE PATH "Qualcomm SDK root directory" FORCE
+  )
   set(ENV{QNN_SDK_ROOT} ${QNN_SDK_ROOT})
 endif()
 
-if(NOT DEFINED QNN_SDK_ROOT)
-  message(
-    FATAL_ERROR
-      "Please define QNN_SDK_ROOT, e.g. cmake <..> -DQNN_SDK_ROOT=<...>"
-  )
-elseif(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
+if(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   message(FATAL_ERROR "ios is not supported by Qualcomm AI Engine Direct")
 endif()
 
