@@ -28,7 +28,7 @@ def define_common_targets(is_fbcode=False):
             aten_suffix = ("_aten" if aten_mode else "")
 
             runtime.cxx_test(
-                name = "test" + aten_suffix,
+                name = "module_test" + aten_suffix,
                 srcs = [
                     "module_test.cpp",
                 ],
@@ -63,6 +63,26 @@ def define_common_targets(is_fbcode=False):
                     "ET_MODULE_PTE_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
                 },
                 platforms = [CXX, ANDROID],  # Cannot bundle resources on Apple platform.
+                compiler_flags = [
+                    "-Wno-error=deprecated-declarations",
+                ],
+            )
+
+            runtime.cxx_test(
+                name = "module_device_memory_test" + aten_suffix,
+                srcs = [
+                    "module_device_memory_test.cpp",
+                ],
+                deps = [
+                    "//executorch/kernels/portable:generated_lib" + aten_suffix,
+                    "//executorch/extension/module:module" + aten_suffix,
+                    "//executorch/runtime/core:device_allocator",
+                    "//executorch/runtime/core:device_memory_buffer",
+                ],
+                env = {
+                    "ET_MODULE_ADD_WITH_DEVICE_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddWithDevice.pte])",
+                    "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
+                },
                 compiler_flags = [
                     "-Wno-error=deprecated-declarations",
                 ],
