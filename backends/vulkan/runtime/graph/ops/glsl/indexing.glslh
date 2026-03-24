@@ -78,6 +78,7 @@ bool is_channels_last(const int hashed_layout) {
 #define get_outer_packed_dim(layout) (((layout) >> 20) & 0xF)
 #define get_packed_dim_block_size(layout) (((layout) >> 24) & 0xF)
 #define get_outer_packed_dim_block_size(layout) (((layout) >> 28) & 0xF)
+#define get_batch_concat_dim(layout) (((layout) >> 12) & 0xF)
 
 // Safe ivec4 component access via if/else chain. Avoids dynamic vector
 // indexing (v[index]) on UBO-backed ivec4 members, which crashes on Adreno 740
@@ -458,15 +459,16 @@ TensorIndex4D texture_pos_to_tensor4d_idx_simple(
   tidx.data.w = 0;
   safe_set(tidx.data, packed_dim, safe_idx(tidx.data, packed_dim) * 4);
 
-  // Compute batch idx accounting for batch concatenation, assuming channels as
-  // the concatenation dim.
+  // Compute batch idx using batch_concat_dim from hashed_layout
   if (meta.sizes.w > 1) {
-    int channels = meta.sizes.z;
-    if (packed_dim == 2) {
-      channels = align_up_4(channels);
+    const int batch_concat_dim = get_batch_concat_dim(hashed_layout);
+    int concat_dim_size = safe_idx(meta.sizes, batch_concat_dim);
+    if (batch_concat_dim == packed_dim) {
+      concat_dim_size = align_up_4(concat_dim_size);
     }
-    tidx.data.w = tidx.data.z / channels;
-    tidx.data.z = tidx.data.z % channels;
+    int concat_dim_val = safe_idx(tidx.data, batch_concat_dim);
+    tidx.data.w = concat_dim_val / concat_dim_size;
+    safe_set(tidx.data, batch_concat_dim, concat_dim_val % concat_dim_size);
   }
   return tidx;
 }
@@ -489,13 +491,20 @@ ivec3 tensor4d_idx_to_texel_pos_simple(
     texel_pos.z = div_4(packed_dim_idx);
   }
 
-  // Account for batch concatenation, assuming channels as the concatenation dim
+  // Account for batch concatenation
   if (meta.sizes.w > 1) {
-    int channels_ntexels = meta.sizes.z;
-    if (packed_dim == 2) {
-      channels_ntexels = div_up_4(channels_ntexels);
+    const int batch_concat_dim = get_batch_concat_dim(hashed_layout);
+    int concat_dim_ntexels = safe_idx(meta.sizes, batch_concat_dim);
+    if (batch_concat_dim == packed_dim) {
+      concat_dim_ntexels = div_up_4(concat_dim_ntexels);
     }
-    texel_pos.z += tidx.data.w * channels_ntexels;
+    if (batch_concat_dim == 0) {
+      texel_pos.x += tidx.data.w * concat_dim_ntexels;
+    } else if (batch_concat_dim == 1) {
+      texel_pos.y += tidx.data.w * concat_dim_ntexels;
+    } else {
+      texel_pos.z += tidx.data.w * concat_dim_ntexels;
+    }
   }
 
   return texel_pos;
@@ -521,13 +530,20 @@ TextureElementIndex tensor4d_idx_to_texture_element_idx_simple(
   }
   tex_idx.comp = mod_4(packed_dim_idx);
 
-  // Account for batch concatenation, assuming channels as the concatenation dim
+  // Account for batch concatenation
   if (meta.sizes.w > 1) {
-    int channels_ntexels = meta.sizes.z;
-    if (packed_dim == 2) {
-      channels_ntexels = div_up_4(channels_ntexels);
+    const int batch_concat_dim = get_batch_concat_dim(hashed_layout);
+    int concat_dim_ntexels = safe_idx(meta.sizes, batch_concat_dim);
+    if (batch_concat_dim == packed_dim) {
+      concat_dim_ntexels = div_up_4(concat_dim_ntexels);
     }
-    tex_idx.pos.z += tidx.data.w * channels_ntexels;
+    if (batch_concat_dim == 0) {
+      tex_idx.pos.x += tidx.data.w * concat_dim_ntexels;
+    } else if (batch_concat_dim == 1) {
+      tex_idx.pos.y += tidx.data.w * concat_dim_ntexels;
+    } else {
+      tex_idx.pos.z += tidx.data.w * concat_dim_ntexels;
+    }
   }
 
   return tex_idx;
