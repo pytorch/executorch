@@ -566,8 +566,7 @@ void add_conv1d_node(
       weight,
       graph.storage_type_of(out),
       utils::kChannelsPacked,
-      /* passthrough = */ false,
-      utils::kOptimizedAxisMap);
+      /* passthrough = */ false);
   ValueRef arg_bias = prepack_biases(
       graph,
       bias,

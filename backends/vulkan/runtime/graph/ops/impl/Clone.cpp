@@ -120,7 +120,9 @@ void add_buffer_to_image_node(
       // Push Constants: none
       {},
       // Specialization Constants: image layout, transpose_hw=0, buffer layout
-      {graph.hashed_layout_of(image), int32_t(0), graph.hashed_layout_of(buffer)},
+      {graph.hashed_layout_of(image),
+       int32_t(0),
+       graph.hashed_layout_of(buffer)},
       // Resize Args
       {},
       // Resizing Logic
