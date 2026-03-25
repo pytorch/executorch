@@ -79,6 +79,34 @@ bool is_channels_last(const int hashed_layout) {
 #define get_packed_dim_block_size(layout) (((layout) >> 24) & 0xF)
 #define get_outer_packed_dim_block_size(layout) (((layout) >> 28) & 0xF)
 
+// Safe ivec4 component access via if/else chain. Avoids dynamic vector
+// indexing (v[index]) on UBO-backed ivec4 members, which crashes on Adreno 740
+// when the index is a specialization constant with value 1 or 2.
+int safe_idx(const ivec4 v, const int idx) {
+  if (idx == 0) return v.x;
+  if (idx == 1) return v.y;
+  if (idx == 2) return v.z;
+  return v.w;
+}
+
+// Safe uvec4 component access via if/else chain. Same rationale as safe_idx
+// for ivec4 — avoids dynamic vector indexing on UBO-backed uvec4 members.
+uint safe_idx(const uvec4 v, const int idx) {
+  if (idx == 0) return v.x;
+  if (idx == 1) return v.y;
+  if (idx == 2) return v.z;
+  return v.w;
+}
+
+// Safe ivec4 component write via if/else chain. Companion to safe_idx for
+// cases where we need to set a component by a spec-const-derived index.
+void safe_set(inout ivec4 v, const int idx, const int val) {
+  if (idx == 0) { v.x = val; }
+  else if (idx == 1) { v.y = val; }
+  else if (idx == 2) { v.z = val; }
+  else { v.w = val; }
+}
+
 //
 // BufferMetadata
 //
@@ -420,17 +448,21 @@ void clamp_tensor_idx(const BufferMetadata meta, inout TensorIndex tidx) {
 
 // Does not account for axis mapping
 TensorIndex4D texture_pos_to_tensor4d_idx_simple(
-    const TextureMetadata meta, const ivec3 pos) {
+    const TextureMetadata meta,
+    const ivec3 pos,
+    const int hashed_layout) {
+  const int packed_dim = get_packed_dim(hashed_layout);
+
   TensorIndex4D tidx;
   tidx.data.xyz = pos;
   tidx.data.w = 0;
-  tidx.data[meta.packed_dim] *= 4;
+  safe_set(tidx.data, packed_dim, safe_idx(tidx.data, packed_dim) * 4);
 
   // Compute batch idx accounting for batch concatenation, assuming channels as
   // the concatenation dim.
   if (meta.sizes.w > 1) {
     int channels = meta.sizes.z;
-    if (meta.packed_dim == 2) {
+    if (packed_dim == 2) {
       channels = align_up_4(channels);
     }
     tidx.data.w = tidx.data.z / channels;
@@ -441,18 +473,26 @@ TensorIndex4D texture_pos_to_tensor4d_idx_simple(
 
 // Does not account for axis mapping
 ivec3 tensor4d_idx_to_texel_pos_simple(
-    const TextureMetadata meta, const TensorIndex4D tidx) {
-  ivec3 texel_pos;
+    const TextureMetadata meta,
+    const TensorIndex4D tidx,
+    const int hashed_layout) {
+  const int packed_dim = get_packed_dim(hashed_layout);
 
-  const int packed_dim_idx = tidx.data[meta.packed_dim];
+  const int packed_dim_idx = safe_idx(tidx.data, packed_dim);
 
-  texel_pos = tidx.data.xyz;
-  texel_pos[meta.packed_dim] = div_4(packed_dim_idx);
+  ivec3 texel_pos = tidx.data.xyz;
+  if (packed_dim == 0) {
+    texel_pos.x = div_4(packed_dim_idx);
+  } else if (packed_dim == 1) {
+    texel_pos.y = div_4(packed_dim_idx);
+  } else {
+    texel_pos.z = div_4(packed_dim_idx);
+  }
 
   // Account for batch concatenation, assuming channels as the concatenation dim
   if (meta.sizes.w > 1) {
     int channels_ntexels = meta.sizes.z;
-    if (meta.packed_dim == 2) {
+    if (packed_dim == 2) {
       channels_ntexels = div_up_4(channels_ntexels);
     }
     texel_pos.z += tidx.data.w * channels_ntexels;
@@ -463,17 +503,28 @@ ivec3 tensor4d_idx_to_texel_pos_simple(
 
 // Does not account for axis mapping
 TextureElementIndex tensor4d_idx_to_texture_element_idx_simple(
-    const TextureMetadata meta, const TensorIndex4D tidx) {
-  const int packed_dim_idx = tidx.data[meta.packed_dim];
+    const TextureMetadata meta,
+    const TensorIndex4D tidx,
+    const int hashed_layout) {
+  const int packed_dim = get_packed_dim(hashed_layout);
+
+  const int packed_dim_idx = safe_idx(tidx.data, packed_dim);
+
   TextureElementIndex tex_idx;
   tex_idx.pos = tidx.data.xyz;
-  tex_idx.pos[meta.packed_dim] = div_4(packed_dim_idx);
+  if (packed_dim == 0) {
+    tex_idx.pos.x = div_4(packed_dim_idx);
+  } else if (packed_dim == 1) {
+    tex_idx.pos.y = div_4(packed_dim_idx);
+  } else {
+    tex_idx.pos.z = div_4(packed_dim_idx);
+  }
   tex_idx.comp = mod_4(packed_dim_idx);
 
   // Account for batch concatenation, assuming channels as the concatenation dim
   if (meta.sizes.w > 1) {
     int channels_ntexels = meta.sizes.z;
-    if (meta.packed_dim == 2) {
+    if (packed_dim == 2) {
       channels_ntexels = div_up_4(channels_ntexels);
     }
     tex_idx.pos.z += tidx.data.w * channels_ntexels;

@@ -38,7 +38,8 @@ void main() {
     return;
   }
 
-  TensorIndex4D out_tidx = texture_pos_to_tensor4d_idx_simple(outp, out_pos);
+  TensorIndex4D out_tidx =
+      texture_pos_to_tensor4d_idx_simple(outp, out_pos, out_layout);
 
   // arange output is 1D, so the W dimension holds the element index.
   // Compute the value for each element in the texel along the packed dim.
