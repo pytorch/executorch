@@ -47,7 +47,7 @@ void main() {
   VEC4_T out_texel = VEC4_T(0);
 
   const int limit = min(
-      4, out_meta.sizes[packed_dim] - out_tidx.data[packed_dim]);
+      4, safe_idx(out_meta.sizes, packed_dim) - out_tidx.data[packed_dim]);
   for (int comp = 0; comp < limit; comp++) {
     TensorIndex4D in_tidx = out_tidx;
     in_tidx.data = ivec4(

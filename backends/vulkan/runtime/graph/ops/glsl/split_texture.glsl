@@ -51,7 +51,7 @@ void main() {
   VEC4_T out_texel = VEC4_T(0);
 
   int limit = min(
-      4, outp.sizes[out_packed_dim] - out_tidx.data[out_packed_dim]);
+      4, safe_idx(outp.sizes, out_packed_dim) - out_tidx.data[out_packed_dim]);
 
   TensorIndex4D input_tidx = out_tidx;
   input_tidx.data[split_dim] += split_offset;

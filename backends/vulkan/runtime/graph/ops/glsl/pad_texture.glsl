@@ -52,7 +52,7 @@ void main() {
 
   // Tail texels may have fewer than 4 valid elements; leave extras as 0.
   const int limit =
-      min(4, outp.sizes[packed_dim] - out_tidx.data[packed_dim]);
+      min(4, safe_idx(outp.sizes, packed_dim) - out_tidx.data[packed_dim]);
 
   VEC4_T out_texel = VEC4_T(0);
 
