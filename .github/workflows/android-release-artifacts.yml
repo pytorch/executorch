@@ -92,9 +92,11 @@ jobs:
         run: |
           set -eux
 
-          # Use sccache for NDK compiler as well
-          export CMAKE_CXX_COMPILER_LAUNCHER=sccache
-          export CMAKE_C_COMPILER_LAUNCHER=sccache
+          # Use sccache for NDK/compiler builds when available.
+          if command -v sccache >/dev/null 2>&1; then
+            export CMAKE_CXX_COMPILER_LAUNCHER=sccache
+            export CMAKE_C_COMPILER_LAUNCHER=sccache
+          fi
 
           # The generic Linux job chooses to use base env, not the one setup by the image
           eval "$(conda shell.bash hook)"
