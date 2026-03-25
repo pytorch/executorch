@@ -25,7 +25,7 @@ binary_op_buffer:
     - NAME: binary_div_buffer
       OPERATOR: X / Y
     - NAME: binary_pow_buffer
-      OPERATOR: pow(float(X), float(Y))
+      OPERATOR: pow(X, Y)
     - NAME: binary_floor_divide_buffer
       OPERATOR: floor(X / Y)
     - NAME: binary_minimum_buffer
