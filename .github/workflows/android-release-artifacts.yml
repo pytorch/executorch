@@ -96,11 +96,10 @@ jobs:
           export CMAKE_CXX_COMPILER_LAUNCHER=sccache
           export CMAKE_C_COMPILER_LAUNCHER=sccache
 
-          if command -v conda >/dev/null 2>&1; then
-            CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-            conda activate "${CONDA_ENV}"
-          fi
-          PYTHON_EXECUTABLE=python3 bash .ci/scripts/setup-linux.sh --build-tool buck2
+          # The generic Linux job chooses to use base env, not the one setup by the image
+          CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+          conda activate "${CONDA_ENV}"
+          PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool buck2
           export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
           mkdir -p ~/.gradle
@@ -138,8 +137,8 @@ jobs:
           fi
 
           if [[ "$FLAVOR" == "qnn" || "$FLAVOR" == "all" ]]; then
-            PYTHON_EXECUTABLE=python3 bash .ci/scripts/setup-qnn-deps.sh
-            PYTHON_EXECUTABLE=python3 bash .ci/scripts/build-qnn-sdk.sh
+            PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+            PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
             export EXECUTORCH_BUILD_QNN=ON
             source backends/qualcomm/scripts/qnn_config.sh
             export QNN_SDK_ROOT="/tmp/qnn/${QNN_VERSION}"
@@ -186,10 +185,16 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: android-apps
+          path: artifacts-to-be-uploaded
       - name: Upload AAR RC to AWS S3
         shell: bash
         run: |
-          shasum -a 256 executorch.aar > executorch.aar.sha256sums
+          AAR_PATH=$(find artifacts-to-be-uploaded -name executorch.aar -print -quit)
+          if [ -z "$AAR_PATH" ]; then
+            echo "executorch.aar not found in downloaded artifact"
+            exit 1
+          fi
+          shasum -a 256 "$AAR_PATH" > executorch.aar.sha256sums
 
           pip install awscli==1.32.18
           AWS_CMD="aws s3 cp"
@@ -201,5 +206,5 @@ jobs:
           if [ -z "$FLAVOR" ]; then
             FLAVOR="xnnpack"
           fi
-          ${AWS_CMD} executorch.aar s3://ossci-android/executorch/release/${VERSION}-${FLAVOR}/executorch.aar --acl public-read
+          ${AWS_CMD} "$AAR_PATH" s3://ossci-android/executorch/release/${VERSION}-${FLAVOR}/executorch.aar --acl public-read
           ${AWS_CMD} executorch.aar.sha256sums s3://ossci-android/executorch/release/${VERSION}-${FLAVOR}/executorch.aar.sha256sums --acl public-read
