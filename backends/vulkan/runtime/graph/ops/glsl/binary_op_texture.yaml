@@ -26,7 +26,7 @@ binary_op_texture:
       OPERATOR: X / Y
       MASK_PADDING: 1
     - NAME: binary_pow_texture3d
-      OPERATOR: pow(float(X), float(Y))
+      OPERATOR: pow(X, Y)
     - NAME: binary_floor_divide_texture3d
       OPERATOR: floor(X / Y)
       MASK_PADDING: 1
