@@ -1929,8 +1929,8 @@ def rms_norm(
     return W * nn.RMSNorm(list(normalized_shape), eps=eps, dtype=X.dtype)(X)
 
 
-@impl_tracked(m, "quantized_max_pool2d")
-def quantized_max_pool2d(
+@impl_tracked(m, "quantized_max_pool2d_nchw")
+def quantized_max_pool2d_nchw(
     input: torch.Tensor,
     kernel_size: list[int],
     stride: list[int],
@@ -1956,6 +1956,37 @@ def quantized_max_pool2d(
         dilation=dilation,
         ceil_mode=ceil_mode,
     )
+
+
+@impl_tracked(m, "quantized_max_pool2d_nhwc")
+def quantized_max_pool2d_nhwc(
+    input: torch.Tensor,
+    kernel_size: list[int],
+    stride: list[int],
+    padding: list[int],
+    dilation: list[int],
+    ceil_mode: bool,
+) -> torch.Tensor:
+    """
+    Quantized max pooling in NHWC layout.
+
+    Converts NHWC→NCHW, performs max pooling, then converts back NCHW→NHWC.
+    """
+    # Convert NHWC [N, H, W, C] to NCHW [N, C, H, W]
+    input_nchw = input.permute(0, 3, 1, 2).contiguous()
+
+    # Call the NCHW version
+    output_nchw = quantized_max_pool2d_nchw(
+        input_nchw,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        ceil_mode=ceil_mode,
+    )
+
+    # Convert NCHW [N, C, H_out, W_out] back to NHWC [N, H_out, W_out, C]
+    return output_nchw.permute(0, 2, 3, 1).contiguous()
 
 
 @impl_tracked(m, "where_Scalar")
