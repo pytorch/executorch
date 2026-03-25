@@ -4,6 +4,7 @@ Export Qwen 3.5 MoE to ExecuTorch .pte format (CUDA only).
 Usage:
   python export.py --model-dir /path/to/Qwen3.5-MoE-A3B
   python export.py --model-dir /path/to/model --qlinear 4w
+  python export.py --prequantized /path/to/quantized_bundle/
 """
 
 import argparse
@@ -12,7 +13,11 @@ import os
 import torch
 import torch.nn as nn
 
-from executorch.examples.models.qwen3_5_moe.model import FusedMoEExperts, Qwen35MoE
+from executorch.examples.models.qwen3_5_moe.model import (
+    FusedMoEExperts,
+    Qwen35MoE,
+    Qwen35MoEConfig,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -25,6 +30,9 @@ def load_and_quantize(args):
 
     Returns (model, config) ready for export.
     """
+    if args.prequantized:
+        return load_prequantized_model(args.prequantized, args.max_seq_len)
+
     print("Loading model...")
     model, config = Qwen35MoE.from_hf_checkpoint(
         args.model_dir, max_seq_len=args.max_seq_len
@@ -40,6 +48,96 @@ def load_and_quantize(args):
     else:
         model.to(dtype=torch.bfloat16)
 
+    return model, config
+
+
+def load_prequantized_model(prequantized_dir, max_seq_len=4096):
+    """Load a prequantized safetensors bundle into a model.
+
+    Args:
+        prequantized_dir: Directory containing model.safetensors and config.json.
+        max_seq_len: Maximum sequence length for KV cache.
+
+    Returns:
+        (model, config) ready for export.
+    """
+    from executorch.examples.models.qwen3_5_moe.quantize_and_save import (
+        load_quantized_state_dict,
+    )
+
+    config_path = os.path.join(prequantized_dir, "config.json")
+    safetensors_path = os.path.join(prequantized_dir, "model.safetensors")
+
+    config = Qwen35MoEConfig.from_hf_config(config_path)
+    config.max_seq_len = max_seq_len
+
+    print(f"Loading prequantized weights from {safetensors_path}...")
+    state_dict = load_quantized_state_dict(safetensors_path)
+
+    # Build model on meta device and prepare for quantized expert buffers.
+    # The model init creates w1_weight/w2_weight parameters but the checkpoint
+    # has w1/w1_scale/w2/w2_scale buffers. Replace them with matching placeholders
+    # so load_state_dict can assign the quantized weights.
+    print("Building model on meta device...")
+    with torch.device("meta"):
+        model = Qwen35MoE(config)
+
+    for i, layer in enumerate(model.layers):
+        experts = layer.mlp.experts
+        if isinstance(experts, FusedMoEExperts) and hasattr(experts, "w1_weight"):
+            del experts.w1_weight
+            del experts.w2_weight
+            prefix = f"layers.{i}.mlp.experts"
+            for buf_name in ("w1", "w1_scale", "w2", "w2_scale"):
+                t = state_dict[f"{prefix}.{buf_name}"]
+                experts.register_buffer(
+                    buf_name,
+                    torch.empty(t.shape, dtype=t.dtype, device="meta"),
+                )
+            # Infer group_size from packed weight and scale shapes:
+            # w1 is [E, N, K//2] (packed int4), w1_scale is [E, N, K//gs]
+            w1 = state_dict[f"{prefix}.w1"]
+            w1_scale = state_dict[f"{prefix}.w1_scale"]
+            experts.group_size = (w1.shape[2] * 2) // w1_scale.shape[2]
+
+    missing, unexpected = model.load_state_dict(state_dict, strict=False, assign=True)
+    del state_dict
+
+    # Validate: only runtime state buffers should be missing.
+    # Any missing weight key indicates a version mismatch between the
+    # checkpoint and the model (e.g., unfused vs fused projections).
+    runtime_prefixes = (
+        ".kv_cache.",
+        ".conv_state",
+        ".recurrent_state",
+        ".mask",
+        ".inv_freq",
+    )
+    expected_missing = {k for k in missing if any(p in k for p in runtime_prefixes)}
+    weight_missing = set(missing) - expected_missing
+    if weight_missing:
+        raise RuntimeError(
+            f"Prequantized checkpoint is missing {len(weight_missing)} weight keys "
+            f"(model/checkpoint version mismatch?): {sorted(weight_missing)[:10]}"
+        )
+    if unexpected:
+        raise RuntimeError(
+            f"Prequantized checkpoint has {len(unexpected)} unexpected keys "
+            f"(model/checkpoint version mismatch?): {sorted(unexpected)[:10]}"
+        )
+
+    # load_state_dict(assign=True) wraps tensors as Parameter(requires_grad=True).
+    # run_decompositions -> unwrap_tensor_subclass_parameters tries to wrap
+    # int-dtype inner tensors of quantized subclasses as Parameters with
+    # requires_grad=True, which fails. Disable grad on all parameters.
+    for p in model.parameters():
+        p.requires_grad_(False)
+    model.eval()
+
+    print(
+        f"Model: {config.num_hidden_layers} layers, {config.hidden_size}d, "
+        f"{config.num_experts} experts top-{config.num_experts_per_tok}"
+    )
     return model, config
 
 
@@ -347,7 +445,9 @@ def main():
         description="Export Qwen3.5 MoE to ExecuTorch (CUDA)"
     )
     parser.add_argument(
-        "--model-dir", required=True, help="HuggingFace model directory"
+        "--model-dir",
+        default=None,
+        help="HuggingFace model directory (not needed with --prequantized)",
     )
     parser.add_argument(
         "--output-dir", default="./qwen35_moe_exports", help="Output directory"
@@ -373,7 +473,17 @@ def main():
         action="store_true",
         help="Use HQQ scale-only optimization for expert quantization (slower, better accuracy).",
     )
+    parser.add_argument(
+        "--prequantized",
+        default=None,
+        help="Path to prequantized directory (from quantize_and_save.py) "
+        "containing model.safetensors and config.json. "
+        "Skips quantization; --model-dir is not needed.",
+    )
     args = parser.parse_args()
+
+    if not args.prequantized and not args.model_dir:
+        parser.error("--model-dir is required unless --prequantized is provided.")
 
     if args.hqq and not args.qlinear:
         parser.error("--hqq requires --qlinear")

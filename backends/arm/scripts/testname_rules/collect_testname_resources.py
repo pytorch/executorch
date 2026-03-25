@@ -6,7 +6,7 @@ import ast
 import pathlib
 import re
 
-from executorch.exir.dialects.edge.spec.utils import SAMPLE_INPUT as _SAMPLE_INPUT
+from executorch.exir.dialects.edge.spec.utils import SAMPLE_INPUT
 
 # Add all targets and TOSA profiles we support here.
 TARGETS = [
@@ -63,7 +63,7 @@ _CUSTOM_EDGE_OPS = [
     "conv_transpose2d.default",
     "index_copy.default",
 ]
-_ALL_EDGE_OPS = _SAMPLE_INPUT.keys() | _CUSTOM_EDGE_OPS
+_ALL_EDGE_OPS = SAMPLE_INPUT.keys() | _CUSTOM_EDGE_OPS
 
 _NON_ARM_PASSES = ["quantize_io_pass"]
 
