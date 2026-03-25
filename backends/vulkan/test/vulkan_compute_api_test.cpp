@@ -2047,7 +2047,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       vkapi::kFloat,
       /*shared_object_idx = */ 4);
 
-  // +4: t.sizes_ubo() + t.texture_meta_ubo() for each staging shader (2 inputs)
+  // +4: texture_meta_ubo() + staging buffer for each input (2 inputs)
   expected_vma_allocation_count += 4;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
@@ -2059,7 +2059,8 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   auto addFn = VK_GET_OP_FN("aten.add.Tensor");
   addFn(graph, {a.value, b.value, kDummyValueRef, c});
 
-  // no new allocations if binary op uses push constants
+  // +1: meta_ubo() for output tensor c
+  expected_vma_allocation_count += 1;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   IOValueRef d = graph.add_input_tensor(
@@ -2067,7 +2068,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       vkapi::kFloat,
       /*shared_object_idx = */ 2);
 
-  // +2: t.sizes_ubo() + t.texture_meta_ubo() for staging shader
+  // +2: texture_meta_ubo() + staging buffer for input d
   expected_vma_allocation_count += 2;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
@@ -2079,15 +2080,16 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   auto mulFn = VK_GET_OP_FN("aten.mul.Tensor");
   mulFn(graph, {c, d.value, e});
 
-  // no new allocations if binary op uses push constants
+  // +1: meta_ubo() for output tensor e
+  expected_vma_allocation_count += 1;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   IOValueRef out = {};
   out.value = e;
   out.staging = graph.set_output_tensor(out.value);
 
-  // +2: staging buffer + t.texture_meta_ubo() for output tensor
-  expected_vma_allocation_count += 2;
+  // +1: staging buffer (e already has texture_meta_ubo from mul op)
+  expected_vma_allocation_count += 1;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   graph.prepare();
