@@ -33,6 +33,10 @@ ${layout_declare_ubo(B, "TextureMetadata", "index")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+${layout_declare_spec_const(C, "int", "out_layout", "CONTIG_LAYOUT_INT")}
+${layout_declare_spec_const(C, "int", "inp_layout", "CONTIG_LAYOUT_INT")}
+const int out_packed_dim = get_packed_dim(out_layout);
+
 // Implements aten.index.Tensor for the case where self is 1D and there is
 // exactly one index tensor. Each output element is:
 //   output[...] = self[index[...]]
@@ -44,13 +48,14 @@ void main() {
     return;
   }
 
-  TensorIndex4D out_tidx = texture_pos_to_tensor4d_idx_simple(outp, out_pos);
+  TensorIndex4D out_tidx =
+      texture_pos_to_tensor4d_idx_simple(outp, out_pos, out_layout);
   ivec4 idx_texel = texelFetch(t_index, out_pos, 0);
 
   VEC4_T out_texel = VEC4_T(0);
 
   int limit = min(
-      4, outp.sizes[outp.packed_dim] - out_tidx.data[outp.packed_dim]);
+      4, outp.sizes[out_packed_dim] - out_tidx.data[out_packed_dim]);
   for (int comp = 0; comp < limit; comp++) {
     int idx = idx_texel[comp];
 
@@ -60,12 +65,12 @@ void main() {
     self_tidx.data = ivec4(idx, 0, 0, 0);
 
     TextureElementIndex self_elem =
-        tensor4d_idx_to_texture_element_idx_simple(inp, self_tidx);
+        tensor4d_idx_to_texture_element_idx_simple(inp, self_tidx, inp_layout);
 
     VEC4_T self_texel = texelFetch(t_self, self_elem.pos, 0);
     out_texel[comp] = self_texel[self_elem.comp];
 
-    out_tidx.data[outp.packed_dim]++;
+    out_tidx.data[out_packed_dim]++;
   }
 
   imageStore(t_out, out_pos, out_texel);

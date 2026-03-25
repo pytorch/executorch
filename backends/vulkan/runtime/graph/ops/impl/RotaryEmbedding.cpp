@@ -101,7 +101,7 @@ void add_rotary_embedding_node(
       // Push Constants
       {},
       // Specialization Constants
-      {},
+      {graph.hashed_layout_of(xq_out), graph.hashed_layout_of(freqs_cos)},
       // Resize Args
       {},
       // Resizing Logic
