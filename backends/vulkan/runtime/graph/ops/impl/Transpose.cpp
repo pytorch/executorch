@@ -69,18 +69,4 @@ void add_transpose_view_node(
       resize_transpose_view_node, {out_ref, input_ref, dim0_ref, dim1_ref}));
 }
 
-void transpose(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  const ValueRef out = args[3];
-  return add_transpose_view_node(
-      graph,
-      args[0], // input
-      args[1], // dim0
-      args[2], // dim1
-      out);
-}
-
-REGISTER_OPERATORS {
-  VK_REGISTER_OP(aten.transpose.int, transpose);
-}
-
 } // namespace vkcompute
