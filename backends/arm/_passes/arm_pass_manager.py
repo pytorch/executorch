@@ -189,7 +189,7 @@ class ArmPassManager(PassManager):
         """
         skip_set: set[type] = set()
 
-        config = override_config or self.compile_spec.get_pass_pipeline_config()
+        config = override_config or self.compile_spec._get_pass_pipeline_config()
         logger.debug(f"Skip Config: {config}")
 
         match config.softmax:

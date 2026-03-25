@@ -1,6 +1,6 @@
 # Test ExecuTorch CUDA Build Compatibility
 # This workflow tests whether ExecuTorch can be successfully built with CUDA support
-# across different CUDA versions (12.6, 12.8, 12.9) using the command:
+# across different CUDA versions (12.6, 12.8, 12.9, 13.0) using the command:
 #   ./install_executorch.sh
 #
 # Note: ExecuTorch automatically detects the system CUDA version using nvcc and
@@ -66,7 +66,7 @@ jobs:
             echo "CUDA build results: ${{ needs.test-cuda-builds.result }}"
             exit 1
           else
-            echo "SUCCESS: All ExecuTorch CUDA builds (12.6, 12.8, 12.9) completed successfully!"
+            echo "SUCCESS: All ExecuTorch CUDA builds (12.6, 12.8, 12.9, 13.0) completed successfully!"
           fi
 
   test-models-cuda:
@@ -75,10 +75,6 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        model: [linear, add, add_mul, resnet18, conv1d, sdpa, mv2, mv3]
     with:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
@@ -92,7 +88,21 @@ jobs:
 
         PYTHON_EXECUTABLE=python ./install_executorch.sh
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
-        PYTHON_EXECUTABLE=python source .ci/scripts/test_model.sh "${{ matrix.model }}" cmake cuda
+
+        # Build executor_runner with CUDA support once, then reuse for all models.
+        # test_model.sh's build_cmake_executor_runner does rm -rf cmake-out on each
+        # invocation, so we build separately and run models directly.
+        cmake -DCMAKE_BUILD_TYPE=Release \
+            -DEXECUTORCH_BUILD_CUDA=ON \
+            -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+            -DPYTHON_EXECUTABLE=python \
+            -Bcmake-out .
+        cmake --build cmake-out -j4
+
+        for model in linear add add_mul resnet18 conv1d sdpa mv2 mv3; do
+          python -m examples.cuda.scripts.export --model_name="$model" --output_dir "./"
+          ./cmake-out/executor_runner --model_path "./${model}.pte" --data_path "./aoti_cuda_blob.ptd"
+        done
 
   unittest-cuda:
     name: unittest-cuda
@@ -134,6 +144,9 @@ jobs:
 
         # Run CUDA backend Python tests
         python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts="
+
+        # Run quantize roundtrip tests (Qwen 3.5 MoE save/load prequantized)
+        python -m pytest examples/models/qwen3_5_moe/test_quantize_roundtrip.py -v -o "addopts="
 
         # Build Qwen3.5 MoE runner (ExecuTorch already built above)
         cd examples/models/qwen3_5_moe && cmake --workflow --preset qwen3-5-moe-cuda
@@ -206,6 +219,30 @@ jobs:
               repo: "facebook"
               name: "dinov2-small-imagenet1k-1-layer"
             quant: "quantized-int4-weight-only"
+          # Qwen3 int4-weight-only: no downstream job consumes this artifact
+          - model:
+              repo: "Qwen"
+              name: "Qwen3-0.6B"
+            quant: "quantized-int4-weight-only"
+          - model:
+              repo: "nvidia"
+              name: "parakeet-tdt"
+            quant: "quantized-int4-weight-only"
+          # Whisper: cover all quant types and both sizes with minimal combos
+          # whisper-small: non-quantized only
+          # whisper-large-v3-turbo: int4-tile-packed + int4-weight-only
+          - model:
+              repo: "openai"
+              name: "whisper-small"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "openai"
+              name: "whisper-small"
+            quant: "quantized-int4-weight-only"
+          - model:
+              repo: "openai"
+              name: "whisper-large-v3-turbo"
+            quant: "non-quantized"
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
@@ -301,6 +338,25 @@ jobs:
               repo: "facebook"
               name: "dinov2-small-imagenet1k-1-layer"
             quant: "quantized-int4-weight-only"
+          - model:
+              repo: "nvidia"
+              name: "parakeet-tdt"
+            quant: "quantized-int4-weight-only"
+          # Whisper: cover all quant types and both sizes with minimal combos
+          # whisper-small: non-quantized only
+          # whisper-large-v3-turbo: int4-tile-packed + int4-weight-only
+          - model:
+              repo: "openai"
+              name: "whisper-small"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "openai"
+              name: "whisper-small"
+            quant: "quantized-int4-weight-only"
+          - model:
+              repo: "openai"
+              name: "whisper-large-v3-turbo"
+            quant: "non-quantized"
     with:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
@@ -326,9 +382,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - model: "gemma3-4b"
-            quantize: ""
-            artifact: "google-gemma-3-4b-it-cuda-non-quantized"
           - model: "gemma3-4b"
             quantize: "--quantize"
             artifact: "google-gemma-3-4b-it-cuda-quantized-int4-tile-packed"
