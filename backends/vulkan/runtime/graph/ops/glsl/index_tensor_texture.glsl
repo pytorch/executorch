@@ -55,7 +55,7 @@ void main() {
   VEC4_T out_texel = VEC4_T(0);
 
   int limit = min(
-      4, outp.sizes[out_packed_dim] - out_tidx.data[out_packed_dim]);
+      4, safe_idx(outp.sizes, out_packed_dim) - out_tidx.data[out_packed_dim]);
   for (int comp = 0; comp < limit; comp++) {
     int idx = idx_texel[comp];
 

@@ -99,6 +99,14 @@ uint safe_idx(const uvec4 v, const int idx) {
   return v.w;
 }
 
+// Safe ivec3 component access via if/else chain. Same rationale as safe_idx
+// for ivec4.
+int safe_idx(const ivec3 v, const int idx) {
+  if (idx == 0) return v.x;
+  if (idx == 1) return v.y;
+  return v.z;
+}
+
 // Safe ivec4 component write via if/else chain. Companion to safe_idx for
 // cases where we need to set a component by a spec-const-derived index.
 void safe_set(inout ivec4 v, const int idx, const int val) {
