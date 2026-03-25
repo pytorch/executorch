@@ -124,6 +124,10 @@ def _is_quantize(node_: Node) -> bool:
     ]
 
 
+def is_qdq_op(node: Node) -> bool:
+    return _is_quantize(node) or _is_dequantize(node)
+
+
 def previous_non_qdq_node(node: Node, input_index: int = 0) -> Node | None:
     """Return the first node which is not a `quantize` or `dequantize`, found by traversing the graph backwards
     starting with the `node.args[input_index]`,
