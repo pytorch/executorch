@@ -46,6 +46,7 @@ def define_arm_tests():
         "misc/test_bn_relu_folding_qat.py",
         "misc/test_custom_partition.py",
         "misc/test_debug_hook.py",
+        "misc/test_post_quant_device_switch.py",
         # "misc/test_dim_order.py", (TODO - T238390249)
         "misc/test_outputs_order.py",
     ]
