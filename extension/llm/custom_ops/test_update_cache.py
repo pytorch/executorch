@@ -447,9 +447,7 @@ class RecurrentGatedDeltaRuleTest(unittest.TestCase):
         value = torch.randn(batch_size, num_heads, seq_len, v_head_dim)
         g = torch.randn(batch_size, num_heads, seq_len)
         beta = torch.sigmoid(torch.randn(batch_size, num_heads, seq_len))
-        recurrent_state = torch.randn(
-            batch_size, num_heads, k_head_dim, v_head_dim
-        )
+        recurrent_state = torch.randn(batch_size, num_heads, k_head_dim, v_head_dim)
         return query, key, value, g, beta, recurrent_state
 
     def _reference_recurrent_gated_delta_rule(

@@ -48,8 +48,10 @@ tile_crop_out_no_context(const Tensor& input, int64_t tile_size, Tensor& out) {
 
 at::Tensor tile_crop_aten(const at::Tensor& input, int64_t tile_size);
 
-at::Tensor&
-tile_crop_out_aten(const at::Tensor& input, int64_t tile_size, at::Tensor& out) {
+at::Tensor& tile_crop_out_aten(
+    const at::Tensor& input,
+    int64_t tile_size,
+    at::Tensor& out) {
   auto input_et = to_et_arg<Tensor>(input);
   auto out_et = to_et_arg<Tensor&>(out);
   auto& et_result =
@@ -76,7 +78,5 @@ TORCH_LIBRARY(preprocess, m) {
 
 TORCH_LIBRARY_IMPL(preprocess, CompositeExplicitAutograd, m) {
   m.impl("tile_crop", torch::executor::native::tile_crop_aten);
-  m.impl(
-      "tile_crop.out",
-      torch::executor::native::tile_crop_out_aten);
+  m.impl("tile_crop.out", torch::executor::native::tile_crop_out_aten);
 }

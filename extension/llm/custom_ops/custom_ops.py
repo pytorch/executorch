@@ -88,9 +88,7 @@ def _load_custom_ops_library() -> None:
         _CUSTOM_OPS_DLL_DIR_HANDLES.append(os.add_dll_directory(str(lib_path.parent)))
         torch_lib_dir = Path(torch.__file__).resolve().parent / "lib"
         if torch_lib_dir.is_dir():
-            _CUSTOM_OPS_DLL_DIR_HANDLES.append(
-                os.add_dll_directory(str(torch_lib_dir))
-            )
+            _CUSTOM_OPS_DLL_DIR_HANDLES.append(os.add_dll_directory(str(torch_lib_dir)))
 
     torch.ops.load_library(lib_path)
 

@@ -81,7 +81,7 @@ def _get_recurrent_gated_delta_rule_op():
 
     try:
         from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
-    except (ImportError, OSError):
+    except (ImportError, OSError, RuntimeError):
         logging.debug("Failed to import custom ops library", exc_info=True)
         return None
 

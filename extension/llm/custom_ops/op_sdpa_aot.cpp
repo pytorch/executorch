@@ -735,13 +735,9 @@ TORCH_LIBRARY_IMPL(llama, CompositeExplicitAutograd, m) {
       "sdpa_with_kv_cache.out",
       torch::executor::native::sdpa_with_kv_cache_out_aten);
   m.impl("custom_sdpa", torch::executor::native::custom_sdpa_aten);
-  m.impl(
-      "custom_sdpa.out",
-      torch::executor::native::custom_sdpa_out_aten);
+  m.impl("custom_sdpa.out", torch::executor::native::custom_sdpa_out_aten);
   m.impl("update_cache", torch::executor::native::update_cache_aten);
-  m.impl(
-      "update_cache.out",
-      torch::executor::native::update_cache_out_aten);
+  m.impl("update_cache.out", torch::executor::native::update_cache_out_aten);
   m.impl(
       "update_cache_with_indices",
       torch::executor::native::update_cache_with_indices_aten);
