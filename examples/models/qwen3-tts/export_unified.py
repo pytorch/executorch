@@ -6,7 +6,7 @@ Produces one model.pte containing all pipeline stages:
   code_predictor   — sub-code embeddings → hidden with KV cache
   codec_embed      — (token_id, group_idx) → embedding [1, 1, 1024]
   cp_head          — (hidden, head_idx) → logits [1, 2048]
-  cp_generate      — fused 15-step code predictor loop
+  cp_generate      — fused sampled 15-step code predictor loop
   decode_audio     — audio codes [1, T, 16] → (waveform, lengths)
 
 Follows the Parakeet multi-method export pattern.
@@ -209,20 +209,27 @@ class CpHeadExport(nn.Module):
 
 
 class CpGenerateExport(nn.Module):
-    """Fused code predictor: 15 autoregressive steps in one graph.
+    """Fused code predictor v2 for the warm XNNPACK fast path.
 
-    Unrolls the code predictor loop at export time. Each iteration:
-    1. Apply per-group LM head to get logits
-    2. Argmax to get greedy code (drives the autoregressive chain)
-    3. Embed the code via per-group embedding table
-    4. Run code predictor transformer step
+    The runner still samples `code_0` on the host so it can keep repetition
+    penalty, suppression, and EOS handling aligned with the talker path.
+    This fused export handles groups 1..15 using the current common sampler
+    shape used in this project:
+      - temperature > 0
+      - top_k == 50
+      - top_p disabled
 
-    Returns all 15 logits (for optional C++ re-sampling) and the sum
-    of all 16 group embeddings (for constructing the next talker input).
+    Sampling is made exportable by passing one pre-generated uniform random
+    value per sub-code group. The graph performs:
+      1. per-group LM head
+      2. fixed top-k(50)
+      3. inverse-CDF sampling over softmax(topk logits / temperature)
+      4. embedding lookup for the chosen code
+      5. code predictor step for the next group
 
-    The code predictor uses KV cache. Positions 0-16 are used per call.
-    The causal mask prevents attending to stale future positions, so
-    no explicit cache reset is needed between talker steps.
+    Returns:
+      - sampled sub-codes [15]
+      - fused embedding sum for the next talker step [1024]
     """
 
     def __init__(
@@ -234,11 +241,8 @@ class CpGenerateExport(nn.Module):
         super().__init__()
         self.cp_transformer = cp_transformer
         self.num_groups = len(cp_head_weights)
-
-        for i, hw in enumerate(cp_head_weights):
-            self.register_buffer(f"head_{i}", hw)
-        for i, ew in enumerate(cp_embed_weights):
-            self.register_buffer(f"embed_{i}", ew)
+        self.register_buffer("stacked_heads", torch.stack(cp_head_weights, dim=0))
+        self.register_buffer("stacked_embeds", torch.stack(cp_embed_weights, dim=0))
 
     def _cp_forward(self, embeds: torch.Tensor, pos: torch.Tensor) -> torch.Tensor:
         hidden = self.cp_transformer(
@@ -252,6 +256,8 @@ class CpGenerateExport(nn.Module):
         self,
         talker_hidden: torch.Tensor,
         code_0_embed: torch.Tensor,
+        temperature: torch.Tensor,
+        sample_uniforms: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # Prefill: [talker_hidden, code_0_embed] at positions [0, 1]
         cp_input = torch.cat([talker_hidden, code_0_embed], dim=1)
@@ -260,133 +266,31 @@ class CpGenerateExport(nn.Module):
 
         # Start with code_0 embedding in the sum
         embed_sum = code_0_embed.reshape(-1)  # [1024]
+        safe_temperature = torch.clamp(temperature.reshape(()), min=1e-5)
+        sampled_codes = []
 
-        # Collect all 15 sub-code logits
-        logits_list = []
+        for group_idx in range(self.num_groups):
+            head_weight = self.stacked_heads[group_idx]
+            logits = F.linear(cp_hidden, head_weight).reshape(-1)
+            topk_vals, topk_idx = torch.topk(logits, k=50, dim=0)
+            probs = torch.softmax(topk_vals / safe_temperature, dim=0)
+            cdf = torch.cumsum(probs, dim=0)
+            sample = torch.clamp(sample_uniforms[group_idx], min=1e-6, max=1.0 - 1e-6)
+            choice = torch.argmax((cdf >= sample).to(torch.int64), dim=0)
+            code = torch.gather(topk_idx, 0, choice.reshape(1)).reshape(())
+            sampled_codes.append(code)
 
-        # Unrolled 15 iterations (traced by torch.export)
-        head_0 = self.head_0
-        logits_0 = F.linear(cp_hidden, head_0)
-        logits_list.append(logits_0)
-        code_0g = torch.argmax(logits_0, dim=-1)
-        embed_0g = F.embedding(code_0g, self.embed_0)
-        embed_sum = embed_sum + embed_0g.reshape(-1)
-        cp_hidden = self._cp_forward(embed_0g.unsqueeze(0), torch.tensor([2], dtype=torch.long))
+            embed_weight = self.stacked_embeds[group_idx]
+            code_embed = F.embedding(code.reshape(1), embed_weight).unsqueeze(0)
+            embed_sum = embed_sum + code_embed.reshape(-1)
 
-        head_1 = self.head_1
-        logits_1 = F.linear(cp_hidden, head_1)
-        logits_list.append(logits_1)
-        code_1g = torch.argmax(logits_1, dim=-1)
-        embed_1g = F.embedding(code_1g, self.embed_1)
-        embed_sum = embed_sum + embed_1g.reshape(-1)
-        cp_hidden = self._cp_forward(embed_1g.unsqueeze(0), torch.tensor([3], dtype=torch.long))
+            if group_idx + 1 < self.num_groups:
+                cp_hidden = self._cp_forward(
+                    code_embed,
+                    torch.tensor([group_idx + 2], dtype=torch.long),
+                )
 
-        head_2 = self.head_2
-        logits_2 = F.linear(cp_hidden, head_2)
-        logits_list.append(logits_2)
-        code_2g = torch.argmax(logits_2, dim=-1)
-        embed_2g = F.embedding(code_2g, self.embed_2)
-        embed_sum = embed_sum + embed_2g.reshape(-1)
-        cp_hidden = self._cp_forward(embed_2g.unsqueeze(0), torch.tensor([4], dtype=torch.long))
-
-        head_3 = self.head_3
-        logits_3 = F.linear(cp_hidden, head_3)
-        logits_list.append(logits_3)
-        code_3g = torch.argmax(logits_3, dim=-1)
-        embed_3g = F.embedding(code_3g, self.embed_3)
-        embed_sum = embed_sum + embed_3g.reshape(-1)
-        cp_hidden = self._cp_forward(embed_3g.unsqueeze(0), torch.tensor([5], dtype=torch.long))
-
-        head_4 = self.head_4
-        logits_4 = F.linear(cp_hidden, head_4)
-        logits_list.append(logits_4)
-        code_4g = torch.argmax(logits_4, dim=-1)
-        embed_4g = F.embedding(code_4g, self.embed_4)
-        embed_sum = embed_sum + embed_4g.reshape(-1)
-        cp_hidden = self._cp_forward(embed_4g.unsqueeze(0), torch.tensor([6], dtype=torch.long))
-
-        head_5 = self.head_5
-        logits_5 = F.linear(cp_hidden, head_5)
-        logits_list.append(logits_5)
-        code_5g = torch.argmax(logits_5, dim=-1)
-        embed_5g = F.embedding(code_5g, self.embed_5)
-        embed_sum = embed_sum + embed_5g.reshape(-1)
-        cp_hidden = self._cp_forward(embed_5g.unsqueeze(0), torch.tensor([7], dtype=torch.long))
-
-        head_6 = self.head_6
-        logits_6 = F.linear(cp_hidden, head_6)
-        logits_list.append(logits_6)
-        code_6g = torch.argmax(logits_6, dim=-1)
-        embed_6g = F.embedding(code_6g, self.embed_6)
-        embed_sum = embed_sum + embed_6g.reshape(-1)
-        cp_hidden = self._cp_forward(embed_6g.unsqueeze(0), torch.tensor([8], dtype=torch.long))
-
-        head_7 = self.head_7
-        logits_7 = F.linear(cp_hidden, head_7)
-        logits_list.append(logits_7)
-        code_7g = torch.argmax(logits_7, dim=-1)
-        embed_7g = F.embedding(code_7g, self.embed_7)
-        embed_sum = embed_sum + embed_7g.reshape(-1)
-        cp_hidden = self._cp_forward(embed_7g.unsqueeze(0), torch.tensor([9], dtype=torch.long))
-
-        head_8 = self.head_8
-        logits_8 = F.linear(cp_hidden, head_8)
-        logits_list.append(logits_8)
-        code_8g = torch.argmax(logits_8, dim=-1)
-        embed_8g = F.embedding(code_8g, self.embed_8)
-        embed_sum = embed_sum + embed_8g.reshape(-1)
-        cp_hidden = self._cp_forward(embed_8g.unsqueeze(0), torch.tensor([10], dtype=torch.long))
-
-        head_9 = self.head_9
-        logits_9 = F.linear(cp_hidden, head_9)
-        logits_list.append(logits_9)
-        code_9g = torch.argmax(logits_9, dim=-1)
-        embed_9g = F.embedding(code_9g, self.embed_9)
-        embed_sum = embed_sum + embed_9g.reshape(-1)
-        cp_hidden = self._cp_forward(embed_9g.unsqueeze(0), torch.tensor([11], dtype=torch.long))
-
-        head_10 = self.head_10
-        logits_10 = F.linear(cp_hidden, head_10)
-        logits_list.append(logits_10)
-        code_10g = torch.argmax(logits_10, dim=-1)
-        embed_10g = F.embedding(code_10g, self.embed_10)
-        embed_sum = embed_sum + embed_10g.reshape(-1)
-        cp_hidden = self._cp_forward(embed_10g.unsqueeze(0), torch.tensor([12], dtype=torch.long))
-
-        head_11 = self.head_11
-        logits_11 = F.linear(cp_hidden, head_11)
-        logits_list.append(logits_11)
-        code_11g = torch.argmax(logits_11, dim=-1)
-        embed_11g = F.embedding(code_11g, self.embed_11)
-        embed_sum = embed_sum + embed_11g.reshape(-1)
-        cp_hidden = self._cp_forward(embed_11g.unsqueeze(0), torch.tensor([13], dtype=torch.long))
-
-        head_12 = self.head_12
-        logits_12 = F.linear(cp_hidden, head_12)
-        logits_list.append(logits_12)
-        code_12g = torch.argmax(logits_12, dim=-1)
-        embed_12g = F.embedding(code_12g, self.embed_12)
-        embed_sum = embed_sum + embed_12g.reshape(-1)
-        cp_hidden = self._cp_forward(embed_12g.unsqueeze(0), torch.tensor([14], dtype=torch.long))
-
-        head_13 = self.head_13
-        logits_13 = F.linear(cp_hidden, head_13)
-        logits_list.append(logits_13)
-        code_13g = torch.argmax(logits_13, dim=-1)
-        embed_13g = F.embedding(code_13g, self.embed_13)
-        embed_sum = embed_sum + embed_13g.reshape(-1)
-        cp_hidden = self._cp_forward(embed_13g.unsqueeze(0), torch.tensor([15], dtype=torch.long))
-
-        # Last group: no need for CP forward after
-        head_14 = self.head_14
-        logits_14 = F.linear(cp_hidden, head_14)
-        logits_list.append(logits_14)
-        code_14g = torch.argmax(logits_14, dim=-1)
-        embed_14g = F.embedding(code_14g, self.embed_14)
-        embed_sum = embed_sum + embed_14g.reshape(-1)
-
-        all_logits = torch.cat(logits_list, dim=0)  # [15, 2048]
-        return all_logits, embed_sum
+        return torch.stack(sampled_codes, dim=0), embed_sum
 
 
 class DynamicDecoderExport(nn.Module):
@@ -689,13 +593,20 @@ def export_all(
         strict=False,
     )
 
-    # 6. cp_generate — fused 15-step code predictor (static shapes)
-    print("Exporting cp_generate (fused 15-step loop)...")
+    # 6. cp_generate — fused sampled 15-step code predictor (static shapes)
+    print("Exporting cp_generate (fused sampled 15-step loop)...")
     sample_talker_hidden = torch.randn(1, 1, cp_args.dim)
     sample_code0_embed = torch.randn(1, 1, cp_args.dim)
+    sample_temperature = torch.tensor([1.0], dtype=torch.float32)
+    sample_uniforms = torch.full((15,), 0.5, dtype=torch.float32)
     programs["cp_generate"] = export(
         modules["cp_generate"],
-        (sample_talker_hidden, sample_code0_embed),
+        (
+            sample_talker_hidden,
+            sample_code0_embed,
+            sample_temperature,
+            sample_uniforms,
+        ),
         strict=False,
     )
 
@@ -780,6 +691,8 @@ def export_all(
         "text_prompt_prefill_token_count": TEXT_ONLY_PREFILL_TOKEN_COUNT,
         "text_prompt_prefill_token_count_with_language": TEXT_ONLY_PREFILL_TOKEN_COUNT_WITH_LANGUAGE,
         "text_prompt_trailing_template_token_count": TRAILING_TEMPLATE_TOKEN_COUNT,
+        "cp_generate_contract_version": 2,
+        "cp_generate_fast_top_k": 50,
     })
     constant_methods.update(runtime_token_ids)
 
@@ -899,6 +812,9 @@ def main():
         "text_prompt_prefill_token_count": TEXT_ONLY_PREFILL_TOKEN_COUNT,
         "text_prompt_prefill_token_count_with_language": TEXT_ONLY_PREFILL_TOKEN_COUNT_WITH_LANGUAGE,
         "text_prompt_trailing_template_token_count": TRAILING_TEMPLATE_TOKEN_COUNT,
+        "cp_generate_contract_version": 2,
+        "cp_generate_fast_top_k": 50,
+        "cp_generate_sampler": "cdf_topk50_no_top_p_v2",
         **runtime_token_ids,
     }
     manifest_path = args.output_dir / "export_manifest.json"

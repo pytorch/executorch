@@ -1,5 +1,8 @@
 {
   "backend": "xnnpack",
+  "cp_generate_contract_version": 2,
+  "cp_generate_fast_top_k": 50,
+  "cp_generate_sampler": "cdf_topk50_no_top_p_v2",
   "dtype": "fp32",
   "max_seq_len": 256,
   "methods": [
@@ -21,5 +24,6 @@
   "supports_voice_clone_synthesis": false,
   "text_prompt_min_token_count": 9,
   "text_prompt_prefill_token_count": 8,
+  "text_prompt_prefill_token_count_with_language": 9,
   "text_prompt_trailing_template_token_count": 5
 }

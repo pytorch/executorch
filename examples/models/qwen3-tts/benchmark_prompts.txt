@@ -1,0 +1,3 @@
+Hello from ExecuTorch.
+Please speak clearly and keep the pacing natural from the first word to the final sentence.
+This is a warm benchmark run for sequential text to speech generation on XNNPACK in a single process.

@@ -41,6 +41,9 @@ class UnifiedMetadataTest(unittest.TestCase):
         self.assertEqual(manifest["text_prompt_prefill_token_count"], 8)
         self.assertEqual(manifest["text_prompt_prefill_token_count_with_language"], 9)
         self.assertEqual(manifest["text_prompt_trailing_template_token_count"], 5)
+        self.assertEqual(manifest["cp_generate_contract_version"], 2)
+        self.assertEqual(manifest["cp_generate_fast_top_k"], 50)
+        self.assertEqual(manifest["cp_generate_sampler"], "cdf_topk50_no_top_p_v2")
         self.assertEqual(manifest["codec_think_id"], 2154)
         self.assertEqual(manifest["codec_language_english_id"], 2050)
 

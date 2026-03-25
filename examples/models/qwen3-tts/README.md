@@ -14,6 +14,15 @@ Supports three backends: **XNNPACK** (CPU), **Metal/AOTI** (Apple GPU), and **po
 
 Model load + warmup: ~5-7s (one-time at startup).
 
+Warm XNNPACK multi-prompt benchmark in one process (`top_k=50`, generation-only,
+no WAV writes):
+
+- Legacy host loop (`--disable_fused_cp_generate`): `3.61s`, `12.46s`, `21.56s`
+- Fused `cp_generate` v2: `5.35s`, `12.92s`, `14.69s`
+- The stable speed win is in `codegen_ms` per generated codec step:
+  roughly `159/135/146 ms` down to `124/127/136 ms` on the benchmark prompts.
+  End-to-end wall time still depends on how many codec steps the sampler emits.
+
 ### Model Sizes
 
 | Config | Size |
@@ -121,6 +130,25 @@ cmake-out/examples/models/qwen3-tts/qwen3_tts_unified_runner \
   --output_wav /tmp/hello_text.wav
 ```
 
+### Warm XNNPACK multi-prompt benchmark
+
+```bash
+cmake-out/examples/models/qwen3-tts/qwen3_tts_unified_runner \
+  --model_path examples/models/qwen3-tts/qwen3_tts_exports_unified/model.pte \
+  --tokenizer_path examples/models/qwen3-tts/qwen3-tts-12Hz-0.6B-Base/tokenizer.json \
+  --prompts_path examples/models/qwen3-tts/benchmark_prompts.txt \
+  --repeat 1 \
+  --max_new_tokens 128 \
+  --temperature 1.0 \
+  --top_k 50
+```
+
+To compare against the legacy host-side sub-code loop in the same binary, add:
+
+```bash
+  --disable_fused_cp_generate
+```
+
 ### Metal decode
 
 ```bash
@@ -148,7 +176,7 @@ Single `model.pte` with 7 named methods:
 | `code_predictor` | Metal/XNNPACK | 5-layer sub-talker with KV cache |
 | `codec_embed` | Portable | Codec token embedding lookup |
 | `cp_head` | Metal/XNNPACK | Per-group LM head selection |
-| `cp_generate` | Metal/XNNPACK | Fused 15-step code predictor (7121 nodes) |
+| `cp_generate` | Metal/XNNPACK | Fused sampled 15-step code predictor fast path |
 | `decode_audio` | XNNPACK | Vocoder: codes → waveform (dynamic shapes) |
 
 The runner calls `decode_audio` for codes→audio (decode-only mode) or orchestrates
@@ -173,12 +201,16 @@ prompt contract used by the Python helper.
 
 - The decoder uses dynamic shapes with patched `CausalConvNet` padding
   (`math.ceil` → integer ceiling division for `torch.export` compatibility).
-- XNNPACK has a one-time ~5s warmup per method on first call. The runner
-  handles this via `warmup_decode()` during model loading.
+- XNNPACK has a one-time warmup cost on first call. The runner now exercises the
+  full text path in `warmup_all()` so sequential prompt benchmarking reflects
+  steady-state generation instead of cold delegate setup.
 - Leading silence is automatically trimmed (`--trim_silence`, default on).
 - Text-only `--text` mode now runs directly in `qwen3_tts_unified_runner` with
   dynamic prompt length, explicit prompt-budget checks, and assistant-wrapped
   prompt formatting aligned to `generate_codes.py`.
+- Warm benchmark mode supports `--prompts_path`, `--repeat`, `--seed`, optional
+  batch output writing via `--output_dir`, and `--disable_fused_cp_generate` for
+  apples-to-apples comparisons.
 - The recommended tokenizer path for local bring-up is
   `examples/models/qwen3-tts/qwen3-tts-12Hz-0.6B-Base/tokenizer.json`.
 - Unified export manifests now record the text prompt contract and the current

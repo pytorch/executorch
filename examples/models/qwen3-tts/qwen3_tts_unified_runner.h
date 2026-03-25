@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -24,7 +25,22 @@ struct SynthesizeConfig {
   int top_k = -1;
   float top_p = -1.0f;
   float repetition_penalty = 1.05f;
+  uint64_t seed = 0;
+  bool use_fused_cp_generate = true;
 };
+
+struct SynthesisTiming {
+  int prompt_token_count = 0;
+  int generated_codec_steps = 0;
+  int text_tokens_consumed = 0;
+  double prompt_prep_ms = 0.0;
+  double talker_prefill_ms = 0.0;
+  double codegen_ms = 0.0;
+  double decode_audio_ms = 0.0;
+  double total_generation_ms = 0.0;
+};
+
+class SynthesisSession;
 
 class Qwen3TTSUnifiedRunner {
  public:
@@ -45,6 +61,16 @@ class Qwen3TTSUnifiedRunner {
       const SynthesizeConfig& config,
       std::vector<float>* waveform);
 
+  bool synthesize(
+      const std::string& text,
+      const std::string& language,
+      const SynthesizeConfig& config,
+      std::vector<float>* waveform,
+      SynthesisTiming* timing);
+
+  std::unique_ptr<SynthesisSession> create_synthesis_session(
+      const SynthesizeConfig& config);
+
   // Decode precomputed codes (backward compat).
   bool decode_codes_file(
       const std::string& codes_path,
@@ -59,6 +85,8 @@ class Qwen3TTSUnifiedRunner {
       const std::vector<float>& waveform) const;
 
  private:
+  friend class SynthesisSession;
+
   // Pipeline stages.
   bool run_encode_text(
       const std::vector<int64_t>& token_ids,
@@ -91,7 +119,9 @@ class Qwen3TTSUnifiedRunner {
   bool run_cp_generate(
       const std::vector<float>& talker_hidden,
       const std::vector<float>& code_0_embed,
-      std::vector<float>* cp_logits_flat,
+      float temperature,
+      const std::vector<float>& sample_uniforms,
+      std::vector<int64_t>* sampled_subcodes,
       std::vector<float>* embed_sum);
 
   bool run_decode_audio(
@@ -116,7 +146,8 @@ class Qwen3TTSUnifiedRunner {
       int vocab_size,
       float temperature,
       int top_k,
-      float top_p);
+      float top_p,
+      std::mt19937* gen);
 
   int64_t sample_token(
       const std::vector<float>& logits,
@@ -127,7 +158,8 @@ class Qwen3TTSUnifiedRunner {
       float repetition_penalty,
       const std::vector<int64_t>* generated_tokens,
       const std::vector<int64_t>* suppress_tokens,
-      int64_t eos_token_id);
+      int64_t eos_token_id,
+      std::mt19937* gen);
 
   void load_metadata();
   void load_methods();
@@ -148,6 +180,8 @@ class Qwen3TTSUnifiedRunner {
   int text_prompt_prefill_token_count_ = 8;
   int text_prompt_prefill_token_count_with_language_ = 9;
   int text_prompt_trailing_template_token_count_ = 5;
+  int cp_generate_contract_version_ = 1;
+  int cp_generate_fast_top_k_ = 50;
 
   // Special token IDs.
   int64_t tts_pad_id_ = 151671;
@@ -164,6 +198,25 @@ class Qwen3TTSUnifiedRunner {
   int64_t im_start_id_ = 151644;
   int64_t assistant_id_ = 77091;
   int64_t newline_id_ = 198;
+};
+
+class SynthesisSession {
+ public:
+  bool synthesize(
+      const std::string& text,
+      const std::string& language,
+      std::vector<float>* waveform,
+      SynthesisTiming* timing = nullptr);
+
+ private:
+  friend class Qwen3TTSUnifiedRunner;
+  SynthesisSession(
+      Qwen3TTSUnifiedRunner* runner,
+      const SynthesizeConfig& config);
+
+  Qwen3TTSUnifiedRunner* runner_;
+  SynthesizeConfig config_;
+  std::mt19937 rng_;
 };
 
 } // namespace qwen3_tts

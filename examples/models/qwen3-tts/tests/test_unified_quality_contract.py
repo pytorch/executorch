@@ -72,6 +72,25 @@ class UnifiedQualityContractTest(unittest.TestCase):
             self.main,
         )
 
+    def test_cp_generate_export_uses_sampling_aware_contract(self):
+        self.assertIn("sample_uniforms: torch.Tensor", self.export_source)
+        self.assertIn("torch.topk(logits, k=50", self.export_source)
+        self.assertIn("torch.cumsum(probs, dim=0)", self.export_source)
+        self.assertIn("torch.stack(sampled_codes, dim=0), embed_sum", self.export_source)
+
+    def test_runner_uses_session_rng_instead_of_static_global_rng(self):
+        self.assertIn("std::mt19937* gen", self.header)
+        self.assertIn("config.seed == 0 ? std::random_device{}() : config.seed", self.runner)
+        self.assertNotIn("static std::mt19937 gen(42);", self.runner)
+
+    def test_runner_has_fused_cp_generate_fast_path_and_legacy_fallback(self):
+        self.assertIn("cp_generate_contract_version_ >= 2", self.runner)
+        self.assertIn("config_.top_k == runner->cp_generate_fast_top_k_", self.runner)
+        self.assertIn("config_.temperature >= 1e-6f", self.runner)
+        self.assertIn("use_fused_cp_generate", self.runner)
+        self.assertIn("Falling back to legacy code predictor loop", self.runner)
+        self.assertIn("sample_uniforms", self.runner)
+
     def test_decoder_wrapper_shims_missing_transformers_check_model_inputs(self):
         self.assertIn('hasattr(hf_generic, "check_model_inputs")', self.model_source)
         self.assertIn("hf_generic.check_model_inputs = _identity_check_model_inputs", self.model_source)

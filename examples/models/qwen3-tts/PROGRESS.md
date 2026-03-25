@@ -741,3 +741,138 @@ Result: **PASS** (`elapsed ~37.9s`)
 - Output wav:
   `examples/models/qwen3-tts/output_text_fixed_quality.wav`
 - Samples written: `368640` at `24000 Hz`
+
+### 13) Warm XNNPACK benchmark + fused `cp_generate` v2
+
+Goal: measure steady-state text-to-voice latency honestly in one warmed process,
+then reduce the XNNPACK hot-loop cost without switching backends.
+
+Changes landed in source:
+
+- Added a per-prompt `SynthesisSession` API plus `SynthesisTiming` so the
+  runner can stay loaded/warmed while each request gets fresh RNG and state.
+- Updated `main_unified.cpp` with warm benchmark controls:
+  - `--prompts_path`
+  - `--repeat`
+  - `--seed`
+  - `--output_dir`
+  - `--disable_fused_cp_generate`
+- Split timing into prompt prep, talker prefill, codegen, decode-audio, and
+  total generation.
+- Expanded `warmup_all()` so it actually executes the text path, including
+  `encode_text`, `talker`, `codec_embed`, `code_predictor`, `cp_head`,
+  `cp_generate`, and `decode_audio`.
+- Replaced the old greedy-only fused `cp_generate` export with a v2 contract
+  that:
+  - keeps host-side `code_0` sampling
+  - samples groups `1..15` inside the fused graph for the XNNPACK fast path
+  - returns sampled sub-codes plus the fused embedding sum for the next talker step
+- Added ABI/version metadata:
+  - `cp_generate_contract_version = 2`
+  - `cp_generate_fast_top_k = 50`
+  - `cp_generate_sampler = cdf_topk50_no_top_p_v2`
+- Gated the fast path on exported metadata so older `.pte` artifacts cleanly
+  fall back to the legacy host-side sub-code loop instead of crashing.
+- Aligned host and fused sub-code sampling to the same inverse-CDF categorical
+  sampler shape for the current fast-path mode (`top_k=50`, top-p disabled).
+
+Warm benchmark prompt set:
+
+- `examples/models/qwen3-tts/benchmark_prompts.txt`
+
+Warm benchmark results (`top_k=50`, `temperature=1.0`, `max_new_tokens=128`,
+same warmed process, no WAV writes):
+
+| Prompt | Legacy generation-only | Fused generation-only | Legacy codegen | Fused codegen |
+|--------|-------------------------|-----------------------|----------------|---------------|
+| 0 | 3.61s | 5.35s | 3.18s / 20 steps | 4.58s / 37 steps |
+| 1 | 12.46s | 12.92s | 10.97s / 81 steps | 11.19s / 88 steps |
+| 2 | 21.56s | 14.69s | 18.75s / 128 steps | 12.90s / 95 steps |
+
+Interpretation:
+
+- The fused path consistently lowers codegen cost per generated codec step:
+  - prompt 0: ~159 ms/step -> ~124 ms/step
+  - prompt 1: ~135 ms/step -> ~127 ms/step
+  - prompt 2: ~146 ms/step -> ~136 ms/step
+- End-to-end warm wall time still depends on sampling trajectory and EOS timing,
+  so raw prompt latency can move in either direction even when the hot path is
+  cheaper per step.
+- The first-order XNNPACK bottleneck is still the talker/codegen loop, not the
+  decoder and not startup once warmup is separated out.
+
+Follow-up evaluation:
+
+- Talker decode-step specialization remains secondary for now:
+  warm benchmarks still show `codegen_ms` dominating `decode_audio_ms`.
+- Streaming decode is mainly a first-audio latency lever, not the biggest
+  throughput win for the current single-run warm benchmark.
+- The next XNNPACK speed work should focus on:
+  - reducing generated codec step count without hurting quality
+  - shrinking per-step talker/code-predictor cost further
+  - only then revisiting talker decode specialization and streaming decode
+
+Verification:
+
+Source/contract tests:
+
+```bash
+python -m unittest \
+  examples.models.qwen3-tts.tests.test_unified_prompt_flow \
+  examples.models.qwen3-tts.tests.test_unified_metadata \
+  examples.models.qwen3-tts.tests.test_unified_runner_contract \
+  examples.models.qwen3-tts.tests.test_unified_quality_contract
+```
+
+Result: **PASS** (`28 tests`)
+
+Runner rebuild:
+
+```bash
+cmake --build cmake-out/examples/models/qwen3-tts --target qwen3_tts_unified_runner
+```
+
+Result: **PASS**
+
+Unified export:
+
+```bash
+conda run -n executorch python examples/models/qwen3-tts/export_unified.py \
+  --converted-dir examples/models/qwen3-tts/qwen3_tts_artifacts \
+  --talker-dir examples/models/qwen3-tts/qwen3_tts_artifacts/talker_converted \
+  --output-dir examples/models/qwen3-tts/qwen3_tts_exports_unified \
+  --backend xnnpack --qlinear 8da4w
+```
+
+Result: **PASS** (`model.pte` + manifest updated with `cp_generate` v2 metadata)
+
+Warm legacy comparison:
+
+```bash
+cmake-out/examples/models/qwen3-tts/qwen3_tts_unified_runner \
+  --model_path examples/models/qwen3-tts/qwen3_tts_exports_unified/model.pte \
+  --tokenizer_path examples/models/qwen3-tts/qwen3-tts-12Hz-0.6B-Base/tokenizer.json \
+  --prompts_path examples/models/qwen3-tts/benchmark_prompts.txt \
+  --repeat 1 \
+  --max_new_tokens 128 \
+  --temperature 1.0 \
+  --top_k 50 \
+  --disable_fused_cp_generate
+```
+
+Result: **PASS**
+
+Warm fused benchmark:
+
+```bash
+cmake-out/examples/models/qwen3-tts/qwen3_tts_unified_runner \
+  --model_path examples/models/qwen3-tts/qwen3_tts_exports_unified/model.pte \
+  --tokenizer_path examples/models/qwen3-tts/qwen3-tts-12Hz-0.6B-Base/tokenizer.json \
+  --prompts_path examples/models/qwen3-tts/benchmark_prompts.txt \
+  --repeat 1 \
+  --max_new_tokens 128 \
+  --temperature 1.0 \
+  --top_k 50
+```
+
+Result: **PASS**
