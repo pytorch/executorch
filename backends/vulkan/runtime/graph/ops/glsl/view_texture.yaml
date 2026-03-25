@@ -1,4 +1,4 @@
-view:
+view_texture:
   parameter_names_with_default_values:
     DTYPE: float
     NDIM: 3
@@ -10,4 +10,4 @@ view:
       - VALUE: int32
       - VALUE: uint8
   shader_variants:
-    - NAME: view
+    - NAME: view_texture
