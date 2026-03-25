@@ -1,1 +1,1 @@
-nncf==3.0.0
+git+https://github.com/openvinotoolkit/nncf@b101e7e#egg=nncf
