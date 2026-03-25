@@ -70,6 +70,37 @@ run_docgen_check() {
     fi
 }
 
+run_public_api_validator() {
+    echo -e "${INFO} Validating Arm public API manifests"
+
+    manifest_failures=0
+    for manifest_path in backends/arm/public_api_manifests/api_manifest_*.toml; do
+        if [[ ! -f "${manifest_path}" ]]; then
+            continue
+        fi
+        manifest_name="${manifest_path##*/}"
+        echo
+        echo "=== ${manifest_name} ==="
+        validator_output=$(
+            python backends/arm/scripts/public_api_manifest/validate_public_api_manifest.py \
+                --manifest "${manifest_path}" 2>&1
+        )
+        validator_status=$?
+        printf '%s\n' "${validator_output}"
+        if [[ ${validator_status} -ne 0 ]]; then
+            manifest_failures=$((manifest_failures + 1))
+            FAILED=1
+        fi
+    done
+
+    echo
+    if [[ ${manifest_failures} -eq 0 ]]; then
+        echo -e "${SUCCESS} Arm public API manifests OK"
+    else
+        echo -e "${ERROR} ${manifest_failures} manifest(s) failed validation"
+    fi
+}
+
 # This list of imperative verbs was compiled from the entire list of Executorch
 # commits. It should be fairly exhaustive, but add more verbs if you find one
 # that's missing.
@@ -149,7 +180,6 @@ for COMMIT in ${COMMITS}; do
             fi
         done
     fi
-
     # Check license headers
     # We do a simple check of if all committed headers contain
     # "$current_year Arm". This does not guarantee OK in ci but should be ok
@@ -177,7 +207,7 @@ for COMMIT in ${COMMITS}; do
     for committed_file in "${license_files[@]}"; do
         # Skip files with certain extensions
         case "$committed_file" in
-            *.md|*.md.in|*.json|*.yml|*.yaml|*.cmake|*.patch|.gitignore|*.bzl)
+            *.md|*.md.in|*.json|*.yml|*.yaml|*.cmake|*.patch|*.bzl|.gitignore)
                 echo -e "${INFO} Skipping license check for ${committed_file} (excluded extension)"
                 continue
                 ;;
@@ -310,6 +340,8 @@ if [[ $RUN_DOCGEN -eq 1 ]]; then
 else
     echo -e "${INFO} Skipping Arm docgen (no public API inputs changed)"
 fi
+
+run_public_api_validator
 
 if [[ $FAILED ]]; then
     echo -e "${INFO} Fix your commit message errors with"\
