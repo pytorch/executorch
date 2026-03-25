@@ -102,7 +102,7 @@ jobs:
           eval "$(conda shell.bash hook)"
           CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
           conda activate "${CONDA_ENV}"
-          PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool buck2
+          PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
           export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
           mkdir -p ~/.gradle
