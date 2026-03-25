@@ -146,7 +146,7 @@ void clone(ComputeGraph& graph, const std::vector<ValueRef>& args) {
     if (graph.hashed_layout_of(src) == graph.hashed_layout_of(dst)) {
       return add_clone_node(graph, src, dst);
     } else {
-      return add_view_node(graph, src, kDummyValueRef, dst);
+      return add_view_copy_node(graph, src, dst, {}, resize_clone_node);
     }
   }
   if (src_storage == utils::kTexture3D && dst_storage == utils::kBuffer) {
@@ -158,8 +158,7 @@ void clone(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
   std::vector<ValueRef> extra_args = {};
   // Buffer to buffer copy
-  return add_view_copy_buffer_node(
-      graph, src, dst, extra_args, resize_clone_node);
+  return add_view_copy_node(graph, src, dst, extra_args, resize_clone_node);
 }
 
 // Clone node is not the most efficient implementation for the aten.clone
