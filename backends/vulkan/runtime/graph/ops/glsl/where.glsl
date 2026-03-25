@@ -41,6 +41,11 @@ $else:
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+${layout_declare_spec_const(C, "int", "out_layout", "CONTIG_LAYOUT_INT")}
+${layout_declare_spec_const(C, "int", "cond_layout", "CONTIG_LAYOUT_INT")}
+${layout_declare_spec_const(C, "int", "self_layout", "CONTIG_LAYOUT_INT")}
+${layout_declare_spec_const(C, "int", "other_layout", "CONTIG_LAYOUT_INT")}
+
 #ifdef USING_BUFFER
 
 void main() {
@@ -84,29 +89,34 @@ void main() {
     return;
   }
 
-  TensorIndex4D out_tidx = texture_pos_to_tensor4d_idx_simple(outp, out_pos);
+  const int out_packed_dim = get_packed_dim(out_layout);
+  TensorIndex4D out_tidx =
+      texture_pos_to_tensor4d_idx_simple(outp, out_pos, out_layout);
 
   VEC4_T outtex = VEC4_T(0);
 
   int limit = min(
-      4, outp.sizes[outp.packed_dim] - out_tidx.data[outp.packed_dim]);
+      4, outp.sizes[out_packed_dim] - out_tidx.data[out_packed_dim]);
   for (int comp = 0; comp < limit; comp++) {
     TensorIndex4D cond_tidx;
     cond_tidx.data = min(out_tidx.data, condp.sizes - 1);
     TextureElementIndex cond_elem =
-        tensor4d_idx_to_texture_element_idx_simple(condp, cond_tidx);
+        tensor4d_idx_to_texture_element_idx_simple(
+            condp, cond_tidx, cond_layout);
     uint cond_val = texelFetch(t_condition, cond_elem.pos, 0)[cond_elem.comp];
 
     TensorIndex4D self_tidx;
     self_tidx.data = min(out_tidx.data, selfp.sizes - 1);
     TextureElementIndex self_elem =
-        tensor4d_idx_to_texture_element_idx_simple(selfp, self_tidx);
+        tensor4d_idx_to_texture_element_idx_simple(
+            selfp, self_tidx, self_layout);
     VEC4_T self_texel = texelFetch(t_self, self_elem.pos, 0);
 
     TensorIndex4D other_tidx;
     other_tidx.data = min(out_tidx.data, otherp.sizes - 1);
     TextureElementIndex other_elem =
-        tensor4d_idx_to_texture_element_idx_simple(otherp, other_tidx);
+        tensor4d_idx_to_texture_element_idx_simple(
+            otherp, other_tidx, other_layout);
     VEC4_T other_texel = texelFetch(t_other, other_elem.pos, 0);
 
     if (cond_val > 0) {
@@ -115,7 +125,7 @@ void main() {
       outtex[comp] = other_texel[other_elem.comp];
     }
 
-    out_tidx.data[outp.packed_dim]++;
+    out_tidx.data[out_packed_dim]++;
   }
 
   imageStore(t_out, out_pos, outtex);
