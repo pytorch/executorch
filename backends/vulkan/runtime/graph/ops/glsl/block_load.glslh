@@ -85,7 +85,8 @@
       const int block_outer_dim) {                                            \
     /* Convert tensor index to texture position */                            \
     /* Use tensor4d_idx_to_texel_pos_simple to properly map the packed dim */ \
-    ivec3 tex_pos = tensor4d_idx_to_texel_pos_simple(meta, tidx_base);        \
+    ivec3 tex_pos =                                                           \
+        tensor4d_idx_to_texel_pos_simple(meta, tidx_base, hashed_layout);     \
     const int tex_outer_dim = mod_4(block_outer_dim);                         \
     const int outer_size = meta.sizes[block_outer_dim];                       \
     const int base_outer_idx = tidx_base.data[block_outer_dim];               \
@@ -160,7 +161,8 @@
     /* Convert to 4D for texture operations (textures are always <= 4D) */     \
     TensorIndex4D tidx4d;                                                       \
     tidx4d.data = ivec4(tidx_base.data[0]);                                     \
-    ivec3 tex_pos = tensor4d_idx_to_texel_pos_simple(meta, tidx4d);             \
+    ivec3 tex_pos =                                                            \
+        tensor4d_idx_to_texel_pos_simple(meta, tidx4d, hashed_layout);          \
     const int tex_outer_dim = mod_4(block_outer_dim);                           \
     const int outer_size = meta.sizes[block_outer_dim];                         \
     const int base_outer_idx = tidx4d.data[block_outer_dim];                    \
