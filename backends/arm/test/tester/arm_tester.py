@@ -90,7 +90,13 @@ from executorch.exir.program._program import (
 )
 from tabulate import tabulate  # type: ignore[import-untyped]
 
-from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
+from torch.export.graph_signature import (
+    ExportGraphSignature,
+    InputKind,
+    InputSpec,
+    OutputKind,
+    OutputSpec,
+)
 from torch.fx import Graph
 
 from torchao.quantization.pt2e.quantizer import QuantizationSpec, SharedQuantizationSpec
@@ -1226,7 +1232,7 @@ def _get_tosa_operator_distribution(
             raise NotImplementedError("Can not get operator distribution for VGF.")
         else:
             raise NotImplementedError(
-                f"Unknown output format '{compile_spec.get_output_format()}'."
+                f"Unknown output format '{compile_spec._get_output_format()}'."
             )
         id += 1
     if id == 0:
@@ -1272,3 +1278,39 @@ def count_tosa_ops(graph_module: torch.fx.GraphModule, expected_ops: Dict[str, i
                 raise AssertionError(
                     f"Expected {expected_count} occurrences of TOSA op {op} but found {actual_count}."
                 )
+
+
+def count_program_io_kinds(
+    exported_program: ExportedProgram,
+    expected_input_kinds: dict[InputKind, int] | None,
+    expected_output_kinds: dict[OutputKind, int] | None,
+):
+    """Checks that the number of InputKinds and OutputKinds in the final
+    ExportedProgram are equal to those in expected_inputs and
+    expected_outputs.
+    """
+
+    def check_spec_count(
+        spec: Sequence[InputSpec] | Sequence[OutputSpec],
+        expected_counts: dict[Any, int],
+    ):
+        kind = type(spec[0].kind)
+        counts: dict[Any, int] = Counter([s.kind for s in spec])
+
+        for e in kind:
+            if counts[e] != expected_counts.get(e, 0):
+                raise AssertionError(
+                    f"Expected to find {expected_counts[e]} for input/output kind {e}, but found {counts[e]}."
+                )
+
+    if expected_input_kinds:
+        check_spec_count(
+            exported_program.graph_signature.input_specs,
+            expected_input_kinds,
+        )
+
+    if expected_output_kinds:
+        check_spec_count(
+            exported_program.graph_signature.output_specs,
+            expected_output_kinds,
+        )

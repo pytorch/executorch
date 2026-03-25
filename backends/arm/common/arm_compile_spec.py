@@ -58,7 +58,7 @@ class ArmCompileSpec(ABC):
         self._pipeline_config = pipeline_config
 
     @classmethod
-    def from_list(cls, compile_specs: list[CompileSpec]):  # noqa: C901
+    def _from_list(cls, compile_specs: list[CompileSpec]):  # noqa: C901
         tosa_spec: TosaSpecification | None = None
         output_format: str | None = None
         compiler_flags: list[str] | None = None
@@ -117,9 +117,9 @@ class ArmCompileSpec(ABC):
             raise ValueError("No tosa_spec in compile spec.")
         if output_format is None:
             raise ValueError("No output_format in compile spec.")
-        if output_format != cls.get_output_format():
+        if output_format != cls._get_output_format():
             raise ValueError(
-                f"Incorrect output format '{output_format}' for {cls.__name__}, expected '{cls.get_output_format()}'"
+                f"Incorrect output format '{output_format}' for {cls.__name__}, expected '{cls._get_output_format()}'"
             )
         if compiler_flags is None:
             compiler_flags = []
@@ -134,23 +134,23 @@ class ArmCompileSpec(ABC):
             output_order_workaround=output_order_workaround,
             pipeline_config=pipeline_config,
         )
-        cls.from_list_hook(compile_spec, unknown_specs)
-        compile_spec.validate()
+        cls._from_list_hook(compile_spec, unknown_specs)
+        compile_spec._validate()
         return compile_spec
 
     @classmethod
-    def from_list_hook(cls, compile_spec, specs: dict[str, str]):  # noqa: B027
+    def _from_list_hook(cls, compile_spec, specs: dict[str, str]):  # noqa: B027
         """Allows subclasses to hook into parsing compile spec lists."""
         pass
 
     @abstractmethod
-    def validate(self):
+    def _validate(self):
         """Throws an error if the compile spec is not valid."""
 
-    def to_list(self):
+    def _to_list(self):
         """Get the ArmCompileSpec in list form."""
         if not self.tosa_spec:
-            raise ValueError("tosa_spec must be set before calling to_list()")
+            raise ValueError("tosa_spec must be set before calling _to_list()")
 
         # Always supply a TOSA version
         compile_spec = [
@@ -170,7 +170,7 @@ class ArmCompileSpec(ABC):
         # Add output format to identify kind of compile spec.
         compile_spec.append(
             CompileSpec(
-                ArmCompileSpec._OUTPUT_FORMAT_KEY, self.get_output_format().encode()
+                ArmCompileSpec._OUTPUT_FORMAT_KEY, self._get_output_format().encode()
             )
         )
 
@@ -211,7 +211,7 @@ class ArmCompileSpec(ABC):
             )
         return compile_spec
 
-    def get_pass_pipeline_config(self) -> ArmPassPipelineConfig:
+    def _get_pass_pipeline_config(self) -> ArmPassPipelineConfig:
         """Returns configuration that controls how the Arm pass pipeline should
         behave.
 
@@ -238,7 +238,7 @@ class ArmCompileSpec(ABC):
             config.disable_masked_softmax()
         return config
 
-    def get_intermediate_path(self) -> str | None:
+    def _get_intermediate_path(self) -> str | None:
         """Gets the path used for dumping intermediate results such as tosa and
         pte.
 
@@ -285,5 +285,5 @@ class ArmCompileSpec(ABC):
 
     @classmethod
     @abstractmethod
-    def get_output_format(cls) -> str:
+    def _get_output_format(cls) -> str:
         """Returns a constant string that is the output format of the class."""

@@ -16,23 +16,24 @@ Logs a summary report at INFO level, and a detailed node-per-node report at DEBU
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, NamedTuple, Optional
+from importlib import import_module
+from typing import Any, Callable, cast, Dict, List, NamedTuple, Optional
 
-from tabulate import tabulate
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
+    QuantizationAnnotation,
     QuantizationSpec,
     QuantizationSpecBase,
-    Quantizer,
     SharedQuantizationSpec,
 )
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 logger = logging.getLogger(__name__)
+tabulate = cast(Callable[..., str], import_module("tabulate").tabulate)
 
 # Look-up dicts used to get human readable names for supported quantization configs and specs
-SUPPORTED_QCONFIGS: dict[any, str] = {}
+SUPPORTED_QCONFIGS: dict[Any, str] = {}
 SUPPORTED_QSPECS: dict[QuantizationSpecBase | None, str] = {}
 
 
@@ -146,7 +147,13 @@ class QuantizerReport:
                 raise ValueError(
                     "Node {node.name} reported as annotated but has no quantization annotation."
                 )
-            annotation = node.meta.get(Q_ANNOTATION_KEY)
+            annotation = cast(
+                QuantizationAnnotation | None, node.meta.get(Q_ANNOTATION_KEY)
+            )
+            if annotation is None:
+                raise ValueError(
+                    f"Node {node.name} was reported as annotated but annotation metadata is missing."
+                )
             qspec_input_map_lines = [
                 f"{node.name}: {_qspec_repr(qspec)}"
                 for node, qspec in annotation.input_qspec_map.items()
@@ -294,7 +301,7 @@ class QuantizerReporter:
         quantizers: List[QuantizerReporterUser],
         report_title: str = "QUANTIZATION REPORT",
     ):
-        self.quantizers: Dict[Quantizer, QuantizerReport] = {}
+        self.quantizers: Dict[QuantizerReporterUser, QuantizerReport] = {}
         self.report_title = report_title
         self.set_quantizers(quantizers)
 
@@ -387,9 +394,12 @@ class QuantizerReporter:
         """Generates the quantization report for all non-annotated nodes in the
         model.
         """
-        non_quantized_nodes = [
-            node for node in model.graph.nodes if Q_ANNOTATION_KEY not in node.meta
-        ]
+        if model is None:
+            non_quantized_nodes: list[Node] = []
+        else:
+            non_quantized_nodes = [
+                node for node in model.graph.nodes if Q_ANNOTATION_KEY not in node.meta
+            ]
 
         rows = []
         if extended_report:
@@ -419,7 +429,7 @@ class QuantizerReporterUser:
     """
 
     def __init__(self):
-        self.reporter: QuantizerReporter = None
+        self.reporter: Optional[QuantizerReporter] = None
 
     def register_reporter(self, reporter: QuantizerReporter) -> None:
         """Used by QuantizerReporter to register itself with the Quantizer."""

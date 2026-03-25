@@ -158,7 +158,7 @@ class TOSAPartitioner(Partitioner):
 
         """
         self.delegation_spec = DelegationSpec(
-            TOSABackend.__name__, compile_spec.to_list()
+            TOSABackend.__name__, compile_spec._to_list()
         )
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
@@ -352,7 +352,6 @@ class TOSAPartitioner(Partitioner):
             torch.ops.aten.linear.default,
             torch.ops.aten.linspace.default,
             torch.ops.aten.silu.default,
-            torch.ops.aten.silu_.default,
         }
         ops_to_not_decompose_if_fp = {
             torch.ops.aten.eye.default,
@@ -367,7 +366,6 @@ class TOSAPartitioner(Partitioner):
             torch.ops.aten.eye.default,
             torch.ops.aten.linspace.default,
             torch.ops.aten.silu.default,
-            torch.ops.aten.silu_.default,
         }
 
         def filter_fn(node: torch.fx.Node) -> bool:
