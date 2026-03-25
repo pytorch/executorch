@@ -48,42 +48,29 @@ Tensor& pad_out(
     return out;
   }
 
-  // arm_pad_s8 processes data in {n, h, w, c} order where c is the
-  // fastest-varying (innermost) dimension. Use dim_order to permute
-  // logical sizes and padding into physical memory order so this holds
-  // for both contiguous and channels_last tensors.
+  // Permute logical sizes to physical memory order.
+  // Padding is already in physical order from the AOT pass.
+  constexpr size_t kNhwcDimOrder[] = {0, 2, 3, 1};
   const size_t offset = kMaxSupportedDims - rank;
-  int32_t logical_dims[kMaxSupportedDims] = {1, 1, 1, 1};
+  const bool nhwc = is_channels_last_tensor(input);
+
+  int32_t dims[kMaxSupportedDims] = {1, 1, 1, 1};
   for (size_t i = 0; i < rank; ++i) {
-    logical_dims[offset + i] = static_cast<int32_t>(input.size(i));
+    const size_t src = nhwc ? kNhwcDimOrder[offset + i] : i;
+    dims[offset + i] = static_cast<int32_t>(input.size(src));
   }
 
-  int32_t physical_dims[kMaxSupportedDims];
-  int32_t physical_pre[kMaxSupportedDims];
-  int32_t physical_post[kMaxSupportedDims];
-
-  // Leading virtual dims (for rank < 4) are always identity-ordered.
-  for (size_t i = 0; i < offset; ++i) {
-    physical_dims[i] = 1;
-    physical_pre[i] = static_cast<int32_t>(pre_pad[i]);
-    physical_post[i] = static_cast<int32_t>(post_pad[i]);
-  }
-
-  // Permute the real dims according to dim_order.
-  const auto dim_order = input.dim_order();
-  for (size_t i = 0; i < rank; ++i) {
-    const size_t logical_idx = offset + dim_order[i];
-    physical_dims[offset + i] = logical_dims[logical_idx];
-    physical_pre[offset + i] = static_cast<int32_t>(pre_pad[logical_idx]);
-    physical_post[offset + i] = static_cast<int32_t>(post_pad[logical_idx]);
-  }
-
-  cmsis_nn_dims input_dims = {
-      physical_dims[0], physical_dims[1], physical_dims[2], physical_dims[3]};
+  cmsis_nn_dims input_dims = {dims[0], dims[1], dims[2], dims[3]};
   cmsis_nn_dims cmsis_pre_pad = {
-      physical_pre[0], physical_pre[1], physical_pre[2], physical_pre[3]};
+      static_cast<int32_t>(pre_pad[0]),
+      static_cast<int32_t>(pre_pad[1]),
+      static_cast<int32_t>(pre_pad[2]),
+      static_cast<int32_t>(pre_pad[3])};
   cmsis_nn_dims cmsis_post_pad = {
-      physical_post[0], physical_post[1], physical_post[2], physical_post[3]};
+      static_cast<int32_t>(post_pad[0]),
+      static_cast<int32_t>(post_pad[1]),
+      static_cast<int32_t>(post_pad[2]),
+      static_cast<int32_t>(post_pad[3])};
 
   const int8_t* input_data = input.const_data_ptr<int8_t>();
   int8_t* output_data = out.mutable_data_ptr<int8_t>();
