@@ -42,7 +42,7 @@ on:
 jobs:
   check-if-aar-exists:
     name: check-if-aar-exists
-    runs-on: ubuntu-22.04
+    runs-on: 16-core-ubuntu
     timeout-minutes: 10
     outputs:
       should-skip: ${{ steps.check.outputs.should-skip }}
@@ -158,7 +158,7 @@ jobs:
   upload-release-aar:
     name: upload-release-aar
     needs: build-aar
-    runs-on: ubuntu-22.04
+    runs-on: 16-core-ubuntu
     timeout-minutes: 10
     permissions:
       id-token: write
