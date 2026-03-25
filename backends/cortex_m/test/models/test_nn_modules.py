@@ -188,9 +188,7 @@ test_cases = {
     ),
 }
 
-xfails = {
-    "conv_add_relu": "Activation fusion does not support relu after add",
-}
+xfails = {}
 
 
 @parametrize("test_case", test_cases, xfails=xfails, strict=False)
