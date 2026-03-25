@@ -29,11 +29,11 @@ if(NOT _executorch_imported)
   executorch_target_link_options_shared_lib(executorch)
 endif()
 
-set(link_libraries executorch gflags)
+set(common_link_libraries executorch gflags)
 
 # Common ops for all builds
 if(TARGET optimized_native_cpu_ops_lib)
-  list(APPEND link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)
+  list(APPEND common_link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)
   get_target_property(_is_imported optimized_native_cpu_ops_lib IMPORTED)
   if(NOT _is_imported)
     executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
@@ -46,7 +46,7 @@ if(TARGET xnnpack_backend)
   if(TARGET kleidiai)
     list(APPEND xnnpack_backend_libs kleidiai)
   endif()
-  list(APPEND link_libraries ${xnnpack_backend_libs})
+  list(APPEND common_link_libraries ${xnnpack_backend_libs})
   get_target_property(_xnnpack_imported xnnpack_backend IMPORTED)
   if(NOT _xnnpack_imported)
     executorch_target_link_options_shared_lib(xnnpack_backend)
@@ -55,14 +55,24 @@ endif()
 
 # Needed for cpuinfo where it uses android specific log lib
 if(ANDROID)
-  list(APPEND link_libraries log)
+  list(APPEND common_link_libraries log)
 endif()
 
 # Add the required ExecuTorch extensions
+set(silero_runner_link_libraries ${common_link_libraries})
 list(
   APPEND
-  link_libraries
-  extension_llm_runner
+  silero_runner_link_libraries
+  extension_module
+  extension_data_loader
+  extension_tensor
+  extension_flat_tensor
+)
+
+set(silero_stream_link_libraries ${common_link_libraries})
+list(
+  APPEND
+  silero_stream_link_libraries
   extension_module
   extension_data_loader
   extension_tensor
@@ -80,5 +90,23 @@ endif()
 target_include_directories(
   silero_vad_runner PUBLIC ${_common_include_directories}
 )
-target_link_libraries(silero_vad_runner PUBLIC ${link_libraries})
+target_link_libraries(silero_vad_runner PUBLIC ${silero_runner_link_libraries})
 target_compile_options(silero_vad_runner PUBLIC ${_common_compile_options})
+
+add_executable(silero_vad_stream_runner stream_main.cpp silero_vad_runner.cpp)
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  target_link_options_gc_sections(silero_vad_stream_runner)
+  if(NOT APPLE AND NOT MSVC)
+    target_link_options(silero_vad_stream_runner PRIVATE "LINKER:-s")
+  endif()
+endif()
+
+target_include_directories(
+  silero_vad_stream_runner PUBLIC ${_common_include_directories}
+)
+target_link_libraries(
+  silero_vad_stream_runner PUBLIC ${silero_stream_link_libraries}
+)
+target_compile_options(
+  silero_vad_stream_runner PUBLIC ${_common_compile_options}
+)
