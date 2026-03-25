@@ -202,7 +202,7 @@ def numpy_to_torch_tensor(array: np.ndarray, output_node: Node) -> torch.Tensor:
         tensor = torch.from_numpy(array).reshape(shape_with_dim_order)
         return tensor.permute(NNHWC_INVERSE_ORDER).to(memory_format=torch.channels_last)
     else:
-        if type(array.dtype) is np.dtypes.VoidDType:
+        if array.dtype.type is np.void:
             # If dtype is void, "cheat" and use the output_tensor dtype.
             tensor = torch.frombuffer(array, dtype=output_tensor.dtype)
         else:
