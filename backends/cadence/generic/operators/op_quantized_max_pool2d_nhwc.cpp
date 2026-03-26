@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 
 #include <executorch/backends/cadence/generic/operators/cadence_type_util.h>
