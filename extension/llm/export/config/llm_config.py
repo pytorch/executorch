@@ -22,7 +22,7 @@ import argparse
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import ClassVar, Dict, List, Optional
+from typing import ClassVar, List, Optional
 
 
 ################################################################################
@@ -316,8 +316,8 @@ class MethodConfig:
 class MultimethodConfig:
     """Configuration for exporting multiple methods to a single .pte file.
 
-    Maps method names to optional LoRA configurations. A None value means
-    the method uses base model weights.
+    Holds a list of method configs, as well as global options that apply
+    across all methods.
 
     Attributes:
         methods: List of MethodConfig objects with method name and config
