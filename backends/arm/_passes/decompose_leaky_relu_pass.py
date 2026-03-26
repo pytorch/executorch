@@ -9,9 +9,6 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
-    ConvertFullLikeToFullPass,
-)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -23,14 +20,12 @@ def _get_leaky_relu_ops(op) -> tuple:
     if op in edge_ops:
         return (
             exir_ops.edge.aten.clamp.default,
-            exir_ops.edge.aten.full_like.default,
             exir_ops.edge.aten.mul.Tensor,
             exir_ops.edge.aten.add.Tensor,
         )
     elif op in torch_ops:
         return (
             torch.ops.aten.clamp.default,
-            torch.ops.aten.full_like.default,
             torch.ops.aten.mul.Tensor,
             torch.ops.aten.add.Tensor,
         )
@@ -45,13 +40,13 @@ class DecomposeLeakyReLUPass(ArmPass):
     Example:
         %op1 = clamp(x,0,None) (equivalent to max(0,x))
         %op2 = clamp(x,None,0) (equivalent to min(0,x))
-        %op3 = full_like(x,slope)
+        %op3 = slope
         %op4 = mul(%op3,%op2)
         %op5 = add(%op1,%op4)
 
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = {ConvertFullLikeToFullPass}
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in (edge_ops + torch_ops) or not self.allowed_to_transform(meta):
@@ -59,19 +54,18 @@ class DecomposeLeakyReLUPass(ArmPass):
 
         x = args[0]
         slope = args[1] if len(args) > 1 else 0.01
-        clamp, full_like, mul, add = _get_leaky_relu_ops(op)
+        clamp, mul, add = _get_leaky_relu_ops(op)
         op1 = super().call_operator(
             op=clamp, args=(x, 0, None), kwargs=kwargs, meta=meta
         )
         op2 = super().call_operator(
             op=clamp, args=(x, None, 0), kwargs=kwargs, meta=meta
         )
-        op3 = super().call_operator(
-            op=full_like,
-            args=(x, slope),
-            kwargs={},
+        op4 = super().call_operator(
+            op=mul,
+            args=(op2, super().call_scalar(slope, meta)),
+            kwargs=kwargs,
             meta=meta,
         )
-        op4 = super().call_operator(op=mul, args=(op3, op2), kwargs=kwargs, meta=meta)
         op5 = super().call_operator(op=add, args=(op1, op4), kwargs=kwargs, meta=meta)
         return op5

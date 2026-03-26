@@ -1,5 +1,5 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -53,7 +53,7 @@ fbcode_target(_kind = runtime.python_library,
     name = "arm_tester_serialize",
     srcs = ["tester/serialize.py"],
     deps = [
-        "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/backends/test/harness:tester",
         "//executorch/devtools/backend_debug:delegation_info",
     ]
 )
@@ -63,7 +63,7 @@ fbcode_target(_kind = runtime.python_library,
     srcs = glob(["tester/*.py"], exclude = ["tester/serialize.py"]),
     deps = [
         ":common",
-        "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/backends/test/harness:tester",
         "//executorch/backends/arm:ethosu",
         "//executorch/backends/arm/quantizer:lib",
         "//executorch/backends/arm/tosa:mapping",

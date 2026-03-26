@@ -417,6 +417,93 @@ class MatmulPattern(QuantizationPattern):
         return torch.ops.cadence.quantized_matmul.default
 
 
+class MaxPool2dPattern(QuantizationPattern):
+    """
+    Pattern for quantized max pooling (with indices variant).
+
+    Max pooling is order-preserving, so max(a, b) in the quantized domain gives
+    the same result as quantizing max(dequant(a), dequant(b)) when using the same
+    scale/zero_point. This means we can perform max pooling directly on quantized
+    values without any requantization.
+
+    The input and output share quantization parameters.
+    """
+
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.max_pool2d_with_indices.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        max_pool_node = fused_partition[0].nodes[-1]
+
+        # Input and output share quantization parameters since max is order-preserving
+        return (
+            PartitionAnchors(
+                inputs=[(max_pool_node, 0)],
+                weights=[],
+                biases=[],
+                # kernel_size, stride, padding, dilation, ceil_mode are literals
+                literals=[
+                    (max_pool_node, i) for i in range(1, len(max_pool_node.args))
+                ],
+                output=[
+                    (
+                        max_pool_node,
+                        SharedQuantizationSpec((max_pool_node.args[0], max_pool_node)),
+                    )
+                ],
+            ),
+            max_pool_node,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_max_pool2d_nchw.default
+
+
+class MaxPool2dWithoutIndicesPattern(QuantizationPattern):
+    """
+    Pattern for quantized max pooling (without indices variant).
+
+    Same as MaxPool2dPattern but matches aten.max_pool2d.default which returns
+    a single tensor instead of a tuple (values, indices).
+    """
+
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.max_pool2d.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        max_pool_node = fused_partition[0].nodes[-1]
+
+        return (
+            PartitionAnchors(
+                inputs=[(max_pool_node, 0)],
+                weights=[],
+                biases=[],
+                literals=[
+                    (max_pool_node, i) for i in range(1, len(max_pool_node.args))
+                ],
+                output=[
+                    (
+                        max_pool_node,
+                        SharedQuantizationSpec((max_pool_node.args[0], max_pool_node)),
+                    )
+                ],
+            ),
+            max_pool_node,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_max_pool2d_nchw.default
+
+
+# This is a base class for ReLU
+
+
 # This is a base class for ReLU, since it can be used with two different aten ops
 class ReluBasePattern(QuantizationPattern):
     @abstractmethod

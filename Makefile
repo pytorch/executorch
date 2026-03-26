@@ -91,7 +91,7 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral_realtime-cuda voxtral_realtime-cpu voxtral_realtime-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal sortformer-cuda sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral_realtime-cuda voxtral_realtime-cpu voxtral_realtime-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu llava-cpu gemma3-cuda gemma3-cpu qwen3_5_moe-cuda clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
@@ -109,6 +109,9 @@ help:
 	@echo "  parakeet-cuda-debug - Build Parakeet runner with CUDA backend (debug mode)"
 	@echo "  parakeet-cpu        - Build Parakeet runner with CPU backend"
 	@echo "  parakeet-metal      - Build Parakeet runner with Metal backend (macOS only)"
+	@echo "  parakeet-vulkan     - Build Parakeet runner with Vulkan backend"
+	@echo "  dinov2-cuda         - Build DINOv2 runner with CUDA backend"
+	@echo "  dinov2-cuda-debug   - Build DINOv2 runner with CUDA backend (debug mode)"
 	@echo "  sortformer-cuda     - Build Sortformer runner with CUDA backend"
 	@echo "  sortformer-cpu      - Build Sortformer runner with CPU backend"
 	@echo "  silero-vad-cpu      - Build Silero VAD runner with CPU backend"
@@ -118,6 +121,7 @@ help:
 	@echo "  llava-cpu           - Build Llava runner with CPU backend"
 	@echo "  gemma3-cuda         - Build Gemma3 runner with CUDA backend"
 	@echo "  gemma3-cpu          - Build Gemma3 runner with CPU backend"
+	@echo "  qwen3_5_moe-cuda    - Build Qwen3.5 MoE runner with CUDA backend"
 	@echo "  clean               - Clean build artifacts"
 
 voxtral-cuda:
@@ -218,6 +222,33 @@ parakeet-metal:
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
+
+parakeet-vulkan:
+	@echo "==> Building and installing ExecuTorch with Vulkan..."
+	cmake --workflow --preset llm-debug-vulkan
+	@echo "==> Building Parakeet runner with Vulkan..."
+	cd examples/models/parakeet && cmake --workflow --preset parakeet-vulkan
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
+
+dinov2-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Building DINOv2 runner with CUDA..."
+	cd examples/models/dinov2 && cmake --workflow --preset dinov2-cuda
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/dinov2/dinov2_runner"
+
+dinov2-cuda-debug:
+	@echo "==> Building and installing ExecuTorch with CUDA (debug mode)..."
+	cmake --workflow --preset llm-debug-cuda
+	@echo "==> Building DINOv2 runner with CUDA (debug mode)..."
+	cd examples/models/dinov2 && cmake --workflow --preset dinov2-cuda-debug
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/dinov2/dinov2_runner"
 
 sortformer-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
@@ -331,6 +362,15 @@ gemma3-cpu:
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/gemma3/gemma3_e2e_runner"
+
+qwen3_5_moe-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Building Qwen3.5 MoE runner with CUDA..."
+	cd examples/models/qwen3_5_moe && cmake --workflow --preset qwen3-5-moe-cuda
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner"
 
 clean:
 	rm -rf cmake-out \

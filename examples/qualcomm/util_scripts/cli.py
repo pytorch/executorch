@@ -135,7 +135,6 @@ class InputListParser:
 
 def quantize(args):
     logger = get_logger()
-
     # get corresponding QnnQuantizer
     try:
         quant_dtype = getattr(QuantDtype, args.config)
@@ -147,6 +146,7 @@ def quantize(args):
             act_observer=act_observer,
             backend=get_backend_type(args.backend),
             soc_model=args.model,
+            eps=args.eps,
         )
     except Exception:
         logger.error(
@@ -449,6 +449,12 @@ def main():
         choices=["htp", "gpu"],
         default="htp",
         help="Backend to be deployed ('htp'/'gpu' are currently supported).",
+    )
+    sub_quantize.add_argument(
+        "--eps",
+        help="EPS value for quantizer. Accepts floating‑point literal. E.g., 0.0009765625.",
+        type=float,
+        default=None,
     )
     sub_quantize.set_defaults(callback=quantize)
 

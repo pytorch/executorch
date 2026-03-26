@@ -1486,6 +1486,7 @@ def _load_llama_model_metadata(
     n_layers: int,
     vocab_size: int,
     metadata_str: Optional[str] = None,
+    num_kv_shared_layers: int = 0,
 ):
     metadata = {
         "get_max_seq_len": max_seq_len,
@@ -1496,6 +1497,9 @@ def _load_llama_model_metadata(
         "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,
         "enable_dynamic_shape": enable_dynamic_shape,
     }
+    # YOCO (You Only Cache Once) KV sharing metadata
+    if num_kv_shared_layers > 0:
+        metadata["get_num_kv_shared_layers"] = num_kv_shared_layers
     if metadata_str:
         try:
             extra = json.loads(metadata_str)
@@ -1575,6 +1579,9 @@ def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
             #  Module]`.
             model.vocab_size,
             llm_config.base.metadata,
+            # pyre-fixme[6]: For 10th argument expected `int` but got `Union[Tensor,
+            #  Module]`.
+            num_kv_shared_layers=getattr(model, "num_kv_shared_layers", 0),
         ),
     )
 
