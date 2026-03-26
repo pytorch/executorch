@@ -8,10 +8,12 @@
 
 #pragma once
 
+#include <executorch/runtime/executor/dynamic_allocator.h>
+
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+
 #include <algorithm>
 #include <cstddef>
-
-#include <executorch/runtime/executor/dynamic_allocator.h>
 
 namespace executorch {
 namespace runtime {
@@ -90,3 +92,5 @@ class TrackingDynamicAllocator : public DynamicAllocator {
 
 } // namespace runtime
 } // namespace executorch
+
+#endif // ET_DYNAMIC_ALLOCATOR_ENABLED

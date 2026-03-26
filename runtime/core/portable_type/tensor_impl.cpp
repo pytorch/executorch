@@ -113,32 +113,22 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
       }
 
       break;
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
     case TensorShapeDynamism::DYNAMIC_UNBOUND: {
       const auto new_numel = compute_numel(new_sizes.data(), dim_);
 
-      ET_CHECK_OR_RETURN_ERROR(
-          static_cast<size_t>(new_numel) <= numel_bound_,
-          NotSupported,
-          "Attempted to resize a dynamic unbound tensor beyond its ceiling of %zu elements to %zu elements.",
-          numel_bound_,
-          new_numel);
-
       const size_t needed_bytes =
           static_cast<size_t>(new_numel) * elementSize(type_);
-      // If capacity_bytes_ is 0 but data_ is non-null, the buffer is
-      // externally managed (e.g., stack-allocated in tests). Use the
-      // original numel bound as the effective capacity.
-      const size_t effective_capacity = capacity_bytes_ > 0
-          ? capacity_bytes_
-          : static_cast<size_t>(numel_bound_) * elementSize(type_);
-      if (needed_bytes > effective_capacity) {
+      if (needed_bytes > capacity_bytes_) {
         ET_CHECK_OR_RETURN_ERROR(
             dynamic_allocator_ != nullptr,
             NotSupported,
             "DYNAMIC_UNBOUND tensor needs reallocation but has no DynamicAllocator");
         size_t actual_size = 0;
+        // Only pass data_ to reallocate if we own it (capacity_bytes_ > 0).
+        // When capacity_bytes_ == 0, data_ may be externally managed.
         void* new_data = dynamic_allocator_->reallocate(
-            data_,
+            capacity_bytes_ > 0 ? data_ : nullptr,
             capacity_bytes_,
             needed_bytes,
             alignof(std::max_align_t),
@@ -162,6 +152,11 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
       numel_ = new_numel;
       std::copy(new_sizes.begin(), new_sizes.end(), sizes_);
     } break;
+#else
+    // When dynamic allocator is not enabled, fall through to DYNAMIC_BOUND
+    // (legacy behavior: treat DYNAMIC_UNBOUND as upper-bounded).
+    case TensorShapeDynamism::DYNAMIC_UNBOUND:
+#endif // ET_DYNAMIC_ALLOCATOR_ENABLED
 
     case TensorShapeDynamism::DYNAMIC_BOUND: {
       const auto new_numel = compute_numel(new_sizes.data(), dim_);

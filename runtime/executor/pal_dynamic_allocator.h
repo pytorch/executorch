@@ -8,10 +8,13 @@
 
 #pragma once
 
+#include <executorch/runtime/executor/dynamic_allocator.h>
+
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+
 #include <algorithm>
 #include <cstring>
 
-#include <executorch/runtime/executor/dynamic_allocator.h>
 #include <executorch/runtime/platform/platform.h>
 
 namespace executorch {
@@ -34,6 +37,7 @@ class PalDynamicAllocator : public DynamicAllocator {
     void* aligned = align_pointer(raw, alignment);
     // Store the raw pointer just before the aligned pointer so we can free it.
     store_raw_pointer(aligned, raw);
+    std::memset(aligned, 0, size);
     if (actual_size) {
       *actual_size = size;
     }
@@ -58,10 +62,14 @@ class PalDynamicAllocator : public DynamicAllocator {
     }
     void* aligned = align_pointer(raw, alignment);
     store_raw_pointer(aligned, raw);
-    // Copy old data.
+    // Copy old data and zero-initialize the new region.
     size_t copy_size = std::min(old_size, new_size);
     if (copy_size > 0) {
       std::memcpy(aligned, ptr, copy_size);
+    }
+    if (target > copy_size) {
+      std::memset(
+          static_cast<uint8_t*>(aligned) + copy_size, 0, target - copy_size);
     }
     // Free old allocation.
     free(ptr);
@@ -100,3 +108,5 @@ class PalDynamicAllocator : public DynamicAllocator {
 
 } // namespace runtime
 } // namespace executorch
+
+#endif // ET_DYNAMIC_ALLOCATOR_ENABLED

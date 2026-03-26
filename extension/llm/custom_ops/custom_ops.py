@@ -207,16 +207,11 @@ def _validate_update_cache_params(
         ), f"Expected value and cache to have same size in dimension {i} but got {value.size(i)} and {cache.size(i)}"
 
     torch._check_is_size(start_pos)
-    if indices is None:
+    # Bounds checks are skipped for DYNAMIC_UNBOUND (lazy) caches where
+    # cache.size(1) starts at 0 and grows at runtime.
+    if indices is None and cache.size(1) > 0:
         torch._check(start_pos < cache.size(1))
-        assert start_pos < cache.size(
-            1
-        ), f"Start position {start_pos} must be less than sequence length {cache.size(1)}"
-
         torch._check((start_pos + seq_len) <= cache.size(1))
-        assert (start_pos + seq_len) <= cache.size(
-            1
-        ), f"Start position  + length = {start_pos + seq_len} must be less than sequence length {cache.size(1)}"
 
     if indices is not None:
         assert (

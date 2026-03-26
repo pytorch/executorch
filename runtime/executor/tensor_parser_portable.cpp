@@ -53,6 +53,7 @@ Result<Tensor> parseTensor(
 
   TensorShapeDynamism dynamism =
       static_cast<TensorShapeDynamism>(s_tensor->shape_dynamism());
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
   if (dynamism == TensorShapeDynamism::DYNAMIC_UNBOUND) {
     ET_CHECK_OR_RETURN_ERROR(
         memory_manager->dynamic_allocator() != nullptr,
@@ -60,6 +61,15 @@ Result<Tensor> parseTensor(
         "Model contains DYNAMIC_UNBOUND tensors but no DynamicAllocator was "
         "provided. Pass a DynamicAllocator to MemoryManager.");
   }
+#else
+  if (dynamism == TensorShapeDynamism::DYNAMIC_UNBOUND) {
+    ET_CHECK_OR_RETURN_ERROR(
+        false,
+        NotSupported,
+        "Model contains DYNAMIC_UNBOUND tensors but the runtime was built "
+        "without EXECUTORCH_ENABLE_DYNAMIC_ALLOCATOR=ON");
+  }
+#endif // ET_DYNAMIC_ALLOCATOR_ENABLED
 
   ET_CHECK_OR_RETURN_ERROR(
       s_tensor->sizes() != nullptr, InvalidProgram, "Missing sizes field");
@@ -183,6 +193,7 @@ Result<Tensor> parseTensor(
   }
   tensor_impl->set_data(data_ptr.get());
 
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
   // For DYNAMIC_UNBOUND tensors, wire up the dynamic allocator. Memory is
   // managed by the DynamicAllocator rather than the memory planner, making it
   // freeable via FreeCall and growable via resize.
@@ -211,6 +222,7 @@ Result<Tensor> parseTensor(
       tensor_impl->set_capacity_bytes(0);
     }
   }
+#endif // ET_DYNAMIC_ALLOCATOR_ENABLED
 
   return Tensor(tensor_impl);
 }

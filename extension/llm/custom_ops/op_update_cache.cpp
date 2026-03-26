@@ -11,6 +11,7 @@
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 // @lint-ignore CLANGTIDY facebook-unused-include-check
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 
@@ -207,6 +208,32 @@ Tensor& update_cache_impl(
 }
 } // anonymous namespace
 
+// Grow cache seq dimension if needed (for DYNAMIC_UNBOUND lazy KV cache).
+static bool maybe_resize_cache(
+    RuntimeContext& ctx,
+    const Tensor& value,
+    Tensor& cache,
+    int64_t start_pos) {
+  ET_CHECK_OR_RETURN_FALSE(cache.dim() == 4, "cache must be a 4D tensor");
+  ET_CHECK_OR_RETURN_FALSE(value.dim() == 4, "value must be a 4D tensor");
+  int64_t seq_len = value.size(1);
+  int64_t required_seq = start_pos + seq_len;
+  if (required_seq > cache.size(1)) {
+    executorch::aten::SizesType new_sizes[] = {
+        static_cast<executorch::aten::SizesType>(cache.size(0)),
+        static_cast<executorch::aten::SizesType>(required_seq),
+        static_cast<executorch::aten::SizesType>(cache.size(2)),
+        static_cast<executorch::aten::SizesType>(cache.size(3)),
+    };
+    auto err = resize_tensor(
+        cache, {new_sizes, static_cast<size_t>(cache.dim())});
+    if (err != Error::Ok) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // Original update_cache_out function without indices parameter
 Tensor& update_cache_out(
     RuntimeContext& ctx,
@@ -215,6 +242,11 @@ Tensor& update_cache_out(
     const int64_t start_pos,
     Tensor& output) {
   int64_t seq_len = value.size(1);
+  ET_KERNEL_CHECK(
+      ctx,
+      maybe_resize_cache(ctx, value, cache, start_pos),
+      InvalidArgument,
+      output);
   ET_KERNEL_CHECK(
       ctx,
       validate_cache_params(value, cache, start_pos, seq_len),
@@ -233,6 +265,11 @@ Tensor& update_cache_with_indices_out(
     const Tensor& indices,
     Tensor& output) {
   int64_t seq_len = value.size(1);
+  ET_KERNEL_CHECK(
+      ctx,
+      maybe_resize_cache(ctx, value, cache, start_pos),
+      InvalidArgument,
+      output);
   ET_KERNEL_CHECK(
       ctx,
       validate_cache_params(value, cache, start_pos, seq_len, indices),

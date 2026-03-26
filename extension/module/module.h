@@ -14,7 +14,9 @@
 #include <unordered_set>
 #include <vector>
 
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
 #include <executorch/runtime/executor/dynamic_allocator.h>
+#endif
 #include <executorch/runtime/executor/program.h>
 
 #ifdef USE_ATEN_LIB
@@ -695,7 +697,9 @@ class Module {
 
   struct MethodHolder {
     std::unique_ptr<PlannedMemory> planned_memory;
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
     std::unique_ptr<runtime::DynamicAllocator> dynamic_allocator;
+#endif
     std::unique_ptr<runtime::MemoryManager> memory_manager;
     std::unique_ptr<Method> method;
   };

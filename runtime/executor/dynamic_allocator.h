@@ -13,6 +13,8 @@
 namespace executorch {
 namespace runtime {
 
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+
 /**
  * Interface for dynamic memory allocation used by DYNAMIC_UNBOUND tensors.
  *
@@ -68,6 +70,8 @@ class DynamicAllocator {
    */
   virtual void free(void* ptr) = 0;
 };
+
+#endif // ET_DYNAMIC_ALLOCATOR_ENABLED
 
 } // namespace runtime
 } // namespace executorch
