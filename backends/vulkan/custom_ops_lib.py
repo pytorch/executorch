@@ -8,7 +8,6 @@ from typing import Optional
 
 import executorch.backends.vulkan.patterns as vk_patterns
 import torch.library
-
 from torch._subclasses.fake_tensor import FakeTensor
 
 namespace = "et_vk"
@@ -259,7 +258,7 @@ def linear_q4gsw(
         weights, [1, group_size], weight_scales, weight_zeros, torch.int8, -8, 7
     )
 
-    out = torch.nn.functional.linear(x, weights)
+    out = torch.nn.functional.linear(x, weights, bias)
     return out
 
 
@@ -273,7 +272,7 @@ def linear_dq8ca_q4gsw(
     group_size: int,
     bias: Optional[torch.Tensor] = None,
 ):
-    return linear_q4gsw(x, weights, weight_scales, group_size)
+    return linear_q4gsw(x, weights, weight_scales, group_size, bias)
 
 
 name = "linear_q4gsw"
@@ -879,6 +878,46 @@ lib.define(
 )
 lib.impl(name, q8ta_relu_impl, "CompositeExplicitAutograd")
 q8ta_relu_op = getattr(getattr(torch.ops, namespace), name)
+
+########################
+## embedding_q4gsw ##
+########################
+
+
+def embedding_q4gsw_impl(
+    weight: torch.Tensor,
+    weight_scales: torch.Tensor,
+    group_size: int,
+    indices: torch.Tensor,
+    is_linear_weight: bool = False,
+) -> torch.Tensor:
+    # Unpack 4-bit values from packed uint8 tensor
+    # Packing convention: packed_byte = (even_val + 8) << 4 | (odd_val + 8)
+    high = (weight >> 4).to(torch.int8) - 8
+    low = (weight & 0xF).to(torch.int8) - 8
+    if is_linear_weight:
+        unpacked = torch.stack([low, high], dim=-1).reshape(weight.shape[0], -1)
+    else:
+        unpacked = torch.stack([high, low], dim=-1).reshape(weight.shape[0], -1)
+    # Dequantize using per-group scales
+    num_groups = weight_scales.shape[1] if weight_scales.dim() > 1 else 1
+    unpacked_groups = unpacked.reshape(weight.shape[0], num_groups, group_size)
+    scales = (
+        weight_scales.unsqueeze(-1)
+        if weight_scales.dim() > 1
+        else weight_scales.reshape(1, 1, 1)
+    )
+    dequantized = unpacked_groups.float() * scales.float()
+    dequantized = dequantized.reshape(weight.shape[0], -1)
+    return torch.nn.functional.embedding(indices, dequantized)
+
+
+name = "embedding_q4gsw"
+lib.define(
+    f"{name}(Tensor weight, Tensor weight_scales, int group_size, Tensor indices, bool is_linear_weight = False) -> Tensor"
+)
+lib.impl(name, embedding_q4gsw_impl, "CompositeExplicitAutograd")
+embedding_q4gsw_op = getattr(getattr(torch.ops, namespace), name)
 
 #############################
 ## select_as_symint ##

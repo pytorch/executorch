@@ -1,6 +1,6 @@
 # Test ExecuTorch CUDA Build Compatibility
 # This workflow tests whether ExecuTorch can be successfully built with CUDA support
-# across different CUDA versions (12.6, 12.8, 12.9) using the command:
+# across different CUDA versions (12.6, 12.8, 12.9, 13.0) using the command:
 #   ./install_executorch.sh
 #
 # Note: ExecuTorch automatically detects the system CUDA version using nvcc and
@@ -9,11 +9,18 @@
 name: Test CUDA Builds
 
 on:
-  pull_request:
   push:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/cuda/*
+  pull_request:
+    paths:
+      - .github/workflows/cuda.yml
+      - backends/cuda/**
+      - backends/aoti/**
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
@@ -59,7 +66,7 @@ jobs:
             echo "CUDA build results: ${{ needs.test-cuda-builds.result }}"
             exit 1
           else
-            echo "SUCCESS: All ExecuTorch CUDA builds (12.6, 12.8, 12.9) completed successfully!"
+            echo "SUCCESS: All ExecuTorch CUDA builds (12.6, 12.8, 12.9, 13.0) completed successfully!"
           fi
 
   test-models-cuda:
@@ -68,10 +75,6 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        model: [linear, add, add_mul, resnet18, conv1d, sdpa, mv2, mv3]
     with:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
@@ -85,7 +88,21 @@ jobs:
 
         PYTHON_EXECUTABLE=python ./install_executorch.sh
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
-        PYTHON_EXECUTABLE=python source .ci/scripts/test_model.sh "${{ matrix.model }}" cmake cuda
+
+        # Build executor_runner with CUDA support once, then reuse for all models.
+        # test_model.sh's build_cmake_executor_runner does rm -rf cmake-out on each
+        # invocation, so we build separately and run models directly.
+        cmake -DCMAKE_BUILD_TYPE=Release \
+            -DEXECUTORCH_BUILD_CUDA=ON \
+            -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+            -DPYTHON_EXECUTABLE=python \
+            -Bcmake-out .
+        cmake --build cmake-out -j4
+
+        for model in linear add add_mul resnet18 conv1d sdpa mv2 mv3; do
+          python -m examples.cuda.scripts.export --model_name="$model" --output_dir "./"
+          ./cmake-out/executor_runner --model_path "./${model}.pte" --data_path "./aoti_cuda_blob.ptd"
+        done
 
   unittest-cuda:
     name: unittest-cuda
@@ -119,8 +136,17 @@ jobs:
         cmake --workflow --preset default
         popd
 
-        # Run CUDA backend Python tests, overrides addopts so that we don't run all tests in pytest.ini
+        # Install flash-linear-attention for chunk_gated_delta_rule triton kernel tests
+        pip install "flash-linear-attention==0.4.2"
+
+        # Build executor_runner (needed by CUDA backend e2e tests)
+        cmake --build cmake-out --target executor_runner
+
+        # Run CUDA backend Python tests
         python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts="
+
+        # Run quantize roundtrip tests (Qwen 3.5 MoE save/load prequantized)
+        python -m pytest examples/models/qwen3_5_moe/test_quantize_roundtrip.py -v -o "addopts="
 
   export-model-cuda-artifact:
     name: export-model-cuda-artifact
@@ -153,6 +179,8 @@ jobs:
             name: "parakeet-tdt"
           - repo: "facebook"
             name: "dinov2-small-imagenet1k-1-layer"
+          - repo: "SocialLocalMobile"
+            name: "Qwen3.5-35B-A3B-HQQ-INT4"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -162,6 +190,15 @@ jobs:
           - model:
               repo: "google"
               name: "gemma-3-4b-it"
+            quant: "quantized-int4-weight-only"
+          # Qwen3.5 MoE uses a prequantized checkpoint, only tile-packed
+          - model:
+              repo: "SocialLocalMobile"
+              name: "Qwen3.5-35B-A3B-HQQ-INT4"
+            quant: "non-quantized"
+          - model:
+              repo: "SocialLocalMobile"
+              name: "Qwen3.5-35B-A3B-HQQ-INT4"
             quant: "quantized-int4-weight-only"
           # Voxtral Realtime only supports int4-tile-packed on CUDA
           - model:
@@ -190,10 +227,34 @@ jobs:
               repo: "facebook"
               name: "dinov2-small-imagenet1k-1-layer"
             quant: "quantized-int4-weight-only"
+          # Qwen3 int4-weight-only: no downstream job consumes this artifact
+          - model:
+              repo: "Qwen"
+              name: "Qwen3-0.6B"
+            quant: "quantized-int4-weight-only"
+          - model:
+              repo: "nvidia"
+              name: "parakeet-tdt"
+            quant: "quantized-int4-weight-only"
+          # Whisper: cover all quant types and both sizes with minimal combos
+          # whisper-small: non-quantized only
+          # whisper-large-v3-turbo: int4-tile-packed + int4-weight-only
+          - model:
+              repo: "openai"
+              name: "whisper-small"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "openai"
+              name: "whisper-small"
+            quant: "quantized-int4-weight-only"
+          - model:
+              repo: "openai"
+              name: "whisper-large-v3-turbo"
+            quant: "non-quantized"
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: linux.g5.4xlarge.nvidia.gpu
+      runner: ${{ matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
       gpu-arch-type: cuda
       gpu-arch-version: 12.6
       use-custom-docker-registry: false
@@ -248,6 +309,8 @@ jobs:
             name: "parakeet-tdt"
           - repo: "facebook"
             name: "dinov2-small-imagenet1k-1-layer"
+          - repo: "SocialLocalMobile"
+            name: "Qwen3.5-35B-A3B-HQQ-INT4"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -257,6 +320,15 @@ jobs:
           - model:
               repo: "google"
               name: "gemma-3-4b-it"
+            quant: "quantized-int4-weight-only"
+          # Qwen3.5 MoE uses a prequantized checkpoint, only tile-packed
+          - model:
+              repo: "SocialLocalMobile"
+              name: "Qwen3.5-35B-A3B-HQQ-INT4"
+            quant: "non-quantized"
+          - model:
+              repo: "SocialLocalMobile"
+              name: "Qwen3.5-35B-A3B-HQQ-INT4"
             quant: "quantized-int4-weight-only"
           # Voxtral Realtime only supports int4-tile-packed on CUDA
           - model:
@@ -285,9 +357,28 @@ jobs:
               repo: "facebook"
               name: "dinov2-small-imagenet1k-1-layer"
             quant: "quantized-int4-weight-only"
+          - model:
+              repo: "nvidia"
+              name: "parakeet-tdt"
+            quant: "quantized-int4-weight-only"
+          # Whisper: cover all quant types and both sizes with minimal combos
+          # whisper-small: non-quantized only
+          # whisper-large-v3-turbo: int4-tile-packed + int4-weight-only
+          - model:
+              repo: "openai"
+              name: "whisper-small"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "openai"
+              name: "whisper-small"
+            quant: "quantized-int4-weight-only"
+          - model:
+              repo: "openai"
+              name: "whisper-large-v3-turbo"
+            quant: "non-quantized"
     with:
       timeout: 90
-      runner: linux.g5.4xlarge.nvidia.gpu
+      runner: ${{ matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
       gpu-arch-type: cuda
       gpu-arch-version: 12.6
       use-custom-docker-registry: false
@@ -310,9 +401,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - model: "gemma3-4b"
-            quantize: ""
-            artifact: "google-gemma-3-4b-it-cuda-non-quantized"
           - model: "gemma3-4b"
             quantize: "--quantize"
             artifact: "google-gemma-3-4b-it-cuda-quantized-int4-tile-packed"

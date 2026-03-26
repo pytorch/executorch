@@ -91,6 +91,8 @@ class DtypeSetList:
         # Broadcasting: single set applies to all positions
         if idx > 0 and len(self.vals) == 1:
             return self.vals[0]
+        if idx >= len(self.vals):
+            return set()
         return self.vals[idx]
 
     def is_empty(self) -> bool:
@@ -1227,8 +1229,9 @@ class TensorRepSetList:
     def __getitem__(self, idx: int) -> TensorRepSet:
         if idx > 0 and len(self) == 1:
             return self.vals[0]
-        else:
-            return self.vals[idx]
+        if idx >= len(self.vals):
+            return set()
+        return self.vals[idx]
 
     def __setitem__(self, idx: int, val: TensorRepSet) -> None:
         if idx > 0 and len(self.vals) == 1:

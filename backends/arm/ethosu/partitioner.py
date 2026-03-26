@@ -29,7 +29,7 @@ class EthosUPartitioner(TOSAPartitioner):
     ) -> None:
         # Override the delegation spec for Ethos-U
         self.delegation_spec = DelegationSpec(
-            EthosUBackend.__name__, compile_spec.to_list()
+            EthosUBackend.__name__, compile_spec._to_list()
         )
         self.additional_checks = additional_checks
         self.tosa_spec = compile_spec.tosa_spec

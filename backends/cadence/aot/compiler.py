@@ -148,7 +148,11 @@ def apply_pre_edge_transform_passes(
     quantizer: CadenceQuantizer,
 ) -> ExportedProgram:
     """
-    Fuse a converted exported program using the given quantizer.
+    Apply pre-edge transform passes including QuantFusion and torch ops passes.
+    This mirrors the Cadence AOT compiler flow:
+    1. QuantFusion - fuses dq->op->q patterns
+    2. apply_torch_ops_passes - applied just before to_edge()
+
     The quantizer must be the same as the one used to convert the model.
     If you do not expect that behavior, please use quantize_pt2 instead,
     which will instantiate a default quantizer for you if needed.
@@ -158,6 +162,9 @@ def apply_pre_edge_transform_passes(
     # pyre-ignore[16]: no attribute
     patterns = [q.pattern for q in quantizer.quantizers]
     fused_program = _transform(converted_program, QuantFusion(patterns))
+
+    # Apply torch ops passes (e.g., ReplaceMulTensorWithMulAndFullOpsPass)
+    fused_program = apply_torch_ops_passes(fused_program)
 
     return fused_program
 
@@ -232,6 +239,11 @@ def quantize_pt2(
 
     # Apply quant fusion to the exported program
     program = torch.export.export(converted_gm, inputs, strict=True)
+
+    # Sink dequant nodes through transparent ops so they fuse per-branch.
+    if quant_input_args is not None:
+        QuantizedInputWrapper.sink_dequants(program)
+
     fused_program = apply_pre_edge_transform_passes(program, quantizer)
 
     if dump_graphs:
