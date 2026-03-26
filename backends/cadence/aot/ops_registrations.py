@@ -6,7 +6,7 @@
 
 # pyre-strict
 
-from math import prod
+from math import ceil, prod
 from typing import Callable, Optional, Tuple
 
 import torch
@@ -214,6 +214,19 @@ lib.define(
 )
 
 lib.define(
+    "quantized_max_pool2d_nchw(Tensor input, int[] kernel_size, int[] stride, int[] padding, int[] dilation, bool ceil_mode) -> Tensor"
+)
+lib.define(
+    "quantized_max_pool2d_nchw.out(Tensor input, int[] kernel_size, int[] stride, int[] padding, int[] dilation, bool ceil_mode, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_max_pool2d_nhwc(Tensor input, int[] kernel_size, int[] stride, int[] padding, int[] dilation, bool ceil_mode) -> Tensor"
+)
+lib.define(
+    "quantized_max_pool2d_nhwc.out(Tensor input, int[] kernel_size, int[] stride, int[] padding, int[] dilation, bool ceil_mode, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
     "quantized_conv2d_nhwc(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Z)"
 )
 lib.define(
@@ -368,6 +381,10 @@ lib.define(
 lib.define(
     "quantized_mul(Tensor X, Tensor X_scale, Tensor X_zero_point, Tensor Y, Tensor Y_scale, "
     "Tensor Y_zero_point, float out_scale, int out_zero_point) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_mul.per_tensor(Tensor X, float X_scale, int X_zero_point, Tensor Y, float Y_scale, "
+    "int Y_zero_point, float out_scale, int out_zero_point) -> (Tensor Z)"
 )
 lib.define(
     "quantized_add_Scalar(Tensor X, Tensor X_scale, Tensor X_zero_point, Scalar Y, "
@@ -574,6 +591,10 @@ lib.define(
 lib.define(
     "quantized_mul.out(Tensor X, Tensor X_scale, Tensor X_zero_point, Tensor Y, Tensor Y_scale, "
     "Tensor Y_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_mul.per_tensor_out(Tensor X, float X_scale, int X_zero_point, Tensor Y, float Y_scale, "
+    "int Y_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "quantized_add_Scalar.out(Tensor X, Tensor X_scale, Tensor X_zero_point, Scalar Y, "
@@ -881,6 +902,22 @@ def quantized_add_meta(
 ) -> torch.Tensor:
 
     # Determine output shape by broadcasting X and Y
+    out_size = torch.broadcast_shapes(X.size(), Y.size())
+    return X.new_empty(out_size, dtype=X.dtype)
+
+
+@register_fake("cadence::quantized_mul.per_tensor")
+def quantized_mul_per_tensor_meta(
+    X: torch.Tensor,
+    X_scale: float,
+    X_zero_point: int,
+    Y: torch.Tensor,
+    Y_scale: float,
+    Y_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+
     out_size = torch.broadcast_shapes(X.size(), Y.size())
     return X.new_empty(out_size, dtype=X.dtype)
 
@@ -2268,6 +2305,88 @@ def quantized_relu_asym8u_asym8u_per_tensor_meta(
     out_shift: int,
 ) -> torch.Tensor:
     return input.new_empty(input.size(), dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_max_pool2d_nchw")
+def quantized_max_pool2d_nchw_meta(
+    input: torch.Tensor,
+    kernel_size: list[int],
+    stride: list[int],
+    padding: list[int],
+    dilation: list[int],
+    ceil_mode: bool,
+) -> torch.Tensor:
+    assert (
+        len(kernel_size) == 2
+    ), f"kernel_size must have 2 elements, got {len(kernel_size)}"
+    assert len(stride) == 2, f"stride must have 2 elements, got {len(stride)}"
+    assert len(padding) == 2, f"padding must have 2 elements, got {len(padding)}"
+    assert len(dilation) == 2, f"dilation must have 2 elements, got {len(dilation)}"
+    assert (
+        len(input.size()) == 4
+    ), f"input must be 4D (N, C, H, W), got {len(input.size())}D"
+
+    batch = input.size(0)
+    channels = input.size(1)
+    height_in = input.size(2)
+    width_in = input.size(3)
+
+    height_out_raw = (
+        height_in + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1
+    ) / stride[0] + 1
+    width_out_raw = (
+        width_in + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1
+    ) / stride[1] + 1
+
+    if ceil_mode:
+        height_out = ceil(height_out_raw)
+        width_out = ceil(width_out_raw)
+    else:
+        height_out = int(height_out_raw)
+        width_out = int(width_out_raw)
+
+    return input.new_empty([batch, channels, height_out, width_out], dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_max_pool2d_nhwc")
+def quantized_max_pool2d_nhwc_meta(
+    input: torch.Tensor,
+    kernel_size: list[int],
+    stride: list[int],
+    padding: list[int],
+    dilation: list[int],
+    ceil_mode: bool,
+) -> torch.Tensor:
+    assert (
+        len(kernel_size) == 2
+    ), f"kernel_size must have 2 elements, got {len(kernel_size)}"
+    assert len(stride) == 2, f"stride must have 2 elements, got {len(stride)}"
+    assert len(padding) == 2, f"padding must have 2 elements, got {len(padding)}"
+    assert len(dilation) == 2, f"dilation must have 2 elements, got {len(dilation)}"
+    assert (
+        len(input.size()) == 4
+    ), f"input must be 4D (N, H, W, C), got {len(input.size())}D"
+
+    batch = input.size(0)
+    height_in = input.size(1)
+    width_in = input.size(2)
+    channels = input.size(3)
+
+    height_out_raw = (
+        height_in + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1
+    ) / stride[0] + 1
+    width_out_raw = (
+        width_in + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1
+    ) / stride[1] + 1
+
+    if ceil_mode:
+        height_out = ceil(height_out_raw)
+        width_out = ceil(width_out_raw)
+    else:
+        height_out = int(height_out_raw)
+        width_out = int(width_out_raw)
+
+    return input.new_empty([batch, height_out, width_out, channels], dtype=input.dtype)
 
 
 @register_fake("cadence::fully_connected")

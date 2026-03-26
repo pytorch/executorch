@@ -42,6 +42,7 @@ from torchao.quantization.pt2e.quantizer.quantizer import (
     Q_ANNOTATION_KEY,
     QuantizationAnnotation,
     QuantizationSpec,
+    SharedQuantizationSpec,
 )
 
 # Type alias for graph builder functions.
@@ -206,7 +207,26 @@ QUANTIZER_ANNOTATION_TEST_CASES: list[
         # Use None to skip comparison for bias since it's a DerivedQuantizationSpec
         [None, qconfig_A8W8.input_activation, qconfig_A8W8.weight],
     ),
+    (
+        "default_max_pool2d_A8W8",
+        lambda self: self._build_max_pool2d_graph(),
+        CadenceDefaultQuantizer(),
+        torch.ops.aten.max_pool2d_with_indices.default,
+        # Output uses SharedQuantizationSpec (shares qparams with input)
+        SharedQuantizationSpec,
+        # For max_pool2d: only input_activation (no weights, order-preserving op)
+        [qconfig_A8W8.input_activation],
+    ),
     # CadenceFusedConvReluQuantizer test cases
+    (
+        "fused_conv1d_relu_A8W8sym",
+        lambda self: self._build_conv1d_relu_graph(),
+        CadenceFusedConvReluQuantizer(),
+        torch.ops.aten.relu.default,
+        qconfig_A8W8sym.output_activation,
+        # For fused conv1d+relu: [input_activation, weight] from conv1d node
+        [qconfig_A8W8sym.input_activation, qconfig_A8W8sym.weight],
+    ),
     (
         "fused_conv2d_relu_A8W8sym",
         lambda self: self._build_conv2d_relu_graph(),
@@ -457,6 +477,40 @@ class QuantizerAnnotationTest(unittest.TestCase):
         self.assertEqual(len(addmm_nodes), 1, "Should find exactly one addmm node")
         return gm, addmm_nodes[0]
 
+    def _build_max_pool2d_graph(self) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        """Build a simple graph with a max_pool2d_with_indices operation."""
+        builder = GraphBuilder()
+        # Input shape: (batch, channels, height, width)
+        x = builder.placeholder("x", torch.randn(1, 3, 8, 8))
+        # max_pool2d_with_indices args: (input, kernel_size, stride, padding, dilation, ceil_mode)
+        max_pool = builder.call_operator(
+            op=torch.ops.aten.max_pool2d_with_indices.default,
+            args=(x, [2, 2], [2, 2], [0, 0], [1, 1], False),
+            meta=NodeMetadata(
+                {
+                    "source_fn_stack": [
+                        (
+                            "max_pool2d_with_indices",
+                            torch.ops.aten.max_pool2d_with_indices.default,
+                        )
+                    ]
+                }
+            ),
+        )
+        builder.output([max_pool])
+        gm = builder.get_graph_module()
+
+        max_pool_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.max_pool2d_with_indices.default,
+        )
+        self.assertEqual(
+            len(max_pool_nodes),
+            1,
+            "Should find exactly one max_pool2d_with_indices node",
+        )
+        return gm, max_pool_nodes[0]
+
     def _build_conv2d_relu_graph(
         self,
     ) -> tuple[torch.fx.GraphModule, torch.fx.Node, torch.fx.Node]:
@@ -503,6 +557,52 @@ class QuantizerAnnotationTest(unittest.TestCase):
 
         return gm, relu_nodes[0], conv2d_nodes[0]
 
+    def _build_conv1d_relu_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node, torch.fx.Node]:
+        """Build a graph with a conv1d followed by relu (fused pattern).
+
+        Returns:
+            A tuple of (graph_module, relu_node, conv_node).
+            The relu_node is the target node where the annotation is placed.
+            The conv_node is the input source node whose args contain the quantized inputs.
+        """
+        builder = GraphBuilder()
+        # Input shape: (batch, in_channels, length)
+        x = builder.placeholder("x", torch.randn(1, 3, 10))
+        # Weight shape: (out_channels, in_channels, kernel_size)
+        weight = builder.placeholder("weight", torch.randn(6, 3, 3))
+        conv1d = builder.call_operator(
+            op=torch.ops.aten.conv1d.default,
+            args=(x, weight),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("conv1d", torch.ops.aten.conv1d.default)]}
+            ),
+        )
+        relu = builder.call_operator(
+            op=torch.ops.aten.relu.default,
+            args=(conv1d,),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("relu", torch.ops.aten.relu.default)]}
+            ),
+        )
+        builder.output([relu])
+        gm = builder.get_graph_module()
+
+        relu_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.relu.default,
+        )
+        self.assertEqual(len(relu_nodes), 1, "Should find exactly one relu node")
+
+        conv1d_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.conv1d.default,
+        )
+        self.assertEqual(len(conv1d_nodes), 1, "Should find exactly one conv1d node")
+
+        return gm, relu_nodes[0], conv1d_nodes[0]
+
     @parameterized.expand(QUANTIZER_ANNOTATION_TEST_CASES)
     def test_quantizer_annotation(
         self,
@@ -532,7 +632,13 @@ class QuantizerAnnotationTest(unittest.TestCase):
         # Verify output annotation (always on the output node)
         output_annotation: QuantizationAnnotation = output_node.meta[Q_ANNOTATION_KEY]
         self.assertTrue(output_annotation._annotated)
-        self.assertEqual(output_annotation.output_qspec, expected_output_qspec)
+        if isinstance(expected_output_qspec, type) and issubclass(
+            expected_output_qspec, SharedQuantizationSpec
+        ):
+            # For order-preserving ops like max_pool2d, verify output uses SharedQuantizationSpec
+            self.assertIsInstance(output_annotation.output_qspec, expected_output_qspec)
+        else:
+            self.assertEqual(output_annotation.output_qspec, expected_output_qspec)
 
         # Verify input annotations (on the input source node, which may differ for fused patterns)
         input_annotation: QuantizationAnnotation = input_source_node.meta[
@@ -608,6 +714,8 @@ class QuantizerOpsPreserveTest(unittest.TestCase):
             torch.ops.aten.conv2d.default,
             torch.ops.aten.linear.default,
             torch.ops.aten.matmul.default,
+            torch.ops.aten.max_pool2d_with_indices.default,
+            torch.ops.aten.max_pool2d.default,
             torch.ops.aten.relu.default,
             torch.ops.aten.relu_.default,
         ]

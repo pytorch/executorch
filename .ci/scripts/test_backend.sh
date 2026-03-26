@@ -78,6 +78,12 @@ if [[ "$FLOW" == *arm* ]]; then
     fi
 fi
 
+if [[ "$FLOW" == *openvino* ]]; then
+    # Setup OpenVINO environment
+    source .ci/scripts/setup-openvino.sh --nightly
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_OPENVINO=ON"
+fi
+
 if [[ $IS_MACOS -eq 1 ]]; then
     SETUP_SCRIPT=.ci/scripts/setup-macos.sh
 else
