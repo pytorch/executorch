@@ -62,6 +62,11 @@ xcuserdata/
 /share/
 /version.py
 *_etdump
+/runtime/core/portable_type/c10/CMakeFiles/
+/runtime/core/portable_type/c10/bin/
+/runtime/core/portable_type/c10/Makefile
+/runtime/core/portable_type/c10/cmake_install.cmake
+/runtime/core/portable_type/c10/*.a
 
 # Android
 *.aar
