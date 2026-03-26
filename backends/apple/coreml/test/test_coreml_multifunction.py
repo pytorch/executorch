@@ -5,6 +5,7 @@
 import platform
 import sys
 import unittest
+from typing import Dict, Optional, Tuple
 
 import coremltools as ct
 import torch
@@ -50,75 +51,98 @@ class TestCoreMLMultifunction(unittest.TestCase):
 
     edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
 
-    def _get_compile_specs(self, weight_sharing: bool = True):
-        """Get compile specs for multifunction models."""
+    class SimpleModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(16, 16)
+
+        def forward(self, x):
+            return self.linear(x)
+
+    def _get_compile_specs(
+        self,
+        strategy: Optional[MULTIMETHOD_WEIGHT_SHARING_STRATEGY] = None,
+    ):
+        """Get compile specs, optionally with a weight sharing strategy."""
         compile_specs = CoreMLBackend.generate_compile_specs(
             minimum_deployment_target=ct.target.iOS18,
             compute_precision=ct.precision.FLOAT32,
             compute_unit=ct.ComputeUnit.CPU_ONLY,
             model_type=CoreMLBackend.MODEL_TYPE.MODEL,
         )
-        if weight_sharing:
+        if strategy is not None:
             compile_specs.append(
                 CoreMLBackend.generate_multimethod_weight_sharing_strategy_compile_spec(
-                    MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL
+                    strategy
                 )
             )
         return compile_specs
 
-    def test_multifunction_simple_model(self):
-        """Test exporting a simple model with multiple methods (forward and prefill)."""
+    def _export_and_lower(
+        self,
+        model: torch.nn.Module,
+        method_inputs: Dict[str, Tuple],
+        strategy: Optional[MULTIMETHOD_WEIGHT_SHARING_STRATEGY] = None,
+        constant_methods: Optional[Dict[str, int]] = None,
+    ):
+        """Export methods, partition, and lower to ExecuTorch program.
 
-        class SimpleModel(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.linear = torch.nn.Linear(16, 16)
+        Args:
+            model: The PyTorch module to export.
+            method_inputs: Dict mapping method name to example input tuple.
+            strategy: Weight sharing strategy, or None for no strategy spec.
+            constant_methods: Optional constant methods metadata dict.
 
-            def forward(self, x):
-                return self.linear(x)
+        Returns:
+            Tuple of (et_program, edge_manager).
+        """
+        exported_programs = {
+            name: torch.export.export(model, inputs)
+            for name, inputs in method_inputs.items()
+        }
 
-        model = SimpleModel()
-        model.eval()
-
-        # Create example inputs for two different sequence lengths
-        decode_inputs = (torch.randn(1, 1, 16),)  # seqlen=1
-        prefill_inputs = (torch.randn(1, 8, 16),)  # seqlen=8
-
-        # Export both methods
-        decode_ep = torch.export.export(model, decode_inputs)
-        prefill_ep = torch.export.export(model, prefill_inputs)
-
-        # Create partitioner with multifunction support
         partitioner = CoreMLPartitioner(
-            compile_specs=self._get_compile_specs(weight_sharing=True),
+            compile_specs=self._get_compile_specs(strategy=strategy),
         )
 
-        # Lower to edge with multiple methods
+        kwargs = {}
+        if constant_methods is not None:
+            kwargs["constant_methods"] = constant_methods
+
         edge_manager = to_edge_transform_and_lower(
-            {"forward": decode_ep, "prefill": prefill_ep},
+            exported_programs,
             partitioner=[partitioner],
             compile_config=self.edge_compile_config,
+            **kwargs,
         )
 
-        # Verify both methods exist
-        method_names = edge_manager.methods
-        self.assertIn("forward", method_names)
-        self.assertIn("prefill", method_names)
-
-        # Convert to ExecuTorch
         et_program = edge_manager.to_executorch()
+        return et_program, edge_manager
+
+    def test_multifunction_simple_model(self):
+        """Test exporting a simple model with multiple methods (forward and prefill)."""
+        model = self.SimpleModel()
+        model.eval()
+
+        decode_inputs = (torch.randn(1, 1, 16),)
+        prefill_inputs = (torch.randn(1, 8, 16),)
+
+        et_program, edge_manager = self._export_and_lower(
+            model,
+            {"forward": decode_inputs, "prefill": prefill_inputs},
+            strategy=MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL,
+        )
+
+        self.assertIn("forward", edge_manager.methods)
+        self.assertIn("prefill", edge_manager.methods)
 
         if _TEST_RUNTIME:
-            # Test runtime execution
             runtime = Runtime.get()
             program = runtime.load_program(et_program.buffer)
 
-            # Check both methods are available
-            available_methods = program.method_names
-            self.assertIn("forward", available_methods)
-            self.assertIn("prefill", available_methods)
+            self.assertIn("forward", program.method_names)
+            self.assertIn("prefill", program.method_names)
 
-            # Test forward (decode) method
             forward_method = program.load_method("forward")
             decode_output = forward_method.execute(decode_inputs)
             expected_decode = model(*decode_inputs)
@@ -126,7 +150,6 @@ class TestCoreMLMultifunction(unittest.TestCase):
                 torch.allclose(decode_output[0], expected_decode, atol=1e-4, rtol=1e-4)
             )
 
-            # Test prefill method
             prefill_method = program.load_method("prefill")
             prefill_output = prefill_method.execute(prefill_inputs)
             expected_prefill = model(*prefill_inputs)
@@ -147,10 +170,7 @@ class TestCoreMLMultifunction(unittest.TestCase):
                 self.cache_len = cache_len
 
             def forward(self, x, cache):
-                # x: [batch, seqlen, hidden_dim]
-                # cache: [batch, cache_len, hidden_dim]
                 out = self.linear(x)
-                # Simple cache update simulation
                 new_cache = torch.cat([cache[:, 1:, :], out[:, -1:, :]], dim=1)
                 return out, new_cache
 
@@ -159,38 +179,25 @@ class TestCoreMLMultifunction(unittest.TestCase):
         model = ModelWithCache(hidden_dim, cache_len)
         model.eval()
 
-        # Decode: seqlen=1
         decode_inputs = (
             torch.randn(1, 1, hidden_dim),
             torch.randn(1, cache_len, hidden_dim),
         )
-
-        # Prefill: seqlen=8
         prefill_inputs = (
             torch.randn(1, 8, hidden_dim),
             torch.randn(1, cache_len, hidden_dim),
         )
 
-        decode_ep = torch.export.export(model, decode_inputs)
-        prefill_ep = torch.export.export(model, prefill_inputs)
-
-        partitioner = CoreMLPartitioner(
-            compile_specs=self._get_compile_specs(weight_sharing=True),
+        et_program, _ = self._export_and_lower(
+            model,
+            {"forward": decode_inputs, "prefill": prefill_inputs},
+            strategy=MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL,
         )
-
-        edge_manager = to_edge_transform_and_lower(
-            {"forward": decode_ep, "prefill": prefill_ep},
-            partitioner=[partitioner],
-            compile_config=self.edge_compile_config,
-        )
-
-        et_program = edge_manager.to_executorch()
 
         if _TEST_RUNTIME:
             runtime = Runtime.get()
             program = runtime.load_program(et_program.buffer)
 
-            # Test decode
             forward_method = program.load_method("forward")
             decode_output = forward_method.execute(decode_inputs)
             expected_out, expected_cache = model(*decode_inputs)
@@ -201,7 +208,6 @@ class TestCoreMLMultifunction(unittest.TestCase):
                 torch.allclose(decode_output[1], expected_cache, atol=1e-4, rtol=1e-4)
             )
 
-            # Test prefill
             prefill_method = program.load_method("prefill")
             prefill_output = prefill_method.execute(prefill_inputs)
             expected_out, expected_cache = model(*prefill_inputs)
@@ -214,50 +220,20 @@ class TestCoreMLMultifunction(unittest.TestCase):
 
     def test_multifunction_without_weight_sharing(self):
         """Test multifunction export without weight sharing."""
-
-        class SimpleModel(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.linear = torch.nn.Linear(16, 16)
-
-            def forward(self, x):
-                return self.linear(x)
-
-        model = SimpleModel()
+        model = self.SimpleModel()
         model.eval()
 
         decode_inputs = (torch.randn(1, 1, 16),)
         prefill_inputs = (torch.randn(1, 8, 16),)
 
-        decode_ep = torch.export.export(model, decode_inputs)
-        prefill_ep = torch.export.export(model, prefill_inputs)
-
-        # Create partitioner without weight sharing
-        compile_specs = CoreMLBackend.generate_compile_specs(
-            minimum_deployment_target=ct.target.iOS18,
-            compute_precision=ct.precision.FLOAT32,
-            compute_unit=ct.ComputeUnit.CPU_ONLY,
-            model_type=CoreMLBackend.MODEL_TYPE.MODEL,
-        )
-        compile_specs.append(
-            CoreMLBackend.generate_multimethod_weight_sharing_strategy_compile_spec(
-                MULTIMETHOD_WEIGHT_SHARING_STRATEGY.DISABLED
-            )
+        et_program, edge_manager = self._export_and_lower(
+            model,
+            {"forward": decode_inputs, "prefill": prefill_inputs},
+            strategy=MULTIMETHOD_WEIGHT_SHARING_STRATEGY.DISABLED,
         )
 
-        partitioner = CoreMLPartitioner(compile_specs=compile_specs)
-
-        edge_manager = to_edge_transform_and_lower(
-            {"forward": decode_ep, "prefill": prefill_ep},
-            partitioner=[partitioner],
-            compile_config=self.edge_compile_config,
-        )
-
-        method_names = edge_manager.methods
-        self.assertIn("forward", method_names)
-        self.assertIn("prefill", method_names)
-
-        et_program = edge_manager.to_executorch()
+        self.assertIn("forward", edge_manager.methods)
+        self.assertIn("prefill", edge_manager.methods)
 
         if _TEST_RUNTIME:
             runtime = Runtime.get()
@@ -272,29 +248,12 @@ class TestCoreMLMultifunction(unittest.TestCase):
 
     def test_multifunction_with_constant_methods(self):
         """Test multifunction export with constant methods (metadata)."""
-
-        class SimpleModel(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.linear = torch.nn.Linear(16, 16)
-
-            def forward(self, x):
-                return self.linear(x)
-
-        model = SimpleModel()
+        model = self.SimpleModel()
         model.eval()
 
         decode_inputs = (torch.randn(1, 1, 16),)
         prefill_inputs = (torch.randn(1, 8, 16),)
 
-        decode_ep = torch.export.export(model, decode_inputs)
-        prefill_ep = torch.export.export(model, prefill_inputs)
-
-        partitioner = CoreMLPartitioner(
-            compile_specs=self._get_compile_specs(weight_sharing=True),
-        )
-
-        # Add constant methods (metadata)
         constant_methods = {
             "vocab_size": 32000,
             "hidden_dim": 16,
@@ -302,20 +261,17 @@ class TestCoreMLMultifunction(unittest.TestCase):
             "prefill_seqlen": 8,
         }
 
-        edge_manager = to_edge_transform_and_lower(
-            {"forward": decode_ep, "prefill": prefill_ep},
-            partitioner=[partitioner],
+        et_program, _ = self._export_and_lower(
+            model,
+            {"forward": decode_inputs, "prefill": prefill_inputs},
+            strategy=MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL,
             constant_methods=constant_methods,
-            compile_config=self.edge_compile_config,
         )
-
-        et_program = edge_manager.to_executorch()
 
         if _TEST_RUNTIME:
             runtime = Runtime.get()
             program = runtime.load_program(et_program.buffer)
 
-            # Check all methods are available (executable + constant)
             available_methods = program.method_names
             self.assertIn("forward", available_methods)
             self.assertIn("prefill", available_methods)
@@ -324,6 +280,46 @@ class TestCoreMLMultifunction(unittest.TestCase):
             self.assertIn("decode_seqlen", available_methods)
             self.assertIn("prefill_seqlen", available_methods)
 
+    def test_multifunction_one_blob_simple_model(self):
+        """Test exporting a simple model using ONE_BLOB weight sharing strategy."""
+        model = self.SimpleModel()
+        model.eval()
+
+        decode_inputs = (torch.randn(1, 1, 16),)
+        prefill_inputs = (torch.randn(1, 8, 16),)
+
+        et_program, edge_manager = self._export_and_lower(
+            model,
+            {"forward": decode_inputs, "prefill": prefill_inputs},
+            strategy=MULTIMETHOD_WEIGHT_SHARING_STRATEGY.ONE_BLOB,
+        )
+
+        self.assertIn("forward", edge_manager.methods)
+        self.assertIn("prefill", edge_manager.methods)
+
+        if _TEST_RUNTIME:
+            runtime = Runtime.get()
+            program = runtime.load_program(et_program.buffer)
+
+            self.assertIn("forward", program.method_names)
+            self.assertIn("prefill", program.method_names)
+
+            forward_method = program.load_method("forward")
+            decode_output = forward_method.execute(decode_inputs)
+            expected_decode = model(*decode_inputs)
+            self.assertTrue(
+                torch.allclose(decode_output[0], expected_decode, atol=1e-4, rtol=1e-4)
+            )
+
+            prefill_method = program.load_method("prefill")
+            prefill_output = prefill_method.execute(prefill_inputs)
+            expected_prefill = model(*prefill_inputs)
+            self.assertTrue(
+                torch.allclose(
+                    prefill_output[0], expected_prefill, atol=1e-4, rtol=1e-4
+                )
+            )
+
 
 if __name__ == "__main__":
     test_runner = TestCoreMLMultifunction()
@@ -331,4 +327,5 @@ if __name__ == "__main__":
     test_runner.test_multifunction_with_kv_cache()
     test_runner.test_multifunction_without_weight_sharing()
     test_runner.test_multifunction_with_constant_methods()
+    test_runner.test_multifunction_one_blob_simple_model()
     print("All tests passed!")
