@@ -1,0 +1,50 @@
+============================================================
+  ResNet18 Output Comparison: Generic vs Optimized
+============================================================
+  Generic log : resnet18_generic.log
+  Optimized log: resnet18_quant_64k_mem_model.log
+  Output size  : 1000 values
+  Quant step   : 0.0724200
+============================================================
+
+Category                  Count   Percent
+------------------------------------------
+Exact match                 400     40.0%
+Off-by-1 level              474     47.4%
+Off-by-2 levels             108     10.8%
+>2 levels                    18      1.8%
+Total                      1000
+
+  Max absolute diff : 0.2897000  (4.0 levels)  at index 867
+  Mean absolute diff: 0.0539582  (0.75 levels)
+
+  Top 10 largest differences:
+    [ 867]  gen=  2.897080  opt=  3.186780  diff=0.289700 (4.0 levels)
+    [ 920]  gen=  9.922490  opt= 10.139800  diff=0.217310 (3.0 levels)
+    [ 644]  gen=  9.198220  opt=  9.415500  diff=0.217280 (3.0 levels)
+    [ 475]  gen=  2.100380  opt=  2.317660  diff=0.217280 (3.0 levels)
+    [ 557]  gen=  3.114360  opt=  3.331640  diff=0.217280 (3.0 levels)
+    [ 581]  gen=  2.607370  opt=  2.824650  diff=0.217280 (3.0 levels)
+    [ 704]  gen=  2.100380  opt=  2.317660  diff=0.217280 (3.0 levels)
+    [ 864]  gen= -1.738250  opt= -1.520970  diff=0.217280 (3.0 levels)
+    [ 908]  gen=  3.911050  opt=  4.128330  diff=0.217280 (3.0 levels)
+    [ 627]  gen= -0.434561  opt= -0.217281  diff=0.217280 (3.0 levels)
+
+============================================================
+  Top-K Classification Comparison
+============================================================
+  Generic  Top-1: class  920  (score 9.9225)
+  Optimized Top-1: class  920  (score 10.1398)
+  Top-1 match: YES
+  Generic  Top-5: [920, 530, 644, 916, 409]
+  Optimized Top-5: [920, 530, 644, 916, 818]
+  Top-5 overlap : 4/5
+
+============================================================
+  Performance (PERF_LOG cycles)
+============================================================
+  Generic  conv2d total: 2,128,989,606 cycles  (20 layers)
+  Optimized conv2d total:   89,293,898 cycles  (20 layers)
+  Speedup: 23.8x
+
+============================================================

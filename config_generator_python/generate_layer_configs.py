@@ -20,6 +20,9 @@ Usage:
 
     # From .pte extraction JSON
     python generate_layer_configs.py layers_config.json --dram0 32768 --dram1 32768
+
+    # Generate all configs in cache mode (appends _cache to every kernel name)
+    python generate_layer_configs.py resnet_conv_list.csv --output conv_layer_configs_cache.h --dram0 64000 --dram1 64000 --cache-mode
 """
 
 import sys
@@ -370,6 +373,7 @@ def calculate_layer_config(layer, dram0_size, dram1_size):
             'stride_x': stride_w, 'stride_y': stride_h, 'accum_shift': 8, 'relu_max': 4000,
             'relu_min': 0, 'output_shift': 11, 'output_scale': 0, 'dilation': 1,
             'kernel_w': kernel_w, 'kernel_h': kernel_h, 'padding': pad_w, 'flags': 0,
+            'input_zero_point': 0,
             # Generate unique config key: ic_ih_iw_oc_kh_kw_oh_ow_sy_sx_pad_dil
             'config_key': f"{input_c}_{input_h}_{input_w}_{output_c}_{kernel_h}_{kernel_w}_{output_h}_{output_w}_{stride_h}_{stride_w}_{pad_w}_1",
         }
@@ -477,6 +481,7 @@ def calculate_layer_config(layer, dram0_size, dram1_size):
         'kernel_h': kernel_h,
         'padding': pad_w,  # Symmetric padding
         'flags': buffer_sizes.get('FLAGS', 0),
+        'input_zero_point': 0,
     }
     
     # Generate unique config key based on layer parameters
@@ -486,7 +491,7 @@ def calculate_layer_config(layer, dram0_size, dram1_size):
     
     return config
 
-def generate_c_header(configs, output_file, dram0_size=32768, dram1_size=32768):
+def generate_c_header(configs, output_file, dram0_size=32768, dram1_size=32768, cache_mode=False):
     """
     Generate C header file with lookup table
     
@@ -614,6 +619,7 @@ typedef struct {
     int output_shift;       // Output quantization shift
     int output_scale;       // Output scale factor
     int flags;              // Convolution flags
+    int input_zero_point;   // Input zero point for padding fill
     
 } conv_layer_config_t;
 
@@ -624,8 +630,10 @@ typedef struct {
         f.write(f"#define NUM_CONV_LAYERS {len(configs)}\n\n")
         
         # Generate IDMA buffer size macros
-        f.write(f" #define IDMA_BUFFER_SIZE_DRAM0 ({dram0_size}) // {dram0_size // 1024} KB for DRAM0\n")
-        f.write(f" #define IDMA_BUFFER_SIZE_DRAM1 ({dram1_size}) // {dram1_size // 1024} KB for DRAM1\n\n")
+        _dram0_macro = 0 if cache_mode else dram0_size
+        _dram1_macro = 0 if cache_mode else dram1_size
+        f.write(f" #define IDMA_BUFFER_SIZE_DRAM0 ({_dram0_macro}) // {_dram0_macro // 1024} KB for DRAM0\n")
+        f.write(f" #define IDMA_BUFFER_SIZE_DRAM1 ({_dram1_macro}) // {_dram1_macro // 1024} KB for DRAM1\n\n")
         
         f.write("// Layer configuration lookup table\n")
         f.write("static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {\n")
@@ -744,6 +752,7 @@ typedef struct {
             f.write(f"        .output_shift = {config['output_shift']},\n")
             f.write(f"        .output_scale = {config['output_scale']},\n")
             f.write(f"        .flags = {config['flags']},\n")
+            f.write(f"        .input_zero_point = {config['input_zero_point']},\n")
             f.write("    },\n")
         
         f.write("};\n\n")
@@ -865,6 +874,8 @@ def main():
                        help=f'DRAM0 size in bytes (default: {DRAM_SIZE_0})')
     parser.add_argument('--dram1', type=int, default=DRAM_SIZE_1,
                        help=f'DRAM1 size in bytes (default: {DRAM_SIZE_1})')
+    parser.add_argument('--cache-mode', action='store_true', default=False,
+                       help='Force all configs to cache mode: appends _cache to every kernel name')
     
     args = parser.parse_args()
     
@@ -914,8 +925,15 @@ def main():
     
     print(f"\nGenerated {len(configs)} valid configurations")
     
+    # Apply cache mode: append _cache to every kernel name
+    if args.cache_mode:
+        for config in configs:
+            if not config['kernel_name'].endswith('_cache'):
+                config['kernel_name'] += '_cache'
+        print(f"Cache mode enabled: all kernel names suffixed with _cache")
+    
     # Generate C header
-    generate_c_header(configs, args.output, args.dram0, args.dram1)
+    generate_c_header(configs, args.output, args.dram0, args.dram1, args.cache_mode)
     
     print(f"\nSuccess! Generated {args.output}")
     print(f"Use in C code:")
