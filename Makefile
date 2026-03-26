@@ -91,7 +91,7 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral_realtime-cuda voxtral_realtime-cpu voxtral_realtime-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu llava-cpu gemma3-cuda gemma3-cpu qwen3_5_moe-cuda clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral_realtime-cuda voxtral_realtime-cpu voxtral_realtime-metal voxtral_tts-cpu voxtral_tts-metal whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu llava-cpu gemma3-cuda gemma3-cpu qwen3_5_moe-cuda clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
@@ -101,6 +101,8 @@ help:
 	@echo "  voxtral_realtime-cuda - Build Voxtral Realtime runner with CUDA backend"
 	@echo "  voxtral_realtime-cpu - Build Voxtral Realtime runner with CPU backend"
 	@echo "  voxtral_realtime-metal - Build Voxtral Realtime runner with Metal backend (macOS only)"
+	@echo "  voxtral_tts-cpu     - Build Voxtral TTS runner with XNNPACK (CPU)"
+	@echo "  voxtral_tts-metal   - Build Voxtral TTS runner with Metal backend (macOS only)"
 	@echo "  whisper-cuda        - Build Whisper runner with CUDA backend"
 	@echo "  whisper-cuda-debug  - Build Whisper runner with CUDA backend (debug mode)"
 	@echo "  whisper-cpu         - Build Whisper runner with CPU backend"
@@ -294,6 +296,24 @@ voxtral_realtime-cuda:
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner"
+
+voxtral_tts-cpu:
+	@echo "==> Building and installing ExecuTorch..."
+	cmake --workflow --preset llm-release
+	@echo "==> Building Voxtral TTS runner (CPU/XNNPACK)..."
+	cd examples/models/voxtral_tts && cmake --workflow --preset voxtral-tts-cpu
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/voxtral_tts/voxtral_tts_runner"
+
+voxtral_tts-metal:
+	@echo "==> Building and installing ExecuTorch with Metal (stats enabled)..."
+	cmake --workflow --preset llm-metal-stats
+	@echo "==> Building Voxtral TTS runner with Metal..."
+	cd examples/models/voxtral_tts && cmake --workflow --preset voxtral-tts-metal
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/voxtral_tts/voxtral_tts_runner"
 
 silero-vad-cpu:
 	@echo "==> Building and installing ExecuTorch..."

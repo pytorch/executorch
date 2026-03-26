@@ -216,6 +216,18 @@ case "$HF_MODEL" in
     AUDIO_FILE="test_audio.wav"
     IMAGE_PATH=""
     ;;
+  mistralai/Voxtral-4B-TTS-2603)
+    MODEL_NAME="voxtral_tts"
+    RUNNER_TARGET="voxtral_tts_runner"
+    RUNNER_PATH="voxtral_tts"
+    EXPECTED_OUTPUT=""
+    PREPROCESSOR=""
+    TOKENIZER_URL="https://huggingface.co/mistralai/Voxtral-4B-TTS-2603/resolve/main" # @lint-ignore
+    TOKENIZER_FILE="tekken.json"
+    AUDIO_URL=""
+    AUDIO_FILE=""
+    IMAGE_PATH=""
+    ;;
   SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4)
     MODEL_NAME="qwen3_5_moe"
     RUNNER_TARGET="qwen3_5_moe_runner"
@@ -244,7 +256,7 @@ echo "::group::Prepare $MODEL_NAME Artifacts"
 
 
 # Download tokenizer files (skip for models that bundle tokenizer in export or do not use one)
-if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ] && [ "$MODEL_NAME" != "sortformer" ] && [ "$MODEL_NAME" != "dinov2" ] && [ "$MODEL_NAME" != "qwen3_5_moe" ]; then
+if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ] && [ "$MODEL_NAME" != "voxtral_tts" ] && [ "$MODEL_NAME" != "sortformer" ] && [ "$MODEL_NAME" != "dinov2" ] && [ "$MODEL_NAME" != "qwen3_5_moe" ]; then
   if [ "$TOKENIZER_FILE" != "" ]; then
     curl -L $TOKENIZER_URL/$TOKENIZER_FILE -o $MODEL_DIR/$TOKENIZER_FILE
   else
@@ -372,6 +384,10 @@ EOF
       RUNNER_ARGS="$RUNNER_ARGS --streaming"
     fi
     ;;
+  voxtral_tts)
+    RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --codec_path ${MODEL_DIR}/codec.pte --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --voice_path ${MODEL_DIR}/voice.bin --prompt Hello --output_path ${MODEL_DIR}/output.wav --max_tokens 50 --temperature 0"
+    VOXTRAL_TTS_WAV="${MODEL_DIR}/output.wav"
+    ;;
 esac
 
 OUTPUT=$(eval $RUNNER_BIN $RUNNER_ARGS 2>&1)
@@ -396,6 +412,23 @@ if [ -n "$EXPECTED_OUTPUT" ]; then
   fi
 else
   echo "SUCCESS: Runner completed successfully"
+fi
+
+# Validate TTS WAV output if applicable
+if [ -n "${VOXTRAL_TTS_WAV:-}" ]; then
+  echo "Validating WAV output: ${VOXTRAL_TTS_WAV}"
+  python3 -c "
+import wave, numpy as np, sys
+with wave.open('${VOXTRAL_TTS_WAV}') as f:
+    sr = f.getframerate()
+    data = np.frombuffer(f.readframes(f.getnframes()), dtype=np.int16).astype(np.float32) / 32767
+duration = len(data) / sr
+rms = np.sqrt(np.mean(data**2))
+print(f'WAV: {duration:.1f}s, {sr}Hz, rms={rms:.4f}')
+assert duration > 0.5, f'Audio too short: {duration:.1f}s'
+assert rms > 0.001, f'Audio is silent: rms={rms}'
+print('WAV validation: PASS')
+"
 fi
 echo "::endgroup::"
 
