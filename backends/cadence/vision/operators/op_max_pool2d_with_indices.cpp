@@ -120,6 +120,9 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
         out_height, out_width, padded_width, padded_height,
         out_pitch_width, out_pitch_height, kernel_height, kernel_width);
 
+    // Writeback output from cache to system memory for DMA coherency
+    xthal_dcache_region_writeback(ptr_out, sizeof(float) * out.numel());
+
     TIME_END(maxpool);
     TIME_DISPLAY(maxpool, in.numel(), "floats");
 

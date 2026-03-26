@@ -164,6 +164,11 @@ Tensor& add_out(
 
         // Load first chunk (both inputs) into buffer 0 via ch0
         size_t current_chunk = (numel < chunk_size) ? numel : chunk_size;
+
+        // Writeback inputs from cache to system memory for DMA coherency
+        xthal_dcache_region_writeback((void*)a_data, FLT32_SIZE * numel);
+        xthal_dcache_region_writeback((void*)b_data, FLT32_SIZE * numel);
+
         dma_1dm(0, (void*)ptr_a, inp_a_buff[pp_swap], FLT32_SIZE * current_chunk);
         dma_1dm(0, (void*)ptr_b, inp_b_buff[pp_swap], FLT32_SIZE * current_chunk);
 
@@ -207,6 +212,9 @@ Tensor& add_out(
         dma_1dm(1, out_buff[pp_swap], (void*)ptr_out, FLT32_SIZE * current_chunk);
         idma_hw_wait_all(1);
         
+        // Invalidate cache for DMA-written output so next operator sees fresh data
+        xthal_dcache_region_invalidate(out_data, FLT32_SIZE * numel);
+        
         TIME_END(add_float);
         TIME_DISPLAY(add_float, numel, "elements (DMA ping-pong)");
       } 
@@ -241,13 +249,19 @@ Tensor& add_out(
         }
         idma_hw_wait_all(1);
         
+        // Invalidate cache for DMA-written output so next operator sees fresh data
+        xthal_dcache_region_invalidate(out_data, FLT32_SIZE * numel);
+        
         TIME_END(add_float);
         TIME_DISPLAY(add_float, numel, "elements (DMA ping-process-pong)");
       }
     } else {
       // Fallback: use hardware-optimized vector addition directly without DMA
       rvaddf(out_data, a_data, b_data, (int)numel);
-      
+
+      // Writeback output from cache to system memory for DMA coherency
+      xthal_dcache_region_writeback(out_data, FLT32_SIZE * numel);
+
       TIME_END(add_float);
       TIME_DISPLAY(add_float, numel, "elements (HW-optimized, no DMA)");
     }

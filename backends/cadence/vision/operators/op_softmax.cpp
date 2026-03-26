@@ -196,6 +196,9 @@ Tensor& _softmax_out(
       dma_1dm(1, out_buff[pp_swap], ptr_out, 4 * stride);
       idma_hw_wait_all(1);
 
+      // Invalidate cache for DMA-written output so next operator sees fresh data
+      xthal_dcache_region_invalidate(out_data, 4 * in.numel());
+
       TIME_END(softmax);
       TIME_DISPLAY(softmax, in.numel(), "floats");
 
@@ -229,6 +232,9 @@ Tensor& _softmax_out(
 		    ptr_out += outer_stride;
 	    }
       idma_hw_wait_all(1);
+
+      // Invalidate cache for DMA-written output so next operator sees fresh data
+      xthal_dcache_region_invalidate(out_data, 4 * in.numel());
 
       TIME_END(softmax);
       TIME_DISPLAY(softmax, in.numel(), "floats");
@@ -302,6 +308,9 @@ Tensor& _softmax_out(
         ptr_permute_vec,
         num_out_dims,
         num_inp_dims);
+
+      // Writeback output from cache to system memory for DMA coherency
+      xthal_dcache_region_writeback(out_data, sizeof(float) * in.numel());
 
       TIME_END(softmax);
       TIME_DISPLAY(softmax, in.numel(), "floats");

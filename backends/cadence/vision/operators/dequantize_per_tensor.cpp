@@ -124,6 +124,10 @@ Tensor& dequantize_per_tensor_out(
 
         // Load first chunk via ch0
         size_t current_chunk = (numel < chunk_size) ? numel : chunk_size;
+
+        // Writeback input from cache to system memory for DMA coherency
+        xthal_dcache_region_writeback((void*)ptr_inp, sizeof(int8_t) * numel);
+
         dma_1dm(0, ptr_in, inp_buff[pp_swap], sizeof(int8_t) * current_chunk);
 
         size_t remaining = numel - current_chunk;
@@ -163,6 +167,9 @@ Tensor& dequantize_per_tensor_out(
         dma_1dm(1, out_buff[pp_swap], ptr_out, FLT32_SIZE * current_chunk);
         idma_hw_wait_all(1);
         
+        // Invalidate cache for DMA-written output so next operator sees fresh data
+        xthal_dcache_region_invalidate(out_data, FLT32_SIZE * numel);
+        
         TIME_END(dequantize_asym8s);
         TIME_DISPLAY(dequantize_asym8s, numel, "elements (DMA ping-pong)");
       } 
@@ -194,6 +201,9 @@ Tensor& dequantize_per_tensor_out(
         }
         idma_hw_wait_all(1);
         
+        // Invalidate cache for DMA-written output so next operator sees fresh data
+        xthal_dcache_region_invalidate(out_data, FLT32_SIZE * numel);
+        
         TIME_END(dequantize_asym8s);
         TIME_DISPLAY(dequantize_asym8s, numel, "elements (DMA ping-process-pong)");
       }
@@ -202,6 +212,10 @@ Tensor& dequantize_per_tensor_out(
     } else {
       // No DMA: use hardware function on full tensor at once
       dequantize_asym8s_f32(out_data, input_data, (float)scale, (int)zero_point, (int)numel);
+
+      // Writeback output from cache to system memory for DMA coherency
+      xthal_dcache_region_writeback(out_data, sizeof(float) * numel);
+
       TIME_END(dequantize_asym8s);
       TIME_DISPLAY(dequantize_asym8s, numel, "elements (HW-optimized, no DMA)");
     }

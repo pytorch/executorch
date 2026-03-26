@@ -502,13 +502,126 @@ void quantized_conv2d_nchw(
         config->output_shift = best_shift;
         config->output_scale = raw_scale;
 
+        // print all elements of config for debugging
+        printf("=== conv_layer_config_t dump ===\n");
+        printf("  layer_id:          %d\n", config->layer_id);
+        printf("  layer_name:        %s\n", config->layer_name ? config->layer_name : "(null)");
+        printf("  kernel_name:       %s\n", config->kernel_name ? config->kernel_name : "(null)");
+        printf("  config_key:        %s\n", config->config_key ? config->config_key : "(null)");
+        printf("  --- Source (DRAM) ---\n");
+        printf("  src_dim1_size:     %d\n", config->src_dim1_size);
+        printf("  src_dim2_size:     %d\n", config->src_dim2_size);
+        printf("  src_dim3_size:     %d\n", config->src_dim3_size);
+        printf("  src_dim1_pitch:    %d\n", config->src_dim1_pitch);
+        printf("  src_dim2_pitch:    %d\n", config->src_dim2_pitch);
+        printf("  --- Destination (DRAM) ---\n");
+        printf("  dst_dim1_size:     %d\n", config->dst_dim1_size);
+        printf("  dst_dim2_size:     %d\n", config->dst_dim2_size);
+        printf("  dst_dim3_size:     %d\n", config->dst_dim3_size);
+        printf("  dst_dim1_pitch:    %d\n", config->dst_dim1_pitch);
+        printf("  dst_dim2_pitch:    %d\n", config->dst_dim2_pitch);
+        printf("  --- Input tile (local memory) ---\n");
+        printf("  in_dim1_size:      %d\n", config->in_dim1_size);
+        printf("  in_dim1_pitch:     %d\n", config->in_dim1_pitch);
+        printf("  in_dim2_size:      %d\n", config->in_dim2_size);
+        printf("  in_dim2_pitch:     %d\n", config->in_dim2_pitch);
+        printf("  in_dim1_edge1:     %d\n", config->in_dim1_edge1);
+        printf("  in_dim1_edge2:     %d\n", config->in_dim1_edge2);
+        printf("  in_dim2_edge1:     %d\n", config->in_dim2_edge1);
+        printf("  in_dim2_edge2:     %d\n", config->in_dim2_edge2);
+        printf("  in_dim3_edge1:     %d\n", config->in_dim3_edge1);
+        printf("  in_dim3_edge2:     %d\n", config->in_dim3_edge2);
+        printf("  in_data_offset:    %d\n", config->in_data_offset);
+        printf("  in_rows_firstdma:  %d\n", config->in_rows_firstdma);
+        printf("  --- Output tile (local memory) ---\n");
+        printf("  out_dim1_size:     %d\n", config->out_dim1_size);
+        printf("  out_dim1_pitch:    %d\n", config->out_dim1_pitch);
+        printf("  out_dim2_size:     %d\n", config->out_dim2_size);
+        printf("  out_dim2_pitch:    %d\n", config->out_dim2_pitch);
+        printf("  out_dim3_size:     %d\n", config->out_dim3_size);
+        printf("  --- Coefficient tile ---\n");
+        printf("  coeff_dim1_size:   %d\n", config->coeff_dim1_size);
+        printf("  coeff_dim2_size:   %d\n", config->coeff_dim2_size);
+        printf("  coeff_dim3_size:   %d\n", config->coeff_dim3_size);
+        printf("  coeff_dim4_size:   %d\n", config->coeff_dim4_size);
+        printf("  coeff_dim1_pitch:  %d\n", config->coeff_dim1_pitch);
+        printf("  coeff_dim2_pitch:  %d\n", config->coeff_dim2_pitch);
+        printf("  coeff_dim3_pitch:  %d\n", config->coeff_dim3_pitch);
+        printf("  --- Bias ---\n");
+        printf("  bias_dim1_size:    %d\n", config->bias_dim1_size);
+        printf("  bias_dim2_size:    %d\n", config->bias_dim2_size);
+        printf("  --- Output scale ---\n");
+        printf("  outscale_dim1_size:%d\n", config->outscale_dim1_size);
+        printf("  outscale_dim2_size:%d\n", config->outscale_dim2_size);
+        printf("  --- Buffer sizes (bytes) ---\n");
+        printf("  input_buffer_size: %d\n", config->input_buffer_size);
+        printf("  coeff_buffer_size: %d\n", config->coeff_buffer_size);
+        printf("  output_buffer_size:%d\n", config->output_buffer_size);
+        printf("  bias_buffer_size:  %d\n", config->bias_buffer_size);
+        printf("  outscale_buf_size: %d\n", config->outscale_buffer_size);
+        printf("  --- Buffer DRAM placement ---\n");
+        printf("  input_ping_dram:   %d\n", config->input_ping_dram);
+        printf("  input_pong_dram:   %d\n", config->input_pong_dram);
+        printf("  coeff_dram:        %d\n", config->coeff_dram);
+        printf("  output_ping_dram:  %d\n", config->output_ping_dram);
+        printf("  output_pong_dram:  %d\n", config->output_pong_dram);
+        printf("  bias_dram:         %d\n", config->bias_dram);
+        printf("  outscale_dram:     %d\n", config->outscale_dram);
+        printf("  --- Tiling parameters ---\n");
+        printf("  n_tile_size:       %d\n", config->n_tile_size);
+        printf("  n_tiles:           %d\n", config->n_tiles);
+        printf("  n_tile_size_last:  %d\n", config->n_tile_size_last);
+        printf("  height_tiles:      %d\n", config->height_tiles);
+        printf("  output_rows:       %d\n", config->output_rows);
+        printf("  input_rows:        %d\n", config->input_rows);
+        printf("  --- Convolution parameters ---\n");
+        printf("  kernel_w:          %d\n", config->kernel_w);
+        printf("  kernel_h:          %d\n", config->kernel_h);
+        printf("  stride_x:          %d\n", config->stride_x);
+        printf("  stride_y:          %d\n", config->stride_y);
+        printf("  padding:           %d\n", config->padding);
+        printf("  dilation:          %d\n", config->dilation);
+        printf("  accum_shift:       %d\n", config->accum_shift);
+        printf("  relu_max:          %d\n", config->relu_max);
+        printf("  relu_min:          %d\n", config->relu_min);
+        printf("  output_shift:      %d\n", config->output_shift);
+        printf("  output_scale:      %d\n", config->output_scale);
+        printf("  flags:             %d\n", config->flags);
+        printf("  input_zero_point:  %d\n", config->input_zero_point);
+        printf("===============================\n");
+
+
         // Execute XAI DMA kernel
-        conv_execute_kernel(
+
+        // Writeback DMA source data from cache to system memory.
+        // CPU-computed kernel_bias and runtime-loaded weight/input data may
+        // reside only in cache; DMA bypasses cache and reads system memory.
+        xthal_dcache_region_writeback(
+            const_cast<int8_t*>(input.const_data_ptr<int8_t>()),
+            n * c * h * w * sizeof(int8_t));
+        xthal_dcache_region_writeback(
+            const_cast<int8_t*>(weight.const_data_ptr<int8_t>()),
+            oc * wc * wh * ww * sizeof(int8_t));
+        xthal_dcache_region_writeback(
+            reinterpret_cast<int8_t*>(kernel_bias),
+            oc * sizeof(int32_t));
+
+        XAI_ERR_TYPE kern_status = conv_execute_kernel(
             const_cast<int8_t*>(input.const_data_ptr<int8_t>()),
             out.mutable_data_ptr<int8_t>(),
             const_cast<int8_t*>(weight.const_data_ptr<int8_t>()),
             reinterpret_cast<int8_t*>(kernel_bias),
             config);
+        if (kern_status != 0) {
+          printf("*** conv_execute_kernel FAILED for %s: status=%d ***\n",
+                 config->layer_name ? config->layer_name : "?", (int)kern_status);
+        }
+
+        // Invalidate cache for DMA-written output so post-correction
+        // and next operator see fresh data instead of stale cache lines
+        xthal_dcache_region_invalidate(
+            out.mutable_data_ptr<int8_t>(),
+            n * oc * oh * ow * sizeof(int8_t));
 
         // Apply post-kernel residual correction
         for (int _n = 0; _n < n; _n++) {
@@ -522,6 +635,73 @@ void quantized_conv2d_nchw(
               ch_out[_s] = static_cast<int8_t>(val);
             }
           }
+        }
+
+        // ================================================================
+        // DIAGNOSTIC: Compare cache output vs generic for first few pixels
+        // ================================================================
+        {
+          // Compute generic reference for comparison
+          int diag_count = (oc < 4 ? oc : 4);
+          int diag_pixels = (oh * ow < 4 ? oh * ow : 4);
+          const int8_t* in_data = input.const_data_ptr<int8_t>();
+          const int8_t* wt_data_diag = weight.const_data_ptr<int8_t>();
+          const int32_t* bias_orig_diag = bias.const_data_ptr<int32_t>();
+          const int8_t* cache_out = out.mutable_data_ptr<int8_t>();
+          int wt_per_oc_diag = wc * wh * ww;
+          float eff_scale_diag = bias_scale / output_scale;
+
+          printf("=== DIAG layer=%s cache_vs_generic (eff_scale=%.6f, izp=%d, ozp=%d) ===\n",
+                 config->layer_name ? config->layer_name : "?",
+                 eff_scale_diag, (int)in_zero_point, (int)output_zero_point);
+          printf("  kernel_bias[0]=%d, post_corr[0]=%d, accum_shift=%d, out_scale=%d, out_shift=%d\n",
+                 kernel_bias[0], post_correction[0], config->accum_shift,
+                 config->output_scale, config->output_shift);
+
+          int total_diff = 0, max_diff = 0, count_gt2 = 0;
+          int total_checked = 0;
+          for (int doc = 0; doc < diag_count; doc++) {
+            for (int dp = 0; dp < diag_pixels; dp++) {
+              int _oh_d = dp / ow;
+              int _ow_d = dp % ow;
+              // Generic reference for this pixel
+              float acc = static_cast<float>(bias_orig_diag[doc]);
+              for (int _ic = 0; _ic < wc; _ic++) {
+                for (int _wh = 0; _wh < wh; _wh++) {
+                  for (int _ww = 0; _ww < ww; _ww++) {
+                    int ih = _oh_d * stride[0] + _wh * dilation[0] - padding[0];
+                    int iw = _ow_d * stride[1] + _ww * dilation[1] - padding[1];
+                    if (ih >= 0 && ih < h && iw >= 0 && iw < w) {
+                      float lhs = static_cast<float>(in_data[_ic * h * w + ih * w + iw]) - in_zero_point;
+                      float rhs = static_cast<float>(wt_data_diag[doc * wt_per_oc_diag + _ic * wh * ww + _wh * ww + _ww]);
+                      acc += lhs * rhs;
+                    }
+                  }
+                }
+              }
+              float val = bias_scale * acc;
+              float inv_out_sc = 1.0f / output_scale;
+              int32_t generic_out = static_cast<int32_t>(val * inv_out_sc + output_zero_point + (val * inv_out_sc + output_zero_point >= 0 ? 0.5f : -0.5f));
+              if (generic_out < -128) generic_out = -128;
+              if (generic_out > 127) generic_out = 127;
+
+              int8_t cache_val = cache_out[doc * oh * ow + dp];
+              int diff = static_cast<int>(cache_val) - generic_out;
+              if (diff < 0) diff = -diff;
+              if (diff > max_diff) max_diff = diff;
+              if (diff > 2) count_gt2++;
+              total_diff += diff;
+              total_checked++;
+
+              if (dp < 2) {
+                printf("  [oc=%d,px=%d] generic=%d cache=%d diff=%d\n",
+                       doc, dp, generic_out, (int)cache_val, (int)cache_val - generic_out);
+              }
+            }
+          }
+          printf("  SUMMARY: checked=%d, max_diff=%d, >2_count=%d, avg_diff=%.2f\n",
+                 total_checked, max_diff, count_gt2,
+                 total_checked > 0 ? (float)total_diff / total_checked : 0.0f);
         }
 
         break;

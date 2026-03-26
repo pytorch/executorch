@@ -179,6 +179,10 @@ void quantized_relu_per_tensor_out(
 
         // Load first chunk via ch0
         size_t current_chunk = (numel < chunk_size) ? numel : chunk_size;
+
+        // Writeback input from cache to system memory for DMA coherency
+        xthal_dcache_region_writeback((void*)ptr_inp, sizeof(int8_t) * numel);
+
         dma_1dm(0, ptr_in, inp_buff[pp_swap], sizeof(int8_t) * current_chunk);
 
         size_t remaining = numel - current_chunk;
@@ -220,6 +224,9 @@ void quantized_relu_per_tensor_out(
         dma_1dm(1, out_buff[pp_swap], ptr_out, sizeof(uint8_t) * current_chunk);
         idma_hw_wait_all(1);
         
+        // Invalidate cache for DMA-written output so next operator sees fresh data
+        xthal_dcache_region_invalidate(out_data, sizeof(uint8_t) * numel);
+        
         TIME_END(quantized_relu);
         TIME_DISPLAY(quantized_relu, numel, "elements (DMA ping-pong)");
       } 
@@ -252,6 +259,9 @@ void quantized_relu_per_tensor_out(
         }
         idma_hw_wait_all(1);
         
+        // Invalidate cache for DMA-written output so next operator sees fresh data
+        xthal_dcache_region_invalidate(out_data, sizeof(uint8_t) * numel);
+        
         TIME_END(quantized_relu);
         TIME_DISPLAY(quantized_relu, numel, "elements (DMA ping-process-pong)");
       }
@@ -266,7 +276,10 @@ void quantized_relu_per_tensor_out(
           out_zp,
           out_scale,
           (int)numel);
-      
+
+      // Writeback output from cache to system memory for DMA coherency
+      xthal_dcache_region_writeback(out_data, sizeof(uint8_t) * numel);
+
       TIME_END(quantized_relu);
       TIME_DISPLAY(quantized_relu, numel, "elements (HW-optimized, no DMA)");
     }

@@ -121,8 +121,8 @@ typedef struct {
 // Total number of convolution layers
 #define NUM_CONV_LAYERS 29
 
- #define IDMA_BUFFER_SIZE_DRAM0 (64000) // 62 KB for DRAM0
- #define IDMA_BUFFER_SIZE_DRAM1 (64000) // 62 KB for DRAM1
+ #define IDMA_BUFFER_SIZE_DRAM0 (62976) // 61 KB for DRAM0
+ #define IDMA_BUFFER_SIZE_DRAM1 (62976) // 61 KB for DRAM1
 
 // Layer configuration lookup table
 static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
@@ -219,6 +219,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 1,
@@ -313,6 +314,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 2,
@@ -407,6 +409,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 3,
@@ -501,6 +504,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 4,
@@ -595,6 +599,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 5,
@@ -689,6 +694,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 6,
@@ -783,6 +789,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 7,
@@ -877,6 +884,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 8,
@@ -971,6 +979,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 9,
@@ -1065,6 +1074,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 10,
@@ -1159,6 +1169,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 11,
@@ -1253,6 +1264,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 12,
@@ -1347,6 +1359,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 13,
@@ -1441,6 +1454,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 14,
@@ -1535,6 +1549,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 15,
@@ -1629,6 +1644,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 16,
@@ -1723,6 +1739,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 17,
@@ -1817,6 +1834,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 18,
@@ -1911,6 +1929,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 19,
@@ -2005,6 +2024,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 20,
@@ -2099,6 +2119,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 21,
@@ -2193,6 +2214,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 22,
@@ -2287,6 +2309,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 23,
@@ -2381,6 +2404,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 24,
@@ -2475,6 +2499,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 25,
@@ -2569,6 +2594,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 26,
@@ -2663,6 +2689,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 27,
@@ -2757,6 +2784,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
     {
         .layer_id = 28,
@@ -2851,6 +2879,7 @@ static const conv_layer_config_t CONV_LAYER_CONFIGS[] = {
         .output_shift = 11,
         .output_scale = 0,
         .flags = 0,
+        .input_zero_point = 0,
     },
 };
 

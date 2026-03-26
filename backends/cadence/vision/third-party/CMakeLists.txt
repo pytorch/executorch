@@ -47,6 +47,9 @@ set(LIBXAI_COMMON_INCLUDE_DIRS
 
 add_library(xai_common STATIC ${LIBXAI_COMMON_SOURCES})
 target_include_directories(xai_common PUBLIC ${LIBXAI_COMMON_INCLUDE_DIRS})
+# Allow XAI kernels to operate on system memory (not just local DRAM).
+# Required for cache-mode convolution variants that pass system memory pointers.
+target_compile_definitions(xai_common PUBLIC SYS_MEM_TESTING=1)
 
 # ============================================================================
 # libxai - CNN kernels library
