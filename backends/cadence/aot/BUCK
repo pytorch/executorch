@@ -575,6 +575,7 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "memory_planning_algo.py",
     ],
+    typing = True,
     deps = [
         ":memory_constraints",
         ":pass_utils",
@@ -615,6 +616,23 @@ fbcode_target(_kind = runtime.python_library,
         "//caffe2:torch",
         "//executorch/exir:memory",
         "//executorch/exir:pass_manager",
+        "//executorch/exir:tensor",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_memory_planning_algo",
+    srcs = [
+        "tests/test_memory_planning_algo.py",
+    ],
+    supports_static_listing = False,
+    typing = True,
+    deps = [
+        ":memory_constraints",
+        ":memory_planning",
+        ":memory_planning_algo",
+        ":utils",
+        "//caffe2:torch",
         "//executorch/exir:tensor",
     ],
 )
