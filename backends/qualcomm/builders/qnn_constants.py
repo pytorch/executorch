@@ -390,6 +390,18 @@ class OpInstanceNorm:
 
 
 @dataclass(init=False, frozen=True)
+class OpIsInf:
+    op_name: str = "IsInf"
+    param_detect_negative = "detect_negative"
+    param_detect_positive = "detect_positive"
+
+
+@dataclass(init=False, frozen=True)
+class OpIsNan:
+    op_name: str = "IsNan"
+
+
+@dataclass(init=False, frozen=True)
 class OpLayerNorm:
     op_name: str = "LayerNorm"
     param_epsilon = "epsilon"
@@ -483,6 +495,13 @@ class OpPRelu:
 @dataclass(init=False, frozen=True)
 class OpQuantize:
     op_name: str = "Quantize"
+
+
+@dataclass(init=False, frozen=True)
+class OpRandomUniformLike:
+    op_name: str = "RandomUniformLike"
+    param_low: str = "low"
+    param_high: str = "high"
 
 
 @dataclass(init=False, frozen=True)
