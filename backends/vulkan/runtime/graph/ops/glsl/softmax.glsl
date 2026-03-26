@@ -57,7 +57,7 @@ void softmax_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
 
   scan_pos[reduce_dim] = tid.x;
   vec4 max_elements = texelFetch(tin, scan_pos, 0);
-  for (int i = tid.x; i < in_meta.sizes[reduce_dim];
+  for (int i = tid.x; i < safe_idx(in_meta.sizes, reduce_dim);
        i += NWORKERS, scan_pos[reduce_dim] += NWORKERS) {
     max_elements = max(max_elements, texelFetch(tin, scan_pos, 0));
   }
@@ -71,7 +71,7 @@ void softmax_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
 
   scan_pos[reduce_dim] = tid.x;
   vec4 denominators = vec4(0);
-  for (int i = tid.x; i < in_meta.sizes[reduce_dim];
+  for (int i = tid.x; i < safe_idx(in_meta.sizes, reduce_dim);
        i += NWORKERS, scan_pos[reduce_dim] += NWORKERS) {
     denominators += exp(texelFetch(tin, scan_pos, 0) - max_elements);
   }
@@ -83,12 +83,12 @@ void softmax_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
     denominators += shared_sum[group_i];
   }
 
-  const int nspill = mod_4(in_meta.sizes[packed_dim]);
+  const int nspill = mod_4(safe_idx(in_meta.sizes, packed_dim));
   const bool is_last_texel =
-      scan_pos[packed_dim] == (out_meta.limits[packed_dim] - 1);
+      scan_pos[packed_dim] == (safe_idx(out_meta.limits, packed_dim) - 1);
 
   scan_pos[reduce_dim] = tid.x;
-  for (int i = tid.x; i < in_meta.sizes[reduce_dim];
+  for (int i = tid.x; i < safe_idx(in_meta.sizes, reduce_dim);
        i += NWORKERS, scan_pos[reduce_dim] += NWORKERS) {
     const vec4 numerators = op1(texelFetch(tin, scan_pos, 0) - max_elements);
     const vec4 safe_denom = max(denominators, vec4(1e-37));
@@ -124,8 +124,8 @@ void softmax_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   const int smi = tid_to_smi(tid);
   int group_i;
 
-  const int nspill = mod_4(in_meta.sizes[packed_dim]);
-  const int reduce_len = in_meta.sizes[packed_dim] - nspill;
+  const int nspill = mod_4(safe_idx(in_meta.sizes, packed_dim));
+  const int reduce_len = safe_idx(in_meta.sizes, packed_dim) - nspill;
 
   scan_pos[reduce_dim] = tid.x;
   vec4 max_elements = vec4(-3.402823e+38);
@@ -133,7 +133,7 @@ void softmax_packed_dim(const ivec2 tid, ivec3 scan_pos) {
        i += NWORKERS * 4, scan_pos[reduce_dim] += NWORKERS) {
     max_elements = max(max_elements, texelFetch(tin, scan_pos, 0));
   }
-  if (scan_pos[reduce_dim] == out_meta.limits[reduce_dim] - 1 && nspill > 0) {
+  if (scan_pos[reduce_dim] == safe_idx(out_meta.limits, reduce_dim) - 1 && nspill > 0) {
     const vec4 intex = texelFetch(tin, scan_pos, 0);
     for (int i = 0; i < nspill; ++i) {
       max_elements.x = max(intex[i], max_elements.x);
@@ -157,7 +157,7 @@ void softmax_packed_dim(const ivec2 tid, ivec3 scan_pos) {
        i += NWORKERS * 4, scan_pos[reduce_dim] += NWORKERS) {
     denominators += exp(texelFetch(tin, scan_pos, 0) - max_element);
   }
-  if (nspill > 0 && scan_pos[reduce_dim] == out_meta.limits[reduce_dim] - 1) {
+  if (nspill > 0 && scan_pos[reduce_dim] == safe_idx(out_meta.limits, reduce_dim) - 1) {
     const vec4 intex = texelFetch(tin, scan_pos, 0);
     for (int i = 0; i < nspill; ++i) {
       denominators.x += exp(intex[i] - max_element);
@@ -182,7 +182,7 @@ void softmax_packed_dim(const ivec2 tid, ivec3 scan_pos) {
     const vec4 numerators = op1(texelFetch(tin, scan_pos, 0) - max_element);
     imageStore(tout, scan_pos, op2(numerators, safe_denominator));
   }
-  if (nspill > 0 && scan_pos[reduce_dim] == out_meta.limits[reduce_dim] - 1) {
+  if (nspill > 0 && scan_pos[reduce_dim] == safe_idx(out_meta.limits, reduce_dim) - 1) {
     const vec4 numerator = op1(texelFetch(tin, scan_pos, 0) - max_element);
     vec4 outtex = op2(numerator, safe_denominator);
     [[unroll]] for (int i = nspill; i < 4; ++i) {

@@ -185,6 +185,8 @@ ov::element::Type OpenvinoBackend::convert_to_openvino_type(
   switch (scalar_type) {
     case exa::ScalarType::Float:
       return ov::element::f32;
+    case exa::ScalarType::Double:
+      return ov::element::f64;
     case exa::ScalarType::Half:
       return ov::element::f16;
     case exa::ScalarType::Int:

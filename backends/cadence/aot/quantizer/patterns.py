@@ -459,7 +459,7 @@ class MaxPool2dPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_max_pool2d.default
+        return torch.ops.cadence.quantized_max_pool2d_nchw.default
 
 
 class MaxPool2dWithoutIndicesPattern(QuantizationPattern):
@@ -498,7 +498,10 @@ class MaxPool2dWithoutIndicesPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_max_pool2d.default
+        return torch.ops.cadence.quantized_max_pool2d_nchw.default
+
+
+# This is a base class for ReLU
 
 
 # This is a base class for ReLU, since it can be used with two different aten ops
