@@ -974,15 +974,56 @@ class Modality(Component):
                 config.quant_recipe(True) if config.quant_recipe else None
             )
 
+            # metadata
+            self.config = config
+            self.num_layers = auto_model.config.vision_config.num_hidden_layers
+
+        self.passes_job = get_capture_program_passes()
+        self.dep_table = get_passes_dependency_for_capture_program()
+
+    def _tag_ios(self, node, fixed_point_type):
+        quant_io_type = None
+
+        # tag sharding io
+        if exir_ops.edge.llama.fallback.default in [
+            u.target for u in list(node.users.keys())
+        ] + [node.target]:
+            quant_io_type = fixed_point_type["io_type"]
+
+        return quant_io_type
+
     def compile(self, request: Request):
         if self.model is None:
             return
 
         request_data = request.method_data[self.modality]
+        # check if sharding required
+        if self.config.num_sharding > 1:
+            SplitGraph, setting = model_sharding.get_split_graph_pass(
+                self.num_layers,
+                shares=self.config.num_sharding,
+                pattern=r"vision_tower.encoder.layer.(\d+)",
+            )
+            self.passes_job[SplitGraph] = setting
+            self.dep_table[SplitGraph] = [FoldQDQ]
+            self.dep_table[TagQuantIO] = [SplitGraph]
+
+            if not request_data.skip_quantize:
+                fixed_point_type = {"io_type": torch.uint16}
+
+                # setup quantized IO
+                self.passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
+                self.passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
+                    "get_quant_io_dtype_fn"
+                ] = partial(self._tag_ios, fixed_point_type=fixed_point_type)
+
         edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
             module=self.model,
             inputs=self.example_input,
             compiler_specs=request_data.compile_spec,
+            dep_table=self.dep_table,
+            passes_job=self.passes_job,
+            skip_node_op_set={"llama.fallback.default"},
         )
         if self.control_args.verbose:
             print_delegation_info(edge_prog_mgr.exported_program().graph_module)

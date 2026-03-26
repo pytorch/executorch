@@ -13,6 +13,7 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
     get_8a8w_qnn_ptq_config,
     get_8a8w_qnn_qat_config,
     get_ptq_per_channel_quant_config,
+    get_16a4w_qnn_ptq_config,
     QuantizationConfig,
 )
 from executorch.backends.qualcomm.quantizer.rules import (
@@ -27,8 +28,35 @@ from torchao.quantization.pt2e.quantizer import (
     annotate_output_qspec,
     QuantizationAnnotation,
     SharedQuantizationSpec,
+    QuantizationSpec,
 )
 
+def custom_annotation_16a4w_layer_norm(gm):
+    use_16a4w_config = get_16a4w_qnn_ptq_config()
+    use_16a4w_config.weight = QuantizationSpec(
+        dtype=torch.uint8,
+        quant_min=0,
+        quant_max=15,
+        qscheme=torch.per_tensor_symmetric,
+        ch_axis=0,
+        observer_or_fake_quant_ctr=use_16a4w_config.weight.observer_or_fake_quant_ctr,
+    )
+    for node in gm.graph.nodes:
+        if node.target != torch.ops.aten.layer_norm.default:
+            continue
+        act_node = node.args[0]
+        weight_node = node.args[2]
+        bias_node = None
+        input_qspec_map = {act_node: use_16a4w_config.input_activation, weight_node: use_16a4w_config.weight}
+        if len(node.args) > 2:
+            bias_node = node.args[3]
+            input_qspec_map[bias_node] = use_16a4w_config.bias
+        
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=use_16a4w_config.output_activation,
+            _annotated=True,
+        )
 
 def annotate_eurobert(gm: torch.fx.GraphModule):
     """
