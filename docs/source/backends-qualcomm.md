@@ -189,18 +189,17 @@ We can test model inferences before deploying it to a device by HTP emulator.
 Let's build `qnn_executor_runner` for a x64 host:
 ```bash
 # assuming the AOT component is built.
-cd $EXECUTORCH_ROOT/build-x86
-cmake ../examples/qualcomm \
-  -DCMAKE_PREFIX_PATH="$PWD/lib/cmake/ExecuTorch;$PWD/third-party/gflags;" \
+cmake -S $EXECUTORCH_ROOT/examples/qualcomm \
+  -B $EXECUTORCH_ROOT/build-x86/examples/qualcomm \
+  -DCMAKE_PREFIX_PATH="$EXECUTORCH_ROOT/build-x86/lib/cmake/ExecuTorch;$EXECUTORCH_ROOT/build-x86/third-party/gflags;" \
   -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
-  -DPYTHON_EXECUTABLE=python3 \
-  -Bexamples/qualcomm
+  -DPYTHON_EXECUTABLE=python3
 
-cmake --build examples/qualcomm -j$(nproc)
+cmake --build $EXECUTORCH_ROOT/build-x86/examples/qualcomm -j$(nproc)
 
 # qnn_executor_runner can be found under examples/qualcomm/executor_runner
 # The full path is $EXECUTORCH_ROOT/build-x86/examples/qualcomm/executor_runner/qnn_executor_runner
-ls examples/qualcomm/executor_runner
+ls $EXECUTORCH_ROOT/build-x86/examples/qualcomm/executor_runner
 ```
 
 To run the HTP emulator, the dynamic linker needs to access QNN libraries and `libqnn_executorch_backend.so`.

@@ -171,7 +171,7 @@ set(EXECUTORCH_BUILD_PRESET_FILE ${CMAKE_SOURCE_DIR}/executorch/tools/cmake/pres
 Standalone build:
 ```bash
 # Configure the build with the ios preset.
-cmake .. --preset ios
+cmake -B cmake-out --preset ios
 ```
 
 #### Build Options
@@ -187,7 +187,7 @@ set(EXECUTORCH_BUILD_XNNPACK ON)
 
 Standalone build:
 ```bash
-cmake -DEXECUTORCH_BUILD_XNNPACK=ON
+cmake -B cmake-out -DEXECUTORCH_BUILD_XNNPACK=ON
 ```
 
 ##### Build Type
@@ -196,7 +196,7 @@ The CMake build is typically set to `Debug` or `Release`. For production use or 
 
 ```bash
 # Specify build type during CMake configuration
-cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake -B cmake-out -DCMAKE_BUILD_TYPE=Release
 ```
 
 ##### Backends
@@ -216,7 +216,7 @@ Typically, each hardware backend exposes a CMake option to control whether the b
 
 ```bash
 # Build the XNNPACK and Vulkan backends.
-cmake .. -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_VULKAN=ON
+cmake -B cmake-out -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_VULKAN=ON
 ```
 
 ##### Extensions
@@ -237,7 +237,7 @@ ExecuTorch extensions provide optional functionality outside of the core runtime
 
  ```
 # Enable the data loader extension.
-cmake .. -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
+cmake -B cmake-out -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
  ```
 
 ##### Logging
@@ -249,7 +249,7 @@ Logging is enabled by default in debug builds and disabled in release. When enab
 
  ```
 # Enable logging at debug
-cmake .. -DEXECUTORCH_ENABLE_LOGGING=ON -DEXECUTORCH_LOG_LEVEL=debug
+cmake -B cmake-out -DEXECUTORCH_ENABLE_LOGGING=ON -DEXECUTORCH_LOG_LEVEL=debug
  ```
 
 ### Building
@@ -352,7 +352,7 @@ To use the ExecuTorch runtime from native Android C++ code, the runtime can be c
 For direct cross-compilation, the ExecuTorch runtime can be configured to build with the NDK toolchain:
 ```bash
 # point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed
-cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a ..
+cmake -B cmake-out -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a
 ```
 
 <hr/>
