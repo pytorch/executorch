@@ -98,6 +98,7 @@ from executorch.backends.arm._passes import (
     DecorateFp32toInt32CastingPass,
     FoldAndAnnotateQParamsPass,
     FuseBatchNorm2dPass,
+    FuseConsecutiveConcatShapesPass,
     FuseConsecutiveRescalesPass,
     FuseConstantArgsPass,
     FuseDuplicateUsersPass,
@@ -112,6 +113,7 @@ from executorch.backends.arm._passes import (
     InsertTableOpsPass,
     MatchArgDtypePass,
     MatchArgRanksPass,
+    NormalizeIndexPutBoolIndexTensorPass,
     NormalizeIndexPutNoneIndicesPass,
     NormalizeWhileInitialArgsPass,
     PromoteBoolOperandsPass,
@@ -449,6 +451,7 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 NormalizeIndexPutNoneIndicesPass(),
+                NormalizeIndexPutBoolIndexTensorPass(),
                 RewriteIndexPutPass(),
                 RewriteBoolBitwiseToLogicalPass(),
                 DecomposeRemainderPass(),
@@ -503,6 +506,7 @@ class ArmPassManager(PassManager):
             [
                 CastInt64BuffersToInt32Pass(exported_program),
                 FuseEqualPlaceholdersPass(exported_program),
+                FuseConsecutiveConcatShapesPass(),
                 ToTosaMemoryFormatPass(exported_program),
                 RemoveNoopPass(),
                 InsertRescalePass(),
