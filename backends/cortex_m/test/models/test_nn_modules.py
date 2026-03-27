@@ -188,7 +188,7 @@ test_cases = {
     ),
 }
 
-xfails : dict[str, xfail_type] = {}
+xfails: dict[str, xfail_type] = {}
 
 
 @parametrize("test_case", test_cases, xfails=xfails, strict=False)

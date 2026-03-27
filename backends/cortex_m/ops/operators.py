@@ -192,7 +192,9 @@ def quantized_add_impl(
 
     result_fp = self_fp + other_fp
     result_quantized = requantize_cmsis(result_fp, output_multiplier, output_shift)
-    result = torch.clamp(result_quantized + output_zero_point, activation_min, activation_max).to(torch.int8)
+    result = torch.clamp(
+        result_quantized + output_zero_point, activation_min, activation_max
+    ).to(torch.int8)
     return result
 
 
