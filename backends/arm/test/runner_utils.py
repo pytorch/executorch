@@ -202,7 +202,7 @@ def numpy_to_torch_tensor(array: np.ndarray, output_node: Node) -> torch.Tensor:
         tensor = torch.from_numpy(array).reshape(shape_with_dim_order)
         return tensor.permute(NNHWC_INVERSE_ORDER).to(memory_format=torch.channels_last)
     else:
-        if type(array.dtype) is np.dtypes.VoidDType:
+        if array.dtype.type is np.void:
             # If dtype is void, "cheat" and use the output_tensor dtype.
             tensor = torch.frombuffer(array, dtype=output_tensor.dtype)
         else:
@@ -221,7 +221,7 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
 
     def _tosa_dispatch(self, lowered_backend_module: LoweredBackendModule, inputs):
         tosa_buffer = lowered_backend_module.processed_bytes
-        compile_spec = TosaCompileSpec.from_list(lowered_backend_module.compile_specs)
+        compile_spec = TosaCompileSpec._from_list(lowered_backend_module.compile_specs)
 
         output_node = lowered_backend_module.original_module.graph.output_node()
         return run_tosa_graph(tosa_buffer, compile_spec.tosa_spec, inputs, output_node)

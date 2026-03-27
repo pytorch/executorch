@@ -41,13 +41,7 @@ void add_to_copy_node(ComputeGraph& graph, ValueRef in, ValueRef out) {
   }
 
   // Other conversions (e.g. int<->float) use view_convert shaders
-  if (graph.is_buffer_storage(in)) {
-    add_view_copy_convert_buffer_node(
-        graph, in, out, {}, resize_to_copy_op_node);
-  } else {
-    add_view_copy_convert_texture_node(
-        graph, in, out, {}, resize_to_copy_op_node);
-  }
+  add_view_copy_convert_node(graph, in, out, {}, resize_to_copy_op_node);
 }
 
 void to_copy(ComputeGraph& graph, const std::vector<ValueRef>& args) {

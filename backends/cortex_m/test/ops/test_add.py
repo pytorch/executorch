@@ -5,7 +5,7 @@
 
 
 import torch
-from executorch.backends.arm.test.common import parametrize
+from executorch.backends.arm.test.common import parametrize, xfail_type
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
@@ -224,10 +224,10 @@ test_cases = {
 }
 
 
-xfails_implementation = {
+xfails_implementation: dict[str, xfail_type] = {
     "alpha": "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
 }
-xfails_dialect = xfails_implementation | {
+xfails_dialect: dict[str, xfail_type] = xfails_implementation | {
     # Cortex-M quantizer will not quantize additions that require broadcasting
     # leading to the add op not being replaced by a cortex-m specific implementation
     "broadcast_1": "Broadcasting is not supported in Cortex-M backend",
