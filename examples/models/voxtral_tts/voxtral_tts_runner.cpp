@@ -302,17 +302,32 @@ std::vector<float> VoxtralTTSRunner::generate(
   ET_LOG(Info, "Prefill done.");
 
   // --- Audio generation loop ---
-  // vLLM's flow: AT runs on the prefill's last hidden state for frame 0,
-  // then each subsequent frame feeds audio_token_embedding(prev_codes)
-  // through the decoder. The LM head is NOT used.
+  // Matching mlx-audio/vLLM flow:
+  // 1. Decode with token_embedding(audio_tok) at pos=prompt_len → hidden
+  // 2. AT(hidden) → frame 0 codes
+  // 3. Decode with audio_token_embedding(frame_0_codes) at pos=prompt_len+1 →
+  // hidden
+  // 4. AT(hidden) → frame 1 codes
+  // 5. ...repeat until END_AUDIO
   constexpr int64_t END_AUDIO_SEMANTIC = 1;
 
   ET_LOG(Info, "Generating audio (max %d frames)...", config.max_tokens);
 
   // Pad to 3 tokens for Metal SDPA compatibility (requires seq_len >= 3).
   constexpr int DECODE_SEQ_LEN = 3;
+
+  // Embed audio token for the first decode step after prefill.
+  // This matches mlx-audio which runs lm_backbone(tok_emb(24)) before
+  // entering the generate loop. Subsequent steps use audio_token_embedding.
+  int64_t audio_tok = static_cast<int64_t>(audio_tok_id_);
+  auto audio_tok_t =
+      from_blob(&audio_tok, {1, 1}, ::executorch::aten::ScalarType::Long);
+  auto audio_tok_result =
+      model_->execute("token_embedding", std::vector<EValue>{*audio_tok_t});
+  ET_CHECK_MSG(audio_tok_result.ok(), "token_embedding(audio) failed.");
+  auto first_embed = audio_tok_result.get()[0].toTensor();
   const size_t embed_bytes =
-      static_cast<size_t>(dim_) * prefill_hidden.element_size();
+      static_cast<size_t>(dim_) * first_embed.element_size();
 
   // Build padded embedding buffer (updated each step)
   auto audio_step_embeds =
@@ -328,11 +343,33 @@ std::vector<float> VoxtralTTSRunner::generate(
     }
   };
 
-  // Frame 0: use the prefill's last hidden state directly (no decode step).
-  // This matches vLLM's make_omni_output which runs AT on hidden[logits_index]
-  // during the prefill step itself, before any decode step occurs.
-  auto generate_frame = [&](const ::executorch::aten::Tensor& h_2d) {
-    // Generate noise
+  // Initialize with token_embedding(24) for the first decode step
+  fill_step_embeds(first_embed.const_data_ptr());
+
+  auto h_2d = empty({1, static_cast<int>(dim_)}, model_dtype_);
+
+  for (int step = 0; step < config.max_tokens && dec_pos < max_seq_len_;
+       step++) {
+    // 1. Run text_decoder with current step's embedding
+    std::vector<int64_t> pos_data = {dec_pos, dec_pos + 1, dec_pos + 2};
+    auto pos_tensor = from_blob(
+        pos_data.data(),
+        {DECODE_SEQ_LEN},
+        ::executorch::aten::ScalarType::Long);
+    auto dec_result = model_->execute(
+        "text_decoder", std::vector<EValue>{*audio_step_embeds, *pos_tensor});
+    ET_CHECK_MSG(
+        dec_result.ok(),
+        "text_decoder failed at pos %ld.",
+        static_cast<long>(dec_pos));
+    auto hidden = dec_result.get()[0].toTensor();
+    dec_pos++;
+
+    // 2. Extract first position's hidden state: (1, DECODE_SEQ_LEN, dim) -> (1,
+    // dim)
+    std::memcpy(h_2d->mutable_data_ptr(), hidden.const_data_ptr(), embed_bytes);
+
+    // 3. Generate noise and run acoustic transformer
     auto noise_tensor =
         empty({1, static_cast<int>(n_acoustic_codebook_)}, model_dtype_);
     if (model_dtype_ == ::executorch::aten::ScalarType::BFloat16) {
@@ -351,34 +388,17 @@ std::vector<float> VoxtralTTSRunner::generate(
     auto frame_result = model_->execute(
         "decode_audio_frame", std::vector<EValue>{*h_2d, *noise_tensor});
     ET_CHECK_MSG(frame_result.ok(), "decode_audio_frame failed.");
-    return frame_result.get()[0].toTensor();
-  };
+    auto codes_tensor = frame_result.get()[0].toTensor();
+    const auto* codes_ptr = codes_tensor.const_data_ptr<int64_t>();
 
-  // Extract prefill's last hidden: (1, prompt_len, dim) -> (1, dim)
-  auto h_2d = empty({1, static_cast<int>(dim_)}, model_dtype_);
-  {
-    const size_t last_pos_offset =
-        static_cast<size_t>(prompt_len - 1) * embed_bytes;
-    std::memcpy(
-        h_2d->mutable_data_ptr(),
-        static_cast<const char*>(prefill_hidden.const_data_ptr()) +
-            last_pos_offset,
-        embed_bytes);
-  }
-
-  auto codes_tensor = generate_frame(*h_2d);
-  const auto* codes_ptr = codes_tensor.const_data_ptr<int64_t>();
-
-  for (int step = 0; step < config.max_tokens && dec_pos < max_seq_len_;
-       step++) {
-    // Check semantic code (first element) for END_AUDIO
+    // 4. Check semantic code for END_AUDIO
     int64_t semantic_code = codes_ptr[0];
     if (semantic_code == END_AUDIO_SEMANTIC) {
       ET_LOG(Info, "END_AUDIO at frame %d", step);
       break;
     }
 
-    // Accumulate codes
+    // 5. Accumulate codes
     for (int64_t i = 0; i < n_codebooks_; i++) {
       all_codes.push_back(codes_ptr[i]);
     }
@@ -389,7 +409,9 @@ std::vector<float> VoxtralTTSRunner::generate(
       token_cb("");
     }
 
-    // Feed codes back through audio_token_embedding for next decode step.
+    // 6. Prepare next step's embedding via audio_token_embedding.
+    // Copy codes first (codes_ptr points to decode_audio_frame's output
+    // buffer).
     std::vector<int64_t> codes_col(static_cast<size_t>(n_codebooks_));
     for (int64_t i = 0; i < n_codebooks_; i++) {
       codes_col[static_cast<size_t>(i)] = codes_ptr[i];
@@ -403,27 +425,6 @@ std::vector<float> VoxtralTTSRunner::generate(
     ET_CHECK_MSG(ate_result.ok(), "audio_token_embedding failed.");
     auto next_embed = ate_result.get()[0].toTensor();
     fill_step_embeds(next_embed.const_data_ptr());
-
-    // Run text_decoder to get hidden state for next frame
-    std::vector<int64_t> pos_data = {dec_pos, dec_pos + 1, dec_pos + 2};
-    auto pos_tensor = from_blob(
-        pos_data.data(),
-        {DECODE_SEQ_LEN},
-        ::executorch::aten::ScalarType::Long);
-    auto dec_result = model_->execute(
-        "text_decoder", std::vector<EValue>{*audio_step_embeds, *pos_tensor});
-    ET_CHECK_MSG(
-        dec_result.ok(),
-        "text_decoder failed at pos %ld.",
-        static_cast<long>(dec_pos));
-    auto hidden = dec_result.get()[0].toTensor();
-    dec_pos++;
-
-    // Extract first position's hidden state for next AT call
-    std::memcpy(h_2d->mutable_data_ptr(), hidden.const_data_ptr(), embed_bytes);
-
-    codes_tensor = generate_frame(*h_2d);
-    codes_ptr = codes_tensor.const_data_ptr<int64_t>();
   }
 
   ET_LOG(
