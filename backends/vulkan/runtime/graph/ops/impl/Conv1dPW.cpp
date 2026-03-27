@@ -20,23 +20,8 @@
 
 namespace vkcompute {
 
-// Minimum number of thread groups to target for good GPU occupancy.
-static constexpr uint32_t kMinOccupancyThreads = 4096;
-
-// Returns the tile_m (1, 2, or 4) for the conv1d_pw shader. tile_m tiles the
-// L (spatial) dimension. The largest tile that produces at least
-// kMinOccupancyThreads thread groups is chosen.
-static uint32_t
-pick_conv1d_pw_tile_m(uint32_t C_out, uint32_t L, uint32_t N_batch) {
-  uint32_t n_groups = utils::div_up_4(C_out);
-  for (uint32_t tile_m : {4u, 2u, 1u}) {
-    uint32_t total = n_groups * utils::div_up(L, tile_m) * N_batch;
-    if (total >= kMinOccupancyThreads) {
-      return tile_m;
-    }
-  }
-  return 1u;
-}
+// Must match TILE_M default in conv1d_pw.yaml.
+static constexpr uint32_t kTileM = 4;
 
 // Prepack conv1d_pw weight [C_out, C_in, 1] into 4OC x 4IC blocked layout.
 // This is equivalent to prepack_fp_linear_weight with N=C_out, K=C_in,
@@ -131,23 +116,7 @@ vkapi::ShaderInfo pick_conv1d_pw_shader(
   const ValueRef packed_weight = args.at(1).refs.at(1);
   bool has_bias = graph->get_bool(resize_args.at(1));
 
-  // out is [N_batch, C_out, L]; in WHCN: {L, C_out, N_batch, 1}
-  uint32_t C_out = graph->size_at<uint32_t>(-2, out);
-  uint32_t L = graph->size_at<uint32_t>(-1, out);
-  uint32_t N_batch =
-      graph->dim_of(out) >= 3 ? graph->size_at<uint32_t>(-3, out) : 1;
-  uint32_t tile_m = pick_conv1d_pw_tile_m(C_out, L, N_batch);
-
-  std::string kernel_name;
-  if (has_bias) {
-    kernel_name = tile_m <= 1 ? "conv1d_pw_bias_tile_row_1"
-        : tile_m <= 2         ? "conv1d_pw_bias_tile_row_2"
-                              : "conv1d_pw_bias";
-  } else {
-    kernel_name = tile_m <= 1 ? "conv1d_pw_tile_row_1"
-        : tile_m <= 2         ? "conv1d_pw_tile_row_2"
-                              : "conv1d_pw";
-  }
+  std::string kernel_name = has_bias ? "conv1d_pw_bias" : "conv1d_pw";
   kernel_name.reserve(kShaderNameReserve);
   add_storage_type_suffix(kernel_name, graph->storage_type_of(out));
   add_storage_type_suffix(kernel_name, graph->storage_type_of(packed_weight));
@@ -169,10 +138,9 @@ utils::uvec3 pick_conv1d_pw_global_wg_size(
   uint32_t L = graph->size_at<uint32_t>(-1, out);
   uint32_t N_batch =
       graph->dim_of(out) >= 3 ? graph->size_at<uint32_t>(-3, out) : 1;
-  uint32_t tile_m = pick_conv1d_pw_tile_m(C_out, L, N_batch);
 
   // X=OC4 (div_up_4(C_out)), Y=L/tile_m, Z=N_batch
-  return {utils::div_up_4(C_out), utils::div_up(L, tile_m), N_batch};
+  return {utils::div_up_4(C_out), utils::div_up(L, kTileM), N_batch};
 }
 
 void add_conv1d_pw_node(

@@ -158,23 +158,6 @@ def cleanup_erased_nodes(graph_module: torch.fx.GraphModule):
     pass
 
 
-def transfer_metadata(
-    new_node: Node, source_node: Node, pass_name: str = "QuantizedPass"
-) -> None:
-    """Transfer metadata with proper provenance tracking."""
-    if hasattr(source_node, "meta") and source_node.meta:
-        new_node.meta = source_node.meta.copy()
-        if "from_node" in new_node.meta:
-            from_node_list = new_node.meta.get("from_node", []).copy()
-            from_node_list.append(
-                {"source": source_node.name, "pass": pass_name, "op": "fuse"}
-            )
-            new_node.meta["from_node"] = from_node_list
-        for field in ["tensor_meta", "stack_trace"]:
-            if field in source_node.meta:
-                new_node.meta[field] = source_node.meta[field]
-
-
 def is_dequant_node(node: Node) -> bool:
     """Check if node is a dequantize operation."""
     dequant_targets = {

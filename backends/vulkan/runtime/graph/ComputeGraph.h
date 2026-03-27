@@ -12,6 +12,7 @@
 
 #include <optional>
 #include <stack>
+#include <unordered_map>
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
@@ -203,6 +204,22 @@ class ComputeGraph final {
 
   // Set to track which ValueRefs were updated during inference
   std::unordered_set<ValueRef> updated_values_;
+
+  // Cache to prevent duplicate prepacking of the same weight tensor with the
+  // same kernel. Key is (inputValueRef, kernel_name).
+  struct PrepackCacheHash {
+    size_t operator()(const std::pair<ValueRef, std::string>& key) const {
+      size_t h1 = std::hash<ValueRef>{}(key.first);
+      size_t h2 = std::hash<std::string>{}(key.second);
+      // Combine hashes using a method similar to boost::hash_combine
+      return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+    }
+  };
+  std::unordered_map<
+      std::pair<ValueRef, std::string>,
+      ValueRef,
+      PrepackCacheHash>
+      prepack_cache_;
 
   // Flag to indicate if re-encoding is required
   bool requires_reencode_ = false;
@@ -687,6 +704,22 @@ class ComputeGraph final {
   void check_no_active_value_ptrs();
 
  public:
+  /*
+   * Check if a prepacked tensor already exists for the given input and kernel.
+   */
+  ValueRef get_cached_prepack(
+      const ValueRef input,
+      const std::string& kernel_name) const;
+
+  /*
+   * Store a prepacked tensor in the cache, keyed by input ValueRef and kernel
+   * name.
+   */
+  void cache_prepack(
+      const ValueRef input,
+      const std::string& kernel_name,
+      const ValueRef prepacked);
+
   /*
    * Add a `api::vTensor` value to the graph with the specified properties.
    * There are various convenience overloads of this function that may be used

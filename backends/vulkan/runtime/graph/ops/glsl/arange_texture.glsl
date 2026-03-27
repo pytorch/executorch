@@ -38,13 +38,14 @@ void main() {
     return;
   }
 
-  TensorIndex4D out_tidx = texture_pos_to_tensor4d_idx_simple(outp, out_pos);
+  TensorIndex4D out_tidx =
+      texture_pos_to_tensor4d_idx_simple(outp, out_pos, out_layout);
 
   // arange output is 1D, so the W dimension holds the element index.
   // Compute the value for each element in the texel along the packed dim.
   VEC4_T outtex = VEC4_T(0);
   int limit = min(
-      4, outp.sizes[packed_dim] - out_tidx.data[packed_dim]);
+      4, safe_idx(outp.sizes, packed_dim) - out_tidx.data[packed_dim]);
   for (int comp = 0; comp < limit; comp++) {
     int elem_idx = out_tidx.data[0]; // W index is the linear element index
     outtex[comp] = VEC4_T(start + elem_idx * step).x;
