@@ -313,39 +313,47 @@ std::vector<float> VoxtralTTSRunner::generate(
 
   ET_LOG(Info, "Generating audio (max %d frames)...", config.max_tokens);
 
-  // Pre-embed the audio token once (reused every step).
   // Pad to 3 tokens for Metal SDPA compatibility (requires seq_len >= 3).
-  // Positions [dec_pos-2, dec_pos-1, dec_pos] — only last position's hidden
-  // state is used. The first two are padding (same embedding, earlier positions
-  // already in KV cache — the causal mask prevents them from affecting output).
+  // Positions [dec_pos, dec_pos+1, dec_pos+2] — we advance by 1 per step
+  // but present 3 positions to satisfy Metal's min seq_len. Only position 0's
+  // hidden state is used. The padding positions get overwritten next step.
   constexpr int DECODE_SEQ_LEN = 3;
+
+  // First step uses plain token_embedding(audio_tok) since there are no
+  // previous audio codes yet. Subsequent steps use audio_token_embedding
+  // on the previous step's codes (multi-codebook sum), matching vLLM's
+  // tts_preprocess which calls embed_multimodal(audio_tokens).
   int64_t audio_tok = static_cast<int64_t>(audio_tok_id_);
   auto audio_tok_t =
       from_blob(&audio_tok, {1, 1}, ::executorch::aten::ScalarType::Long);
   auto audio_tok_result =
       model_->execute("token_embedding", std::vector<EValue>{*audio_tok_t});
   ET_CHECK_MSG(audio_tok_result.ok(), "token_embedding(audio) failed.");
-  auto audio_embed_ref = audio_tok_result.get()[0].toTensor();
+  auto first_embed = audio_tok_result.get()[0].toTensor();
   const size_t embed_bytes =
-      static_cast<size_t>(dim_) * audio_embed_ref.element_size();
+      static_cast<size_t>(dim_) * first_embed.element_size();
 
-  // Build padded embedding: repeat the audio token embedding 3 times
+  // Build padded embedding buffer (updated each step)
   auto audio_step_embeds =
       empty({1, DECODE_SEQ_LEN, static_cast<int>(dim_)}, model_dtype_);
-  for (int i = 0; i < DECODE_SEQ_LEN; i++) {
-    std::memcpy(
-        static_cast<char*>(audio_step_embeds->mutable_data_ptr()) +
-            static_cast<size_t>(i) * embed_bytes,
-        audio_embed_ref.const_data_ptr(),
-        embed_bytes);
-  }
+
+  // Helper to fill all DECODE_SEQ_LEN slots with the same embedding
+  auto fill_step_embeds = [&](const void* src) {
+    for (int i = 0; i < DECODE_SEQ_LEN; i++) {
+      std::memcpy(
+          static_cast<char*>(audio_step_embeds->mutable_data_ptr()) +
+              static_cast<size_t>(i) * embed_bytes,
+          src,
+          embed_bytes);
+    }
+  };
+
+  // Initialize with token_embedding(24) for the first step
+  fill_step_embeds(first_embed.const_data_ptr());
 
   for (int step = 0; step < config.max_tokens && dec_pos < max_seq_len_;
        step++) {
-    // 1. Run text_decoder with padded audio token embedding
-    // Positions: [dec_pos, dec_pos+1, dec_pos+2] — we advance by 1 per step
-    // but present 3 positions to satisfy Metal's min seq_len.
-    // The KV cache at dec_pos+1 and dec_pos+2 will be overwritten next steps.
+    // 1. Run text_decoder with current step's embedding
     std::vector<int64_t> pos_data = {dec_pos, dec_pos + 1, dec_pos + 2};
     auto pos_tensor = from_blob(
         pos_data.data(),
@@ -360,10 +368,8 @@ std::vector<float> VoxtralTTSRunner::generate(
     auto hidden = dec_result.get()[0].toTensor();
     dec_pos++;
 
-    // 2. Extract hidden (1,1,dim) -> (1,dim) for acoustic transformer
-    // Extract the FIRST position's hidden state (index 0 of DECODE_SEQ_LEN).
-    // hidden is (1, DECODE_SEQ_LEN, dim). Position 0 corresponds to dec_pos-1
-    // (the actual current position after dec_pos++ above).
+    // 2. Extract first position's hidden state: (1, DECODE_SEQ_LEN, dim) -> (1,
+    // dim)
     auto h_2d = empty({1, static_cast<int>(dim_)}, model_dtype_);
     std::memcpy(
         h_2d->mutable_data_ptr(),
@@ -410,6 +416,23 @@ std::vector<float> VoxtralTTSRunner::generate(
     if (token_cb) {
       token_cb("");
     }
+
+    // 4. Prepare next step's embedding via audio_token_embedding.
+    // Reshape codes from (1, n_codebooks) to (1, n_codebooks, 1) for the
+    // multi-codebook embedding lookup, then pad to DECODE_SEQ_LEN.
+    std::vector<int64_t> codes_col(static_cast<size_t>(n_codebooks_));
+    for (int64_t i = 0; i < n_codebooks_; i++) {
+      codes_col[static_cast<size_t>(i)] = codes_ptr[i];
+    }
+    auto codes_3d = from_blob(
+        codes_col.data(),
+        {1, static_cast<int>(n_codebooks_), 1},
+        ::executorch::aten::ScalarType::Long);
+    auto ate_result = model_->execute(
+        "audio_token_embedding", std::vector<EValue>{*codes_3d});
+    ET_CHECK_MSG(ate_result.ok(), "audio_token_embedding failed.");
+    auto next_embed = ate_result.get()[0].toTensor(); // (1, 1, dim)
+    fill_step_embeds(next_embed.const_data_ptr());
   }
 
   ET_LOG(

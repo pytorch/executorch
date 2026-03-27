@@ -188,13 +188,18 @@ cmake-out/examples/models/voxtral_tts/voxtral_tts_runner \
 1. token_embedding(prompt_tokens + voice_context) → embeds
 2. Inject voice embeddings at audio token positions
 3. text_decoder(embeds, positions) → hidden          # prefill
-4. Audio generation loop (every step):
-   a. text_decoder(token_emb(24), pos) → hidden      # single-step decode
-   b. decode_audio_frame(hidden, randn()) → codes     # flow matching ODE
+4. Audio generation loop:
+   a. text_decoder(step_embed, pos) → hidden         # single-step decode
+   b. decode_audio_frame(hidden, randn()) → codes    # flow matching ODE
    c. If semantic_code == END_AUDIO: break
    d. Accumulate codes
-5. audio_decoder(codes[:chunk]) → waveform            # for each chunk
+   e. audio_token_embedding(codes) → step_embed      # feedback for next step
+5. audio_decoder(codes[:chunk]) → waveform           # for each chunk
 6. Concatenate chunks → final audio → write WAV
+
+Step 4a uses token_embedding(24) on the first iteration (no previous codes),
+then audio_token_embedding(previous_codes) on subsequent iterations. This
+matches vLLM's tts_preprocess which feeds back multi-codebook embeddings.
 ```
 
 ## License
