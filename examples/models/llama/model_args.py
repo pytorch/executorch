@@ -151,6 +151,10 @@ class ModelArgs:
     sliding_window: Optional[int] = (
         None  # sliding window size for sliding window attention
     )
+    # YOCO KV sharing: number of layers that share KV cache
+    # with earlier donor layers instead of computing their own K/V projections.
+    # When > 0, the last num_kv_shared_layers share KV from earlier layers.
+    num_kv_shared_layers: int = 0
     # gemma2 attn and output soft capping
     final_logit_softcapping: Optional[float] = None
     attn_logit_softcapping: Optional[float] = None

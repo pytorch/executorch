@@ -97,7 +97,25 @@ struct ET_EXPERIMENTAL Stats {
 
 inline std::string stats_to_json_string(const Stats& stats) {
   std::stringstream ss;
-  ss << "{\"prompt_tokens\":" << stats.num_prompt_tokens << ","
+  ss << "{";
+  // Prefill and decode rates as first two metrics
+  double prefill_ms =
+      (double)(stats.prompt_eval_end_ms - stats.inference_start_ms);
+  if (prefill_ms > 0) {
+    ss << "\"prefill_token_per_sec\":"
+       << (stats.num_prompt_tokens / prefill_ms *
+           stats.SCALING_FACTOR_UNITS_PER_SECOND)
+       << ",";
+  }
+  double decode_ms =
+      (double)(stats.inference_end_ms - stats.prompt_eval_end_ms);
+  if (decode_ms > 0) {
+    ss << "\"decode_token_per_sec\":"
+       << (stats.num_generated_tokens / decode_ms *
+           stats.SCALING_FACTOR_UNITS_PER_SECOND)
+       << ",";
+  }
+  ss << "\"prompt_tokens\":" << stats.num_prompt_tokens << ","
      << "\"generated_tokens\":" << stats.num_generated_tokens << ","
      << "\"model_load_start_ms\":" << stats.model_load_start_ms << ","
      << "\"model_load_end_ms\":" << stats.model_load_end_ms << ","
