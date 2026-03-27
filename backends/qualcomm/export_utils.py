@@ -575,6 +575,7 @@ def build_executorch_binary(
             dep_table=passes_dependency,
             skip_node_id_set=qnn_config.skip_delegate_node_ids,
             skip_node_op_set=qnn_config.skip_delegate_node_ops,
+            generate_etrecord=qnn_intermediate_debugger is not None,
         )
     else:
         edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
@@ -585,20 +586,8 @@ def build_executorch_binary(
             passes_job=passes_job,
             skip_node_id_set=qnn_config.skip_delegate_node_ids,
             skip_node_op_set=qnn_config.skip_delegate_node_ops,
+            generate_etrecord=qnn_intermediate_debugger is not None,
         )
-
-    if qnn_intermediate_debugger:
-        lowered_module_nodes = get_delegates(edge_prog_mgr.exported_program().graph)
-        assert (
-            len(lowered_module_nodes) == 1
-        ), "Graph with partitions are currently unsupported."
-
-        lowered_module_node = lowered_module_nodes[0]
-        lower_module = getattr(
-            edge_prog_mgr.exported_program().graph_module, lowered_module_node.name
-        )
-        edge_module = lower_module.original_module.module()
-        qnn_intermediate_debugger.set_edge_module(edge_module=edge_module)
 
     allocate_io = not (qnn_config.shared_buffer or qnn_config.direct_build_folder)
     executorch_config = ExecutorchBackendConfig(
@@ -616,6 +605,16 @@ def build_executorch_binary(
     exec_prog_mgr = edge_prog_mgr.to_executorch(config=executorch_config)
     with open(pte_name, "wb") as file:
         exec_prog_mgr.write_to_file(file)
+    
+    if qnn_intermediate_debugger:
+        etrecord = exec_prog_mgr.get_etrecord()
+        etrecord.update_representative_inputs(qnn_intermediate_debugger.sample_input)
+        edge_ep = etrecord.graph_map[qnn_intermediate_debugger.reference_graph_name]
+        # Use this edge_ep since edge_ep after etrecord serialize/deserialize will lost quant_attrs info.
+        qnn_intermediate_debugger.set_edge_ep(edge_ep=edge_ep)
+        etrecord_file_path = f"{os.path.dirname(pte_name)}/debug.etrecord"
+        qnn_intermediate_debugger.set_etrecord_file_path(etrecord_file_path)
+        etrecord.save(etrecord_file_path)
 
     if qnn_config.compile_only:
         sys.exit(0)
