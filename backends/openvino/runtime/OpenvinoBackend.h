@@ -21,8 +21,6 @@
 namespace exr = executorch::runtime;
 namespace exa = executorch::aten;
 
-using namespace std;
-
 namespace executorch {
 namespace backends {
 namespace openvino {

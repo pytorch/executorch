@@ -65,31 +65,9 @@ Args:
 - **output_path**: Path to dump intermediate results to.
 
 ```python
-def VgfCompileSpec.get_intermediate_path(self) -> str | None:
-```
-Gets the path used for dumping intermediate results such as tosa and
-pte.
-
-Returns:
-    Path where intermediate results are saved.
-
-```python
-def VgfCompileSpec.get_output_format() -> str:
-```
-Return the artifact format emitted by this compile spec.
-
-```python
 def VgfCompileSpec.get_output_order_workaround(self) -> bool:
 ```
 Gets whether the output order workaround is being applied.
-
-```python
-def VgfCompileSpec.get_pass_pipeline_config(self) -> executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig:
-```
-Returns configuration that controls how the Arm pass pipeline should
-behave.
-
-Subclasses may override to tweak defaults for specific targets.
 
 ```python
 def VgfCompileSpec.set_output_order_workaround(self, output_order_workaround: bool):
@@ -128,6 +106,21 @@ For more information on quantization, see [Quantization](arm-vgf-quantization.md
 The VGF backend can use the default ExecuTorch runner. The steps required for building and running it are explained in the [VGF Backend Tutorial](tutorials/vgf-getting-started.md). <!-- @lint-ignore -->
 The example application is recommended to use for testing basic functionality of your lowered models, as well as a starting point for developing runtime integrations for your own targets.
 
+### Example: Image classification flow
+
+[`examples/arm/image_classification_example_vgf`](https://github.com/pytorch/executorch/tree/main/examples/arm/image_classification_example_vgf)
+contains a ready-to-run DeiT image classification pipeline for VGF targets.
+The example README documents how to:
+
+- Export the quantized INT8 weights via `model_export/export_deit.py`.
+- Use the provided requirements file to install the ML SDK converter scripts
+  and produce a `.pte` artifact.
+- Build and launch the Vulkan-based runtime under `runtime/`, which loads the
+  `.pte` alongside the generated VGF blob.
+
+Following this walkthrough ensures you exercise the same lowering + runtime flow
+described in the rest of this guide but with a concrete end-to-end sample.
+
 ## Reference
 
 **→{doc}`/backends/arm-vgf/arm-vgf-partitioner` — Partitioner options.**
@@ -137,6 +130,8 @@ The example application is recommended to use for testing basic functionality of
 **→{doc}`/backends/arm-vgf/arm-vgf-troubleshooting` — Debug common issues.**
 
 **→{doc}`/backends/arm-vgf/tutorials/arm-vgf-tutorials` — Tutorials.**
+
+**→{doc}`/backends/arm-vgf/VGF_op_support` — VGF supported operators.**
 
 
 ```{toctree}
@@ -148,4 +143,5 @@ arm-vgf-partitioner
 arm-vgf-quantization
 arm-vgf-troubleshooting
 tutorials/arm-vgf-tutorials
+VGF_op_support
 ```

@@ -8,7 +8,6 @@ from typing import Optional
 
 import executorch.backends.vulkan.patterns as vk_patterns
 import torch.library
-
 from torch._subclasses.fake_tensor import FakeTensor
 
 namespace = "et_vk"
@@ -259,7 +258,7 @@ def linear_q4gsw(
         weights, [1, group_size], weight_scales, weight_zeros, torch.int8, -8, 7
     )
 
-    out = torch.nn.functional.linear(x, weights)
+    out = torch.nn.functional.linear(x, weights, bias)
     return out
 
 
@@ -273,7 +272,7 @@ def linear_dq8ca_q4gsw(
     group_size: int,
     bias: Optional[torch.Tensor] = None,
 ):
-    return linear_q4gsw(x, weights, weight_scales, group_size)
+    return linear_q4gsw(x, weights, weight_scales, group_size, bias)
 
 
 name = "linear_q4gsw"
@@ -685,6 +684,105 @@ lib.define(
 lib.impl(name, q8ta_conv2d_dw, "CompositeExplicitAutograd")
 conv2d_q8ta_q8csw_dw_op = getattr(getattr(torch.ops, namespace), name)
 
+
+def q8ta_conv2d_transposed(
+    x: torch.Tensor,
+    input_scale: float,
+    input_zero_point: int,
+    weights: torch.Tensor,
+    weight_sums: torch.Tensor,
+    weight_scales: torch.Tensor,
+    output_scale: float,
+    output_zero_point: int,
+    bias: Optional[torch.Tensor],
+    kernel_size: list,
+    stride: list,
+    padding: list,
+    output_padding: list,
+    dilation: list,
+    groups: int,
+    activation: str,
+):
+    x = torch.ops.quantized_decomposed.dequantize_per_tensor(
+        x, input_scale, input_zero_point, -128, 127, x.dtype
+    )
+
+    OC = weights.shape[0]
+    IC_per_group = int(x.shape[1] / groups)
+    K_h, K_w = kernel_size[0], kernel_size[1]
+
+    orig_weight_K_dim = K_h * K_w * IC_per_group
+    if weights.shape[-1] > orig_weight_K_dim:
+        weights = weights[:, :orig_weight_K_dim]
+
+    if weight_scales.shape[0] > OC:
+        weight_scales = weight_scales[:OC]
+        if bias is not None:
+            bias = bias[:OC]
+
+    # Reshape to (OC, IC_per_group, K_h, K_w) then transpose to
+    # (IC_per_group * groups, OC_per_group, K_h, K_w) for conv_transpose2d
+    weights = weights.view(OC, IC_per_group, K_h, K_w)
+    OC_per_group = OC // groups
+    weights = (
+        weights.view(groups, OC_per_group, IC_per_group, K_h, K_w)
+        .permute(0, 2, 1, 3, 4)
+        .contiguous()
+        .view(IC_per_group * groups, OC_per_group, K_h, K_w)
+    )
+
+    weight_zeros = torch.zeros_like(weight_scales, dtype=torch.int32)
+    # Dequantize per OC channel. For transposed weight (IC, OC_per_group, KH, KW),
+    # OC is at axis=1.
+    weights = torch.ops.quantized_decomposed.dequantize_per_channel(
+        weights,
+        weight_scales[:OC_per_group].repeat(groups) if groups > 1 else weight_scales,
+        weight_zeros[:OC_per_group].repeat(groups) if groups > 1 else weight_zeros,
+        1,
+        -127,
+        127,
+        torch.int8,
+    )
+
+    out = torch.nn.functional.conv_transpose2d(
+        x, weights, bias, stride, padding, output_padding, groups, dilation
+    )
+
+    if activation == "relu":
+        out = torch.nn.functional.relu(out)
+
+    out = torch.ops.quantized_decomposed.quantize_per_tensor(
+        out, output_scale, output_zero_point, -128, 127, torch.int8
+    )
+
+    return out
+
+
+name = "q8ta_conv2d_transposed"
+lib.define(
+    f"""
+    {name}(
+        Tensor x,
+        float input_scale,
+        int input_zero_point,
+        Tensor weights,
+        Tensor weight_sums,
+        Tensor weight_scales,
+        float output_scale,
+        int output_zero_point,
+        Tensor? bias,
+        SymInt[] kernel_size,
+        SymInt[] stride,
+        SymInt[] padding,
+        SymInt[] output_padding,
+        SymInt[] dilation,
+        SymInt groups,
+        str activation) -> Tensor
+    """
+)
+lib.impl(name, q8ta_conv2d_transposed, "CompositeExplicitAutograd")
+q8ta_conv2d_transposed_op = getattr(getattr(torch.ops, namespace), name)
+
 ######################
 ## apply_rotary_emb ##
 ######################
@@ -780,6 +878,46 @@ lib.define(
 )
 lib.impl(name, q8ta_relu_impl, "CompositeExplicitAutograd")
 q8ta_relu_op = getattr(getattr(torch.ops, namespace), name)
+
+########################
+## embedding_q4gsw ##
+########################
+
+
+def embedding_q4gsw_impl(
+    weight: torch.Tensor,
+    weight_scales: torch.Tensor,
+    group_size: int,
+    indices: torch.Tensor,
+    is_linear_weight: bool = False,
+) -> torch.Tensor:
+    # Unpack 4-bit values from packed uint8 tensor
+    # Packing convention: packed_byte = (even_val + 8) << 4 | (odd_val + 8)
+    high = (weight >> 4).to(torch.int8) - 8
+    low = (weight & 0xF).to(torch.int8) - 8
+    if is_linear_weight:
+        unpacked = torch.stack([low, high], dim=-1).reshape(weight.shape[0], -1)
+    else:
+        unpacked = torch.stack([high, low], dim=-1).reshape(weight.shape[0], -1)
+    # Dequantize using per-group scales
+    num_groups = weight_scales.shape[1] if weight_scales.dim() > 1 else 1
+    unpacked_groups = unpacked.reshape(weight.shape[0], num_groups, group_size)
+    scales = (
+        weight_scales.unsqueeze(-1)
+        if weight_scales.dim() > 1
+        else weight_scales.reshape(1, 1, 1)
+    )
+    dequantized = unpacked_groups.float() * scales.float()
+    dequantized = dequantized.reshape(weight.shape[0], -1)
+    return torch.nn.functional.embedding(indices, dequantized)
+
+
+name = "embedding_q4gsw"
+lib.define(
+    f"{name}(Tensor weight, Tensor weight_scales, int group_size, Tensor indices, bool is_linear_weight = False) -> Tensor"
+)
+lib.impl(name, embedding_q4gsw_impl, "CompositeExplicitAutograd")
+embedding_q4gsw_op = getattr(getattr(torch.ops, namespace), name)
 
 #############################
 ## select_as_symint ##

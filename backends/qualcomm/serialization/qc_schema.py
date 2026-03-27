@@ -152,6 +152,14 @@ class QnnExecuTorchBackendType(IntEnum):
     kHtpBackend = 2
     kDspBackend = 3
 
+    def __str__(self) -> str:
+        return {
+            QnnExecuTorchBackendType.kUndefinedBackend: "undefined",
+            QnnExecuTorchBackendType.kGpuBackend: "gpu",
+            QnnExecuTorchBackendType.kHtpBackend: "htp",
+            QnnExecuTorchBackendType.kDspBackend: "dsp",
+        }[self]
+
 
 @dataclass
 class QnnExecuTorchHtpBackendOptions:

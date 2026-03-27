@@ -152,7 +152,8 @@
         "llm-release"
       ],
       "cacheVariables": {
-        "EXECUTORCH_BUILD_CUDA": "ON"
+        "EXECUTORCH_BUILD_CUDA": "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "native"
       },
       "condition": {
         "type": "inList",
@@ -215,6 +216,21 @@
         "lhs": "${hostSystemName}",
         "type": "equals",
         "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "llm-debug-vulkan",
+      "displayName": "LLM debug build with Vulkan",
+      "inherits": [
+        "llm-debug"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_VULKAN": "ON"
+      },
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Windows"]
       }
     },
     {
@@ -392,6 +408,15 @@
       "jobs": 0
     },
     {
+      "name": "llm-debug-vulkan-install",
+      "displayName": "Build and install LLM extension debug artifacts (Vulkan)",
+      "configurePreset": "llm-debug-vulkan",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
       "name": "llm-metal-stats-install",
       "displayName": "Build and install LLM extension artifacts with Metal stats",
       "configurePreset": "llm-metal-stats",
@@ -501,6 +526,20 @@
         {
           "type": "build",
           "name": "llm-debug-metal-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-debug-vulkan",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with Vulkan enabled (Debug)",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-debug-vulkan"
+        },
+        {
+          "type": "build",
+          "name": "llm-debug-vulkan-install"
         }
       ]
     },

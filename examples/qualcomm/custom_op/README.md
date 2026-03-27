@@ -44,7 +44,7 @@ python3 examples/qualcomm/custom_op/custom_ops_1.py --build_folder build-android
 Use the custom annotation in Qnn Quantizer
 ```python
 quantizer = make_quantizer(
-    quant_dtype=quant_dtype, custom_annotations=(annotate_custom,)
+    quant_dtype=quant_dtype, custom_annotations=(annotate_custom,), backend=QnnExecuTorchBackendType.kHtpBackend, soc_model="SM8750"
 )
 ```
 

@@ -200,6 +200,12 @@ function create_setup_path(){
     clear_setup_path
     log_step "path" "Generating setup path scripts at ${setup_path_script}"
 
+    if [[ -n "${VIRTUAL_ENV:-}" && -d "${VIRTUAL_ENV}/bin" ]]; then
+        prepend_env_in_setup_path PATH "${VIRTUAL_ENV}/bin"
+    elif [[ -d "${et_dir}/env/bin" ]]; then
+        prepend_env_in_setup_path PATH "${et_dir}/env/bin"
+    fi
+
     local use_mlsdk_pip=0
     if use_mlsdk_pip_package; then
         use_mlsdk_pip=1
@@ -335,7 +341,7 @@ if [[ $is_script_sourced -eq 0 ]]; then
     fi
 
     pushd tosa-tools
-    git checkout v2025.11.0
+    git checkout v2025.11.2
 
     if [[ ! -d "reference_model" ]]; then
         log_step "main" "[error] Missing reference_model directory in tosa-tools repo."
@@ -345,7 +351,6 @@ if [[ $is_script_sourced -eq 0 ]]; then
         log_step "main" "[error] Missing serialization directory in tosa-tools repo."
         exit 1
     fi
-
 
     export CMAKE_BUILD_PARALLEL_LEVEL="$(get_parallel_jobs)"
 

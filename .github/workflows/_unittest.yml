@@ -58,10 +58,11 @@ jobs:
     if: ${{ inputs.build-tool == 'cmake' }}
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     with:
-      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       script: |
+        git config --global http.sslBackend openssl
+        git submodule update --init --recursive 
         conda init powershell
 
         powershell -Command "& {

@@ -266,15 +266,6 @@ Result<uint64_t> MultimodalPromptProcessor<T>::prefill(
     prepare_io(prompt_embedding, num_prompt_tokens, prompt_pos, pos);
 
     // Run inference
-    for (int layer = 0; layer < metadata_.num_layers; ++layer) {
-      std::vector<KVCache<T>> k_cache_ptrs = kv_manager_->get_k_cache_();
-      T* k_cache_data = k_cache_ptrs[layer].buffer;
-    }
-    for (int layer = 0; layer < metadata_.num_layers; ++layer) {
-      std::vector<KVCache<T>> v_cache_ptrs = kv_manager_->get_v_cache_();
-      T* v_cache_data = v_cache_ptrs[layer].buffer;
-    }
-
     decoder_runner_->step(method_name_, inputs_);
     if (dump_logits) {
       prompt_all_logits_.insert(
