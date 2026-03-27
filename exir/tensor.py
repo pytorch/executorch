@@ -175,7 +175,8 @@ class TensorSpec:
 
     @property
     def allocated_memory(self) -> int:
-        nbytes = num_bytes_from_shape_and_dtype(self.shape, self.dtype)
+        shape = getattr(self, "_upper_bound_shape", None) or self.shape
+        nbytes = num_bytes_from_shape_and_dtype(shape, self.dtype)
         return calculate_aligned_num_bytes(nbytes, self.alignment)
 
     def realign(self, new_alignment: int) -> int:
@@ -359,7 +360,8 @@ def make_tensor_value(
         else:
             return x
 
-    tensor_size = to_list(spec.shape)
+    upper = getattr(spec, "_upper_bound_shape", None)
+    tensor_size = to_list(upper if upper is not None else spec.shape)
     tensor_dim_order = to_list(spec.dim_order)
 
     flatbuffer_tensor = schema.Tensor(

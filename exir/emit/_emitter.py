@@ -1179,6 +1179,172 @@ class _Emitter(torch.fx.Interpreter):
 
         return subemitter_binding_output_values
 
+    def _emit_while(
+        self,
+        args: Tuple[_Argument, ...],
+        subemitter_binding_output_values: List[_AbstractValue],
+    ) -> List[_AbstractValue]:
+        """Emits torch.while_loop.
+
+        Converts the higher order while_loop op into a loop constructed from jump
+        instructions and primitive operations. while_loop executes body_fn
+        repeatedly as long as cond_fn returns True, carrying state across iterations.
+
+        while_loop signature: while_loop(cond_fn, body_fn, carried_inputs, additional_inputs)
+            - cond_fn: GraphModule that takes (*carried, *additional) and returns a boolean
+            - body_fn: GraphModule that takes (*carried, *additional) and returns new carried values
+            - carried_inputs: Initial carried state (list of tensors)
+            - additional_inputs: Additional arguments passed unchanged to cond_fn and body_fn
+
+        Output: Final carried values after the loop terminates.
+
+        Emitted structure:
+            1. Copy carried_inputs to output buffers
+            2. Loop start: emit cond_fn -> boolean result
+            3. If cond is False, jump to end
+            4. Emit body_fn -> new carried values
+            5. Copy body_fn outputs to output buffers
+            6. Jump back to step 2
+            7. End of loop
+        """
+        cond_fn, body_fn, carried_inputs, additional_inputs = args
+
+        assert isinstance(subemitter_binding_output_values, (list, tuple)), (
+            f"Expected list for subemitter_binding_output_values. "
+            f"Got {type(subemitter_binding_output_values).__name__}: "
+            f"{subemitter_binding_output_values}."
+        )
+
+        assert isinstance(cond_fn, torch.fx.GraphModule)
+        assert isinstance(body_fn, torch.fx.GraphModule)
+        assert isinstance(carried_inputs, (list, tuple))
+        assert isinstance(additional_inputs, (list, tuple))
+
+        num_carry = len(carried_inputs)
+        carry_outputs = list(subemitter_binding_output_values[:num_carry])
+
+        # Initialize carry_outputs from carried_inputs.
+        # Use copy.out (not copy_) because it calls resize_tensor on the output,
+        # which is needed when carry_outputs have trace-time shapes that differ
+        # from runtime shapes (e.g. dynamic sequence length).
+        op_index_copy_out, _ = self._get_operator(
+            name="aten::copy", overload="out"
+        )
+        for init_val, carry_out in zip(carried_inputs, carry_outputs):
+            kernel = Instruction(
+                KernelCall(
+                    op_index=op_index_copy_out,
+                    args=[
+                        init_val.id,
+                        init_val.id,
+                        self._emit_evalue(EValue(Bool(False))).id,
+                        carry_out.id,
+                        carry_out.id,
+                    ],
+                )
+            )
+            self.chain.instructions.append(kernel)
+
+        # Record the jump-back target (start of cond_fn evaluation)
+        jump_to_instruction = self.instruction_start_offset + len(
+            self.chain.instructions
+        )
+
+        # Emit cond_fn submodule
+        cond_binding_input_values: List[Any] = []
+        cond_binding_input_values.extend(carry_outputs)
+        cond_binding_input_values.extend(additional_inputs)
+
+        cond_emitter = _Emitter(
+            cond_fn,
+            self.emitter_state,
+            self.program_state,
+            instruction_start_offset=self.instruction_start_offset
+            + len(self.chain.instructions),
+            binding_input_values=cond_binding_input_values,
+            binding_output_values=None,
+        )
+        cond_emitter.run()
+        self._merge_chain(cond_emitter.chain)
+
+        # The cond_fn should output a single boolean value
+        self._internal_assert_emitter(
+            len(cond_emitter.concrete_output_ids) == 1,
+            self.node,
+            f"while_loop cond_fn should return exactly 1 value, "
+            f"got {len(cond_emitter.concrete_output_ids)}",
+        )
+        cond_bool_value = cond_emitter.concrete_output_ids[0]
+
+        # We need to jump past the body when cond is False.
+        # We'll insert a placeholder JumpFalse here and fix the destination after
+        # emitting the body.
+        jf_placeholder_idx = len(self.chain.instructions)
+        jf_exit_loop = Instruction(
+            JumpFalseCall(
+                cond_value_index=cond_bool_value.id,
+                destination_instruction=0,  # will be fixed up below
+            )
+        )
+        self.chain.instructions.append(jf_exit_loop)
+
+        # Emit body_fn submodule
+        body_binding_input_values: List[Any] = []
+        body_binding_input_values.extend(carry_outputs)
+        body_binding_input_values.extend(additional_inputs)
+
+        body_emitter = _Emitter(
+            body_fn,
+            self.emitter_state,
+            self.program_state,
+            instruction_start_offset=self.instruction_start_offset
+            + len(self.chain.instructions),
+            binding_input_values=body_binding_input_values,
+            binding_output_values=None,
+        )
+        body_emitter.run()
+        self._merge_chain(body_emitter.chain)
+
+        body_carry_outputs = body_emitter.concrete_output_ids
+        self._internal_assert_emitter(
+            len(body_carry_outputs) == num_carry,
+            self.node,
+            f"while_loop body_fn should output {num_carry} carried values, "
+            f"got {len(body_carry_outputs)}",
+        )
+
+        # Copy body_fn outputs to carry_outputs for next iteration.
+        # Use copy.out to handle dynamic shapes (same reason as init above).
+        for body_out, carry_out in zip(body_carry_outputs, carry_outputs):
+            kernel = Instruction(
+                KernelCall(
+                    op_index=op_index_copy_out,
+                    args=[
+                        body_out.id,
+                        body_out.id,
+                        self._emit_evalue(EValue(Bool(False))).id,
+                        carry_out.id,
+                        carry_out.id,
+                    ],
+                )
+            )
+            self.chain.instructions.append(kernel)
+
+        # Jump back to cond_fn evaluation
+        jf_back_to_cond = Instruction(
+            JumpFalseCall(
+                cond_value_index=self._emit_evalue(EValue(Bool(False))).id,
+                destination_instruction=jump_to_instruction,
+            )
+        )
+        self.chain.instructions.append(jf_back_to_cond)
+
+        # Fix up the exit jump destination to point past the loop
+        end_of_loop = self.instruction_start_offset + len(self.chain.instructions)
+        jf_exit_loop.instr_args.destination_instruction = end_of_loop
+
+        return subemitter_binding_output_values
+
     def _emit_control_flow(
         self, target: _Target, args: Tuple[_Argument, ...], kwargs: Dict[str, _Argument]
     ) -> _EmitterValue:
@@ -1204,6 +1370,11 @@ class _Emitter(torch.fx.Interpreter):
             assert len(specs) == 1
             assert isinstance(specs[0], TensorSpec)
             specs[0].shape_dynamism = TensorShapeDynamism.DYNAMIC_BOUND
+        elif target is torch.ops.higher_order.while_loop:
+            if isinstance(specs, (list, tuple)):
+                for spec in specs:
+                    if isinstance(spec, TensorSpec):
+                        spec.shape_dynamism = TensorShapeDynamism.DYNAMIC_BOUND
 
         subemitter_binding_output_values = pytree.tree_map(
             lambda spec: self._emit_spec(spec),
@@ -1216,6 +1387,8 @@ class _Emitter(torch.fx.Interpreter):
             return self._emit_map(args, subemitter_binding_output_values)
         elif target is torch.ops.higher_order.scan:
             return self._emit_scan(args, subemitter_binding_output_values)
+        elif target is torch.ops.higher_order.while_loop:
+            return self._emit_while(args, subemitter_binding_output_values)
         else:
             raise InternalError(
                 self._emit_node_specific_error(

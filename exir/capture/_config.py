@@ -50,6 +50,12 @@ class EdgeCompileConfig:
     # Allow ops to be preserved in the graph, i.e., prevent them from being decomposed.
     # These may be core or non-core ATen ops; custom ops should not be here.
     preserve_ops: List[torch.torch._ops.OpOverload] = field(default_factory=list)
+    # Additional decompositions to merge into the default decomposition table.
+    # Use this to provide custom decompositions for ops like aten.lstm.input
+    # when the default decomposition doesn't preserve dynamic shapes.
+    _extra_decomp_table: Optional[
+        Dict[torch._ops.OpOverload, Callable]
+    ] = None
 
 
 @compatibility(is_backward_compatible=False)

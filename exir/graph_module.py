@@ -89,6 +89,7 @@ def get_control_flow_submodules(
             torch.ops.higher_order.cond: [1, 2],
             torch.ops.higher_order.map_impl: [0],
             torch.ops.higher_order.scan: [0],  # combine_fn is at arg index 0
+            torch.ops.higher_order.while_loop: [0, 1],  # cond_fn, body_fn
         },
     )
 

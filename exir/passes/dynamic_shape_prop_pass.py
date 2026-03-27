@@ -259,6 +259,23 @@ class DynamicShapePropPass(ExportPass):
                     self.eval_symint_to_ubval(s) for s in val.shape
                 ]
 
+    def call_while(
+        self,
+        cond_fn: torch.fx.GraphModule,
+        body_fn: torch.fx.GraphModule,
+        carried_inputs: List[ProxyValue],
+        additional_inputs: List[ProxyValue],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
+        all_inputs = list(carried_inputs) + list(additional_inputs)
+        self.inject_dsinfo_to_graph(cond_fn, all_inputs)
+        self.inject_dsinfo_to_graph(body_fn, all_inputs)
+        retval = super().call_while(
+            cond_fn, body_fn, carried_inputs, additional_inputs, meta
+        )
+        self.extract_dsinfo_from_graph(body_fn, meta)
+        return retval
+
     def call_delegate(
         self,
         lowered_module: LoweredBackendModule,

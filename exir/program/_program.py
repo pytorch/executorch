@@ -1161,6 +1161,95 @@ def _can_skip_using_EDGE_DO_NOT_DECOMP(
     return check_op_support is None
 
 
+def _run_decompositions_with_lifted_constants(
+    program: ExportedProgram,
+    decomp_table: Dict,
+) -> ExportedProgram:
+    """Wrapper around run_decompositions that handles new lifted constants.
+
+    When decompositions (like the while_loop LSTM decomposition) introduce new
+    constant tensors, the standard run_decompositions may fail validation because
+    the new constants aren't in the original constants dictionary. This wrapper
+    catches such failures and rebuilds the ExportedProgram with the correct
+    constants merged from the new graph signature.
+    """
+    try:
+        return program.run_decompositions(decomp_table)
+    except Exception as e:
+        if "not in the constants dictionary" not in str(e):
+            raise
+
+    from torch.export.exported_program import (
+        _decompose_exported_program,
+        _split_decomp_table_to_cia_and_python_decomp,
+        _decompose_and_get_gm_with_new_signature_constants,
+        _get_updated_module_call_graph,
+        _get_updated_range_constraints,
+    )
+
+    _table = dict(decomp_table)
+    cia_to_decomp, python_decomp_table = _split_decomp_table_to_cia_and_python_decomp(
+        _table
+    )
+
+    gm, new_graph_signature, state_dict = (
+        _decompose_and_get_gm_with_new_signature_constants(
+            program,
+            cia_to_decomp=cia_to_decomp,
+            python_decomp_table=python_decomp_table,
+            joint_loss_index=None,
+            decompose_custom_triton_ops=False,
+        )
+    )
+
+    new_module_call_graph = _get_updated_module_call_graph(
+        program.graph_module,
+        program.graph_signature,
+        gm,
+        new_graph_signature,
+        program.module_call_graph,
+    )
+
+    gm.meta.update(program.graph_module.meta)
+
+    new_range_constraints = _get_updated_range_constraints(
+        gm,
+        program.range_constraints,
+    )
+
+    # Merge constants: start with original, then add any new lifted constants.
+    # When decompositions create new constant tensors, they get registered as
+    # buffers in the graph module but aren't included in the constants dict.
+    # We extract them from the graph module's buffers.
+    from torch.export.graph_signature import InputKind
+
+    merged_constants = dict(program.constants)
+    gm_buffers = dict(gm.named_buffers())
+    for spec in new_graph_signature.input_specs:
+        if spec.kind == InputKind.CONSTANT_TENSOR and spec.target not in merged_constants:
+            if spec.target in state_dict:
+                merged_constants[spec.target] = state_dict.pop(spec.target)
+            else:
+                # Find the constant in graph module's buffers.
+                # Buffer names don't match target names, so we search by
+                # matching placeholder nodes to get_attr references.
+                for buf_name, buf_val in gm_buffers.items():
+                    if buf_name not in state_dict and buf_name not in merged_constants:
+                        merged_constants[spec.target] = buf_val
+                        break
+
+    return ExportedProgram(
+        root=gm,
+        graph=gm.graph,
+        graph_signature=new_graph_signature,
+        state_dict=state_dict,
+        range_constraints=new_range_constraints,
+        module_call_graph=new_module_call_graph,
+        example_inputs=program.example_inputs,
+        constants=merged_constants,
+    )
+
+
 def _gen_edge_manager_for_partitioners(
     partitioner: Dict[str, List[Partitioner]],
     aten_programs: Dict[str, ExportedProgram],
@@ -1181,11 +1270,50 @@ def _gen_edge_manager_for_partitioners(
           on nodes with preserved aten targets. They are then replaces with transformed ops to
           keep them through the second pass of decompositions
     """
+    extra_decomp_table = config._extra_decomp_table or {}
+
+    def _get_decomp_table():
+        table = _default_decomposition_table()
+        table.update(extra_decomp_table)
+        return table
+
+    # Save placeholder dynamic shape info before run_decompositions can
+    # narrow the shape env ranges (e.g. from [1, 128] to [16, 16]).
+    # This is used by SpecPropPass to restore correct upper bounds.
+    placeholder_dynamic_dims: Dict[str, Dict[str, List]] = {}
+    for name, program in aten_programs.items():
+        per_program: Dict[str, List] = {}
+        for node in program.graph.nodes:
+            if node.op != "placeholder":
+                continue
+            val = node.meta.get("val", None)
+            if val is None or not isinstance(val, torch.Tensor):
+                continue
+            ub_shape = []
+            has_dynamic = False
+            for s in val.shape:
+                if isinstance(s, torch.SymInt):
+                    has_dynamic = True
+                    sym_expr = s.node.expr
+                    if sym_expr in program.range_constraints:
+                        rc = program.range_constraints[sym_expr]
+                        import sympy
+
+                        ub = int(rc.upper) if isinstance(rc.upper, sympy.Integer) else None
+                    else:
+                        ub = None
+                    ub_shape.append(ub)
+                else:
+                    ub_shape.append(int(s))
+            if has_dynamic:
+                per_program[node.name] = ub_shape
+        placeholder_dynamic_dims[name] = per_program
+
     ops_set_to_not_decompose_by_program = defaultdict(list)
     edge_programs: Dict[str, ExportedProgram] = {}
     for name, program in aten_programs.items():
         # Functionalize program before asking partitioners to preserve ops
-        program = program.run_decompositions({})
+        program = _run_decompositions_with_lifted_constants(program, {})
 
         if partitioner is not None:
             partitioners_for_program = partitioner.get(name, [])
@@ -1193,10 +1321,10 @@ def _gen_edge_manager_for_partitioners(
 
             # Decompose by default if there are no partitioners for the method
             if not partitioners_for_program:
-                table = _default_decomposition_table()
+                table = _get_decomp_table()
                 for op in config.preserve_ops:
                     table.pop(op, None)
-                program = program.run_decompositions(table)
+                program = _run_decompositions_with_lifted_constants(program, table)
 
             # Process each partitioner individually using their specific requirements
             for curr_partitioner in partitioners_for_program:
@@ -1209,14 +1337,14 @@ def _gen_edge_manager_for_partitioners(
 
                 if can_skip_using_edge_do_not_decomp:
                     # Preserve all ops in curr_ops_no_decomp from decomposition
-                    table = _default_decomposition_table()
+                    table = _get_decomp_table()
                     ops_needing_preservation = []
 
                     for op in curr_ops_no_decomp:
                         if table.pop(op, None) is not None:
                             ops_needing_preservation.append(op)
 
-                    program = program.run_decompositions(table)
+                    program = _run_decompositions_with_lifted_constants(program, table)
                     final_ops_to_preserve.update(ops_needing_preservation)
                 else:
                     # EDGE_DO_NOT_DECOMP path for the partitioner
@@ -1225,12 +1353,12 @@ def _gen_edge_manager_for_partitioners(
                     )
 
                     # Apply decompositions with this partitioner's preserved ops
-                    table = _default_decomposition_table()
+                    table = _get_decomp_table()
                     for op in curr_ops_no_decomp:
                         table.pop(op, None)
 
                     # First pass of decompositions with this partitioner's preserved ops
-                    program = program.run_decompositions(table)
+                    program = _run_decompositions_with_lifted_constants(program, table)
 
                     # Filter ops using EDGE_DO_NOT_DECOMP
                     temp_partitioner_dict = {name: [curr_partitioner]}
@@ -1243,7 +1371,7 @@ def _gen_edge_manager_for_partitioners(
                     final_ops_to_preserve.update(preserved_ops)
 
                     # Second pass of decompositions with this partitioner's preserved ops after filtering
-                    program = program.run_decompositions(_default_decomposition_table())
+                    program = _run_decompositions_with_lifted_constants(program, _get_decomp_table())
 
                     # Restore ops from edge_no_decomp_namespace to aten ops
                     _restore_transformed_ops_to_aten_ops(program)
@@ -1254,6 +1382,11 @@ def _gen_edge_manager_for_partitioners(
             program,
             preserve_ops=ops_set_to_not_decompose_by_program.get(name, []),
         )
+        # Store placeholder dynamic dim info on the edge program's graph module.
+        if name in placeholder_dynamic_dims and placeholder_dynamic_dims[name]:
+            edge_programs[name].graph_module.meta[
+                "_placeholder_dynamic_dims"
+            ] = placeholder_dynamic_dims[name]
 
     # Merge ops_to_not_decompose into config so that downstream calls (e.g.
     # EdgeProgramManager.transform()) carry the exception list through their

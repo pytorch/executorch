@@ -7,11 +7,12 @@
 # pyre-strict
 
 import operator
-from typing import Optional
+from typing import Dict, Optional
 
 import torch
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.pass_base import ExportPass, ProxyValue
+from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
 from torch.export.exported_program import ExportGraphSignature
 from torch.fx.node import Node
@@ -29,6 +30,73 @@ def make_spec(x):
         return x
     else:
         return None
+
+
+def _get_concrete_to_ub(
+    graph_module: torch.fx.GraphModule,
+) -> Dict[int, int]:
+    """Build concrete dim value -> upper bound mapping from placeholder info.
+
+    Uses ``_placeholder_dynamic_dims`` from ``graph_module.meta`` (set during
+    edge transform from the original ExportedProgram range_constraints) to
+    build a mapping from trace-time concrete dimension values to their
+    original upper bounds.
+    """
+    ph_dynamic: Dict[str, list] = graph_module.meta.get(
+        "_placeholder_dynamic_dims", {}
+    )
+    concrete_to_ub: Dict[int, int] = {}
+    for node in graph_module.graph.nodes:
+        if node.op != "placeholder" or node.name not in ph_dynamic:
+            continue
+        val = node.meta.get("val", None)
+        if val is None or not isinstance(val, torch.Tensor):
+            continue
+        ub_shape = ph_dynamic[node.name]
+        for concrete, ub in zip(val.shape, ub_shape):
+            c = int(concrete)
+            if isinstance(ub, int) and ub != c:
+                concrete_to_ub[c] = ub
+    return concrete_to_ub
+
+
+def _restore_dynamic_shape_info(
+    graph_module: torch.fx.GraphModule,
+    concrete_to_ub: Dict[int, int],
+) -> None:
+    """Restore dynamic shape info on TensorSpec objects that lost SymInt dims.
+
+    Uses the concrete_to_ub mapping to find TensorSpecs whose shapes contain
+    a dynamic dimension and marks them as DYNAMIC_BOUND with the correct
+    upper-bound shape stored in ``_upper_bound_shape``.
+    """
+    if not concrete_to_ub:
+        return
+    for module in graph_module.modules():
+        if not isinstance(module, torch.fx.GraphModule):
+            continue
+        for node in module.graph.nodes:
+            spec = node.meta.get("spec", None)
+            if spec is None:
+                continue
+            flat_specs = pytree.tree_flatten(spec)[0]
+            for s in flat_specs:
+                if not isinstance(s, TensorSpec):
+                    continue
+                if getattr(s, "_upper_bound_shape", None) is not None:
+                    continue
+                ub_shape = []
+                has_dynamic = False
+                for d in s.shape:
+                    d_int = int(d)
+                    if d_int in concrete_to_ub:
+                        ub_shape.append(concrete_to_ub[d_int])
+                        has_dynamic = True
+                    else:
+                        ub_shape.append(d_int)
+                if has_dynamic:
+                    s.shape_dynamism = TensorShapeDynamism.DYNAMIC_BOUND
+                    s._upper_bound_shape = ub_shape
 
 
 def _is_mutable_buffer(
@@ -55,6 +123,10 @@ class SpecPropPass(ExportPass):
         super().__init__()
 
     def __call__(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        # Save dynamic dim mapping before re-tracing, since ExportPass can
+        # lose SymInt shapes for intermediate tensors (e.g. with while_loop).
+        concrete_to_ub = _get_concrete_to_ub(graph_module)
+
         # Re-trace metadata to ensure it's up to date.
         res = ExportPass()(graph_module)
         assert res is not None
@@ -91,6 +163,10 @@ class SpecPropPass(ExportPass):
                             node.meta["spec"] = pytree.tree_map(make_spec, meta_val)
                     else:
                         node.meta["spec"] = pytree.tree_map(make_spec, meta_val)
+
+        # Restore dynamic shape info lost during ExportPass re-tracing.
+        _restore_dynamic_shape_info(gm, concrete_to_ub)
+
         return res
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:

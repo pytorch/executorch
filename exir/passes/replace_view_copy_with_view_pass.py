@@ -152,11 +152,22 @@ class _ViewSpec(TensorSpec):
             torch.Size(self.shape)
         )
 
-        # Check compatibility with base on creation
-        if self.shape_dynamism != base.shape_dynamism:
-            raise Exception(
-                f"_ViewSpec is incompatible with its base on creation.  It has shape_dynamism={self.shape_dynamism}, but its base has shape_dynamism={base.shape_dynamism}."
-            )
+        # A view of a dynamic tensor is itself dynamic (they share memory).
+        if (
+            self.shape_dynamism == TensorShapeDynamism.STATIC
+            and base.shape_dynamism != TensorShapeDynamism.STATIC
+        ):
+            self.shape_dynamism = base.shape_dynamism
+            base_ub = getattr(base, "_upper_bound_shape", None)
+            if base_ub is not None:
+                dim_to_ub = {
+                    int(d): int(u)
+                    for d, u in zip(base.shape, base_ub)
+                    if d != u
+                }
+                self._upper_bound_shape = [
+                    dim_to_ub.get(d, d) for d in shape
+                ]
         self._guards.append(
             _Guard(
                 "shape_dynamism_init",

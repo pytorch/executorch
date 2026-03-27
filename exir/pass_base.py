@@ -61,6 +61,7 @@ _TORCH_SYM_OPS: Set[Any] = {  # pyre-ignore
     torch.sym_min,
     torch.sym_not,
     torch.sym_sqrt,
+    torch.sym_sum,
 }
 
 
