@@ -82,7 +82,7 @@ class VoxtralTTSRunner {
   // Tokenizer special tokens
   uint64_t bos_id_ = 1;
   uint64_t eos_id_ = 2;
-  uint64_t audio_tok_id_ = 0;
+  uint64_t audio_tok_id_ = 24; // Tekken default, overridden by metadata
 
   // Voice embedding (loaded via load_voice())
   std::vector<float> voice_data_; // fp32, (n_voice_frames * dim)

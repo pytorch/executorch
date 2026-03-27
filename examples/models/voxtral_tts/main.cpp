@@ -87,12 +87,12 @@ int main(int argc, char** argv) {
   config.temperature = static_cast<float>(FLAGS_temperature);
   config.seed = static_cast<uint64_t>(FLAGS_seed);
 
-  // Token callback for progress
-  int token_count = 0;
-  auto token_cb = [&token_count](const std::string& piece) {
-    token_count++;
-    if (token_count % 100 == 0) {
-      fprintf(stderr, "\r  %d tokens generated...", token_count);
+  // Progress callback (invoked per audio frame)
+  int frame_count = 0;
+  auto token_cb = [&frame_count](const std::string& piece) {
+    frame_count++;
+    if (frame_count % 100 == 0) {
+      fprintf(stderr, "\r  %d audio frames generated...", frame_count);
       fflush(stderr);
     }
   };
@@ -106,13 +106,13 @@ int main(int argc, char** argv) {
 
   stats.inference_end_ms = ::executorch::extension::llm::time_in_ms();
 
-  if (token_count > 0) {
-    fprintf(stderr, "\r  %d tokens generated.     \n", token_count);
+  if (frame_count > 0) {
+    fprintf(stderr, "\r  %d audio frames generated.     \n", frame_count);
   }
 
   double inference_s =
       (stats.inference_end_ms - stats.inference_start_ms) / 1000.0;
-  ET_LOG(Info, "Inference: %.1f s (%d tokens)", inference_s, token_count);
+  ET_LOG(Info, "Inference: %.1f s (%d audio frames)", inference_s, frame_count);
 
   // Write output
   if (!waveform.empty()) {

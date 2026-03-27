@@ -32,7 +32,7 @@ from executorch.extension.llm.custom_ops import custom_ops as _custom_ops  # noq
 _N_AUDIO_SPECIAL_TOKENS = 2  # [EMPTY_AUDIO]=0, [END_AUDIO]=1
 _EMPTY_AUDIO_TOKEN_ID = 0
 _END_AUDIO_TOKEN_ID = 1
-_ACOUSTIC_DECODE_ITERS = 8
+_N_FLOW_TIMESTEPS = 8
 _CFG_ALPHA = 1.2
 _NOISE_SCALE = 1.0
 
@@ -246,6 +246,7 @@ def _build_attn_mask(
     return (valid.to(dtype) - 1.0) * 1e9
 
 
+
 # ---------------------------------------------------------------------------
 # SDPA variants
 # ---------------------------------------------------------------------------
@@ -310,6 +311,7 @@ class MetalSDPA(nn.Module):
         )
         y = y.transpose(1, 2).contiguous()
         return y.view(bsz, seqlen, self.dim)
+
 
 
 # ---------------------------------------------------------------------------
@@ -555,7 +557,7 @@ class FlowMatchingAudioTransformer(nn.Module):
         # Flow matching timesteps
         self.register_buffer(
             "timesteps",
-            torch.linspace(0, 1, _ACOUSTIC_DECODE_ITERS),
+            torch.linspace(0, 1, _N_FLOW_TIMESTEPS),
             persistent=False,
         )
 
@@ -812,7 +814,7 @@ def load_model(
     # Recompute flow matching timesteps (persistent=False, lost during meta construction)
     model.acoustic_transformer.register_buffer(
         "timesteps",
-        torch.linspace(0, 1, _ACOUSTIC_DECODE_ITERS),
+        torch.linspace(0, 1, _N_FLOW_TIMESTEPS),
         persistent=False,
     )
 

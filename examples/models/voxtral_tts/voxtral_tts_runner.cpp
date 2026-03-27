@@ -241,15 +241,11 @@ std::vector<float> VoxtralTTSRunner::generate(
   std::mt19937 noise_rng(static_cast<unsigned int>(config.seed));
   std::normal_distribution<float> noise_dist(0.0f, 1.0f);
 
-  std::vector<float> logits_buf;
-  auto input_embeds = empty({1, 1, static_cast<int>(dim_)}, model_dtype_);
-
   // Accumulated audio codes: flat buffer, n_codebooks values per frame
   std::vector<int64_t> all_codes;
   int64_t num_audio_frames = 0;
 
   int64_t dec_pos = 0;
-  uint64_t prev_token = bos_id_;
   int num_generated = 0;
 
   // --- Prefill: process all prompt tokens ---
@@ -301,10 +297,6 @@ std::vector<float> VoxtralTTSRunner::generate(
     auto dec_result = model_->execute(
         "text_decoder", std::vector<EValue>{embeds, *pos_tensor});
     ET_CHECK_MSG(dec_result.ok(), "text_decoder (prefill) failed.");
-
-    auto hidden = dec_result.get()[0].toTensor();
-    dec_pos = prompt_len;
-    prev_token = static_cast<uint64_t>(tokens.back());
 
     dec_pos = prompt_len;
     ET_LOG(Info, "Prefill done.");
@@ -415,7 +407,7 @@ std::vector<float> VoxtralTTSRunner::generate(
     num_audio_frames++;
     num_generated++;
 
-    if (token_cb && num_generated % 100 == 0) {
+    if (token_cb) {
       token_cb("");
     }
   }
@@ -455,10 +447,11 @@ std::vector<float> VoxtralTTSRunner::decode_audio(
     int64_t this_chunk = std::min(chunk, n_frames - start);
 
     // Pad to full chunk if needed.
-    // Strip _N_AUDIO_SPECIAL_TOKENS (2) offset from acoustic codes:
-    // decode_one_frame outputs acoustic codes in [2, acoustic_levels+1] for
-    // audio_token_embedding compatibility, but the codec expects raw [0,
-    // levels-1].
+    // Strip _N_AUDIO_SPECIAL_TOKENS (2) offset from all codes:
+    // decode_one_frame outputs codes with special token offset (semantic
+    // argmax includes EMPTY=0/END=1 positions, acoustic codes are shifted
+    // by +2). The codec expects raw indices: semantic in [0, codebook_size)
+    // and acoustic in [0, levels-1].
     constexpr int64_t N_SPECIAL = 2;
     std::vector<int64_t> chunk_codes(
         static_cast<size_t>(chunk * n_codebooks_), 0);
@@ -466,10 +459,7 @@ std::vector<float> VoxtralTTSRunner::decode_audio(
       for (int64_t c = 0; c < n_codebooks_; c++) {
         int64_t code =
             codes[static_cast<size_t>((start + f) * n_codebooks_ + c)];
-        if (c > 0) {
-          // Acoustic codes: strip special token offset
-          code -= N_SPECIAL;
-        }
+        code -= N_SPECIAL;
         chunk_codes[static_cast<size_t>(c * chunk + f)] = code;
       }
     }
