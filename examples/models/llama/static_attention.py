@@ -220,6 +220,18 @@ class StaticAttentionMask:
         self.unmasked_len += new_unmasked_len
 
 
+def _is_kv_shared_layer(
+    layer_idx: int, n_layers: int, num_kv_shared_layers: int
+) -> bool:
+    """Check if this layer uses shared K/V from a donor layer (YOCO)."""
+    if num_kv_shared_layers <= 0:
+        return False
+    first_shared = n_layers - num_kv_shared_layers
+    if first_shared <= 0:
+        return False
+    return layer_idx >= first_shared
+
+
 class StaticAttentionIOManager:
     class NGramCache:
         def __init__(self, max_size):
@@ -286,11 +298,7 @@ class StaticAttentionIOManager:
         self.freqs_sin = freqs[1].to(dtype)
 
         split_mha = config.attention_type in ("static", "static_shas")
-        # YOCO: skip cache creation for KV-shared layers (2nd half)
         num_kv_shared = getattr(config, "num_kv_shared_layers", 0)
-        first_kv_shared = (
-            config.n_layers - num_kv_shared if num_kv_shared > 0 else config.n_layers
-        )
         if split_mha:
             self.k_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, head_id): torch.zeros(
@@ -301,7 +309,10 @@ class StaticAttentionIOManager:
                 )
                 for layer_id in range(config.n_layers)
                 for head_id in range(none_throws(config.n_kv_heads))
-                if cache_lens[layer_id] > 0 and layer_id < first_kv_shared
+                if cache_lens[layer_id] > 0
+                and not _is_kv_shared_layer(
+                    layer_id, config.n_layers, num_kv_shared
+                )
             }
             self.v_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, head_id): torch.zeros(
@@ -312,7 +323,10 @@ class StaticAttentionIOManager:
                 )
                 for layer_id in range(config.n_layers)
                 for head_id in range(none_throws(config.n_kv_heads))
-                if cache_lens[layer_id] > 0 and layer_id < first_kv_shared
+                if cache_lens[layer_id] > 0
+                and not _is_kv_shared_layer(
+                    layer_id, config.n_layers, num_kv_shared
+                )
             }
         else:
             self.k_caches = {
@@ -324,7 +338,10 @@ class StaticAttentionIOManager:
                     dtype=dtype,
                 )
                 for layer_id in range(config.n_layers)
-                if cache_lens[layer_id] > 0 and layer_id < first_kv_shared
+                if cache_lens[layer_id] > 0
+                and not _is_kv_shared_layer(
+                    layer_id, config.n_layers, num_kv_shared
+                )
             }
             self.v_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, 0): torch.zeros(
@@ -335,7 +352,10 @@ class StaticAttentionIOManager:
                     dtype=dtype,
                 )
                 for layer_id in range(config.n_layers)
-                if cache_lens[layer_id] > 0 and layer_id < first_kv_shared
+                if cache_lens[layer_id] > 0
+                and not _is_kv_shared_layer(
+                    layer_id, config.n_layers, num_kv_shared
+                )
             }
 
         self.generate_full_logits = config.generate_full_logits
@@ -998,8 +1018,10 @@ class StaticAttention(Attention):
         new_qs = [wq(x) for wq in self.wqs]
 
         shared_kv = kwargs.get("shared_kv")
-        if self.is_kv_shared_layer:
-            assert shared_kv is not None
+        if shared_kv is not None:
+            assert self.is_kv_shared_layer, (
+                "shared_kv provided but this is not a KV shared layer"
+            )
             new_ks = []
             new_vs = []
         else:
@@ -1157,11 +1179,7 @@ class StaticAttention(Attention):
             kv_idx = i // self.n_heads_per_kv_group
             k_head = k_shared[:, kv_idx : kv_idx + 1, :, :].squeeze(1)
             v_head = v_shared[:, kv_idx : kv_idx + 1, :, :].squeeze(1)
-            heads.append(
-                self._compute_attention(
-                    new_qs[i], k_head, v_head, mask, self.enable_qnn_masked_softmax
-                )
-            )
+            heads.append(self._compute_attention(new_qs[i], k_head, v_head, mask, self.enable_qnn_masked_softmax))
 
         return torch.cat(heads, dim=-1)
 
@@ -1210,19 +1228,11 @@ class StaticAttention(Attention):
         heads = []
         for i in range(self.n_heads):
             kv_idx = i // self.n_heads_per_kv_group
-            heads.append(
-                self._compute_attention(
-                    new_qs[i],
-                    all_ks[kv_idx],
-                    all_vs[kv_idx],
-                    mask,
-                    self.enable_qnn_masked_softmax,
-                )
-            )
+            heads.append(self._compute_attention(new_qs[i], all_ks[kv_idx], all_vs[kv_idx], mask, self.enable_qnn_masked_softmax))
 
         kv_to_share = None
         if self.num_kv_shared_layers > 0:
-            kv_to_share = (torch.cat(all_ks, dim=1), torch.cat(all_vs, dim=1))
+            kv_to_share = (torch.stack(all_ks, dim=1), torch.stack(all_vs, dim=1))
 
         return torch.cat(heads, dim=-1), out_cache_state, kv_to_share
 
