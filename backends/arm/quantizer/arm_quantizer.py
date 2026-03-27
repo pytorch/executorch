@@ -71,6 +71,7 @@ from executorch.backends.arm.quantizer.arm_quantizer_utils import (
     SharedQspecQuantizer,
 )
 from executorch.backends.arm.vgf import VgfCompileSpec
+from executorch.exir._warnings import experimental
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e import (
     FakeQuantize,
@@ -441,14 +442,26 @@ def _for_each_filtered_node(
 
 
 class TOSAQuantizer(Quantizer):
-    """Manage quantization annotations for TOSA-compatible backends."""
+    """Manage quantization annotations for TOSA-compatible backends.
+
+    .. warning::
+        Setting ``use_composable_quantizer=True`` enables an experimental API
+        surface that may change without notice.
+
+    """
 
     def __init__(
         self,
         compile_spec_or_tosa_spec,
         use_composable_quantizer: bool = False,
     ) -> None:
-        """Create a TOSA quantizer from a TOSA spec or Arm compile spec."""
+        """Create a TOSA quantizer from a TOSA spec or Arm compile spec.
+
+        .. warning::
+            Setting ``use_composable_quantizer=True`` enables an experimental
+            API surface that may change without notice.
+
+        """
         self.use_composable_quantizer = use_composable_quantizer
         self.quantizer: _TOSAQuantizerV1 | _TOSAQuantizerV2
         if use_composable_quantizer:
@@ -606,6 +619,10 @@ class TOSAQuantizer(Quantizer):
         self.quantizer.set_io(quantization_config)
         return self
 
+    @experimental(
+        "This API is experimental and may change without notice. "
+        "It is only available when use_composable_quantizer=True."
+    )
     def add_quantizer(self, quantizer: Quantizer) -> TOSAQuantizer:
         """Insert a quantizer with highest precedence."""
         if self.use_composable_quantizer:
@@ -614,6 +631,10 @@ class TOSAQuantizer(Quantizer):
             "add_quantizer is only supported in the composable quantizer implementation."
         )
 
+    @experimental(
+        "This API is experimental and may change without notice. "
+        "It is only available when use_composable_quantizer=True."
+    )
     def set_node_finder(
         self, quantization_config: Optional[QuantizationConfig], node_finder: NodeFinder
     ) -> TOSAQuantizer:
@@ -631,6 +652,10 @@ class TOSAQuantizer(Quantizer):
             "set_node_finder is only supported in the composable quantizer implementation."
         )
 
+    @experimental(
+        "This API is experimental and may change without notice. "
+        "It is only available when use_composable_quantizer=True."
+    )
     def set_node_target(
         self, node_target: OpOverload, quantization_config: Optional[QuantizationConfig]
     ) -> TOSAQuantizer:
@@ -641,6 +666,10 @@ class TOSAQuantizer(Quantizer):
             "set_node_target is only supported in the composable quantizer implementation."
         )
 
+    @experimental(
+        "This API is experimental and may change without notice. "
+        "It is only available when use_composable_quantizer=True."
+    )
     def set_node_name(
         self, node_name: str, quantization_config: Optional[QuantizationConfig]
     ) -> TOSAQuantizer:
@@ -725,7 +754,7 @@ class TOSAQuantizer(Quantizer):
                         f"Quantizer detected operator {node.name} with different device inputs: {devices}."
                     )
 
-    def quantize_with_submodules(
+    def _quantize_with_submodules(
         self,
         model: GraphModule,
         calibration_samples: list[tuple],
@@ -779,17 +808,19 @@ class TOSAQuantizer(Quantizer):
         for _, submodule, _ in get_cond_while_submodules_nested(
             prepared, apply_quantization=True
         ):
-            converted = convert_pt2e(submodule)
+            converted = convert_pt2e(submodule, fold_quantize=fold_quantize)
             for submodule_node in submodule.graph.nodes:
                 if is_submodule_node(submodule_node):
                     for nested_name, nested_sub, _ in get_cond_while_submodules_nested(
                         submodule, apply_quantization=True
                     ):
                         converted.set_submodule(
-                            nested_name, convert_pt2e(nested_sub), strict=True
+                            nested_name,
+                            convert_pt2e(nested_sub, fold_quantize=fold_quantize),
+                            strict=True,
                         )
 
-        return convert_pt2e(prepared)
+        return convert_pt2e(prepared, fold_quantize=fold_quantize)
 
 
 class _TOSAQuantizerV1(Quantizer):
@@ -1167,6 +1198,10 @@ class _TOSAQuantizerV2(ComposableQuantizer):
 class EthosUQuantizer(TOSAQuantizer):
     """Quantizer supported by the Arm Ethos-U backend.
 
+    .. warning::
+        Setting ``use_composable_quantizer=True`` enables an experimental API
+        surface that may change without notice.
+
     Args:
         compile_spec (EthosUCompileSpec): Backend compile specification for
             Ethos-U targets.
@@ -1184,6 +1219,10 @@ class EthosUQuantizer(TOSAQuantizer):
 
 class VgfQuantizer(TOSAQuantizer):
     """Quantizer supported by the Arm Vgf backend.
+
+    .. warning::
+        Setting ``use_composable_quantizer=True`` enables an experimental API
+        surface that may change without notice.
 
     Args:
         compile_spec (VgfCompileSpec): Backend compile specification for Vgf

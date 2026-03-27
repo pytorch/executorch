@@ -1781,6 +1781,14 @@ class PReLUPerChannel(torch.nn.Module):
         return self.prelu(x)
 
 
+class Rand(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.rand_like(x) + x
+
+
 class Reciprocal(torch.nn.Module):
     def __init__(self):
         super().__init__()

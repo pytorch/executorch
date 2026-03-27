@@ -14,6 +14,7 @@
 
 $if STORAGE == "buffer":
   #define BUFFER
+  #define SCALAR_BUFFER
 $if HAS_BIAS:
   #define HAS_BIAS
 
@@ -23,11 +24,19 @@ layout(std430) buffer;
 
 #include "common.glslh"
 
-${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_weight", DTYPE, STORAGE, is_scalar_array=False)}
+$if STORAGE == "buffer":
+  ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE, is_scalar_array=True)}
+  ${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE, is_scalar_array=True)}
+  ${layout_declare_tensor(B, "r", "t_weight", DTYPE, STORAGE, is_scalar_array=True)}
+$else:
+  ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE, is_scalar_array=False)}
+  ${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE, is_scalar_array=False)}
+  ${layout_declare_tensor(B, "r", "t_weight", DTYPE, STORAGE, is_scalar_array=False)}
 $if HAS_BIAS:
-  ${layout_declare_tensor(B, "r", "t_bias", DTYPE, STORAGE, is_scalar_array=False)}
+  $if STORAGE == "buffer":
+    ${layout_declare_tensor(B, "r", "t_bias", DTYPE, STORAGE, is_scalar_array=True)}
+  $else:
+    ${layout_declare_tensor(B, "r", "t_bias", DTYPE, STORAGE, is_scalar_array=False)}
 
 // in_sizes: {L_in, C, N, 1} in WHCN order
 ${layout_declare_ubo(B, "ivec4", "in_sizes")}
@@ -70,8 +79,19 @@ void main() {
     const int l_in = l_out * stride - padding + k * dilation;
     if (l_in >= 0 && l_in < L_in) {
 #ifdef BUFFER
-      const VEC4_T in_val = t_in[(n * L_in + l_in) * C4 + c4];
-      const VEC4_T w_val = t_weight[k * C4 + c4];
+      const int in_base = (n * L_in + l_in) * C + c4 * 4;
+      T in_s0 = t_in[in_base];
+      T in_s1 = (c4 * 4 + 1 < C) ? t_in[in_base + 1] : T(0);
+      T in_s2 = (c4 * 4 + 2 < C) ? t_in[in_base + 2] : T(0);
+      T in_s3 = (c4 * 4 + 3 < C) ? t_in[in_base + 3] : T(0);
+      const VEC4_T in_val = VEC4_T(in_s0, in_s1, in_s2, in_s3);
+
+      const int w_base = k * C + c4 * 4;
+      T w_s0 = t_weight[w_base];
+      T w_s1 = (c4 * 4 + 1 < C) ? t_weight[w_base + 1] : T(0);
+      T w_s2 = (c4 * 4 + 2 < C) ? t_weight[w_base + 2] : T(0);
+      T w_s3 = (c4 * 4 + 3 < C) ? t_weight[w_base + 3] : T(0);
+      const VEC4_T w_val = VEC4_T(w_s0, w_s1, w_s2, w_s3);
 #else
       const VEC4_T in_val = texelFetch(t_in, ivec3(l_in, c4, n), 0);
       const VEC4_T w_val = texelFetch(t_weight, ivec3(k, 0, c4), 0);
@@ -82,7 +102,12 @@ void main() {
 
 #ifdef HAS_BIAS
 #ifdef BUFFER
-  sum += t_bias[c4];
+  const int bias_base = c4 * 4;
+  T b0 = t_bias[bias_base];
+  T b1 = (bias_base + 1 < C) ? t_bias[bias_base + 1] : T(0);
+  T b2 = (bias_base + 2 < C) ? t_bias[bias_base + 2] : T(0);
+  T b3 = (bias_base + 3 < C) ? t_bias[bias_base + 3] : T(0);
+  sum += VEC4_T(b0, b1, b2, b3);
 #else
   sum += texelFetch(t_bias, ivec3(c4, 0, 0), 0);
 #endif
@@ -91,7 +116,11 @@ void main() {
   sum = clamp(sum, VEC4_T(output_min), VEC4_T(output_max));
 
 #ifdef BUFFER
-  t_out[(n * L_out + l_out) * C4 + c4] = sum;
+  const int out_base = (n * L_out + l_out) * C + c4 * 4;
+  t_out[out_base] = sum.x;
+  if (c4 * 4 + 1 < C) t_out[out_base + 1] = sum.y;
+  if (c4 * 4 + 2 < C) t_out[out_base + 2] = sum.z;
+  if (c4 * 4 + 3 < C) t_out[out_base + 3] = sum.w;
 #else
   imageStore(t_out, ivec3(l_out, c4, n), sum);
 #endif
