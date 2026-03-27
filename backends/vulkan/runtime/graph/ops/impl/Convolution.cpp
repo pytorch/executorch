@@ -110,6 +110,18 @@ ValueRef prepack_biases(
   vkapi::ShaderInfo shader =
       get_nchw_to_tensor_shader(graph, v, graph.get_staging_dtype_for(weight));
 
+  vkapi::ParamsBindList param_buffers = {};
+  if (graph.is_buffer_storage(v)) {
+    param_buffers.append(graph.buffer_meta_ubo(v));
+  } else {
+    param_buffers.append(graph.texture_meta_ubo(v));
+  }
+
+  std::vector<PushConstantDataInfo> pcs;
+  if (graph.is_buffer_storage(v)) {
+    pcs = {graph.sizes_pc_of(v), graph.strides_pc_of(v), graph.numel_pc_of(v)};
+  }
+
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       shader,
@@ -117,10 +129,10 @@ ValueRef prepack_biases(
       graph.create_local_wg_size(v),
       vref,
       v,
-      {},
+      param_buffers,
       // Specialization constants
       {graph.hashed_layout_of(v)},
-      {graph.sizes_pc_of(v)}));
+      pcs));
 
   return v;
 }
@@ -554,8 +566,7 @@ void add_conv1d_node(
       weight,
       graph.storage_type_of(out),
       utils::kChannelsPacked,
-      /* passthrough = */ false,
-      utils::kOptimizedAxisMap);
+      /* passthrough = */ false);
   ValueRef arg_bias = prepack_biases(
       graph,
       bias,

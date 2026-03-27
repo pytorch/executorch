@@ -5,7 +5,7 @@
 
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 import torch
 from executorch.backends.arm.test.common import get_u55_compile_spec
@@ -73,7 +73,11 @@ cortex_m_stage_classes = {
 
 class CortexMTester(TesterBase):
     def __init__(self, module, example_inputs):
-        super().__init__(module, example_inputs, cortex_m_stage_classes)
+        if callable(example_inputs):
+            resolved_example_inputs = example_inputs()
+        else:
+            resolved_example_inputs = example_inputs
+        super().__init__(module, resolved_example_inputs, cortex_m_stage_classes)
 
     def test_dialect(
         self,
@@ -124,10 +128,14 @@ class CortexMTester(TesterBase):
 @dataclass
 class McuTestCase:
     model: torch.nn.Module
-    example_inputs: tuple[Any, ...]
+    example_inputs: tuple[Any, ...] | Callable[[], tuple[Any, ...]]
+
+    def get_example_inputs(self) -> tuple[Any, ...]:
+        if callable(self.example_inputs):
+            return self.example_inputs()
+        return self.example_inputs
 
 
-def ramp_tensor(start: int, end: int, shape: tuple[int, ...]) -> torch.Tensor:
-    return torch.linspace(start, end, steps=torch.prod(torch.tensor(shape))).reshape(
-        shape
-    )
+def ramp_tensor(start: float, end: float, shape: tuple[int, ...]) -> torch.Tensor:
+    steps = int(torch.prod(torch.tensor(shape)).item())
+    return torch.linspace(start, end, steps=steps).reshape(shape)

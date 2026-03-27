@@ -27,15 +27,5 @@ conv1d_pw:
       - VALUE: half
   shader_variants:
     - NAME: conv1d_pw
-    - NAME: conv1d_pw_tile_row_2
-      TILE_M: 2
-    - NAME: conv1d_pw_tile_row_1
-      TILE_M: 1
     - NAME: conv1d_pw_bias
       HAS_BIAS: true
-    - NAME: conv1d_pw_bias_tile_row_2
-      HAS_BIAS: true
-      TILE_M: 2
-    - NAME: conv1d_pw_bias_tile_row_1
-      HAS_BIAS: true
-      TILE_M: 1

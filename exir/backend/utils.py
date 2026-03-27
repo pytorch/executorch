@@ -24,7 +24,6 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.lowered_backend_module import create_submodule_from_nodes
 from tabulate import tabulate
-from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.fx.experimental.symbolic_shapes import has_free_symbols
 from torch.fx.node import Node
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -351,15 +350,22 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
     subgraph. Throw error when const/param/buffers is used across different partitions. That is the
     underlying data will be owned by multiple delegates.
     """
+    # Cache signature lookups to avoid rebuilding dicts on every access.
+    sig = edge_program.graph_signature
+    params_map = sig.inputs_to_parameters
+    buffers_map = sig.inputs_to_buffers
+    constants_map = sig.inputs_to_lifted_tensor_constants
+    buffers_to_mutate = sig.buffers_to_mutate
+
     mutated_buffer = set()
     for node in edge_program.graph.nodes:
         if node.op == "placeholder" and (
-            is_param(edge_program, node)
-            or is_buffer(edge_program, node)
-            or is_lifted_tensor_constant(edge_program, node)
+            node.name in params_map
+            or node.name in buffers_map
+            or node.name in constants_map
         ):
             for node_user in node.users:
-                if node_user.name in edge_program.graph_signature.buffers_to_mutate:
+                if node_user.name in buffers_to_mutate:
                     logging.info(
                         "The buffer node is a mutated buffer node, which is not constant."
                     )
@@ -368,9 +374,9 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
     for node in edge_program.graph.nodes:
         # go through const/param/buffer nodes, if all users of const/param/buffer nodes are partitioned then partition
         if node.op == "placeholder" and (
-            is_param(edge_program, node)
-            or is_buffer(edge_program, node)
-            or is_lifted_tensor_constant(edge_program, node)
+            node.name in params_map
+            or node.name in buffers_map
+            or node.name in constants_map
         ):
             if node not in mutated_buffer:
                 user_tags = set()
@@ -397,12 +403,17 @@ def tag_mutated_buffer(edge_program: ExportedProgram) -> None:
     subgraph. Throw error when buffers is used across different partitions. That is the
     underlying data will be owned by multiple delegates.
     """
+    # Cache signature lookups to avoid rebuilding dicts on every access.
+    sig = edge_program.graph_signature
+    buffers_map = sig.inputs_to_buffers
+    buffers_to_mutate = sig.buffers_to_mutate
+
     for node in edge_program.graph.nodes:
         # Determine whether this node is a mutated buffer
         is_mutated_buffer_node = False
-        if node.op == "placeholder" and is_buffer(edge_program, node):
+        if node.op == "placeholder" and node.name in buffers_map:
             for node_user in node.users:
-                if node_user.name in edge_program.graph_signature.buffers_to_mutate:
+                if node_user.name in buffers_to_mutate:
                     is_mutated_buffer_node = True
                     break
         # This node is mutated buffer, tag it

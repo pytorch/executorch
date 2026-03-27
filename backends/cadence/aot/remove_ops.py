@@ -34,7 +34,7 @@ from executorch.exir.passes import dead_code_elimination_pass
 from torch.fx.node import Node
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class RemoveCloneOpsTransformImported(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         finalize_passes: List[PassType] = [
@@ -45,7 +45,7 @@ class RemoveCloneOpsTransformImported(ExportPass):
         return result
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class RemoveDetachCopyPass(RemoveOrReplacePassInterface):
     @property
     def targets(self) -> list[EdgeOpOverload]:
@@ -67,7 +67,7 @@ class RemoveRedundantOps:
     ]
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class RemoveZeroSizedCatArgsPass(RemoveOrReplacePassInterface):
     @property
     def targets(self) -> list[EdgeOpOverload]:
@@ -121,11 +121,11 @@ class RemoveZeroSizedCatArgsPass(RemoveOrReplacePassInterface):
         return False
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class RemoveNopExpandOpPass(RemoveOrReplacePassInterface):
     """
     For an expand op, if the operator shape matches the expand shape, then the
-    expand is a nop. This is an optimization that removes unnecessary ops.
+    expand is a nop.
     """
 
     @property
@@ -144,9 +144,9 @@ class RemoveNopExpandOpPass(RemoveOrReplacePassInterface):
         return False
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class RemoveToOpsPass(RemoveOrReplacePassInterface):
-    # aten.to.* ops are no-ops in inference - this is an optimization
+    # aten.to.* as of now are all nops
     @property
     def targets(self) -> list[EdgeOpOverload]:
         return [
@@ -265,11 +265,11 @@ class RemoveContiguousOpPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class RemoveAliasCopyOpPass(RemoveOrReplacePassInterface):
     """
+
     alias_copy is a no-op and can be removed.
-    This is an optimization that removes unnecessary ops.
     """
 
     @property

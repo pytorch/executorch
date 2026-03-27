@@ -88,6 +88,13 @@ Error register_kernels_internal(const Span<const Kernel> kernels) {
           kernel.kernel_key_ == k.kernel_key_) {
         ET_LOG(Error, "Re-registering %s, from %s", k.name_, lib_name);
         ET_LOG_KERNEL_KEY(k.kernel_key_);
+        ET_CHECK_MSG(
+            false,
+            "Kernel registration failed with error %" PRIu32
+            ", Re-registering %s, from %s",
+            static_cast<uint32_t>(Error::RegistrationAlreadyRegistered),
+            k.name_,
+            lib_name);
         return Error::RegistrationAlreadyRegistered;
       }
     }
