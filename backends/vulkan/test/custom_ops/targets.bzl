@@ -104,3 +104,4 @@ def define_common_targets(is_fbcode = False):
     define_custom_op_test_binary("test_conv2d_dw")
     define_custom_op_test_binary("test_embedding_q4gsw")
     define_custom_op_test_binary("test_conv1d_pw")
+    define_custom_op_test_binary("test_conv1d_dw")
