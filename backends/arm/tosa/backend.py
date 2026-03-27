@@ -227,6 +227,9 @@ class TOSABackend(BackendDetails):
             targetDraft=True if version.minor > 0 else False,
         )
 
+        if compile_spec.tosa_dev_mode:
+            tosa_graph.setExperimentalDevVersion()
+
         if not (
             tosa_spec.version.major == ts.TOSA_VERSION_MAJOR
             and tosa_spec.version.minor <= ts.TOSA_VERSION_MINOR
@@ -440,4 +443,5 @@ class TOSABackend(BackendDetails):
             )
             .dump_debug_info(compile_spec.tosa_debug_mode)
             .set_output_order_workaround(compile_spec.output_order_workaround)
+            ._set_tosa_dev_mode(compile_spec.tosa_dev_mode)
         )

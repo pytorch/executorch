@@ -43,6 +43,8 @@ class VgfCompileSpec(ArmCompileSpec):
         if compiler_flags is None:
             compiler_flags = []
         self._set_compile_specs(tosa_spec, compiler_flags)
+        # intermediate handling
+        self._set_tosa_dev_mode(True)
         self._validate()
 
     def _validate(self):
