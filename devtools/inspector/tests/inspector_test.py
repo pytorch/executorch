@@ -740,9 +740,11 @@ class TestInspector(unittest.TestCase):
             self.assertEqual(len(df), 2)
             cols = set(df.columns)
             expected_cols = {
+                "aot_debug_handle",
                 "aot_ops",
                 "aot_intermediate_output",
                 "runtime_ops",
+                "runtime_debug_handle",
                 "runtime_intermediate_output",
                 "gap",
                 "stacktraces",
@@ -831,9 +833,11 @@ class TestInspector(unittest.TestCase):
             self.assertEqual(len(df), 2)
             cols = set(df.columns)
             expected_cols = {
+                "aot_debug_handle",
                 "aot_ops",
                 "aot_intermediate_output",
                 "runtime_ops",
+                "runtime_debug_handle",
                 "runtime_intermediate_output",
                 "gap",
                 "stacktraces",
@@ -918,9 +922,11 @@ class TestInspector(unittest.TestCase):
             self.assertEqual(len(df), 2)
             cols = set(df.columns)
             expected_cols = {
+                "aot_debug_handle",
                 "aot_ops",
                 "aot_intermediate_output",
                 "runtime_ops",
+                "runtime_debug_handle",
                 "runtime_intermediate_output",
                 "gap",
                 "stacktraces",
