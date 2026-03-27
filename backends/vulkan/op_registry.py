@@ -1167,6 +1167,20 @@ def register_clone_dim_order():
     )
 
 
+# alias_copy is a no-op identity operation (same as clone/alias). It is removed
+# by RemoveRedundantOpsTransform during preprocess, so the C++ runtime never sees
+# it. Registering it here ensures the partitioner delegates it to Vulkan rather
+# than creating partition boundaries that break the graph.
+@update_features(exir_ops.edge.aten.alias_copy.default)
+def register_alias_copy():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
 # =============================================================================
 # Gather.cpp
 # =============================================================================
@@ -1475,6 +1489,38 @@ def register_embedding():
         supports_prepacking=True,
         supports_resize=True,
         are_node_inputs_supported_fn=check_embedding_weight_size,
+    )
+
+
+# =============================================================================
+# EmbeddingQ4gsw (Quantized Embedding)
+# =============================================================================
+
+
+@update_features(exir_ops.edge.quantized_decomposed.embedding_4bit.dtype)
+def register_quantized_decomposed_embedding_4bit():
+    def check_embedding_4bit_weight_size(node: torch.fx.Node) -> bool:
+        weight = node.args[0]
+        if isinstance(weight, torch.fx.Node) and utils.is_tensor_node(weight):
+            numel = weight.meta["val"].numel()
+            if numel > utils.DEFAULT_BUFFER_LIMIT:
+                return False
+        return True
+
+    return OpFeatures(
+        inputs_storage=utils.ANY_BUFFER,
+        supports_prepacking=True,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_embedding_4bit_weight_size,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.embedding_q4gsw.default)
+def register_embedding_q4gsw():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        supports_prepacking=True,
+        supports_resize=True,
     )
 
 

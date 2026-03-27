@@ -103,7 +103,8 @@ class TestRunner:
     ids=str,
 )
 def test_runner(request):
-    return TestRunner(request.param, request.node.name, request.node.originalname)
+    flow = request.param
+    return TestRunner(flow, request.node.name, request.node.originalname)
 
 
 @pytest.hookimpl(optionalhook=True)

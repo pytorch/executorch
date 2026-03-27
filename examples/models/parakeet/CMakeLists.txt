@@ -84,8 +84,11 @@ list(
   extension_data_loader
   extension_tensor
   extension_flat_tensor
-  tokenizers::tokenizers
 )
+
+if(TARGET tokenizers::tokenizers)
+  list(APPEND link_libraries tokenizers::tokenizers)
+endif()
 
 # Link CUDA backend
 if(EXECUTORCH_BUILD_CUDA)

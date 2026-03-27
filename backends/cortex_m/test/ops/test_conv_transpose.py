@@ -1,12 +1,13 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 
 import torch
-from executorch.backends.arm.test.common import parametrize
+from executorch.backends.arm.test.common import parametrize, xfail_type
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
@@ -220,7 +221,7 @@ test_cases = {
     ),
 }
 
-xfails_dialect = {
+xfails_dialect: dict[str, xfail_type] = {
     # Grouped convolutions not supported by CMSIS-NN - rejected during quantization
     "conv_transpose2d_groups_2": "Grouped transpose conv not supported by CMSIS-NN",
     "conv_transpose2d_depthwise": "Depthwise transpose conv not supported by CMSIS-NN",
@@ -248,7 +249,7 @@ def test_dialect_conv_transpose2d(test_case):
 # Implementation xfails: empty because unsupported configurations are now
 # rejected at AOT time by the quantizer filter, so they fall back to portable
 # ops and work correctly. Only xfails_dialect needs to track these.
-xfails_implementation = {}
+xfails_implementation: dict[str, xfail_type] = {}
 
 
 @parametrize("test_case", test_cases, xfails=xfails_implementation)
