@@ -246,7 +246,6 @@ def _build_attn_mask(
     return (valid.to(dtype) - 1.0) * 1e9
 
 
-
 # ---------------------------------------------------------------------------
 # SDPA variants
 # ---------------------------------------------------------------------------
@@ -311,7 +310,6 @@ class MetalSDPA(nn.Module):
         )
         y = y.transpose(1, 2).contiguous()
         return y.view(bsz, seqlen, self.dim)
-
 
 
 # ---------------------------------------------------------------------------
@@ -757,6 +755,23 @@ def _map_checkpoint_key(ckpt_key: str) -> str | None:
     return None
 
 
+def _permute_qk(w: torch.Tensor, n_heads: int) -> torch.Tensor:
+    """Permute Q/K weights from Mistral interleaved to split-half layout.
+
+    Mistral checkpoints store Q/K in interleaved RoPE layout:
+      [pair0_real, pair0_imag, pair1_real, pair1_imag, ...]
+    The split-half RoPE used here expects:
+      [pair0_real, pair1_real, ..., pair0_imag, pair1_imag, ...]
+    This matches vLLM's maybe_remap_mistral permutation.
+    """
+    head_dim = w.shape[0] // n_heads
+    return (
+        w.view(n_heads, head_dim // 2, 2, w.shape[1])
+        .transpose(1, 2)
+        .reshape(w.shape[0], w.shape[1])
+    )
+
+
 def load_model(
     model_path: str,
     max_seq_len: int = 4096,
@@ -786,7 +801,13 @@ def load_model(
             model_key = _map_checkpoint_key(ckpt_key)
             if model_key is None:
                 continue
-            state_dict[model_key] = f.get_tensor(ckpt_key).to(dtype)
+            tensor = f.get_tensor(ckpt_key).to(dtype)
+            # Permute Q/K weights from Mistral interleaved to split-half layout
+            if ckpt_key.endswith(".wq.weight") and ckpt_key.startswith("layers."):
+                tensor = _permute_qk(tensor, config.n_heads)
+            elif ckpt_key.endswith(".wk.weight") and ckpt_key.startswith("layers."):
+                tensor = _permute_qk(tensor, config.n_kv_heads)
+            state_dict[model_key] = tensor
 
     missing, unexpected = model.load_state_dict(state_dict, strict=False, assign=True)
 
