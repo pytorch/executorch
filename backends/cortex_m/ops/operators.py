@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from executorch.backends.cortex_m.passes.passes_utils import (
     dequantize_per_tensor_cmsis,
     is_channel_broadcast,
+    is_channels_last,
     quantize_per_tensor_cmsis,
     requantize_cmsis,
     SHIFT_INT8,
@@ -564,6 +565,16 @@ lib.define(
 )
 
 
+_NHWC_INV_ORDER = [0, 3, 1, 2]
+
+
+def _pad_to_logical_order(physical_pad: list[int], input: torch.Tensor) -> list[int]:
+    """Inverse of _to_physical_order: map physical-order padding back to logical."""
+    if not is_channels_last(input):
+        return list(physical_pad)
+    return [physical_pad[_NHWC_INV_ORDER[i]] for i in range(4)]
+
+
 @register_fake("cortex_m::pad")  # type: ignore[misc]
 def pad_meta(
     input: torch.Tensor,
@@ -573,10 +584,16 @@ def pad_meta(
 ) -> torch.Tensor:
     rank = input.dim()
     offset = 4 - rank
+    logical_pre = _pad_to_logical_order(pre_pad, input)
+    logical_post = _pad_to_logical_order(post_pad, input)
+
     output_shape = list(input.shape)
     for i in range(rank):
-        output_shape[i] += pre_pad[offset + i] + post_pad[offset + i]
-    return torch.empty(output_shape, dtype=input.dtype, device=input.device)
+        output_shape[i] += logical_pre[offset + i] + logical_post[offset + i]
+    result = torch.empty(output_shape, dtype=input.dtype, device=input.device)
+    if is_channels_last(input):
+        result = result.to(memory_format=torch.channels_last)
+    return result
 
 
 @impl(lib, "pad", "CompositeExplicitAutograd")  # type: ignore[misc]
@@ -588,9 +605,12 @@ def pad_impl(
 ) -> torch.Tensor:
     rank = input.dim()
     offset = 4 - rank
+    logical_pre = _pad_to_logical_order(pre_pad, input)
+    logical_post = _pad_to_logical_order(post_pad, input)
+
     padding = []
     for i in reversed(range(rank)):
-        padding.extend([pre_pad[offset + i], post_pad[offset + i]])
+        padding.extend([logical_pre[offset + i], logical_post[offset + i]])
     return F.pad(input, padding, mode="constant", value=pad_value)
 
 
