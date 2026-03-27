@@ -4,6 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+
+from executorch.backends.nxp.backend.graph_utils import get_output_shape
 from torch.export.unflatten import _assign_attr, _AttrKind
 from torch.fx import GraphModule, Node
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
@@ -102,6 +104,14 @@ class FuseBatchNormWithLinearPass(PassBase):
                 continue  # Something other than a Linear node comes before the BatchNorm.
 
             linear_node = bn_node.args[0]
+            linear_out_shape = get_output_shape(linear_node)
+
+            # Skip cases where batch norm does not operate on the same dim as linear.
+            # Linear operates on the last dim while batch norm works with the first dim right after batch.
+            # The only case where this occurs is when input shape is (B, C).
+            if not linear_out_shape or len(linear_out_shape) != 2:
+                continue
+
             linear_weight_node_or_fq = linear_node.args[1]
             linear_bias_node_or_fq = (
                 linear_node.args[2] if len(linear_node.args) > 2 else None

@@ -72,7 +72,7 @@ class VgfBackend(BackendDetails):
 
         """
         compile_flags = compile_spec.compiler_flags
-        artifact_path = compile_spec.get_intermediate_path()
+        artifact_path = compile_spec._get_intermediate_path()
         # Pass on the TOSA flatbuffer to the vgf compiler.
         binary = vgf_compile(tosa_flatbuffer, compile_flags, artifact_path, tag_name)
         return binary
@@ -95,7 +95,7 @@ class VgfBackend(BackendDetails):
         """
         logger.info(f"{VgfBackend.__name__} preprocess")
 
-        compile_spec = VgfCompileSpec.from_list(compile_specs)
+        compile_spec = VgfCompileSpec._from_list(compile_specs)
         # deduce TOSA compile_spec from VGF compile spec. We get a new
         # compile spec list, containing only elements relevant for the
         # TOSABackend.

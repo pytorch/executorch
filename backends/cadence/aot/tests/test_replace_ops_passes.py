@@ -14,10 +14,6 @@ from typing import cast, List, Optional, Sequence, Tuple, Union
 import executorch.backends.cadence.aot.ref_implementations  # noqa
 
 import torch
-from executorch.backends.cadence.aot.graph_builder import (
-    GraphBuilder,
-    single_op_builder,
-)
 from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_match
 from executorch.backends.cadence.aot.replace_ops import (
     MakeSliceAndCatDimOutermostPass,
@@ -56,6 +52,7 @@ from executorch.backends.cadence.aot.replace_ops import (
 )
 
 from executorch.backends.cadence.aot.typing_stubs import expand
+from executorch.backends.test.graph_builder import GraphBuilder, single_op_builder
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, ProxyValue
 from torch.fx.passes.infra.pass_base import PassResult
@@ -1243,9 +1240,17 @@ class TestReplaceOpsPasses(unittest.TestCase):
         self.assertTrue(result.modified)
         graph_after_passes = result.graph_module
 
-        # Validate numerical accuracy
+        # Conv and linear compute the same dot product but accumulate fp32
+        # terms in different order, so non-associativity of floating-point
+        # addition produces diffs up to ~1.2e-05. Use rtol=2e-05.
         inputs = [x, weights, bias]
-        validate(gm_before, graph_after_passes, inputs, "ReplaceTrivialConvWithLinear")
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceTrivialConvWithLinear",
+            rtol=2e-5,
+        )
 
         # Assert that conv1d is trivially converted to linear
         self.assertEqual(
@@ -1279,9 +1284,17 @@ class TestReplaceOpsPasses(unittest.TestCase):
         self.assertTrue(result.modified)
         graph_after_passes = result.graph_module
 
-        # Validate numerical accuracy
+        # Conv and linear compute the same dot product but accumulate fp32
+        # terms in different order, so non-associativity of floating-point
+        # addition produces diffs up to ~1.2e-05. Use rtol=2e-05.
         inputs = [x, weights, bias]
-        validate(gm_before, graph_after_passes, inputs, "ReplaceTrivialConvWithLinear")
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceTrivialConvWithLinear",
+            rtol=2e-5,
+        )
 
         # Assert that conv2d is trivially converted to linear
         self.assertEqual(

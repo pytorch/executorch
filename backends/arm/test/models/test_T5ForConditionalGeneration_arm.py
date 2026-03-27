@@ -80,9 +80,6 @@ class TestT5ForConditionalGeneration:
         return model, inputs
 
 
-@pytest.mark.xfail(
-    reason="MLETORCH-1916: Don't partition aten.index.Tensor on int tensors in FP-only profile."
-)
 @pytest.mark.slow
 def test_t5_for_conditional_generation_tosa_FP():
     prompt = "summarize: studies have shown that owning a dog is good for you"
