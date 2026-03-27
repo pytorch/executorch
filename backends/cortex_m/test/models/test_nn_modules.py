@@ -24,7 +24,7 @@ Modules tested:
 """
 
 import torch
-from executorch.backends.arm.test.common import parametrize
+from executorch.backends.arm.test.common import parametrize, xfail_type
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
@@ -188,7 +188,7 @@ test_cases = {
     ),
 }
 
-xfails = {
+xfails: dict[str, xfail_type] = {
     "conv_add_relu": "Activation fusion does not support relu after add",
 }
 
