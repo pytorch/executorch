@@ -239,6 +239,11 @@ def quantize_pt2(
 
     # Apply quant fusion to the exported program
     program = torch.export.export(converted_gm, inputs, strict=True)
+
+    # Sink dequant nodes through transparent ops so they fuse per-branch.
+    if quant_input_args is not None:
+        QuantizedInputWrapper.sink_dequants(program)
+
     fused_program = apply_pre_edge_transform_passes(program, quantizer)
 
     if dump_graphs:

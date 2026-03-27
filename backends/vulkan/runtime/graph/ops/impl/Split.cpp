@@ -53,7 +53,9 @@ void add_split_node(
       // Specialization Constants
       {utils::safe_downcast<int32_t>(dim_whcn),
        static_cast<int32_t>(split_idx),
-       static_cast<int32_t>(split_offset)},
+       static_cast<int32_t>(split_offset),
+       graph.hashed_layout_of(out),
+       graph.hashed_layout_of(input)},
       // Resize Args
       {},
       // Resizing Logic

@@ -1929,8 +1929,8 @@ def rms_norm(
     return W * nn.RMSNorm(list(normalized_shape), eps=eps, dtype=X.dtype)(X)
 
 
-@impl_tracked(m, "quantized_max_pool2d")
-def quantized_max_pool2d(
+@impl_tracked(m, "quantized_max_pool2d_nchw")
+def quantized_max_pool2d_nchw(
     input: torch.Tensor,
     kernel_size: list[int],
     stride: list[int],
@@ -1956,6 +1956,37 @@ def quantized_max_pool2d(
         dilation=dilation,
         ceil_mode=ceil_mode,
     )
+
+
+@impl_tracked(m, "quantized_max_pool2d_nhwc")
+def quantized_max_pool2d_nhwc(
+    input: torch.Tensor,
+    kernel_size: list[int],
+    stride: list[int],
+    padding: list[int],
+    dilation: list[int],
+    ceil_mode: bool,
+) -> torch.Tensor:
+    """
+    Quantized max pooling in NHWC layout.
+
+    Converts NHWC→NCHW, performs max pooling, then converts back NCHW→NHWC.
+    """
+    # Convert NHWC [N, H, W, C] to NCHW [N, C, H, W]
+    input_nchw = input.permute(0, 3, 1, 2).contiguous()
+
+    # Call the NCHW version
+    output_nchw = quantized_max_pool2d_nchw(
+        input_nchw,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        ceil_mode=ceil_mode,
+    )
+
+    # Convert NCHW [N, C, H_out, W_out] back to NHWC [N, H_out, W_out, C]
+    return output_nchw.permute(0, 2, 3, 1).contiguous()
 
 
 @impl_tracked(m, "where_Scalar")
@@ -2449,6 +2480,8 @@ def quantized_softmax_per_tensor_common(
     input_tensor: torch.Tensor,
     mask: torch.Tensor | None,
     dim: int,
+    mask_type: int,
+    pos: torch.Tensor,
     in_scale: float,
     in_zero_point: int,
     out_scale: float,
@@ -2461,6 +2494,8 @@ def quantized_softmax_per_tensor_common(
         - input_tensor (Tensor): The quantized input tensor
         - mask (Tensor): Mask tensor
         - dim (int): The dimension along which softmax is computed
+        - mask_type (int): Masking strategy (0=none, 1=position-based causal)
+        - pos (Tensor): Position tensor for causal masking
         - in_scale (float): The scale of the input quantization
         - in_zero_point (int): The zero point of the input quantization
         - out_scale (float): The scale of the output quantization
@@ -2468,6 +2503,9 @@ def quantized_softmax_per_tensor_common(
     """
     # TODO: T228751479 - Add support for mask parameter in softmax
     assert mask is None
+    assert (
+        mask_type == 0
+    ), f"Only mask_type=0 (no masking) is supported, got {mask_type}"
     supported_dtypes = [torch.int8, torch.uint8, torch.int16]
     if input_tensor.dtype not in supported_dtypes:
         raise ValueError(
@@ -2500,6 +2538,8 @@ def quantized_softmax_per_tensor(
     input_tensor: torch.Tensor,
     mask: torch.Tensor | None,
     dim: int,
+    mask_type: int,
+    pos: torch.Tensor,
     in_scale: float,
     in_zero_point: int,
     out_scale: float,
@@ -2509,6 +2549,8 @@ def quantized_softmax_per_tensor(
         input_tensor,
         mask,
         dim,
+        mask_type,
+        pos,
         in_scale,
         in_zero_point,
         out_scale,
@@ -2521,6 +2563,8 @@ def quantized_softmax(
     input_tensor: torch.Tensor,
     mask: torch.Tensor | None,
     dim: int,
+    mask_type: int,
+    pos: torch.Tensor,
     in_scale: torch.Tensor,
     in_zero_point: torch.Tensor,
     out_scale: float,
@@ -2530,6 +2574,8 @@ def quantized_softmax(
         input_tensor,
         mask,
         dim,
+        mask_type,
+        pos,
         float(in_scale.item()),
         int(in_zero_point.item()),
         out_scale,
