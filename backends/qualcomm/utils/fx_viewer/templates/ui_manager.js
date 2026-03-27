@@ -69,7 +69,6 @@ class UIManager {
             legend: true,
             zoomButtons: true,
             fullscreenButton: false,
-            clearButton: true,
             highlightButton: true,
             ...(options.controls || {}),
         };
@@ -158,7 +157,7 @@ class UIManager {
 
         if (this.controls.zoomButtons) {
             this.btnZoomFit = this._createTaskbarButton({
-                html: '&#x26F6;',
+                html: '&#x2922;',
                 title: 'Zoom to Fit',
                 onClick: () => this.controller.zoomToFit(),
             });
@@ -181,19 +180,6 @@ class UIManager {
             this.taskbar.appendChild(this.btnFullscreen);
             this._onFullscreenChange = () => this.syncFullscreenButton();
             fxOn(this._teardownFns, document, 'fullscreenchange', this._onFullscreenChange);
-        }
-
-        if (this.controls.clearButton) {
-            this.btnClear = this._createTaskbarButton({
-                html: '&#x2716;',
-                title: 'Clear Selection',
-                onClick: () => {
-                    if (this.searchInput) this.searchInput.value = '';
-                    this.controller.handleSearch('');
-                    this.controller.clearSelection();
-                },
-            });
-            this.taskbar.appendChild(this.btnClear);
         }
 
         if (this.controls.theme) {

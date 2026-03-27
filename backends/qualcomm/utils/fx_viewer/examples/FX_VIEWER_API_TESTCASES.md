@@ -101,9 +101,18 @@ Qualcomm harness requires QAIRT/QNN environment.
 1. Enter/exit fullscreen from side buttons.
 2. Use taskbar fullscreen toggle too.
 
+12. `adv_04_tiled_compare`
+- Purpose: two-graph tiled compare with shared taskbar, layer sync, and merged info panel.
+- Target APIs: `FXGraphCompare.create`, `layout.tiled`, `sharedTaskbar`, `sync.mode`, `setTiled`, `setSync`.
+- What to try:
+1. Click a node in either graph — observe sync and merged info panel.
+2. Use shared taskbar to switch theme across both viewers.
+3. Use sync mode dropdown to switch between "Sync by ID" and "Don't sync".
+4. Toggle tiled layout on/off via the Tiled button.
+
 ### Level 3: Current Mixed Demo
 
-12. `js_99_combo_mixed`
+13. `js_99_combo_mixed`
 - Purpose: demonstrate a realistic mixed usage pattern.
 - Target APIs: compare sync, runtime mutation, event subscriptions, theme control, camera APIs.
 - What to try:

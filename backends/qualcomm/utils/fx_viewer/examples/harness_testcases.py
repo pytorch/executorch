@@ -381,7 +381,6 @@ const viewer = FXGraphViewer.create({
       theme: true,
       legend: true,
       zoomButtons: true,
-      clearButton: true,
       highlightButton: true,
       fullscreenButton: false,
     },
@@ -475,27 +474,25 @@ api.log('Trigger controls and inspect event stream in the right log panel.');
         {
             "id": "js_08_compare_basics",
             "title": "JS 08: Compare Basics",
-            "description": "Minimal two-view compare orchestration with sync and layout controls.",
+            "description": "Minimal two-view compare orchestration with sync and column controls.",
             "html": """
 <div style="display:grid;grid-template-rows:auto 1fr;gap:10px;height:100%;">
   <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
     <label><input id="c8_sync_selection" type="checkbox" checked /> Sync selection</label>
-    <label><input id="c8_sync_theme" type="checkbox" /> Sync theme</label>
-    <label><input id="c8_compact" type="checkbox" checked /> Compact</label>
     <label>Columns
       <select id="c8_cols"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select>
     </label>
   </div>
-  <div id="c8_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;min-height:0;">
-    <div id="c8_left" style="border:1px solid #d1d5db;border-radius:8px;overflow:hidden;"></div>
-    <div id="c8_right" style="border:1px solid #d1d5db;border-radius:8px;overflow:hidden;"></div>
+  <div id="c8_grid" style="min-height:0;">
+    <div id="c8_left_mount" style="display:none;"></div>
+    <div id="c8_right_mount" style="display:none;"></div>
   </div>
 </div>
 """.strip(),
             "js": """
 const left = FXGraphViewer.create({
   payload: api.payloads.accuracy_reference,
-  mount: { root: '#c8_left' },
+  mount: { root: '#c8_left_mount' },
   layout: { preset: 'split' },
   state: { activeExtensions: ['color_by_type'], colorBy: 'color_by_type' },
 });
@@ -504,7 +501,7 @@ api.registerViewer(left);
 
 const right = FXGraphViewer.create({
   payload: api.payloads.accuracy_candidate,
-  mount: { root: '#c8_right' },
+  mount: { root: '#c8_right_mount' },
   layout: { preset: 'split' },
   state: { activeExtensions: ['per_layer_accuracy'], colorBy: 'per_layer_accuracy' },
 });
@@ -513,23 +510,17 @@ api.registerViewer(right);
 
 const compare = FXGraphCompare.create({
   viewers: [left, right],
-  layout: { columns: 2, compact: true, container: '#c8_grid' },
-  sync: { selection: true, theme: false },
+  layout: { columns: 2, container: '#c8_grid' },
+  sync: { mode: 'id' },
 });
 api.registerCompare(compare);
 
 document.getElementById('c8_sync_selection').addEventListener('change', (e) => {
-  compare.setSync({ selection: e.target.checked });
+  compare.setSync({ mode: e.target.checked ? 'id' : 'none' });
 });
-
-document.getElementById('c8_sync_theme').addEventListener('change', (e) => {
-  compare.setSync({ theme: e.target.checked });
-});
-
-document.getElementById('c8_compact').addEventListener('change', (e) => compare.setCompact(e.target.checked));
 document.getElementById('c8_cols').addEventListener('change', (e) => compare.setColumns(Number(e.target.value)));
 
-api.log('Try selecting nodes in either pane and toggling compare sync options.');
+api.log('Try selecting nodes in either pane and toggling sync. Use Columns to change layout.');
 """.strip(),
         },
         {
@@ -635,9 +626,9 @@ api.log(`Loaded real accuracy payload. worst_sample_index=${api.payloads.meta.wo
     <div style="position:relative;border:1px solid #d1d5db;border-radius:8px;overflow:hidden;">
       <div id="adv2_slot_canvas" style="position:absolute;inset:0;"></div>
     </div>
-    <div style="display:grid;grid-template-rows:1fr 1fr;gap:10px;">
-      <div id="adv2_slot_minimap" style="border:1px solid #d1d5db;border-radius:8px;overflow:hidden;"></div>
-      <div id="adv2_slot_info" style="border:1px solid #d1d5db;border-radius:8px;overflow:auto;"></div>
+    <div style="display:grid;grid-template-rows:1fr 1fr;gap:10px;min-height:0;">
+      <div id="adv2_slot_minimap" style="border:1px solid #d1d5db;border-radius:8px;overflow:hidden;min-height:0;"></div>
+      <div id="adv2_slot_info" style="border:1px solid #d1d5db;border-radius:8px;overflow:hidden;min-height:0;"></div>
     </div>
   </div>
 </div>
@@ -671,7 +662,6 @@ const viewer = FXGraphViewer.create({
       theme: false,
       legend: true,
       zoomButtons: false,
-      clearButton: false,
       highlightButton: false,
       fullscreenButton: false,
     },
@@ -736,6 +726,52 @@ api.log('Use taskbar fullscreen button or side controls to validate API + UI int
 """.strip(),
         },
         {
+            "id": "adv_04_tiled_compare",
+            "title": "ADV 04: Compare + Shared Taskbar + Layer Sync",
+            "description": "Two-graph compare with shared taskbar, sync by ID and by layer field, merged info panel.",
+            "html": """
+<div id="adv4_grid" style="width:100%;height:100%;">
+  <div id="adv4_left_mount" style="display:none;"></div>
+  <div id="adv4_right_mount" style="display:none;"></div>
+</div>
+""".strip(),
+            "js": """
+const left = FXGraphViewer.create({
+  payload: api.payloads.accuracy_reference,
+  mount: { root: '#adv4_left_mount' },
+  layout: { preset: 'split' },
+  state: { activeExtensions: ['topological_order'], colorBy: 'topological_order' },
+});
+left.init();
+api.registerViewer(left);
+
+const right = FXGraphViewer.create({
+  payload: api.payloads.accuracy_candidate,
+  mount: { root: '#adv4_right_mount' },
+  layout: { preset: 'split' },
+  state: {
+    activeExtensions: ['per_layer_accuracy', 'topological_order'],
+    colorBy: 'per_layer_accuracy',
+  },
+});
+right.init();
+api.registerViewer(right);
+
+const compare = FXGraphCompare.create({
+  viewers: [left, right],
+  layout: { columns: 2, container: '#adv4_grid' },
+  sharedTaskbar: {
+    enabled: true,
+    controls: { theme: true, layers: true, zoomFit: true, fullscreen: true, syncMode: true },
+  },
+  sync: { mode: 'id' },
+});
+api.registerCompare(compare);
+
+api.log('ADV04: compare active. Use shared taskbar to change theme, sync mode, or zoom all.');
+""".strip(),
+        },
+        {
             "id": "js_99_combo_mixed",
             "title": "JS 99: Mixed Combo Demo",
             "description": "Current mixed demo: compare + sync + runtime mutation + events + themed controls.",
@@ -753,26 +789,22 @@ api.log('Use taskbar fullscreen button or side controls to validate API + UI int
     <div id="c99_threshold_text" style="margin-top:6px;font-family:monospace;"></div>
     <div style="height:8px;"></div>
     <label><input id="c99_sync_sel" type="checkbox" checked /> Sync selection</label><br />
-    <label><input id="c99_sync_theme" type="checkbox" checked /> Sync theme</label><br />
-    <label><input id="c99_compact" type="checkbox" checked /> Compact layout</label>
     <div style="height:8px;"></div>
     <button id="c99_focus_worst">Focus Worst Node</button>
     <button id="c99_sequence" style="margin-left:6px;">Run Scripted Sequence</button>
     <div style="height:10px;"></div>
     <pre id="c99_log" style="margin:0;border:1px solid #d1d5db;border-radius:8px;padding:8px;min-height:180px;max-height:280px;overflow:auto;font-size:12px;"></pre>
   </div>
-  <div style="display:grid;grid-template-rows:1fr;min-height:0;">
-    <div id="c99_grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;min-height:0;">
-      <div id="c99_left" style="border:1px solid #d1d5db;border-radius:8px;overflow:hidden;"></div>
-      <div id="c99_right" style="border:1px solid #d1d5db;border-radius:8px;overflow:hidden;"></div>
-    </div>
+  <div id="c99_grid" style="min-height:0;">
+    <div id="c99_left_mount" style="display:none;"></div>
+    <div id="c99_right_mount" style="display:none;"></div>
   </div>
 </div>
 """.strip(),
             "js": """
 const left = FXGraphViewer.create({
   payload: api.payloads.accuracy_reference,
-  mount: { root: '#c99_left' },
+  mount: { root: '#c99_left_mount' },
   layout: { preset: 'split' },
   state: { activeExtensions: ['color_by_type'], colorBy: 'color_by_type', theme: 'light' },
 });
@@ -781,7 +813,7 @@ api.registerViewer(left);
 
 const right = FXGraphViewer.create({
   payload: api.payloads.accuracy_candidate,
-  mount: { root: '#c99_right' },
+  mount: { root: '#c99_right_mount' },
   layout: { preset: 'split' },
   state: {
     activeExtensions: ['per_layer_accuracy', 'topological_order', 'color_by_type'],
@@ -794,8 +826,8 @@ api.registerViewer(right);
 
 const compare = FXGraphCompare.create({
   viewers: [left, right],
-  layout: { columns: 2, compact: true, container: '#c99_grid' },
-  sync: { selection: true, theme: true },
+  layout: { columns: 2, container: '#c99_grid' },
+  sync: { mode: 'id' },
 });
 api.registerCompare(compare);
 
@@ -860,11 +892,10 @@ function focusWorst() {
 
 document.getElementById('c99_theme').addEventListener('change', (e) => {
   left.setTheme(e.target.value);
+  right.setTheme(e.target.value);
 });
 document.getElementById('c99_threshold').addEventListener('input', applyThreshold);
-document.getElementById('c99_sync_sel').addEventListener('change', (e) => compare.setSync({ selection: e.target.checked }));
-document.getElementById('c99_sync_theme').addEventListener('change', (e) => compare.setSync({ theme: e.target.checked }));
-document.getElementById('c99_compact').addEventListener('change', (e) => compare.setCompact(e.target.checked));
+document.getElementById('c99_sync_sel').addEventListener('change', (e) => compare.setSync({ mode: e.target.checked ? 'id' : 'none' }));
 document.getElementById('c99_focus_worst').addEventListener('click', focusWorst);
 document.getElementById('c99_sequence').addEventListener('click', () => {
   log('scripted sequence start');

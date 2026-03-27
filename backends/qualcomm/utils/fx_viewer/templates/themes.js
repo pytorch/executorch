@@ -13,14 +13,6 @@ function fxOffAll(teardownFns) {
     }
 }
 
-const FX_COMPARE_COMPACT_LAYOUT_PATCH = Object.freeze({
-    panels: Object.freeze({
-        sidebar: Object.freeze({ visible: false }),
-        minimap: Object.freeze({ visible: false }),
-        info: Object.freeze({ visible: false }),
-    }),
-});
-
 const THEMES = {
     'light': {
         bg: '#ffffff',
