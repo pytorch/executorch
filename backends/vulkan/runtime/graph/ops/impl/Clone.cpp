@@ -87,12 +87,12 @@ void add_image_to_buffer_node(
       default_pick_local_wg_size,
       // Input and Outputs
       {{buffer, vkapi::kWrite}, {image, vkapi::kRead}},
-      // Parameter Buffers
+      // Parameter Buffers: TextureMetadata for image, BufferMetadata for buffer
+      {graph.texture_meta_ubo(image), graph.buffer_meta_ubo(buffer)},
+      // Push Constants: none
       {},
-      // Push Constants
-      {graph.sizes_pc_of(image), graph.strides_pc_of(buffer)},
-      // Specialization Constants
-      {graph.hashed_layout_of(image)},
+      // Specialization Constants: image layout + buffer layout
+      {graph.hashed_layout_of(image), graph.hashed_layout_of(buffer)},
       // Resize Args
       {},
       // Resizing Logic
@@ -115,12 +115,14 @@ void add_buffer_to_image_node(
       default_pick_local_wg_size,
       // Input and Outputs
       {{image, vkapi::kWrite}, {buffer, vkapi::kRead}},
-      // Parameter Buffers
+      // Parameter Buffers: TextureMetadata for image, BufferMetadata for buffer
+      {graph.texture_meta_ubo(image), graph.buffer_meta_ubo(buffer)},
+      // Push Constants: none
       {},
-      // Push Constants
-      {graph.sizes_pc_of(image), graph.strides_pc_of(buffer)},
-      // Specialization Constants
-      {graph.hashed_layout_of(image)},
+      // Specialization Constants: image layout, transpose_hw=0, buffer layout
+      {graph.hashed_layout_of(image),
+       int32_t(0),
+       graph.hashed_layout_of(buffer)},
       // Resize Args
       {},
       // Resizing Logic
@@ -144,7 +146,7 @@ void clone(ComputeGraph& graph, const std::vector<ValueRef>& args) {
     if (graph.hashed_layout_of(src) == graph.hashed_layout_of(dst)) {
       return add_clone_node(graph, src, dst);
     } else {
-      return add_view_node(graph, src, kDummyValueRef, dst);
+      return add_view_copy_node(graph, src, dst, {}, resize_clone_node);
     }
   }
   if (src_storage == utils::kTexture3D && dst_storage == utils::kBuffer) {
@@ -156,8 +158,7 @@ void clone(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
   std::vector<ValueRef> extra_args = {};
   // Buffer to buffer copy
-  return add_view_copy_buffer_node(
-      graph, src, dst, extra_args, resize_clone_node);
+  return add_view_copy_node(graph, src, dst, extra_args, resize_clone_node);
 }
 
 // Clone node is not the most efficient implementation for the aten.clone

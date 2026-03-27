@@ -351,6 +351,7 @@ include_patterns = [
     # TODO(https://github.com/pytorch/executorch/issues/7441): Gradually start enabling all folders.
     # 'backends/**/*.py',
     'backends/arm/**/*.py',
+    'backends/cortex_m/**/*.py',
     'backends/openvino/**/*.py',
     'build/**/*.py',
     'codegen/**/*.py',
@@ -375,6 +376,7 @@ exclude_patterns = [
     'scripts/check_binary_dependencies.py',
     'profiler/test/test_profiler_e2e.py',
     'backends/arm/test/ops/*.py',
+    'backends/cortex_m/test/**/*.py',
 ]
 command = [
     'python',
@@ -403,10 +405,12 @@ code = 'BANDIT'
 include_patterns = [
     'backends/arm/**/*.py',
     'examples/arm/**/*.py',
+    'backends/cortex_m/**/*.py',
 ]
 exclude_patterns = [
     'third-party/**',
     '**/third-party/**',
+    'backends/cortex_m/test/**/*.py',
 ]
 command = [
     'python',

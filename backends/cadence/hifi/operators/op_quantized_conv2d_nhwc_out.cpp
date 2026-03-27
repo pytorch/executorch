@@ -237,7 +237,7 @@ void xa_opt_quantized_conv2d_nhwc(
     WORD32 scratch_size = 0;
 
     if (groups == 1) {
-      WORD32 out_data_format = 1;
+      WORD32 out_data_format = 0;
 
       scratch_size = xa_nn_conv2d_getsize(
           input_height,
