@@ -85,6 +85,12 @@ def test_preserve_io_quantization_roundtrip_vgf_FP_INT():
     assert roundtripped.preserve_io_quantization is True
 
 
+def test_preserve_tosa_dev_mode_roundtrip_vgf_FP_INT():
+    compile_spec = VgfCompileSpec()
+    roundtripped = VgfCompileSpec._from_list(compile_spec._to_list())
+    assert roundtripped.tosa_dev_mode is True
+
+
 def test_preserve_io_quantization_warns_for_u55_INT():
     with warns(
         UserWarning,

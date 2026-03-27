@@ -72,7 +72,7 @@ vgf = [
   "ai_ml_emulation_layer_for_vulkan==0.9.0",
   "ai_ml_sdk_model_converter==0.9.0",
   "ml_dtypes==0.5.1",
-  "tosa-tools==2026.2.1",
+  "tosa-tools==2026.5.0",
 ]
 ethos_u = [
   # AoT ethos_u dependencies
