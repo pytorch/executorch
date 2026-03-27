@@ -15,6 +15,10 @@ import torch
 import torchao
 from executorch import exir
 from executorch.backends.qualcomm.builders.node_visitor import dq_ops
+
+from executorch.backends.qualcomm.debugger.qcom_numerical_comparator_sample import (
+    QcomCosineSimilarityComparator,
+)
 from executorch.backends.qualcomm.debugger.qnn_intermediate_debugger import (
     QNNIntermediateDebugger,
 )
@@ -48,7 +52,6 @@ from executorch.devtools.inspector._inspector_utils import TimeScale
 from executorch.examples.qualcomm.utils import make_output_dir
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.backend.utils import get_delegates
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
@@ -186,7 +189,6 @@ class TestQNN(unittest.TestCase):
     compile_only: bool = False
     pre_gen_pte: str = ""
     llama_artifacts: str = ""
-    dump_intermediate_outputs: bool = False
     inference_speed: float = 0.0
     inference_speed_output_path = "outputs/inference_speed.txt"
     static_llm_eval_method = ""
@@ -321,7 +323,6 @@ class TestQNN(unittest.TestCase):
         executorch_prog: ExecutorchProgram | ExecutorchProgramManager,
         etrecord_path: str = "etrecord.bin",
         expected_profile_events: int = -1,
-        expected_intermediate_events: int = -1,
         method_index: int = 0,
         input_encodings: Tuple = (),
         output_encodings: Tuple = (),
@@ -386,29 +387,27 @@ class TestQNN(unittest.TestCase):
                 )
 
             def validate_intermediate_tensor():
-                inspector = Inspector(
-                    etdump_path=etdump_path, debug_buffer_path=debug_output_path
+                qnn_intermediate_debugger.setup_inspector(
+                    etdump_path=etdump_path,
+                    debug_buffer_path=debug_output_path,
                 )
-                node_tensor_map = qnn_intermediate_debugger._match_tensors(
-                    inspector=inspector, keep_qnn_layout=False
+                cos_comparator = qnn_intermediate_debugger.create_comparator(
+                    QcomCosineSimilarityComparator
                 )
-                self.assertEqual(
-                    len(node_tensor_map),
-                    expected_compared_events,
-                    msg=f"Unexpected number of compared events, expecting {expected_compared_events}, but has {len(node_tensor_map)} events.",
-                )
-                # Compare accuracy for each layer
-                for _, value in node_tensor_map.items():
-                    self._assert_outputs_equal(
-                        value[0].to(torch.float32), value[1].to(torch.float32)
+                numeric_results = (
+                    qnn_intermediate_debugger.inspector.calculate_numeric_gap(
+                        distance=cos_comparator,
+                        reference_graph=qnn_intermediate_debugger.reference_graph_name,
                     )
-                for event_block in inspector.event_blocks:
-                    if event_block.name == "Execute":
-                        self.assertEqual(
-                            len(event_block.events),
-                            expected_intermediate_events,
-                            msg=f"Unexpected number of intermediate events, expecting {expected_intermediate_events}, but has {len(event_block.events)} events.",
-                        )
+                )
+                numeric_results = numeric_results.set_index("runtime_debug_handle")
+                assert (
+                    len(numeric_results) == expected_compared_events
+                ), f"Unexpected number of compared events, expecting {expected_compared_events}, but has {len(numeric_results)} events."
+                for _, row in numeric_results.iterrows():
+                    assert cos_comparator.is_valid_score(
+                        row.gap[0]
+                    ), f"Node {row.aot_ops} is failing {cos_comparator.metric_name()} test, {row.gap[0]} is lower than {cos_comparator.threshold}."
 
             processed_inputs = list(sample_inputs)
             for i, enc in enumerate(input_encodings):
@@ -448,7 +447,7 @@ class TestQNN(unittest.TestCase):
                     "--method_index",
                     str(method_index),
                 ]
-                if self.dump_intermediate_outputs:
+                if expected_compared_events != -1:
                     cmd.append("--dump_intermediate_outputs")
                 cmd += extra_cmds.split()
 
@@ -499,7 +498,7 @@ class TestQNN(unittest.TestCase):
                 if expected_profile_events != -1:
                     validate_profile()
 
-                if expected_intermediate_events != -1:
+                if expected_compared_events != -1:
                     validate_intermediate_tensor()
 
                 if save_inference_speed:
@@ -516,7 +515,7 @@ class TestQNN(unittest.TestCase):
                     device=self.device,
                     host=self.host,
                     soc_model=self.soc_model,
-                    dump_intermediate_outputs=expected_intermediate_events != -1,
+                    dump_intermediate_outputs=expected_compared_events != -1,
                     direct_build_folder=self.direct_build_folder,
                 )
 
@@ -555,7 +554,7 @@ class TestQNN(unittest.TestCase):
                 if expected_profile_events != -1:
                     adb.pull_etdump(etdump_path, callback=validate_profile)
 
-                if expected_intermediate_events != -1:
+                if expected_compared_events != -1:
                     adb.pull_debug_output(
                         etdump_path,
                         debug_output_path,
@@ -573,7 +572,6 @@ class TestQNN(unittest.TestCase):
         sample_inputs: Tuple[torch.Tensor],
         expected_partitions: int = 1,
         expected_profile_events: int = -1,
-        expected_intermediate_events: int = -1,
         expected_compared_events: int = -1,
         assert_output_equal: bool = True,
         passes_job: Optional[OrderedDict] = None,
@@ -595,26 +593,8 @@ class TestQNN(unittest.TestCase):
             skip_node_op_set=skip_node_op_set,
             skip_mutable_buffer=skip_mutable_buffer,
             generate_etrecord=self.profile_level != 0
-            or expected_intermediate_events != -1,
+            or expected_compared_events != -1,
         )
-
-        qnn_intermediate_debugger = None
-        if expected_intermediate_events != -1:
-            lowered_module_nodes = get_delegates(
-                delegated_program.exported_program().graph
-            )
-            assert len(lowered_module_nodes) == 1, "Length not correct"
-
-            lowered_module_node = lowered_module_nodes[0]
-            lower_module = getattr(
-                delegated_program.exported_program().graph_module,
-                lowered_module_node.name,
-            )
-            edge_module = lower_module.original_module.module()
-
-            qnn_intermediate_debugger = QNNIntermediateDebugger()
-            qnn_intermediate_debugger.set_edge_module(edge_module=edge_module)
-            qnn_intermediate_debugger.intermediate_output_module(*sample_inputs)
 
         # Don't allocate if shared_buffer enabled or using direct_mode
         allocate_io = not (self.shared_buffer or self.direct_build_folder)
@@ -646,11 +626,24 @@ class TestQNN(unittest.TestCase):
         etrecord_path = "etrecord.bin"
         if self.profile_level:
             exec_prog.get_etrecord().save(etrecord_path)
+
+        qnn_intermediate_debugger = None
+        if expected_compared_events != -1:
+            etrecord = exec_prog.get_etrecord()
+            qnn_intermediate_debugger = QNNIntermediateDebugger(sample_inputs)
+            qnn_intermediate_debugger.set_etrecord_file_path(etrecord_path)
+            edge_ep = etrecord.graph_map[qnn_intermediate_debugger.reference_graph_name]
+            qnn_intermediate_debugger.set_edge_ep(edge_ep=edge_ep)
+            etrecord.update_representative_inputs(
+                qnn_intermediate_debugger.sample_input
+            )
+            etrecord.save(etrecord_path)
+
         # Check numerics
         if (
             assert_output_equal
             or expected_profile_events != -1
-            or expected_intermediate_events != -1
+            or expected_compared_events != -1
         ):
             self.verify_output(
                 module=module,
@@ -658,7 +651,6 @@ class TestQNN(unittest.TestCase):
                 executorch_prog=exec_prog,
                 etrecord_path=etrecord_path,
                 expected_profile_events=expected_profile_events,
-                expected_intermediate_events=expected_intermediate_events,
                 extra_cmds=extra_cmds,
                 output_callback=output_callback,
                 save_inference_speed=save_inference_speed,

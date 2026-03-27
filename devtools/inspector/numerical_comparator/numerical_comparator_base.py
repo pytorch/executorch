@@ -246,6 +246,7 @@ class NumericalComparatorBase(ABC):
                 continue
             rows.append(
                 {
+                    "aot_debug_handle": aot_debug_handle,
                     "aot_ops": find_op_names(
                         aot_debug_handle, aot_debug_handle_to_op_names
                     ),
@@ -253,6 +254,7 @@ class NumericalComparatorBase(ABC):
                     "runtime_ops": find_op_names(
                         runtime_debug_handle, runtime_debug_handle_to_op_names
                     ),
+                    "runtime_debug_handle": runtime_debug_handle,
                     "runtime_intermediate_output": runtime_intermediate_output,
                     "gap": self._compare_intermediate_outputs(
                         aot_intermediate_output, runtime_intermediate_output
