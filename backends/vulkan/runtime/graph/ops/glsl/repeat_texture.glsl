@@ -41,12 +41,13 @@ void main() {
     return;
   }
 
-  TensorIndex4D out_tidx = texture_pos_to_tensor4d_idx_simple(out_meta, out_pos);
+  TensorIndex4D out_tidx =
+      texture_pos_to_tensor4d_idx_simple(out_meta, out_pos, out_layout);
 
   VEC4_T out_texel = VEC4_T(0);
 
   const int limit = min(
-      4, out_meta.sizes[packed_dim] - out_tidx.data[packed_dim]);
+      4, safe_idx(out_meta.sizes, packed_dim) - out_tidx.data[packed_dim]);
   for (int comp = 0; comp < limit; comp++) {
     TensorIndex4D in_tidx = out_tidx;
     in_tidx.data = ivec4(
@@ -56,7 +57,8 @@ void main() {
         out_tidx.data.w % in_meta.sizes.w);
 
     TextureElementIndex in_elem =
-        tensor4d_idx_to_texture_element_idx_simple(in_meta, in_tidx);
+        tensor4d_idx_to_texture_element_idx_simple(
+            in_meta, in_tidx, out_layout);
 
     VEC4_T in_texel = texelFetch(t_in, in_elem.pos, 0);
     out_texel[comp] = in_texel[in_elem.comp];

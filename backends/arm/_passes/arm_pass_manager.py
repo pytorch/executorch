@@ -99,6 +99,7 @@ from executorch.backends.arm._passes import (
     DecorateFp32toInt32CastingPass,
     FoldAndAnnotateQParamsPass,
     FuseBatchNorm2dPass,
+    FuseConsecutiveConcatShapesPass,
     FuseConsecutiveRescalesPass,
     FuseConstantArgsPass,
     FuseDuplicateUsersPass,
@@ -113,6 +114,7 @@ from executorch.backends.arm._passes import (
     InsertTableOpsPass,
     MatchArgDtypePass,
     MatchArgRanksPass,
+    NormalizeIndexPutBoolIndexTensorPass,
     NormalizeIndexPutNoneIndicesPass,
     NormalizeWhileInitialArgsPass,
     PromoteBoolOperandsPass,
@@ -189,7 +191,7 @@ class ArmPassManager(PassManager):
         """
         skip_set: set[type] = set()
 
-        config = override_config or self.compile_spec.get_pass_pipeline_config()
+        config = override_config or self.compile_spec._get_pass_pipeline_config()
         logger.debug(f"Skip Config: {config}")
 
         match config.softmax:
@@ -450,6 +452,7 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 NormalizeIndexPutNoneIndicesPass(),
+                NormalizeIndexPutBoolIndexTensorPass(),
                 RewriteIndexPutPass(),
                 RewriteBoolBitwiseToLogicalPass(),
                 DecomposeRemainderPass(),
@@ -504,6 +507,7 @@ class ArmPassManager(PassManager):
             [
                 CastInt64BuffersToInt32Pass(exported_program),
                 FuseEqualPlaceholdersPass(exported_program),
+                FuseConsecutiveConcatShapesPass(),
                 ToTosaMemoryFormatPass(exported_program),
                 RemoveNoopPass(),
                 InsertRescalePass(),
