@@ -28,9 +28,9 @@ from executorch.backends.cadence.aot.fuse_ops import (
     FuseTransposeOrPermuteOpPairsPass,
     HierarchicalCSEPass,
 )
-from executorch.backends.cadence.aot.graph_builder import GraphBuilder
 from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_match
 from executorch.backends.cadence.aot.typing_stubs import expand
+from executorch.backends.test.graph_builder import GraphBuilder
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import PassResult, ProxyValue
@@ -287,6 +287,72 @@ class TestFusionPasses(TestFusionPassesBase):
         )
         validate_numerics(
             graph_copy, converted_graph, (x_input,), "FuseCascadedTransposeOrPermuteOps"
+        )
+
+    def test_cascaded_permutes_multiple_users(self) -> None:
+        # Test case where intermediate permute has multiple users.
+        #            x
+        #            |
+        #         permute1
+        #       /    |     \
+        # permute2 permute3 permute4
+        #    |       |         |
+        #   out0    out1    permute5
+        #                      |
+        #                     out2
+
+        builder = GraphBuilder()
+        x_input = torch.randn(2, 3, 8, 8, dtype=torch.float32)
+        x = builder.placeholder("x", x_input)
+        permute1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(x, [0, 2, 3, 1]),
+        )
+        permute2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(permute1, [0, 3, 1, 2]),
+        )
+        permute3 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(permute1, [0, 1, 3, 2]),
+        )
+        permute4 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(permute1, [3, 2, 1, 0]),
+        )
+        permute5 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(permute4, [1, 2, 3, 0]),
+        )
+        builder.output([permute2, permute3, permute5])
+        original_graph = builder.get_graph_module()
+        graph_copy = copy.deepcopy(original_graph)
+
+        p = FuseCascadedTransposeOrPermuteOps()
+        result = p.call(original_graph)
+        self.assertTrue(result.modified)
+        converted_graph = result.graph_module
+
+        # permute2 becomes a no-op, permute3 and permute5 fused with preceding permutes
+        # into new single permutes.
+        output0, output1, output2 = converted_graph.graph.output_node().args[0]
+        # out0: permute1 + permute2 = identity, so it connects to the graph input.
+        graph_input = converted_graph.graph.find_nodes(op="placeholder")[0]
+        self.assertIs(output0, graph_input)
+        # out1: permute1 [0,2,3,1] + permute3 [0,1,3,2] fused to [0,2,1,3].
+        self.assertEqual(output1.target, exir_ops.edge.aten.permute_copy.default)
+        self.assertIs(output1.args[0], graph_input)
+        self.assertEqual(output1.args[1], [0, 2, 1, 3])
+        # out2: permute1 [0,2,3,1] + permute4 [3,2,1,0] + permute5 [1,2,3,0]
+        # fused to [3,2,0,1].
+        self.assertEqual(output2.target, exir_ops.edge.aten.permute_copy.default)
+        self.assertIs(output2.args[0], graph_input)
+        self.assertEqual(output2.args[1], [3, 2, 0, 1])
+        validate_numerics(
+            graph_copy,
+            converted_graph,
+            (x_input,),
+            "FuseCascadedTransposeOrPermuteOps_multiple_users",
         )
 
     def test_view_fusion(self) -> None:

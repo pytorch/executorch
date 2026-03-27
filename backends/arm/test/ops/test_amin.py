@@ -11,6 +11,7 @@ import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
     EthosU85PipelineINT,
     OpNotSupportedPipeline,
     TosaPipelineFP,
@@ -144,14 +145,14 @@ def test_amin_tosa_INT(test_data: Amin.input_t):
     pipeline.run()
 
 
-def test_amin_u55_INT_not_delegated():
-    data, dim, keep_dims = Amin.test_data["rank_4_all_dim"]()
-    pipeline = OpNotSupportedPipeline[Amin.input_t](
+@common.parametrize("test_data", Amin.test_data)
+@common.XfailIfNoCorstone300
+def test_amin_u55_INT(test_data: Amin.input_t):
+    data, dim, keep_dims = test_data()
+    pipeline = EthosU55PipelineINT[Amin.input_t](
         Amin(dim, keep_dims),
         data,
-        {"executorch_exir_dialects_edge__ops_aten_amin_default": 1},
-        quantize=True,
-        u55_subset=True,
+        amin_aten_op,
     )
     pipeline.run()
 
