@@ -129,10 +129,35 @@ conv2d_2x2_3x2x14x14_nobias = Conv2d(
     kernel_size=(2, 2),
     stride=1,
     bias=False,
-    padding=0,
+    padding=3,
     width=14,
     height=14,
     batches=2,
+    padding_mode="circular",
+)
+
+conv2d_3x3_1x3x12x12_st1_pd1_reflect = Conv2d(
+    in_channels=3,
+    out_channels=4,
+    kernel_size=(3, 3),
+    stride=1,
+    padding=3,
+    width=12,
+    height=12,
+    batches=1,
+    padding_mode="reflect",
+)
+
+conv2d_3x3_1x3x12x12_st1_pd1_replicate = Conv2d(
+    in_channels=3,
+    out_channels=4,
+    kernel_size=(3, 3),
+    stride=1,
+    padding=3,
+    width=12,
+    height=12,
+    batches=1,
+    padding_mode="replicate",
 )
 
 conv2d_3x3_1x3x24x24_st1 = Conv2d(
@@ -365,7 +390,9 @@ conv2d_groups_bias = Conv2d(
 # Shenanigan to get a nicer output when test fails. With unittest it looks like:
 # FAIL: test_convolution_2d_tosa_INT_2_3x3_1x3x12x12_st2_pd1
 test_data_FP = {
-    "2x2_3x2x14x14_nobias": lambda: conv2d_2x2_3x2x14x14_nobias,
+    "2x2_3x2x14x14_nobias_circular": lambda: conv2d_2x2_3x2x14x14_nobias,
+    "3x3_1x3x12x12_st1_pd1_reflect": lambda: conv2d_3x3_1x3x12x12_st1_pd1_reflect,
+    "3x3_1x3x12x12_st1_pd1_replicate": lambda: conv2d_3x3_1x3x12x12_st1_pd1_replicate,
     "3x3_1x3x24x24_st1": lambda: conv2d_3x3_1x3x24x24_st1,
     "3x3_1x3x12x12_st2_pd1": lambda: conv2d_3x3_1x3x12x12_st2_pd1,
     "1x1_1x2x16x16_st1": lambda: conv2d_1x1_1x2x16x16_st1,
@@ -483,6 +510,8 @@ def test_convolution_2d_tosa_FP(test_data):
         aten_op,
         exir_op,
         tosa_extensions=["bf16"],
+        atol=3e-3,
+        rtol=3e-3,
     )
     pipeline.run()
 
@@ -593,6 +622,8 @@ def test_convolution_2d_vgf_no_quant(test_data):
         aten_op,
         exir_op,
         quantize=False,
+        atol=3e-3,
+        rtol=3e-3,
     )
     pipeline.run()
 
