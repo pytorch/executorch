@@ -2,7 +2,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -28,30 +28,38 @@ source "${script_dir}/utils.sh"
 
 if [[ "${ARCH}" == "x86_64" ]]; then
     # FVPs
-    corstone300_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64.tgz?rev=018659bd574f4e7b95fa647e7836ccf4&hash=22A79103C6FA5FFA7AFF3BE0447F3FF9"
+    corstone300_url="https://developer.arm.com/-/cdn-downloads/permalink/FVPs-Corstone-IoT/Corstone-300/FVP_Corstone_SSE-300_11.27_42_Linux64.tgz"
     corstone300_model_dir="Linux64_GCC-9.3"
-    corstone300_md5_checksum="98e93b949d0fbac977292d8668d34523"
+    corstone300_md5_checksum="0dc9538041296b8d479249e6fa5aab74"
 
-    corstone320_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-320/FVP_Corstone_SSE-320_11.27_25_Linux64.tgz?rev=a507bffc219a4d5792f1192ab7002d89&hash=D9A824AA8227D2E679C9B9787FF4E8B6FBE3D7C6"
+    corstone320_url="https://developer.arm.com/-/cdn-downloads/permalink/FVPs-Corstone-IoT/Corstone-320/FVP_Corstone_SSE-320_11.27_25_Linux64.tgz"
     corstone320_model_dir="Linux64_GCC-9.3"
     corstone320_md5_checksum="3deb3c68f9b2d145833f15374203514d"
+
+    corstone1000_url="https://developer.arm.com/-/cdn-downloads/permalink/FVPs-Corstone-IoT/Corstone-1000-with-Cortex-A320/FVP_Corstone_1000-A320_11.30_27_Linux64.tgz"
+    corstone1000_model_dir="Linux64_GCC-9.3"
+    corstone1000_md5_checksum="80251ab4c7b9ca9d1b04ee7ff9f01ba0"
 elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
     # FVPs
-    corstone300_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64_armv8l.tgz?rev=9cc6e9a32bb947ca9b21fa162144cb01&hash=7657A4CF27D42E892E3F08D452AAB073"
+    corstone300_url="https://developer.arm.com/-/cdn-downloads/permalink/FVPs-Corstone-IoT/Corstone-300/FVP_Corstone_SSE-300_11.27_42_Linux64_armv8l.tgz"
     corstone300_model_dir="Linux64_armv8l_GCC-9.3"
-    corstone300_md5_checksum="cbbabbe39b07939cff7a3738e1492ef1"
+    corstone300_md5_checksum="74e7952817b338c8479bcf66874b23e0"
 
-    corstone320_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-320/FVP_Corstone_SSE-320_11.27_25_Linux64_armv8l.tgz?rev=b6ebe0923cb84f739e017385fd3c333c&hash=8965C4B98E2FF7F792A099B08831FE3CB6120493"
+    corstone320_url="https://developer.arm.com/-/cdn-downloads/permalink/FVPs-Corstone-IoT/Corstone-320/FVP_Corstone_SSE-320_11.27_25_Linux64_armv8l.tgz"
     corstone320_model_dir="Linux64_armv8l_GCC-9.3"
     corstone320_md5_checksum="3889f1d80a6d9861ea4aa6f1c88dd0ae"
+
+    corstone1000_url="https://developer.arm.com/-/cdn-downloads/permalink/FVPs-Corstone-IoT/Corstone-1000-with-Cortex-A320/FVP_Corstone_1000-A320_11.30_27_Linux64_armv8l.tgz"
+    corstone1000_model_dir="Linux64_armv8l_GCC-9.3"
+    corstone1000_md5_checksum="19585fa8b63a8f5084ef392a96c88e96"
 else
     log_step "fvp" "Error: only x86-64 & aarch64/arm64 architecture is supported for now!"
     exit 1
 fi
 
 function install_fvp() {
-    # Download and install the Corstone 300 FVP simulator platform
-    fvps=("corstone300" "corstone320")
+    # Download and install Corstone FVP simulator platforms.
+    fvps=("corstone300" "corstone320" "corstone1000")
 
     for fvp in "${fvps[@]}"; do
         cd "${root_dir}"
@@ -78,6 +86,9 @@ function install_fvp() {
                 ;;
             corstone320)
                 ./FVP_Corstone_SSE-320.sh --i-agree-to-the-contained-eula --force --destination ./ --quiet --no-interactive
+                ;;
+            corstone1000)
+                ./FVP_Corstone_1000-A320.sh --i-agree-to-the-contained-eula --force --destination ./ --quiet --no-interactive
                 ;;
             *)
                 log_step "fvp" "Error: Unknown FVP model ${fvp}. Exiting."
@@ -117,7 +128,7 @@ function setup_fvp() {
 }
 
 function setup_path_fvp() {
-    fvps=("corstone300" "corstone320")
+    fvps=("corstone300" "corstone320" "corstone1000")
     for fvp in "${fvps[@]}"; do
         model_dir_variable=${fvp}_model_dir
         fvp_model_dir=${!model_dir_variable}
@@ -131,4 +142,5 @@ function setup_path_fvp() {
     echo "hash FVP_Corstone_SSE-300_Ethos-U55" >> ${setup_path_script}.sh
     echo "hash FVP_Corstone_SSE-300_Ethos-U65" >> ${setup_path_script}.sh
     echo "hash FVP_Corstone_SSE-320" >> ${setup_path_script}.sh
+    echo "hash FVP_Corstone-1000-A320" >> ${setup_path_script}.sh
 }

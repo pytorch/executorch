@@ -107,6 +107,9 @@ EXECUTORCH_DEFINED_MODELS = [
     "qwen3_0_6b",
     "qwen3_1_7b",
     "qwen3_4b",
+    "qwen3_5_0_8b",
+    "qwen3_5_2b",
+    "qwen3_5_4b",
     "phi_4_mini",
     "smollm2",
     "lfm2_350m",  # hybrid
@@ -124,6 +127,9 @@ HUGGING_FACE_REPO_IDS = {
     "qwen3_0_6b": "Qwen/Qwen3-0.6B",
     "qwen3_1_7b": "Qwen/Qwen3-1.7B",
     "qwen3_4b": "Qwen/Qwen3-4B",
+    "qwen3_5_0_8b": "Qwen/Qwen3.5-0.8B",
+    "qwen3_5_2b": "Qwen/Qwen3.5-2B",
+    "qwen3_5_4b": "Qwen/Qwen3.5-4B",
     "lfm2_350m": "LiquidAI/LFM2-350M",
     "lfm2_700m": "LiquidAI/LFM2-700M",
     "lfm2_1_2b": "LiquidAI/LFM2-1.2B",
@@ -628,7 +634,7 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
         return return_val
 
 
-def export_llama(
+def export_llama(  # noqa: C901
     export_options: Union[argparse.Namespace, LlmConfig, DictConfig],
 ) -> str:
     if isinstance(export_options, argparse.Namespace):
@@ -651,6 +657,8 @@ def export_llama(
         repo_id = HUGGING_FACE_REPO_IDS[model_name]
         if model_name.startswith("qwen2_5"):
             from executorch.examples.models.qwen2_5 import convert_weights
+        elif model_name.startswith("qwen3_5"):
+            from executorch.examples.models.qwen3_5 import convert_weights
         elif model_name.startswith("qwen3"):
             from executorch.examples.models.qwen3 import convert_weights
         elif model_name == "phi_4_mini":
@@ -896,15 +904,15 @@ def _validate_args(llm_config):
                 "Shared embedding is only supported with torchao quantization."
             )
 
-    if llm_config.multimethod_lora.enabled:
+    if llm_config.multimethod.enabled:
         if llm_config.base.lora_config is not None:
             raise ValueError(
-                "Cannot use both base.lora_config and multimethod_lora.methods. "
-                "Use multimethod_lora.methods for all LoRA variants."
+                "Cannot use both base.lora_config and multimethod.methods. "
+                "Use multimethod.methods for all LoRA variants."
             )
         if llm_config.quantization.pt2e_quantize is not None:
             raise ValueError(
-                "PT2E quantization is not supported with multimethod_lora export."
+                "PT2E quantization is not supported with multimethod export."
             )
         if (
             llm_config.backend.coreml.enabled
@@ -914,7 +922,7 @@ def _validate_args(llm_config):
             or llm_config.backend.openvino.enabled
         ):
             raise ValueError(
-                "multimethod_lora export only supports XNNPACK backend or portable ops"
+                "multimethod export only supports XNNPACK backend or portable ops. "
                 "Please disable other backends (coreml, vulkan, qnn, mps, openvino)."
             )
 
@@ -1257,7 +1265,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
 
 
 def _get_xnnpack_partitioners(llm_config: LlmConfig) -> Optional[List[Partitioner]]:
-    """Get XNNPACK partitioners for multimethod_lora export."""
+    """Get XNNPACK partitioners for multimethod export."""
     partitioners = []
 
     # Order matters here, dynamic quantization should be applied first when
@@ -1295,20 +1303,20 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
     """
     Export multiple methods (base + LoRA variants) to a single .pte file.
 
-    For each method in llm_config.multimethod_lora.methods:
+    For each method in llm_config.multimethod.methods:
     - If LoraConfig is None: use base model
     - If LoraConfig is provided: create model with LoRA weights
 
     Limitations:
-    - Only XNNPACK backend is supported for multimethod_lora export.
+    - Only XNNPACK backend is supported for multimethod export.
     - PT2E quantization is not supported.
     - Each method is exported separately; export time scales linearly
       with the number of methods.
     - The final .pte file deduplicates shared weights automatically.
     """
-    num_methods = len(llm_config.multimethod_lora.methods)
+    num_methods = len(llm_config.multimethod.methods)
     logging.info(
-        f"multimethod_lora export: exporting {num_methods} method(s). "
+        f"multimethod export: exporting {num_methods} method(s). "
         "Each method requires separate model instantiation and export."
     )
 
@@ -1320,14 +1328,14 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
     method_to_program: Dict[str, ExportedProgram] = {}
     first_builder = None
 
-    for method_name, lora_config in llm_config.multimethod_lora.methods.items():
-        logging.info(f"Exporting method: {method_name}")
+    for method in llm_config.multimethod.methods:
+        logging.info(f"Exporting method: {method.method_name}")
 
         # Create a copy of config with this method's LoRA setting
         method_config = copy.deepcopy(llm_config)
-        method_config.base.lora_config = lora_config
-        # Disable multimethod_lora to avoid infinite recursion
-        method_config.multimethod_lora.methods = {}
+        method_config.base.lora_config = method.lora_config
+        # Disable multimethod to avoid infinite recursion
+        method_config.multimethod.methods = []
 
         # Load and prepare model for this method
         builder = _prepare_for_llama_export(method_config)
@@ -1336,7 +1344,7 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
 
         # Get the exported program
         exported_program = builder._export(builder.pre_autograd_graph_module)
-        method_to_program[method_name] = exported_program
+        method_to_program[method.method_name] = exported_program
 
         if first_builder is None:
             first_builder = builder
@@ -1346,7 +1354,7 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
     # Get partitioners based on backend config
     partitioners = _get_xnnpack_partitioners(llm_config)
 
-    # Lower all methods together using multimethod_lora API
+    # Lower all methods together using multimethod API
     edge_config = first_builder._get_edge_config()
     edge_manager = to_edge_transform_and_lower(
         method_to_program,
@@ -1360,7 +1368,7 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
     first_builder.edge_manager = edge_manager
     first_builder = first_builder.to_executorch(
         passes=additional_passes,
-        share_mutable_buffers=llm_config.multimethod_lora.share_mutable_buffers,
+        share_mutable_buffers=llm_config.multimethod.share_mutable_buffers,
     )
 
     output_file = _get_output_filename(
@@ -1377,8 +1385,8 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
 def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     _validate_args(llm_config)
 
-    # Check for multimethod_lora export
-    if llm_config.multimethod_lora.enabled:
+    # Check for multimethod export
+    if llm_config.multimethod.enabled:
         return _export_llama_multimethod(llm_config)
 
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(
@@ -1521,6 +1529,7 @@ def _load_llama_model_metadata(
     n_layers: int,
     vocab_size: int,
     metadata_str: Optional[str] = None,
+    num_kv_shared_layers: int = 0,
 ):
     metadata = {
         "get_max_seq_len": max_seq_len,
@@ -1531,6 +1540,9 @@ def _load_llama_model_metadata(
         "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,
         "enable_dynamic_shape": enable_dynamic_shape,
     }
+    # YOCO (You Only Cache Once) KV sharing metadata
+    if num_kv_shared_layers > 0:
+        metadata["get_num_kv_shared_layers"] = num_kv_shared_layers
     if metadata_str:
         try:
             extra = json.loads(metadata_str)
@@ -1610,6 +1622,9 @@ def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
             #  Module]`.
             model.vocab_size,
             llm_config.base.metadata,
+            # pyre-fixme[6]: For 10th argument expected `int` but got `Union[Tensor,
+            #  Module]`.
+            num_kv_shared_layers=getattr(model, "num_kv_shared_layers", 0),
         ),
     )
 

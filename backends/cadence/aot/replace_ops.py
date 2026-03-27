@@ -1183,6 +1183,67 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=3))
+class ReplaceMaxPool2dWithChannelLastMaxPool2dPass(RemoveOrReplacePassInterface):
+    """
+    Replace NCHW max pooling with NHWC (channel-last) max pooling by adding
+    permute operations before and after the max pooling.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [
+            exir_ops.edge.cadence.quantized_max_pool2d_nchw.default,
+        ]
+
+    def _change_nchw_to_nhwc(
+        self, graph: torch.fx.Graph, node: torch.fx.Node
+    ) -> torch.fx.Node:
+        """Convert NCHW format to NHWC format."""
+        permute_node = graph.call_function(
+            exir_ops.edge.aten.permute_copy.default, (node, [0, 2, 3, 1]), {}
+        )
+        permute_node.meta = node.meta
+        return permute_node
+
+    def _change_nhwc_to_nchw(
+        self, graph: torch.fx.Graph, node: torch.fx.Node
+    ) -> torch.fx.Node:
+        """Convert NHWC format to NCHW format."""
+        permute_node = graph.call_function(
+            exir_ops.edge.aten.permute_copy.default, (node, [0, 3, 1, 2]), {}
+        )
+        permute_node.meta = node.meta
+        return permute_node
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        graph = node.graph
+
+        # Get input node
+        input_node = cast(torch.fx.Node, node.args[0])
+
+        with graph.inserting_before(node):
+            # Convert input from NCHW to NHWC
+            input_nhwc = self._change_nchw_to_nhwc(graph, input_node)
+
+            # Create the NHWC max pooling with the same args (kernel_size, stride, padding, dilation, ceil_mode)
+            new_args = (input_nhwc,) + tuple(node.args[1:])
+
+            new_pool = graph.call_function(
+                exir_ops.edge.cadence.quantized_max_pool2d_nhwc.default,
+                new_args,
+                node.kwargs,
+            )
+            new_pool.meta = node.meta
+
+            # Convert output back from NHWC to NCHW
+            nchw_output = self._change_nhwc_to_nchw(graph, new_pool)
+
+        # Replace all uses with the final output
+        node.replace_all_uses_with(nchw_output)
+        return True
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=3))
 class MakeSliceAndCatDimOutermostPass(RemoveOrReplacePassInterface):
     """
     Make the slice/cat dimension the outermost dimension by adding transpose
@@ -2368,8 +2429,18 @@ class ReplaceMulTensorWithMulAndFullOpsPass(RemoveOrReplacePassInterface):
                 args=([1], full_arg),
                 kwargs={"dtype": full_output_dtype},
             )
-            full_node.meta = node.meta
-            full_node.meta["val"] = [1]
+            full_node.meta = node.meta.copy()
+            # Create a proper FakeTensor for metadata instead of Python list
+            fake_mode = node.meta["val"].fake_mode
+            if fake_mode is not None:
+                with fake_mode:
+                    full_node.meta["val"] = torch.full(
+                        [1], full_arg, dtype=full_output_dtype
+                    )
+            else:
+                full_node.meta["val"] = torch.empty(
+                    [1], dtype=full_output_dtype, device="meta"
+                )
             new_mul_node = node.graph.call_function(
                 torch.ops.aten.mul.Tensor, args=(x_arg, full_node)
             )
@@ -2551,6 +2622,7 @@ class CadenceReplaceOpsInGraph:
         ReplacePadWithCatPass,
         ReplaceConstantPadNdWithSlicePass,
         ReplaceConvWithChannelLastConvPass,
+        ReplaceMaxPool2dWithChannelLastMaxPool2dPass,
         ReplaceTrivialConvWithLinear,
         ReplaceConvWithIm2RowAndLinear,
         ReplaceTransposedConvWithLinearPass,

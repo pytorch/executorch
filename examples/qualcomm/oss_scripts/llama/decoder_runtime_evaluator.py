@@ -20,16 +20,20 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     ATTENTION_SINK_EVICTOR,
     DECODER_MODEL_VERSION,
     EVAL_MODE,
+    MODALITY_INPUT_FLAG_MAP,
     TEXT_DECODER,
-    TEXT_EMBEDDING,
+    TOK_EMBEDDING,
     VISION_ENCODER,
-    VISION_ENCODER_INPUT_FILENAME,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
     INFERENCE_REGISTRY,
     retrieve_info_from_pte,
 )
-from executorch.examples.qualcomm.utils import make_output_dir, SimpleADB
+from executorch.examples.qualcomm.utils import (
+    generate_inputs,
+    make_output_dir,
+    SimpleADB,
+)
 from pytorch_tokenizers.hf_tokenizer import HuggingFaceTokenizer
 from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
 from pytorch_tokenizers.tiktoken import TiktokenTokenizer
@@ -82,19 +86,20 @@ class EvalBase(ABC):
         args: argparse.Namespace,
         pte_paths: Dict,
         runtime_tokenizer_path: str,
-        is_modality: bool,
+        is_multimodal: bool,
+        modality_inputs=None,
     ):
         self.args = args
         self.pte_paths = pte_paths
         self.runtime_tokenizer_path = runtime_tokenizer_path
         self.qnn_sdk = os.getenv("QNN_SDK_ROOT")
-        self.is_modality = is_modality
+        self.is_multimodal = is_multimodal
 
         self.device_workspace = (
             f"/data/local/tmp/{getpass.getuser()}/executorch/static_llm"
         )
         self.runner = (
-            "qnn_multimodal_runner" if self.is_modality else "qnn_llama_runner"
+            "qnn_multimodal_runner" if self.is_multimodal else "qnn_llama_runner"
         )
         device_output_path = self._get_adb().output_folder
         if args.enable_x86_64:
@@ -130,14 +135,13 @@ class EvalBase(ABC):
                     f"--performance_output_path {self.device_performance_path}",
                 ]
             )
-            if self.is_modality:
+            if self.is_multimodal:
                 base_cmd = " ".join(
                     [
                         base_cmd,
                         f"--decoder_path {self.pte_paths[TEXT_DECODER]}",
                         f"--encoder_path {self.pte_paths[VISION_ENCODER]}",
-                        f"--embedding_path {self.pte_paths[TEXT_EMBEDDING]}",
-                        f"--image_path {args.artifact}/{VISION_ENCODER_INPUT_FILENAME}.raw",
+                        f"--tok_embedding_path {self.pte_paths[TOK_EMBEDDING]}",
                     ]
                 )
             else:
@@ -165,14 +169,13 @@ class EvalBase(ABC):
                 ]
             )
 
-            if self.is_modality:
+            if self.is_multimodal:
                 base_cmd = " ".join(
                     [
                         base_cmd,
                         f"--decoder_path {os.path.basename(self.pte_paths[TEXT_DECODER])}",
                         f"--encoder_path {os.path.basename(self.pte_paths[VISION_ENCODER])}",
-                        f"--embedding_path {os.path.basename(self.pte_paths[TEXT_EMBEDDING])}",
-                        f"--image_path {VISION_ENCODER_INPUT_FILENAME}.raw",
+                        f"--tok_embedding_path {os.path.basename(self.pte_paths[TOK_EMBEDDING])}",
                     ]
                 )
             else:
@@ -218,10 +221,46 @@ class EvalBase(ABC):
 
 
 class DefaultEval(EvalBase):
-    def __init__(self, args, pte_paths, runtime_tokenizer_path, is_modality):
-        super().__init__(args, pte_paths, runtime_tokenizer_path, is_modality)
+    def __init__(
+        self,
+        args,
+        pte_paths,
+        runtime_tokenizer_path,
+        is_multimodal,
+        modality_inputs=None,
+    ):
+        super().__init__(
+            args, pte_paths, runtime_tokenizer_path, is_multimodal, modality_inputs
+        )
         self.adb = self._get_adb()
         self.inference_speed = 0
+
+        modality_input_cmd = []
+        self.modality_input_files = []
+        for modality, data in modality_inputs.items():
+            if (
+                not modality_inputs[modality]
+                or modality not in MODALITY_INPUT_FLAG_MAP
+                or modality is TEXT_DECODER
+            ):
+                continue
+
+            # Specify the input list filename by it's modality.
+            # This helps distinguish inputs coming from different encoders,
+            # especially in models like OMI where vision and audio encoders coexist.
+            input_list_filename = f"{modality}_input_list.txt"
+            input_list_file, input_files = generate_inputs(
+                self.args.artifact,
+                input_list_filename=input_list_filename,
+                inputs=data,
+                prefix_input_filename=modality,
+            )
+            self.modality_input_files.append(input_list_file)
+            self.modality_input_files.extend(input_files)
+            modality_input_cmd.append(
+                f"--{MODALITY_INPUT_FLAG_MAP[modality]} {input_list_filename}"
+            )
+        self.modality_input_cmd = " ".join(modality_input_cmd)
 
         lookahead_args = " ".join(
             [
@@ -282,10 +321,9 @@ class DefaultEval(EvalBase):
             )
 
             extra_files = [self.runtime_tokenizer_path]
-            if self.is_modality:
-                extra_files = extra_files + [
-                    f"{self.args.artifact}/{VISION_ENCODER_INPUT_FILENAME}.raw"
-                ]
+            if self.is_multimodal:
+                extra_files.extend(self.modality_input_files)
+                runner_cmd = " ".join([runner_cmd, self.modality_input_cmd])
             self.adb.push(inputs=[], files=extra_files)
             self.adb.execute(custom_runner_cmd=runner_cmd)
             self.adb.pull(
@@ -324,9 +362,9 @@ class SqnrEval(EvalBase):
         pte_paths,
         tokenizer,
         runtime_tokenizer_path,
-        is_modality,
+        is_multimodal,
     ):
-        super().__init__(args, pte_paths, runtime_tokenizer_path, is_modality)
+        super().__init__(args, pte_paths, runtime_tokenizer_path, is_multimodal)
         self.inference_speed = 0
         self.source_model = source_model
         self.get_example_inputs = get_example_inputs
@@ -613,12 +651,14 @@ class TaskEval(EvalBase):
             self.inference_speed = output_performance_holder[0]
             return output_logits_holder[0][:, :seq_len, :]
 
-    def __init__(self, args, pte_paths, tokenizer, runtime_tokenizer_path, is_modality):
+    def __init__(
+        self, args, pte_paths, tokenizer, runtime_tokenizer_path, is_multimodal
+    ):
         super().__init__(
             args=args,
             pte_paths=pte_paths,
             runtime_tokenizer_path=runtime_tokenizer_path,
-            is_modality=is_modality,
+            is_multimodal=is_multimodal,
         )
         self.inference_speed = None
         self.tasks = args.tasks

@@ -285,3 +285,9 @@ If your generator is single-config, the runner may be at `.\cmake-out\examples\m
 | `--tokenizer_path` | Path to tokenizer file (default: `tokenizer.json`) |
 | `--data_path` | Path to data file (.ptd) for delegate data (required for CUDA/CUDA-Windows) |
 | `--timestamps`     | Timestamp output mode: `none\|token\|word\|segment\|all` (default: `segment`) |
+
+### Mobile App
+
+Check out a [demo Android app](https://github.com/meta-pytorch/executorch-examples/tree/main/parakeet/android/ParakeetApp) for Parakeet in the separate `executorch-examples` repository.
+
+https://github.com/user-attachments/assets/9793d2d0-0d23-4627-a8dc-4334b97b07ab

@@ -34,7 +34,10 @@ ${layout_declare_ubo(B, "TextureMetadata", "index")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int gather_dim = 0;
+${layout_declare_spec_const(C, "int", "gather_dim", "0")}
+${layout_declare_spec_const(C, "int", "out_layout", "CONTIG_LAYOUT_INT")}
+${layout_declare_spec_const(C, "int", "inp_layout", "CONTIG_LAYOUT_INT")}
+const int out_packed_dim = get_packed_dim(out_layout);
 
 void main() {
   const ivec3 out_pos = ivec3(gl_GlobalInvocationID);
@@ -43,25 +46,26 @@ void main() {
     return;
   }
 
-  TensorIndex4D out_tidx = texture_pos_to_tensor4d_idx_simple(outp, out_pos);
+  TensorIndex4D out_tidx =
+      texture_pos_to_tensor4d_idx_simple(outp, out_pos, out_layout);
   ivec4 idx_texel = texelFetch(t_index, out_pos, 0);
 
   VEC4_T out_texel = VEC4_T(0);
 
   int limit = min(
-      4, outp.sizes[outp.packed_dim] - out_tidx.data[outp.packed_dim]);
+      4, safe_idx(outp.sizes, out_packed_dim) - out_tidx.data[out_packed_dim]);
   for (int comp = 0; comp < 4; comp++) {
     TensorIndex4D input_tidx = out_tidx;
     int gather_idx = idx_texel[comp];
     input_tidx.data[gather_dim] = gather_idx;
 
     TextureElementIndex input_elem_pos = tensor4d_idx_to_texture_element_idx_simple(
-        inp, input_tidx);
+        inp, input_tidx, inp_layout);
 
     VEC4_T input_texel = texelFetch(t_input, input_elem_pos.pos, 0);
     out_texel[comp] = input_texel[input_elem_pos.comp];
 
-    out_tidx.data[outp.packed_dim]++;
+    out_tidx.data[out_packed_dim]++;
   }
 
   imageStore(t_out, out_pos, out_texel);

@@ -1,0 +1,21 @@
+base:
+  # Qwen3.5 tokenizer special ids:
+  #   <|im_start|> 248045
+  #   <|im_end|>   248046
+  #   <|endoftext|> 248044
+  metadata: '{"get_bos_id": 248045, "get_eos_ids":[248046,248044]}'
+
+model:
+  use_kv_cache: True
+  use_sdpa_with_kv_cache: False
+  enable_dynamic_shape: False
+  dtype_override: fp32
+
+export:
+  max_seq_length: 2048
+  max_context_length: 2048
+
+backend:
+  xnnpack:
+    enabled: True
+    extended_ops: True

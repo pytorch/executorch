@@ -103,6 +103,11 @@ if(TARGET mlxdelegate)
   executorch_target_link_options_shared_lib(mlxdelegate)
 endif()
 
+if(EXECUTORCH_BUILD_VULKAN)
+  list(APPEND link_libraries vulkan_backend)
+  executorch_target_link_options_shared_lib(vulkan_backend)
+endif()
+
 add_executable(parakeet_runner main.cpp timestamp_utils.cpp tokenizer_utils.cpp)
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(parakeet_runner)

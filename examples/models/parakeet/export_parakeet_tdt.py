@@ -9,7 +9,6 @@ from typing import Optional
 
 import torch
 import torchaudio
-
 from executorch.examples.models.parakeet.quantize import quantize_model_
 from executorch.exir import (
     EdgeCompileConfig,
@@ -508,13 +507,11 @@ def _create_metal_partitioners(programs):
 
     # Run decompositions for non-preprocessor programs
     updated_programs = {}
+    decomp_table = torch.export.default_decompositions()
+    decomp_table[torch.ops.aten.linear.default] = _linear_bias_decomposition
     for key, ep in programs.items():
-        # print(f"Running decompositions for {key}")
-        # print(ep.graph_module)
         if key != "preprocessor":
-            updated_programs[key] = ep.run_decompositions(
-                {torch.ops.aten.linear.default: _linear_bias_decomposition}
-            )
+            updated_programs[key] = ep.run_decompositions(decomp_table)
         else:
             updated_programs[key] = ep
 
@@ -572,7 +569,25 @@ def _create_mlx_partitioners(programs):
     return partitioner, programs
 
 
-def lower_to_executorch(programs, metadata=None, backend="portable"):
+def _create_vulkan_partitioners(programs, vulkan_force_fp16=False):
+    """Create Vulkan partitioners for all programs except preprocessor."""
+    from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
+        VulkanPartitioner,
+    )
+
+    print("\nLowering to ExecuTorch with Vulkan...")
+    partitioner = {}
+    for key in programs.keys():
+        if key == "preprocessor":
+            partitioner[key] = []
+        else:
+            partitioner[key] = [VulkanPartitioner({"force_fp16": vulkan_force_fp16})]
+    return partitioner, programs
+
+
+def lower_to_executorch(
+    programs, metadata=None, backend="portable", vulkan_force_fp16=False
+):
     if backend == "xnnpack":
         partitioner, programs = _create_xnnpack_partitioners(programs)
     elif backend == "metal":
@@ -582,6 +597,10 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
     elif backend in ("cuda", "cuda-windows"):
         partitioner, programs = _create_cuda_partitioners(
             programs, is_windows=(backend == "cuda-windows")
+        )
+    elif backend == "vulkan":
+        partitioner, programs = _create_vulkan_partitioners(
+            programs, vulkan_force_fp16=vulkan_force_fp16
         )
     else:
         print("\nLowering to ExecuTorch...")
@@ -621,7 +640,7 @@ def main():
         "--backend",
         type=str,
         default="xnnpack",
-        choices=["portable", "xnnpack", "metal", "mlx", "cuda", "cuda-windows"],
+        choices=["portable", "xnnpack", "metal", "mlx", "cuda", "cuda-windows", "vulkan"],
         help="Backend for acceleration (default: xnnpack)",
     )
     parser.add_argument(
@@ -686,6 +705,8 @@ def main():
         help="Group size for embedding quantization",
     )
 
+    parser.add_argument("--vulkan_force_fp16", action="store_true")
+
     args = parser.parse_args()
 
     # Validate dtype
@@ -733,7 +754,12 @@ def main():
         qembedding_group_size=args.qembedding_group_size,
     )
 
-    et = lower_to_executorch(programs, metadata=metadata, backend=args.backend)
+    et = lower_to_executorch(
+        programs,
+        metadata=metadata,
+        backend=args.backend,
+        vulkan_force_fp16=args.vulkan_force_fp16,
+    )
 
     pte_path = os.path.join(args.output_dir, "model.pte")
     print(f"\nSaving ExecuTorch program to: {pte_path}")

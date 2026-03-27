@@ -25,6 +25,41 @@ _is_linear = partial(is_op_node, target_op=torch.ops.aten.linear.default)
 _is_reshape = partial(is_op_node, target_op=torch.ops.aten.reshape)
 _is_zeros_like = partial(is_op_node, target_op=torch.ops.aten.zeros_like)
 
+_CONV_TARGETS = {
+    torch.ops.aten.conv1d.default,
+    torch.ops.aten.conv1d.padding,
+    torch.ops.aten.conv2d.default,
+    torch.ops.aten.conv2d.padding,
+    torch.ops.aten.conv_transpose1d.default,
+    torch.ops.aten.conv_transpose2d.input,
+}
+
+
+def _feeds_into_linear(node: Node) -> bool:
+    """
+    BFS from node to check if it eventually feeds into a linear op (not conv).
+    This is required because:
+    - Linear-BN fusion (added by AddSimulatedLinearBatchNormFusionQATPass, NXP-specific)
+    - Conv-BN QAT fusion (added by TorchAO's _fuse_conv_bn_qat inside prepare_qat_pt2e)
+    are structurally identical. Without this check, we would incorrectly remove
+    Conv-BN scale factor chains, breaking Conv-BN QAT fusion when TorchAO's _fold_conv_bn_qat
+    is called during convert_pt2e.
+    """
+    visited = set()
+    queue = list(node.users.keys())
+    while queue:
+        n = queue.pop(0)
+        if n in visited:
+            continue
+        visited.add(n)
+        if n.op == "call_function":
+            if n.target == torch.ops.aten.linear.default:
+                return True
+            if n.target in _CONV_TARGETS:
+                return False
+        queue.extend(n.users.keys())
+    return True
+
 
 def _is_denorm_pattern(node: Node) -> bool:
     if not _is_div(node):
@@ -43,7 +78,7 @@ def _is_denorm_pattern(node: Node) -> bool:
     return False
 
 
-def _remove_pattern_from_graph(graph_module: GraphModule, pattern: GraphModule):
+def _remove_pattern_from_graph(graph_module: GraphModule, pattern: GraphModule) -> bool:
     matcher = SubgraphMatcher(
         pattern.graph,
         match_output=False,
@@ -53,37 +88,45 @@ def _remove_pattern_from_graph(graph_module: GraphModule, pattern: GraphModule):
     )
     matches: list[InternalMatch] = matcher.match(graph_module.graph, node_name_match="")
 
+    made_changes = False
     for match in matches:
         last_pattern_node = match.anchors[0]
         last_matched_subgraph_node = match.nodes_map[last_pattern_node]
+
+        if not _feeds_into_linear(last_matched_subgraph_node):
+            continue
+
         weight = match.placeholder_nodes[0]
 
         last_matched_subgraph_node.replace_all_uses_with(weight)
+        made_changes = True
 
         for node in match.nodes_map.values():
             if node not in match.placeholder_nodes:
                 graph_module.graph.erase_node(node)
 
+    return made_changes
 
-def _remove_late_bias_pattern(graph_module: GraphModule, bias_node: Node):
+
+def _remove_late_bias_pattern(graph_module: GraphModule, bias_node: Node) -> bool:
     linear_b_users = list(bias_node.users.keys())
 
     if len(linear_b_users) != 2:
-        return
+        return False
 
     if _is_zeros_like(linear_b_users[0]):
         zeros_node, maybe_reshape_node = linear_b_users
     elif _is_zeros_like(linear_b_users[1]):
         maybe_reshape_node, zeros_node = linear_b_users
     else:
-        return
+        return False
 
     if _is_reshape(maybe_reshape_node):
         reshape_node = maybe_reshape_node
         reshape_users = list(reshape_node.users.keys())
 
         if len(reshape_users) != 1:
-            return
+            return False
 
         add_node = reshape_users[0]
     else:
@@ -92,7 +135,7 @@ def _remove_late_bias_pattern(graph_module: GraphModule, bias_node: Node):
         add_node = maybe_reshape_node
 
     if not _is_add(add_node):
-        return
+        return False
 
     # Remove zeroed linear bias
     zeros_node.replace_all_uses_with(bias_node)
@@ -105,10 +148,13 @@ def _remove_late_bias_pattern(graph_module: GraphModule, bias_node: Node):
     if reshape_node:
         graph_module.graph.erase_node(reshape_node)
 
+    return True
 
-def _remove_denorm_and_late_bias(graph_module: GraphModule):
+
+def _remove_denorm_and_late_bias(graph_module: GraphModule) -> bool:
     named_modules = dict(graph_module.named_modules(remove_duplicate=False))
 
+    made_changes = False
     for node in graph_module.graph.nodes:
         if not _is_linear(node):
             continue
@@ -125,7 +171,7 @@ def _remove_denorm_and_late_bias(graph_module: GraphModule):
         has_late_bias = _is_zeros_like(linear_bias_fq_or_zeros)
 
         if has_late_bias:
-            _remove_late_bias_pattern(
+            made_changes |= _remove_late_bias_pattern(
                 graph_module, bias_node=linear_bias_fq_or_zeros.args[0]
             )
 
@@ -134,7 +180,10 @@ def _remove_denorm_and_late_bias(graph_module: GraphModule):
                 if any(is_batch_norm(user) for user in user_node.users.keys()):
                     user_node.replace_all_uses_with(node)
                     graph_module.graph.erase_node(user_node)
+                    made_changes = True
                     break
+
+    return made_changes
 
 
 class RemoveSimulatedLinearBatchNormFusionQATPass(PassBase):
@@ -153,6 +202,7 @@ class RemoveSimulatedLinearBatchNormFusionQATPass(PassBase):
         Given a graph of decomposed aten ops, removes nodes corresponding to linear + batch norm fusion.
         """
         is_cuda = False
+        made_changes = False
 
         graph_module.graph.eliminate_dead_code()
         graph_module.recompile()
@@ -180,11 +230,16 @@ class RemoveSimulatedLinearBatchNormFusionQATPass(PassBase):
             is_cuda=is_cuda,
         )
 
-        _remove_pattern_from_graph(graph_module, pattern=scale_match_pattern)
-        _remove_pattern_from_graph(graph_module, pattern=weight_preprocess_pattern)
-        _remove_denorm_and_late_bias(graph_module)
+        made_changes |= _remove_pattern_from_graph(
+            graph_module, pattern=scale_match_pattern
+        )
+        made_changes |= _remove_pattern_from_graph(
+            graph_module, pattern=weight_preprocess_pattern
+        )
+        made_changes |= _remove_denorm_and_late_bias(graph_module)
 
-        graph_module.graph.eliminate_dead_code()
-        graph_module.recompile()
+        if made_changes:
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
 
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, made_changes)

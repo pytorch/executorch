@@ -51,9 +51,17 @@ void apply_padding_to_dim(
 
   size_t pad_before = 0;
   size_t pad_after = 0;
-  if (pad_i >= 0 && pad_i < pad.size() / 2) {
-    pad_before = pad[2 * pad_i];
-    pad_after = pad[2 * pad_i + 1];
+  if (pad_i < pad.size() / 2) {
+    int64_t pb = pad[2 * pad_i];
+    int64_t pa = pad[2 * pad_i + 1];
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        pb >= 0 && pa >= 0,
+        InvalidArgument,
+        /* void */,
+        "Padding values must be non-negative.");
+    pad_before = static_cast<size_t>(pb);
+    pad_after = static_cast<size_t>(pa);
   }
 
   size_t out_step_len = out_strides[dim];
@@ -62,6 +70,12 @@ void apply_padding_to_dim(
   // Do not copy padding beyond the out tensor bounds.
   // Use division to avoid potential overflow in multiplication.
   if (pad_before > 0) {
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        out_data <= out_data_end,
+        InvalidArgument,
+        /* void */,
+        "Out data pointer exceeds buffer bounds.");
     size_t remaining = out_data_end - out_data;
     ET_KERNEL_CHECK_MSG(
         ctx,
@@ -92,7 +106,12 @@ void apply_padding_to_dim(
           /* void */,
           "Out tensor overlaps with the input tensor. This is not supported.");
       // Bounds check before memcpy
-      // Use overflow-safe check for remaining >= copy_len
+      ET_KERNEL_CHECK_MSG(
+          ctx,
+          out_data <= out_data_end,
+          InvalidArgument,
+          /* void */,
+          "Out data pointer exceeds buffer bounds.");
       size_t remaining = out_data_end - out_data;
       ET_KERNEL_CHECK_MSG(
           ctx,
@@ -123,6 +142,10 @@ void apply_padding_to_dim(
           last_padded_dim,
           dim + 1);
 
+      if (ctx.failure_state() != Error::Ok) {
+        return;
+      }
+
       out_data += out_step_len;
       self_data += in_step_len;
     }
@@ -131,6 +154,12 @@ void apply_padding_to_dim(
   // Do not copy padding beyond the out tensor bounds.
   // Use division to avoid potential overflow in multiplication.
   if (pad_after > 0) {
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        out_data <= out_data_end,
+        InvalidArgument,
+        /* void */,
+        "Out data pointer exceeds buffer bounds.");
     size_t remaining = out_data_end - out_data;
     ET_KERNEL_CHECK_MSG(
         ctx,
@@ -177,7 +206,7 @@ void constant_pad_nd_out_impl(
     out_strides[i] = getTrailingDims(out, static_cast<int64_t>(i));
 
     size_t pad_i = ndim - 1 - i;
-    if (pad_i >= 0 && pad_i < pad.size() / 2) {
+    if (pad_i < pad.size() / 2) {
       if (pad[2 * pad_i] + pad[2 * pad_i + 1] > 0) {
         last_padded_dim = i;
       }

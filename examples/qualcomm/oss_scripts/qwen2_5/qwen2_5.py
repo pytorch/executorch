@@ -21,6 +21,7 @@ from executorch.examples.qualcomm.oss_scripts.llm_utils.qnn_decoder_model_manage
 )
 
 from executorch.examples.qualcomm.utils import (
+    get_backend_type,
     make_output_dir,
     parse_skip_delegation_node,
     setup_common_args_and_variables,
@@ -75,6 +76,8 @@ def compile(args):  # noqa: C901
             args.calibration_limit,
             args.prompt,
             tokenizer_json_path,
+            get_backend_type(args.backend),
+            args.model,
         )
 
     manager.to_edge_transform_and_lower_to_qnn(

@@ -18,7 +18,10 @@ from itertools import count
 from typing import Callable, List, Optional, Sequence, Tuple
 
 import torch
-from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_cond_while_submodules_nested,
+    get_first_fake_tensor,
+)
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
 )
@@ -37,7 +40,6 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data, WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.graph_module import get_cond_while_submodules
 from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
@@ -143,7 +145,7 @@ class TOSAPartitioner(Partitioner):
 
         """
         self.delegation_spec = DelegationSpec(
-            TOSABackend.__name__, compile_spec.to_list()
+            TOSABackend.__name__, compile_spec._to_list()
         )
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
@@ -219,7 +221,7 @@ class TOSAPartitioner(Partitioner):
         tags: set[str] = set()
         if tag_iterator is None:
             tag_iterator = count(0)
-        for _, submodule, _ in get_cond_while_submodules(module):
+        for _, submodule, _ in get_cond_while_submodules_nested(module):
             submodule_tags = self._tag_module(
                 submodule, containing_program, reporter, tag_iterator
             )
@@ -258,6 +260,7 @@ class TOSAPartitioner(Partitioner):
                 _is_noop_clone(node)
                 or _is_noop_alias_copy(node)
                 or _is_noop_expand(node)
+                or _is_noop_detach_copy(node)
                 or _is_noop_to_dim_order_copy(node)
                 or _is_view_copy(node)
                 or node.target in Q_OPS
@@ -335,13 +338,14 @@ class TOSAPartitioner(Partitioner):
             torch.ops.aten.linear.default,
             torch.ops.aten.linspace.default,
             torch.ops.aten.silu.default,
-            torch.ops.aten.silu_.default,
+            torch.ops.aten.pad.default,
         }
         ops_to_not_decompose_if_fp = {
             torch.ops.aten.eye.default,
             torch.ops.aten.logit.default,
             torch.ops.aten.linear.default,
             torch.ops.aten.linspace.default,
+            torch.ops.aten.pad.default,
         }
         ops_to_not_decompose_always = {
             torch.ops.aten.logit.default,
@@ -350,7 +354,6 @@ class TOSAPartitioner(Partitioner):
             torch.ops.aten.eye.default,
             torch.ops.aten.linspace.default,
             torch.ops.aten.silu.default,
-            torch.ops.aten.silu_.default,
         }
 
         def filter_fn(node: torch.fx.Node) -> bool:

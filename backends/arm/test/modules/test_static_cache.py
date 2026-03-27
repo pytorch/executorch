@@ -19,6 +19,8 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
+from torch.export.graph_signature import InputKind, OutputKind
+
 from transformers import LlamaConfig
 from transformers.cache_utils import StaticCache
 
@@ -31,6 +33,17 @@ test_configs = {
         num_attention_heads=32, num_key_value_heads=4
     ),
     "multi_query_attention": LlamaConfig(num_attention_heads=32, num_key_value_heads=1),
+}
+
+
+EXPECTED_INPUT_COUNTS = {
+    InputKind.BUFFER: 2,
+    InputKind.USER_INPUT: 3,
+}
+
+EXPECTED_OUTPUT_COUNTS = {
+    OutputKind.BUFFER_MUTATION: 2,
+    OutputKind.USER_OUTPUT: 2,
 }
 
 
@@ -121,28 +134,23 @@ def test_static_cache_tosa_FP(test_data):
         exir_op=[],
         transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
     )
+    pipeline.count_program_io_kinds(EXPECTED_INPUT_COUNTS, EXPECTED_OUTPUT_COUNTS)
     pipeline.run()
 
 
-@pytest.mark.xfail(
-    reason="TODO(MLETORCH-1818): Quantization for StaticCache is not yet supported."
-)
+@pytest.mark.xfail(reason="BUFFER_MUTATION count mismatch: MLETORCH-1971")
 @common.parametrize("test_data", test_configs)
 def test_static_cache_tosa_INT(test_data):
     module = StaticCacheModule(test_data).eval()
     pipeline = TosaPipelineINT[input_t](
-        module,
-        module.get_inputs(),
-        aten_op=[],
-        exir_op=[],
+        module, module.get_inputs(), aten_op=[], exir_op=[], fold_quantize=False
     )
+    pipeline.count_program_io_kinds(EXPECTED_INPUT_COUNTS, EXPECTED_OUTPUT_COUNTS)
     pipeline.run()
 
 
 @common.XfailIfNoCorstone300
-@pytest.mark.xfail(
-    reason="Quantization for StaticCache is not yet supported. Scatter operator is also not supported on U55."
-)
+@pytest.mark.xfail(reason="Scatter operator is not supported on U55.")
 @common.parametrize("test_data", test_configs)
 def test_static_cache_u55_INT(test_data):
     module = StaticCacheModule(test_data).eval()
@@ -154,14 +162,35 @@ def test_static_cache_u55_INT(test_data):
     pipeline.run()
 
 
-@common.XfailIfNoCorstone320
-@pytest.mark.xfail(
-    reason="TODO(MLETORCH-1818): Quantization for StaticCache is not yet supported."
+@common.parametrize(
+    "test_data",
+    test_configs,
+    xfails={
+        "multihead_attention": (
+            "BUFFER_MUTATION count mismatch: MLETORCH-1971"
+            "Incorrect numerical behavior: MLBEDSW-11589"
+        ),
+        "grouped_query_attention": (
+            "BUFFER_MUTATION count mismatch: MLETORCH-1971"
+            "Incorrect numerical behavior: MLBEDSW-11589"
+        ),
+        "multi_query_attention": (
+            "BUFFER_MUTATION count mismatch: MLETORCH-1971"
+            "Incorrect numerical behavior: MLBEDSW-11589"
+        ),
+    },
 )
-@common.parametrize("test_data", test_configs)
 def test_static_cache_u85_INT(test_data):
     module = StaticCacheModule(test_data).eval()
-    pipeline = EthosU85PipelineINT[input_t](module, module.get_inputs(), aten_ops=[])
+    pipeline = EthosU85PipelineINT[input_t](
+        module,
+        module.get_inputs(),
+        aten_ops=[],
+        fold_quantize=False,
+    )
+    # U85: keep _to_dim_order_copy portable for int64->int32 cast of cache_position (not delegatable).
+    pipeline.tester.use_portable_ops = True
+    pipeline.count_program_io_kinds(EXPECTED_INPUT_COUNTS, EXPECTED_OUTPUT_COUNTS)
     pipeline.run()
 
 
@@ -177,13 +206,12 @@ def test_static_cache_vgf_no_quant(test_data):
         transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
         quantize=False,
     )
+    pipeline.count_program_io_kinds(EXPECTED_INPUT_COUNTS, EXPECTED_OUTPUT_COUNTS)
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(
-    reason="TODO(MLETORCH-1818): Quantization for StaticCache is not yet supported."
-)
+@pytest.mark.xfail(reason="BUFFER_MUTATION count mismatch: MLETORCH-1971")
 @common.parametrize("test_data", test_configs)
 def test_static_cache_vgf_quant(test_data):
     module = StaticCacheModule(test_data).eval()
@@ -193,5 +221,8 @@ def test_static_cache_vgf_quant(test_data):
         aten_op=[],
         exir_op=[],
         quantize=True,
+        fold_quantize=False,
+        tosa_spec="TOSA-1.0+INT",
     )
+    pipeline.count_program_io_kinds(EXPECTED_INPUT_COUNTS, EXPECTED_OUTPUT_COUNTS)
     pipeline.run()

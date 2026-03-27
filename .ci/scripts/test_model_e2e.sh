@@ -19,10 +19,12 @@ Arguments:
   hf_model    HuggingFace model ID (required)
               Supported models:
                 - mistralai/Voxtral-Mini-3B-2507
+                - nvidia/diar_streaming_sortformer_4spk-v2
                 - openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo})
                 - google/gemma-3-4b-it
                 - Qwen/Qwen3-0.6B
                 - nvidia/parakeet-tdt
+                - facebook/dinov2-small-imagenet1k-1-layer
                 - mistralai/Voxtral-Mini-4B-Realtime-2602
 
   quant_name  Quantization type (required)
@@ -44,6 +46,7 @@ Arguments:
 Examples:
   test_model_e2e.sh metal "openai/whisper-small" "non-quantized"
   test_model_e2e.sh cuda "mistralai/Voxtral-Mini-3B-2507" "quantized-int4-tile-packed" "./model_output"
+  test_model_e2e.sh cuda "nvidia/diar_streaming_sortformer_4spk-v2" "non-quantized" "./model_output"
   test_model_e2e.sh cuda "nvidia/parakeet-tdt" "non-quantized" "./model_output"
   test_model_e2e.sh xnnpack "nvidia/parakeet-tdt" "quantized-8da4w" "./model_output"
   test_model_e2e.sh metal "mistralai/Voxtral-Mini-4B-Realtime-2602" "non-quantized" "." "vr-streaming"
@@ -176,6 +179,31 @@ case "$HF_MODEL" in
     AUDIO_FILE="test_audio.wav"
     IMAGE_PATH=""
     ;;
+  nvidia/diar_streaming_sortformer_4spk-v2)
+    MODEL_NAME="sortformer"
+    RUNNER_TARGET="sortformer_runner"
+    RUNNER_PATH="sortformer"
+    EXPECTED_OUTPUT="Speaker 1"
+    PREPROCESSOR=""
+    TOKENIZER_URL=""
+    TOKENIZER_FILE=""
+    AUDIO_URL="https://github.com/voxserv/audio_quality_testing_samples/raw/refs/heads/master/testaudio/16000/test01_20s.wav"
+    AUDIO_FILE="poem.wav"
+    IMAGE_PATH=""
+    ;;
+  facebook/dinov2-small-imagenet1k-1-layer)
+    MODEL_NAME="dinov2"
+    RUNNER_TARGET="dinov2_runner"
+    RUNNER_PATH="dinov2"
+    EXPECTED_OUTPUT="Samoyed"
+    PREPROCESSOR=""
+    TOKENIZER_URL=""
+    TOKENIZER_FILE=""
+    AUDIO_URL=""
+    AUDIO_FILE=""
+    IMAGE_URL="https://github.com/pytorch/hub/raw/master/images/dog.jpg"
+    IMAGE_PATH=""
+    ;;
   mistralai/Voxtral-Mini-4B-Realtime-2602)
     MODEL_NAME="voxtral_realtime"
     RUNNER_TARGET="voxtral_realtime_runner"
@@ -188,9 +216,21 @@ case "$HF_MODEL" in
     AUDIO_FILE="test_audio.wav"
     IMAGE_PATH=""
     ;;
+  SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4)
+    MODEL_NAME="qwen3_5_moe"
+    RUNNER_TARGET="qwen3_5_moe_runner"
+    RUNNER_PATH="qwen3_5_moe"
+    EXPECTED_OUTPUT="Paris"
+    PREPROCESSOR=""
+    TOKENIZER_URL=""
+    TOKENIZER_FILE="tokenizer.json"
+    AUDIO_URL=""
+    AUDIO_FILE=""
+    IMAGE_PATH=""
+    ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/parakeet-tdt"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4"
     exit 1
     ;;
 esac
@@ -203,8 +243,8 @@ echo "::endgroup::"
 echo "::group::Prepare $MODEL_NAME Artifacts"
 
 
-# Download tokenizer files (skip for parakeet and voxtral_realtime which bundle tokenizer in export)
-if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ]; then
+# Download tokenizer files (skip for models that bundle tokenizer in export or do not use one)
+if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ] && [ "$MODEL_NAME" != "sortformer" ] && [ "$MODEL_NAME" != "dinov2" ] && [ "$MODEL_NAME" != "qwen3_5_moe" ]; then
   if [ "$TOKENIZER_FILE" != "" ]; then
     curl -L $TOKENIZER_URL/$TOKENIZER_FILE -o $MODEL_DIR/$TOKENIZER_FILE
   else
@@ -220,8 +260,13 @@ if [ "$AUDIO_URL" != "" ]; then
 elif [[ "$MODEL_NAME" == *whisper* ]] || [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   conda install -y -c conda-forge "ffmpeg<8"
   pip install datasets soundfile
-  pip install torchcodec==0.11.0.dev20260217 --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+  pip install torchcodec==0.11.0 --extra-index-url https://download.pytorch.org/whl/test/cpu
   python -c "from datasets import load_dataset;import soundfile as sf;sample = load_dataset('distil-whisper/librispeech_long', 'clean', split='validation')[0]['audio'];sf.write('${MODEL_DIR}/$AUDIO_FILE', sample['array'][:sample['sampling_rate']*30], sample['sampling_rate'])"
+fi
+
+# Download test image for vision models
+if [ -n "${IMAGE_URL:-}" ]; then
+  curl -L "$IMAGE_URL" -o "${MODEL_DIR}/test_image.jpg"
 fi
 
 ls -al
@@ -296,6 +341,21 @@ EOF
       RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
     fi
     ;;
+  sortformer)
+    RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --audio_path ${MODEL_DIR}/$AUDIO_FILE"
+    if [ "$DEVICE" = "cuda" ]; then
+      RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
+    fi
+    ;;
+  dinov2)
+    RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --image_path ${MODEL_DIR}/test_image.jpg"
+    if [ "$DEVICE" = "cuda" ]; then
+      RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
+    fi
+    ;;
+  qwen3_5_moe)
+    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --prompt 'What is the capital of France?' --max_new_tokens 32"
+    ;;
   voxtral_realtime)
     RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --preprocessor_path ${MODEL_DIR}/$PREPROCESSOR --audio_path ${MODEL_DIR}/$AUDIO_FILE --temperature 0"
     # Add CUDA data path if present
@@ -314,7 +374,7 @@ EOF
     ;;
 esac
 
-OUTPUT=$($RUNNER_BIN $RUNNER_ARGS 2>&1)
+OUTPUT=$(eval $RUNNER_BIN $RUNNER_ARGS 2>&1)
 EXIT_CODE=$?
 set -e
 
