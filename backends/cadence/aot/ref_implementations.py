@@ -2480,6 +2480,8 @@ def quantized_softmax_per_tensor_common(
     input_tensor: torch.Tensor,
     mask: torch.Tensor | None,
     dim: int,
+    mask_type: int,
+    pos: torch.Tensor,
     in_scale: float,
     in_zero_point: int,
     out_scale: float,
@@ -2492,6 +2494,8 @@ def quantized_softmax_per_tensor_common(
         - input_tensor (Tensor): The quantized input tensor
         - mask (Tensor): Mask tensor
         - dim (int): The dimension along which softmax is computed
+        - mask_type (int): Masking strategy (0=none, 1=position-based causal)
+        - pos (Tensor): Position tensor for causal masking
         - in_scale (float): The scale of the input quantization
         - in_zero_point (int): The zero point of the input quantization
         - out_scale (float): The scale of the output quantization
@@ -2499,6 +2503,9 @@ def quantized_softmax_per_tensor_common(
     """
     # TODO: T228751479 - Add support for mask parameter in softmax
     assert mask is None
+    assert (
+        mask_type == 0
+    ), f"Only mask_type=0 (no masking) is supported, got {mask_type}"
     supported_dtypes = [torch.int8, torch.uint8, torch.int16]
     if input_tensor.dtype not in supported_dtypes:
         raise ValueError(
@@ -2531,6 +2538,8 @@ def quantized_softmax_per_tensor(
     input_tensor: torch.Tensor,
     mask: torch.Tensor | None,
     dim: int,
+    mask_type: int,
+    pos: torch.Tensor,
     in_scale: float,
     in_zero_point: int,
     out_scale: float,
@@ -2540,6 +2549,8 @@ def quantized_softmax_per_tensor(
         input_tensor,
         mask,
         dim,
+        mask_type,
+        pos,
         in_scale,
         in_zero_point,
         out_scale,
@@ -2552,6 +2563,8 @@ def quantized_softmax(
     input_tensor: torch.Tensor,
     mask: torch.Tensor | None,
     dim: int,
+    mask_type: int,
+    pos: torch.Tensor,
     in_scale: torch.Tensor,
     in_zero_point: torch.Tensor,
     out_scale: float,
@@ -2561,6 +2574,8 @@ def quantized_softmax(
         input_tensor,
         mask,
         dim,
+        mask_type,
+        pos,
         float(in_scale.item()),
         int(in_zero_point.item()),
         out_scale,

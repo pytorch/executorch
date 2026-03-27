@@ -3152,6 +3152,8 @@ class TestRefImplementations(unittest.TestCase):
             input_tensor,
             mask,
             dim,
+            0,  # mask_type (no masking)
+            torch.zeros(1, dtype=torch.int64),  # pos
             in_scale,
             in_zero_point,
             out_scale,
@@ -3189,6 +3191,8 @@ class TestRefImplementations(unittest.TestCase):
             input_tensor,
             None,  # mask
             1,  # dim
+            0,  # mask_type (no masking)
+            torch.zeros(1, dtype=torch.int64),  # pos
             in_scale,
             in_zero_point,
             0.004,  # out_scale
