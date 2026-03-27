@@ -80,6 +80,19 @@ class MinimapRenderer {
         fxOn(this._teardownFns, window, 'resize', this._onWindowResize);
         
         this.setupEvents();
+
+        if (typeof ResizeObserver !== 'undefined') {
+            this._resizeObserver = new ResizeObserver(() => {
+                const rect = this.container.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) {
+                    this.resize();
+                    this.generateThumbnail();
+                    this.render();
+                }
+            });
+            this._resizeObserver.observe(this.container);
+            this._teardownFns.push(() => this._resizeObserver.disconnect());
+        }
     }
     
     resize() {

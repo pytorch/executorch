@@ -77,8 +77,78 @@ Runtime layer mutation:
 1. `upsertLayer`, `removeLayer`, `patchLayerNodes`, `setLayerLabel`, `setColorRule`
 
 Compare:
-1. `FXGraphCompare.create({ viewers, layout, sync })`
-2. `setColumns`, `setCompact`, `setSync`, `destroy`
+1. `FXGraphCompare.create({ viewers, layout, sharedTaskbar, sync })`
+2. `setColumns(n)`, `setSync(patch)`, `destroy()`
+3. `setTiled()` / `setCompact()` — no-ops (tiled layout is always used in compare mode)
+4. `sharedTaskbar.enabled` — opt-in (`false` by default); when `true`, injects a shared taskbar above the grid
+5. `sharedTaskbar.controls`: `{ theme, layers, zoomFit, fullscreen, syncMode }` — all default `true` when taskbar is enabled
+6. `sync.mode`: `'none' | 'id' | 'layer'`; when `'layer'`: also set `sync.layer` (extension id) and `sync.field` (info key)
+7. `layout.container`: CSS selector or `HTMLElement` — required; `FXGraphCompare` builds its DOM inside this element
+8. `layout.columns`: number of side-by-side viewer columns (default `2`)
+9. `layout.minimapHeight`: minimap row height in px (default `180`)
+10. `layout.infoHeight`: merged info bar max-height in px (default `200`)
+
+## Compare View Architecture
+
+`FXGraphCompare` owns the compare layout DOM entirely. It builds a structured shell inside `layout.container` and moves canvas/minimap elements out of each viewer's own wrapper into that shell.
+
+### DOM Structure
+
+```
+layout.container  (user-supplied div)
+  .fx-compare-root  (flex column, fills container — created by FXGraphCompare)
+    .fx-compare-taskbar  (flex row — only present when sharedTaskbar.enabled)
+    .fx-compare-grid  (CSS grid, repeat(N, 1fr) columns)
+      .fx-compare-col  (one per viewer, flex column)
+        .fx-compare-col-header  (graph title label)
+        .fx-compare-minimap-row  (fixed height — same across all columns)
+          viewer.minimapRenderer.container  (moved here from viewer.sidebar)
+        .fx-compare-canvas-row  (flex: 1 — same height across all columns)
+          viewer.mainArea  (moved here from viewer.wrapper)
+    .fx-compare-info-bar  (single shared merged info panel, spans full width)
+```
+
+Each viewer's own `.fx-viewer-wrapper` (sidebar, resizer, etc.) is hidden (`display: none`) while compare is active. The viewer's public API (`setTheme`, `selectNode`, `renderAll`, etc.) continues to work normally because it operates on `mainArea` and `minimapRenderer.container` regardless of where they are in the DOM.
+
+### Uniform Row Heights
+
+All minimap rows are the same fixed height (`layout.minimapHeight`). All canvas rows share `flex: 1` inside the same flex column, so they expand to fill identical remaining space. Vertical boundaries are aligned across graphs because the columns are siblings in the same CSS grid row — no per-column height negotiation needed.
+
+### Ownership and Lifecycle
+
+1. **`FXGraphCompare` owns the compare DOM.** It creates `.fx-compare-root`, `.fx-compare-grid`, `.fx-compare-col` elements and appends them to `layout.container`.
+2. **Viewers own their renderers.** `FXGraphCompare` only moves `viewer.mainArea` and `viewer.minimapRenderer.container` — it does not touch canvas contexts, event listeners, or state machines.
+3. **DOM snapshots for teardown.** Before moving any element, `FXGraphCompare` records its original parent and next sibling in a `WeakMap`. `destroy()` calls `_teardownCompareDOM()` which restores every element to its original position and un-hides each viewer wrapper.
+4. **`FXCompareTaskbar` is instantiated by `FXGraphCompare`** when `sharedTaskbar.enabled` is true. It prepends its element to `.fx-compare-root` (not to `layout.container`), so it sits above the grid inside the flex column. `FXCompareTaskbar.destroy()` is called by `FXGraphCompare.destroy()`.
+5. **Canvas resize.** A `ResizeObserver` is attached to each `.fx-compare-canvas-row`. When the row resizes (window resize, column count change), it calls `viewer.canvasRenderer.resize()` + `viewer.renderAll()`. An initial `requestAnimationFrame` resize fires after `_buildCompareDOM()` to handle the first layout pass.
+
+### Interaction Control
+
+| Action | Owner | Mechanism |
+|--------|-------|-----------|
+| Node selection sync | `FXGraphCompare._wireSelectionSync()` | Listens to `viewer.on('selectionchange')`; propagates via `viewer.selectNode()` with source guard to prevent loops |
+| Theme sync (shared taskbar) | `FXCompareTaskbar` | Calls `viewer.setTheme()` on all viewers directly |
+| Theme sync (state change) | `FXGraphCompare._wireStateSync()` | Listens to `viewer.on('statechange')`; propagates theme changes to other viewers |
+| Layers / ColorBy | `FXCompareTaskbar` | Builds union of all extension ids; calls `viewer.setLayers()` per viewer |
+| Zoom to Fit | `FXCompareTaskbar` | Calls `viewer.controller.zoomToFit()` on all viewers |
+| Fullscreen | `FXCompareTaskbar` | Calls `requestFullscreen()` on `.fx-compare-root` |
+| Column count | `FXGraphCompare.setColumns()` | Updates `_grid.style.gridTemplateColumns`; triggers resize RAF |
+| Sync mode | `FXCompareTaskbar` → `FXGraphCompare.setSync()` | Updates `this.sync`; next selection event uses new mode |
+| Merged info panel | `FXGraphCompare._updateMergedInfo()` | Called after selection sync; renders a diff table into `.fx-compare-info-bar` |
+
+### Selection Sync Modes
+
+- `mode: 'none'` — no cross-viewer selection propagation.
+- `mode: 'id'` (default) — selects the node with the same id in each other viewer; no-op if id is absent.
+- `mode: 'layer'` — matches by `extensions[layer].nodes[nodeId].info[field]` value; on multiple matches, picks the node with the highest `topo_index` in that extension (or last in `activeNodes` order if no topo index).
+
+### Merged Info Panel
+
+When a node is selected (and sync propagates), `_updateMergedInfo(nodeIdMap)` renders a comparison table into `.fx-compare-info-bar`:
+- Header row: "Property" | Graph 1 | Graph 2 | ...
+- One row per property (union of all `node.info` keys across all selected nodes)
+- Rows where values differ across graphs are highlighted amber (`.fx-diff`)
+- Missing values shown as `—`
 
 ## Canonical Data Contract
 
@@ -145,7 +215,7 @@ Generated outputs:
 
 Suggested learning order:
 1. JS beginner ladder (`js_01` ... `js_08` in testcase guide).
-2. Advanced combos (`adv_01` ... `adv_03`).
+2. Advanced combos (`adv_01` ... `adv_04`).
 3. Final mixed demo (`js_99_combo_mixed`).
 
 ## Testing

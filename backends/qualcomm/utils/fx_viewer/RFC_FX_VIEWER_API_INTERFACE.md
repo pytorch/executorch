@@ -239,21 +239,31 @@ This closes the current drift issue.
 
 ```ts
 const compare = FXGraphCompare.create({
-  viewers: [viewerA, viewerB, viewerC],
-  layout: { columns: 2, compact: true },
-  sync: { selection: true, camera: false, theme: false, layers: false },
+  viewers: [viewerA, viewerB],
+  layout: { columns: 2, tiled: true, container: '#compare-root' },
+  sharedTaskbar: {
+    enabled: true,
+    controls: { theme: true, layers: true, zoomFit: true, fullscreen: true, tiledToggle: true, syncMode: true },
+  },
+  sync: { mode: 'id' },  // 'none' | 'id' | 'layer'
+  // For layer sync: sync: { mode: 'layer', layer: 'ext_name', field: 'field_name' }
 });
 
 compare.setColumns(3);
-compare.setSync({ selection: true, camera: true });
+compare.setTiled(false);
+compare.setSync({ mode: 'layer', layer: 'topological_order', field: 'topo_index' });
 compare.destroy();
 ```
 
 Semantics:
 
 1. Source-guarded propagation avoids loops.
-2. Selection sync applies only when target viewer has the node id.
-3. Viewers remain independently usable outside compare orchestration.
+2. `sync.mode: 'id'` — select matching node id in other viewers.
+3. `sync.mode: 'layer'` — match by `extensions[layer].nodes[id].info[field]` value; topologically last on ties.
+4. `layout.tiled: true` (default) — vertical stack: minimap top, canvas middle, info bottom.
+5. `sharedTaskbar.enabled: true` (default) — shared taskbar above grid; per-viewer toolbars hide except search.
+6. `setCompact()` is a deprecated alias for `setTiled()`.
+7. Viewers remain independently usable outside compare orchestration.
 
 ## 13. Breaking Changes
 
@@ -343,12 +353,12 @@ viewer.init();
 ```ts
 const compare = FXGraphCompare.create({
   viewers: [leftViewer, rightViewer],
-  layout: { columns: 2, compact: true },
-  sync: { selection: true },
+  layout: { columns: 2, tiled: true },
+  sync: { mode: 'id' },
 });
 
-syncCheckbox.onchange = (e) => compare.setSync({ selection: e.target.checked });
-compactCheckbox.onchange = (e) => compare.setCompact(e.target.checked);
+syncCheckbox.onchange = (e) => compare.setSync({ mode: e.target.checked ? 'id' : 'none' });
+tiledCheckbox.onchange = (e) => compare.setTiled(e.target.checked);
 ```
 
 ## Appendix B: Runtime Threshold Coloring Recipe
