@@ -211,3 +211,31 @@ function(executorch_target_copy_mlx_metallib target)
     endif()
   endif()
 endfunction()
+
+# Create and install a shared library composed from dependency libraries. The
+# target links the provided dependencies and carries VERSION/SOVERSION.
+function(executorch_add_shared_library target_name)
+  set(_empty_source_name "${target_name}_empty.cpp")
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/${_empty_source_name}"
+       "// intentionally empty"
+  )
+  add_library(
+    ${target_name} SHARED "${CMAKE_CURRENT_BINARY_DIR}/${_empty_source_name}"
+  )
+  if(ARGN)
+    target_link_libraries(${target_name} PRIVATE ${ARGN})
+  endif()
+  set_target_properties(
+    ${target_name}
+    PROPERTIES VERSION "${PROJECT_VERSION}"
+               SOVERSION "${PROJECT_VERSION_MAJOR}"
+               LINKER_LANGUAGE CXX
+  )
+  install(
+    TARGETS ${target_name}
+    EXPORT ExecuTorchTargets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  )
+endfunction()
