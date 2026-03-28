@@ -61,6 +61,9 @@ from executorch.exir.passes.normalize_view_copy_base_pass import (
 )
 from executorch.exir.passes.quant_fusion_pass import quant_fusion_and_const_prop_pass
 from executorch.exir.passes.reinplace import reinplace_pass
+from executorch.exir.passes.fix_embedding_symbolic_shapes import (
+    FixEmbeddingSymbolicShapes,
+)
 from executorch.exir.passes.remove_graph_asserts_pass import (
     RemoveGraphAssertsPass,
     RemoveNonCoreAtenOpGraphAssertsPass,
@@ -1184,6 +1187,9 @@ def _gen_edge_manager_for_partitioners(
     ops_set_to_not_decompose_by_program = defaultdict(list)
     edge_programs: Dict[str, ExportedProgram] = {}
     for name, program in aten_programs.items():
+        # Re-propagate symbolic shapes through embedding outputs that were
+        # incorrectly concretized by register_lstm_while_loop_decomposition.
+        program = program._transform(FixEmbeddingSymbolicShapes())
         # Functionalize program before asking partitioners to preserve ops
         program = program.run_decompositions({})
 
