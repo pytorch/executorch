@@ -692,13 +692,14 @@ TEST_F(TensorUtilTest, SemanticEquivalencePartialDegenerateFails) {
   EXPECT_FALSE(tensors_have_same_dim_order(nchw, nhwc));
 }
 
-TEST_F(TensorUtilTest, SemanticEquivalenceDifferentRankFails) {
+TEST_F(TensorUtilTest, DifferentRankSameLegacyFormatFamilyPasses) {
   using namespace torch::executor;
-  // Different ranks should fail
+  // Legacy rule: all contiguous-order (or all channels-last) passes even when
+  // ranks differ (e.g. reduced outputs vs full activations).
   Tensor a = tf_float_.ones({2, 3, 4, 4});
   Tensor b = tf_float_.ones({2, 3, 4});
 
-  EXPECT_FALSE(tensors_have_same_dim_order(a, b));
+  EXPECT_TRUE(tensors_have_same_dim_order(a, b));
 }
 
 TEST_F(TensorUtilTest, SemanticEquivalenceSameLabelsSameResult) {

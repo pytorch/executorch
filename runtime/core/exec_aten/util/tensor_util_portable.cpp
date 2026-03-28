@@ -154,6 +154,26 @@ bool two_tensors_same_dim_order(
   return true;
 }
 
+// Tier A: every tensor is contiguous-order or every tensor is channels-last
+// (original portable contract). Handles mixed rank, broadcast shapes, and
+// reduced aux outputs (e.g. batch norm mean tensors).
+bool tensors_share_legacy_format_family(
+    const executorch::aten::ArrayRef<executorch::aten::Tensor> tensor_list) {
+  bool all_contiguous = true;
+  bool all_channels_last = true;
+  for (const auto i : c10::irange(tensor_list.size())) {
+    all_contiguous = all_contiguous &&
+        is_contiguous_dim_order(
+            tensor_list[i].dim_order().data(),
+            tensor_list[i].dim_order().size());
+    all_channels_last = all_channels_last &&
+        is_channels_last_dim_order(
+            tensor_list[i].dim_order().data(),
+            tensor_list[i].dim_order().size());
+  }
+  return all_contiguous || all_channels_last;
+}
+
 } // namespace
 
 bool tensors_have_same_dim_order(
@@ -161,13 +181,42 @@ bool tensors_have_same_dim_order(
   if (tensor_list.size() < 2) {
     return true;
   }
+
+  if (tensors_share_legacy_format_family(tensor_list)) {
+    return true;
+  }
+
+  const executorch::aten::Tensor& ref = tensor_list[0];
+  const bool ref_contiguous =
+      is_contiguous_dim_order(ref.dim_order().data(), ref.dim_order().size());
+  const bool ref_channels_last =
+      is_channels_last_dim_order(ref.dim_order().data(), ref.dim_order().size());
+
   for (size_t i = 1; i < tensor_list.size(); ++i) {
-    if (!two_tensors_same_dim_order(tensor_list[0], tensor_list[i])) {
-      ET_LOG(
-          Error,
-          "%zd input tensors have different dim orders",
-          tensor_list.size());
-      return false;
+    const executorch::aten::Tensor& t = tensor_list[i];
+    if (t.dim() == ref.dim()) {
+      if (!two_tensors_same_dim_order(ref, t)) {
+        ET_LOG(
+            Error,
+            "%zd input tensors have different dim orders",
+            tensor_list.size());
+        return false;
+      }
+    } else {
+      const bool t_contiguous =
+          is_contiguous_dim_order(t.dim_order().data(), t.dim_order().size());
+      const bool t_channels_last =
+          is_channels_last_dim_order(t.dim_order().data(), t.dim_order().size());
+      const bool ok =
+          (ref_contiguous && t_contiguous) ||
+          (ref_channels_last && t_channels_last);
+      if (!ok) {
+        ET_LOG(
+            Error,
+            "%zd input tensors have different dim orders",
+            tensor_list.size());
+        return false;
+      }
     }
   }
   return true;
