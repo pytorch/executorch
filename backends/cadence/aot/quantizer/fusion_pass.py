@@ -378,6 +378,21 @@ def get_args_and_kwargs_softmax(
     with fake_mode:
         mask_tensor.meta["val"] = torch.full(mask_shape, 0.0, dtype=torch.int32)
     copy_node_metadata(mask_tensor, inputs_inputs[0])
+
+    # Default mask_type=0 (no masking) and dummy pos tensor
+    mask_type = 0
+    pos_tensor = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        (
+            [1],
+            0,
+        ),
+        {"dtype": torch.int64},
+    )
+    with fake_mode:
+        pos_tensor.meta["val"] = torch.full([1], 0, dtype=torch.int64)
+    copy_node_metadata(pos_tensor, inputs_inputs[0])
+
     # Make the scale and zero_point tensors
     in_scale = dequants_inputs[0].args[1]
     in_zero_point = dequants_inputs[0].args[2]
@@ -389,6 +404,8 @@ def get_args_and_kwargs_softmax(
         inputs_inputs[0],
         mask_tensor,
         op_node.args[1],
+        mask_type,
+        pos_tensor,
         in_scale,
         in_zero_point,
         out_scale,

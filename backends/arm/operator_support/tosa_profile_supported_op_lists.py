@@ -98,6 +98,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    exir_ops.edge.aten.pad.default,
     exir_ops.edge.aten.constant_pad_nd.default,
     exir_ops.edge.aten.amax.default,
     exir_ops.edge.aten.amin.default,
@@ -124,7 +125,6 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.bitwise_not.default,
     exir_ops.edge.aten.copy.default,
     exir_ops.edge.aten.tan.default,
-    exir_ops.edge.aten.index_put.default,
     exir_ops.edge.aten.silu.default,
     exir_ops.edge.aten.detach_copy.default,
 }
@@ -220,6 +220,7 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.pow.Tensor_Scalar,
     exir_ops.edge.aten.pow.Tensor_Tensor,
     operator.getitem,
+    exir_ops.edge.aten.pad.default,
     exir_ops.edge.aten.constant_pad_nd.default,
     exir_ops.edge.aten.amax.default,
     exir_ops.edge.aten.amin.default,
@@ -249,7 +250,6 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.copy.default,
     exir_ops.edge.aten.floor_divide.default,
     exir_ops.edge.aten.tan.default,
-    exir_ops.edge.aten.index_put.default,
     exir_ops.edge.aten.detach_copy.default,
 }
 
