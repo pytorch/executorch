@@ -135,7 +135,7 @@ try {
     Write-Host "::group::Check CUDA toolchain"
     $nvccOutput = nvcc --version | Out-String
     Write-Host $nvccOutput
-    nvidia-smi
+    try { nvidia-smi } catch { Write-Host "nvidia-smi not available (driver may not be installed)" }
     if (-not [string]::IsNullOrWhiteSpace($ExpectedCudaVersion)) {
         $versionMatch = [Regex]::Match($nvccOutput, "release\s+(\d+\.\d+)")
         if (-not $versionMatch.Success) {
