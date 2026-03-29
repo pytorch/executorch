@@ -890,29 +890,33 @@ def get_quant_properties(  # noqa: C901
         submodule_args_pos = -1 if node.target == torch.ops.higher_order.cond else -2
         submodule_args = node.args[submodule_args_pos]
         output_qspec = output_act_qspec
-        if len(submodule_args) > 0:  # type: ignore[arg-type]
-            # The way the TOSA backend handles quantized inputs, arrays of input tensors (such as the input to a
-            # conditional graph) need shared quantization.
-            shared_qspec = SharedQuantizationSpec(
-                (cast(list[Node], submodule_args)[0], node)
-            )
-            quant_properties.quant_inputs = [
-                _QuantProperty(
-                    submodule_args_pos,
-                    [
-                        input_act_qspec,
-                        *([shared_qspec] * (len(submodule_args) - 1)),  # type: ignore[arg-type]
-                    ],
+        # Annotate each control-flow tensor independently using the default input qspec
+        if submodule_args:
+            if node.meta.get("additional_inputs", None):
+                qspecs = [input_act_qspec] * len(cast(Sequence[Node], submodule_args))  # type: ignore[arg-type]
+                quant_properties.quant_inputs = [
+                    _QuantProperty(submodule_args_pos, qspecs)
+                ]
+            else:
+                shared_qspec = SharedQuantizationSpec(
+                    (cast(list[Node], submodule_args)[0], node)
                 )
-            ]
-            if node.target == torch.ops.higher_order.while_loop:
-                # The output of the while loop body can either re-enter the body, or exit the while loop.
-                # Therefore, A and B in the diagram below need to share the same quantization parameters.
-                # A -> while ( RESCALE -> ... RESCALE -> ) -> B
-                output_qspec = shared_qspec
+                quant_properties.quant_inputs = [
+                    _QuantProperty(
+                        submodule_args_pos,
+                        [
+                            input_act_qspec,
+                            *([shared_qspec] * (len(submodule_args) - 1)),  # type: ignore[arg-type]
+                        ],
+                    )
+                ]
+                if node.target == torch.ops.higher_order.while_loop:
+                    # The output of the while loop body can either re-enter the body, or exit the while loop.
+                    # Therefore, A and B in the diagram below need to share the same quantization parameters.
+                    # A -> while ( RESCALE -> ... RESCALE -> ) -> B
+                    output_qspec = shared_qspec
 
         quant_properties.quant_output = _QuantProperty(0, output_qspec)
-
     else:
         return None
 
