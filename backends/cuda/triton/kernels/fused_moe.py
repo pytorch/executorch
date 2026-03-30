@@ -37,16 +37,29 @@ import triton
 import triton.language as tl
 from torch.library import triton_op, wrap_triton
 
-# Block sizes tuned for M=1 decode on Qwen3.5 MoE dimensions.
-# Benchmarked on H100: N=128, K=64, warps=4, stages=3 gives 1.73x speedup
-# for GEMM1 (N=1024, K=2048) and 1.42x for GEMM2 (N=2048, K=512) vs the
-# original N=32, K=32, warps=2, stages=2 baseline.
-_BLOCK_SIZE_N: int = 128
-_BLOCK_SIZE_K: int = 64
-_NUM_WARPS: int = 4
-_NUM_STAGES: int = 3
+
+# Autotune configs for GEMM1 (_fused_moe_kernel).
+# Top performers from standalone benchmark on A100, Qwen3.5 MoE dimensions
+# (M=1, N=1024, K=2048, 8 experts, group_size=128).
+_GEMM1_CONFIGS = [
+    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 32}, num_warps=2, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=3),
+]
+
+# Autotune configs for GEMM2 (_fused_moe_silu_kernel).
+# Top performers from standalone benchmark on A100, Qwen3.5 MoE dimensions
+# (M=1, N=2048, K=512, 8 experts, group_size=128).
+_GEMM2_CONFIGS = [
+    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128}, num_warps=2, num_stages=2),
+    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 64}, num_warps=2, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=5),
+]
 
 
+@triton.autotune(configs=_GEMM1_CONFIGS, key=["N", "K"])
 @triton.jit
 def _fused_moe_kernel(
     # Pointers
@@ -156,6 +169,7 @@ def _fused_moe_kernel(
     tl.store(c_ptrs, acc.to(compute_type), mask=n_mask)
 
 
+@triton.autotune(configs=_GEMM2_CONFIGS, key=["N", "K"])
 @triton.jit
 def _fused_moe_silu_kernel(
     # Pointers
@@ -312,7 +326,7 @@ def fused_moe(
     cache1 = torch.empty(
         num_pairs, N1, dtype=hidden_states.dtype, device=hidden_states.device
     )
-    grid1 = (num_pairs * triton.cdiv(N1, _BLOCK_SIZE_N),)
+    grid1 = lambda meta: (num_pairs * triton.cdiv(N1, meta["BLOCK_SIZE_N"]),)
     wrap_triton(_fused_moe_kernel)[grid1](
         hidden_states,
         w1,
@@ -334,20 +348,16 @@ def fused_moe(
         stride_bsk=w1_scale.stride(2),
         stride_bsn=w1_scale.stride(1),
         group_size=group_size,
-        BLOCK_SIZE_N=_BLOCK_SIZE_N,
-        BLOCK_SIZE_K=_BLOCK_SIZE_K,
         MUL_ROUTED_WEIGHT=False,
         top_k=top_k,
         compute_type=tl.bfloat16,
-        num_warps=_NUM_WARPS,
-        num_stages=_NUM_STAGES,
     )
 
     # ---- GEMM2 with fused SiLU: reads gate+up from cache1, no intermediate buffer ----
     cache3 = torch.empty(
         num_pairs, N2, dtype=hidden_states.dtype, device=hidden_states.device
     )
-    grid2 = (num_pairs * triton.cdiv(N2, _BLOCK_SIZE_N),)
+    grid2 = lambda meta: (num_pairs * triton.cdiv(N2, meta["BLOCK_SIZE_N"]),)
     wrap_triton(_fused_moe_silu_kernel)[grid2](
         cache1,
         w2,
@@ -369,11 +379,7 @@ def fused_moe(
         stride_bsk=w2_scale.stride(2),
         stride_bsn=w2_scale.stride(1),
         group_size=group_size,
-        BLOCK_SIZE_N=_BLOCK_SIZE_N,
-        BLOCK_SIZE_K=_BLOCK_SIZE_K,
         compute_type=tl.bfloat16,
-        num_warps=_NUM_WARPS,
-        num_stages=_NUM_STAGES,
     )
 
     # ---- Sum across top-k experts ----
