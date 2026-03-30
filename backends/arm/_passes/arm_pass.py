@@ -11,6 +11,7 @@ from typing import Any, List, Optional, Set, Type
 
 from executorch.backends.arm.constants import DISALLOW_TFA_META_KEY
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
 from torch.fx import GraphModule
 from torch.fx.passes.infra.pass_base import PassResult
@@ -38,7 +39,9 @@ class ArmPass(ExportPass):
         return not disallow_tfa
 
     def _is_quantized_meta(self, meta: NodeMetadata | dict[str, Any]) -> bool:
-        """Return True when meta indicates fully quantized inputs and outputs."""
+        """Return True when meta indicates fully quantized inputs and
+        outputs.
+        """
         if isinstance(meta, NodeMetadata):
             meta_dict = meta.data
         else:
@@ -105,11 +108,14 @@ class ArmPass(ExportPass):
         return result
 
     def call_shape_operator(
-        self, op, args: tuple, kwargs: dict, meta: NodeMetadata, update: bool
+        self, op, args: tuple, kwargs: dict, meta: NodeMetadata, updated: bool = True
     ) -> ProxyValue:
-        """
-        Call operator for shape-producing operators. This function is responsible for marking the output of the operator
-        with the TosaSpecialDtype of SHAPE, so that later passes can identify it as a shape-producing operator and handle it accordingly.
+        """Call operator for shape-producing operators.
+
+        This function is responsible for marking the output of the operator with
+        the TosaSpecialDtype of SHAPE, so that later passes can identify it as a
+        shape-producing operator and handle it accordingly.
+
         """
         # Copy meta and set TosaSpecialDtype to SHAPE
         if not isinstance(meta, NodeMetadata):
@@ -118,4 +124,32 @@ class ArmPass(ExportPass):
         shape_meta.data = dict(meta.data)
         shape_meta.data[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.SHAPE
         # Call the super (ArmPass) call operator with updated meta
-        return self.call_operator(op, args, kwargs, shape_meta, update)
+        return self.call_operator(op, args, kwargs, shape_meta, updated)
+
+    def call_scalar(self, value: int | float, meta: NodeMetadata | dict[str, Any]):
+        """Return a scalar value for the current pass stage.
+
+        In transform-for-annotation passes this returns the Python scalar
+        directly. In later passes it materializes a `(1,)` `aten.full` node
+        using the output dtype/device from `meta["val"]` when available.
+
+        """
+
+        if self.is_tfa_pass:
+            return value
+
+        kwargs = {}
+        if "val" in meta:
+            val = meta["val"]
+            if isinstance(val, tuple):
+                val = val[0]
+            kwargs = {"device": val.device, "dtype": val.dtype}
+
+        return ArmPass.call_operator(
+            self,
+            op=exir_ops.edge.aten.full.default,
+            args=((1,), value),
+            kwargs=kwargs,
+            meta=meta,
+            updated=True,
+        )

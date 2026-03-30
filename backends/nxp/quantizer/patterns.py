@@ -298,6 +298,29 @@ class AddTensorPattern(QuantizationPattern):
         )
 
 
+class BMMPattern(QuantizationPattern):
+    """
+    Quantizer for BatchMatMul operator.
+    """
+
+    def partition_types(self) -> list[torch.nn.Module]:
+        return [torch.ops.aten.bmm.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        bmm_node = fused_partition[0].nodes[-1]
+
+        return PartitionAnchors(
+            inputs=[
+                (bmm_node, NodeArgsIdx(0)),
+                (bmm_node, NodeArgsIdx(1)),
+            ],
+            biases=[],
+            output=[(bmm_node,)],
+        )
+
+
 class SubTensorPattern(QuantizationPattern):
     """
     Quantization pattern for Sub Tensor quantization. Accepts 1 or 2 input nodes.
@@ -324,7 +347,16 @@ class SubTensorPattern(QuantizationPattern):
         )
 
 
-class AvgPoolPattern(SharedSpecPattern):
+class AvgPool1DPattern(SharedSpecPattern):
+    """
+    Quantizer for AvgPool1D operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.avg_pool1d.default]
+
+
+class AvgPool2DPattern(SharedSpecPattern):
     """
     Quantizer for AvgPool2D operator.
     """
@@ -711,6 +743,16 @@ class LinearPattern(QuantizationPattern):
             output = []
             activation.meta["quantization_annotation"].input_qspec_map = {}
 
+        # In order for QAT to be numerically correct, there should be no quantization between
+        # linear node and batch norm node.
+        if self.is_qat:
+            linear_users = linear_node.users
+            possibly_bn = (
+                list(linear_users.keys())[0] if len(linear_users) == 1 else None
+            )
+            if possibly_bn and _is_batch_norm(possibly_bn):
+                output = []
+
         return PartitionAnchors(
             inputs=[(linear_node, NodeArgsIdx(0))],
             weights=[(linear_node, NodeArgsIdx(1))],
@@ -719,10 +761,15 @@ class LinearPattern(QuantizationPattern):
         )
 
 
-class MaxPoolPattern(SharedSpecPattern):
-    """
-    Quantizer for MaxPool2D operator.
-    """
+class MaxPool1DPattern(SharedSpecPattern):
+    """Quantizer for the MaxPool1D operator."""
+
+    def partition_types(self):
+        return [torch.ops.aten.max_pool1d.default]
+
+
+class MaxPool2DPattern(SharedSpecPattern):
+    """Quantizer for the MaxPool2D operator."""
 
     def partition_types(self):
         return [torch.ops.aten.max_pool2d.default]
@@ -962,6 +1009,33 @@ class SigmoidPattern(QuantizationPattern):
         )
 
 
+class SqueezePattern(SharedSpecPattern):
+    """
+    Quantizer for the `aten.squeeze.default` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.squeeze.default]
+
+
+class SqueezeDimPattern(SharedSpecPattern):
+    """
+    Quantizer for the `aten.squeeze.dim` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.squeeze.dim]
+
+
+class SqueezeDimsPattern(SharedSpecPattern):
+    """
+    Quantizer for the `aten.squeeze.dims` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.squeeze.dims]
+
+
 class TanhPattern(QuantizationPattern):
     """
     Quantizer for Tanh operator.
@@ -996,6 +1070,13 @@ class TanhInPlacePattern(QuantizationPattern):
         return get_anchors_for_fixed_quant_specs(
             fused_partition, scale=1.0 / 128.0, zero_point=0, is_qat=self.is_qat
         )
+
+
+class UnsqueezePattern(SharedSpecPattern):
+    """Quantizer for the `aten.unsqueeze.default` operator."""
+
+    def partition_types(self):
+        return [torch.ops.aten.unsqueeze.default]
 
 
 class UpsampleBilinear2DPattern(SharedSpecPattern):

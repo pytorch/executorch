@@ -1,0 +1,88 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "dinov2-base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/dinov2",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
+            }
+        },
+        {
+            "name": "dinov2-cuda",
+            "displayName": "DINOv2 runner (CUDA)",
+            "inherits": ["dinov2-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_CUDA": "ON"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
+        },
+        {
+            "name": "dinov2-cuda-debug",
+            "displayName": "DINOv2 runner (CUDA, Debug)",
+            "inherits": ["dinov2-base"],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "EXECUTORCH_BUILD_CUDA": "ON"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "dinov2-cuda",
+            "displayName": "Build DINOv2 runner (CUDA)",
+            "configurePreset": "dinov2-cuda",
+            "configuration": "Release",
+            "targets": ["dinov2_runner"]
+        },
+        {
+            "name": "dinov2-cuda-debug",
+            "displayName": "Build DINOv2 runner (CUDA, Debug)",
+            "configurePreset": "dinov2-cuda-debug",
+            "configuration": "Debug",
+            "targets": ["dinov2_runner"]
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "dinov2-cuda",
+            "displayName": "Configure and build DINOv2 runner (CUDA)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "dinov2-cuda"
+                },
+                {
+                    "type": "build",
+                    "name": "dinov2-cuda"
+                }
+            ]
+        },
+        {
+            "name": "dinov2-cuda-debug",
+            "displayName": "Configure and build DINOv2 runner (CUDA, Debug)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "dinov2-cuda-debug"
+                },
+                {
+                    "type": "build",
+                    "name": "dinov2-cuda-debug"
+                }
+            ]
+        }
+    ]
+}

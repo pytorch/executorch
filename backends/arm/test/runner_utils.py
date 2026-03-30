@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import subprocess  # nosec B404 - invoked only for trusted toolchain binaries
+import sys
 import tempfile
 from pathlib import Path
 
@@ -91,13 +92,13 @@ class QuantizationParams:
 
 
 def get_input_names(program: ExportedProgram) -> list[str]:
-    """
-    Get a list[str] with the names of the inputs to this model.
+    """Get a list[str] with the names of the inputs to this model.
 
     Args:
         program (ExportedProgram): The program to get input names from.
     Returns:
         A list of strings with the names of the model input.
+
     """
     return [spec.arg.name for spec in program.graph_signature.input_specs]
 
@@ -105,12 +106,14 @@ def get_input_names(program: ExportedProgram) -> list[str]:
 def get_input_quantization_params(
     program: ExportedProgram,
 ) -> list[QuantizationParams]:
-    """
-    Get input QuantizationParams in a program, maximum one per input to the program.
+    """Get input QuantizationParams in a program, maximum one per input to the
+    program.
+
     Args:
         program (ExportedProgram): The program to get input quantization parameters from.
     Returns:
         list[QuantizationParams]: The found quantization parameters.
+
     """
 
     quant_params = []
@@ -142,8 +145,8 @@ def get_input_quantization_params(
 def get_output_quantization_params(
     output_node: Node,
 ) -> dict[Node, QuantizationParams | None]:
-    """
-    Get output QuantizationParams from a program.
+    """Get output QuantizationParams from a program.
+
     Args:
         output_nodes (list(Node)): A list of output nodes to get output quantization parameters from.
     Returns:
@@ -151,6 +154,7 @@ def get_output_quantization_params(
         If no quantization parameters were found, the entry is None.
     Raises:
         RuntimeError if no output quantization parameters are found.
+
     """
     quant_params: dict[Node, QuantizationParams | None] = {}
     for node in output_node.args[0]:  # type: ignore[union-attr]
@@ -198,7 +202,7 @@ def numpy_to_torch_tensor(array: np.ndarray, output_node: Node) -> torch.Tensor:
         tensor = torch.from_numpy(array).reshape(shape_with_dim_order)
         return tensor.permute(NNHWC_INVERSE_ORDER).to(memory_format=torch.channels_last)
     else:
-        if type(array.dtype) is np.dtypes.VoidDType:
+        if array.dtype.type is np.void:
             # If dtype is void, "cheat" and use the output_tensor dtype.
             tensor = torch.frombuffer(array, dtype=output_tensor.dtype)
         else:
@@ -207,7 +211,9 @@ def numpy_to_torch_tensor(array: np.ndarray, output_node: Node) -> torch.Tensor:
 
 
 class TosaReferenceModelDispatch(TorchFunctionMode):
-    """A context manager for executing call_delegate nodes using the reference model"""
+    """A context manager for executing call_delegate nodes using the reference
+    model.
+    """
 
     def __init__(self):
         self.ran_tosa_dispatch = False
@@ -215,7 +221,7 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
 
     def _tosa_dispatch(self, lowered_backend_module: LoweredBackendModule, inputs):
         tosa_buffer = lowered_backend_module.processed_bytes
-        compile_spec = TosaCompileSpec.from_list(lowered_backend_module.compile_specs)
+        compile_spec = TosaCompileSpec._from_list(lowered_backend_module.compile_specs)
 
         output_node = lowered_backend_module.original_module.graph.output_node()
         return run_tosa_graph(tosa_buffer, compile_spec.tosa_spec, inputs, output_node)
@@ -359,7 +365,7 @@ def run_vkml_emulation_layer(
         cmd_line += input_string
     cmd_line = cmd_line.split()
 
-    result = _run_cmd(cmd_line)
+    result = _run_cmd(cmd_line, env=_get_vkml_runtime_env())
 
     # TODO: Add regex to check for error or fault messages in stdout from Emulation Layer
     result_stdout = result.stdout.decode()  # noqa: F841
@@ -376,6 +382,7 @@ def run_corstone(
     timeout: int = 120,  # s
 ) -> list[torch.Tensor]:
     """Executes an inference of the exported_program on FVP.
+
     Returns a list of tensors with the output.
     Args:
         `executorch_program_manager`: The executorch program to run.
@@ -392,6 +399,7 @@ def run_corstone(
         Relies on the output tensors from the exported program
         to figure out the shape and dtype of the buffer that was
         output from the FVP.
+
     """
     exported_program = executorch_program_manager.exported_program()
     intermediate_path = Path(intermediate_path)
@@ -406,14 +414,24 @@ def run_corstone(
         f.write(executorch_program_manager.buffer)
 
     input_paths = save_inputs_to_file(exported_program, inputs, intermediate_path)
+    # Keep semihosting command line short: the FVP truncates long cmd strings.
+    # Alias generated input files to compact names in the same directory.
+    aliased_input_paths = []
+    for idx, input_path in enumerate(input_paths):
+        short_name = f"i{idx}.bin"
+        short_path = os.path.join(intermediate_path, short_name)
+        if os.path.abspath(input_path) != os.path.abspath(short_path):
+            shutil.copyfile(input_path, short_path)
+        aliased_input_paths.append(short_path)
 
     output_base_name = "out"
 
     cmd_line = "executor_runner -m program.pte -o out"
-    for input_path in input_paths:
-        relative_path = os.path.relpath(
-            Path(input_path).resolve(), start=intermediate_path
-        )
+    for input_path in aliased_input_paths:
+        # Use local basenames to avoid '/var' -> '/private/var' resolve expansion
+        # on macOS, which can produce long '../../..' paths and exceed FVP's
+        # semihosting cmd_line limit.
+        relative_path = Path(input_path).name
         cmd_line += f" -i {relative_path}"
 
     if len(cmd_line) > 256:
@@ -552,7 +570,8 @@ def save_bytes(
     input_name: str,
     quant_param: Optional[QuantizationParams] = None,
 ) -> str:
-    """Serializes and saves 'data' in byte format, possibly quantizing it before.
+    """Serializes and saves 'data' in byte format, possibly quantizing it
+    before.
 
     Parameters:
         path: the directory where to save the data.
@@ -561,6 +580,7 @@ def save_bytes(
         quant_param: the parameters to use for quantization.
     Returns:
         the full file path of the output.
+
     """
     data_np = prep_data_for_save(data, input_name, quant_param)
     file_path = os.path.join(path, input_name + ".bin")
@@ -571,16 +591,89 @@ def save_bytes(
     return file_path
 
 
-def _run_cmd(cmd: List[str], check=True) -> subprocess.CompletedProcess[bytes]:
+def _prepend_env_path(existing: str | None, value: str) -> str:
+    if not existing:
+        return value
+
+    parts = [part for part in existing.split(os.path.pathsep) if part]
+    if value in parts:
+        return existing
+    return os.path.pathsep.join([value, *parts])
+
+
+def _find_local_vulkan_sdk_root() -> Path | None:
+    repo_root = Path(__file__).resolve().parents[3]
+    sdk_base_dir = repo_root / "examples/arm/arm-scratch/vulkan_sdk"
+    if not sdk_base_dir.is_dir():
+        return None
+
+    if sys.platform == "darwin":
+        candidates = sorted(
+            path for path in sdk_base_dir.glob("*/macOS") if path.is_dir()
+        )
+    else:
+        arch = os.uname().machine
+        arch_aliases = [arch]
+        if arch == "arm64":
+            arch_aliases.append("aarch64")
+        candidates = sorted(
+            path
+            for alias in arch_aliases
+            for path in sdk_base_dir.glob(f"*/{alias}")
+            if path.is_dir()
+        )
+
+    if not candidates:
+        return None
+    return candidates[-1]
+
+
+def _get_vkml_runtime_env() -> dict[str, str]:
+    """Return an environment with the Vulkan runtime variables needed for
+    VKML.
     """
-    Run a command and check for errors.
+    env = os.environ.copy()
+    sdk_root = _find_local_vulkan_sdk_root()
+    if sdk_root is None:
+        return env
+
+    env["VULKAN_SDK"] = str(sdk_root)
+    env["PATH"] = _prepend_env_path(env.get("PATH"), str(sdk_root / "bin"))
+
+    if sys.platform == "darwin":
+        env["DYLD_LIBRARY_PATH"] = _prepend_env_path(
+            env.get("DYLD_LIBRARY_PATH"), str(sdk_root / "lib")
+        )
+        moltenvk_icd = sdk_root / "share/vulkan/icd.d/MoltenVK_icd.json"
+        if moltenvk_icd.is_file():
+            env["VK_DRIVER_FILES"] = _prepend_env_path(
+                env.get("VK_DRIVER_FILES"), str(moltenvk_icd)
+            )
+        else:
+            logger.debug(
+                "MoltenVK ICD file not found at %s; leaving VK_DRIVER_FILES unset.",
+                moltenvk_icd,
+            )
+    else:
+        env["LD_LIBRARY_PATH"] = _prepend_env_path(
+            env.get("LD_LIBRARY_PATH"), str(sdk_root / "lib")
+        )
+
+    return env
+
+
+def _run_cmd(
+    cmd: List[str], check=True, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[bytes]:
+    """Run a command and check for errors.
 
     Args:
     cmd (List[str]): The command to run as a list.
+
     """
     try:
         result = subprocess.run(  # nosec B603 - cmd constructed from trusted inputs
-            cmd, check=check, capture_output=True
+            cmd, check=check, capture_output=True, env=env
         )
         return result
     except subprocess.CalledProcessError as e:
@@ -599,6 +692,7 @@ def _run_flatc(args: List[str]) -> None:
 
     If a resource matching _FLATC_RESOURCE_NAME exists, uses that executable.
     Otherwise, expects the `flatc` tool to be available on the system path.
+
     """
     flatc_resource = _resources.files(arm_test_package).joinpath(_FLATC_RESOURCE_NAME)
     if flatc_resource.is_file():
@@ -623,9 +717,11 @@ def _run_flatc(args: List[str]) -> None:
 
 
 def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
-    """
-    This function is used to dump the TOSA flatbuffer to a human readable
-    format, using flatc. It is used for debugging purposes.
+    """This function is used to dump the TOSA flatbuffer to a human readable
+    format, using flatc.
+
+    It is used for debugging purposes.
+
     """
 
     tmp = tempfile.mkdtemp()

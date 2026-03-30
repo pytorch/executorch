@@ -340,3 +340,47 @@ def get_tosa_quantizer(version: str, pt2e_quantize: str):
         raise ValueError(f"Unsupported quantizer specification {pt2e_quantize}")
 
     return quantizer
+
+
+def get_ethosu_quantizer(
+    target: str, system_config: str, memory_mode: str, pt2e_quantize: str
+):
+    from executorch.backends.arm.ethosu.compile_spec import EthosUCompileSpec
+    from executorch.backends.arm.quantizer.arm_quantizer import (
+        EthosUQuantizer,
+        get_symmetric_quantization_config,
+    )
+
+    compile_spec = EthosUCompileSpec(target, system_config, memory_mode)
+
+    quantizer = EthosUQuantizer(compile_spec)
+
+    if pt2e_quantize == "ethosu_8a8w":
+        quantizer.set_global(get_symmetric_quantization_config())
+    else:
+        raise ValueError(f"Unsupported quantizer specification {pt2e_quantize}")
+
+    return quantizer
+
+
+def get_vgf_quantizer(
+    compile_spec: Optional[str],
+    compiler_flags: Optional[List[str]],
+    pt2e_quantize: str,
+):
+    from executorch.backends.arm.quantizer.arm_quantizer import (
+        get_symmetric_quantization_config,
+        VgfQuantizer,
+    )
+    from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
+
+    compile_spec_obj = VgfCompileSpec(compile_spec, compiler_flags)
+
+    quantizer = VgfQuantizer(compile_spec_obj)
+
+    if pt2e_quantize == "vgf_8a8w":
+        quantizer.set_global(get_symmetric_quantization_config())
+    else:
+        raise ValueError(f"Unsupported quantizer specification {pt2e_quantize}")
+
+    return quantizer

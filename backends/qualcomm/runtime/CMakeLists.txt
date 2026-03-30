@@ -42,13 +42,6 @@ target_sources(
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/Logging.cpp
 )
 
-# utils
-target_sources(
-  utils
-  PUBLIC ${CMAKE_CURRENT_LIST_DIR}/Utils.h
-  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/Utils.cpp
-)
-
 # shared_buffer
 target_sources(
   shared_buffer PRIVATE ${CMAKE_CURRENT_LIST_DIR}/SharedBuffer.h

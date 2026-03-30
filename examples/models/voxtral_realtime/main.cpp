@@ -35,6 +35,9 @@
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/llm/runner/wav_loader.h>
 #include <executorch/runtime/platform/log.h>
+#ifdef ET_BUILD_METAL
+#include <executorch/backends/apple/metal/runtime/stats.h>
+#endif
 
 #include "voxtral_realtime_runner.h"
 
@@ -46,7 +49,11 @@ DEFINE_string(tokenizer_path, "tekken.json", "Path to Tekken tokenizer file.");
 DEFINE_string(preprocessor_path, "", "Path to mel preprocessor (.pte).");
 DEFINE_string(audio_path, "", "Path to input audio file (.wav).");
 DEFINE_double(temperature, 0.0, "Sampling temperature (0 = greedy).");
-DEFINE_int32(max_new_tokens, 500, "Maximum number of tokens to generate.");
+DEFINE_int32(
+    offline_max_new_tokens,
+    500,
+    "Offline-only: maximum extra tokens to generate after audio embeddings "
+    "are exhausted.");
 DEFINE_bool(streaming, false, "Use streaming transcription mode.");
 DEFINE_bool(
     mic,
@@ -57,11 +64,25 @@ DEFINE_int32(
     80,
     "Mic read chunk size in ms. Multiples of 80 align with the model's "
     "streaming step (80, 160, 320, 640, 960).");
+DEFINE_string(
+    data_path,
+    "",
+    "Path to data file (.ptd) for delegate data (required for CUDA).");
+DEFINE_string(
+    color,
+    "",
+    "Output text color: green or red (default: no color).");
 
 namespace {
 volatile sig_atomic_t g_interrupted = 0;
 void sigint_handler(int) {
   g_interrupted = 1;
+}
+
+voxtral_realtime::StreamingTranscribeConfig make_streaming_config() {
+  voxtral_realtime::StreamingTranscribeConfig config;
+  config.temperature = static_cast<float>(FLAGS_temperature);
+  return config;
 }
 } // namespace
 
@@ -78,6 +99,16 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  if ((FLAGS_streaming || FLAGS_mic) &&
+      !gflags::GetCommandLineFlagInfoOrDie("offline_max_new_tokens")
+           .is_default) {
+    ET_LOG(
+        Error,
+        "--offline_max_new_tokens only applies to offline transcription. "
+        "Streaming mode drains until EOS or the padded audio tail is exhausted.");
+    return 1;
+  }
+
   if (FLAGS_preprocessor_path.empty()) {
     ET_LOG(Error, "preprocessor_path flag must be provided.");
     return 1;
@@ -90,20 +121,29 @@ int main(int argc, char** argv) {
   stats.model_load_start_ms = ::executorch::extension::llm::time_in_ms();
 
   voxtral_realtime::VoxtralRealtimeRunner runner(
-      FLAGS_model_path, FLAGS_tokenizer_path, FLAGS_preprocessor_path);
+      FLAGS_model_path,
+      FLAGS_tokenizer_path,
+      FLAGS_preprocessor_path,
+      FLAGS_data_path);
 
   stats.model_load_end_ms = ::executorch::extension::llm::time_in_ms();
   stats.inference_start_ms = ::executorch::extension::llm::time_in_ms();
 
-  voxtral_realtime::TranscribeConfig config;
-  config.temperature = static_cast<float>(FLAGS_temperature);
-  config.max_new_tokens = FLAGS_max_new_tokens;
-
   stats.num_prompt_tokens = 0;
   bool first_token = true;
 
-  // Set to true for green-colored output.
-  const bool use_color = false;
+  const char* ansi_color = nullptr;
+  if (FLAGS_color == "green") {
+    ansi_color = "\033[32m";
+  } else if (FLAGS_color == "red") {
+    ansi_color = "\033[31m";
+  } else if (!FLAGS_color.empty()) {
+    ET_LOG(
+        Error,
+        "Invalid --color value '%s'. Expected: green, red.",
+        FLAGS_color.c_str());
+    return 1;
+  }
 
   auto token_cb = [&](const std::string& piece) {
     if (first_token) {
@@ -115,11 +155,11 @@ int main(int argc, char** argv) {
       // Uncomment to print special tokens
       // ::executorch::extension::llm::safe_printf(piece.c_str());
     } else {
-      if (use_color) {
-        printf("\033[32m");
+      if (ansi_color) {
+        printf("%s", ansi_color);
       }
       ::executorch::extension::llm::safe_printf(piece.c_str());
-      if (use_color) {
+      if (ansi_color) {
         printf("\033[0m");
       }
     }
@@ -132,7 +172,8 @@ int main(int argc, char** argv) {
     ET_CHECK_MSG(
         runner.is_streaming(),
         "Model was not exported with --streaming. Re-export with --streaming flag.");
-    auto session = runner.create_streaming_session(config, token_cb);
+    auto session =
+        runner.create_streaming_session(make_streaming_config(), token_cb);
 
     // Drain any audio that buffered in stdin during model loading/warmup.
     // Without this, piped audio (e.g., from ffmpeg) accumulates while the
@@ -183,7 +224,8 @@ int main(int argc, char** argv) {
     ET_LOG(Info, "Loading audio from: %s", FLAGS_audio_path.c_str());
     auto audio_data =
         ::executorch::extension::llm::load_wav_audio_data(FLAGS_audio_path);
-    auto session = runner.create_streaming_session(config, token_cb);
+    auto session =
+        runner.create_streaming_session(make_streaming_config(), token_cb);
 
     const int64_t chunk_size = 1280;
     for (int64_t offset = 0; offset < static_cast<int64_t>(audio_data.size());
@@ -197,10 +239,13 @@ int main(int argc, char** argv) {
     ET_LOG(Info, "Loading audio from: %s", FLAGS_audio_path.c_str());
     auto audio_data =
         ::executorch::extension::llm::load_wav_audio_data(FLAGS_audio_path);
+    voxtral_realtime::OfflineTranscribeConfig offline_config;
+    offline_config.temperature = static_cast<float>(FLAGS_temperature);
+    offline_config.max_new_tokens = FLAGS_offline_max_new_tokens;
     num_generated = runner.transcribe(
         audio_data.data(),
         static_cast<int64_t>(audio_data.size()),
-        config,
+        offline_config,
         token_cb);
   }
 
@@ -210,6 +255,10 @@ int main(int argc, char** argv) {
   stats.inference_end_ms = ::executorch::extension::llm::time_in_ms();
 
   ::executorch::extension::llm::print_report(stats);
+
+#ifdef ET_BUILD_METAL
+  executorch::backends::metal::print_metal_backend_stats();
+#endif // ET_BUILD_METAL
 
   return 0;
 }

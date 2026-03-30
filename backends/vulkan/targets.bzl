@@ -20,6 +20,7 @@ def get_vulkan_preprocessor_flags(no_volk, is_fbcode):
     android_flags = []
 
     debug_mode = read_config("etvk", "debug", "0") == "1"
+    force_no_extensions = read_config("etvk", "force_no_extensions", "0") == "1"
 
     if not no_volk:
         for flags in [default_flags, android_flags]:
@@ -68,6 +69,9 @@ def get_vulkan_preprocessor_flags(no_volk, is_fbcode):
         if debug_mode:
             VK_API_PREPROCESSOR_FLAGS += ["-DVULKAN_DEBUG"]
 
+    if force_no_extensions:
+        VK_API_PREPROCESSOR_FLAGS += ["-DETVK_FORCE_NO_EXTENSIONS"]
+
     return VK_API_PREPROCESSOR_FLAGS
 
 def get_labels(no_volk):
@@ -93,7 +97,10 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
     for target, subpath in spv_filegroups.items():
         glsl_paths.append("$(location {})/{}".format(target, subpath))
 
-    nthreads = read_config("etvk", "shader_compile_nthreads", "-1")
+    # Default to single-threaded shader compilation on macOS to avoid
+    # multiprocessing issues with the local build toolchain.
+    default_nthreads = "1" if host_info().os.is_macos else "-1"
+    nthreads = read_config("etvk", "shader_compile_nthreads", default_nthreads)
 
     genrule_cmd = (
         "$(exe {}) ".format(gen_vulkan_spv_target) +
@@ -188,7 +195,7 @@ def define_common_targets(is_fbcode = False):
         if no_volk:
             for deps in [default_deps, android_deps]:
                 deps.append("fbsource//third-party/toolchains:vulkan")
-                deps.append("fbsource//third-party/khronos/version-selector:vulkan-headers")
+                deps.append("fbsource//third-party/khronos:vulkan-headers")
         else:
             for deps in [default_deps, android_deps]:
                 deps.append("fbsource//third-party/volk:volk-header")
@@ -205,7 +212,7 @@ def define_common_targets(is_fbcode = False):
             mac_deps = default_deps
             if link_moltenvk:
                 mac_deps = [
-                    "//third-party/khronos/version-selector:moltenVK_static_unexported"
+                    "//third-party/khronos:moltenVK_static_unexported"
                 ]
 
             if debug_mode:

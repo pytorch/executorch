@@ -9,24 +9,69 @@
 #
 # Quantizer for Arm backend
 #
-
 from __future__ import annotations
 
 import functools
+import logging
 from typing import Any, Callable, Dict, List, Optional
 
 import torch
+from executorch.backends.arm._passes import ArmPassManager
+from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.constants import DISALLOW_TFA_META_KEY
 from executorch.backends.arm.ethosu import EthosUCompileSpec
-
-from executorch.backends.arm.quantizer import QuantizationConfig
+from executorch.backends.arm.quantizer.quantization_config import (
+    QuantizationConfig,
+    TOSAQuantizationConfig,
+)
+from executorch.backends.arm.quantizer.quantizer_support import (
+    TOSA_QUANTIZER_SUPPORT_DICT,
+)
 from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.cortex_m.quantizer.node_finders import (
+    GlobalNodeFinder,
+    InputNodeFinder,
+    ModuleNameNodeFinder,
+    ModuleTypeNodeFinder,
+    NodeNameNodeFinder,
+    NodeTargetNodeFinder,
+    OutputNodeFinder,
+)
+from executorch.backends.cortex_m.quantizer.pattern_matcher import PatternMatcher
+
+from executorch.backends.cortex_m.quantizer.quantizer_reporter import (
+    QuantizerReporter,
+    SUPPORTED_QCONFIGS,
+    SUPPORTED_QSPECS,
+)
+
+from torch._ops import OpOverload
+
+from torchao.quantization.pt2e.quantizer import (
+    ComposableQuantizer,
+    QuantizationAnnotation,
+    Quantizer,
+)
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 from executorch.backends.arm.common.arm_compile_spec import (
     ArmCompileSpec,
 )  # isort: skip
-from executorch.backends.arm.vgf import VgfCompileSpec
-from executorch.exir.graph_module import get_cond_while_submodules
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_cond_while_submodules_nested,
+    is_submodule_node,
+)
 
+from executorch.backends.arm.quantizer.arm_quantizer_utils import (
+    _get_int32_bias_qspec,
+    _get_int32_per_channel_bias_qspec,
+    is_annotated,
+    mark_node_as_annotated,
+    NodeFinder,
+    PatternQuantizer,
+    SharedQspecQuantizer,
+)
+from executorch.backends.arm.vgf import VgfCompileSpec
+from executorch.exir._warnings import experimental
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e import (
     FakeQuantize,
@@ -49,11 +94,10 @@ from torchao.quantization.pt2e.quantizer import (
     annotate_output_qspec,
     get_module_name_filter,
     QuantizationSpec,
-    Quantizer,
 )
 
-from .arm_quantizer_utils import is_annotated, mark_node_as_annotated
 from .quantization_annotator import annotate_graph
+
 
 __all__ = [
     "TOSAQuantizer",
@@ -62,6 +106,8 @@ __all__ = [
     "get_symmetric_a16w8_quantization_config",
     "get_symmetric_quantization_config",
 ]
+
+logger = logging.getLogger(__name__)
 
 
 @functools.lru_cache
@@ -73,8 +119,12 @@ def get_symmetric_quantization_config(
     act_qmax: int = 127,
     weight_qmin: int = -127,
     weight_qmax: int = 127,
+    eps: float = 2**-16,
 ) -> QuantizationConfig:
     """Create symmetric quantization config for activations and weights.
+
+    Activations use an affine qscheme; "symmetric" refers to the weight
+    quantization qscheme.
 
     Args:
         is_per_channel (bool): Whether to use per-channel quantization for
@@ -92,7 +142,7 @@ def get_symmetric_quantization_config(
         bias.
 
     """
-    extra_args: Dict[str, Any] = {"eps": 2**-16}
+    extra_args: Dict[str, Any] = {"eps": eps}
     if is_qat:
         if is_dynamic:
             act_observer_or_fake_quant_ctr = FakeQuantize
@@ -162,16 +212,20 @@ def get_symmetric_quantization_config(
         observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr,
     )
 
-    bias_quantization_spec = None
+    if is_per_channel:
+        bias_quantization_spec = _get_int32_per_channel_bias_qspec
+    else:
+        bias_quantization_spec = _get_int32_bias_qspec
+
     if is_dynamic:
-        quantization_config = QuantizationConfig(
+        quantization_config = TOSAQuantizationConfig(
             act_quantization_spec,
             None,
             weight_quantization_spec,
             bias_quantization_spec,
         )
     else:
-        quantization_config = QuantizationConfig(
+        quantization_config = TOSAQuantizationConfig(
             act_quantization_spec,
             act_quantization_spec,
             weight_quantization_spec,
@@ -257,21 +311,57 @@ def get_symmetric_a16w8_quantization_config(
     )
     # Replace activation quantization spec with 16-bit version
     if is_dynamic:
-        quantization_config = QuantizationConfig(
+        quantization_config = TOSAQuantizationConfig(
             act_quantization_spec,  # 16-bit input activations
             None,
             base_config.weight,  # 8-bit weights from base config
-            None,
+            base_config.bias,  # bias from base config
         )
     else:
-        quantization_config = QuantizationConfig(
+        quantization_config = TOSAQuantizationConfig(
             act_quantization_spec,  # 16-bit input activations
             act_quantization_spec,  # 16-bit output activations
             base_config.weight,  # 8-bit weights from base config
-            None,
+            base_config.bias,  # bias from base config
         )
     return quantization_config
 
+
+# Register supported quantization configs and qspecs in the reporter for human-readable reporting
+# MLETORCH-1854: Temporary solution, refactor to automatically register these instead
+_symmetric_a8w4_config_per_channel = get_symmetric_a8w4_quantization_config()
+_symmetric_a8w8_config_per_channel = get_symmetric_quantization_config()
+_symmetric_a16w8_config_per_channel = get_symmetric_a16w8_quantization_config()
+_symmetric_a8w4_config_per_tensor = get_symmetric_a8w4_quantization_config(
+    is_per_channel=False
+)
+_symmetric_a8w8_config_per_tensor = get_symmetric_quantization_config(
+    is_per_channel=False
+)
+_symmetric_a16w8_config_per_tensor = get_symmetric_a16w8_quantization_config(
+    is_per_channel=False
+)
+SUPPORTED_QCONFIGS.update(
+    {
+        _symmetric_a8w8_config_per_channel: f"{__name__}.get_symmetric_quantization_config(is_per_channel=True)",
+        _symmetric_a16w8_config_per_channel: f"{__name__}.get_symmetric_a16w8_quantization_config(is_per_channel=True)",
+        _symmetric_a8w4_config_per_channel: f"{__name__}.get_symmetric_a8w4_quantization_config(is_per_channel=True)",
+        _symmetric_a8w8_config_per_tensor: f"{__name__}.get_symmetric_quantization_config(is_per_channel=False)",
+        _symmetric_a16w8_config_per_tensor: f"{__name__}.get_symmetric_a16w8_quantization_config(is_per_channel=False)",
+        _symmetric_a8w4_config_per_tensor: f"{__name__}.get_symmetric_a8w4_quantization_config(is_per_channel=False)",
+    }
+)
+
+SUPPORTED_QSPECS.update(
+    {
+        _symmetric_a8w4_config_per_channel.get_weight_qspec(): "INT4_PER_CHANNEL_QSPEC",
+        _symmetric_a8w8_config_per_channel.get_weight_qspec(): "INT8_PER_CHANNEL_QSPEC",
+        _symmetric_a8w8_config_per_tensor.get_weight_qspec(): "INT8_PER_TENSOR_QSPEC",
+        _symmetric_a8w4_config_per_tensor.get_weight_qspec(): "INT4_PER_TENSOR_QSPEC",
+        _symmetric_a8w8_config_per_tensor.get_input_act_qspec(): "INT8_PER_TENSOR_QSPEC",
+        _symmetric_a16w8_config_per_tensor.get_input_act_qspec(): "INT16_PER_TENSOR_QSPEC",
+    }
+)
 
 NodeFilterType = Callable[[Node], bool]
 """Type for a Node Filter used by annotators.
@@ -352,7 +442,388 @@ def _for_each_filtered_node(
 
 
 class TOSAQuantizer(Quantizer):
-    """Manage quantization annotations for TOSA-compatible backends."""
+    """Manage quantization annotations for TOSA-compatible backends.
+
+    .. warning::
+        Setting ``use_composable_quantizer=True`` enables an experimental API
+        surface that may change without notice.
+
+    """
+
+    def __init__(
+        self,
+        compile_spec_or_tosa_spec,
+        use_composable_quantizer: bool = False,
+    ) -> None:
+        """Create a TOSA quantizer from a TOSA spec or Arm compile spec.
+
+        .. warning::
+            Setting ``use_composable_quantizer=True`` enables an experimental
+            API surface that may change without notice.
+
+        """
+        self.use_composable_quantizer = use_composable_quantizer
+        self.quantizer: _TOSAQuantizerV1 | _TOSAQuantizerV2
+        if use_composable_quantizer:
+            logger.info(
+                "Using composable quantizer implementation in the arm backend. See https://github.com/pytorch/executorch/issues/17701"
+            )
+            self.quantizer = _TOSAQuantizerV2(compile_spec_or_tosa_spec)
+        else:
+            logger.info(
+                "Using default quantizer in the arm backend. This quantizer is planned to be replaced by the composable quantizer implementation in the future, see https://github.com/pytorch/executorch/issues/17701"
+            )
+            self.quantizer = _TOSAQuantizerV1(compile_spec_or_tosa_spec)
+
+    @property
+    def tosa_spec(self):
+        return self.quantizer.tosa_spec
+
+    @property
+    def compile_spec(self):
+        return self.quantizer.compile_spec
+
+    @property
+    def global_config(self):
+        return self.quantizer.global_config
+
+    @global_config.setter
+    def global_config(self, value: Optional[QuantizationConfig]) -> None:
+        if isinstance(self.quantizer, _TOSAQuantizerV1):
+            self.quantizer.global_config = value
+        else:
+            raise NotImplementedError(
+                "Composable quantizer does not allow setting global_config directly. Please use set_global() instead."
+            )
+
+    @property
+    def io_config(self):
+        if isinstance(self.quantizer, _TOSAQuantizerV1):
+            return self.quantizer.io_config
+        else:
+            raise NotImplementedError(
+                "Composable quantizer does not allow accessing io_config."
+            )
+
+    @io_config.setter
+    def io_config(self, value: Optional[QuantizationConfig]) -> None:
+        if isinstance(self.quantizer, _TOSAQuantizerV1):
+            self.quantizer.io_config = value
+        else:
+            raise NotImplementedError(
+                "Composable quantizer does not allow setting io_config directly. Please use set_io() instead."
+            )
+
+    @property
+    def module_type_config(self):
+        if isinstance(self.quantizer, _TOSAQuantizerV1):
+            return self.quantizer.module_type_config
+        else:
+            raise NotImplementedError(
+                "Composable quantizer does not allow accessing module_type_config."
+            )
+
+    @module_type_config.setter
+    def module_type_config(
+        self, value: Dict[Callable, Optional[QuantizationConfig]]
+    ) -> None:
+        if isinstance(self.quantizer, _TOSAQuantizerV1):
+            self.quantizer.module_type_config = value
+        else:
+            raise NotImplementedError(
+                "Composable quantizer does not allow setting module_type_config directly. Please use set_module_type() instead."
+            )
+
+    @property
+    def module_name_config(self):
+        if isinstance(self.quantizer, _TOSAQuantizerV1):
+            return getattr(self.quantizer, "module_name_config", {})
+        else:
+            raise NotImplementedError(
+                "Composable quantizer does not allow accessing module_name_config."
+            )
+
+    @module_name_config.setter
+    def module_name_config(
+        self, value: Dict[str, Optional[QuantizationConfig]]
+    ) -> None:
+        if isinstance(self.quantizer, _TOSAQuantizerV1):
+            self.quantizer.module_name_config = value
+        else:
+            raise NotImplementedError(
+                "Composable quantizer does not allow setting module_name_config directly. Please use set_module_name() instead."
+            )
+
+    def set_global(
+        self, quantization_config: Optional[QuantizationConfig]
+    ) -> TOSAQuantizer:
+        """Set quantization_config for submodules not matched by other filters.
+
+        Args:
+            quantization_config (Optional[QuantizationConfig]): Configuration to
+                apply to modules that are not captured by name or type filters.
+                ``None`` indicates no quantization.
+
+        """
+        self.quantizer.set_global(quantization_config)
+        return self
+
+    def set_module_type(
+        self, module_type: Callable, quantization_config: Optional[QuantizationConfig]
+    ) -> TOSAQuantizer:
+        """Set quantization_config for submodules with a given module type.
+
+        For example, calling set_module_type(Softmax) quantizes supported
+        patterns in each Softmax instance with the provided quantization_config.
+
+        Args:
+            module_type (Callable): Type whose submodules should use the
+                provided quantization configuration.
+            quantization_config (Optional[QuantizationConfig]): Configuration to
+                apply to submodules of the given type. ``None`` indicates no
+                quantization.
+
+        """
+        self.quantizer.set_module_type(module_type, quantization_config)
+        return self
+
+    def set_module_name(
+        self, module_name: str, quantization_config: Optional[QuantizationConfig]
+    ) -> TOSAQuantizer:
+        """Set quantization_config for submodules with a given module name.
+
+        For example, calling set_module_name("blocks.sub") quantizes supported
+        patterns for that submodule with the provided quantization_config.
+
+        Args:
+            module_name (str): Fully qualified module name to configure.
+            quantization_config (Optional[QuantizationConfig]): Configuration
+                applied to the named submodule. ``None`` indicates no
+                quantization.
+
+        """
+        self.quantizer.set_module_name(module_name, quantization_config)
+        return self
+
+    def set_io(
+        self, quantization_config: Optional[QuantizationConfig]
+    ) -> TOSAQuantizer:
+        """Set quantization_config for input and output nodes.
+
+        Args:
+            quantization_config (Optional[QuantizationConfig]): Configuration
+                describing activation quantization for model inputs and outputs.
+                ``None`` indicates no quantization.
+
+        """
+        self.quantizer.set_io(quantization_config)
+        return self
+
+    @experimental(
+        "This API is experimental and may change without notice. "
+        "It is only available when use_composable_quantizer=True."
+    )
+    def add_quantizer(self, quantizer: Quantizer) -> TOSAQuantizer:
+        """Insert a quantizer with highest precedence."""
+        if self.use_composable_quantizer:
+            return self.quantizer.add_quantizer(quantizer)  # type: ignore[union-attr,return-value]
+        raise NotImplementedError(
+            "add_quantizer is only supported in the composable quantizer implementation."
+        )
+
+    @experimental(
+        "This API is experimental and may change without notice. "
+        "It is only available when use_composable_quantizer=True."
+    )
+    def set_node_finder(
+        self, quantization_config: Optional[QuantizationConfig], node_finder: NodeFinder
+    ) -> TOSAQuantizer:
+        """Set quantization_config for nodes matched by a custom NodeFinder.
+
+        Args:
+            quantization_config (Optional[QuantizationConfig]): Configuration
+                describing quantization settings for nodes matched by the provided
+                NodeFinder. ``None`` indicates no quantization.
+
+        """
+        if self.use_composable_quantizer:
+            return self.quantizer.set_node_finder(quantization_config, node_finder)  # type: ignore[union-attr,return-value]
+        raise NotImplementedError(
+            "set_node_finder is only supported in the composable quantizer implementation."
+        )
+
+    @experimental(
+        "This API is experimental and may change without notice. "
+        "It is only available when use_composable_quantizer=True."
+    )
+    def set_node_target(
+        self, node_target: OpOverload, quantization_config: Optional[QuantizationConfig]
+    ) -> TOSAQuantizer:
+        """Set quantization config for a specific operator target."""
+        if self.use_composable_quantizer:
+            return self.quantizer.set_node_target(node_target, quantization_config)  # type: ignore[union-attr,return-value]
+        raise NotImplementedError(
+            "set_node_target is only supported in the composable quantizer implementation."
+        )
+
+    @experimental(
+        "This API is experimental and may change without notice. "
+        "It is only available when use_composable_quantizer=True."
+    )
+    def set_node_name(
+        self, node_name: str, quantization_config: Optional[QuantizationConfig]
+    ) -> TOSAQuantizer:
+        """Set quantization config for a specific node name."""
+        if self.use_composable_quantizer:
+            return self.quantizer.set_node_name(node_name, quantization_config)  # type: ignore[union-attr,return-value]
+        raise NotImplementedError(
+            "set_node_name is only supported in the composable quantizer implementation."
+        )
+
+    def transform_for_annotation(self, model: GraphModule) -> GraphModule:
+        """Transform the graph to prepare it for quantization annotation.
+
+        Decomposes all operators where required to get correct quantization parameters.
+
+        Args:
+            model (GraphModule): Model whose graph will be transformed.
+
+        Returns:
+            GraphModule: Transformed model prepared for annotation.
+
+        """
+        return self.quantizer.transform_for_annotation(model)
+
+    def annotate(self, model: GraphModule) -> GraphModule:
+        """Annotate the graph with the configured quantization settings.
+
+        Currently only does static quantization annotation.
+
+        Args:
+            model (GraphModule): Model to annotate statically.
+
+        Returns:
+            GraphModule: Annotated model ready for export.
+
+        """
+        return self.quantizer.annotate(model)
+
+    def validate(self, model: GraphModule) -> None:
+        """Validate the quantization results. Currently, this includes:
+            - Ensure tensor inputs to each operator live on the same device.
+
+        Args:
+            model (GraphModule): GraphModule being validated.
+        Raises:
+            ValueError: If tensor inputs for any operator span more than one
+                device.
+        """
+        for node in model.graph.nodes:
+            if node.op != "call_function":
+                continue
+
+            devices = set()
+            for arg_node in node.all_input_nodes:
+                meta_val = arg_node.meta.get("val", None)
+                if meta_val is None:
+                    continue
+                if isinstance(meta_val, (tuple, list)):
+                    for tensor in meta_val:
+                        devices.add(
+                            str(
+                                getattr(
+                                    tensor,
+                                    "device",
+                                    f"Could not get device from {tensor}",
+                                )
+                            )
+                        )
+                else:
+                    devices.add(
+                        str(
+                            getattr(
+                                meta_val,
+                                "device",
+                                f"Could not get device from {meta_val}",
+                            )
+                        )
+                    )
+
+                if len(devices) > 1:
+                    raise ValueError(
+                        f"Quantizer detected operator {node.name} with different device inputs: {devices}."
+                    )
+
+    def _quantize_with_submodules(
+        self,
+        model: GraphModule,
+        calibration_samples: list[tuple],
+        is_qat: bool = False,
+        fold_quantize: bool = True,
+    ):
+        """Quantizes a GraphModule in a way such that conditional submodules are
+        handled properly.
+
+        Note: torchao's prepare_pt2e and convert_pt2e natively handle
+        while_loop body_fn submodules, so we only manually process cond
+        branches and while_loop cond_fn here.
+
+        Args:
+            model (GraphModule): The model to quantize.
+            calibration_samples (list[tuple]): A list of inputs to used to
+                calibrate the model during quantization. To properly calibrate a
+                model with submodules, at least one sample per code path is
+                needed.
+            is_qat (bool): Whether to do quantization aware training or not.
+            fold_quantize (bool): Enables or disables constant folding when quantization
+                is completed.
+
+        Returns:
+            GraphModule: The quantized model.
+
+        """
+        prepare_fn = prepare_qat_pt2e if is_qat else prepare_pt2e
+
+        prepared = prepare_fn(model, self)
+        # Prepare conditional submodules (e.g., if/while bodies)
+        # prepare only cond branches and while_loop cond_fn
+        for name, submodule, _ in get_cond_while_submodules_nested(
+            prepared, apply_quantization=True
+        ):
+            prepared.set_submodule(name, prepare_fn(submodule, self), strict=True)
+            for submodule_node in submodule.graph.nodes:
+                if is_submodule_node(submodule_node):
+                    for nested_name, nested_sub, _ in get_cond_while_submodules_nested(
+                        submodule, apply_quantization=True
+                    ):
+                        prepared.set_submodule(
+                            nested_name, prepare_fn(nested_sub, self), strict=True
+                        )
+
+        for inp in calibration_samples:
+            prepared(*inp)
+
+        # Prepare conditional submodules (e.g., if/while bodies)
+        # convert only cond branches and while_loop cond_fn
+        for _, submodule, _ in get_cond_while_submodules_nested(
+            prepared, apply_quantization=True
+        ):
+            converted = convert_pt2e(submodule, fold_quantize=fold_quantize)
+            for submodule_node in submodule.graph.nodes:
+                if is_submodule_node(submodule_node):
+                    for nested_name, nested_sub, _ in get_cond_while_submodules_nested(
+                        submodule, apply_quantization=True
+                    ):
+                        converted.set_submodule(
+                            nested_name,
+                            convert_pt2e(nested_sub, fold_quantize=fold_quantize),
+                            strict=True,
+                        )
+
+        return convert_pt2e(prepared, fold_quantize=fold_quantize)
+
+
+class _TOSAQuantizerV1(Quantizer):
 
     def __init__(
         self, compile_spec_or_tosa_spec: TosaSpecification | ArmCompileSpec
@@ -380,62 +851,30 @@ class TOSAQuantizer(Quantizer):
         self.module_name_config: Dict[str, Optional[QuantizationConfig]] = {}
 
     def set_global(
-        self, quantization_config: QuantizationConfig | None
-    ) -> TOSAQuantizer:
-        """Set quantization_config for submodules not matched by other filters.
+        self, quantization_config: Optional[QuantizationConfig]
+    ) -> _TOSAQuantizerV1:
 
-        Args:
-            quantization_config (QuantizationConfig): Configuration to apply to
-                modules that are not captured by name or type filters.
-
-        """
         self.global_config = quantization_config
         return self
 
     def set_module_type(
         self, module_type: Callable, quantization_config: Optional[QuantizationConfig]
-    ) -> TOSAQuantizer:
-        """Set quantization_config for submodules with a given module type.
+    ) -> _TOSAQuantizerV1:
 
-        For example, calling set_module_type(Sub) quantizes supported patterns
-        in each Sub instance with the provided quantization_config.
-
-        Args:
-            module_type (Callable): Type whose submodules should use the
-                provided quantization configuration.
-            quantization_config (QuantizationConfig): Configuration to apply to
-                submodules of the given type.
-
-        """
         self.module_type_config[module_type] = quantization_config
         return self
 
     def set_module_name(
         self, module_name: str, quantization_config: Optional[QuantizationConfig]
-    ) -> TOSAQuantizer:
-        """Set quantization_config for submodules with a given module name.
+    ) -> _TOSAQuantizerV1:
 
-        For example, calling set_module_name("blocks.sub") quantizes supported
-        patterns for that submodule with the provided quantization_config.
-
-        Args:
-            module_name (str): Fully qualified module name to configure.
-            quantization_config (QuantizationConfig): Configuration applied to
-                the named submodule.
-
-        """
         # Validate that quantization_config is provided
         self.module_name_config[module_name] = quantization_config
         return self
 
-    def set_io(self, quantization_config: QuantizationConfig) -> TOSAQuantizer:
-        """Set quantization_config for input and output nodes.
-
-        Args:
-            quantization_config (QuantizationConfig): Configuration describing
-                activation quantization for model inputs and outputs.
-
-        """
+    def set_io(
+        self, quantization_config: Optional[QuantizationConfig]
+    ) -> _TOSAQuantizerV1:
         self.io_config = quantization_config
         return self
 
@@ -466,38 +905,12 @@ class TOSAQuantizer(Quantizer):
                 node.meta[DISALLOW_TFA_META_KEY] = config is None
 
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
-        """Transform the graph to prepare it for quantization annotation.
-
-        Currently transforms scalar values to tensor attributes.
-
-        Args:
-            model (GraphModule): Model whose graph will be transformed.
-
-        Returns:
-            GraphModule: Transformed model prepared for annotation.
-
-        """
-
         self._set_disallow_tfa_for_nodes(model)
-
-        # TODO: Fix the need to lazily import this.
-        from executorch.backends.arm._passes import ArmPassManager
 
         pass_manager = ArmPassManager(self.compile_spec)
         return pass_manager.transform_for_annotation_pipeline(graph_module=model)
 
     def annotate(self, model: GraphModule) -> GraphModule:
-        """Annotate the graph with the configured quantization settings.
-
-        Currently only does static quantization annotation.
-
-        Args:
-            model (GraphModule): Model to annotate statically.
-
-        Returns:
-            GraphModule: Annotated model ready for export.
-
-        """
         model = self._annotate_for_static_quantization_config(model)
         return model
 
@@ -594,107 +1007,233 @@ class TOSAQuantizer(Quantizer):
                 mark_node_as_annotated(node)
 
     def validate(self, model: GraphModule) -> None:
-        """Validate the quantization results. Currently, this includes:
-            - Ensure tensor inputs to each operator live on the same device.
+        # Validation is handled by TOSAQuantizer.validate; keep no-op for
+        # Quantizer interface compatibility.
+        return None
 
-        Args:
-            model (GraphModule): GraphModule being validated.
-        Raises:
-            ValueError: If tensor inputs for any operator span more than one
-                device.
+
+class _TOSAQuantizerV2(ComposableQuantizer):
+
+    def __init__(
+        self, compile_spec_or_tosa_spec: TosaSpecification | ArmCompileSpec
+    ) -> None:
+        self.compile_spec: ArmCompileSpec
+        if isinstance(compile_spec_or_tosa_spec, TosaSpecification):
+            from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+
+            self.compile_spec = TosaCompileSpec(compile_spec_or_tosa_spec)
+            self.tosa_spec = self.compile_spec.tosa_spec
+        elif isinstance(compile_spec_or_tosa_spec, ArmCompileSpec):
+            self.compile_spec = compile_spec_or_tosa_spec
+            self.tosa_spec = self.compile_spec.tosa_spec
+        else:
+            raise TypeError(
+                f"TOSAQuantizer constructor expects "
+                f"a TosaSpecification or compile_spec list, "
+                f"got {type(compile_spec_or_tosa_spec)}"
+            )
+
+        self.pattern_matcher = PatternMatcher(TOSA_QUANTIZER_SUPPORT_DICT)
+        self.shared_qspec_quantizer = SharedQspecQuantizer()
+        self.global_quantizer: Quantizer | None = None
+        self.global_config: Optional[QuantizationConfig] = None
+        self._quantizers: List[Quantizer] = []
+        self._graph_annotations: dict[Node, QuantizationAnnotation] = {}
+
+    @property
+    def quantizers(self) -> List[Quantizer]:
+        """Returns the configured quantizers in order of precedence, ensuring
+        the global config and shared_qspec_quantizer are applied last.
+
+        The returned list is a shallow copy; quantizer instances are shared.
+
         """
+        quantizers = self._quantizers.copy()
+        if self.global_quantizer is not None:
+            quantizers.append(self.global_quantizer)
+        quantizers.append(self.shared_qspec_quantizer)
+
+        return quantizers
+
+    @quantizers.setter
+    def quantizers(self, value: List[Quantizer]) -> None:
+        """Override of quantizers setter to allow for dynamic updating of
+        quantizers without accessing self._quantizers.
+        """
+        self._quantizers = value
+
+    def annotate(self, model):
+        reporter = QuantizerReporter(self.quantizers, "FINAL QUANTIZATION REPORT")
+        model = super().annotate(model)
+        reporter.log_quantizer_report(model)
+        return model
+
+    def _remove_annotations(self, model: GraphModule) -> GraphModule:
         for node in model.graph.nodes:
-            if node.op != "call_function":
-                continue
+            if Q_ANNOTATION_KEY in node.meta:
+                del node.meta[Q_ANNOTATION_KEY]
+            if ArmAnnotationInfo.CUSTOM_META_KEY in node.meta:
+                del node.meta[ArmAnnotationInfo.CUSTOM_META_KEY]
+            if DISALLOW_TFA_META_KEY in node.meta:
+                del node.meta[DISALLOW_TFA_META_KEY]
+            if PatternMatcher.Q_PATTERN_MATCHED_KEY in node.meta:
+                del node.meta[PatternMatcher.Q_PATTERN_MATCHED_KEY]
 
-            devices = set()
-            for arg_node in node.all_input_nodes:
-                meta_val = arg_node.meta.get("val", None)
-                if meta_val is None:
-                    continue
-                if isinstance(meta_val, (tuple, list)):
-                    for tensor in meta_val:
-                        devices.add(
-                            str(
-                                getattr(
-                                    tensor,
-                                    "device",
-                                    f"Could not get device from {tensor}",
-                                )
-                            )
-                        )
-                else:
-                    devices.add(
-                        str(
-                            getattr(
-                                meta_val,
-                                "device",
-                                f"Could not get device from {meta_val}",
-                            )
-                        )
-                    )
+        # Clear quantizer internal annotation tracking
+        self._graph_annotations.clear()
 
-                if len(devices) > 1:
-                    raise ValueError(
-                        f"Quantizer detected operator {node.name} with different device inputs: {devices}."
-                    )
+        return model
 
-    def quantize_with_submodules(
-        self,
-        model: GraphModule,
-        calibration_samples: list[tuple],
-        is_qat: bool = False,
-    ):
-        """Quantizes a GraphModule in a way such that conditional submodules are
-        handled properly.
+    def transform_for_annotation(self, model: GraphModule) -> GraphModule:
+        # Transform_for_annotation should only decompose ops if quantized, which is
+        # indicated either by node.meta['DISALLOW_TFA_META_KEY']==False or no such key
+        # existing in the dict. This means that ops are assumed to be quantized by
+        # default and we need to explicitly annotate all non-quantized nodes with
+        # DISALLOW_TFA_META_KEY=True before calling the pass manager.
 
-        Args:
-            model (GraphModule): The model to quantize.
-            calibration_samples (list[tuple]): A list of inputs to used to
-                calibrate the model during quantization. To properly calibrate a
-                model with submodules, at least one sample per code path is
-                needed.
-            is_qat (bool): Whether to do quantization aware training or not.
+        # For _TOSAQuantizerV2 there is no simple filter which directly finds unquantized
+        # nodes since nodes can be annotated by any quantizer. Instead, self.annotate is
+        # run to set DISALLOW_TFA_META_KEY for quantized nodes and all nodes missing
+        # this key afterwards are set to DISALLOW_TFA_META_KEY=True.
 
-        Returns:
-            GraphModule: The quantized model.
+        reporter = QuantizerReporter(
+            self.quantizers, "PRE-TRANSFORM_FOR_ANNOTATION QUANTIZATION REPORT"  # type: ignore[arg-type]
+        )
+        model = super().annotate(model)
+        reporter.log_quantizer_report(model)
+        for node in model.graph.nodes:
+            if DISALLOW_TFA_META_KEY not in node.meta:
+                node.meta[DISALLOW_TFA_META_KEY] = True
+
+        pass_manager = ArmPassManager(self.compile_spec)
+        transformed_model = pass_manager.transform_for_annotation_pipeline(model)
+
+        # Remove the temporary annotations
+        return self._remove_annotations(transformed_model)
+
+    def add_quantizer(self, quantizer: Quantizer) -> _TOSAQuantizerV2:
+        """Insert a quantizer with highest precedence."""
+        self._quantizers.insert(0, quantizer)
+        return self
+
+    def set_node_finder(
+        self, quantization_config: Optional[QuantizationConfig], node_finder: NodeFinder
+    ) -> _TOSAQuantizerV2:
+        """Add a quantizer targeting nodes found by the provided finder.
+
+        ``None`` indicates no quantization for matched nodes.
 
         """
-        prepare_fn = prepare_qat_pt2e if is_qat else prepare_pt2e
+        quantizer = PatternQuantizer(
+            quantization_config, node_finder, self.pattern_matcher
+        )
+        self.add_quantizer(quantizer)
+        return self
 
-        prepared = prepare_fn(model, self)
-        for name, submodule, _ in get_cond_while_submodules(prepared):
-            prepared.set_submodule(name, prepare_fn(submodule, self), strict=True)
-        for inp in calibration_samples:
-            prepared(*inp)
+    def set_global(
+        self, quantization_config: Optional[QuantizationConfig]
+    ) -> _TOSAQuantizerV2:
+        """Set the default quantization config for all nodes.
 
-        for name, submodule, _ in get_cond_while_submodules(prepared):
-            prepared.set_submodule(name, convert_pt2e(submodule), strict=True)
-        converted = convert_pt2e(prepared)
-        return converted
+        ``None`` indicates no quantization.
+
+        """
+        node_finder = GlobalNodeFinder()
+        self.global_quantizer = PatternQuantizer(
+            quantization_config, node_finder, self.pattern_matcher
+        )
+        self.global_config = quantization_config
+        return self
+
+    def set_node_target(
+        self, node_target: OpOverload, quantization_config: Optional[QuantizationConfig]
+    ) -> _TOSAQuantizerV2:
+        """Set quantization config for a specific operator target."""
+        node_finder = NodeTargetNodeFinder(node_target)
+        self.set_node_finder(quantization_config, node_finder)
+        return self
+
+    def set_node_name(
+        self, node_name: str, quantization_config: Optional[QuantizationConfig]
+    ) -> _TOSAQuantizerV2:
+        """Set quantization config for a specific node name."""
+        node_finder = NodeNameNodeFinder(node_name)
+        self.set_node_finder(quantization_config, node_finder)
+        return self
+
+    def set_module_type(
+        self, module_type: Callable, quantization_config: Optional[QuantizationConfig]
+    ) -> _TOSAQuantizerV2:
+        """Set quantization config for nodes originating from a module type."""
+        node_finder = ModuleTypeNodeFinder(module_type)
+        self.set_node_finder(quantization_config, node_finder)
+        return self
+
+    def set_module_name(
+        self, module_name: str, quantization_config: Optional[QuantizationConfig]
+    ) -> _TOSAQuantizerV2:
+        """Set quantization config for nodes originating from a module name."""
+        node_finder = ModuleNameNodeFinder(module_name)
+        self.set_node_finder(quantization_config, node_finder)
+        return self
+
+    def set_io(
+        self, quantization_config: Optional[QuantizationConfig]
+    ) -> _TOSAQuantizerV2:
+        """Set quantization_config for input and output nodes.
+
+        Args:
+            quantization_config (Optional[QuantizationConfig]): Configuration
+                describing activation quantization for model inputs and outputs.
+                ``None`` indicates no quantization.
+
+        """
+        input_finder = InputNodeFinder()
+        output_finder = OutputNodeFinder()
+        self.set_node_finder(quantization_config, input_finder)
+        self.set_node_finder(quantization_config, output_finder)
+        return self
 
 
 class EthosUQuantizer(TOSAQuantizer):
     """Quantizer supported by the Arm Ethos-U backend.
 
+    .. warning::
+        Setting ``use_composable_quantizer=True`` enables an experimental API
+        surface that may change without notice.
+
     Args:
         compile_spec (EthosUCompileSpec): Backend compile specification for
             Ethos-U targets.
+        use_composable_quantizer (bool): Whether to use the composable quantizer implementation. See https://github.com/pytorch/executorch/issues/17701" for details.
 
     """
 
-    def __init__(self, compile_spec: EthosUCompileSpec) -> None:
-        super().__init__(compile_spec)
+    def __init__(
+        self,
+        compile_spec: EthosUCompileSpec,
+        use_composable_quantizer: bool = False,
+    ) -> None:
+        super().__init__(compile_spec, use_composable_quantizer)
 
 
 class VgfQuantizer(TOSAQuantizer):
     """Quantizer supported by the Arm Vgf backend.
 
+    .. warning::
+        Setting ``use_composable_quantizer=True`` enables an experimental API
+        surface that may change without notice.
+
     Args:
         compile_spec (VgfCompileSpec): Backend compile specification for Vgf
             targets.
+        use_composable_quantizer (bool): Whether to use the composable quantizer implementation. See https://github.com/pytorch/executorch/issues/17701" for details.
 
     """
 
-    def __init__(self, compile_spec: VgfCompileSpec) -> None:
-        super().__init__(compile_spec)
+    def __init__(
+        self,
+        compile_spec: VgfCompileSpec,
+        use_composable_quantizer: bool = False,
+    ) -> None:
+        super().__init__(compile_spec, use_composable_quantizer)

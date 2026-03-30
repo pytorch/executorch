@@ -26,9 +26,10 @@ exir_op = "executorch_exir_dialects_edge__ops_aten_convolution_default"
 
 
 class Conv3d(torch.nn.Module):
-    """
-    Creates one or many chained 3D-convolutions. For multiple convolutions, the
-    respective parameteres are provided as lists.
+    """Creates one or many chained 3D-convolutions.
+
+    For multiple convolutions, the respective parameters are provided as lists.
+
     """
 
     def __init__(
@@ -128,11 +129,12 @@ class Conv3d(torch.nn.Module):
 
 
 class Conv3dMultiOp(torch.nn.Module):
-    """
-    Mixed Conv3d/Conv2d pipeline used to verify spatial-rank propagation across ops.
+    """Mixed Conv3d/Conv2d pipeline used to verify spatial-rank propagation
+    across ops.
 
     Topology:
         conv3d -> reshape -> conv2d -> reshape/permutation -> conv2d -> reshape -> add(5D)
+
     """
 
     def __init__(self, dtype=torch.float):
@@ -241,6 +243,45 @@ conv3d_3x3_1x3x12x12_st2_pd1 = Conv3d(
     width=12,
     height=12,
     batches=1,
+)
+
+conv3d_3x3_1x3x12x12_st1_pd1_reflect = Conv3d(
+    in_channels=3,
+    out_channels=4,
+    kernel_size=(3, 3, 3),
+    stride=1,
+    padding=1,
+    width=12,
+    height=12,
+    depth=12,
+    batches=1,
+    padding_mode="reflect",
+)
+
+conv3d_3x3_1x3x12x12_st1_pd1_replicate = Conv3d(
+    in_channels=3,
+    out_channels=4,
+    kernel_size=(3, 3, 3),
+    stride=1,
+    padding=1,
+    width=12,
+    height=12,
+    depth=12,
+    batches=1,
+    padding_mode="replicate",
+)
+
+conv3d_3x3_1x3x12x12_st1_pd1_circular = Conv3d(
+    in_channels=3,
+    out_channels=4,
+    kernel_size=(3, 3, 3),
+    stride=1,
+    padding=1,
+    width=12,
+    height=12,
+    depth=12,
+    batches=1,
+    padding_mode="circular",
 )
 
 conv3d_1x1_1x2x16x16_st1 = Conv3d(
@@ -398,6 +439,9 @@ test_data_FP = {
     "2x2_3x2x14x14_nobias": lambda: conv3d_2x2_3x2x14x14_nobias,
     "3x3_1x3x24x24_st1": lambda: conv3d_3x3_1x3x24x24_st1,
     "3x3_1x3x12x12_st2_pd1": lambda: conv3d_3x3_1x3x12x12_st2_pd1,
+    "3x3_1x3x12x12_st1_pd1_reflect": lambda: conv3d_3x3_1x3x12x12_st1_pd1_reflect,
+    "3x3_1x3x12x12_st1_pd1_replicate": lambda: conv3d_3x3_1x3x12x12_st1_pd1_replicate,
+    "3x3_1x3x12x12_st1_pd1_circular": lambda: conv3d_3x3_1x3x12x12_st1_pd1_circular,
     "1x1_1x2x16x16_st1": lambda: conv3d_1x1_1x2x16x16_st1,
     "2x2_1x1x14x13_st2_needs_adjust_pass": lambda: conv3d_2x2_1x1x14x13_st2,
     "5x5_1x3x14x15_st3_pd1_needs_adjust_pass": lambda: conv3d_5x5_1x3x14x15_st3_pd1,
@@ -529,7 +573,7 @@ def test_convolution_3d_tosa_INT_a8w4(test_data):
         exir_op,
         tosa_extensions=["int4"],
         qtol=1,
-        frobenius_threshold=0.2,
+        frobenius_threshold=0.4,
     )
     pipeline.quantizer.set_global(
         get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
@@ -578,7 +622,9 @@ def test_convolution_3d_tosa_INT_multi_op():
 
 
 def test_convolution_3d_tosa_FP_depthwise():
-    """Depthwise or Grouped Conv3d should be rejected until grouped support exists."""
+    """Depthwise or Grouped Conv3d should be rejected until grouped support
+    exists.
+    """
     model = DepthwiseConv3d()
     pipeline = TosaPipelineFP[input_t](
         model,

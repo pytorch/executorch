@@ -307,7 +307,9 @@ def test_mul_tensor_vgf_quant_int32(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 def test_mul_tensor_16a8w_tosa_INT(test_data: input_t1):
-    """Test mul operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
+    """Test mul operation with 16A8W quantization (16-bit activations, 8-bit
+    weights)
+    """
     per_channel_quantization = False
 
     pipeline = TosaPipelineINT[input_t1](
@@ -326,7 +328,9 @@ def test_mul_tensor_16a8w_tosa_INT(test_data: input_t1):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_mul_tensor_16a8w_u55_INT(test_data: input_t1):
-    """Test mul operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test mul operation with 16A8W quantization on U55 (16-bit activations,
+    8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU55PipelineINT[input_t1](
@@ -345,7 +349,9 @@ def test_mul_tensor_16a8w_u55_INT(test_data: input_t1):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_mul_tensor_16a8w_u85_INT(test_data: input_t1):
-    """Test mul operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test mul operation with 16A8W quantization on U85 (16-bit activations,
+    8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU85PipelineINT[input_t1](

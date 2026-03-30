@@ -1,7 +1,7 @@
 # load("//caffe2/test/fb:defs.bzl", "define_tests")
-load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
 load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@bazel_skylib//lib:paths.bzl", "paths")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_arm_tests():
     # TODO [fbonly] Add more tests
@@ -19,18 +19,21 @@ def define_arm_tests():
         "ops/test_avg_pool2d.py",
         "ops/test_cat.py",
         "ops/test_conv2d.py",
+        "ops/test_conv3d.py",
+        "ops/test_cos.py",
         "ops/test_linear.py",
+        "ops/test_max_pool.py",
         "ops/test_max_pool1d.py",
         "ops/test_mul.py",
         "ops/test_permute.py",
         "ops/test_rsqrt.py",
-        "ops/test_slice.py",
         "ops/test_sigmoid.py",
+        "ops/test_slice.py",
         "ops/test_sub.py",
         "ops/test_tanh.py",
-        "ops/test_view.py",
-        "ops/test_cos.py",
         "ops/test_to_copy.py",
+        "ops/test_unsqueeze.py",
+        "ops/test_view.py",
     ]
 
     # Quantization
@@ -41,6 +44,7 @@ def define_arm_tests():
     # Misc tests
     test_files += [
         "misc/test_compile_spec.py",
+        "misc/test_pass_pipeline_config.py",
         "misc/test_tosa_spec.py",
         "misc/test_bn_relu_folding_qat.py",
         "misc/test_custom_partition.py",
@@ -66,7 +70,7 @@ def define_arm_tests():
                 "//executorch/kernels/quantized:custom_ops_generated_lib",
             ],
             deps = [
-                "//executorch/backends/arm/test/tester/fb:arm_tester_fb" if is_fbcode else "//executorch/backends/arm/test:arm_tester",
+                "//executorch/backends/arm/test:arm_tester" if runtime.is_oss else "//executorch/backends/arm/test/tester/fb:arm_tester_fb",
                 "//executorch/backends/arm/test:conftest",
                 "//executorch/backends/arm/test/misc:dw_convs_shared_weights_module",
                 "//executorch/backends/arm:ethosu",
@@ -76,5 +80,6 @@ def define_arm_tests():
                 "//executorch/exir:lib",
                 "fbsource//third-party/pypi/pytest:pytest",
                 "fbsource//third-party/pypi/parameterized:parameterized",
+                "fbsource//third-party/tosa_tools:tosa_reference_model",
             ],
         )

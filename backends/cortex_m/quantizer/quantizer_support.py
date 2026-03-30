@@ -7,6 +7,7 @@ import torch
 from executorch.backends.cortex_m.quantizer.pattern_checkers import (
     CortexMAddMulCheck,
     CortexMAvgPool2DCheck,
+    CortexMBmmCheck,
     CortexMConv2DCheck,
     CortexMConvTranspose2DCheck,
     CortexMLinearCheck,
@@ -16,6 +17,12 @@ from executorch.backends.cortex_m.quantizer.pattern_checkers import (
 
 BINARY_OP_PATTERNS = {
     (torch.ops.aten.add.Tensor,): CortexMAddMulCheck,
+    (torch.ops.aten.add.Tensor, torch.ops.aten.relu.default): CortexMAddMulCheck,
+    (torch.ops.aten.add.Tensor, torch.ops.aten.relu_.default): CortexMAddMulCheck,
+    (torch.ops.aten.add.Tensor, torch.ops.aten.hardtanh.default): CortexMAddMulCheck,
+    (torch.ops.aten.add.Tensor, torch.ops.aten.hardtanh_.default): CortexMAddMulCheck,
+    (torch.ops.aten.add.Tensor, torch.ops.aten.clamp.default): CortexMAddMulCheck,
+    (torch.ops.aten.add.Tensor, torch.ops.aten.clamp_.default): CortexMAddMulCheck,
     (torch.ops.aten.add_.Tensor,): CortexMAddMulCheck,
     (torch.ops.aten.mul.Tensor,): CortexMAddMulCheck,
     (torch.ops.aten.mul_.Tensor,): CortexMAddMulCheck,
@@ -118,6 +125,10 @@ POOL_OP_PATTERNS = {
     (torch.ops.aten.max_pool2d_with_indices.default,): CortexMMaxPool2DCheck,
 }
 
+BMM_OP_PATTERNS = {
+    (torch.ops.aten.bmm.default,): CortexMBmmCheck,
+}
+
 CORTEX_M_QUANTIZER_SUPPORT_DICT = (
     BINARY_OP_PATTERNS
     | LINEAR_OP_PATTERNS
@@ -125,4 +136,5 @@ CORTEX_M_QUANTIZER_SUPPORT_DICT = (
     | SOFTMAX_OP_PATTERNS
     | CONV_TRANSPOSE_OP_PATTERNS
     | POOL_OP_PATTERNS
+    | BMM_OP_PATTERNS
 )

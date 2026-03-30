@@ -410,6 +410,7 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
   const size_t n_value = flatbuffer_values->size();
   values_ = memory_manager_->method_allocator()->allocateList<EValue>(n_value);
   if (values_ == nullptr) {
+    ET_LOG(Error, "Failed to allocate values array of size %zu", n_value);
     return Error::MemoryAllocationFailed;
   }
   const size_t n_input = inputs_size();
@@ -417,6 +418,7 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
     input_set_ =
         memory_manager_->method_allocator()->allocateList<bool>(n_input);
     if (input_set_ == nullptr) {
+      ET_LOG(Error, "Failed to allocate input_set array of size %zu", n_input);
       return Error::MemoryAllocationFailed;
     }
     for (size_t i = 0; i < n_input; ++i) {
@@ -440,6 +442,10 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
         memory_manager_->method_allocator()->allocateList<NamedData>(
             max_external_constants.get());
     if (external_constants_ == nullptr) {
+      ET_LOG(
+          Error,
+          "Failed to allocate external_constants array of size %zu",
+          max_external_constants.get());
       return Error::MemoryAllocationFailed;
     }
     Error err = parse_external_constants(external_data_map);
@@ -806,13 +812,15 @@ Result<Method> Method::load(
     const Program* program,
     MemoryManager* memory_manager,
     EventTracer* event_tracer,
-    const NamedDataMap* external_data_map) {
+    const NamedDataMap* external_data_map,
+    const LoadBackendOptionsMap* backend_options) {
   MemoryAllocator* temp_allocator = memory_manager->temp_allocator();
   if (temp_allocator == nullptr) {
     PlatformMemoryAllocator* platform_allocator =
         memory_manager->method_allocator()
             ->allocateInstance<PlatformMemoryAllocator>();
     if (platform_allocator == nullptr) {
+      ET_LOG(Error, "Failed to allocate PlatformMemoryAllocator");
       return Error::MemoryAllocationFailed;
     }
     new (platform_allocator) PlatformMemoryAllocator();
@@ -820,7 +828,7 @@ Result<Method> Method::load(
   }
   Method method(program, memory_manager, event_tracer, temp_allocator);
   ET_LOG(Debug, "Loading method: %s.", s_plan->name()->c_str());
-  Error err = method.init(s_plan, external_data_map);
+  Error err = method.init(s_plan, external_data_map, backend_options);
   if (err != Error::Ok) {
     return err;
   } else {
@@ -831,9 +839,9 @@ Result<Method> Method::load(
 
 Error Method::init(
     executorch_flatbuffer::ExecutionPlan* s_plan,
-    const NamedDataMap* external_data_map) {
-  EXECUTORCH_SCOPE_PROF("Method::init");
-  internal::EventTracerProfileMethodScope event_tracer_profile_scope =
+    const NamedDataMap* external_data_map,
+    const LoadBackendOptionsMap* backend_options) {
+  internal::EventTracerProfileMethodScope event_tracer_scope =
       internal::EventTracerProfileMethodScope(event_tracer_, "Method::init");
   ET_CHECK_OR_RETURN_ERROR(
       // Don't use !initialized() here because we also want to fail on the
@@ -862,6 +870,8 @@ Error Method::init(
     size_t n_delegate = delegates->size();
     delegates_ = method_allocator->allocateList<BackendDelegate>(n_delegate);
     if (delegates_ == nullptr) {
+      ET_LOG(
+          Error, "Failed to allocate delegates array of size %zu", n_delegate);
       return Error::MemoryAllocationFailed;
     }
 
@@ -885,6 +895,7 @@ Error Method::init(
       merged_data_map_ =
           method_allocator->allocateInstance<internal::MergedDataMap>();
       if (merged_data_map_ == nullptr) {
+        ET_LOG(Error, "Failed to allocate MergedDataMap");
         return Error::MemoryAllocationFailed;
       }
       new (merged_data_map_) internal::MergedDataMap(std::move(merged.get()));
@@ -902,11 +913,21 @@ Error Method::init(
 
     for (size_t i = 0; i < n_delegate; ++i) {
       const auto& delegate = *delegates->Get(i);
+
+      // Get per-delegate runtime specs from the LoadBackendOptionsMap if
+      // provided
+      Span<const BackendOption> delegate_runtime_specs;
+      if (backend_options != nullptr && delegate.id() != nullptr) {
+        delegate_runtime_specs =
+            backend_options->get_options(delegate.id()->c_str());
+      }
+
       BackendInitContext backend_init_context(
           method_allocator,
           /*event_tracer=*/event_tracer_,
           /*method_name=*/serialization_plan_->name()->c_str(),
-          /*named_data_map=*/named_data_map);
+          /*named_data_map=*/named_data_map,
+          /*runtime_specs=*/delegate_runtime_specs);
       Error err = BackendDelegate::Init(
           delegate, program_, backend_init_context, &delegates_[i]);
       if (err != Error::Ok) {
@@ -927,6 +948,7 @@ Error Method::init(
     n_chains_ = chains->size();
     chains_ = method_allocator->allocateList<Chain>(n_chains_);
     if (chains_ == nullptr) {
+      ET_LOG(Error, "Failed to allocate chains array of size %zu", n_chains_);
       return Error::MemoryAllocationFailed;
     }
 
@@ -946,11 +968,15 @@ Error Method::init(
       auto chain_instruction_kernels =
           method_allocator->allocateList<OpFunction>(num_instructions);
       if (chain_instruction_kernels == nullptr) {
+        ET_LOG(
+            Error, "Failed to allocate instruction kernels for chain %zu", i);
         return Error::MemoryAllocationFailed;
       }
       auto chain_instruction_arg_lists =
           method_allocator->allocateList<InstructionArgs>(num_instructions);
       if (chain_instruction_arg_lists == nullptr) {
+        ET_LOG(
+            Error, "Failed to allocate instruction arg lists for chain %zu", i);
         return Error::MemoryAllocationFailed;
       }
 

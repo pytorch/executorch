@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,7 +10,7 @@ from executorch.backends.arm.test.common import parametrize
 
 from executorch.backends.cortex_m.test.tester import CortexMTester, McuTestCase
 from executorch.backends.test.harness.stages import StageType
-from torchvision import models
+from torchvision import models  # type: ignore[import-untyped]
 
 
 ops_before_transforms: dict[str, int] = {
@@ -27,8 +28,8 @@ ops_before_transforms: dict[str, int] = {
 
 ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 2,
-    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
+    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 10,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_avg_pool2d_default": 1,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default": 35,
@@ -55,7 +56,7 @@ test_cases = {
 
 @parametrize("test_case", test_cases)
 def test_dialect_mv2(test_case):
-    inputs = test_case.example_inputs()
+    inputs = test_case.get_example_inputs()
     tester = CortexMTester(test_case.model, inputs)
     tester.test_dialect(
         ops_before_transforms,
@@ -77,7 +78,7 @@ def test_dialect_mv2(test_case):
     strict=False,
 )
 def test_implementation_mv2(test_case):
-    inputs = test_case.example_inputs()
+    inputs = test_case.get_example_inputs()
     tester = CortexMTester(test_case.model, inputs)
     tester.test_implementation(
         qtol=10,

@@ -12,7 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/DynamicDispatchNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taStaging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Int8x4Staging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
@@ -21,11 +21,30 @@
 
 namespace vkcompute {
 
+const std::string kBitw8PrefixStr = "bitw8_image_to_nchw_nobitw8buffer";
+const std::string kNchwToBitw8PrefixStr = "nchw_to_bitw8_image_nobitw8buffer";
+
+bool is_bitw8_shader(const vkapi::ShaderInfo& shader) {
+  const auto size = kBitw8PrefixStr.size();
+  const std::string& shader_prefix_str = shader.kernel_name.substr(0, size);
+  return shader_prefix_str == kBitw8PrefixStr;
+}
+
+bool is_nchw_to_bitw8_shader(const vkapi::ShaderInfo& shader) {
+  const auto size = kNchwToBitw8PrefixStr.size();
+  const std::string& shader_prefix_str = shader.kernel_name.substr(0, size);
+  return shader_prefix_str == kNchwToBitw8PrefixStr;
+}
+
 void add_staging_to_tensor_node(
     ComputeGraph& graph,
     const ValueRef in_staging,
     const ValueRef out_tensor) {
   VK_CHECK_COND(graph.val_is_staging(in_staging));
+
+  if (graph.dtype_of(out_tensor) == vkapi::kInt8x4) {
+    return add_staging_to_int8x4_buffer_node(graph, in_staging, out_tensor);
+  }
 
   vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
       graph,
@@ -36,10 +55,12 @@ void add_staging_to_tensor_node(
   vkapi::ParamsBindList param_buffers = {};
   if (graph.is_buffer_storage(out_tensor)) {
     param_buffers.append(graph.buffer_meta_ubo(out_tensor));
+  } else if (!is_nchw_to_bitw8_shader(shader)) {
+    param_buffers.append(graph.texture_meta_ubo(out_tensor));
   }
 
   std::vector<PushConstantDataInfo> pcs;
-  if (graph.is_texture_storage(out_tensor)) {
+  if (is_nchw_to_bitw8_shader(shader)) {
     pcs = {graph.sizes_pc_of(out_tensor)};
   }
 
@@ -60,14 +81,6 @@ void add_staging_to_tensor_node(
       {},
       // Resizing Logic
       nullptr));
-}
-
-const std::string kBitw8PrefixStr = "bitw8_image_to_nchw_nobitw8buffer";
-
-bool is_bitw8_shader(const vkapi::ShaderInfo& shader) {
-  const auto size = kBitw8PrefixStr.size();
-  const std::string& shader_prefix_str = shader.kernel_name.substr(0, size);
-  return shader_prefix_str == kBitw8PrefixStr;
 }
 
 utils::uvec3 tensor_to_staging_global_wg_size(
@@ -104,6 +117,10 @@ void add_tensor_to_staging_node(
     const ValueRef out_staging) {
   VK_CHECK_COND(graph.val_is_staging(out_staging));
 
+  if (graph.dtype_of(in_tensor) == vkapi::kInt8x4) {
+    return add_int8x4_buffer_to_staging_node(graph, in_tensor, out_staging);
+  }
+
   vkapi::ShaderInfo shader = get_tensor_to_nchw_shader(
       graph,
       in_tensor,
@@ -113,14 +130,13 @@ void add_tensor_to_staging_node(
   vkapi::ParamsBindList param_buffers = {};
   if (graph.is_buffer_storage(in_tensor)) {
     param_buffers.append(graph.buffer_meta_ubo(in_tensor));
+  } else if (!is_bitw8_shader(shader)) {
+    param_buffers.append(graph.texture_meta_ubo(in_tensor));
   }
 
   std::vector<PushConstantDataInfo> pcs;
-  if (graph.is_texture_storage(in_tensor)) {
-    pcs = {graph.sizes_pc_of(in_tensor)};
-  }
-
   if (is_bitw8_shader(shader)) {
+    pcs.push_back(graph.sizes_pc_of(in_tensor));
     pcs.push_back(graph.numel_pc_of(in_tensor));
   }
 
@@ -157,6 +173,8 @@ void add_prepack_standard_node(
   vkapi::ParamsBindList param_buffers = {};
   if (graph.is_buffer_storage(tensor)) {
     param_buffers.append(graph.buffer_meta_ubo(tensor));
+  } else if (!is_nchw_to_bitw8_shader(shader)) {
+    param_buffers.append(graph.texture_meta_ubo(tensor));
   }
 
   std::vector<PushConstantDataInfo> pcs;
@@ -165,7 +183,7 @@ void add_prepack_standard_node(
         graph.sizes_pc_of(tensor),
         graph.strides_pc_of(tensor),
         graph.numel_pc_of(tensor)};
-  } else {
+  } else if (is_nchw_to_bitw8_shader(shader)) {
     pcs = {graph.sizes_pc_of(tensor)};
   }
 
@@ -329,7 +347,7 @@ ValueRef prepack_int4_linear_weight_transposed_interleaved(
 
 void prepack_op(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   if (graph.dtype_of(args[1]) == vkapi::kInt8x4) {
-    return add_staging_to_int8x4_buffer_node(graph, args[0], args[1]);
+    return add_prepack_int8x4_buffer_node(graph, args[0], args[1]);
   }
   return add_prepack_standard_node(graph, args[0], args[1]);
 }
