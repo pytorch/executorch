@@ -45,6 +45,9 @@ class Model(str, Enum):
     MobileNetV1025 = "mobilenet_v1_025"
     ResNet8 = "resnet8"
     Sdpa = "sdpa"
+    EfficientNetB0 = "efficientnet_b0"
+    SwinT = "swin_t"
+    DistilBert = "distilbert"
 
     def __str__(self) -> str:
         return self.value
@@ -105,6 +108,9 @@ MODEL_NAME_TO_MODEL = {
     ),
     str(Model.ResNet8): ("mlperf_tiny.resnet8", "ResNet8Model"),
     str(Model.Sdpa): ("toy_model", "SdpaModule"),
+    str(Model.EfficientNetB0): ("efficientnet", "EfficientNetB0Model"),
+    str(Model.SwinT): ("swin", "SwinTModel"),
+    str(Model.DistilBert): ("distilbert", "DistilBertModelExample"),
 }
 
 __all__ = [
