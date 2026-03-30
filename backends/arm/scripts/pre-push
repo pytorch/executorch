@@ -71,33 +71,9 @@ run_docgen_check() {
 }
 
 run_public_api_validator() {
-    echo -e "${INFO} Validating Arm public API manifests"
-
-    manifest_failures=0
-    for manifest_path in backends/arm/public_api_manifests/api_manifest_*.toml; do
-        if [[ ! -f "${manifest_path}" ]]; then
-            continue
-        fi
-        manifest_name="${manifest_path##*/}"
-        echo
-        echo "=== ${manifest_name} ==="
-        validator_output=$(
-            python backends/arm/scripts/public_api_manifest/validate_public_api_manifest.py \
-                --manifest "${manifest_path}" 2>&1
-        )
-        validator_status=$?
-        printf '%s\n' "${validator_output}"
-        if [[ ${validator_status} -ne 0 ]]; then
-            manifest_failures=$((manifest_failures + 1))
-            FAILED=1
-        fi
-    done
-
-    echo
-    if [[ ${manifest_failures} -eq 0 ]]; then
-        echo -e "${SUCCESS} Arm public API manifests OK"
-    else
-        echo -e "${ERROR} ${manifest_failures} manifest(s) failed validation"
+    if ! backends/arm/scripts/public_api_manifest/validate_all_public_api_manifests.sh; then
+        echo -e "${ERROR} Arm public API manifest validation failed"
+        FAILED=1
     fi
 }
 
