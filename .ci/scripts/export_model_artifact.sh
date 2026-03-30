@@ -413,11 +413,6 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
   # Copy tokenizer for the runner
   cp "$LOCAL_MODEL_DIR/tokenizer.json" "${OUTPUT_DIR}/tokenizer.json"
 
-  # Run MoE kernel benchmark to find optimal block sizes for this GPU
-  echo "::group::MoE Kernel Benchmark"
-  python .ci/scripts/moe_kernel_benchmark.py 2>&1 || echo "Benchmark failed (non-fatal)"
-  echo "::endgroup::"
-
   # Export to .pte/.ptd (short cache dir avoids objcopy symbol length issues)
   echo "::group::Export"
   TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
@@ -429,16 +424,6 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
   test -f "${OUTPUT_DIR}/model.pte"
   test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
   ls -al "${OUTPUT_DIR}"
-
-  # Diagnostic: print checksums for cross-machine comparison
-  echo "::group::Artifact checksums"
-  md5sum "${OUTPUT_DIR}/model.pte" "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
-  echo "Local reference checksums:"
-  echo "  model.pte:          3b79cbc9d921b6eaa2d655ede993f6a7"
-  echo "  aoti_cuda_blob.ptd: 2c8d0d31004acbd6dc43118eddabf700"
-  echo "---"
-  python -c "import torch; print(f'torch={torch.__version__}'); import triton; print(f'triton={triton.__version__}'); import torchao; print(f'torchao={torchao.__version__}')"
-  echo "::endgroup::"
 
   exit 0
 fi

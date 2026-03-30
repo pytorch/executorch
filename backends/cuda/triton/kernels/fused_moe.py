@@ -39,25 +39,27 @@ from torch.library import triton_op, wrap_triton
 
 
 # Autotune configs for GEMM1 (_fused_moe_kernel).
-# Top performers from standalone benchmark on A100, Qwen3.5 MoE dimensions
+# Top performers from CI benchmark on A100-SXM4-80GB, Qwen3.5 MoE dimensions
 # (M=1, N=1024, K=2048, 8 experts, group_size=128).
 _GEMM1_CONFIGS = [
     triton.Config({"BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 32}, num_warps=4, num_stages=2),
-    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 32}, num_warps=2, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=2, num_stages=2),
+    triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=2, num_stages=4),
+    triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=2, num_stages=5),
+    triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=2, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 16, "BLOCK_SIZE_K": 256}, num_warps=2, num_stages=5),
 ]
 
 # Autotune configs for GEMM2 (_fused_moe_silu_kernel).
-# Top performers from standalone benchmark on A100, Qwen3.5 MoE dimensions
+# Top performers from CI benchmark on A100-SXM4-80GB, Qwen3.5 MoE dimensions
 # (M=1, N=2048, K=512, 8 experts, group_size=128).
 _GEMM2_CONFIGS = [
     triton.Config({"BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 32}, num_warps=4, num_stages=2),
-    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128}, num_warps=2, num_stages=2),
-    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 64}, num_warps=2, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=5),
+    triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 128}, num_warps=2, num_stages=4),
+    triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=2, num_stages=4),
+    triton.Config({"BLOCK_SIZE_N": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
+    triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=2, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=3),
 ]
 
 
