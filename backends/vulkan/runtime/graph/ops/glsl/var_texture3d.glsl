@@ -48,6 +48,7 @@ shared VEC4_T shared_sum_sq[MAX_NTHREADS];
 shared int shared_count[MAX_NTHREADS];
 
 #include "indexing_utils.h"
+#include "indexing.glslh"
 
 int tid_to_smi(const ivec2 tid) {
   return tid.x + tid.y * NWORKERS;
@@ -73,7 +74,7 @@ void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
   int count = 0;
 
   scan_pos[reduce_dim] = tid.x;
-  for (int i = tid.x; i < tin_sizes[reduce_dim];
+  for (int i = tid.x; i < safe_idx(tin_sizes, reduce_dim);
        i += NWORKERS, scan_pos[reduce_dim] += NWORKERS) {
     VEC4_T val = load_texel(tin, scan_pos);
     sum += val;
@@ -103,11 +104,11 @@ void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
 
     // Determine if there are any padding elements in the final texel of the
     // packed dimension
-    const int nspill = mod4(tin_sizes[packed_dim]);
+    const int nspill = mod4(safe_idx(tin_sizes, packed_dim));
     // Detect if this thread is working on the final texels of the packed
     // dimension, which may have padding elements
     const bool is_last_texel =
-        scan_pos[packed_dim] == (tin_limits[packed_dim] - 1);
+        scan_pos[packed_dim] == (safe_idx(tin_limits, packed_dim) - 1);
 
     VEC4_T variance = calculate_variance(sum, sum_sq, count);
 
@@ -136,10 +137,10 @@ void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   const int smi = tid_to_smi(tid);
 
   // Number of non-padding elements in the last texel in the reduction row
-  const int nspill = mod4(tin_sizes[packed_dim]);
+  const int nspill = mod4(safe_idx(tin_sizes, packed_dim));
   // Only reduce up to the last "complete" texel. The last texel will need to be
   // handled specially if it has padding elements.
-  const int reduce_len = tin_sizes[packed_dim] - nspill;
+  const int reduce_len = safe_idx(tin_sizes, packed_dim) - nspill;
 
   VEC4_T sum = VEC4_T(0);
   VEC4_T sum_sq = VEC4_T(0);
@@ -158,7 +159,7 @@ void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   // For the last texel in the dim, if there are padding elements then each
   // element of the texel needs to be processed individually such that the
   // padding elements are ignored
-  if (scan_pos[reduce_dim] == tin_limits[reduce_dim] - 1 && nspill > 0) {
+  if (scan_pos[reduce_dim] == safe_idx(tin_limits, reduce_dim) - 1 && nspill > 0) {
     const VEC4_T val = load_texel(tin, scan_pos);
     for (int i = 0; i < nspill; i++) {
       sum.x += val[i];

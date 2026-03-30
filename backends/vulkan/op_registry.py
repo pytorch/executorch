@@ -802,6 +802,47 @@ def register_convolution_cpp_ops():
 
         return True
 
+    def pick_conv_storage(
+        node: torch.fx.Node,
+    ) -> Tuple[List[utils.TensorRepSet], utils.TensorRepSet]:
+        x = node.args[0]
+        assert isinstance(x, torch.fx.Node)
+        x_shape = x.meta["val"].size()
+
+        # Default: channels-packed texture (conv2d and fallback conv1d)
+        input_storage = utils.CHANNELS_PACKED_TEXTURE
+        output_storage = utils.CHANNELS_PACKED_TEXTURE
+
+        if len(x_shape) == 3:
+            # Conv1d: check if we can use height-packed
+            weight = node.args[1]
+            assert isinstance(weight, torch.fx.Node)
+            w_shape = weight.meta["val"].size()
+            groups = node.args[8]
+
+            c_in = x_shape[1]
+            c_out = w_shape[0]
+            kernel_size = w_shape[2]
+
+            is_pointwise = kernel_size == 1
+            is_depthwise = (
+                isinstance(groups, int)
+                and groups == c_in
+                and c_out == c_in
+                and w_shape[1] == 1
+            )
+            if is_pointwise or is_depthwise:
+                input_storage = utils.HEIGHT_PACKED_TEXTURE
+                output_storage = utils.HEIGHT_PACKED_TEXTURE
+
+        # Build per-input storage list. The convolution op has variable args:
+        # aten.convolution.default: input, weight, bias, stride, padding,
+        #   dilation, transposed, output_padding, groups
+        # et_vk.conv_with_clamp.default: + output_min, output_max
+        # All args after input are NO_STORAGE (prepacked or non-tensor)
+        inputs = [input_storage] + [utils.NO_STORAGE] * 10
+        return inputs, output_storage
+
     return OpFeatures(
         inputs_storage=[
             utils.CHANNELS_PACKED_TEXTURE,  # input
@@ -820,6 +861,7 @@ def register_convolution_cpp_ops():
         supports_resize=True,
         supports_prepacking=True,
         are_node_inputs_supported_fn=check_conv_node,
+        pick_io_storage_fn=pick_conv_storage,
     )
 
 
@@ -1117,6 +1159,20 @@ def register_clone():
 
 @update_features(exir_ops.edge.dim_order_ops._clone_dim_order.default)
 def register_clone_dim_order():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+# alias_copy is a no-op identity operation (same as clone/alias). It is removed
+# by RemoveRedundantOpsTransform during preprocess, so the C++ runtime never sees
+# it. Registering it here ensures the partitioner delegates it to Vulkan rather
+# than creating partition boundaries that break the graph.
+@update_features(exir_ops.edge.aten.alias_copy.default)
+def register_alias_copy():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,

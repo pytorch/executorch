@@ -211,15 +211,12 @@ class FullAttention(nn.Module):
         self.head_dim = config.head_dim
         self.n_kv_groups = self.n_heads // self.n_kv_heads
 
-        # q_proj includes output gate: 2x heads
-        self.q_proj = nn.Linear(
-            config.hidden_size, self.n_heads * self.head_dim * 2, bias=False
-        )
-        self.k_proj = nn.Linear(
-            config.hidden_size, self.n_kv_heads * self.head_dim, bias=False
-        )
-        self.v_proj = nn.Linear(
-            config.hidden_size, self.n_kv_heads * self.head_dim, bias=False
+        # Fused QKV: Q (with gate) + K + V in one linear
+        self.q_dim = self.n_heads * self.head_dim * 2  # Q includes output gate
+        self.k_dim = self.n_kv_heads * self.head_dim
+        self.v_dim = self.n_kv_heads * self.head_dim
+        self.qkv_proj = nn.Linear(
+            config.hidden_size, self.q_dim + self.k_dim + self.v_dim, bias=False
         )
         self.o_proj = nn.Linear(
             self.n_heads * self.head_dim, config.hidden_size, bias=False
@@ -242,13 +239,18 @@ class FullAttention(nn.Module):
         B, T, _ = x.size()
         dtype = x.dtype
 
-        # Q includes gate
-        q_and_gate = self.q_proj(x).view(B, T, self.n_heads, self.head_dim * 2)
+        # Fused QKV projection
+        qkv = self.qkv_proj(x)
+        q_and_gate = qkv[..., : self.q_dim].view(B, T, self.n_heads, self.head_dim * 2)
         q = q_and_gate[..., : self.head_dim]
         gate = q_and_gate[..., self.head_dim :]
 
-        k = self.k_proj(x).view(B, T, self.n_kv_heads, self.head_dim)
-        v = self.v_proj(x).view(B, T, self.n_kv_heads, self.head_dim)
+        k = qkv[..., self.q_dim : self.q_dim + self.k_dim].view(
+            B, T, self.n_kv_heads, self.head_dim
+        )
+        v = qkv[..., self.q_dim + self.k_dim :].view(
+            B, T, self.n_kv_heads, self.head_dim
+        )
 
         # QK-norm before RoPE
         q = self.q_norm(q)
@@ -305,11 +307,9 @@ class GatedDeltaNet(nn.Module):
 
         self.conv_dim = self.key_dim * 2 + self.value_dim
 
-        # Separate projections (matching HF checkpoint structure)
-        self.in_proj_qkv = nn.Linear(config.hidden_size, self.conv_dim, bias=False)
-        self.in_proj_z = nn.Linear(config.hidden_size, self.value_dim, bias=False)
-        self.in_proj_b = nn.Linear(config.hidden_size, self.num_v_heads, bias=False)
-        self.in_proj_a = nn.Linear(config.hidden_size, self.num_v_heads, bias=False)
+        # Fused input projection: qkv + z + b + a in one linear
+        self.in_proj_dim = self.conv_dim + self.value_dim + 2 * self.num_v_heads
+        self.in_proj = nn.Linear(config.hidden_size, self.in_proj_dim, bias=False)
 
         self.conv1d = nn.Conv1d(
             self.conv_dim,
@@ -345,21 +345,33 @@ class GatedDeltaNet(nn.Module):
         self.conv_state[:B].mul_(keep)
         self.recurrent_state[:B].mul_(keep)
 
-        # Projections
-        mixed_qkv = self.in_proj_qkv(x)
-        z = self.in_proj_z(x).reshape(B, T, self.num_v_heads, self.head_v_dim)
-        b = self.in_proj_b(x)
-        a = self.in_proj_a(x)
+        # Fused projection: split into qkv, z, b, a
+        proj = self.in_proj(x)
+        cd = self.conv_dim
+        vd = self.value_dim
+        nh = self.num_v_heads
+        mixed_qkv = proj[..., :cd]
+        z = proj[..., cd : cd + vd].reshape(B, T, self.num_v_heads, self.head_v_dim)
+        b = proj[..., cd + vd : cd + vd + nh]
+        a = proj[..., cd + vd + nh :]
 
-        # Causal conv1d with state
+        # Causal depthwise conv1d with state (manual, avoids conv1d→conv2d decomposition)
         qkv_t = mixed_qkv.transpose(1, 2)
         conv_input = torch.cat([self.conv_state[:B], qkv_t], dim=-1)
         with torch.no_grad():
             self.conv_state[:B].copy_(conv_input[:, :, -self.conv_kernel_size :])
-        qkv_conv = F.conv1d(
-            conv_input, self.conv1d.weight, bias=None, padding=0, groups=self.conv_dim
+        w = self.conv1d.weight.squeeze(1).float()  # [C, 1, K] -> [C, K]
+        T_conv = conv_input.shape[-1] - self.conv_kernel_size + 1
+        acc = torch.zeros(
+            B,
+            conv_input.shape[1],
+            T_conv,
+            dtype=torch.float32,
+            device=conv_input.device,
         )
-        qkv_conv = F.silu(qkv_conv[:, :, -T:]).transpose(1, 2)
+        for k in range(self.conv_kernel_size):
+            acc = acc + conv_input[:, :, k : k + T_conv].float() * w[:, k : k + 1]
+        qkv_conv = F.silu(acc[:, :, -T:]).to(conv_input.dtype).transpose(1, 2)
 
         # Split via slicing (torch.split produces split_copy which lacks AOTI fallback)
         kd = self.key_dim
@@ -399,84 +411,70 @@ class GatedDeltaNet(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# MoE: stacked expert weights + index by top-k
-
-# 16 experts per group keeps each nn.Linear under ~32K output features,
-# within tinygemm int4 packing limits while keeping the graph small
-# (32 matmul nodes per layer instead of 768 with per-expert linears).
-_EXPERTS_PER_GROUP = 16
+# MoE: expert weights for fused MoE Triton kernel
 
 
-class ConditionalFeedForward(nn.Module):
-    """Grouped expert weights as nn.Linear for quantization compatibility.
+class FusedMoEExperts(nn.Module):
+    """Expert weights stored as stacked tensors for the fused MoE Triton kernel.
 
-    Experts are split into groups of _EXPERTS_PER_GROUP. Each group has:
-      gate_up_projs[g]: nn.Linear(hidden_size, G * intermediate_size * 2)
-      down_projs[g]: nn.Linear(intermediate_size, G * hidden_size)
-    This keeps each nn.Linear small enough for tinygemm int4 packing while
-    allowing quantize_model_() to handle them automatically.
+    Before quantization: w1_weight [E, 2*inter, hidden] and w2_weight [E, hidden, inter]
+    are nn.Parameter tensors loaded from the checkpoint.
+
+    After quantization (in export.py): replaced with packed INT4 buffers
+    w1 [E, 2*inter, hidden//2], w1_scale, w2 [E, hidden, inter//2], w2_scale.
     """
 
-    def __init__(self, hidden_size, intermediate_size, num_experts):
+    def __init__(self, config):
         super().__init__()
-        self.num_experts = num_experts
-        self.intermediate_size = intermediate_size
-        self.hidden_size = hidden_size
-        G = _EXPERTS_PER_GROUP
-        assert num_experts % G == 0
-        num_groups = num_experts // G
+        self.num_experts = config.num_experts
+        self.intermediate_size = config.moe_intermediate_size
+        self.hidden_size = config.hidden_size
+        self.group_size = 32
 
-        self.gate_up_projs = nn.ModuleList(
-            [
-                nn.Linear(hidden_size, G * intermediate_size * 2, bias=False)
-                for _ in range(num_groups)
-            ]
+        self.w1_weight = nn.Parameter(
+            torch.empty(
+                config.num_experts,
+                2 * config.moe_intermediate_size,
+                config.hidden_size,
+            )
         )
-        self.down_projs = nn.ModuleList(
-            [
-                nn.Linear(intermediate_size, G * hidden_size, bias=False)
-                for _ in range(num_groups)
-            ]
+        self.w2_weight = nn.Parameter(
+            torch.empty(
+                config.num_experts,
+                config.hidden_size,
+                config.moe_intermediate_size,
+            )
         )
 
-    def forward(self, x, expert_indices):
-        # x: (T, D), expert_indices: (T, top_k)
-        T = x.size(0)
-        top_k = expert_indices.size(1)
-        G = _EXPERTS_PER_GROUP
-        H = self.intermediate_size
-        D = self.hidden_size
-
-        # Gate + Up: compute per-group, cat, gather top-k
-        gate_up_parts = [proj(x).view(T, G, 2, H) for proj in self.gate_up_projs]
-        gate_up = torch.cat(gate_up_parts, dim=1)  # (T, E, 2, H)
-
-        idx = expert_indices.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, 2, H)
-        gate_up_sel = gate_up.gather(1, idx)  # (T, top_k, 2, H)
-        intermediate = F.silu(gate_up_sel[:, :, 0, :]) * gate_up_sel[:, :, 1, :]
-
-        # Down: compute per-group, cat, gather correct expert per slot
-        intermediate_flat = intermediate.reshape(T * top_k, H)
-        down_parts = [
-            proj(intermediate_flat).view(T, top_k, G, D) for proj in self.down_projs
-        ]
-        all_down = torch.cat(down_parts, dim=2)  # (T, top_k, E, D)
-
-        eidx = expert_indices.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, 1, D)
-        return all_down.gather(2, eidx).squeeze(2)  # (T, top_k, D)
+    def forward(self, x, expert_weights, expert_indices, top_k):
+        return torch.ops.triton.fused_moe(
+            x,
+            self.w1,
+            self.w1_scale,
+            self.w2,
+            self.w2_scale,
+            expert_weights,
+            expert_indices,
+            top_k,
+            self.num_experts,
+            self.group_size,
+        )
 
 
 class SwiGLU(nn.Module):
-    """SwiGLU MLP for shared expert."""
+    """SwiGLU MLP with fused gate+up projection."""
 
     def __init__(self, hidden_size, intermediate_size):
         super().__init__()
-        self.gate_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
-        self.up_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
+        self.gate_up_proj = nn.Linear(hidden_size, 2 * intermediate_size, bias=False)
         self.down_proj = nn.Linear(intermediate_size, hidden_size, bias=False)
+        self.intermediate_size = intermediate_size
 
     def forward(self, x):
-        return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
+        gate_up = self.gate_up_proj(x)
+        gate = gate_up[..., : self.intermediate_size]
+        up = gate_up[..., self.intermediate_size :]
+        return self.down_proj(F.silu(gate) * up)
 
 
 class SparseMoE(nn.Module):
@@ -484,12 +482,9 @@ class SparseMoE(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.top_k = config.num_experts_per_tok
+        self.num_experts = config.num_experts
         self.gate = nn.Linear(config.hidden_size, config.num_experts, bias=False)
-        self.cond_ffn = ConditionalFeedForward(
-            config.hidden_size,
-            config.moe_intermediate_size,
-            config.num_experts,
-        )
+        self.experts = FusedMoEExperts(config)
         self.shared_expert = SwiGLU(
             config.hidden_size, config.shared_expert_intermediate_size
         )
@@ -503,8 +498,9 @@ class SparseMoE(nn.Module):
         expert_weights, expert_indices = torch.topk(scores, self.top_k, dim=-1)
         expert_weights = expert_weights.softmax(dim=-1)
 
-        expert_outs = self.cond_ffn(x_flat, expert_indices)
-        routed_out = torch.einsum("tai,ta->ti", expert_outs, expert_weights)
+        routed_out = self.experts(
+            x_flat, expert_weights.float(), expert_indices, self.top_k
+        )
 
         shared_out = self.shared_expert(x_flat)
         shared_gate = torch.sigmoid(self.shared_expert_gate(x_flat))
@@ -641,9 +637,8 @@ def _load_and_remap_checkpoint(model_dir, config):
                     expert_weights,
                 )
 
-    # Stack per-expert weights, split into groups, reshape for nn.Linear
+    # Stack per-expert weights into [E, N, K] tensors for FusedMoEExperts
     if expert_weights:
-        G = _EXPERTS_PER_GROUP
         for layer_idx in range(config.num_hidden_layers):
             gate_list = [
                 expert_weights.get((layer_idx, "gate", e))
@@ -661,28 +656,68 @@ def _load_and_remap_checkpoint(model_dir, config):
             if gate_list[0] is not None:
                 w_gate = torch.stack(gate_list, dim=0)  # (E, H, D)
                 w_up = torch.stack(up_list, dim=0)
-                fused = torch.cat([w_gate, w_up], dim=1)  # (E, 2*H, D)
-                num_groups = config.num_experts // G
-                for g in range(num_groups):
-                    chunk = fused[g * G : (g + 1) * G]
-                    state_dict[
-                        f"layers.{layer_idx}.mlp.cond_ffn.gate_up_projs.{g}.weight"
-                    ] = chunk.reshape(-1, chunk.size(-1))
+                state_dict[f"layers.{layer_idx}.mlp.experts.w1_weight"] = torch.cat(
+                    [w_gate, w_up], dim=1
+                )  # (E, 2*H, D)
             if down_list[0] is not None:
-                w_down = torch.stack(down_list, dim=0)  # (E, D, H)
-                num_groups = config.num_experts // G
-                for g in range(num_groups):
-                    chunk = w_down[g * G : (g + 1) * G]
-                    state_dict[
-                        f"layers.{layer_idx}.mlp.cond_ffn.down_projs.{g}.weight"
-                    ] = chunk.reshape(-1, chunk.size(-1))
+                state_dict[f"layers.{layer_idx}.mlp.experts.w2_weight"] = torch.stack(
+                    down_list, dim=0
+                )  # (E, D, H)
         del expert_weights
+
+    # Fuse projection weights to reduce kernel launches
+    _fuse_projection_weights(state_dict, config)
 
     # Handle tied embeddings
     if "lm_head.weight" not in state_dict and "embed_tokens.weight" in state_dict:
         state_dict["lm_head.weight"] = state_dict["embed_tokens.weight"].clone()
 
     return state_dict
+
+
+def _fuse_projection_weights(state_dict, config):
+    """Fuse separate projection weights into single matrices."""
+    for i in range(config.num_hidden_layers):
+        layer_type = config.layer_types[i]
+
+        if layer_type == "full_attention":
+            # Fuse Q + K + V into qkv_proj
+            q_key = f"layers.{i}.attn._q_proj.weight"
+            k_key = f"layers.{i}.attn._k_proj.weight"
+            v_key = f"layers.{i}.attn._v_proj.weight"
+            if q_key in state_dict:
+                state_dict[f"layers.{i}.attn.qkv_proj.weight"] = torch.cat(
+                    [
+                        state_dict.pop(q_key),
+                        state_dict.pop(k_key),
+                        state_dict.pop(v_key),
+                    ],
+                    dim=0,
+                )
+        else:
+            # Fuse GDN in_proj_qkv + in_proj_z + in_proj_b + in_proj_a
+            qkv_key = f"layers.{i}.attn._in_proj_qkv.weight"
+            z_key = f"layers.{i}.attn._in_proj_z.weight"
+            b_key = f"layers.{i}.attn._in_proj_b.weight"
+            a_key = f"layers.{i}.attn._in_proj_a.weight"
+            if qkv_key in state_dict:
+                state_dict[f"layers.{i}.attn.in_proj.weight"] = torch.cat(
+                    [
+                        state_dict.pop(qkv_key),
+                        state_dict.pop(z_key),
+                        state_dict.pop(b_key),
+                        state_dict.pop(a_key),
+                    ],
+                    dim=0,
+                )
+
+        # Fuse shared expert gate + up into gate_up_proj
+        gate_key = f"layers.{i}.mlp.shared_expert._gate_proj.weight"
+        up_key = f"layers.{i}.mlp.shared_expert._up_proj.weight"
+        if gate_key in state_dict:
+            state_dict[f"layers.{i}.mlp.shared_expert.gate_up_proj.weight"] = torch.cat(
+                [state_dict.pop(gate_key), state_dict.pop(up_key)], dim=0
+            )
 
 
 def _process_checkpoint_key(ckpt_key, tensor, state_dict, expert_weights):
@@ -697,27 +732,15 @@ def _process_checkpoint_key(ckpt_key, tensor, state_dict, expert_weights):
     if norm_key.startswith(("model.visual.", "model.mtp_")):
         return
 
-    # Fused expert weights: split into groups of _EXPERTS_PER_GROUP
+    # Fused expert weights: store directly as [E, N, K] for FusedMoEExperts
     m = _FUSED_EXPERT_RE.match(norm_key)
     if m:
         layer_idx = int(m.group(1))
         proj_name = m.group(2)
-        G = _EXPERTS_PER_GROUP
-        num_groups = tensor.size(0) // G
         if proj_name == "gate_up_proj":
-            # (E, 2*H, D) → groups of (G, 2*H, D) → each (G*2*H, D)
-            for g in range(num_groups):
-                chunk = tensor[g * G : (g + 1) * G]
-                state_dict[
-                    f"layers.{layer_idx}.mlp.cond_ffn.gate_up_projs.{g}.weight"
-                ] = chunk.reshape(-1, chunk.size(-1)).contiguous()
+            state_dict[f"layers.{layer_idx}.mlp.experts.w1_weight"] = tensor
         else:
-            # down_proj: (E, D, H) → groups of (G, D, H) → each (G*D, H)
-            for g in range(num_groups):
-                chunk = tensor[g * G : (g + 1) * G]
-                state_dict[f"layers.{layer_idx}.mlp.cond_ffn.down_projs.{g}.weight"] = (
-                    chunk.reshape(-1, chunk.size(-1)).contiguous()
-                )
+            state_dict[f"layers.{layer_idx}.mlp.experts.w2_weight"] = tensor
         return
 
     # Per-expert weights
@@ -744,18 +767,18 @@ _HF_KEY_MAP = {
     # Layer norms
     "model.layers.{}.input_layernorm.weight": "layers.{}.ln_1.weight",
     "model.layers.{}.post_attention_layernorm.weight": "layers.{}.ln_2.weight",
-    # Full attention
-    "model.layers.{}.self_attn.q_proj.weight": "layers.{}.attn.q_proj.weight",
-    "model.layers.{}.self_attn.k_proj.weight": "layers.{}.attn.k_proj.weight",
-    "model.layers.{}.self_attn.v_proj.weight": "layers.{}.attn.v_proj.weight",
+    # Full attention (separate Q/K/V loaded then fused in post-processing)
+    "model.layers.{}.self_attn.q_proj.weight": "layers.{}.attn._q_proj.weight",
+    "model.layers.{}.self_attn.k_proj.weight": "layers.{}.attn._k_proj.weight",
+    "model.layers.{}.self_attn.v_proj.weight": "layers.{}.attn._v_proj.weight",
     "model.layers.{}.self_attn.o_proj.weight": "layers.{}.attn.o_proj.weight",
     "model.layers.{}.self_attn.q_norm.weight": "layers.{}.attn.q_norm.weight",
     "model.layers.{}.self_attn.k_norm.weight": "layers.{}.attn.k_norm.weight",
-    # GatedDeltaNet
-    "model.layers.{}.linear_attn.in_proj_qkv.weight": "layers.{}.attn.in_proj_qkv.weight",
-    "model.layers.{}.linear_attn.in_proj_z.weight": "layers.{}.attn.in_proj_z.weight",
-    "model.layers.{}.linear_attn.in_proj_b.weight": "layers.{}.attn.in_proj_b.weight",
-    "model.layers.{}.linear_attn.in_proj_a.weight": "layers.{}.attn.in_proj_a.weight",
+    # GatedDeltaNet (separate projections loaded then fused in post-processing)
+    "model.layers.{}.linear_attn.in_proj_qkv.weight": "layers.{}.attn._in_proj_qkv.weight",
+    "model.layers.{}.linear_attn.in_proj_z.weight": "layers.{}.attn._in_proj_z.weight",
+    "model.layers.{}.linear_attn.in_proj_b.weight": "layers.{}.attn._in_proj_b.weight",
+    "model.layers.{}.linear_attn.in_proj_a.weight": "layers.{}.attn._in_proj_a.weight",
     "model.layers.{}.linear_attn.conv1d.weight": "layers.{}.attn.conv1d.weight",
     "model.layers.{}.linear_attn.dt_bias": "layers.{}.attn.dt_bias",
     "model.layers.{}.linear_attn.A_log": "layers.{}.attn.A_log",
@@ -764,8 +787,9 @@ _HF_KEY_MAP = {
     # MoE (non-expert)
     "model.layers.{}.mlp.gate.weight": "layers.{}.mlp.gate.weight",
     "model.layers.{}.mlp.shared_expert_gate.weight": "layers.{}.mlp.shared_expert_gate.weight",
-    "model.layers.{}.mlp.shared_expert.gate_proj.weight": "layers.{}.mlp.shared_expert.gate_proj.weight",
-    "model.layers.{}.mlp.shared_expert.up_proj.weight": "layers.{}.mlp.shared_expert.up_proj.weight",
+    # Shared expert (separate gate/up loaded then fused in post-processing)
+    "model.layers.{}.mlp.shared_expert.gate_proj.weight": "layers.{}.mlp.shared_expert._gate_proj.weight",
+    "model.layers.{}.mlp.shared_expert.up_proj.weight": "layers.{}.mlp.shared_expert._up_proj.weight",
     "model.layers.{}.mlp.shared_expert.down_proj.weight": "layers.{}.mlp.shared_expert.down_proj.weight",
 }
 
