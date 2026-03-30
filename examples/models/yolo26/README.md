@@ -1,22 +1,10 @@
-# YOLO12 Detection C++ Inference with ExecuTorch
+# YOLO26 Detection C++ Inference with ExecuTorch
 
-This example demonstrates how to perform inference of [YOLO12 family](https://docs.ultralytics.com/models/yolo12/) detection models in C++ leveraging the Executorch backends:
+This example demonstrates how to perform inference of [YOLO26 family](https://docs.ultralytics.com/models/yolo26/) detection models in C++ leveraging the Executorch backends:
 
 - [OpenVINO](../../../backends/openvino/README.md)
 - [XNNPACK](../../../backends/xnnpack/README.md)
 
-## Performance Evaluation
-
-| CPU                            | Model   | Backend  | Device | Precision | Average Latency, ms |
-|--------------------------------|---------|----------|--------|-----------|---------------------|
-| Intel(R) Core(TM) Ultra 7 155H | yolo12s | openvino | CPU    | FP32      | 88.3549             |
-| Intel(R) Core(TM) Ultra 7 155H | yolo12s | openvino | CPU    | INT8      | 53.066              |
-| Intel(R) Core(TM) Ultra 7 155H | yolo12l | openvino | CPU    | FP32      | 317.953             |
-| Intel(R) Core(TM) Ultra 7 155H | yolo12l | openvino | CPU    | INT8      | 150.846             |
-| Intel(R) Core(TM) Ultra 7 155H | yolo12s | openvino | GPU    | FP32      | 32.71               |
-| Intel(R) Core(TM) Ultra 7 155H | yolo12l | openvino | GPU    | FP32      | 70.885              |
-| Intel(R) Core(TM) Ultra 7 155H | yolo12s | xnnpack  | CPU    | FP32      | 169.36              |
-| Intel(R) Core(TM) Ultra 7 155H | yolo12l | xnnpack  | CPU    | FP32      | 436.876             |
 
 ## Instructions
 
@@ -38,24 +26,24 @@ The demo requires the `ultralytics` package, which depends on `torch` and `torch
 python -m pip install --upgrade-strategy only-if-needed -r requirements.txt
 ```
 
-### Step 4: Export the YOLO12 model to the ExecuTorch
+### Step 4: Export the YOLO26 model to the ExecuTorch
 
 OpenVINO:
 
 ```bash
-python export_and_validate.py --model_name yolo12s --input_dims=[1920,1080]  --backend openvino --device CPU
+python export_and_validate.py --model_name yolo26s --input_dims=[1920,1080]  --backend openvino --device CPU
 ```
 
 OpenVINO quantized model:
 
 ```bash
-python export_and_validate.py --model_name yolo12s --input_dims=[1920,1080]  --backend openvino --quantize --video_path /path/to/calibration/video --device CPU
+python export_and_validate.py --model_name yolo26s --input_dims=[1920,1080]  --backend openvino --quantize --video_path /path/to/calibration/video --device CPU
 ```
 
 XNNPACK:
 
 ```bash
-python export_and_validate.py --model_name yolo12s --input_dims=[1920,1080] --backend xnnpack
+python export_and_validate.py --model_name yolo26s --input_dims=[1920,1080] --backend xnnpack
 ```
 
 > **_NOTE:_**  Quantization for XNNPACK backend is WIP. Please refere to <https://github.com/pytorch/executorch/issues/11523> for more details.
@@ -63,7 +51,7 @@ python export_and_validate.py --model_name yolo12s --input_dims=[1920,1080] --ba
 Exported model could be validated using the `--validate` key:
 
 ```bash
-python export_and_validate.py --model_name yolo12s --backend ... --validate dataset_name.yaml
+python export_and_validate.py --model_name yolo26s --backend ... --validate dataset_name.yaml
 ```
 
 A list of available datasets and instructions on how to use a custom dataset can be found [here](https://docs.ultralytics.com/datasets/detect/).
@@ -80,7 +68,7 @@ python export_and_validate.py --help
 OpenVINO:
 
 ```bash
-cd examples/models/yolo12
+cd examples/models/yolo26
 mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release -DUSE_OPENVINO_BACKEND=ON ..
 make -j$(nproc)
@@ -89,7 +77,7 @@ make -j$(nproc)
 XNNPACK:
 
 ```bash
-cd examples/models/yolo12
+cd examples/models/yolo26
 mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release -DUSE_XNNPACK_BACKEND=ON ..
 make -j$(nproc)
@@ -98,13 +86,13 @@ make -j$(nproc)
 ### Step 6: Run the demo
 
 ```bash
-./build/Yolo12DetectionDemo -model_path /path/to/exported/model -input_path /path/to/video/file -output_path /path/to/output/annotated/video
+./build/Yolo26DetectionDemo -model_path /path/to/exported/model -input_path /path/to/video/file -output_path /path/to/output/annotated/video
 ```
 
 To get a full parameters description please use the following command:
 
 ```bash
-./build/Yolo12DetectionDemo --help
+./build/Yolo26DetectionDemo --help
 ```
 
 ## Credits
