@@ -42,6 +42,7 @@ from torch.library import triton_op, wrap_triton
 # Top performers from standalone benchmark on A100, Qwen3.5 MoE dimensions
 # (M=1, N=1024, K=2048, 8 experts, group_size=128).
 _GEMM1_CONFIGS = [
+    triton.Config({"BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 32}, num_warps=4, num_stages=2),
     triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=3),
     triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=3),
     triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 32}, num_warps=2, num_stages=3),
@@ -52,6 +53,7 @@ _GEMM1_CONFIGS = [
 # Top performers from standalone benchmark on A100, Qwen3.5 MoE dimensions
 # (M=1, N=2048, K=512, 8 experts, group_size=128).
 _GEMM2_CONFIGS = [
+    triton.Config({"BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 32}, num_warps=4, num_stages=2),
     triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128}, num_warps=2, num_stages=2),
     triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 64}, num_warps=2, num_stages=3),
     triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=3),

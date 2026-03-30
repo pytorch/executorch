@@ -101,6 +101,21 @@ fi
 
 echo "Testing model: $HF_MODEL (quantization: $QUANT_NAME)"
 
+# GPU diagnostics — helps compare CI vs local performance
+echo "::group::GPU Diagnostics"
+if command -v nvidia-smi &> /dev/null; then
+  nvidia-smi --query-gpu=name,memory.total,pcie.link.gen.max,pcie.link.width.max,clocks.max.sm,clocks.max.mem --format=csv
+  echo "---"
+  nvidia-smi -q | grep -E "Product Name|Product Brand|GPU UUID|GPU Part Number|FB Memory Usage|BAR1 Memory Usage|GPU Current Temp|GPU Max Operating Temp|Power Draw|Power Limit|Max Clocks|Clocks$" | head -20
+  echo "---"
+  echo "CUDA version (nvcc):"
+  nvcc --version 2>/dev/null || echo "nvcc not found"
+  echo "---"
+  echo "PyTorch CUDA info:"
+  python -c "import torch; print(f'torch.version.cuda={torch.version.cuda}'); print(f'torch.cuda.get_device_name()={torch.cuda.get_device_name()}'); print(f'torch.cuda.get_device_properties(0)={torch.cuda.get_device_properties(0)}')" 2>/dev/null || echo "PyTorch not available yet"
+fi
+echo "::endgroup::"
+
 # Make sure model.pte exists
 if [ ! -f "$MODEL_DIR/model.pte" ]; then
   echo "Error: model.pte not found in $MODEL_DIR"
