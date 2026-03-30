@@ -118,7 +118,9 @@ class InsertIOQDQ(ExportPass):
                     user.replace_input_with(node, inserted_node)
 
     def _insert(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
-        for n in graph_module.graph.nodes:
+        # Iterate over a stable snapshot. Otherwise, newly inserted Q/DQ nodes
+        # can be revisited in the same pass and trigger unbounded reinsertion.
+        for n in list(graph_module.graph.nodes):
             # do nothing when a node is expected to output a quant tensor
             if n.meta.get(QCOM_QUANTIZED_IO):
                 continue

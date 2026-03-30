@@ -4,12 +4,16 @@ import torch
 from executorch.backends.qualcomm._passes import (
     ConvertBmmToMatmul,
     ConvertMhaToSha,
+    InsertIOQDQ,
     InsertReshapeForReduceOps,
     RemoveRedundancy,
 )
+from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.tests.models import TopKandIndex
 from executorch.backends.qualcomm.utils.utils import (
+    capture_program,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     to_edge_transform_and_lower_to_qnn,
@@ -17,9 +21,54 @@ from executorch.backends.qualcomm.utils.utils import (
 from executorch.exir import to_edge
 from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.examples.qualcomm.utils import make_quantizer
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 class TestPasses(unittest.TestCase):
+    def test_insert_io_qdq_does_not_revisit_newly_inserted_dequant(self):
+        class AddModule(torch.nn.Module):
+            def forward(self, x):
+                return x + 1
+
+        module = AddModule().eval()
+        sample_input = (torch.randn(1, 4),)
+        exported = torch.export.export(module, sample_input, strict=True).module()
+        quantizer = make_quantizer(quant_dtype=QuantDtype.use_8a8w)
+        prepared = prepare_pt2e(exported, quantizer)
+        prepared(*sample_input)
+        qdq_module = convert_pt2e(prepared)
+        delegated_program = capture_program(qdq_module, sample_input)
+
+        original_insert_dequant = InsertIOQDQ._insert_dequant_node
+        call_count = {"value": 0}
+
+        def wrapped_insert_dequant(this, graph_module, node, target):
+            call_count["value"] += 1
+            if call_count["value"] > 1:
+                raise AssertionError(
+                    "InsertIOQDQ revisited a dequant node inserted earlier in the same pass"
+                )
+            return original_insert_dequant(this, graph_module, node, target)
+
+        InsertIOQDQ._insert_dequant_node = wrapped_insert_dequant
+        try:
+            graph_module = QnnPassManager().transform_for_preprocess_pipeline(
+                delegated_program.exported_program
+            )
+        finally:
+            InsertIOQDQ._insert_dequant_node = original_insert_dequant
+
+        dequant_nodes = [
+            node
+            for node in graph_module.graph.nodes
+            if node.op == "call_function"
+            and node.target
+            == exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor
+        ]
+        self.assertEqual(call_count["value"], 1)
+        self.assertEqual(len(dequant_nodes), 1)
+
     def test_insert_reshape_for_argmax(self):
         class ArgmaxModule(torch.nn.Module):
             def forward(self, x):
