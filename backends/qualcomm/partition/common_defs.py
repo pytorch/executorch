@@ -26,7 +26,6 @@ to_be_implemented_operator = [
     exir_ops.edge.aten.median.dim,
     exir_ops.edge.aten.round.decimals,
     exir_ops.edge.aten.le.Scalar,
-    exir_ops.edge.aten.trunc.default,
 ]
 
 constant_operator = [

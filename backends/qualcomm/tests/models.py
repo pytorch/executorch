@@ -2315,6 +2315,14 @@ class TriuConstant(torch.nn.Module):
         return mask + x
 
 
+class Trunc(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.trunc(x)
+
+
 class Unbind(torch.nn.Module):
     def __init__(self):
         super().__init__()
