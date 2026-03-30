@@ -26,11 +26,11 @@ input_t = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
 
 test_configs = {
-    "multihead_attention": LlamaConfig(num_attention_heads=32),
-    "grouped_query_attention": LlamaConfig(
+    "multihead_attention": LlamaConfig(num_attention_heads=32),  # type: ignore[call-arg]
+    "grouped_query_attention": LlamaConfig(  # type: ignore[call-arg]
         num_attention_heads=32, num_key_value_heads=4
     ),
-    "multi_query_attention": LlamaConfig(num_attention_heads=32, num_key_value_heads=1),
+    "multi_query_attention": LlamaConfig(num_attention_heads=32, num_key_value_heads=1),  # type: ignore[call-arg]
 }
 
 
