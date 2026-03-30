@@ -1063,6 +1063,16 @@ def register_apply_rotary_emb():
     )
 
 
+@update_features(exir_ops.edge.et_vk.apply_rotary_emb_hf.default)
+def register_apply_rotary_emb_hf():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
 # =============================================================================
 # Permute.cpp
 # =============================================================================
