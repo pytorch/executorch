@@ -10,6 +10,7 @@ from typing import cast, Dict, Optional
 
 import torch
 from executorch.backends.cortex_m.passes.passes_utils import (
+    is_channels_last,
     quantize_multiplier_aot,
     quantize_val,
     SHIFT_INT8,
@@ -37,6 +38,14 @@ class QuantizedOpFusionPass(ExportPass):
 
     _SOFTMAX_INPUT_INTEGER_BITS = 5
 
+    _NHWC_DIM_ORDER = [0, 2, 3, 1]
+
+    def _to_physical_order(self, logical_pad: list[int], tensor_data) -> list[int]:
+        """Permute a 4-element logical-dim-order list to physical memory order."""
+        if not is_channels_last(tensor_data):
+            return logical_pad
+        return [logical_pad[self._NHWC_DIM_ORDER[i]] for i in range(4)]
+
     def _get_add_replacement(self, args, meta):
         if (
             meta.data.get("input_qparams", {}) == {}
@@ -61,6 +70,9 @@ class QuantizedOpFusionPass(ExportPass):
             max_scale_2x / (output_scale * (1 << SHIFT_INT8))
         )
 
+        activation_min = meta["output_qparams"][0].qmin
+        activation_max = meta["output_qparams"][0].qmax
+
         args = (
             args[0],
             zero_point1,
@@ -73,6 +85,8 @@ class QuantizedOpFusionPass(ExportPass):
             output_zero_point,
             output_mult,
             output_shift,
+            activation_min,
+            activation_max,
         )
 
         return exir_ops.edge.cortex_m.quantized_add.default, args
@@ -329,6 +343,8 @@ class QuantizedOpFusionPass(ExportPass):
             pad_h, pad_w = padding
             pre_pad = [0, 0, pad_h, pad_w]
             post_pad = [0, 0, pad_h, pad_w]
+            pre_pad = self._to_physical_order(pre_pad, args[0].data)
+            post_pad = self._to_physical_order(post_pad, args[0].data)
             input_arg = super().call_operator(
                 exir_ops.edge.cortex_m.pad.default,
                 (input_arg, pre_pad, post_pad, int(zero_point)),
@@ -378,6 +394,9 @@ class QuantizedOpFusionPass(ExportPass):
             dim_4d = 3 - i
             pre_pad[dim_4d] = int(padding[2 * i])
             post_pad[dim_4d] = int(padding[2 * i + 1])
+
+        pre_pad = self._to_physical_order(pre_pad, args[0].data)
+        post_pad = self._to_physical_order(post_pad, args[0].data)
 
         new_args = (args[0], pre_pad, post_pad, int(quantized_pad_value))
         return exir_ops.edge.cortex_m.pad.default, new_args

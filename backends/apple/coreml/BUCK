@@ -89,6 +89,7 @@ runtime.cxx_library(
     platforms = [APPLE],
     visibility = ["PUBLIC"],
     deps = [
+        "//executorch/runtime/backend:backend_options",
         "//executorch/runtime/backend:interface",
         "//executorch/runtime/core:core",
         "//executorch/runtime/kernel:kernel_includes",
@@ -132,6 +133,32 @@ _PROTOS = [
     "WordEmbedding",
     "WordTagger",
 ]
+
+runtime.cxx_test(
+    name = "coreml_backend_options_test",
+    srcs = [
+        "runtime/test/coreml_backend_options_test.cpp",
+    ],
+    deps = [
+        ":coreml_backend_options",
+        "//executorch/runtime/backend:backend_options",
+        "//executorch/runtime/backend:backend_options_map",
+        "//executorch/runtime/core:core",
+    ],
+)
+
+# Header-only library for CoreML backend options
+runtime.cxx_library(
+    name = "coreml_backend_options",
+    exported_headers = [
+        "runtime/include/coreml_backend/coreml_backend_options.h",
+    ],
+    header_namespace = "executorch/backends/apple/coreml",
+    visibility = ["PUBLIC"],
+    exported_deps = [
+        "//executorch/runtime/backend:backend_options",
+    ],
+)
 
 runtime.cxx_library(
     name = "proto",
