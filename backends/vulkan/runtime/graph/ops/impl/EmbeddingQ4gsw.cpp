@@ -64,14 +64,14 @@ void add_embedding_q4gsw_node(
     const ValueRef weight,
     const ValueRef weight_scales,
     const int32_t group_size,
-    const int32_t embed_dim,
-    const int32_t num_indices,
-    const int32_t out_height,
     const int32_t is_linear_weight,
-    const ValueRef out) {
+    const ValueRef out,
+    const ValueRef embed_dim_ref) {
   VK_CHECK_COND(graph.packed_dim_of(out) == WHCN::kWidthDim);
   VK_CHECK_COND(graph.packed_dim_of(indices) == WHCN::kWidthDim);
-  VK_CHECK_COND(embed_dim % 32 == 0, "embed_dim must be a multiple of 32");
+  VK_CHECK_COND(
+      graph.get_int(embed_dim_ref) % 32 == 0,
+      "embed_dim must be a multiple of 32");
 
   std::string kernel_name = "embedding_q4gsw";
   kernel_name.reserve(kShaderNameReserve);
@@ -91,13 +91,10 @@ void add_embedding_q4gsw_node(
 
   std::vector<PushConstantDataInfo> push_constants = {
       PushConstantDataInfo(&group_size, sizeof(group_size)),
-      PushConstantDataInfo(&embed_dim, sizeof(embed_dim)),
-      PushConstantDataInfo(&num_indices, sizeof(num_indices)),
-      PushConstantDataInfo(&out_height, sizeof(out_height)),
       PushConstantDataInfo(&is_linear_weight, sizeof(is_linear_weight)),
   };
 
-  ValueRef embed_dim_ref = graph.add_scalar<int64_t>(embed_dim);
+  vkapi::ParamsBindList param_ubos = {graph.sizes_ubo(out)};
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -105,7 +102,7 @@ void add_embedding_q4gsw_node(
       pick_embedding_q4gsw_global_wg_size,
       default_pick_local_wg_size,
       {{out, vkapi::kWrite}, {{indices, weight, weight_scales}, vkapi::kRead}},
-      {},
+      param_ubos,
       push_constants,
       {},
       {embed_dim_ref},
@@ -125,14 +122,8 @@ void embedding_q4gsw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       graph.extract_scalar<bool>(is_linear_weight_ref) ? 1 : 0;
 
   const std::vector<int64_t> weight_sizes = graph.sizes_of(weight_data);
-  int32_t embed_dim = static_cast<int32_t>(weight_sizes.back() * 2);
-
-  const std::vector<int64_t> indices_sizes = graph.sizes_of(indices);
-  int32_t num_indices = 1;
-  for (auto s : indices_sizes) {
-    num_indices *= static_cast<int32_t>(s);
-  }
-  int32_t out_height = static_cast<int32_t>(indices_sizes.back());
+  int64_t embed_dim = weight_sizes.back() * 2;
+  ValueRef embed_dim_ref = graph.add_scalar<int64_t>(embed_dim);
 
   ValueRef weight;
   if (is_linear_weight) {
@@ -152,11 +143,9 @@ void embedding_q4gsw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       weight,
       weight_scales,
       group_size,
-      embed_dim,
-      num_indices,
-      out_height,
       is_linear_weight,
-      out);
+      out,
+      embed_dim_ref);
 }
 
 REGISTER_OPERATORS {

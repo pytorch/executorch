@@ -26,6 +26,8 @@ Tensor& quantized_add_out(
     const int64_t output_zero_point,
     const int64_t output_multiplier,
     const int64_t output_shift,
+    const int64_t activation_min,
+    const int64_t activation_max,
     Tensor& out) {
   // Validate tensor types and dim order
   bool channel_broadcast = is_channel_broadcast(input1_int8, input2_int8);
@@ -69,8 +71,8 @@ Tensor& quantized_add_out(
 
   // Left shift to maximize precision
   const int32_t left_shift = 20;
-  const int32_t activation_min = std::numeric_limits<int8_t>::min();
-  const int32_t activation_max = std::numeric_limits<int8_t>::max();
+  const int32_t act_min = static_cast<int32_t>(activation_min);
+  const int32_t act_max = static_cast<int32_t>(activation_max);
 
   ET_LOG(
       Debug,
@@ -121,8 +123,8 @@ Tensor& quantized_add_out(
         static_cast<int32_t>(out_zp),
         output_mult,
         output_shift_val,
-        activation_min,
-        activation_max,
+        act_min,
+        act_max,
         adds_per_loop);
 
     if (status != ARM_CMSIS_NN_SUCCESS) {
