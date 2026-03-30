@@ -21,9 +21,6 @@ not_supported_operator = [
 to_be_implemented_operator = [
     exir_ops.edge.aten.adaptive_max_pool3d.default,
     exir_ops.edge.aten.div.Tensor_mode,
-    exir_ops.edge.aten.log10.default,
-    exir_ops.edge.aten.log1p.default,
-    exir_ops.edge.aten.log2.default,
     exir_ops.edge.aten.max_pool3d_with_indices.default,
     exir_ops.edge.aten.median.default,
     exir_ops.edge.aten.median.dim,

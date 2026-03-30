@@ -1455,6 +1455,21 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([1, 4, 8, 8]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_log10(self):
+        module = Log10()  # noqa: F405
+        sample_input = (torch.abs(torch.rand(2, 5, 1, 3) + 0.1),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_log1p(self):
+        module = Log1p()  # noqa: F405
+        sample_input = (torch.abs(torch.rand(2, 5, 1, 3) + 0.1),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_log2(self):
+        module = Log2()  # noqa: F405
+        sample_input = (torch.abs(torch.rand(2, 5, 1, 3) + 0.1),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_maximum(self):
         module = Maximum()  # noqa: F405
         sample_input = (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4))
@@ -3777,6 +3792,24 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_log_softmax(self):
         module = LogSoftmax()  # noqa: F405
         sample_input = (torch.randn([1, 4, 8, 8]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_log10(self):
+        module = Log10()  # noqa: F405
+        sample_input = (torch.abs(torch.rand(2, 5, 1, 3) + 0.1),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_log1p(self):
+        module = Log1p()  # noqa: F405
+        sample_input = (torch.abs(torch.rand(2, 5, 1, 3) + 0.1),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_log2(self):
+        module = Log2()  # noqa: F405
+        sample_input = (torch.abs(torch.rand(2, 5, 1, 3) + 0.1),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
