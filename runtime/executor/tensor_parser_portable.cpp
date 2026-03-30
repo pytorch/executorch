@@ -8,6 +8,8 @@
 
 #include <executorch/runtime/executor/tensor_parser.h>
 
+#include <cstring>
+
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -51,12 +53,23 @@ Result<Tensor> parseTensor(
 
   TensorShapeDynamism dynamism =
       static_cast<TensorShapeDynamism>(s_tensor->shape_dynamism());
-  // TODO(T175194371): Remove this check once fully dynamic shapes are
-  // supported.
-  ET_CHECK_OR_RETURN_ERROR(
-      dynamism != TensorShapeDynamism::DYNAMIC_UNBOUND,
-      NotSupported,
-      "Fully dynamic tensor shapes not yet supported: T175194371");
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+  if (dynamism == TensorShapeDynamism::DYNAMIC_UNBOUND) {
+    ET_CHECK_OR_RETURN_ERROR(
+        memory_manager->dynamic_allocator() != nullptr,
+        NotSupported,
+        "Model contains DYNAMIC_UNBOUND tensors but no DynamicAllocator was "
+        "provided. Pass a DynamicAllocator to MemoryManager.");
+  }
+#else
+  if (dynamism == TensorShapeDynamism::DYNAMIC_UNBOUND) {
+    ET_CHECK_OR_RETURN_ERROR(
+        false,
+        NotSupported,
+        "Model contains DYNAMIC_UNBOUND tensors but the runtime was built "
+        "without EXECUTORCH_ENABLE_DYNAMIC_ALLOCATOR=ON");
+  }
+#endif // ET_DYNAMIC_ALLOCATOR_ENABLED
 
   ET_CHECK_OR_RETURN_ERROR(
       s_tensor->sizes() != nullptr, InvalidProgram, "Missing sizes field");
@@ -179,6 +192,37 @@ Result<Tensor> parseTensor(
     return data_ptr.error();
   }
   tensor_impl->set_data(data_ptr.get());
+
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+  // For DYNAMIC_UNBOUND tensors, wire up the dynamic allocator. Memory is
+  // managed by the DynamicAllocator rather than the memory planner, making it
+  // freeable via FreeCall and growable via resize.
+  if (dynamism == TensorShapeDynamism::DYNAMIC_UNBOUND) {
+    auto* dyn_alloc = memory_manager->dynamic_allocator();
+    tensor_impl->set_dynamic_allocator(dyn_alloc);
+    if (tensor_impl->nbytes() > 0) {
+      // Allocate from DynamicAllocator so the buffer is owned by it and
+      // can safely be passed to reallocate()/free() later.
+      size_t actual_size = 0;
+      void* dyn_data = dyn_alloc->allocate(
+          tensor_impl->nbytes(), alignof(std::max_align_t), &actual_size);
+      ET_CHECK_OR_RETURN_ERROR(
+          dyn_data != nullptr,
+          MemoryAllocationFailed,
+          "Failed to allocate %" PRIu64
+          " bytes for DYNAMIC_UNBOUND tensor",
+          static_cast<uint64_t>(tensor_impl->nbytes()));
+      // Copy memory-planned data if present.
+      if (data_ptr.get() != nullptr) {
+        memcpy(dyn_data, data_ptr.get(), tensor_impl->nbytes());
+      }
+      tensor_impl->set_data(dyn_data);
+      tensor_impl->set_capacity_bytes(actual_size);
+    } else {
+      tensor_impl->set_capacity_bytes(0);
+    }
+  }
+#endif // ET_DYNAMIC_ALLOCATOR_ENABLED
 
   return Tensor(tensor_impl);
 }

@@ -12,6 +12,9 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/portable_type/scalar_type.h>
 #include <executorch/runtime/core/tensor_shape_dynamism.h>
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+#include <executorch/runtime/executor/dynamic_allocator.h>
+#endif
 
 // Forward declaration of a helper that provides access to internal resizing
 // methods of TensorImpl. Real definition is in
@@ -203,6 +206,28 @@ class TensorImpl {
     data_ = ptr;
   }
 
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+  /// Returns the dynamic allocator for DYNAMIC_UNBOUND tensors, or nullptr.
+  DynamicAllocator* dynamic_allocator() const {
+    return dynamic_allocator_;
+  }
+
+  /// Sets the dynamic allocator for lazy allocation.
+  void set_dynamic_allocator(DynamicAllocator* allocator) {
+    dynamic_allocator_ = allocator;
+  }
+
+  /// Returns the capacity in bytes of the current dynamic allocation.
+  size_t capacity_bytes() const {
+    return capacity_bytes_;
+  }
+
+  /// Sets the capacity in bytes of the current dynamic allocation.
+  void set_capacity_bytes(size_t capacity) {
+    capacity_bytes_ = capacity;
+  }
+#endif // ET_DYNAMIC_ALLOCATOR_ENABLED
+
   /*
    * DEPRECATED: Use torch::executor::resize_tensor() or
    * torch::executor::resize_tensor_impl().
@@ -261,6 +286,17 @@ class TensorImpl {
 
   /// Specifies the mutability of the shape of the tensor.
   const TensorShapeDynamism shape_dynamism_;
+
+  // WARNING: These fields change sizeof(TensorImpl). All translation units
+  // and pre-compiled libraries MUST agree on ET_DYNAMIC_ALLOCATOR_ENABLED.
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+  /// Allocator for DYNAMIC_UNBOUND tensors. nullptr for other dynamism types.
+  DynamicAllocator* dynamic_allocator_ = nullptr;
+
+  /// Capacity in bytes of the buffer pointed to by data_, when managed by
+  /// dynamic_allocator_. 0 means no allocation yet.
+  size_t capacity_bytes_ = 0;
+#endif // ET_DYNAMIC_ALLOCATOR_ENABLED
 };
 
 /**

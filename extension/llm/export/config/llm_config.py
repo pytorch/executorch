@@ -256,6 +256,7 @@ class ExportConfig:
     export_only: bool = False
     foundation_weights_file: Optional[str] = None
     lora_weights_file: Optional[str] = None
+    lazy_kv_cache: bool = False
 
     def __post_init__(self):
         if self.max_context_length < self.max_seq_length:
@@ -708,6 +709,8 @@ class LlmConfig:
             llm_config.export.foundation_weights_file = args.foundation_weights_file
         if hasattr(args, "lora_weights_file"):
             llm_config.export.lora_weights_file = args.lora_weights_file
+        if hasattr(args, "lazy_kv_cache"):
+            llm_config.export.lazy_kv_cache = args.lazy_kv_cache
 
         # QuantizationConfig
         if hasattr(args, "quantization_mode"):

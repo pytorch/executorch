@@ -30,11 +30,43 @@ def define_common_targets():
     """
 
     runtime.cxx_library(
+        name = "dynamic_allocator",
+        exported_headers = [
+            "dynamic_allocator.h",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "pal_dynamic_allocator",
+        exported_headers = [
+            "pal_dynamic_allocator.h",
+        ],
+        exported_deps = [
+            ":dynamic_allocator",
+            "//executorch/runtime/platform:platform",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "tracking_dynamic_allocator",
+        exported_headers = [
+            "tracking_dynamic_allocator.h",
+        ],
+        exported_deps = [
+            ":dynamic_allocator",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
         name = "memory_manager",
         exported_headers = [
             "memory_manager.h",
         ],
         exported_deps = [
+            ":dynamic_allocator",
             "//executorch/runtime/core:memory_allocator",
         ],
         visibility = ["PUBLIC"],
