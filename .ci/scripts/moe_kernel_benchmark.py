@@ -19,6 +19,11 @@ from executorch.backends.cuda.triton.kernels.fused_moe import (
     _fused_moe_silu_kernel,
 )
 
+# .fn bypasses @triton.autotune to get the raw JIT kernel,
+# allowing us to pass BLOCK_SIZE_N/BLOCK_SIZE_K directly.
+_gemm1_kernel = _fused_moe_kernel.fn
+_gemm2_kernel = _fused_moe_silu_kernel.fn
+
 # Qwen3.5 MoE dimensions
 HIDDEN = 2048
 INTERMEDIATE = 512
@@ -44,7 +49,7 @@ def bench_gemm1(N, K, num_pairs, top_k, group_size, block_n, block_k, warps, sta
     grid = (num_pairs * triton.cdiv(N, block_n),)
 
     def run():
-        _fused_moe_kernel[grid](
+        _gemm1_kernel[grid](
             A,
             B,
             C,
@@ -107,7 +112,7 @@ def bench_gemm2(N, K, num_pairs, top_k, group_size, block_n, block_k, warps, sta
     grid = (num_pairs * triton.cdiv(N, block_n),)
 
     def run():
-        _fused_moe_silu_kernel[grid](
+        _gemm2_kernel[grid](
             A,
             B,
             C,
