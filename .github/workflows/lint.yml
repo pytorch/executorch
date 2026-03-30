@@ -49,7 +49,7 @@ jobs:
           pip install lintrunner==0.12.7 lintrunner-adapters==0.13.0
           pip install -r requirements-lintrunner.txt
           USE_CPP=0 pip install --no-build-isolation third-party/ao
-          pip install pytest numpy parameterized huggingface_hub transformers timm expecttest types-requests
+          pip install pytest numpy parameterized huggingface_hub transformers==5.3.0 timm expecttest types-requests
           pip install torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
       - name: Generate mypy stubs for C++ bindings
