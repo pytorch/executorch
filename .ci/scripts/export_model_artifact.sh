@@ -413,6 +413,11 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
   # Copy tokenizer for the runner
   cp "$LOCAL_MODEL_DIR/tokenizer.json" "${OUTPUT_DIR}/tokenizer.json"
 
+  # Run MoE kernel benchmark to find optimal block sizes for this GPU
+  echo "::group::MoE Kernel Benchmark"
+  python .ci/scripts/moe_kernel_benchmark.py 2>&1 || echo "Benchmark failed (non-fatal)"
+  echo "::endgroup::"
+
   # Export to .pte/.ptd (short cache dir avoids objcopy symbol length issues)
   echo "::group::Export"
   TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
