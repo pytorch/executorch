@@ -847,16 +847,7 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
   set(TORCHAO_BUILD_KLEIDIAI ON)
 
   # TorchAO requires find_package(Torch) for include dirs; add its cmake path.
-  execute_process(
-    COMMAND ${PYTHON_EXECUTABLE} -c
-            "import torch; print(torch.utils.cmake_prefix_path)"
-    OUTPUT_VARIABLE _torch_cmake_prefix
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    RESULT_VARIABLE _torch_cmake_prefix_result
-  )
-  if(_torch_cmake_prefix_result EQUAL 0 AND _torch_cmake_prefix)
-    list(APPEND CMAKE_PREFIX_PATH "${_torch_cmake_prefix}")
-  endif()
+  add_torch_to_cmake_prefix_path()
 
   # TorchAO kernels look for EXECUTORCH_INCLUDE_DIRS
   if(DEFINED EXECUTORCH_INCLUDE_DIRS)
