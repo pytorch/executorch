@@ -77,5 +77,6 @@ def define_arm_tests():
                 "//executorch/exir:lib",
                 "fbsource//third-party/pypi/pytest:pytest",
                 "fbsource//third-party/pypi/parameterized:parameterized",
+                "fbsource//third-party/tosa_tools:tosa_reference_model",
             ],
         )
