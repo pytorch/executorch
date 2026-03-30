@@ -44,7 +44,9 @@ To validate the running manifest directly, run
 To validate all manifests, use `backends/arm/scripts/pre-push`. This is the
 check that must pass before the change is ready to merge.
 
-Manifest validation only checks the API surface and signatures.
+Manifest validation only checks the API surface and signatures. Workflow-level
+backward compatibility is covered separately by the scenario runner described
+below.
 
 Running-manifest validation uses exact signature matching. Any intentional API
 change must update `api_manifest_running.toml`.
@@ -55,6 +57,35 @@ adding a trailing optional parameter is accepted for static manifests, while
 removing a parameter, reordering parameters, or adding a new required
 parameter still fails validation.
 
+## Backward-compatibility scenarios
+
+Workflow-level backward compatibility is checked by
+`python backends/arm/test/public_api_bc/run_public_api_bc_scenarios.py`.
+
+The runner hardcodes the current canonical public API workflow scripts:
+
+- `backends/arm/test/public_api_bc/ethosu_flow.py`
+- `backends/arm/test/public_api_bc/vgf_fp_flow.py`
+- `backends/arm/test/public_api_bc/vgf_int_flow.py`
+
+These scripts should be updated continuously to reflect the current public API.
+The runner materializes those same paths into a temporary harness and executes
+them there with pytest so they import the latest installed
+`executorch.backends.arm` package instead of the repository source tree.
+
+The rolling support window is controlled by the `OLDEST_SUPPORTED_REF` constant
+in `backends/arm/test/public_api_bc/run_public_api_bc_scenarios.py`:
+
+- If `OLDEST_SUPPORTED_REF` is empty, the runner uses the current workspace.
+  This is the bootstrap mode until a release contains the scenario scripts.
+- Once a release contains the scripts, the release epic should update
+  `OLDEST_SUPPORTED_REF` to the oldest still-supported release ref.
+- At that point the runner uses `git show <ref>:<path>` to fetch the old
+  release's scripts and run them against the latest code.
+
+When an old release falls out of the support window, update
+`OLDEST_SUPPORTED_REF` to the next newer supported release. That is how the
+backward-compatibility window rolls forward.
 Reasons for passing validation may include:
 - Adding a new API symbol and adding it to the running manifest.
 - Removing an API that was marked as deprecated and no longer exists in any

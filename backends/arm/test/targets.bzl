@@ -54,6 +54,13 @@ def define_arm_tests():
         # "misc/test_dim_order.py", (TODO - T238390249)
     ]
 
+    # Public API backward-compatibility scenarios
+    test_files += [
+        "public_api_bc/ethosu_flow.py",
+        "public_api_bc/vgf_fp_flow.py",
+        "public_api_bc/vgf_int_flow.py",
+    ]
+
     # Deprecation tests
     test_files += [
         "deprecation/test_arm_compile_spec_deprecation.py",
