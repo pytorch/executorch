@@ -45,6 +45,9 @@ MODEL_NAME_TO_OPTIONS = {
     "emformer_join": XNNPACKOptions(QuantType.DYNAMIC_PER_CHANNEL, True),
     "emformer_predict": XNNPACKOptions(QuantType.DYNAMIC_PER_CHANNEL, True),
     "emformer_transcribe": XNNPACKOptions(QuantType.STATIC_PER_CHANNEL, True),
+    "efficientnet_b0": XNNPACKOptions(QuantType.STATIC_PER_CHANNEL, True),
+    "swin_t": XNNPACKOptions(QuantType.DYNAMIC_PER_CHANNEL, True),
+    "distilbert": XNNPACKOptions(QuantType.DYNAMIC_PER_CHANNEL, True),
 }
 
 
