@@ -330,7 +330,10 @@ def fused_moe(
     cache1 = torch.empty(
         num_pairs, N1, dtype=hidden_states.dtype, device=hidden_states.device
     )
-    grid1 = lambda meta: (num_pairs * triton.cdiv(N1, meta["BLOCK_SIZE_N"]),)
+
+    def grid1(meta):
+        return (num_pairs * triton.cdiv(N1, meta["BLOCK_SIZE_N"]),)
+
     wrap_triton(_fused_moe_kernel)[grid1](
         hidden_states,
         w1,
@@ -361,7 +364,10 @@ def fused_moe(
     cache3 = torch.empty(
         num_pairs, N2, dtype=hidden_states.dtype, device=hidden_states.device
     )
-    grid2 = lambda meta: (num_pairs * triton.cdiv(N2, meta["BLOCK_SIZE_N"]),)
+
+    def grid2(meta):
+        return (num_pairs * triton.cdiv(N2, meta["BLOCK_SIZE_N"]),)
+
     wrap_triton(_fused_moe_silu_kernel)[grid2](
         cache1,
         w2,
