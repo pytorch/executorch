@@ -473,15 +473,17 @@ api.log('Trigger controls and inspect event stream in the right log panel.');
         },
         {
             "id": "js_08_compare_basics",
-            "title": "JS 08: Compare Basics",
-            "description": "Minimal two-view compare orchestration with sync and column controls.",
+            "title": "JS 08: Compare + Shared Taskbar",
+            "description": "Two-view compare with shared taskbar (theme, layers+colorBy, zoom, sync, fullscreen). Toggle the taskbar on/off to compare both modes.",
             "html": """
 <div style="display:grid;grid-template-rows:auto 1fr;gap:10px;height:100%;">
-  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+    <label><input id="c8_shared_taskbar" type="checkbox" checked /> Shared taskbar</label>
     <label><input id="c8_sync_selection" type="checkbox" checked /> Sync selection</label>
     <label>Columns
       <select id="c8_cols"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select>
     </label>
+    <span style="font-size:12px;color:#6b7280;">Shared taskbar: theme &#x25BE; | layers+colorBy &#x25BE; | zoom | sync &#x25BE; | fullscreen</span>
   </div>
   <div id="c8_grid" style="min-height:0;">
     <div id="c8_left_mount" style="display:none;"></div>
@@ -490,37 +492,58 @@ api.log('Trigger controls and inspect event stream in the right log panel.');
 </div>
 """.strip(),
             "js": """
-const left = FXGraphViewer.create({
-  payload: api.payloads.accuracy_reference,
-  mount: { root: '#c8_left_mount' },
-  layout: { preset: 'split' },
-  state: { activeExtensions: ['color_by_type'], colorBy: 'color_by_type' },
-});
-left.init();
-api.registerViewer(left);
+// Recreate compare when shared taskbar toggle changes
+let compare = null;
 
-const right = FXGraphViewer.create({
-  payload: api.payloads.accuracy_candidate,
-  mount: { root: '#c8_right_mount' },
-  layout: { preset: 'split' },
-  state: { activeExtensions: ['per_layer_accuracy'], colorBy: 'per_layer_accuracy' },
-});
-right.init();
-api.registerViewer(right);
+function buildCompare() {
+  if (compare) { compare.destroy(); compare = null; }
 
-const compare = FXGraphCompare.create({
-  viewers: [left, right],
-  layout: { columns: 2, container: '#c8_grid' },
-  sync: { mode: 'id' },
-});
-api.registerCompare(compare);
+  const useSharedTaskbar = document.getElementById('c8_shared_taskbar').checked;
+  const syncMode = document.getElementById('c8_sync_selection').checked ? 'id' : 'none';
 
+  const left = FXGraphViewer.create({
+    payload: api.payloads.accuracy_reference,
+    mount: { root: '#c8_left_mount' },
+    layout: { preset: 'split' },
+    config: { title: 'Reference' },
+    state: { activeExtensions: ['color_by_type'], colorBy: 'color_by_type' },
+  });
+  left.init();
+  api.registerViewer(left);
+
+  const right = FXGraphViewer.create({
+    payload: api.payloads.accuracy_candidate,
+    mount: { root: '#c8_right_mount' },
+    layout: { preset: 'split' },
+    config: { title: 'Candidate' },
+    state: { activeExtensions: ['per_layer_accuracy'], colorBy: 'per_layer_accuracy' },
+  });
+  right.init();
+  api.registerViewer(right);
+
+  compare = FXGraphCompare.create({
+    viewers: [left, right],
+    layout: { columns: Number(document.getElementById('c8_cols').value), container: '#c8_grid' },
+    sync: { mode: syncMode },
+    sharedTaskbar: { enabled: useSharedTaskbar },
+  });
+  api.registerCompare(compare);
+
+  api.log(useSharedTaskbar
+    ? 'Shared taskbar ON — use theme/layers/colorBy/zoom/sync/fullscreen controls above the grid'
+    : 'Shared taskbar OFF — per-viewer toolbars fully hidden');
+}
+
+document.getElementById('c8_shared_taskbar').addEventListener('change', buildCompare);
 document.getElementById('c8_sync_selection').addEventListener('change', (e) => {
-  compare.setSync({ mode: e.target.checked ? 'id' : 'none' });
+  if (compare) compare.setSync({ mode: e.target.checked ? 'id' : 'none' });
 });
-document.getElementById('c8_cols').addEventListener('change', (e) => compare.setColumns(Number(e.target.value)));
+document.getElementById('c8_cols').addEventListener('change', (e) => {
+  if (compare) compare.setColumns(Number(e.target.value));
+});
 
-api.log('Try selecting nodes in either pane and toggling sync. Use Columns to change layout.');
+buildCompare();
+api.setCleanup(() => { if (compare) compare.destroy(); });
 """.strip(),
         },
         {
