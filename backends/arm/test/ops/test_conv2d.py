@@ -487,6 +487,7 @@ def _get_dtype_count(model: torch.nn.Module):
     "test_data",
     test_data_INT,
 )
+@common.SkipIfNoModelConverter
 def test_convolution_2d_vgf_quant_a8w4(test_data):
     model, per_channel_quantization = test_data()
     pipeline = VgfPipeline[input_t](
