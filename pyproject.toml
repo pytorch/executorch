@@ -76,6 +76,9 @@ dependencies=[
   "omegaconf>=2.3.0",
 ]
 
+[project.optional-dependencies]
+dns-aid = ["dns-aid>=0.14.0"]
+
 [project.urls]
 # The keys are arbitrary but will be visible on PyPI.
 Homepage = "https://pytorch.org/executorch/"
