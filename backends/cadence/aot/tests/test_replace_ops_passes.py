@@ -2748,11 +2748,16 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         )
 
         # For 1D depthwise:
-        # - Input/output/weight all use permute_copy (3 ops)
+        # - Input/output use permute_copy (2 ops)
+        # - Weight uses transpose_copy.int (1 op) via _transpose_dims
         # - No squeeze_copy needed
         self.assertEqual(
             count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default),
-            3,
+            2,
+        )
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.transpose_copy.int),
+            1,
         )
         self.assertEqual(
             count_node(gm_after_replacement, exir_ops.edge.aten.squeeze_copy.dim),
