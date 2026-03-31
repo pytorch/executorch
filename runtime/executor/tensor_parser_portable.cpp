@@ -8,6 +8,10 @@
 
 #include <executorch/runtime/executor/tensor_parser.h>
 
+#include <climits>
+
+#include <c10/util/safe_numerics.h>
+
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -118,10 +122,11 @@ Result<Tensor> parseTensor(
     dim_order =
         const_cast<executorch::aten::DimOrderType*>(serialized_dim_order);
   }
-  // Validate sizes before using them in case the PTE data is bad. We can't
-  // detect bad positive values, but we can reject negative values, which would
-  // otherwise panic in the TensorImpl ctor. dim_order_to_stride() will validate
-  // dim_order.
+  // Validate sizes before using them in case the PTE data is bad. Reject
+  // negative values and check that the product of all dimensions doesn't
+  // overflow ssize_t, which would otherwise abort in the TensorImpl ctor.
+  // dim_order_to_stride() will validate dim_order.
+  ssize_t numel = 1;
   for (flatbuffers::uoffset_t i = 0; i < dim; i++) {
     ET_CHECK_OR_RETURN_ERROR(
         sizes[i] >= 0,
@@ -129,6 +134,13 @@ Result<Tensor> parseTensor(
         "Negative size[%zu] %" PRId32,
         static_cast<size_t>(i),
         sizes[i]);
+    ssize_t next_numel;
+    ET_CHECK_OR_RETURN_ERROR(
+        !c10::mul_overflows(numel, static_cast<ssize_t>(sizes[i]), &next_numel),
+        InvalidProgram,
+        "Overflow computing numel at dim %zu",
+        static_cast<size_t>(i));
+    numel = next_numel;
   }
 
   // We will remove strides from schema.

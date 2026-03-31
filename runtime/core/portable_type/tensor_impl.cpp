@@ -13,6 +13,7 @@
 #include <cstdint>
 
 #include <c10/util/irange.h>
+#include <c10/util/safe_numerics.h>
 
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -39,13 +40,14 @@ ssize_t compute_numel(const TensorImpl::SizesType* sizes, ssize_t dim) {
         "Size must be non-negative, got %zd at dimension %zd",
         static_cast<ssize_t>(sizes[i]),
         i);
+    ssize_t next_numel;
     ET_CHECK_MSG(
-        sizes[i] == 0 || numel <= SSIZE_MAX / sizes[i],
+        !c10::mul_overflows(numel, static_cast<ssize_t>(sizes[i]), &next_numel),
         "Overflow computing numel: %zd * %zd would overflow ssize_t at dimension %zd",
         numel,
         static_cast<ssize_t>(sizes[i]),
         i);
-    numel *= sizes[i];
+    numel = next_numel;
   }
   return numel;
 }
