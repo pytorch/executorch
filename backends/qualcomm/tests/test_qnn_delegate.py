@@ -3089,6 +3089,19 @@ class TestQNNQuantizedOperator(TestQNN):
                 )
                 self.lower_module_and_test_output(modules[i], sample_input)
 
+    # TODO: Once the accuracy issue is fixed, enable this test.
+    @unittest.skip("Bad accuracy for HTP")
+    def test_qnn_backend_embedding_per_channel(self):
+        module = Embedding()  # noqa: F405
+        sample_input = (torch.Tensor([1, 2, 4, 5]).to(torch.int32),)
+        qdq_module = self.get_qdq_module(
+            module,
+            sample_input,
+            quant_dtype=QuantDtype.use_16a8w,
+            is_embedding_per_channel=True,
+        )
+        self.lower_module_and_test_output(qdq_module, sample_input)
+
     def test_qnn_backend_equal(self):
         test_comb = [
             {
