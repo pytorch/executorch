@@ -1,14 +1,20 @@
+import copy
 import unittest
 
 import torch
 from executorch.backends.qualcomm._passes import (
+    AnnotateQuantAttrs,
     ConvertBmmToMatmul,
     ConvertMhaToSha,
+    FoldQDQ,
+    InsertIOQDQ,
     InsertReshapeForReduceOps,
     RemoveRedundancy,
 )
+from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.tests.models import TopKandIndex
+from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -17,9 +23,87 @@ from executorch.backends.qualcomm.utils.utils import (
 from executorch.exir import to_edge
 from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 class TestPasses(unittest.TestCase):
+    def _build_quantized_graph(self):
+        """Build a quantized graph through AnnotateQuantAttrs + FoldQDQ."""
+
+        class AddModule(torch.nn.Module):
+            def forward(self, x):
+                return x + 1
+
+        module = AddModule().eval()
+        sample_input = (torch.randn(1, 4),)
+
+        exported = torch.export.export(module, sample_input, strict=True).module()
+        quantizer = QnnQuantizer()
+        quantizer.set_default_quant_config(quant_dtype=QuantDtype.use_8a8w)
+        prepared = prepare_pt2e(exported, quantizer)
+        prepared(*sample_input)
+        qdq_module = convert_pt2e(prepared)
+
+        edge_program = to_edge(
+            torch.export.export(qdq_module, sample_input, strict=True)
+        )
+        ep = edge_program.exported_program()
+        gm = ep.graph_module
+
+        gm = AnnotateQuantAttrs(ep)(gm).graph_module
+        gm = FoldQDQ(ep)(gm).graph_module
+        return gm, ep
+
+    def test_insert_io_qdq_handles_dequant_encoding(self):
+        """InsertIOQDQ should not KeyError when a node with a dequantize
+        encoding feeds the output node (e.g. pre-quantized LLM parameters)."""
+        gm, ep = self._build_quantized_graph()
+
+        # Wire b__frozen_param0 (which has dequantize encoding) to output,
+        # simulating the LLM topology from github issue #17732.
+        param_node = None
+        output_node = None
+        for n in gm.graph.nodes:
+            if n.name == "b__frozen_param0":
+                param_node = n
+            if n.op == "output":
+                output_node = n
+
+        self.assertIsNotNone(param_node)
+        old_args = output_node.args[0]
+        output_node.args = (
+            ((old_args,) if not isinstance(old_args, tuple) else old_args)
+            + (param_node,),
+        )
+        gm.graph.lint()
+        gm.recompile()
+
+        pass_instance = InsertIOQDQ(ep)
+        pass_instance._insert(gm)
+
+        dq_nodes = [
+            n
+            for n in gm.graph.nodes
+            if n.op == "call_function"
+            and hasattr(n.target, "__name__")
+            and "dequantize" in n.target.__name__
+            and any(u.op == "output" for u in n.users.keys())
+        ]
+        self.assertGreaterEqual(len(dq_nodes), 1)
+
+    def test_insert_io_qdq_no_revisit(self):
+        """InsertIOQDQ must not revisit newly inserted nodes."""
+        gm, ep = self._build_quantized_graph()
+
+        node_count_before = len(list(gm.graph.nodes))
+        pass_instance = InsertIOQDQ(ep)
+        pass_instance._insert(gm)
+        node_count_after = len(list(gm.graph.nodes))
+
+        # AddModule with one input and one output should insert exactly
+        # one quantize (input) and one dequantize (output) = +2 nodes.
+        self.assertEqual(node_count_after, node_count_before + 2)
+
     def test_insert_reshape_for_argmax(self):
         class ArgmaxModule(torch.nn.Module):
             def forward(self, x):
