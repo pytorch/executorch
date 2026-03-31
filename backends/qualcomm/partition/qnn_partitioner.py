@@ -207,7 +207,7 @@ class QnnPartitioner(Partitioner):
         pl = len(partitions)
         if backend == QnnExecuTorchBackendType.kLpaiBackend:
             assert (
-                pl != 1
+                pl == 1
             ), "LPAI backend only supports fully delegation due to the accuracy issue of Q/DQ in the LPAI backend."
         if pl == 0:
             logging.warning("Nothing can be partitioned!")
