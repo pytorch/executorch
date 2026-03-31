@@ -23,6 +23,7 @@ from executorch.backends.arm.test.tester.quantize import ArmQuantize as Quantize
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     TosaPipelineINT,
+    VgfPipeline,
 )
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
@@ -402,6 +403,62 @@ def test_quantize_io_tosa_INT_uint8_numeric():
     )
     pipeline.quantizer.set_io(get_uint8_io_quantization_config())
 
+    _run_uint8_io_numeric_pipeline(pipeline, model, calib_input, calib_other)
+
+
+def test_quantize_io_vgf_INT_uint8_numeric():
+    """Run VGF flow with uint8 input and verify numerical output."""
+
+    model = SimpleModel().eval()
+    calib_input = torch.rand(1, 4)
+    calib_other = torch.rand(1, 4)
+
+    pipeline = VgfPipeline(
+        model,
+        (calib_input, calib_other),
+        aten_op=[],
+        exir_op=[],
+        run_on_vulkan_runtime=True,
+        quantize=True,
+        use_to_edge_transform_and_lower=True,
+        preserve_io_quantization=True,
+    )
+
+    pipeline.quantizer.set_io(get_uint8_io_quantization_config())
+
+    if pipeline.has_stage("check_not.exir_quant_nodes"):
+        pipeline.pop_stage("check_not.exir_quant_nodes")
+    _run_uint8_io_numeric_pipeline(pipeline, model, calib_input, calib_other)
+
+
+def test_quantize_io_u55_INT_uint8_numeric():
+    """Run Ethos-U55 flow with uint8 input and verify numerical output."""
+    model = SimpleModel().eval()
+    calib_input = torch.rand(1, 4)
+    calib_other = torch.rand(1, 4)
+
+    if not (
+        common.corstone300_installed()
+        and common.arm_executor_runner_exists("corstone-300")
+    ):
+        pytest.xfail("Did not find Corstone-300 FVP or executor_runner on path")
+
+    pipeline = EthosU55PipelineINT(
+        model,
+        (calib_input, calib_other),
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=True,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.quantizer.set_io(get_uint8_io_quantization_config())
+
+    _run_uint8_io_numeric_pipeline(pipeline, model, calib_input, calib_other)
+
+
+def _run_uint8_io_numeric_pipeline(  # noqa: C901
+    pipeline, model, calib_input, calib_other
+) -> None:
     qparams = {}
 
     def _apply_uint8_io(ep):
@@ -483,7 +540,6 @@ def test_quantize_io_tosa_INT_uint8_numeric():
             # Match TOSA's signless int8 representation of unsigned outputs.
             return ref_u8
 
-    pipeline.pop_stage("run_method_and_compare_outputs.original_model")
     # Insert quantization of inputs/outputs after lowering so we can run uint8 IO.
     pipeline.add_stage_after(
         "to_edge_transform_and_lower",
@@ -505,8 +561,13 @@ def test_quantize_io_tosa_INT_uint8_numeric():
     )
 
     # Run the pipeline to get the quantization parameters without the standard comparison step
-    pipeline.pop_stage("run_method_and_compare_outputs")
+    if pipeline.has_stage("run_method_and_compare_outputs"):
+        pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.run()
+
+    assert qparams["in0_dtype"] == torch.uint8
+    assert qparams["in1_dtype"] == torch.uint8
+    assert qparams["out_dtype"] == torch.uint8
 
     # Calculate the calib inputs and outputs uint8 values given the
     # calibrated quantization parameters, so we can run the reference with the same quantized inputs.
@@ -527,24 +588,26 @@ def test_quantize_io_tosa_INT_uint8_numeric():
         qparams["in1_dtype"],
     )
 
-    print(
-        f"input_tensor: {input_tensor}, other_input: {other_input}, qparams: {qparams}"
-    )
-
     # Compare against a reference that dequantizes uint8 inputs, runs the float model,
     # and requantizes to match TOSA's signless int8 representation.
     def uint8_compare_callback(reference, output, _qparams):
         # Map signless int8 to uint8
-        output = output.to(torch.uint8)
-        diff = (output.to(torch.int16) - reference.to(torch.int16)).abs()
+        output_u8 = output.to(torch.uint8)
+        reference_u8 = reference.to(torch.uint8)
+        diff = (output_u8.to(torch.int16) - reference_u8.to(torch.int16)).abs()
         if diff.max().item() > 1:
             raise AssertionError(
                 "Output mismatch beyond 1 LSB after uint8 IO flow. "
                 f"max abs diff={diff.max().item()}"
             )
 
+    compare_stage = (
+        StageType.SERIALIZE
+        if pipeline.has_stage("serialize")
+        else StageType.TO_EXECUTORCH
+    )
     pipeline.tester.run_method_and_compare_outputs(
-        stage=StageType.TO_EXECUTORCH,
+        stage=compare_stage,
         inputs=(input_tensor, other_input),
         qtol=1,
         reference_stage_type=StageType.RUN_PASSES,
