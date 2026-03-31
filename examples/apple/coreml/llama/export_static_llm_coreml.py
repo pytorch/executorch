@@ -178,7 +178,11 @@ def load_model(
         adapter_weights = load_and_convert_unsloth_to_meta(adapter_checkpoint)
         # Rename adapter keys: wq.lora_*.weight -> wqs.0.lora_*.weight
         for i in range(len(model.layers)):
-            for old_proj, new_proj in [("wq", "wqs.0"), ("wk", "wks.0"), ("wv", "wvs.0")]:
+            for old_proj, new_proj in [
+                ("wq", "wqs.0"),
+                ("wk", "wks.0"),
+                ("wv", "wvs.0"),
+            ]:
                 for suffix in ["lora_a.weight", "lora_b.weight"]:
                     old_key = f"layers.{i}.attention.{old_proj}.{suffix}"
                     if old_key in adapter_weights:
@@ -378,9 +382,7 @@ def _transform_eager_model(model, args, float_dtype):
             lambda m, fqn: isinstance(m, torch.nn.Embedding),
         )
 
-    has_lora_modules = any(
-        isinstance(m, LoRALinear) for m in model.modules()
-    )
+    has_lora_modules = any(isinstance(m, LoRALinear) for m in model.modules())
 
     def _exclude_lora(m, fqn):
         if isinstance(m, LoRALinear):
