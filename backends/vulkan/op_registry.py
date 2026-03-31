@@ -169,15 +169,37 @@ def update_features(aten_op):
         # Guard and assert ops
         torch.ops.aten._assert_scalar.default,
         torch.ops.aten.sym_constrain_range_for_size.default,
-        # copy.default is a no-op when src dtype matches dst dtype; removed by
-        # RemoveRedundantOpsTransform before execution.
-        exir_ops.edge.aten.copy.default,
     ]
 )
 def register_ephemeral_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         supports_resize=True,
+    )
+
+
+def _check_copy_is_noop(node: torch.fx.Node) -> bool:
+    """Only support copy.default when it's a no-op (same dtype and shape)."""
+    src = node.args[1]
+    if not isinstance(src, torch.fx.Node):
+        return False
+    src_val = src.meta.get("val")
+    dst_val = node.meta.get("val")
+    if src_val is None or dst_val is None:
+        return False
+    return src_val.dtype == dst_val.dtype and src_val.shape == dst_val.shape
+
+
+@update_features(
+    [
+        exir_ops.edge.aten.copy.default,
+    ]
+)
+def register_copy_op():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        supports_resize=True,
+        are_node_inputs_supported_fn=_check_copy_is_noop,
     )
 
 
@@ -193,6 +215,7 @@ def register_ephemeral_ops():
         exir_ops.edge.aten.exp.default,
         exir_ops.edge.aten.gelu.default,
         exir_ops.edge.aten.hardshrink.default,
+        exir_ops.edge.aten.hardswish.default,
         exir_ops.edge.aten.hardtanh.default,
         exir_ops.edge.aten.neg.default,
         exir_ops.edge.aten.relu.default,
@@ -1055,6 +1078,16 @@ def register_sdpa_cpp_ops():
 
 @update_features(exir_ops.edge.et_vk.apply_rotary_emb.default)
 def register_apply_rotary_emb():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.apply_rotary_emb_hf.default)
+def register_apply_rotary_emb_hf():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
         inputs_dtypes=utils.FP_T,
