@@ -353,7 +353,8 @@ bool run_inference(Method& method) {
   uint32_t total_us = 0;
   printf("📊 Inference latency summary:\n");
   for (int i = 0; i < 4; i++) {
-    printf("  %s: %lu us\n", test_cases[i].name, (unsigned long)latencies_us[i]);
+    printf(
+        "  %s: %lu us\n", test_cases[i].name, (unsigned long)latencies_us[i]);
     total_us += latencies_us[i];
   }
   printf("  Average: %lu us\n\n", (unsigned long)(total_us / 4));
@@ -398,9 +399,12 @@ int executor_runner() {
       ? (uint32_t)((uint8_t*)probe - method_allocator_pool)
       : sizeof(method_allocator_pool);
   printf("📊 Memory usage after method load:\n");
-  printf("   Method allocator: %lu / %lu bytes used\n",
-      (unsigned long)method_used, (unsigned long)sizeof(method_allocator_pool));
-  printf("   Activation pool: %lu bytes allocated\n",
+  printf(
+      "   Method allocator: %lu / %lu bytes used\n",
+      (unsigned long)method_used,
+      (unsigned long)sizeof(method_allocator_pool));
+  printf(
+      "   Activation pool: %lu bytes allocated\n",
       (unsigned long)sizeof(activation_pool));
 
   if (!run_inference(*method_ptr)) {
