@@ -160,7 +160,19 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         return ChannelsLastTaggedReshapePass._is_nhwc_tensor(tensor)
 
     def requires_nhwc_input(self, node: torch.fx.Node) -> bool:
-        return node.target in self.memory_sensitive_ops_nhwc
+        if node.target not in self.memory_sensitive_ops_nhwc:
+            return False
+
+        # NHWC layout only applies to 4D tensors. For ops like prelu that can
+        # accept inputs of any dimensionality, skip the NHWC requirement when
+        # the input is not 4D.
+        input_node = node.args[0] if node.args else None
+        if input_node is not None and hasattr(input_node, "meta"):
+            val = input_node.meta.get("val")
+            if val is not None and hasattr(val, "shape") and len(val.shape) != 4:
+                return False
+
+        return True
 
     def requires_nchw_inputs(self, node: torch.fx.Node) -> bool:
         if node.target == exir_ops.edge.aten.view_copy.default:
