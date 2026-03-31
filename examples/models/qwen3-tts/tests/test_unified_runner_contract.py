@@ -15,7 +15,11 @@ class UnifiedRunnerContractTest(unittest.TestCase):
         cls.main = (root / "main_unified.cpp").read_text(encoding="utf-8")
 
     def test_runner_header_exposes_top_p_sampling_config(self):
-        self.assertIn("float top_p = -1.0f;", self.header)
+        self.assertIn("float top_p = 1.0f;", self.header)
+        self.assertIn("float streaming_interval_sec = 2.0f;", self.header)
+        self.assertIn("int streaming_chunk_size = 300;", self.header)
+        self.assertIn("int streaming_left_context_size = 25;", self.header)
+        self.assertIn("bool force_streaming_decoder_surface = false;", self.header)
         self.assertIn("float top_p,", self.header)
         self.assertIn("uint64_t seed = 0;", self.header)
         self.assertIn("struct SynthesisTiming", self.header)
@@ -23,7 +27,14 @@ class UnifiedRunnerContractTest(unittest.TestCase):
         self.assertIn("create_synthesis_session", self.header)
 
     def test_main_cli_validates_text_mode_requirements(self):
-        self.assertIn('DEFINE_double(top_p, -1.0, "Top-p sampling.', self.main)
+        self.assertIn('DEFINE_double(top_p, 1.0, "Top-p sampling.', self.main)
+        self.assertIn('DEFINE_double(\n    streaming_interval,', self.main)
+        self.assertIn('DEFINE_int32(\n    streaming_chunk_size,', self.main)
+        self.assertIn('DEFINE_int32(\n    streaming_left_context_size,', self.main)
+        self.assertIn('DEFINE_bool(\n    non_streaming_mode,', self.main)
+        self.assertIn("disable_streaming_decoder_surface", self.main)
+        self.assertIn("force_streaming_decoder_surface", self.main)
+        self.assertIn("use_legacy_cumulative_streaming_decode", self.main)
         self.assertIn('Provide either --codes_path or text synthesis inputs, not both.', self.main)
         self.assertIn('Provide either --text or --prompts_path, not both.', self.main)
         self.assertIn('Text synthesis requires --tokenizer_path.', self.main)
@@ -55,6 +66,21 @@ class UnifiedRunnerContractTest(unittest.TestCase):
         self.assertIn('ensure_method("cp_generate")', self.runner)
         self.assertIn("run_cp_generate(", self.runner)
         self.assertIn("use_fused_cp_generate", self.runner)
+
+    def test_runner_exposes_streaming_decode_helpers(self):
+        self.assertIn("run_decode_audio_stream(", self.header)
+        self.assertIn("has_streaming_decode_method()", self.header)
+        self.assertIn("decode_code_step_range(", self.header)
+        self.assertIn("decode_codes_chunked(", self.header)
+        self.assertIn('ensure_method("decode_audio_stream")', self.runner)
+
+    def test_runner_respects_export_streaming_policy_metadata(self):
+        self.assertIn("generation_backend_code_", self.header)
+        self.assertIn("decoder_backend_code_", self.header)
+        self.assertIn("prefer_streaming_decoder_surface_", self.header)
+        self.assertIn('try_int("generation_backend_code", &generation_backend_code_);', self.runner)
+        self.assertIn('try_int("decoder_backend_code", &decoder_backend_code_);', self.runner)
+        self.assertIn("Streaming decode policy:", self.runner)
 
 
 if __name__ == "__main__":

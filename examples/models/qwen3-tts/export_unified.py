@@ -53,6 +53,32 @@ from text_prompt_contract import (
 )
 
 
+STREAMING_DECODER_CHUNK_SIZE = 300
+STREAMING_DECODER_LEFT_CONTEXT_SIZE = 25
+
+BACKEND_CODE_PORTABLE = 0
+BACKEND_CODE_XNNPACK = 1
+BACKEND_CODE_METAL = 2
+
+
+def resolve_backend_runtime_metadata(backend: str) -> tuple[int, int, int]:
+    backend_code = {
+        "portable": BACKEND_CODE_PORTABLE,
+        "xnnpack": BACKEND_CODE_XNNPACK,
+        "metal": BACKEND_CODE_METAL,
+    }[backend]
+    generation_backend_code = backend_code
+    decoder_backend_code = backend_code
+    prefer_streaming_decoder_surface = 0
+    if backend == "metal":
+        decoder_backend_code = BACKEND_CODE_XNNPACK
+    return (
+        generation_backend_code,
+        decoder_backend_code,
+        prefer_streaming_decoder_surface,
+    )
+
+
 def load_runtime_token_ids(model_config_path: Path) -> Dict[str, int]:
     with model_config_path.open("r", encoding="utf-8") as f:
         config = json.load(f)
@@ -316,6 +342,29 @@ class DynamicDecoderExport(nn.Module):
         return wav, audio_lengths
 
 
+class StreamingDecoderExport(DynamicDecoderExport):
+    """Fixed-window decoder surface for overlap-context streaming on XNNPACK."""
+
+    def __init__(
+        self,
+        decoder,
+        decode_upsample_rate: int,
+        chunk_size: int,
+        left_context_size: int,
+    ):
+        super().__init__(decoder, decode_upsample_rate)
+        self.chunk_size = int(chunk_size)
+        self.left_context_size = int(left_context_size)
+        self.max_codes = self.chunk_size + self.left_context_size
+
+    def forward(self, audio_codes: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        if audio_codes.shape[1] != self.max_codes:
+            raise ValueError(
+                f"audio_codes must have shape [B, {self.max_codes}, Q], got {tuple(audio_codes.shape)}"
+            )
+        return super().forward(audio_codes)
+
+
 def _patch_conv_padding(module):
     """Monkey-patch _get_extra_padding_for_conv1d to avoid math.ceil on SymInt."""
     kernel_size = module.kernel_size
@@ -417,6 +466,7 @@ def build_wrapper_modules(
     metadata: DecoderExportMetadata,
     max_seq_len: int,
     dtype: torch.dtype,
+    backend: str,
 ):
     """Build all wrapper modules for multi-method export."""
     aux = load_aux_weights(talker_dir)
@@ -439,12 +489,20 @@ def build_wrapper_modules(
 
     # 2. talker
     talker_model, talker_args = load_talker_model(talker_dir, max_seq_len)
+    if backend == "metal":
+        from executorch.examples.models.llama.source_transformation.sdpa import (
+            replace_causal_mask,
+        )
+
+        talker_model = replace_causal_mask(talker_model)
     codec_head_weight = aux["codec_head.weight"].to(dtype)
     talker = TalkerExport(talker_model, codec_head_weight)
     talker.eval()
 
     # 3. code_predictor (standalone, kept for backward compat)
     cp_model, cp_args = load_code_predictor_model(talker_dir, max_seq_len=32)
+    if backend == "metal":
+        cp_model = replace_causal_mask(cp_model)
     code_predictor = CodePredictorExport(cp_model)
     code_predictor.eval()
 
@@ -477,12 +535,23 @@ def build_wrapper_modules(
     # 7. decode_audio
     checkpoint_path = converted_dir / metadata.decoder_checkpoint
     decoder = load_decoder_from_metadata(metadata, checkpoint_path, dtype=dtype)
+    streaming_decoder = load_decoder_from_metadata(
+        metadata, checkpoint_path, dtype=dtype
+    )
     decode_audio = DynamicDecoderExport(decoder, metadata.decode_upsample_rate)
+    decode_audio_stream = StreamingDecoderExport(
+        streaming_decoder,
+        metadata.decode_upsample_rate,
+        chunk_size=STREAMING_DECODER_CHUNK_SIZE,
+        left_context_size=STREAMING_DECODER_LEFT_CONTEXT_SIZE,
+    )
     decode_audio.eval()
     decode_audio.to(dtype=dtype)
+    decode_audio_stream.eval()
+    decode_audio_stream.to(dtype=dtype)
 
     for mod in [encode_text, talker, code_predictor, codec_embed, cp_head,
-                 cp_generate, decode_audio]:
+                 cp_generate, decode_audio, decode_audio_stream]:
         for p in mod.parameters():
             p.requires_grad_(False)
         for b in mod.buffers():
@@ -496,6 +565,7 @@ def build_wrapper_modules(
         "cp_head": cp_head,
         "cp_generate": cp_generate,
         "decode_audio": decode_audio,
+        "decode_audio_stream": decode_audio_stream,
     }, talker_args, cp_args
 
 
@@ -621,6 +691,28 @@ def export_all(
         strict=False,
     )
 
+    print("Exporting decode_audio_stream...")
+    sample_stream_codes = torch.full(
+        (
+            1,
+            STREAMING_DECODER_CHUNK_SIZE + STREAMING_DECODER_LEFT_CONTEXT_SIZE,
+            metadata.num_quantizers,
+        ),
+        -1,
+        dtype=torch.long,
+    )
+    sample_stream_codes[:, :10, :] = torch.randint(
+        0,
+        metadata.codebook_size,
+        (1, 10, metadata.num_quantizers),
+        dtype=torch.long,
+    )
+    programs["decode_audio_stream"] = export(
+        modules["decode_audio_stream"],
+        (sample_stream_codes,),
+        strict=False,
+    )
+
     # Build per-method partitioners.
     if backend == "xnnpack":
         from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
@@ -661,9 +753,11 @@ def export_all(
         for key in programs:
             if key in ("codec_embed",):
                 partitioner[key] = []
-            elif key == "decode_audio":
-                # decode_audio uses cumsum which lacks Metal fallback.
-                # Use XNNPACK for GPU-incompatible methods.
+            elif key in ("cp_generate", "decode_audio", "decode_audio_stream"):
+                # Keep GPU-incompatible methods on XNNPACK for the hybrid Metal path.
+                # `cp_generate` still lowers through topk/cumsum fallback kernels that
+                # the current AOTI Metal backend does not provide, and the decoder
+                # remains on XNNPACK until we have a true Metal vocoder path.
                 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
                     XnnpackDynamicallyQuantizedPartitioner,
                     XnnpackPartitioner,
@@ -677,6 +771,12 @@ def export_all(
                 partitioner[key] = [MetalPartitioner(compile_specs)]
     else:
         partitioner = {key: [] for key in programs}
+
+    (
+        generation_backend_code,
+        decoder_backend_code,
+        prefer_streaming_decoder_surface,
+    ) = resolve_backend_runtime_metadata(backend)
 
     # Constant methods (metadata).
     constant_methods = metadata.to_constant_methods()
@@ -693,6 +793,13 @@ def export_all(
         "text_prompt_trailing_template_token_count": TRAILING_TEMPLATE_TOKEN_COUNT,
         "cp_generate_contract_version": 2,
         "cp_generate_fast_top_k": 50,
+        "generation_backend_code": generation_backend_code,
+        "decoder_backend_code": decoder_backend_code,
+        "prefer_streaming_decoder_surface": prefer_streaming_decoder_surface,
+        "streaming_decoder_contract_version": 1,
+        "streaming_decoder_chunk_size": STREAMING_DECODER_CHUNK_SIZE,
+        "streaming_decoder_left_context_size": STREAMING_DECODER_LEFT_CONTEXT_SIZE,
+        "streaming_decoder_max_codes": STREAMING_DECODER_CHUNK_SIZE + STREAMING_DECODER_LEFT_CONTEXT_SIZE,
     })
     constant_methods.update(runtime_token_ids)
 
@@ -768,6 +875,7 @@ def main():
         metadata=metadata,
         max_seq_len=args.max_seq_len,
         dtype=dtype,
+        backend=args.backend,
     )
 
     print(f"\nModule summary:")
@@ -788,6 +896,11 @@ def main():
         qlinear_group_size=args.qlinear_group_size,
         qembedding=args.qembedding,
     )
+    (
+        generation_backend_code,
+        decoder_backend_code,
+        prefer_streaming_decoder_surface,
+    ) = resolve_backend_runtime_metadata(args.backend)
 
     model_path = args.output_dir / args.output_name
     with model_path.open("wb") as f:
@@ -815,6 +928,13 @@ def main():
         "cp_generate_contract_version": 2,
         "cp_generate_fast_top_k": 50,
         "cp_generate_sampler": "cdf_topk50_no_top_p_v2",
+        "generation_backend_code": generation_backend_code,
+        "decoder_backend_code": decoder_backend_code,
+        "prefer_streaming_decoder_surface": prefer_streaming_decoder_surface,
+        "streaming_decoder_contract_version": 1,
+        "streaming_decoder_chunk_size": STREAMING_DECODER_CHUNK_SIZE,
+        "streaming_decoder_left_context_size": STREAMING_DECODER_LEFT_CONTEXT_SIZE,
+        "streaming_decoder_max_codes": STREAMING_DECODER_CHUNK_SIZE + STREAMING_DECODER_LEFT_CONTEXT_SIZE,
         **runtime_token_ids,
     }
     manifest_path = args.output_dir / "export_manifest.json"

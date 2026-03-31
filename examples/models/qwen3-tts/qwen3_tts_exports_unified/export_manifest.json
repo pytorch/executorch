@@ -12,7 +12,9 @@
   "cp_generate_contract_version": 2,
   "cp_generate_fast_top_k": 50,
   "cp_generate_sampler": "cdf_topk50_no_top_p_v2",
+  "decoder_backend_code": 1,
   "dtype": "fp32",
+  "generation_backend_code": 1,
   "im_start_token_id": 151644,
   "max_seq_len": 256,
   "methods": [
@@ -22,7 +24,8 @@
     "codec_embed",
     "cp_head",
     "cp_generate",
-    "decode_audio"
+    "decode_audio",
+    "decode_audio_stream"
   ],
   "model_type": "qwen3_tts_unified",
   "newline_token_id": 198,
@@ -30,7 +33,12 @@
   "prompt_contract": "assistant_chat_text_v1",
   "qembedding": null,
   "qlinear": "8da4w",
+  "prefer_streaming_decoder_surface": 0,
   "requires_tokenizer": true,
+  "streaming_decoder_chunk_size": 300,
+  "streaming_decoder_contract_version": 1,
+  "streaming_decoder_left_context_size": 25,
+  "streaming_decoder_max_codes": 325,
   "supports_text_only_synthesis": true,
   "supports_voice_clone_synthesis": false,
   "text_prompt_min_token_count": 9,

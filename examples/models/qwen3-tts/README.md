@@ -23,6 +23,28 @@ no WAV writes):
   roughly `159/135/146 ms` down to `124/127/136 ms` on the benchmark prompts.
   End-to-end wall time still depends on how many codec steps the sampler emits.
 
+Warm XNNPACK streaming benchmark on the refreshed unified export (`31` codec
+steps, `2.48s` audio, same warmed process):
+
+| Streaming path | Key flags | First audio | Decode time | Generation-only | RTF |
+|----------------|-----------|-------------|-------------|-----------------|-----|
+| Auto streaming surface | default (`decode_audio_stream`) | `8.73s` | `11.41s` | `15.20s` | `0.16x` |
+| Windowed fallback | `--disable_streaming_decoder_surface` | `5.41s` | `1.56s` | `7.39s` | `0.34x` |
+| Legacy cumulative | `--use_legacy_cumulative_streaming_decode` | `5.40s` | `1.60s` | `7.41s` | `0.33x` |
+
+Today the dedicated fixed-shape `decode_audio_stream` export is functionally
+correct, but it is slower than the dynamic `decode_audio` overlap-window path on
+XNNPACK. The best current XNNPACK streaming path remains the windowed fallback,
+and the main steady-state bottleneck is still code generation rather than audio
+decode orchestration.
+
+The CLI now reports `audio` and `rtf` from the raw waveform before silence
+trimming, with `trimmed_audio` and `rtf_trimmed` logged separately. On the
+corrected warmed prompt-set benchmark, the checked-in `max_seq_len=256` export
+reaches about `0.51x` raw realtime and the best temporary `max_seq_len=160`
+export reaches about `0.52x`. See `XNNPACK_CONFIDENCE_STATUS.md` for the exact
+commands and benchmark breakdown.
+
 ### Model Sizes
 
 | Config | Size |
@@ -167,7 +189,7 @@ afplay /tmp/hello_metal.wav
 
 ## Architecture
 
-Single `model.pte` with 7 named methods:
+Single `model.pte` with 8 named methods:
 
 | Method | Backend | Purpose |
 |--------|---------|---------|
@@ -178,6 +200,7 @@ Single `model.pte` with 7 named methods:
 | `cp_head` | Metal/XNNPACK | Per-group LM head selection |
 | `cp_generate` | Metal/XNNPACK | Fused sampled 15-step code predictor fast path |
 | `decode_audio` | XNNPACK | Vocoder: codes → waveform (dynamic shapes) |
+| `decode_audio_stream` | XNNPACK | Fixed-shape streaming vocoder surface for chunked decode |
 
 The runner calls `decode_audio` for codes→audio (decode-only mode) or orchestrates
 all methods for text-only full text→audio synthesis through the assistant-wrapped
@@ -204,7 +227,8 @@ prompt contract used by the Python helper.
 - XNNPACK has a one-time warmup cost on first call. The runner now exercises the
   full text path in `warmup_all()` so sequential prompt benchmarking reflects
   steady-state generation instead of cold delegate setup.
-- Leading silence is automatically trimmed (`--trim_silence`, default on).
+- Leading silence is automatically trimmed (`--trim_silence`, default on), but
+  the main `audio` / `rtf` metrics are reported from the raw pre-trim waveform.
 - Text-only `--text` mode now runs directly in `qwen3_tts_unified_runner` with
   dynamic prompt length, explicit prompt-budget checks, and assistant-wrapped
   prompt formatting aligned to `generate_codes.py`.
@@ -213,8 +237,11 @@ prompt contract used by the Python helper.
   apples-to-apples comparisons.
 - The recommended tokenizer path for local bring-up is
   `examples/models/qwen3-tts/qwen3-tts-12Hz-0.6B-Base/tokenizer.json`.
-- Unified export manifests now record the text prompt contract and the current
-  7-method surface, including `cp_generate`.
+- Unified export manifests now record the text prompt contract, the current
+  8-method surface, and streaming decoder metadata (`streaming_decoder_*`).
+- The new `decode_audio_stream` surface is capability-gated by manifest
+  metadata. The runner can benchmark it directly, or fall back to the dynamic
+  `decode_audio` overlap-window path if that is faster on the current backend.
 - Text mode still requires an external tokenizer path; tokenizer packaging is
   tracked in `TODO.md`.
 - Metal/AOTI uses AOTInductor to compile graphs into `.so` with Metal kernels.

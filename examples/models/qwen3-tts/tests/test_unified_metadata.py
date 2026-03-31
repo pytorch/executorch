@@ -19,6 +19,7 @@ class UnifiedMetadataTest(unittest.TestCase):
             "cp_head",
             "cp_generate",
             "decode_audio",
+            "decode_audio_stream",
         ]
 
         for manifest_path in manifests:
@@ -44,6 +45,13 @@ class UnifiedMetadataTest(unittest.TestCase):
         self.assertEqual(manifest["cp_generate_contract_version"], 2)
         self.assertEqual(manifest["cp_generate_fast_top_k"], 50)
         self.assertEqual(manifest["cp_generate_sampler"], "cdf_topk50_no_top_p_v2")
+        self.assertEqual(manifest["generation_backend_code"], 1)
+        self.assertEqual(manifest["decoder_backend_code"], 1)
+        self.assertEqual(manifest["prefer_streaming_decoder_surface"], 0)
+        self.assertEqual(manifest["streaming_decoder_contract_version"], 1)
+        self.assertEqual(manifest["streaming_decoder_chunk_size"], 300)
+        self.assertEqual(manifest["streaming_decoder_left_context_size"], 25)
+        self.assertEqual(manifest["streaming_decoder_max_codes"], 325)
         self.assertEqual(manifest["codec_think_id"], 2154)
         self.assertEqual(manifest["codec_language_english_id"], 2050)
 

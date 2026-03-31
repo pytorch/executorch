@@ -77,6 +77,24 @@ class UnifiedQualityContractTest(unittest.TestCase):
         self.assertIn("torch.topk(logits, k=50", self.export_source)
         self.assertIn("torch.cumsum(probs, dim=0)", self.export_source)
         self.assertIn("torch.stack(sampled_codes, dim=0), embed_sum", self.export_source)
+        self.assertIn('elif key in ("cp_generate", "decode_audio", "decode_audio_stream"):', self.export_source)
+
+    def test_export_adds_fixed_window_streaming_decoder_surface(self):
+        self.assertIn("class StreamingDecoderExport", self.export_source)
+        self.assertIn("STREAMING_DECODER_CHUNK_SIZE = 300", self.export_source)
+        self.assertIn("STREAMING_DECODER_LEFT_CONTEXT_SIZE = 25", self.export_source)
+        self.assertIn('programs["decode_audio_stream"]', self.export_source)
+
+    def test_export_reuses_backend_runtime_metadata_for_manifest_and_constants(self):
+        self.assertIn("def resolve_backend_runtime_metadata(backend: str)", self.export_source)
+        self.assertIn("resolve_backend_runtime_metadata(backend)", self.export_source)
+        self.assertIn("resolve_backend_runtime_metadata(args.backend)", self.export_source)
+
+    def test_metal_export_rewrites_bool_causal_masks(self):
+        self.assertIn("if backend == \"metal\":", self.export_source)
+        self.assertIn("replace_causal_mask", self.export_source)
+        self.assertIn("talker_model = replace_causal_mask(talker_model)", self.export_source)
+        self.assertIn("cp_model = replace_causal_mask(cp_model)", self.export_source)
 
     def test_runner_uses_session_rng_instead_of_static_global_rng(self):
         self.assertIn("std::mt19937* gen", self.header)
@@ -90,6 +108,27 @@ class UnifiedQualityContractTest(unittest.TestCase):
         self.assertIn("use_fused_cp_generate", self.runner)
         self.assertIn("Falling back to legacy code predictor loop", self.runner)
         self.assertIn("sample_uniforms", self.runner)
+
+    def test_runner_uses_overlap_context_delta_decode_for_streaming(self):
+        self.assertIn("decode_code_step_range(", self.runner)
+        self.assertIn("config_.streaming_left_context_size", self.runner)
+        self.assertIn("Streamed delta audio through step", self.runner)
+        self.assertIn("Streamed cumulative audio through step", self.runner)
+        self.assertIn("use_legacy_cumulative_streaming_decode", self.runner)
+        self.assertIn("disable_streaming_decoder_surface", self.header)
+        self.assertIn("chunk_decode_ms", self.runner)
+        self.assertNotIn("Streamed audio chunk at step", self.runner)
+
+    def test_runner_accounts_codegen_separately_from_streaming_decode(self):
+        self.assertIn("auto t_codegen_cursor = Clock::now();", self.runner)
+        self.assertIn("codegen_ms += ms_since(t_codegen_cursor);", self.runner)
+        self.assertIn("double first_audio_from_decode_ms = 0.0;", self.runner)
+        self.assertIn("t_final_decode_start", self.runner)
+
+    def test_cli_reports_raw_and_trimmed_rtf_separately(self):
+        self.assertIn("const size_t raw_sample_count = waveform.size();", self.main)
+        self.assertIn("trimmed_audio=%.2fs", self.main)
+        self.assertIn("rtf_trimmed=%.2fx", self.main)
 
     def test_decoder_wrapper_shims_missing_transformers_check_model_inputs(self):
         self.assertIn('hasattr(hf_generic, "check_model_inputs")', self.model_source)

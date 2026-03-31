@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <random>
 #include <string>
@@ -19,14 +20,26 @@
 
 namespace qwen3_tts {
 
+using AudioChunkCallback =
+    std::function<void(const std::vector<float>& chunk, bool is_final)>;
+
 struct SynthesizeConfig {
   int max_new_tokens = 200;
-  float temperature = 1.0f;
-  int top_k = -1;
-  float top_p = -1.0f;
+  float temperature = 0.9f;
+  int top_k = 50;
+  float top_p = 1.0f;
   float repetition_penalty = 1.05f;
   uint64_t seed = 0;
   bool use_fused_cp_generate = true;
+  std::string instruct;
+  bool non_streaming_mode = false;
+  float streaming_interval_sec = 2.0f;
+  int streaming_chunk_steps = 0;
+  int streaming_chunk_size = 300;
+  int streaming_left_context_size = 25;
+  bool disable_streaming_decoder_surface = false;
+  bool force_streaming_decoder_surface = false;
+  bool use_legacy_cumulative_streaming_decode = false;
 };
 
 struct SynthesisTiming {
@@ -36,6 +49,9 @@ struct SynthesisTiming {
   double prompt_prep_ms = 0.0;
   double talker_prefill_ms = 0.0;
   double codegen_ms = 0.0;
+  double first_audio_ms = 0.0;
+  double chunk_decode_ms = 0.0;
+  double final_decode_ms = 0.0;
   double decode_audio_ms = 0.0;
   double total_generation_ms = 0.0;
 };
@@ -130,6 +146,12 @@ class Qwen3TTSUnifiedRunner {
       int32_t num_quantizers,
       std::vector<float>* waveform);
 
+  bool run_decode_audio_stream(
+      const std::vector<int64_t>& padded_codes,
+      int32_t padded_codes_len,
+      int32_t num_quantizers,
+      std::vector<float>* waveform);
+
   bool read_codes_file(
       const std::string& codes_path,
       std::vector<int64_t>* codes,
@@ -164,12 +186,30 @@ class Qwen3TTSUnifiedRunner {
   void load_metadata();
   void load_methods();
   bool ensure_method(const std::string& method_name);
+  bool has_streaming_decode_method();
+  int effective_streaming_interval_steps(const SynthesizeConfig& config) const;
+  bool decode_code_step_range(
+      const std::vector<std::vector<int64_t>>& all_codes,
+      int start_step,
+      int end_step,
+      int left_context_steps,
+      bool allow_streaming_surface,
+      std::vector<float>* waveform);
+  bool decode_codes_chunked(
+      const std::vector<std::vector<int64_t>>& all_codes,
+      int chunk_size_steps,
+      int left_context_steps,
+      bool allow_streaming_surface,
+      std::vector<float>* waveform,
+      double* decode_ms,
+      double* first_audio_ms);
 
   std::unique_ptr<::executorch::extension::Module> module_;
   std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
 
   // Model metadata (from constant_methods).
   int output_sample_rate_ = 24000;
+  int decode_upsample_rate_ = 1920;
   int max_seq_len_ = 256;
   int talker_vocab_size_ = 3072;
   int talker_dim_ = 1024;
@@ -182,6 +222,15 @@ class Qwen3TTSUnifiedRunner {
   int text_prompt_trailing_template_token_count_ = 5;
   int cp_generate_contract_version_ = 1;
   int cp_generate_fast_top_k_ = 50;
+  int generation_backend_code_ = 0;
+  int decoder_backend_code_ = 0;
+  int streaming_decoder_contract_version_ = 0;
+  int streaming_decoder_chunk_size_ = 0;
+  int streaming_decoder_left_context_size_ = 0;
+  int streaming_decoder_max_codes_ = 0;
+  int prefer_streaming_decoder_surface_ = 1;
+  bool checked_streaming_decode_method_ = false;
+  bool has_streaming_decode_method_ = false;
 
   // Special token IDs.
   int64_t tts_pad_id_ = 151671;
@@ -208,11 +257,25 @@ class SynthesisSession {
       std::vector<float>* waveform,
       SynthesisTiming* timing = nullptr);
 
+  bool synthesize(
+      const std::string& text,
+      const std::string& language,
+      std::vector<float>* waveform,
+      SynthesisTiming* timing,
+      AudioChunkCallback on_audio_chunk);
+
  private:
   friend class Qwen3TTSUnifiedRunner;
   SynthesisSession(
       Qwen3TTSUnifiedRunner* runner,
       const SynthesizeConfig& config);
+
+  bool synthesize_impl(
+      const std::string& text,
+      const std::string& language,
+      std::vector<float>* waveform,
+      SynthesisTiming* timing,
+      AudioChunkCallback on_audio_chunk);
 
   Qwen3TTSUnifiedRunner* runner_;
   SynthesizeConfig config_;

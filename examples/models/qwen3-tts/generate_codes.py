@@ -1,5 +1,6 @@
 import argparse
 import json
+import random
 import sys
 from pathlib import Path
 from typing import List, Optional
@@ -34,6 +35,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--non-streaming-mode", action="store_true")
     parser.add_argument("--dtype", choices=["fp32", "bf16"], default="fp32")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--instruct", type=str, default="")
     parser.add_argument("--max-new-tokens", type=int, default=None)
     parser.add_argument("--top-k", type=int, default=None)
     parser.add_argument("--top-p", type=float, default=None)
@@ -125,6 +128,9 @@ def _build_ref_ids(
 def main() -> None:
     args = parse_args()
     args.output_codes.parent.mkdir(parents=True, exist_ok=True)
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
 
     dtype = {"fp32": torch.float32, "bf16": torch.bfloat16}[args.dtype]
     model = Qwen3TTSModel.from_pretrained(
@@ -148,10 +154,6 @@ def main() -> None:
             x_vector_only_mode=True,
         )
 
-    prompt_dict = model._prompt_items_to_voice_clone_prompt(prompt_items)
-    input_ids = model._tokenize_texts([model._build_assistant_text(args.text)])
-    ref_ids = _build_ref_ids(model, prompt_items)
-
     gen_kwargs = model._merge_generate_kwargs(
         max_new_tokens=args.max_new_tokens,
         top_k=args.top_k,
@@ -159,14 +161,28 @@ def main() -> None:
         temperature=args.temperature,
         repetition_penalty=args.repetition_penalty,
     )
-    talker_codes_list, _ = model.model.generate(
-        input_ids=input_ids,
-        ref_ids=ref_ids,
-        voice_clone_prompt=prompt_dict,
-        languages=[args.language],
-        non_streaming_mode=args.non_streaming_mode,
-        **gen_kwargs,
-    )
+    if args.instruct:
+        input_ids = model._tokenize_texts([model._build_assistant_text(args.text)])
+        instruct_ids = [model._tokenize_texts([model._build_instruct_text(args.instruct)])[0]]
+        talker_codes_list, _ = model.model.generate(
+            input_ids=input_ids,
+            instruct_ids=instruct_ids,
+            languages=[args.language],
+            non_streaming_mode=args.non_streaming_mode,
+            **gen_kwargs,
+        )
+    else:
+        prompt_dict = model._prompt_items_to_voice_clone_prompt(prompt_items)
+        input_ids = model._tokenize_texts([model._build_assistant_text(args.text)])
+        ref_ids = _build_ref_ids(model, prompt_items)
+        talker_codes_list, _ = model.model.generate(
+            input_ids=input_ids,
+            ref_ids=ref_ids,
+            voice_clone_prompt=prompt_dict,
+            languages=[args.language],
+            non_streaming_mode=args.non_streaming_mode,
+            **gen_kwargs,
+        )
     codes = talker_codes_list[0].detach().cpu()
 
     if args.trim_silence:
@@ -182,6 +198,8 @@ def main() -> None:
         "text": args.text,
         "num_codes": int(codes.shape[0]),
         "num_quantizers": int(codes.shape[1]),
+        "seed": args.seed,
+        "instruct": args.instruct,
         "x_vector_only_mode": bool(
             args.x_vector_only_mode or args.ref_audio is None
         ),

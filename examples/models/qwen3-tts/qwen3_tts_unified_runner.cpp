@@ -80,9 +80,24 @@ void extract_float_tensor(
   }
 }
 
+const char* backend_code_name(int code) {
+  switch (code) {
+    case 1:
+      return "xnnpack";
+    case 2:
+      return "metal";
+    default:
+      return "portable";
+  }
+}
+
 std::string build_assistant_prompt_text(const std::string& text) {
   return std::string("<|im_start|>assistant\n") + text +
       "<|im_end|>\n<|im_start|>assistant\n";
+}
+
+std::string build_instruct_prefix(const std::string& instruct) {
+  return std::string("<|im_start|>user\n") + instruct + "<|im_end|>\n";
 }
 
 void copy_token_slice(
@@ -152,13 +167,17 @@ Qwen3TTSUnifiedRunner::Qwen3TTSUnifiedRunner(
   ET_LOG(
       Info,
       "Unified runner: sample_rate=%d max_seq_len=%d talker_dim=%d "
-      "num_code_groups=%d text_prompt_prefill=%d tokenizer=%s",
+      "num_code_groups=%d text_prompt_prefill=%d tokenizer=%s "
+      "generation_backend=%s decoder_backend=%s prefer_stream_surface=%s",
       output_sample_rate_,
       max_seq_len_,
       talker_dim_,
       num_code_groups_,
       text_prompt_prefill_token_count_,
-      tokenizer_ ? "loaded" : "none");
+      tokenizer_ ? "loaded" : "none",
+      backend_code_name(generation_backend_code_),
+      backend_code_name(decoder_backend_code_),
+      prefer_streaming_decoder_surface_ > 0 ? "true" : "false");
 }
 
 std::unique_ptr<SynthesisSession>
@@ -177,6 +196,7 @@ void Qwen3TTSUnifiedRunner::load_metadata() {
     }
   };
   try_int("output_sample_rate", &output_sample_rate_);
+  try_int("decode_upsample_rate", &decode_upsample_rate_);
   try_int("max_seq_len", &max_seq_len_);
   try_int("talker_vocab_size", &talker_vocab_size_);
   try_int("talker_dim", &talker_dim_);
@@ -193,6 +213,19 @@ void Qwen3TTSUnifiedRunner::load_metadata() {
       &text_prompt_trailing_template_token_count_);
   try_int("cp_generate_contract_version", &cp_generate_contract_version_);
   try_int("cp_generate_fast_top_k", &cp_generate_fast_top_k_);
+  try_int("generation_backend_code", &generation_backend_code_);
+  try_int("decoder_backend_code", &decoder_backend_code_);
+  try_int(
+      "prefer_streaming_decoder_surface",
+      &prefer_streaming_decoder_surface_);
+  try_int(
+      "streaming_decoder_contract_version",
+      &streaming_decoder_contract_version_);
+  try_int("streaming_decoder_chunk_size", &streaming_decoder_chunk_size_);
+  try_int(
+      "streaming_decoder_left_context_size",
+      &streaming_decoder_left_context_size_);
+  try_int("streaming_decoder_max_codes", &streaming_decoder_max_codes_);
 
   auto try_int64 = [&](const char* name, int64_t* out) {
     auto result = module_->execute(name, empty);
@@ -233,12 +266,56 @@ bool Qwen3TTSUnifiedRunner::ensure_method(const std::string& method_name) {
   }
   // Run a warmup call to trigger XNNPACK delegate initialization.
   // Without this, the first real call pays a multi-second init penalty.
-  if (method_name == "decode_audio") {
-    ET_LOG(Info, "Warming up decode_audio (XNNPACK init)...");
-    std::vector<int64_t> warmup_codes(1 * 1 * num_quantizers_, 0);
-    run_decode_audio(warmup_codes, 1, num_quantizers_, nullptr);
+  if (method_name == "decode_audio" || method_name == "decode_audio_stream") {
+    ET_LOG(Info, "Warming up %s (XNNPACK init)...", method_name.c_str());
+    const int warmup_codes_len =
+        method_name == "decode_audio_stream" && streaming_decoder_max_codes_ > 0
+        ? streaming_decoder_max_codes_
+        : 1;
+    std::vector<int64_t> warmup_codes(
+        static_cast<size_t>(warmup_codes_len) * num_quantizers_, -1);
+    for (int q = 0; q < num_quantizers_; ++q) {
+      warmup_codes[q] = 0;
+    }
+    if (method_name == "decode_audio_stream") {
+      run_decode_audio_stream(
+          warmup_codes, warmup_codes_len, num_quantizers_, nullptr);
+    } else {
+      run_decode_audio(warmup_codes, 1, num_quantizers_, nullptr);
+    }
   }
   return true;
+}
+
+bool Qwen3TTSUnifiedRunner::has_streaming_decode_method() {
+  if (checked_streaming_decode_method_) {
+    return has_streaming_decode_method_;
+  }
+  checked_streaming_decode_method_ = true;
+  if (streaming_decoder_contract_version_ <= 0 ||
+      streaming_decoder_max_codes_ <= 0) {
+    has_streaming_decode_method_ = false;
+    return false;
+  }
+  has_streaming_decode_method_ = ensure_method("decode_audio_stream");
+  return has_streaming_decode_method_;
+}
+
+int Qwen3TTSUnifiedRunner::effective_streaming_interval_steps(
+    const SynthesizeConfig& config) const {
+  if (config.streaming_chunk_steps > 0) {
+    return config.streaming_chunk_steps;
+  }
+  if (config.streaming_interval_sec <= 0.0f) {
+    return 0;
+  }
+  const double codec_steps_per_second =
+      static_cast<double>(output_sample_rate_) /
+      static_cast<double>(decode_upsample_rate_);
+  const int interval_steps = static_cast<int>(std::lround(
+      static_cast<double>(config.streaming_interval_sec) *
+      codec_steps_per_second));
+  return std::max(1, interval_steps);
 }
 
 // ---------------------------------------------------------------------------
@@ -443,6 +520,154 @@ bool Qwen3TTSUnifiedRunner::run_decode_audio(
   } else {
     extract_float_tensor(wav_tensor, waveform);
     waveform->resize(static_cast<size_t>(used));
+  }
+  return true;
+}
+
+bool Qwen3TTSUnifiedRunner::run_decode_audio_stream(
+    const std::vector<int64_t>& padded_codes,
+    int32_t padded_codes_len,
+    int32_t num_quantizers,
+    std::vector<float>* waveform) {
+  if (!ensure_method("decode_audio_stream")) {
+    return false;
+  }
+  auto codes_tensor = from_blob(
+      const_cast<int64_t*>(padded_codes.data()),
+      {1, padded_codes_len, num_quantizers},
+      ::executorch::aten::ScalarType::Long);
+
+  std::vector<EValue> inputs_da = {EValue(*codes_tensor)};
+  auto result = module_->execute("decode_audio_stream", inputs_da);
+  if (!result.ok()) {
+    ET_LOG(Error, "decode_audio_stream execution failed.");
+    return false;
+  }
+  if (waveform == nullptr) {
+    return true;
+  }
+  auto outputs = result.get();
+  auto wav_tensor = outputs[0].toTensor();
+  auto len_tensor = outputs[1].toTensor();
+  int64_t wav_len = len_tensor.const_data_ptr<int64_t>()[0];
+  int64_t total = wav_tensor.numel();
+  int64_t used = std::min(wav_len, total);
+
+  waveform->resize(static_cast<size_t>(used));
+  if (wav_tensor.scalar_type() == ::executorch::aten::ScalarType::Float) {
+    const float* src = wav_tensor.const_data_ptr<float>();
+    std::copy(src, src + used, waveform->begin());
+  } else {
+    extract_float_tensor(wav_tensor, waveform);
+    waveform->resize(static_cast<size_t>(used));
+  }
+  return true;
+}
+
+bool Qwen3TTSUnifiedRunner::decode_code_step_range(
+    const std::vector<std::vector<int64_t>>& all_codes,
+    int start_step,
+    int end_step,
+    int left_context_steps,
+    bool allow_streaming_surface,
+    std::vector<float>* waveform) {
+  if (start_step < 0 || end_step < start_step ||
+      end_step > static_cast<int>(all_codes.size())) {
+    ET_LOG(
+        Error,
+        "Invalid decode range [%d, %d) for %zu codec steps.",
+        start_step,
+        end_step,
+        all_codes.size());
+    return false;
+  }
+  const int context_steps = std::min(left_context_steps, start_step);
+  const int window_start = start_step - context_steps;
+  const int window_steps = end_step - window_start;
+  std::vector<int64_t> window_codes(
+      static_cast<size_t>(window_steps) * num_code_groups_);
+  for (int t = 0; t < window_steps; ++t) {
+    const auto& step_codes = all_codes[window_start + t];
+    for (int g = 0; g < num_code_groups_; ++g) {
+      window_codes[t * num_code_groups_ + g] = step_codes[g];
+    }
+  }
+
+  std::vector<float> decoded_window;
+  const bool use_streaming_surface =
+      allow_streaming_surface &&
+      has_streaming_decode_method() &&
+      window_steps <= streaming_decoder_max_codes_;
+  if (use_streaming_surface) {
+    std::vector<int64_t> padded_codes(
+        static_cast<size_t>(streaming_decoder_max_codes_) * num_code_groups_,
+        -1);
+    std::copy(window_codes.begin(), window_codes.end(), padded_codes.begin());
+    if (!run_decode_audio_stream(
+            padded_codes,
+            streaming_decoder_max_codes_,
+            num_code_groups_,
+            &decoded_window)) {
+      return false;
+    }
+  } else if (!run_decode_audio(
+                 window_codes, window_steps, num_code_groups_, &decoded_window)) {
+    return false;
+  }
+
+  const size_t trim_samples =
+      static_cast<size_t>(context_steps) *
+      static_cast<size_t>(decode_upsample_rate_);
+  if (trim_samples >= decoded_window.size()) {
+    waveform->clear();
+    return true;
+  }
+  waveform->assign(
+      decoded_window.begin() + static_cast<std::ptrdiff_t>(trim_samples),
+      decoded_window.end());
+  return true;
+}
+
+bool Qwen3TTSUnifiedRunner::decode_codes_chunked(
+    const std::vector<std::vector<int64_t>>& all_codes,
+    int chunk_size_steps,
+    int left_context_steps,
+    bool allow_streaming_surface,
+    std::vector<float>* waveform,
+    double* decode_ms,
+    double* first_audio_ms) {
+  using Clock = std::chrono::steady_clock;
+  const auto t_decode = Clock::now();
+  const auto ms_since = [&](const Clock::time_point& begin) {
+    return std::chrono::duration<double, std::milli>(Clock::now() - begin)
+        .count();
+  };
+  chunk_size_steps = std::max(1, chunk_size_steps);
+
+  waveform->clear();
+  bool saw_first_audio = false;
+  for (int start = 0; start < static_cast<int>(all_codes.size());
+       start += chunk_size_steps) {
+    const int end =
+        std::min(start + chunk_size_steps, static_cast<int>(all_codes.size()));
+    std::vector<float> chunk_wav;
+    if (!decode_code_step_range(
+            all_codes,
+            start,
+            end,
+            left_context_steps,
+            allow_streaming_surface,
+            &chunk_wav)) {
+      return false;
+    }
+    if (!saw_first_audio && !chunk_wav.empty() && first_audio_ms != nullptr) {
+      *first_audio_ms = ms_since(t_decode);
+      saw_first_audio = true;
+    }
+    waveform->insert(waveform->end(), chunk_wav.begin(), chunk_wav.end());
+  }
+  if (decode_ms != nullptr) {
+    *decode_ms = ms_since(t_decode);
   }
   return true;
 }
@@ -700,6 +925,7 @@ bool Qwen3TTSUnifiedRunner::read_codes_file(
 
 void Qwen3TTSUnifiedRunner::warmup_decode() {
   if (!ensure_method("decode_audio")) return;
+  has_streaming_decode_method();
 }
 
 void Qwen3TTSUnifiedRunner::warmup_all() {
@@ -710,6 +936,7 @@ void Qwen3TTSUnifiedRunner::warmup_all() {
   ensure_method("cp_head");
   ensure_method("cp_generate");
   ensure_method("decode_audio");
+  has_streaming_decode_method();
 
   ET_LOG(Info, "Warming up full text synthesis path...");
 
@@ -757,6 +984,18 @@ void Qwen3TTSUnifiedRunner::warmup_all() {
 
   std::vector<int64_t> warmup_codes(1 * num_quantizers_, 0);
   run_decode_audio(warmup_codes, 1, num_quantizers_, nullptr);
+  if (has_streaming_decode_method()) {
+    std::vector<int64_t> padded_stream_codes(
+        static_cast<size_t>(streaming_decoder_max_codes_) * num_quantizers_, -1);
+    for (int q = 0; q < num_quantizers_; ++q) {
+      padded_stream_codes[q] = 0;
+    }
+    run_decode_audio_stream(
+        padded_stream_codes,
+        streaming_decoder_max_codes_,
+        num_quantizers_,
+        nullptr);
+  }
 }
 
 bool Qwen3TTSUnifiedRunner::decode_codes_file(
@@ -773,7 +1012,30 @@ bool Qwen3TTSUnifiedRunner::decode_codes_file(
       "Decoding codes: codes_len=%d num_quantizers=%d",
       codes_len,
       num_quantizers);
-  return run_decode_audio(flat_codes, codes_len, num_quantizers, waveform);
+  if (num_quantizers != num_code_groups_) {
+    return run_decode_audio(flat_codes, codes_len, num_quantizers, waveform);
+  }
+  std::vector<std::vector<int64_t>> all_codes(
+      static_cast<size_t>(codes_len),
+      std::vector<int64_t>(static_cast<size_t>(num_quantizers), 0));
+  for (int t = 0; t < codes_len; ++t) {
+    for (int g = 0; g < num_quantizers; ++g) {
+      all_codes[static_cast<size_t>(t)][static_cast<size_t>(g)] =
+          flat_codes[static_cast<size_t>(t * num_quantizers + g)];
+    }
+  }
+  double decode_ms = 0.0;
+  double first_audio_ms = 0.0;
+  return decode_codes_chunked(
+      all_codes,
+      streaming_decoder_chunk_size_ > 0 ? streaming_decoder_chunk_size_ : 300,
+      streaming_decoder_left_context_size_ > 0
+          ? streaming_decoder_left_context_size_
+          : 25,
+      prefer_streaming_decoder_surface_ > 0,
+      waveform,
+      &decode_ms,
+      &first_audio_ms);
 }
 
 // ---------------------------------------------------------------------------
@@ -835,6 +1097,25 @@ bool SynthesisSession::synthesize(
     const std::string& language,
     std::vector<float>* waveform,
     SynthesisTiming* timing) {
+  return synthesize_impl(text, language, waveform, timing, nullptr);
+}
+
+bool SynthesisSession::synthesize(
+    const std::string& text,
+    const std::string& language,
+    std::vector<float>* waveform,
+    SynthesisTiming* timing,
+    AudioChunkCallback on_audio_chunk) {
+  return synthesize_impl(
+      text, language, waveform, timing, std::move(on_audio_chunk));
+}
+
+bool SynthesisSession::synthesize_impl(
+    const std::string& text,
+    const std::string& language,
+    std::vector<float>* waveform,
+    SynthesisTiming* timing,
+    AudioChunkCallback on_audio_chunk) {
   auto* runner = runner_;
   if (!runner->tokenizer_) {
     ET_LOG(
@@ -871,6 +1152,30 @@ bool SynthesisSession::synthesize(
   }
 
   const auto t_prompt = Clock::now();
+
+  // 0. VoiceDesign instruct: tokenize and project the instruct prefix.
+  std::vector<float> instruct_embeds_flat;
+  int instruct_token_count = 0;
+  if (!config_.instruct.empty()) {
+    auto instruct_text = build_instruct_prefix(config_.instruct);
+    auto instruct_enc =
+        runner->tokenizer_->encode(instruct_text, /*bos=*/0, /*eos=*/0);
+    if (!instruct_enc.ok()) {
+      ET_LOG(Error, "Failed to tokenize VoiceDesign instruct.");
+      return false;
+    }
+    auto instruct_ids_raw = instruct_enc.get();
+    std::vector<int64_t> instruct_ids(
+        instruct_ids_raw.begin(), instruct_ids_raw.end());
+    instruct_token_count = static_cast<int>(instruct_ids.size());
+    if (!runner->run_encode_text(instruct_ids, &instruct_embeds_flat)) {
+      return false;
+    }
+    ET_LOG(
+        Info,
+        "VoiceDesign instruct: %d tokens prepended.",
+        instruct_token_count);
+  }
 
   // 1. Tokenize the assistant-wrapped prompt. This mirrors the upstream helper
   // and the mlx-audio reference path for text-only prompting.
@@ -988,9 +1293,10 @@ bool SynthesisSession::synthesize(
     return false;
   }
 
-  const int prefill_len = use_language_prefix
+  const int base_prefill_len = use_language_prefix
       ? runner->text_prompt_prefill_token_count_with_language_
       : runner->text_prompt_prefill_token_count_;
+  const int prefill_len = base_prefill_len + instruct_token_count;
   if (static_cast<int>(trailing_text_embeds.size()) != trailing_prompt_token_count) {
     ET_LOG(
         Error,
@@ -1019,13 +1325,15 @@ bool SynthesisSession::synthesize(
   }
 
   // 5. Build composite prefill embeddings.
-  //    Text-only schedule:
+  //    VoiceDesign: instruct tokens are prepended before the role tokens.
+  //    Text-only schedule (after instruct offset):
   //    pos 0-2: role tokens from the assistant-wrapped prompt
   //    auto:    pos 3-5 = tts_pad + codec_nothink/think_bos/think_eos,
   //             pos 6 = tts_bos + codec_pad, pos 7 = first_text + codec_bos
   //    English: pos 3-6 = tts_pad + codec_think/think_bos/lang/think_eos,
   //             pos 7 = tts_bos + codec_pad, pos 8 = first_text + codec_bos
   int dim = runner->talker_dim_;
+  const int off = instruct_token_count;
 
   std::vector<float> prefill_embeds(prefill_len * dim, 0.0f);
   auto set_pos = [&](int pos, const std::vector<float>& v) {
@@ -1037,38 +1345,45 @@ bool SynthesisSession::synthesize(
     }
   };
 
+  // Instruct tokens (VoiceDesign prefix).
+  for (int i = 0; i < instruct_token_count; ++i) {
+    std::vector<float> token_embed;
+    copy_token_slice(instruct_embeds_flat, i, 1, dim, &token_embed);
+    set_pos(i, token_embed);
+  }
+
   // Role tokens.
   for (int i = 0; i < kAssistantRoleTokenCount; ++i) {
     std::vector<float> token_embed;
     copy_token_slice(role_embed, i, 1, dim, &token_embed);
-    set_pos(i, token_embed);
+    set_pos(off + i, token_embed);
   }
 
   // Combined codec/text prefix.
   if (use_language_prefix) {
-    set_pos(3, tts_pad_embed);
-    add_pos(3, codec_think_embed);
-    set_pos(4, tts_pad_embed);
-    add_pos(4, codec_think_bos_embed);
-    set_pos(5, tts_pad_embed);
-    add_pos(5, codec_language_embed);
-    set_pos(6, tts_pad_embed);
-    add_pos(6, codec_think_eos_embed);
-    set_pos(7, tts_bos_embed);
-    add_pos(7, codec_pad_embed);
-    set_pos(8, first_text_embed);
-    add_pos(8, codec_bos_embed);
+    set_pos(off + 3, tts_pad_embed);
+    add_pos(off + 3, codec_think_embed);
+    set_pos(off + 4, tts_pad_embed);
+    add_pos(off + 4, codec_think_bos_embed);
+    set_pos(off + 5, tts_pad_embed);
+    add_pos(off + 5, codec_language_embed);
+    set_pos(off + 6, tts_pad_embed);
+    add_pos(off + 6, codec_think_eos_embed);
+    set_pos(off + 7, tts_bos_embed);
+    add_pos(off + 7, codec_pad_embed);
+    set_pos(off + 8, first_text_embed);
+    add_pos(off + 8, codec_bos_embed);
   } else {
-    set_pos(3, tts_pad_embed);
-    add_pos(3, codec_nothink_embed);
-    set_pos(4, tts_pad_embed);
-    add_pos(4, codec_think_bos_embed);
-    set_pos(5, tts_pad_embed);
-    add_pos(5, codec_think_eos_embed);
-    set_pos(6, tts_bos_embed);
-    add_pos(6, codec_pad_embed);
-    set_pos(7, first_text_embed);
-    add_pos(7, codec_bos_embed);
+    set_pos(off + 3, tts_pad_embed);
+    add_pos(off + 3, codec_nothink_embed);
+    set_pos(off + 4, tts_pad_embed);
+    add_pos(off + 4, codec_think_bos_embed);
+    set_pos(off + 5, tts_pad_embed);
+    add_pos(off + 5, codec_think_eos_embed);
+    set_pos(off + 6, tts_bos_embed);
+    add_pos(off + 6, codec_pad_embed);
+    set_pos(off + 7, first_text_embed);
+    add_pos(off + 7, codec_bos_embed);
   }
 
   const auto t_prompt_prep_end = Clock::now();
@@ -1093,6 +1408,7 @@ bool SynthesisSession::synthesize(
 
   // 7. Autoregressive generation loop.
   std::vector<std::vector<int64_t>> all_codes;
+  std::vector<float> streamed_waveform;
   std::vector<int64_t> generated_code_0_tokens;
   std::vector<int64_t> suppress_tokens;
   suppress_tokens.reserve(1024);
@@ -1118,7 +1434,30 @@ bool SynthesisSession::synthesize(
         "(fast path requires cp_generate v2, temperature>0, matching top_k, "
         "and top_p disabled).");
   }
-  const auto t_codegen = Clock::now();
+  double codegen_ms = 0.0;
+  auto t_codegen_cursor = Clock::now();
+  const int streaming_interval_steps =
+      runner->effective_streaming_interval_steps(config_);
+  const bool enable_streaming_decode =
+      on_audio_chunk != nullptr && !config_.non_streaming_mode &&
+      streaming_interval_steps > 0;
+  const bool use_streaming_decoder_surface =
+      !config_.disable_streaming_decoder_surface &&
+      (config_.force_streaming_decoder_surface ||
+       runner->prefer_streaming_decoder_surface_ > 0);
+  if (enable_streaming_decode) {
+    ET_LOG(
+        Info,
+        "Streaming decode policy: %s (generation_backend=%s decoder_backend=%s)",
+        use_streaming_decoder_surface ? "fixed_surface" : "overlap_window",
+        backend_code_name(runner->generation_backend_code_),
+        backend_code_name(runner->decoder_backend_code_));
+  }
+  std::vector<float> cumulative_stream_waveform;
+  int decoded_steps = 0;
+  double chunk_decode_ms = 0.0;
+  double first_audio_ms = 0.0;
+  bool saw_first_audio = false;
 
   for (int step = 0; step < config_.max_new_tokens; ++step) {
     int64_t code_0 = runner->sample_token(
@@ -1249,6 +1588,66 @@ bool SynthesisSession::synthesize(
 
     all_codes.push_back(step_codes);
 
+    if (enable_streaming_decode) {
+      const int n_accumulated = static_cast<int>(all_codes.size());
+      if (n_accumulated - decoded_steps >= streaming_interval_steps) {
+        codegen_ms += ms_since(t_codegen_cursor);
+        const auto t_chunk_decode = Clock::now();
+        std::vector<float> chunk_wav;
+        if (config_.use_legacy_cumulative_streaming_decode) {
+          std::vector<int64_t> chunk_flat(
+              static_cast<size_t>(n_accumulated) * runner->num_code_groups_);
+          for (int t = 0; t < n_accumulated; ++t) {
+            for (int g = 0; g < runner->num_code_groups_; ++g) {
+              chunk_flat[t * runner->num_code_groups_ + g] = all_codes[t][g];
+            }
+          }
+          if (!runner->run_decode_audio(
+                  chunk_flat, n_accumulated, runner->num_code_groups_, &chunk_wav)) {
+            return false;
+          }
+        } else if (!runner->decode_code_step_range(
+                       all_codes,
+                       decoded_steps,
+                       n_accumulated,
+                       config_.streaming_left_context_size,
+                       use_streaming_decoder_surface,
+                       &chunk_wav)) {
+          return false;
+        }
+        chunk_decode_ms +=
+            std::chrono::duration<double, std::milli>(
+                Clock::now() - t_chunk_decode)
+                .count();
+        if (!saw_first_audio && !chunk_wav.empty()) {
+          first_audio_ms = ms_since(t_start);
+          saw_first_audio = true;
+        }
+        on_audio_chunk(chunk_wav, false);
+        if (config_.use_legacy_cumulative_streaming_decode) {
+          cumulative_stream_waveform = chunk_wav;
+          ET_LOG(
+              Info,
+              "Streamed cumulative audio through step %d (%zu samples)",
+              step + 1,
+              chunk_wav.size());
+        } else {
+          streamed_waveform.insert(
+              streamed_waveform.end(), chunk_wav.begin(), chunk_wav.end());
+          decoded_steps = n_accumulated;
+          ET_LOG(
+              Info,
+              "Streamed delta audio through step %d (%zu samples)",
+              step + 1,
+              chunk_wav.size());
+        }
+        if (config_.use_legacy_cumulative_streaming_decode) {
+          decoded_steps = n_accumulated;
+        }
+        t_codegen_cursor = Clock::now();
+      }
+    }
+
     if (trailing_idx < static_cast<int>(trailing_text_embeds.size())) {
       runner->vec_add(next_input_embed, trailing_text_embeds[trailing_idx]);
       ++trailing_idx;
@@ -1267,7 +1666,7 @@ bool SynthesisSession::synthesize(
              talker_pos);
     }
   }
-  const double codegen_ms = ms_since(t_codegen);
+  codegen_ms += ms_since(t_codegen_cursor);
 
   int n_codes = static_cast<int>(all_codes.size());
   ET_LOG(
@@ -1281,9 +1680,6 @@ bool SynthesisSession::synthesize(
     return false;
   }
 
-  // 8. Flatten codes to [n_codes, num_code_groups] and decode audio.
-  std::vector<int64_t> flat_codes(
-      static_cast<size_t>(n_codes) * runner->num_code_groups_);
   for (int t = 0; t < n_codes; ++t) {
     for (int g = 0; g < runner->num_code_groups_; ++g) {
       int64_t code = all_codes[t][g];
@@ -1296,17 +1692,76 @@ bool SynthesisSession::synthesize(
             g);
         return false;
       }
-      flat_codes[t * runner->num_code_groups_ + g] = code;
     }
   }
 
-  ET_LOG(Info, "Decoding %d codes to audio...", n_codes);
-  const auto t_decode = Clock::now();
-  if (!runner->run_decode_audio(
-          flat_codes, n_codes, runner->num_code_groups_, waveform)) {
-    return false;
+  double final_decode_ms = 0.0;
+  if (enable_streaming_decode) {
+    if (decoded_steps < n_codes) {
+      const auto t_chunk_decode = Clock::now();
+      std::vector<float> final_chunk;
+      if (config_.use_legacy_cumulative_streaming_decode) {
+        std::vector<int64_t> flat_codes(
+            static_cast<size_t>(n_codes) * runner->num_code_groups_);
+        for (int t = 0; t < n_codes; ++t) {
+          for (int g = 0; g < runner->num_code_groups_; ++g) {
+            flat_codes[t * runner->num_code_groups_ + g] = all_codes[t][g];
+          }
+        }
+        if (!runner->run_decode_audio(
+                flat_codes, n_codes, runner->num_code_groups_, &final_chunk)) {
+          return false;
+        }
+      } else if (!runner->decode_code_step_range(
+                     all_codes,
+                     decoded_steps,
+                     n_codes,
+                     config_.streaming_left_context_size,
+                     use_streaming_decoder_surface,
+                     &final_chunk)) {
+        return false;
+      }
+      chunk_decode_ms +=
+          std::chrono::duration<double, std::milli>(
+              Clock::now() - t_chunk_decode)
+              .count();
+      if (!saw_first_audio && !final_chunk.empty()) {
+        first_audio_ms = ms_since(t_start);
+        saw_first_audio = true;
+      }
+      on_audio_chunk(final_chunk, true);
+      streamed_waveform.insert(
+          streamed_waveform.end(), final_chunk.begin(), final_chunk.end());
+      cumulative_stream_waveform = final_chunk;
+    } else {
+      on_audio_chunk({}, true);
+    }
+    *waveform = config_.use_legacy_cumulative_streaming_decode
+        ? std::move(cumulative_stream_waveform)
+        : std::move(streamed_waveform);
+  } else {
+    ET_LOG(Info, "Decoding %d codes to audio...", n_codes);
+    const auto t_final_decode_start = Clock::now();
+    double first_audio_from_decode_ms = 0.0;
+    if (!runner->decode_codes_chunked(
+            all_codes,
+            config_.streaming_chunk_size,
+            config_.streaming_left_context_size,
+            use_streaming_decoder_surface,
+            waveform,
+            &final_decode_ms,
+            &first_audio_from_decode_ms)) {
+      return false;
+    }
+    if (first_audio_from_decode_ms > 0.0) {
+      first_audio_ms =
+          std::chrono::duration<double, std::milli>(
+              t_final_decode_start - t_start)
+              .count() +
+          first_audio_from_decode_ms;
+    }
   }
-  const double decode_audio_ms = ms_since(t_decode);
+  const double decode_audio_ms = chunk_decode_ms + final_decode_ms;
 
   if (timing != nullptr) {
     timing->prompt_token_count = prompt_token_count;
@@ -1315,6 +1770,9 @@ bool SynthesisSession::synthesize(
     timing->prompt_prep_ms = prompt_prep_ms;
     timing->talker_prefill_ms = talker_prefill_ms;
     timing->codegen_ms = codegen_ms;
+    timing->first_audio_ms = first_audio_ms;
+    timing->chunk_decode_ms = chunk_decode_ms;
+    timing->final_decode_ms = final_decode_ms;
     timing->decode_audio_ms = decode_audio_ms;
     timing->total_generation_ms = ms_since(t_start);
   }

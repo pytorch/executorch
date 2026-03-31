@@ -356,6 +356,238 @@ python examples/models/qwen3-tts/convert_talker_weights.py \
 
 Result: **PASS**
 
+### 15) XNNPACK confidence gate: metric/accounting fixes
+
+Goal:
+
+- Fix the measurement bugs identified during `/autoresearch` before starting MLX
+  work, then document the best verified warmed XNNPACK path.
+
+What changed:
+
+- `qwen3_tts_unified_runner.cpp`
+  - `codegen_ms` now excludes in-loop streaming decode checkpoints instead of
+    timing across both code generation and chunk decode.
+  - Non-streaming `first_audio_ms` is now reported relative to request start,
+    matching the streaming code path.
+- `main_unified.cpp`
+  - `audio` and `rtf` now use the raw waveform before silence trimming.
+  - Added `trimmed_audio` and `rtf_trimmed` so post-processing effects stay
+    visible without polluting the main throughput metric.
+- `tests/test_unified_quality_contract.py`
+  - Added contract coverage for the separated codegen timing and the new raw vs.
+    trimmed RTF reporting.
+- `XNNPACK_CONFIDENCE_STATUS.md`
+  - Added a dedicated note capturing the current trustworthy XNNPACK status,
+    the exact warmed benchmark command, and the remaining blockers before we can
+    claim we beat `mlx-audio`.
+
+Verification:
+
+Focused tests:
+
+```bash
+conda run -n executorch python -m unittest \
+  examples.models.qwen3-tts.tests.test_unified_runner_contract \
+  examples.models.qwen3-tts.tests.test_unified_quality_contract \
+  examples.models.qwen3-tts.tests.test_unified_metadata
+```
+
+Result: **PASS** (`26 tests`)
+
+Runner rebuild:
+
+```bash
+cmake --build cmake-out/examples/models/qwen3-tts --target qwen3_tts_unified_runner
+```
+
+Result: **PASS**
+
+Warmed prompt-set benchmark (checked-in export):
+
+```bash
+cmake-out/examples/models/qwen3-tts/qwen3_tts_unified_runner \
+  --model_path examples/models/qwen3-tts/qwen3_tts_exports_unified/model.pte \
+  --tokenizer_path examples/models/qwen3-tts/qwen3-tts-12Hz-0.6B-Base/tokenizer.json \
+  --prompts_path examples/models/qwen3-tts/benchmark_prompts.txt \
+  --repeat 1 \
+  --max_new_tokens 128 \
+  --temperature 1.0 \
+  --top_k 50 \
+  --disable_streaming_decoder_surface
+```
+
+Result: **PASS**
+
+- Avg raw RTF: `0.51x`
+- Avg first audio: `3.57s`
+- Avg codegen: `9.16s`
+- Avg decode: `1.57s`
+
+Warmed prompt-set benchmark (temporary `max_seq_len=160` export):
+
+```bash
+cmake-out/examples/models/qwen3-tts/qwen3_tts_unified_runner \
+  --model_path /tmp/qwen3_tts_exports_unified_s160/model.pte \
+  --tokenizer_path examples/models/qwen3-tts/qwen3-tts-12Hz-0.6B-Base/tokenizer.json \
+  --prompts_path examples/models/qwen3-tts/benchmark_prompts.txt \
+  --repeat 1 \
+  --max_new_tokens 128 \
+  --temperature 1.0 \
+  --top_k 50 \
+  --disable_streaming_decoder_surface
+```
+
+Result: **PASS**
+
+- Avg raw RTF: `0.52x`
+- Avg first audio: `3.43s`
+- Avg codegen: `8.74s`
+- Avg decode: `1.61s`
+
+Non-streaming sanity check:
+
+```bash
+cmake-out/examples/models/qwen3-tts/qwen3_tts_unified_runner \
+  --model_path examples/models/qwen3-tts/qwen3_tts_exports_unified/model.pte \
+  --tokenizer_path examples/models/qwen3-tts/qwen3-tts-12Hz-0.6B-Base/tokenizer.json \
+  --text "Hello from the non streaming timing check." \
+  --max_new_tokens 64 \
+  --temperature 1.0 \
+  --top_k 50 \
+  --non_streaming_mode \
+  --disable_streaming_decoder_surface
+```
+
+Result: **PASS**
+
+- `first_audio_ms = 7685.4`
+- `generation_ms = 7685.4`
+- `final_decode_ms = 902.5`
+
+Interpretation:
+
+- The timing/accounting layer is now trustworthy enough to start MLX work.
+- The best current XNNPACK path remains the overlap-window fallback
+  (`--disable_streaming_decoder_surface`).
+- XNNPACK is still below realtime after load, so we cannot honestly claim it is
+  faster than `mlx-audio` yet.
+
+### 14) Streaming parity upgrade + XNNPACK path comparison
+
+Goal: align the ExecuTorch streaming path more closely with upstream Qwen3-TTS
+chunking semantics, add a dedicated streaming decoder export surface, and
+measure whether that new surface actually improves XNNPACK first-audio latency.
+
+Changes landed in source:
+
+- Added `capture_reference_streaming_contract.py` to record fixed-seed upstream
+  codec traces, chunk boundaries, and decode pacing semantics.
+- Reworked `qwen3_tts_unified_runner` streaming decode from cumulative
+  prefix re-decode to bounded overlap-window decode with delta chunk emission.
+- Added a dedicated `decode_audio_stream` export surface plus manifest metadata:
+  `streaming_decoder_contract_version`, `streaming_decoder_chunk_size`,
+  `streaming_decoder_left_context_size`, and `streaming_decoder_max_codes`.
+- Capability-gated the new surface in the C++ runner, warmed it up explicitly,
+  and split timing into `first_audio_ms`, `chunk_decode_ms`, and
+  `final_decode_ms`.
+- Added contract/metadata/reference tests for the new export surface and runner
+  switches.
+
+Verification:
+
+Reference contract capture:
+
+```bash
+conda run -n executorch python -u \
+  examples/models/qwen3-tts/capture_reference_streaming_contract.py \
+  --upstream-repo /Users/younghan/project/executorch-exp/Qwen3-TTS \
+  --output-dir /tmp/qwen3_streaming_reference \
+  --text "Hello from the streaming benchmark path." \
+  --language English \
+  --max-new-tokens 256
+```
+
+Result: **PASS**
+
+- Wrote fixed-seed upstream reference codes/audio/contract metadata.
+
+Focused tests:
+
+```bash
+conda run -n executorch python -m pytest \
+  examples/models/qwen3-tts/tests/test_unified_runner_contract.py \
+  examples/models/qwen3-tts/tests/test_unified_quality_contract.py \
+  examples/models/qwen3-tts/tests/test_unified_metadata.py \
+  examples/models/qwen3-tts/tests/test_streaming_reference_contract.py
+```
+
+Result: **PASS**
+
+Runner rebuild:
+
+```bash
+cmake --build cmake-out/examples/models/qwen3-tts --target qwen3_tts_unified_runner
+```
+
+Result: **PASS**
+
+Fresh unified export with streaming decoder surface:
+
+```bash
+conda run -n executorch python examples/models/qwen3-tts/export_unified.py \
+  --converted-dir examples/models/qwen3-tts/qwen3_tts_artifacts \
+  --talker-dir examples/models/qwen3-tts/qwen3_tts_artifacts/talker_converted \
+  --output-dir examples/models/qwen3-tts/qwen3_tts_exports_unified \
+  --backend xnnpack \
+  --qlinear 8da4w
+```
+
+Result: **PASS** (`elapsed ~25 min`)
+
+- Export includes `decode_audio_stream` and the new `streaming_decoder_*`
+  metadata fields.
+
+Streaming benchmark command family (same prompt, warmed process, WAV write on):
+
+```bash
+cmake-out/examples/models/qwen3-tts/qwen3_tts_unified_runner \
+  --model_path examples/models/qwen3-tts/qwen3_tts_exports_unified/model.pte \
+  --tokenizer_path examples/models/qwen3-tts/qwen3-tts-12Hz-0.6B-Base/tokenizer.json \
+  --text "Hello from the streaming benchmark path." \
+  --language English \
+  --max_new_tokens 128 \
+  --streaming_interval 2.0 \
+  --streaming_chunk_size 300 \
+  --streaming_left_context_size 25 \
+  --output_wav /tmp/qwen3_streaming.wav
+```
+
+Results:
+
+| Mode | Extra flags | First audio | Chunk decode | Generation-only | Audio | RTF |
+|------|-------------|-------------|--------------|-----------------|-------|-----|
+| Auto streaming surface | none | `8.73s` | `11.41s` | `15.20s` | `2.48s` | `0.16x` |
+| Windowed fallback | `--disable_streaming_decoder_surface` | `5.41s` | `1.56s` | `7.39s` | `2.48s` | `0.34x` |
+| Legacy cumulative | `--use_legacy_cumulative_streaming_decode` | `5.40s` | `1.60s` | `7.41s` | `2.48s` | `0.33x` |
+
+Interpretation:
+
+- The bounded overlap-window decode path is working and materially better than
+  the old cumulative prefix strategy for first-audio-oriented streaming.
+- The new fixed-shape `decode_audio_stream` surface is **not** yet a win on the
+  current XNNPACK build. It is functionally correct but significantly slower
+  than the dynamic `decode_audio` fallback on this benchmark.
+- The dominant latency is still in talker/code-predictor generation. Streaming
+  decode remains primarily a first-audio lever, not the main throughput bottleneck.
+
+Follow-up:
+
+- Investigate why `decode_audio_stream` regresses on XNNPACK despite the tighter
+  fixed-shape contract.
+- Keep the overlap-window fallback as the preferred current XNNPACK path while
+  preserving the new export surface for future backend tuning.
+
 Artifacts:
 - `talker_main.pth` (311 keys) — main backbone in Meta/Llama format
 - `talker_code_predictor.pth` (56 keys) — code predictor backbone

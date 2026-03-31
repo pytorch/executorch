@@ -1,0 +1,20 @@
+# Local model downloads and caches
+qwen3-tts-12Hz-0.6B-Base/
+tokenizer_cache/
+
+# Local converted checkpoints and export artifacts
+qwen3_tts_artifacts/
+qwen3_tts_exports_talker_8da4w/
+qwen3_tts_exports_talker_8da4w_s256/
+qwen3_tts_exports_unified/*.pte
+qwen3_tts_exports_unified_q4emb/*.pte
+qwen3_tts_exports_unified_q8emb/*.pte
+
+# Local experiment outputs
+repro_runs/
+output*.wav
+metal_test_codes.json
+qwen3_runner_exports.txt
+qwen3_runner_symbols.txt
+decode_codes_so_blob71390_strings.txt
+decode_codes_so_blob71390_symbols.txt
