@@ -424,6 +424,7 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
   test -f "${OUTPUT_DIR}/model.pte"
   test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
   ls -al "${OUTPUT_DIR}"
+
   exit 0
 fi
 
