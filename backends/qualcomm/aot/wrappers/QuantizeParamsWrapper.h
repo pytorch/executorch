@@ -84,8 +84,8 @@ class BwAxisScaleOffsetQuantizeParamsWrapper final
       std::uint32_t bitwidth,
       std::int32_t axis,
       std::uint32_t num_elements,
-      std::vector<float>& scales,
-      std::vector<int32_t>& offsets)
+      std::vector<float> scales,
+      std::vector<int32_t> offsets)
       : QuantizeParamsWrapper(
             QNN_DEFINITION_DEFINED,
             QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET),
@@ -235,7 +235,7 @@ class AxisScaleOffsetQuantizeParamsWrapper final
  public:
   explicit AxisScaleOffsetQuantizeParamsWrapper(
       std::int32_t axis,
-      std::vector<Qnn_ScaleOffset_t>& scale_offsets)
+      std::vector<Qnn_ScaleOffset_t> scale_offsets)
       : QuantizeParamsWrapper(
             QNN_DEFINITION_DEFINED,
             QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET),
@@ -284,11 +284,11 @@ class BlockwiseExpansionQuantizeParamsWrapper final
  public:
   explicit BlockwiseExpansionQuantizeParamsWrapper(
       std::int32_t axis,
-      std::vector<Qnn_ScaleOffset_t>& scale_offsets,
+      std::vector<Qnn_ScaleOffset_t> scale_offsets,
       std::uint32_t num_blocks_per_axis,
       std::uint32_t block_scale_bitwidth,
       Qnn_BlockwiseExpansionBlockScaleStorageType_t storage_type,
-      std::vector<uint8_t>& block_scales)
+      std::vector<uint8_t> block_scales)
       : QuantizeParamsWrapper(
             QNN_DEFINITION_DEFINED,
             QNN_QUANTIZATION_ENCODING_BLOCKWISE_EXPANSION),

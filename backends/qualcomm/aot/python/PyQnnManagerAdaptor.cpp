@@ -35,7 +35,7 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
     std::vector<Qnn_ScaleOffset_t> scale_offset(so_ptr, so_ptr + so_buf.size);
     quantize_param_wrapper =
         std::make_unique<AxisScaleOffsetQuantizeParamsWrapper>(
-            axis, scale_offset);
+            axis, std::move(scale_offset));
   } else if (encoding == QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET) {
     uint32_t bitwidth = quant_info["bitwidth"].cast<uint32_t>();
     int32_t axis = quant_info["axis"].cast<int32_t>();
@@ -53,7 +53,11 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
     }
     quantize_param_wrapper =
         std::make_unique<BwAxisScaleOffsetQuantizeParamsWrapper>(
-            bitwidth, axis, num_elements, scales, offsets);
+            bitwidth,
+            axis,
+            num_elements,
+            std::move(scales),
+            std::move(offsets));
   } else if (encoding == QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET) {
     uint32_t bitwidth = quant_info["bitwidth"].cast<uint32_t>();
     float scale = quant_info["scale"].cast<float>();
@@ -89,11 +93,11 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
     quantize_param_wrapper =
         std::make_unique<BlockwiseExpansionQuantizeParamsWrapper>(
             axis,
-            scale_offset,
+            std::move(scale_offset),
             num_blocks_per_axis,
             block_scale_bitwidth,
             block_storage_type,
-            block_scales_vec);
+            std::move(block_scales_vec));
   } else {
     QNN_EXECUTORCH_LOG_ERROR(
         "Unknown the encoding of quantization: %d", encoding);
