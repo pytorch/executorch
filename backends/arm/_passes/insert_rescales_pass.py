@@ -56,6 +56,13 @@ class InsertRescalePass(ArmPass):
                     continue
             if (
                 node.op == "call_function"
+                and node.target
+                == exir_ops.edge.dim_order_ops._to_dim_order_copy.default
+            ):
+                # dim_order is a view-like transform; allow it to preserve uint8 at IO.
+                continue
+            if (
+                node.op == "call_function"
                 and node.target == exir_ops.backend.tosa.RESCALE.default
             ):
                 continue

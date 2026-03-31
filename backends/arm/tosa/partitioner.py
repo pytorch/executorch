@@ -172,7 +172,11 @@ class TOSAPartitioner(Partitioner):
         self._custom_partition_ops.add(op)
 
     def _detag_boundary_nodes(
-        self, module: GraphModule, tag: str, reporter: WhyNoPartitionReporter
+        self,
+        module: GraphModule,
+        tag: str,
+        reporter: WhyNoPartitionReporter,
+        detag_first_fp_node: bool = True,
     ) -> None:
         """De-tag nodes at the partition boundary.
 
@@ -208,7 +212,7 @@ class TOSAPartitioner(Partitioner):
                 # Remove tag from quantize node with input outside partition,
                 # or dequantize node with any output outside partition
                 del node.meta["delegation_tag"]
-            elif not is_q_node and not is_dq_node:
+            elif detag_first_fp_node and not is_q_node and not is_dq_node:
                 # For non Q/DQ nodes, remove tag from first node in partition if any input has fp dtype
                 for input in node.all_input_nodes:
                     if is_partitioned(input, tag):
@@ -220,6 +224,21 @@ class TOSAPartitioner(Partitioner):
                         )
                         del node.meta["delegation_tag"]
                         break
+
+    def _preserve_io_quantization_enabled(self) -> bool:
+        """Return True if IO quantization should be preserved from compile
+        specs.
+        """
+        for spec in self.delegation_spec.compile_specs:
+            if spec.key != "preserve_io_quantization":
+                continue
+            raw = (
+                spec.value.decode()
+                if isinstance(spec.value, (bytes, bytearray))
+                else str(spec.value)
+            )
+            return raw.lower() in ("1", "true", "yes")
+        return False
 
     def _partition_has_invalid_uint8(self, partition: Partition, tag: str) -> bool:
         """Return True if any uint8 appears outside allowed IO nodes.
@@ -327,6 +346,15 @@ class TOSAPartitioner(Partitioner):
                     module,
                     tag,
                     reporter,
+                )
+
+            if self._preserve_io_quantization_enabled():
+                # Detag boundary Q/DQ to keep IO quantization outside delegate.
+                self._detag_boundary_nodes(
+                    module,
+                    tag,
+                    reporter,
+                    detag_first_fp_node=False,
                 )
 
             if self._partition_has_invalid_uint8(partition, tag):
