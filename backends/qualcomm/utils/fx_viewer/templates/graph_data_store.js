@@ -1,50 +1,4 @@
-/**
- * ============================================================================
- * CLASS: GraphDataStore
- * ============================================================================
- * Manages the raw JSON graph payload and constructs the "Virtual Node" topology.
- * 
- * USE CASES & METHOD CALLS:
- * - Initialization: `new GraphDataStore(payload)` parses the V3 JSON schema, 
- *   separating the base structural graph from the extension overlays.
- * - Dynamic Composition: `computeActiveGraph(activeExtensionIds, colorById)` is 
- *   called whenever the user toggles a UI layer, flattening the nested data into
- *   a fast array of active Virtual Nodes.
- * - Traversal: `getAncestors(id)` / `getDescendants(id)` provides O(1) BFS 
- *   lookups for the Canvas selection highlighting.
- * 
- * VARIABLES & STATE:
- * - `baseData`: Object. Contains the structural nodes and edges.
- * - `extensions`: Object. Maps extension IDs to their respective annotation data.
- * - `activeNodes`: Array. A pre-computed list of flattened node objects used by 
- *   the rendering engine and search engine.
- * - `activeNodeMap`: Map. O(1) lookup map mapping Node ID -> Virtual Node.
- * - `adjList` / `revAdjList`: Maps tracking outgoing/incoming edges.
- * - `graphBounds`: Object. Bounding box of the entire graph for camera zooming.
- * 
- * ALGORITHM & INFO FLOW:
- * 1. Topology Init (`_initTopology`): Loops over `baseData.nodes` once to calculate 
- *    the global bounds. It normalizes coordinates so the top-left node always 
- *    starts at (50, 50), providing a visual buffer. It builds the adjacency lists.
- * 2. Virtual Node Composition (`computeActiveGraph`):
- *    - Loops over `baseData.nodes`.
- *    - For each node, it creates a flat `info` dictionary starting with base meta.
- *    - It iterates over the provided `activeExtensionIds`. If an extension has data
- *      for this node, it prefixes the keys (e.g. `Profiler.latency: 15`) and 
- *      merges them into the flat `info` dictionary. This enables O(1) searching.
- *    - It concatenates `label_append` and `tooltip` arrays.
- *    - Finally, it resolves the `fill_color` strictly based on the `colorById` argument.
- * 
- * USER EXPERIENCE (UX):
- * - By pre-computing the `activeNodes` array whenever a checkbox is clicked, 
- *   the system avoids creating new objects or arrays during the 60FPS Canvas 
- *   `render()` loop. This prevents Garbage Collection stutters, ensuring buttery
- *   smooth pan and zoom even with tens of thousands of nodes.
- * - The prefixed flattening (e.g., `Profiler.latency`) means users can type 
- *   "Profiler" into the search bar and instantly highlight all nodes that have 
- *   profiling data attached.
- * ============================================================================
- */
+// Manages base graph + extension data and composes virtual nodes.
 class GraphDataStore {
     constructor(payload) {
         this.baseData = payload.base;
@@ -258,6 +212,21 @@ class GraphDataStore {
             });
         }
         return visited;
+    }
+
+    computeBoundsForNodes(nodeIds) {
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        nodeIds.forEach(nid => {
+            const node = this.activeNodeMap.get(nid);
+            if (node) {
+                minX = Math.min(minX, node.x - node.width / 2);
+                maxX = Math.max(maxX, node.x + node.width / 2);
+                minY = Math.min(minY, node.y - node.height / 2);
+                maxY = Math.max(maxY, node.y + node.height / 2);
+            }
+        });
+        if (minX === Infinity) return null;
+        return { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY };
     }
 
     getDescendants(nodeId) {

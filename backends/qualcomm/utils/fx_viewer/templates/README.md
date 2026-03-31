@@ -14,14 +14,15 @@ This folder contains the browser runtime used by `FXGraphExporter`.
 
 ## Files and Responsibilities
 
-1. `themes.js`: shared theme tokens (`THEMES`).
+1. `runtime.js`: shared theme tokens (`THEMES`), event utilities (`fxOn`, `fxOffAll`, `fxEsc`).
 2. `graph_data_store.js`: payload normalization, topology cache, virtual-node composition.
 3. `search_engine.js`: fuzzy search over active nodes.
 4. `view_controller.js`: state machine and interaction orchestration.
 5. `canvas_renderer.js`: primary graph rendering + canvas interactions.
 6. `minimap_renderer.js`: minimap rendering + minimap navigation.
 7. `ui_manager.js`: taskbar/search/layers/info panel/legend DOM.
-8. `fx_graph_viewer.js`: `FXGraphViewer` facade, `FXGraphCompare` orchestrator, `FXCompareTaskbar` shared taskbar.
+8. `fx_graph_viewer.js`: `FXGraphViewer` facade (CSS in `_injectStyles()`).
+9. `compare.js`: `FXCompareTaskbar` + `FXGraphCompare` orchestrator.
 
 ## Public API
 
@@ -110,7 +111,7 @@ Runtime input payload:
 
 ## Script Load Order
 
-1. `themes.js`
+1. `runtime.js`
 2. `graph_data_store.js`
 3. `search_engine.js`
 4. `view_controller.js`
@@ -118,6 +119,7 @@ Runtime input payload:
 6. `minimap_renderer.js`
 7. `ui_manager.js`
 8. `fx_graph_viewer.js`
+9. `compare.js`
 
 ## Maintenance Notes
 
@@ -125,6 +127,108 @@ Runtime input payload:
 2. Preserve payload compatibility when adding UI/runtime features.
 3. If state shape changes, update docs and relevant contracts in this folder.
 4. `FXGraphCompare` must always restore viewer DOM on `destroy()` — never leave viewer.mainArea detached.
+
+---
+
+## Runtime Internals
+
+### GraphDataStore
+
+Manages the raw JSON graph payload and constructs the "Virtual Node" topology.
+
+**State:** `baseData` (structural nodes/edges), `extensions` (annotation overlays), `activeNodes` (pre-computed flat array), `activeNodeMap` (O(1) id→node), `adjList`/`revAdjList` (edge traversal), `graphBounds` (camera zoom target).
+
+**Topology Init (`_initTopology`):** Loops over `baseData.nodes` once to calculate global bounds. Normalizes coordinates so the top-left node starts at (50, 50). Builds adjacency lists.
+
+**Virtual Node Composition (`computeActiveGraph`):** For each base node, creates a flat `info` dict. Iterates active extension ids; if an extension has data for the node, prefixes keys (e.g. `Profiler.latency: 15`) and merges them. Concatenates `label_append` and `tooltip` arrays. Resolves `fill_color` from `colorById`. Pre-computing `activeNodes` on checkbox toggle avoids GC pressure during the 60FPS render loop.
+
+**Traversal:** `getAncestors(id)` / `getDescendants(id)` — BFS over `revAdjList`/`adjList` for canvas selection highlighting.
+
+---
+
+### SearchEngine
+
+Fuzzy search over active graph nodes with token scoring and context highlighting.
+
+**Algorithm:**
+1. Tokenize query by spaces (e.g. `"conv 15ms"` → `["conv", "15ms"]`).
+2. Iterate `activeNodes`. Because `node.info` is a flattened dict with extension prefixes, the engine searches extension data natively.
+3. Scoring: `node.id` match = +10, `op` = +5, `target` = +3, other key/value = +1.
+4. Context highlighting: wraps matched substring in `<span style="background: yellow">` so the dropdown shows exactly why a node matched.
+5. Filter to nodes matching the maximum number of tokens (fuzzy AND).
+
+---
+
+### ViewerController
+
+Centralized state machine managing interactions, camera transforms, selections, and extension visibility.
+
+**State fields:** `hoveredNodeId`, `hoveredEdge`, `selectedNodeId`, `selectedEdge`, `previewNodeId`, `ancestors`/`descendants` (Sets), `searchCandidates`, `searchSelectedIndex`, `highlightAncestors`, `themeName`, `activeExtensions` (Set), `colorBy`.
+
+**`setState(patch)`:** Merges patch. If `activeExtensions` or `colorBy` changed, calls `store.computeActiveGraph()`, regenerates minimap thumbnail, updates legend and info panel. If `themeName` changed, calls `ui.applyThemeToDOM()`. Always calls `viewer.renderAll()` and emits `statechange`.
+
+**`animateToTransform(x, y, k)`:** Uses `requestAnimationFrame` with easeOutCubic over 300ms to interpolate camera position.
+
+**`zoomToFit()`:** If a node is selected, collects its 2-hop neighborhood; if an edge is selected, collects 1-hop neighbors of both endpoints. Computes bounding box and animates camera to fit. Falls back to full graph bounds if nothing is selected.
+
+**Selection:** `selectNode` / `selectEdge` run BFS ancestors/descendants via `store`, update state, and call `ui.updateInfoPanel` / `ui.updateEdgeInfoPanel`. `clearSelection` nullifies all selection state and hides the info panel.
+
+**Search flow:** `handleSearch` → `SearchEngine.search` → `setState({searchCandidates})` → `ui.updateSearchResults`. Arrow keys call `handleSearchNavigate` (pan preview). Enter/click calls `handleSearchSelect` (full select + close menu).
+
+---
+
+### CanvasRenderer
+
+High-performance 2D canvas rendering of the main graph with pan/zoom and hover interactions.
+
+**Coordinate spaces:** DOM mouse events are in Screen Space. Nodes/edges live in Graph Space. Conversion: `graphX = (screenX - transform.x) / transform.k`. Device pixel ratio (`dpr`) is applied via `ctx.scale(dpr, dpr)` to prevent blurring on retina displays.
+
+**Pan/zoom:** `mousedown`/`mousemove` delta → `transform.x/y`. `wheel` → exponential `zoomFactor`, pivot at cursor: `transform.x = mouseX - graphX * newK`.
+
+**`render()` loop:**
+1. Clear canvas, fill theme background.
+2. Apply `ctx.scale(dpr, dpr)`, `ctx.translate(transform.x, y)`, `ctx.scale(k, k)`.
+3. Compute `opacity = 0.15` for nodes/edges outside the active selection ancestry.
+4. Draw edges (with midpoint tensor-shape labels), then node rectangles with multi-line labels.
+
+**`drawSmartTooltip()`:** Tests 4 candidate positions (up/down/left/right) against viewport bounds. Prefers "right" if it fits. Draws a dashed connector line scaled by `1/transform.k`.
+
+**Dynamic color:** `shadeColor()` lightens/darkens custom extension fill colors for hover/selected/ancestor states, preserving analytical heatmap context.
+
+---
+
+### MinimapRenderer
+
+Minimap overview rendering with viewport tracking and click/drag navigation.
+
+**Coordinate transforms:**
+- `minimapScale = min(mw/graphW, mh/graphH) * 0.9` — shrinks Graph Space to Minimap Space.
+- `thumbnailOffset` — centers the scaled graph in the minimap container.
+- Click/drag: `graphX = (screenX - thumbnailOffset.x) / minimapScale` → update `transform.x/y` to center main canvas on that point.
+- Viewport rect: `viewX = -transform.x / transform.k`, projected to minimap: `mx = viewX * minimapScale + thumbnailOffset.x`.
+
+**`generateThumbnail()`:** Draws the full graph to an off-screen canvas buffer. Called only when graph data or theme changes.
+
+**`render()`:** Blits thumbnail (O(1)), then overlays search candidate dots, ancestor/descendant highlights, and the red viewport rectangle.
+
+---
+
+### UIManager
+
+Manages all non-canvas DOM elements: taskbar, search, layers dropdown, legend overlay, and info panel.
+
+**`buildUI()`:** Constructs HTML overlay components programmatically. Attaches `input`/`keydown` listeners on search input, relaying to `ViewerController`.
+
+**Search rendering:** `updateSearchResults` renders 50 items initially. `onscroll` listener appends 20 more when near the bottom (chunked rendering to prevent DOM freeze).
+
+**Layers menu:** Reads `viewer.store.extensions` to build checkboxes (`activeExtensions`) and radio buttons (`colorBy`). `onchange` calls `controller.setState`.
+
+**Info panel (`updateInfoPanel`):**
+1. Renders core PyTorch keys (`op`, `name`, `target`, `args`, `kwargs`, `shape`, `dtype`) at top.
+2. Renders Inputs/Outputs as clickable `fx-link` elements that animate camera to related nodes.
+3. Groups remaining prefixed keys (e.g. `Profiler.latency`) by prefix, rendering section headers.
+
+**Legend (`renderLegend`):** Reads `colorBy` state, fetches legend array from `store`, renders color swatches with `shadeColor` adjustment for dark mode.
 
 ---
 

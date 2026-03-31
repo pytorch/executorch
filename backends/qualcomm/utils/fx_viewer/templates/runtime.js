@@ -13,6 +13,11 @@ function fxOffAll(teardownFns) {
     }
 }
 
+function fxEsc(s) {
+    if (typeof s !== 'string') s = String(s);
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 const THEMES = {
     'light': {
         bg: '#ffffff',

@@ -1,47 +1,4 @@
-
-/**
- * ============================================================================
- * CLASS: SearchEngine
- * ============================================================================
- * A dedicated utility class providing fuzzy searching over the graph data.
- * 
- * USE CASES & METHOD CALLS:
- * - Search Querying: `SearchEngine.search(query)` is called whenever the user 
- *   types into the taskbar search input.
- * 
- * VARIABLES & STATE:
- * - `dataStore`: Reference to the `GraphDataStore`. This allows the SearchEngine 
- *   to query against `dataStore.activeNodes`, meaning it inherently searches 
- *   across both base data and ALL currently enabled Extension data.
- * 
- * ALGORITHM & INFO FLOW:
- * 1. Tokenization: Splits the query by spaces into `queryTokens` (e.g., "conv 15ms" 
- *    becomes ["conv", "15ms"]).
- * 2. Active Node Traversal: Iterates over the pre-computed `activeNodes` array.
- *    Because `node.info` is a flattened dictionary containing prefixes (e.g. 
- *    `Profiler.latency: "15ms"`), the engine simply iterates through all key-value
- *    pairs natively without needing to know about extensions.
- * 3. Scoring: 
- *    - `node.id` matches get +10 points.
- *    - `op` matches get +5.
- *    - `target` matches get +3.
- *    - Any other key or value match in `node.info` gets +1 point.
- * 4. Context Highlighting: When a token matches a value in `node.info`, it extracts 
- *    a substring around the match and wraps it in a `<span style="background: yellow">`
- *    tag so the user sees exactly *why* a node matched.
- * 5. Filtering: Calculates `maxMatchedTokensCount`. If the user types 3 keywords, 
- *    it heavily prioritizes nodes that match all 3, filtering out nodes that only 
- *    matched 1 or 2 (acting as a fuzzy AND filter).
- * 
- * USER EXPERIENCE (UX):
- * - By searching against the dynamically prefixed `node.info` dictionary, the 
- *   search engine instantly becomes "Extension-aware". Users can search for a 
- *   specific memory bandwidth value or quantization scale, and the engine will 
- *   highlight the result just like native PyTorch data.
- * - The context highlighting prevents confusion when searching deeply nested 
- *   properties, as the dropdown explicitly shows the matching snippet.
- * ============================================================================
- */
+// Fuzzy search over active graph nodes with token scoring and context highlighting.
 class SearchEngine {
     constructor(dataStore) {
         this.dataStore = dataStore;

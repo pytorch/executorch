@@ -1,58 +1,4 @@
-
-/**
- * ============================================================================
- * CLASS: UIManager
- * ============================================================================
- * Manages all non-canvas DOM elements: the Taskbar, Search Menu, Layers Dropdown,
- * Legend Overlay, and the dynamic Info Panel.
- * 
- * USE CASES & METHOD CALLS:
- * 1. Initialized by FXGraphViewer. Builds the DOM inside `viewer.mainArea` and `viewer.sidebar`.
- * 2. `applyThemeToDOM()` is called when the theme switches to update CSS Variables and colors.
- * 3. `updateSearchResults()` and `updateSearchActiveItem()` are called by ViewerController 
- *    during search operations to populate the dropdown.
- * 4. `updateInfoPanel()` and `updateEdgeInfoPanel()` are called by ViewerController 
- *    when elements are selected. dynamically rendering section headers based on active 
- *   Extension prefixes (e.g., separating Base Data from Profiler Data).
- * 5. Legend Updating: `renderLegend()` grabs the color keys mapped to the currently
- *   selected `colorBy` extension and paints the floating box.
- * 
- * RELATED VARIABLES & STATE:
- * - `taskbar`, `searchInput`, `searchMenu`, `layersMenu`, `legendOverlay`: DOM container refs.
- * - `infoPanel`: The DOM element inside the right-hand sidebar.
- * - `visibleCandidatesCount`: Integer tracking how many search results are currently rendered 
- *   to support infinite scrolling without lagging the browser. 
- * 
- * ALGORITHM & INFO FLOW:
- * - `buildUI()`: Constructs the HTML overlay components programmatically. Attaches 
- *   event listeners to the search input (`input`, `keydown`) and relays them to `ViewerController`.
- * - Search Rendering: `updateSearchResults` uses a chunked rendering strategy. It initially 
- *   renders 50 items. An `onscroll` listener detects when the user reaches the bottom of the 
- *   dropdown, expanding `visibleCandidatesCount` and appending more items, preventing DOM freeze.
- * - Layers Menu Generation: Reads `viewer.store.extensions` on boot to build 
- *   checkboxes (`activeExtensions`) and radio buttons (`colorBy`). Attaches 
- *   `onchange` listeners that mutate `controller.state`.
- * - Info Panel Reconstruction (`updateInfoPanel`): 
- *   1. Iterates through the flat `node.info` dictionary.
- *   2. Base PyTorch properties ('op', 'target', 'args', 'kwargs', 'shape') are 
- *      rendered at the top.
- *   3. It groups the remaining prefixed keys (e.g. `Profiler.latency`) by 
- *      splitting on `.`. Whenever the prefix changes, it prints an HTML Header
- *      like `<div class="header">--- Profiler ---</div>`.
- *   4. Parses internal Inputs/Outputs to create clickable `<div class="fx-link">`
- *      elements that jump the camera to related nodes.
- * 
- * USER EXPERIENCE (UX):
- * - Separation between Canvas layer (WebGL/2D Context) and HTML layer allows text 
- *   selection, native scrollbars, and native UI interactions. 
- * - Organized Info Panel: The user sees an organized sidebar where Python-defined
- *   Extension data sits cleanly below the structural PyTorch properties.
- * - Seamless interactions: Hovering search dropdown results smoothly pans the 
- *   canvas to "preview" the result without destroying the user's current selection.
- * - Floating Legend: Gives immediate visual context to the canvas colors without 
- *   requiring the user to hunt for documentation.
- * ============================================================================
- */
+// Manages all non-canvas DOM elements: taskbar, search, layers dropdown, legend, and info panel.
 class UIManager {
     constructor(container, viewer, options = {}) {
         this.container = container;
@@ -264,8 +210,8 @@ class UIManager {
             for (const [extId, extData] of Object.entries(this.viewer.store.extensions)) {
                 layersHtml += `
                     <label style="display: block; padding: 5px; cursor: pointer;">
-                        <input type="checkbox" class="fx-layer-checkbox" value="${extId}">
-                        ${extData.name}
+                        <input type="checkbox" class="fx-layer-checkbox" value="${fxEsc(extId)}">
+                        ${fxEsc(extData.name)}
                     </label>
                 `;
             }
@@ -283,8 +229,8 @@ class UIManager {
                 if (extData.legend && extData.legend.length > 0) {
                     layersHtml += `
                         <label style="display: block; padding: 5px; cursor: pointer;">
-                            <input type="radio" name="${radioName}" value="${extId}">
-                            ${extData.name}
+                            <input type="radio" name="${radioName}" value="${fxEsc(extId)}">
+                            ${fxEsc(extData.name)}
                         </label>
                     `;
                 }
@@ -402,7 +348,7 @@ class UIManager {
             const swatchColor = theme && theme === THEMES.dark ? shadeColor(item.color, -20) : item.color;
             html += `<div style="display:flex; align-items:center; margin-bottom:2px;">
                 <div style="width:12px; height:12px; background-color:${swatchColor}; border:1px solid #ccc; margin-right:5px;"></div>
-                <span style="font-size:11px;">${item.label}</span>
+                <span style="font-size:11px;">${fxEsc(item.label)}</span>
             </div>`;
         });
         html += `</div>`;
@@ -513,6 +459,7 @@ class UIManager {
                 matchText = `<i>${cand.matchField}:</i> ${cand.matchString}`;
             }
             
+            // highlightedId and matchString contain intentional HTML (highlight spans from SearchEngine)
             item.innerHTML = `<div><strong>${cand.highlightedId}</strong></div><div style="font-size: 10px; color: ${theme.textMuted};">${matchText}</div>`;
             
             item.onmouseenter = () => this.controller.handleSearchHover(idx);
@@ -532,11 +479,11 @@ class UIManager {
         this.infoPanel.style.display = 'block';
         const theme = THEMES[this.controller.state.themeName];
         
-        let html = `<h3>Node: ${node.id}</h3>`;
+        let html = `<h3>Node: ${fxEsc(node.id)}</h3>`;
         html += `<table class="fx-info-table" style="border-color: ${theme.uiBorder}">`;
         
         const renderRow = (key, val) => {
-            html += `<tr><th style="border-color: ${theme.uiBorder}">${key}</th><td style="border-color: ${theme.uiBorder}">${val}</td></tr>`;
+            html += `<tr><th style="border-color: ${theme.uiBorder}">${fxEsc(key)}</th><td style="border-color: ${theme.uiBorder}">${val}</td></tr>`;
         };
 
         // 1. Core PyTorch Properties
@@ -562,13 +509,13 @@ class UIManager {
 
         const inEdges = this.viewer.store.revAdjList.get(nodeId) || [];
         if (inEdges.length > 0) {
-            let links = inEdges.map(e => `<div class="fx-link" data-node="${e.v}">${e.v}</div>`).join('<br>');
+            let links = inEdges.map(e => `<div class="fx-link" data-node="${fxEsc(e.v)}">${fxEsc(e.v)}</div>`).join('<br>');
             renderRow("Inputs", links);
         }
 
         const outEdges = this.viewer.store.adjList.get(nodeId) || [];
         if (outEdges.length > 0) {
-            let links = outEdges.map(e => `<div class="fx-link" data-node="${e.w}">${e.w}</div>`).join('<br>');
+            let links = outEdges.map(e => `<div class="fx-link" data-node="${fxEsc(e.w)}">${fxEsc(e.w)}</div>`).join('<br>');
             renderRow("Outputs", links);
         }
         
@@ -596,11 +543,11 @@ class UIManager {
             }
 
             for (const [extName, extDict] of Object.entries(extensionGroups)) {
-                html += `<div class="fx-ext-header" style="border-bottom: 1px solid ${theme.uiBorder};">--- ${extName} ---</div>`;
+                html += `<div class="fx-ext-header" style="border-bottom: 1px solid ${theme.uiBorder};">--- ${fxEsc(extName)} ---</div>`;
                 html += `<table class="fx-info-table" style="border-color: ${theme.uiBorder}; margin-top: 5px;">`;
                 for (const [k, v] of Object.entries(extDict)) {
                     let valStr = typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v);
-                    html += `<tr><th style="border-color: ${theme.uiBorder}">${k}</th><td style="border-color: ${theme.uiBorder}"><pre style="margin:0; font-size:10px; white-space:pre-wrap; max-width: 250px; overflow-x: auto;">${valStr}</pre></td></tr>`;
+                    html += `<tr><th style="border-color: ${theme.uiBorder}">${fxEsc(k)}</th><td style="border-color: ${theme.uiBorder}"><pre style="margin:0; font-size:10px; white-space:pre-wrap; max-width: 250px; overflow-x: auto;">${fxEsc(valStr)}</pre></td></tr>`;
                 }
                 html += `</table>`;
             }
@@ -624,20 +571,20 @@ class UIManager {
         if (!srcNode || !dstNode) return;
         
         const theme = THEMES[this.controller.state.themeName];
-        let html = `<h3>Edge: ${srcNode.id} &rarr;<br>${dstNode.id}</h3>`;
+        let html = `<h3>Edge: ${fxEsc(srcNode.id)} &rarr;<br>${fxEsc(dstNode.id)}</h3>`;
         html += `<table class="fx-info-table" style="border-color: ${theme.uiBorder}">`;
-        
+
         let shapeStr = '', dtypeStr = '';
         if (srcNode.info && srcNode.info.shape) shapeStr = JSON.stringify(srcNode.info.shape).replace(/"/g, '');
         else if (srcNode.info && srcNode.info.tensor_shape) shapeStr = JSON.stringify(srcNode.info.tensor_shape).replace(/"/g, '');
-        
+
         if (srcNode.info && srcNode.info.dtype && typeof srcNode.info.dtype === "string") dtypeStr = srcNode.info.dtype.replace('torch.', '');
-        
-        if (shapeStr) html += `<tr><th style="border-color: ${theme.uiBorder}">Shape</th><td style="border-color: ${theme.uiBorder}">${shapeStr}</td></tr>`;
-        if (dtypeStr) html += `<tr><th style="border-color: ${theme.uiBorder}">Dtype</th><td style="border-color: ${theme.uiBorder}">${dtypeStr}</td></tr>`;
-        
-        html += `<tr><th style="border-color: ${theme.uiBorder}">Src Node</th><td style="border-color: ${theme.uiBorder}"><div class="fx-link" data-node="${srcNode.id}">${srcNode.id}</div></td></tr>`;
-        html += `<tr><th style="border-color: ${theme.uiBorder}">Dst Node</th><td style="border-color: ${theme.uiBorder}"><div class="fx-link" data-node="${dstNode.id}">${dstNode.id}</div></td></tr>`;
+
+        if (shapeStr) html += `<tr><th style="border-color: ${theme.uiBorder}">Shape</th><td style="border-color: ${theme.uiBorder}">${fxEsc(shapeStr)}</td></tr>`;
+        if (dtypeStr) html += `<tr><th style="border-color: ${theme.uiBorder}">Dtype</th><td style="border-color: ${theme.uiBorder}">${fxEsc(dtypeStr)}</td></tr>`;
+
+        html += `<tr><th style="border-color: ${theme.uiBorder}">Src Node</th><td style="border-color: ${theme.uiBorder}"><div class="fx-link" data-node="${fxEsc(srcNode.id)}">${fxEsc(srcNode.id)}</div></td></tr>`;
+        html += `<tr><th style="border-color: ${theme.uiBorder}">Dst Node</th><td style="border-color: ${theme.uiBorder}"><div class="fx-link" data-node="${fxEsc(dstNode.id)}">${fxEsc(dstNode.id)}</div></td></tr>`;
         
         html += `</table>`;
         this.infoPanel.innerHTML = html;
