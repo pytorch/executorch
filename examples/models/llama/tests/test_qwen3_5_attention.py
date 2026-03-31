@@ -6,8 +6,9 @@
 
 import unittest
 
-import torch
 import executorch.examples.models.llama.attention as attention_module
+import torch
+
 from executorch.examples.models.llama.attention import ATTENTION_REGISTRY
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.norm import RMSNorm
@@ -199,7 +200,9 @@ class Qwen35AttentionTest(unittest.TestCase):
         beta = torch.sigmoid(torch.randn(1, 3, attn_custom.num_v_heads))
 
         original_op = attention_module._RECURRENT_GATED_DELTA_RULE_OP
-        original_tried_loading = attention_module._TRIED_LOADING_RECURRENT_GATED_DELTA_RULE_OP
+        original_tried_loading = (
+            attention_module._TRIED_LOADING_RECURRENT_GATED_DELTA_RULE_OP
+        )
         try:
             attention_module._RECURRENT_GATED_DELTA_RULE_OP = recurrent_op
             attention_module._TRIED_LOADING_RECURRENT_GATED_DELTA_RULE_OP = True
