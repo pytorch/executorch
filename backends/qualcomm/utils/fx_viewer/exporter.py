@@ -265,7 +265,7 @@ class FXGraphExporter:
     def _load_viewer_js_bundle() -> str:
         template_dir = os.path.join(os.path.dirname(__file__), "templates")
         ordered_files = [
-            "themes.js",
+            "runtime.js",
             "graph_data_store.js",
             "search_engine.js",
             "view_controller.js",
@@ -273,6 +273,7 @@ class FXGraphExporter:
             "minimap_renderer.js",
             "ui_manager.js",
             "fx_graph_viewer.js",
+            "compare.js",
         ]
         chunks = []
         for filename in ordered_files:

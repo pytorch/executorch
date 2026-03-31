@@ -72,7 +72,7 @@ def _load_viewer_js_bundle_local() -> str:
     """
     template_dir = THIS_DIR.parent / "templates"
     ordered_files = [
-        "themes.js",
+        "runtime.js",
         "graph_data_store.js",
         "search_engine.js",
         "view_controller.js",
@@ -80,6 +80,7 @@ def _load_viewer_js_bundle_local() -> str:
         "minimap_renderer.js",
         "ui_manager.js",
         "fx_graph_viewer.js",
+        "compare.js",
     ]
     chunks: list[str] = []
     for filename in ordered_files:
