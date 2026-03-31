@@ -348,6 +348,9 @@ class UIManager {
         if ('fullscreenButton' in flags && this.btnFullscreen) {
             this.btnFullscreen.style.display = flags.fullscreenButton ? '' : 'none';
         }
+        if ('highlightButton' in flags && this.btnHighlight) {
+            this.btnHighlight.style.display = flags.highlightButton ? '' : 'none';
+        }
     }
 
     syncFullscreenButton() {

@@ -275,12 +275,13 @@ class FXGraphViewer {
             .fx-compare-minimap-row .fx-minimap-container { width: 100%; height: 100%; border-top: none; }
             .fx-compare-canvas-row { flex: 1; min-height: 0; position: relative; overflow: hidden; }
             .fx-compare-canvas-row .fx-main-area { min-width: 0; }
-            .fx-compare-info-bar { flex: 0 0 auto; overflow-y: auto; border-top: 1px solid #ccc; padding: 8px; font-size: 13px; max-height: 220px; background: #fff; }
-            .fx-compare-info-bar-placeholder { color: #888; text-align: center; padding: 12px; }
-            .fx-compare-info-merged { width: 100%; border-collapse: collapse; font-size: 12px; }
-            .fx-compare-info-merged th, .fx-compare-info-merged td { border: 1px solid #ddd; padding: 4px 6px; text-align: left; vertical-align: top; }
-            .fx-compare-info-merged th { font-weight: bold; background: rgba(0,0,0,0.04); }
-            .fx-compare-info-merged tr.fx-diff td { background: rgba(255, 200, 0, 0.2); }
+            .fx-compare-info-bar { flex: 0 0 auto; overflow-y: auto; border-top: 1px solid #ccc; font-size: 13px; max-height: 220px; background: #fff; }
+            .fx-compare-info-grid { display: grid; padding: 4px 8px; gap: 0 8px; font-size: 12px; }
+            .fx-compare-info-hdr { font-weight: 600; padding: 3px 6px; border-bottom: 2px solid #ccc; background: rgba(0,0,0,0.04); position: sticky; top: 0; }
+            .fx-compare-info-prop { font-weight: 600; padding: 3px 6px; border-bottom: 1px solid #eee; background: rgba(0,0,0,0.02); }
+            .fx-compare-info-val { padding: 3px 6px; border-bottom: 1px solid #eee; }
+            .fx-compare-info-diff { background: rgba(255,200,0,0.2); }
+            .fx-compare-info-placeholder { color: #888; text-align: center; padding: 12px; }
         `;
         document.head.appendChild(style);
     }
@@ -876,6 +877,11 @@ class FXCompareTaskbar {
         allLayers.forEach((name, id) => {
             html += `<label style="display:block;padding:5px;cursor:pointer;"><input type="checkbox" value="${id}"> ${name}</label>`;
         });
+        html += '<div style="padding:5px;font-weight:bold;border-top:1px solid #ccc;margin-top:4px;">Color By</div>';
+        html += `<label style="display:block;padding:5px;cursor:pointer;"><input type="radio" name="cmp_colorby" value="base"> Base</label>`;
+        allLayers.forEach((name, id) => {
+            html += `<label style="display:block;padding:5px;cursor:pointer;"><input type="radio" name="cmp_colorby" value="${id}"> ${name}</label>`;
+        });
         this._layersMenu.innerHTML = html;
         this._layersMenu.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
             cb.onchange = (e) => {
@@ -885,6 +891,17 @@ class FXCompareTaskbar {
                     else active.delete(e.target.value);
                     v.setLayers([...active]);
                 });
+            };
+        });
+        // Sync current colorBy state from first viewer
+        const currentColorBy = this.compare.viewers[0]?.controller?.state?.colorBy || 'base';
+        const matchingRadio = this._layersMenu.querySelector(`input[type="radio"][name="cmp_colorby"][value="${currentColorBy}"]`);
+        if (matchingRadio) matchingRadio.checked = true;
+        this._layersMenu.querySelectorAll('input[type="radio"][name="cmp_colorby"]').forEach((rb) => {
+            rb.onchange = (e) => {
+                if (e.target.checked) {
+                    this.compare.viewers.forEach((v) => v.setColorBy(e.target.value));
+                }
             };
         });
     }
@@ -942,6 +959,8 @@ class FXGraphCompare {
         };
         this._minimapHeight = (config.layout && config.layout.minimapHeight) || 180;
         this._infoHeight = (config.layout && config.layout.infoHeight) || 200;
+        this._canvasHeightRatio = (config.layout && config.layout.canvasHeightRatio != null)
+            ? config.layout.canvasHeightRatio : 0.7;
 
         this.container = null;
         if (config.layout && config.layout.container) {
@@ -968,15 +987,25 @@ class FXGraphCompare {
         this._wireSelectionSync();
         this._wireStateSync();
 
+        // Always suppress per-viewer UI in compare mode
+        this.viewers.forEach((v) => {
+            const keepToolbar = this.sharedTaskbar.enabled;
+            v.setUIVisibility({
+                toolbar: keepToolbar,
+                search: keepToolbar,
+                layers: false,
+                theme: false,
+                zoomButtons: false,
+                fullscreenButton: false,
+                highlightButton: false,
+            });
+            if (keepToolbar && v.ui && v.ui.searchContainer) {
+                v.ui.searchContainer.style.flex = '1';
+                v.ui.searchContainer.style.maxWidth = 'none';
+            }
+        });
         if (this.sharedTaskbar.enabled && this._root) {
             this._taskbar = new FXCompareTaskbar(this._root, this, this.sharedTaskbar.controls);
-            this.viewers.forEach((v) => {
-                v.setUIVisibility({ toolbar: true, search: true, layers: false, theme: false, zoomButtons: false, fullscreenButton: false });
-                if (v.ui && v.ui.searchContainer) {
-                    v.ui.searchContainer.style.flex = '1';
-                    v.ui.searchContainer.style.maxWidth = 'none';
-                }
-            });
         }
     }
 
@@ -985,6 +1014,22 @@ class FXGraphCompare {
         this._root = document.createElement('div');
         this._root.className = 'fx-compare-root';
         this.container.appendChild(this._root);
+
+        // Ensure root has a defined height so the flex chain doesn't collapse.
+        // If the container has an explicit height, use 100%; otherwise fall back to 90vh.
+        const _syncRootHeight = () => {
+            if (this.container.offsetHeight >= 100) {
+                this._root.style.height = '100%';
+            } else {
+                this._root.style.height = Math.round(window.innerHeight * 0.9) + 'px';
+            }
+        };
+        _syncRootHeight();
+        if (typeof ResizeObserver !== 'undefined') {
+            const ro = new ResizeObserver(_syncRootHeight);
+            ro.observe(this.container);
+            this._colResizeObservers.push(ro);
+        }
 
         // Create the grid (columns of viewers)
         this._grid = document.createElement('div');
@@ -1047,7 +1092,7 @@ class FXGraphCompare {
         // Shared info bar at the bottom
         this._infoBar = document.createElement('div');
         this._infoBar.className = 'fx-compare-info-bar';
-        this._infoBar.innerHTML = '<div class="fx-compare-info-bar-placeholder">No node selected — click a node to compare</div>';
+        this._infoBar.innerHTML = '<div class="fx-compare-info-placeholder">No node selected — click a node to compare</div>';
         this._root.appendChild(this._infoBar);
 
         // Resize all viewers after DOM is settled
@@ -1170,9 +1215,10 @@ class FXGraphCompare {
     _updateMergedInfo(nodeIdMap) {
         if (!this._infoBar) return;
         if (!nodeIdMap) {
-            this._infoBar.innerHTML = '<div class="fx-compare-info-bar-placeholder">No node selected — click a node to compare</div>';
+            this._infoBar.innerHTML = '<div class="fx-compare-info-placeholder">No node selected — click a node to compare</div>';
             return;
         }
+        const N = this.viewers.length;
         const viewerNames = this.viewers.map((v, i) => (v.config && v.config.title) || `Graph ${i + 1}`);
         const allProps = new Set();
         const rowData = new Map();
@@ -1183,20 +1229,21 @@ class FXGraphCompare {
             Object.keys(props).forEach((k) => allProps.add(k));
             rowData.set(v, props);
         });
-        let html = `<table class="fx-compare-info-merged"><thead><tr><th>Property</th>`;
-        this.viewers.forEach((v, i) => { html += `<th>${viewerNames[i]}</th>`; });
-        html += `</tr></thead><tbody>`;
+        let html = `<div class="fx-compare-info-grid" style="grid-template-columns: auto repeat(${N}, 1fr)">`;
+        // Header row
+        html += `<div class="fx-compare-info-hdr">Property</div>`;
+        viewerNames.forEach((name) => { html += `<div class="fx-compare-info-hdr">${name}</div>`; });
+        // Data rows
         allProps.forEach((prop) => {
             const vals = this.viewers.map((v) => {
                 const d = rowData.get(v);
                 return d ? (d[prop] !== undefined ? String(d[prop]) : '—') : '—';
             });
             const allSame = vals.every((v) => v === vals[0]);
-            html += `<tr${allSame ? '' : ' class="fx-diff"'}><td>${prop}</td>`;
-            vals.forEach((val) => { html += `<td>${val}</td>`; });
-            html += `</tr>`;
+            html += `<div class="fx-compare-info-prop">${prop}</div>`;
+            vals.forEach((val) => { html += `<div class="fx-compare-info-val${allSame ? '' : ' fx-compare-info-diff'}">${val}</div>`; });
         });
-        html += `</tbody></table>`;
+        html += `</div>`;
         this._infoBar.innerHTML = html;
     }
 
