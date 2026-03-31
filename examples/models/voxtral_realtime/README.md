@@ -198,6 +198,7 @@ capability to avoid "invalid device function" errors (the `int4mm` kernels
 require SM 80+).
 
 ```powershell
+$env:CMAKE_CUDA_ARCHITECTURES="80;86;89;90;120"
 cmake --workflow --preset llm-release-cuda
 Push-Location examples/models/voxtral_realtime
 cmake --workflow --preset voxtral-realtime-cuda
