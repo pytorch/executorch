@@ -5,16 +5,14 @@
  *  LICENSE file in the root directory of this source tree.
  */
 
+#include <cinttypes>
+#include <cstdlib>
 #include <cstring>
-#include <iostream>
-#include <memory>
-
-#include <openvino/openvino.hpp>
+#include <string>
 
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
-#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 #include "OpenvinoBackend.h"
@@ -23,68 +21,185 @@ namespace executorch {
 namespace backends {
 namespace openvino {
 
-OpenvinoBackend::OpenvinoBackend() {}
+namespace {
 
-bool OpenvinoBackend::is_available() const {
-  try {
-    // Create an OpenVINO Core object to verify runtime availability
-    ov::Core core;
+constexpr const char* kDefaultLibName = "libopenvino_c.so";
 
-    // Check if at least one device is available
-    auto devices = core.get_available_devices();
-    if (!devices.empty()) {
-      return true; // OpenVINO is available
+template <typename FuncPtr>
+FuncPtr load_symbol(void* handle, const char* name) {
+  dlerror(); // Clear any stale error state.
+  void* sym = dlsym(handle, name);
+  const char* err = dlerror();
+  if (err) {
+    ET_LOG(Error, "OpenVINO: failed to resolve symbol '%s': %s", name, err);
+    return nullptr;
+  }
+  return reinterpret_cast<FuncPtr>(sym);
+}
+
+} // namespace
+
+// Loading is attempted exactly once via std::call_once.  If the first attempt
+// fails (e.g. library not on LD_LIBRARY_PATH), subsequent calls return false
+// without retrying.  Users must fix their environment and restart the process.
+bool OpenvinoBackend::ensure_loaded() const {
+  std::call_once(load_flag_, [this]() {
+    const char* lib_path = std::getenv("OPENVINO_LIB_PATH");
+    const char* effective_path = lib_path ? lib_path : kDefaultLibName;
+
+    void* handle = dlopen(effective_path, RTLD_NOW | RTLD_LOCAL);
+    if (!handle) {
+      ET_LOG(
+          Error,
+          "OpenVINO runtime not found (dlopen failed: %s). "
+          "Ensure 'libopenvino_c.so' is on your library search path "
+          "(set OPENVINO_LIB_PATH or LD_LIBRARY_PATH), or install with: "
+          "pip install \"openvino>=2025.1.0,<2026.0.0\"",
+          dlerror());
+      return;
     }
-  } catch (const std::exception& e) {
-    // Log the exception if OpenVINO runtime is not available
-    ET_LOG(Error, "OpenVINO is not available: %s", e.what());
-  } catch (...) {
-    // Handle any unexpected errors
-    ET_LOG(
-        Error, "OpenVINO availability check failed due to an unknown error.");
+    lib_handle_.reset(handle);
+
+#define LOAD_SYM(field, symbol_name)                                  \
+  ov_.field = load_symbol<decltype(ov_.field)>(handle, #symbol_name); \
+  if (!ov_.field) {                                                   \
+    ov_ = OpenvinoFunctions{};                                        \
+    lib_handle_.reset(); /* handle is stale after this */             \
+    return;                                                           \
   }
 
-  return false; // OpenVINO is not available
+    LOAD_SYM(core_create, ov_core_create)
+    LOAD_SYM(core_free, ov_core_free)
+    LOAD_SYM(core_get_available_devices, ov_core_get_available_devices)
+    LOAD_SYM(available_devices_free, ov_available_devices_free)
+    LOAD_SYM(core_import_model, ov_core_import_model)
+    LOAD_SYM(
+        compiled_model_create_infer_request,
+        ov_compiled_model_create_infer_request)
+    LOAD_SYM(compiled_model_inputs_size, ov_compiled_model_inputs_size)
+    LOAD_SYM(compiled_model_outputs_size, ov_compiled_model_outputs_size)
+    LOAD_SYM(compiled_model_free, ov_compiled_model_free)
+    LOAD_SYM(
+        infer_request_set_input_tensor_by_index,
+        ov_infer_request_set_input_tensor_by_index)
+    LOAD_SYM(
+        infer_request_set_output_tensor_by_index,
+        ov_infer_request_set_output_tensor_by_index)
+    LOAD_SYM(infer_request_infer, ov_infer_request_infer)
+    LOAD_SYM(infer_request_free, ov_infer_request_free)
+    LOAD_SYM(tensor_create_from_host_ptr, ov_tensor_create_from_host_ptr)
+    LOAD_SYM(tensor_free, ov_tensor_free)
+    LOAD_SYM(shape_create, ov_shape_create)
+    LOAD_SYM(shape_free, ov_shape_free)
+
+#undef LOAD_SYM
+
+    loaded_ = true;
+    ET_LOG(
+        Info,
+        "OpenVINO: runtime loaded successfully from '%s'",
+        effective_path);
+  });
+  return loaded_;
+}
+
+bool OpenvinoBackend::is_available() const {
+  if (!ensure_loaded()) {
+    return false;
+  }
+
+  ov_core_t* core = nullptr;
+  ov_status_e status = ov_.core_create(&core);
+  if (status != OV_STATUS_OK || !core) {
+    return false;
+  }
+
+  ov_available_devices_t devices = {};
+  status = ov_.core_get_available_devices(core, &devices);
+  bool available = (status == OV_STATUS_OK && devices.size > 0);
+
+  if (devices.devices) {
+    ov_.available_devices_free(&devices);
+  }
+  ov_.core_free(core);
+  return available;
 }
 
 exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
     exr::BackendInitContext& context,
     exr::FreeableBuffer* processed,
     exr::ArrayRef<exr::CompileSpec> compile_specs) const {
-  ET_LOG(Info, "OpenvinoBackend::init %p", processed->data());
+  if (!ensure_loaded()) {
+    return exr::Error::NotFound;
+  }
 
-  ov::Core core;
+  ov_core_t* core = nullptr;
+  ov_status_e status = ov_.core_create(&core);
+  if (status != OV_STATUS_OK || !core) {
+    ET_LOG(Error, "OpenVINO: failed to create core (status=%d)", status);
+    return exr::Error::Internal;
+  }
+
   const char* data_ptr = static_cast<const char*>(processed->data());
   size_t data_size = processed->size();
 
-  // Copy data to a string or vector
-  std::string data_string(data_ptr, data_size);
-
-  // Wrap the data in a stream
-  std::istringstream compiled_stream(data_string);
-
-  auto device = "CPU";
-  // Get the device value, if provided in compile sepcs
+  std::string device = "CPU";
   for (auto& compile_spec : compile_specs) {
-    if (std::strcmp(compile_spec.key, "device") == 0)
-      device = static_cast<char*>(compile_spec.value.buffer);
+    if (std::strcmp(compile_spec.key, "device") == 0) {
+      const char* buf = static_cast<const char*>(compile_spec.value.buffer);
+      size_t len = compile_spec.value.nbytes;
+      // Strip trailing null bytes that may be included in nbytes.
+      while (len > 0 && buf[len - 1] == '\0') {
+        --len;
+      }
+      if (len > 0) {
+        device.assign(buf, len);
+      }
+    }
   }
 
-  // Import the model
-  auto compiled_model = core.import_model(compiled_stream, device);
+  ov_compiled_model_t* compiled_model = nullptr;
+  status = ov_.core_import_model(
+      core, data_ptr, data_size, device.c_str(), &compiled_model);
+  ov_.core_free(core);
 
-  // The processed data can be freed since the model is compiled
+  if (status != OV_STATUS_OK || !compiled_model) {
+    ET_LOG(
+        Error,
+        "OpenVINO: failed to import model for device '%s' (status=%d)",
+        device.c_str(),
+        status);
+    return exr::Error::Internal;
+  }
+
   processed->Free();
 
-  // Allocate an infer request
-  std::shared_ptr<ov::InferRequest> infer_request =
-      std::make_shared<ov::InferRequest>(compiled_model.create_infer_request());
+  ov_infer_request_t* infer_request = nullptr;
+  status =
+      ov_.compiled_model_create_infer_request(compiled_model, &infer_request);
+  if (status != OV_STATUS_OK || !infer_request) {
+    ET_LOG(
+        Error, "OpenVINO: failed to create infer request (status=%d)", status);
+    ov_.compiled_model_free(compiled_model);
+    return exr::Error::Internal;
+  }
 
-  // Allocate execution handle
   exr::MemoryAllocator* allocator = context.get_runtime_allocator();
+  if (!allocator) {
+    ET_LOG(Error, "OpenVINO: runtime allocator is null");
+    ov_.infer_request_free(infer_request);
+    ov_.compiled_model_free(compiled_model);
+    return exr::Error::Internal;
+  }
   ExecutionHandle* handle = allocator->allocateInstance<ExecutionHandle>();
+  if (!handle) {
+    ET_LOG(Error, "OpenVINO: failed to allocate ExecutionHandle");
+    ov_.infer_request_free(infer_request);
+    ov_.compiled_model_free(compiled_model);
+    return exr::Error::MemoryAllocationFailed;
+  }
   new (handle) ExecutionHandle;
-  handle->compiled_model = std::make_shared<ov::CompiledModel>(compiled_model);
+  handle->compiled_model = compiled_model;
   handle->infer_request = infer_request;
 
   return handle;
@@ -94,113 +209,203 @@ exr::Error OpenvinoBackend::execute(
     exr::BackendExecutionContext& context,
     exr::DelegateHandle* input_handle,
     exr::Span<exr::EValue*> args) const {
-  ExecutionHandle* execution_handle = (ExecutionHandle*)input_handle;
+  (void)context;
+  ExecutionHandle* execution_handle =
+      static_cast<ExecutionHandle*>(input_handle);
 
-  auto infer_request = execution_handle->infer_request;
+  size_t num_inputs = 0;
+  size_t num_outputs = 0;
+  ov_status_e status = ov_.compiled_model_inputs_size(
+      execution_handle->compiled_model, &num_inputs);
+  if (status != OV_STATUS_OK) {
+    return exr::Error::Internal;
+  }
+  status = ov_.compiled_model_outputs_size(
+      execution_handle->compiled_model, &num_outputs);
+  if (status != OV_STATUS_OK) {
+    return exr::Error::Internal;
+  }
 
-  size_t num_inputs = infer_request->get_compiled_model().inputs().size();
-  size_t num_outputs = infer_request->get_compiled_model().outputs().size();
+  // Bounds check must come after querying num_inputs/num_outputs from the
+  // compiled model — those values are only known at runtime.  If either
+  // query above fails, we return Internal before reaching this point.
+  ET_CHECK_OR_RETURN_ERROR(
+      num_inputs + num_outputs == args.size(),
+      InvalidArgument,
+      "OpenVINO: expected %zu args (inputs=%zu + outputs=%zu), got %zu",
+      num_inputs + num_outputs,
+      num_inputs,
+      num_outputs,
+      args.size());
 
-  // Set inputs
   for (size_t i = 0; i < num_inputs; i++) {
-    auto input_tensor = args[i]->toTensor();
-    ov::Shape input_shape(
-        input_tensor.sizes().begin(), input_tensor.sizes().end());
-
-    // Convert input tensor to OpenVINO tensor
-    ov::element::Type ov_type =
-        convert_to_openvino_type(input_tensor.scalar_type());
-    ov::Tensor ov_input_tensor(
-        ov_type, input_shape, input_tensor.mutable_data_ptr());
-
-    infer_request->set_input_tensor(i, ov_input_tensor);
+    ov_tensor_t* tensor = nullptr;
 
     if (args[i]->isInt()) {
       int64_t* val = &(args[i]->payload.copyable_union.as_int);
-
-      // Create OpenVINO tensor from integer input
-      ov::Tensor ov_input_tensor(ov::element::i64, ov::Shape{1}, val);
-      infer_request->set_input_tensor(i, ov_input_tensor);
-    } else {
+      int64_t dims[] = {1};
+      ov_shape_t shape = {};
+      status = ov_.shape_create(1, dims, &shape);
+      if (status != OV_STATUS_OK) {
+        return exr::Error::Internal;
+      }
+      status =
+          ov_.tensor_create_from_host_ptr(OV_ELEMENT_I64, shape, val, &tensor);
+      ov_.shape_free(&shape);
+      if (status != OV_STATUS_OK || !tensor) {
+        return exr::Error::Internal;
+      }
+    } else if (args[i]->isTensor()) {
       auto input_tensor = args[i]->toTensor();
-      ov::Shape input_shape(
-          input_tensor.sizes().begin(), input_tensor.sizes().end());
+      auto result = create_ov_tensor(input_tensor);
+      if (!result.ok()) {
+        return result.error();
+      }
+      tensor = result.get();
+    } else {
+      ET_LOG(Error, "OpenVINO: unsupported input arg type at index %zu", i);
+      return exr::Error::InvalidArgument;
+    }
 
-      // Convert input tensor to OpenVINO tensor
-      ov::element::Type ov_type =
-          convert_to_openvino_type(input_tensor.scalar_type());
-      ov::Tensor ov_input_tensor(
-          ov_type, input_shape, input_tensor.mutable_data_ptr());
-
-      infer_request->set_input_tensor(i, ov_input_tensor);
+    status = ov_.infer_request_set_input_tensor_by_index(
+        execution_handle->infer_request, i, tensor);
+    // Safe to free: the OpenVINO C API wraps ov::Tensor in a shared_ptr
+    // (see ov_tensor struct in openvino/src/bindings/c/src/common.h).
+    // set_input_tensor dereferences the shared_ptr and passes by value to the
+    // C++ InferRequest, which stores its own shared_ptr copy.  Freeing the
+    // C wrapper here only decrements the refcount; the tensor stays alive
+    // inside the infer_request until it is freed or overwritten.
+    ov_.tensor_free(tensor);
+    if (status != OV_STATUS_OK) {
+      return exr::Error::Internal;
     }
   }
 
-  // Set outputs
   for (size_t i = 0; i < num_outputs; i++) {
+    ET_CHECK_OR_RETURN_ERROR(
+        args[num_inputs + i]->isTensor(),
+        InvalidArgument,
+        "OpenVINO: expected tensor for output %zu",
+        i);
     auto output_tensor = args[num_inputs + i]->toTensor();
-    ov::Shape output_shape(
-        output_tensor.sizes().begin(), output_tensor.sizes().end());
+    auto result = create_ov_tensor(output_tensor);
+    if (!result.ok()) {
+      return result.error();
+    }
+    ov_tensor_t* tensor = result.get();
 
-    // Convert input tensor to OpenVINO tensor
-    ov::element::Type ov_type =
-        convert_to_openvino_type(output_tensor.scalar_type());
-    ov::Tensor ov_output_tensor(
-        ov_type, output_shape, output_tensor.mutable_data_ptr());
-
-    infer_request->set_output_tensor(i, ov_output_tensor);
+    status = ov_.infer_request_set_output_tensor_by_index(
+        execution_handle->infer_request, i, tensor);
+    // Safe to free: see shared_ptr ownership comment on input tensor above.
+    ov_.tensor_free(tensor);
+    if (status != OV_STATUS_OK) {
+      return exr::Error::Internal;
+    }
   }
 
-  // Execute the inference
-  infer_request->infer();
+  status = ov_.infer_request_infer(execution_handle->infer_request);
+  if (status != OV_STATUS_OK) {
+    ET_LOG(Error, "OpenVINO: inference failed (status=%d)", status);
+    return exr::Error::Internal;
+  }
 
   return exr::Error::Ok;
 }
 
+// Lifecycle note: destroy() is only called for handles returned by a
+// successful init(), which requires ensure_loaded() to have succeeded.
+// The function-pointer null checks below are an extra safety net in case
+// the library was torn down out of order (e.g. process exit).
 void OpenvinoBackend::destroy(exr::DelegateHandle* handle) const {
   if (!handle) {
-    ET_LOG(Info, "Attempted to destroy a null handle.");
     return;
   }
 
-  // Cast the handle to the appropriate type
   ExecutionHandle* execution_handle = static_cast<ExecutionHandle*>(handle);
 
-  // Clean up resources
-  if (execution_handle->infer_request) {
-    execution_handle->infer_request.reset(); // Release the infer request
-    ET_LOG(Info, "Infer request successfully destroyed.");
+  if (execution_handle->infer_request && ov_.infer_request_free) {
+    ov_.infer_request_free(execution_handle->infer_request);
+    execution_handle->infer_request = nullptr;
   }
 
-  if (execution_handle->compiled_model) {
-    execution_handle->compiled_model.reset(); // Release the compiled model
-    ET_LOG(Info, "Compiled model successfully destroyed.");
+  if (execution_handle->compiled_model && ov_.compiled_model_free) {
+    ov_.compiled_model_free(execution_handle->compiled_model);
+    execution_handle->compiled_model = nullptr;
   }
-
-  ET_LOG(Info, "Delegate handle destroyed successfully.");
 }
 
-ov::element::Type OpenvinoBackend::convert_to_openvino_type(
+exr::Result<ov_tensor_t*> OpenvinoBackend::create_ov_tensor(
+    const exa::Tensor& tensor) const {
+  ov_element_type_e ov_type = convert_to_openvino_type(tensor.scalar_type());
+  if (ov_type == OV_ELEMENT_UNDEFINED) {
+    return exr::Error::NotSupported;
+  }
+  auto sizes = tensor.sizes();
+  int64_t rank = sizes.size();
+  ET_CHECK_OR_RETURN_ERROR(
+      rank >= 0 && rank <= 1024,
+      InvalidArgument,
+      "OpenVINO: unreasonable tensor rank %" PRId64,
+      rank);
+  // Stack buffer for common ranks; heap-allocate via unique_ptr for larger.
+  int64_t dims_buf[8];
+  std::unique_ptr<int64_t[]> dims_heap;
+  int64_t* dims = dims_buf;
+  if (rank > 8) {
+    dims_heap.reset(new int64_t[rank]);
+    dims = dims_heap.get();
+  }
+  for (int64_t d = 0; d < rank; d++) {
+    dims[d] = sizes[d];
+  }
+  // shape is zero-initialized; shape_free is only needed after a successful
+  // shape_create (the zero state is safe to skip).
+  ov_shape_t shape = {};
+  ov_status_e status = ov_.shape_create(rank, dims, &shape);
+  dims_heap.reset(); // Release heap dims (no-op if stack was used).
+  if (status != OV_STATUS_OK) {
+    return exr::Error::Internal;
+  }
+
+  ov_tensor_t* ov_tensor = nullptr;
+  status = ov_.tensor_create_from_host_ptr(
+      ov_type, shape, tensor.mutable_data_ptr(), &ov_tensor);
+  ov_.shape_free(&shape);
+  if (status != OV_STATUS_OK || !ov_tensor) {
+    return exr::Error::Internal;
+  }
+  return ov_tensor;
+}
+
+ov_element_type_e OpenvinoBackend::convert_to_openvino_type(
     exa::ScalarType scalar_type) const {
   switch (scalar_type) {
     case exa::ScalarType::Float:
-      return ov::element::f32;
-    case exa::ScalarType::Double:
-      return ov::element::f64;
+      return OV_ELEMENT_F32;
     case exa::ScalarType::Half:
-      return ov::element::f16;
+      return OV_ELEMENT_F16;
     case exa::ScalarType::Int:
-      return ov::element::i32;
+      return OV_ELEMENT_I32;
     case exa::ScalarType::Char:
-      return ov::element::i8;
+      return OV_ELEMENT_I8;
     case exa::ScalarType::Byte:
-      return ov::element::u8;
+      return OV_ELEMENT_U8;
     case exa::ScalarType::Long:
-      return ov::element::i64;
+      return OV_ELEMENT_I64;
     case exa::ScalarType::Bool:
-      return ov::element::boolean;
+      return OV_ELEMENT_BOOLEAN;
+    case exa::ScalarType::BFloat16:
+      return OV_ELEMENT_BF16;
+    case exa::ScalarType::Double:
+      return OV_ELEMENT_F64;
+    case exa::ScalarType::Short:
+      return OV_ELEMENT_I16;
     default:
-      throw std::runtime_error("Unsupported scalar type");
+      ET_LOG(
+          Error,
+          "OpenVINO: unsupported scalar type %d",
+          static_cast<int>(scalar_type));
+      return OV_ELEMENT_UNDEFINED;
   }
 }
 
