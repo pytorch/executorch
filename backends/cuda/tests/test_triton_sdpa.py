@@ -7,9 +7,8 @@
 """Comprehensive tests for the Triton SDPA kernel.
 
 Tests MHA, GQA, MQA with various head dims, sequence lengths, causal/non-causal,
-bool masks, and the pack_gqa optimization. Reference outputs are computed using
-torch SDPA with expanded KV heads (for GQA/MQA) in float32 for numerical
-stability.
+and bool masks. Reference outputs are computed using torch SDPA with expanded KV
+heads (for GQA/MQA) in float32 for numerical stability.
 
 Test parametrization adapted from FlashAttention (tests/cute/test_flash_attn.py).
 """
@@ -31,11 +30,7 @@ def _skip_if_no_cuda():
 def _import_sdpa():
     from executorch.backends.cuda.triton.kernels.sdpa import sdpa
 
-    try:
-        from executorch.backends.cuda.triton.kernels.sdpa import _should_pack_gqa
-    except ImportError:
-        _should_pack_gqa = None
-    return sdpa, _should_pack_gqa
+    return sdpa
 
 
 def _reference_sdpa(q, k, v, attn_mask=None, is_causal=False, scale=None):
@@ -112,11 +107,7 @@ class TestTritonSdpa(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         _skip_if_no_cuda()
-        cls.sdpa, cls.should_pack_gqa = _import_sdpa()
-
-    @staticmethod
-    def _should_pack_gqa(L_q, num_groups, block_m):
-        return TestTritonSdpa.should_pack_gqa(L_q, num_groups, block_m)
+        cls.sdpa = _import_sdpa()
 
     # ------------------------------------------------------------------
     # MHA tests (no GQA, backwards compatibility)
@@ -220,12 +211,7 @@ class TestTritonSdpa(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_gqa_decode(self):
-        """GQA decode (seqlen_q=1): exercises pack_gqa path.
-
-        This is the critical test for the pack_gqa optimization. With
-        seqlen_q=1, the heuristic should choose pack_gqa, folding all
-        Q heads into a single tile.
-        """
+        """GQA decode (seqlen_q=1)."""
         for (H_q, H_kv, label), D, Lk in itertools.product(
             GQA_CONFIGS, [64, 128, 256], [64, 128, 512]
         ):
@@ -237,13 +223,6 @@ class TestTritonSdpa(unittest.TestCase):
                 q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
                 k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
                 v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
-
-                # Verify heuristic chooses pack_gqa for decode
-                num_groups = H_q // H_kv
-                self.assertTrue(
-                    self._should_pack_gqa(Lq, num_groups, 64),
-                    "Heuristic should choose pack_gqa for decode",
-                )
 
                 out = self.sdpa(q, k, v, enable_gqa=True)
                 ref = _reference_sdpa(q, k, v)
@@ -277,22 +256,15 @@ class TestTritonSdpa(unittest.TestCase):
                 self.assertLess(_max_abs_error(out, ref), 0.05)
 
     def test_gqa_short_seqlen(self):
-        """GQA with short seqlen_q (2-8): pack_gqa should still activate."""
+        """GQA with short seqlen_q (2-8)."""
         for Lq in [2, 4, 8]:
             for H_q, H_kv, label in [(8, 2, "gqa_4x"), (16, 2, "gqa_8x")]:
                 with self.subTest(label=label, Lq=Lq):
                     B, Lk, D = 1, 256, 128
-                    num_groups = H_q // H_kv
                     torch.manual_seed(42)
                     q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
                     k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
                     v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
-
-                    # Verify heuristic activates pack_gqa
-                    self.assertTrue(
-                        self._should_pack_gqa(Lq, num_groups, 64),
-                        f"Should pack for Lq={Lq}, groups={num_groups}",
-                    )
 
                     out = self.sdpa(q, k, v, enable_gqa=True)
                     ref = _reference_sdpa(q, k, v)
@@ -301,24 +273,17 @@ class TestTritonSdpa(unittest.TestCase):
                     self.assertLess(_max_abs_error(out, ref), 0.05)
 
     def test_gqa_prefill(self):
-        """GQA prefill (long seqlen_q): should NOT use pack_gqa."""
+        """GQA prefill (long seqlen_q)."""
         for (H_q, H_kv, label), L in itertools.product(
             [(8, 2, "gqa_4x"), (16, 2, "gqa_8x"), (6, 1, "mqa")],
             [64, 128, 256],
         ):
             with self.subTest(label=label, L=L):
                 B, D = 1, 128
-                num_groups = H_q // H_kv
                 torch.manual_seed(42)
                 q = torch.randn(B, H_q, L, D, dtype=torch.bfloat16, device="cuda")
                 k = torch.randn(B, H_kv, L, D, dtype=torch.bfloat16, device="cuda")
                 v = torch.randn(B, H_kv, L, D, dtype=torch.bfloat16, device="cuda")
-
-                # Verify heuristic does NOT pack for long seqlen
-                self.assertFalse(
-                    self._should_pack_gqa(L, num_groups, 64),
-                    f"Should NOT pack for L={L}",
-                )
 
                 out = self.sdpa(q, k, v, is_causal=True, enable_gqa=True)
                 ref = _reference_sdpa(q, k, v, is_causal=True)
@@ -430,30 +395,6 @@ class TestTritonSdpa(unittest.TestCase):
                 self.assertLess(
                     _max_abs_error(out, ref), 0.05, f"Qwen config Lq={Lq} Lk={Lk}"
                 )
-
-    # ------------------------------------------------------------------
-    # Pack GQA heuristic tests
-    # ------------------------------------------------------------------
-
-    def test_pack_gqa_heuristic(self):
-        """Verify _should_pack_gqa matches expected behavior."""
-        # MHA: never pack
-        self.assertFalse(self._should_pack_gqa(1, 1, 64))
-        self.assertFalse(self._should_pack_gqa(128, 1, 64))
-
-        # GQA decode (seqlen=1): always pack
-        self.assertTrue(self._should_pack_gqa(1, 8, 64))
-        self.assertTrue(self._should_pack_gqa(1, 4, 64))
-        self.assertTrue(self._should_pack_gqa(1, 2, 64))
-
-        # GQA short seqlen: pack when utilization improves
-        self.assertTrue(self._should_pack_gqa(4, 8, 64))
-        self.assertTrue(self._should_pack_gqa(8, 8, 64))
-
-        # GQA long seqlen: don't pack (tiles already full)
-        self.assertFalse(self._should_pack_gqa(64, 8, 64))
-        self.assertFalse(self._should_pack_gqa(128, 4, 64))
-        self.assertFalse(self._should_pack_gqa(256, 2, 64))
 
     # ------------------------------------------------------------------
     # Edge cases and validation

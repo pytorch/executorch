@@ -240,22 +240,24 @@ def _sdpa_fwd_kernel_non_pow2(
     NEG_INF: tl.constexpr = float("-inf")
 
     for start_n in tl.range(0, LK, BLOCK_N, num_stages=2):
-        kn = start_n + tl.arange(0, BLOCK_N)
-        kv_col_mask = kn < LK
+        offs_n = start_n + tl.arange(0, BLOCK_N)
+        kv_col_mask = offs_n < LK
 
-        k_ptrs = k_base + (kn[:, None] * stride_kl + offs_d[None, :] * stride_kd)
+        k_ptrs = k_base + (offs_n[:, None] * stride_kl + offs_d[None, :] * stride_kd)
         k = tl.load(k_ptrs, mask=kv_col_mask[:, None] & d_mask[None, :], other=0.0)
 
         qk = tl.dot(q, tl.trans(k))
         qk = (qk * qk_scale_log2).to(tl.float32)
 
         if IS_CAUSAL:
-            causal_mask = kn[None, :] > seq_pos[:, None]
+            causal_mask = offs_n[None, :] > seq_pos[:, None]
             qk = tl.where(causal_mask, tl.full(qk.shape, NEG_INF, dtype=tl.float32), qk)
 
         if HAS_MASK:
             m_ptrs = (
-                mask_b_base + seq_pos[:, None] * stride_mlq + kn[None, :] * stride_mlk
+                mask_b_base
+                + seq_pos[:, None] * stride_mlq
+                + offs_n[None, :] * stride_mlk
             )
             tile_valid = row_valid[:, None] & kv_col_mask[None, :]
             keep = tl.load(m_ptrs, mask=tile_valid, other=False)
@@ -276,7 +278,7 @@ def _sdpa_fwd_kernel_non_pow2(
 
         acc = (acc * alpha[:, None]).to(tl.float32)
 
-        v_ptrs = v_base + (kn[:, None] * stride_vl + offs_d[None, :] * stride_vd)
+        v_ptrs = v_base + (offs_n[:, None] * stride_vl + offs_d[None, :] * stride_vd)
         v = tl.load(v_ptrs, mask=kv_col_mask[:, None] & d_mask[None, :], other=0.0)
 
         acc = tl.dot(p.to(v.dtype), v, acc).to(tl.float32)
