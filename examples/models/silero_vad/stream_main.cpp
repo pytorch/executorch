@@ -61,14 +61,14 @@ int main(int argc, char** argv) {
         pending_samples.data() + prior_sample_count,
         pending_bytes.data(),
         float_bytes);
-    pending_bytes.erase(pending_bytes.begin(), pending_bytes.begin() + float_bytes);
+    pending_bytes.erase(
+        pending_bytes.begin(), pending_bytes.begin() + float_bytes);
 
     while (pending_samples.size() >=
            static_cast<size_t>(runner.window_size())) {
       float prob =
           runner.process_frame(pending_samples.data(), runner.window_size());
-      double timestamp =
-          static_cast<double>(runner.stream_frame_index()) *
+      double timestamp = static_cast<double>(runner.stream_frame_index()) *
           runner.frame_duration();
       std::cout << "PROB " << timestamp << " " << prob << std::endl;
       pending_samples.erase(
