@@ -76,10 +76,10 @@ def lower_to_openvino(
     subset_size: int,
     quantize: bool,
 ) -> ExecutorchProgramManager:
+    import nncf
     from executorch.backends.openvino.partitioner import OpenvinoPartitioner
     from executorch.backends.openvino.quantizer import OpenVINOQuantizer
     from executorch.backends.openvino.quantizer.quantizer import QuantizationMode
-    import nncf
     from nncf.experimental.torch.fx import quantize_pt2e
 
     if quantize:
@@ -269,7 +269,7 @@ def main(
     if val_dataset_yaml_path is not None:
         if input_dims != [640, 640]:
             raise NotImplementedError(
-                f"Validation with the custom input shape {input_dims} is not implmenented."
+                f"Validation with the custom input shape {input_dims} is not implemented."
                 " Please use the default --input_dims=[640,640] for the validation."
             )
         stats = validate_yolo(model, exec_prog, val_dataset_yaml_path)
@@ -288,7 +288,6 @@ def _prepare_validation(
     }  # highest priority args on the right
 
     validator = model._smart_load("validator")(args=args, _callbacks=model.callbacks)
-    validator.device = torch.device("cpu")
     stride = 32  # default stride
     validator.stride = stride  # used in get_dataloader() for padding
     validator.data = check_det_dataset(dataset_yaml_path)

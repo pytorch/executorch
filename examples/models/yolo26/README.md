@@ -46,8 +46,6 @@ XNNPACK:
 python export_and_validate.py --model_name yolo26s --input_dims=[1920,1080] --backend xnnpack
 ```
 
-> **_NOTE:_**  Quantization for XNNPACK backend is WIP. Please refere to <https://github.com/pytorch/executorch/issues/11523> for more details.
-
 Exported model could be validated using the `--validate` key:
 
 ```bash

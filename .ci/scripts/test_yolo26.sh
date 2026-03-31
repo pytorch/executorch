@@ -167,9 +167,14 @@ prepare_artifacts_upload() {
 
 
 # Export model.
-EXPORTED_MODEL_NAME="${MODEL_NAME}_fp32_${MODE}.pte"
-echo "Exporting ${EXPORTED_MODEL_NAME}"
 EXPORT_ARGS="--model_name=${MODEL_NAME} --backend=${MODE}"
+if [[ -n "${PT2E_QUANTIZE}" ]]; then
+  EXPORTED_MODEL_NAME="${MODEL_NAME}_int8_${MODE}.pte"
+  EXPORT_ARGS="${EXPORT_ARGS} --quantize --video_path=${VIDEO_PATH}"
+else
+  EXPORTED_MODEL_NAME="${MODEL_NAME}_fp32_${MODE}.pte"
+fi
+echo "Exporting ${EXPORTED_MODEL_NAME}"
 
 # Add dynamically linked library location
 cmake_install_executorch_libraries
