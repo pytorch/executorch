@@ -52,8 +52,8 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Hexagon toolchain with release build complains about code in third party
 # libraries.
-if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon AND ${CMAKE_BUILD_TYPE} STREQUAL
-                                                 "Release"
+if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "Hexagon" AND "${CMAKE_BUILD_TYPE}"
+                                                     STREQUAL "Release"
 )
   add_compile_options(
     -Wno-error=format -Wno-error=implicit-int-conversion
