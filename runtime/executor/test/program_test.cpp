@@ -811,7 +811,10 @@ TEST_F(ProgramTest, NullPlanNameDoesNotCrash) {
   auto program = executorch_flatbuffer::CreateProgram(
       builder,
       0,
-      builder.CreateVector({execution_plan}),
+      builder.CreateVector(
+          std::vector<
+              flatbuffers::Offset<executorch_flatbuffer::ExecutionPlan>>{
+              execution_plan}),
       builder.CreateVector(
           std::vector<flatbuffers::Offset<executorch_flatbuffer::Buffer>>{}),
       builder.CreateVector(
