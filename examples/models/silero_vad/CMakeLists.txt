@@ -33,7 +33,9 @@ set(common_link_libraries executorch gflags)
 
 # Common ops for all builds
 if(TARGET optimized_native_cpu_ops_lib)
-  list(APPEND common_link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)
+  list(APPEND common_link_libraries optimized_native_cpu_ops_lib cpublas
+       eigen_blas
+  )
   get_target_property(_is_imported optimized_native_cpu_ops_lib IMPORTED)
   if(NOT _is_imported)
     executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
@@ -60,23 +62,13 @@ endif()
 
 # Add the required ExecuTorch extensions
 set(silero_runner_link_libraries ${common_link_libraries})
-list(
-  APPEND
-  silero_runner_link_libraries
-  extension_module
-  extension_data_loader
-  extension_tensor
-  extension_flat_tensor
+list(APPEND silero_runner_link_libraries extension_module extension_data_loader
+     extension_tensor extension_flat_tensor
 )
 
 set(silero_stream_link_libraries ${common_link_libraries})
-list(
-  APPEND
-  silero_stream_link_libraries
-  extension_module
-  extension_data_loader
-  extension_tensor
-  extension_flat_tensor
+list(APPEND silero_stream_link_libraries extension_module extension_data_loader
+     extension_tensor extension_flat_tensor
 )
 
 add_executable(silero_vad_runner main.cpp silero_vad_runner.cpp)
