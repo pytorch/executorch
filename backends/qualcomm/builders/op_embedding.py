@@ -14,6 +14,12 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_ENCODING,
     QCOM_QUANT_ATTRS,
+    QCOM_QUANT_MAX,
+    QCOM_QUANT_MIN,
+    QCOM_SCALE,
+    QCOM_SCALES,
+    QCOM_ZERO_POINT,
+    QCOM_ZERO_POINTS,
 )
 
 from .node_visitor import NodeVisitor, PER_CHANNEL_ENCODING, QNN_QUANT_TYPE_MAP
@@ -66,21 +72,21 @@ class Embedding(NodeVisitor):
             intermediate_quant_attrs = node.meta[QCOM_QUANT_ATTRS].copy()
             # Based on QNN HTP quantization constraints,
             # we should set the scale to max of scales and per-tensor quantization for embedding op
-            intermediate_quant_attrs["scale"] = (
-                weight_node.meta[QCOM_QUANT_ATTRS]["scales"].max().item()
+            intermediate_quant_attrs[QCOM_SCALE] = (
+                weight_node.meta[QCOM_QUANT_ATTRS][QCOM_SCALES].max().item()
             )
-            intermediate_quant_attrs["zero_point"] = (
-                weight_node.meta[QCOM_QUANT_ATTRS]["zero_points"].max().item()
+            intermediate_quant_attrs[QCOM_ZERO_POINT] = (
+                weight_node.meta[QCOM_QUANT_ATTRS][QCOM_ZERO_POINTS].max().item()
             )
-            intermediate_quant_attrs["dtype"] = weight_node.meta[QCOM_QUANT_ATTRS][
-                "dtype"
+            intermediate_quant_attrs[QCOM_DTYPE] = weight_node.meta[QCOM_QUANT_ATTRS][
+                QCOM_DTYPE
             ]
-            intermediate_quant_attrs["quant_max"] = weight_node.meta[QCOM_QUANT_ATTRS][
-                "quant_max"
-            ]
-            intermediate_quant_attrs["quant_min"] = weight_node.meta[QCOM_QUANT_ATTRS][
-                "quant_min"
-            ]
+            intermediate_quant_attrs[QCOM_QUANT_MAX] = weight_node.meta[
+                QCOM_QUANT_ATTRS
+            ][QCOM_QUANT_MAX]
+            intermediate_quant_attrs[QCOM_QUANT_MIN] = weight_node.meta[
+                QCOM_QUANT_ATTRS
+            ][QCOM_QUANT_MIN]
             node.meta[QCOM_QUANT_ATTRS] = intermediate_quant_attrs
             node_name += "_intermediate"
         output_tensor_wrapper = self.define_tensor(

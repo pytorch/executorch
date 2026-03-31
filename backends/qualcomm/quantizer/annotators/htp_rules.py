@@ -562,7 +562,7 @@ class Embedding(GeneralOpDef):
         weight = node.args[0]
 
         # Only quantize if input is a float tensor
-        if not _is_float_tensor(weight):
+        if _is_annotated([node]) or not _is_float_tensor(weight):
             return
 
         is_pcq_embedding = quantization_config.per_channel_embedding
