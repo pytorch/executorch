@@ -17,7 +17,7 @@ This demo demonstrates ExecuTorch's ability to bring your own PyTorch model and 
 
 ### Adapting to Other Baremetal Architectures
 
-While this example targets the Pico2 (ARM Cortex-M33), the same pattern — embedding the `.pte` model as a C array, using `BufferDataLoader`, and statically allocating memory — can be adapted to other baremetal targets (e.g., RISC-V) by providing your own CMake toolchain file. The key requirement is a correct selective build (see below) so all operators your model needs are included.
+While this example targets the Pico2 board, the same pattern — embedding the `.pte` model as a C array, using `BufferDataLoader`, and statically allocating memory — can be adapted to other baremetal targets (e.g., RISC-V) by providing your own CMake toolchain file. The key requirement is a correct selective build (see below) so all operators your model needs are included.
 
 ### Important Caveats
 
@@ -56,7 +56,7 @@ When cross-compiling ExecuTorch for baremetal targets, you need to register the 
    ```
    This requires you to know the exact operator names (including `.out` suffixes). If you miss any, you'll get "Operator missing" (error 20) at runtime.
 
-3. **`EXECUTORCH_SELECT_ALL_OPS=ON`** — Register all portable operators. Simple but produces larger binaries, which matters on memory-constrained targets.
+3. **All portable operators (no selective build)** — Omit any `EXECUTORCH_SELECT_OPS_*` options when configuring CMake. This registers all portable operators, which is simple but produces larger binaries, an important consideration on memory-constrained targets.
 
 The `build_firmware_pico.sh` script uses `EXECUTORCH_SELECT_OPS_MODEL` by default when a model file is provided.
 
