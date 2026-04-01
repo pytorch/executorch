@@ -1941,7 +1941,7 @@ document.write(`
 
 <span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="c1">// Load tokenizer and create runner</span>
-<span class="w">  </span><span class="k">auto</span><span class="w"> </span><span class="n">tokenizer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">load_tokenizer</span><span class="p">(</span><span class="s">&quot;path/to/tokenizer.json&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">nullptr</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">nullopt</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span>
+<span class="w">  </span><span class="k">auto</span><span class="w"> </span><span class="n">tokenizer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">load_tokenizer</span><span class="p">(</span><span class="s">&quot;path/to/tokenizer.json&quot;</span><span class="p">,</span><span class="w"> </span><span class="nb">nullptr</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">nullopt</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span>
 <span class="w">  </span><span class="k">auto</span><span class="w"> </span><span class="n">runner</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">create_text_llm_runner</span><span class="p">(</span><span class="s">&quot;path/to/model.pte&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">move</span><span class="p">(</span><span class="n">tokenizer</span><span class="p">));</span>
 
 <span class="w">  </span><span class="c1">// Load the model</span>
@@ -1955,7 +1955,7 @@ document.write(`
 <span class="w">  </span><span class="c1">// Generate text with streaming output</span>
 <span class="w">  </span><span class="n">runner</span><span class="o">-&gt;</span><span class="n">generate</span><span class="p">(</span><span class="s">&quot;Hello, world!&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">config</span><span class="p">,</span>
 <span class="w">    </span><span class="p">[](</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="o">&amp;</span><span class="w"> </span><span class="n">token</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">token</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">flush</span><span class="p">;</span><span class="w"> </span><span class="p">},</span>
-<span class="w">    </span><span class="k">nullptr</span><span class="p">);</span>
+<span class="w">    </span><span class="nb">nullptr</span><span class="p">);</span>
 
 <span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
 <span class="p">}</span>
@@ -2095,7 +2095,7 @@ document.write(`
 <p>The runner library supports multiple tokenizer formats through a unified interface:</p>
 <div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="n">std</span><span class="o">::</span><span class="n">unique_ptr</span><span class="o">&lt;</span><span class="n">tokenizers</span><span class="o">::</span><span class="n">Tokenizer</span><span class="o">&gt;</span><span class="w"> </span><span class="n">tokenizer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">load_tokenizer</span><span class="p">(</span>
 <span class="w">    </span><span class="n">tokenizer_path</span><span class="p">,</span><span class="w">  </span><span class="c1">// Path to tokenizer file</span>
-<span class="w">    </span><span class="k">nullptr</span><span class="p">,</span><span class="w">         </span><span class="c1">// Optional special tokens</span>
+<span class="w">    </span><span class="nb">nullptr</span><span class="p">,</span><span class="w">         </span><span class="c1">// Optional special tokens</span>
 <span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">nullopt</span><span class="p">,</span><span class="w">    </span><span class="c1">// Optional regex pattern (for TikToken)</span>
 <span class="w">    </span><span class="mi">0</span><span class="p">,</span><span class="w">               </span><span class="c1">// BOS token index</span>
 <span class="w">    </span><span class="mi">0</span><span class="w">                </span><span class="c1">// EOS token index</span>
