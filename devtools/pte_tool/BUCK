@@ -1,0 +1,29 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "diff_pte_lib",
+    srcs = [
+        "diff_pte.py",
+    ],
+    deps = [
+        "//executorch/exir:scalar_type",
+        "//executorch/exir:schema",
+        "//executorch/exir/_serialize:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_binary,
+    name = "diff_pte",
+    srcs = [
+        "diff_pte.py",
+    ],
+    main_function = "executorch.devtools.pte_tool.diff_pte._main",
+    deps = [
+        "//executorch/exir:scalar_type",
+        "//executorch/exir:schema",
+        "//executorch/exir/_serialize:lib",
+    ],
+)

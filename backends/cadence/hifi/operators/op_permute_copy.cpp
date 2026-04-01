@@ -68,8 +68,8 @@ Tensor& permute_copy_out(
       InvalidArgument,
       out);
 
-  const auto in_type = out.scalar_type();
-  constexpr int kNnlibMaxDim = 16;
+  const auto in_type = in.scalar_type();
+  constexpr int kNnlibMaxDim = 5;
 
   bool optimized = false;
 
@@ -91,7 +91,13 @@ Tensor& permute_copy_out(
 
     for (int i = 0; i < num_inp_dims; i++) {
       p_inp_shape[i] = in.size(i);
-      p_out_shape[i] = in.size(dims[i]);
+    }
+
+    for (int i = 0; i < num_out_dims; i++) {
+      p_out_shape[i] = out.size(i);
+    }
+
+    for (int i = 0; i < num_inp_dims; i++) {
       p_permute_vec[i] = dims[i];
     }
 

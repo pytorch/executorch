@@ -15,6 +15,8 @@ from executorch.exir.passes import MemoryPlanningPass
 
 
 class TestCat(nn.Module):
+    __test__ = False
+
     def forward(self, x, y, z):
         empty = torch.empty((0, 6))
         return torch.cat([empty, x, empty, y, z, empty])

@@ -44,7 +44,7 @@ list(APPEND link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)
 executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 
 # CPU-only builds need quantized and custom ops
-if(NOT EXECUTORCH_BUILD_CUDA AND MSVC)
+if(NOT EXECUTORCH_BUILD_CUDA)
   list(APPEND link_libraries quantized_ops_lib custom_ops)
   executorch_target_link_options_shared_lib(quantized_ops_lib)
   executorch_target_link_options_shared_lib(custom_ops)
@@ -113,6 +113,12 @@ endif()
 target_include_directories(voxtral_runner PUBLIC ${_common_include_directories})
 target_link_libraries(voxtral_runner PUBLIC ${link_libraries})
 target_compile_options(voxtral_runner PUBLIC ${_common_compile_options})
+
+# AOTI-generated CUDA code can use significant stack depth; the Windows default
+# of 1 MB is not enough for large multimodal models.
+if(WIN32)
+  target_link_options(voxtral_runner PRIVATE "/STACK:8388608")
+endif()
 
 # On Windows, copy required DLLs to the executable directory
 if(MSVC AND EXECUTORCH_BUILD_CUDA)

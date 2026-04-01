@@ -179,7 +179,9 @@ class TestBenchmarkAnalysis(unittest.TestCase):
     def test_init(self):
         """Test initialization of ExecutorchBenchmarkFetcher."""
         self.assertEqual(self.fetcher.env, "prod")
-        self.assertEqual(self.fetcher.base_url, "https://hud.pytorch.org")
+        self.assertEqual(
+            self.fetcher.base_url, "https://hud.pytorch.org"  # @lint-ignore
+        )
         self.assertEqual(
             self.fetcher.query_group_table_by_fields,
             ["model", "backend", "device", "arch"],
@@ -193,7 +195,9 @@ class TestBenchmarkAnalysis(unittest.TestCase):
 
     def test_get_base_url(self):
         """Test _get_base_url method."""
-        self.assertEqual(self.fetcher._get_base_url(), "https://hud.pytorch.org")
+        self.assertEqual(
+            self.fetcher._get_base_url(), "https://hud.pytorch.org"  # @lint-ignore
+        )
 
         # Test with local environment
         local_fetcher = self.module.ExecutorchBenchmarkFetcher(env="local")

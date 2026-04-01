@@ -53,7 +53,7 @@ dedupe_macos_loader_path_rpaths() {
   pushd ..
   torch_lib_dir=$(python -c "import importlib.util; print(importlib.util.find_spec('torch').submodule_search_locations[0])")/lib
   popd
-  
+
   if [[ -z "${torch_lib_dir}" || ! -d "${torch_lib_dir}" ]]; then
     return
   fi
@@ -141,9 +141,9 @@ install_pytorch_and_domains() {
 
   dedupe_macos_loader_path_rpaths
   # Grab the pinned audio and vision commits from PyTorch
-  TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
+  TORCHAUDIO_VERSION=release/2.11
   export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
+  TORCHVISION_VERSION=release/0.26
   export TORCHVISION_VERSION
 
   install_domains
@@ -164,14 +164,18 @@ build_executorch_runner_cmake() {
   clean_executorch_install_folders
   mkdir "${CMAKE_OUTPUT_DIR}"
 
-  if [[ $1 == "Debug" ]]; then
-      CXXFLAGS="-fsanitize=address,undefined"
-  else
-      CXXFLAGS=""
+  local build_type="${1:-Release}"
+  local sanitizer_flag=""
+
+  if [[ "${EXECUTORCH_USE_SANITIZER:-OFF}" == "ON" ]]; then
+      sanitizer_flag="-DEXECUTORCH_USE_SANITIZER=ON"
   fi
-  CXXFLAGS="$CXXFLAGS" retry cmake \
+
+  retry cmake \
     -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" \
-    -DCMAKE_BUILD_TYPE="${1:-Release}" \
+    -DCMAKE_BUILD_TYPE="${build_type}" \
+    ${sanitizer_flag} \
+    ${CMAKE_ARGS:-} \
     -B${CMAKE_OUTPUT_DIR} .
 
   if [ "$(uname)" == "Darwin" ]; then

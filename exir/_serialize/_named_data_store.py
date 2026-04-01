@@ -7,14 +7,30 @@
 # pyre-strict
 
 import hashlib
-
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
-
 from executorch.exir._serialize.data_serializer import DataEntry
 from executorch.exir.tensor_layout import TensorLayout
+
+
+def _tensor_to_bytes(tensor: torch.Tensor) -> bytes:
+    """Convert tensor to bytes using the fastest method available.
+
+    Uses numpy().tobytes() which is faster than bytes(untyped_storage())
+    for C-contiguous tensors. Falls back to untyped_storage() for
+    non-contiguous tensors (e.g., channels_last) to preserve memory layout.
+    """
+    if not tensor.is_contiguous():
+        # For non-C-contiguous tensors (e.g., channels_last), use untyped_storage
+        # to preserve the actual memory layout
+        return bytes(tensor.untyped_storage())
+    if tensor.dtype == torch.bfloat16:
+        # BFloat16 is not supported by numpy, extract raw bytes via view
+        return tensor.view(torch.uint16).numpy().tobytes()
+    else:
+        return tensor.numpy().tobytes()
 
 
 @dataclass
@@ -59,13 +75,11 @@ class NamedDataStore:
     # Map of {filename: {key: DataEntry}}.
     external_data: Dict[str, Dict[str, DataEntry]]
 
-    # Cache of the data hash for deduplication.
-    # Use a hash instead of the data as a key because a sha256 collision is
-    # unlikely, and the data may be large.
-    data_hash_to_buffer_idx: Dict[bytes, int]
-    # Cache of the key to buffer idx to ensure uniqueness.
-    # If a key is added multiple times, check the buffer idx to ensure that the
-    # data is identical too.
+    # Fast fingerprint for dedup: (length, first 32 bytes) -> buffer indices.
+    fingerprint_to_buffer_idx: Dict[Tuple[int, bytes], List[int]]
+    # SHA-256 digest per buffer index, computed lazily on first dedup check.
+    buffer_sha256: Dict[int, bytes]
+    # Cache of key to buffer idx to detect duplicate key registration.
     key_to_buffer_idx: Dict[str, int]
 
     def __init__(self) -> None:
@@ -75,9 +89,16 @@ class NamedDataStore:
         self.buffers = []
         self.pte_data = {}
         self.external_data = {}
-
-        self.data_hash_to_buffer_idx = {}
+        self.fingerprint_to_buffer_idx = {}
+        self.buffer_sha256 = {}
         self.key_to_buffer_idx = {}
+
+    def _get_buffer_sha256(self, buffer_idx: int) -> bytes:
+        sha = self.buffer_sha256.get(buffer_idx)
+        if sha is None:
+            sha = hashlib.sha256(self.buffers[buffer_idx]).digest()
+            self.buffer_sha256[buffer_idx] = sha
+        return sha
 
     def _add_named_data_to_map(
         self,
@@ -103,31 +124,34 @@ class NamedDataStore:
             ValueError: when the key exists in the store, and corresponding data
                 is different.
         """
-        # Get data hash.
-        hashed = hashlib.sha256(data).digest()
-
         # Check if the key exists.
         buffer_idx = self.key_to_buffer_idx.get(key, -1)
-        # If the key exists, the corresponding data must be identical.
-        if (
-            buffer_idx != -1
-            and self.data_hash_to_buffer_idx.get(hashed, -1) != buffer_idx
-        ):
-            raise ValueError(
-                f"Duplicate key {key} with different data. "
-                f"Existing data: {self.buffers[buffer_idx]}. "
-                f"New data: {data}."
-            )
+        if buffer_idx != -1:
+            if data != self.buffers[buffer_idx]:
+                raise ValueError(
+                    f"Duplicate key {key} with different data. "
+                    f"Existing data size: {len(self.buffers[buffer_idx])} bytes. "
+                    f"New data size: {len(data)} bytes."
+                )
         else:
-            # Key doesn't exist; check if the data exists.
-            buffer_idx = self.data_hash_to_buffer_idx.get(hashed, -1)
+            # Two-level dedup: cheap fingerprint rejects non-matches fast,
+            # SHA-256 confirms matches without full byte comparison.
+            fingerprint = (len(data), data[:32])
+            candidates = self.fingerprint_to_buffer_idx.get(fingerprint)
+            if candidates is not None:
+                new_sha = hashlib.sha256(data).digest()
+                for candidate in candidates:
+                    if new_sha == self._get_buffer_sha256(candidate):
+                        buffer_idx = candidate
+                        break
+
             if buffer_idx == -1:
-                # The data doesn't exist; add it to the data store.
                 buffer_idx = len(self.buffers)
                 self.buffers.append(data)
-                self.data_hash_to_buffer_idx[hashed] = buffer_idx
+                self.fingerprint_to_buffer_idx.setdefault(fingerprint, []).append(
+                    buffer_idx
+                )
 
-            # Add key to the map and the key cache.
             local_key_to_buffer_idx[key] = DataEntry(
                 buffer_index=buffer_idx,
                 alignment=alignment,
@@ -169,7 +193,7 @@ class NamedDataStore:
                     f"Tensor {key} is a torch.Tensor, with tensor_layout {real_tensor_layout}. The provided tensor layout {tensor_layout} does not match."
                 )
             tensor_layout = real_tensor_layout
-            byte_data = bytes(data.untyped_storage())
+            byte_data = _tensor_to_bytes(data)
         else:
             byte_data = data
 

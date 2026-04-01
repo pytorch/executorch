@@ -10,6 +10,7 @@ Please prepare the SDK before you start, it is important to code compilation and
 
 ### Supported Chipset
 - Exynos 2500 (E9955)
+- Exynos 2600 (E9965)
 
 ### Supported Inference Type
 - Quantized (i8/u8/i16/u16)
@@ -67,6 +68,6 @@ cmake --build cmake-android-out/extension/android -j8
 ```
 
 ## Examples
-python -m executorch.examples.samsung.aot_compiler --chipset e9955 -m ic3
+python -m executorch.examples.samsung.aot_compiler --chipset e9955 (or e9965) -m ic3
 
 Please see this [README.md](../../examples/samsung/README.md).

@@ -375,7 +375,7 @@ class SDPA(nn.Module):
             is_causal=self.kv_cache is None and mask is None and self.is_causal,
         )
         # Reshape the output to be the same shape as the input
-        return output.transpose(1, 2).contiguous().view(bsz, seq_len, -1)
+        return output.transpose(1, 2).reshape(bsz, seq_len, -1)
 
 
 def _replace_mha_with_inference_mha(module: torch.nn.Module) -> None:

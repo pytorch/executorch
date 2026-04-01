@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -66,8 +66,13 @@ def _print_channels(
                         res += " . "
                 else:
                     if not booldata:
-                        diff = (reference[c, y, x] - result[c, y, x]) / 10 ** (int(exp))
-                        res += f"{diff: .2f} "
+                        if exp == "inf":
+                            res += "NA "
+                        else:
+                            diff = (reference[c, y, x] - result[c, y, x]) / 10 ** (
+                                int(exp)
+                            )
+                            res += f"{diff: .2f} "
                     else:
                         diff = reference[c, y, x] ^ result[c, y, x]
                         res += " X "
@@ -296,13 +301,13 @@ def dump_error_output(
     rtol: float = 1e-03,
     qtol: float = 0,
 ) -> None:
-    """
-    Prints Quantization info and error tolerances, and saves the differing tensors to disc.
+    """Prints Quantization info and error tolerances, and saves the differing
+    tensors to disc.
     """
     # Capture assertion error and print more info
     banner = "=" * 40 + "TOSA debug info" + "=" * 40
     logger.error(banner)
-    path_to_tosa_files = tester.compile_spec.get_intermediate_path()
+    path_to_tosa_files = tester.compile_spec._get_intermediate_path()
 
     if path_to_tosa_files is None:
         path_to_tosa_files = tempfile.mkdtemp(prefix="executorch_result_dump_")
@@ -313,6 +318,8 @@ def dump_error_output(
         output_node = export_stage.artifact.graph_module.graph.output_node()
         qp_input = get_input_quantization_params(export_stage.artifact)
         qp_output = get_output_quantization_params(output_node)
+        scales = {k.name: v.scale for k, v in qp_output.items() if v is not None}
+        logger.error(f"Output Quant scales: {scales}")
         logger.error(f"Input QuantArgs: {qp_input}")
         logger.error(f"Output QuantArgs: {qp_output}")
 
@@ -330,8 +337,114 @@ def dump_error_output(
     logger.error(f"{atol=}, {rtol=}, {qtol=}")
 
 
+def compare_rel_frobenius_and_cosine_similarity(
+    reference_output: torch.Tensor,
+    test_output: torch.Tensor,
+    quantization_parameters,
+    frobenius_threshold: float | None = 0.05,
+    cosine_threshold: float | None = 0.95,
+    clean_reference: bool = True,
+):
+    """Frobenius test: computes the frobenius norm (sum of elementwise squared tensor values) of the *error*, and
+     divides it with the frobenius norm of the reference output. Lower is better.
+    Cosine similarity test: The cosine similiarity of the flattened reference and test tensor. Closer to 1 is better.
+
+    If clean_reference is set to True the following is done to the reference :
+        - NaN-values will be set to 0.0
+        - Inf values will be set to max/min representable by the (dtype - zp) * scale
+        - Values lower than the scale will be set to 0.0
+    If the reference is all zeros, the function returns without testing.
+
+    To reduce false positives in quantized testing, the Frobenius check is
+    skipped when reference norm is at quantization-noise scale, and a small
+    Frobenius overflow is accepted when cosine similarity is very high.
+    """
+
+    quant_scale_for_guards: float | None = None
+    posinf_value: float | None = None
+    neginf_value: float | None = None
+    if clean_reference:
+        if quantization_parameters:
+            scale = quantization_parameters.scale
+            assert isinstance(
+                scale, (torch.Tensor, int, float)
+            ), f"Unsupported quantization scale type: {type(scale)!r}"
+            quant_scale_for_guards = (
+                float(scale.max().item())
+                if isinstance(scale, torch.Tensor)
+                else float(scale)
+            )
+            assert quant_scale_for_guards is not None
+            posinf_value = (
+                float(quantization_parameters.qmax - quantization_parameters.zp)
+                * quant_scale_for_guards
+            )
+            neginf_value = (
+                float(quantization_parameters.qmin - quantization_parameters.zp)
+                * quant_scale_for_guards
+            )
+            reference_output = reference_output.where(
+                torch.abs(reference_output) >= scale, 0.0
+            )
+        reference_output = reference_output.nan_to_num(
+            nan=0.0, posinf=posinf_value, neginf=neginf_value
+        )
+
+    reference_all_zeros = torch.count_nonzero(reference_output).item() == 0
+    if reference_all_zeros:
+        return
+
+    reference_output = reference_output.to(torch.float32)
+    test_output = test_output.to(torch.float32)
+
+    reference_frobenius_norm = torch.linalg.norm(reference_output).item()
+    error_frobenius_norm = torch.linalg.norm(test_output - reference_output).item()
+
+    relative_frobenius_error = error_frobenius_norm / (reference_frobenius_norm + 1e-8)
+    cosine_similarity = torch.nn.functional.cosine_similarity(
+        test_output.flatten(), reference_output.flatten(), dim=0
+    ).item()
+
+    # Relative Frobenius is unstable when the reference norm is at quantization-noise scale.
+    reference_numel_sqrt = reference_output.numel() ** 0.5
+    low_norm_floor = 1e-8
+    if quant_scale_for_guards is not None:
+        low_norm_floor = max(
+            low_norm_floor, quant_scale_for_guards * reference_numel_sqrt
+        )
+    run_frobenius_check = reference_frobenius_norm > low_norm_floor
+
+    if run_frobenius_check and frobenius_threshold is not None:
+        # If cosine is very high, slightly discount Frobenius error to avoid
+        # borderline failures dominated by quantization noise.
+        high_cosine_floor = (
+            max(0.98, cosine_threshold) if cosine_threshold is not None else 0.98
+        )
+        effective_relative_frobenius_error = relative_frobenius_error
+        if cosine_similarity >= high_cosine_floor:
+            effective_relative_frobenius_error = max(
+                0.0, relative_frobenius_error - 0.02
+            )
+
+        if effective_relative_frobenius_error > frobenius_threshold:
+            raise AssertionError(
+                f"Tensor-wise comparison failed: Relative frobenius norm error {relative_frobenius_error} exceeds threshold {frobenius_threshold}."
+                f" (Cosine similarity: {cosine_similarity}, threshold {cosine_threshold})."
+            )
+
+    if (
+        cosine_threshold is not None
+        and cosine_similarity < cosine_threshold
+        and not reference_all_zeros
+    ):
+        raise AssertionError(
+            f"Tensor-wise comparison failed: Cosine similarity {cosine_similarity} is below threshold {cosine_threshold}."
+            f" (Relative frobenius error: {relative_frobenius_error}, threshold {frobenius_threshold})."
+        )
+
+
 if __name__ == "__main__":
-    """This is expected to produce the example output of print_diff"""
+    """This is expected to produce the example output of print_diff."""
     torch.manual_seed(0)
     a = torch.rand(3, 3, 2, 2) * 0.01
     b = a.clone().detach()

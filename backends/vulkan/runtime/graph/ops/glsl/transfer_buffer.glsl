@@ -8,15 +8,15 @@
 
 #version 450 core
 
+${define_required_extensions("buffer", DTYPE)}
+#extension GL_EXT_control_flow_attributes : require
+
 #define PRECISION ${PRECISION}
 #define UBO_PARAMS ${UBO_PARAMS}
 
 #define T ${buffer_scalar_type(DTYPE)}
 
 ${define_active_storage_type("buffer")}
-${define_required_extensions(DTYPE)}
-
-#extension GL_EXT_control_flow_attributes : require
 
 layout(std430) buffer;
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Arm Limited and/or its affiliates.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -75,7 +75,9 @@ void vkml_free_basics(
     VkInstance* instance,
     VkDevice* device,
     VkCommandPool* command_pool) {
-  vkDestroyCommandPool(*device, *command_pool, nullptr);
+  if (*device != VK_NULL_HANDLE && *command_pool != VK_NULL_HANDLE) {
+    vkDestroyCommandPool(*device, *command_pool, nullptr);
+  }
   // Note: These primitives are used by the emulation layer for vulkan
   //       object allocation, the vulkan objects are freed in in library
   //       shutdown, so we can't yet destroy these here without causing
@@ -111,21 +113,19 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
           result);
       return;
     }
+
+    is_initialized_ = true;
   }
   ~VGFBackend() {
     vkml_free_basics(&vk_instance, &vk_device, &vk_command_pool);
   }
 
   bool is_available() const override {
-    VkResult result;
-
     ET_LOG(Info, "Checking VGFBackend is available");
-    // Query the device prepared in constructor for needed extensions
-    result = vkml_load_extensions(&vk_device);
-    if (result != VK_SUCCESS)
+    if (!is_initialized_) {
       return false;
-
-    return true;
+    }
+    return vkml_load_extensions(&vk_device) == VK_SUCCESS;
   }
 
   Result<DelegateHandle*> init(
@@ -133,6 +133,13 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
     ET_LOG(Info, "Entered VGF init");
+
+    if (!is_initialized_) {
+      ET_LOG(
+          Error,
+          "VGF backend is unavailable because Vulkan initialization failed");
+      return Error::NotSupported;
+    }
 
     const char* vgf_data = reinterpret_cast<const char*>(processed->data());
 
@@ -230,11 +237,12 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
   }
 
  private:
-  VkInstance vk_instance;
-  VkPhysicalDevice vk_physical_device;
-  VkDevice vk_device;
-  VkQueue vk_queue;
-  VkCommandPool vk_command_pool;
+  VkInstance vk_instance = VK_NULL_HANDLE;
+  VkPhysicalDevice vk_physical_device = VK_NULL_HANDLE;
+  VkDevice vk_device = VK_NULL_HANDLE;
+  VkQueue vk_queue = VK_NULL_HANDLE;
+  VkCommandPool vk_command_pool = VK_NULL_HANDLE;
+  bool is_initialized_ = false;
 };
 
 namespace {
@@ -253,6 +261,7 @@ VkResult vkml_allocate_basics(
 
   if (VK_SUCCESS != volkInitialize()) {
     ET_LOG(Error, "Volk failed to initialize");
+    return VK_ERROR_INITIALIZATION_FAILED;
   }
 
   VkApplicationInfo app_info{

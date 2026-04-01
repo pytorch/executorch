@@ -598,6 +598,48 @@ class Conv2dCat(torch.nn.Module):
         return z
 
 
+class Conv2dDownUpSample(torch.nn.Module):
+    def __init__(self, bias=True):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=16,
+            out_channels=16,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=bias,
+        )
+        self.conv_transpose = torch.nn.ConvTranspose2d(
+            in_channels=16,
+            out_channels=16,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=bias,
+        )
+
+    def forward(self, x):
+        return self.conv_transpose(self.conv(x))
+
+
+class Conv2dFlip(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=16,
+            out_channels=16,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=False,
+        )
+        self.dims = [1, 3]
+
+    def forward(self, x):
+        x = self.conv(x)
+        return torch.flip(x, self.dims)
+
+
 class Conv2dMaxPool2d(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -660,46 +702,14 @@ class Conv2dSingle(torch.nn.Module):
         return self.conv(x)
 
 
-class Conv2dDownUpSample(torch.nn.Module):
-    def __init__(self, bias=True):
-        super().__init__()
-        self.conv = torch.nn.Conv2d(
-            in_channels=16,
-            out_channels=16,
-            kernel_size=3,
-            stride=2,
-            padding=1,
-            bias=bias,
-        )
-        self.conv_transpose = torch.nn.ConvTranspose2d(
-            in_channels=16,
-            out_channels=16,
-            kernel_size=3,
-            stride=2,
-            padding=1,
-            bias=bias,
-        )
-
-    def forward(self, x):
-        return self.conv_transpose(self.conv(x))
-
-
-class Conv2dFlip(torch.nn.Module):
+class Conv2dStack(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv = torch.nn.Conv2d(
-            in_channels=16,
-            out_channels=16,
-            kernel_size=3,
-            stride=2,
-            padding=1,
-            bias=False,
-        )
-        self.dims = [1, 3]
+        self.conv1 = torch.nn.Conv2d(3, 3, 3)
 
-    def forward(self, x):
-        x = self.conv(x)
-        return torch.flip(x, self.dims)
+    def forward(self, x, y, z):
+        x1 = self.conv1(x)
+        return torch.stack((x1, y, z))
 
 
 class Conv2dSliceCopy(torch.nn.Module):
@@ -742,6 +752,16 @@ class Conv2dTopK(torch.nn.Module):
         x = self.conv(x)
         topk_values, topk_indices = torch.topk(x, 5, dim=1)
         return topk_values
+
+
+class Conv2dUnbind(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(3, 3, 3)
+
+    def forward(self, x):
+        x1 = self.conv1(x)
+        return torch.unbind(x1, dim=1)
 
 
 class Conv3dSequential(torch.nn.Module):
@@ -826,6 +846,17 @@ class ConvTranspose3dSingle(torch.nn.Module):
 
     def forward(self, x):
         return self.conv_transpose(x)
+
+
+class Copy(torch.nn.Module):
+    def __init__(self, x):
+        super().__init__()
+        self.x = x
+
+    def forward(self, y):
+        # +1 to workaround that copy has no quant config
+        x = torch.ops.aten.copy.default(self.x, y + 1)
+        return x + 1
 
 
 class Cos(torch.nn.Module):
@@ -1279,10 +1310,26 @@ class InstanceNorm2d(torch.nn.Module):
         return self.instance_norm(x)
 
 
+class IsInf(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.isinf(x)
+
+
+class IsNan(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.isnan(x)
+
+
 class LargeTensorLinear(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        hidden_dim = 4096
+        hidden_dim = 8192
         self.linear1_1 = torch.nn.Linear(512, hidden_dim)
         self.linear1_2 = torch.nn.Linear(512, hidden_dim)
         self.linear1_3 = torch.nn.Linear(512, hidden_dim)
@@ -1451,15 +1498,39 @@ class LogSoftmax(torch.nn.Module):
         return torch.nn.functional.log_softmax(x, dim=-1)
 
 
-class MaxPool2d(torch.nn.Module):
+class Log10(torch.nn.Module):
     def __init__(self):
         super().__init__()
+
+    def forward(self, x):
+        return torch.log10(x)
+
+
+class Log1p(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.log1p(x)
+
+
+class Log2(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.log2(x)
+
+
+class MaxPool2d(torch.nn.Module):
+    def __init__(self, kernel_size=3, stride=1, padding=1, ceil_mode=True):
+        super().__init__()
         self.max_pool2d = torch.nn.MaxPool2d(
-            kernel_size=3,
-            stride=1,
-            padding=1,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
             dilation=1,
-            ceil_mode=True,
+            ceil_mode=ceil_mode,
         )
 
     def forward(self, x):
@@ -1601,6 +1672,14 @@ class MultiheadAttention(torch.nn.Module):
         return attn_output
 
 
+class Narrow(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return (x.narrow(1, 4, 32),)
+
+
 class Neg(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1724,6 +1803,22 @@ class PReLUPerChannel(torch.nn.Module):
 
     def forward(self, x):
         return self.prelu(x)
+
+
+class Rand(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.rand_like(x) + x
+
+
+class Reciprocal(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.reciprocal(x)
 
 
 class Relu(torch.nn.Module):
@@ -1858,11 +1953,11 @@ class UpsampleNearest2D(torch.nn.Module):
 
 
 class RmsNorm(torch.nn.Module):
-    def __init__(self, eps=None):
+    def __init__(self, eps=None, elementwise_affine=True):
         super().__init__()
-        self.rms = torch.nn.RMSNorm([4])
+        self.rms = torch.nn.RMSNorm([4], elementwise_affine=elementwise_affine)
         if eps:
-            self.rms = torch.nn.RMSNorm([4], eps)
+            self.rms = torch.nn.RMSNorm([4], eps, elementwise_affine=elementwise_affine)
 
     def forward(self, x):
         return self.rms(x)
@@ -2218,6 +2313,14 @@ class TriuConstant(torch.nn.Module):
             mask = torch.zeros(x.shape, dtype=x.dtype).masked_fill_(mask, -10000.0)
         # Add x to avoid no input in graph
         return mask + x
+
+
+class Trunc(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.trunc(x)
 
 
 class Unbind(torch.nn.Module):

@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,14 +19,11 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_valid_dtype,
 )
 from executorch.backends.arm.tosa.mapping import TosaArg
-from executorch.backends.arm.tosa.utils import tosa_shape
 
 
 @register_node_visitor
 class RepeatVisitor(NodeVisitor):
     target = "aten.repeat.default"
-
-    tosa_specs = NodeVisitor.tosa_specs
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -48,21 +45,11 @@ class RepeatVisitor(NodeVisitor):
                 ts.DType.INT8,
                 ts.DType.INT16,
                 ts.DType.INT32,
+                ts.DType.FP16,
                 ts.DType.FP32,
+                ts.DType.BF16,
             ],
-            output.tosa_spec,
-        )
-
-        multiples = inputs[1].special
-
-        if len(multiples) == 0:
-            raise ValueError(f"Length of multiples argument is 0: {inputs[1]}!")
-
-        multiple_shapes = tosa_graph.addConst(
-            (len(multiples),),
-            ts.DType.SHAPE,
-            list(tosa_shape(multiples, output.dim_order)),
-            name=output.name + "_multiples",
+            self.tosa_spec,
         )
 
         attr = ts.TosaSerializerAttribute()
@@ -71,7 +58,7 @@ class RepeatVisitor(NodeVisitor):
             node,
             tosa_graph,
             ts.Op.TILE,
-            [inputs[0].name, multiple_shapes.name],
+            [inputs[0].name, inputs[1].name],
             [output.name],
             attr,
         )

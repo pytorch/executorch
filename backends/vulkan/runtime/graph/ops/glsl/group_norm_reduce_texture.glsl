@@ -8,14 +8,14 @@
 
 #version 450 core
 
+${define_required_extensions("buffer", DTYPE)}
+
 #include "broadcasting_utils.h"
 #include "indexing_utils.h"
 
 #define PRECISION ${PRECISION}
 
 #define BUF_T ${buffer_scalar_type(DTYPE)}
-
-${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 

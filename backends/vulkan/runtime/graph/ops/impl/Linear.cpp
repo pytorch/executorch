@@ -9,6 +9,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Linear.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/MatMul.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
@@ -19,410 +20,243 @@
 
 namespace vkcompute {
 
-// Custom global workgroup size function for addmm_naive_texture
-utils::uvec3 addmm_naive_texture_global_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)shader;
-  (void)resize_args;
-  const ValueRef out = args.at(0).refs.at(0);
-  return graph->logical_limits_of(out);
-}
-
-// Custom global workgroup size function for addmm_naive_buffer
-utils::uvec3 addmm_naive_buffer_global_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)shader;
-  (void)resize_args;
-  const ValueRef out = args.at(0).refs.at(0);
-  return {
-      graph->size_at<uint32_t>(-1, out),
-      graph->size_at<uint32_t>(-2, out),
-      graph->size_at<uint32_t>(-3, out) * graph->size_at<uint32_t>(-4, out)};
-}
-
-// Custom global workgroup size function for addmm_optimized
-utils::uvec3 addmm_optimized_global_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)shader;
-  (void)resize_args;
-  const ValueRef out = args.at(0).refs.at(0);
-  const ValueRef mat1 = args.at(1).refs.at(0);
-
-  std::vector<int64_t> mat1_sizes = graph->sizes_of(mat1);
-  int mat1_dims = mat1_sizes.size();
-
-  utils::uvec3 global_size = graph->logical_limits_of(out);
-
-  if (mat1_sizes.at(mat1_dims - 2) < 8) {
-    global_size = utils::divup_vec(global_size, {4, 2, 1});
-  } else {
-    global_size = utils::divup_vec(global_size, {4, 4, 1});
-  }
-  return global_size;
-}
-
-// Custom local workgroup size function for addmm_optimized
-utils::uvec3 addmm_optimized_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)shader;
-  (void)args;
-  (void)resize_args;
-  return adaptive_work_group_size(global_workgroup_size);
-}
-
-void check_addmm_args(
+ValueRef prepack_fp_linear_weight(
     ComputeGraph& graph,
-    const ValueRef self,
-    const ValueRef mat1,
-    const ValueRef mat2_data,
-    const ValueRef beta,
-    const ValueRef alpha,
-    const ValueRef out) {
-  (void)alpha;
-  (void)beta;
+    const ValueRef weight_data,
+    bool is_transposed,
+    int64_t B) {
+  std::vector<int64_t> weight_sizes = graph.sizes_of(weight_data);
 
-  std::vector<int64_t> self_sizes = graph.sizes_of(self);
-  std::vector<int64_t> mat1_sizes = graph.sizes_of(mat1);
-  std::vector<int64_t> mat2_sizes = graph.sizes_of(mat2_data);
-
-  VK_CHECK_COND(mat1_sizes.size() == 2 || mat1_sizes.size() == 3);
-  VK_CHECK_COND(mat1_sizes.size() == mat2_sizes.size());
-
-  VK_CHECK_COND(graph.packed_dim_of(mat1) == graph.packed_dim_of(out));
-
-  VK_CHECK_COND(utils::val_at(-1, mat1_sizes) == utils::val_at(-2, mat2_sizes));
-
-  if (utils::val_at(-1, self_sizes) != 1) {
-    VK_CHECK_COND(
-        utils::val_at(-1, self_sizes) == utils::val_at(-1, mat2_sizes));
+  int64_t N, K;
+  if (is_transposed) {
+    // Source is [N, K] or [B, N, K]
+    N = weight_sizes.at(weight_sizes.size() - 2);
+    K = weight_sizes.at(weight_sizes.size() - 1);
+  } else {
+    // Source is [K, N] or [B, K, N]
+    K = weight_sizes.at(weight_sizes.size() - 2);
+    N = weight_sizes.at(weight_sizes.size() - 1);
   }
-  if (utils::val_at(-2, self_sizes) != 1) {
-    VK_CHECK_COND(
-        utils::val_at(-2, self_sizes) == utils::val_at(-2, mat1_sizes));
+
+  int64_t K4 = utils::div_up(K, int64_t(4));
+  int64_t N4 = utils::div_up(N, int64_t(4));
+
+  // Packed tensor: B*K4 rows, N4*4 vec4 elements per row (batch-stacked).
+  // Since the tensor size is in scalars and kWidthPacked packs 4 scalars per
+  // texel, we need width = N4*4*4 scalars to get N4*4 texels.
+  int64_t output_height = B * K4;
+  int64_t output_width = N4 * 4 * 4;
+
+  utils::StorageType weight_storage = utils::kTexture2D;
+  uint32_t max_extent = graph.context()->adapter_ptr()->max_texture2d_dim();
+  // output_width is in scalars; texture width in texels = output_width / 4
+  if (output_width / 4 > max_extent ||
+      static_cast<uint32_t>(output_height) > max_extent) {
+    weight_storage = utils::kBuffer;
   }
+
+  ValueRef packed_weight = graph.add_tensor(
+      {output_height, output_width},
+      graph.dtype_of(weight_data),
+      weight_storage,
+      utils::kWidthPacked);
+
+  utils::uvec3 global_wg_size = {
+      utils::safe_downcast<uint32_t>(N4),
+      utils::safe_downcast<uint32_t>(K4),
+      utils::safe_downcast<uint32_t>(B)};
+
+  struct PackParams {
+    int32_t N;
+    int32_t K;
+    int32_t B;
+    int32_t is_transposed;
+  };
+  PackParams pack_params{
+      utils::safe_downcast<int32_t>(N),
+      utils::safe_downcast<int32_t>(K),
+      utils::safe_downcast<int32_t>(B),
+      is_transposed ? 1 : 0};
+
+  std::string kernel_name = "pack_fp_linear_weight";
+  add_storage_type_suffix(kernel_name, weight_storage);
+  add_dtype_suffix(kernel_name, graph.dtype_of(weight_data));
+  add_dtype_suffix(kernel_name, graph.get_staging_dtype_for(weight_data));
+
+  graph.prepack_nodes().emplace_back(new PrepackNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      global_wg_size,
+      graph.create_local_wg_size(global_wg_size),
+      weight_data,
+      packed_weight,
+      {},
+      {},
+      {PushConstantDataInfo(&pack_params, sizeof(PackParams))}));
+
+  return packed_weight;
 }
 
-void resize_addmm_node(
+void resize_linear_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& extra_args) {
+    const std::vector<ValueRef>& resize_args) {
   const ValueRef out = args.at(0).refs.at(0);
   const ValueRef mat1 = args.at(1).refs.at(0);
-  const ValueRef mat2 = args.at(1).refs.at(1);
-
-  const bool mat2_is_transposed = graph->get_bool(extra_args.at(0));
 
   const std::vector<int64_t> mat1_sizes = graph->sizes_of(mat1);
-  const std::vector<int64_t> mat2_sizes = graph->sizes_of(mat2);
 
-  const int out_cols = utils::val_at(-2, mat1_sizes);
-  const int out_rows = mat2_is_transposed ? utils::val_at(-2, mat2_sizes)
-                                          : utils::val_at(-1, mat2_sizes);
+  int64_t M = mat1_sizes.at(mat1_sizes.size() - 2);
+  int64_t N = graph->get_int(resize_args.at(0));
 
-  std::vector<int64_t> new_out_sizes(3);
-  if (mat1_sizes.size() == 2) {
-    new_out_sizes.resize(2);
-    new_out_sizes.at(0) = out_cols;
-    new_out_sizes.at(1) = out_rows;
+  if (mat1_sizes.size() >= 3) {
+    int64_t B = mat1_sizes.at(0);
+    graph->virtual_resize(out, {B, M, N});
   } else {
-    new_out_sizes.at(0) = mat1_sizes.at(0);
-    new_out_sizes.at(1) = out_cols;
-    new_out_sizes.at(2) = out_rows;
+    graph->virtual_resize(out, {M, N});
   }
-
-  graph->virtual_resize(out, new_out_sizes);
 }
 
-struct Params final {
+struct LinearIntParams final {
+  int32_t weight_B;
+};
+
+struct LinearBiasParams final {
   float alpha;
   float beta;
 };
 
-void add_addmm_naive_texture_node(
-    ComputeGraph& graph,
-    const ValueRef self_data,
-    const ValueRef mat1,
-    const ValueRef mat2_data,
-    const ValueRef beta,
-    const ValueRef alpha,
-    const ValueRef out,
-    const Params& params,
-    const ValueRef mat2_is_transposed) {
-  utils::StorageType stype = graph.storage_type_of(out);
-  ValueRef self = prepack_standard(
-      graph, self_data, stype, utils::kWidthPacked, /*passthrough = */ true);
-  ValueRef mat2 = prepack_standard(
-      graph, mat2_data, stype, utils::kHeightPacked, /*passthrough = */ true);
+vkapi::ShaderInfo pick_linear_shader(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef input = args.at(1).refs.at(0);
+  const ValueRef packed_weight = args.at(1).refs.at(1);
+  bool has_bias = graph->get_bool(resize_args.at(1));
+  uint32_t tile_m = pick_matmul_tile_m(graph, out);
 
-  std::string kernel_name =
-      graph.get_bool(mat2_is_transposed) ? "linear_naive" : "addmm_naive";
+  bool is_buffer = graph->storage_type_of(out) == utils::kBuffer;
+  // Use vec4 shader when all tensor widths are aligned to 4, even for buffers
+  uint32_t K = graph->size_at<uint32_t>(-1, input);
+  uint32_t N = graph->size_at<uint32_t>(-1, out);
+  bool use_scalar = is_buffer && (K % 4 != 0 || N % 4 != 0);
+  std::string base = use_scalar ? "linear" : "linear_vec";
+
+  std::string kernel_name;
+  if (has_bias) {
+    kernel_name = tile_m <= 1 ? base + "_bias_tile_row_1"
+        : tile_m <= 2         ? base + "_bias_tile_row_2"
+                              : base + "_bias";
+  } else {
+    kernel_name = tile_m <= 1 ? base + "_tile_row_1"
+        : tile_m <= 2         ? base + "_tile_row_2"
+                              : base;
+  }
   kernel_name.reserve(kShaderNameReserve);
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
-  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+  add_storage_type_suffix(kernel_name, graph->storage_type_of(out));
+  add_storage_type_suffix(kernel_name, graph->storage_type_of(packed_weight));
+  add_dtype_suffix(kernel_name, graph->dtype_of(out));
+  return VK_KERNEL_FROM_STR(kernel_name);
+}
 
-  utils::uvec3 global_wg_size = graph.logical_limits_of(out);
+utils::uvec3 pick_linear_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  uint32_t N = graph->size_at<uint32_t>(-1, out);
+  uint32_t M = graph->size_at<uint32_t>(-2, out);
+  uint32_t B = graph->dim_of(out) >= 3 ? graph->size_at<uint32_t>(-3, out) : 1;
+  uint32_t tile_m = pick_matmul_tile_m(graph, out);
+  return {utils::div_up_4(N), utils::div_up(M, tile_m), B};
+}
+
+void add_linear_tiled_node(
+    ComputeGraph& graph,
+    const ValueRef input,
+    const ValueRef packed_weight,
+    const ValueRef packed_bias,
+    bool has_bias,
+    const ValueRef out,
+    int32_t weight_B,
+    float alpha,
+    float beta) {
+  VK_CHECK_COND(graph.packed_dim_of(input) == WHCN::kWidthDim);
+  VK_CHECK_COND(graph.packed_dim_of(out) == WHCN::kWidthDim);
+  std::vector<int64_t> out_sizes = graph.sizes_of(out);
+  int32_t orig_N = utils::safe_downcast<int32_t>(out_sizes.back());
+
+  LinearIntParams int_params{weight_B};
+  LinearBiasParams bias_params{alpha, beta};
+  ValueRef has_bias_ref = graph.add_scalar(has_bias);
+  ValueRef orig_N_ref = graph.add_scalar(static_cast<int64_t>(orig_N));
+
+  std::vector<ValueRef> read_inputs = {input, packed_weight};
+  if (has_bias) {
+    read_inputs.push_back(packed_bias);
+  }
+
+  std::vector<PushConstantDataInfo> push_constants = {
+      PushConstantDataInfo(&int_params, sizeof(LinearIntParams)),
+  };
+  if (has_bias) {
+    push_constants.push_back(
+        PushConstantDataInfo(&bias_params, sizeof(LinearBiasParams)));
+  }
+
+  vkapi::ParamsBindList shader_params = {
+      graph.sizes_ubo(input), graph.sizes_ubo(out)};
+  if (has_bias) {
+    shader_params.append(graph.sizes_ubo(packed_bias));
+  }
+
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
-      VK_KERNEL_FROM_STR(kernel_name),
-      addmm_naive_texture_global_wg_size,
+      pick_linear_shader,
+      pick_linear_global_wg_size,
       pick_hw_square_wg_size,
       // Inputs and Outputs
-      {{out, vkapi::kWrite}, {{mat1, mat2, self}, vkapi::kRead}},
+      {{out, vkapi::kWrite}, {read_inputs, vkapi::kRead}},
       // Shader params buffers
-      {},
+      shader_params,
       // Push Constants
-      {graph.sizes_pc_of(out),
-       graph.sizes_pc_of(mat1),
-       graph.sizes_pc_of(mat2),
-       graph.logical_limits_pc_of(out),
-       graph.sizes_pc_of(self),
-       PushConstantDataInfo(&params, sizeof(params))},
+      push_constants,
       // Specialization Constants
-      {graph.hashed_layout_of(out),
-       graph.hashed_layout_of(mat1),
-       graph.hashed_layout_of(mat2),
-       graph.hashed_layout_of(self)},
-      // Resize Args
-      {mat2_is_transposed},
-      // Resizing Logic
-      resize_addmm_node));
-}
-
-void add_addmm_naive_buffer_node(
-    ComputeGraph& graph,
-    const ValueRef self_data,
-    const ValueRef mat1,
-    const ValueRef mat2_data,
-    const ValueRef beta,
-    const ValueRef alpha,
-    const ValueRef out,
-    const Params& params,
-    const ValueRef mat2_is_transposed) {
-  (void)beta;
-  (void)alpha;
-  ValueRef mat2 = prepack_standard(
-      graph,
-      mat2_data,
-      graph.storage_type_of(out),
-      utils::kHeightPacked,
-      /*passthrough = */ true);
-  ValueRef self = prepack_standard(
-      graph,
-      self_data,
-      graph.storage_type_of(out),
-      utils::kWidthPacked,
-      /*passthrough = */ true);
-
-  std::string kernel_name = "addmm_naive_buffer";
-  add_dtype_suffix(kernel_name, graph.dtype_of(out));
-
-  utils::uvec3 global_size = {
-      graph.size_at<uint32_t>(-1, out),
-      graph.size_at<uint32_t>(-2, out),
-      graph.size_at<uint32_t>(-3, out) * graph.size_at<uint32_t>(-4, out)};
-
-  int mat2_is_transposed_val = (mat2_is_transposed != kDummyValueRef &&
-                                graph.get_bool(mat2_is_transposed))
-      ? 1
-      : 0;
-
-  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
-      graph,
-      VK_KERNEL_FROM_STR(kernel_name),
-      addmm_naive_buffer_global_wg_size,
-      pick_hw_square_wg_size,
-      // Inputs and Outputs
-      {{out, vkapi::kWrite}, {{mat1, mat2, self}, vkapi::kRead}},
-      // Shader params buffers
-      {
-          graph.sizes_ubo(out),
-          graph.strides_ubo(out),
-          graph.sizes_ubo(mat1),
-          graph.strides_ubo(mat1),
-          graph.sizes_ubo(mat2),
-          graph.strides_ubo(mat2),
-          graph.numel_ubo(out),
-          graph.create_params_buffer(params),
-      },
-      // Push Constants
       {},
-      // Specialization Constants
-      {mat2_is_transposed_val},
       // Resize Args
-      {mat2_is_transposed},
+      {orig_N_ref, has_bias_ref},
       // Resizing Logic
-      resize_addmm_node));
+      resize_linear_node));
 }
 
-void add_addmm_optimized_node(
+void linear_packed_weight(
     ComputeGraph& graph,
-    const ValueRef self_data,
-    const ValueRef mat1,
-    const ValueRef mat2_data,
-    const ValueRef beta,
-    const ValueRef alpha,
-    const ValueRef out,
-    const Params& params,
-    const ValueRef mat2_is_transposed) {
-  utils::StorageType stype = graph.storage_type_of(out);
-  ValueRef self = prepack_standard(
-      graph, self_data, stype, utils::kChannelsPacked, /*passthrough=*/true);
-  ValueRef mat2 = prepack_standard(
-      graph, mat2_data, stype, utils::kHeightPacked, /*passthrough=*/true);
-
-  // Ensure mat1 is width packed
-  ValueRef mat1_W_packed = graph.add_tensor_like(mat1, utils::kWidthPacked);
-  auto viewFn = VK_GET_OP_FN("aten.view_copy.default");
-  viewFn(graph, {mat1, graph.add_none(), mat1_W_packed});
-
-  const bool mat2_is_transposed_val = graph.get_bool(mat2_is_transposed);
-
-  // Ensure mat2 is height packed
-  ValueRef mat2_packed = mat2;
-  const utils::GPUMemoryLayout mat2_layout =
-      mat2_is_transposed_val ? utils::kWidthPacked : utils::kHeightPacked;
-  if (graph.estimate_memory_layout_of(mat2) != mat2_layout) {
-    mat2_packed = graph.add_tensor_like(mat2, mat2_layout);
-    viewFn(graph, {mat2, graph.add_none(), mat2_packed});
-  }
-
-  std::string kernel_name = graph.get_bool(mat2_is_transposed)
-      ? "linear_optimized"
-      : "addmm_optimized";
-
-  std::vector<int64_t> mat1_sizes = graph.sizes_of(mat1_W_packed);
-  int mat1_dims = mat1_sizes.size();
-  if (mat1_dims == 3) {
-    kernel_name = "batch_" + kernel_name;
-  }
-  if (mat1_sizes.at(mat1_dims - 2) < 8) {
-    kernel_name += "_tile_row_2";
-  } else {
-    kernel_name += "_tile_row_4";
-  }
-  add_dtype_suffix(kernel_name, graph.dtype_of(out));
-
-  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
-      graph,
-      VK_KERNEL_FROM_STR(kernel_name),
-      addmm_optimized_global_wg_size,
-      addmm_optimized_local_wg_size,
-      // Inputs and Outputs
-      {{out, vkapi::kWrite},
-       {{mat1_W_packed, mat2_packed, self}, vkapi::kRead}},
-      // Shader params buffers
-      {
-          graph.sizes_ubo(out),
-          graph.sizes_ubo(mat1_W_packed),
-          graph.sizes_ubo(mat2_packed),
-          graph.sizes_ubo(self),
-          graph.create_params_buffer(params),
-      },
-      // Push Constants
-      {},
-      // Specialization Constants
-      {graph.hashed_layout_of(out),
-       graph.hashed_layout_of(mat1_W_packed),
-       graph.hashed_layout_of(mat2_packed),
-       graph.hashed_layout_of(self)},
-      // Resize Args
-      {mat2_is_transposed},
-      // Resizing Logic
-      resize_addmm_node));
-}
-
-void add_addmm_node(
-    ComputeGraph& graph,
-    const ValueRef self,
-    const ValueRef mat1,
-    const ValueRef mat2,
-    const ValueRef beta,
-    const ValueRef alpha,
-    const ValueRef out,
-    const ValueRef mat2_is_transposed) {
-  float alpha_val = 1.0f;
-  float beta_val = 1.0f;
-
-  if (alpha != kDummyValueRef) {
-    alpha_val = graph.extract_scalar<float>(alpha);
-  }
-  if (beta != kDummyValueRef) {
-    beta_val = graph.extract_scalar<float>(beta);
-  }
-
-  Params params = {alpha_val, beta_val};
-  if (graph.is_buffer_storage(out)) {
-    add_addmm_naive_buffer_node(
-        graph, self, mat1, mat2, beta, alpha, out, params, mat2_is_transposed);
-  } else if (graph.packed_dim_of(mat1) == WHCN::kChannelsDim) {
-    add_addmm_optimized_node(
-        graph, self, mat1, mat2, beta, alpha, out, params, mat2_is_transposed);
-  } else if (graph.packed_dim_of(mat1) == WHCN::kWidthDim) {
-    add_addmm_naive_texture_node(
-        graph, self, mat1, mat2, beta, alpha, out, params, mat2_is_transposed);
-  } else {
-    VK_THROW("Input should be channel packed or width packed.");
-  }
-}
-
-void addmm(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  check_addmm_args(graph, args[0], args[1], args[2], args[3], args[4], args[5]);
-  ValueRef mat2_is_transposed = graph.add_scalar(false);
-  return add_addmm_node(
-      graph,
-      args[0],
-      args[1],
-      args[2],
-      args[3],
-      args[4],
-      args[5],
-      mat2_is_transposed);
-}
-
-void linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+    const std::vector<ValueRef>& args) {
   ValueRef input = args.at(0);
   ValueRef weight_data = args.at(1);
   ValueRef bias = args.at(2);
   ValueRef out = args.at(3);
-  ValueRef weight = prepack_standard(
-      graph,
-      weight_data,
-      graph.storage_type_of(out),
-      utils::kWidthPacked,
-      /*passthrough = */ true);
-  ValueRef mat2_is_transposed = graph.add_scalar(true);
 
-  if (graph.val_is_none(bias)) {
-    return add_matmul_node(graph, input, weight, out, mat2_is_transposed);
-  } else {
-    return add_addmm_node(
-        graph,
-        bias,
-        input,
-        weight,
-        kDummyValueRef,
-        kDummyValueRef,
-        out,
-        mat2_is_transposed);
+  ValueRef packed_weight = prepack_fp_linear_weight(
+      graph, weight_data, /*is_transposed=*/true, /*B=*/1);
+
+  ValueRef packed_bias = kDummyValueRef;
+  bool has_bias = graph.val_is_not_none(bias);
+  if (has_bias) {
+    packed_bias = prepack_standard(
+        graph, bias, graph.storage_type_of(out), utils::kWidthPacked);
   }
+
+  add_linear_tiled_node(
+      graph, input, packed_weight, packed_bias, has_bias, out);
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(aten.addmm.default, addmm);
-  VK_REGISTER_OP(aten.linear.default, linear);
+  VK_REGISTER_OP(aten.linear.default, linear_packed_weight);
 }
 
 } // namespace vkcompute

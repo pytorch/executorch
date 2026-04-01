@@ -1,15 +1,11 @@
 /*
- * Copyright 2025 Arm Limited and/or its affiliates.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
 
 #include "cortex_m_ops_common.h"
-
-extern "C" {
-#include "arm_nnfunctions.h"
-}
 
 namespace cortex_m {
 namespace native {
@@ -25,9 +21,9 @@ bool validate_conv2d_arguments(
     const Tensor& weight,
     const torch::executor::optional<Tensor>& bias,
     const Tensor& output,
-    const IntArrayRef& stride,
-    const IntArrayRef& padding,
-    const IntArrayRef& dilation,
+    const Int64ArrayRef& stride,
+    const Int64ArrayRef& padding,
+    const Int64ArrayRef& dilation,
     const Tensor& requantize_multipliers,
     const Tensor& requantize_shifts) {
   if (input.dim() != kConvDim || weight.dim() != kConvDim ||
@@ -44,7 +40,7 @@ bool validate_conv2d_arguments(
   executorch::aten::ArrayRef<executorch::aten::DimOrderType>
       channels_last_order(kChannelsLastDimOrder, 4);
 
-  if (input.size(1) > 1 && input.dim_order() != channels_last_order) {
+  if (input.size(1) > 1 && !is_channels_last_tensor(input)) {
     ET_LOG(
         Error,
         "quantized_conv2d_out: input must have channels_last dim_order (NHWC)");
@@ -52,7 +48,7 @@ bool validate_conv2d_arguments(
     return false;
   }
 
-  if (output.size(1) > 1 && output.dim_order() != channels_last_order) {
+  if (output.size(1) > 1 && !is_channels_last_tensor(input)) {
     ET_LOG(
         Error,
         "quantized_conv2d_out: output must have channels_last dim_order (NHWC)");
@@ -107,9 +103,9 @@ Tensor& quantized_conv2d_out(
     const Tensor& input,
     const Tensor& weight,
     const torch::executor::optional<Tensor>& bias,
-    const IntArrayRef stride,
-    const IntArrayRef padding,
-    const IntArrayRef dilation,
+    const Int64ArrayRef stride,
+    const Int64ArrayRef padding,
+    const Int64ArrayRef dilation,
     const int64_t input_offset,
     const int64_t output_offset,
     const Tensor& requantize_multipliers,
@@ -188,24 +184,28 @@ Tensor& quantized_conv2d_out(
   cmsis_context.buf = nullptr;
   cmsis_context.size = 0;
 
-  const size_t buffer_bytes = static_cast<size_t>(
-      arm_convolve_s8_get_buffer_size(&input_dims, &filter_dims));
+  const int32_t buffer_bytes = arm_convolve_wrapper_s8_get_buffer_size(
+      &conv_params, &input_dims, &filter_dims, &output_dims);
+  if (buffer_bytes < 0) {
+    ET_LOG(
+        Error, "quantized_conv2d_out: CMSIS-NN buffer size calculation failed");
+    context.fail(Error::Internal);
+    return out;
+  }
   if (buffer_bytes > 0) {
     auto buffer_or_error =
-        context.allocate_temp(buffer_bytes, alignof(int16_t));
+        context.allocate_temp(buffer_bytes, kCortexMMveAlignment);
     if (!buffer_or_error.ok()) {
-      if (buffer_or_error.error() != Error::NotFound) {
-        ET_LOG(
-            Error,
-            "quantized_conv2d_out: failed to allocate scratch buffer (%d)",
-            static_cast<int>(buffer_or_error.error()));
-        context.fail(buffer_or_error.error());
-        return out;
-      }
-    } else {
-      cmsis_context.buf = buffer_or_error.get();
-      cmsis_context.size = buffer_bytes;
+      ET_LOG(
+          Error,
+          "quantized_conv2d_out: failed to allocate scratch buffer (%d bytes, error %d)",
+          static_cast<int>(buffer_bytes),
+          static_cast<int>(buffer_or_error.error()));
+      context.fail(buffer_or_error.error());
+      return out;
     }
+    cmsis_context.buf = buffer_or_error.get();
+    cmsis_context.size = buffer_bytes;
   }
 
   const arm_cmsis_nn_status status = arm_convolve_wrapper_s8(
@@ -224,7 +224,7 @@ Tensor& quantized_conv2d_out(
   if (status != ARM_CMSIS_NN_SUCCESS) {
     ET_LOG(
         Error,
-        "quantized_conv2d_out: arm_convolve_s8 failed with status %d",
+        "quantized_conv2d_out: arm_convolve_wrapper_s8 failed with status %d",
         status);
     context.fail(Error::Internal);
   }

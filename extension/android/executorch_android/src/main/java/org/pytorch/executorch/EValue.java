@@ -10,6 +10,7 @@ package org.pytorch.executorch;
 
 import com.facebook.jni.annotations.DoNotStrip;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Locale;
 import org.pytorch.executorch.annotations.Experimental;
@@ -202,12 +203,14 @@ public class EValue {
     } else if (isDouble()) {
       return ByteBuffer.allocate(9).put((byte) TYPE_CODE_DOUBLE).putDouble(toDouble()).array();
     } else if (isString()) {
-      return ByteBuffer.allocate(1 + toString().length())
+      byte[] strBytes = toStr().getBytes(StandardCharsets.UTF_8);
+      return ByteBuffer.allocate(1 + 4 + strBytes.length)
           .put((byte) TYPE_CODE_STRING)
-          .put(toString().getBytes())
+          .putInt(strBytes.length)
+          .put(strBytes)
           .array();
     } else {
-      throw new IllegalArgumentException("Unknown Tensor dtype");
+      throw new IllegalArgumentException("Unknown EValue type code: " + mTypeCode);
     }
   }
 
@@ -234,7 +237,10 @@ public class EValue {
         byte[] bufferArray = buffer.array();
         return from(Tensor.fromByteArray(Arrays.copyOfRange(bufferArray, 1, bufferArray.length)));
       case TYPE_CODE_STRING:
-        throw new IllegalArgumentException("TYPE_CODE_STRING is not supported");
+        int strLen = buffer.getInt();
+        byte[] strBytes = new byte[strLen];
+        buffer.get(strBytes);
+        return from(new String(strBytes, StandardCharsets.UTF_8));
       case TYPE_CODE_DOUBLE:
         return from(buffer.getDouble());
       case TYPE_CODE_INT:

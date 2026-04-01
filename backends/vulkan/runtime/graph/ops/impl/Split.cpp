@@ -9,51 +9,12 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
-#include <executorch/backends/vulkan/runtime/utils/StorageUtils.h>
-
 namespace vkcompute {
-
-using utils::GPUMemoryLayout;
-using utils::StorageType;
-
-void resize_split_node(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)resize_args;
-  const ValueRef input = args.at(0).refs.at(0);
-  const ValueRef split_sizes_ref = args.at(1).refs.at(0);
-  const ValueRef dim_ref = args.at(2).refs.at(0);
-  const ValueRef out_list_ref = args.at(3).refs.at(0);
-
-  const ValueListPtr out_list = graph->get_value_list(out_list_ref);
-  const std::vector<int64_t> split_sizes =
-      *(graph->get_int_list(split_sizes_ref));
-  const int64_t dim = graph->extract_scalar<int64_t>(dim_ref);
-
-  const int64_t input_ndim = graph->dim_of(input);
-  const DimIndex dim_index = dim < 0 ? static_cast<DimIndex>(dim)
-                                     : static_cast<DimIndex>(dim - input_ndim);
-
-  std::vector<int64_t> input_sizes = graph->sizes_of(input);
-
-  for (int split_idx = 0; split_idx < split_sizes.size(); split_idx++) {
-    const int64_t split_size = split_sizes.at(split_idx);
-    const ValueRef out_ref = out_list->at(split_idx);
-
-    std::vector<int64_t> out_sizes = input_sizes;
-    out_sizes.at(dim_index) = split_size;
-
-    graph->virtual_resize(out_ref, out_sizes);
-  }
-}
 
 void add_split_node(
     ComputeGraph& graph,
@@ -92,7 +53,9 @@ void add_split_node(
       // Specialization Constants
       {utils::safe_downcast<int32_t>(dim_whcn),
        static_cast<int32_t>(split_idx),
-       static_cast<int32_t>(split_offset)},
+       static_cast<int32_t>(split_offset),
+       graph.hashed_layout_of(out),
+       graph.hashed_layout_of(input)},
       // Resize Args
       {},
       // Resizing Logic
@@ -125,7 +88,8 @@ void split_with_sizes_copy_default(
   ValueRef out_list_ref = args[3];
 
   int64_t dim = graph.extract_scalar<int64_t>(dim_ref);
-  std::vector<int64_t> split_sizes = *(graph.get_int_list(split_sizes_ref));
+  std::vector<int64_t> split_sizes =
+      graph.extract_int_or_symint_list(split_sizes_ref);
 
   add_split_with_sizes_node(graph, input, split_sizes, dim, out_list_ref);
 }

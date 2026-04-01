@@ -43,9 +43,9 @@ DEFINE_string(
     "outputs",
     "Executorch inference data output path.");
 
-std::vector<std::vector<std::vector<int64_t>>> parse_input_list_file(
+std::vector<std::vector<std::vector<uint8_t>>> parse_input_list_file(
     const std::string& input_list_path) {
-  std::vector<std::vector<std::vector<int64_t>>> bufs;
+  std::vector<std::vector<std::vector<uint8_t>>> bufs;
   std::ifstream input_list(input_list_path);
 
   auto split = [](std::string s, std::string delimiter) {
@@ -88,9 +88,7 @@ std::vector<std::vector<std::vector<int64_t>>> parse_input_list_file(
       fin.seekg(0, std::ios::end);
       size_t file_size = fin.tellg();
       fin.seekg(0, std::ios::beg);
-
-      size_t num_tokens = file_size / sizeof(int64_t);
-      bufs.back()[input_index].resize(num_tokens);
+      bufs.back()[input_index].resize(file_size);
 
       if (!fin.read(
               reinterpret_cast<char*>(bufs.back()[input_index].data()),
@@ -111,7 +109,7 @@ std::vector<std::vector<std::vector<int64_t>>> parse_input_list_file(
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-  std::vector<std::vector<std::vector<int64_t>>> multi_turns_input_buffers =
+  std::vector<std::vector<std::vector<uint8_t>>> multi_turns_input_buffers =
       parse_input_list_file(FLAGS_input_list_path);
 
   for (int iter = 0; iter < multi_turns_input_buffers.size(); ++iter) {

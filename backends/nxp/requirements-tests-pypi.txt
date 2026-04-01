@@ -2,3 +2,4 @@ tensorflow==2.18.0
 pytest-mock
 tflite
 GvGen
+polars

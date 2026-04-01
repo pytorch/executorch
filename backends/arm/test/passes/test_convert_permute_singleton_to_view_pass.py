@@ -22,7 +22,7 @@ class PermuteSingletonAxesModule(torch.nn.Module):
         return (torch.randn(2, 1, 3, 4),)
 
 
-def test_convert_permute_singleton_to_view_applies():
+def test_convert_permute_singleton_to_view_tosa_FP_applies():
     module = PermuteSingletonAxesModule()
     pipeline = PassPipeline[input_t](
         module,
@@ -51,7 +51,7 @@ class PermuteNonSingletonModule(torch.nn.Module):
         return (torch.randn(2, 3, 4),)
 
 
-def test_convert_permute_singleton_to_view_skips_non_singleton():
+def test_convert_permute_singleton_to_view_tosa_FP_skip_non_singleton():
     module = PermuteNonSingletonModule()
     pipeline = PassPipeline[input_t](
         module,
@@ -80,7 +80,7 @@ class PermuteSameSizedNonSingletonModule(torch.nn.Module):
         return (torch.randn(2, 1, 2),)
 
 
-def test_convert_permute_singleton_to_view_skips_same_sized_non_singleton():
+def test_convert_permute_singleton_to_view_tosa_FP_skip_same_size_non_singleton():
     module = PermuteSameSizedNonSingletonModule()
     pipeline = PassPipeline[input_t](
         module,

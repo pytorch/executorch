@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -72,6 +72,16 @@ class Gelu(torch.nn.Module):
             torch.arange(-16, 16, 0.2),
         ),
     }
+    test_data_bf16: dict[str, Tuple[str, input_t1]] = {
+        "rand_none_bf16": lambda: (
+            "none",
+            torch.rand(6, 6, dtype=torch.bfloat16) - 0.5,
+        ),
+        "rand_tanh_bf16": lambda: (
+            "tanh",
+            torch.rand(6, 6, dtype=torch.bfloat16) - 0.5,
+        ),
+    }
 
     def __init__(self, approximate: str = "none"):
         super().__init__()
@@ -81,15 +91,27 @@ class Gelu(torch.nn.Module):
         return self.gelu(x)
 
 
-@common.parametrize("test_data", Gelu.test_data)
+@common.parametrize("test_data", Gelu.test_data | Gelu.test_data_bf16)
 def test_gelu_tosa_FP(test_data: input_t1):
     approximate, test_data = test_data()
+
+    match test_data.dtype:
+        case torch.bfloat16:
+            atol = 1e-2
+            rtol = 1e-2
+        case _:
+            atol = 1e-3
+            rtol = 1e-3
+
     TosaPipelineFP[input_t1](
         Gelu(approximate),
         (test_data,),
         Gelu.aten_op,
         Gelu.exir_op,
         use_to_edge_transform_and_lower=False,
+        atol=atol,
+        rtol=rtol,
+        tosa_extensions=["bf16"],
     ).run()
 
 

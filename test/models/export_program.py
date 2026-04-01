@@ -13,7 +13,6 @@ import sys
 from typing import Any, Dict, List, Type
 
 import torch
-from executorch.exir import CaptureConfig
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.program._program import ExecutorchProgramManager
 from torch import nn
@@ -65,6 +64,18 @@ class ModuleIndex(nn.Module):
 
     def get_random_inputs(self):
         return (torch.randn(10, 10, 10),)
+
+
+# Used for testing int and bool inputs.
+class ModuleIntBool(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor, y: int, z: bool):
+        return x + y + int(z)
+
+    def get_random_inputs(self):
+        return (torch.ones(1), 1, True)
 
 
 class ModuleNoOp(nn.Module):
@@ -128,7 +139,7 @@ class ModuleDynamicCatUnallocatedIO(nn.Module):
 
     @staticmethod
     def get_export_kwargs():
-        return {"capture_config": CaptureConfig(pt2_mode=True, enable_aot=True)}
+        return {}
 
 
 class ModuleAddMul(torch.nn.Module):

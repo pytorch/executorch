@@ -22,9 +22,7 @@ def define_common_targets():
                 "tensor_ptr.h",
                 "tensor_ptr_maker.h",
             ],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 "//executorch/runtime/core/exec_aten/util:dim_order_util" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,

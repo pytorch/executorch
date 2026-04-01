@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,8 +20,8 @@ from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_da
 from executorch.exir._serialize._flatbuffer import (
     _FlatbufferResult,
     _program_flatbuffer_to_json,
-    _program_json_to_flatbuffer,
 )
+from executorch.exir._serialize._flatbuffer_program import _program_to_flatbuffer
 from executorch.exir._serialize._named_data_store import (
     NamedDataStore,
     NamedDataStoreOutput,
@@ -523,8 +524,10 @@ def serialize_pte_binary(
         segments_data.append(segment.data)
 
     # Convert to a standard flatbuffer binary.
-    result: _FlatbufferResult = _program_json_to_flatbuffer(
-        _program_to_json(program),
+    # Prefer the direct flatbuffer path to avoid JSON+flatc roundtrip,
+    # which reduces CPU/memory and avoids temp file I/O.
+    result: _FlatbufferResult = _program_to_flatbuffer(
+        program,
         constant_tensor_alignment=constant_tensor_alignment,
         delegate_alignment=delegate_alignment,
     )

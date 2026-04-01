@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,6 +11,7 @@ import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass
+from torch._ops import OpOverload
 
 
 class ReplaceScalarWithTensorArgPass(ExportPass):
@@ -46,6 +47,11 @@ class ReplaceScalarWithTensorArgPass(ExportPass):
         super().__init__()
 
     def get_replacement(self, op, args, kwargs, meta):
+        if isinstance(op, OpOverload):
+            full_op = torch.ops.aten.full.default
+        else:
+            full_op = exir_ops.edge.aten.full.default
+
         return super().call_operator(
             # Replace with .Tensor variant.
             op=self.scalar_to_tensor_ops[op],
@@ -54,12 +60,15 @@ class ReplaceScalarWithTensorArgPass(ExportPass):
                 args[0],
                 # Scalar arg - replace with aten.full tensor.
                 super().call_operator(
-                    exir_ops.edge.aten.full.default,
+                    full_op,
                     args=(
                         (1,),
-                        args[1],
+                        float(args[1]),
                     ),
-                    kwargs={"dtype": args[0].to_tensor().dtype},
+                    kwargs={
+                        "dtype": args[0].to_tensor().dtype,
+                        "device": args[0].to_tensor().device,
+                    },
                     meta=meta,
                 ),
                 # Other args.

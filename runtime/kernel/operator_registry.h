@@ -123,14 +123,14 @@ struct KernelKey {
    * for all input tensor dtypes and dim orders if the specialized kernel is not
    * registered.
    */
-  KernelKey() = default;
+  constexpr KernelKey() = default;
 
   /**
    * Creates a specialized (non-fallback) kernel key that matches a specific
    * set of input tensor dtypes and dim orders. See the class comment for the
    * expected format of `kernel_key_data`.
    */
-  /* implicit */ KernelKey(const char* kernel_key_data)
+  /* implicit */ constexpr KernelKey(const char* kernel_key_data)
       : kernel_key_data_(kernel_key_data) {}
 
   bool operator==(const KernelKey& other) const {
@@ -188,12 +188,13 @@ struct Kernel {
    * itself, we require the lifetime of the operator name to be at least as long
    * as the operator registry.
    */
-  explicit Kernel(const char* name, OpFunction func) : name_(name), op_(func) {}
+  constexpr explicit Kernel(const char* name, OpFunction func)
+      : name_(name), op_(func) {}
 
-  explicit Kernel(const char* name, KernelKey key, OpFunction func)
+  constexpr explicit Kernel(const char* name, KernelKey key, OpFunction func)
       : name_(name), kernel_key_(key), op_(func) {}
 
-  Kernel() {}
+  constexpr Kernel() : name_(nullptr), op_(nullptr) {}
 };
 
 namespace internal {

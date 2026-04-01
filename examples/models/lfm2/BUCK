@@ -1,0 +1,24 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "lfm2",
+    srcs = [
+        "__init__.py",
+        "short_conv.py",
+        "convert_weights.py",
+    ],
+    base_module = "executorch.examples.models.lfm2",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:transformer_modules",
+        "fbcode//pytorch/torchtune:lib",
+        "fbsource//third-party/pypi/safetensors:safetensors",
+    ],
+)

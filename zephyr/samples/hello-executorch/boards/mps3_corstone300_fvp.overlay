@@ -1,0 +1,15 @@
+/* Copyright 2025 Arm Limited and/or its affiliates.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* Ensure ExecuTorch scratch buffers live in shared SRAM that the Ethos-U
+ * DMA can access. The default board DTS routes Zephyr's general-purpose
+ * SRAM to DTCM, which the NPU cannot reach. Override the choice so that
+ * .data/.bss land in ISRAM (0x3100_0000) instead.
+ */
+/ {
+	chosen {
+		zephyr,sram = &isram;
+	};
+};

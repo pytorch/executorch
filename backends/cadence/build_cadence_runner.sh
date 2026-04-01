@@ -31,12 +31,19 @@ main() {
 
   local example_dir=backends/cadence
   local build_dir="cmake-out/${example_dir}"
-  local cmake_prefix_path="${PWD}/cmake-out/lib/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags"
+  # Detect lib vs lib64
+  if [ -d "${PWD}/cmake-out/lib64/cmake/ExecuTorch" ]; then
+    libdir="lib64"
+  else
+    libdir="lib"
+  fi
+  local cmake_prefix_path="${PWD}/cmake-out/${libdir}/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags"
   rm -rf ${build_dir}
   CXXFLAGS="-fno-exceptions -fno-rtti" cmake -DCMAKE_PREFIX_PATH="${cmake_prefix_path}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_CADENCE_CPU_RUNNER=ON \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
+    -DPYTHON_EXECUTABLE="$(which python3)" \
     -B"${build_dir}" \
     "${example_dir}"
   cmake --build "${build_dir}" --config Release -j16

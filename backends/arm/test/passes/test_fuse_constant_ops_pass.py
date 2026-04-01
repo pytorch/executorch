@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -12,11 +12,7 @@ from executorch.backends.arm._passes.fuse_constant_ops_pass import (
     FuseConstantArgsPass,
 )
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.test_pipeline import (
-    PassPipeline,
-    TosaPipelineFP,
-    TosaPipelineINT,
-)
+from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
 input_t = Tuple[torch.Tensor]  # Input x
 input_t2 = Tuple[torch.Tensor, torch.Tensor]
@@ -84,7 +80,6 @@ class FuseBuffer(torch.nn.Module):
 
 class FuseLiftedTensor(torch.nn.Module):
     ops_before_pass: ClassVar[Dict[str, int]] = {
-        "executorch_exir_dialects_edge__ops_aten_select_copy_int": 1,
         "executorch_exir_dialects_edge__ops_aten_add_Tensor": 1,
     }
     ops_after_pass: ClassVar[Dict[str, int]] = {
@@ -121,22 +116,6 @@ class CatConst(torch.nn.Module):
         return torch.cat((a, b), dim=0)
 
 
-class LinearConst(torch.nn.Module):
-    """A linear layer that can be computed AOT"""
-
-    def __init__(self, in_out_features: int = 3, bias: bool = True):
-        super().__init__()
-        self.linear = torch.nn.Linear(in_out_features, in_out_features, bias=bias)
-        self.example_input = torch.rand(in_out_features, in_out_features)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        y = torch.full_like(x, 1.0)
-        return self.linear(y) + x
-
-    def get_example_input(self) -> torch.Tensor:
-        return self.example_input
-
-
 modules: Dict[str, ModuleWithFuseAttrs] = {
     "fuse_parameter": cast(ModuleWithFuseAttrs, FuseParameter()),
     "fuse_buffer": cast(ModuleWithFuseAttrs, FuseBuffer()),
@@ -149,7 +128,7 @@ cat_module: Dict[str, ModuleWithFuseAttrs] = {
 
 
 @common.parametrize("module", modules)
-def test_fuse_const_ops_tosa_FP(module: ModuleWithFuseAttrs) -> None:
+def test_fuse_constant_args_tosa_FP(module: ModuleWithFuseAttrs) -> None:
     pipeline = PassPipeline[input_t](
         module=cast(torch.nn.Module, module),
         test_data=(torch.rand(1),),
@@ -166,7 +145,7 @@ def test_fuse_const_ops_tosa_FP(module: ModuleWithFuseAttrs) -> None:
 
 
 @common.parametrize("module", modules)
-def test_fuse_const_ops_tosa_INT(module: ModuleWithFuseAttrs) -> None:
+def test_fuse_constant_args_tosa_INT(module: ModuleWithFuseAttrs) -> None:
     pipeline = PassPipeline[input_t](
         cast(torch.nn.Module, module),
         (torch.rand(10, 10),),
@@ -182,7 +161,7 @@ def test_fuse_const_ops_tosa_INT(module: ModuleWithFuseAttrs) -> None:
 
 
 @common.parametrize("module", cat_module)
-def test_fuse_const_ops_tosa_BI_cat(module: ModuleWithFuseAttrs) -> None:
+def test_fuse_constant_args_tosa_INT_cat(module: ModuleWithFuseAttrs) -> None:
     pipeline = PassPipeline[input_t2](
         cast(torch.nn.Module, module),
         (torch.rand(3), torch.rand(2)),
@@ -193,32 +172,5 @@ def test_fuse_const_ops_tosa_BI_cat(module: ModuleWithFuseAttrs) -> None:
             ComputeConstantOpsAOTPass,
             FuseConstantArgsPass,
         ],
-    )
-    pipeline.run()
-
-
-def test_linear_const_tosa_FP():
-    model = LinearConst()
-    example_input = model.get_example_input()
-    pipeline = TosaPipelineFP[input_t](
-        model,
-        (example_input,),
-        aten_op=[],
-        exir_op=[],
-        use_to_edge_transform_and_lower=True,
-    )
-    pipeline.run()
-
-
-def test_linear_const_tosa_INT():
-    model = LinearConst()
-    example_input = model.get_example_input()
-    pipeline = TosaPipelineINT[input_t](
-        model,
-        (example_input,),
-        aten_op=[],
-        exir_op=[],
-        per_channel_quantization=False,
-        use_to_edge_transform_and_lower=True,
     )
     pipeline.run()

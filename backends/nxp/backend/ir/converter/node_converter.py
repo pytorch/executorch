@@ -1,9 +1,11 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
 from abc import ABC, abstractmethod
+from typing import Callable
 
 import torch
 
@@ -13,6 +15,10 @@ from executorch.backends.nxp.backend.custom_delegation_options import (
 from executorch.backends.nxp.backend.ir.conversion_context import ConversionContext
 from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_director import (
     AtenModelBuilderDirector,
+)
+
+from executorch.backends.nxp.backend.ir.converter.tensor_utils import (
+    get_name_of_node_output,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
@@ -75,7 +81,10 @@ class NodeConverter(ABC):
             Classes which implement conversion for individual operators must overwrite this method.
 
         :param node: torch.Node to check.
-        :param parameters_mapping: Dictionary mapping tensor names to their static data (if they have it).
+        :param parameters_mapping: Dictionary mapping static parameter names to Parameter objects containing their data
+                                    (if they have any). During partitioning, this data is extracted from the model right
+                                    after quantization and before edge dialect passes. Therefore, it could potentially
+                                    be outdated.
         :param custom_delegation_options: Custom options which affect delegation.
         """
         pass
@@ -93,7 +102,10 @@ class NodeConverter(ABC):
 
         :param node: The node (edge operator) to check.
         :param neutron_target_spec: Object for querying the target platform to retrieve its properties.
-        :param parameters_mapping: Dictionary mapping tensor names to their static data (if they have it).
+        :param parameters_mapping: Dictionary mapping static parameter names to Parameter objects containing their data
+                                    (if they have any). During partitioning, this data is extracted from the model right
+                                    after quantization and before edge dialect passes. Therefore, it could potentially
+                                    be outdated.
         :param custom_delegation_options: Custom options which affect delegation.
         """
         return True
@@ -110,7 +122,10 @@ class NodeConverter(ABC):
 
         :param node: torch.Node to check.
         :param neutron_target_spec: Object for querying the target platform to retrieve its properties.
-        :param parameters_mapping: Dict mapping tensor names to their data.
+        :param parameters_mapping: Dictionary mapping static parameter names to Parameter objects containing their data
+                                    (if they have any). During partitioning, this data is extracted from the model right
+                                    after quantization and before edge dialect passes. Therefore, it could potentially
+                                    be outdated.
         :param custom_delegation_options: Custom user options which affect node delegation.
         """
         return cls._is_supported_in_IR(
@@ -136,7 +151,10 @@ class NodeConverter(ABC):
         :param partition_list: List of proposed partitions.
         :param custom_delegation_options: Custom user options which affect node delegation.
         :param neutron_target_spec: NeutronTargetSpec instance.
-        :param parameters_mapping: Dictionary mapping tensor names to their static data.
+        :param parameters_mapping: Dictionary mapping static parameter names to Parameter objects containing their data
+                                    (if they have any). During partitioning, this data is extracted from the model right
+                                    after quantization and before edge dialect passes. Therefore, it could potentially
+                                    be outdated.
         :return: Boolean indicating whether the node supports the current partitioning.
         """
         return True
@@ -169,17 +187,55 @@ class NodeConverter(ABC):
         # Node not quantized
         return True
 
+    @staticmethod
+    def is_node_alone_in_partition(
+        node: Node, partition_list: list[Partition], filter_fn: Callable[[Node], bool]
+    ) -> bool:
+        """Return True if `node` is the only node in its partition for which `filter_fn`
+        returns True.
+
+        The function finds the unique partition containing `node` and applies
+        `filter_fn` to all nodes in that partition. If only one node passes the
+        predicate — and that node is `node` — the function returns True.
+
+        :param node: The torch.fx.Node to check.
+        :param partition_list: List of proposed partitions.
+        :param filter_fn: Predicate applied to nodes in the partition.
+                        `node` is considered alone if it is the only node
+                        for which this predicate returns True.
+        """
+        partitions = [p for p in partition_list if node in p.nodes]
+        if len(partitions) != 1:
+            raise ValueError(
+                "Cannot find a partition of a node in graph. This should not occur."
+            )
+
+        partition = partitions[0]
+        filtered_partition_nodes = list(filter(filter_fn, partition.nodes))
+        return (
+            len(filtered_partition_nodes) == 1 and filtered_partition_nodes[0] == node
+        )
+
     def assert_convertible(self, node):
-        """Assert that the call `_is_supported_in_IR()` returns `True`. Otherwise, raise an exception and print an
+        """Assert that the call `is_supported()` returns `True`. Otherwise, raise an exception and print an
         error message.
         """
-        assert self._is_supported_in_IR(
+        supported_in_ir = self._is_supported_in_IR(
             node,
             self.context.parameters_mapping,
             self.context.custom_delegation_options,
-        ), (
-            f"Node `{node}` is not convertible to the intermediate representation. "
-            "There is an error in the partitioner."
+        )
+
+        supported_on_target = self._is_supported_on_target(
+            node,
+            self.neutron_target_spec,
+            self.context.parameters_mapping,
+            self.context.custom_delegation_options,
+        )
+
+        assert supported_in_ir and supported_on_target, (
+            f"Node `{node}` was selected for delegation to Neutron, but it is not convertible to the intermediate "
+            "representation. There is an error in the Neutron partitioner. Please report this."
         )
 
     @property
@@ -210,25 +266,45 @@ class NodeConverter(ABC):
         # Initialize node's inputs
         t_operator.inputs = tflite_model.OperatorInputs()
 
-        input_nodes = []
-        for arg in node.args:
-            match arg:
-                case Node():
-                    input_nodes.append(arg)
-                case list() if all(isinstance(node_, Node) for node_ in arg):
-                    input_nodes.extend(arg)
+        if node.target == operator.getitem:
+            # Special case of a builtin function, which can extract a specific output tensor from the previous node.
+            previous_node = node.args[0]
+            output_index = node.args[1]
+            input_name = get_name_of_node_output(previous_node, output_index)
+            assert self.builder.tensor_exists(input_name)
+            t_operator.tmp_inputs.append(self.builder.tensor_for_name(input_name))
 
-        for ancestor_node in input_nodes:
-            assert self.context.tflite_builder.tensor_exists(ancestor_node.name)
-            t_operator.tmp_inputs.append(
-                self.context.tflite_builder.tensor_for_name(ancestor_node.name)
-            )
+        else:
+            # Regular operator.
+            input_nodes = []
+            for arg in node.args:
+                match arg:
+                    case Node():
+                        input_nodes.append(arg)
+                    case list() if all(isinstance(node_, Node) for node_ in arg):
+                        input_nodes.extend(arg)
 
-        # Add node's output as a new tensor
-        assert self.context.tflite_builder.tensor_exists(node.name)
-        t_operator.outputs = tflite_model.OperatorOutputs()
-        t_operator.tmp_outputs.append(
-            self.context.tflite_builder.tensor_for_name(node.name)
+            for ancestor_node in input_nodes:
+                assert self.builder.tensor_exists(ancestor_node.name)
+                t_operator.tmp_inputs.append(
+                    self.builder.tensor_for_name(ancestor_node.name)
+                )
+
+        # Add node's outputs as a new tensors
+        num_outputs = (
+            len(node.meta["val"]) if isinstance(node.meta["val"], tuple) else 1
         )
+        if num_outputs == 1:
+            # Single output node.
+            assert self.builder.tensor_exists(node.name)
+            t_operator.outputs = tflite_model.OperatorOutputs()
+            t_operator.tmp_outputs.append(self.builder.tensor_for_name(node.name))
+        else:
+            # The node has multiple outputs.
+            t_operator.outputs = tflite_model.OperatorOutputs()
+            for output_index in range(num_outputs):
+                tensor_name = get_name_of_node_output(node, output_index)
+                assert self.builder.tensor_exists(tensor_name)
+                t_operator.tmp_outputs.append(self.builder.tensor_for_name(tensor_name))
 
         return t_operator

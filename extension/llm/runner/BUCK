@@ -1,0 +1,56 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load(":targets.bzl", "define_common_targets")
+
+
+non_fbcode_target(_kind = define_common_targets,)
+
+# !!!! fbcode/executorch/extension/llm/runner/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load(":targets.bzl", "define_common_targets")
+
+
+fbcode_target(_kind = define_common_targets,)
+
+# Python bindings for LLM runner
+fbcode_target(
+    _kind = runtime.cxx_python_extension,
+    name = "_llm_runner",
+    srcs = ["pybindings.cpp"],
+    visibility = ["PUBLIC"],
+    deps = [
+        ":runner_lib",
+        ":multimodal_runner_lib",
+        ":stats",
+        "//executorch/extension/llm/sampler:sampler",
+        "//executorch/extension/module:module",
+        "//executorch/runtime:runtime",
+        "//pytorch/tokenizers:headers",
+    ],
+    external_deps = [
+        "libtorch_python",
+        "pybind11",
+    ],
+)
+
+# Python library that exposes the runner module
+python_library(
+    name = "runner",
+    srcs = ["__init__.py"],
+    base_module = "executorch.extension.llm.runner",
+    visibility = ["PUBLIC"],
+    deps = [
+        ":_llm_runner",
+        "fbsource//third-party/pypi/transformers:transformers",
+        "fbcode//caffe2:torch",
+    ],
+)

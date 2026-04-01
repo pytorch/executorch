@@ -48,6 +48,7 @@ class FuseClampPass(ExportPass):
                     if (
                         preceding_op.op == "call_function"
                         and preceding_op.target in self.FUSEABLE_OPS
+                        and len(preceding_op.users) == 1
                     ):
                         # Delete activation
                         output_min_max = self.get_output_min_max_from_activation(

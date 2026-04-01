@@ -1,4 +1,4 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,13 +9,10 @@ from typing import Any
 
 import numpy as np
 
-import sympy  # type: ignore
-
 import torch
 import tosa_serializer as ts
 
 from executorch.backends.arm.tosa.mapping import extract_tensor_meta
-from executorch.backends.arm.tosa.specification import TosaSpecification
 
 from torch._subclasses.fake_tensor import FakeTensor
 from torch.fx import Node
@@ -64,9 +61,7 @@ def are_fake_tensors_broadcastable(
     return (True, list(reversed(broadcast_shape)))
 
 
-def broadcast_tensors(
-    tosa_fb, nodes: list[Node], tosa_spec: TosaSpecification
-) -> list[Any]:
+def broadcast_tensors(tosa_fb, nodes: list[Node]) -> list[Any]:
     """Broadcast the FX nodes to a shared shape inside the TOSA graph.
 
     This mirrors ``reshape_for_broadcast`` but also emits the tile operators
@@ -96,7 +91,7 @@ def broadcast_tensors(
 
     broadcast_tensors = []
     for node in nodes:
-        tens_dtype, tens_shape, _ = extract_tensor_meta(node.meta, tosa_spec)
+        tens_dtype, tens_shape, _ = extract_tensor_meta(node.meta)
         list_tens_shape = list(tens_shape)
         # Already in the right shape we can just add it to the list.
         if list_tens_shape == common_shape:
@@ -189,116 +184,3 @@ def tosa_shape(shape, dim_order):
         [-1 if isinstance(d, torch.SymInt) else d for d in reordered]
     )
     return list(removed_symints)
-
-
-def get_resize_parameters_1d(
-    input_size: int | torch.SymInt,
-    output_size: int | torch.SymInt,
-    resize_mode: int,
-    align_corners: bool,
-):
-    """Compute resize coefficients for a single spatial dimension.
-
-    Args:
-        input_size (int | torch.SymInt): Input size for the axis, possibly
-            symbolic.
-        output_size (int | torch.SymInt): Output size for the axis, possibly
-            symbolic.
-        resize_mode (int): Target resize mode defined by TOSA.
-        align_corners (bool): Whether the resize should align the corner
-            pixels.
-
-    Returns:
-        tuple[int, int, int, int]: Numerator, denominator, offset, and border
-            terms encoded as integers.
-
-    Raises:
-        RuntimeError: If symbolic shapes are used with ``align_corners`` or if
-            the computed ratio or border is not constant.
-
-    """
-    # We don't support align_corners for symbolic shapes, because handling the edge case where size == 1 is tricky.
-    if align_corners:
-        if (not isinstance(input_size, int)) or (not isinstance(output_size, int)):
-            raise RuntimeError(
-                "We do not support align_corners=True for symbolic shapes."
-            )
-
-    # SymInt seems to not actually work for symbolic expressions, so use the underlying sympy objects instead
-    input_size = (
-        input_size.node._expr if isinstance(input_size, torch.SymInt) else input_size
-    )
-    output_size = (
-        output_size.node._expr if isinstance(output_size, torch.SymInt) else output_size
-    )
-    if align_corners and input_size > 1 and output_size > 1:
-        scale_n = output_size - 1
-    else:
-        scale_n = output_size
-    if align_corners and input_size > 1 and output_size > 1:
-        scale_d = input_size - 1
-    else:
-        scale_d = input_size
-    ratio = scale_n / scale_d
-    if not sympy.sympify(ratio).is_constant():
-        raise RuntimeError(
-            "Resize requires a constant ratio: " + str(ratio) + " is not constant!"
-        )
-    gcd = sympy.gcd(scale_n, scale_d)
-    scale_n = 2 * scale_n // gcd
-    scale_d = 2 * scale_d // gcd
-    # These should always be whole integers, based on the above calculations
-    scale_n = int(scale_n.evalf())
-    scale_d = int(scale_d.evalf())
-
-    if align_corners:
-        offset = 0
-    else:
-        # Half pixel centers so input and output sampling positions are offset by 1/2 pixel.
-        offset = scale_d // 2 - scale_n // 2
-
-    # Calculate border to maintain the correct the output size.
-    # Note that this should always result in a constant value, as the ratio is constant.
-    border = scale_d * (output_size - 1) - scale_n * (input_size - 1) + offset
-
-    if not sympy.sympify(border).is_constant():
-        raise RuntimeError(
-            "Resize requires a constant border: " + str(border) + " is not constant!"
-        )
-
-    border = int(sympy.sympify(border).evalf())
-    return scale_n, scale_d, offset, border
-
-
-def get_resize_parameters(
-    input_size_xy: tuple[int | torch.SymInt, int | torch.SymInt],
-    output_size_xy: tuple[int | torch.SymInt, int | torch.SymInt],
-    resize_mode: int,
-    align_corners: bool,
-) -> tuple[torch.IntTensor, ...]:
-    """Calculate 2D resize parameters for TOSA emission.
-
-    Args:
-        input_size_xy (tuple[int | torch.SymInt, int | torch.SymInt]): Height
-            and width of the input tensor.
-        output_size_xy (tuple[int | torch.SymInt, int | torch.SymInt]): Height
-            and width of the output tensor.
-        resize_mode (int): TOSA resize mode used for coefficient generation.
-        align_corners (bool): Whether to align corner pixels between input and
-            output.
-
-    Returns:
-        tuple[torch.IntTensor, ...]: Four-element tuple of tensors describing
-            the scale numerator, scale denominator, offset, and border for Y
-            and X dimensions.
-
-    """
-    # Get the parameters for each dimension independently
-    y_params = get_resize_parameters_1d(
-        input_size_xy[0], output_size_xy[0], resize_mode, align_corners
-    )
-    x_params = get_resize_parameters_1d(
-        input_size_xy[1], output_size_xy[1], resize_mode, align_corners
-    )
-    # Combine them together, so we return four 2-element tensors (scale_n, scale_d, offset, border)
-    return tuple(map(torch.IntTensor, zip(y_params, x_params)))

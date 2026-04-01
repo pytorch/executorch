@@ -170,7 +170,7 @@ def main(args):
         args.artifact, args.artifact, callback=validate_intermediate_tensor
     )
 
-    adb.pull(output_path=args.artifact)
+    adb.pull(host_output_path=args.artifact)
 
     # top-k analysis
     predictions = []

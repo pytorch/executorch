@@ -16,7 +16,7 @@ from executorch.backends.samsung.serialization.compile_options import (
 
 from executorch.exir import to_edge_transform_and_lower
 
-chipset = "E9955"
+chipset = "E9955"  # or "E9965" for Exynos 2600
 compile_specs = [gen_samsung_backend_compile_spec(chipset)]
 
 et_program = to_edge_transform_and_lower(
@@ -25,5 +25,5 @@ et_program = to_edge_transform_and_lower(
 ).to_executorch()
 ```
 
-At the moment, only `"E9955"` is supported as a valid chipset name, which corresponds to
-the Exynose 2500 SoC. Support for additional chipsets will be added in the future.
+At the moment, only `"E9955"` and `"E9965"` are supported as a valid chipset name, which corresponds to
+the Exynos 2500 and Exynos 2600 SoC. Support for additional chipsets will be added in the future.

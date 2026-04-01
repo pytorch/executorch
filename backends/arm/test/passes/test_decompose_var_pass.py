@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -20,9 +20,7 @@ class ModuleWithInputs(Protocol):
 
 
 class VarDim(torch.nn.Module):
-    """
-    Basic variance model using torch.Tensor.var function.
-    """
+    """Basic variance model using torch.Tensor.var function."""
 
     def __init__(self, keepdim):
         super(VarDim, self).__init__()
@@ -36,9 +34,7 @@ class VarDim(torch.nn.Module):
 
 
 class VarCorrection(torch.nn.Module):
-    """
-    Basic variance model using torch.var function.
-    """
+    """Basic variance model using torch.var function."""
 
     def __init__(self, keepdim):
         super(VarCorrection, self).__init__()

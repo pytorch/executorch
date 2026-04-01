@@ -9,10 +9,7 @@ def define_common_targets():
     """
     runtime.export_file(
         name = "custom_ops.yaml",
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     # ~~~ START of custom ops 1 `my_ops::mul3` library definitions ~~~
@@ -22,10 +19,7 @@ def define_common_targets():
             "my_ops::mul3.out",
         ],
         define_static_targets = True,
-        visibility = [
-            "//executorch/codegen/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -34,10 +28,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     executorch_generated_lib(
@@ -47,10 +38,7 @@ def define_common_targets():
             ":custom_ops_1",
         ],
         custom_ops_yaml_target = ":custom_ops.yaml",
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     # ~~~ END of custom ops 1 `my_ops::mul3` library definitions ~~~
@@ -62,10 +50,7 @@ def define_common_targets():
             "my_ops::mul4.out",
         ],
         define_static_targets = True,
-        visibility = [
-            "//executorch/codegen/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -74,10 +59,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -89,10 +71,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes_aten",
         ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         external_deps = ["libtorch"],
         # @lint-ignore BUCKLINT link_whole
         link_whole = True,
@@ -120,9 +99,6 @@ def define_common_targets():
             ":custom_ops_2",
         ],
         custom_ops_yaml_target = ":custom_ops.yaml",
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
     # ~~~ END of custom ops 2 `my_ops::mul4` library definitions ~~~

@@ -14,10 +14,6 @@ from typing import cast, List, Optional, Sequence, Tuple, Union
 import executorch.backends.cadence.aot.ref_implementations  # noqa
 
 import torch
-from executorch.backends.cadence.aot.graph_builder import (
-    GraphBuilder,
-    single_op_builder,
-)
 from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_match
 from executorch.backends.cadence.aot.replace_ops import (
     MakeSliceAndCatDimOutermostPass,
@@ -36,6 +32,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceLinearWithFullyConnectedOpPass,
     ReplaceLogicalNotBooleanWhereWithWherePass,
     ReplaceMatmulWithTransposedMatmulPass,
+    ReplaceMaxPool2dWithChannelLastMaxPool2dPass,
     ReplaceMMWithAddMMPass,
     ReplaceMulTensorWithMulAndFullOpsPass,
     ReplaceNopTransposeOrPermuteWithViewPass,
@@ -55,6 +52,7 @@ from executorch.backends.cadence.aot.replace_ops import (
 )
 
 from executorch.backends.cadence.aot.typing_stubs import expand
+from executorch.backends.test.graph_builder import GraphBuilder, single_op_builder
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, ProxyValue
 from torch.fx.passes.infra.pass_base import PassResult
@@ -1007,9 +1005,10 @@ class TestReplaceOpsPasses(unittest.TestCase):
             0,
         )
 
-    @expand([[1.0, 1.0], [2.0, 3.0]])
     @torch.no_grad()
-    def test_replace_addmm_with_linear(self, alpha: float, beta: float) -> None:
+    def test_replace_addmm_with_linear(self) -> None:
+        alpha = 1.0
+        beta = 1.0
         M, K, N = 14, 12, 10
         builder = GraphBuilder()
         x_input = torch.randn(N, dtype=torch.float32)
@@ -1053,6 +1052,37 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.addmm.default),
             0,
         )
+
+    @torch.no_grad()
+    def test_no_replace_addmm_with_linear(self) -> None:
+        alpha = 2.0
+        beta = 3.0
+        M, K, N = 14, 12, 10
+        builder = GraphBuilder()
+        x_input = torch.randn(N, dtype=torch.float32)
+        y_input = torch.randn([M, K], dtype=torch.float32)
+        z_input = torch.randn([N, K], dtype=torch.float32)
+        x = builder.placeholder("x", x_input)
+        y = builder.placeholder("y", y_input)
+        z = builder.placeholder("z", z_input)
+        permute_copy = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(z, [1, 0]),
+        )
+        addmm = builder.call_operator(
+            op=exir_ops.edge.aten.addmm.default,
+            args=(x, y, permute_copy),
+            kwargs={"beta": beta, "alpha": alpha},
+        )
+        builder.output([addmm])
+        original_gm = builder.get_graph_module()
+
+        gm = cast(
+            PassResult, ReplacePermuteWithTransposePass()(original_gm)
+        ).graph_module
+
+        pass_result = cast(PassResult, ReplaceAddMMWithLinearPass()(gm))
+        self.assertFalse(pass_result.modified)
 
     @torch.no_grad()
     def test_replace_mm_with_addmm(self) -> None:
@@ -1210,9 +1240,17 @@ class TestReplaceOpsPasses(unittest.TestCase):
         self.assertTrue(result.modified)
         graph_after_passes = result.graph_module
 
-        # Validate numerical accuracy
+        # Conv and linear compute the same dot product but accumulate fp32
+        # terms in different order, so non-associativity of floating-point
+        # addition produces diffs up to ~1.2e-05. Use rtol=2e-05.
         inputs = [x, weights, bias]
-        validate(gm_before, graph_after_passes, inputs, "ReplaceTrivialConvWithLinear")
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceTrivialConvWithLinear",
+            rtol=2e-5,
+        )
 
         # Assert that conv1d is trivially converted to linear
         self.assertEqual(
@@ -1246,9 +1284,17 @@ class TestReplaceOpsPasses(unittest.TestCase):
         self.assertTrue(result.modified)
         graph_after_passes = result.graph_module
 
-        # Validate numerical accuracy
+        # Conv and linear compute the same dot product but accumulate fp32
+        # terms in different order, so non-associativity of floating-point
+        # addition produces diffs up to ~1.2e-05. Use rtol=2e-05.
         inputs = [x, weights, bias]
-        validate(gm_before, graph_after_passes, inputs, "ReplaceTrivialConvWithLinear")
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceTrivialConvWithLinear",
+            rtol=2e-5,
+        )
 
         # Assert that conv2d is trivially converted to linear
         self.assertEqual(
@@ -1261,6 +1307,252 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.linear.default)
             + count_node(
                 graph_after_passes, exir_ops.edge.cadence.fully_connected.default
+            ),
+            1,
+        )
+
+    @torch.no_grad()
+    def test_replace_quantized_conv1d_ncl_with_linear(self) -> None:
+        """Test that a trivial quantized conv1d NCL (in_length == kernel_length) is
+        replaced with quantized_linear via view_copy."""
+        in_channels = 3
+        out_channels = 4
+        kernel_size = 2
+        x = torch.randint(-10, 10, (1, in_channels, kernel_size), dtype=torch.int8)
+        w = torch.randint(
+            -5, 5, (out_channels, in_channels, kernel_size), dtype=torch.int8
+        )
+        b = torch.zeros(out_channels, dtype=torch.int32)
+        placeholders = (x, w, b)
+        args = (
+            x,
+            w,
+            b,
+            [1],
+            [0],
+            [1],
+            1,
+            0,
+            0,
+            0.001,
+            1.0,
+            0,
+            1,
+            0,
+        )
+        original_gm = single_op_builder(
+            placeholders=placeholders,
+            op=exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
+            args=args,
+        )
+
+        self.assertEqual(
+            count_node(
+                original_gm, exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor
+            ),
+            1,
+        )
+
+        p = ReplaceTrivialConvWithLinear()
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
+            ),
+            0,
+        )
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.cadence.quantized_linear.per_tensor,
+            ),
+            1,
+        )
+        # 3 view_copy ops: weight reshape, input reshape, output reshape
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.view_copy.default,
+            ),
+            3,
+        )
+
+    @torch.no_grad()
+    def test_replace_quantized_conv1d_nlc_with_linear(self) -> None:
+        """Test that a trivial quantized conv1d NLC (in_length == kernel_length) is
+        replaced with quantized_linear via view_copy."""
+        in_channels = 3
+        out_channels = 4
+        kernel_size = 2
+        x = torch.randint(-10, 10, (1, kernel_size, in_channels), dtype=torch.int8)
+        w = torch.randint(
+            -5, 5, (out_channels, kernel_size, in_channels), dtype=torch.int8
+        )
+        b = torch.zeros(out_channels, dtype=torch.int32)
+        placeholders = (x, w, b)
+        args = (
+            x,
+            w,
+            b,
+            [1],
+            [0],
+            [1],
+            1,
+            0,
+            0,
+            0.001,
+            1.0,
+            0,
+            1,
+            0,
+        )
+        original_gm = single_op_builder(
+            placeholders=placeholders,
+            op=exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor,
+            args=args,
+        )
+
+        self.assertEqual(
+            count_node(
+                original_gm, exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor
+            ),
+            1,
+        )
+
+        p = ReplaceTrivialConvWithLinear()
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor,
+            ),
+            0,
+        )
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.cadence.quantized_linear.per_tensor,
+            ),
+            1,
+        )
+        # 3 view_copy ops: weight reshape, input reshape, output reshape
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.view_copy.default,
+            ),
+            3,
+        )
+
+    @torch.no_grad()
+    def test_replace_quantized_conv1d_ncl_with_stride_with_linear(self) -> None:
+        """Test that a trivial quantized conv1d NCL with stride > 1 is still replaced.
+
+        When in_length == kernel_length, stride is irrelevant because
+        out_length = floor((L - K) / stride) + 1 = 1 for any stride.
+        """
+        in_channels = 3
+        out_channels = 4
+        kernel_size = 2
+        x = torch.randint(-10, 10, (1, in_channels, kernel_size), dtype=torch.int8)
+        w = torch.randint(
+            -5, 5, (out_channels, in_channels, kernel_size), dtype=torch.int8
+        )
+        b = torch.zeros(out_channels, dtype=torch.int32)
+        placeholders = (x, w, b)
+        args = (
+            x,
+            w,
+            b,
+            [2],
+            [0],
+            [1],
+            1,
+            0,
+            0,
+            0.001,
+            1.0,
+            0,
+            1,
+            0,
+        )
+        original_gm = single_op_builder(
+            placeholders=placeholders,
+            op=exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
+            args=args,
+        )
+
+        p = ReplaceTrivialConvWithLinear()
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
+            ),
+            0,
+        )
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.cadence.quantized_linear.per_tensor,
+            ),
+            1,
+        )
+
+    @torch.no_grad()
+    def test_no_replace_nontrivial_quantized_conv1d_ncl(self) -> None:
+        """Test that a non-trivial quantized conv1d NCL (in_length != kernel_length)
+        is NOT replaced with linear."""
+        in_channels = 3
+        out_channels = 16
+        kernel_size = 4
+        in_length = 224
+        x = torch.randint(0, 100, (1, in_channels, in_length), dtype=torch.int8)
+        w = torch.randint(
+            -128, 127, (out_channels, in_channels, kernel_size), dtype=torch.int8
+        )
+        b = torch.randint(-1000, 1000, (out_channels,), dtype=torch.int32)
+        placeholders = (x, w, b)
+        args = (
+            x,
+            w,
+            b,
+            [1],
+            [0],
+            [1],
+            1,
+            0,
+            0,
+            0.01,
+            0.02,
+            0,
+            1,
+            0,
+        )
+        original_gm = single_op_builder(
+            placeholders=placeholders,
+            op=exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
+            args=args,
+        )
+
+        p = ReplaceTrivialConvWithLinear()
+        result = cast(PassResult, p(original_gm))
+        self.assertFalse(result.modified)
+
+        self.assertEqual(
+            count_node(
+                original_gm,
+                exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
             ),
             1,
         )
@@ -1919,6 +2211,73 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
             args=args,
         )
 
+    def create_quantized_conv1d_graph_module(
+        self, channels_last: Optional[bool] = None
+    ) -> tuple[tuple[torch.Tensor, ...], torch.fx.GraphModule]:
+        """Helper to create a quantized conv1d node.
+
+        quantized_conv1d_ncl/nlc.per_tensor(
+            Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding,
+            int[] dilation, int groups, int input_zero_point, int weight_zero_point,
+            Tensor bias_scale, float out_scale, int out_zero_point, int out_multiplier,
+            int out_shift) -> (Tensor Z)
+        """
+        # NCL: (N, C, L) format
+        # NLC: (N, L, C) format
+        in_channels = 3
+        out_channels = 16
+        kernel_size = 4
+        if channels_last:
+            x = torch.randint(0, 100, (1, 224, in_channels), dtype=torch.int8)  # NLC
+            w = torch.randint(
+                -128, 127, (out_channels, kernel_size, in_channels), dtype=torch.int8
+            )
+        else:
+            x = torch.randint(0, 100, (1, in_channels, 224), dtype=torch.int8)  # NCL
+            w = torch.randint(
+                -128, 127, (out_channels, in_channels, kernel_size), dtype=torch.int8
+            )
+        b = torch.randint(-1000, 1000, (out_channels,), dtype=torch.int32)
+        stride = [2]
+        padding = [0]
+        dilation = [1]
+        groups = 1
+        input_zero_point = 0
+        w_zero_point = 0
+        b_scale = 0.01
+        out_scale = 0.02
+        out_zero_point = 0
+        out_multiplier = 1
+        out_shift = 0
+        args = (
+            x,
+            w,
+            b,
+            stride,
+            padding,
+            dilation,
+            groups,
+            input_zero_point,
+            w_zero_point,
+            b_scale,
+            out_scale,
+            out_zero_point,
+            out_multiplier,
+            out_shift,
+        )
+        if channels_last:
+            op = exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor
+        else:
+            op = exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor
+
+        placeholders = (x, w, b)
+
+        return placeholders, single_op_builder(
+            placeholders=placeholders,
+            op=op,
+            args=args,
+        )
+
     def test_quantized_convolution_default_channel_last(self) -> None:
         # Create a graph with a single convolution node.
         placeholders, gm = self.create_quantized_convolution_graph_module()
@@ -1956,6 +2315,78 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
             "ReplaceConvWithChannelLastConvPass",
         )
 
+    def test_convert_quantized_conv1d_ncl_to_nlc(self) -> None:
+        # Create a graph with a quantized_conv1d_ncl node
+        placeholders, gm = self.create_quantized_conv1d_graph_module(
+            channels_last=False
+        )
+        original = copy.deepcopy(gm)
+        # Check that we start with quantized_conv1d_ncl
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor), 1
+        )
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
+
+        # Apply replacement pass
+        p = ReplaceConvWithChannelLastConvPass()
+        gm_after_replacement = p.call(gm).graph_module
+
+        # Verify the quantized_conv1d_nlc node exists
+        self.assertEqual(
+            count_node(
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor,
+            ),
+            1,
+        )
+        # For 1D conv, the pass uses permute_copy (swap dims 1 and -1)
+        # for input, weight, and output: 3 permute_copy ops total
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default),
+            3,
+        )
+
+        # Validate numerical accuracy
+        validate(
+            original,
+            gm_after_replacement,
+            placeholders,
+            "ReplaceConvWithChannelLastConvPass",
+        )
+
+    def test_no_transpose_if_already_quantized_conv1d_channel_last(self) -> None:
+        # Create a graph with a quantized_conv1d_nlc node (already channel-last)
+        placeholders, gm = self.create_quantized_conv1d_graph_module(channels_last=True)
+        original = copy.deepcopy(gm)
+        # Check if graph module has quantized_conv1d_nlc
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor), 1
+        )
+
+        # Apply replacement pass
+        p = ReplaceConvWithChannelLastConvPass()
+        gm_after_replacement = p.call(gm).graph_module
+
+        # Check that no replacement was made - nlc is not a target of this pass
+        # The pass doesn't target nlc, so it should remain unchanged
+        self.assertEqual(
+            count_node(
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor,
+            ),
+            1,
+        )
+        # No permutes should be added
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        validate(
+            gm_after_replacement,
+            original,
+            placeholders,
+            "ReplaceConvWithChannelLastConvPass",
+        )
+
     def test_no_transpose_if_already_quantized_conv_channel_last(self) -> None:
         # Create a graph with a single im2row node.
         placeholders, gm = self.create_quantized_convolution_graph_module(
@@ -1987,8 +2418,375 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
             "ReplaceConvWithChannelLastConvPass",
         )
 
+    def create_depthwise_convolution_graph_module(
+        self,
+    ) -> Tuple[Tuple[torch.Tensor, ...], torch.fx.GraphModule]:
+        """Helper to create a depthwise convolution node.
 
-class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
+        For depthwise convolution, groups == input_channels.
+        Input shape: [N, C, H, W] = [1, 8, 224, 56] (NCHW)
+        Weight shape: [OC, 1, KH, KW] = [16, 1, 3, 3] where OC = C * channel_multiplier
+        """
+        in_channels = 8
+        out_channels = 16
+        x = torch.randint(0, 100, (1, in_channels, 224, 56), dtype=torch.int32)
+        # Depthwise: weight shape is [out_channels, 1, kernel_h, kernel_w]
+        w = torch.randint(0, 100, (out_channels, 1, 3, 3), dtype=torch.int32)
+        b = torch.randn(out_channels)
+        stride = (1, 1)
+        padding = (1, 1)
+        dilation = (1, 1)
+        groups = in_channels  # Depthwise: groups == input_channels
+        input_zero_point = 0
+        w_zero_point = 0
+        b_scale = 10
+        out_scale = 1
+        out_zero_point = 0
+        out_multiplier = 5
+        out_shift = 5
+        args = (
+            x,
+            w,
+            b,
+            stride,
+            padding,
+            dilation,
+            groups,
+            input_zero_point,
+            w_zero_point,
+            b_scale,
+            out_scale,
+            out_zero_point,
+            out_multiplier,
+            out_shift,
+        )
+        placeholders = (x, w, b)
+        gm = single_op_builder(
+            placeholders=placeholders,
+            op=exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
+            args=args,
+        )
+        return placeholders, gm
+
+    def test_depthwise_convolution_weight_shape(self) -> None:
+        """Test that depthwise conv weight is transformed to [KH, KW, OC] format.
+
+        For depthwise convolution with NHWC layout, NNLib expects weights in
+        [KH, KW, OC] format (3D), not [OC, KH, KW, 1] (4D standard NCHW->NHWC).
+
+        The pass should:
+        1. Detect depthwise convolution (groups == input_channels)
+        2. Transform weight from [OC, 1, KH, KW] to [KH, KW, OC] (3D)
+        3. Use permute_copy + squeeze_copy operations
+        """
+        placeholders, gm = self.create_depthwise_convolution_graph_module()
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor), 1
+        )
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.squeeze_copy.dim), 0)
+
+        # Apply replacement pass.
+        p = ReplaceConvWithChannelLastConvPass()
+        gm_after_replacement = p.call(gm).graph_module
+
+        # Verify the quantized_conv2d_nhwc node exists
+        self.assertEqual(
+            count_node(
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
+            ),
+            1,
+        )
+
+        # For depthwise conv:
+        # - Input: 1 permute (NCHW -> NHWC)
+        # - Weight: 1 permute ([OC, 1, KH, KW] -> [KH, KW, OC, 1])
+        # - Output: 1 permute (NHWC -> NCHW)
+        # Total: 3 permutes
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default),
+            3,
+        )
+
+        # For depthwise conv, weight should also have squeeze_copy to go from
+        # [KH, KW, OC, 1] to [KH, KW, OC] (3D)
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.squeeze_copy.dim),
+            1,
+        )
+
+        # Find the weight node being passed to the quantized_conv2d_nhwc
+        for node in gm_after_replacement.graph.nodes:
+            if node.target != exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor:
+                continue
+
+            # The weight argument (index 1) should come from squeeze_copy for depthwise
+            weight_node = node.args[1]
+            self.assertEqual(
+                weight_node.target,
+                exir_ops.edge.aten.squeeze_copy.dim,
+                "Depthwise conv weight should be processed by squeeze_copy",
+            )
+
+            # The squeeze_copy input should come from permute_copy
+            permute_node = weight_node.args[0]
+            self.assertEqual(
+                permute_node.target,
+                exir_ops.edge.aten.permute_copy.default,
+                "squeeze_copy input should come from permute_copy",
+            )
+
+            # Verify the weight shape after transformation is 3D [KH, KW, OC]
+            weight_shape = weight_node.meta["val"].shape
+            self.assertEqual(
+                len(weight_shape),
+                3,
+                f"Depthwise weight should be 3D [KH, KW, OC], got {len(weight_shape)}D",
+            )
+            # Original weight: [16, 1, 3, 3] (OC=16, 1, KH=3, KW=3)
+            # Expected after transform: [3, 3, 16] (KH, KW, OC)
+            self.assertEqual(weight_shape[0], 3)  # KH
+            self.assertEqual(weight_shape[1], 3)  # KW
+            self.assertEqual(weight_shape[2], 16)  # OC
+
+        # Validate numerical accuracy
+        validate(
+            gm,
+            gm_after_replacement,
+            placeholders,
+            "ReplaceConvWithChannelLastConvPass",
+        )
+
+    def create_1d_conv_with_single_input_channel_graph_module(
+        self,
+    ) -> Tuple[Tuple[torch.Tensor, ...], torch.fx.GraphModule]:
+        """Helper to create a regular 1D quantized conv with in_channels=1, groups=1.
+
+        This configuration (groups == in_channels == 1) must NOT be classified as
+        depthwise. It is a regular convolution that happens to have a single input
+        channel, e.g. Silero VAD's learned STFT conv.
+
+        Input shape: [N, C, L] = [1, 1, 576] (NCHW)
+        Weight shape: [OC, IC, K] = [258, 1, 256]
+        """
+        in_channels = 1
+        out_channels = 258
+        kernel_size = 256
+        x = torch.randint(0, 100, (1, in_channels, 576), dtype=torch.int32)
+        w = torch.randint(
+            0, 100, (out_channels, in_channels, kernel_size), dtype=torch.int32
+        )
+        b = torch.randn(out_channels)
+        stride = (1, 1)
+        padding = (0, 0)
+        dilation = (1, 1)
+        groups = 1
+        input_zero_point = 0
+        w_zero_point = 0
+        b_scale = 10
+        out_scale = 1
+        out_zero_point = 0
+        out_multiplier = 5
+        out_shift = 5
+        args = (
+            x,
+            w,
+            b,
+            stride,
+            padding,
+            dilation,
+            groups,
+            input_zero_point,
+            w_zero_point,
+            b_scale,
+            out_scale,
+            out_zero_point,
+            out_multiplier,
+            out_shift,
+        )
+        placeholders = (x, w, b)
+        gm = single_op_builder(
+            placeholders=placeholders,
+            op=exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
+            args=args,
+        )
+        return placeholders, gm
+
+    def test_1d_conv_single_input_channel_not_depthwise(self) -> None:
+        """Test that a regular 1D conv with in_channels=1 is NOT treated as depthwise.
+
+        Regression test: when groups == in_channels == 1, the conv is regular (not
+        depthwise). The weight should be converted via the regular NLC path
+        [OC, IC, K] -> [OC, K, IC], NOT the depthwise path [OC, 1, K] -> [K, OC].
+        """
+        placeholders, gm = self.create_1d_conv_with_single_input_channel_graph_module()
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor), 1
+        )
+
+        p = ReplaceConvWithChannelLastConvPass()
+        gm_after_replacement = p.call(gm).graph_module
+
+        # 1D convolutions (3D tensors) are now converted to quantized_conv1d_nlc
+        self.assertEqual(
+            count_node(
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor,
+            ),
+            1,
+        )
+
+        # For 1D conv, the pass uses permute_copy
+        # for input, weight, and output: 3 permute_copy ops total. NO squeeze_copy.
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default),
+            3,
+        )
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.squeeze_copy.dim),
+            0,
+            "Regular conv with in_channels=1 must NOT have squeeze_copy (not depthwise)",
+        )
+
+        # Verify weight shape is 3D [OC, K, IC] (regular NLC), not 2D [K, OC] (depthwise)
+        for node in gm_after_replacement.graph.nodes:
+            if node.target != exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor:
+                continue
+            weight_node = node.args[1]
+            weight_shape = weight_node.meta["val"].shape
+            self.assertEqual(
+                len(weight_shape),
+                3,
+                f"Regular 1D conv weight should be 3D [OC, K, IC], got {len(weight_shape)}D",
+            )
+            # Original weight: [258, 1, 256] (OC, IC, K)
+            # Expected after regular NLC transform: [258, 256, 1] (OC, K, IC)
+            self.assertEqual(weight_shape[0], 258)  # OC
+            self.assertEqual(weight_shape[1], 256)  # K
+            self.assertEqual(weight_shape[2], 1)  # IC
+
+        validate(
+            gm,
+            gm_after_replacement,
+            placeholders,
+            "ReplaceConvWithChannelLastConvPass",
+        )
+
+    def create_1d_depthwise_convolution_graph_module(
+        self,
+    ) -> Tuple[Tuple[torch.Tensor, ...], torch.fx.GraphModule]:
+        """Helper to create a 1D depthwise convolution node.
+
+        For depthwise convolution, groups == input_channels > 1.
+        Input shape: [N, C, L] = [1, 8, 64] (NCHW)
+        Weight shape: [OC, 1, K] = [8, 1, 3]
+        """
+        in_channels = 8
+        out_channels = 8
+        kernel_size = 3
+        x = torch.randint(0, 100, (1, in_channels, 64), dtype=torch.int32)
+        w = torch.randint(0, 100, (out_channels, 1, kernel_size), dtype=torch.int32)
+        b = torch.randn(out_channels)
+        stride = (1, 1)
+        padding = (1, 1)
+        dilation = (1, 1)
+        groups = in_channels
+        input_zero_point = 0
+        w_zero_point = 0
+        b_scale = 10
+        out_scale = 1
+        out_zero_point = 0
+        out_multiplier = 5
+        out_shift = 5
+        args = (
+            x,
+            w,
+            b,
+            stride,
+            padding,
+            dilation,
+            groups,
+            input_zero_point,
+            w_zero_point,
+            b_scale,
+            out_scale,
+            out_zero_point,
+            out_multiplier,
+            out_shift,
+        )
+        placeholders = (x, w, b)
+        gm = single_op_builder(
+            placeholders=placeholders,
+            op=exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
+            args=args,
+        )
+        return placeholders, gm
+
+    def test_1d_depthwise_convolution_weight_shape(self) -> None:
+        """Test that 1D depthwise conv weight is transformed to [OC, K, 1] format.
+
+        For 1D depthwise conv with groups == in_channels > 1, the weight should be
+        transformed from [OC, 1, K] to [OC, K, 1] (3D) via transpose_copy.int,
+        matching the standard NLC weight format expected by C++ kernels.
+        """
+        placeholders, gm = self.create_1d_depthwise_convolution_graph_module()
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor), 1
+        )
+
+        p = ReplaceConvWithChannelLastConvPass()
+        gm_after_replacement = p.call(gm).graph_module
+
+        # 1D convolutions (3D tensors) are now converted to quantized_conv1d_nlc
+        self.assertEqual(
+            count_node(
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor,
+            ),
+            1,
+        )
+
+        # For 1D depthwise:
+        # - Input/output use permute_copy (2 ops)
+        # - Weight uses transpose_copy.int (1 op) via _transpose_dims
+        # - No squeeze_copy needed
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default),
+            2,
+        )
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.transpose_copy.int),
+            1,
+        )
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.squeeze_copy.dim),
+            0,
+        )
+
+        for node in gm_after_replacement.graph.nodes:
+            if node.target != exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor:
+                continue
+            weight_node = node.args[1]
+            weight_shape = weight_node.meta["val"].shape
+            self.assertEqual(
+                len(weight_shape),
+                3,
+                f"1D depthwise weight should be 3D [OC, K, 1], got {len(weight_shape)}D",
+            )
+            # Original weight: [8, 1, 3] (OC, 1, K)
+            # Expected after standard NLC transform: [8, 3, 1] (OC, K, IC/groups)
+            self.assertEqual(weight_shape[0], 8)  # OC
+            self.assertEqual(weight_shape[1], 3)  # K
+            self.assertEqual(weight_shape[2], 1)  # IC/groups
+
+        validate(
+            gm,
+            gm_after_replacement,
+            placeholders,
+            "ReplaceConvWithChannelLastConvPass",
+        )
+
     def create_slice_graph(
         self,
         input_shape: Sequence[int],
@@ -2183,6 +2981,59 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
         self.assertEqual(
             count_node(gm_after_pass, exir_ops.edge.aten.transpose_copy.int),
             3,
+        )
+
+
+class TestReplaceMaxPool2dWithChannelLastMaxPool2dPass(unittest.TestCase):
+    def test_replace_max_pool2d_nchw_with_nhwc(self) -> None:
+        # Create a graph with a single quantized_max_pool2d_nchw node.
+        x = torch.randint(0, 100, (1, 3, 8, 8), dtype=torch.int8)
+        gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.cadence.quantized_max_pool2d_nchw.default,
+            args=(x, [2, 2], [2, 2], [0, 0], [1, 1], False),
+        )
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.quantized_max_pool2d_nchw.default), 1
+        )
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
+
+        # Deepcopy before the pass
+        original = copy.deepcopy(gm)
+
+        # Apply replacement pass.
+        p = ReplaceMaxPool2dWithChannelLastMaxPool2dPass()
+        result = p.call(gm)
+        self.assertTrue(result.modified)
+        gm_after_replacement = result.graph_module
+
+        # Check that replacement was made.
+        self.assertEqual(
+            count_node(
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_max_pool2d_nhwc.default,
+            ),
+            1,
+        )
+        self.assertEqual(
+            count_node(
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_max_pool2d_nchw.default,
+            ),
+            0,
+        )
+        # Two permutes: one for input NCHW->NHWC, one for output NHWC->NCHW
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default),
+            2,
+        )
+
+        # Validate numerical accuracy
+        validate(
+            original,
+            gm_after_replacement,
+            (x,),
+            "ReplaceMaxPool2dWithChannelLastMaxPool2dPass",
         )
 
 

@@ -422,7 +422,7 @@ Please help update following table if you are contributing new operators:
 | ElementWiseSquaredDifference | &cross; |
 | ElementWiseSquareRoot | &check; |
 | ElementWiseSubtract | &check; |
-| ElementWiseUnary | &cross; |
+| ElementWiseUnary | &check; |
 | ElementWiseXor | &check; |
 | Elu | &check; |
 | ExpandDims | &check; |
@@ -439,6 +439,8 @@ Please help update following table if you are contributing new operators:
 | GroupNorm | &check; |
 | HardSwish | &check; |
 | InstanceNorm | &check; |
+| IsInf | &check; |
+| IsNan | &check; |
 | L2Norm | &cross; |
 | LayerNorm | &check; |
 | LogSoftmax | &check; |
@@ -456,6 +458,7 @@ Please help update following table if you are contributing new operators:
 | PoolMax2d | &check; |
 | Prelu | &check; |
 | Quantize | &check; |
+| Rand | &check; |
 | ReduceMax | &check; |
 | ReduceMean | &check; |
 | ReduceMin | &check; |

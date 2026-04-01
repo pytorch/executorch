@@ -55,7 +55,7 @@ def define_common_targets():
             "*.h",
         ]),
         platforms = (CXX),
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
         deps = [
             "//executorch/backends/qualcomm/aot/wrappers:wrappers",
             "//executorch/backends/qualcomm/runtime:logging",

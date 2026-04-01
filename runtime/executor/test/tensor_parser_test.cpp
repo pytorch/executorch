@@ -10,6 +10,7 @@
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/tensor_layout.h>
 #include <executorch/runtime/executor/test/managed_memory_manager.h>
 #include <executorch/schema/program_generated.h>
 
@@ -23,7 +24,10 @@ using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
+using executorch::runtime::TensorLayout;
 using executorch::runtime::deserialization::parseTensor;
+using executorch::runtime::deserialization::validateTensorLayout;
 using executorch::runtime::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
 
@@ -187,4 +191,35 @@ TEST_F(TensorParserTest, TestMutableState) {
     }
   }
   ASSERT_EQ(num_mutable_tensors, 2);
+}
+
+// Tests that validateTensorLayout rejects tensors where dim_order is shorter
+// than sizes, preventing out-of-bounds reads.
+TEST(ValidateTensorLayoutTest, DimOrderSizeMismatchIsRejected) {
+  flatbuffers::FlatBufferBuilder builder;
+
+  std::vector<int32_t> sizes = {2, 3, 4};
+  std::vector<uint8_t> dim_order_short = {0};
+
+  auto tensor_offset = executorch_flatbuffer::CreateTensor(
+      builder,
+      executorch_flatbuffer::ScalarType::FLOAT,
+      0,
+      builder.CreateVector(sizes),
+      builder.CreateVector(dim_order_short));
+  builder.Finish(tensor_offset);
+
+  const auto* s_tensor = flatbuffers::GetRoot<executorch_flatbuffer::Tensor>(
+      builder.GetBufferPointer());
+
+  std::vector<int32_t> expected_sizes = {2, 3, 4};
+  std::vector<uint8_t> expected_dim_order = {0, 1, 2};
+  auto layout = TensorLayout::create(
+      Span<const int32_t>(expected_sizes.data(), expected_sizes.size()),
+      Span<const uint8_t>(expected_dim_order.data(), expected_dim_order.size()),
+      ScalarType::Float);
+  ASSERT_TRUE(layout.ok());
+
+  EXPECT_EQ(
+      validateTensorLayout(s_tensor, layout.get()), Error::InvalidExternalData);
 }

@@ -38,7 +38,11 @@ from executorch.backends.qualcomm.utils.utils import (
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.examples.qualcomm.qaihub_scripts.utils.utils import preprocess_binary
-from executorch.examples.qualcomm.utils import make_quantizer, SimpleADB
+from executorch.examples.qualcomm.utils import (
+    get_backend_type,
+    make_quantizer,
+    SimpleADB,
+)
 from executorch.exir import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torchao.quantization import pt2e
@@ -131,7 +135,6 @@ class InputListParser:
 
 def quantize(args):
     logger = get_logger()
-
     # get corresponding QnnQuantizer
     try:
         quant_dtype = getattr(QuantDtype, args.config)
@@ -141,6 +144,9 @@ def quantize(args):
             per_channel_conv=args.per_channel,
             per_channel_linear=args.per_row,
             act_observer=act_observer,
+            backend=get_backend_type(args.backend),
+            soc_model=args.model,
+            eps=args.eps,
         )
     except Exception:
         logger.error(
@@ -429,6 +435,26 @@ def main():
             "Activation observer for PTQ "
             "(MinMaxObserver / MovingAverageMinMaxObserver / HistogramObserver)."
         ),
+    )
+    sub_quantize.add_argument(
+        "-m",
+        "--model",
+        type=str,
+        required=True,
+        help="SoC model. e.g. SM8750",
+    )
+    sub_quantize.add_argument(
+        "--backend",
+        type=str,
+        choices=["htp", "gpu"],
+        default="htp",
+        help="Backend to be deployed ('htp'/'gpu' are currently supported).",
+    )
+    sub_quantize.add_argument(
+        "--eps",
+        help="EPS value for quantizer. Accepts floating‑point literal. E.g., 0.0009765625.",
+        type=float,
+        default=None,
     )
     sub_quantize.set_defaults(callback=quantize)
 

@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,6 +6,7 @@
 from abc import ABC, abstractmethod
 
 import numpy as np
+from executorch.backends.nxp.backend.data_format import DataFormat
 
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     create_channels_last_to_channels_first_permutation,
@@ -18,7 +19,6 @@ from executorch.backends.nxp.backend.ir.converter.node_converter import (
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import (
     set_quantization_parameters_to_tensor,
 )
-from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
 from executorch.backends.nxp.backend.ir.tflite_generator.tflite_model import Tensor
 from torch.fx import Node
 from torch.nn import Parameter
@@ -107,7 +107,7 @@ class QDQPerChannelDequantizeConverter(QDQDequantizeConverterBase):
         quantization_dimension = node.args[3]
 
         # Quantization dimension is affected by tensor format
-        if from_tensor.tensor_format == TensorFormat.CHANNELS_LAST:
+        if from_tensor.tensor_format == DataFormat.CHANNELS_LAST:
             tensor_rank = len(from_tensor.shape.vector)
             perm = create_channels_last_to_channels_first_permutation(
                 tensor_rank, return_list=True

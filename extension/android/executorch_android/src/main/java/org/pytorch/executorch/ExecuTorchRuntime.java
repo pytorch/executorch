@@ -11,6 +11,7 @@ package org.pytorch.executorch;
 import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
+import java.io.File;
 
 /** Class for entire ExecuTorch Runtime related functions. */
 public class ExecuTorchRuntime {
@@ -30,6 +31,18 @@ public class ExecuTorchRuntime {
   /** Get the runtime instance. */
   public static ExecuTorchRuntime getRuntime() {
     return sInstance;
+  }
+
+  /**
+   * Validates that the given path points to a readable file.
+   *
+   * @throws RuntimeException if the file does not exist or is not readable.
+   */
+  public static void validateFilePath(String path, String description) {
+    File file = new File(path);
+    if (!file.canRead() || !file.isFile()) {
+      throw new RuntimeException("Cannot load " + description + " " + path);
+    }
   }
 
   /** Get all registered ops. */

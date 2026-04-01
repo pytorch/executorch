@@ -28,7 +28,13 @@ class QnnManagerRegistry:
     ) -> PyQnnManager.QnnManager:
         if backend_type not in self._registry:
             qnn_manager = PyQnnManager.QnnManager(option)
-            qnn_manager.InitBackend()
+            err = qnn_manager.InitBackend()
+            if err.value != 0:
+                raise RuntimeError(
+                    f"Failed to initialize QNN backend for {backend_type.name}. "
+                    "Ensure QNN SDK libraries are available "
+                    "(e.g. LD_LIBRARY_PATH includes $QNN_SDK_ROOT/lib/x86_64-linux-clang/)."
+                )
             self._registry[backend_type] = qnn_manager
         return self._registry[backend_type]
 

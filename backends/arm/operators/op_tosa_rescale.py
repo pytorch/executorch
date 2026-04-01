@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,7 +18,6 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
 )
 
-from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.mapping import map_dtype, TosaArg
 from torch.fx import Node
 
@@ -215,8 +214,6 @@ def _build_rescale(
 class RescaleVisitor(NodeVisitor):
     target = "tosa.RESCALE.default"
 
-    tosa_specs = [TosaSpecification.create_from_string("TOSA-1.0+INT")]
-
     def define_node(
         self,
         node: Node,
@@ -235,8 +232,8 @@ class RescaleVisitor(NodeVisitor):
         if (
             input_dtype
             not in [
-                map_dtype(torch.int8, self.tosa_spec),
-                map_dtype(torch.int16, self.tosa_spec),
+                map_dtype(torch.int8),
+                map_dtype(torch.int16),
             ]
             and input_zp != 0
         ):

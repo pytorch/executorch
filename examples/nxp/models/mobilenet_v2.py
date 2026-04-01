@@ -16,6 +16,10 @@ from torchvision import transforms
 
 class MobilenetV2(MV2Model):
 
+    def __init__(self, use_random_dataset: bool = False):
+        super().__init__()
+        self.use_random_dataset = use_random_dataset
+
     def get_calibration_inputs(
         self, batch_size: int = 1
     ) -> Iterator[tuple[torch.Tensor]]:
@@ -40,27 +44,44 @@ class MobilenetV2(MV2Model):
         return itertools.islice(dataloader_iterable, batch_count)
 
     def get_dataset(self, batch_size):
-        # Define data transformations
-        data_transforms = transforms.Compose(
-            [
-                transforms.Resize((224, 224)),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                ),  # ImageNet stats
-            ]
-        )
+        if self.use_random_dataset:
+            # Create random data matching the expected format (224x224 RGB images, normalized)
+            num_samples = 10
+            random_data = torch.randn(num_samples, 3, 224, 224)
+            random_labels = torch.randint(
+                0, 10, (num_samples,)
+            )  # 10 classes in Imagenette
 
-        dataset = torchvision.datasets.Imagenette(
-            root="./data", split="val", transform=data_transforms, download=True
-        )
-        dataloader = torch.utils.data.DataLoader(
-            dataset,
-            batch_size=batch_size,
-            shuffle=False,
-            num_workers=1,
-        )
-        return dataloader
+            dataset = torch.utils.data.TensorDataset(random_data, random_labels)
+            return torch.utils.data.DataLoader(
+                dataset,
+                batch_size=batch_size,
+                shuffle=False,
+                num_workers=0,  # Use 0 to avoid multiprocessing issues in tests
+            )
+
+        else:
+            # Define data transformations
+            data_transforms = transforms.Compose(
+                [
+                    transforms.Resize((224, 224)),
+                    transforms.ToTensor(),
+                    transforms.Normalize(
+                        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                    ),  # ImageNet stats
+                ]
+            )
+
+            dataset = torchvision.datasets.Imagenette(
+                root="./data", split="val", transform=data_transforms, download=True
+            )
+            dataloader = torch.utils.data.DataLoader(
+                dataset,
+                batch_size=batch_size,
+                shuffle=False,
+                num_workers=1,
+            )
+            return dataloader
 
 
 def gather_samples_per_class_from_dataloader(

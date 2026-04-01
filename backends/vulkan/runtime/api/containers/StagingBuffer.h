@@ -19,6 +19,10 @@
 namespace vkcompute {
 namespace api {
 
+vkapi::ScalarType get_staging_dtype(
+    Context* context_p,
+    vkapi::ScalarType dtype);
+
 class StagingBuffer final {
  private:
   Context* context_p_;
@@ -32,13 +36,7 @@ class StagingBuffer final {
       Context* context_p,
       const vkapi::ScalarType dtype,
       const size_t numel,
-      const vkapi::CopyDirection direction)
-      : context_p_(context_p),
-        dtype_(dtype),
-        vulkan_buffer_(context_p_->adapter_ptr()->vma().create_staging_buffer(
-            element_size(dtype_) * numel,
-            direction)),
-        mapped_data_(nullptr) {}
+      const vkapi::CopyDirection direction);
 
   StagingBuffer(const StagingBuffer&) = delete;
   StagingBuffer& operator=(const StagingBuffer&) = delete;
@@ -90,7 +88,18 @@ class StagingBuffer final {
     for (size_t i = 0; i < numel; ++i) {
       dst[i] = static_cast<DST_T>(src[i]);
     }
+    vmaFlushAllocation(
+        vulkan_buffer_.vma_allocator(),
+        vulkan_buffer_.allocation(),
+        0u,
+        VK_WHOLE_SIZE);
   }
+
+  void cast_half_to_float_and_copy_from(
+      const uint16_t* src,
+      const size_t numel);
+
+  void cast_float_to_half_and_copy_to(uint16_t* dst, const size_t numel);
 
   inline void copy_to(void* dst, const size_t nbytes) {
     VK_CHECK_COND(nbytes <= this->nbytes());
@@ -105,6 +114,11 @@ class StagingBuffer final {
   template <typename SRC_T, typename DST_T>
   void cast_and_copy_to(DST_T* dst, const size_t numel) {
     VK_CHECK_COND(numel <= this->numel());
+    vmaInvalidateAllocation(
+        vulkan_buffer_.vma_allocator(),
+        vulkan_buffer_.allocation(),
+        0u,
+        VK_WHOLE_SIZE);
     const SRC_T* src = reinterpret_cast<const SRC_T*>(data());
     for (size_t i = 0; i < numel; ++i) {
       dst[i] = static_cast<DST_T>(src[i]);

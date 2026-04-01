@@ -232,6 +232,10 @@ class Context final {
     return cmd_;
   }
 
+  void wait_for_queue();
+
+  void clear_resources();
+
   void flush();
 
 #if defined(VK_KHR_pipeline_executable_properties) && \

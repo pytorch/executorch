@@ -8,6 +8,8 @@
 
 #version 450 core
 
+${define_required_extensions("buffer", DTYPE)}
+
 #define PRECISION ${PRECISION}
 
 #define ACCUM_T ${accum_scalar_type(DTYPE)}
@@ -17,7 +19,6 @@
 #define NUM_WORKERS_PER_OUTPUT 64
 
 ${define_active_storage_type("buffer")}
-${define_required_extensions(DTYPE)}
 
 #extension GL_EXT_control_flow_attributes : require
 
@@ -114,7 +115,7 @@ void main() {
 #endif
 
 #ifdef OUTPUT_IS_INDICES
-    t_out[out_bufi] = int(0); // int(local_accum.idx);
+    t_out[out_bufi] = int(local_accum.idx);
 #else
     t_out[out_bufi] = convert_to_T(local_accum.val);
 #endif

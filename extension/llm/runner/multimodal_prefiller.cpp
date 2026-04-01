@@ -36,7 +36,9 @@ MultimodalPrefiller::MultimodalPrefiller(
  */
 Result<uint64_t> MultimodalPrefiller::prefill(
     const MultimodalInput& input,
-    int64_t& start_pos) {
+    int64_t& start_pos,
+    int32_t bos,
+    int32_t eos) {
   // 1. Run encoder model.
   ::executorch::runtime::EValue encoder_output;
   if (input.is_image()) {
@@ -176,7 +178,7 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     std::vector<uint64_t> tokens;
     if (input.is_text()) {
       auto& text = input.get_text();
-      auto encode_result = tokenizer_->encode(text);
+      auto encode_result = tokenizer_->encode(text, bos, eos);
       if (!encode_result.ok()) {
         ET_LOG(
             Error,

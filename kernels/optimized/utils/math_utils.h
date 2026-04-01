@@ -11,6 +11,8 @@
 #include <cstdint>
 
 #include <executorch/kernels/optimized/utils/llvmMathExtras.h>
+#include <executorch/runtime/core/portable_type/bfloat16.h>
+#include <executorch/runtime/core/portable_type/half.h>
 
 namespace executorch {
 namespace utils {
@@ -36,6 +38,15 @@ struct ComputeDTypeTraits<uint8_t> {
 template <>
 struct ComputeDTypeTraits<int8_t> {
   using type = int32_t;
+};
+// For 16 bit float types, ops should perform internal math in float32.
+template <>
+struct ComputeDTypeTraits<c10::BFloat16> {
+  using type = float;
+};
+template <>
+struct ComputeDTypeTraits<c10::Half> {
+  using type = float;
 };
 
 template <typename T>

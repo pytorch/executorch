@@ -8,10 +8,7 @@
 
 #include <executorch/kernels/quantized/cpu/embeddingxb.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <algorithm>
-#include <cassert>
 #include <cinttypes>
-#include <cmath>
 
 namespace torch {
 namespace executor {
@@ -144,8 +141,9 @@ void check_embedding_xbit_args(
   }
 
   ET_CHECK_MSG(
-      indices.scalar_type() == ScalarType::Long,
-      "indices.scalar_type() %" PRId8 " is not Long only Long is supported:",
+      indices.scalar_type() == ScalarType::Long ||
+          indices.scalar_type() == ScalarType::Int,
+      "indices.scalar_type() %" PRId8 " is not Long or Int",
       static_cast<int8_t>(indices.scalar_type()));
 
   ET_CHECK_MSG(
@@ -166,7 +164,7 @@ void check_embedding_xbit_args(
  * Retrieves the embeddings specified by indices, dequantizes them, and stores
  * them in out. Weight will always be uint8
  */
-template <typename CTYPE_PARAMS, typename CTYPE_OUT>
+template <typename CTYPE_PARAMS, typename CTYPE_OUT, typename CTYPE_INDICES>
 void embedding_xbit_per_channel(
     const Tensor& weight,
     const Tensor& weight_scales,
@@ -183,7 +181,7 @@ void embedding_xbit_per_channel(
   int32_t group_size = embedding_dim / num_groups_per_channel;
 
   CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-  const int64_t* indices_ptr = indices.const_data_ptr<int64_t>();
+  const CTYPE_INDICES* indices_ptr = indices.const_data_ptr<CTYPE_INDICES>();
 
   const CTYPE_PARAMS* scales = weight_scales.const_data_ptr<CTYPE_PARAMS>();
   const CTYPE_PARAMS* zero_points = nullptr;
@@ -192,7 +190,7 @@ void embedding_xbit_per_channel(
   }
 
   for (int i = 0; i < indices.numel(); i++) {
-    int64_t index = indices_ptr[i];
+    CTYPE_INDICES index = indices_ptr[i];
     // If using groupwise embedding
     int32_t qparams_index = index * num_groups_per_channel;
     CTYPE_PARAMS zp = 0.0;
@@ -285,14 +283,17 @@ Tensor& quantized_embedding_xbit_out(
       weight_nbit);
 
   constexpr auto name = "quantized_decomposed::embedding_xbit.out";
+  ScalarType indices_type = indices.scalar_type();
   ET_SWITCH_TWO_TYPES(Float, Half, out_type, ctx, name, CTYPE_OUT, [&]() {
-    embedding_xbit_per_channel<CTYPE_OUT, CTYPE_OUT>(
-        weight,
-        weight_scales,
-        opt_weight_zero_points,
-        indices,
-        out,
-        weight_nbit);
+    ET_SWITCH_TWO_TYPES(Int, Long, indices_type, ctx, name, CTYPE_IDX, [&]() {
+      embedding_xbit_per_channel<CTYPE_OUT, CTYPE_OUT, CTYPE_IDX>(
+          weight,
+          weight_scales,
+          opt_weight_zero_points,
+          indices,
+          out,
+          weight_nbit);
+    });
   });
 
   return out;
@@ -356,15 +357,18 @@ Tensor& quantized_embedding_xbit_dtype_out(
   ScalarType out_type = out.scalar_type();
 
   constexpr auto name = "quantized_decomposed::embedding_xbit.dtype_out";
+  ScalarType indices_type = indices.scalar_type();
   ET_SWITCH_TWO_TYPES(Float, Half, params_type, ctx, name, CTYPE_P, [&]() {
     ET_SWITCH_TWO_TYPES(Float, Half, out_type, ctx, name, CTYPE_OUT, [&]() {
-      embedding_xbit_per_channel<CTYPE_P, CTYPE_OUT>(
-          weight,
-          weight_scales,
-          opt_weight_zero_points,
-          indices,
-          out,
-          weight_nbit);
+      ET_SWITCH_TWO_TYPES(Int, Long, indices_type, ctx, name, CTYPE_IDX, [&]() {
+        embedding_xbit_per_channel<CTYPE_P, CTYPE_OUT, CTYPE_IDX>(
+            weight,
+            weight_scales,
+            opt_weight_zero_points,
+            indices,
+            out,
+            weight_nbit);
+      });
     });
   });
 

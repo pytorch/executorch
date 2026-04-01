@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -49,7 +49,7 @@ class ArangeDefaultIncrementViewLessThan(torch.nn.Module):
 
 
 @common.parametrize("test_data", ArangeDefaultIncrementViewLessThan.test_data)
-def test_convert_arange_default_int64_dtype_to_int32_pass_tosa_FP(
+def test_convert_int64_const_ops_to_int32_tosa_FP_arange_default(
     test_data: input_t1,
 ) -> None:
     module = ArangeDefaultIncrementViewLessThan()
@@ -72,7 +72,7 @@ def test_convert_arange_default_int64_dtype_to_int32_pass_tosa_FP(
 
 
 @common.parametrize("test_data", ArangeDefaultIncrementViewLessThan.test_data)
-def test_convert_arange_default_int64_dtype_to_int32_pass_tosa_INT(
+def test_convert_int64_const_ops_to_int32_tosa_INT_arange_default(
     test_data: input_t1,
 ) -> None:
     module = ArangeDefaultIncrementViewLessThan()
@@ -110,7 +110,7 @@ class ArangeStartIncrementViewLessThan(torch.nn.Module):
 
 
 @common.parametrize("test_data", ArangeStartIncrementViewLessThan.test_data)
-def test_convert_arange_start_int64_dtype_to_int32_pass_tosa_FP(
+def test_convert_int64_const_ops_to_int32_tosa_FP_arange_start(
     test_data: input_t1,
 ) -> None:
     module = ArangeStartIncrementViewLessThan()
@@ -133,7 +133,7 @@ def test_convert_arange_start_int64_dtype_to_int32_pass_tosa_FP(
 
 
 @common.parametrize("test_data", ArangeStartIncrementViewLessThan.test_data)
-def test_convert_arange_start_int64_dtype_to_int32_pass_tosa_INT(
+def test_convert_int64_const_ops_to_int32_tosa_INT_arange_start(
     test_data: input_t1,
 ) -> None:
     module = ArangeStartIncrementViewLessThan()
@@ -171,7 +171,7 @@ class ArangeStartStepIncrementViewLessThan(torch.nn.Module):
 
 
 @common.parametrize("test_data", ArangeStartStepIncrementViewLessThan.test_data)
-def test_convert_arange_start_step_int64_dtype_to_int32_pass_tosa_FP(
+def test_convert_int64_const_ops_to_int32_tosa_FP_arange_start_step(
     test_data: input_t1,
 ) -> None:
     module = ArangeStartStepIncrementViewLessThan()
@@ -194,7 +194,7 @@ def test_convert_arange_start_step_int64_dtype_to_int32_pass_tosa_FP(
 
 
 @common.parametrize("test_data", ArangeStartStepIncrementViewLessThan.test_data)
-def test_convert_arange_start_step_int64_dtype_to_int32_pass_tosa_INT(
+def test_convert_int64_const_ops_to_int32_tosa_INT_arange_start_step(
     test_data: input_t1,
 ) -> None:
     module = ArangeStartStepIncrementViewLessThan()
@@ -244,7 +244,9 @@ class ArangeAddDtypeNone(torch.nn.Module):
 
 
 @common.parametrize("test_data", ArangeAddDtypeNone.test_data)
-def test_arange_dtype_none_tosa_FP(test_data: ArangeNoneParam) -> None:
+def test_convert_int64_const_ops_to_int32_tosa_FP_arange_none(
+    test_data: ArangeNoneParam,
+) -> None:
     input_factory, init_data = test_data
     pipeline = TosaPipelineFP[input_t1](
         ArangeAddDtypeNone(*init_data),
@@ -256,7 +258,9 @@ def test_arange_dtype_none_tosa_FP(test_data: ArangeNoneParam) -> None:
 
 
 @common.parametrize("test_data", ArangeAddDtypeNone.test_data)
-def test_arange_dtype_none_tosa_INT(test_data: ArangeNoneParam) -> None:
+def test_convert_int64_const_ops_to_int32_tosa_INT_arange_none(
+    test_data: ArangeNoneParam,
+) -> None:
     input_factory, init_data = test_data
     pipeline = TosaPipelineINT[input_t1](
         ArangeAddDtypeNone(*init_data),
@@ -310,7 +314,7 @@ class FullIncrementViewMulXLessThanY(torch.nn.Module):
 
 
 @common.parametrize("test_data", FullIncrementViewMulXLessThanY.test_data)
-def test_convert_full_int64_dtype_to_int32_pass_tosa_FP(
+def test_convert_int64_const_ops_to_int32_tosa_FP_full(
     test_data: input_t2,
 ) -> None:
     """
@@ -354,14 +358,16 @@ def test_convert_full_int64_dtype_to_int32_pass_tosa_FP(
 
 
 @common.parametrize("test_data", FullIncrementViewMulXLessThanY.test_data)
-def test_convert_full_int64_dtype_to_int32_pass_tosa_INT(
+def test_convert_int64_const_ops_to_int32_tosa_INT_full(
     test_data: input_t2,
 ) -> None:
-    """
-    For INT profile, _lifted_tensor_constant0 is still int64 after applying ConvertInt64ConstOpsToInt32Pass().
+    """For INT profile, _lifted_tensor_constant0 is still int64 after applying
+    ConvertInt64ConstOpsToInt32Pass().
+
     And an int64->int32 cast is inserted at the beginning of the graph.
     TODO: Explore why _lifted_tensor_constant0 is handled in different ways in FP and INT profile.
         Find a way to optimize out the int64->int32 cast.
+
     """
     module = FullIncrementViewMulXLessThanY()
     aten_ops_checks = [
@@ -427,7 +433,7 @@ class RejectFullIncrementViewMulXLessThanY(torch.nn.Module):
 @pytest.mark.xfail(
     reason="MLETORCH-1254: Add operator support check for aten.arange and aten.full"
 )
-def test_reject_convert_full_int64_dtype_to_int32_pass_tosa_FP(
+def test_convert_int64_const_ops_to_int32_tosa_FP_reject_full(
     test_data: input_t2,
 ) -> None:
     module = RejectFullIncrementViewMulXLessThanY()
@@ -478,7 +484,9 @@ class AddConstFullDtypeNone(torch.nn.Module):
 
 
 @common.parametrize("test_data", AddConstFullDtypeNone.test_data)
-def test_full_dtype_none_tosa_FP(test_data: FullNoneParam) -> None:
+def test_convert_int64_const_ops_to_int32_tosa_FP_full_none(
+    test_data: FullNoneParam,
+) -> None:
     input_factory, init_data = test_data
     pipeline = TosaPipelineFP[input_t1](
         AddConstFullDtypeNone(*init_data),
@@ -490,7 +498,9 @@ def test_full_dtype_none_tosa_FP(test_data: FullNoneParam) -> None:
 
 
 @common.parametrize("test_data", AddConstFullDtypeNone.test_data_bool)
-def test_full_dtype_none_tosa_FP_bool(test_data: FullNoneParam) -> None:
+def test_convert_int64_const_ops_to_int32_tosa_FP_full_none_bool(
+    test_data: FullNoneParam,
+) -> None:
     input_factory, init_data = test_data
     pipeline = TosaPipelineFP[input_t1](
         AddConstFullDtypeNone(*init_data),
@@ -508,7 +518,7 @@ def test_full_dtype_none_tosa_FP_bool(test_data: FullNoneParam) -> None:
 @common.parametrize(
     "test_data", AddConstFullDtypeNone.test_data | AddConstFullDtypeNone.test_data_bool
 )
-def test_full_dtype_none_tosa_INT(test_data):
+def test_convert_int64_const_ops_to_int32_tosa_INT_full_none(test_data):
     input_data, init_data = test_data
     input_factory, init_data = test_data
     pipeline = TosaPipelineINT[input_t1](

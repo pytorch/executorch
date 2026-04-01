@@ -39,6 +39,7 @@ pip install graphviz
 set +e
 
 echo "Executing task: $TASK_NAME"
+EXTRA_FLAGS=""
 if [[ "${TASK_NAME}" == "stories_110m" ]]; then
     # Download stories llama110m artifacts
     download_stories_model_artifacts
@@ -80,7 +81,10 @@ elif [[ "${TASK_NAME}" == "stories_260k_bc" ]]; then
     fi
 
 elif [[ "${TASK_NAME}" == "smollm2_135m" ]]; then
-    $PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_static_llm_model --model_name smollm2_135m --model SM8650 --build_folder build-x86/ --executorch_root . --artifact_dir ./static_smollm2 --enable_x86_64
+    if [ -n "$2" ]; then
+        EXTRA_FLAGS="$EXTRA_FLAGS --static_llm_eval_method $2"
+    fi
+    $PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_static_llm_model --model_name smollm2_135m --model SM8650 --build_folder build-x86/ --executorch_root . --artifact_dir ./static_smollm2 --enable_x86_64 $EXTRA_FLAGS
     exit_code1=$?
     if [ $exit_code1 -ne 0 ]; then
         exit 1

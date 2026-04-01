@@ -21,8 +21,6 @@ from executorch.examples.models.model_factory import EagerModelFactory
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 
 from executorch.extension.export_util.utils import save_pte_program
-from torch._inductor.decomposition import conv1d_to_conv2d
-from torch.nn.attention import SDPBackend
 
 # Script to export a model with CUDA delegation.
 
@@ -88,24 +86,17 @@ def main():
         kwargs=example_kwargs,
         dynamic_shapes=dynamic_shapes,
     )
-    print(exported_programs)
 
     partitioner = CudaPartitioner(
         [CudaBackend.generate_method_name_compile_spec(args.model_name)]
     )
-    # Add decompositions for triton to generate kernels.
-    exported_programs = exported_programs.run_decompositions(
-        {
-            torch.ops.aten.conv1d.default: conv1d_to_conv2d,
-        }
+
+    et_prog = to_edge_transform_and_lower(
+        exported_programs,
+        partitioner=[partitioner],
+        compile_config=_EDGE_COMPILE_CONFIG,
+        generate_etrecord=args.generate_etrecord,
     )
-    with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]):
-        et_prog = to_edge_transform_and_lower(
-            exported_programs,
-            partitioner=[partitioner],
-            compile_config=_EDGE_COMPILE_CONFIG,
-            generate_etrecord=args.generate_etrecord,
-        )
     exec_program = et_prog.to_executorch()
     save_pte_program(exec_program, args.model_name, args.output_dir)
     if args.generate_etrecord:

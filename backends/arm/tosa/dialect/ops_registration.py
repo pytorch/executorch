@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,8 +18,7 @@ R = TypeVar("R")
 
 # The list of registered ops are not yet used, except for registration
 _tosa_registered_ops: dict[TosaSpecification, list[Callable]] = {
-    TosaSpecification.create_from_string("TOSA-1.0+FP"): [],
-    TosaSpecification.create_from_string("TOSA-1.0+INT"): [],
+    spec: [] for spec in TosaSpecification.all_versions_and_profiles()
 }
 
 # Mapping to ensure we only register a given function once.
@@ -29,8 +28,7 @@ _registered_tosa_ops_by_func: dict[Callable, Callable] = {}
 def register_fake_tosa_op(
     op_schema: str, tosa_specs: Iterable[TosaSpecification]
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    """
-    Decorator for registering a TOSA operation.
+    """Decorator for registering a TOSA operation.
 
     Parameters:
       op_schema : A string that defines the operation schema.
@@ -40,6 +38,7 @@ def register_fake_tosa_op(
     The decorated function is registered with the given op_schema by calling
     register_tosa_dialect_op(op_schema, func) only once per function. The resulting
     callable is then inserted into _tosa_registered_ops for each spec.
+
     """
 
     def decorator(func: Callable[P, R]) -> Callable[P, R]:

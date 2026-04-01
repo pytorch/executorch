@@ -49,6 +49,15 @@ class ISSRuntimeFailure(Exception):
     pass
 
 
+def is_depthwise_conv(groups: int, in_channels: int) -> bool:
+    """Check whether a convolution is depthwise.
+
+    Depthwise convolution has groups == in_channels with groups > 1.
+    When groups == 1, it is always a regular convolution even if in_channels == 1.
+    """
+    return groups > 1 and groups == in_channels
+
+
 # Get the output size of a 1D convolution given the input size and parameters
 def get_conv1d_output_size(
     in_size: torch.Size,

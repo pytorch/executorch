@@ -40,8 +40,14 @@ install_ndk() {
   rm -rf "${NDK_INSTALLATION_DIR}" && mkdir -p "${NDK_INSTALLATION_DIR}"
 
   pushd /tmp
-  # The NDK installation is cached on ossci-android S3 bucket
-  curl -Os --retry 3 "https://ossci-android.s3.amazonaws.com/android-ndk-${ANDROID_NDK_VERSION}-linux.zip"
+  ARCH=$(uname -m)
+  if [ "${ARCH}" = "aarch64" ]; then
+    # aarch64 NDK is not cached on S3, download from Google directly
+    curl -Os --retry 3 "https://dl.google.com/android/repository/android-ndk-${ANDROID_NDK_VERSION}-linux.zip"
+  else
+    # The NDK installation is cached on ossci-android S3 bucket
+    curl -Os --retry 3 "https://ossci-android.s3.amazonaws.com/android-ndk-${ANDROID_NDK_VERSION}-linux.zip"
+  fi
   unzip -qo "android-ndk-${ANDROID_NDK_VERSION}-linux.zip"
 
   # Print the content for manual verification
@@ -73,7 +79,10 @@ install_sdk() {
   yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "build-tools;35.0.0"
   # And some more tools for future emulator tests
   yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "platform-tools"
-  yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "tools"
+  # The 'tools' package (emulator) is not available on aarch64
+  if [ "$(uname -m)" != "aarch64" ]; then
+    yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "tools"
+  fi
 }
 
 install_prerequiresites

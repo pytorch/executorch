@@ -13,6 +13,10 @@ on:
   schedule:
     - cron: '0 0 * * *'
 
+concurrency:
+  group: docs-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -95,7 +99,9 @@ jobs:
       id-token: write
       contents: write
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    secrets: inherit
     with:
+      secrets-env: DOC_BUILD_GITHUB_TOKEN
       repository: pytorch/executorch
       download-artifact: docs
       ref: gh-pages
@@ -108,6 +114,9 @@ jobs:
         # refs/tags/v1.12.0 convert to 1.12
         export GITHUB_REF=${{ github.ref }}
 
+        # Fail immediately instead of prompting for input.
+        export GIT_TERMINAL_PROMPT=0
+
         # Convert refs/tags/v1.12.0rc3 into 1.12.
         # Adopted from https://github.com/pytorch/pytorch/blob/main/.github/workflows/_docs.yml#L150C11-L155C13
         if [[ "${GITHUB_REF}" =~ ^refs/tags/v([0-9]+\.[0-9]+) ]]; then
@@ -117,12 +126,17 @@ jobs:
         fi
         echo "Target Folder: ${TARGET_FOLDER}"
 
-        mkdir -p "${TARGET_FOLDER}"
         # Clean up target folder if exists and copy html output to the
         # Target folder
-        rm -rf "${TARGET_FOLDER}"/*
+        if [ -d "${TARGET_FOLDER}" ]; then
+          rm -rf "${TARGET_FOLDER}"
+        fi
+        mkdir -p "${TARGET_FOLDER}"
         mv "${RUNNER_ARTIFACT_DIR}"/html/* "${TARGET_FOLDER}"
         git add "${TARGET_FOLDER}" || true
+
+        echo "::add-mask::$SECRET_DOC_BUILD_GITHUB_TOKEN" # Mask the secret in GH logs
+        git remote set-url origin https://x-access-token:$SECRET_DOC_BUILD_GITHUB_TOKEN@github.com/pytorch/executorch.git
 
         git config user.name 'pytorchbot'
         git config user.email 'soumith+bot@pytorch.org'

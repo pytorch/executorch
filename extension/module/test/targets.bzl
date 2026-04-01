@@ -37,6 +37,8 @@ def define_common_targets(is_fbcode=False):
                     "//executorch/extension/data_loader:file_data_loader",
                     "//executorch/extension/module:module" + aten_suffix,
                     "//executorch/extension/tensor:tensor" + aten_suffix,
+                    "//executorch/runtime/backend:backend_options",
+                    "//executorch/runtime/backend:backend_options_map",
                     "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
                 ],
                 env = modules_env,

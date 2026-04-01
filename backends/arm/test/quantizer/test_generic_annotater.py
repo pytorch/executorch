@@ -52,35 +52,35 @@ def check_annotation(model: SingleOpModel) -> None:
     assert all(is_annotated(node) for node in partition.nodes)
 
 
-def test_squeeze():
+def test_squeeze_tosa_INT():
     check_annotation(SingleOpModel(torch.squeeze, (torch.rand(8, 8, 1),)))
     check_annotation(SingleOpModel(torch.squeeze_copy, (torch.rand(8, 8, 1),)))
 
 
-def test_unsqueeze():
+def test_unsqueeze_tosa_INT():
     check_annotation(SingleOpModel(torch.unsqueeze, (torch.rand(8, 8),), dim=0))
     check_annotation(SingleOpModel(torch.unsqueeze_copy, (torch.rand(8, 8),), dim=0))
 
 
-def test_reshape():
+def test_reshape_tosa_INT():
     check_annotation(
         SingleOpModel(torch.reshape, (torch.randn(8, 8),), shape=(64,)),
     )
 
 
-def test_view():
+def test_view_tosa_INT():
     check_annotation(
         SingleOpModel(torch.view_copy, (torch.randn(4, 4),), size=(2, 8)),
     )
 
 
-def test_slice():
+def test_slice_tosa_INT():
     check_annotation(
         SingleOpModel(torch.slice_copy, (torch.randn(3, 4),)),
     )
 
 
-def test_transpose():
+def test_transpose_tosa_INT():
     check_annotation(
         SingleOpModel(torch.transpose, (torch.randn(2, 3),), dim0=0, dim1=1),
     )
@@ -89,19 +89,19 @@ def test_transpose():
     )
 
 
-def test_tile():
+def test_tile_tosa_INT():
     check_annotation(
         SingleOpModel(torch.tile, (torch.randn(4, 4),), dims=(2,)),
     )
 
 
-def test_flip():
+def test_flip_tosa_INT():
     check_annotation(
         SingleOpModel(torch.flip, (torch.randn(2, 4),), dims=(0, 1)),
     )
 
 
-def test_concat():
+def test_concat_tosa_INT():
     check_annotation(
         SingleOpModel(
             torch.concatenate, ((torch.randn(2, 3), torch.randn(2, 3)),), dim=0

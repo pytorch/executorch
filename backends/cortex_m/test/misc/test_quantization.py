@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,7 +6,7 @@
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
-from executorch.backends.arm.test.common import parametrize
+from executorch.backends.arm.test.common import parametrize, xfail_type
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
@@ -141,8 +141,8 @@ class SharedQspecInputForkYShared(torch.nn.Module):
 class SharedQspecInputForkXConstant(torch.nn.Module):
     """Shared qspec cluster with an input fork with left input as global constant."""
 
-    ops_before_transforms = {}
-    ops_after_transforms = {}
+    ops_before_transforms: dict[str, int] = {}
+    ops_after_transforms: dict[str, int] = {}
     constant = torch.tensor(5.0)
 
     def forward(self, x):
@@ -152,8 +152,8 @@ class SharedQspecInputForkXConstant(torch.nn.Module):
 class SharedQspecInputForkYConstant(torch.nn.Module):
     """Shared qspec cluster with an input fork with left input as local constant."""
 
-    ops_before_transforms = {}
-    ops_after_transforms = {}
+    ops_before_transforms: dict[str, int] = {}
+    ops_after_transforms: dict[str, int] = {}
 
     def forward(self, x):
         return torch.maximum(x, torch.tensor(5.0))
@@ -259,8 +259,8 @@ class SharedQspecSurroundedQuantizedOp(torch.nn.Module):
 
 
 class SharedQspecSurroundedQuantizedOpConstant(torch.nn.Module):
-    ops_before_transforms = {}
-    ops_after_transforms = {}
+    ops_before_transforms: dict[str, int] = {}
+    ops_after_transforms: dict[str, int] = {}
 
     def forward(self, x):
         x1 = torch.clone(x)
@@ -270,11 +270,41 @@ class SharedQspecSurroundedQuantizedOpConstant(torch.nn.Module):
 
 
 class SharedQspecSub(torch.nn.Module):
-    ops_before_transforms = {}
-    ops_after_transforms = {}
+    ops_before_transforms: dict[str, int] = {}
+    ops_after_transforms: dict[str, int] = {}
 
     def forward(self, x, y):
         return torch.clone(x - y)
+
+
+class SharedQspecCompetingQspecs(torch.nn.Module):
+    ops_before_transforms: dict[str, int] = {}
+    ops_after_transforms: dict[str, int] = {}
+
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 3, 1)
+        self.conv.weight.data = torch.tensor(
+            [
+                [[[0.1]], [[-0.2]], [[0.3]]],
+                [[[-0.1]], [[0.2]], [[-0.3]]],
+                [[[0.05]], [[-0.05]], [[0.15]]],
+            ],
+            dtype=self.conv.weight.dtype,
+        )
+        self.conv.bias.data = torch.tensor([0.0, 0.1, -0.1], dtype=self.conv.bias.dtype)
+
+    def forward(self, x):
+        return torch.cat([self.conv(x), x], dim=1)
+
+
+class SharedQspecNoQspecs(torch.nn.Module):
+    ops_before_transforms: dict[str, int] = {}
+    ops_after_transforms: dict[str, int] = {}
+
+    def forward(self, x):
+        z = torch.clone(x - x)
+        return z - z
 
 
 test_cases = {
@@ -326,15 +356,10 @@ test_cases = {
         SharedQspecManyForks(),
         (ramp_tensor(-20, 2, (4, 4)),),
     ),
-    "non-quantized_op": McuTestCase(
-        SharedQspecSub(),
-        (ramp_tensor(0, 10, (5, 5)), ramp_tensor(0, 1, (5, 5))),
-    ),
 }
 
-xfails = {
+xfails: dict[str, xfail_type] = {
     "surrounded_quantized_op_constant": "Numerical error since the add is forced to have non-correct qparams.",
-    "non-quantized_op": "Non-quantized ops are not currently supported in SharedQspecQuantizer.",
 }
 
 
@@ -357,3 +382,30 @@ def test_shared_qspec_quantizer(test_case):
             continue
 
         assert get_first_fake_tensor(node).dtype == torch.int8, f"{node.name}"
+
+
+float_test_cases = {
+    "non-quantized_op": McuTestCase(
+        SharedQspecSub(),
+        (ramp_tensor(0, 10, (5, 5)), ramp_tensor(0, 1, (5, 5))),
+    ),
+    "competing_qspecs": McuTestCase(
+        SharedQspecCompetingQspecs(),
+        (ramp_tensor(0, 10, (1, 3, 5, 5)).to(memory_format=torch.channels_last),),
+    ),
+    "no_qspecs": McuTestCase(
+        SharedQspecNoQspecs(),
+        (ramp_tensor(0, 10, (1, 3, 5, 5)),),
+    ),
+}
+
+
+@parametrize("test_case", float_test_cases)
+def test_shared_qspec_quantizer_no_qspecs(test_case):
+    """
+    Test that ops which does not change dynamic range are able to use int8 portable kernels.
+    """
+    tester = CortexMTester(test_case.model, test_case.example_inputs)
+    tester.test_dialect(
+        test_case.model.ops_before_transforms, test_case.model.ops_after_transforms
+    )

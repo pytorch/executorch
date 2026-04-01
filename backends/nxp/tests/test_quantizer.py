@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -26,10 +26,17 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
 from executorch.backends.nxp.tests.executors import (
     convert_run_compare,
     graph_contains_any_of_ops,
+    tflite,
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
+
 from executorch.exir.dialects._ops import ops as exir_ops
+
+requires_tflite = pytest.mark.skipif(
+    tflite is None, reason="tensorflow/tflite not available"
+)
+
 from torch.export import export, ExportedProgram
 from torch.fx import GraphModule
 from torchao.quantization.pt2e import (
@@ -65,6 +72,14 @@ all_activation_cases = list(
     ("sigmoid", False, True),
     ("sigmoid", False, False),
 ]
+
+batch_norm_ops = (
+    exir_ops.edge.aten._native_batch_norm_legit.no_stats,
+    exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
+    torch.ops.aten._native_batch_norm_legit_no_training.default,
+    torch.ops.aten.batch_norm.default,
+    torch.ops.aten.native_batch_norm.default,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -392,6 +407,7 @@ def test_quantizers_order_invariance():
     assert all(n == n_reversed for n, n_reversed in zip(nodes, nodes_reversed))
 
 
+@requires_tflite
 @pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
 def test_quantizer__linear_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
@@ -439,6 +455,7 @@ def test_quantizer__linear_w_activation(mocker, activation, inplace, use_qat):
     )
 
 
+@requires_tflite
 @pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
 def test_quantizer__addmm_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
@@ -483,6 +500,7 @@ def test_quantizer__addmm_w_activation(mocker, activation, inplace, use_qat):
     )
 
 
+@requires_tflite
 @pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
 def test_quantizer__mm_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
@@ -527,6 +545,7 @@ def test_quantizer__mm_w_activation(mocker, activation, inplace, use_qat):
     )
 
 
+@requires_tflite
 @pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
 def test_quantizer__conv_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
@@ -636,3 +655,62 @@ def test_qat_produces_same_graph_as_ptq():
             qat_quantized_model.graph.nodes, ptq_quantized_model.graph.nodes
         )
     )
+
+
+@pytest.mark.parametrize("input_shape", [(1, 3, 32), (1, 3, 32, 32)])
+@pytest.mark.parametrize("transposed_conv", [True, False])
+@pytest.mark.parametrize("conv_bias", [True, False])
+@pytest.mark.parametrize("bn_affine", [True, False])
+def test_torchao_native_conv_bn_qat_fusing(
+    input_shape, transposed_conv, conv_bias, bn_affine
+):
+    if not conv_bias:
+        pytest.skip("Conv without bias is not supported.")
+
+    if len(input_shape) < 4 and transposed_conv:
+        pytest.skip("Conv1d transpose is not supported.")
+
+    model = models.ConvBatchNormModule(
+        bias=conv_bias,
+        input_rank=len(input_shape),
+        num_features=input_shape[1],
+        transposed_conv=transposed_conv,
+        bn_affine=bn_affine,
+    )
+    model.eval()
+
+    exported_model = export(model, (torch.randn(*input_shape),), strict=True)
+    prepared_model = _prepare_for_quantization(exported_model, is_qat=True)
+    quantized_model = convert_pt2e(prepared_model)
+
+    def is_conv(node):
+        return node.op == "call_function" and node.target in [
+            torch.ops.aten.conv1d.default,
+            torch.ops.aten.conv2d.default,
+            torch.ops.aten.conv_transpose2d.input,
+        ]
+
+    graph_nodes = list(quantized_model.graph.nodes)
+    conv_node = next(n for n in graph_nodes if is_conv(n))
+    conv_node_args = conv_node.args
+
+    if len(conv_node_args) > 3:
+        conv_node_args = conv_node_args[:3]
+
+    assert not any(
+        n.target in batch_norm_ops for n in graph_nodes if hasattr(n, "target")
+    )
+    assert (
+        len(conv_node.users) == 1
+        and list(conv_node.users.keys())[0].target
+        == torch.ops.quantized_decomposed.quantize_per_tensor.default
+    )
+    assert all(
+        arg.target
+        in (
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            torch.ops.quantized_decomposed.dequantize_per_channel.default,
+        )
+        for arg in conv_node_args
+    )
+    assert len(graph_nodes) == 15

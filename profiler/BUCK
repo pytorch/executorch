@@ -1,0 +1,43 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain xplat-only targets.
+
+
+# !!!! fbcode/executorch/profiler/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+
+fbcode_target(_kind = runtime.python_library,
+    name = "parse_profiler_library",
+    srcs = [
+        "parse_profiler_results.py",
+        "profiler_results_cli.py",
+    ],
+    base_module = "executorch.profiler",
+    visibility = ["PUBLIC"],
+    external_deps = ["prettytable"],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "profiler_results_cli_lib",
+    srcs = [
+        "profiler_results_cli.py",
+    ],
+    base_module = "executorch.profiler",
+    deps = [
+        ":parse_profiler_library",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_binary,
+    name = "profiler_results_cli",
+    main_function = "executorch.profiler.profiler_results_cli.invoke_main",
+    deps = [
+        ":profiler_results_cli_lib",
+    ],
+)

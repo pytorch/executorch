@@ -105,6 +105,19 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "insert_dtype_promotion",
+    srcs = ["insert_dtype_promotion.py"],
+    visibility = [
+        "//executorch/backends/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+runtime.python_library(
     name = "fuse_patterns",
     srcs = ["fuse_patterns.py"],
     visibility = [
@@ -133,6 +146,7 @@ runtime.python_library(
         ":fold_qdq",
         ":fuse_patterns",
         ":fuse_quantized_ops",
+        ":insert_dtype_promotion",
         ":insert_prepack_nodes",
         ":remove_asserts",
         ":remove_redundant_ops",

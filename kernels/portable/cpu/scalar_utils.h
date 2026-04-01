@@ -221,8 +221,8 @@ bool extract_scalar(Scalar scalar, FLOAT_T* out_val) {
     // be represented when FLOAT_T == float. float can, however, represent
     // infinite and NaN values.
     if (std::isfinite(val) &&
-        (val < std::numeric_limits<FLOAT_T>::lowest() ||
-         val > std::numeric_limits<FLOAT_T>::max())) {
+        (val < static_cast<double>(std::numeric_limits<FLOAT_T>::lowest()) ||
+         val > static_cast<double>(std::numeric_limits<FLOAT_T>::max()))) {
       // PyTorch's implementation of clamp() raises an exception if the min/max
       // values cannot be represented as the dtype, so we should fail too.
       return false;

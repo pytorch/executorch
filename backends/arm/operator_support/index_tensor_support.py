@@ -1,11 +1,11 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 """Provide TOSA support checks for ``aten.index.Tensor``.
 
-Reject unsupported patterns such as high-rank index tensors, front-positioned
-slice/ellipsis/None markers, and cases that exceed ``int32`` element limits.
+Reject unsupported patterns such as front-positioned slice/ellipsis/None
+markers and cases that exceed ``int32`` element limits.
 
 """
 
@@ -30,18 +30,12 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
     This support check is intended to prevent the partitioning of
     currently unsupported usages of the index.Tensor operator.
 
-    1. Usages where indexing tensors are of rank 4 or higher.
-        This is due to the AnnotateChannelsLastDimOrder pass and
-        the rarity of such operation.
-        Support is possible but would require further changes to the above
-        pass which can be added at such a time as is necessary.
-
-    2. Usages where slice, ellipsis or None are present before an indexing tensor:
+    1. Usages where slice, ellipsis or None are present before an indexing tensor:
         t[{start}:{end}, indexTensor] - slicing
         t[None, indexTensor] - unsqueeze
         t[..., indexTensor] - ellipsis
 
-    3. Usages where the value tensor contains more than int32.max elements
+    2. Usages where the value tensor contains more than int32.max elements
         This is due to int32 TOSA limitation and the fact that we flatten out
         and accumulate all index tensors.
         As such to avoid overflow we reject lowering of this operator if it is
@@ -108,11 +102,6 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
 
     targets = [exir_ops.edge.aten.index.Tensor]
 
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
-
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:  # type: ignore[override, misc]
@@ -120,13 +109,12 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
 
         Enforces the following constraints:
         - No ``None`` (unsqueeze), slice, or ellipsis before an indexing tensor.
-        - Indexing tensors have rank <= 3.
         - The value tensor element count fits in ``int32``.
 
         """
         indices = node.args[1]
         for index in indices:  # type: ignore[union-attr]
-            # Usage 2 guard
+            # Usage 1 guard
             if index is None:
                 self.reporter.report_reject(
                     node,
@@ -137,23 +125,46 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
                 )
                 return False
 
-            # Usage 1 guard
-            index = ensure_type(torch.fx.Node, index)
-            fake_tensor = get_first_fake_tensor(index)
-            if len(fake_tensor.size()) > 3:
-                self.reporter.report_reject(
-                    node,
-                    ("Indexing tensors of rank >= 4 is not supported."),
-                )
-                return False
-
-        # Usage 3 guard
+        # Usage 2 guard
         input_node = ensure_type(torch.fx.Node, node.args[0])
-        total_vals = math.prod(get_first_fake_tensor(input_node).shape)
+        input_val = get_first_fake_tensor(input_node)
+        total_vals = math.prod(input_val.shape)
         if total_vals > torch.iinfo(torch.int32).max:
             self.reporter.report_reject(
                 node,
                 ("Value size exceeds int32 range; would overflow flattened indexing."),
+            )
+            return False
+
+        values_dtype = input_val.dtype
+        if values_dtype in (torch.bool, torch.int8, torch.int16, torch.int32):
+            if not tosa_spec.support_integer():
+                self.reporter.report_reject(
+                    node,
+                    f"{node.target}: dtype {values_dtype} requires INT profile.",
+                )
+                return False
+        elif values_dtype in (torch.float16, torch.float32, torch.bfloat16):
+            if values_dtype == torch.bfloat16 and not tosa_spec.support_extension(
+                "bf16"
+            ):
+                self.reporter.report_reject(
+                    node,
+                    f"{node.target}: dtype {values_dtype} requires bf16 extension.",
+                )
+                return False
+            if not (tosa_spec.support_float() or tosa_spec.support_integer()):
+                self.reporter.report_reject(
+                    node,
+                    f"{node.target}: dtype {values_dtype} requires FP profile or "
+                    "INT profile (with quantization).",
+                )
+                return False
+        else:
+            self.reporter.report_reject(
+                node,
+                f"{node.target}: unsupported values dtype {values_dtype}; "
+                "expected bool/int8/int16/int32/float16/bfloat16/float32.",
             )
             return False
 

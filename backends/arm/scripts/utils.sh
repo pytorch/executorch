@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -136,6 +136,11 @@ function prepend_env_in_setup_path() {
 function append_env_in_setup_path() {
     echo "export $1=\${$1-}:$2" >> ${setup_path_script}.sh
     echo "set --path -agx $1 $2" >> ${setup_path_script}.fish
+}
+
+function set_env_in_setup_path() {
+    echo "export $1=$2" >> ${setup_path_script}.sh
+    echo "set -gx $1 $2" >> ${setup_path_script}.fish
 }
 
 function clear_setup_path() {

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -24,6 +24,11 @@ from torchvision import models, transforms  # type: ignore[import-untyped]
 mv3 = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights)
 mv3 = mv3.eval()
 
+mv3_fp16 = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights).to(
+    torch.float16
+)
+mv3_fp16 = mv3_fp16.eval()
+
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
 input_tensor = torch.rand(1, 3, 232, 232)
@@ -41,6 +46,20 @@ def test_mv3_tosa_FP():
 
 
 @pytest.mark.slow
+def test_mv3_tosa_FP_fp16():
+    inputs_fp16 = tuple(t.to(torch.float16) for t in model_inputs)
+    pipeline = TosaPipelineFP[input_t](
+        mv3_fp16,
+        inputs_fp16,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        atol=5e-2,
+    )
+    pipeline.run()
+
+
+@pytest.mark.slow
 def test_mv3_tosa_INT():
     pipeline = TosaPipelineINT[input_t](
         mv3,
@@ -50,6 +69,8 @@ def test_mv3_tosa_INT():
         use_to_edge_transform_and_lower=True,
         atol=0.5,
         qtol=1,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 

@@ -65,12 +65,27 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "test_weight_cache",
+        srcs = ["runtime/test_weight_cache.cpp"],
+        deps = [
+                "//executorch/extension/module:module",
+                "//executorch/extension/tensor:tensor",
+                "//executorch/backends/xnnpack:xnnpack_backend",
+                "//executorch/runtime/backend:backend_options_map",
+            ],
+            env = {
+                "ET_XNNPACK_GENERATED_ADD_LARGE_PTE_PATH": "$(location fbcode//executorch/test/models:exported_xnnp_delegated_programs[ModuleAddLarge.pte])",
+            },
+    )
+
+    runtime.cxx_test(
         name = "test_workspace_sharing",
         srcs = ["runtime/test_workspace_sharing.cpp"],
         deps = [
                 "//executorch/extension/module:module",
                 "//executorch/extension/tensor:tensor",
                 "//executorch/backends/xnnpack:xnnpack_backend",
+                "//executorch/runtime/backend:backend_options_map",
             ],
             env = {
                 "ET_XNNPACK_GENERATED_ADD_LARGE_PTE_PATH": "$(location fbcode//executorch/test/models:exported_xnnp_delegated_programs[ModuleAddLarge.pte])",

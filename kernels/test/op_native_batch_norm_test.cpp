@@ -1156,3 +1156,57 @@ TEST_F(OpNativeBatchNormLegitNoStatsOutTest, SampleAtomicTest4D) {
   EXPECT_TENSOR_CLOSE(out1, out1_expected);
   EXPECT_TENSOR_CLOSE(out2, out2_expected);
 }
+
+// Test that verifies the fix for uninitialized memory bug in mean/invstd
+// accumulation. Before the fix, mean_data and invstd_data buffers were not
+// initialized to zero before accumulating sums, causing incorrect results
+// when the output tensors contained garbage values.
+TEST_F(OpNativeBatchNormLegitNoStatsOutTest, UninitializedMemoryBugTest) {
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tfFloat;
+
+  // Simple 2D input: batch=2, channels=3, spatial=4
+  executorch::aten::Tensor input = tfFloat.make(
+      {2, 3, 4}, {0,   1,   4,   9,   16,  25,  36,  49,  64,  81,  100, 121,
+                  144, 169, 196, 225, 256, 289, 324, 361, 400, 441, 484, 529});
+  std::optional<executorch::aten::Tensor> weight =
+      std::optional<executorch::aten::Tensor>();
+  std::optional<executorch::aten::Tensor> bias =
+      std::optional<executorch::aten::Tensor>();
+  bool training = true;
+  double momentum = 1e-3;
+  double eps = 1e-5;
+
+  // Initialize output tensors with garbage values (large non-zero numbers)
+  // to simulate uninitialized memory. Before the fix, these garbage values
+  // would corrupt the mean/invstd accumulation.
+  executorch::aten::Tensor out0 = tfFloat.make(
+      {2, 3, 4}, {999, 999, 999, 999, 999, 999, 999, 999, 999, 999, 999, 999,
+                  999, 999, 999, 999, 999, 999, 999, 999, 999, 999, 999, 999});
+  executorch::aten::Tensor out1 =
+      tfFloat.make({3}, {1e9, 1e9, 1e9}); // Garbage in mean buffer
+  executorch::aten::Tensor out2 =
+      tfFloat.make({3}, {1e9, 1e9, 1e9}); // Garbage in invstd buffer
+
+  // Expected values (same as SampleAtomicTest3D)
+  executorch::aten::Tensor out0_expected = tfFloat.make(
+      {2, 3, 4},
+      {-1.01045656, -0.99964952, -0.96722847, -0.91319335, -1.08850884,
+       -1.02468753, -0.94668359, -0.85449719, -1.12558389, -1.03595889,
+       -0.93578988, -0.82507670, 0.54575467,  0.81593025,  1.10771990,
+       1.42112350,  0.61339414,  0.84740579,  1.09560001,  1.35797679,
+       0.64582670,  0.86198103,  1.08867943,  1.32592189});
+  executorch::aten::Tensor out1_expected =
+      tfFloat.make({3}, {93.5, 169.5, 277.5});
+  executorch::aten::Tensor out2_expected =
+      tfFloat.make({3}, {0.01080702, 0.00709126, 0.00527206});
+
+  op_native_batch_norm_legit_no_stats_out(
+      input, weight, bias, training, momentum, eps, out0, out1, out2);
+
+  // These assertions would FAIL before the fix because the garbage values
+  // (1e9) in out1 and out2 would be added to the accumulated sums
+  EXPECT_TENSOR_CLOSE(out0, out0_expected);
+  EXPECT_TENSOR_CLOSE(out1, out1_expected);
+  EXPECT_TENSOR_CLOSE(out2, out2_expected);
+}

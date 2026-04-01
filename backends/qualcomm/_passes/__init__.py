@@ -22,12 +22,15 @@ from .decompose_expm1 import DecomposeExpM1
 from .decompose_floor_divide import DecomposeFloorDivide
 from .decompose_glu import DecomposeGlu
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
+from .decompose_log_variants import DecomposeLogVariants
 from .decompose_maxpool3d import DecomposeMaxPool3d
 from .decompose_minmaxdim import DecomposeMinMaxDim
+from .decompose_reciprocal import DecomposeReciprocal
 from .decompose_roll import DecomposeRoll
 from .decompose_silu import DecomposeSilu
 from .decompose_threshold import DecomposeThreshold
 from .decompose_triu import DecomposeTriu
+from .decompose_trunc import DecomposeTrunc
 from .decompose_wrap_with_autocast import DecomposeWrapWithAutocast
 from .expand_broadcast_tensor_shape import ExpandBroadcastTensorShape
 from .fixed_linear_keep_dim import FixedLinearKeepDim
@@ -40,6 +43,7 @@ from .insert_requantize import InsertRequantize
 from .insert_reshape_for_reduce_ops import InsertReshapeForReduceOps
 from .layout_transform import LayoutTransform
 from .lift_constant_scalar_operands import LiftConstantScalarOperands
+from .recompose_pad_maxpool2d import RecomposePadMaxPool2d
 from .recompose_pixel_unshuffle import RecomposePixelUnshuffle
 from .recompose_rms_norm import RecomposeRmsNorm
 from .reduce_dynamic_range import ReduceDynamicRange
@@ -47,6 +51,7 @@ from .remove_0d_tensor import Remove0DTensor
 from .remove_redundancy import RemoveRedundancy
 from .replace_arange_args import ReplaceArangeArgs
 from .replace_inf_values import ReplaceInfValues
+from .resolve_debug_handle import ResolveDebugHandle
 from .seq_mse import SeqMSE
 from .tag_quant_io import TagQuantIO
 
@@ -69,12 +74,15 @@ __all__ = [
     DecomposeFloorDivide,
     DecomposeGlu,
     DecomposeLinalgVectorNorm,
+    DecomposeLogVariants,
     DecomposeMaxPool3d,
     DecomposeMinMaxDim,
+    DecomposeReciprocal,
     DecomposeRoll,
     DecomposeSilu,
     DecomposeThreshold,
     DecomposeTriu,
+    DecomposeTrunc,
     DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
@@ -87,6 +95,7 @@ __all__ = [
     InsertRequantize,
     LayoutTransform,
     LiftConstantScalarOperands,
+    RecomposePadMaxPool2d,
     RecomposePixelUnshuffle,
     RecomposeRmsNorm,
     ReduceDynamicRange,
@@ -94,6 +103,7 @@ __all__ = [
     RemoveRedundancy,
     ReplaceArangeArgs,
     ReplaceInfValues,
+    ResolveDebugHandle,
     SeqMSE,
     TagQuantIO,
 ]

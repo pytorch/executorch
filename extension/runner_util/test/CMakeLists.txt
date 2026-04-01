@@ -19,17 +19,22 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleIntBool.pte"
   COMMAND ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
-          "ModuleAdd" --outdir "${CMAKE_CURRENT_BINARY_DIR}"
+          "ModuleAdd,ModuleIntBool" --outdir "${CMAKE_CURRENT_BINARY_DIR}"
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
 )
 
 add_custom_target(
   executorch_runner_util_test_resources
   DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleIntBool.pte"
 )
 
-set(test_env "ET_MODULE_ADD_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte")
+set(test_env
+    "ET_MODULE_ADD_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte"
+    "ET_MODULE_INTBOOL_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleIntBool.pte"
+)
 
 set(_test_srcs inputs_test.cpp)
 

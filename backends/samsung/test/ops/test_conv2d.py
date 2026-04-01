@@ -41,10 +41,6 @@ class Conv2d(torch.nn.Module):
 
         self.in_channels = in_channels
 
-    def get_example_inputs(self) -> tuple[torch.Tensor]:
-        input_1 = torch.randn(1, self.in_channels, 24, 24)
-        return (input_1,)
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.conv(x)
 
@@ -62,19 +58,15 @@ class TransposeConv2d(torch.nn.Module):
             bias=True,
         )
 
-    def get_example_inputs(self) -> tuple[torch.Tensor]:
-        input_1 = torch.randn(1, 32, 24, 24)
-        return (input_1,)
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.conv(x)
 
 
 class TestConv2d(unittest.TestCase):
-    def _test(self, module: torch.nn.Module):
+    def _test(self, module: torch.nn.Module, inputs):
         tester = SamsungTester(
             module,
-            module.get_example_inputs(),
+            inputs,
             [gen_samsung_backend_compile_spec("E9955")],
         )
         (
@@ -83,16 +75,21 @@ class TestConv2d(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .run_method_and_compare_outputs(inputs=inputs)
         )
 
     def test_fp32_conv2d_without_bias(self):
-        self._test(Conv2d(bias=False))
+        inputs = (torch.randn(1, 3, 24, 24),)
+        self._test(Conv2d(bias=False), inputs)
 
     def test_fp32_conv2d_with_bias(self):
-        self._test(Conv2d(bias=True))
+        inputs = (torch.randn(1, 3, 24, 24),)
+        self._test(Conv2d(bias=True), inputs)
 
     def test_fp32_depthwise_conv2d(self):
-        self._test(Conv2d(in_channels=8, out_channels=8, groups=8))
+        inputs = (torch.randn(1, 8, 24, 24),)
+        self._test(Conv2d(in_channels=8, out_channels=8, groups=8), inputs)
 
     def test_fp32_transpose_conv2d(self):
-        self._test(TransposeConv2d())
+        inputs = (torch.randn(1, 32, 24, 24),)
+        self._test(TransposeConv2d(), inputs)

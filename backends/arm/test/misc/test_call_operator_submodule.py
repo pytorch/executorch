@@ -51,7 +51,7 @@ class _CondModule(torch.nn.Module):
         return torch.cond(predicate, _true_branch, _false_branch, [x])
 
 
-def test_call_operator_runs_once_for_cond_submodules() -> None:
+def test_call_operator_runs_once_for_cond_submodules_tosa_FP() -> None:
     module = _CondModule()
     example_inputs = (torch.randn(2, 3),)
     exported = torch.export.export(module, example_inputs)

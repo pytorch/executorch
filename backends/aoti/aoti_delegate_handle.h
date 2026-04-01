@@ -10,6 +10,7 @@
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#include <string>
 
 namespace executorch {
 namespace backends {
@@ -83,8 +84,7 @@ struct AOTIDelegateHandle {
   void* so_handle;
   std::string so_path;
   AOTInductorModelContainerHandle container_handle;
-  void* cuda_stream; // cudaStream_t stored as void* to avoid CUDA header
-                     // dependency
+  std::string method_name;
 
   // Function pointers specific to this handle's shared library
   AOTInductorModelContainerCreateWithDeviceFunc create_with_device;

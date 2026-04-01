@@ -9,6 +9,7 @@
 #include <executorch/extension/llm/runner/wav_loader.h>
 #include <executorch/extension/testing_util/temp_file.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <executorch/test/utils/DeathTest.h>
 
 #include <cstdint>
 #include <limits>
@@ -258,10 +259,101 @@ TEST_F(WavLoaderTest, LoadAudioDataRejectsUnsupportedFormat) {
   const std::vector<uint8_t> wav_bytes =
       make_wav_bytes_with_format(0x0006, 16, sample_data);
   TempFile file(wav_bytes.data(), wav_bytes.size());
-#if ET_LOG_ENABLED
-  EXPECT_DEATH(
+  ET_EXPECT_DEATH(
       { load_wav_audio_data(file.path()); }, "Unsupported audio format");
-#else
-  EXPECT_DEATH({ load_wav_audio_data(file.path()); }, "");
-#endif // ET_LOG_ENABLED
+}
+
+// Helper function to create a malformed WAV file with inflated Subchunk2Size
+std::vector<uint8_t> make_malformed_wav_with_inflated_size(
+    uint32_t claimed_data_size,
+    uint32_t actual_data_size,
+    uint16_t num_channels = 1,
+    uint32_t sample_rate = 16000) {
+  const size_t bytes_per_sample = sizeof(float);
+  const uint32_t byte_rate = sample_rate * num_channels * bytes_per_sample;
+  const uint16_t block_align = num_channels * bytes_per_sample;
+  // Use claimed size in ChunkSize to match what a malicious file would have
+  const auto chunk_size = kWavHeaderSizeBeforeData + claimed_data_size;
+
+  std::vector<uint8_t> bytes;
+  bytes.reserve(kWavHeaderSizeWithData + actual_data_size);
+
+  append_bytes(bytes, "RIFF");
+  append_le32(bytes, chunk_size);
+  append_bytes(bytes, "WAVE");
+  append_bytes(bytes, "fmt ");
+  append_le32(bytes, 16);
+  append_le16(bytes, 3); // AudioFormat IEEE Float
+  append_le16(bytes, num_channels);
+  append_le32(bytes, sample_rate);
+  append_le32(bytes, byte_rate);
+  append_le16(bytes, block_align);
+  append_le16(bytes, 32); // bits per sample
+  append_bytes(bytes, "data");
+  append_le32(bytes, claimed_data_size); // Inflated size in header
+
+  // Only write actual_data_size bytes of audio data
+  for (uint32_t i = 0; i < actual_data_size; ++i) {
+    bytes.push_back(0);
+  }
+
+  return bytes;
+}
+
+// Security test: Verify that WAV files with inflated Subchunk2Size are rejected
+// This prevents heap-buffer-overflow from malicious files claiming more data
+// than actually present.
+TEST_F(WavLoaderTest, LoadAudioDataRejectsInflatedSubchunk2Size) {
+  // Create a 48-byte WAV file that claims to contain 1 MB of audio data
+  // (similar to the proof-of-concept in the security report)
+  const uint32_t claimed_size = 1024 * 1024; // 1 MB claimed
+  const uint32_t actual_size = 4; // Only 4 bytes of actual data
+  const std::vector<uint8_t> wav_bytes =
+      make_malformed_wav_with_inflated_size(claimed_size, actual_size);
+  TempFile file(wav_bytes.data(), wav_bytes.size());
+
+  ET_EXPECT_DEATH(
+      { load_wav_audio_data(file.path()); }, "claimed data size.*exceeds");
+}
+
+// Security test: Verify that WAV files with data chunk at end of file and
+// inflated data size are rejected
+TEST_F(WavLoaderTest, LoadAudioDataRejectsDataOffsetBeyondBounds) {
+  // Create a minimal WAV header but truncate it so data offset points beyond
+  // file
+  std::vector<uint8_t> bytes;
+  append_bytes(bytes, "RIFF");
+  append_le32(bytes, 100); // ChunkSize
+  append_bytes(bytes, "WAVE");
+  append_bytes(bytes, "fmt ");
+  append_le32(bytes, 16);
+  append_le16(bytes, 3); // IEEE Float
+  append_le16(bytes, 1); // channels
+  append_le32(bytes, 16000); // sample rate
+  append_le32(bytes, 64000); // byte rate
+  append_le16(bytes, 4); // block align
+  append_le16(bytes, 32); // bits per sample
+  append_bytes(bytes, "data");
+  append_le32(bytes, 1000); // Claim 1000 bytes but provide none
+  // No actual audio data follows - file ends here
+
+  TempFile file(bytes.data(), bytes.size());
+
+  ET_EXPECT_DEATH(
+      { load_wav_audio_data(file.path()); }, "claimed data size.*exceeds");
+}
+
+// Security test: Verify boundary condition where claimed size exactly matches
+// available data
+TEST_F(WavLoaderTest, LoadAudioDataAcceptsExactSizeMatch) {
+  // Create a valid WAV file where Subchunk2Size exactly matches the data
+  const std::vector<float> samples = {0.5f, -0.5f};
+  const std::vector<uint8_t> wav_bytes = make_float_wav_bytes(samples);
+  TempFile file(wav_bytes.data(), wav_bytes.size());
+
+  // This should succeed without any issues
+  std::vector<float> audio = load_wav_audio_data(file.path());
+  ASSERT_EQ(audio.size(), samples.size());
+  EXPECT_FLOAT_EQ(audio[0], 0.5f);
+  EXPECT_FLOAT_EQ(audio[1], -0.5f);
 }

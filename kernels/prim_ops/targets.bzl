@@ -11,13 +11,13 @@ def define_common_targets():
     runtime.filegroup(
         name = "prim_ops_sources",
         srcs = ["register_prim_ops.cpp"],
-        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.filegroup(
         name = "selective_build_prim_ops.h",
         srcs = ["selective_build_prim_ops.h"],
-        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     for aten_mode in get_aten_mode_options():
@@ -28,10 +28,7 @@ def define_common_targets():
             srcs = ["et_copy_index.cpp"],
             # To allow for selective prim ops to depend on this library.
             # Used by selective_build.bzl
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_headers = ["et_copy_index.h"],
             deps = [
                 "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
@@ -48,10 +45,7 @@ def define_common_targets():
             srcs = ["et_view.cpp"],
             # To allow for selective prim ops to depend on this library.
             # Used by selective_build.bzl
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_headers = ["et_view.h"],
             deps = [
                 "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
@@ -66,10 +60,7 @@ def define_common_targets():
         runtime.cxx_library(
             name = "prim_ops_registry" + aten_suffix,
             srcs = ["register_prim_ops.cpp"],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             # @lint-ignore BUCKLINT link_whole, need this to register prim ops.
             link_whole = True,
             # prim ops are registered through a global table so the ctor needs to be allowed

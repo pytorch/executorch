@@ -1,0 +1,30 @@
+load("@fbcode//on_device_ai/Assistant/Jarvis/build:cxx_wrapper.bzl", "jarvis_wrapper")
+load("@fbsource//arvr/firmware/ar/build_defs:xtensa.bzl", "XTENSA_TEST_REMOTE_EXECUTION_ASIC")
+load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
+load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
+
+oncall("odai_jarvis")
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_add",
+    srcs = [
+        "test_op_add.cpp",
+    ],
+    compatible_backends = ["g3"],
+    labels = [ci.skip_target()],
+    remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
+    compiler_flags = [
+        "-Wno-ignored-attributes",
+    ],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/fusion_g3/operators:op_add",
+        "fbsource//xplat/executorch/backends/cadence/runtime:et_pal",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)

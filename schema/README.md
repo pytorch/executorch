@@ -4,6 +4,15 @@ ExecuTorch programs.
 
 The `scalar_type.fbs` file contains schema for scalar types.
 
+## Regenerating generated code
+
+Schema changes require regenerating the Python bindings in
+`exir/_serialize/generated/executorch_flatbuffer` and committing the updated files. From the repo root:
+
+```sh
+python exir/_serialize/generate_program.py
+```
+
 ## Rules to ensure forward/backward compatibility
 
 A serialized program never knows which version of the code will try to read it.

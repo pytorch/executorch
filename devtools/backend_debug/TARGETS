@@ -8,12 +8,7 @@ runtime.python_library(
         "__init__.py",
         "delegation_info.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "//executorch/exir/backend/...",
-        "//executorch/test/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "fbsource//third-party/pypi/pandas:pandas",
         "//caffe2:torch",

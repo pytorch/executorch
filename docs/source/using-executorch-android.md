@@ -178,9 +178,9 @@ Set environment variable EXECUTORCH_CMAKE_BUILD_TYPE to Release or Debug based o
 
 To use MediaTek backend, after installing and setting up the SDK, set NEURON_BUFFER_ALLOCATOR_LIB and NEURON_USDK_ADAPTER_LIB to the corresponding path.
 
-- __Using Qualcomm AI Engine Backend__
+- __Using Qualcomm AI Engine Backend (Dependencies)__
 
-To use Qualcomm AI Engine Backend, after installing and setting up the SDK, set QNN_SDK_ROOT to the corresponding path.
+To use Qualcomm AI Engine Backend, ensure your Android app configuration includes the [QNN Runtime Maven dependency](https://mvnrepository.com/artifact/com.qualcomm.qti/qnn-runtime), and after installing and setting up the SDK, set QNN_SDK_ROOT to the corresponding path.
 
 - __Using Vulkan Backend__
 

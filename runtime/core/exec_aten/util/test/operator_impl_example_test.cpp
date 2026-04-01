@@ -131,7 +131,7 @@ TEST(OperatorImplExampleTest, UnhandledDtypeDies) {
 
   // Adding the two boolean tensors should cause an assertion and kill the
   // test process.
-  ET_EXPECT_DEATH(add_tensors_op(a, b, out), "");
+  ET_EXPECT_DEATH(add_tensors_op(a, b, out), "Unhandled dtype");
 }
 
 TEST(OpAddOutKernelTest, MismatchedInputDimsDies) {

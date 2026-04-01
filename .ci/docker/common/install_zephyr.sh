@@ -2,6 +2,7 @@
 #!/bin/bash
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -82,6 +83,13 @@ install_prerequiresites() {
         rm -f kitware-archive.sh
     pip_install --no-cache-dir west
     pip_install pyelftools
+
+    # Zephyr SDK
+    wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.4/zephyr-sdk-0.17.4_linux-x86_64.tar.xz
+    tar -xf zephyr-sdk-0.17.4_linux-x86_64.tar.xz
+    rm -f zephyr-sdk-0.17.4_linux-x86_64.tar.xz*
+    # Save setup to later and this get symlinked in to another folder in the test in trunk.yml
+    #./zephyr-sdk-0.17.4/setup.sh -c -t arm-zephyr-eabi
 }
 
 install_prerequiresites

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -30,20 +30,20 @@ input_t3 = Tuple[
 class TestT5ForConditionalGeneration:
     # Adjust nbr below as we increase op support.
     ops_after_partitioner_FP = {
+        "executorch_exir_dialects_edge__ops_aten_index_Tensor": 2,
         "executorch_exir_dialects_edge__ops_aten_where_self": 2,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 5,
+        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 6,
         "torch.ops.higher_order.executorch_call_delegate": 2,
     }
 
     ops_after_partitioner_INT = {
-        "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 3,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 10,
+        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 7,
         "torch.ops.higher_order.executorch_call_delegate": 3,
     }
 
     ops_after_partitioner_vgf_no_quantize = {
-        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 4,
-        "torch.ops.higher_order.executorch_call_delegate": 2,
+        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 3,
+        "torch.ops.higher_order.executorch_call_delegate": 1,
     }
 
     ops_after_partitioner_vgf_quantize = ops_after_partitioner_vgf_no_quantize
@@ -52,7 +52,7 @@ class TestT5ForConditionalGeneration:
         self,
         prompt: str,
     ):
-        tokenizer = AutoTokenizer.from_pretrained("google-t5/t5-small")
+        tokenizer = AutoTokenizer.from_pretrained("google-t5/t5-small")  # nosec
         enc = tokenizer(prompt, return_tensors="pt")
         input_ids = enc.input_ids  # (1, src_len)
         attention_mask = enc.attention_mask  # (1, src_len)
@@ -81,7 +81,7 @@ class TestT5ForConditionalGeneration:
 
 
 @pytest.mark.slow
-def test_T5ForConditionalGeneration_tosa_FP():
+def test_t5_for_conditional_generation_tosa_FP():
     prompt = "summarize: studies have shown that owning a dog is good for you"
     model, inputs = TestT5ForConditionalGeneration().prepare_model_and_inputs(prompt)
     with torch.no_grad():
@@ -104,7 +104,7 @@ def test_T5ForConditionalGeneration_tosa_FP():
 
 
 @pytest.mark.slow
-def test_T5ForConditionalGeneration_tosa_INT():
+def test_t5_for_conditional_generation_tosa_INT():
     prompt = "summarize: studies have shown that owning a dog is good for you"
     model, inputs = TestT5ForConditionalGeneration().prepare_model_and_inputs(prompt)
     with torch.no_grad():
@@ -114,7 +114,8 @@ def test_T5ForConditionalGeneration_tosa_INT():
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
-            atol=20,  # TODO: MLETORCH-1703: Reduce the tolerance of quantized T5ForConditionalGeneration
+            atol=14,  # TODO: MLETORCH-1703: Reduce the tolerance of quantized T5ForConditionalGeneration
+            frobenius_threshold=0.3,
         )
         pipeline.change_args(
             "check_count.exir",
@@ -125,7 +126,7 @@ def test_T5ForConditionalGeneration_tosa_INT():
 
 @pytest.mark.slow
 @common.SkipIfNoModelConverter
-def test_T5ForConditionalGeneration_vgf_no_quant():
+def test_t5_for_conditional_generation_vgf_no_quant():
     prompt = "summarize: studies have shown that owning a dog is good for you"
     model, inputs = TestT5ForConditionalGeneration().prepare_model_and_inputs(prompt)
     with torch.no_grad():
@@ -151,7 +152,7 @@ def test_T5ForConditionalGeneration_vgf_no_quant():
 
 @pytest.mark.slow
 @common.SkipIfNoModelConverter
-def test_T5ForConditionalGeneration_vgf_quant():
+def test_t5_for_conditional_generation_vgf_quant():
     prompt = "summarize: studies have shown that owning a dog is good for you"
     model, inputs = TestT5ForConditionalGeneration().prepare_model_and_inputs(prompt)
     with torch.no_grad():
@@ -161,7 +162,7 @@ def test_T5ForConditionalGeneration_vgf_quant():
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
-            atol=20,  # TODO: MLETORCH-1703: Reduce the tolerance of quantized T5ForConditionalGeneration
+            atol=14,  # TODO: MLETORCH-1703: Reduce the tolerance of quantized T5ForConditionalGeneration
             quantize=True,
         )
         pipeline.change_args(

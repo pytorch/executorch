@@ -1,0 +1,31 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+source "Kconfig.zephyr"
+
+menu "ExecuTorch Zephyr sample configuration"
+
+config EXECUTORCH_METHOD_ALLOCATOR_POOL_SIZE
+	int "Method allocator pool size in bytes"
+	default 16384
+	depends on EXECUTORCH
+	help
+	  Size of the method allocator pool in bytes. This memory is used
+	  for allocating ExecuTorch method instances and their metadata.
+	  Default is 16KB which should be sufficient for most small models.
+	  Larger models may require more memory.
+
+config EXECUTORCH_TEMP_ALLOCATOR_POOL_SIZE
+	int "Temporary allocator pool size in bytes"
+	default 2048
+	depends on EXECUTORCH
+	help
+	  Size of the temporary allocator pool in bytes. This memory is used
+	  for temporary allocations during model execution such as intermediate
+	  tensor calculations. Default is 2KB which should be sufficient for
+	  simple operations. Complex models may require more memory.
+
+endmenu

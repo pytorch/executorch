@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,9 +18,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 
 input_t1 = Tuple[torch.Tensor, int]
 aten_op = "torch.ops.aten.cumsum.default"
-
-"""
-Tests the aten.cumsum operator by decomposing it into a convolution and
+"""Tests the aten.cumsum operator by decomposing it into a convolution and
 verifying results across various dims and pipelines.
 """
 

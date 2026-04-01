@@ -1,0 +1,53 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("odai_jarvis")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "utils",
+    srcs = [
+        "utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "patterns",
+    srcs = [
+        "patterns.py",
+    ],
+    typing = True,
+    deps = [
+        ":utils",
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "quantizer",
+    srcs = [
+        "quantizer.py",
+    ],
+    typing = True,
+    deps = [
+        ":patterns",
+        ":utils",
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "fusion_pass",
+    srcs = [
+        "fusion_pass.py",
+    ],
+    deps = [
+        ":patterns",
+        ":utils",
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+    ],
+)

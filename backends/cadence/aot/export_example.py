@@ -1,4 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2026 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -41,7 +42,7 @@ def export_model(
     example_inputs: Tuple[Any, ...],
     file_name: str = "CadenceDemoModel",
     working_dir: Optional[str] = None,
-):
+) -> ExecutorchProgramManager:
     # create work directory for outputs and model binary
     if working_dir is None:
         working_dir = tempfile.mkdtemp(dir="/tmp")
@@ -93,6 +94,8 @@ def export_model(
     logging.debug(
         f"Executorch bundled program buffer saved to {file_name} is {len(buffer)} total bytes"
     )
+
+    return exec_prog
 
 
 def export_and_run_model(

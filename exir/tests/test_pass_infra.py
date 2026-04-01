@@ -8,12 +8,12 @@
 
 import unittest
 
-import executorch.exir as exir
-
 import torch
+from executorch.exir import to_edge
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import ScalarToTensorPass
 from executorch.exir.passes.pass_registry import PassRegistry
+from torch.export import export
 from torch.fx.passes.infra.pass_base import PassBase
 
 
@@ -99,15 +99,16 @@ class TestPassInfra(unittest.TestCase):
                 if node.op == "call_function" and node.target == torch.mul:
                     node.target = torch.div
 
-        def f(x: torch.Tensor) -> torch.Tensor:
-            y = torch.add(x, x)
-            z = torch.add(y, x)
-            return z
+        class AddModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = torch.add(x, x)
+                z = torch.add(y, x)
+                return z
 
         f = (
-            exir.capture(f, (torch.randn(10),), exir.CaptureConfig())
-            .to_edge()
-            .exported_program.graph_module
+            to_edge(export(AddModule(), (torch.randn(10),), strict=True))
+            .exported_program()
+            .graph_module
         )
         pm = PassManager(passes=[replace_add_with_mul, replace_mul_with_div])
         self.assertEqual(len(pm.passes), 2)
@@ -144,15 +145,16 @@ class TestPassInfra(unittest.TestCase):
                 new_node = gm.graph.call_module("foo", (torch.randn(2),))
                 node.replace_all_uses_with(new_node)
 
-        def f(x: torch.Tensor) -> torch.Tensor:
-            y = torch.add(x, x)
-            z = torch.add(y, x)
-            return z
+        class AddModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = torch.add(x, x)
+                z = torch.add(y, x)
+                return z
 
         traced_f1 = (
-            exir.capture(f, (torch.randn(10),), exir.CaptureConfig())
-            .to_edge()
-            .exported_program.graph_module
+            to_edge(export(AddModule(), (torch.randn(10),), strict=True))
+            .exported_program()
+            .graph_module
         )
         pm1 = PassManager(
             passes=[introduce_call_method], run_checks_after_each_pass=True
@@ -162,13 +164,12 @@ class TestPassInfra(unittest.TestCase):
             pm1(traced_f1)
 
     def test_pass_metadata(self) -> None:
-        def f(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-            return x + y
+        class AddModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                return x + y
 
         sample_inputs = (torch.randn(1, 3), torch.randn(1, 3))
-        gm = exir.capture(
-            f, sample_inputs, exir.CaptureConfig()
-        ).exported_program.graph_module
+        gm = export(AddModule(), sample_inputs, strict=True).module()
 
         pass_result = ScalarToTensorPass()(gm)
         self.assertIsNotNone(pass_result)

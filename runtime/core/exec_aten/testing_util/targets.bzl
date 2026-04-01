@@ -16,26 +16,7 @@ def define_common_targets():
                 "tensor_util.h",
                 "tensor_factory.h",
             ],
-            visibility = [
-                # Be strict with the visibility so that operator implementations
-                # under //executorch/kernels/... can't depend on this test-only
-                # target. It's ok to add any //executorch/*/test/... path to this
-                # list.
-                "//executorch/runtime/core/exec_aten/util/test/...",
-                "//executorch/runtime/core/exec_aten/testing_util/test/...",
-                "//executorch/runtime/core/portable_type/test/...",
-                "//executorch/kernels/prim_ops/test/...",
-                "//executorch/kernels/portable/test/...",
-                "//executorch/kernels/portable/cpu/util/test/...",
-                "//executorch/kernels/quantized/test/...",
-                "//executorch/kernels/optimized/test/...",
-                "//executorch/kernels/test/...",
-                "//executorch/kernels/fb/custom_ops/...",
-                "//executorch/runtime/core/test/...",
-                "//executorch/test/...",
-                "//executorch/extension/kernel_util/test/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             compiler_flags = ["-Wno-unneeded-internal-declaration"],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             exported_deps = [

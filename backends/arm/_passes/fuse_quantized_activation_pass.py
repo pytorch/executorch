@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -29,7 +29,9 @@ class FuseQuantizedActivationPass(ArmPass):
 
     @staticmethod
     def _is_fuseable_quantized_activation(node: Node):
-        """Fuse activations that have a 0 lower bound and quantized with a qmin zero-point"""
+        """Fuse activations that have a 0 lower bound and quantized with a qmin
+        zero-point.
+        """
         is_fuseable = node.target == exir_ops.edge.aten.relu.default
         if node.target == exir_ops.edge.aten.hardtanh.default:
             min_val = node.args[1]

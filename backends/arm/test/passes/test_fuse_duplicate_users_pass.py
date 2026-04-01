@@ -56,7 +56,7 @@ modules: Dict[str, ModuleWithOps] = {
 
 
 @common.parametrize("module", modules)
-def test_fuse_duplicate_ops_FP(module: ModuleWithOps):
+def test_fuse_duplicate_users_tosa_FP(module: ModuleWithOps):
     pipeline = PassPipeline[input_t](
         module=module,
         test_data=(torch.ones(1, 1, 1, 1),),

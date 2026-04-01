@@ -21,10 +21,7 @@ def define_common_targets():
             "-Wno-global-constructors",
             "-Wno-unused-function",
         ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/extension/kernel_util:kernel_util",
             "//executorch/extension/tensor:tensor",

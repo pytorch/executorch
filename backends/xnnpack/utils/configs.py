@@ -4,10 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import List, Optional
+from typing import List
 
 import executorch.exir as exir
-from executorch.exir import CaptureConfig
 from executorch.exir.pass_manager import PassType
 
 
@@ -33,17 +32,3 @@ def get_xnnpack_executorch_backend_config(
         passes=additional_passes,
         extract_delegate_segments=True,
     )
-
-
-def get_xnnpack_capture_config(
-    dynamic_shape=False,
-    enable_aot: Optional[bool] = None,
-    unlift: Optional[bool] = None,
-):
-    if enable_aot is None:
-        return CaptureConfig(enable_dynamic_shape=dynamic_shape)
-    else:
-        unlift = unlift if unlift is not None else enable_aot
-        return CaptureConfig(
-            enable_dynamic_shape=dynamic_shape, enable_aot=enable_aot, _unlift=unlift
-        )

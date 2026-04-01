@@ -131,7 +131,7 @@ def quantize(  # noqa C901
         if verbose:
             print("quantized model:", model)
         return model
-    elif qmode == "8da4w":
+    elif qmode in ("8da4w", "8da8w"):
         if group_size is None:
             # TODO: Default value for group size for 8da4w. Need this here for refactor, will clean this up.
             group_size = 128
@@ -140,38 +140,28 @@ def quantize(  # noqa C901
             Int8DynamicActivationIntxWeightConfig,
             quantize_,
         )
-        from torchao.quantization.granularity import PerGroup
+        from torchao.quantization.granularity import PerAxis, PerGroup
         from torchao.utils import unwrap_tensor_subclass
 
         def filter_fn(m, fqn):
-            # Check if it's a regular nn.Linear
-            is_linear = isinstance(m, nn.Linear)
+            if not isinstance(m, nn.Linear):
+                return False
+            parts = fqn.split(".")
+            if "lora_a" in parts or "lora_b" in parts:
+                return False
+            if group_size == 0:
+                return True
+            return m.weight.shape[1] % group_size == 0
 
-            # Check if it's a LoRALinear (which has a base weight parameter to quantize)
-            is_lora_linear = False
-            try:
-                from executorch.examples.models.llama.lora import LoRALinear
-
-                is_lora_linear = isinstance(m, LoRALinear)
-            except ImportError:
-                pass
-
-            # Check if the weight shape is compatible with group size
-            has_shape_compatible_with_group_size = False
-            if is_linear or is_lora_linear:
-                has_shape_compatible_with_group_size = (
-                    m.weight.shape[1] % group_size == 0
-                )
-            return (
-                is_linear or is_lora_linear
-            ) and has_shape_compatible_with_group_size
-
+        weight_dtype = torch.int4 if qmode == "8da4w" else torch.int8
         quantize_(
             model,
             Int8DynamicActivationIntxWeightConfig(
                 # pyre-ignore[16]
-                weight_dtype=torch.int4,
-                weight_granularity=PerGroup(group_size),
+                weight_dtype=weight_dtype,
+                weight_granularity=(
+                    PerAxis(0) if group_size == 0 else PerGroup(group_size)
+                ),
                 # pyre-ignore[6]
                 intx_choose_qparams_algorithm=(
                     "hqq_scale_only" if quantize_with_hqq else "affine"

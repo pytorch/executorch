@@ -18,5 +18,9 @@ view_convert_buffer:
         - parameter_values: [uint8, float]
         - parameter_values: [uint8, half]
         - parameter_values: [uint8, int32]
+        - parameter_values: [float, int32]
+        - parameter_values: [float, half]
+        - parameter_values: [half, float]
+        - parameter_values: [half, int32]
   shader_variants:
     - NAME: view_convert_buffer

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -37,19 +37,19 @@ def _get_decomposition(op) -> tuple:
 
 
 class DecomposeAdaptiveAvgPool2dPass(ArmPass):
-    """
-    Decomposes AdaptiveAvgPool2d into AvgPool2d operations.
+    """Decomposes AdaptiveAvgPool2d into AvgPool2d operations.
 
     An input tensor of shape (N, C, H, W) is transformed into an output tensor
     of shape (N, C, output_size_h, output_size_w).
 
     The output is of size output_size_h x output_size_w for any input.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeAvgPool2dPass}
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
-        if op not in (edge_ops + aten_ops):
+        if op not in (edge_ops + aten_ops) or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta, updated)
 
         avg_pool2d_op, slice_op, cat_op = _get_decomposition(op)
@@ -98,15 +98,20 @@ class DecomposeAdaptiveAvgPool2dPass(ArmPass):
                     avg_pool2d_op, pool_args, kwargs, meta, True
                 )
                 row.append(pooled)
-
-            # Concatenate row results along width (dim=3)
-            row_tensor = super().call_operator(
-                cat_op, (row, 3), kwargs, meta_with_no_qparams, True
-            )
+            # Concatenate row results along width (dim=3) if more than one.
+            if len(row) > 1:
+                row_tensor = super().call_operator(
+                    cat_op, (row, 3), kwargs, meta_with_no_qparams, True
+                )
+            else:
+                row_tensor = row[0]
             res.append(row_tensor)
 
-        # Concatenate all rows along height (dim=2)
-        out = super().call_operator(
-            cat_op, (res, 2), kwargs, meta_with_no_qparams, True
-        )
+        # Concatenate all rows along height (dim=2) if more than one.
+        if len(res) > 1:
+            out = super().call_operator(
+                cat_op, (res, 2), kwargs, meta_with_no_qparams, True
+            )
+        else:
+            out = res[0]
         return out

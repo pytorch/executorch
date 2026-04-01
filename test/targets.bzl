@@ -45,7 +45,5 @@ def define_common_targets():
 
     runtime.export_file(
         name = "size_test.cpp",
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )

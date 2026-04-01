@@ -8,6 +8,9 @@
 
 #version 450 core
 
+${define_required_extensions(IO_STORAGE, DTYPE)}
+${define_required_extensions("buffer", DTYPE)}
+
 #define PRECISION ${PRECISION}
 #define VEC4_T ${texel_load_type(DTYPE, IO_STORAGE)}
 #define T ${texel_load_component_type(DTYPE, IO_STORAGE)}
@@ -27,8 +30,6 @@ $if WEIGHT_STORAGE == "buffer":
 #define TILE_M ${TILE_M4 * 4}
 #define TILE_K ${TILE_K4 * 4}
 #define TILE_N ${TILE_N8 * 8}
-
-${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
@@ -107,6 +108,12 @@ void main() {
           weight_scales_tile,
           weight_zeros_tile);
     }
+  }
+
+  if (apply_bias > 0) {
+    FPPerOutChannelParams bias_tile;
+    load_bias_tile(bias_tile, n4);
+    add_bias_to_out_tile(out_tile, bias_tile);
   }
 
   write_output_tile_with_checks(out_tile, n4, m, N4, M);

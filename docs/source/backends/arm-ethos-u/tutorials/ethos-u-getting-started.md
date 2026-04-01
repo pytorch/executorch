@@ -78,7 +78,7 @@ example_inputs = (torch.ones(1,1,1,1),torch.ones(1,1,1,1))
 model = Add()
 model = model.eval()
 exported_program = torch.export.export(model, example_inputs)
-graph_module = exported_program.graph_module
+graph_module = exported_program.module(check_guards=False)
 
 
 from executorch.backends.arm.ethosu import EthosUCompileSpec
@@ -95,7 +95,6 @@ compile_spec = EthosUCompileSpec(
             target="ethos-u55-128",
             system_config="Ethos_U55_High_End_Embedded",
             memory_mode="Shared_Sram",
-            extra_flags=["--output-format=raw", "--debug-force-regor"]
         )
 
 # Create and configure quantizer to use a symmetric quantization config globally on all nodes

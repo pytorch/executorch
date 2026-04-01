@@ -7,20 +7,24 @@
  */
 
 #include <cuda_runtime.h>
-#include <executorch/backends/aoti/common_shims.h>
-#include <executorch/backends/aoti/utils.h>
+#include <executorch/backends/aoti/slim/c10/core/DeviceType.h>
+#include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
 #include <executorch/backends/cuda/runtime/shims/int4mm.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
-#include <executorch/backends/cuda/runtime/shims/tensor_attribute.h>
-#include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/platform.h>
 #include <gtest/gtest.h>
 #include <vector>
 
-using namespace executorch::backends::cuda;
-using namespace executorch::backends::aoti;
-using namespace executorch::runtime;
+// Use explicit types to avoid ambiguity between different Tensor typedefs
+using executorch::backends::cuda::aoti_torch_cuda__weight_int4pack_mm;
+using executorch::backends::cuda::aoti_torch_empty_strided;
+using executorch::backends::cuda::AOTITorchError;
+using executorch::runtime::Error;
+namespace slim_c10 = executorch::backends::aoti::slim::c10;
+
+// Tensor type definition using SlimTensor
+using Tensor = executorch::backends::aoti::slim::SlimTensor;
 
 // Test fixture for aoti_torch_cuda__weight_int4pack_mm tests
 class AOTITorchInt4MMTest : public ::testing::Test {
@@ -44,20 +48,6 @@ class AOTITorchInt4MMTest : public ::testing::Test {
       GTEST_SKIP() << "GPU compute capability " << compute_capability
                    << " < 80 (Ampere+), int4mm requires sm_80+";
     }
-
-    // Clean up any existing cached metadata before each test
-    cleanup_tensor_metadata();
-
-    // Clear any remaining tensors from previous tests
-    clear_all_tensors();
-  }
-
-  void TearDown() override {
-    // Clean up metadata
-    cleanup_tensor_metadata();
-
-    // Clear the global tensor storage using the provided function
-    clear_all_tensors();
   }
 
   // Helper to create a BFloat16 tensor
@@ -68,8 +58,8 @@ class AOTITorchInt4MMTest : public ::testing::Test {
         sizes.size(),
         sizes.data(),
         nullptr, // default strides
-        static_cast<int32_t>(SupportedDTypes::BFLOAT16),
-        static_cast<int32_t>(SupportedDevices::CUDA),
+        static_cast<int32_t>(slim_c10::ScalarType::BFloat16),
+        static_cast<int32_t>(slim_c10::DeviceType::CUDA),
         0, // device index
         &tensor);
 
@@ -84,8 +74,8 @@ class AOTITorchInt4MMTest : public ::testing::Test {
         sizes.size(),
         sizes.data(),
         nullptr, // default strides
-        static_cast<int32_t>(SupportedDTypes::INT32),
-        static_cast<int32_t>(SupportedDevices::CUDA),
+        static_cast<int32_t>(slim_c10::ScalarType::Int),
+        static_cast<int32_t>(slim_c10::DeviceType::CUDA),
         0, // device index
         &tensor);
 

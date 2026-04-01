@@ -40,6 +40,7 @@ class ActivationFusionPass(ExportPass):
     FUSE_OPS = {
         exir_ops.edge.aten.linear.default,
         exir_ops.edge.aten.convolution.default,
+        exir_ops.edge.aten.add.Tensor,
     }
 
     def _get_validated_qparams(self, node, input_node):
@@ -85,7 +86,7 @@ class ActivationFusionPass(ExportPass):
                     else qmax
                 )
             case _:
-                raise RuntimeError("Unexpected target {node.target}.")
+                raise RuntimeError(f"Unexpected target {node.target}.")
 
         # If the minimal quantized value is larger than the qmin, it means that the quantized range contains
         # invalid values [qmin, ..., quantized_min_val-1], indicating bad quantization parameters.

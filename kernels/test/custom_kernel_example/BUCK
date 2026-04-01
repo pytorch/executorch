@@ -1,0 +1,19 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load(":targets.bzl", "define_common_targets")
+load(":tests.bzl", "define_common_test_targets")
+
+oncall("executorch")
+
+non_fbcode_target(_kind = define_common_targets,)
+
+non_fbcode_target(_kind = define_common_test_targets,)
+
+# !!!! fbcode/executorch/kernels/test/custom_kernel_example/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load(":targets.bzl", "define_common_targets")
+load(":tests.bzl", "define_common_test_targets")
+
+
+fbcode_target(_kind = define_common_targets,)
+
+fbcode_target(_kind = define_common_test_targets,)

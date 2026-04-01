@@ -1,0 +1,69 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain xplat-only targets.
+
+load(":targets.bzl", "define_common_targets")
+
+
+non_fbcode_target(_kind = define_common_targets,)
+
+# !!!! fbcode/executorch/kernels/test/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load(":targets.bzl", "define_common_targets")
+
+
+fbcode_target(_kind = define_common_targets,)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_bitwise_shift",
+    srcs = ["test_bitwise_shift.py"],
+    preload_deps = [
+        "//executorch/kernels/portable:custom_ops_generated_lib",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/extension/export_util:export_util",
+        "//executorch/runtime:runtime",
+    ],
+    env = {
+        "PYTORCH_DISABLE_JUSTKNOBS": "1",
+    },
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "gen_supported_features_test",
+    srcs = ["gen_supported_features_test.py"],
+    deps = [
+        "fbsource//third-party/pypi/pyyaml:pyyaml",
+        ":gen_supported_features_lib",
+    ],
+)
+
+fbcode_target(_kind = python_binary,
+    name = "test_case_gen",
+    srcs = [
+        "test_case_gen.py",
+    ],
+    main_function = "executorch.kernels.test.test_case_gen.main",
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = python_binary,
+    name = "summarize_supported_features",
+    srcs = [
+        "summarize_supported_features.py",
+    ],
+    main_function = "executorch.kernels.test.summarize_supported_features.make_md_table",
+    deps = [
+        "fbsource//third-party/pypi/pyyaml:pyyaml",
+    ],
+)

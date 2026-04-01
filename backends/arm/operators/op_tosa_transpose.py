@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -24,15 +24,14 @@ from executorch.backends.arm.tosa.mapping import TosaArg
 
 @register_node_visitor
 class TransposeVisitor(NodeVisitor):
-    """
-    This node visitor targets the tosa::TRANSPOSE op defined in the
-    TOSA backend dialect. Used when switching between tosa_dim_orders.
-    Inserts a TOSA TRANSPOSE.
+    """Lower the TOSA TRANSPOSE op when switching dim orders.
+
+    Targets the tosa::TRANSPOSE op in the TOSA backend dialect and inserts a
+    TOSA TRANSPOSE.
+
     """
 
     target = "tosa.TRANSPOSE.default"
-
-    tosa_specs = NodeVisitor.tosa_specs
 
     def define_node(
         self,
@@ -53,8 +52,9 @@ class TransposeVisitor(NodeVisitor):
                 ts.DType.INT32,
                 ts.DType.FP16,
                 ts.DType.FP32,
+                ts.DType.BF16,
             ],
-            output.tosa_spec,
+            self.tosa_spec,
         )
 
         output_rank = len(output.shape)

@@ -1,6 +1,6 @@
 # AOTI Common Library
 
-This directory contains **common library components** for AOTI (Ahead-of-Time Inference) driven backends in ExecutorTorch, **not a standalone backend**.
+This directory contains **common library components** for AOTI (Ahead-of-Time Inference) driven backends in ExecuTorch, **not a standalone backend**.
 
 ## Purpose
 

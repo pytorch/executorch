@@ -23,6 +23,7 @@ def define_common_targets():
             "//executorch/runtime/executor:program",
             "//executorch/devtools/etdump:etdump_flatcc",
             "//executorch/devtools/bundled_program:runtime",
+            "//executorch/kernels/quantized:generated_lib",
             "//executorch/extension/data_loader:buffer_data_loader",
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/extension/tensor:tensor",

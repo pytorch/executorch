@@ -1,15 +1,15 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-"""
-Check log files for memory metrics and compare them against thresholds.
+"""Check log files for memory metrics and compare them against thresholds.
 
 Usage example:
   python3 test_memory_allocator_log.py \
     --log path/to/log.txt \
     --require "Total SRAM used" "<= 310 KiB" \
     --require "method_allocator_input" "<= 4 B"
+
 """
 
 import argparse

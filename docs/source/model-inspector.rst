@@ -17,7 +17,7 @@ APIs:
 * By accessing the `public attributes <#inspector-attributes>`__ of the ``Inspector``, ``EventBlock``, and ``Event`` classes.
 * By using a `CLI <#cli>`__ tool for basic functionalities.
 
-Please refer to the `e2e use case doc <tutorials/devtools-integration-tutorial.html>`__ get an understanding of how to use these in a real world example.
+Please refer to the `e2e use case doc <tutorials/devtools-integration-tutorial.html>`__ to get an understanding of how to use these for profiling, or the `debugging tutorial <tutorials/devtools-debugging-tutorial.html>`__ for debugging numerical discrepancies.
 
 
 Inspector Methods

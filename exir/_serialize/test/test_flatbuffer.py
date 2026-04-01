@@ -1,6 +1,7 @@
 #!/usr/bin/env fbpython
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -76,6 +77,7 @@ class TestResourceFiles(unittest.TestCase):
 SCHEMA_FILES: Dict[str, bytes] = {
     "program.fbs": b"\n".join(
         [
+            b'file_identifier "ET12";',
             b"table Program {",
             # Space after the colon.
             b"  tensor_data: [ubyte] (force_align: 8); // @executorch-tensor-alignment",
@@ -146,6 +148,7 @@ class TestPrepareSchema(unittest.TestCase):
                 read_file(out_dir, "program.fbs"),
                 b"\n".join(
                     [
+                        b'file_identifier "ET12";',
                         b"table Program {",
                         # Now 128:
                         b"  tensor_data: [ubyte] (force_align: 128); // @executorch-tensor-alignment",
@@ -182,6 +185,7 @@ class TestPrepareSchema(unittest.TestCase):
                 read_file(out_dir, "program.fbs"),
                 b"\n".join(
                     [
+                        b'file_identifier "ET12";',
                         b"table Program {",
                         b"  tensor_data: [ubyte] (force_align: 8); // @executorch-tensor-alignment",
                         # Now 256:
@@ -221,6 +225,7 @@ class TestPrepareSchema(unittest.TestCase):
                 read_file(out_dir, "program.fbs"),
                 b"\n".join(
                     [
+                        b'file_identifier "ET12";',
                         b"table Program {",
                         # Now 1:
                         b"  tensor_data: [ubyte] (force_align: 1); // @executorch-tensor-alignment",

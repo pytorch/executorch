@@ -24,8 +24,7 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
     ComputeGraph& graph,
     const ValueRef dst,
     const vkapi::ScalarType staging_dtype,
-    bool int8_buffer_enabled,
-    bool push_constant_variant) {
+    bool int8_buffer_enabled) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
@@ -35,9 +34,6 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
   if (is_bitw8(dst_dtype) && dst_storage_type != utils::kBuffer &&
       !int8_buffer_enabled) {
     kernel_name = "nchw_to_bitw8_image_nobitw8buffer";
-    if (!push_constant_variant) {
-      kernel_name += "_no_pc";
-    }
     add_storage_type_suffix(kernel_name, dst_storage_type);
     add_dtype_suffix(kernel_name, dst_dtype);
     return VK_KERNEL_FROM_STR(kernel_name);
@@ -51,9 +47,6 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
   }
 
   kernel_name = "nchw_to_image";
-  if (!push_constant_variant) {
-    kernel_name += "_no_pc";
-  }
   add_storage_type_suffix(kernel_name, dst_storage_type);
   add_dtype_suffix(kernel_name, dst_dtype);
   add_dtype_suffix(kernel_name, staging_dtype);
@@ -65,8 +58,7 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
     ComputeGraph& graph,
     const ValueRef src,
     const vkapi::ScalarType staging_dtype,
-    bool int8_buffer_enabled,
-    bool push_constant_variant) {
+    bool int8_buffer_enabled) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
@@ -76,9 +68,6 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
   if (is_bitw8(src_dtype) && src_storage_type != utils::kBuffer &&
       !int8_buffer_enabled) {
     kernel_name = "bitw8_image_to_nchw_nobitw8buffer";
-    if (!push_constant_variant) {
-      kernel_name += "_no_pc";
-    }
     add_storage_type_suffix(kernel_name, src_storage_type);
     add_dtype_suffix(kernel_name, src_dtype);
     return VK_KERNEL_FROM_STR(kernel_name);
@@ -92,9 +81,6 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
   }
 
   kernel_name = "image_to_nchw";
-  if (!push_constant_variant) {
-    kernel_name += "_no_pc";
-  }
   add_storage_type_suffix(kernel_name, src_storage_type);
   add_dtype_suffix(kernel_name, src_dtype);
   add_dtype_suffix(kernel_name, staging_dtype);

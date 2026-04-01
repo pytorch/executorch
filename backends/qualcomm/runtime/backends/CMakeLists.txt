@@ -51,6 +51,15 @@ set(HOST_ARCHITECTURE_HTP
 )
 set(HOST_ARCHITECTURE_IR ${CMAKE_CURRENT_LIST_DIR}/ir/${CMAKE_SYSTEM_PROCESSOR})
 
+set(platform target)
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES x86_64)
+  set(platform host)
+endif()
+
+set(HOST_ARCHITECTURE_GPU ${CMAKE_CURRENT_LIST_DIR}/gpu/${platform})
+set(HOST_ARCHITECTURE_HTP ${CMAKE_CURRENT_LIST_DIR}/htp/${platform})
+set(HOST_ARCHITECTURE_IR ${CMAKE_CURRENT_LIST_DIR}/ir/${platform})
+
 # qnn_device
 target_sources(
   qnn_device

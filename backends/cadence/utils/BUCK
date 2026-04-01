@@ -1,0 +1,6 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("targets.bzl", "define_common_targets")
+
+oncall("odai_jarvis")
+
+fbcode_target(_kind = define_common_targets,)

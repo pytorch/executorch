@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,7 +18,6 @@
 
 from transformers import CLIPTextConfig, T5Config
 
-
 """
 This file defines test configs used to initialize Stable Diffusion module tests.
 Module tests in the same directory will import these configs.
@@ -35,7 +34,7 @@ root directory of this source tree.
 
 
 # Source: https://github.com/huggingface/diffusers/blob/v0.33.1/tests/pipelines/stable_diffusion_3/test_pipeline_stable_diffusion_3.py#L56
-CLIP_text_encoder_config = CLIPTextConfig(
+CLIP_text_encoder_config = CLIPTextConfig(  # type: ignore[call-arg]
     bos_token_id=0,
     eos_token_id=2,
     hidden_size=32,
@@ -52,7 +51,7 @@ CLIP_text_encoder_config = CLIPTextConfig(
 
 # Source: https://github.com/huggingface/diffusers/blob/v0.33.1/tests/pipelines/stable_diffusion_3/test_pipeline_stable_diffusion_3.py#L76
 # Exported from: T5EncoderModel.from_pretrained("hf-internal-testing/tiny-random-t5").config
-T5_encoder_config = T5Config(
+T5_encoder_config = T5Config(  # type: ignore[call-arg]
     bos_token_id=0,
     classifier_dropout=0.0,
     d_ff=37,

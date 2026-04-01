@@ -1,0 +1,52 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "qwen3-5-moe-base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/qwen3_5_moe",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
+            }
+        },
+        {
+            "name": "qwen3-5-moe-cuda",
+            "displayName": "Qwen3.5 MoE runner (CUDA)",
+            "inherits": ["qwen3-5-moe-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_CUDA": "ON"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "qwen3-5-moe-cuda",
+            "displayName": "Build Qwen3.5 MoE runner (CUDA)",
+            "configurePreset": "qwen3-5-moe-cuda",
+            "targets": ["qwen3_5_moe_runner"]
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "qwen3-5-moe-cuda",
+            "displayName": "Configure and build Qwen3.5 MoE runner (CUDA)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "qwen3-5-moe-cuda"
+                },
+                {
+                    "type": "build",
+                    "name": "qwen3-5-moe-cuda"
+                }
+            ]
+        }
+    ]
+}

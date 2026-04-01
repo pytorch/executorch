@@ -1,11 +1,11 @@
 # Introduction
 
-As you have seen in in the [Arm&reg; Ethos&trade;-U NPU backend tutorial](../../docs/source/backends-arm-ethos-u.md), ExecuTorch has two distinct parts:
+As you have seen in the [Arm&reg; Ethos&trade;-U NPU backend tutorial](../../docs/source/backends/arm-ethos-u/tutorials/ethos-u-getting-started.md), ExecuTorch has two distinct parts:
 - Ahead-of-time(AoT) compile flow
 - Ethos-U on-device runtime
 
 In the porting guide, we guide you through the main steps to port your SoC with an Ethos-U to the ExecuTorch Ethos-U backend in order to leverage the ExecuTorch Ethos-U enablement. We assume
-you are familiar with the concepts introduced in `backends-arm-ethos-u.md`, you have already generated a pte in the AoT flow and want to deploy the ML model on device.
+you are familiar with the concepts introduced in `backends-arm-ethos-u-overview.md`, you have already generated a pte in the AoT flow and want to deploy the ML model on device.
 Fundamentally, there are two big approaches you can take in porting a SoC with an Ethos-U NPU towards the ExecuTorch runtime.
 - You can use the enablement we have done in ExecuTorch for the Arm&reg; Corstone&trade;-300(Arm&reg; Cortex&reg;-M55 and Arm&reg; Ethos&trade;-U55 reference design) and
 Arm&reg; Corstone&trade;-320(Arm&reg; Cortex&reg;-M85 and Arm&reg; Ethos&trade;-U85 reference design) and migrate from the Corstone platform towards a new platform.

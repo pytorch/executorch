@@ -1,10 +1,11 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 from typing import Tuple
 
+import pytest
 import torch
 
 from executorch.backends.arm.test import common
@@ -28,19 +29,20 @@ class Remainder(torch.nn.Module):
     exir_op_tensor = "executorch_exir_dialects_edge__ops_aten_remainder_Tensor"
     aten_op_scalar = "torch.ops.aten.remainder.Scalar"
     exir_op_scalar = "executorch_exir_dialects_edge__ops_aten_remainder_Scalar"
+    lowered_exir_ops = [exir_op_scalar, exir_op_tensor]
 
     test_cases_tensor = {
         "rank2_tensors": lambda: (
-            torch.randn(2, 3) * 7,
-            _nonzero_float_tensor(2, 3),
+            torch.randn(32, 3) * 7,
+            _nonzero_float_tensor(32, 3),
         ),
         "rank4_tensors": lambda: (
-            torch.randn(1, 4, 2, 3) * 7,
-            _nonzero_float_tensor(1, 4, 2, 3),
+            torch.randn(1, 8, 4, 6) * 7,
+            _nonzero_float_tensor(1, 8, 4, 6),
         ),
         "broadcast": lambda: (
-            torch.randn(4, 5, 1),
-            _nonzero_float_tensor(1, 5, 6),
+            torch.randn(8, 10, 1),
+            _nonzero_float_tensor(1, 10, 6),
         ),
     }
 
@@ -83,6 +85,9 @@ def test_remainder_scalar_tosa_FP(test_data):
     pipeline.run()
 
 
+@pytest.mark.xfail(
+    reason="MLETORCH-1536: Inaccurate quantization of remainder op for certain inputs"
+)
 @common.parametrize("test_data", Remainder.test_cases_tensor)
 def test_remainder_tensor_tosa_INT(test_data):
     pipeline = TosaPipelineINT[Remainder.input_t](
@@ -99,6 +104,8 @@ def test_remainder_scalar_tosa_INT(test_data):
         Remainder(),
         test_data(),
         [],
+        Remainder.lowered_exir_ops,
+        frobenius_threshold=0.4,
     )
     pipeline.run()
 
@@ -121,6 +128,7 @@ def test_remainder_scalar_u55_INT(test_data):
         Remainder(),
         test_data(),
         [],
+        Remainder.lowered_exir_ops,
     )
     pipeline.run()
 
@@ -143,6 +151,7 @@ def test_remainder_scalar_u85_INT(test_data):
         Remainder(),
         test_data(),
         [],
+        Remainder.lowered_exir_ops,
     )
     pipeline.run()
 

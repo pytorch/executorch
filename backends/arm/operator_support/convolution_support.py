@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -13,6 +13,11 @@ from typing import cast
 
 import torch
 import torch.fx as fx
+from executorch.backends.arm._passes.arm_pass_utils import (
+    expand_around_channel,
+    get_first_fake_tensor,
+)
+from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     register_tosa_support_check,
     SupportedTOSAOperatorCheck,
@@ -28,11 +33,6 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
 
     targets = [exir_ops.edge.aten.convolution.default]
 
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
-
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:
@@ -42,17 +42,15 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
         padding. Apply additional hardware-specific constraints for U55.
 
         """
-        # Not implemented
         transposed = cast(bool, node.args[6])
         output_padding = cast(list[int], node.args[7])
-        if transposed:
-            return False
+        groups = cast(int, node.args[8])
 
-        for pad in output_padding:
-            if pad != 0:
-                self.reporter.report_reject(
-                    node, "Convolutions with non-zero output padding not implemented."
-                )
+        if transposed:
+            if not self._check_transposed_support(node, groups, output_padding):
+                return False
+        else:
+            if not self._check_output_padding(output_padding, node):
                 return False
 
         # Hardware specific constraints
@@ -61,8 +59,147 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
         else:
             return True
 
+    def _get_weight_qargs(self, node: fx.Node) -> QuantArgs | None:
+        input_qparams = node.meta.get("input_qparams")
+        if isinstance(input_qparams, dict):
+            return input_qparams.get(1)
+        if isinstance(input_qparams, list) and len(input_qparams) > 1:
+            return input_qparams[1]
+        return None
+
+    def _check_output_padding(self, output_padding: list[int], node: fx.Node) -> bool:
+        for output_pad in output_padding:
+            if output_pad != 0:
+                self.reporter.report_reject(
+                    node,
+                    "Convolutions with non-zero output padding not implemented.",
+                )
+                return False
+        return True
+
+    def _check_transposed_support(
+        self, node: fx.Node, groups: int, output_padding: list[int]
+    ) -> bool:
+        if groups != 1:
+            weight_qargs = self._get_weight_qargs(node)
+            if isinstance(weight_qargs, QuantArgs) and weight_qargs.per_channel:
+                self.reporter.report_reject(
+                    node,
+                    "Grouped transpose convolutions with per-channel weight "
+                    "quantization are not supported.",
+                )
+                return False
+            dilation = expand_around_channel(cast(list[int], node.args[5]), 2)
+            if any(d != 1 for d in dilation):
+                self.reporter.report_reject(
+                    node, "Transpose convolutions with dilation are not supported."
+                )
+                return False
+
+        pad = expand_around_channel(cast(list[int], node.args[4]), 2)
+        out_pad = expand_around_channel(output_padding, 2)
+        weight_shape = get_first_fake_tensor(cast(fx.Node, node.args[1])).shape
+        if len(weight_shape) != 4:
+            self.reporter.report_reject(
+                node, "Only 2D transpose convolutions are supported."
+            )
+            return False
+        kernel_h = weight_shape[2]
+        kernel_w = weight_shape[3]
+
+        out_pad_top = -pad[0]
+        out_pad_bottom = -pad[0] + out_pad[0]
+        out_pad_left = -pad[1]
+        out_pad_right = -pad[1] + out_pad[1]
+
+        if out_pad_top <= -kernel_h or out_pad_bottom <= -kernel_h:
+            self.reporter.report_reject(
+                node, "Transpose convolution out_pad exceeds kernel height."
+            )
+            return False
+        if out_pad_left <= -kernel_w or out_pad_right <= -kernel_w:
+            self.reporter.report_reject(
+                node, "Transpose convolution out_pad exceeds kernel width."
+            )
+            return False
+        return True
+
+    def _check_transposed_conv_u55(self, node: fx.Node) -> bool:
+        """Implement the condition checks specified in
+        https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela/-/blob/main/SUPPORTED_OPS.md?ref_type=heads#ethos-u55-and-ethos-u65-tosa-transpose_conv2d-constraints
+        for the TransposeConv2D for Ethos-U55.
+        """
+        input_fake_tensor = get_first_fake_tensor(cast(fx.Node, node.args[0]))
+        if input_fake_tensor.dim() != 4:
+            self.reporter.report_reject(
+                node,
+                f"TransposeConv2d requires 4D input, got rank {input_fake_tensor.dim()}.",
+            )
+            return False
+        # For TransposeConv2D, the input tensor can only be 4D, hence we don't expect 3D input tensor.
+        # In case of a 3D input tensor, the user should first unsqueeze the tensor and then pass it
+        # to the TransposeConv2D, otherwise PyTorch throws an error.
+        if input_fake_tensor.dim_order() == (0, 1, 2, 3):
+            input_C = input_fake_tensor.shape[1]
+            input_H = input_fake_tensor.shape[2]
+            input_W = input_fake_tensor.shape[3]
+        elif input_fake_tensor.dim_order() == (0, 2, 3, 1):
+            input_C = input_fake_tensor.shape[3]
+            input_H = input_fake_tensor.shape[1]
+            input_W = input_fake_tensor.shape[2]
+        else:
+            self.reporter.report_reject(
+                node,
+                f"Unsupported dim order. Support dim orders (0,1,2,3) or (0,2,3,1) and got dim_order {input_fake_tensor.dim_order()}",
+            )
+            return False
+        kernel = cast(fx.Node, node.args[1]).meta["val"].shape
+        kernel_h = kernel[2]
+        kernel_w = kernel[3] if len(kernel) > 3 else 1
+        if (
+            input_C > 65536
+            or input_C < 1
+            or input_H > 65536
+            or input_H < 1
+            or input_W > 65536
+            or input_W < 1
+        ):
+            self.reporter.report_reject(
+                node,
+                f"HWC must be in the range [1;65536] but got {input_C} {input_H} {input_W}",
+            )
+            return False
+
+        if (
+            kernel_h * kernel_w > 4096
+            or kernel_h * kernel_w < 1
+            or kernel_h > 64
+            or kernel_h < 1
+        ):
+            self.reporter.report_reject(
+                node,
+                f"Kernel Height * Kernel Width must be in the range [1;4096] but got {kernel_h * kernel_w}",
+            )
+            return False
+        strides = expand_around_channel(cast(list[int], node.args[3]), 2)
+        stride = (strides[0], strides[1])
+        ok = False
+        if stride in ((1, 1), (2, 2)):
+            ok = True
+        elif stride == (1, 2):
+            ok = input_H == 1 and kernel_h == 1
+        elif stride == (2, 1):
+            ok = input_W == 1 and kernel_w == 1
+        if not ok:
+            self.reporter.report_reject(
+                node,
+                f"Unsupported stride of {stride} for Ethos-U55. You can use stride of (1,1) or (2,2), stride (1,2) for IFM height kernel height of 1 and stride(2,1) for IFM width and kernel width of 1",
+            )
+            return False
+        return True
+
     def _is_node_supported_u55(self, node: fx.Node) -> bool:
-        """Enforce Ethos-U55-specific constraints (Vela 4.2.0).
+        """Enforce Ethos-U55-specific constraints (Vela 5.0.0).
 
         Check channel dimensions, kernel sizes, and stride/pad/dilation
         combinations permitted on U55.
@@ -74,6 +211,10 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
             bool: True if supported; otherwise, False.
 
         """
+        transposed = cast(bool, node.args[6])
+        if transposed:
+            return self._check_transposed_conv_u55(node)
+
         shape_in = cast(torch.Tensor, node.all_input_nodes[0].meta["val"]).shape
         shape_out = node.meta["val"].shape
         kernel = cast(fx.Node, node.args[1]).meta["val"].shape

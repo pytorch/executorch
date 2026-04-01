@@ -21,10 +21,6 @@ class UnSqueeze(torch.nn.Module):
         super().__init__()
         self.axis = axis
 
-    def get_example_inputs(self) -> tuple[torch.Tensor]:
-        input_1 = torch.randn(2, 3, 1, 4)  # input should be positive
-        return (input_1,)
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.unsqueeze(x, dim=self.axis)
 
@@ -43,6 +39,7 @@ class TestSqueeze(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_unsqueeze_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .run_method_and_compare_outputs(inputs=inputs)
         )
 
     def test_fp32_unsqueeze(self):

@@ -1,6 +1,8 @@
 ## Summary
 [LFM2](https://huggingface.co/collections/LiquidAI/lfm2-686d721927015b2ad73eaa38) is a new generation of hybrid models developed by [Liquid AI](https://www.liquid.ai/) and available in 3 variants - 350M, 700M, 1.2B.
 
+[LFM2.5](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct) is an updated version with improved training (28T tokens vs 10T) and extended context length support (32K tokens).
+
 ## Instructions
 
 LFM2 uses the same example code as optimized Llama model, while the checkpoint, model params, and tokenizer are different. Please see the [Llama README page](../llama/README.md) for details.
@@ -34,6 +36,26 @@ python -m extension.llm.export.export_llm \
   +base.model_class="lfm2_1_2b" \
   +base.params="examples/models/lfm2/config/lfm2_1_2b_config.json" \
   +export.output_name="lfm2_1_2b_8da4w.pte"
+```
+
+Export LFM2.5 1.2B to XNNPack, quantized with 8da4w:
+```
+python -m extension.llm.export.export_llm \
+  --config examples/models/lfm2/config/lfm2_xnnpack_q8da4w.yaml \
+  +base.model_class="lfm2_5_1_2b" \
+  +base.params="examples/models/lfm2/config/lfm2_5_1_2b_config.json" \
+  +export.output_name="lfm2_5_1_2b_8da4w.pte"
+```
+
+To export with extended context (e.g., 2048 tokens):
+```
+python -m extension.llm.export.export_llm \
+  --config examples/models/lfm2/config/lfm2_xnnpack_q8da4w.yaml \
+  +base.model_class="lfm2_5_1_2b" \
+  +base.params="examples/models/lfm2/config/lfm2_5_1_2b_config.json" \
+  +export.max_seq_length=2048 \
+  +export.max_context_length=2048 \
+  +export.output_name="lfm2_5_1_2b_8da4w.pte"
 ```
 ### Example run
 With ExecuTorch pybindings:

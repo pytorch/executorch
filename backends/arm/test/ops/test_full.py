@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -56,7 +56,9 @@ class AddVariableFull(torch.nn.Module):
 
 
 class FullLike(torch.nn.Module):
-    """Since full_like is replaced with full, we only need to test on reference model, not FVP."""
+    """Since full_like is replaced with full, we only need to test on reference
+    model, not FVP.
+    """
 
     test_parameters = {
         "full_like_value_3_2": lambda: (torch.randn(2, 2, 2, 2) * 50, 3.2),
@@ -143,7 +145,7 @@ def test_full_tosa_INT(test_data: Tuple):
 
 
 @common.SkipIfNoModelConverter
-def test_full_only_vgf_no_quant():
+def test_full_vgf_no_quant_only():
     pipeline = VgfPipeline[input_t1](
         Full(),
         (),
@@ -155,7 +157,7 @@ def test_full_only_vgf_no_quant():
 
 
 @common.SkipIfNoModelConverter
-def test_full_const_vgf_no_quant():
+def test_full_vgf_no_quant_const():
     test_data = (torch.rand((2, 2, 3, 3)) * 10,)
     pipeline = VgfPipeline[input_t1](
         AddConstFull(),

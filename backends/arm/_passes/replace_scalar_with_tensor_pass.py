@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -79,19 +79,29 @@ _all_ops: Dict[
     _fp_profile_ops | _int_profile_ops
 )
 
+_preserve_in_tfa = {
+    torch.ops.aten.remainder.Scalar,
+    exir_ops.edge.aten.remainder.Scalar,
+}
 
-class ReplaceScalarWithTensorByProfilePass(ReplaceScalarWithTensorArgPass, ArmPass):
+
+class ReplaceScalarWithTensorByProfilePass(ArmPass, ReplaceScalarWithTensorArgPass):
     """Profile-aware scalar-to-tensor replacement pass for binary ops."""
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    def __init__(self):
+    def __init__(self, tfa_pass=False, *args, **kwargs):
+        # NOTE diamond heritance for this class, thus MRO is important.
+
         # Initialize base (ReplaceScalarWithTensorArgPass) with the full
         # superset which will make the superclass handle ops in _all_ops.
         # Actual selection is done per-call in call_operator.
-        super().__init__(_all_ops)
+        super().__init__(tfa_pass, _all_ops, *args, **kwargs)
 
     def call_operator(self, op, args, kwargs, meta):
+        if self.is_tfa_pass and op in _preserve_in_tfa:
+            return ExportPass.call_operator(self, op, args, kwargs, meta)
+
         tosa_spec = get_context_spec()
 
         included_ops = {}
@@ -106,7 +116,7 @@ class ReplaceScalarWithTensorByProfilePass(ReplaceScalarWithTensorArgPass, ArmPa
         if op in TableOps.included_ops():
             # Do not handle quantized table ops; forward unchanged.
             input_qparams = meta.data.get("input_qparams", {})
-            output_qparams = meta.data.get("input_qparams", {})
+            output_qparams = meta.data.get("output_qparams", {})
             if len(input_qparams) > 0 and len(output_qparams) > 0:
                 # Do not handle; forward unchanged.
                 return ExportPass.call_operator(self, op, args, kwargs, meta)

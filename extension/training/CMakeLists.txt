@@ -62,11 +62,11 @@ if(EXECUTORCH_BUILD_PYBIND)
     )
   endif()
 
-  # pybind training
   pybind11_add_module(
     _training_lib SHARED
     ${CMAKE_CURRENT_SOURCE_DIR}/pybindings/_training_lib.cpp
   )
+  set_target_properties(_training_lib PROPERTIES CXX_STANDARD 20)
 
   target_include_directories(_training_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(
@@ -93,4 +93,19 @@ install(
   DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES
   DESTINATION ${_common_include_directories}
+)
+
+# Headers
+install(
+  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/module
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/training
+  FILES_MATCHING
+  PATTERN "*.h"
+)
+
+install(
+  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/optimizer
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/training
+  FILES_MATCHING
+  PATTERN "*.h"
 )

@@ -1,16 +1,16 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+from executorch.backends.nxp.backend.data_format import DataFormat
 
 from executorch.backends.nxp.backend.ir.converter.builder.model_builder import (
     ModelBuilder,
 )
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
-from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 
 
@@ -63,13 +63,13 @@ def ensure_reduce_transposition(builder, ops: OpsList):
         transpose_before = builder.create_transpose_operator_before(
             t_op, 0, to_executorch_perm
         )
-        transpose_before.tmp_outputs[0].tensor_format = TensorFormat.CHANNELS_FIRST
+        transpose_before.tmp_outputs[0].tensor_format = DataFormat.CHANNELS_FIRST
         ops.add_pre(transpose_before)
 
         transpose_after = builder.create_transpose_operator_after(
             t_op, 0, to_tflite_perm
         )
-        transpose_after.tmp_inputs[0].tensor_format = TensorFormat.CHANNELS_FIRST
+        transpose_after.tmp_inputs[0].tensor_format = DataFormat.CHANNELS_FIRST
         ops.post_ops.insert(0, transpose_after)
 
     elif input_format.is_channels_last() and not output_format.is_channels_last():
@@ -79,7 +79,7 @@ def ensure_reduce_transposition(builder, ops: OpsList):
             translator.create_channels_last_to_channels_first_permutation(input_rank)
         )
         transpose = builder.create_transpose_operator_before(t_op, 0, permutation)
-        transpose.tmp_outputs[0].tensor_format = TensorFormat.CHANNELS_FIRST
+        transpose.tmp_outputs[0].tensor_format = DataFormat.CHANNELS_FIRST
 
         ops.add_pre(transpose)
 
@@ -92,6 +92,6 @@ def ensure_reduce_transposition(builder, ops: OpsList):
             translator.create_channels_first_to_channels_last_permutation(output_rank)
         )
         transpose = builder.create_transpose_operator_after(t_op, 0, permutation)
-        transpose.tmp_inputs[0].tensor_format = TensorFormat.CHANNELS_FIRST
+        transpose.tmp_inputs[0].tensor_format = DataFormat.CHANNELS_FIRST
 
         ops.post_ops.insert(0, transpose)

@@ -63,7 +63,7 @@ shuffle: True
 batch_size: 1
 ```
 
-Torchtune supports datasets using huggingface dataloaders, so custom datasets could also be defined. For examples on defining your own datasets, review the [torchtune docs](https://pytorch.org/torchtune/stable/basics/text_completion_datasets.html#loading-text-completion-datasets-from-hugging-face).
+Torchtune supports datasets using huggingface dataloaders, so custom datasets could also be defined. For examples on defining your own datasets, review the [torchtune docs](https://meta-pytorch.org/torchtune/main/basics/text_completion_datasets.html#loading-text-completion-datasets-from-hugging-face).
 
 ### Loss
 

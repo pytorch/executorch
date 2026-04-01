@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -74,7 +74,7 @@ class EthosUBackend(BackendDetails):
             tosa_flatbuffer,
             compile_flags,
             verbose=logger.getEffectiveLevel() <= logging.INFO,
-            intermediate_path=compile_spec.get_intermediate_path(),
+            intermediate_path=compile_spec._get_intermediate_path(),
         )
         return binary
 
@@ -96,7 +96,7 @@ class EthosUBackend(BackendDetails):
         """
         logger.info(f"{EthosUBackend.__name__} preprocess")
 
-        compile_spec = EthosUCompileSpec.from_list(compile_specs)
+        compile_spec = EthosUCompileSpec._from_list(compile_specs)
         # deduce TOSA compile_spec from Ethos-U compile spec. We get a new
         # compile spec list, containing only elements relevant for the
         # TOSABackend.

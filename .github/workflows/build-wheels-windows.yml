@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - .ci/**/*
-      - .github/workflows/build-wheels-macos.yml
+      - .github/workflows/build-wheels-windows.yml
       - examples/**/*
       - pyproject.toml
       - setup.py
@@ -64,4 +64,6 @@ jobs:
       smoke-test-script: ${{ matrix.smoke-test-script }}
       trigger-event: ${{ github.event_name }}
       wheel-build-params: "--verbose"
-      submodules: true
+      # Submodules are initialized in pre_build_script.sh with OpenSSL to avoid
+      # schannel SSL errors on Windows when cloning from non-GitHub hosts.
+      submodules: false

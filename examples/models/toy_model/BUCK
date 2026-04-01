@@ -1,0 +1,17 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+fbcode_target(_kind = python_library,
+    name = "toy_model",
+    srcs = [
+        "__init__.py",
+        "model.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models:model_base",
+        "//executorch/exir/backend:compile_spec_schema",
+    ],
+)

@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,9 +19,7 @@ test_case_t = Tuple[
 
 
 class Repeat(torch.nn.Module):
-    """
-    Basic repeat model.
-    """
+    """Basic repeat model."""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x.repeat(2, 2, 2, 2)
@@ -42,8 +40,7 @@ class Repeat(torch.nn.Module):
 
 @common.parametrize("test_data", Repeat.test_data)
 def test_unsqueeze_before_repeat_tosa_FP(test_data: test_case_t):
-    """
-    When rank(input) != number of repeated dimensions (=4 in Repeat module),
+    """When rank(input) != number of repeated dimensions (=4 in Repeat module),
     insert view.
     """
     module = Repeat()

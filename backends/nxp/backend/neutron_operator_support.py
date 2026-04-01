@@ -1,9 +1,15 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from executorch.backends.nxp.backend.data_format import NXP_NODE_FORMAT
+from executorch.backends.nxp.backend.edge_helper import input_tensor
+from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
+    dims_to_channels_last,
+)
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+from torch.fx import Node
 
 
 def is_tensor_invariant_permutation(
@@ -77,3 +83,23 @@ def transposition_is_supported_on_neutron(
         return True
 
     return False
+
+
+def activation_supported_on_target(
+    node: Node, neutron_target_spec: NeutronTargetSpec
+) -> bool:
+    """This function determines if the current NeutronSoftware properly supports an activation operator represented by the given node.
+
+    :param node: The node representing the activation operator.
+    :param neutron_target_spec: Object for querying the target platform to retrieve its properties.
+    """
+    input_shape = list(input_tensor(node, 0).shape)
+    if node.args[0].meta[NXP_NODE_FORMAT].is_channels_first():
+        input_shape = dims_to_channels_last(input_shape)
+
+    c = input_shape[-1]
+    num_macs = neutron_target_spec.get_num_macs()
+
+    # activations in Neutron are delegable only
+    # if `num_channels` % `num_macs` == 0
+    return c % num_macs == 0

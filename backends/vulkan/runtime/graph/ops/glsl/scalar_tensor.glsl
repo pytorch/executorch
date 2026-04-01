@@ -8,14 +8,15 @@
 
 #version 450 core
 
+${define_required_extensions(STORAGE, DTYPE)}
+${define_explicit_type_extensions(SCALAR_VALUE_TYPE)}
+
 #define PRECISION ${PRECISION}
 
 #define BUF_T ${buffer_scalar_type(DTYPE)}
 #define VEC4_T ${texel_type(DTYPE)}
 
 ${define_active_storage_type(STORAGE)}
-${define_required_extensions(DTYPE)}
-${define_required_extensions(SCALAR_VALUE_TYPE)}
 
 #include "indexing_utils.h"
 

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -48,7 +48,11 @@ test_data: dict[str, input_t1] = {
 
 
 class SoftplusModule(torch.nn.Module):
-    """Module containing an addition followed by a Softplus. Softplus is currently not supported by TosaBackend."""
+    """Module containing an addition followed by a Softplus.
+
+    Softplus is currently not supported by TosaBackend.
+
+    """
 
     def __init__(self):
         super().__init__()
@@ -59,8 +63,11 @@ class SoftplusModule(torch.nn.Module):
 
 
 class LinearResidualModule(torch.nn.Module):
-    """Module containing a residual and a linear layer followed by GELU and a Dropout.
+    """Module containing a residual and a linear layer followed by GELU and a
+    Dropout.
+
     GELU is currently not supported by TosaBackend nor TosaQuantizer.
+
     """
 
     def __init__(

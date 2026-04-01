@@ -189,13 +189,20 @@ void test_vulkan_linear_qcs4w_impl(
   //
 
   graph.propagate_resize();
-  graph.copy_into_staging(r_x.staging, x.const_data_ptr(), x.numel());
+  graph.maybe_cast_and_copy_into_staging(
+      r_x.staging,
+      x.const_data_ptr(),
+      x.numel(),
+      from_at_scalartype(x.scalar_type()));
 
   graph.execute();
 
   at::Tensor vk_out = at::empty_like(out_ref);
-  graph.copy_from_staging(
-      staging_out, vk_out.mutable_data_ptr(), vk_out.numel());
+  graph.maybe_cast_and_copy_from_staging(
+      staging_out,
+      vk_out.mutable_data_ptr(),
+      vk_out.numel(),
+      from_at_scalartype(vk_out.scalar_type()));
 
   ASSERT_TRUE(at::allclose(vk_out, out_ref, 1e-4, 1e-4));
 }

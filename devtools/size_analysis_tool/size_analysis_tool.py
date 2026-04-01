@@ -56,13 +56,14 @@ def _get_delegate_blob_data(
     return delegate_blob_data
 
 
-def _get_nested_model_data(
+def _get_nested_model_data(  # noqa: C901
     graph_module: torch.fx.GraphModule,
     delegate_deserializers: Optional[
         Dict[str, Callable[[bytes], Dict[str, Any]]]
     ] = None,
     tensor_data: Optional[List[Dict[str, Any]]] = None,
     delegate_blob_data: Optional[List[Dict[str, Any]]] = None,
+    exported_program: Optional["ExportedProgram"] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     if tensor_data is None:
         tensor_data = []
@@ -71,7 +72,20 @@ def _get_nested_model_data(
         delegate_blob_data = []
 
     for node in graph_module.graph.nodes:
-        if node.op == "get_attr":
+        if node.op == "placeholder" and exported_program is not None:
+            sig = exported_program.graph_signature
+            fqn = None
+            if node.name in getattr(sig, "inputs_to_parameters", {}):
+                fqn = sig.inputs_to_parameters[node.name]
+            elif node.name in getattr(sig, "inputs_to_buffers", {}):
+                fqn = sig.inputs_to_buffers[node.name]
+
+            if fqn is not None:
+                tensor = exported_program.state_dict.get(fqn)
+                if isinstance(tensor, torch.Tensor):
+                    tensor_data.append(_get_tensor_data(node, tensor))
+
+        elif node.op == "get_attr":
             node_attr = getattr(node.graph.owning_module, node.target)
             if isinstance(node_attr, torch.Tensor):
                 tensor_data.append(_get_tensor_data(node, node_attr))
@@ -105,7 +119,7 @@ def generate_model_size_information(
     """
 
     tensor_and_delegate_blob_data = _get_nested_model_data(
-        model.graph_module, delegate_deserializers
+        model.graph_module, delegate_deserializers, exported_program=model
     )
 
     for data_list in tensor_and_delegate_blob_data:

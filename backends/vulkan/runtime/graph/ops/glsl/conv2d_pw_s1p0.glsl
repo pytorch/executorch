@@ -8,8 +8,6 @@
 
 #version 450 core
 
-#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
-
 #define PRECISION ${PRECISION}
 
 $if DTYPE == "half":

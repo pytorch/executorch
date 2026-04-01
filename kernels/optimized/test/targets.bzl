@@ -25,6 +25,7 @@ def _lib_test_bin(name, extra_deps = [], in_cpu = False):
         deps = [
             "//executorch/test/utils:utils",
             "//executorch/kernels/optimized{}:{}".format(cpu_path, lib_root),
+            "//executorch/runtime/core/portable_type:scalar_type",
         ] + extra_deps,
         preprocessor_flags = get_vec_preprocessor_flags() + get_vec_cxx_preprocessor_flags(),
     )

@@ -22,6 +22,7 @@ from executorch.exir.backend.backend_details import CompileSpec
 class SamsungChipset(IntEnum):
     UNDEFINED_CHIP_V = 0
     E9955 = 9955
+    E9965 = 9965
 
 
 @dataclass
@@ -65,7 +66,7 @@ def gen_samsung_backend_compile_spec(
     A function to generate an ExecuTorch binary for Samsung Backend.
 
     Attributes:
-        chipset (str): chipset name in SamsungChipset. For example, E9955 or e9955 both work.
+        chipset (str): chipset name in SamsungChipset. For example, E9955 or E9965 (case-insensitive).
 
     Returns:
         CompileSpec: key is COMPILE_OPTION_SCHEMA_NAME, value is serialization binary of fb schema

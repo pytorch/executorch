@@ -29,14 +29,16 @@ std::unique_ptr<llm::TextLLMRunner> create_llama_runner(
     const std::string& tokenizer_path,
     std::optional<const std::string> data_path,
     float temperature = -1.0f,
-    std::unique_ptr<::executorch::runtime::EventTracer> event_tracer = nullptr);
+    std::unique_ptr<::executorch::runtime::EventTracer> event_tracer = nullptr,
+    const std::string& method_name = "forward");
 
 std::unique_ptr<llm::TextLLMRunner> create_llama_runner(
     const std::string& model_path,
     const std::string& tokenizer_path,
     std::vector<std::string> data_files = {},
     float temperature = -1.0f,
-    std::unique_ptr<::executorch::runtime::EventTracer> event_tracer = nullptr);
+    std::unique_ptr<::executorch::runtime::EventTracer> event_tracer = nullptr,
+    const std::string& method_name = "forward");
 
 std::unique_ptr<tokenizers::Tokenizer> load_llama_tokenizer(
     const std::string& tokenizer_path,

@@ -44,7 +44,9 @@ class ET_EXPERIMENTAL MultimodalPrefiller {
    */
   virtual Result<uint64_t> prefill(
       const MultimodalInput& input,
-      int64_t& start_pos);
+      int64_t& start_pos,
+      int32_t bos = 0,
+      int32_t eos = 0);
 
   virtual Error load();
   virtual bool is_method_loaded();

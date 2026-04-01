@@ -107,19 +107,14 @@ def duplicate_constant_node(
                             for arg in users[ith].args
                         ]
                     )
-                    new_kwargs = dict(
-                        {
-                            (
-                                key,
-                                (
-                                    value
-                                    if value != constant_or_attribute_node
-                                    else copied_constant_or_attribute_node
-                                ),
-                            )
-                            for key, value in users[ith].kwargs
-                        }
-                    )
+                    new_kwargs = {
+                        key: (
+                            value
+                            if value != constant_or_attribute_node
+                            else copied_constant_or_attribute_node
+                        )
+                        for key, value in users[ith].kwargs.items()
+                    }
                     users[ith].args = new_args
                     users[ith].kwargs = new_kwargs
                     if old_input_spec.kind == InputKind.CONSTANT_TENSOR:

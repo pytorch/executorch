@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,13 +16,16 @@ subsequent stages (for example, JIT or hardware-specific compilers) consume.
 """
 
 import logging
-import tempfile
 from itertools import count
 from typing import cast, Dict, final, List
 
 import torch
 
 import tosa_serializer as ts
+
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_cond_while_submodules_nested,
+)
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.debug import debug_fail, debug_tosa_dump
 from executorch.backends.arm.debug.schema import DebugHook
@@ -36,7 +39,6 @@ from executorch.backends.arm.tosa.mapping import TOSA_TENSOR_NAME_META
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dim_order_utils import get_memory_format
-from executorch.exir.graph_module import get_cond_while_submodules
 from torch.export.exported_program import ExportedProgram
 from torch.fx import Graph, GraphModule, Node
 
@@ -55,6 +57,7 @@ def _annotate_external_ids(ep_graph: Graph) -> Dict[str, int]:
 
     Returns:
         dict[str, int]: Mapping from *leaf output node name* to external output index.
+
     """
     node2external_id = {}
 
@@ -116,8 +119,8 @@ def _sort_outputs(graph_module: GraphModule, node_to_id_map: dict[str, int]):
 
 
 def _get_matching_fake_tensor(node: Node):
-    """Return a fake tensor with the same properties as node,
-    but with .dim_order() == node.meta["tosa_dim_order"]
+    """Return a fake tensor with the same properties as node, but with
+    .dim_order() == node.meta["tosa_dim_order"]
     """
     fake_tensor = node.meta["val"]
     desired_dim_order = node.meta["tosa_dim_order"]
@@ -167,7 +170,7 @@ class TOSABackend(BackendDetails):
 
         """
         return TOSABackend._preprocess(
-            edge_program, TosaCompileSpec.from_list(compile_specs)
+            edge_program, TosaCompileSpec._from_list(compile_specs)
         )
 
     @staticmethod
@@ -201,7 +204,7 @@ class TOSABackend(BackendDetails):
 
         """
         # if a debug/test build capture output files from TOSA stage
-        artifact_path = compile_spec.get_intermediate_path()
+        artifact_path = compile_spec._get_intermediate_path()
         tosa_spec = compile_spec.tosa_spec
         dump_debug_info = compile_spec.tosa_debug_mode
         debug_hook = None
@@ -221,12 +224,12 @@ class TOSABackend(BackendDetails):
             targetMajor=version.major,
             targetMinor=version.minor,
             targetPatch=version.micro,
-            targetDraft=False,
+            targetDraft=True if version.minor > 0 else False,
         )
 
         if not (
             tosa_spec.version.major == ts.TOSA_VERSION_MAJOR
-            and tosa_spec.version.minor == ts.TOSA_VERSION_MINOR
+            and tosa_spec.version.minor <= ts.TOSA_VERSION_MINOR
         ):
             raise RuntimeError(
                 f"TOSA serializer version "
@@ -246,16 +249,11 @@ class TOSABackend(BackendDetails):
 
         if artifact_path:
             tag = arm_get_first_delegation_tag(edge_program.graph_module)
-
-            # Only dump TOSA if we are not saving to temporary folder.
-            if len(
-                tempdir := tempfile.gettempdir()
-            ) > 0 and not artifact_path.startswith(tempdir):
-                debug_tosa_dump(
-                    binary,
-                    artifact_path,
-                    suffix="{}".format(f"_{tag}" if tag else "") + (f"_{tosa_spec}"),
-                )
+            debug_tosa_dump(
+                binary,
+                artifact_path,
+                suffix="{}".format(f"_{tag}" if tag else "") + (f"_{tosa_spec}"),
+            )
 
             if debug_hook is not None:
                 if debug_hook.mode == ArmCompileSpec.DebugMode.JSON:
@@ -267,7 +265,8 @@ class TOSABackend(BackendDetails):
 
     @staticmethod
     def _regularize_submodule(submodule: GraphModule, submodule_node: Node):
-        """To make a submodule fit into the normal flow of a graph_module, we need to do some regularizations.
+        """To make a submodule fit into the normal flow of a graph_module, we
+        need to do some regularizations.
 
         - Buffers created before passes are treated as input to the submodule. Buffers created during passes
             are treated as "normal" buffers, i.e. gathered from the state_dict.
@@ -275,6 +274,7 @@ class TOSABackend(BackendDetails):
         - Make sure output node args[0] is always iterable.
         - Match the dim_order() of the input tensors with the dim orders of the submodule_node inputs.
         - Match the dim_order() of the out tensors with the dim orders of the submodule_node outputs.
+
         """
         submodule_inputs: list[Node] = []
         for node in submodule.graph.nodes:
@@ -332,7 +332,7 @@ class TOSABackend(BackendDetails):
         """
         tosa_spec = compile_spec.tosa_spec
         node_to_id_map = _annotate_external_ids(graph_module.graph)
-        artifact_path = compile_spec.get_intermediate_path()
+        artifact_path = compile_spec._get_intermediate_path()
         output_order_workaround = compile_spec.get_output_order_workaround()
 
         # TODO: Fix the need to lazily import this.
@@ -401,7 +401,7 @@ class TOSABackend(BackendDetails):
                 raise
 
         # Recursively preprocess controlflow submodules.
-        for name, submodule, control_flow_node in get_cond_while_submodules(
+        for name, submodule, control_flow_node in get_cond_while_submodules_nested(
             graph_module
         ):
             TOSABackend._regularize_submodule(submodule, control_flow_node)
@@ -431,12 +431,12 @@ class TOSABackend(BackendDetails):
 
         """
 
-        pipeline_config = compile_spec.get_pass_pipeline_config()
+        pipeline_config = compile_spec._get_pass_pipeline_config()
         tosa_compile_spec = TosaCompileSpec(compile_spec.tosa_spec)
         tosa_compile_spec.set_pass_pipeline_config(pipeline_config)
         return (
             tosa_compile_spec.dump_intermediate_artifacts_to(
-                compile_spec.get_intermediate_path()
+                compile_spec._get_intermediate_path()
             )
             .dump_debug_info(compile_spec.tosa_debug_mode)
             .set_output_order_workaround(compile_spec.output_order_workaround)

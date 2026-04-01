@@ -127,8 +127,19 @@ inline std::unique_ptr<WavHeader> load_wav_header(const std::string& fp) {
       ET_LOG(Info, "Bits per Sample: %d", header->bitsPerSample);
 
       if (data_offset != 0) {
+        // Validate that we can safely read the Subchunk2Size (4 bytes at
+        // data_offset + 4) and that the data starts at data_offset + 8
+        if (data_offset + 8 > data_size) {
+          ET_LOG(
+              Error,
+              "WAV file structure is invalid: data chunk header extends beyond file bounds (offset %zu, file size %zu)",
+              data_offset,
+              data_size);
+          throw std::runtime_error(
+              "Invalid WAV file: data chunk header extends beyond file bounds");
+        }
         header->Subchunk2Size =
-            *reinterpret_cast<const int32_t*>(data + data_offset + 4);
+            *reinterpret_cast<const uint32_t*>(data + data_offset + 4);
         ET_LOG(Info, "Subchunk2Size: %d", header->Subchunk2Size);
         header->dataOffset = static_cast<uint32_t>(data_offset + 8);
       } else {
@@ -172,6 +183,23 @@ inline std::vector<float> load_wav_audio_data(const std::string& fp) {
   size_t data_size = header->Subchunk2Size;
   int bits_per_sample = header->bitsPerSample;
   int audio_format = header->AudioFormat;
+
+  // Validate that the claimed data size does not exceed the buffer bounds.
+  if (data_offset > buffer.size()) {
+    ET_CHECK_MSG(
+        false,
+        "Invalid WAV file: data offset (%zu) exceeds file size (%zu)",
+        data_offset,
+        buffer.size());
+  }
+  if (data_size > buffer.size() - data_offset) {
+    ET_CHECK_MSG(
+        false,
+        "Invalid WAV file: claimed data size (%zu) exceeds available data (%zu bytes from offset %zu)",
+        data_size,
+        buffer.size() - data_offset,
+        data_offset);
+  }
 
   if (audio_format != kWavFormatPcm && audio_format != kWavFormatIeeeFloat) {
     ET_CHECK_MSG(

@@ -111,6 +111,15 @@ def create_constant_placeholder(
 
     target = name
 
+    # If a placeholder with this target already exists, return it to avoid
+    # duplicate parameter names in the generated function signature which would
+    # cause a SyntaxError on recompile. This can happen when multiple pattern
+    # replacements independently create placeholders for a shared weight.
+    if name in exp_program.state_dict or name in exp_program.constants:
+        for n in graph.nodes:
+            if n.op == "placeholder" and n.target == name:
+                return n
+
     # Add data to state_dict/ constants
     match kind:
         case InputKind.PARAMETER:

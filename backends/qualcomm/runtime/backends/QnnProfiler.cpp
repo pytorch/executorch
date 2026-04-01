@@ -54,6 +54,7 @@ QnnProfile::QnnProfile(
 
       QnnProfile_Config_t qnnProfileConfig = QNN_PROFILE_CONFIG_INIT;
       qnnProfileConfig.option = QNN_PROFILE_CONFIG_OPTION_ENABLE_OPTRACE;
+      qnnProfileConfig.enableOptrace = true;
       std::array<const QnnProfile_Config_t*, 2> profileConfigs = {
           &qnnProfileConfig, nullptr};
       error =

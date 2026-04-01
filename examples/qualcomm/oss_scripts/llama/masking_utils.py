@@ -10,9 +10,9 @@ from typing import List, Union
 import torch
 
 
-def create_causal_attn_mask(max_batch_size: int, ar_len: int, max_seq_len: int):
+def create_causal_attn_mask(max_batch_size: int, ar_len: int, max_context_len: int):
     """
-    Creating a causal attention mask (ar_len: 5, max_seq_len: 15)
+    Creating a causal attention mask (ar_len: 5, max_context_len: 15)
         0 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ○ ○ ○ ○
         1 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ○ ○ ○
         2 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○
@@ -25,23 +25,23 @@ def create_causal_attn_mask(max_batch_size: int, ar_len: int, max_seq_len: int):
     mask_cond = torch.arange(ar_len)
     mask.masked_fill_(mask_cond.view(1, ar_len) <= mask_cond.view(ar_len, 1), 0)
 
-    if max_seq_len != ar_len:
+    if max_context_len != ar_len:
         mask = torch.cat(
             [
-                torch.ones(ar_len, max_seq_len - ar_len) * -255.0,
+                torch.ones(ar_len, max_context_len - ar_len) * -255.0,
                 mask,
             ],
             dim=-1,
         )
-    mask = mask[None, :, :].expand(max_batch_size, ar_len, max_seq_len)
+    mask = mask[None, :, :].expand(max_batch_size, ar_len, max_context_len)
     return mask
 
 
 def create_sliding_window_attn_mask(
-    max_batch_size: int, ar_len: int, max_seq_len: int, sliding_window: int
+    max_batch_size: int, ar_len: int, max_context_len: int, sliding_window: int
 ):
     """
-    Creating a sliding_window attention mask (ar_len: 5, max_seq_len: 15, sliding_window: 3)
+    Creating a sliding_window attention mask (ar_len: 5, max_context_len: 15, sliding_window: 3)
         0 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ○ ○ ○ ○
         1 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ○ ○ ○
         2 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○
@@ -58,37 +58,47 @@ def create_sliding_window_attn_mask(
         0,
     )
 
-    if max_seq_len != ar_len:
+    if max_context_len != ar_len:
         mask = torch.cat(
             [
-                torch.ones(ar_len, max_seq_len - ar_len) * -255.0,
+                torch.ones(ar_len, max_context_len - ar_len) * -255.0,
                 mask,
             ],
             dim=-1,
         )
-    mask = mask[None, :, :].expand(max_batch_size, ar_len, max_seq_len)
+    mask = mask[None, :, :].expand(max_batch_size, ar_len, max_context_len)
     return mask
 
 
 class BaseAttentionMask(ABC):
-    def __init__(self, max_batch_size: int, ar_len: int, max_seq_len: int):
+    def __init__(self, max_batch_size: int, ar_len: int, max_context_len: int):
         """
         Base class for attention masks used in autoregressive or hybrid attention mechanisms.
 
         Args:
             max_batch_size (int): Maximum batch size supported.
             ar_len (int): Length of the autoregressive sequence.
-            max_seq_len (int): Maximum sequence length.
+            max_context_len (int): Maximum sequence length.
         """
         self.max_batch_size = max_batch_size
         self.ar_len = ar_len
-        self.max_seq_len = max_seq_len
+        self.max_context_len = max_context_len
 
     @property
     @abstractmethod
     def mask(self) -> torch.Tensor:
         """
         Attention mask tensor that must be initialized by child classes.
+        """
+        pass
+
+    @abstractmethod
+    def smart_mask_init(self, pos):
+        """
+        Initialize the attention mask by smart mask initialization method after model forward.
+
+        Args:
+            pos (int): Current position in the sequence.
         """
         pass
 
@@ -106,13 +116,20 @@ class BaseAttentionMask(ABC):
 
 
 class CausalAttentionMask(BaseAttentionMask):
-    def __init__(self, max_batch_size: int, ar_len: int, max_seq_len: int):
-        super().__init__(max_batch_size, ar_len, max_seq_len)
-        self._mask = create_causal_attn_mask(max_batch_size, ar_len, max_seq_len)
+    def __init__(self, max_batch_size: int, ar_len: int, max_context_len: int):
+        super().__init__(max_batch_size, ar_len, max_context_len)
+        self._max_batch_size = max_batch_size
+        self._mask = create_causal_attn_mask(max_batch_size, ar_len, max_context_len)
 
     @property
     def mask(self):
         return self._mask
+
+    def smart_mask_init(self, pos):
+        self._mask = create_causal_attn_mask(
+            self.max_batch_size, self.ar_len, self.max_context_len
+        )
+        self.mask[:, :, :pos] = 0
 
     def smart_mask_update(self, pos, n_updates, _):
         """
@@ -155,18 +172,24 @@ class SlidingWindowAttentionMask(BaseAttentionMask):
         self,
         max_batch_size: int,
         ar_len: int,
-        max_seq_len: int,
+        max_context_len: int,
         sliding_window: int,
     ):
-        super().__init__(max_batch_size, ar_len, max_seq_len)
+        super().__init__(max_batch_size, ar_len, max_context_len)
         self._mask = create_sliding_window_attn_mask(
-            max_batch_size, ar_len, max_seq_len, sliding_window
+            max_batch_size, ar_len, max_context_len, sliding_window
         )
         self.sliding_window = sliding_window
 
     @property
     def mask(self):
         return self._mask
+
+    def smart_mask_init(self, pos):
+        self._mask = create_sliding_window_attn_mask(
+            self.max_batch_size, self.ar_len, self.max_context_len, self.sliding_window
+        )
+        self.mask[:, :, :pos] = 0
 
     def smart_mask_update(self, pos, n_updates, lade_pos_offset):
         """
@@ -194,7 +217,7 @@ class SlidingWindowAttentionMask(BaseAttentionMask):
 
 
         After 2nd update (e.g., pos=5, n_updates=5, sliding_window=3):
-            Sliding window shifts again, masking older positions and activate new postion.
+            Sliding window shifts again, masking older positions and activate new position.
 
             0 ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○ ○ ○
             1 ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○ ○
@@ -223,6 +246,10 @@ class SlidingWindowAttentionMask(BaseAttentionMask):
 class AttentionMask:
     def __init__(self, masks: Union[BaseAttentionMask, List[BaseAttentionMask]]):
         self.masks = masks if isinstance(masks, list) else [masks]
+
+    def smart_mask_init(self, pos):
+        for mask in self.masks:
+            mask.smart_mask_init(pos)
 
     def smart_mask_update(self, pos, n_updates, lade_pos_offset=None):
         for mask in self.masks:

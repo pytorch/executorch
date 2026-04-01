@@ -21,6 +21,8 @@ public class LlmGenerationConfig {
   private final boolean warming;
   private final int seqLen;
   private final float temperature;
+  private final int numBos;
+  private final int numEos;
 
   private LlmGenerationConfig(Builder builder) {
     this.echo = builder.echo;
@@ -28,6 +30,8 @@ public class LlmGenerationConfig {
     this.warming = builder.warming;
     this.seqLen = builder.seqLen;
     this.temperature = builder.temperature;
+    this.numBos = builder.numBos;
+    this.numEos = builder.numEos;
   }
 
   /**
@@ -75,6 +79,20 @@ public class LlmGenerationConfig {
   }
 
   /**
+   * @return number of BOS tokens to prepend
+   */
+  public int getNumBos() {
+    return numBos;
+  }
+
+  /**
+   * @return number of EOS tokens to append
+   */
+  public int getNumEos() {
+    return numEos;
+  }
+
+  /**
    * Builder class for constructing LlmGenerationConfig instances.
    *
    * <p>Provides a fluent interface for configuring generation parameters with sensible defaults.
@@ -86,6 +104,8 @@ public class LlmGenerationConfig {
     private boolean warming = false;
     private int seqLen = -1;
     private float temperature = 0.8f;
+    private int numBos = 0;
+    private int numEos = 0;
 
     Builder() {}
 
@@ -141,6 +161,28 @@ public class LlmGenerationConfig {
      */
     public Builder temperature(float temperature) {
       this.temperature = temperature;
+      return this;
+    }
+
+    /**
+     * Sets the number of BOS tokens to prepend.
+     *
+     * @param numBos number of BOS tokens
+     * @return this builder instance
+     */
+    public Builder numBos(int numBos) {
+      this.numBos = numBos;
+      return this;
+    }
+
+    /**
+     * Sets the number of EOS tokens to append.
+     *
+     * @param numEos number of EOS tokens
+     * @return this builder instance
+     */
+    public Builder numEos(int numEos) {
+      this.numEos = numEos;
       return this;
     }
 

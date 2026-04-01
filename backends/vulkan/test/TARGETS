@@ -35,6 +35,7 @@ python_unittest(
         "//caffe2:torch",
         "//executorch/backends/vulkan/_passes:vulkan_passes",
         "//executorch/backends/vulkan:vulkan_preprocess",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//pytorch/ao:torchao",  # @manual
     ]
 )
@@ -53,6 +54,17 @@ python_unittest(
     name = "test_serialization",
     srcs = [
         "test_serialization.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan:vulkan_preprocess",
+    ],
+)
+
+python_unittest(
+    name = "test_vulkan_tensor_repr",
+    srcs = [
+        "test_vulkan_tensor_repr.py",
     ],
     deps = [
         "//caffe2:torch",

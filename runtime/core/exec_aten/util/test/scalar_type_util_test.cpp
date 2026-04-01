@@ -91,13 +91,15 @@ TEST(ScalarTypeUtilTest, IsValidFalse) {
 TEST(ScalarTypeUtilTest, UnknownTypeElementSizeDies) {
   // Undefined, which is sort of a special case since it's not part of the
   // iteration macros but is still a part of the enum.
-  ET_EXPECT_DEATH(elementSize(ScalarType::Undefined), "");
+  ET_EXPECT_DEATH(elementSize(ScalarType::Undefined), "Unknown ScalarType");
 
   // Some out-of-range types, also demonstrating that NumOptions is not really a
   // scalar type.
-  ET_EXPECT_DEATH(elementSize(ScalarType::NumOptions), "");
-  ET_EXPECT_DEATH(elementSize(static_cast<ScalarType>(127)), "");
-  ET_EXPECT_DEATH(elementSize(static_cast<ScalarType>(-1)), "");
+  ET_EXPECT_DEATH(elementSize(ScalarType::NumOptions), "Unknown ScalarType");
+  ET_EXPECT_DEATH(
+      elementSize(static_cast<ScalarType>(127)), "Unknown ScalarType");
+  ET_EXPECT_DEATH(
+      elementSize(static_cast<ScalarType>(-1)), "Unknown ScalarType");
 }
 
 TEST(ScalarTypeUtilTest, canCastTest) {

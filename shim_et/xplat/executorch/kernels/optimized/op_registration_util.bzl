@@ -92,13 +92,7 @@ def define_op_library(name, compiler_flags, deps):
         srcs = [
             "{}.cpp".format(name),
         ],
-        visibility = [
-            "//executorch/kernels/portable/test/...",
-            "//executorch/kernels/quantized/test/...",
-            "//executorch/kernels/optimized/test/...",
-            "//executorch/kernels/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         compiler_flags = [
             # kernels often have helpers with no prototypes just disabling the warning here as the headers
             # are codegend and linked in later
@@ -107,21 +101,18 @@ def define_op_library(name, compiler_flags, deps):
             # fail Werror builds; see https://godbolt.org/z/zvf85vTsr
             "-Wno-pass-failed",
         ] + compiler_flags + get_compiler_optimization_flags(),
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-        ] + augmented_deps + get_vec_deps(),
-        preprocessor_flags = get_vec_preprocessor_flags(),
         # sleef needs to be added as a direct dependency of the operator target when building for Android,
         # or a linker error may occur. Not sure why this happens; it seems that fbandroid_platform_deps of
         # dependencies are not transitive
-        fbandroid_platform_deps = [
-            (
-                "^android-arm64.*$",
-                [
-                    "fbsource//third-party/sleef:sleef",
-                ],
-            ),
-        ],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ] + augmented_deps + get_vec_deps() + select({
+            "DEFAULT": [],
+            "ovr_config//os:android-arm64": [
+                "fbsource//third-party/sleef:sleef",
+            ],
+        }),
+        preprocessor_flags = get_vec_preprocessor_flags(),
         # link_whole is necessary because the operators register themselves
         # via static initializers that run at program startup.
         # @lint-ignore BUCKLINT link_whole

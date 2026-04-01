@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -38,7 +38,7 @@ quant_test_data = {
 }
 
 
-def test_resnet_tosa_FP():
+def test_resnet_18_tosa_FP():
     pipeline = TosaPipelineFP[input_t](
         model,
         model_inputs,
@@ -49,8 +49,23 @@ def test_resnet_tosa_FP():
     pipeline.run()
 
 
+def test_resnet_18_tosa_FP_bf16():
+    bf16_model = resnet18(weights=ResNet18_Weights).eval()
+    bf16_model = bf16_model.to(torch.bfloat16)
+    bf16_input = normalize(torch.rand((1, 3, 224, 224)) * 2 - 1).to(torch.bfloat16)
+    pipeline = TosaPipelineFP[input_t](
+        bf16_model,
+        (bf16_input,),
+        aten_op=[],
+        tosa_extensions=["bf16"],
+        atol=10e-02,
+        rtol=10e-02,
+    )
+    pipeline.run()
+
+
 @common.parametrize("per_channel_quantization", quant_test_data)
-def test_resnet_tosa_INT(per_channel_quantization):
+def test_resnet_18_tosa_INT(per_channel_quantization):
     pipeline = TosaPipelineINT[input_t](
         model,
         model_inputs,
@@ -60,6 +75,8 @@ def test_resnet_tosa_INT(per_channel_quantization):
         per_channel_quantization=per_channel_quantization,
         atol=0.25,
         qtol=1,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -67,7 +84,7 @@ def test_resnet_tosa_INT(per_channel_quantization):
 @pytest.mark.slow
 @common.XfailIfNoCorstone300
 @common.parametrize("per_channel_quantization", quant_test_data)
-def test_resnet_u55_INT(per_channel_quantization):
+def test_resnet_18_u55_INT(per_channel_quantization):
     pipeline = EthosU55PipelineINT[input_t](
         model,
         model_inputs,
@@ -84,7 +101,7 @@ def test_resnet_u55_INT(per_channel_quantization):
 @pytest.mark.slow
 @common.XfailIfNoCorstone320
 @common.parametrize("per_channel_quantization", quant_test_data)
-def test_resnet_u85_INT(per_channel_quantization):
+def test_resnet_18_u85_INT(per_channel_quantization):
     pipeline = EthosU85PipelineINT[input_t](
         model,
         model_inputs,

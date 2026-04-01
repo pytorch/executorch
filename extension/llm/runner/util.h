@@ -33,7 +33,7 @@
   })
 
 #define ET_CHECK_TK_OK_OR_RETURN_ERROR(result__, ...)                        \
-  ({                                                                         \
+  do {                                                                       \
     auto tk_result__ = (result__);                                           \
     if (tk_result__ != ::tokenizers::Error::Ok) {                            \
       ET_LOG(                                                                \
@@ -41,7 +41,7 @@
       ET_CHECK_OK_OR_RETURN_ERROR(                                           \
           ::executorch::runtime::Error::InvalidArgument, ##__VA_ARGS__);     \
     }                                                                        \
-  })
+  } while (0)
 
 namespace executorch {
 namespace extension {

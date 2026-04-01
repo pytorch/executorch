@@ -1,10 +1,10 @@
 #version 450 core
 
+${define_required_extensions(STORAGE, DTYPE)}
+
 #define PRECISION ${PRECISION}
 
 #define T ${buffer_scalar_type(DTYPE)}
-
-${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 

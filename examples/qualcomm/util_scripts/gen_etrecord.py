@@ -2,6 +2,10 @@ import os
 
 import torch
 
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
+
 from executorch.backends.qualcomm.tests.models import SimpleModel
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
@@ -28,7 +32,9 @@ def main(args):
     pte_filename = "qnn_simple_model"
 
     # Quantize the model
-    quantizer = make_quantizer()
+    quantizer = make_quantizer(
+        backend=QnnExecuTorchBackendType.kHtpBackend, soc_model=args.model
+    )
     prepared = prepare_pt2e(model, quantizer)
     prepared(*sample_input)
     converted = convert_pt2e(prepared)

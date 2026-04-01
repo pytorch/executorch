@@ -25,12 +25,14 @@ These quantizers usually support configs that allow users to specify quantizatio
 * Precision (e.g., 8-bit or 4-bit)
 * Quantization type (e.g., dynamic, static, or weight-only quantization)
 * Granularity (e.g., per-tensor, per-channel)
+* Post-Training Quantization vs. Quantization Aware Training 
 
 Not all quantization options are supported by all backends. Consult backend-specific guides for supported quantization modes and configuration, and how to initialize the backend-specific PT2E quantizer:
 
 * [XNNPACK quantization](backends/xnnpack/xnnpack-quantization.md)
 * [CoreML quantization](backends/coreml/coreml-quantization.md)
 * [QNN quantization](backends-qualcomm.md#step-2-optional-quantize-your-model)
+* [NXP quantization](backends/nxp/nxp-quantization.md)
 
 
 

@@ -36,13 +36,7 @@ def define_common_targets():
         exported_preprocessor_flags = [
             "-DET_USE_THREADPOOL",
         ],
-        visibility = [
-            "//executorch/...",
-            "//executorch/backends/...",
-            "//executorch/runtime/backend/...",
-            "//executorch/extension/threadpool/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -56,6 +50,7 @@ def define_common_targets():
             "ovr_config//os:windows": [":threadpool_lib"],
             "ovr_config//os:android": [":threadpool_lib"],
             "ovr_config//os:iphoneos": [":threadpool_lib"],
+            "ovr_config//runtime:wasm-emscripten": [":threadpool_lib"],
             # Machines without an operating system shouldn't.
             "ovr_config//os:none": ["//executorch/runtime/kernel:thread_parallel_interface"],
             # If we don't know what it is, disable threadpool out of caution.
@@ -71,10 +66,7 @@ def define_common_targets():
             # If we don't know what it is, disable threadpool out of caution.
             "DEFAULT": ["//executorch/runtime/kernel:thread_parallel_interface"],
         })),
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -92,11 +84,5 @@ def define_common_targets():
             third_party_dep("pthreadpool"),
             third_party_dep("cpuinfo"),
         ],
-        visibility = [
-            "//executorch/...",
-            "//executorch/backends/...",
-            "//executorch/runtime/backend/...",
-            "//executorch/extension/threadpool/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )

@@ -1,10 +1,11 @@
+import argparse
 import os
 from typing import Dict
 
 import torch
-from safetensors.torch import load_file
 
-from torchtune.models.convert_weights import get_mapped_key
+from executorch.examples.models.checkpoint import get_mapped_key
+from safetensors.torch import load_file
 
 _LFM_2_TO_META = {
     "model.embed_tokens.weight": "tok_embeddings.weight",
@@ -72,3 +73,20 @@ def convert_weights(input_dir: str, output_file: str) -> None:
     print("Saving checkpoint...")
     torch.save(sd, output_file)
     print("Done.")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Convert LFM2 weights to Meta format.")
+    parser.add_argument(
+        "input_dir",
+        type=str,
+        help="Path to directory containing safetensor checkpoint files.",
+    )
+    parser.add_argument("output", type=str, help="Path to the output checkpoint")
+
+    args = parser.parse_args()
+    convert_weights(args.input_dir, args.output)
+
+
+if __name__ == "__main__":
+    main()

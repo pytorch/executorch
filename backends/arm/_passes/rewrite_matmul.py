@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -21,7 +21,9 @@ from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class RewriteMatmulPass(ArmPass):
-    """Rewrites aten.bmm to tosa.MATMUL and inserts a tosa.RESCALE op if needed."""
+    """Rewrites aten.bmm to tosa.MATMUL and inserts a tosa.RESCALE op if
+    needed.
+    """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
@@ -91,6 +93,22 @@ class RewriteMatmulPass(ArmPass):
                     tosa_matmul_node.meta[TosaSpecialDtype.meta_key()] = (
                         TosaSpecialDtype.INT48
                     )
+            elif (
+                x1_fake_tensor.dtype in [torch.float16, torch.bfloat16]
+                and x2_fake_tensor.dtype in [torch.float16, torch.bfloat16]
+                and output_fake_tensor.dtype not in [torch.float16, torch.bfloat16]
+            ):
+                # A TOSA BF16/FP16 MATMUL outputs FP32 whereas pytorch outputs BF16/FP16.
+                # Cast back to BF16/FP16 to get matching semantics.
+                with graph_module.graph.inserting_after(tosa_matmul_node):
+                    cast_node = create_node(
+                        graph_module.graph,
+                        op_target=exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+                        kwargs={"dtype": x1_fake_tensor.dtype},
+                        from_node=tosa_matmul_node,
+                    )
+                    tosa_matmul_node.replace_all_uses_with(cast_node)
+                    cast_node.args = (tosa_matmul_node,)
 
         if modified:
             graph_module.recompile()

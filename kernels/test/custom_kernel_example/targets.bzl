@@ -26,10 +26,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "my_operators",
         srcs = [],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = all_op_targets,
     )
 

@@ -18,6 +18,36 @@
                 "CMAKE_BUILD_TYPE": "Debug",
                 "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out"
             }
+        },
+        {
+            "name": "llama-cuda-debug",
+            "displayName": "Llama runner in Debug mode with CUDA backend",
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/llama",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "EXECUTORCH_BUILD_CUDA": "ON"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
+        },
+        {
+            "name": "llama-cuda",
+            "displayName": "Llama runner with CUDA backend",
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/llama",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "EXECUTORCH_BUILD_CUDA": "ON"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
         }
     ],
     "buildPresets": [
@@ -31,6 +61,18 @@
             "name": "llama-debug",
             "displayName": "Build Llama runner in Debug mode",
             "configurePreset": "llama-debug",
+            "targets": ["llama_main"]
+        },
+        {
+            "name": "llama-cuda-debug",
+            "displayName": "Build Llama runner in Debug mode with CUDA backend",
+            "configurePreset": "llama-cuda-debug",
+            "targets": ["llama_main"]
+        },
+        {
+            "name": "llama-cuda",
+            "displayName": "Build Llama runner with CUDA backend",
+            "configurePreset": "llama-cuda",
             "targets": ["llama_main"]
         }
     ],
@@ -60,6 +102,34 @@
                 {
                     "type": "build",
                     "name": "llama-debug"
+                }
+            ]
+        },
+        {
+            "name": "llama-cuda-debug",
+            "displayName": "Configure and build Llama runner in Debug mode with CUDA backend",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "llama-cuda-debug"
+                },
+                {
+                    "type": "build",
+                    "name": "llama-cuda-debug"
+                }
+            ]
+        },
+        {
+            "name": "llama-cuda",
+            "displayName": "Configure and build Llama runner with CUDA backend",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "llama-cuda"
+                },
+                {
+                    "type": "build",
+                    "name": "llama-cuda"
                 }
             ]
         }

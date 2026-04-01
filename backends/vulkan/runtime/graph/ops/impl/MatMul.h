@@ -12,11 +12,6 @@
 
 namespace vkcompute {
 
-void add_matmul_node(
-    ComputeGraph& graph,
-    const ValueRef mat1,
-    const ValueRef mat2_data,
-    const ValueRef out,
-    const ValueRef mat2_is_transposed);
+uint32_t pick_matmul_tile_m(ComputeGraph* graph, const ValueRef out);
 
 } // namespace vkcompute

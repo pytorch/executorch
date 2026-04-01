@@ -29,9 +29,6 @@ class StaticLLMQuantRecipe:
         if self.default_quant_dtype is None:
             raise ValueError("default_quant_dtype must be defined in the recipe.")
 
-    def annotate(self, graph_module: torch.fx.GraphModule):
-        self.recipe.annotate(graph_module)
-
     def get_kv_io_bit_width(self) -> int:
         if self.default_quant_dtype is None:
             return 32
@@ -110,6 +107,7 @@ class LlamaStories110MQuantRecipe(StaticLLMQuantRecipe):
                 QuantDtype.use_8a4w,
                 False,
                 act_observer=MinMaxObserver,
+                act_symmetric=True,
                 granularity=QuantGranularity.PER_CHANNEL,
             )
             .add_regex(
@@ -263,6 +261,43 @@ class Gemma_2BQuantRecipe(StaticLLMQuantRecipe):
         self.recipe.custom_quant_annotations.append(annotate_kv_8bit)
 
 
+class Gemma2QuantRecipe(StaticLLMQuantRecipe):
+    default_quant_dtype = QuantDtype.use_16a4w
+
+    def __init__(self, verbose: bool = False):
+        super().__init__()
+
+        self.recipe = (
+            QuantRecipe(
+                self.default_quant_dtype,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_TENSOR,
+                verbose=verbose,
+            )
+            .add_node_target(
+                {
+                    torch.ops.aten.conv2d.default,
+                },
+                QuantDtype.use_16a4w_block,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_BLOCK,
+                extra_kwargs={"block_size": (1, 32, 1, 1)},
+            )
+            .add_regex(
+                {
+                    r"layers\..*\.attention\.wv.*",
+                },
+                QuantDtype.use_16a8w,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_CHANNEL,
+            )
+        )
+        self.recipe.custom_quant_annotations.append(annotate_kv_8bit)
+
+
 class Gemma3QuantRecipe(StaticLLMQuantRecipe):
     default_quant_dtype = QuantDtype.use_16a4w
 
@@ -372,6 +407,29 @@ class Granite_3_3_2B_InstructQuantRecipe(StaticLLMQuantRecipe):
         self.recipe.custom_quant_annotations.append(annotate_kv_8bit)
 
 
+class InternVL3_1B_QuantRecipe(StaticLLMQuantRecipe):
+    default_quant_dtype = QuantDtype.use_16a8w
+
+    def __init__(self, verbose: bool = False):
+        super().__init__()
+
+        self.recipe = QuantRecipe(
+            self.default_quant_dtype,
+            False,
+            act_observer=MinMaxObserver,
+            granularity=QuantGranularity.PER_TENSOR,
+            verbose=verbose,
+        ).add_node_target(
+            {
+                torch.ops.aten.conv2d.default,
+            },
+            QuantDtype.use_16a8w,
+            False,
+            act_observer=MinMaxObserver,
+            granularity=QuantGranularity.PER_CHANNEL,
+        )
+
+
 class Phi4MiniQuantRecipe(StaticLLMQuantRecipe):
     default_quant_dtype = QuantDtype.use_16a4w
 
@@ -401,6 +459,7 @@ class Phi4MiniQuantRecipe(StaticLLMQuantRecipe):
                 QuantDtype.use_8a4w,
                 False,
                 act_observer=MinMaxObserver,
+                act_symmetric=True,
                 granularity=QuantGranularity.PER_CHANNEL,
             )
             .add_regex(
@@ -615,3 +674,26 @@ class Smollm3QuantRecipe(StaticLLMQuantRecipe):
             )
         )
         self.recipe.custom_quant_annotations.append(annotate_kv_8bit)
+
+
+class SmolVLMQuantRecipe(StaticLLMQuantRecipe):
+    default_quant_dtype = QuantDtype.use_16a8w
+
+    def __init__(self, verbose: bool = False):
+        super().__init__()
+
+        self.recipe = QuantRecipe(
+            self.default_quant_dtype,
+            False,
+            act_observer=MinMaxObserver,
+            granularity=QuantGranularity.PER_TENSOR,
+            verbose=verbose,
+        ).add_node_target(
+            {
+                torch.ops.aten.conv2d.default,
+            },
+            QuantDtype.use_16a8w,
+            False,
+            act_observer=MinMaxObserver,
+            granularity=QuantGranularity.PER_CHANNEL,
+        )

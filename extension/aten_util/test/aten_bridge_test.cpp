@@ -193,7 +193,8 @@ TEST(ATenBridgeTest, AliasATTensorToETensorFailDimOrder) {
       dim_order.data(),
       strides.data());
   torch::executor::Tensor etensor(&tensor_impl);
-  ET_EXPECT_DEATH(alias_attensor_to_etensor(etensor), "");
+  ET_EXPECT_DEATH(
+      alias_attensor_to_etensor(etensor), "Strides don't match dim order");
 }
 
 TEST(ATenBridgeTest, AliasETensorToATenTensorChannelsLast) {

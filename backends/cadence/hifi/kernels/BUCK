@@ -1,0 +1,13 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("targets.bzl", "define_common_targets")
+
+oncall("odai_jarvis")
+
+non_fbcode_target(_kind = define_common_targets,)
+
+# !!!! fbcode/executorch/backends/cadence/hifi/kernels/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load("targets.bzl", "define_common_targets")
+
+
+fbcode_target(_kind = define_common_targets,)

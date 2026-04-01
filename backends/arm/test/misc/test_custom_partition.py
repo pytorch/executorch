@@ -46,7 +46,7 @@ class NestedModule(torch.nn.Module):
 
 
 @common.parametrize("test_data", CustomPartitioning.inputs)
-def test_single_reject(caplog, test_data: input_t1):
+def test_single_reject_tosa_FP(caplog, test_data: input_t1):
     caplog.set_level(logging.INFO)
 
     module = CustomPartitioning()
@@ -66,7 +66,7 @@ def test_single_reject(caplog, test_data: input_t1):
 
 
 @common.parametrize("test_data", CustomPartitioning.inputs)
-def test_multiple_reject(test_data: input_t1):
+def test_multiple_reject_tosa_FP(test_data: input_t1):
     module = CustomPartitioning()
     pipeline = TosaPipelineFP[input_t1](module, test_data, [], exir_op=[])
     check = DontPartition(
@@ -85,7 +85,7 @@ def test_multiple_reject(test_data: input_t1):
 
 
 @common.parametrize("test_data", CustomPartitioning.inputs)
-def test_torch_op_reject(caplog, test_data: input_t1):
+def test_torch_op_reject_tosa_FP(caplog, test_data: input_t1):
     caplog.set_level(logging.INFO)
 
     module = CustomPartitioning()
@@ -105,7 +105,7 @@ def test_torch_op_reject(caplog, test_data: input_t1):
 
 
 @common.parametrize("test_data", CustomPartitioning.inputs)
-def test_string_op_reject(test_data: input_t1):
+def test_string_op_reject_tosa_FP(test_data: input_t1):
     module = CustomPartitioning()
     check = DontPartition("aten.sigmoid.default")
     pipeline = TosaPipelineFP[input_t1](module, test_data, [], exir_op=[])
@@ -122,7 +122,7 @@ def test_string_op_reject(test_data: input_t1):
 
 
 @common.parametrize("test_data", CustomPartitioning.inputs)
-def test_name_reject(caplog, test_data: input_t1):
+def test_name_reject_tosa_FP(caplog, test_data: input_t1):
     caplog.set_level(logging.INFO)
 
     module = CustomPartitioning()
@@ -139,7 +139,7 @@ def test_name_reject(caplog, test_data: input_t1):
 
 
 @common.parametrize("test_data", CustomPartitioning.inputs)
-def test_module_reject(test_data: input_t1):
+def test_module_reject_tosa_FP(test_data: input_t1):
     module = NestedModule()
     check = DontPartitionModule(module_name="CustomPartitioning")
     pipeline = TosaPipelineFP[input_t1](module, test_data, [], exir_op=[])
@@ -153,7 +153,7 @@ def test_module_reject(test_data: input_t1):
 
 
 @common.parametrize("test_data", CustomPartitioning.inputs)
-def test_inexact_module_reject(caplog, test_data: input_t1):
+def test_inexact_module_reject_tosa_FP(caplog, test_data: input_t1):
     caplog.set_level(logging.INFO)
 
     module = NestedModule()
@@ -170,7 +170,7 @@ def test_inexact_module_reject(caplog, test_data: input_t1):
 
 
 @common.parametrize("test_data", CustomPartitioning.inputs)
-def test_module_instance_reject(test_data: input_t1):
+def test_module_instance_reject_tosa_FP(test_data: input_t1):
     module = NestedModule()
     check = DontPartitionModule(instance_name="nested")
     pipeline = TosaPipelineFP[input_t1](module, test_data, [], exir_op=[])

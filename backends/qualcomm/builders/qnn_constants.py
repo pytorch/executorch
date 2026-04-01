@@ -168,6 +168,11 @@ class OpElementWiseFloor:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseFloorDiv:
+    op_name: str = "ElementWiseFloorDiv"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseGreater:
     op_name: str = "ElementWiseGreater"
 
@@ -276,6 +281,31 @@ class OpElementWiseSubtract:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseUnary:
+    op_name: str = "ElementWiseUnary"
+    param_operation: str = "operation"
+
+    @unique
+    class Operation(IntEnum):
+        ABS = 0
+        ASIN = 1
+        ATAN = 2
+        CEIL = 3
+        COS = 4
+        EXP = 5
+        FLOOR = 6
+        LOG = 7
+        NEG = 8
+        NOT = 9
+        RECIPROCAL = 10
+        ROUND = 11
+        RSQRT = 12
+        SIGN = 13
+        SIN = 14
+        SQRT = 15
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseXor:
     op_name: str = "ElementWiseXor"
 
@@ -357,6 +387,18 @@ class OpInstanceNorm:
     param_mode = "mode"
     param_normalize_variance = "normalize_variance"
     param_region = "region"
+
+
+@dataclass(init=False, frozen=True)
+class OpIsInf:
+    op_name: str = "IsInf"
+    param_detect_negative = "detect_negative"
+    param_detect_positive = "detect_positive"
+
+
+@dataclass(init=False, frozen=True)
+class OpIsNan:
+    op_name: str = "IsNan"
 
 
 @dataclass(init=False, frozen=True)
@@ -453,6 +495,13 @@ class OpPRelu:
 @dataclass(init=False, frozen=True)
 class OpQuantize:
     op_name: str = "Quantize"
+
+
+@dataclass(init=False, frozen=True)
+class OpRandomUniformLike:
+    op_name: str = "RandomUniformLike"
+    param_low: str = "low"
+    param_high: str = "high"
 
 
 @dataclass(init=False, frozen=True)

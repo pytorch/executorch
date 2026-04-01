@@ -1,4 +1,4 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,6 +8,7 @@ import torch
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
+from executorch.backends.nxp.backend.data_format import NXP_NODE_FORMAT
 from executorch.backends.nxp.backend.edge_helper import previous_non_qdq_node
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
@@ -23,7 +24,6 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.concate
     Concatenation,
 )
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
-from executorch.backends.nxp.backend.node_format import NXP_NODE_FORMAT
 from torch.fx import Node
 from torch.fx.passes.infra.partitioner import Partition
 from torch.nn import Parameter

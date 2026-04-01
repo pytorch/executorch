@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -12,10 +12,11 @@ from executorch.exir.pass_base import ExportPass
 
 
 class DecomposeIntPowPass(ArmPass):
-    """
-    Replaces pow with integer exponent with a series of multiplications.
-    Only handles pow.Tensor_Scalar and not pow.Tensor_Tensor.
-    Needs to be run before doing scalar to tensor conversion.
+    """Replaces pow with integer exponent with a series of multiplications.
+
+    Only handles pow.Tensor_Scalar and not pow.Tensor_Tensor. Needs to be run
+    before doing scalar to tensor conversion.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -24,11 +25,7 @@ class DecomposeIntPowPass(ArmPass):
         if op != exir_ops.edge.aten.pow.Tensor_Scalar:
             return super().call_operator(op, args, kwargs, meta)
 
-        is_quantized = (
-            len(meta.data.get("input_qparams", {})) > 0
-            and len(meta.data.get("output_qparams", {})) > 0
-        )
-        if is_quantized:
+        if self._is_quantized_meta(meta):
             # If quantized, node should be replace by table op
             return super().call_operator(op, args, kwargs, meta)
 

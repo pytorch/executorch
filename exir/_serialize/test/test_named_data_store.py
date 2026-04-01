@@ -210,3 +210,40 @@ class TestNamedDataStore(unittest.TestCase):
         # Merge store2 into store1 raises error as key1 is already in store1
         # with different data.
         self.assertRaises(ValueError, store1.merge_named_data_store, output2)
+
+    def test_fingerprint_collision(self) -> None:
+        """Two blobs with same length and first 32 bytes but different content
+        must not be deduped."""
+        store = NamedDataStore()
+        prefix = b"A" * 32
+        data1 = prefix + b"X" * 100
+        data2 = prefix + b"Y" * 100
+        self.assertEqual(len(data1), len(data2))
+
+        store.add_named_data("key1", data1, None, None)
+        store.add_named_data("key2", data2, None, None)
+
+        output = store.get_named_data_store_output()
+        self.assertEqual(len(output.buffers), 2)
+        self.assertEqual(output.buffers[0], data1)
+        self.assertEqual(output.buffers[1], data2)
+        self.assertEqual(output.pte_data["key1"].buffer_index, 0)
+        self.assertEqual(output.pte_data["key2"].buffer_index, 1)
+
+    def test_fingerprint_collision_with_dedup(self) -> None:
+        """After a fingerprint collision, a true duplicate of the first blob
+        must still be deduped correctly."""
+        store = NamedDataStore()
+        prefix = b"A" * 32
+        data1 = prefix + b"X" * 100
+        data2 = prefix + b"Y" * 100
+
+        store.add_named_data("key1", data1, None, None)
+        store.add_named_data("key2", data2, None, None)
+        store.add_named_data("key3", data1, None, None)  # duplicate of key1
+
+        output = store.get_named_data_store_output()
+        self.assertEqual(len(output.buffers), 2)
+        self.assertEqual(output.pte_data["key1"].buffer_index, 0)
+        self.assertEqual(output.pte_data["key2"].buffer_index, 1)
+        self.assertEqual(output.pte_data["key3"].buffer_index, 0)

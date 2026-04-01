@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -25,9 +25,11 @@ input_t4 = Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
 
 
 class TestSD3Transformer2DModel:
-    """
-    Test class of AutoenSD3Transformer2DModelcoderKL.
-    SD3Transformer2DModel is the transformer model used by Stable Diffusion 3.5 Medium
+    """Test class of AutoenSD3Transformer2DModelcoderKL.
+
+    SD3Transformer2DModel is the transformer model used by Stable Diffusion 3.5
+    Medium
+
     """
 
     # Adjust nbr below as we increase op support.
@@ -39,8 +41,7 @@ class TestSD3Transformer2DModel:
 
     ops_after_partitioner_INT = {
         "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 2,
-        "torch.ops.higher_order.executorch_call_delegate": 3,
-        "executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1,
+        "torch.ops.higher_order.executorch_call_delegate": 2,
     }
 
     ops_after_partitioner_vgf_quantize = {
@@ -105,7 +106,7 @@ class TestSD3Transformer2DModel:
         return sd35_transformer2D_model, sd35_transformer2D_model_inputs
 
 
-def test_SD3Transformer2DModel_tosa_FP():
+def test_sd3_transformer_tosa_FP():
     sd35_transformer2D_model, sd35_transformer2D_model_inputs = (
         TestSD3Transformer2DModel().prepare_model_and_inputs()
     )
@@ -125,7 +126,7 @@ def test_SD3Transformer2DModel_tosa_FP():
         pipeline.run()
 
 
-def test_SD3Transformer2DModel_tosa_INT():
+def test_sd3_transformer_tosa_INT():
     sd35_transformer2D_model, sd35_transformer2D_model_inputs = (
         TestSD3Transformer2DModel().prepare_model_and_inputs()
     )
@@ -139,6 +140,8 @@ def test_SD3Transformer2DModel_tosa_INT():
             qtol=1.0,  # TODO: MLETORCH-875: Reduce tolerance of SD3Transformer2DModel with FP and INT
             rtol=1.0,
             atol=4.0,
+            frobenius_threshold=None,
+            cosine_threshold=None,
         )
         pipeline.change_args(
             "check_count.exir", TestSD3Transformer2DModel.ops_after_partitioner_INT
@@ -147,7 +150,7 @@ def test_SD3Transformer2DModel_tosa_INT():
 
 
 @common.SkipIfNoModelConverter
-def test_SD3Transformer2DModel_vgf_no_quant():
+def test_sd3_transformer_vgf_no_quant():
     sd35_transformer2D_model, sd35_transformer2D_model_inputs = (
         TestSD3Transformer2DModel().prepare_model_and_inputs()
     )
@@ -170,7 +173,7 @@ def test_SD3Transformer2DModel_vgf_no_quant():
 
 
 @common.SkipIfNoModelConverter
-def test_SD3Transformer2DModel_vgf_quant():
+def test_sd3_transformer_vgf_quant():
     sd35_transformer2D_model, sd35_transformer2D_model_inputs = (
         TestSD3Transformer2DModel().prepare_model_and_inputs()
     )

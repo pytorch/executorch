@@ -54,6 +54,15 @@ at::Tensor tensor_like(bundled_program_flatbuffer::Tensor* bundled_tensor) {
   at::Tensor ret_tensor = at::zeros(
       {ret_t_sizes, bundled_tensor->sizes()->size()},
       at::dtype(static_cast<ScalarType>(bundled_tensor->scalar_type())));
+
+  // Validate data buffer exists and has sufficient size
+  ET_CHECK(bundled_tensor->data() != nullptr);
+  ET_CHECK_MSG(
+      bundled_tensor->data()->size() >= ret_tensor.nbytes(),
+      "Tensor data buffer too small: got %zu bytes, need %zu bytes",
+      static_cast<size_t>(bundled_tensor->data()->size()),
+      static_cast<size_t>(ret_tensor.nbytes()));
+
   memcpy(
       ret_tensor.mutable_data_ptr(),
       static_cast<const void*>(bundled_tensor->data()->Data()),

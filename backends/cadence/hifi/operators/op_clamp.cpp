@@ -155,13 +155,13 @@ Tensor& clamp_Tensor_out(
           inp_shape[i + off_inp] = in.size(i);
         }
 
-        WORD32 ret_val = xa_nn_elm_minimum_broadcast_4D_f32xf32_f32(
+        WORD32 ret_val = xa_nn_elm_min_4D_Bcast_f32xf32_f32(
             out_data, out_shape, inp_data, inp_shape, max_data, max_shape);
 
         ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);
 
       } else {
-        WORD32 ret_val = xa_nn_elm_minimum_f32xf32_f32(
+        WORD32 ret_val = xa_nn_elm_min_f32xf32_f32(
             out_data, inp_data, max_data, out.numel());
 
         ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);
@@ -192,13 +192,13 @@ Tensor& clamp_Tensor_out(
           min_shape[i + off_min] = min.size(i);
         for (int i = 0; i < inp_dim; i++)
           inp_shape[i + off_inp] = in.size(i);
-        WORD32 ret_val = xa_nn_elm_maximum_broadcast_4D_f32xf32_f32(
+        WORD32 ret_val = xa_nn_elm_max_4D_Bcast_f32xf32_f32(
             out_data, out_shape, inp_data, inp_shape, min_data, min_shape);
 
         ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);
 
       } else {
-        WORD32 ret_val = xa_nn_elm_maximum_f32xf32_f32(
+        WORD32 ret_val = xa_nn_elm_max_f32xf32_f32(
             out_data, inp_data, min_data, out.numel());
 
         ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);

@@ -71,7 +71,7 @@ Core ML supports backward compatibility via the [`minimum_deployment_target`](co
 
 ## Runtime integration
 
-To run the model on device, use the standard ExecuTorch runtime APIs. See [Running on Device](getting-started.md#running-on-device) for more information, including building the iOS frameworks.
+To run the model on device, use the standard ExecuTorch runtime APIs. See [Running on Device](../../getting-started.md#running-on-device) for more information, including building the iOS frameworks.
 
 When building from source, pass `-DEXECUTORCH_BUILD_COREML=ON` when configuring the CMake build to compile the Core ML backend.
 

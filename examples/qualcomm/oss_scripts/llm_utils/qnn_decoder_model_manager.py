@@ -240,6 +240,8 @@ class QnnLLMEdgeManager:
         calibration_limit,
         calibration_data,
         tokenizer_path,
+        backend,
+        soc_model,
     ):
         self.export()
 
@@ -248,6 +250,8 @@ class QnnLLMEdgeManager:
             per_channel_linear=True,
             per_channel_conv=True,
             act_observer=MinMaxObserver,
+            backend=backend,
+            soc_model=soc_model,
         )
         if quant_dtype == QuantDtype.use_16a4w_block:
 

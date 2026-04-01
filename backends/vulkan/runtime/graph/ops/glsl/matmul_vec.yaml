@@ -1,0 +1,36 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+matmul_vec:
+  parameter_names_with_default_values:
+    DTYPE: float
+    STORAGE: texture3d
+    HAS_BIAS: false
+    TILE_M4: 1
+    TILE_K4: 1
+    TILE_N4: 1
+    TILE_M: 4
+  generate_variant_forall:
+    STORAGE:
+      - VALUE: texture3d
+      - VALUE: buffer
+    DTYPE:
+      - VALUE: float
+      - VALUE: half
+  shader_variants:
+    - NAME: matmul_vec
+    - NAME: matmul_vec_tile_row_2
+      TILE_M: 2
+    - NAME: matmul_vec_tile_row_1
+      TILE_M: 1
+    - NAME: matmul_vec_bias
+      HAS_BIAS: true
+    - NAME: matmul_vec_bias_tile_row_2
+      HAS_BIAS: true
+      TILE_M: 2
+    - NAME: matmul_vec_bias_tile_row_1
+      HAS_BIAS: true
+      TILE_M: 1

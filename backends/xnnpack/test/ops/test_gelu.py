@@ -63,8 +63,28 @@ class TestGelu(unittest.TestCase):
         )
 
     def test_fp16_gelu(self):
+        # Older versions of XNNPACK don't support fp16 GELU.
+        # TODO (gjcomer) Remove this when we update XNNPACK. (#16679)
         inputs = (torch.randn(20).to(torch.float16),)
-        self.run_gelu_test(inputs)
+
+        with torch.no_grad():
+            ref_output = torch.nn.functional.gelu(inputs[0].to(torch.float32)).to(
+                torch.float16
+            )
+        atol, rtol = calculate_fp16_gelu_tolerance(ref_output)
+
+        (
+            Tester(self.Gelu(), inputs)
+            .export()
+            .check_count({"torch.ops.aten.gelu.default": 1})
+            .to_edge_transform_and_lower()
+            # Expect no delegation
+            .check(["executorch_exir_dialects_edge__ops_aten_gelu_default"])
+            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(atol=atol, rtol=rtol)
+        )
 
     def test_fp32_gelu(self):
         inputs = (torch.randn(20),)

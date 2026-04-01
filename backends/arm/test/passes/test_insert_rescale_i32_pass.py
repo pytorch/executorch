@@ -82,15 +82,15 @@ def _test_model_with_f32_data(model):
     pipeline.run()
 
 
-def test_insert_rescales_sum_model():
+def test_insert_rescale_int32_tosa_INT_sum():
     _test_model_with_f32_data(SumModel())
 
 
-def test_insert_rescales_multiple_ops_model():
+def test_insert_rescale_int32_tosa_INT_multiple_ops():
     _test_model_with_f32_data(MultipleOpsModel())
 
 
-def test_dont_insert_rescales():
+def test_insert_rescale_int32_tosa_FP_dont_insert_rescales():
     module = MultipleOpsModel()
     input_t = Tuple[torch.Tensor, torch.Tensor]
     ops_not_before = {"executorch_exir_dialects_backend__ops_tosa_RESCALE_default"}

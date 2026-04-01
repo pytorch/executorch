@@ -1,0 +1,17 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "xnnpack_utils",
+    srcs = glob(["*.py"]),
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:pass_manager",
+        "//executorch/exir/backend/canonical_partitioners:config_partitioner_lib",
+        "//executorch/exir/dialects:lib",
+        "//pytorch/ao:torchao",  # @manual
+    ],
+)

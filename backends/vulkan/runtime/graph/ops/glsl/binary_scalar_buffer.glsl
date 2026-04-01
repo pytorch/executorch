@@ -8,6 +8,8 @@
 
 #version 450 core
 
+${define_required_extensions(STORAGE, DTYPE)}
+
 #define PRECISION ${PRECISION}
 
 #define NAME ${VARIANT_NAME}
@@ -17,7 +19,6 @@
 #define op(X, Y) ${OPERATOR}
 
 ${define_active_storage_type(STORAGE)}
-${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 

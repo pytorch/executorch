@@ -68,10 +68,11 @@ if(_portable_lib_LIBRARY)
   list(APPEND EXECUTORCH_LIBRARIES _portable_lib)
   add_library(_portable_lib STATIC IMPORTED)
   set(EXECUTORCH_INCLUDE_DIRS ${CMAKE_CURRENT_LIST_DIR}/../../include)
+  # PyTorch requires C++20, so pybindings must be compiled with C++20.
   set_target_properties(
     _portable_lib
     PROPERTIES IMPORTED_LOCATION "${_portable_lib_LIBRARY}"
                INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
-               CXX_STANDARD 17
+               CXX_STANDARD 20
   )
 endif()

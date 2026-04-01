@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -21,9 +21,8 @@ input_t1 = Tuple[torch.Tensor, ...]  # Input x
 
 
 class ChannelsLastInput(torch.nn.Module):
-    """
-    Test a complex case with (channels last, channels first) input,
-    and  (channels first, channels last) output.
+    """Test a complex case with (channels last, channels first) input, and
+    (channels first, channels last) output.
     """
 
     inputs: input_t1 = (
@@ -39,9 +38,7 @@ class ChannelsLastInput(torch.nn.Module):
 
 
 class ChannelsFirstOutput(torch.nn.Module):
-    """
-    Test coverting to channels_first inside the delegate.
-    """
+    """Test coverting to channels_first inside the delegate."""
 
     inputs: input_t1 = (
         torch.arange(1, 25, dtype=torch.float32)
@@ -55,9 +52,7 @@ class ChannelsFirstOutput(torch.nn.Module):
 
 
 class ChannelsLastOutput(torch.nn.Module):
-    """
-    Test changing of dim_order inside the delegate.
-    """
+    """Test changing of dim_order inside the delegate."""
 
     inputs: input_t1 = (torch.arange(1, 9, dtype=torch.float32).reshape((1, 2, 2, 2)),)
 
@@ -68,8 +63,8 @@ class ChannelsLastOutput(torch.nn.Module):
 
 
 class ChannelsLastInsidePartition(torch.nn.Module):
-    """
-    Test dim_order changes inside the partiton, but no dim_order changes at input/output.
+    """Test dim_order changes inside the partiton, but no dim_order changes at
+    input/output.
     """
 
     inputs: input_t1 = (torch.randn((1, 2, 3, 3)),)

@@ -21,12 +21,7 @@ import executorch.exir.control_flow as control_flow
 import executorch.extension.pytree as pytree
 import torch
 
-from executorch.exir import (
-    CaptureConfig,
-    EdgeCompileConfig,
-    ExecutorchBackendConfig,
-    memory,
-)
+from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, memory
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
 from executorch.exir.emit import emit_program
 from executorch.exir.pass_manager import PassManager
@@ -61,7 +56,7 @@ except ImportError as e:
     pass
 
 try:
-    from executorch.extension.pybindings.aten_lib import (  # type: ignore[import-not-found]
+    from executorch.extension.pybindings.aten_lib import (  # type: ignore[import-not-found, no-redef]
         _load_for_executorch_from_buffer,
     )
 
@@ -471,7 +466,6 @@ def maketest(
     allow_non_contiguous_tensor: bool = False,
     method: str = "forward",
     dynamic_memory_planning_mode: DynamicMemoryPlanningMode = DynamicMemoryPlanningMode.UPPER_BOUND,
-    capture_config=None,
     verify_graph: Optional[Callable] = None,
 ) -> Callable[[unittest.TestCase], None]:
     r"""Returns a TestCase method to test the provided module class and method.
@@ -507,7 +501,6 @@ def maketest(
             methods=(method,),
             ignore_to_out_var_failure=ignore_to_out_var_failure,
             dynamic_memory_planning_mode=dynamic_memory_planning_mode,
-            capture_config=capture_config,
         )
         if verify_graph:
             verify_graph(self, module.exported_program.graph_module)
@@ -599,9 +592,6 @@ class E2ETest(unittest.TestCase):
     def test_mem_planning_toy_model(self):
         maketest(
             ToyModelForMemPlanning,
-            capture_config=exir.CaptureConfig(
-                enable_dynamic_shape=True,
-            ),
         )(self)
 
     # TODO: add ops implementations and turn on 'run_executor'
@@ -621,9 +611,6 @@ class E2ETest(unittest.TestCase):
         maketest(
             ModuleContainers,
             do_tree_flatten=True,
-            capture_config=exir.CaptureConfig(
-                enable_dynamic_shape=True,
-            ),
         )(self)
 
     # can not run the graph module since the out variance with tensor list out
@@ -675,9 +662,6 @@ class DynamicModelE2ETest(unittest.TestCase):
             ModuleIntermediateDynamicShape,
             run_graph_module=False,
             allow_non_contiguous_tensor=True,
-            capture_config=exir.CaptureConfig(
-                enable_dynamic_shape=True,
-            ),
         )(self)
 
     # TODO(shunting): some non constant tensors for transformer are non-contiguous.
@@ -697,49 +681,103 @@ class DynamicModelE2ETest(unittest.TestCase):
     def test_ft_cond_basic(self):
         maketest(
             FTCondBasic,
-            capture_config=exir.CaptureConfig(
-                enable_dynamic_shape=True,
-                enable_functionalization=False,  # TODO enable functionalization
-            ),
         )(self)
 
-    @skipUnless(RUN_SKIPPED, "Emitter is not ready yet")
     def test_ft_map_basic(self):
-        maketest(
-            FTMapBasic,
-            capture_config=exir.CaptureConfig(
-                enable_dynamic_shape=True,
-                enable_functionalization=False,  # TODO enable functionalization
-            ),
-        )(self)
+        """Test FTMapBasic model through the modern torch.export API."""
+        from executorch.exir import EdgeCompileConfig, to_edge
+
+        # Create model and get inputs
+        model = FTMapBasic()
+        inputs = model.get_random_inputs()
+
+        # Export the model
+        exported_program = torch.export.export(
+            model,
+            inputs,
+        )
+
+        # Convert to edge program
+        edge_program = to_edge(
+            exported_program,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+
+        # Convert to executorch
+        executorch_program = edge_program.to_executorch()
+
+        # Load and run
+        executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
+
+        # Test execution matches eager mode
+        eager_output = model(*inputs)
+        et_output = executorch_module.forward(list(inputs))[0]
+
+        # Compare outputs
+        torch.testing.assert_close(
+            et_output,
+            eager_output,
+            rtol=1e-5,
+            atol=1e-8,
+            msg="ExecuTorch output doesn't match eager output",
+        )
 
     @skipUnless(RUN_SKIPPED, "TODO(larryliu0820) Fix this in both fbcode and oss")
     def test_ft_cond_dynshape(self):
         maketest(
             FTCondDynShape,
-            capture_config=exir.CaptureConfig(
-                enable_dynamic_shape=True,
-                enable_functionalization=False,  # TODO enable functionalization
-            ),
         )(self)
 
-    @skipUnless(RUN_SKIPPED, "Emitter is not ready yet")
     def test_ft_map_dynshape(self):
-        maketest(
-            FTMapDynShape,
-            capture_config=exir.CaptureConfig(
-                enable_dynamic_shape=True,
-                enable_functionalization=False,  # TODO enable functionalization
-            ),
-        )(self)
+        """Test FTMapDynShape model through the modern torch.export API.
+
+        Note: The higher-order map operation specializes on the iteration dimension
+        at export time, so varying batch sizes are not supported. This test verifies
+        that the map-based model can be exported and executed correctly through the
+        ExecuTorch pipeline using the modern torch.export.export() API.
+        """
+        from executorch.exir import EdgeCompileConfig, to_edge
+
+        # Create model and get inputs
+        model = FTMapDynShape()
+        # Use upper bound inputs since map specializes on the iteration dimension
+        inputs = model.get_upper_bound_inputs()
+
+        # Export the model
+        exported_program = torch.export.export(
+            model,
+            inputs,
+        )
+
+        # Convert to edge program
+        edge_program = to_edge(
+            exported_program,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+
+        # Convert to executorch
+        executorch_program = edge_program.to_executorch()
+
+        # Load and run
+        executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
+
+        # Test execution matches eager mode
+        eager_output = model(*inputs)
+        et_output = executorch_module.forward(list(inputs))[0]
+
+        # Compare outputs
+        torch.testing.assert_close(
+            et_output,
+            eager_output,
+            rtol=1e-5,
+            atol=1e-8,
+            msg="ExecuTorch output doesn't match eager output",
+        )
 
     @skipUnless(RUN_SKIPPED, "TODO(larryliu0820) Fix this in both fbcode and oss")
     def test_batch_norm(self):
         maketest(
             BatchNormModel,
-            capture_config=exir.CaptureConfig(
-                enable_dynamic_shape=True,
-            ),
             verify_graph=BatchNormModel.verify_graph,
             # TODO: lean mode does not have native_batch_norm.out implemented
             # run this on aten mode.

@@ -87,28 +87,6 @@ def broadcastable(shape_1: Sequence[int], shape_2: Sequence[int]) -> bool:
     )
 
 
-# Return a chain of nodes with target in op_targets
-def get_cascaded_ops(
-    nodes: List[torch.fx.Node],
-    # pyre-fixme[2]: Parameter annotation cannot contain `Any`.
-    op_targets: Iterable[Union[Callable[..., Any], str]],
-) -> Sequence[torch.fx.Node]:
-    """
-    'nodes' contains a chain of ops with target in 'op_targets'. Extend that chain
-    by one if nodes[-1] has a single user with its op target in 'op_targets'.
-    """
-    cur = nodes[-1]
-    users = list(cur.users.keys())
-    # Assert that (a) there is only one user of cur, and (b) that user is
-    # one of the op in op_targets.
-    if len(users) == 1 and users[0].target in op_targets:
-        nodes.append(users[0])
-        # Recursively find the chain starting at the user
-        return get_cascaded_ops(nodes, op_targets)
-
-    return nodes
-
-
 def get_transposed_dims(
     node: torch.fx.Node, dims: Optional[List[int]] = None
 ) -> List[int]:

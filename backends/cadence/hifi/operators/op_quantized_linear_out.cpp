@@ -13,7 +13,6 @@
 #include <optional>
 
 #include <xa_nnlib_api.h>
-#include <xtensa/tie/xt_datacache.h>
 
 #include <executorch/backends/cadence/generic/operators/op_quantized_linear.h>
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>

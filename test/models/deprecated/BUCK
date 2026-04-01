@@ -1,0 +1,13 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.export_file,
+    name = "ModuleLinear-no-constant-segment.pte",
+    src = "ModuleLinear-no-constant-segment.pte",
+    visibility = [
+        "//executorch/runtime/executor/test/...",
+        "//executorch/test/...",
+    ],
+)

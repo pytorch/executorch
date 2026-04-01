@@ -48,14 +48,18 @@ void xa_opt_quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u(
   WORD32* __restrict__ p_bias =
       (WORD32* __restrict__)bias.const_data_ptr<int32_t>();
 
-  WORD32 input_height = conv1d ? 1 : input.size(2);
-  WORD32 input_width = conv1d ? input.size(2) : input.size(3);
-  WORD32 input_channels = input.size(1);
-  WORD32 kernel_height = conv1d ? 1 : weight.size(2);
-  WORD32 kernel_width = conv1d ? weight.size(2) : weight.size(3);
-  WORD32 out_channels = weight.size(0);
-  WORD32 out_height = conv1d ? 1 : out.size(2);
-  WORD32 out_width = conv1d ? out.size(2) : out.size(3);
+  // NHWC layout: 4D=[N,H,W,C], 3D=[N,W,C]
+  WORD32 input_height = conv1d ? 1 : input.size(1);
+  WORD32 input_width = conv1d ? input.size(1) : input.size(2);
+  WORD32 input_channels = conv1d ? input.size(2) : input.size(3);
+  // Depthwise weight layout:
+  // 2D conv: [KH, KW, OC] (3D tensor)
+  // 1D conv: [K, OC] (2D tensor)
+  WORD32 kernel_height = conv1d ? 1 : weight.size(0);
+  WORD32 kernel_width = conv1d ? weight.size(0) : weight.size(1);
+  WORD32 out_channels = conv1d ? weight.size(1) : weight.size(2);
+  WORD32 out_height = conv1d ? 1 : out.size(1);
+  WORD32 out_width = conv1d ? out.size(1) : out.size(2);
   WORD32 batches = input.size(0);
 
   WORD32 x_stride = stride[1];

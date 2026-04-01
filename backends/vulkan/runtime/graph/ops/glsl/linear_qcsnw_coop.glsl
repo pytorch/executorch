@@ -8,6 +8,11 @@
 
 #version 450 core
 
+${define_required_extensions(OUT_STORAGE, DTYPE)}
+
+$if WEIGHT_STORAGE == "buffer":
+  ${define_required_extensions("buffer", "int8")}
+
 #define PRECISION ${PRECISION}
 
 #define T ${buffer_scalar_type(DTYPE)}
@@ -18,11 +23,6 @@
 
 #define NGROUPS 8
 #define NWORKERS 8
-
-${define_required_extensions(DTYPE)}
-
-$if WEIGHT_STORAGE == "buffer":
-  ${define_required_extensions("int8")}
 
 #extension GL_EXT_control_flow_attributes : require
 

@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,6 +8,8 @@ import itertools
 import logging
 import os.path
 from typing import Iterator, Tuple
+
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -145,34 +147,11 @@ def get_model(
         cifar_net.load_state_dict(torch.load(state_dict_file, weights_only=True))
 
     if train:
-        # Train the model.
-        criterion = nn.CrossEntropyLoss()
-        optimizer = optim.SGD(cifar_net.parameters(), lr=0.0005, momentum=0.6)
-        train_loader = get_train_loader(batch_size)
+        cifar_net = train_cifarnet_model(
+            cifar_net=cifar_net, batch_size=batch_size, num_epochs=num_epochs
+        )
 
-        for epoch in range(num_epochs):
-            running_loss = 0.0
-            for i, data in enumerate(train_loader, 0):
-                # get the inputs; data is a list of [inputs, labels]
-                inputs, labels = data
-
-                # zero the parameter gradients
-                optimizer.zero_grad()
-
-                # forward + backward + optimize
-                outputs = cifar_net(inputs)
-                loss = criterion(outputs, labels)
-                loss.backward()
-                optimizer.step()
-
-                # print statistics
-                running_loss += loss.item()
-                if i % 2000 == 1999:  # print every 2000 mini-batches
-                    print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
-                    running_loss = 0.0
-
-        logger.info("Finished training.")
-        if state_dict_file is not None and train:
+        if state_dict_file is not None:
             logger.info(f"Saving the trained weights in `{state_dict_file}`.")
             torch.save(cifar_net.state_dict(), state_dict_file)
 
@@ -189,7 +168,41 @@ def get_cifarnet_calibration_data(num_images: int = 100) -> tuple[torch.Tensor]:
     return (tensor,)
 
 
-def test_cifarnet_model(cifar_net: nn.Module, batch_size: int = 1) -> float:
+def train_cifarnet_model(
+    cifar_net: nn.Module | torch.fx.GraphModule,
+    batch_size: int = 1,
+    num_epochs: int = 1,
+) -> nn.Module:
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(cifar_net.parameters(), lr=0.0001, momentum=0.6)
+    train_loader = get_train_loader(batch_size)
+
+    for epoch in range(num_epochs):
+        running_loss = 0.0
+        for i, data in enumerate(train_loader, 0):
+            # get the inputs; data is a list of [inputs, labels]
+            inputs, labels = data
+
+            # zero the parameter gradients
+            optimizer.zero_grad()
+
+            # forward + backward + optimize
+            outputs = cifar_net(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+
+            # print statistics
+            running_loss += loss.item()
+            if i % 2000 == 1999:  # print every 2000 mini-batches
+                print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
+                running_loss = 0.0
+
+    logger.info("Finished training.")
+    return cifar_net
+
+
+def verify_cifarnet_model(cifar_net: nn.Module, batch_size: int = 1) -> float:
     """Test the CifarNet model on the CifarNet10 testing dataset and return the accuracy.
 
     This function may at some point in the future be integrated into the `CifarNet` class.
@@ -208,6 +221,26 @@ def test_cifarnet_model(cifar_net: nn.Module, batch_size: int = 1) -> float:
             correct += torch.sum(predicted == labels).item()
 
     return correct / total
+
+
+def store_test_data(path="./cifar10_test_data", count=10):
+    test_loader = get_test_loader(batch_size=1)
+
+    os.makedirs(path, exist_ok=True)
+
+    index = 0
+    count = 10
+    for data in test_loader:
+        images, labels = data
+        for image, label in zip(images, labels):
+            arr = image.numpy().astype(np.float32)
+            file_name = f"img{str(index)}_class{str(int(label))}.bin"
+            arr.tofile(os.path.join(path, file_name))
+            index = index + 1
+            if index >= count:
+                break
+        if index >= count:
+            break
 
 
 if __name__ == "__main__":
@@ -232,6 +265,12 @@ if __name__ == "__main__":
     )
     parser.add_argument("-b", "--batch-size", required=False, type=int, default=1)
     parser.add_argument("-e", "--num-epochs", required=False, type=int, default=1)
+    parser.add_argument(
+        "--store-test-data",
+        required=False,
+        action="store_true",
+        help="Store the test data for the executor runner",
+    )
     args = parser.parse_args()
 
     cifar_net = get_model(
@@ -243,8 +282,11 @@ if __name__ == "__main__":
 
     if args.test:
         logger.info("Running tests.")
-        accuracy = test_cifarnet_model(cifar_net, args.batch_size)
+        accuracy = verify_cifarnet_model(cifar_net, args.batch_size)
         logger.info(f"Accuracy of the network on the 10000 test images: {accuracy}")
+
+    if args.store_test_data:
+        store_test_data()
 
     if args.pte_file is not None:
         tracing_inputs = (torch.rand(args.batch_size, 3, 32, 32),)

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -136,14 +136,14 @@ mv3.eval()
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
 
-def test_mv3_selective_quant_int16():
+def test_mv3_selective_quant_int16_tosa_INT():
     model = mv3
     inputs = (normalize(torch.randn(1, 3, 224, 224)),)
 
     a16w8_config = get_symmetric_a16w8_quantization_config()
     quantization_annotations = {
         "aten.conv2d.default": {
-            a16w8_config.output_activation: 29,
+            a16w8_config.output_activation: 34,
         },
         "aten.hardswish_.default": {
             a16w8_config.output_activation: 18,
@@ -167,13 +167,13 @@ def test_mv3_selective_quant_int16():
     pipeline.run()
 
 
-def test_mv3_selective_quant_float32():
+def test_mv3_selective_quant_float32_tosa_INT():
     model = mv3
     inputs = (normalize(torch.randn(1, 3, 224, 224)),)
 
     quantization_annotations = {
-        "aten.adaptive_avg_pool2d.default": {
-            None: 1,
+        "aten.conv2d.default": {
+            None: 14,
         },
     }
 
@@ -182,16 +182,15 @@ def test_mv3_selective_quant_float32():
         inputs,
         quantizer=get_selective_quantizer_by_module_name(
             {
-                "features.11.block.2.avgpool": None,
+                "conv2d_3": None,
             }
         ),
         qspecs=quantization_annotations,
     )
-
     pipeline.run()
 
 
-def test_mv3_io_quant():
+def test_mv3_io_quant_tosa_INT():
     model = mv3
     inputs = (normalize(torch.randn(1, 3, 224, 224)),)
 

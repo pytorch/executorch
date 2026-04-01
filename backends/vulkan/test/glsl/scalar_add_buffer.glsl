@@ -10,7 +10,7 @@
 
 #define PRECISION ${PRECISION}
 
-${define_required_extensions(DTYPE)}
+${define_required_extensions("buffer", DTYPE)}
 
 #define T ${buffer_scalar_type(DTYPE)}
 

@@ -4,8 +4,7 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_opt
 COMPILER_FLAGS = [
     "-std=c++17",
 ]
-COMPILER_FLAGS_ATEN = [
-    "-std=c++17",]
+COMPILER_FLAGS_ATEN = []
 
 # define_gtest_targets
 def define_gtest_targets():

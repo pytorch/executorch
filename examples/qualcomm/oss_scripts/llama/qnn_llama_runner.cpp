@@ -9,9 +9,9 @@
 /**
  * @file
  *
- * This tool can run Llama2 110M, Llama3.2 1B / 3B, Gemma 2B, Gemma3 1B,
- * Granite3.3 2B, phi4-mini-instruct, Qwen2.5 0.5B / 1.5B, Qwen3 0.6B / 1.7B,
- * SmolLM2 135M, SmolLM3 3B with Qualcomm AI Engine Direct.
+ * This tool can run Llama2 110M, Llama3.2 1B / 3B, Gemma 2B, Gemma2 2B, Gemma3
+ * 1B, Granite3.3 2B, phi4-mini-instruct, Qwen2.5 0.5B / 1.5B, Qwen3 0.6B
+ * / 1.7B, SmolLM2 135M, SmolLM3 3B with Qualcomm AI Engine Direct.
  *
  */
 
@@ -28,6 +28,10 @@ DEFINE_string(
     model_path,
     "kv_llama_qnn.pte",
     "Model serialized in flatbuffer format.");
+DEFINE_string(
+    attention_sink_rope_path,
+    "",
+    "[Attention Sink] The Attention Sink Rope Model is serialized using the flatbuffer format. If specified, seq_len can exceed the context length defined in the model.");
 DEFINE_string(
     output_path,
     "outputs.txt",
@@ -130,6 +134,12 @@ std::string get_formatted_prompt(
         formatted_prompt.append("<end_of_turn>\n");
       }
       break;
+    case example::DecoderModelVersion::kGemma2:
+      formatted_prompt.append("<start_of_turn>user\n");
+      formatted_prompt.append(prompt);
+      formatted_prompt.append("<end_of_turn>\n");
+      formatted_prompt.append("<start_of_turn>model\n");
+      break;
     case example::DecoderModelVersion::kGranite:
       if (!system_prompt.empty()) {
         formatted_prompt.append("<|start_of_role|>system<|end_of_role|>");
@@ -203,7 +213,8 @@ std::string get_formatted_prompt(
 template <typename T>
 void start_runner(
     std::unique_ptr<executorch::extension::Module> module,
-    std::vector<std::string>& prompts) {
+    std::vector<std::string>& prompts,
+    std::unique_ptr<executorch::extension::Module> attention_sink_rope_module) {
   bool use_tokenized_prompt =
       gflags::GetCommandLineFlagInfoOrDie("tokenized_prompt").is_default ? false
                                                                          : true;
@@ -220,7 +231,9 @@ void start_runner(
       FLAGS_shared_buffer,
       FLAGS_ngram,
       FLAGS_window,
-      FLAGS_gcap);
+      FLAGS_gcap,
+      nullptr,
+      std::move(attention_sink_rope_module));
   auto decoder_model_version = runner.get_decoder_model_version();
   std::vector<char> buf;
   buf.reserve(5 * FLAGS_seq_len); // assume each token is around 5 char
@@ -232,6 +245,7 @@ void start_runner(
   };
   executorch::extension::llm::GenerationConfig config{
       true,
+      false,
       -1,
       false,
       FLAGS_seq_len,
@@ -275,6 +289,13 @@ int main(int argc, char** argv) {
       std::make_unique<executorch::extension::Module>(
           FLAGS_model_path.c_str(),
           executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
+  std::unique_ptr<executorch::extension::Module> attention_sink_rope_module;
+  if (!FLAGS_attention_sink_rope_path.empty()) {
+    attention_sink_rope_module =
+        std::make_unique<executorch::extension::Module>(
+            FLAGS_attention_sink_rope_path.c_str(),
+            executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
+  }
   // Using 8bit as default since this meta is introduced with 16bit kv io
   // support and older models only have 8bit kv io.
   example::KvBitWidth kv_bitwidth = example::KvBitWidth::kWidth8;
@@ -284,9 +305,11 @@ int main(int argc, char** argv) {
   }
 
   if (kv_bitwidth == example::KvBitWidth::kWidth8) {
-    start_runner<uint8_t>(std::move(module), prompts);
+    start_runner<uint8_t>(
+        std::move(module), prompts, std::move(attention_sink_rope_module));
   } else if (kv_bitwidth == example::KvBitWidth::kWidth16) {
-    start_runner<uint16_t>(std::move(module), prompts);
+    start_runner<uint16_t>(
+        std::move(module), prompts, std::move(attention_sink_rope_module));
   } else {
     ET_CHECK_MSG(
         false,

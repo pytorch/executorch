@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -29,9 +29,10 @@ class VectorNormModel(torch.nn.Module):
         dim=1,
         keepdim=False,
     ):
-        """
-        A simple module that applies torch.linalg.vector_norm to its input.
+        """A simple module that applies torch.linalg.vector_norm to its input.
+
         Ord is 2 by default.
+
         """
         super().__init__()
         self.ord = ord

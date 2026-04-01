@@ -20,6 +20,11 @@ if [[ "$BUILD_TOOL" == "cmake" ]]; then
     # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate
     source .ci/scripts/setup-vulkan-linux-deps.sh
 
+    # Enable sanitizers for Debug builds
+    if [[ "$BUILD_MODE" == "Debug" ]]; then
+        export EXECUTORCH_USE_SANITIZER=ON
+    fi
+
     # We need the runner to test the built library.
     PYTHON_EXECUTABLE=python \
     CMAKE_ARGS="-DEXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL=ON -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON -DEXECUTORCH_BUILD_TESTS=ON" \

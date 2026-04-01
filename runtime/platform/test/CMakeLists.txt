@@ -29,9 +29,7 @@ et_cxx_test(
   executor_pal_static_runtime_override_test.cpp
 )
 
-# TODO: Re-enable this test on OSS
-#
-# et_cxx_test(platform_death_test SOURCES executor_pal_death_test.cpp)
+et_cxx_test(platform_death_test SOURCES executor_pal_death_test.cpp)
 
 # No weak function symbols on Windows/MSVC, thus PAL intercept doesn't work.
 # Skip logging tests in Release mode.

@@ -25,7 +25,7 @@ If users are interested in well-known applications, [Qualcomm AI HUB](https://ai
 ### Target Model
 
 * Consider using [virtual environment](https://app.aihub.qualcomm.com/docs/hub/getting_started.html) for AI HUB scripts to prevent package conflict against ExecuTorch. Please finish the [installation section](https://app.aihub.qualcomm.com/docs/hub/getting_started.html#installation) before proceeding following steps.
-* Take [QuickSRNetLarge](https://aihub.qualcomm.com/iot/models/quicksrnetlarge) as an example, please [install](https://huggingface.co/qualcomm/QuickSRNetLarge-Quantized#installation) package as instructed.
+* Take [QuickSRNetLarge](https://aihub.qualcomm.com/iot/models/quicksrnetlarge) as an example, please [install](https://huggingface.co/qualcomm/QuickSRNetLarge-Quantized#installation) package as instructed. <!-- @lint-ignore -->
 * Create workspace and export pre-built model library:
   ```bash
   mkdir $MY_WS && cd $MY_WS

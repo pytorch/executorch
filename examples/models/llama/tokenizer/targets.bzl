@@ -17,9 +17,7 @@ def define_common_targets():
         exported_deps = [
             "//pytorch/tokenizers:tiktoken",
         ],
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.python_library(

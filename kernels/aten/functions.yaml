@@ -2,7 +2,11 @@
 #
 # This yaml file contains operators that are defined by the ATen library.
 
+- op: _adaptive_avg_pool2d.out
+
 - op: _cdist_forward.out
+
+- op: _conj_physical.out
 
 - op: _fake_quantize_per_tensor_affine_cachemask_tensor_qparams.out
 

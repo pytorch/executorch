@@ -54,8 +54,9 @@ bool element_is_close(const T a, const T b, double rtol, double atol) {
         return false;
       }
     } else {
-      auto allowed_error = atol + std::abs(rtol * b);
-      auto actual_error = std::abs(a - b);
+      const double allowed_error =
+          atol + std::abs(rtol * static_cast<double>(b));
+      const double actual_error = static_cast<double>(std::abs(a - b));
       if (!std::isfinite(actual_error) || actual_error > allowed_error) {
         return false;
       }
