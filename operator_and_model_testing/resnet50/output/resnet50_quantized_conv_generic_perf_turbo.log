@@ -1,0 +1,13 @@
+I 00:00:00.381559 executorch:executor_runner.cpp:258] Model file operator_and_model_testing/resnet50/pte/resnet50_quantized.pte is loaded.
+I 00:00:00.384937 executorch:executor_runner.cpp:267] Using method forward
+I 00:00:00.387526 executorch:executor_runner.cpp:318] Setting up planned buffer 0, size 786432.
+I 00:00:00.802056 executorch:executor_runner.cpp:346] Method loaded.
+I 00:00:00.804270 executorch:executor_runner.cpp:350] Number of operators: 8
+I 00:00:00.806707 executorch:executor_runner.cpp:354] Operator[0]: cadence::quantize_per_tensor
+I 00:00:00.809095 executorch:executor_runner.cpp:354] Operator[1]: cadence::quantized_conv2d_nchw
+I 00:00:00.811420 executorch:executor_runner.cpp:354] Operator[2]: cadence::quantized_relu
+I 00:00:00.813736 executorch:executor_runner.cpp:354] Operator[3]: cadence::dequantize_per_tensor
+I 00:00:00.816079 executorch:executor_runner.cpp:354] Operator[4]: aten::max_pool2d_with_indices
+I 00:00:00.818418 executorch:executor_runner.cpp:354] Operator[5]: aten::add
+I 00:00:00.820659 executorch:executor_runner.cpp:354] Operator[6]: aten::mean
+I 00:00:00.822924 executorch:executor_runner.cpp:354] Operator[7]: cadence::quantized_linear

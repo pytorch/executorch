@@ -23,6 +23,15 @@
 #ifndef __XAI_CORE_H__
 #define __XAI_CORE_H__
 
+/* Force-disable DRAM boundary checks so XAI kernels accept system memory pointers.
+   Required for cache-variant convolution which operates on system memory directly. */
+#ifndef SYS_MEM_TESTING
+#define SYS_MEM_TESTING 1
+#endif
+#ifndef XAI_ERROR_CHECKS_RELAXED_REF
+#define XAI_ERROR_CHECKS_RELAXED_REF 1
+#endif
+
 #include "xai_core_api.h"
 
 #if defined(_MSC_VER)

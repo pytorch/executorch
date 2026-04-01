@@ -29,7 +29,7 @@
 // Performance measurement macros
 #define XTPERF_PRINTF(...) printf(__VA_ARGS__)
 #define TIME_DECL(test) long start_time_##test, end_time_##test;
-#define TIME_START(test) { start_time_##test = 0;   XT_WSR_CCOUNT(0); }
+#define TIME_START(test) { start_time_##test = XT_RSR_CCOUNT(); }
 #define TIME_END(test) { end_time_##test = XT_RSR_CCOUNT(); }
 #define TIME_DISPLAY(test, opcnt, opname) { long long cycles_##test = end_time_##test - start_time_##test; \
 		XTPERF_PRINTF("PERF_LOG : %s : %d : %s : %lld : cycles : %.2f : %s/cycle : %.2f : cycles/%s\n", \
@@ -66,9 +66,6 @@
 
 extern void *ptr_dram0;
 extern void *ptr_dram1;
-
-// extern idma_buffer_t buffer_idma_ch_2d[];
-// extern idma_buffer_t buffer_idma_ch_3d[];
 
 #endif // COMPILER_XTENSA
 

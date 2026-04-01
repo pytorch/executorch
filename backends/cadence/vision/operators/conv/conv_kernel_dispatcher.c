@@ -10,7 +10,6 @@
  */
 
 #include "kernel_executors.h"
-#include <stdio.h>
 #include <string.h>
 
 /**
@@ -23,8 +22,6 @@ XAI_ERR_TYPE conv_execute_kernel(
     int8_t* bias_ptr,
     const conv_layer_config_t* config)
 {
-    printf("  Dispatching to kernel: %s\n", config->kernel_name);
-
     // Dispatch to kernel-specific executor
     if (strcmp(config->kernel_name, "7x7j2d1") == 0) {
         return conv_exec_7x7j2d1(src, dst, coeff_ptr, bias_ptr, config);
@@ -47,7 +44,6 @@ XAI_ERR_TYPE conv_execute_kernel(
     } else if (strcmp(config->kernel_name, "1x1j1d1_cache") == 0) {
         return conv_exec_1x1j1d1_cache(src, dst, coeff_ptr, bias_ptr, config);
     } else {
-        printf("ERROR: Unknown kernel type: %s\n should fall back to generic executor" , config->kernel_name);
         return XAI_ERR_BADARG;
     }
 }

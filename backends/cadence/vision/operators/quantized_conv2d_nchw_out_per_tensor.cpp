@@ -6,50 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include <lib.h>
-#include <stdio.h>
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/backends/cadence/generic/operators/operators.h>
 #include <executorch/backends/cadence/vision/operators/conv/conv_layer_configs.h>
-
-// CSV logging for per-layer input/output data
-static int csv_layer_counter = 0;
-static FILE* csv_log_file = NULL;
-
-static void csv_log_open() {
-  if (csv_log_file == NULL) {
-    csv_log_file = fopen("conv2d_layer_dump.csv", "w");
-    if (csv_log_file) {
-      fprintf(csv_log_file, "layer,direction,n,c,h,w,oc,wh,ww,oh,ow,groups,stride_h,stride_w,pad_h,pad_w,dil_h,dil_w,in_zp,wt_zp,bias_scale,out_scale,out_zp,numel,data\n");
-    }
-  }
-}
-
-static void csv_log_tensor_row(
-    int layer, const char* direction,
-    int n, int c, int h, int w, int oc, int wh, int ww, int oh, int ow,
-    int groups, int sh, int sw, int ph, int pw, int dh, int dw,
-    int in_zp, int wt_zp, float bias_sc, float out_sc, int out_zp,
-    const int8_t* data, int numel) {
-  csv_log_open();
-  if (!csv_log_file) return;
-  fprintf(csv_log_file, "%d,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%d,%d,",
-      layer, direction, n, c, h, w, oc, wh, ww, oh, ow,
-      groups, sh, sw, ph, pw, dh, dw, in_zp, wt_zp, bias_sc, out_sc, out_zp, numel);
-  for (int i = 0; i < numel; i++) {
-    if (i > 0) fprintf(csv_log_file, " ");
-    fprintf(csv_log_file, "%d", (int)data[i]);
-  }
-  fprintf(csv_log_file, "\n");
-  fflush(csv_log_file);
-}
-
-static void csv_log_close() {
-  if (csv_log_file) {
-    fclose(csv_log_file);
-    csv_log_file = NULL;
-  }
-}
-
+#include <stdio.h>
+#include <string.h>
 
 // Forward declaration of conv_execute_kernel (defined in conv_kernel_dispatcher.c)
 extern "C" {
@@ -226,6 +187,9 @@ void quantized_conv2d_nchw(
     float output_scale,
     int32_t output_zero_point,
     Tensor& out) {
+  TIME_DECL(conv2d);
+  TIME_START(conv2d);
+
   bool conv1d = input.dim() == 3;
   // input = [n, c, h, w]
   const int n = input.size(0);
@@ -240,21 +204,6 @@ void quantized_conv2d_nchw(
   // output = [n, oc, oh, ow]
   const int oh = conv1d ? 1 : out.size(2);
   const int ow = conv1d ? out.size(2) : out.size(3);
-
-  printf("quantized_conv2d_nchw: n=%d, c=%d, h=%d, w=%d, oc=%d, wc=%d, wh=%d, ww=%d, oh=%d, ow=%d\n",
-         n, c, h, w, oc, wc, wh, ww, oh, ow);
-  printf("quantized_conv2d_nchw: groups=%d, in_zero_point=%d, weight_zero_point=%d, bias_scale=%f, output_scale=%f\n",
-         groups, in_zero_point, weight_zero_point, bias_scale, output_scale);
-
-  // Log input tensor to CSV
-  int cur_layer = csv_layer_counter++;
-  if (input.scalar_type() == ScalarType::Char) {
-    csv_log_tensor_row(cur_layer, "input",
-        n, c, h, w, oc, wh, ww, oh, ow,
-        groups, stride[0], stride[1], padding[0], padding[1], dilation[0], dilation[1],
-        in_zero_point, weight_zero_point, bias_scale, output_scale, output_zero_point,
-        input.const_data_ptr<int8_t>(), input.numel());
-  }
 
 #define typed_quantized_conv2d_nchw(ctype, dtype)                 \
   case ScalarType::dtype: {                                       \
@@ -288,11 +237,9 @@ void quantized_conv2d_nchw(
     break;                                                        \
   }
   ScalarType dtype = out.scalar_type();
-  printf("quantized_conv2d_nchw: output dtype=%d\n", static_cast<int>(dtype));
   switch (dtype) {
     case ScalarType::Char: {
 #if CADENCE_CONV2D_GENERIC
-      printf("quantized_conv2d_nchw: Using generic conv2d implementation (CADENCE_CONV2D_GENERIC enabled)\n");
       conv2d_nchw_core_generic<int8_t, int8_t, int32_t, int8_t, true>(
           input.const_data_ptr<int8_t>(),
           weight.const_data_ptr<int8_t>(),
@@ -312,57 +259,6 @@ void quantized_conv2d_nchw(
           (int8_t)output_zero_point);
       break;
 #endif
-      printf("quantized_conv2d_nchw: 1234 trying to use optimized cadence kernel for QInt8\n");
-      // if(wh == 1 && ww == 1) {
-
-      //   const conv_layer_config_t* config get_layer_config(n,c,h,w,oc,wc,wh,ww,oh,ow,stride,padding,dilation);
-      //   // For 1x1 conv, use int8_t to match QNNPACK behavior
-      //   //function call
-
-      //   break;
-      // } else if( wh == 3 && ww ==3) {
-      //   // For 3x3 conv, use int8_t to match QNNPACK behavior
-      //   //function call
-
-      //   break;
-      // } else if( wh == 7 && ww ==7) {
-      //   // For other kernel sizes, use int32_t to avoid overflow
-      //   //function call
-
-      //   break;
-      // }else {
-      //   // Default to int32_t
-      //   // Do nothing here, fall through to general case
-      // }
-
-        // // By parameters (conv1: 3ch 224x224 → 64ch 112x112, 7x7 kernel, stride 2, pad 3)
-        // const conv_layer_config_t* config = get_layer_config_by_params(
-        // 3, 224, 224,    // ic, ih, iw
-        // 64, 7, 7,       // oc, kh, kw
-        // 112, 112,       // oh, ow
-        // 2, 2,           // sy, sx
-        // 3, 1            // pad, dil
-        // );
-
-      
-      printf("quantized_conv2d_nchw: searching for optimized cadence kernel for QInt8\n");
-      // print first 100 elements of input tensor for debugging
-      printf("Input tensor first 100 elements:\n");
-      const int input_numel = input.numel();
-      const int8_t* input_data = input.const_data_ptr<int8_t>();
-      for (int i = 0; i < std::min(100, input_numel); i++) {
-          printf("%d ", input_data[i]);
-      }
-      printf("\n");
-
-      //print weight anf bias tensor first 100 elements for debugging
-      printf("Weight tensor first 100 elements:\n");
-      const int weight_numel = weight.numel();
-      const int8_t* weight_data = weight.const_data_ptr<int8_t>();
-      for (int i = 0; i < std::min(100, weight_numel); i++) {
-          printf("%d ", weight_data[i]);
-      }
-      printf("\n");
 
       const conv_layer_config_t* config_const = get_layer_config_by_params(
           c, h, w,              // ic, ih, iw
@@ -376,29 +272,55 @@ void quantized_conv2d_nchw(
       // behavior and silently fails on Xtensa targets.
       conv_layer_config_t config_local;
       conv_layer_config_t* config = NULL;
+      float effective_scale = 0.0f;
       if (config_const != NULL) {
         config_local = *config_const;  // shallow copy all fields
         config = &config_local;
 
-        // Compute fixed-point effective scale = bias_scale / output_scale
+        // DMA path for all layers ≥ 4×4 spatial; generic C fallback for ≤ 2×2.
+        //
         // XAI kernel pipeline: out = (acc >> accumShift) * outputScale >> outputShift
-        //
-        // IMPORTANT: The XAI kernel internally saturates the shifted accumulator
-        // to int16 range [-32768, 32767] after accumShift.  With accumShift=0,
-        // layers with many input channels (ic * kh * kw large) produce int32
-        // accumulators that exceed int16, causing output clipping.
-        //
-        // We must choose accumShift so that the worst-case accumulator fits in
-        // int16 after shifting.  The effective_scale relationship is:
-        //   effective_scale = outputScale / 2^(accumShift + outputShift)
-        float effective_scale = bias_scale / output_scale;
+        // The kernel saturates the shifted accumulator to int16 [-32768, 32767]
+        // after accumShift, so accumShift must be chosen to keep accumulators in range.
+        effective_scale = bias_scale / output_scale;
+      }
 
-        // --- Step 1: Compute accumShift to keep shifted acc within int16 ---
-        // Worst-case accumulator magnitude for int8 × int8 MAC + bias correction:
-        //   max_acc = num_products * 127 * (127 + |in_zero_point|)
-        // The bias correction adds |-zp * sum(weights)| ≤ |zp| * num_products * 127
-        // to the accumulator, so both MAC and correction terms must fit after shift.
-        int32_t icpg = c / groups;          // input channels per group
+      /*
+       * COMMENTED OUT: Original quantization approach (simple bias correction +
+       * worst-case accumShift + post-kernel output_zero_point addition).
+       *
+       * Replaced by enhanced approach below which produces correct top-1
+       * classification (class 920) vs. this original which misclassifies
+       * (class 644). See FUNCTIONALITY_FIXES.md §8 for details.
+       *
+       * Key differences from the enhanced approach:
+       * 1. Does NOT absorb output_zero_point into kernel bias — adds it post-kernel
+       * 2. Does NOT clamp bias to 24-bit — passes full 32-bit bias_corrected
+       * 3. Uses worst-case accumShift: num_products * 127 * (127 + |zp|)
+       *    which over-shifts and loses precision for layers with small actual weights
+       */
+      /*
+      if(config != NULL) {
+        config->input_zero_point = static_cast<int>(in_zero_point);
+        config->relu_min = -128;
+        config->relu_max = 127;
+
+        const int32_t* bias_orig = bias.const_data_ptr<int32_t>();
+        const int8_t*  wt_data   = weight.const_data_ptr<int8_t>();
+        const int       wt_per_oc = weight.numel() / oc;
+        int32_t bias_corrected[2048];
+
+        for (int o = 0; o < oc; o++) {
+          int32_t w_sum = 0;
+          const int8_t* wt_oc = wt_data + o * wt_per_oc;
+          for (int i = 0; i < wt_per_oc; i++) {
+            w_sum += wt_oc[i];
+          }
+          bias_corrected[o] = bias_orig[o]
+                            - static_cast<int32_t>(in_zero_point) * w_sum;
+        }
+
+        int32_t icpg = c / groups;
         int32_t num_products = icpg * wh * ww;
         int32_t abs_zp = (in_zero_point >= 0)
                        ? static_cast<int32_t>(in_zero_point)
@@ -412,9 +334,144 @@ void quantized_conv2d_nchw(
         }
         config->accum_shift = accum_shift;
 
-        // --- Step 2: Find outputShift & outputScale for best precision ---
-        // outputScale = effective_scale * 2^(accumShift + outputShift)
-        // outputScale must fit in uint16_t [1, 65535].
+        int best_shift = 15;
+        int64_t total_shift = static_cast<int64_t>(accum_shift) + best_shift;
+        int32_t raw_scale = static_cast<int32_t>(
+            effective_scale * static_cast<double>(1LL << total_shift));
+        if (raw_scale > 65535) {
+          while (best_shift > 0 && raw_scale > 65535) {
+            best_shift--;
+            total_shift = static_cast<int64_t>(accum_shift) + best_shift;
+            raw_scale = static_cast<int32_t>(
+                effective_scale * static_cast<double>(1LL << total_shift));
+          }
+        } else if (raw_scale < 16384 && best_shift < 31) {
+          while (best_shift < 31) {
+            int64_t trial_total = static_cast<int64_t>(accum_shift) + best_shift + 1;
+            if (trial_total > 62) break;
+            int32_t trial = static_cast<int32_t>(
+                effective_scale * static_cast<double>(1LL << trial_total));
+            if (trial > 65535) break;
+            best_shift++;
+            raw_scale = trial;
+          }
+        }
+        if (raw_scale <= 0) raw_scale = 1;
+        if (raw_scale > 65535) raw_scale = 65535;
+        config->output_shift = best_shift;
+        config->output_scale = raw_scale;
+
+        conv_execute_kernel(
+            const_cast<int8_t*>(input.const_data_ptr<int8_t>()),
+            out.mutable_data_ptr<int8_t>(),
+            const_cast<int8_t*>(weight.const_data_ptr<int8_t>()),
+            reinterpret_cast<int8_t*>(bias_corrected),
+            config);
+
+        if (output_zero_point != 0) {
+          int8_t* out_data = out.mutable_data_ptr<int8_t>();
+          const int out_numel = out.numel();
+          for (int i = 0; i < out_numel; i++) {
+            int32_t val = static_cast<int32_t>(out_data[i]) + output_zero_point;
+            val = val < -128 ? -128 : (val > 127 ? 127 : val);
+            out_data[i] = static_cast<int8_t>(val);
+          }
+        }
+
+        break;
+      }
+      */ // END COMMENTED OUT original quantization approach
+
+      // Enhanced quantization approach: 24-bit bias split + L1-norm accumShift
+      // + output_zero_point absorption into kernel bias.
+      // See FUNCTIONALITY_FIXES.md §8 for why this is needed.
+      if(config != NULL) {
+        config->input_zero_point = static_cast<int>(in_zero_point);
+
+        // Disable in-kernel ReLU — ExecuTorch applies ReLU as a separate op.
+        config->relu_min = -128;
+        config->relu_max = 127;
+
+        // Bias correction: absorb input_zero_point and output_zero_point
+        // into the kernel bias to avoid the double-clamp problem.
+        // Also clamp to 24-bit range (ACC_INIT_BIAS takes lower 24 bits);
+        // any residual beyond 24-bit is applied as post-kernel correction.
+        const int32_t* bias_orig = bias.const_data_ptr<int32_t>();
+        const int8_t*  wt_data   = weight.const_data_ptr<int8_t>();
+        const int       wt_per_oc = weight.numel() / oc;
+
+        static const int32_t BIAS_24BIT_MAX =  8388607;   // (1 << 23) - 1
+        static const int32_t BIAS_24BIT_MIN = -8388608;   // -(1 << 23)
+
+        // output_zero_point expressed in accumulator domain
+        int64_t zp_acc_corr = 0;
+        if (output_zero_point != 0 && effective_scale > 0.0f) {
+          double zp_d = static_cast<double>(output_zero_point) / effective_scale;
+          zp_acc_corr = static_cast<int64_t>(zp_d >= 0.0 ? zp_d + 0.5 : zp_d - 0.5);
+        }
+
+        // Per-channel split bias: kernel_bias (24-bit safe) + post_correction
+        int32_t kernel_bias[2048];
+        int32_t post_correction[2048];
+        int64_t max_abs_kernel_bias = 0;
+        for (int o = 0; o < oc; o++) {
+          int32_t w_sum = 0;
+          const int8_t* wt_oc = wt_data + o * wt_per_oc;
+          for (int i = 0; i < wt_per_oc; i++) {
+            w_sum += wt_oc[i];
+          }
+          int64_t bias_corr_64 = static_cast<int64_t>(bias_orig[o])
+                               - static_cast<int64_t>(in_zero_point) * w_sum;
+
+          int64_t target_bias = bias_corr_64 + zp_acc_corr;
+
+          int32_t kb;
+          if (target_bias > BIAS_24BIT_MAX) {
+            kb = BIAS_24BIT_MAX;
+          } else if (target_bias < BIAS_24BIT_MIN) {
+            kb = BIAS_24BIT_MIN;
+          } else {
+            kb = static_cast<int32_t>(target_bias);
+          }
+          kernel_bias[o] = kb;
+
+          int64_t abs_kb = kb >= 0 ? kb : -static_cast<int64_t>(kb);
+          if (abs_kb > max_abs_kernel_bias) max_abs_kernel_bias = abs_kb;
+
+          int64_t bias_residual = target_bias - kb;
+          float resid_float = static_cast<float>(bias_residual) * effective_scale;
+          int32_t resid_int = static_cast<int32_t>(resid_float >= 0.0f
+                            ? resid_float + 0.5f : resid_float - 0.5f);
+          post_correction[o] = resid_int;
+        }
+
+        // accumShift: ensure (acc >> accSh) fits in int16 after PACK.
+        // Tight bound from actual weight L1 norms instead of worst-case 128*128*P.
+        // max_acc = |bias| + sum(|weight_i|) * 128 since inputs are int8 (magnitude ≤ 128).
+        // Compute max sum(|weights|) across all output channels
+        int64_t max_weight_l1 = 0;
+        for (int o = 0; o < oc; o++) {
+          const int8_t* wt_oc = wt_data + o * wt_per_oc;
+          int64_t w_l1 = 0;
+          for (int i = 0; i < wt_per_oc; i++) {
+            w_l1 += (wt_oc[i] >= 0) ? wt_oc[i] : -wt_oc[i];
+          }
+          if (w_l1 > max_weight_l1) max_weight_l1 = w_l1;
+        }
+
+        // Tight max accumulator bound: bias + L1(weights) * max_input_magnitude
+        float max_acc = static_cast<float>(max_abs_kernel_bias)
+                      + static_cast<float>(max_weight_l1) * 128.0f;
+
+        int accum_shift = 0;
+        while (max_acc / static_cast<float>(1LL << accum_shift) > 32767.0f
+               && accum_shift < 31) {
+          accum_shift++;
+        }
+
+        config->accum_shift = accum_shift;
+
+        // outputShift & outputScale: maximize precision within uint16 range.
         int best_shift = 15;
         int64_t total_shift = static_cast<int64_t>(accum_shift) + best_shift;
         int32_t raw_scale = static_cast<int32_t>(
@@ -439,87 +496,216 @@ void quantized_conv2d_nchw(
             raw_scale = trial;
           }
         }
-        // Clamp to valid uint16_t range [1, 65535]
         if (raw_scale <= 0) raw_scale = 1;
         if (raw_scale > 65535) raw_scale = 65535;
 
         config->output_shift = best_shift;
         config->output_scale = raw_scale;
-        printf("quantized_conv2d_nchw: effective_scale=%f, output_scale=%d, output_shift=%d, accum_shift=%d (ic=%d kh=%d kw=%d num_products=%d)\n",
-               effective_scale, config->output_scale, config->output_shift, config->accum_shift,
-               (int)icpg, (int)wh, (int)ww, (int)num_products);
-      }
 
-      printf("quantized_conv2d_nchw: obtained layer config %p\n", (void*)config);
+        // print all elements of config for debugging
+        printf("=== conv_layer_config_t dump ===\n");
+        printf("  layer_id:          %d\n", config->layer_id);
+        printf("  layer_name:        %s\n", config->layer_name ? config->layer_name : "(null)");
+        printf("  kernel_name:       %s\n", config->kernel_name ? config->kernel_name : "(null)");
+        printf("  config_key:        %s\n", config->config_key ? config->config_key : "(null)");
+        printf("  --- Source (DRAM) ---\n");
+        printf("  src_dim1_size:     %d\n", config->src_dim1_size);
+        printf("  src_dim2_size:     %d\n", config->src_dim2_size);
+        printf("  src_dim3_size:     %d\n", config->src_dim3_size);
+        printf("  src_dim1_pitch:    %d\n", config->src_dim1_pitch);
+        printf("  src_dim2_pitch:    %d\n", config->src_dim2_pitch);
+        printf("  --- Destination (DRAM) ---\n");
+        printf("  dst_dim1_size:     %d\n", config->dst_dim1_size);
+        printf("  dst_dim2_size:     %d\n", config->dst_dim2_size);
+        printf("  dst_dim3_size:     %d\n", config->dst_dim3_size);
+        printf("  dst_dim1_pitch:    %d\n", config->dst_dim1_pitch);
+        printf("  dst_dim2_pitch:    %d\n", config->dst_dim2_pitch);
+        printf("  --- Input tile (local memory) ---\n");
+        printf("  in_dim1_size:      %d\n", config->in_dim1_size);
+        printf("  in_dim1_pitch:     %d\n", config->in_dim1_pitch);
+        printf("  in_dim2_size:      %d\n", config->in_dim2_size);
+        printf("  in_dim2_pitch:     %d\n", config->in_dim2_pitch);
+        printf("  in_dim1_edge1:     %d\n", config->in_dim1_edge1);
+        printf("  in_dim1_edge2:     %d\n", config->in_dim1_edge2);
+        printf("  in_dim2_edge1:     %d\n", config->in_dim2_edge1);
+        printf("  in_dim2_edge2:     %d\n", config->in_dim2_edge2);
+        printf("  in_dim3_edge1:     %d\n", config->in_dim3_edge1);
+        printf("  in_dim3_edge2:     %d\n", config->in_dim3_edge2);
+        printf("  in_data_offset:    %d\n", config->in_data_offset);
+        printf("  in_rows_firstdma:  %d\n", config->in_rows_firstdma);
+        printf("  --- Output tile (local memory) ---\n");
+        printf("  out_dim1_size:     %d\n", config->out_dim1_size);
+        printf("  out_dim1_pitch:    %d\n", config->out_dim1_pitch);
+        printf("  out_dim2_size:     %d\n", config->out_dim2_size);
+        printf("  out_dim2_pitch:    %d\n", config->out_dim2_pitch);
+        printf("  out_dim3_size:     %d\n", config->out_dim3_size);
+        printf("  --- Coefficient tile ---\n");
+        printf("  coeff_dim1_size:   %d\n", config->coeff_dim1_size);
+        printf("  coeff_dim2_size:   %d\n", config->coeff_dim2_size);
+        printf("  coeff_dim3_size:   %d\n", config->coeff_dim3_size);
+        printf("  coeff_dim4_size:   %d\n", config->coeff_dim4_size);
+        printf("  coeff_dim1_pitch:  %d\n", config->coeff_dim1_pitch);
+        printf("  coeff_dim2_pitch:  %d\n", config->coeff_dim2_pitch);
+        printf("  coeff_dim3_pitch:  %d\n", config->coeff_dim3_pitch);
+        printf("  --- Bias ---\n");
+        printf("  bias_dim1_size:    %d\n", config->bias_dim1_size);
+        printf("  bias_dim2_size:    %d\n", config->bias_dim2_size);
+        printf("  --- Output scale ---\n");
+        printf("  outscale_dim1_size:%d\n", config->outscale_dim1_size);
+        printf("  outscale_dim2_size:%d\n", config->outscale_dim2_size);
+        printf("  --- Buffer sizes (bytes) ---\n");
+        printf("  input_buffer_size: %d\n", config->input_buffer_size);
+        printf("  coeff_buffer_size: %d\n", config->coeff_buffer_size);
+        printf("  output_buffer_size:%d\n", config->output_buffer_size);
+        printf("  bias_buffer_size:  %d\n", config->bias_buffer_size);
+        printf("  outscale_buf_size: %d\n", config->outscale_buffer_size);
+        printf("  --- Buffer DRAM placement ---\n");
+        printf("  input_ping_dram:   %d\n", config->input_ping_dram);
+        printf("  input_pong_dram:   %d\n", config->input_pong_dram);
+        printf("  coeff_dram:        %d\n", config->coeff_dram);
+        printf("  output_ping_dram:  %d\n", config->output_ping_dram);
+        printf("  output_pong_dram:  %d\n", config->output_pong_dram);
+        printf("  bias_dram:         %d\n", config->bias_dram);
+        printf("  outscale_dram:     %d\n", config->outscale_dram);
+        printf("  --- Tiling parameters ---\n");
+        printf("  n_tile_size:       %d\n", config->n_tile_size);
+        printf("  n_tiles:           %d\n", config->n_tiles);
+        printf("  n_tile_size_last:  %d\n", config->n_tile_size_last);
+        printf("  height_tiles:      %d\n", config->height_tiles);
+        printf("  output_rows:       %d\n", config->output_rows);
+        printf("  input_rows:        %d\n", config->input_rows);
+        printf("  --- Convolution parameters ---\n");
+        printf("  kernel_w:          %d\n", config->kernel_w);
+        printf("  kernel_h:          %d\n", config->kernel_h);
+        printf("  stride_x:          %d\n", config->stride_x);
+        printf("  stride_y:          %d\n", config->stride_y);
+        printf("  padding:           %d\n", config->padding);
+        printf("  dilation:          %d\n", config->dilation);
+        printf("  accum_shift:       %d\n", config->accum_shift);
+        printf("  relu_max:          %d\n", config->relu_max);
+        printf("  relu_min:          %d\n", config->relu_min);
+        printf("  output_shift:      %d\n", config->output_shift);
+        printf("  output_scale:      %d\n", config->output_scale);
+        printf("  flags:             %d\n", config->flags);
+        printf("  input_zero_point:  %d\n", config->input_zero_point);
+        printf("===============================\n");
 
-      //ptint config feilds for debugging
-      printf("Layer ID: %d\n", config->layer_id);
-      printf("Layer Name: %s\n", config->layer_name);
-      printf("Kernel Name: %s\n", config->kernel_name);
-      printf("Config Key: %s\n", config->config_key);
-      printf("Input Dimensions (DRAM): %d x %d x %d\n",
-              config->src_dim3_size, config->src_dim2_size, config->src_dim1_size); 
-      printf("Output Dimensions (DRAM): %d x %d x %d\n",
-              config->dst_dim3_size, config->dst_dim2_size, config->dst_dim1_size);
-    
-      if(config != NULL) {
-        // Set input_zero_point on config so kernel executors can fill padding
-        // with the correct value (the quantized representation of 0.0).
-        config->input_zero_point = static_cast<int>(in_zero_point);
 
-        // --- Bias correction for zero-point handling ---
-        // Instead of subtracting in_zero_point from int8 input (which overflows
-        // for zero_point=-128 since the result range [0,255] exceeds int8),
-        // we mathematically absorb the zero-point into the bias:
-        //   acc = Σ((input - zp) * weight) + bias
-        //       = Σ(input * weight) - zp * Σ(weight) + bias
-        //       = Σ(input * weight) + (bias - zp * Σ(weight))
-        // The kernel then uses raw (uncorrected) input data with corrected bias.
-        // Padding is filled with in_zero_point so padded positions represent 0.0.
-        const int32_t* bias_orig = bias.const_data_ptr<int32_t>();
-        const int8_t*  wt_data   = weight.const_data_ptr<int8_t>();
-        const int       wt_per_oc = weight_numel / oc;
-        int32_t bias_corrected[2048]; // Stack buffer, max 2048 output channels
+        // Execute XAI DMA kernel
 
-        for (int o = 0; o < oc; o++) {
-          int32_t w_sum = 0;
-          const int8_t* wt_oc = wt_data + o * wt_per_oc;
-          for (int i = 0; i < wt_per_oc; i++) {
-            w_sum += wt_oc[i];
-          }
-          bias_corrected[o] = bias_orig[o]
-                            - static_cast<int32_t>(in_zero_point) * w_sum;
-        }
-        printf("quantized_conv2d_nchw: bias correction applied (in_zero_point=%d, weight_zero_point=%d)\n",
-               (int)in_zero_point, (int)weight_zero_point);
+        // Writeback DMA source data from cache to system memory.
+        // CPU-computed kernel_bias and runtime-loaded weight/input data may
+        // reside only in cache; DMA bypasses cache and reads system memory.
+        xthal_dcache_region_writeback(
+            const_cast<int8_t*>(input.const_data_ptr<int8_t>()),
+            n * c * h * w * sizeof(int8_t));
+        xthal_dcache_region_writeback(
+            const_cast<int8_t*>(weight.const_data_ptr<int8_t>()),
+            oc * wc * wh * ww * sizeof(int8_t));
+        xthal_dcache_region_writeback(
+            reinterpret_cast<int8_t*>(kernel_bias),
+            oc * sizeof(int32_t));
 
-        // Use optimized cadence kernel dma/cache
-        // Pass raw input (no zero-point subtraction) and corrected bias.
-        conv_execute_kernel(
+        XAI_ERR_TYPE kern_status = conv_execute_kernel(
             const_cast<int8_t*>(input.const_data_ptr<int8_t>()),
             out.mutable_data_ptr<int8_t>(),
             const_cast<int8_t*>(weight.const_data_ptr<int8_t>()),
-            reinterpret_cast<int8_t*>(bias_corrected),
+            reinterpret_cast<int8_t*>(kernel_bias),
             config);
+        if (kern_status != 0) {
+          printf("*** conv_execute_kernel FAILED for %s: status=%d ***\n",
+                 config->layer_name ? config->layer_name : "?", (int)kern_status);
+        }
 
-        // XAI kernel operates in symmetric mode (no output offset).
-        // Add output_zero_point to convert back to asymmetric quantization.
-        if (output_zero_point != 0) {
-          int8_t* out_data = out.mutable_data_ptr<int8_t>();
-          const int out_numel = out.numel();
-          for (int i = 0; i < out_numel; i++) {
-            int32_t val = static_cast<int32_t>(out_data[i]) + output_zero_point;
-            // Clamp to int8 range [-128, 127]
-            val = val < -128 ? -128 : (val > 127 ? 127 : val);
-            out_data[i] = static_cast<int8_t>(val);
+        // Invalidate cache for DMA-written output so post-correction
+        // and next operator see fresh data instead of stale cache lines
+        xthal_dcache_region_invalidate(
+            out.mutable_data_ptr<int8_t>(),
+            n * oc * oh * ow * sizeof(int8_t));
+
+        // Apply post-kernel residual correction
+        for (int _n = 0; _n < n; _n++) {
+          for (int _oc = 0; _oc < oc; _oc++) {
+            int32_t corr = post_correction[_oc];
+            if (corr == 0) continue;
+            int8_t* ch_out = out.mutable_data_ptr<int8_t>() + (_n * oc * oh * ow + _oc * oh * ow);
+            for (int _s = 0; _s < oh * ow; _s++) {
+              int32_t val = static_cast<int32_t>(ch_out[_s]) + corr;
+              val = val < -128 ? -128 : (val > 127 ? 127 : val);
+              ch_out[_s] = static_cast<int8_t>(val);
+            }
           }
         }
 
-        printf("Using optimized cadence conv2d kernel for Char (output_zero_point=%d applied)\n",
-               (int)output_zero_point);
+        // ================================================================
+        // DIAGNOSTIC: Compare cache output vs generic for first few pixels
+        // ================================================================
+        {
+          // Compute generic reference for comparison
+          int diag_count = (oc < 4 ? oc : 4);
+          int diag_pixels = (oh * ow < 4 ? oh * ow : 4);
+          const int8_t* in_data = input.const_data_ptr<int8_t>();
+          const int8_t* wt_data_diag = weight.const_data_ptr<int8_t>();
+          const int32_t* bias_orig_diag = bias.const_data_ptr<int32_t>();
+          const int8_t* cache_out = out.mutable_data_ptr<int8_t>();
+          int wt_per_oc_diag = wc * wh * ww;
+          float eff_scale_diag = bias_scale / output_scale;
+
+          printf("=== DIAG layer=%s cache_vs_generic (eff_scale=%.6f, izp=%d, ozp=%d) ===\n",
+                 config->layer_name ? config->layer_name : "?",
+                 eff_scale_diag, (int)in_zero_point, (int)output_zero_point);
+          printf("  kernel_bias[0]=%d, post_corr[0]=%d, accum_shift=%d, out_scale=%d, out_shift=%d\n",
+                 kernel_bias[0], post_correction[0], config->accum_shift,
+                 config->output_scale, config->output_shift);
+
+          int total_diff = 0, max_diff = 0, count_gt2 = 0;
+          int total_checked = 0;
+          for (int doc = 0; doc < diag_count; doc++) {
+            for (int dp = 0; dp < diag_pixels; dp++) {
+              int _oh_d = dp / ow;
+              int _ow_d = dp % ow;
+              // Generic reference for this pixel
+              float acc = static_cast<float>(bias_orig_diag[doc]);
+              for (int _ic = 0; _ic < wc; _ic++) {
+                for (int _wh = 0; _wh < wh; _wh++) {
+                  for (int _ww = 0; _ww < ww; _ww++) {
+                    int ih = _oh_d * stride[0] + _wh * dilation[0] - padding[0];
+                    int iw = _ow_d * stride[1] + _ww * dilation[1] - padding[1];
+                    if (ih >= 0 && ih < h && iw >= 0 && iw < w) {
+                      float lhs = static_cast<float>(in_data[_ic * h * w + ih * w + iw]) - in_zero_point;
+                      float rhs = static_cast<float>(wt_data_diag[doc * wt_per_oc_diag + _ic * wh * ww + _wh * ww + _ww]);
+                      acc += lhs * rhs;
+                    }
+                  }
+                }
+              }
+              float val = bias_scale * acc;
+              float inv_out_sc = 1.0f / output_scale;
+              int32_t generic_out = static_cast<int32_t>(val * inv_out_sc + output_zero_point + (val * inv_out_sc + output_zero_point >= 0 ? 0.5f : -0.5f));
+              if (generic_out < -128) generic_out = -128;
+              if (generic_out > 127) generic_out = 127;
+
+              int8_t cache_val = cache_out[doc * oh * ow + dp];
+              int diff = static_cast<int>(cache_val) - generic_out;
+              if (diff < 0) diff = -diff;
+              if (diff > max_diff) max_diff = diff;
+              if (diff > 2) count_gt2++;
+              total_diff += diff;
+              total_checked++;
+
+              if (dp < 2) {
+                printf("  [oc=%d,px=%d] generic=%d cache=%d diff=%d\n",
+                       doc, dp, generic_out, (int)cache_val, (int)cache_val - generic_out);
+              }
+            }
+          }
+          printf("  SUMMARY: checked=%d, max_diff=%d, >2_count=%d, avg_diff=%.2f\n",
+                 total_checked, max_diff, count_gt2,
+                 total_checked > 0 ? (float)total_diff / total_checked : 0.0f);
+        }
+
         break;
       }
-      printf("No optimized cadence conv2d kernel found for Char, using generic implementation\n");
       // Fall through to generic implementation
       conv2d_nchw_core_generic<int8_t, int8_t, int32_t, int8_t, true>(
           input.const_data_ptr<int8_t>(),
@@ -544,21 +730,14 @@ void quantized_conv2d_nchw(
     // Note: Char (int8_t) is handled explicitly above with optimized kernel
     typed_quantized_conv2d_nchw(uint8_t, Byte);
     default:
-      printf("quantized_conv2d_nchw: unsupported dtype %d\n", static_cast<int>(dtype));
       ET_DCHECK_MSG(
           false, "Unhandled dtype %s", torch::executor::toString(dtype));
   }
 
 #undef typed_quantized_conv2d_nchw
 
-  // Log output tensor to CSV
-  if (out.scalar_type() == ScalarType::Char) {
-    csv_log_tensor_row(cur_layer, "output",
-        n, c, h, w, oc, wh, ww, oh, ow,
-        groups, stride[0], stride[1], padding[0], padding[1], dilation[0], dilation[1],
-        in_zero_point, weight_zero_point, bias_scale, output_scale, output_zero_point,
-        out.const_data_ptr<int8_t>(), out.numel());
-  }
+  TIME_END(conv2d);
+  TIME_DISPLAY(conv2d, input.numel(), "elements");
 }
 
 void quantized_conv2d_nchw_out(

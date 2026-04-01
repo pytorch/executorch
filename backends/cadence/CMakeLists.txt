@@ -95,7 +95,7 @@ elseif(EXECUTORCH_VISION_OPT)
   else()
     set(_CADENCE_CONV2D_GENERIC_VAL 0)
   endif()
-  add_compile_definitions(DRAM0_BUFF_SIZE=${DRAM0_BUFF_SIZE} DRAM1_BUFF_SIZE=${DRAM1_BUFF_SIZE} CADENCE_CONV2D_GENERIC=${_CADENCE_CONV2D_GENERIC_VAL})
+  add_compile_definitions(CADENCE_CONV2D_GENERIC=${_CADENCE_CONV2D_GENERIC_VAL})
   add_subdirectory(
     ${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party
     ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10

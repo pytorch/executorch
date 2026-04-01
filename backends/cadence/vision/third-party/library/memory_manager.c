@@ -14,10 +14,10 @@
 // Memory pools placed in specific DRAM sections
 // These are the actual storage for the DRAM pools
 __attribute__((section(".dram0.data"))) __attribute__((aligned(64*2))) 
-uint8_t dram0_pool[IDMA_BUFFER_SIZE_DRAM0];  // 40 KB pool in DRAM0
+uint8_t dram0_pool[IDMA_BUFFER_SIZE_DRAM0];
 
 __attribute__((section(".dram1.data"))) __attribute__((aligned(64*2))) 
-uint8_t dram1_pool[IDMA_BUFFER_SIZE_DRAM1];  // 40 KB pool in DRAM1
+uint8_t dram1_pool[IDMA_BUFFER_SIZE_DRAM1];
 
 // Cache-mode padded input buffer (in system memory)
 // Used by cache-mode kernels for edge padding before convolution

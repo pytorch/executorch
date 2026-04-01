@@ -1,0 +1,1897 @@
+PERF_LOG : quantize_asym8s : 12288 : elements (DMA ping-pong) : 2855 : cycles : 4.30 : elements (DMA ping-pong)/cycle : 0.23 : cycles/elements (DMA ping-pong)
+=== conv_layer_config_t dump ===
+  layer_id:          0
+  layer_name:        conv1
+  kernel_name:       7x7j2d1
+  config_key:        3_64_64_64_7_7_32_32_2_2_3_1
+  --- Source (DRAM) ---
+  src_dim1_size:     64
+  src_dim2_size:     64
+  src_dim3_size:     3
+  src_dim1_pitch:    64
+  src_dim2_pitch:    4096
+  --- Destination (DRAM) ---
+  dst_dim1_size:     32
+  dst_dim2_size:     32
+  dst_dim3_size:     64
+  dst_dim1_pitch:    32
+  dst_dim2_pitch:    1024
+  --- Input tile (local memory) ---
+  in_dim1_size:      64
+  in_dim1_pitch:     70
+  in_dim2_size:      35
+  in_dim2_pitch:     2450
+  in_dim1_edge1:     3
+  in_dim1_edge2:     3
+  in_dim2_edge1:     3
+  in_dim2_edge2:     3
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    213
+  in_rows_firstdma:  32
+  --- Output tile (local memory) ---
+  out_dim1_size:     32
+  out_dim1_pitch:    32
+  out_dim2_size:     15
+  out_dim2_pitch:    480
+  out_dim3_size:     64
+  --- Coefficient tile ---
+  coeff_dim1_size:   7
+  coeff_dim2_size:   7
+  coeff_dim3_size:   3
+  coeff_dim4_size:   64
+  coeff_dim1_pitch:  7
+  coeff_dim2_pitch:  49
+  coeff_dim3_pitch:  147
+  --- Bias ---
+  bias_dim1_size:    64
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:64
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 7350
+  coeff_buffer_size: 9408
+  output_buffer_size:30720
+  bias_buffer_size:  256
+  outscale_buf_size: 128
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   0
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       64
+  n_tiles:           1
+  n_tile_size_last:  64
+  height_tiles:      3
+  output_rows:       15
+  input_rows:        35
+  --- Convolution parameters ---
+  kernel_w:          7
+  kernel_h:          7
+  stride_x:          2
+  stride_y:          2
+  padding:           3
+  dilation:          1
+  accum_shift:       4
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      20
+  output_scale:      57213
+  flags:             0
+  input_zero_point:  10
+===============================
+PERF_LOG : conv2d : 12288 : elements : 562648 : cycles : 0.02 : elements/cycle : 45.79 : cycles/elements
+PERF_LOG : quantized_relu : 65536 : elements (DMA ping-pong) : 18006 : cycles : 3.64 : elements (DMA ping-pong)/cycle : 0.27 : cycles/elements (DMA ping-pong)
+PERF_LOG : dequantize_asym8s : 65536 : elements (DMA ping-pong) : 9940 : cycles : 6.59 : elements (DMA ping-pong)/cycle : 0.15 : cycles/elements (DMA ping-pong)
+PERF_LOG : maxpool : 65536 : floats : 41900 : cycles : 1.56 : floats/cycle : 0.64 : cycles/floats
+PERF_LOG : quantize_asym8s : 16384 : elements (DMA ping-pong) : 3879 : cycles : 4.22 : elements (DMA ping-pong)/cycle : 0.24 : cycles/elements (DMA ping-pong)
+=== conv_layer_config_t dump ===
+  layer_id:          1
+  layer_name:        conv2.1
+  kernel_name:       3x3j1d1
+  config_key:        64_16_16_64_3_3_16_16_1_1_1_1
+  --- Source (DRAM) ---
+  src_dim1_size:     16
+  src_dim2_size:     16
+  src_dim3_size:     64
+  src_dim1_pitch:    16
+  src_dim2_pitch:    256
+  --- Destination (DRAM) ---
+  dst_dim1_size:     16
+  dst_dim2_size:     16
+  dst_dim3_size:     64
+  dst_dim1_pitch:    16
+  dst_dim2_pitch:    256
+  --- Input tile (local memory) ---
+  in_dim1_size:      16
+  in_dim1_pitch:     18
+  in_dim2_size:      18
+  in_dim2_pitch:     324
+  in_dim1_edge1:     1
+  in_dim1_edge2:     1
+  in_dim2_edge1:     1
+  in_dim2_edge2:     1
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    19
+  in_rows_firstdma:  17
+  --- Output tile (local memory) ---
+  out_dim1_size:     16
+  out_dim1_pitch:    16
+  out_dim2_size:     16
+  out_dim2_pitch:    256
+  out_dim3_size:     64
+  --- Coefficient tile ---
+  coeff_dim1_size:   3
+  coeff_dim2_size:   3
+  coeff_dim3_size:   64
+  coeff_dim4_size:   64
+  coeff_dim1_pitch:  3
+  coeff_dim2_pitch:  9
+  coeff_dim3_pitch:  576
+  --- Bias ---
+  bias_dim1_size:    64
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:64
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 20736
+  coeff_buffer_size: 36864
+  output_buffer_size:16384
+  bias_buffer_size:  256
+  outscale_buf_size: 128
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   1
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       64
+  n_tiles:           1
+  n_tile_size_last:  64
+  height_tiles:      1
+  output_rows:       16
+  input_rows:        18
+  --- Convolution parameters ---
+  kernel_w:          3
+  kernel_h:          3
+  stride_x:          1
+  stride_y:          1
+  padding:           1
+  dilation:          1
+  accum_shift:       5
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      19
+  output_scale:      42145
+  flags:             0
+  input_zero_point:  -128
+===============================
+PERF_LOG : conv2d : 16384 : elements : 573798 : cycles : 0.03 : elements/cycle : 35.02 : cycles/elements
+PERF_LOG : quantized_relu : 16384 : elements (DMA ping-pong) : 5193 : cycles : 3.16 : elements (DMA ping-pong)/cycle : 0.32 : cycles/elements (DMA ping-pong)
+=== conv_layer_config_t dump ===
+  layer_id:          1
+  layer_name:        conv2.1
+  kernel_name:       3x3j1d1
+  config_key:        64_16_16_64_3_3_16_16_1_1_1_1
+  --- Source (DRAM) ---
+  src_dim1_size:     16
+  src_dim2_size:     16
+  src_dim3_size:     64
+  src_dim1_pitch:    16
+  src_dim2_pitch:    256
+  --- Destination (DRAM) ---
+  dst_dim1_size:     16
+  dst_dim2_size:     16
+  dst_dim3_size:     64
+  dst_dim1_pitch:    16
+  dst_dim2_pitch:    256
+  --- Input tile (local memory) ---
+  in_dim1_size:      16
+  in_dim1_pitch:     18
+  in_dim2_size:      18
+  in_dim2_pitch:     324
+  in_dim1_edge1:     1
+  in_dim1_edge2:     1
+  in_dim2_edge1:     1
+  in_dim2_edge2:     1
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    19
+  in_rows_firstdma:  17
+  --- Output tile (local memory) ---
+  out_dim1_size:     16
+  out_dim1_pitch:    16
+  out_dim2_size:     16
+  out_dim2_pitch:    256
+  out_dim3_size:     64
+  --- Coefficient tile ---
+  coeff_dim1_size:   3
+  coeff_dim2_size:   3
+  coeff_dim3_size:   64
+  coeff_dim4_size:   64
+  coeff_dim1_pitch:  3
+  coeff_dim2_pitch:  9
+  coeff_dim3_pitch:  576
+  --- Bias ---
+  bias_dim1_size:    64
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:64
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 20736
+  coeff_buffer_size: 36864
+  output_buffer_size:16384
+  bias_buffer_size:  256
+  outscale_buf_size: 128
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   1
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       64
+  n_tiles:           1
+  n_tile_size_last:  64
+  height_tiles:      1
+  output_rows:       16
+  input_rows:        18
+  --- Convolution parameters ---
+  kernel_w:          3
+  kernel_h:          3
+  stride_x:          1
+  stride_y:          1
+  padding:           1
+  dilation:          1
+  accum_shift:       6
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      19
+  output_scale:      62280
+  flags:             0
+  input_zero_point:  -128
+===============================
+PERF_LOG : conv2d : 16384 : elements : 573843 : cycles : 0.03 : elements/cycle : 35.02 : cycles/elements
+PERF_LOG : dequantize_asym8s : 16384 : elements (DMA ping-pong) : 3199 : cycles : 5.12 : elements (DMA ping-pong)/cycle : 0.20 : cycles/elements (DMA ping-pong)
+PERF_LOG : add_float : 16384 : elements (DMA ping-pong) : 3577 : cycles : 4.58 : elements (DMA ping-pong)/cycle : 0.22 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantize_asym8s : 16384 : elements (DMA ping-pong) : 3879 : cycles : 4.22 : elements (DMA ping-pong)/cycle : 0.24 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantized_relu : 16384 : elements (DMA ping-pong) : 5193 : cycles : 3.16 : elements (DMA ping-pong)/cycle : 0.32 : cycles/elements (DMA ping-pong)
+=== conv_layer_config_t dump ===
+  layer_id:          1
+  layer_name:        conv2.1
+  kernel_name:       3x3j1d1
+  config_key:        64_16_16_64_3_3_16_16_1_1_1_1
+  --- Source (DRAM) ---
+  src_dim1_size:     16
+  src_dim2_size:     16
+  src_dim3_size:     64
+  src_dim1_pitch:    16
+  src_dim2_pitch:    256
+  --- Destination (DRAM) ---
+  dst_dim1_size:     16
+  dst_dim2_size:     16
+  dst_dim3_size:     64
+  dst_dim1_pitch:    16
+  dst_dim2_pitch:    256
+  --- Input tile (local memory) ---
+  in_dim1_size:      16
+  in_dim1_pitch:     18
+  in_dim2_size:      18
+  in_dim2_pitch:     324
+  in_dim1_edge1:     1
+  in_dim1_edge2:     1
+  in_dim2_edge1:     1
+  in_dim2_edge2:     1
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    19
+  in_rows_firstdma:  17
+  --- Output tile (local memory) ---
+  out_dim1_size:     16
+  out_dim1_pitch:    16
+  out_dim2_size:     16
+  out_dim2_pitch:    256
+  out_dim3_size:     64
+  --- Coefficient tile ---
+  coeff_dim1_size:   3
+  coeff_dim2_size:   3
+  coeff_dim3_size:   64
+  coeff_dim4_size:   64
+  coeff_dim1_pitch:  3
+  coeff_dim2_pitch:  9
+  coeff_dim3_pitch:  576
+  --- Bias ---
+  bias_dim1_size:    64
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:64
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 20736
+  coeff_buffer_size: 36864
+  output_buffer_size:16384
+  bias_buffer_size:  256
+  outscale_buf_size: 128
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   1
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       64
+  n_tiles:           1
+  n_tile_size_last:  64
+  height_tiles:      1
+  output_rows:       16
+  input_rows:        18
+  --- Convolution parameters ---
+  kernel_w:          3
+  kernel_h:          3
+  stride_x:          1
+  stride_y:          1
+  padding:           1
+  dilation:          1
+  accum_shift:       5
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      20
+  output_scale:      64554
+  flags:             0
+  input_zero_point:  -128
+===============================
+PERF_LOG : conv2d : 16384 : elements : 573908 : cycles : 0.03 : elements/cycle : 35.03 : cycles/elements
+PERF_LOG : quantized_relu : 16384 : elements (DMA ping-pong) : 5193 : cycles : 3.16 : elements (DMA ping-pong)/cycle : 0.32 : cycles/elements (DMA ping-pong)
+=== conv_layer_config_t dump ===
+  layer_id:          1
+  layer_name:        conv2.1
+  kernel_name:       3x3j1d1
+  config_key:        64_16_16_64_3_3_16_16_1_1_1_1
+  --- Source (DRAM) ---
+  src_dim1_size:     16
+  src_dim2_size:     16
+  src_dim3_size:     64
+  src_dim1_pitch:    16
+  src_dim2_pitch:    256
+  --- Destination (DRAM) ---
+  dst_dim1_size:     16
+  dst_dim2_size:     16
+  dst_dim3_size:     64
+  dst_dim1_pitch:    16
+  dst_dim2_pitch:    256
+  --- Input tile (local memory) ---
+  in_dim1_size:      16
+  in_dim1_pitch:     18
+  in_dim2_size:      18
+  in_dim2_pitch:     324
+  in_dim1_edge1:     1
+  in_dim1_edge2:     1
+  in_dim2_edge1:     1
+  in_dim2_edge2:     1
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    19
+  in_rows_firstdma:  17
+  --- Output tile (local memory) ---
+  out_dim1_size:     16
+  out_dim1_pitch:    16
+  out_dim2_size:     16
+  out_dim2_pitch:    256
+  out_dim3_size:     64
+  --- Coefficient tile ---
+  coeff_dim1_size:   3
+  coeff_dim2_size:   3
+  coeff_dim3_size:   64
+  coeff_dim4_size:   64
+  coeff_dim1_pitch:  3
+  coeff_dim2_pitch:  9
+  coeff_dim3_pitch:  576
+  --- Bias ---
+  bias_dim1_size:    64
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:64
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 20736
+  coeff_buffer_size: 36864
+  output_buffer_size:16384
+  bias_buffer_size:  256
+  outscale_buf_size: 128
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   1
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       64
+  n_tiles:           1
+  n_tile_size_last:  64
+  height_tiles:      1
+  output_rows:       16
+  input_rows:        18
+  --- Convolution parameters ---
+  kernel_w:          3
+  kernel_h:          3
+  stride_x:          1
+  stride_y:          1
+  padding:           1
+  dilation:          1
+  accum_shift:       6
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      18
+  output_scale:      45907
+  flags:             0
+  input_zero_point:  -128
+===============================
+PERF_LOG : conv2d : 16384 : elements : 573741 : cycles : 0.03 : elements/cycle : 35.02 : cycles/elements
+PERF_LOG : dequantize_asym8s : 16384 : elements (DMA ping-pong) : 3199 : cycles : 5.12 : elements (DMA ping-pong)/cycle : 0.20 : cycles/elements (DMA ping-pong)
+PERF_LOG : dequantize_asym8s : 16384 : elements (DMA ping-pong) : 3199 : cycles : 5.12 : elements (DMA ping-pong)/cycle : 0.20 : cycles/elements (DMA ping-pong)
+PERF_LOG : add_float : 16384 : elements (DMA ping-pong) : 3577 : cycles : 4.58 : elements (DMA ping-pong)/cycle : 0.22 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantize_asym8s : 16384 : elements (DMA ping-pong) : 3879 : cycles : 4.22 : elements (DMA ping-pong)/cycle : 0.24 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantized_relu : 16384 : elements (DMA ping-pong) : 5193 : cycles : 3.16 : elements (DMA ping-pong)/cycle : 0.32 : cycles/elements (DMA ping-pong)
+=== conv_layer_config_t dump ===
+  layer_id:          4
+  layer_name:        conv4a.1
+  kernel_name:       1x1j2d1
+  config_key:        64_16_16_128_1_1_8_8_2_2_0_1
+  --- Source (DRAM) ---
+  src_dim1_size:     16
+  src_dim2_size:     16
+  src_dim3_size:     64
+  src_dim1_pitch:    16
+  src_dim2_pitch:    256
+  --- Destination (DRAM) ---
+  dst_dim1_size:     8
+  dst_dim2_size:     8
+  dst_dim3_size:     128
+  dst_dim1_pitch:    8
+  dst_dim2_pitch:    64
+  --- Input tile (local memory) ---
+  in_dim1_size:      16
+  in_dim1_pitch:     16
+  in_dim2_size:      15
+  in_dim2_pitch:     240
+  in_dim1_edge1:     0
+  in_dim1_edge2:     0
+  in_dim2_edge1:     0
+  in_dim2_edge2:     0
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    0
+  in_rows_firstdma:  15
+  --- Output tile (local memory) ---
+  out_dim1_size:     8
+  out_dim1_pitch:    8
+  out_dim2_size:     8
+  out_dim2_pitch:    64
+  out_dim3_size:     128
+  --- Coefficient tile ---
+  coeff_dim1_size:   1
+  coeff_dim2_size:   1
+  coeff_dim3_size:   64
+  coeff_dim4_size:   128
+  coeff_dim1_pitch:  1
+  coeff_dim2_pitch:  1
+  coeff_dim3_pitch:  64
+  --- Bias ---
+  bias_dim1_size:    128
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:128
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 15360
+  coeff_buffer_size: 8192
+  output_buffer_size:8192
+  bias_buffer_size:  512
+  outscale_buf_size: 256
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   0
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       128
+  n_tiles:           1
+  n_tile_size_last:  128
+  height_tiles:      1
+  output_rows:       8
+  input_rows:        15
+  --- Convolution parameters ---
+  kernel_w:          1
+  kernel_h:          1
+  stride_x:          2
+  stride_y:          2
+  padding:           0
+  dilation:          1
+  accum_shift:       3
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      20
+  output_scale:      45825
+  flags:             0
+  input_zero_point:  -128
+===============================
+PERF_LOG : conv2d : 16384 : elements : 416854 : cycles : 0.04 : elements/cycle : 25.44 : cycles/elements
+=== conv_layer_config_t dump ===
+  layer_id:          2
+  layer_name:        conv4b.1
+  kernel_name:       3x3j2d1
+  config_key:        64_16_16_128_3_3_8_8_2_2_1_1
+  --- Source (DRAM) ---
+  src_dim1_size:     16
+  src_dim2_size:     16
+  src_dim3_size:     64
+  src_dim1_pitch:    16
+  src_dim2_pitch:    256
+  --- Destination (DRAM) ---
+  dst_dim1_size:     8
+  dst_dim2_size:     8
+  dst_dim3_size:     128
+  dst_dim1_pitch:    8
+  dst_dim2_pitch:    64
+  --- Input tile (local memory) ---
+  in_dim1_size:      16
+  in_dim1_pitch:     18
+  in_dim2_size:      5
+  in_dim2_pitch:     90
+  in_dim1_edge1:     1
+  in_dim1_edge2:     1
+  in_dim2_edge1:     1
+  in_dim2_edge2:     1
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    19
+  in_rows_firstdma:  4
+  --- Output tile (local memory) ---
+  out_dim1_size:     8
+  out_dim1_pitch:    8
+  out_dim2_size:     2
+  out_dim2_pitch:    16
+  out_dim3_size:     64
+  --- Coefficient tile ---
+  coeff_dim1_size:   3
+  coeff_dim2_size:   3
+  coeff_dim3_size:   64
+  coeff_dim4_size:   128
+  coeff_dim1_pitch:  3
+  coeff_dim2_pitch:  9
+  coeff_dim3_pitch:  576
+  --- Bias ---
+  bias_dim1_size:    128
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:128
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 5760
+  coeff_buffer_size: 36864
+  output_buffer_size:1024
+  bias_buffer_size:  512
+  outscale_buf_size: 256
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   0
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       64
+  n_tiles:           2
+  n_tile_size_last:  64
+  height_tiles:      4
+  output_rows:       2
+  input_rows:        5
+  --- Convolution parameters ---
+  kernel_w:          3
+  kernel_h:          3
+  stride_x:          2
+  stride_y:          2
+  padding:           1
+  dilation:          1
+  accum_shift:       5
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      19
+  output_scale:      33483
+  flags:             0
+  input_zero_point:  -128
+===============================
+PERF_LOG : conv2d : 16384 : elements : 746989 : cycles : 0.02 : elements/cycle : 45.59 : cycles/elements
+PERF_LOG : quantized_relu : 8192 : elements (DMA ping-pong) : 3145 : cycles : 2.60 : elements (DMA ping-pong)/cycle : 0.38 : cycles/elements (DMA ping-pong)
+=== conv_layer_config_t dump ===
+  layer_id:          3
+  layer_name:        conv4b.2
+  kernel_name:       3x3j1d1
+  config_key:        128_8_8_128_3_3_8_8_1_1_1_1
+  --- Source (DRAM) ---
+  src_dim1_size:     8
+  src_dim2_size:     8
+  src_dim3_size:     128
+  src_dim1_pitch:    8
+  src_dim2_pitch:    64
+  --- Destination (DRAM) ---
+  dst_dim1_size:     8
+  dst_dim2_size:     8
+  dst_dim3_size:     128
+  dst_dim1_pitch:    8
+  dst_dim2_pitch:    64
+  --- Input tile (local memory) ---
+  in_dim1_size:      8
+  in_dim1_pitch:     10
+  in_dim2_size:      4
+  in_dim2_pitch:     40
+  in_dim1_edge1:     1
+  in_dim1_edge2:     1
+  in_dim2_edge1:     1
+  in_dim2_edge2:     1
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    11
+  in_rows_firstdma:  3
+  --- Output tile (local memory) ---
+  out_dim1_size:     8
+  out_dim1_pitch:    8
+  out_dim2_size:     2
+  out_dim2_pitch:    16
+  out_dim3_size:     32
+  --- Coefficient tile ---
+  coeff_dim1_size:   3
+  coeff_dim2_size:   3
+  coeff_dim3_size:   128
+  coeff_dim4_size:   128
+  coeff_dim1_pitch:  3
+  coeff_dim2_pitch:  9
+  coeff_dim3_pitch:  1152
+  --- Bias ---
+  bias_dim1_size:    128
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:128
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 5120
+  coeff_buffer_size: 36864
+  output_buffer_size:512
+  bias_buffer_size:  512
+  outscale_buf_size: 256
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   0
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       32
+  n_tiles:           4
+  n_tile_size_last:  32
+  height_tiles:      4
+  output_rows:       2
+  input_rows:        4
+  --- Convolution parameters ---
+  kernel_w:          3
+  kernel_h:          3
+  stride_x:          1
+  stride_y:          1
+  padding:           1
+  dilation:          1
+  accum_shift:       6
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      18
+  output_scale:      41668
+  flags:             0
+  input_zero_point:  -128
+===============================
+PERF_LOG : conv2d : 8192 : elements : 1087612 : cycles : 0.01 : elements/cycle : 132.77 : cycles/elements
+PERF_LOG : dequantize_asym8s : 8192 : elements (DMA ping-pong) : 1946 : cycles : 4.21 : elements (DMA ping-pong)/cycle : 0.24 : cycles/elements (DMA ping-pong)
+PERF_LOG : dequantize_asym8s : 8192 : elements (DMA ping-pong) : 1946 : cycles : 4.21 : elements (DMA ping-pong)/cycle : 0.24 : cycles/elements (DMA ping-pong)
+PERF_LOG : add_float : 8192 : elements (DMA ping-pong) : 2155 : cycles : 3.80 : elements (DMA ping-pong)/cycle : 0.26 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantize_asym8s : 8192 : elements (DMA ping-pong) : 2289 : cycles : 3.58 : elements (DMA ping-pong)/cycle : 0.28 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantized_relu : 8192 : elements (DMA ping-pong) : 3145 : cycles : 2.60 : elements (DMA ping-pong)/cycle : 0.38 : cycles/elements (DMA ping-pong)
+=== conv_layer_config_t dump ===
+  layer_id:          3
+  layer_name:        conv4b.2
+  kernel_name:       3x3j1d1
+  config_key:        128_8_8_128_3_3_8_8_1_1_1_1
+  --- Source (DRAM) ---
+  src_dim1_size:     8
+  src_dim2_size:     8
+  src_dim3_size:     128
+  src_dim1_pitch:    8
+  src_dim2_pitch:    64
+  --- Destination (DRAM) ---
+  dst_dim1_size:     8
+  dst_dim2_size:     8
+  dst_dim3_size:     128
+  dst_dim1_pitch:    8
+  dst_dim2_pitch:    64
+  --- Input tile (local memory) ---
+  in_dim1_size:      8
+  in_dim1_pitch:     10
+  in_dim2_size:      4
+  in_dim2_pitch:     40
+  in_dim1_edge1:     1
+  in_dim1_edge2:     1
+  in_dim2_edge1:     1
+  in_dim2_edge2:     1
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    11
+  in_rows_firstdma:  3
+  --- Output tile (local memory) ---
+  out_dim1_size:     8
+  out_dim1_pitch:    8
+  out_dim2_size:     2
+  out_dim2_pitch:    16
+  out_dim3_size:     32
+  --- Coefficient tile ---
+  coeff_dim1_size:   3
+  coeff_dim2_size:   3
+  coeff_dim3_size:   128
+  coeff_dim4_size:   128
+  coeff_dim1_pitch:  3
+  coeff_dim2_pitch:  9
+  coeff_dim3_pitch:  1152
+  --- Bias ---
+  bias_dim1_size:    128
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:128
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 5120
+  coeff_buffer_size: 36864
+  output_buffer_size:512
+  bias_buffer_size:  512
+  outscale_buf_size: 256
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   0
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       32
+  n_tiles:           4
+  n_tile_size_last:  32
+  height_tiles:      4
+  output_rows:       2
+  input_rows:        4
+  --- Convolution parameters ---
+  kernel_w:          3
+  kernel_h:          3
+  stride_x:          1
+  stride_y:          1
+  padding:           1
+  dilation:          1
+  accum_shift:       7
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      18
+  output_scale:      59143
+  flags:             0
+  input_zero_point:  -128
+===============================
+PERF_LOG : conv2d : 8192 : elements : 1087644 : cycles : 0.01 : elements/cycle : 132.77 : cycles/elements
+PERF_LOG : quantized_relu : 8192 : elements (DMA ping-pong) : 3145 : cycles : 2.60 : elements (DMA ping-pong)/cycle : 0.38 : cycles/elements (DMA ping-pong)
+=== conv_layer_config_t dump ===
+  layer_id:          3
+  layer_name:        conv4b.2
+  kernel_name:       3x3j1d1
+  config_key:        128_8_8_128_3_3_8_8_1_1_1_1
+  --- Source (DRAM) ---
+  src_dim1_size:     8
+  src_dim2_size:     8
+  src_dim3_size:     128
+  src_dim1_pitch:    8
+  src_dim2_pitch:    64
+  --- Destination (DRAM) ---
+  dst_dim1_size:     8
+  dst_dim2_size:     8
+  dst_dim3_size:     128
+  dst_dim1_pitch:    8
+  dst_dim2_pitch:    64
+  --- Input tile (local memory) ---
+  in_dim1_size:      8
+  in_dim1_pitch:     10
+  in_dim2_size:      4
+  in_dim2_pitch:     40
+  in_dim1_edge1:     1
+  in_dim1_edge2:     1
+  in_dim2_edge1:     1
+  in_dim2_edge2:     1
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    11
+  in_rows_firstdma:  3
+  --- Output tile (local memory) ---
+  out_dim1_size:     8
+  out_dim1_pitch:    8
+  out_dim2_size:     2
+  out_dim2_pitch:    16
+  out_dim3_size:     32
+  --- Coefficient tile ---
+  coeff_dim1_size:   3
+  coeff_dim2_size:   3
+  coeff_dim3_size:   128
+  coeff_dim4_size:   128
+  coeff_dim1_pitch:  3
+  coeff_dim2_pitch:  9
+  coeff_dim3_pitch:  1152
+  --- Bias ---
+  bias_dim1_size:    128
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:128
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 5120
+  coeff_buffer_size: 36864
+  output_buffer_size:512
+  bias_buffer_size:  512
+  outscale_buf_size: 256
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   0
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       32
+  n_tiles:           4
+  n_tile_size_last:  32
+  height_tiles:      4
+  output_rows:       2
+  input_rows:        4
+  --- Convolution parameters ---
+  kernel_w:          3
+  kernel_h:          3
+  stride_x:          1
+  stride_y:          1
+  padding:           1
+  dilation:          1
+  accum_shift:       7
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      17
+  output_scale:      54558
+  flags:             0
+  input_zero_point:  -128
+===============================
+PERF_LOG : conv2d : 8192 : elements : 1087551 : cycles : 0.01 : elements/cycle : 132.76 : cycles/elements
+PERF_LOG : dequantize_asym8s : 8192 : elements (DMA ping-pong) : 1946 : cycles : 4.21 : elements (DMA ping-pong)/cycle : 0.24 : cycles/elements (DMA ping-pong)
+PERF_LOG : dequantize_asym8s : 8192 : elements (DMA ping-pong) : 1946 : cycles : 4.21 : elements (DMA ping-pong)/cycle : 0.24 : cycles/elements (DMA ping-pong)
+PERF_LOG : add_float : 8192 : elements (DMA ping-pong) : 2155 : cycles : 3.80 : elements (DMA ping-pong)/cycle : 0.26 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantize_asym8s : 8192 : elements (DMA ping-pong) : 2289 : cycles : 3.58 : elements (DMA ping-pong)/cycle : 0.28 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantized_relu : 8192 : elements (DMA ping-pong) : 3145 : cycles : 2.60 : elements (DMA ping-pong)/cycle : 0.38 : cycles/elements (DMA ping-pong)
+=== conv_layer_config_t dump ===
+  layer_id:          7
+  layer_name:        conv6a.1
+  kernel_name:       1x1j2d1
+  config_key:        128_8_8_256_1_1_4_4_2_2_0_1
+  --- Source (DRAM) ---
+  src_dim1_size:     8
+  src_dim2_size:     8
+  src_dim3_size:     128
+  src_dim1_pitch:    8
+  src_dim2_pitch:    64
+  --- Destination (DRAM) ---
+  dst_dim1_size:     4
+  dst_dim2_size:     4
+  dst_dim3_size:     256
+  dst_dim1_pitch:    4
+  dst_dim2_pitch:    16
+  --- Input tile (local memory) ---
+  in_dim1_size:      8
+  in_dim1_pitch:     8
+  in_dim2_size:      7
+  in_dim2_pitch:     56
+  in_dim1_edge1:     0
+  in_dim1_edge2:     0
+  in_dim2_edge1:     0
+  in_dim2_edge2:     0
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    0
+  in_rows_firstdma:  7
+  --- Output tile (local memory) ---
+  out_dim1_size:     4
+  out_dim1_pitch:    4
+  out_dim2_size:     4
+  out_dim2_pitch:    16
+  out_dim3_size:     256
+  --- Coefficient tile ---
+  coeff_dim1_size:   1
+  coeff_dim2_size:   1
+  coeff_dim3_size:   128
+  coeff_dim4_size:   256
+  coeff_dim1_pitch:  1
+  coeff_dim2_pitch:  1
+  coeff_dim3_pitch:  128
+  --- Bias ---
+  bias_dim1_size:    256
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:256
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 7168
+  coeff_buffer_size: 32768
+  output_buffer_size:4096
+  bias_buffer_size:  1024
+  outscale_buf_size: 512
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   0
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       256
+  n_tiles:           1
+  n_tile_size_last:  256
+  height_tiles:      1
+  output_rows:       4
+  input_rows:        7
+  --- Convolution parameters ---
+  kernel_w:          1
+  kernel_h:          1
+  stride_x:          2
+  stride_y:          2
+  padding:           0
+  dilation:          1
+  accum_shift:       4
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      18
+  output_scale:      36073
+  flags:             0
+  input_zero_point:  -128
+===============================
+PERF_LOG : conv2d : 8192 : elements : 531619 : cycles : 0.02 : elements/cycle : 64.89 : cycles/elements
+=== conv_layer_config_t dump ===
+  layer_id:          5
+  layer_name:        conv6b.1
+  kernel_name:       3x3j2d1
+  config_key:        128_8_8_256_3_3_4_4_2_2_1_1
+  --- Source (DRAM) ---
+  src_dim1_size:     8
+  src_dim2_size:     8
+  src_dim3_size:     128
+  src_dim1_pitch:    8
+  src_dim2_pitch:    64
+  --- Destination (DRAM) ---
+  dst_dim1_size:     4
+  dst_dim2_size:     4
+  dst_dim3_size:     256
+  dst_dim1_pitch:    4
+  dst_dim2_pitch:    16
+  --- Input tile (local memory) ---
+  in_dim1_size:      8
+  in_dim1_pitch:     10
+  in_dim2_size:      5
+  in_dim2_pitch:     50
+  in_dim1_edge1:     1
+  in_dim1_edge2:     1
+  in_dim2_edge1:     1
+  in_dim2_edge2:     1
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    11
+  in_rows_firstdma:  4
+  --- Output tile (local memory) ---
+  out_dim1_size:     4
+  out_dim1_pitch:    4
+  out_dim2_size:     2
+  out_dim2_pitch:    8
+  out_dim3_size:     32
+  --- Coefficient tile ---
+  coeff_dim1_size:   3
+  coeff_dim2_size:   3
+  coeff_dim3_size:   128
+  coeff_dim4_size:   256
+  coeff_dim1_pitch:  3
+  coeff_dim2_pitch:  9
+  coeff_dim3_pitch:  1152
+  --- Bias ---
+  bias_dim1_size:    256
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:256
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 6400
+  coeff_buffer_size: 36864
+  output_buffer_size:256
+  bias_buffer_size:  1024
+  outscale_buf_size: 512
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   0
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       32
+  n_tiles:           8
+  n_tile_size_last:  32
+  height_tiles:      2
+  output_rows:       2
+  input_rows:        5
+  --- Convolution parameters ---
+  kernel_w:          3
+  kernel_h:          3
+  stride_x:          2
+  stride_y:          2
+  padding:           1
+  dilation:          1
+  accum_shift:       6
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      18
+  output_scale:      40823
+  flags:             0
+  input_zero_point:  -128
+===============================
+PERF_LOG : conv2d : 8192 : elements : 1625152 : cycles : 0.01 : elements/cycle : 198.38 : cycles/elements
+PERF_LOG : quantized_relu : 4096 : elements (DMA ping-pong) : 2121 : cycles : 1.93 : elements (DMA ping-pong)/cycle : 0.52 : cycles/elements (DMA ping-pong)
+=== conv_layer_config_t dump ===
+  layer_id:          6
+  layer_name:        conv6b.2
+  kernel_name:       3x3j1d1
+  config_key:        256_4_4_256_3_3_4_4_1_1_1_1
+  --- Source (DRAM) ---
+  src_dim1_size:     4
+  src_dim2_size:     4
+  src_dim3_size:     256
+  src_dim1_pitch:    4
+  src_dim2_pitch:    16
+  --- Destination (DRAM) ---
+  dst_dim1_size:     4
+  dst_dim2_size:     4
+  dst_dim3_size:     256
+  dst_dim1_pitch:    4
+  dst_dim2_pitch:    16
+  --- Input tile (local memory) ---
+  in_dim1_size:      4
+  in_dim1_pitch:     6
+  in_dim2_size:      4
+  in_dim2_pitch:     24
+  in_dim1_edge1:     1
+  in_dim1_edge2:     1
+  in_dim2_edge1:     1
+  in_dim2_edge2:     1
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    7
+  in_rows_firstdma:  3
+  --- Output tile (local memory) ---
+  out_dim1_size:     4
+  out_dim1_pitch:    4
+  out_dim2_size:     2
+  out_dim2_pitch:    8
+  out_dim3_size:     16
+  --- Coefficient tile ---
+  coeff_dim1_size:   3
+  coeff_dim2_size:   3
+  coeff_dim3_size:   256
+  coeff_dim4_size:   256
+  coeff_dim1_pitch:  3
+  coeff_dim2_pitch:  9
+  coeff_dim3_pitch:  2304
+  --- Bias ---
+  bias_dim1_size:    256
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:256
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 6144
+  coeff_buffer_size: 36864
+  output_buffer_size:128
+  bias_buffer_size:  1024
+  outscale_buf_size: 512
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   0
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       16
+  n_tiles:           16
+  n_tile_size_last:  16
+  height_tiles:      2
+  output_rows:       2
+  input_rows:        4
+  --- Convolution parameters ---
+  kernel_w:          3
+  kernel_h:          3
+  stride_x:          1
+  stride_y:          1
+  padding:           1
+  dilation:          1
+  accum_shift:       7
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      18
+  output_scale:      45858
+  flags:             0
+  input_zero_point:  -128
+===============================
+PERF_LOG : conv2d : 4096 : elements : 2856888 : cycles : 0.00 : elements/cycle : 697.48 : cycles/elements
+PERF_LOG : dequantize_asym8s : 4096 : elements (DMA ping-pong) : 1466 : cycles : 2.79 : elements (DMA ping-pong)/cycle : 0.36 : cycles/elements (DMA ping-pong)
+PERF_LOG : dequantize_asym8s : 4096 : elements (DMA ping-pong) : 1466 : cycles : 2.79 : elements (DMA ping-pong)/cycle : 0.36 : cycles/elements (DMA ping-pong)
+PERF_LOG : add_float : 4096 : elements (DMA ping-pong) : 1440 : cycles : 2.84 : elements (DMA ping-pong)/cycle : 0.35 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantize_asym8s : 4096 : elements (DMA ping-pong) : 1649 : cycles : 2.48 : elements (DMA ping-pong)/cycle : 0.40 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantized_relu : 4096 : elements (DMA ping-pong) : 2121 : cycles : 1.93 : elements (DMA ping-pong)/cycle : 0.52 : cycles/elements (DMA ping-pong)
+=== conv_layer_config_t dump ===
+  layer_id:          6
+  layer_name:        conv6b.2
+  kernel_name:       3x3j1d1
+  config_key:        256_4_4_256_3_3_4_4_1_1_1_1
+  --- Source (DRAM) ---
+  src_dim1_size:     4
+  src_dim2_size:     4
+  src_dim3_size:     256
+  src_dim1_pitch:    4
+  src_dim2_pitch:    16
+  --- Destination (DRAM) ---
+  dst_dim1_size:     4
+  dst_dim2_size:     4
+  dst_dim3_size:     256
+  dst_dim1_pitch:    4
+  dst_dim2_pitch:    16
+  --- Input tile (local memory) ---
+  in_dim1_size:      4
+  in_dim1_pitch:     6
+  in_dim2_size:      4
+  in_dim2_pitch:     24
+  in_dim1_edge1:     1
+  in_dim1_edge2:     1
+  in_dim2_edge1:     1
+  in_dim2_edge2:     1
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    7
+  in_rows_firstdma:  3
+  --- Output tile (local memory) ---
+  out_dim1_size:     4
+  out_dim1_pitch:    4
+  out_dim2_size:     2
+  out_dim2_pitch:    8
+  out_dim3_size:     16
+  --- Coefficient tile ---
+  coeff_dim1_size:   3
+  coeff_dim2_size:   3
+  coeff_dim3_size:   256
+  coeff_dim4_size:   256
+  coeff_dim1_pitch:  3
+  coeff_dim2_pitch:  9
+  coeff_dim3_pitch:  2304
+  --- Bias ---
+  bias_dim1_size:    256
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:256
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 6144
+  coeff_buffer_size: 36864
+  output_buffer_size:128
+  bias_buffer_size:  1024
+  outscale_buf_size: 512
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   0
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       16
+  n_tiles:           16
+  n_tile_size_last:  16
+  height_tiles:      2
+  output_rows:       2
+  input_rows:        4
+  --- Convolution parameters ---
+  kernel_w:          3
+  kernel_h:          3
+  stride_x:          1
+  stride_y:          1
+  padding:           1
+  dilation:          1
+  accum_shift:       7
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      18
+  output_scale:      49746
+  flags:             0
+  input_zero_point:  -128
+===============================
+PERF_LOG : conv2d : 4096 : elements : 2856887 : cycles : 0.00 : elements/cycle : 697.48 : cycles/elements
+PERF_LOG : quantized_relu : 4096 : elements (DMA ping-pong) : 2121 : cycles : 1.93 : elements (DMA ping-pong)/cycle : 0.52 : cycles/elements (DMA ping-pong)
+=== conv_layer_config_t dump ===
+  layer_id:          6
+  layer_name:        conv6b.2
+  kernel_name:       3x3j1d1
+  config_key:        256_4_4_256_3_3_4_4_1_1_1_1
+  --- Source (DRAM) ---
+  src_dim1_size:     4
+  src_dim2_size:     4
+  src_dim3_size:     256
+  src_dim1_pitch:    4
+  src_dim2_pitch:    16
+  --- Destination (DRAM) ---
+  dst_dim1_size:     4
+  dst_dim2_size:     4
+  dst_dim3_size:     256
+  dst_dim1_pitch:    4
+  dst_dim2_pitch:    16
+  --- Input tile (local memory) ---
+  in_dim1_size:      4
+  in_dim1_pitch:     6
+  in_dim2_size:      4
+  in_dim2_pitch:     24
+  in_dim1_edge1:     1
+  in_dim1_edge2:     1
+  in_dim2_edge1:     1
+  in_dim2_edge2:     1
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    7
+  in_rows_firstdma:  3
+  --- Output tile (local memory) ---
+  out_dim1_size:     4
+  out_dim1_pitch:    4
+  out_dim2_size:     2
+  out_dim2_pitch:    8
+  out_dim3_size:     16
+  --- Coefficient tile ---
+  coeff_dim1_size:   3
+  coeff_dim2_size:   3
+  coeff_dim3_size:   256
+  coeff_dim4_size:   256
+  coeff_dim1_pitch:  3
+  coeff_dim2_pitch:  9
+  coeff_dim3_pitch:  2304
+  --- Bias ---
+  bias_dim1_size:    256
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:256
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 6144
+  coeff_buffer_size: 36864
+  output_buffer_size:128
+  bias_buffer_size:  1024
+  outscale_buf_size: 512
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   0
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       16
+  n_tiles:           16
+  n_tile_size_last:  16
+  height_tiles:      2
+  output_rows:       2
+  input_rows:        4
+  --- Convolution parameters ---
+  kernel_w:          3
+  kernel_h:          3
+  stride_x:          1
+  stride_y:          1
+  padding:           1
+  dilation:          1
+  accum_shift:       7
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      17
+  output_scale:      34404
+  flags:             0
+  input_zero_point:  -128
+===============================
+PERF_LOG : conv2d : 4096 : elements : 2856787 : cycles : 0.00 : elements/cycle : 697.46 : cycles/elements
+PERF_LOG : dequantize_asym8s : 4096 : elements (DMA ping-pong) : 1466 : cycles : 2.79 : elements (DMA ping-pong)/cycle : 0.36 : cycles/elements (DMA ping-pong)
+PERF_LOG : dequantize_asym8s : 4096 : elements (DMA ping-pong) : 1466 : cycles : 2.79 : elements (DMA ping-pong)/cycle : 0.36 : cycles/elements (DMA ping-pong)
+PERF_LOG : add_float : 4096 : elements (DMA ping-pong) : 1440 : cycles : 2.84 : elements (DMA ping-pong)/cycle : 0.35 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantize_asym8s : 4096 : elements (DMA ping-pong) : 1649 : cycles : 2.48 : elements (DMA ping-pong)/cycle : 0.40 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantized_relu : 4096 : elements (DMA ping-pong) : 2121 : cycles : 1.93 : elements (DMA ping-pong)/cycle : 0.52 : cycles/elements (DMA ping-pong)
+=== conv_layer_config_t dump ===
+  layer_id:          10
+  layer_name:        conv8a.1
+  kernel_name:       1x1j2d1
+  config_key:        256_4_4_512_1_1_2_2_2_2_0_1
+  --- Source (DRAM) ---
+  src_dim1_size:     4
+  src_dim2_size:     4
+  src_dim3_size:     256
+  src_dim1_pitch:    4
+  src_dim2_pitch:    16
+  --- Destination (DRAM) ---
+  dst_dim1_size:     2
+  dst_dim2_size:     2
+  dst_dim3_size:     512
+  dst_dim1_pitch:    2
+  dst_dim2_pitch:    4
+  --- Input tile (local memory) ---
+  in_dim1_size:      4
+  in_dim1_pitch:     4
+  in_dim2_size:      3
+  in_dim2_pitch:     12
+  in_dim1_edge1:     0
+  in_dim1_edge2:     0
+  in_dim2_edge1:     0
+  in_dim2_edge2:     0
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    0
+  in_rows_firstdma:  3
+  --- Output tile (local memory) ---
+  out_dim1_size:     2
+  out_dim1_pitch:    2
+  out_dim2_size:     2
+  out_dim2_pitch:    4
+  out_dim3_size:     128
+  --- Coefficient tile ---
+  coeff_dim1_size:   1
+  coeff_dim2_size:   1
+  coeff_dim3_size:   256
+  coeff_dim4_size:   512
+  coeff_dim1_pitch:  1
+  coeff_dim2_pitch:  1
+  coeff_dim3_pitch:  256
+  --- Bias ---
+  bias_dim1_size:    512
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:512
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 3072
+  coeff_buffer_size: 32768
+  output_buffer_size:512
+  bias_buffer_size:  2048
+  outscale_buf_size: 1024
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   0
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       128
+  n_tiles:           4
+  n_tile_size_last:  128
+  height_tiles:      1
+  output_rows:       2
+  input_rows:        3
+  --- Convolution parameters ---
+  kernel_w:          1
+  kernel_h:          1
+  stride_x:          2
+  stride_y:          2
+  padding:           0
+  dilation:          1
+  accum_shift:       4
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      19
+  output_scale:      33076
+  flags:             0
+  input_zero_point:  -128
+===============================
+PERF_LOG : conv2d : 4096 : elements : 906356 : cycles : 0.00 : elements/cycle : 221.28 : cycles/elements
+=== conv_layer_config_t dump ===
+  layer_id:          8
+  layer_name:        conv8b.1
+  kernel_name:       3x3j2d1
+  config_key:        256_4_4_512_3_3_2_2_2_2_1_1
+  --- Source (DRAM) ---
+  src_dim1_size:     4
+  src_dim2_size:     4
+  src_dim3_size:     256
+  src_dim1_pitch:    4
+  src_dim2_pitch:    16
+  --- Destination (DRAM) ---
+  dst_dim1_size:     2
+  dst_dim2_size:     2
+  dst_dim3_size:     512
+  dst_dim1_pitch:    2
+  dst_dim2_pitch:    4
+  --- Input tile (local memory) ---
+  in_dim1_size:      4
+  in_dim1_pitch:     6
+  in_dim2_size:      5
+  in_dim2_pitch:     30
+  in_dim1_edge1:     1
+  in_dim1_edge2:     1
+  in_dim2_edge1:     1
+  in_dim2_edge2:     1
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    7
+  in_rows_firstdma:  4
+  --- Output tile (local memory) ---
+  out_dim1_size:     2
+  out_dim1_pitch:    2
+  out_dim2_size:     2
+  out_dim2_pitch:    4
+  out_dim3_size:     16
+  --- Coefficient tile ---
+  coeff_dim1_size:   3
+  coeff_dim2_size:   3
+  coeff_dim3_size:   256
+  coeff_dim4_size:   512
+  coeff_dim1_pitch:  3
+  coeff_dim2_pitch:  9
+  coeff_dim3_pitch:  2304
+  --- Bias ---
+  bias_dim1_size:    512
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:512
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 7680
+  coeff_buffer_size: 36864
+  output_buffer_size:64
+  bias_buffer_size:  2048
+  outscale_buf_size: 1024
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   0
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       16
+  n_tiles:           32
+  n_tile_size_last:  16
+  height_tiles:      1
+  output_rows:       2
+  input_rows:        5
+  --- Convolution parameters ---
+  kernel_w:          3
+  kernel_h:          3
+  stride_x:          2
+  stride_y:          2
+  padding:           1
+  dilation:          1
+  accum_shift:       7
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      17
+  output_scale:      37495
+  flags:             0
+  input_zero_point:  -128
+===============================
+PERF_LOG : conv2d : 4096 : elements : 4883593 : cycles : 0.00 : elements/cycle : 1192.28 : cycles/elements
+PERF_LOG : quantized_relu : 2048 : elements (DMA ping-pong) : 1609 : cycles : 1.27 : elements (DMA ping-pong)/cycle : 0.79 : cycles/elements (DMA ping-pong)
+=== conv_layer_config_t dump ===
+  layer_id:          9
+  layer_name:        conv8b.2
+  kernel_name:       3x3j1d1
+  config_key:        512_2_2_512_3_3_2_2_1_1_1_1
+  --- Source (DRAM) ---
+  src_dim1_size:     2
+  src_dim2_size:     2
+  src_dim3_size:     512
+  src_dim1_pitch:    2
+  src_dim2_pitch:    4
+  --- Destination (DRAM) ---
+  dst_dim1_size:     2
+  dst_dim2_size:     2
+  dst_dim3_size:     512
+  dst_dim1_pitch:    2
+  dst_dim2_pitch:    4
+  --- Input tile (local memory) ---
+  in_dim1_size:      2
+  in_dim1_pitch:     4
+  in_dim2_size:      4
+  in_dim2_pitch:     16
+  in_dim1_edge1:     1
+  in_dim1_edge2:     1
+  in_dim2_edge1:     1
+  in_dim2_edge2:     1
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    5
+  in_rows_firstdma:  3
+  --- Output tile (local memory) ---
+  out_dim1_size:     2
+  out_dim1_pitch:    2
+  out_dim2_size:     2
+  out_dim2_pitch:    4
+  out_dim3_size:     8
+  --- Coefficient tile ---
+  coeff_dim1_size:   3
+  coeff_dim2_size:   3
+  coeff_dim3_size:   512
+  coeff_dim4_size:   512
+  coeff_dim1_pitch:  3
+  coeff_dim2_pitch:  9
+  coeff_dim3_pitch:  4608
+  --- Bias ---
+  bias_dim1_size:    512
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:512
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 8192
+  coeff_buffer_size: 36864
+  output_buffer_size:32
+  bias_buffer_size:  2048
+  outscale_buf_size: 1024
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   0
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       8
+  n_tiles:           64
+  n_tile_size_last:  8
+  height_tiles:      1
+  output_rows:       2
+  input_rows:        4
+  --- Convolution parameters ---
+  kernel_w:          3
+  kernel_h:          3
+  stride_x:          1
+  stride_y:          1
+  padding:           1
+  dilation:          1
+  accum_shift:       8
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      17
+  output_scale:      59827
+  flags:             0
+  input_zero_point:  -128
+===============================
+PERF_LOG : conv2d : 2048 : elements : 9361542 : cycles : 0.00 : elements/cycle : 4571.07 : cycles/elements
+PERF_LOG : dequantize_asym8s : 2048 : elements (DMA ping-pong) : 1226 : cycles : 1.67 : elements (DMA ping-pong)/cycle : 0.60 : cycles/elements (DMA ping-pong)
+PERF_LOG : dequantize_asym8s : 2048 : elements (DMA ping-pong) : 1226 : cycles : 1.67 : elements (DMA ping-pong)/cycle : 0.60 : cycles/elements (DMA ping-pong)
+PERF_LOG : add_float : 2048 : elements (DMA ping-pong) : 1248 : cycles : 1.64 : elements (DMA ping-pong)/cycle : 0.61 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantize_asym8s : 2048 : elements (DMA ping-pong) : 1329 : cycles : 1.54 : elements (DMA ping-pong)/cycle : 0.65 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantized_relu : 2048 : elements (DMA ping-pong) : 1609 : cycles : 1.27 : elements (DMA ping-pong)/cycle : 0.79 : cycles/elements (DMA ping-pong)
+=== conv_layer_config_t dump ===
+  layer_id:          9
+  layer_name:        conv8b.2
+  kernel_name:       3x3j1d1
+  config_key:        512_2_2_512_3_3_2_2_1_1_1_1
+  --- Source (DRAM) ---
+  src_dim1_size:     2
+  src_dim2_size:     2
+  src_dim3_size:     512
+  src_dim1_pitch:    2
+  src_dim2_pitch:    4
+  --- Destination (DRAM) ---
+  dst_dim1_size:     2
+  dst_dim2_size:     2
+  dst_dim3_size:     512
+  dst_dim1_pitch:    2
+  dst_dim2_pitch:    4
+  --- Input tile (local memory) ---
+  in_dim1_size:      2
+  in_dim1_pitch:     4
+  in_dim2_size:      4
+  in_dim2_pitch:     16
+  in_dim1_edge1:     1
+  in_dim1_edge2:     1
+  in_dim2_edge1:     1
+  in_dim2_edge2:     1
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    5
+  in_rows_firstdma:  3
+  --- Output tile (local memory) ---
+  out_dim1_size:     2
+  out_dim1_pitch:    2
+  out_dim2_size:     2
+  out_dim2_pitch:    4
+  out_dim3_size:     8
+  --- Coefficient tile ---
+  coeff_dim1_size:   3
+  coeff_dim2_size:   3
+  coeff_dim3_size:   512
+  coeff_dim4_size:   512
+  coeff_dim1_pitch:  3
+  coeff_dim2_pitch:  9
+  coeff_dim3_pitch:  4608
+  --- Bias ---
+  bias_dim1_size:    512
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:512
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 8192
+  coeff_buffer_size: 36864
+  output_buffer_size:32
+  bias_buffer_size:  2048
+  outscale_buf_size: 1024
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   0
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       8
+  n_tiles:           64
+  n_tile_size_last:  8
+  height_tiles:      1
+  output_rows:       2
+  input_rows:        4
+  --- Convolution parameters ---
+  kernel_w:          3
+  kernel_h:          3
+  stride_x:          1
+  stride_y:          1
+  padding:           1
+  dilation:          1
+  accum_shift:       8
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      15
+  output_scale:      20759
+  flags:             0
+  input_zero_point:  -128
+===============================
+PERF_LOG : conv2d : 2048 : elements : 9361234 : cycles : 0.00 : elements/cycle : 4570.92 : cycles/elements
+PERF_LOG : quantized_relu : 2048 : elements (DMA ping-pong) : 1609 : cycles : 1.27 : elements (DMA ping-pong)/cycle : 0.79 : cycles/elements (DMA ping-pong)
+=== conv_layer_config_t dump ===
+  layer_id:          9
+  layer_name:        conv8b.2
+  kernel_name:       3x3j1d1
+  config_key:        512_2_2_512_3_3_2_2_1_1_1_1
+  --- Source (DRAM) ---
+  src_dim1_size:     2
+  src_dim2_size:     2
+  src_dim3_size:     512
+  src_dim1_pitch:    2
+  src_dim2_pitch:    4
+  --- Destination (DRAM) ---
+  dst_dim1_size:     2
+  dst_dim2_size:     2
+  dst_dim3_size:     512
+  dst_dim1_pitch:    2
+  dst_dim2_pitch:    4
+  --- Input tile (local memory) ---
+  in_dim1_size:      2
+  in_dim1_pitch:     4
+  in_dim2_size:      4
+  in_dim2_pitch:     16
+  in_dim1_edge1:     1
+  in_dim1_edge2:     1
+  in_dim2_edge1:     1
+  in_dim2_edge2:     1
+  in_dim3_edge1:     0
+  in_dim3_edge2:     0
+  in_data_offset:    5
+  in_rows_firstdma:  3
+  --- Output tile (local memory) ---
+  out_dim1_size:     2
+  out_dim1_pitch:    2
+  out_dim2_size:     2
+  out_dim2_pitch:    4
+  out_dim3_size:     8
+  --- Coefficient tile ---
+  coeff_dim1_size:   3
+  coeff_dim2_size:   3
+  coeff_dim3_size:   512
+  coeff_dim4_size:   512
+  coeff_dim1_pitch:  3
+  coeff_dim2_pitch:  9
+  coeff_dim3_pitch:  4608
+  --- Bias ---
+  bias_dim1_size:    512
+  bias_dim2_size:    1
+  --- Output scale ---
+  outscale_dim1_size:512
+  outscale_dim2_size:1
+  --- Buffer sizes (bytes) ---
+  input_buffer_size: 8192
+  coeff_buffer_size: 36864
+  output_buffer_size:32
+  bias_buffer_size:  2048
+  outscale_buf_size: 1024
+  --- Buffer DRAM placement ---
+  input_ping_dram:   0
+  input_pong_dram:   0
+  coeff_dram:        0
+  output_ping_dram:  1
+  output_pong_dram:  1
+  bias_dram:         1
+  outscale_dram:     1
+  --- Tiling parameters ---
+  n_tile_size:       8
+  n_tiles:           64
+  n_tile_size_last:  8
+  height_tiles:      1
+  output_rows:       2
+  input_rows:        4
+  --- Convolution parameters ---
+  kernel_w:          3
+  kernel_h:          3
+  stride_x:          1
+  stride_y:          1
+  padding:           1
+  dilation:          1
+  accum_shift:       8
+  relu_max:          127
+  relu_min:          -128
+  output_shift:      15
+  output_scale:      18874
+  flags:             0
+  input_zero_point:  -128
+===============================
+PERF_LOG : conv2d : 2048 : elements : 9361254 : cycles : 0.00 : elements/cycle : 4570.92 : cycles/elements
+PERF_LOG : dequantize_asym8s : 2048 : elements (DMA ping-pong) : 1226 : cycles : 1.67 : elements (DMA ping-pong)/cycle : 0.60 : cycles/elements (DMA ping-pong)
+PERF_LOG : dequantize_asym8s : 2048 : elements (DMA ping-pong) : 1226 : cycles : 1.67 : elements (DMA ping-pong)/cycle : 0.60 : cycles/elements (DMA ping-pong)
+PERF_LOG : add_float : 2048 : elements (DMA ping-pong) : 1248 : cycles : 1.64 : elements (DMA ping-pong)/cycle : 0.61 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantize_asym8s : 2048 : elements (DMA ping-pong) : 1329 : cycles : 1.54 : elements (DMA ping-pong)/cycle : 0.65 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantized_relu : 2048 : elements (DMA ping-pong) : 1609 : cycles : 1.27 : elements (DMA ping-pong)/cycle : 0.79 : cycles/elements (DMA ping-pong)
+PERF_LOG : dequantize_asym8s : 2048 : elements (DMA ping-pong) : 1226 : cycles : 1.67 : elements (DMA ping-pong)/cycle : 0.60 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantize_asym8s : 512 : elements (HW-optimized, no DMA) : 161 : cycles : 3.18 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 1000 : elements (HW-optimized, no DMA) : 206 : cycles : 4.85 : elements (HW-optimized, no DMA)/cycle : 0.21 : cycles/elements (HW-optimized, no DMA)
+Output 0: tensor(sizes=[1, 1000], [
+  -1.59339, 0.506988, -0.0724269, -0.796696, 0.94155, 2.53494, -1.23126, -1.0864, -1.01398, -3.11436, 
+  -0.869123, 0.506988, -0.94155, -2.53494, -1.52097, -0.651842, -0.289708, -2.10038, -0.579415, -2.17281, 
+  -4.12833, -2.02795, -1.66582, -2.24523, -2.53494, -0.217281, -0.144854, -0.506988, -0.144854, -1.23126, 
+  -0.869123, 1.52097, -1.30368, -3.47649, -2.46252, -4.63532, -1.81067, -3.47649, -1.30368, -0.94155, 
+  0.144854, -1.73825, -3.69377, -1.66582, -1.44854, -0.94155, -0.506988, -0.724269, -4.5629, -3.69377, 
+  -2.31766, -2.10038, -1.66582, -0.724269, -1.37611, 0.651842, -2.24523, -3.54892, -2.46252, 1.73825, 
+  0.144854, -4.20076, -1.59339, -0.869123, 0.651842, -1.30368, 0.144854, -3.18678, -0.869123, -1.23126, 
+  0.362135, 2.82465, 2.82465, 3.47649, 2.17281, 1.01398, 0.217281, 0.724269, 0.651842, 1.01398, 
+  -1.95553, -1.37611, -1.95553, -2.31766, -5.50445, -1.73825, -2.82465, -3.25921, -2.24523, -1.66582, 
+  -2.39009, -2.6798, -0.217281, -1.15883, 0.217281, -2.6798, -2.31766, -5.28716, -5.14231, -4.49047, 
+  -2.82465, -3.98348, -2.10038, -1.37611, -2.39009, -4.27319, -0.217281, 4.70775, 0.651842, -1.23126, 
+  2.24523, 2.75222, 0.869123, 0.144854, -0.506988, 1.0864, -1.73825, 0.651842, -2.39009, -2.53494, 
+  -1.52097, -2.31766, -1.66582, -2.17281, -2.31766, -1.95553, -0.217281, -4.41804, -3.83863, -2.75222, 
+  -2.9695, -3.40407, -1.37611, -4.05591, -3.91105, -1.81067, -3.40407, -1.95553, -5.21474, -3.47649, 
+  -3.40407, -3.11436, -2.46252, -3.11436, -3.04193, -0.579415, -3.40407, -3.47649, -1.73825, -1.0864, 
+  -1.95553, 1.23126, -2.9695, -0.796696, -1.81067, -2.02795, -3.11436, -1.23126, -1.37611, -2.9695, 
+  -3.7662, -2.31766, -3.11436, -1.81067, -2.10038, -2.75222, -4.78018, -2.75222, -3.18678, -2.17281, 
+  -2.31766, -3.04193, -3.98348, -0.506988, -0.434561, -3.11436, -3.33164, -3.25921, -2.10038, -2.39009, 
+  -4.27319, -1.23126, -1.30368, -1.52097, -0.869123, 0.0724269, -0.217281, -0.217281, -3.83863, -2.02795, 
+  -2.10038, -3.7662, -2.53494, -2.17281, -1.30368, -0.724269, -1.66582, -2.24523, -0.362135, -0.651842, 
+  -3.7662, -1.44854, -1.37611, 1.23126, -0.144854, -2.10038, -1.59339, -0.94155, -1.37611, -4.12833, 
+  -4.05591, -2.10038, -3.25921, -1.30368, -2.89708, -2.10038, -1.44854, -3.11436, -3.25921, -1.44854, 
+  -0.94155, -2.6798, 0.144854, 0.724269, 1.01398, -1.8831, -1.30368, -1.15883, -2.10038, -2.02795, 
+  -4.05591, -2.82465, -1.95553, -0.651842, -1.95553, -0.289708, -2.39009, -2.02795, -3.33164, -3.91105, 
+  -2.02795, -2.39009, -1.15883, -2.75222, -1.73825, -0.579415, -1.52097, -2.10038, -0.362135, -1.30368, 
+  -0.724269, 0.217281, -0.217281, -1.15883, 1.44854, -1.66582, -2.46252, -1.30368, -1.8831, -1.44854, 
+  -2.10038, -1.30368, 1.15883, -2.89708, -1.23126, -0.362135, -2.17281, -1.15883, -1.23126, -0.0724269, 
+  -0.506988, -0.94155, -1.66582, -1.81067, -1.37611, -0.796696, -2.46252, -2.02795, -2.46252, 0.724269, 
+  -0.579415, 0.579415, 0.362135, 2.31766, -0.144854, 1.73825, -1.44854, -3.11436, 2.31766, 0.289708, 
+  -1.44854, -3.18678, -2.17281, -0.289708, -2.46252, -1.52097, -1.0864, -3.54892, -2.53494, -0.94155, 
+  0.434561, 0.869123, 0., 2.6798, -0.289708, -2.39009, 0.0724269, 0.289708, 2.9695, 1.30368, 
+  2.39009, 0.362135, 0.724269, 1.37611, 0.217281, 3.47649, -2.24523, -0.144854, 2.17281, 2.17281, 
+  1.44854, 0.94155, -3.54892, 1.73825, 1.15883, 0.0724269, 0.724269, -0.869123, 0.217281, -1.59339, 
+  -0.144854, 0.217281, -1.52097, 2.10038, -1.15883, 0.144854, -1.8831, -0.434561, -2.31766, -2.46252, 
+  -1.15883, -3.04193, -3.62135, -3.7662, -3.98348, -3.47649, -5.79415, -4.12833, -4.92503, -3.7662, 
+  -3.33164, -4.41804, -2.75222, -2.75222, -1.30368, -1.15883, -0.0724269, -0.579415, -0.362135, -2.17281, 
+  -2.02795, -1.01398, -2.53494, -0.651842, -1.15883, -1.01398, -2.24523, -2.10038, -1.81067, -1.52097, 
+  -2.60737, -2.89708, -0.724269, -1.81067, -2.89708, -3.69377, -1.37611, -1.37611, -2.82465, -1.73825, 
+  -2.10038, -2.10038, -2.17281, -1.59339, -0.289708, -3.40407, -3.33164, -1.81067, -2.10038, -1.81067, 
+  -1.30368, -1.81067, 1.73825, -0.144854, -3.33164, -1.30368, 0.0724269, -1.0864, 5.93901, 2.82465, 
+  -0.869123, 4.05591, 3.04193, -0.217281, -0.362135, 0.724269, -1.73825, 1.23126, -4.41804, 7.38755, 
+  -1.23126, -0.651842, 2.46252, 0.289708, -1.01398, 0.362135, 2.39009, 3.11436, 1.8831, 6.7357, 
+  0.144854, 3.47649, -0.796696, 0.434561, 2.82465, 1.23126, 2.10038, -0.362135, -3.25921, 1.0864, 
+  -0.0724269, -2.10038, 0.0724269, 0.434561, -2.31766, 0.869123, -3.25921, 2.53494, 3.11436, -1.30368, 
+  2.9695, 3.47649, 1.0864, -0.434561, -2.9695, 1.01398, 3.47649, 1.30368, 0.0724269, -0.434561, 
+  -2.89708, -1.15883, -3.40407, 0.94155, 0.869123, 0.651842, 1.37611, 0.869123, -0.579415, 3.40407, 
+  -2.53494, -0.651842, -0.506988, 1.15883, 1.30368, -0.0724269, 1.15883, -1.44854, 4.20076, -0.0724269, 
+  4.63532, -1.0864, -0.869123, 0.0724269, -2.75222, 2.31766, -0.94155, -1.01398, 2.10038, 1.23126, 
+  4.70775, 2.6798, 0.869123, 1.8831, -0.506988, 2.17281, 0.796696, 4.34561, 3.98348, 6.22871, 
+  2.10038, -0.94155, -2.17281, -1.81067, 2.60737, -2.6798, -0.579415, 3.11436, 5.21474, 2.31766, 
+  -1.52097, 0.362135, -0.579415, 0.362135, 3.83863, 0.217281, 4.5629, 3.33164, 5.79415, -0.651842, 
+  -0.579415, -1.15883, -0.144854, 1.15883, 0., 2.24523, 0.506988, 3.98348, 0.289708, -1.0864, 
+  0.651842, -2.82465, 1.0864, 1.0864, -1.52097, -2.53494, 1.15883, 4.63532, 1.0864, -0.94155, 
+  9.56035, 4.34561, -1.59339, -2.31766, -0.434561, 0.506988, 0.289708, -3.54892, 1.15883, 2.6798, 
+  -0.144854, 0.506988, 2.39009, 1.15883, -1.01398, 1.0864, 4.41804, -2.17281, -1.15883, 5.6493, 
+  0.217281, 2.60737, 0.217281, 2.17281, -2.02795, 1.0864, 3.04193, 3.33164, -0.94155, 2.6798, 
+  0.144854, -0.724269, 3.98348, 2.82465, -1.95553, 0.289708, -1.52097, -1.37611, -1.59339, 0.434561, 
+  0.796696, 2.17281, 0.434561, -4.20076, 3.47649, -2.9695, -1.95553, 1.37611, 0.869123, 2.53494, 
+  0.796696, 2.82465, 0.579415, 2.9695, 1.8831, 3.04193, -5.50445, 1.52097, 0.289708, 1.0864, 
+  2.46252, 0.506988, 1.66582, 2.75222, 3.04193, -2.46252, 0., -3.18678, 2.9695, 4.70775, 
+  3.04193, -1.73825, 1.37611, -4.49047, 6.80813, 5.06988, 1.73825, 1.73825, 1.15883, -1.66582, 
+  2.17281, 4.05591, -2.10038, 2.60737, 1.23126, -0.724269, 2.6798, 1.37611, -0.94155, 4.49047, 
+  3.98348, -2.82465, 3.11436, 1.95553, -0.651842, -3.11436, 6.88056, -0.217281, 1.81067, 5.28716, 
+  -0.579415, 2.17281, 3.7662, 4.41804, -5.43202, 3.40407, 0.651842, 1.30368, 1.66582, 0.217281, 
+  -1.59339, 1.0864, 1.44854, 0.579415, 9.4155, -0.434561, 2.75222, 1.01398, 0.0724269, -1.59339, 
+  5.35959, 2.10038, -2.10038, -1.37611, -0.362135, -0.0724269, -0.362135, 2.17281, 0., -1.30368, 
+  -0.217281, -4.05591, 2.53494, -0.0724269, 6.446, -2.53494, 2.02795, -0.724269, 1.01398, -1.59339, 
+  -2.10038, -1.30368, 0.796696, 2.9695, 3.98348, -0.651842, -2.17281, 1.59339, 0.217281, 1.0864, 
+  0.434561, 3.98348, 0.869123, 0.217281, -0.579415, 3.98348, 2.24523, 0.362135, 5.50445, -2.60737, 
+  -6.15629, 0.651842, 3.91105, -0.289708, -1.23126, 3.18678, 3.40407, -0.144854, 1.44854, 1.59339, 
+  0.724269, 0.579415, -1.30368, 0.362135, 2.31766, -1.8831, -1.30368, 2.31766, -0.94155, 0.796696, 
+  1.81067, 6.37357, 2.89708, 0.217281, 5.21474, -3.18678, 4.49047, -2.9695, 2.75222, 1.01398, 
+  5.57687, -0.289708, 1.81067, 2.53494, 1.0864, 0.796696, -4.12833, 3.11436, 2.46252, 0.0724269, 
+  -2.82465, 1.52097, 2.46252, 3.91105, -1.0864, -1.30368, 2.10038, 1.0864, -0.651842, -1.0864, 
+  0.0724269, 0.0724269, 0.796696, 3.04193, 2.46252, 3.69377, 0.434561, 0.289708, -2.17281, 0., 
+  0.869123, -1.66582, 0.94155, 0.144854, 3.47649, 2.24523, -2.46252, -0.289708, 1.37611, 2.60737, 
+  3.83863, 6.88056, 1.59339, -0.144854, 1.0864, 2.02795, 0.434561, 4.27319, -1.15883, 4.27319, 
+  0.506988, 0., 4.20076, 0.289708, -0.144854, -0.724269, 2.82465, -1.37611, 1.73825, 3.54892, 
+  1.0864, 7.09784, 6.446, 1.0864, 3.11436, 1.44854, 0.724269, 1.23126, 0.94155, 3.54892, 
+  0.0724269, -0.579415, -1.44854, -0.869123, 3.54892, 2.24523, 1.95553, -0.796696, -0.0724269, 3.18678, 
+  4.78018, -1.95553, -2.82465, -2.75222, -0.362135, -0.217281, 1.37611, 3.54892, -0.579415, 0.362135, 
+  3.40407, 2.60737, 3.69377, 0.289708, -2.39009, 5.57687, -3.40407, 0.289708, 7.45997, 5.35959, 
+  -2.10038, 1.66582, 0.0724269, 1.23126, -0.94155, -1.01398, 5.57687, 2.17281, 2.9695, -0.217281, 
+  -2.17281, -0.94155, 0.869123, -1.44854, 0.289708, 2.02795, 5.21474, 4.92503, 1.81067, 4.05591, 
+  -0.289708, 2.02795, -3.25921, 1.8831, 2.75222, 4.63532, 4.05591, -1.37611, 1.66582, -0.796696, 
+  0.434561, 5.86658, 4.27319, -3.69377, 6.66328, 2.89708, -3.83863, 1.15883, 0.0724269, 1.0864, 
+  2.89708, 2.24523, 3.04193, -0.362135, -1.52097, -0.651842, -2.60737, 3.18678, 0.869123, -1.37611, 
+  -3.18678, -0.506988, 2.75222, 0.796696, 0.651842, 1.95553, 0.651842, 1.23126, 4.05591, 2.24523, 
+  -1.81067, 1.8831, 1.44854, -0.289708, -1.30368, -0.651842, 4.92503, -2.24523, 2.46252, 1.01398, 
+  -0.724269, -2.89708, 3.98348, 0.869123, 0.144854, -0.362135, 0.651842, 1.59339, 1.95553, 0.506988, 
+  2.9695, -2.24523, 0.289708, 0.796696, 4.20076, 6.01143, 2.17281, 3.25921, 4.12833, -0.506988, 
+  -0.217281, -2.02795, 0.869123, -0.94155, -1.59339, -1.30368, 8.47395, 4.34561, 6.01143, 6.80813, 
+  10.1398, 5.6493, 4.63532, 1.8831, 0.94155, 1.59339, -3.40407, -1.01398, 0.144854, 1.81067, 
+  -0.144854, -2.10038, 2.02795, -0.217281, 0.506988, -1.52097, 0.144854, 1.8831, 1.23126, -2.89708, 
+  -1.15883, -2.89708, -1.59339, 0.0724269, 0.651842, 0.579415, 2.82465, 2.10038, 1.95553, 1.37611, 
+  3.40407, 3.7662, 0.869123, -2.02795, 3.18678, -1.01398, -1.01398, 0.796696, 0., -0.506988, 
+  0.289708, -0.651842, -0.651842, -2.6798, -0.796696, -1.66582, 3.54892, 1.95553, 4.05591, 2.39009, 
+  0.94155, 3.18678, -1.59339, 0.724269, 0.94155, 1.23126, -1.01398, -1.01398, 2.6798, -0.0724269, 
+  2.24523, 0.0724269, 1.59339, 0.94155, 4.49047, 3.33164, -0.0724269, 2.53494, 1.0864, -1.0864, 
+  1.0864, -1.66582, -1.66582, -3.33164, -4.12833, -1.73825, -1.73825, -2.75222, 1.01398, 1.30368, 
+])

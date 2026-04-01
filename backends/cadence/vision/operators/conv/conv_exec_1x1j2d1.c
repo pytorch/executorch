@@ -21,8 +21,8 @@
 #include "dma.h"
 #include "utils.h"
 #include <xai_cnn_api.h>
-#include <stdio.h>
 #include <string.h>
+#include <xtensa/hal.h>
 
 // VQ (per-channel output scaling) DMA version
 XAI_ERR_TYPE conv_exec_1x1j2d1VQ(
@@ -63,17 +63,8 @@ XAI_ERR_TYPE conv_exec_1x1j2d1VQ(
     
     if (!p_input0 || !p_input1 || !p_coeff || 
         !p_output0 || !p_output1 || !p_bias || !p_outscale) {
-        printf("ERROR: Buffer allocation failed in conv_exec_1x1j2d1\n");
         return (-1);
     }
-    
-    printf("  [1x1j2d1] DRAM usage: dram0=%d, dram1=%d\n", dram0_used, dram1_used);
-    printf("  [1x1j2d1] Buffers: in0=%p, in1=%p, coeff=%p, out0=%p, out1=%p\n", 
-           (void*)p_input0, (void*)p_input1, (void*)p_coeff, (void*)p_output0, (void*)p_output1);
-    printf("  [1x1j2d1] Config: src=%dx%dx%d, dst=%dx%dx%d, n_tiles=%d, h_tiles=%d\n",
-           config->src_dim1_size, config->src_dim2_size, config->src_dim3_size,
-           config->dst_dim1_size, config->dst_dim2_size, config->dst_dim3_size,
-           config->n_tiles, config->height_tiles);
     
     // ========================================================================
     // SECTION 2: Initialize XAI Tile Descriptors
@@ -85,22 +76,18 @@ XAI_ERR_TYPE conv_exec_1x1j2d1VQ(
     xai_array tile_outscale;
     xai_tile3D tile_output;
     xai_cnn_conv_params params;
+    memset(&params, 0, sizeof(params));
     
     // Transfer constant data (all buffers are 64-byte aligned by test harness)
-    printf("  [1x1j2d1] DMA coeff %d bytes from %p to %p\n", config->coeff_buffer_size, (void*)coeff_ptr, (void*)p_coeff);
     dma_1dm(0, coeff_ptr, p_coeff, config->coeff_buffer_size);
-    printf("  [1x1j2d1] DMA bias %d bytes\n", config->bias_buffer_size);
     dma_1dm(0, bias_ptr, p_bias, config->bias_buffer_size);
-    printf("  [1x1j2d1] DMA outscale %d bytes\n", config->outscale_buffer_size);
     dma_1dm(0, outScale_ptr, p_outscale, config->outscale_buffer_size);
     
     // Initialize input buffer and load first tile
     // Note: For 1x1 kernel, IN_DATA_OFFSET = 0, no edge padding needed
-    printf("  [1x1j2d1] Fill input buffer %d bytes\n", config->input_buffer_size);
     _proto_FillBuffer_I8(p_input0, config->input_zero_point, config->input_buffer_size);
     
     // First DMA: load IN_ROWS_FIRSTDMA rows at offset 0 (no edge padding)
-    printf("  [1x1j2d1] DMA first input tile: rows=%d, src=%p\n", config->in_rows_firstdma, (void*)src);
     dma_3dm(1,
             (void*)src,
             (void*)&p_input0[config->in_data_offset],  // in_data_offset = 0 for 1x1
@@ -111,6 +98,17 @@ XAI_ERR_TYPE conv_exec_1x1j2d1VQ(
             config->src_dim1_size,
             config->in_rows_firstdma,
             config->src_dim3_size);
+    
+    // Wait for all initial DMA transfers to complete
+    idma_hw_wait_all(0);  // coeff + bias + outscale on ch0
+    idma_hw_wait_all(1);  // input on ch1
+    
+    // Invalidate cached copies of DMA destination buffers.
+    // iDMA does not maintain cache coherency.
+    xthal_dcache_region_invalidate(p_coeff, config->coeff_buffer_size);
+    xthal_dcache_region_invalidate(p_bias, config->bias_buffer_size);
+    xthal_dcache_region_invalidate(p_outscale, config->outscale_buffer_size);
+    xthal_dcache_region_invalidate(p_input0, config->input_buffer_size);
     
     // ========================================================================
     // Configure Input Tile Descriptor
@@ -296,10 +294,16 @@ XAI_ERR_TYPE conv_exec_1x1j2d1VQ(
             XAI_TILE3D_SET_DIM2_COORD(&tile_output, (config->output_rows)*(idx_h));
             XAI_TILE3D_SET_DIM2(&tile_output, current_output_rows);
             
+            // Wait for any in-flight DMA to complete before using buffers
+            idma_hw_wait_all(0);  // previous output store / coeff prefetch on ch0
+            idma_hw_wait_all(1);  // input prefetch on ch1
+            
+            // Invalidate cached copies of DMA-written input buffer.
+            xthal_dcache_region_invalidate(p_input0, config->input_buffer_size);
+            
             // ================================================================
             // Perform Convolution
             // ================================================================
-            // Perform convolution
             XAI_ERR_TYPE status = xaiConvolvedVQ3D_S_1x1j2d1_S8S8IX_MOW_WHD(
                                         &(tile_input),
                                         &(tile_coeff),
@@ -349,6 +353,12 @@ XAI_ERR_TYPE conv_exec_1x1j2d1VQ(
         }
     }
     
+    // Wait for final output DMA to complete before returning
+    idma_hw_wait_all(0);
+
+    // Invalidate cached copies of dst so next operator reads fresh DMA-written data
+    xthal_dcache_region_invalidate(dst, config->dst_dim2_pitch * config->dst_dim3_size);
+
     return XAI_ERR_OK;
 }
 
@@ -402,12 +412,9 @@ XAI_ERR_TYPE conv_exec_1x1j2d1VQ_cache(
     int8_t* padded_input = get_cache_padded_input();
     
     if (input_buffer_size > (int)get_cache_padded_input_size()) {
-        printf("ERROR: Input buffer size %d exceeds max %d\n", 
-               input_buffer_size, (int)get_cache_padded_input_size());
         return XAI_ERR_DATASIZE;
     }
     
-    // Zero-fill the padded buffer
     memset(padded_input, config->input_zero_point, input_buffer_size);
 
     // ========================================================================
@@ -466,11 +473,64 @@ XAI_ERR_TYPE conv_exec_1x1j2d1VQ_cache(
     xaiExtendEdgesConst3D_I8(&tile_input, config->input_zero_point, frame_size);
 
     // ========================================================================
+    // Pre-subsample input when numInCh > 64 (gather instruction workaround)
+    // The XAI 1x1j2d1 kernel uses gather instructions for numInCh > 64.
+    // Gather only works on local DRAM, not system memory (cache mode).
+    // Fix: apply stride manually, then call with stride=1 → dispatches to
+    // 1x1j1d1 kernel which has an aligned path that uses regular loads.
+    // ========================================================================
+    int need_prestride = (config->src_dim3_size > 2 * XCHAL_IVPN_SIMD_WIDTH)
+                         && (config->stride_x > 1);
+    if (need_prestride) {
+        int pre_outW = config->dst_dim1_size;
+        int pre_outH = config->dst_dim2_size;
+        int pre_d1_pitch = (pre_outW + 2*XCHAL_IVPN_SIMD_WIDTH - 1)
+                           & ~(2*XCHAL_IVPN_SIMD_WIDTH - 1);
+        int pre_d2_pitch = pre_d1_pitch * pre_outH;
+        int pre_buf_size = pre_d2_pitch * config->src_dim3_size;
+        int stride = config->stride_x;
+
+        // Place pre-subsampled data after padded input (128-byte aligned)
+        int pre_offset = (input_buffer_size + 127) & ~127;
+        int8_t* pre_input = &padded_input[pre_offset];
+
+        if ((pre_offset + pre_buf_size) > (int)get_cache_padded_input_size()) {
+            return XAI_ERR_DATASIZE;
+        }
+
+        memset(pre_input, config->input_zero_point, pre_buf_size);
+
+        // Subsample: pick every stride-th pixel in W and H
+        int8_t* orig = &padded_input[data_offset];
+        for (int d = 0; d < config->src_dim3_size; d++) {
+            for (int oy = 0; oy < pre_outH; oy++) {
+                for (int ox = 0; ox < pre_outW; ox++) {
+                    pre_input[d * pre_d2_pitch + oy * pre_d1_pitch + ox] =
+                        orig[d * dim2_pitch + (stride * oy) * dim1_pitch + stride * ox];
+                }
+            }
+        }
+
+        // Update tile_input to point to pre-subsampled data
+        XAI_TILE3D_SET_BUFF_PTR(&tile_input, pre_input);
+        XAI_TILE3D_SET_BUFF_SIZE(&tile_input, pre_buf_size);
+        XAI_TILE3D_SET_DATA_PTR(&tile_input, pre_input);
+        XAI_TILE3D_SET_DIM1_PITCH(&tile_input, pre_d1_pitch);
+        XAI_TILE3D_SET_DIM2_PITCH(&tile_input, pre_d2_pitch);
+        XAI_TILE3D_SET_DIM1(&tile_input, pre_outW);
+        XAI_TILE3D_SET_DIM2(&tile_input, pre_outH);
+        XAI_TILE3D_SET_DIM1_EDGE1(&tile_input, 0);
+        XAI_TILE3D_SET_DIM1_EDGE2(&tile_input, 0);
+        XAI_TILE3D_SET_DIM2_EDGE1(&tile_input, 0);
+        XAI_TILE3D_SET_DIM2_EDGE2(&tile_input, 0);
+    }
+
+    // ========================================================================
     // Configure Coefficient Tile Descriptor (4D: W×H×C×N)  
     // ========================================================================
     xai_tile4D tile_coeff;
     XAI_TILE4D_SET_BUFF_PTR(&tile_coeff, coeff_ptr);    
-    XAI_TILE4D_SET_BUFF_SIZE(&tile_coeff, config->coeff_buffer_size);
+    XAI_TILE4D_SET_BUFF_SIZE(&tile_coeff, config->coeff_dim3_pitch * config->dst_dim3_size);
     XAI_TILE4D_SET_DATA_PTR(&tile_coeff, coeff_ptr);
     XAI_TILE4D_SET_DATA_ORDER(&tile_coeff, XAI_WHDN);
     XAI_TILE4D_SET_TYPE(&tile_coeff, XAI_TILE4D_S8);
@@ -499,7 +559,7 @@ XAI_ERR_TYPE conv_exec_1x1j2d1VQ_cache(
     // ========================================================================
     xai_array tile_bias;
     XAI_ARRAY_SET_BUFF_PTR(&tile_bias, bias_ptr);   
-    XAI_ARRAY_SET_BUFF_SIZE(&tile_bias, config->bias_buffer_size);
+    XAI_ARRAY_SET_BUFF_SIZE(&tile_bias, config->dst_dim3_size * 4);
     XAI_ARRAY_SET_DATA_PTR(&tile_bias, bias_ptr);
     XAI_ARRAY_SET_WIDTH(&tile_bias, config->dst_dim3_size);
     XAI_ARRAY_SET_HEIGHT(&tile_bias, 1);
@@ -511,7 +571,7 @@ XAI_ERR_TYPE conv_exec_1x1j2d1VQ_cache(
     // ========================================================================
     xai_array tile_outscale;
     XAI_ARRAY_SET_BUFF_PTR(&tile_outscale, outScale_ptr);
-    XAI_ARRAY_SET_BUFF_SIZE(&tile_outscale, config->outscale_buffer_size);
+    XAI_ARRAY_SET_BUFF_SIZE(&tile_outscale, config->dst_dim3_size * 2);
     XAI_ARRAY_SET_DATA_PTR(&tile_outscale, outScale_ptr);
     XAI_ARRAY_SET_WIDTH(&tile_outscale, config->dst_dim3_size);
     XAI_ARRAY_SET_HEIGHT(&tile_outscale, 1);
@@ -519,7 +579,7 @@ XAI_ERR_TYPE conv_exec_1x1j2d1VQ_cache(
     XAI_ARRAY_SET_CAPACITY(&tile_outscale, config->dst_dim3_size);
 
     // ========================================================================
-    // Configure Output Tile Descriptor (points to system memory)
+    // Configure Output Tile Descriptor
     // ========================================================================
     xai_tile3D tile_output;
     XAI_TILE3D_SET_BUFF_PTR(&tile_output, dst);
@@ -548,6 +608,7 @@ XAI_ERR_TYPE conv_exec_1x1j2d1VQ_cache(
     // Configure Convolution Parameters
     // ========================================================================
     xai_cnn_conv_params params;
+    memset(&params, 0, sizeof(params));
     XAI_CNN_CONV_SET_ACCUM_SHIFT(&params, config->accum_shift);
     XAI_CNN_CONV_SET_DILATION(&params, config->dilation);
     XAI_CNN_CONV_SET_FLAGS(&params, config->flags);
@@ -555,8 +616,14 @@ XAI_ERR_TYPE conv_exec_1x1j2d1VQ_cache(
     XAI_CNN_CONV_SET_OUTPUT_SHIFT(&params, config->output_shift);
     XAI_CNN_CONV_SET_RELU_MAX(&params, config->relu_max);
     XAI_CNN_CONV_SET_RELU_MIN(&params, config->relu_min);
-    XAI_CNN_CONV_SET_STRIDEX(&params, config->stride_x);
-    XAI_CNN_CONV_SET_STRIDEY(&params, config->stride_y);
+    // If pre-strided, override stride to 1 → dispatch to 1x1j1d1 (no gather)
+    if (need_prestride) {
+        XAI_CNN_CONV_SET_STRIDEX(&params, 1);
+        XAI_CNN_CONV_SET_STRIDEY(&params, 1);
+    } else {
+        XAI_CNN_CONV_SET_STRIDEX(&params, config->stride_x);
+        XAI_CNN_CONV_SET_STRIDEY(&params, config->stride_y);
+    }
 
     // ========================================================================
     // Execute convolution using generic system-memory API
@@ -564,7 +631,10 @@ XAI_ERR_TYPE conv_exec_1x1j2d1VQ_cache(
     // ========================================================================
     XAI_ERR_TYPE status = xaiConvolvedVQ3D(&tile_input, &tile_coeff, &tile_bias, 
                                             &tile_outscale, &tile_output, &params);
-    
+
+    // Writeback output from cache to system memory for DMA coherency
+    xthal_dcache_region_writeback(dst, config->dst_dim2_pitch * config->dst_dim3_size);
+
     return status;
 }
 
@@ -607,11 +677,8 @@ XAI_ERR_TYPE conv_exec_1x1j2d1(
     
     if (!p_input0 || !p_input1 || !p_coeff || 
         !p_output0 || !p_output1 || !p_bias) {
-        printf("ERROR: Buffer allocation failed in conv_exec_1x1j2d1\n");
         return (-1);
     }
-    
-    printf("  [1x1j2d1] DRAM usage: dram0=%d, dram1=%d\n", dram0_used, dram1_used);
     
     // ========================================================================
     // SECTION 2: Initialize XAI Tile Descriptors
@@ -622,6 +689,7 @@ XAI_ERR_TYPE conv_exec_1x1j2d1(
     xai_array tile_bias;
     xai_tile3D tile_output;
     xai_cnn_conv_params params;
+    memset(&params, 0, sizeof(params));
     
     /* Initialize DMA engines */
     dma_3dm_init(1);
@@ -645,6 +713,16 @@ XAI_ERR_TYPE conv_exec_1x1j2d1(
             config->src_dim1_size,
             config->in_rows_firstdma,
             config->src_dim3_size);
+    
+    // Wait for all initial DMA transfers to complete
+    idma_hw_wait_all(0);  // coeff + bias on ch0
+    idma_hw_wait_all(1);  // input on ch1
+    
+    // Invalidate cached copies of DMA destination buffers.
+    // iDMA does not maintain cache coherency.
+    xthal_dcache_region_invalidate(p_coeff, config->coeff_buffer_size);
+    xthal_dcache_region_invalidate(p_bias, config->bias_buffer_size);
+    xthal_dcache_region_invalidate(p_input0, config->input_buffer_size);
     
     // ========================================================================
     // Configure Input Tile Descriptor
@@ -807,6 +885,13 @@ XAI_ERR_TYPE conv_exec_1x1j2d1(
             XAI_TILE3D_SET_DIM2_COORD(&tile_output, (config->output_rows)*(idx_h));
             XAI_TILE3D_SET_DIM2(&tile_output, current_output_rows);
             
+            // Wait for any in-flight DMA to complete before using buffers
+            idma_hw_wait_all(0);  // previous output store / coeff prefetch on ch0
+            idma_hw_wait_all(1);  // input prefetch on ch1
+            
+            // Invalidate cached copies of DMA-written input buffer.
+            xthal_dcache_region_invalidate(p_input0, config->input_buffer_size);
+            
             // ================================================================
             // Perform Convolution (non-VQ API)
             // ================================================================
@@ -846,6 +931,12 @@ XAI_ERR_TYPE conv_exec_1x1j2d1(
         }
     }
     
+    // Wait for final output DMA to complete before returning
+    idma_hw_wait_all(0);
+
+    // Invalidate cached copies of dst so next operator reads fresh DMA-written data
+    xthal_dcache_region_invalidate(dst, config->dst_dim2_pitch * config->dst_dim3_size);
+
     return XAI_ERR_OK;
 }
 
@@ -857,36 +948,146 @@ XAI_ERR_TYPE conv_exec_1x1j2d1_cache(
     int8_t* bias_ptr,
     const conv_layer_config_t* config)
 {
-    // For 1x1, no padding needed - use input directly
+    // ========================================================================
+    // Setup source raw tile descriptor (points to raw input without padding)
+    // ========================================================================
+    xai_tile3D src_raw;
+    XAI_TILE3D_SET_BUFF_PTR(&src_raw, src);
+    XAI_TILE3D_SET_BUFF_SIZE(&src_raw, config->src_dim2_pitch * config->src_dim3_size);
+    XAI_TILE3D_SET_DATA_PTR(&src_raw, src);
+    XAI_TILE3D_SET_DATA_ORDER(&src_raw, XAI_WHD);
+    XAI_TILE3D_SET_TYPE(&src_raw, XAI_TILE3D_S8);
+    XAI_TILE3D_SET_FRAME_PTR(&src_raw, 0);
+    XAI_TILE3D_SET_STATUS_FLAGS(&src_raw, 0);
+    XAI_TILE3D_SET_DIM1_PITCH(&src_raw, config->src_dim1_pitch);
+    XAI_TILE3D_SET_DIM2_PITCH(&src_raw, config->src_dim2_pitch);
+    XAI_TILE3D_SET_DIM1_COORD(&src_raw, 0);
+    XAI_TILE3D_SET_DIM1(&src_raw, config->src_dim1_size);
+    XAI_TILE3D_SET_DIM1_EDGE1(&src_raw, 0);
+    XAI_TILE3D_SET_DIM1_EDGE2(&src_raw, 0);
+    XAI_TILE3D_SET_DIM2_COORD(&src_raw, 0);
+    XAI_TILE3D_SET_DIM2(&src_raw, config->src_dim2_size);
+    XAI_TILE3D_SET_DIM2_EDGE1(&src_raw, 0);
+    XAI_TILE3D_SET_DIM2_EDGE2(&src_raw, 0);
+    XAI_TILE3D_SET_DIM3_COORD(&src_raw, 0);
+    XAI_TILE3D_SET_DIM3(&src_raw, config->src_dim3_size);
+    XAI_TILE3D_SET_DIM3_EDGE1(&src_raw, 0);
+    XAI_TILE3D_SET_DIM3_EDGE2(&src_raw, 0);
+
+    // ========================================================================
+    // Get padded input buffer from allocator (SIMD-aligned dim1_pitch required)
+    // ========================================================================
+    int padded_dim1 = config->src_dim1_size + config->in_dim1_edge1 + config->in_dim1_edge2;
+    int dim1_pitch = (padded_dim1 + 2*XCHAL_IVPN_SIMD_WIDTH - 1) & ~(2*XCHAL_IVPN_SIMD_WIDTH - 1);
+    int padded_dim2 = config->src_dim2_size + config->in_dim2_edge1 + config->in_dim2_edge2;
+    int dim2_pitch = dim1_pitch * padded_dim2;
+    int input_buffer_size = dim2_pitch * config->src_dim3_size;
+
+    int8_t* padded_input = get_cache_padded_input();
+
+    if (input_buffer_size > (int)get_cache_padded_input_size()) {
+        return XAI_ERR_DATASIZE;
+    }
+
+    memset(padded_input, config->input_zero_point, input_buffer_size);
+
+    // ========================================================================
+    // Setup padded input tile descriptor
+    // ========================================================================
+    int data_offset = (config->in_dim2_edge1 * dim1_pitch) + config->in_dim1_edge1;
+
     xai_tile3D tile_input;
-    XAI_TILE3D_SET_BUFF_PTR(&tile_input, src);
-    XAI_TILE3D_SET_BUFF_SIZE(&tile_input, config->src_dim2_pitch * config->src_dim3_size);
-    XAI_TILE3D_SET_DATA_PTR(&tile_input, src);
+    XAI_TILE3D_SET_BUFF_PTR(&tile_input, padded_input);
+    XAI_TILE3D_SET_BUFF_SIZE(&tile_input, input_buffer_size);
+    XAI_TILE3D_SET_DATA_PTR(&tile_input, &padded_input[data_offset]);
     XAI_TILE3D_SET_DATA_ORDER(&tile_input, XAI_WHD);
     XAI_TILE3D_SET_TYPE(&tile_input, XAI_TILE3D_S8);
     XAI_TILE3D_SET_FRAME_PTR(&tile_input, 0);
     XAI_TILE3D_SET_STATUS_FLAGS(&tile_input, 0);
-    XAI_TILE3D_SET_DIM1_PITCH(&tile_input, config->src_dim1_pitch);
-    XAI_TILE3D_SET_DIM2_PITCH(&tile_input, config->src_dim2_pitch);
+    XAI_TILE3D_SET_DIM1_PITCH(&tile_input, dim1_pitch);
+    XAI_TILE3D_SET_DIM2_PITCH(&tile_input, dim2_pitch);
     XAI_TILE3D_SET_DIM1_COORD(&tile_input, 0);
     XAI_TILE3D_SET_DIM1(&tile_input, config->src_dim1_size);
-    XAI_TILE3D_SET_DIM1_EDGE1(&tile_input, 0);
-    XAI_TILE3D_SET_DIM1_EDGE2(&tile_input, 0);
+    XAI_TILE3D_SET_DIM1_EDGE1(&tile_input, config->in_dim1_edge1);
+    XAI_TILE3D_SET_DIM1_EDGE2(&tile_input, config->in_dim1_edge2);
     XAI_TILE3D_SET_DIM2_COORD(&tile_input, 0);
     XAI_TILE3D_SET_DIM2(&tile_input, config->src_dim2_size);
-    XAI_TILE3D_SET_DIM2_EDGE1(&tile_input, 0);
-    XAI_TILE3D_SET_DIM2_EDGE2(&tile_input, 0);
+    XAI_TILE3D_SET_DIM2_EDGE1(&tile_input, config->in_dim2_edge1);
+    XAI_TILE3D_SET_DIM2_EDGE2(&tile_input, config->in_dim2_edge2);
     XAI_TILE3D_SET_DIM3_COORD(&tile_input, 0);
     XAI_TILE3D_SET_DIM3(&tile_input, config->src_dim3_size);
     XAI_TILE3D_SET_DIM3_EDGE1(&tile_input, 0);
     XAI_TILE3D_SET_DIM3_EDGE2(&tile_input, 0);
+
+    // Copy raw input to padded buffer and extend edges
+    xaiCopyTile3D(&src_raw, &tile_input, true);
+
+    xai_size3D frame_size;
+    frame_size.dim1Size = config->dst_dim1_size * config->stride_x;
+    frame_size.dim2Size = config->dst_dim2_size * config->stride_y;
+    frame_size.dim3Size = config->src_dim3_size;
+
+    xaiExtendEdgesConst3D_I8(&tile_input, config->input_zero_point, frame_size);
+
+    // ========================================================================
+    // Pre-subsample input when numInCh > 64 (gather instruction workaround)
+    // The XAI 1x1j2d1 kernel uses gather instructions for numInCh > 64.
+    // Gather only works on local DRAM, not system memory (cache mode).
+    // Fix: apply stride manually, then call with stride=1 → dispatches to
+    // 1x1j1d1 kernel which has an aligned path that uses regular loads.
+    // ========================================================================
+    int need_prestride = (config->src_dim3_size > 2 * XCHAL_IVPN_SIMD_WIDTH)
+                         && (config->stride_x > 1);
+    if (need_prestride) {
+        int pre_outW = config->dst_dim1_size;
+        int pre_outH = config->dst_dim2_size;
+        int pre_d1_pitch = (pre_outW + 2*XCHAL_IVPN_SIMD_WIDTH - 1)
+                           & ~(2*XCHAL_IVPN_SIMD_WIDTH - 1);
+        int pre_d2_pitch = pre_d1_pitch * pre_outH;
+        int pre_buf_size = pre_d2_pitch * config->src_dim3_size;
+        int stride = config->stride_x;
+
+        // Place pre-subsampled data after padded input (128-byte aligned)
+        int pre_offset = (input_buffer_size + 127) & ~127;
+        int8_t* pre_input = &padded_input[pre_offset];
+
+        if ((pre_offset + pre_buf_size) > (int)get_cache_padded_input_size()) {
+            return XAI_ERR_DATASIZE;
+        }
+
+        memset(pre_input, config->input_zero_point, pre_buf_size);
+
+        // Subsample: pick every stride-th pixel in W and H
+        int8_t* orig = &padded_input[data_offset];
+        for (int d = 0; d < config->src_dim3_size; d++) {
+            for (int oy = 0; oy < pre_outH; oy++) {
+                for (int ox = 0; ox < pre_outW; ox++) {
+                    pre_input[d * pre_d2_pitch + oy * pre_d1_pitch + ox] =
+                        orig[d * dim2_pitch + (stride * oy) * dim1_pitch + stride * ox];
+                }
+            }
+        }
+
+        // Update tile_input to point to pre-subsampled data
+        XAI_TILE3D_SET_BUFF_PTR(&tile_input, pre_input);
+        XAI_TILE3D_SET_BUFF_SIZE(&tile_input, pre_buf_size);
+        XAI_TILE3D_SET_DATA_PTR(&tile_input, pre_input);
+        XAI_TILE3D_SET_DIM1_PITCH(&tile_input, pre_d1_pitch);
+        XAI_TILE3D_SET_DIM2_PITCH(&tile_input, pre_d2_pitch);
+        XAI_TILE3D_SET_DIM1(&tile_input, pre_outW);
+        XAI_TILE3D_SET_DIM2(&tile_input, pre_outH);
+        XAI_TILE3D_SET_DIM1_EDGE1(&tile_input, 0);
+        XAI_TILE3D_SET_DIM1_EDGE2(&tile_input, 0);
+        XAI_TILE3D_SET_DIM2_EDGE1(&tile_input, 0);
+        XAI_TILE3D_SET_DIM2_EDGE2(&tile_input, 0);
+    }
 
     // ========================================================================
     // Configure Coefficient Tile Descriptor
     // ========================================================================
     xai_tile4D tile_coeff;
     XAI_TILE4D_SET_BUFF_PTR(&tile_coeff, coeff_ptr);    
-    XAI_TILE4D_SET_BUFF_SIZE(&tile_coeff, config->coeff_buffer_size);
+    XAI_TILE4D_SET_BUFF_SIZE(&tile_coeff, config->coeff_dim3_pitch * config->dst_dim3_size);
     XAI_TILE4D_SET_DATA_PTR(&tile_coeff, coeff_ptr);
     XAI_TILE4D_SET_DATA_ORDER(&tile_coeff, XAI_WHDN);
     XAI_TILE4D_SET_TYPE(&tile_coeff, XAI_TILE4D_S8);
@@ -915,7 +1116,7 @@ XAI_ERR_TYPE conv_exec_1x1j2d1_cache(
     // ========================================================================
     xai_array tile_bias;
     XAI_ARRAY_SET_BUFF_PTR(&tile_bias, bias_ptr);   
-    XAI_ARRAY_SET_BUFF_SIZE(&tile_bias, config->bias_buffer_size);
+    XAI_ARRAY_SET_BUFF_SIZE(&tile_bias, config->dst_dim3_size * 4);
     XAI_ARRAY_SET_DATA_PTR(&tile_bias, bias_ptr);
     XAI_ARRAY_SET_WIDTH(&tile_bias, config->dst_dim3_size);
     XAI_ARRAY_SET_HEIGHT(&tile_bias, 1);
@@ -952,6 +1153,7 @@ XAI_ERR_TYPE conv_exec_1x1j2d1_cache(
     // Configure Convolution Parameters
     // ========================================================================
     xai_cnn_conv_params params;
+    memset(&params, 0, sizeof(params));
     XAI_CNN_CONV_SET_ACCUM_SHIFT(&params, config->accum_shift);
     XAI_CNN_CONV_SET_DILATION(&params, config->dilation);
     XAI_CNN_CONV_SET_FLAGS(&params, config->flags);
@@ -959,14 +1161,23 @@ XAI_ERR_TYPE conv_exec_1x1j2d1_cache(
     XAI_CNN_CONV_SET_OUTPUT_SHIFT(&params, config->output_shift);
     XAI_CNN_CONV_SET_RELU_MAX(&params, config->relu_max);
     XAI_CNN_CONV_SET_RELU_MIN(&params, config->relu_min);
-    XAI_CNN_CONV_SET_STRIDEX(&params, config->stride_x);
-    XAI_CNN_CONV_SET_STRIDEY(&params, config->stride_y);
+    // If pre-strided, override stride to 1 → dispatch to 1x1j1d1 (no gather)
+    if (need_prestride) {
+        XAI_CNN_CONV_SET_STRIDEX(&params, 1);
+        XAI_CNN_CONV_SET_STRIDEY(&params, 1);
+    } else {
+        XAI_CNN_CONV_SET_STRIDEX(&params, config->stride_x);
+        XAI_CNN_CONV_SET_STRIDEY(&params, config->stride_y);
+    }
 
     // ========================================================================
     // Execute convolution (non-VQ API)
     // ========================================================================
     XAI_ERR_TYPE status = xaiConvolved3D(&tile_input, &tile_coeff, &tile_bias, 
                                           &tile_output, &params);
-    
+
+    // Writeback output from cache to system memory for DMA coherency
+    xthal_dcache_region_writeback(dst, config->dst_dim2_pitch * config->dst_dim3_size);
+
     return status;
 }
