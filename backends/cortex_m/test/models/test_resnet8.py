@@ -45,7 +45,7 @@ test_cases = {
 def test_dialect_resnet8(test_case):
     inputs = test_case.get_example_inputs()
     tester = CortexMTester(test_case.model, inputs)
-    tester.test_dialect(ops_before_transforms, ops_after_transforms, qtol=1, atol=0.1)
+    tester.test_dialect(ops_before_transforms, ops_after_transforms, qtol=1)
 
 
 @parametrize("test_case", test_cases)
