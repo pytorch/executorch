@@ -1123,7 +1123,13 @@ void cpu_sdpa(
     const optional<double>& scale,
     const SeqDim seq_dim,
     const int64_t start_pos,
-    const int64_t num_keys_for_causal_attention) {
+    const int64_t num_keys_for_causal_attention,
+    const optional<Tensor>& q_zero_points = nullopt,
+    const optional<Tensor>& q_scales = nullopt,
+    const optional<Tensor>& k_zero_points = nullopt,
+    const optional<Tensor>& k_scales = nullopt,
+    const optional<Tensor>& v_zero_points = nullopt,
+    const optional<Tensor>& v_scales = nullopt) {
   using accum_t = scalar_t;
   using Vec = vec::Vectorized<accum_t>;
   accum_t scaling_factor = static_cast<accum_t>(calculate_scale(query, scale));
@@ -1158,6 +1164,7 @@ void cpu_sdpa(
   int64_t num_reps = num_head / num_heads_kv;
 
   bool has_attn_mask = attn_mask.has_value() && attn_mask.value().numel();
+  bool is_quantized_sdpa = query.scalar_type() == ScalarType::Char;
 
   // Extract strides, swapping seq/head dims based on seq_dim
   auto q_strides = query.strides();
@@ -1186,6 +1193,33 @@ void cpu_sdpa(
     mStrideM = m_strides[0];
   }
 
+  int64_t q_quant_params_StrideB = 0;
+  int64_t q_quant_params_StrideH = 0;
+  int64_t q_quant_params_StrideM = 0;
+  int64_t k_quant_params_StrideB = 0;
+  int64_t k_quant_params_StrideH = 0;
+  int64_t k_quant_params_StrideN = 0;
+  int64_t v_quant_params_StrideB = 0;
+  int64_t v_quant_params_StrideH = 0;
+  int64_t v_quant_params_StrideN = 0;
+
+  if (is_quantized_sdpa) {
+    auto q_qp_strides = q_zero_points.value().strides();
+    q_quant_params_StrideB = q_qp_strides[0];
+    q_quant_params_StrideH = (seq_dim == SeqDim::ONE) ? q_qp_strides[2] : q_qp_strides[1];
+    q_quant_params_StrideM = (seq_dim == SeqDim::ONE) ? q_qp_strides[1] : q_qp_strides[2];
+
+    auto k_qp_strides = k_zero_points.value().strides();
+    k_quant_params_StrideB = k_qp_strides[0];
+    k_quant_params_StrideH = (seq_dim == SeqDim::ONE) ? k_qp_strides[2] : k_qp_strides[1];
+    k_quant_params_StrideN = (seq_dim == SeqDim::ONE) ? k_qp_strides[1] : k_qp_strides[2];
+
+    auto v_qp_strides = v_zero_points.value().strides();
+    v_quant_params_StrideB = v_qp_strides[0];
+    v_quant_params_StrideH = (seq_dim == SeqDim::ONE) ? v_qp_strides[2] : v_qp_strides[1];
+    v_quant_params_StrideN = (seq_dim == SeqDim::ONE) ? v_qp_strides[1] : v_qp_strides[2];
+  }
+
   // Allocate per-thread scores buffer: [qSize, kvSize] per (batch, head)
 #ifdef ET_USE_THREADPOOL
   int64_t num_thread =
@@ -1207,6 +1241,24 @@ void cpu_sdpa(
   }
   accum_t* buf_data = reinterpret_cast<accum_t*>(buf);
 
+  // Allocate dequantization buffer for V (used by _qk_at_v_gemm when m > 4)
+  int64_t size_per_thread_qdq_vec = kvSize * headSize;
+  std::unique_ptr<char[]> allocated_buf_for_qdq;
+  accum_t* scratch_for_quant_dequant = nullptr;
+  if (is_quantized_sdpa) {
+    int64_t size_qdq_bytes =
+        size_per_thread_qdq_vec * num_thread * sizeof(accum_t);
+    Result<void*> scratch_qdq = ctx.allocate_temp(size_qdq_bytes, 64);
+    if (!scratch_qdq.ok()) {
+      allocated_buf_for_qdq = std::make_unique<char[]>(size_qdq_bytes);
+      scratch_for_quant_dequant =
+          reinterpret_cast<accum_t*>(allocated_buf_for_qdq.get());
+    } else {
+      scratch_for_quant_dequant =
+          reinterpret_cast<accum_t*>(scratch_qdq.get());
+    }
+  }
+
   const scalar_t* q_data = query.const_data_ptr<scalar_t>();
   const scalar_t* k_data = key.const_data_ptr<scalar_t>();
   const scalar_t* v_data = value.const_data_ptr<scalar_t>();
@@ -1217,40 +1269,76 @@ void cpu_sdpa(
   auto compute_lambda = [&](int64_t begin, int64_t end) {
     int64_t ompIdx = torch::executor::get_thread_num();
     accum_t* scores = buf_data + ompIdx * scores_per_thread;
+    accum_t* buf_qdq_ptr = is_quantized_sdpa
+        ? scratch_for_quant_dequant + ompIdx * size_per_thread_qdq_vec
+        : nullptr;
 
     for (int64_t idx = begin; idx < end; ++idx) {
       int64_t b = idx / num_head;
       int64_t h = idx % num_head;
       int64_t kv_h = h / num_reps;
 
-      // Pointer to Q[b, h, :, :] and K[b, kv_h, :, :] with appropriate strides
-      const scalar_t* q_ptr = q_data + b * qStrideB + h * qStrideH;
-      const scalar_t* k_ptr = k_data + b * kStrideB + kv_h * kStrideH;
-      const scalar_t* v_ptr = v_data + b * vStrideB + kv_h * vStrideH;
+      const void* q_ptr;
+      const void* k_ptr;
+      const void* v_ptr;
+      const float* q_scales_ptr = nullptr;
+      const float* k_scales_ptr = nullptr;
+      const float* v_scales_ptr = nullptr;
+      const int8_t* q_zp_ptr = nullptr;
+      const int8_t* k_zp_ptr = nullptr;
+      const int8_t* v_zp_ptr = nullptr;
+
+      int64_t q_offset = b * qStrideB + h * qStrideH;
+      int64_t k_offset = b * kStrideB + kv_h * kStrideH;
+      int64_t v_offset = b * vStrideB + kv_h * vStrideH;
+
+      if (is_quantized_sdpa) {
+        q_ptr = reinterpret_cast<const int8_t*>(q_data) + q_offset;
+        k_ptr = reinterpret_cast<const int8_t*>(k_data) + k_offset;
+        v_ptr = reinterpret_cast<const int8_t*>(v_data) + v_offset;
+
+        int64_t q_qp_offset =
+            b * q_quant_params_StrideB + h * q_quant_params_StrideH;
+        int64_t k_qp_offset =
+            b * k_quant_params_StrideB + kv_h * k_quant_params_StrideH;
+        int64_t v_qp_offset =
+            b * v_quant_params_StrideB + kv_h * v_quant_params_StrideH;
+
+        q_scales_ptr =
+            q_scales.value().const_data_ptr<float>() + q_qp_offset;
+        k_scales_ptr =
+            k_scales.value().const_data_ptr<float>() + k_qp_offset;
+        v_scales_ptr =
+            v_scales.value().const_data_ptr<float>() + v_qp_offset;
+        q_zp_ptr =
+            q_zero_points.value().const_data_ptr<int8_t>() + q_qp_offset;
+        k_zp_ptr =
+            k_zero_points.value().const_data_ptr<int8_t>() + k_qp_offset;
+        v_zp_ptr =
+            v_zero_points.value().const_data_ptr<int8_t>() + v_qp_offset;
+      } else {
+        q_ptr = q_data + q_offset;
+        k_ptr = k_data + k_offset;
+        v_ptr = v_data + v_offset;
+      }
       scalar_t* o_ptr = out_data + b * oStrideB + h * oStrideH;
 
-      // GEMM 1: scores[qSize, kvSize] = scaling_factor * Q[qSize, D] @ K^T[D, kvSize]
-      ::executorch::cpublas::gemm(
-          ::executorch::cpublas::TransposeType::Transpose,
-          ::executorch::cpublas::TransposeType::NoTranspose,
-          kvSize, qSize, headSize,
-          scaling_factor,
-          k_ptr, kStrideN,
-          q_ptr, qStrideM,
-          static_cast<accum_t>(0),
-          scores, kvSize);
+      // GEMM 1: scores[qSize, kvSize] = Q[qSize, D] @ K^T[D, kvSize]
+      MaybeQuantizedMatrixData q_matrix(
+          q_ptr, q_zp_ptr, q_scales_ptr,
+          qSize, headSize, q_quant_params_StrideM, query.scalar_type());
+      MaybeQuantizedMatrixData k_matrix(
+          k_ptr, k_zp_ptr, k_scales_ptr,
+          kvSize, headSize, k_quant_params_StrideN, key.scalar_type());
+      _q_at_k_gemm<accum_t>(
+          qSize, kvSize, headSize,
+          q_matrix, qStrideM,
+          k_matrix, kStrideN,
+          scores);
 
-      // Causal mask + attention mask + softmax per query row
+      // Causal mask + scaling + attention mask + softmax per query row
       for (int64_t qi = 0; qi < qSize; ++qi) {
         accum_t* row = scores + qi * kvSize;
-
-        // Apply attention mask if present
-        if (has_attn_mask) {
-          const accum_t* mask_row = mask_data + qi * mStrideM;
-          for (int64_t j = 0; j < kvSize; ++j) {
-            row[j] += mask_row[j];
-          }
-        }
 
         // Apply causal mask
         if (is_causal) {
@@ -1260,16 +1348,27 @@ void cpu_sdpa(
           }
         }
 
-        // Softmax: find max, compute exp, normalize
-        accum_t max_val = vec::reduce_all<accum_t>(
-            [](Vec& x, Vec& y) { return vec::maximum(x, y); },
-            row, kvSize);
+        accum_t max_val;
+        const int kvSizeInt = static_cast<int>(kvSize);
+        if (has_attn_mask) {
+          // Apply scaling factor and attention mask in fusion
+          const accum_t* mask_row = mask_data + qi * mStrideM;
+          for (int64_t j = 0; j < kvSize; ++j) {
+            row[j] = row[j] * scaling_factor + mask_row[j];
+          }
+          max_val = vec::reduce_all<accum_t>(
+              [](Vec& x, Vec& y) { return vec::maximum(x, y); },
+              row, kvSize);
+        } else {
+          // Apply scaling factor and find max in fusion
+          _mul_reduce_max_fusion_kernel(
+              row, scaling_factor, kvSizeInt, row, max_val);
+        }
 
         if (max_val == -std::numeric_limits<accum_t>::infinity()) {
           fill_stub(row, static_cast<accum_t>(0), kvSize);
         } else {
           accum_t sum_val = max_val;
-          const int kvSizeInt = static_cast<int>(kvSize);
           _exp_reduce_sum_fusion_kernel(row, kvSizeInt, row, sum_val);
           accum_t inv_sum = static_cast<accum_t>(1) / sum_val;
           vec::map<accum_t>(
@@ -1279,15 +1378,15 @@ void cpu_sdpa(
       }
 
       // GEMM 2: output[qSize, D] = scores[qSize, kvSize] @ V[kvSize, D]
-      ::executorch::cpublas::gemm(
-          ::executorch::cpublas::TransposeType::NoTranspose,
-          ::executorch::cpublas::TransposeType::NoTranspose,
-          headSize, qSize, kvSize,
-          static_cast<accum_t>(1),
-          v_ptr, vStrideN,
+      MaybeQuantizedMatrixData v_matrix(
+          v_ptr, v_zp_ptr, v_scales_ptr,
+          kvSize, headSize, v_quant_params_StrideN, value.scalar_type());
+      _qk_at_v_gemm<accum_t>(
+          qSize, headSize, kvSize,
           scores, kvSize,
-          static_cast<accum_t>(0),
-          o_ptr, oStrideM);
+          v_matrix, vStrideN,
+          o_ptr, oStrideM,
+          static_cast<accum_t>(0), buf_qdq_ptr);
     }
   };
   torch::executor::parallel_for(
