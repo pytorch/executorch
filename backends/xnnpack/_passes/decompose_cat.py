@@ -73,9 +73,7 @@ class DecomposeConcatenate(ExportPass):
                     # quantize_per_tensor does not accept out_dtype, so exclude
                     # it from kwargs passed to the quantize node. out_dtype is
                     # only valid for dequantize_per_tensor (e.g. fp16 models).
-                    q_kwargs = {
-                        k: v for k, v in dq_kwargs.items() if k != "out_dtype"
-                    }
+                    q_kwargs = {k: v for k, v in dq_kwargs.items() if k != "out_dtype"}
                     # Quantizer enforces all the inputs and output to a concat node must share
                     # the same qparams, this means the newly inserted q/dq pair must share the
                     # same qparams as the first quantized input in the concat node.
