@@ -423,24 +423,32 @@ def _compute_layer_metrics(
 def _add_accuracy_extension(exporter: FXGraphExporter, metrics: Iterable[LayerMetric]) -> None:
     ext = GraphExtension(id="per_layer_accuracy", name="Per-layer Accuracy (Worst Sample)")
     for metric in metrics:
-        ext.add_node_data(
-            metric.candidate_node,
-            {
-                "reference_node": metric.reference_node,
-                "candidate_debug_handle": list(metric.candidate_debug_handle),
-                "reference_debug_handle": list(metric.reference_debug_handle),
-                "matched_by": metric.matched_by,
-                "numel_compared": metric.numel_compared,
-                "candidate_shape": metric.candidate_shape,
-                "reference_shape": metric.reference_shape,
-                "max_abs_err": metric.max_abs_err,
-                "mean_abs_err": metric.mean_abs_err,
-                "mse": metric.mse,
-                "cosine_similarity": metric.cosine_similarity,
-                "severity_score": metric.severity_score,
-            },
-        )
+        dh = metric.candidate_debug_handle
+        if isinstance(dh, (tuple, list)) and len(dh) > 0:
+            dh_scalar = int(dh[0])
+        elif isinstance(dh, int) and dh != 0:
+            dh_scalar = dh
+        else:
+            dh_scalar = None
+        node_data: dict[str, Any] = {
+            "reference_node": metric.reference_node,
+            "candidate_debug_handle": list(metric.candidate_debug_handle),
+            "reference_debug_handle": list(metric.reference_debug_handle),
+            "matched_by": metric.matched_by,
+            "numel_compared": metric.numel_compared,
+            "candidate_shape": metric.candidate_shape,
+            "reference_shape": metric.reference_shape,
+            "max_abs_err": metric.max_abs_err,
+            "mean_abs_err": metric.mean_abs_err,
+            "mse": metric.mse,
+            "cosine_similarity": metric.cosine_similarity,
+            "severity_score": metric.severity_score,
+        }
+        if dh_scalar is not None:
+            node_data["debug_handle"] = dh_scalar
+        ext.add_node_data(metric.candidate_node, node_data)
 
+    ext.set_sync_key("debug_handle")
     ext.set_label_formatter(
         lambda d: [
             f"severity={d.get('severity_score', 0.0):.2e}",

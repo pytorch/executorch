@@ -80,6 +80,59 @@ layout.container
 | Zoom / Fullscreen | `FXCompareTaskbar` — calls viewer public API or `requestFullscreen()` on root |
 | Column count | `FXGraphCompare.setColumns()` — updates grid CSS, triggers resize RAF |
 | Merged info panel | `FXGraphCompare._updateMergedInfo()` — called after selection sync, renders diff table |
+| Viewer visibility | `FXGraphCompare.setViewerVisible(name, visible)` — show/hide graph columns |
+| Follow selection | Sidebar toggle — controls auto-pan on selection change |
+
+### Selection Sync Modes
+
+`FXGraphCompare` propagates the primary selection from the source viewer to all other viewers using `_findSyncTarget`. The sidebar selector controls the active mode.
+
+| Mode | Sidebar label | Behavior |
+|------|--------------|----------|
+| `'auto'` (default) | Auto (handle→id) | Tries `debug_handle` set-intersection first; falls back to node-ID match |
+| `'id'` | ID only | Selects the node with the same id in each target viewer; no-op if absent |
+| `'layer'` | Ext: \<extId\>.\<field\> | Matches by `extensions[layer].nodes[nodeId].info[field]` value equality; picks last in topo order on multiple matches |
+| `'none'` | Don't sync | No cross-viewer selection propagation |
+
+#### `debug_handle` normalization (`mode: 'auto'`)
+
+`debug_handle` in `node.info` is `int` (scalar) or `int[]` (list, for fused nodes). The sync engine normalizes both to a `Set<int>` and uses **set intersection** to find matches:
+
+- `int dh` → `{dh}` (if non-zero)
+- `int[] dh` → `Set(dh.filter(x => x !== 0))`
+- `null / 0 / []` → empty set (no match)
+
+Two nodes match if their normalized sets have a non-empty intersection. When multiple target nodes match, the **last in topological order** is selected (highest `topo_index`).
+
+This enables three mapping patterns:
+- **1-to-1**: same handle on both sides → direct match.
+- **1-to-many** (decomposed ops): one source node → multiple target nodes sharing the same handle (e.g. `linear` → `t + mm + add`). The last decomposed op is selected.
+- **many-to-1** (fused ops): a fused node carries a union tuple handle `(h1, h2)`. Any source node whose handle intersects `{h1, h2}` will match the fused node.
+
+#### Registering a sync key on an extension
+
+To expose an extension field as an explicit sync option in the sidebar, call `set_sync_key` on the Python `GraphExtension`:
+
+```python
+ext = GraphExtension(id="my_ext", name="My Extension")
+ext.add_node_data(node_id, {"debug_handle": 42, ...})
+ext.set_sync_key("debug_handle")   # appears as "Ext: my_ext.debug_handle" in sidebar
+```
+
+The sidebar will show `Ext: my_ext.debug_handle` as a selectable option. Selecting it activates `mode: 'layer'` with `layer='my_ext'` and `field='debug_handle'`.
+
+### `compare.setViewerVisible(name, visible)`
+
+Show or hide a graph column by name. Equivalent to checking/unchecking in the Graphs menu.
+
+- `name` {string} — viewer name as passed to `FXGraphCompare.create()`
+- `visible` {boolean} — `true` to show, `false` to hide
+
+When showing a viewer that has a corresponding node for the current selection in another viewer, the newly visible viewer will pan to that node automatically.
+
+### Follow Selection toggle
+
+The sidebar includes a "Follow" toggle button. When enabled (\u2299), every selection change auto-pans all viewers to the corresponding node. When disabled (\u25cb), selections still sync but viewers don't auto-pan (user can navigate freely). Newly re-enabled viewers always pan to the active selection regardless of this toggle.
 
 ## Payload Contract
 
@@ -90,15 +143,17 @@ Runtime input payload:
   base: {
     legend: [{ label, color }],
     nodes: [{ id, label, x, y, width, height, info, tooltip, fill_color? }],
+    //   info.debug_handle: int | int[]  — present when generate_missing_debug_handles() was called
     edges: [{ v, w, points? }]
   },
   extensions: {
     [extId]: {
       name: string,
       legend: [{ label, color }],
+      sync_keys: string[],   // fields registered via ext.set_sync_key(); drives sidebar options
       nodes: {
         [nodeId]: {
-          info?: object,
+          info?: object,       // arbitrary key/value; info.debug_handle used by 'auto' sync
           tooltip?: string[],
           label_append?: string[],
           fill_color?: string
@@ -163,7 +218,7 @@ Fuzzy search over active graph nodes with token scoring and context highlighting
 
 Centralized state machine managing interactions, camera transforms, selections, and extension visibility.
 
-**State fields:** `hoveredNodeId`, `hoveredEdge`, `selectedNodeId`, `selectedEdge`, `previewNodeId`, `ancestors`/`descendants` (Sets), `searchCandidates`, `searchSelectedIndex`, `highlightAncestors`, `themeName`, `activeExtensions` (Set), `colorBy`.
+**State fields:** `hoveredNodeId`, `hoveredEdge`, `selectedNodeId`, `selectedEdge`, `previewNodeId`, `ancestors`/`descendants` (Sets), `searchCandidates`, `searchSelectedIndex`, `highlightAncestors`, `themeName`, `activeExtensions` (Set), `colorBy`, `highlightGroups` (Map<groupId, {nodeIds: Set<string>, color: string}>).
 
 **`setState(patch)`:** Merges patch. If `activeExtensions` or `colorBy` changed, calls `store.computeActiveGraph()`, regenerates minimap thumbnail, updates legend and info panel. If `themeName` changed, calls `ui.applyThemeToDOM()`. Always calls `viewer.renderAll()` and emits `statechange`.
 
@@ -190,6 +245,7 @@ High-performance 2D canvas rendering of the main graph with pan/zoom and hover i
 2. Apply `ctx.scale(dpr, dpr)`, `ctx.translate(transform.x, y)`, `ctx.scale(k, k)`.
 3. Compute `opacity = 0.15` for nodes/edges outside the active selection ancestry.
 4. Draw edges (with midpoint tensor-shape labels), then node rectangles with multi-line labels.
+5. **Highlight group overlay pass** (after node rendering): iterates `state.highlightGroups`; for each group draws a thick 6px solid border outside the node rect (offset by `borderWidth/2` so it does not clip node fill or text). Multiple groups coexist; last group in Map iteration order wins visually on overlapping nodes.
 
 **`drawSmartTooltip()`:** Tests 4 candidate positions (up/down/left/right) against viewport bounds. Prefers "right" if it fits. Draws a dashed connector line scaled by `1/transform.k`.
 
@@ -299,6 +355,10 @@ viewer.removeLayer(id)                  Remove an extension layer
 viewer.patchLayerNodes(id, nodePatch)   Update node data in an extension
 viewer.enterFullscreen()                Enter fullscreen (returns Promise)
 viewer.exitFullscreen()                 Exit fullscreen (returns Promise)
+viewer.addHighlightGroup(groupId, nodeIds, color)  Add/replace a named highlight group overlay
+viewer.removeHighlightGroup(groupId)               Remove a named highlight group
+viewer.clearAllHighlightGroups()                   Remove all highlight groups
+viewer.getHighlightGroups()                        Returns Map<groupId, {nodeIds, color}>
 viewer.destroy()                        Teardown all DOM, listeners, renderers
 viewer.on(event, fn)                    Subscribe to event; returns unsubscribe fn
 viewer.off(event, fn)                   Unsubscribe from event
@@ -357,6 +417,61 @@ viewer.setColorBy('quant');
 
 ---
 
+## Highlight Groups
+
+Highlight groups are a **read-only programmatic overlay** separate from the single-node selection system. They are set via the JS API and render as thick colored borders around specified nodes.
+
+### Key properties
+
+- Multiple named groups coexist simultaneously on the same viewer.
+- Each group has a `groupId` (string), a set of `nodeIds`, and a CSS `color`.
+- Rendering: 6px solid border drawn **outside** the node rect (offset by `borderWidth/2`) so it does not clip node fill or text.
+- Groups survive `clearSelection()` — they are independent of selection state.
+- Groups are drawn as a separate pass **after** all node rendering, so they always appear on top.
+
+### API
+
+```js
+// Create or replace a named group
+viewer.addHighlightGroup(groupId, nodeIds, color)
+// groupId: string — unique name
+// nodeIds: string[] — node IDs to highlight
+// color: string — CSS color, e.g. '#ff6600' or 'rgba(255,100,0,0.8)'
+
+// Remove one group
+viewer.removeHighlightGroup(groupId)
+
+// Remove all groups
+viewer.clearAllHighlightGroups()
+
+// Read current groups (returns a shallow copy)
+viewer.getHighlightGroups()  // → Map<string, {nodeIds: Set<string>, color: string}>
+```
+
+### Example
+
+```js
+// Highlight two groups with different colors
+viewer.addHighlightGroup('critical', ['conv_0', 'conv_1'], '#ff0000');
+viewer.addHighlightGroup('attention', ['attn_q', 'attn_k', 'attn_v'], '#0066ff');
+
+// Remove one group
+viewer.removeHighlightGroup('critical');
+
+// Clear all
+viewer.clearAllHighlightGroups();
+```
+
+### Compare mode
+
+`FXGraphCompare` does **not** automatically propagate highlight groups across viewers. Groups are set explicitly per-viewer via the JS API. The compare sync only propagates the primary selection (unchanged).
+
+### State storage
+
+`highlightGroups` is stored on `ViewerController.state.highlightGroups` as a `Map<string, {nodeIds: Set<string>, color: string}>`. It is included in `snapshotState()` (shallow copy). `setState({ highlightGroups: newMap })` replaces the reference atomically and triggers a re-render.
+
+---
+
 ## FXGraphCompare API Reference
 
 ### `FXGraphCompare.create(config)`
@@ -375,7 +490,7 @@ viewer.setColorBy('quant');
 | `config.sharedTaskbar.controls.zoomFit` | boolean | `true` | Zoom-to-fit button in shared taskbar |
 | `config.sharedTaskbar.controls.syncMode` | boolean | `true` | Sync mode selector in shared taskbar |
 | `config.sharedTaskbar.controls.fullscreen` | boolean | `true` | Fullscreen button in shared taskbar |
-| `config.sync.mode` | `'none'`\|`'id'`\|`'layer'` | `'id'` | Selection sync mode |
+| `config.sync.mode` | `'none'`\|`'id'`\|`'auto'`\|`'layer'` | `'auto'` | Selection sync mode |
 | `config.sync.layer` | string | `''` | Extension id (when `mode='layer'`) |
 | `config.sync.field` | string | `''` | Info key to match on (when `mode='layer'`) |
 

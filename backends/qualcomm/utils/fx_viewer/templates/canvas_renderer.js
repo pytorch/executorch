@@ -1,4 +1,14 @@
 // High-performance 2D canvas rendering of the main graph with pan/zoom and hover interactions.
+//
+// render() pass order:
+//   1. Clear canvas, fill theme background.
+//   2. Apply DPR scale + camera transform (translate + scale).
+//   3. Draw edges (with midpoint tensor-shape labels).
+//   4. Draw node rectangles with multi-line labels and interaction-state coloring.
+//   5. Highlight group overlay pass — iterates state.highlightGroups; draws a 6px solid border
+//      outside each node rect (offset by borderWidth/2 so it does not clip fill or text).
+//      Multiple groups coexist; last group in Map iteration order wins on overlapping nodes.
+//   6. Draw smart tooltip for hovered node or edge.
 class CanvasRenderer {
     constructor(container, viewer) {
         this.container = container;
@@ -380,6 +390,27 @@ class CanvasRenderer {
 
             ctx.globalAlpha = 1.0;
         });
+
+        // Highlight group overlay pass — drawn after all nodes
+        const borderWidth = 6;
+        const half = borderWidth / 2;
+        if (state.highlightGroups && state.highlightGroups.size > 0) {
+            state.highlightGroups.forEach(({ nodeIds, color }) => {
+                ctx.strokeStyle = color;
+                ctx.lineWidth = borderWidth;
+                ctx.setLineDash([]);
+                nodeIds.forEach((id) => {
+                    const node = this.viewer.store.activeNodeMap.get(id);
+                    if (!node) return;
+                    ctx.strokeRect(
+                        node.x - node.width / 2 - half,
+                        node.y - node.height / 2 - half,
+                        node.width + borderWidth,
+                        node.height + borderWidth
+                    );
+                });
+            });
+        }
 
         if (state.hoveredNodeId || state.hoveredEdge) {
             this.drawSmartTooltip(ctx, state.hoveredNodeId, state.hoveredEdge);

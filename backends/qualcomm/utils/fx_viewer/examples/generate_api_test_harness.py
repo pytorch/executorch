@@ -213,6 +213,24 @@ def _build_portable_payloads(num_samples: int) -> dict[str, Any]:
     reference_payload = reference_exporter.generate_json_payload()
     candidate_payload = candidate_exporter.generate_json_payload()
 
+    # Second candidate: different fake-quant seed for 3-graph harness demo
+    torch.manual_seed(42)
+    candidate_model_2 = acc_demo._make_fake_quantized_copy(model)
+    candidate_ep_2 = acc_demo._export_with_debug_handles(candidate_model_2, export_sample)
+    graph_pair_2 = acc_demo.GraphPair(
+        pipeline="fake_quant_2",
+        reference_name="Reference Float",
+        candidate_name="Candidate Fake-Quantized (seed 42)",
+        reference_graph=graph_pair.reference_graph,
+        candidate_graph=candidate_ep_2.module(),
+        metadata={},
+    )
+    metrics_2, _ = _compute_accuracy_metrics_for_pair(graph_pair_2, samples)
+    candidate_exporter_2 = FXGraphExporter(graph_pair_2.candidate_graph)
+    _add_structural_extensions(candidate_exporter_2)
+    acc_demo._add_accuracy_extension(candidate_exporter_2, metrics_2)
+    candidate_payload_2 = candidate_exporter_2.generate_json_payload()
+
     return {
         "profile": "portable",
         "model": "swin",
@@ -221,6 +239,7 @@ def _build_portable_payloads(num_samples: int) -> dict[str, Any]:
         "structural": reference_payload,
         "accuracy_reference": reference_payload,
         "accuracy_candidate": candidate_payload,
+        "accuracy_candidate_2": candidate_payload_2,
     }
 
 
@@ -286,6 +305,7 @@ def _render_html(payloads: dict[str, Any], testcases: list[dict[str, Any]]) -> s
             "structural": payloads["structural"],
             "accuracy_reference": payloads["accuracy_reference"],
             "accuracy_candidate": payloads["accuracy_candidate"],
+            "accuracy_candidate_2": payloads.get("accuracy_candidate_2"),
         }
     )
     testcases_json = json.dumps(testcases)

@@ -25,7 +25,18 @@ from .models import (
 
 
 class FXGraphExporter:
-    """Export PyTorch FX graphs to JSON/JS/HTML payloads for the viewer."""
+    """Export PyTorch FX graphs to JSON/JS/HTML payloads for the viewer.
+
+    The exporter extracts node metadata from ``fx_node.meta`` into ``node.info``.
+    Scalar meta values (str, int, float, bool) are included automatically.
+    ``debug_handle`` is handled explicitly to support both scalar (int) and
+    fused/tuple forms (tuple[int, ...] / list[int]):
+      - int  → stored as int
+      - tuple/list with one non-zero element → stored as int
+      - tuple/list with multiple non-zero elements → stored as list[int]
+    This ensures ``node.info.debug_handle`` is always present and usable by the
+    JS compare sync engine (``mode: 'auto'`` set-intersection matching).
+    """
 
     def __init__(self, graph_module: torch.fx.GraphModule):
         self.graph_module = graph_module
@@ -74,11 +85,12 @@ class FXGraphExporter:
         return str(arg)
 
     def _extract_graph(self) -> tuple[dict[str, GraphNode], list[GraphEdge]]:
+        # torch.fx.Graph.nodes iterates in topological order (documented guarantee).
         print("Building graph payload model...")
         nodes: dict[str, GraphNode] = {}
         edges: list[GraphEdge] = []
 
-        for fx_node in self.graph_module.graph.nodes:
+        for idx, fx_node in enumerate(self.graph_module.graph.nodes):
             info: dict[str, Any] = {
                 "op": fx_node.op,
                 "name": fx_node.name,
@@ -100,7 +112,17 @@ class FXGraphExporter:
                 if key != "tensor_meta" and isinstance(value, (str, int, float, bool)):
                     info[key] = value
 
-            nodes[fx_node.name] = GraphNode(id=fx_node.name, info=info)
+            # Explicitly handle debug_handle (may be int or tuple — not caught by scalar loop)
+            raw_dh = fx_node.meta.get("debug_handle")
+            if raw_dh is not None and raw_dh != 0 and raw_dh != () and raw_dh != []:
+                if isinstance(raw_dh, int):
+                    info["debug_handle"] = raw_dh
+                elif isinstance(raw_dh, (tuple, list)):
+                    ints = [int(x) for x in raw_dh if isinstance(x, int) and x != 0]
+                    if ints:
+                        info["debug_handle"] = ints[0] if len(ints) == 1 else ints
+
+            nodes[fx_node.name] = GraphNode(id=fx_node.name, topo_index=idx, info=info)
 
             for input_node in fx_node.all_input_nodes:
                 edges.append(GraphEdge(v=input_node.name, w=fx_node.name))

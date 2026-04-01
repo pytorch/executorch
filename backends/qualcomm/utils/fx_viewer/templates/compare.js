@@ -1,101 +1,365 @@
-// FXCompareTaskbar: shared taskbar for multi-viewer compare mode.
 // FXGraphCompare: orchestrates multi-view compare DOM, selection sync, and lifecycle.
+// Layout: 3-row × (N+1)-col CSS grid.
+//   Col 0 (sidebar): shared controls spanning rows 0-1.
+//   Cols 1..N: per-graph minimap (row 0) and canvas (row 1).
+//   Row 2: info row using CSS subgrid for aligned property columns.
+//
+// Selection sync modes (config.sync.mode):
+//   'auto'  (default) — tries debug_handle set-intersection first, falls back to node-ID match.
+//   'id'              — matches by node id only.
+//   'layer'           — matches by extensions[layer].nodes[nodeId].info[field] value equality;
+//                       picks last in topological order on multiple matches.
+//   'none'            — no cross-viewer selection propagation.
+//
+// debug_handle normalization (_normalizeHandle):
+//   int dh      → Set{dh}  (if non-zero)
+//   int[] dh    → Set(dh.filter(x => x !== 0))
+//   null/0/[]   → empty Set (no match)
+// Two nodes match if their normalized sets have a non-empty intersection.
+//
+// Sidebar sync selector options (rebuilt by _rebuildSyncPanel):
+//   "Auto (handle→id)"          → mode: 'auto'
+//   "ID only"                   → mode: 'id'
+//   "Don't sync"                → mode: 'none'
+//   "Ext: <extId>.<field>"      → mode: 'layer' (one per registered sync_key)
 
-class FXCompareTaskbar {
-    constructor(root, compareInstance, controls = {}) {
-        this._root = root;
-        this.compare = compareInstance;
-        this._teardownFns = [];
-
-        this.el = document.createElement('div');
-        this.el.className = 'fx-compare-taskbar';
-        root.insertBefore(this.el, root.firstChild);
-
-        this._build(controls);
+class FXGraphCompare {
+    static create(config) {
+        return new FXGraphCompare(config);
     }
 
-    _build(controls) {
-        const el = this.el;
+    constructor(config = {}) {
+        // Accept Map<name, viewer> or Array<viewer> (backward compat)
+        if (config.viewers instanceof Map) {
+            this._viewerMap = config.viewers;
+        } else if (Array.isArray(config.viewers)) {
+            this._viewerMap = new Map(config.viewers.map((v, i) =>
+                [(v.config && v.config.title) || `Graph ${i + 1}`, v]
+            ));
+        } else {
+            this._viewerMap = new Map();
+        }
+        this.viewers = [...this._viewerMap.values()];
+        this._viewerNames = [...this._viewerMap.keys()];
+        this._visibleViewers = new Set(this._viewerNames);
 
-        if (controls.theme !== false) {
-            const sel = document.createElement('select');
-            sel.className = 'fx-select';
-            sel.innerHTML = `<option value="light">&#x2600; Light</option><option value="dark">&#x1F319; Dark</option>`;
-            sel.onchange = (e) => this.compare.viewers.forEach((v) => v.setTheme(e.target.value));
-            el.appendChild(sel);
-            this._themeSelect = sel;
+        this.sync = {
+            mode: 'auto',
+            layer: '',
+            field: '',
+            ...(config.sync || {}),
+        };
+
+        this.container = null;
+        if (config.layout && config.layout.container) {
+            if (typeof config.layout.container === 'string') {
+                this.container = document.querySelector(config.layout.container);
+            } else if (config.layout.container instanceof HTMLElement) {
+                this.container = config.layout.container;
+            }
         }
 
-        if (controls.layers !== false) {
-            this._layersBtn = document.createElement('button');
-            this._layersBtn.className = 'fx-button';
-            this._layersBtn.title = 'Layers / Color By';
-            this._layersBtn.textContent = 'Layers';
-            this._layersMenu = document.createElement('div');
-            this._layersMenu.className = 'fx-layers-menu';
-            this._layersMenu.style.display = 'none';
-            this._layersBtn.onclick = () => {
-                this._rebuildLayersMenu();
-                this._layersMenu.style.display = this._layersMenu.style.display === 'none' ? 'block' : 'none';
-            };
-            const wrap = document.createElement('div');
-            wrap.style.position = 'relative';
-            wrap.appendChild(this._layersBtn);
-            wrap.appendChild(this._layersMenu);
-            el.appendChild(wrap);
-            fxOn(this._teardownFns, document, 'click', (e) => {
-                if (!wrap.contains(e.target)) this._layersMenu.style.display = 'none';
+        this._guards = new WeakSet();
+        this._offs = [];
+        this._root = null;
+        this._grid = null;
+        this._infoRow = null;
+        this._minimapCells = [];
+        this._nameCells = [];
+        this._canvasCells = [];
+        this._colResizeObservers = [];
+        this._domSnapshots = new WeakMap();
+        this._followSelection = true;
+        this._openPortalMenus = [];
+
+        if (this.container) {
+            this._buildCompareDOM();
+        }
+
+        this._wireSelectionSync();
+        this._wireStateSync();
+
+        // Suppress per-viewer UI in compare mode (keep taskbar + search only)
+        this.viewers.forEach((v) => {
+            v.setUIVisibility({
+                toolbar: true,
+                search: true,
+                layers: false,
+                theme: false,
+                zoomButtons: false,
+                fullscreenButton: false,
+                highlightButton: false,
             });
-        }
-
-        if (controls.zoomFit !== false) {
-            const btn = document.createElement('button');
-            btn.className = 'fx-button';
-            btn.innerHTML = '&#x2922;';
-            btn.title = 'Zoom to Fit All';
-            btn.onclick = () => this.compare.viewers.forEach((v) => v.controller.zoomToFit());
-            el.appendChild(btn);
-        }
-
-        if (controls.syncMode !== false) {
-            const sel = document.createElement('select');
-            sel.className = 'fx-select';
-            this._syncSelect = sel;
-            this._rebuildSyncSelect();
-            sel.onchange = (e) => {
-                const val = e.target.value;
-                if (val === 'none') {
-                    this.compare.setSync({ mode: 'none' });
-                } else if (val === 'id') {
-                    this.compare.setSync({ mode: 'id' });
-                } else {
-                    const [layer, field] = val.split('::');
-                    this.compare.setSync({ mode: 'layer', layer, field });
-                }
-            };
-            el.appendChild(sel);
-        }
-
-        if (controls.fullscreen !== false) {
-            const btn = document.createElement('button');
-            btn.className = 'fx-button';
-            btn.innerHTML = '&#x26F6;';
-            btn.title = 'Fullscreen';
-            btn.onclick = () => {
-                if (document.fullscreenElement) {
-                    document.exitFullscreen();
-                } else {
-                    this._root.requestFullscreen && this._root.requestFullscreen();
-                }
-            };
-            el.appendChild(btn);
-        }
+        });
     }
 
-    _rebuildLayersMenu() {
-        if (!this._layersMenu) return;
+    _buildCompareDOM() {
+        this._root = document.createElement('div');
+        this._root.className = 'fx-compare-root';
+        // Fallback height if container has no defined height
+        if (this.container.offsetHeight < 100) {
+            this._root.style.height = Math.round(window.innerHeight * 0.85) + 'px';
+        }
+        this.container.appendChild(this._root);
+
+        const N = this.viewers.length;
+
+        // Main grid: col 0 = 160px sidebar, cols 1..N = 1fr each
+        this._grid = document.createElement('div');
+        this._grid.className = 'fx-compare-grid';
+        this._grid.style.gridTemplateColumns = `160px repeat(${N}, 1fr)`;
+        this._root.appendChild(this._grid);
+
+        // Sidebar cell (col 1, rows 1-3)
+        const sidebar = document.createElement('div');
+        sidebar.className = 'fx-compare-sidebar-cell';
+        this._grid.appendChild(sidebar);
+        this._buildSidebar(sidebar);
+        this._sidebarEl = sidebar;
+
+        // Per-viewer cells
+        this._minimapCells = [];
+        this._nameCells = [];
+        this._canvasCells = [];
+
+        this.viewers.forEach((viewer, i) => {
+            // Snapshot original DOM positions for teardown
+            this._domSnapshots.set(viewer, {
+                mainAreaParent: viewer.mainArea.parentNode,
+                mainAreaNextSibling: viewer.mainArea.nextSibling,
+                minimapParent: viewer.minimapRenderer ? viewer.minimapRenderer.container.parentNode : null,
+                minimapNextSibling: viewer.minimapRenderer ? viewer.minimapRenderer.container.nextSibling : null,
+                wrapperDisplay: viewer.wrapper.style.display,
+            });
+
+            // Minimap cell: col i+2, row 1
+            const minimapCell = document.createElement('div');
+            minimapCell.className = 'fx-compare-minimap-cell';
+            minimapCell.style.gridColumn = String(i + 2);
+            minimapCell.style.gridRow = '1';
+            if (viewer.minimapRenderer) {
+                minimapCell.appendChild(viewer.minimapRenderer.container);
+            }
+            this._grid.appendChild(minimapCell);
+            this._minimapCells.push(minimapCell);
+
+            // Name cell: col i+2, row 2
+            const nameCell = document.createElement('div');
+            nameCell.className = 'fx-compare-name-cell';
+            nameCell.style.gridColumn = String(i + 2);
+            nameCell.textContent = this._viewerNames[i];
+            this._grid.appendChild(nameCell);
+            this._nameCells.push(nameCell);
+
+            // Canvas cell: col i+2, row 3
+            const canvasCell = document.createElement('div');
+            canvasCell.className = 'fx-compare-canvas-cell';
+            canvasCell.style.gridColumn = String(i + 2);
+            canvasCell.style.gridRow = '3';
+            canvasCell.appendChild(viewer.mainArea);
+            this._grid.appendChild(canvasCell);
+            this._canvasCells.push(canvasCell);
+
+            // Hide viewer's own wrapper shell
+            viewer.wrapper.style.display = 'none';
+
+            // ResizeObserver on canvas cell
+            if (typeof ResizeObserver !== 'undefined') {
+                const ro = new ResizeObserver(() => {
+                    viewer.canvasRenderer.resize();
+                    viewer.renderAll();
+                });
+                ro.observe(canvasCell);
+                this._colResizeObservers.push(ro);
+            }
+        });
+
+        // Info row (col 1..-1, row 4) — uses CSS subgrid
+        this._infoRow = document.createElement('div');
+        this._infoRow.className = 'fx-compare-info-row';
+        this._grid.appendChild(this._infoRow);
+        this._updateMergedInfo(null);
+
+        this._applyCompareTheme(this.viewers[0]?.controller?.state?.themeName || 'light');
+
+        // Resize all viewers after DOM settles (double-rAF ensures grid layout is complete)
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                this.viewers.forEach((v) => {
+                    v.canvasRenderer.resize();
+                    if (v.minimapRenderer) {
+                        v.minimapRenderer.resize();
+                        v.minimapRenderer.generateThumbnail();
+                    }
+                    v.init();
+                });
+            });
+        });
+    }
+
+    _buildSidebar(sidebar) {
+        // Layers button + menu (portal pattern — menu appended to document.body when open)
+        const layersWrap = document.createElement('div');
+        layersWrap.style.position = 'relative';
+        const layersBtn = document.createElement('button');
+        layersBtn.className = 'fx-button';
+        layersBtn.title = 'Layers / Color By';
+        layersBtn.textContent = 'Layers';
+        layersBtn.style.marginLeft = '0';
+        layersBtn.style.boxSizing = 'border-box';
+        layersBtn.style.width = '100%';
+        const layersMenu = document.createElement('div');
+        layersMenu.className = 'fx-compare-portal-menu';
+        layersBtn.onclick = () => {
+            if (layersMenu.parentNode) {
+                this._closePortalMenu(layersMenu);
+            } else {
+                this._rebuildLayersMenu(layersMenu);
+                this._openPortalMenu(layersBtn, layersMenu);
+            }
+        };
+        fxOn(this._offs, document, 'click', (e) => {
+            if (!layersWrap.contains(e.target) && !layersMenu.contains(e.target)) {
+                this._closePortalMenu(layersMenu);
+            }
+        });
+        layersWrap.appendChild(layersBtn);
+        sidebar.appendChild(layersWrap);
+
+        // Theme selector
+        const themeSel = document.createElement('select');
+        themeSel.className = 'fx-select';
+        themeSel.style.marginLeft = '0';
+        themeSel.style.boxSizing = 'border-box';
+        themeSel.style.width = '100%';
+        themeSel.innerHTML = `<option value="light">&#x2600; Light</option><option value="dark">&#x1F319; Dark</option>`;
+        themeSel.onchange = (e) => this.viewers.forEach((v) => v.setTheme(e.target.value));
+        sidebar.appendChild(themeSel);
+        this._themeSelect = themeSel;
+
+        // Zoom-fit button
+        const zoomBtn = document.createElement('button');
+        zoomBtn.className = 'fx-button';
+        zoomBtn.style.marginLeft = '0';
+        zoomBtn.innerHTML = '&#x2922; Fit';
+        zoomBtn.title = 'Zoom to Fit All';
+        zoomBtn.style.boxSizing = 'border-box';
+        zoomBtn.style.width = '100%';
+        zoomBtn.onclick = () => this.viewers.forEach((v) => v.controller.zoomToFit());
+        sidebar.appendChild(zoomBtn);
+
+        // Fullscreen button
+        const fsBtn = document.createElement('button');
+        fsBtn.className = 'fx-button';
+        fsBtn.style.marginLeft = '0';
+        fsBtn.innerHTML = '&#x26F6; Full';
+        fsBtn.title = 'Fullscreen';
+        fsBtn.style.boxSizing = 'border-box';
+        fsBtn.style.width = '100%';
+        fsBtn.onclick = () => {
+            if (document.fullscreenElement) {
+                document.exitFullscreen();
+            } else {
+                this._root.requestFullscreen && this._root.requestFullscreen();
+            }
+        };
+        fxOn(this._offs, document, 'fullscreenchange', () => {
+            fsBtn.innerHTML = document.fullscreenElement ? '&#x2715; Exit' : '&#x26F6; Full';
+            fsBtn.title = document.fullscreenElement ? 'Exit Fullscreen' : 'Fullscreen';
+        });
+        sidebar.appendChild(fsBtn);
+
+        // Sync mode selector (only registered sync_keys)
+        const syncSel = document.createElement('select');
+        syncSel.className = 'fx-select';
+        syncSel.style.marginLeft = '0';
+        syncSel.style.boxSizing = 'border-box';
+        syncSel.style.width = '100%';
+        this._syncSelect = syncSel;
+        this._rebuildSyncPanel();
+        syncSel.onchange = (e) => {
+            const val = e.target.value;
+            if (val === 'none') { this.setSync({ mode: 'none' }); }
+            else if (val === 'id') { this.setSync({ mode: 'id' }); }
+            else if (val === 'auto') { this.setSync({ mode: 'auto' }); }
+            else { const [layer, field] = val.split('::'); this.setSync({ mode: 'layer', layer, field }); }
+        };
+        sidebar.appendChild(syncSel);
+
+        // Visible graphs toggle (portal pattern)
+        const visWrap = document.createElement('div');
+        visWrap.style.position = 'relative';
+        const visBtn = document.createElement('button');
+        visBtn.className = 'fx-button';
+        visBtn.style.marginLeft = '0';
+        visBtn.style.boxSizing = 'border-box';
+        visBtn.style.width = '100%';
+        visBtn.title = 'Toggle visible graphs';
+        visBtn.textContent = 'Graphs';
+        const visMenu = document.createElement('div');
+        visMenu.className = 'fx-compare-portal-menu';
+        visBtn.onclick = () => {
+            if (visMenu.parentNode) {
+                this._closePortalMenu(visMenu);
+            } else {
+                this._rebuildVisMenu(visMenu);
+                this._openPortalMenu(visBtn, visMenu);
+            }
+        };
+        fxOn(this._offs, document, 'click', (e) => {
+            if (!visWrap.contains(e.target) && !visMenu.contains(e.target)) {
+                this._closePortalMenu(visMenu);
+            }
+        });
+        visWrap.appendChild(visBtn);
+        sidebar.appendChild(visWrap);
+
+        // Follow selection toggle
+        const followBtn = document.createElement('button');
+        followBtn.className = 'fx-button';
+        followBtn.style.marginLeft = '0';
+        followBtn.style.boxSizing = 'border-box';
+        followBtn.style.width = '100%';
+        followBtn.title = 'Toggle: zoom-to-fit on selection sync';
+        const updateFollowBtn = () => {
+            followBtn.textContent = this._followSelection ? '\u2299 Zoom-Fit' : '\u25cb Zoom-Fit';
+            followBtn.style.opacity = this._followSelection ? '1' : '0.6';
+        };
+        updateFollowBtn();
+        followBtn.onclick = () => {
+            this._followSelection = !this._followSelection;
+            updateFollowBtn();
+        };
+        sidebar.appendChild(followBtn);
+
+        // Highlight ancestors toggle
+        const hlBtn = document.createElement('button');
+        hlBtn.className = 'fx-button';
+        hlBtn.style.marginLeft = '0';
+        hlBtn.style.boxSizing = 'border-box';
+        hlBtn.style.width = '100%';
+        hlBtn.innerHTML = '&#x1F517;';
+        hlBtn.title = 'Toggle Highlight Ancestors/Descendants';
+        const updateHlBtn = () => {
+            const on = this.viewers[0]?.controller?.state?.highlightAncestors !== false;
+            hlBtn.style.opacity = on ? '1' : '0.6';
+        };
+        updateHlBtn();
+        hlBtn.onclick = () => {
+            const on = this.viewers[0]?.controller?.state?.highlightAncestors !== false;
+            this.viewers.forEach((v) => {
+                v.controller.state.highlightAncestors = !on;
+                v.controller.setState({});
+            });
+            updateHlBtn();
+        };
+        sidebar.appendChild(hlBtn);
+        this._hlBtn = hlBtn;
+    }
+
+    _rebuildLayersMenu(menu) {
         const allLayers = new Map();
-        this.compare.viewers.forEach((v) => {
+        this.viewers.forEach((v) => {
             Object.entries(v.store.extensions || {}).forEach(([id, ext]) => {
                 if (!allLayers.has(id)) allLayers.set(id, ext.name || id);
             });
@@ -109,10 +373,10 @@ class FXCompareTaskbar {
         allLayers.forEach((name, id) => {
             html += `<label style="display:block;padding:5px;cursor:pointer;"><input type="radio" name="cmp_colorby" value="${fxEsc(id)}"> ${fxEsc(name)}</label>`;
         });
-        this._layersMenu.innerHTML = html;
-        this._layersMenu.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+        menu.innerHTML = html;
+        menu.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
             cb.onchange = (e) => {
-                this.compare.viewers.forEach((v) => {
+                this.viewers.forEach((v) => {
                     const active = new Set(v.controller.state.activeExtensions);
                     if (e.target.checked) active.add(e.target.value);
                     else active.delete(e.target.value);
@@ -120,232 +384,144 @@ class FXCompareTaskbar {
                 });
             };
         });
-        // Sync current colorBy state from first viewer
-        const currentColorBy = this.compare.viewers[0]?.controller?.state?.colorBy || 'base';
-        const matchingRadio = this._layersMenu.querySelector(`input[type="radio"][name="cmp_colorby"][value="${currentColorBy}"]`);
+        const currentColorBy = this.viewers[0]?.controller?.state?.colorBy || 'base';
+        const matchingRadio = menu.querySelector(`input[type="radio"][name="cmp_colorby"][value="${currentColorBy}"]`);
         if (matchingRadio) matchingRadio.checked = true;
-        this._layersMenu.querySelectorAll('input[type="radio"][name="cmp_colorby"]').forEach((rb) => {
+        menu.querySelectorAll('input[type="radio"][name="cmp_colorby"]').forEach((rb) => {
             rb.onchange = (e) => {
-                if (e.target.checked) {
-                    this.compare.viewers.forEach((v) => v.setColorBy(e.target.value));
-                }
+                if (e.target.checked) this.viewers.forEach((v) => v.setColorBy(e.target.value));
             };
         });
     }
 
-    _rebuildSyncSelect() {
+    _rebuildSyncPanel() {
         if (!this._syncSelect) return;
-        let html = '<option value="none">Don\'t sync</option><option value="id">Sync by ID</option>';
-        const allFields = new Map();
-        this.compare.viewers.forEach((v) => {
+        let html = '<option value="auto">Auto (handle→id)</option>'
+                 + '<option value="id">ID only</option>'
+                 + '<option value="none">Don\'t sync</option>';
+        const seen = new Set(['auto', 'id', 'none']);
+        this.viewers.forEach((v) => {
             Object.entries(v.store.extensions || {}).forEach(([extId, ext]) => {
-                const firstNode = ext.nodes && Object.values(ext.nodes)[0];
-                if (firstNode && firstNode.info) {
-                    Object.keys(firstNode.info).forEach((field) => {
-                        const key = `${extId}::${field}`;
-                        if (!allFields.has(key)) allFields.set(key, `Sync by ${extId}.${field}`);
-                    });
-                }
+                (ext.sync_keys || []).forEach((field) => {
+                    const key = `${extId}::${field}`;
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        html += `<option value="${fxEsc(key)}">Ext: ${fxEsc(extId)}.${fxEsc(field)}</option>`;
+                    }
+                });
             });
-        });
-        allFields.forEach((label, key) => {
-            html += `<option value="${fxEsc(key)}">${fxEsc(label)}</option>`;
         });
         this._syncSelect.innerHTML = html;
-        const sync = this.compare.sync;
+        const sync = this.sync;
         if (sync.mode === 'none') this._syncSelect.value = 'none';
+        else if (sync.mode === 'id') this._syncSelect.value = 'id';
         else if (sync.mode === 'layer' && sync.layer && sync.field) this._syncSelect.value = `${sync.layer}::${sync.field}`;
-        else this._syncSelect.value = 'id';
+        else this._syncSelect.value = 'auto';
     }
 
-    destroy() {
-        fxOffAll(this._teardownFns);
-        if (this.el && this.el.parentNode) this.el.parentNode.removeChild(this.el);
-    }
-}
-
-class FXGraphCompare {
-    static create(config) {
-        return new FXGraphCompare(config);
-    }
-
-    constructor(config = {}) {
-        this.viewers = Array.isArray(config.viewers) ? config.viewers : [];
-        this.sync = {
-            mode: 'id',
-            layer: '',
-            field: '',
-            ...(config.sync || {}),
-        };
-        this.layout = {
-            columns: (config.layout && config.layout.columns) || 2,
-        };
-        this.sharedTaskbar = {
-            enabled: !!(config.sharedTaskbar && config.sharedTaskbar.enabled),
-            controls: (config.sharedTaskbar && config.sharedTaskbar.controls) || {},
-        };
-        this._minimapHeight = (config.layout && config.layout.minimapHeight) || 180;
-        this._infoHeight = (config.layout && config.layout.infoHeight) || 200;
-        this._canvasHeightRatio = (config.layout && config.layout.canvasHeightRatio != null)
-            ? config.layout.canvasHeightRatio : 0.7;
-
-        this.container = null;
-        if (config.layout && config.layout.container) {
-            if (typeof config.layout.container === 'string') {
-                this.container = document.querySelector(config.layout.container);
-            } else if (config.layout.container instanceof HTMLElement) {
-                this.container = config.layout.container;
-            }
-        }
-
-        this._guards = new WeakSet();
-        this._offs = [];
-        this._taskbar = null;
-        this._root = null;
-        this._grid = null;
-        this._infoBar = null;
-        this._colResizeObservers = [];
-        this._domSnapshots = new WeakMap();
-
-        if (this.container) {
-            this._buildCompareDOM();
-        }
-
-        this._wireSelectionSync();
-        this._wireStateSync();
-
-        // Always suppress per-viewer UI in compare mode
-        this.viewers.forEach((v) => {
-            const keepToolbar = this.sharedTaskbar.enabled;
-            v.setUIVisibility({
-                toolbar: keepToolbar,
-                search: keepToolbar,
-                layers: false,
-                theme: false,
-                zoomButtons: false,
-                fullscreenButton: false,
-                highlightButton: false,
-            });
-            if (keepToolbar && v.ui && v.ui.searchContainer) {
-                v.ui.searchContainer.style.flex = '1';
-                v.ui.searchContainer.style.maxWidth = 'none';
-            }
+    _rebuildVisMenu(menu) {
+        menu.innerHTML = '';
+        this._viewerNames.forEach((name) => {
+            const label = document.createElement('label');
+            label.style.cssText = 'display:block;padding:5px;cursor:pointer;';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = this._visibleViewers.has(name);
+            cb.onchange = (e) => this._setViewerVisible(name, e.target.checked);
+            label.appendChild(cb);
+            label.appendChild(document.createTextNode(' ' + name));
+            menu.appendChild(label);
         });
-        if (this.sharedTaskbar.enabled && this._root) {
-            this._taskbar = new FXCompareTaskbar(this._root, this, this.sharedTaskbar.controls);
-        }
     }
 
-    _buildCompareDOM() {
-        // Create root flex-column container inside user's container
-        this._root = document.createElement('div');
-        this._root.className = 'fx-compare-root';
-        this.container.appendChild(this._root);
+    _openPortalMenu(btn, menu) {
+        if (menu.parentNode) menu.parentNode.removeChild(menu);
+        const btnRect = btn.getBoundingClientRect();
+        const rootRect = this._root.getBoundingClientRect();
+        const scrollTop = this._root.scrollTop;
+        const scrollLeft = this._root.scrollLeft;
+        const top = btnRect.top - rootRect.top + scrollTop;
+        const left = btnRect.right - rootRect.left + scrollLeft + 4;
+        menu.style.top = top + 'px';
+        menu.style.left = left + 'px';
+        menu.style.maxHeight = Math.min(window.innerHeight - btnRect.top - 8, window.innerHeight * 0.6) + 'px';
+        this._root.appendChild(menu);
+        this._openPortalMenus.push(menu);
+    }
 
-        // Ensure root has a defined height so the flex chain doesn't collapse.
-        // If the container has an explicit height, use 100%; otherwise fall back to 90vh.
-        const _syncRootHeight = () => {
-            if (this.container.offsetHeight >= 100) {
-                this._root.style.height = '100%';
-            } else {
-                this._root.style.height = Math.round(window.innerHeight * 0.9) + 'px';
+    _closePortalMenu(menu) {
+        if (menu.parentNode) menu.parentNode.removeChild(menu);
+        const idx = this._openPortalMenus.indexOf(menu);
+        if (idx !== -1) this._openPortalMenus.splice(idx, 1);
+    }
+
+    _setViewerVisible(name, visible) {
+        if (visible) this._visibleViewers.add(name);
+        else this._visibleViewers.delete(name);
+
+        const visCount = [...this._viewerNames].filter((n) => this._visibleViewers.has(n)).length;
+        this._grid.style.gridTemplateColumns = `160px repeat(${Math.max(1, visCount)}, 1fr)`;
+
+        let colIdx = 2;
+        this.viewers.forEach((v, i) => {
+            const isVis = this._visibleViewers.has(this._viewerNames[i]);
+            if (this._minimapCells[i]) {
+                this._minimapCells[i].style.display = isVis ? '' : 'none';
+                if (isVis) this._minimapCells[i].style.gridColumn = String(colIdx);
             }
-        };
-        _syncRootHeight();
-        if (typeof ResizeObserver !== 'undefined') {
-            const ro = new ResizeObserver(_syncRootHeight);
-            ro.observe(this.container);
-            this._colResizeObservers.push(ro);
-        }
-
-        // Create the grid (columns of viewers)
-        this._grid = document.createElement('div');
-        this._grid.className = 'fx-compare-grid';
-        this._grid.style.gridTemplateColumns = `repeat(${this.layout.columns}, 1fr)`;
-        this._root.appendChild(this._grid);
-
-        // For each viewer, create a column and move its mainArea + minimap into it
-        this.viewers.forEach((viewer, i) => {
-            // Snapshot original DOM positions for teardown
-            this._domSnapshots.set(viewer, {
-                mainAreaParent: viewer.mainArea.parentNode,
-                mainAreaNextSibling: viewer.mainArea.nextSibling,
-                minimapParent: viewer.minimapRenderer ? viewer.minimapRenderer.container.parentNode : null,
-                minimapNextSibling: viewer.minimapRenderer ? viewer.minimapRenderer.container.nextSibling : null,
-                wrapperDisplay: viewer.wrapper.style.display,
-            });
-
-            const col = document.createElement('div');
-            col.className = 'fx-compare-col';
-
-            // Optional column header (viewer title)
-            const title = (viewer.config && viewer.config.title) || `Graph ${i + 1}`;
-            const header = document.createElement('div');
-            header.className = 'fx-compare-col-header';
-            header.textContent = title;
-            col.appendChild(header);
-
-            // Minimap row
-            if (viewer.minimapRenderer) {
-                const minimapRow = document.createElement('div');
-                minimapRow.className = 'fx-compare-minimap-row';
-                minimapRow.style.height = `${this._minimapHeight}px`;
-                minimapRow.appendChild(viewer.minimapRenderer.container);
-                col.appendChild(minimapRow);
+            if (this._nameCells[i]) {
+                this._nameCells[i].style.display = isVis ? '' : 'none';
+                if (isVis) this._nameCells[i].style.gridColumn = String(colIdx);
             }
-
-            // Canvas row — move mainArea here
-            const canvasRow = document.createElement('div');
-            canvasRow.className = 'fx-compare-canvas-row';
-            canvasRow.appendChild(viewer.mainArea);
-            col.appendChild(canvasRow);
-
-            // Hide the viewer's own wrapper shell (sidebar, resizer, etc.)
-            viewer.wrapper.style.display = 'none';
-
-            this._grid.appendChild(col);
-
-            // ResizeObserver on canvas row to keep canvas sized correctly
-            if (typeof ResizeObserver !== 'undefined') {
-                const ro = new ResizeObserver(() => {
-                    viewer.canvasRenderer.resize();
-                    viewer.renderAll();
-                });
-                ro.observe(canvasRow);
-                this._colResizeObservers.push(ro);
+            if (this._canvasCells[i]) {
+                this._canvasCells[i].style.display = isVis ? '' : 'none';
+                if (isVis) this._canvasCells[i].style.gridColumn = String(colIdx);
             }
-        });
-
-        // Shared info bar at the bottom
-        this._infoBar = document.createElement('div');
-        this._infoBar.className = 'fx-compare-info-bar';
-        this._infoBar.innerHTML = '<div class="fx-compare-info-placeholder">No node selected — click a node to compare</div>';
-        this._root.appendChild(this._infoBar);
-
-        // Resize all viewers after DOM is settled
-        requestAnimationFrame(() => {
-            this.viewers.forEach((v) => {
+            if (isVis) {
+                colIdx++;
                 v.canvasRenderer.resize();
-                if (v.minimapRenderer) {
-                    v.minimapRenderer.resize();
-                    v.minimapRenderer.generateThumbnail();
-                }
                 v.renderAll();
-            });
+            }
         });
+
+        if (visible) {
+            const newViewer = this.viewers[this._viewerNames.indexOf(name)];
+            requestAnimationFrame(() => {
+                newViewer.canvasRenderer.resize();
+                let srcViewer = null, srcNodeId = null;
+                this.viewers.forEach((v, i) => {
+                    if (v === newViewer || !this._visibleViewers.has(this._viewerNames[i])) return;
+                    const sel = v.controller?.state?.selectedNodeId;
+                    if (sel && !srcNodeId) { srcViewer = v; srcNodeId = sel; }
+                });
+                if (srcViewer && srcNodeId) {
+                    const targetId = this._findSyncTarget(srcViewer, srcNodeId, newViewer);
+                    if (targetId) {
+                        newViewer.selectNode(targetId, { center: false });
+                        newViewer.controller.zoomToFit();
+                    } else {
+                        newViewer.controller.zoomToFit();
+                    }
+                } else {
+                    newViewer.controller.zoomToFit();
+                }
+            });
+        }
+
+        this._updateMergedInfo(null);
     }
 
     _teardownCompareDOM() {
-        // Disconnect resize observers
+        // Close any open portal menus
+        this._openPortalMenus.slice().forEach((m) => this._closePortalMenu(m));
+
         this._colResizeObservers.forEach((ro) => ro.disconnect());
         this._colResizeObservers = [];
 
-        // Restore each viewer's DOM
         this.viewers.forEach((viewer) => {
             const snap = this._domSnapshots.get(viewer);
             if (!snap) return;
 
-            // Restore mainArea
             if (snap.mainAreaParent) {
                 if (snap.mainAreaNextSibling) {
                     snap.mainAreaParent.insertBefore(viewer.mainArea, snap.mainAreaNextSibling);
@@ -354,7 +530,6 @@ class FXGraphCompare {
                 }
             }
 
-            // Restore minimap
             if (viewer.minimapRenderer && snap.minimapParent) {
                 if (snap.minimapNextSibling) {
                     snap.minimapParent.insertBefore(viewer.minimapRenderer.container, snap.minimapNextSibling);
@@ -363,18 +538,19 @@ class FXGraphCompare {
                 }
             }
 
-            // Restore wrapper visibility
             viewer.wrapper.style.display = snap.wrapperDisplay;
             this._domSnapshots.delete(viewer);
         });
 
-        // Remove compare root
         if (this._root && this._root.parentNode) {
             this._root.parentNode.removeChild(this._root);
         }
         this._root = null;
         this._grid = null;
-        this._infoBar = null;
+        this._infoRow = null;
+        this._minimapCells = [];
+        this._nameCells = [];
+        this._canvasCells = [];
     }
 
     _wireSelectionSync() {
@@ -387,6 +563,8 @@ class FXGraphCompare {
                         this._applyGuarded(other, () => other.clearSelection());
                     });
                     this._updateMergedInfo(null);
+                    // Clear candidate highlights on all viewers
+                    this.viewers.forEach((v) => v.removeHighlightGroup('_sync_candidates'));
                     return;
                 }
 
@@ -398,7 +576,8 @@ class FXGraphCompare {
                     if (targetId) {
                         nodeIdMap.set(other, targetId);
                         this._applyGuarded(other, () => {
-                            other.selectNode(targetId, { animate: true, center: true });
+                            other.selectNode(targetId, { center: false });
+                            if (this._followSelection) other.controller.zoomToFit();
                         });
                     } else {
                         this._applyGuarded(other, () => other.clearSelection());
@@ -406,6 +585,21 @@ class FXGraphCompare {
                 });
 
                 this._updateMergedInfo(nodeIdMap);
+
+                // Auto mode: highlight all debug_handle candidates across all viewers
+                if (this.sync.mode === 'auto') {
+                    // Clear own highlight group first (handles cross-viewer click sequence)
+                    viewer.removeHighlightGroup('_sync_candidates');
+                    this.viewers.forEach((other) => {
+                        if (other === viewer) return;
+                        const candidates = this._getAllDebugHandleCandidates(viewer, evt.nextSelection, other);
+                        if (candidates.length > 1) {
+                            other.addHighlightGroup('_sync_candidates', candidates, '#ffaa00');
+                        } else {
+                            other.removeHighlightGroup('_sync_candidates');
+                        }
+                    });
+                }
             });
             this._offs.push(off);
         });
@@ -414,6 +608,11 @@ class FXGraphCompare {
     _findSyncTarget(sourceViewer, nodeId, targetViewer) {
         const mode = this.sync.mode;
         if (mode === 'none') return null;
+        if (mode === 'auto') {
+            const byHandle = this._syncByDebugHandle(sourceViewer, nodeId, targetViewer);
+            if (byHandle) return byHandle;
+            return targetViewer.store.activeNodeMap.has(nodeId) ? nodeId : null;
+        }
         if (mode === 'id') {
             return targetViewer.store.activeNodeMap.has(nodeId) ? nodeId : null;
         }
@@ -425,53 +624,102 @@ class FXGraphCompare {
                 (n) => targetViewer.store.extensions[layer]?.nodes[n.id]?.info[field] === srcVal
             );
             if (candidates.length === 0) return null;
-            if (candidates.length === 1) return candidates[0].id;
-            const withTopo = candidates.filter((n) => targetViewer.store.extensions[layer]?.nodes[n.id]?.info?.topo_index !== undefined);
-            if (withTopo.length > 0) {
-                return withTopo.reduce((best, n) => {
-                    const bv = Number(targetViewer.store.extensions[layer]?.nodes[best.id]?.info?.topo_index);
-                    const nv = Number(targetViewer.store.extensions[layer]?.nodes[n.id]?.info?.topo_index);
-                    return nv > bv ? n : best;
-                }).id;
-            }
+            // activeNodes is in topological order; last candidate = highest topo index
             return candidates[candidates.length - 1].id;
         }
         return null;
     }
 
+    // Normalize debug_handle (int | int[] | null) → Set<int>
+    _normalizeHandle(dh) {
+        if (!dh && dh !== 0) return new Set();
+        if (typeof dh === 'number') return dh !== 0 ? new Set([dh]) : new Set();
+        if (Array.isArray(dh)) return new Set(dh.filter((x) => typeof x === 'number' && x !== 0));
+        return new Set();
+    }
+
+    _syncByDebugHandle(sourceViewer, nodeId, targetViewer) {
+        const srcNode = sourceViewer.store.activeNodeMap.get(nodeId);
+        const srcSet = this._normalizeHandle(srcNode?.info?.debug_handle);
+        if (srcSet.size === 0) return null;
+        const candidates = targetViewer.store.activeNodes.filter((n) => {
+            const tgtSet = this._normalizeHandle(
+                targetViewer.store.activeNodeMap.get(n.id)?.info?.debug_handle
+            );
+            for (const v of srcSet) { if (tgtSet.has(v)) return true; }
+            return false;
+        });
+        if (candidates.length === 0) return null;
+        return candidates[candidates.length - 1].id;
+    }
+
+    _getAllDebugHandleCandidates(sourceViewer, nodeId, targetViewer) {
+        const srcNode = sourceViewer.store.activeNodeMap.get(nodeId);
+        const srcSet = this._normalizeHandle(srcNode?.info?.debug_handle);
+        if (srcSet.size === 0) return [];
+        return targetViewer.store.activeNodes
+            .filter((n) => {
+                const tgtSet = this._normalizeHandle(
+                    targetViewer.store.activeNodeMap.get(n.id)?.info?.debug_handle
+                );
+                for (const v of srcSet) { if (tgtSet.has(v)) return true; }
+                return false;
+            })
+            .map((n) => n.id);
+    }
+
     _updateMergedInfo(nodeIdMap) {
-        if (!this._infoBar) return;
+        if (!this._infoRow) return;
+        while (this._infoRow.firstChild) this._infoRow.removeChild(this._infoRow.firstChild);
+
         if (!nodeIdMap) {
-            this._infoBar.innerHTML = '<div class="fx-compare-info-placeholder">No node selected — click a node to compare</div>';
+            const ph = document.createElement('div');
+            ph.className = 'fx-compare-info-placeholder';
+            ph.textContent = 'No node selected — click a node to compare';
+            this._infoRow.appendChild(ph);
             return;
         }
-        const N = this.viewers.length;
-        const viewerNames = this.viewers.map((v, i) => (v.config && v.config.title) || `Graph ${i + 1}`);
-        const allProps = new Set();
+
+        const makeCell = (cls, text) => {
+            const el = document.createElement('div');
+            el.className = cls;
+            el.textContent = text;
+            return el;
+        };
+
+        const allProps = [];
         const rowData = new Map();
         nodeIdMap.forEach((nid, v) => {
             const node = v.store.activeNodeMap.get(nid);
             if (!node) return;
             const props = { id: nid, op: node.op || '', ...(node.info || {}) };
-            Object.keys(props).forEach((k) => allProps.add(k));
+            Object.keys(props).forEach((k) => { if (!allProps.includes(k)) allProps.push(k); });
             rowData.set(v, props);
         });
-        let html = `<div class="fx-compare-info-grid" style="grid-template-columns: auto repeat(${N}, 1fr)">`;
+
         // Header row
-        html += `<div class="fx-compare-info-hdr">Property</div>`;
-        viewerNames.forEach((name) => { html += `<div class="fx-compare-info-hdr">${fxEsc(name)}</div>`; });
+        this._infoRow.appendChild(makeCell('fx-compare-info-hdr fx-compare-info-prop', 'Property'));
+        this._viewerNames.forEach((name) => {
+            if (!this._visibleViewers.has(name)) return;
+            this._infoRow.appendChild(makeCell('fx-compare-info-hdr', name));
+        });
+
         // Data rows
-        allProps.forEach((prop) => {
-            const vals = this.viewers.map((v) => {
+        allProps.forEach((prop, idx) => {
+            const rowCls = idx % 2 === 1 ? ' fx-compare-info-row-alt' : '';
+            const visViewerPairs = this.viewers
+                .map((v, i) => ({ v, name: this._viewerNames[i] }))
+                .filter(({ name }) => this._visibleViewers.has(name));
+            const vals = visViewerPairs.map(({ v }) => {
                 const d = rowData.get(v);
-                return d ? (d[prop] !== undefined ? String(d[prop]) : '—') : '—';
+                return d && d[prop] !== undefined ? String(d[prop]) : '—';
             });
             const allSame = vals.every((v) => v === vals[0]);
-            html += `<div class="fx-compare-info-prop">${fxEsc(prop)}</div>`;
-            vals.forEach((val) => { html += `<div class="fx-compare-info-val${allSame ? '' : ' fx-compare-info-diff'}">${fxEsc(val)}</div>`; });
+            this._infoRow.appendChild(makeCell('fx-compare-info-prop' + rowCls, prop));
+            vals.forEach((val) => {
+                this._infoRow.appendChild(makeCell('fx-compare-info-val' + rowCls + (allSame ? '' : ' fx-compare-info-diff'), val));
+            });
         });
-        html += `</div>`;
-        this._infoBar.innerHTML = html;
     }
 
     _wireStateSync() {
@@ -488,38 +736,71 @@ class FXGraphCompare {
                         }
                     });
                 });
+                // Sync theme selector in sidebar
+                if (this._themeSelect && typeof next.themeName === 'string') {
+                    this._themeSelect.value = next.themeName;
+                }
+                if (typeof next.themeName === 'string') {
+                    this._applyCompareTheme(next.themeName);
+                }
             });
             this._offs.push(off);
         });
     }
 
-    setColumns(columns) {
-        this.layout.columns = Math.max(1, Number(columns) || 1);
-        if (this._grid) {
-            this._grid.style.gridTemplateColumns = `repeat(${this.layout.columns}, 1fr)`;
-        }
-        requestAnimationFrame(() => {
-            this.viewers.forEach((v) => {
-                v.canvasRenderer.resize();
-                if (v.minimapRenderer) {
-                    v.minimapRenderer.resize();
-                    v.minimapRenderer.generateThumbnail();
-                }
-                v.renderAll();
-            });
-        });
-    }
-
     setSync(syncPatch = {}) {
         this.sync = { ...this.sync, ...syncPatch };
-        if (this._taskbar) this._taskbar._rebuildSyncSelect();
+        if (this.sync.mode !== 'auto') {
+            this.viewers.forEach((v) => v.removeHighlightGroup('_sync_candidates'));
+        }
+        this._rebuildSyncPanel();
     }
 
     /** @deprecated No-op — tiled layout is always used in compare mode */
     setTiled() {}
 
-    /** @deprecated No-op — use sharedTaskbar config instead */
+    /** @deprecated No-op — sidebar replaces sharedTaskbar */
     setCompact() {}
+
+    _applyCompareTheme(themeName) {
+        const isDark = themeName === 'dark';
+        const r = this._root.style;
+        if (isDark) {
+            r.setProperty('--cmp-bg', '#1e1e1e');
+            r.setProperty('--cmp-text', '#ffffff');
+            r.setProperty('--cmp-border', '#444444');
+            r.setProperty('--cmp-border-strong', '#555555');
+            r.setProperty('--cmp-sidebar-bg', 'rgba(255,255,255,0.05)');
+            r.setProperty('--cmp-info-bg', '#1e1e1e');
+            r.setProperty('--cmp-prop-bg', 'rgba(255,255,255,0.05)');
+            r.setProperty('--cmp-hdr-bg', 'rgba(255,255,255,0.08)');
+            r.setProperty('--cmp-diff-bg', 'rgba(255,200,0,0.15)');
+            r.setProperty('--cmp-name-bg', 'rgba(255,255,255,0.1)');
+            r.setProperty('--cmp-ui-bg', 'rgba(30,30,30,0.95)');
+            r.setProperty('--cmp-ui-hover', '#333333');
+        } else {
+            r.setProperty('--cmp-bg', '#ffffff');
+            r.setProperty('--cmp-text', '#000000');
+            r.setProperty('--cmp-border', '#e5e7eb');
+            r.setProperty('--cmp-border-strong', '#cccccc');
+            r.setProperty('--cmp-sidebar-bg', 'rgba(0,0,0,0.02)');
+            r.setProperty('--cmp-info-bg', '#ffffff');
+            r.setProperty('--cmp-prop-bg', 'rgba(0,0,0,0.02)');
+            r.setProperty('--cmp-hdr-bg', 'rgba(0,0,0,0.04)');
+            r.setProperty('--cmp-diff-bg', 'rgba(255,200,0,0.2)');
+            r.setProperty('--cmp-name-bg', 'rgba(0,0,0,0.06)');
+            r.setProperty('--cmp-ui-bg', 'rgba(255,255,255,0.95)');
+            r.setProperty('--cmp-ui-hover', '#f0f8ff');
+        }
+        const theme = (typeof THEMES !== 'undefined' && THEMES[themeName]) || THEMES?.light;
+        if (theme && this._sidebarEl) {
+            this._sidebarEl.querySelectorAll('.fx-button, .fx-select').forEach((el) => {
+                el.style.backgroundColor = theme.uiBg;
+                el.style.color = theme.text;
+                el.style.borderColor = theme.uiBorder;
+            });
+        }
+    }
 
     _applyGuarded(viewer, fn) {
         this._guards.add(viewer);
@@ -530,11 +811,11 @@ class FXGraphCompare {
         }
     }
 
+    setViewerVisible(name, visible) {
+        this._setViewerVisible(name, visible);
+    }
+
     destroy() {
-        if (this._taskbar) {
-            this._taskbar.destroy();
-            this._taskbar = null;
-        }
         this._teardownCompareDOM();
         this._offs.forEach((off) => {
             try { off(); } catch (_) {}

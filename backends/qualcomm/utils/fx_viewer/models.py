@@ -14,6 +14,7 @@ class GraphNode:
     y: float = 0.0
     width: float = 100.0
     height: float = 40.0
+    topo_index: int = 0
     info: dict[str, Any] = field(default_factory=dict)
     tooltip: list[str] = field(default_factory=list)
     fill_color: str | None = None
@@ -30,6 +31,8 @@ class GraphEdge:
 
 @dataclass
 class BaseGraphPayload:
+    """Nodes are in topological order (guaranteed by torch.fx.Graph.nodes iteration)."""
+
     legend: list[dict[str, str]]
     nodes: list[GraphNode]
     edges: list[GraphEdge]
@@ -53,6 +56,7 @@ class GraphExtensionPayload:
     name: str
     legend: list[dict[str, str]] = field(default_factory=list)
     nodes: dict[str, GraphExtensionNodePayload] = field(default_factory=dict)
+    sync_keys: list[str] = field(default_factory=list)
 
 
 @dataclass

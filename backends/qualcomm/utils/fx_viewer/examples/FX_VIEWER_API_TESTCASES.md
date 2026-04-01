@@ -71,12 +71,14 @@ Qualcomm harness requires QAIRT/QNN environment.
 3. Confirm log no longer updates.
 
 8. `js_08_compare_basics`
-- Purpose: first compare orchestration flow.
-- Target APIs: `FXGraphCompare.create`, `setSync`, `setCompact`, `setColumns`.
+- Purpose: 3-graph compare with automatic `debug_handle` sync.
+- Target APIs: `FXGraphCompare.create` (Map API), `setSync`, default `mode: 'auto'`.
 - What to try:
-1. Toggle selection/theme sync.
-2. Change compact mode.
-3. Change compare columns.
+1. Click a node in any graph — observe that the other two graphs sync to the matching node via `debug_handle` set intersection.
+2. Open the sidebar sync selector — confirm it shows `Auto (handle→id)` as the default.
+3. Switch to `ID only` and click a node — confirm sync still works (same graph, same node ids).
+4. Switch to `Don't sync` — confirm no propagation.
+5. If `per_layer_accuracy.debug_handle` appears in the selector, try it to see extension-field sync.
 
 ### Level 2: Interesting Combinations
 
@@ -101,14 +103,26 @@ Qualcomm harness requires QAIRT/QNN environment.
 1. Enter/exit fullscreen from side buttons.
 2. Use taskbar fullscreen toggle too.
 
-12. `adv_04_tiled_compare`
-- Purpose: two-graph tiled compare with shared taskbar, layer sync, and merged info panel.
-- Target APIs: `FXGraphCompare.create`, `layout.tiled`, `sharedTaskbar`, `sync.mode`, `setTiled`, `setSync`.
+11b. `demo_3graph_compare` (standalone HTML, not in harness)
+- Purpose: see all three `debug_handle` mapping patterns in one view.
+- Run: `python backends/qualcomm/utils/fx_viewer/examples/demo_3graph_compare.py`
 - What to try:
-1. Click a node in either graph — observe sync and merged info panel.
-2. Use shared taskbar to switch theme across both viewers.
-3. Use sync mode dropdown to switch between "Sync by ID" and "Don't sync".
-4. Toggle tiled layout on/off via the Tiled button.
+1. Click `linear` in Graph 1 — Graph 2 selects `add_tensor` (last of decomposed ops), Graph 3 selects `relu` (fused handle `{6,7}`).
+2. Click `relu` in Graph 3 — Graph 1 selects `relu` (last among `{linear,relu}` intersecting `{6,7}`), Graph 2 selects `relu_default`.
+3. Click "Highlight Demo" button — all three graphs show orange borders on linear-family nodes.
+4. Click "Clear Highlights" — borders disappear.
+5. In browser console: `fxRef.addHighlightGroup('test', ['linear'], '#00aaff')` — blue border on `linear`.
+
+12. `adv_04_tiled_compare`
+- Purpose: 3-graph compare starting with explicit extension-field sync (`per_layer_accuracy.debug_handle`).
+- Target APIs: `FXGraphCompare.create` (Map API), `sync.mode: 'layer'`, `sync.layer`, `sync.field`, `setSync`.
+- What to try:
+1. Click a node in any graph — observe sync via `per_layer_accuracy.debug_handle` field value matching.
+2. Open the sidebar sync selector — confirm `Ext: per_layer_accuracy.debug_handle` is selected.
+3. Switch to `Auto (handle→id)` — confirm sync still works via `debug_handle` set intersection.
+4. Switch to `ID only` — confirm sync works by node name.
+5. Switch to `Don't sync` — confirm no propagation.
+6. Inspect the merged info panel — compare `debug_handle` values across all three graphs.
 
 ### Level 3: Current Mixed Demo
 
@@ -140,3 +154,6 @@ Qualcomm harness requires QAIRT/QNN environment.
 2. Forgetting to call `init()` after `create()`.
 3. Patching a layer that has not been added via `upsertLayer`.
 4. Assuming compare sync covers all dimensions when only selection is enabled.
+5. Expecting `mode: 'id'` to work across decomposed/fused graphs — use `mode: 'auto'` instead.
+6. Forgetting to call `ext.set_sync_key(field)` when you want an extension field to appear in the compare sidebar.
+7. Calling `addHighlightGroup` with node IDs that don't exist in the graph — they are silently skipped.
