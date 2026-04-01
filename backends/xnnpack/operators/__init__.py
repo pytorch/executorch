@@ -43,6 +43,7 @@ from . import (  # noqa
     op_prelu,
     op_quant_dequant,
     op_relu,
+    op_rope,
     op_rsqrt,
     op_sigmoid,
     op_sin,

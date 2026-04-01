@@ -216,7 +216,7 @@ class CatConfig(GenericNodePartitionerConfig):
         if not self.check_common_constraints(node, ep):
             return False
 
-        num_tensors = len(node.all_input_nodes)
+        num_tensors = len(node.args[0])
 
         if not (num_tensors >= 2):
             why(
@@ -581,8 +581,15 @@ class SliceCopyConfig(GenericNodePartitionerConfig):
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
-        Support slicing with stride = 1, no zero-dim tensors, Slice isn't supported
-        if the input or output is dynamic
+        Support slicing with stride = 1 and static begin/end offsets.
+
+        XNNPACK's static_slice computes output shapes at runtime from the
+        actual input dimensions, so dynamic (symbolic) dims in non-sliced
+        dimensions are fine. We only reject when:
+        - stride != 1
+        - the sliced dimension itself is symbolic in the input
+        - a begin or end arg is symbolic
+        - any output dim is zero
         """
         if not self.check_common_constraints(node, ep):
             return False
@@ -594,25 +601,51 @@ class SliceCopyConfig(GenericNodePartitionerConfig):
         if stride != 1:
             return False
 
+        # Slice dim and begin/end must be static
+        dim_of_slice = cast(int, node.args[1]) if len(node.args) > 1 else 0
+
+        begin = node.args[2] if len(node.args) > 2 else None
+        if begin is not None and not isinstance(begin, int):
+            why(node, reason=f"slice begin is not static: {begin}")
+            return False
+
+        end = node.args[3] if len(node.args) > 3 else None
+        if end is not None and not isinstance(end, int):
+            why(node, reason=f"slice end is not static: {end}")
+            return False
+
         input_node = get_input_node(node, 0)
-        output_node = node
-
         input_shape = list(input_node.meta["val"].shape)
-        output_shape = list(output_node.meta["val"].shape)
+        output_shape = list(node.meta["val"].shape)
 
-        for dim in input_shape:
-            if not isinstance(dim, int) or dim == 0:
+        # The sliced dimension must be static in the input
+        ndim = len(input_shape)
+        normalized_dim = dim_of_slice if dim_of_slice >= 0 else dim_of_slice + ndim
+        if 0 <= normalized_dim < ndim:
+            sliced_dim = input_shape[normalized_dim]
+            if not isinstance(sliced_dim, int) or sliced_dim == 0:
                 why(
                     node,
-                    reason=f"input tensor has invalid shape, dim: {dim} of type {type(dim)}. Expecting non-zero, int values.",
+                    reason=f"sliced dimension {normalized_dim} has invalid size: {sliced_dim}",
                 )
                 return False
 
-        for dim in output_shape:
-            if not isinstance(dim, int) or dim == 0:
+        # The output of the sliced dimension must also be static
+        if 0 <= normalized_dim < len(output_shape):
+            out_sliced = output_shape[normalized_dim]
+            if not isinstance(out_sliced, int) or out_sliced == 0:
                 why(
                     node,
-                    reason=f"output tensor has invalid shape, dim: {dim} of type {type(dim)}. Expecting non-zero, int values.",
+                    reason=f"output sliced dimension {normalized_dim} is not static: {out_sliced}",
+                )
+                return False
+
+        # No zero-dim outputs
+        for i, dim in enumerate(output_shape):
+            if isinstance(dim, int) and dim == 0:
+                why(
+                    node,
+                    reason=f"output dim {i} is zero",
                 )
                 return False
 
@@ -715,6 +748,13 @@ class CloneDimOrderConfig(GenericNodePartitionerConfig):
             return False
 
         return True
+
+
+class UnsqueezeCopyConfig(GenericNodePartitionerConfig):
+    target_name = "unsqueeze_copy.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
 
 
 class CosConfig(GenericNodePartitionerConfig):

@@ -1699,6 +1699,60 @@ Error defineGenericBinaryNode(
         node->debug_handle());                                    \
   }
 
+Error defineRopeNode(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const NodePtr node,
+    const fb_xnnpack::XNNGraph* graph) noexcept {
+  MAYBE_UNUSED(graph);
+
+  auto graph_node = node->xnode_union_as_XNNRope();
+
+  xnn_status status = xnn_define_rope(
+      subgraph_ptr,
+      graph_node->max_tokens(),
+      remapped_ids.at(graph_node->input_id()),
+      remapped_ids.at(graph_node->weights_id()),
+      remapped_ids.at(graph_node->output_id()),
+      graph_node->flags());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create RoPE node %i with code: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
+Error defineStaticExpandDimsNode(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const NodePtr node,
+    const fb_xnnpack::XNNGraph* graph) noexcept {
+  MAYBE_UNUSED(graph);
+
+  auto graph_node = node->xnode_union_as_XNNStaticExpandDims();
+
+  std::vector<size_t> new_axes = flatbufferDimsToVector(graph_node->new_axes());
+  xnn_status status = xnn_define_static_expand_dims(
+      subgraph_ptr,
+      graph_node->num_new_axes(),
+      new_axes.data(),
+      remapped_ids.at(graph_node->input_id()),
+      remapped_ids.at(graph_node->output_id()),
+      graph_node->flags());
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create static expand dims node %i with code: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
 /*
 Returns the pointer to the defineNode function that handles the given
 XNode type
@@ -1794,6 +1848,8 @@ DefineNodeFunc getDefineNodeFunc(fb_xnnpack::XNodeUnion nodeType) {
     _DEFINE(StaticSlice)
     _DEFINE(BatchMatrixMultiply)
     _DEFINE(Copy)
+    _DEFINE(Rope)
+    _DEFINE(StaticExpandDims)
     case fb_xnnpack::XNodeUnion::NONE:
     default: // Adding here as a catch all, just in case
       return &defineNotImplementedNode;
