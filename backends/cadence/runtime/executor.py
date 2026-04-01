@@ -105,17 +105,22 @@ class Executor:
         self,
         working_dir: str = "",
         file_name: str = "CadenceDemoModel",
+        force_rebuild: bool = False,
     ):
         self.working_dir = working_dir
         self.executor_builder = "./backends/cadence/build_cadence_runner.sh"
         self.execute_runner = "./cmake-out/backends/cadence/cadence_runner"
         self.bundled_program_path: str = f"{file_name}.bpte"
+        self.force_rebuild = force_rebuild
 
     def __call__(self) -> None:
-        # build executor
-        args = self.get_bash_command(self.executor_builder)
-        logging.info(f"\33[33m{' '.join(args)}\33[0m")
-        execute(args)
+        # build executor if not already built or force rebuild requested
+        if self.force_rebuild or not os.path.isfile(self.execute_runner):
+            args = self.get_bash_command(self.executor_builder)
+            logging.info(f"\33[33m{' '.join(args)}\33[0m")
+            execute(args)
+        else:
+            logging.info("Reusing existing runner at %s", self.execute_runner)
 
         # run executor
         cmd_args = {
