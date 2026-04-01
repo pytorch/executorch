@@ -31,7 +31,7 @@ Currently, users cannot add additional chipset models because the chipset ID is 
 - QNN LPAI
   - Currently, only LPAI Arch v6 is supported, which requires QNN SDK version 2.39 or higher.
   - Please check `_soc_info_table` in [qc_schema.py](serialization/qc_schema.py) to find the supported chipsets.
-  - The skel library needs to be signed for LPAI to work. Please confirm if you are able to sign it. You can use [signed_library.sh](scripts/signed_library.sh) to sign the skel library.
+  - The skel library needs to be signed for LPAI to work. Please confirm if you are able to sign it. You can use [sign_library.sh](scripts/sign_library.sh) to sign the skel library.
   
 
 ## Directory Structure
