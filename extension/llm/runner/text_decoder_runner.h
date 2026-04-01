@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #include <executorch/extension/llm/runner/io_manager/io_manager.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/llm/sampler/util.h>
@@ -70,7 +72,7 @@ class ET_EXPERIMENTAL TextDecoderRunner {
   }
 
   inline void stop() {
-    should_stop_ = true;
+    should_stop_.store(true, std::memory_order_relaxed);
   }
 
   /**
@@ -98,7 +100,7 @@ class ET_EXPERIMENTAL TextDecoderRunner {
   Module* module_;
   IOManager* io_manager_;
   std::string method_name_;
-  bool should_stop_{false};
+  std::atomic<bool> should_stop_{false};
 };
 
 } // namespace llm
