@@ -23,7 +23,7 @@ To install ExecuTorch, follow this [guide](https://pytorch.org/executorch/stable
 The demo requires the `ultralytics` package, which depends on `torch` and `torchvision`. Since these packages are already installed as dev dependencies, use `--upgrade-strategy only-if-needed` to avoid version conflicts:
 
 ```bash
-python -m pip install --upgrade-strategy only-if-needed -r requirements.txt
+python -m pip install --upgrade-strategy only-if-needed --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
 ```
 
 ### Step 4: Export the YOLO26 model to the ExecuTorch

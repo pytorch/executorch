@@ -7,9 +7,6 @@
 
 set -ex
 
-# NOTE: Run .ci/scripts/setup-openvino.sh before this script to download and
-# install OpenVINO when using the openvino backend.
-
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
@@ -79,10 +76,13 @@ if [[ "${MODE}" =~ .*openvino.* ]]; then
   OPENVINO=ON
   TARGET_LIBS="$TARGET_LIBS openvino_backend "
 
-  # Use existing openvino installation from the root directory
-  # setup-openvino.sh extracts OpenVINO into openvino/
-  source openvino/setupvars.sh
-  pip install -r backends/openvino/requirements.txt
+  # Install specific OpenVINO runtime from pip.
+  $PYTHON_EXECUTABLE -m pip install --pre openvino==2026.1.0.dev20260131 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+  $PYTHON_EXECUTABLE -m pip install -r backends/openvino/requirements.txt
+
+  # Set OPENVINO_LIB_PATH so the C++ demo runner can also find libopenvino_c.so.
+  OPENVINO_LIB_PATH=$($PYTHON_EXECUTABLE -c "import openvino, os, glob; print(sorted(glob.glob(os.path.join(os.path.dirname(openvino.__file__), 'libs', 'libopenvino_c.so*')))[-1])")
+  export OPENVINO_LIB_PATH
 else
   OPENVINO=OFF
 fi
@@ -96,9 +96,10 @@ fi
 
 which "${PYTHON_EXECUTABLE}"
 
+TORCH_URL=https://download.pytorch.org/whl/cpu
 
 DIR="examples/models/yolo26"
-$PYTHON_EXECUTABLE -m pip install --upgrade-strategy only-if-needed -r ${DIR}/requirements.txt
+$PYTHON_EXECUTABLE -m pip install --upgrade-strategy only-if-needed --extra-index-url "$TORCH_URL" -r ${DIR}/requirements.txt
 
 cmake_install_executorch_libraries() {
     rm -rf cmake-out
@@ -135,7 +136,7 @@ cmake_install_executorch_libraries() {
 
     echo $TARGET_LIBS
     export CMAKE_BUILD_ARGS="--target $TARGET_LIBS"
-    pip install . --no-build-isolation
+    $PYTHON_EXECUTABLE -m pip install . --no-build-isolation
 }
 
 cmake_build_demo() {

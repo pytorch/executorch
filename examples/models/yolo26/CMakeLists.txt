@@ -44,7 +44,8 @@ if(USE_XNNPACK_BACKEND)
 endif()
 
 if(USE_OPENVINO_BACKEND)
-  find_package(OpenVINO REQUIRED)
+  # The OpenVINO backend resolves symbols via dlopen at runtime, so there is no
+  # build-time dependency on the OpenVINO SDK (no find_package needed).
   list(APPEND link_libraries openvino_backend)
   executorch_target_link_options_shared_lib(openvino_backend)
 endif()
