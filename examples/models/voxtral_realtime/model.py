@@ -546,22 +546,19 @@ class LMAttention(nn.Module):
         self.wo = nn.Linear(self.n_heads * self.head_dim, config.dim, bias=False)
 
         if config.streaming:
-            # Ring buffer KV cache for unlimited streaming (same pattern as
-            # the encoder ring cache). All layouts are [B, S, H, D].
+            # Ring buffer KV cache for unlimited streaming.
             if self.backend == "metal":
+                # StandardRingKVCache uses [B, H, S, D] — same layout as
+                # StaticKVCache, so no transpose needed in the SDPA.
                 self.kv_cache = StandardRingKVCache(
                     config.sliding_window, self.n_kv_heads, self.head_dim
                 )
-                self.sdpa = MetalSDPA(
-                    self.n_heads, self.n_kv_heads, self.head_dim, transpose_kv=True
-                )
+                self.sdpa = MetalSDPA(self.n_heads, self.n_kv_heads, self.head_dim)
             elif self.backend == "cuda":
                 self.kv_cache = StandardRingKVCache(
                     config.sliding_window, self.n_kv_heads, self.head_dim
                 )
-                self.sdpa = StandardSDPA(
-                    self.n_heads, self.n_kv_heads, self.head_dim, transpose_kv=True
-                )
+                self.sdpa = StandardSDPA(self.n_heads, self.n_kv_heads, self.head_dim)
             else:
                 self.kv_cache = RingKVCache(
                     config.sliding_window, self.n_kv_heads, self.head_dim
@@ -878,15 +875,16 @@ class RingKVCache(nn.Module):
 class StandardRingKVCache(nn.Module):
     """Export-friendly ring buffer KV cache using index_copy_ for updates.
 
-    Compatible with torch.export and AOTI. Uses [B, S, H, D] layout.
-    Ring buffer enables unlimited streaming.
+    Compatible with torch.export and AOTI. Uses [B, H, S, D] layout
+    (same as StaticKVCache) for fast index_copy_ on dim=2, which scatters
+    into contiguous memory on MPS. Ring buffer enables unlimited streaming.
     """
 
     def __init__(self, window_size: int, n_heads: int, head_dim: int):
         super().__init__()
         self.window_size = window_size
         self.buf_size = window_size * 2
-        cache_shape = (1, self.buf_size, n_heads, head_dim)
+        cache_shape = (1, n_heads, self.buf_size, head_dim)
         self.register_buffer("k_cache", torch.zeros(cache_shape))
         self.register_buffer("v_cache", torch.zeros(cache_shape))
 
@@ -899,15 +897,14 @@ class StandardRingKVCache(nn.Module):
             input_pos: (seq_len,) position indices.
             k_val, v_val: (B, seq_len, n_heads, head_dim) in [B, S, H, D] layout.
         Returns:
-            k_cache, v_cache: (B, buf_size, n_heads, head_dim) in [B, S, H, D] layout.
+            k_cache, v_cache: (B, n_heads, buf_size, head_dim) in [B, H, S, D] layout.
         """
-        # Compute wrapped indices for ring buffer
         wrapped_indices = input_pos % self.buf_size
-
-        # Use index_copy_ on dimension 1 (sequence dimension in [B, S, H, D])
-        self.k_cache.index_copy_(1, wrapped_indices, k_val)
-        self.v_cache.index_copy_(1, wrapped_indices, v_val)
-
+        # Transpose to [B, H, S, D] for index_copy_ on dim=2 (contiguous on MPS)
+        k_val = k_val.transpose(1, 2)
+        v_val = v_val.transpose(1, 2)
+        self.k_cache.index_copy_(2, wrapped_indices, k_val)
+        self.v_cache.index_copy_(2, wrapped_indices, v_val)
         return self.k_cache, self.v_cache
 
     def create_causal_mask(
@@ -994,19 +991,18 @@ class StreamingAudioEncoderExport(nn.Module):
         )
 
         # Choose SDPA based on backend
+        # StandardRingKVCache returns [B, H, S, D] — no transpose needed.
         if config.backend == "metal":
             self.sdpa = MetalSDPA(
                 config.enc_n_heads,
                 config.enc_n_heads,
                 config.enc_head_dim,
-                transpose_kv=True,
             )
         elif config.backend == "cuda":
             self.sdpa = StandardSDPA(
                 config.enc_n_heads,
                 config.enc_n_heads,
                 config.enc_head_dim,
-                transpose_kv=True,
             )
         else:
             self.sdpa = SDPA(config.enc_n_heads, config.enc_head_dim)

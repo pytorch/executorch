@@ -126,7 +126,7 @@ StreamingAudioEncoderExport
   enc_norm: RMSNorm (shared from encoder.norm)
   adapter: AudioLanguageAdapter (shared from model.adapter)
   kv_caches: 32x RingKVCache (XNNPACK) or StandardRingKVCache (Metal/CUDA)
-  sdpa: SDPA (XNNPACK) or MetalSDPA (Metal, transpose_kv=True) or StandardSDPA (CUDA, transpose_kv=True)
+  sdpa: SDPA (XNNPACK) or MetalSDPA (Metal) or StandardSDPA (CUDA)
   inv_freq: RoPE inverse frequencies (owned, on-the-fly computation)
 ```
 
@@ -164,8 +164,8 @@ Sliding window masks are computed each step via `create_causal_mask`.
 
 - XNNPACK/Portable: `RingKVCache` with `[B, S, H, D]` layout, using
   `torch.ops.llama.update_cache_with_indices` for scatter writes.
-- Metal/CUDA: `StandardRingKVCache` with `[B, S, H, D]` layout, using
-  `index_copy_` with wrapped indices.
+- Metal/CUDA: `StandardRingKVCache` with `[B, H, S, D]` layout, using
+  `index_copy_` on dim=2 with wrapped indices.
 
 **Offline (default):** Flat KV cache bounded by `max_seq_len` (default
 4096). Full causal attention — each query attends to all prior positions.
@@ -190,14 +190,14 @@ which handles GQA natively (the kernel infers the group ratio from differing
 Q vs K/V head counts), avoiding the memory bandwidth overhead of
 `repeat_interleave`. Uses explicit additive attention masks
 that must match the Q/K/V dtype (the kernel reads masks as `device T*`).
-In streaming mode, the decoder and encoder both use `transpose_kv=True`
-(ring KV cache in `[B, S, H, D]` layout). In offline mode, the decoder
-uses `transpose_kv=False` (`StaticKVCache` in `[B, H, S, D]` layout).
+Both streaming and offline use `[B, H, S, D]` KV layout
+(`StandardRingKVCache` and `StaticKVCache` share this layout), so
+`transpose_kv=False` in all cases.
 
 **CUDA:** `StandardSDPA` uses `F.scaled_dot_product_attention` with
 `enable_gqa=True`. Uses boolean attention masks (`True`=attend,
 `False`=masked) as required by the Triton SDPA kernel. Same
-`transpose_kv` behavior as Metal (streaming: True, offline: False).
+`[B, H, S, D]` KV layout as Metal.
 
 ### Attention layout
 
@@ -208,13 +208,10 @@ on `[B, T, H, D]`.
 (streaming) use `[B, S, H, D]`. `SDPA` (custom_sdpa) receives Q and
 KV cache in this layout — no `transpose(1, 2)` in the attention hot path.
 
-**Metal/CUDA (streaming):** `StandardRingKVCache` uses `[B, S, H, D]`.
-`MetalSDPA`/`StandardSDPA` transpose Q and KV to `[B, H, S, D]` for
-the SDPA kernel (`transpose_kv=True`), then transpose back.
-
-**Metal/CUDA (offline):** `StaticKVCache` stores in `[B, H, S, D]`
-directly. `MetalSDPA`/`StandardSDPA` use `transpose_kv=False` — KV is
-already in the expected layout.
+**Metal/CUDA:** Both `StandardRingKVCache` (streaming) and `StaticKVCache`
+(offline) use `[B, H, S, D]` layout. `MetalSDPA`/`StandardSDPA` only
+transpose Q from `[B, T, H, D]` to `[B, H, T, D]` — KV is already in
+the expected layout.
 
 ### RoPE
 
@@ -262,11 +259,11 @@ mel_chunk (1, 128, 8) + enc_input_pos (4,)
 custom op) and `SDPA` (`custom_sdpa`).
 
 **Metal:** Uses `StandardRingKVCache` (`index_copy_`-based ring
-buffer) and `MetalSDPA` (native MPS SDPA kernel with `transpose_kv=True`).
+buffer) and `MetalSDPA` (native MPS SDPA kernel).
 Masks are created in the model dtype to match the kernel's `device T*` expectation.
 
 **CUDA:** Uses `StandardRingKVCache` and `StandardSDPA`
-(`F.scaled_dot_product_attention` with `transpose_kv=True` and explicit
+(`F.scaled_dot_product_attention` with explicit
 sliding window masks).
 
 ### Streaming decode loop
