@@ -1247,6 +1247,7 @@ jobs:
         fi
 
         # Test models
+        #python -m executorch.backends.samsung.test.utils.run_tests --chipset E9955
         python -m unittest discover -s backends/samsung/test/models -p "test_*.py"
 
   test-vulkan-models-linux:

@@ -14,6 +14,7 @@ from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
 )
 from executorch.backends.samsung.test.tester import SamsungTester
+from executorch.backends.samsung.test.utils.utils import TestConfig
 
 
 class MeanDim(torch.nn.Module):
@@ -30,7 +31,7 @@ class TestMeanDim(unittest.TestCase):
         tester = SamsungTester(
             module,
             inputs,
-            [gen_samsung_backend_compile_spec("E9955")],
+            [gen_samsung_backend_compile_spec(TestConfig.chipset)],
         )
         (
             tester.export()
@@ -42,6 +43,23 @@ class TestMeanDim(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=inputs)
         )
 
+    def _test_a8w8(self, module: torch.nn.Module, inputs):
+        tester = SamsungTester(
+            module,
+            inputs,
+            [gen_samsung_backend_compile_spec(TestConfig.chipset)],
+        )
+        (
+            tester.quantize()
+            .export()
+            .check_count({"torch.ops.aten.mean.dim": 1})
+            .to_edge_transform_and_lower()
+            .check_not(["executorch_exir_dialects_edge__ops_aten_mean_dim"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .run_method_and_compare_outputs(inputs=inputs, atol=0.2)
+        )
+
     def test_fp32_mean_with_keep_dims(self):
         inputs = (torch.randn(1, 3, 8, 8),)
         self._test(MeanDim(), inputs)
@@ -49,3 +67,11 @@ class TestMeanDim(unittest.TestCase):
     def test_fp32_mean_without_keep_dims(self):
         inputs = (torch.randn(1, 3, 8, 8),)
         self._test(MeanDim(keep_dims=False), inputs)
+
+    def test_a8w8_mean_with_keep_dims(self):
+        inputs = (torch.randn(1, 3, 8, 8),)
+        self._test_a8w8(MeanDim(), inputs)
+
+    def test_a8w8_mean_without_keep_dims(self):
+        inputs = (torch.randn(1, 3, 8, 8),)
+        self._test_a8w8(MeanDim(keep_dims=False), inputs)

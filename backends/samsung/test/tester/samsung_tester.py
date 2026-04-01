@@ -18,11 +18,20 @@ from executorch.backends.samsung.utils.export_utils import (
 )
 from executorch.backends.test.harness import Tester as TesterBase
 from executorch.backends.test.harness.stages import StageType
+from executorch.backends.transforms.decompose_sdpa import (
+    DecomposeScaledDotProductAttention,
+)
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from executorch.exir.backend.backend_details import CompileSpec
 
 from executorch.exir.pass_manager import PassType
-from torch.export import ExportedProgram
+from torch.export import export, ExportedProgram
+
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
 
 from torchao.quantization.pt2e.quantizer import Quantizer
 
@@ -47,6 +56,35 @@ class Quantize(BaseStages.Quantize):
             calibration_samples=calibration_samples,
             is_qat=is_qat,
         )
+
+    def run(
+        self, artifact: torch.nn.Module, inputs: Optional[Tuple[torch.Tensor]]
+    ) -> None:
+        assert inputs is not None
+        if self.is_qat:
+            artifact.train()
+        captured_graph = export(artifact, inputs, strict=True).module()
+
+        assert isinstance(captured_graph, torch.fx.GraphModule)
+
+        DecomposeScaledDotProductAttention()(captured_graph)
+
+        if self.is_qat:
+            prepared = prepare_qat_pt2e(captured_graph, self.quantizer)
+        else:
+            prepared = prepare_pt2e(captured_graph, self.quantizer)
+
+        if self.calibrate:
+            # Calibrate prepared model to provide data to quantization observers.
+            if self.calibration_samples is not None:
+                for inp in self.calibration_samples:
+                    prepared(*inp)
+            else:
+                prepared(*inputs)
+
+        converted = convert_pt2e(prepared, fold_quantize=False)
+
+        self.converted_graph = converted
 
 
 class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
