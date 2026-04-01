@@ -117,4 +117,5 @@ def export_and_run_model(
         working_dir=working_dir,
         eps_error=eps_error,
         eps_warn=eps_warn,
+        file_name=file_name,
     )
