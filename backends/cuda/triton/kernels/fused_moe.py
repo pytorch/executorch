@@ -8,8 +8,8 @@
 # https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/layers/fused_moe/fused_moe.py
 # Copyright contributors to the vLLM project. Licensed under Apache-2.0.
 #
-# Shared with vLLM: weight layout [E, N, K//2] packed INT4, scale layout
-# [E, N, K//group_size], INT4 unpack via (b >> (k%2)*4) & 0xF, symmetric
+# Shared with vLLM: weight layout [E, K//2, N] packed INT4, scale layout
+# [E, K//group_size, N], INT4 unpack via (b >> (k%2)*4) & 0xF, symmetric
 # dequant (uint4 - 8) * scale, K-loop pointer advancement (BLOCK_SIZE_K // 2).
 #
 # Differences from vLLM: no token sorting (moe_align_block_size) — each
@@ -27,8 +27,9 @@ quantization (W4A16). Each Triton program handles one (token-expert pair,
 N-block) — only active experts' weights are loaded from HBM.
 
 Weight layout:
-  B:       [E, N, K//2] int8 — two INT4 values packed per byte along K
-  B_scale: [E, N, K//group_size] bf16 — per-group scales
+  B:       [E, K//2, N] int8 — two INT4 values packed per byte along K,
+           N-contiguous for coalesced HBM reads during decode (M=1)
+  B_scale: [E, K//group_size, N] bf16 — per-group scales
   Dequant: weight = (uint4 - 8) * scale  (symmetric, no zero-point tensor)
 """
 
@@ -68,9 +69,9 @@ _GEMM2_CONFIGS = [
 def _fused_moe_kernel(
     # Pointers
     A,  # [M, K] bf16 activations
-    B,  # [E, N, K//2] int8 packed INT4 weights
+    B,  # [E, K//2, N] int8 packed INT4 weights
     C,  # [M * top_k, N] bf16 output
-    B_scale,  # [E, N, K//group_size] bf16 scales
+    B_scale,  # [E, K//group_size, N] bf16 scales
     topk_ids,  # [M * top_k] int64 expert indices
     topk_weights,  # [M * top_k] float32 router weights
     # Dimensions
@@ -178,9 +179,9 @@ def _fused_moe_kernel(
 def _fused_moe_silu_kernel(
     # Pointers
     A,  # [M * top_k, 2*inter] bf16 GEMM1 output (gate | up)
-    B,  # [E, N, K//2] int8 packed INT4 weights
+    B,  # [E, K//2, N] int8 packed INT4 weights
     C,  # [M * top_k, N] bf16 output
-    B_scale,  # [E, N, K//group_size] bf16 scales
+    B_scale,  # [E, K//group_size, N] bf16 scales
     topk_ids,  # [M * top_k] int64 expert indices
     topk_weights,  # [M * top_k] float32 router weights
     # Dimensions
@@ -302,10 +303,10 @@ def fused_moe(
 
     Args:
         hidden_states: [M, K] bf16 input activations
-        w1: [E, 2*inter, K//2] int8 packed INT4 gate+up weights
-        w1_scale: [E, 2*inter, K//group_size] bf16 scales
-        w2: [E, K, inter//2] int8 packed INT4 down weights
-        w2_scale: [E, K, inter//group_size] bf16 scales
+        w1: [E, K//2, 2*inter] int8 packed INT4 gate+up weights
+        w1_scale: [E, K//group_size, 2*inter] bf16 scales
+        w2: [E, inter//2, K] int8 packed INT4 down weights
+        w2_scale: [E, inter//group_size, K] bf16 scales
         topk_weights: [M, top_k] float32 router weights (softmax)
         topk_ids: [M, top_k] int64 expert indices
         top_k: number of experts per token
@@ -316,9 +317,9 @@ def fused_moe(
         [M, K] bf16 output
     """
     M, K = hidden_states.shape
-    N1 = w1.shape[1]  # 2 * intermediate_size
+    N1 = w1.shape[2]  # 2 * intermediate_size (weights are [E, K//2, N])
     intermediate = N1 // 2
-    N2 = w2.shape[1]  # hidden_size
+    N2 = w2.shape[2]  # hidden_size (weights are [E, K//2, N])
     num_pairs = M * top_k
 
     # Flatten topk tensors
@@ -347,13 +348,13 @@ def fused_moe(
         stride_am=hidden_states.stride(0),
         stride_ak=hidden_states.stride(1),
         stride_be=w1.stride(0),
-        stride_bk=w1.stride(2),
-        stride_bn=w1.stride(1),
+        stride_bk=w1.stride(1),
+        stride_bn=w1.stride(2),
         stride_cm=cache1.stride(0),
         stride_cn=cache1.stride(1),
         stride_bse=w1_scale.stride(0),
-        stride_bsk=w1_scale.stride(2),
-        stride_bsn=w1_scale.stride(1),
+        stride_bsk=w1_scale.stride(1),
+        stride_bsn=w1_scale.stride(2),
         group_size=group_size,
         MUL_ROUTED_WEIGHT=False,
         top_k=top_k,
@@ -381,13 +382,13 @@ def fused_moe(
         stride_am=cache1.stride(0),
         stride_ak=cache1.stride(1),
         stride_be=w2.stride(0),
-        stride_bk=w2.stride(2),
-        stride_bn=w2.stride(1),
+        stride_bk=w2.stride(1),
+        stride_bn=w2.stride(2),
         stride_cm=cache3.stride(0),
         stride_cn=cache3.stride(1),
         stride_bse=w2_scale.stride(0),
-        stride_bsk=w2_scale.stride(2),
-        stride_bsn=w2_scale.stride(1),
+        stride_bsk=w2_scale.stride(1),
+        stride_bsn=w2_scale.stride(2),
         group_size=group_size,
         compute_type=tl.bfloat16,
     )

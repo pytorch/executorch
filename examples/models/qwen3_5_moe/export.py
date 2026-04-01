@@ -88,6 +88,15 @@ def load_prequantized_model(prequantized_dir, max_seq_len=4096):
             del experts.w1_weight
             del experts.w2_weight
             prefix = f"layers.{i}.mlp.experts"
+
+            # Prequantized checkpoint stores [E, N, K//2] layout.
+            # Transpose to [E, K//2, N] for coalesced N-dimension reads.
+            for buf_name in ("w1", "w2"):
+                w = state_dict[f"{prefix}.{buf_name}"]
+                state_dict[f"{prefix}.{buf_name}"] = w.transpose(1, 2).contiguous()
+                s = state_dict[f"{prefix}.{buf_name}_scale"]
+                state_dict[f"{prefix}.{buf_name}_scale"] = s.transpose(1, 2).contiguous()
+
             for buf_name in ("w1", "w1_scale", "w2", "w2_scale"):
                 t = state_dict[f"{prefix}.{buf_name}"]
                 experts.register_buffer(
@@ -95,10 +104,10 @@ def load_prequantized_model(prequantized_dir, max_seq_len=4096):
                     torch.empty(t.shape, dtype=t.dtype, device="meta"),
                 )
             # Infer group_size from packed weight and scale shapes:
-            # w1 is [E, N, K//2] (packed int4), w1_scale is [E, N, K//gs]
+            # w1 is [E, K//2, N] (packed int4), w1_scale is [E, K//gs, N]
             w1 = state_dict[f"{prefix}.w1"]
             w1_scale = state_dict[f"{prefix}.w1_scale"]
-            experts.group_size = (w1.shape[2] * 2) // w1_scale.shape[2]
+            experts.group_size = (w1.shape[1] * 2) // w1_scale.shape[1]
 
     missing, unexpected = model.load_state_dict(state_dict, strict=False, assign=True)
     del state_dict
@@ -152,6 +161,9 @@ def _quantize_experts_int4(model, config, group_size=32, use_hqq=False):
     Converts w1_weight [E, N, K] and w2_weight [E, N, K] to:
       w1 [E, N, K//2] int8 packed, w1_scale [E, N, K//gs] bf16
       w2 [E, N, K//2] int8 packed, w2_scale [E, N, K//gs] bf16
+
+    Storage format is [E, N, K//2]; the transpose to [E, K//2, N] for
+    coalesced kernel access happens at load time in _load_prequantized_model.
     """
     if use_hqq:
         from torchao.quantization.quant_primitives import (
