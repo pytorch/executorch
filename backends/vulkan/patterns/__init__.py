@@ -10,11 +10,15 @@ import executorch.backends.vulkan.patterns.quantized_binary  # noqa
 
 import executorch.backends.vulkan.patterns.quantized_convolution  # noqa
 
+import executorch.backends.vulkan.patterns.quantized_embedding  # noqa
+
 import executorch.backends.vulkan.patterns.quantized_linear  # noqa
 
 import executorch.backends.vulkan.patterns.quantized_unary  # noqa
 
 import executorch.backends.vulkan.patterns.rope  # noqa
+
+import executorch.backends.vulkan.patterns.rope_hf  # noqa
 
 import executorch.backends.vulkan.patterns.sdpa  # noqa
 
@@ -35,6 +39,7 @@ from executorch.backends.vulkan.patterns.pattern_registry import (
 )
 
 from executorch.backends.vulkan.patterns.rope import RotaryEmbeddingPattern
+from executorch.backends.vulkan.patterns.rope_hf import HfRotaryEmbeddingPattern
 
 from executorch.exir import ExportedProgram
 
@@ -47,6 +52,7 @@ __all__ = [
     "DetectorFn",
     "CreateReplacementFn",
     "RotaryEmbeddingPattern",
+    "HfRotaryEmbeddingPattern",
     "fusable_patterns",
     "register_pattern_graph",
     "register_pattern_detector",

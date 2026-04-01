@@ -1251,6 +1251,63 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_is_inf(self):
+        module = IsInf()  # noqa: F405
+        sample_input = (
+            torch.tensor(
+                [
+                    1.1,
+                    float("inf"),
+                    -float("inf"),
+                    0.0,
+                    float("nan"),
+                    0.6,
+                    float("nan"),
+                    -5.0,
+                ],
+                dtype=torch.float16,
+            ),
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_is_nan(self):
+        module = IsNan()  # noqa: F405
+        sample_inputs = [
+            (
+                torch.tensor(
+                    [
+                        -2.0,
+                        float("nan"),
+                        -float("nan"),
+                        0.2,
+                        float("inf"),
+                        3.2,
+                        float("nan"),
+                        -float("inf"),
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            (
+                torch.tensor(
+                    [
+                        -0.234,
+                        -float("nan"),
+                        float("nan"),
+                        -float("inf"),
+                        3.2,
+                        float("nan"),
+                        1.26,
+                        float("inf"),
+                    ],
+                    dtype=torch.float16,
+                ),
+            ),
+        ]
+
+        for sample_input in sample_inputs:
+            self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_interpolate_bicubic(self):
         modules = [
             ResizeBicubic([2, 2], None, False),  # noqa: F405
@@ -1396,6 +1453,21 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_log_softmax(self):
         module = LogSoftmax()  # noqa: F405
         sample_input = (torch.randn([1, 4, 8, 8]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_log10(self):
+        module = Log10()  # noqa: F405
+        sample_input = (torch.abs(torch.rand(2, 5, 1, 3) + 0.1),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_log1p(self):
+        module = Log1p()  # noqa: F405
+        sample_input = (torch.abs(torch.rand(2, 5, 1, 3) + 0.1),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_log2(self):
+        module = Log2()  # noqa: F405
+        sample_input = (torch.abs(torch.rand(2, 5, 1, 3) + 0.1),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_maximum(self):
@@ -1605,6 +1677,24 @@ class TestQNNFloatingPointOperator(TestQNN):
                     with self.subTest(i=index):
                         index += 1
                         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_rand(self):
+        sample_inputs = [
+            (torch.randn(3, 4, 5),),
+            (torch.randn(2, 8),),
+            (
+                torch.randn(
+                    10,
+                ),
+            ),
+            (torch.randn(1, 3, 32, 32),),
+        ]
+        for i, sample_input in enumerate(sample_inputs):
+            with self.subTest(i=i):
+                module = Rand()  # noqa: F405
+                self.lower_module_and_test_output(
+                    module, sample_input, assert_output_equal=False
+                )
 
     def test_qnn_backend_reciprocal(self):
         module = Reciprocal()  # noqa: F405
@@ -1827,6 +1917,11 @@ class TestQNNFloatingPointOperator(TestQNN):
                     with self.subTest(i=index):
                         index += 1
                         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_trunc(self):
+        module = Trunc()  # noqa: F405
+        sample_input = (torch.randn(3, 4),)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_unflatten(self):
         module = Unflatten(dim=1, sizes=(2, 3, 4))  # noqa: F405
@@ -2994,6 +3089,19 @@ class TestQNNQuantizedOperator(TestQNN):
                 )
                 self.lower_module_and_test_output(modules[i], sample_input)
 
+    # TODO: Once the accuracy issue is fixed, enable this test.
+    @unittest.skip("Bad accuracy for HTP")
+    def test_qnn_backend_embedding_per_channel(self):
+        module = Embedding()  # noqa: F405
+        sample_input = (torch.Tensor([1, 2, 4, 5]).to(torch.int32),)
+        qdq_module = self.get_qdq_module(
+            module,
+            sample_input,
+            quant_dtype=QuantDtype.use_16a8w,
+            is_embedding_per_channel=True,
+        )
+        self.lower_module_and_test_output(qdq_module, sample_input)
+
     def test_qnn_backend_equal(self):
         test_comb = [
             {
@@ -3705,6 +3813,24 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_log10(self):
+        module = Log10()  # noqa: F405
+        sample_input = (torch.abs(torch.rand(2, 5, 1, 3) + 0.1),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_log1p(self):
+        module = Log1p()  # noqa: F405
+        sample_input = (torch.abs(torch.rand(2, 5, 1, 3) + 0.1),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_log2(self):
+        module = Log2()  # noqa: F405
+        sample_input = (torch.abs(torch.rand(2, 5, 1, 3) + 0.1),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_maximum(self):
         module = Maximum()  # noqa: F405
         sample_input = (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4))
@@ -3935,6 +4061,25 @@ class TestQNNQuantizedOperator(TestQNN):
                         index += 1
                         module = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_rand(self):
+        sample_inputs = [
+            (torch.randn(3, 4, 5),),
+            (torch.randn(2, 8),),
+            (
+                torch.randn(
+                    10,
+                ),
+            ),
+            (torch.randn(1, 3, 32, 32),),
+        ]
+        for i, sample_input in enumerate(sample_inputs):
+            with self.subTest(i=i):
+                module = Rand()  # noqa: F405
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(
+                    module, sample_input, assert_output_equal=False
+                )
 
     def test_qnn_backend_reciprocal(self):
         module = Reciprocal()  # noqa: F405
@@ -4191,6 +4336,12 @@ class TestQNNQuantizedOperator(TestQNN):
                         index += 1
                         qdq_module = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(qdq_module, sample_input)
+
+    def test_qnn_backend_trunc(self):
+        module = Trunc()  # noqa: F405
+        sample_input = (torch.randn(3, 4),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_unflatten(self):
         module = Unflatten(dim=1, sizes=(2, 3, 4))  # noqa: F405

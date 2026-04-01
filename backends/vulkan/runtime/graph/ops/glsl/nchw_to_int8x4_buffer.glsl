@@ -42,7 +42,7 @@ void main() {
       texel_idx_to_tensor4d_idx(outp, texel_idx, outp_layout);
 
   // Bounds check on outer dimension
-  if (tidx.data[outer_dim] >= int(outp.sizes[0][outer_dim])) {
+  if (tidx.data[outer_dim] >= int(safe_idx(outp.sizes[0], outer_dim))) {
     return;
   }
 
@@ -55,7 +55,7 @@ void main() {
   int packed = 0;
   [[unroll]] for (int i = 0; i < 4; ++i) {
     const int elem_inner = tidx.data[inner_dim] + i;
-    if (elem_inner < int(outp.sizes[0][inner_dim])) {
+    if (elem_inner < int(safe_idx(outp.sizes[0], inner_dim))) {
       // Build element coordinates
       ivec4 elem = tidx.data;
       elem[inner_dim] = elem_inner;

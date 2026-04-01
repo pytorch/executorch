@@ -309,6 +309,16 @@
     - arg_meta: null
       kernel_name: impl::generic::quantized_relu_asym8u_asym8u_per_tensor_out
 
+- func: cadence::quantized_max_pool2d.out(Tensor input, int[] kernel_size, int[] stride, int[] padding, int[] dilation, bool ceil_mode, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::generic::quantized_max_pool2d_nchw_out
+
+- func: cadence::quantized_max_pool2d_nhwc.out(Tensor input, int[] kernel_size, int[] stride, int[] padding, int[] dilation, bool ceil_mode, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::generic::quantized_max_pool2d_nhwc_out
+
 - func: cadence::quantized_add.per_tensor_out(Tensor X, float X_scale, int X_zero_point, Tensor Y, float Y_scale, int Y_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
@@ -323,6 +333,11 @@
   kernels:
     - arg_meta: null
       kernel_name: impl::generic::quantized_add_asym8uxasym8u_asym8u_per_tensor_out
+
+- func: cadence::quantized_mul.per_tensor_out(Tensor X, float X_scale, int X_zero_point, Tensor Y, float Y_scale, int Y_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::generic::quantized_mul_per_tensor_out
 
 - func: cadence::quantized_matmul.out(Tensor X, int X_zero_point, Tensor Y, int Y_zero_point, Tensor? bias, int out_multiplier, int out_shift, int out_zero_point, bool transposed, *, Tensor(a!) out) -> Tensor(a!)
   kernels:

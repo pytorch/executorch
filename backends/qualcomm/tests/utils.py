@@ -519,6 +519,7 @@ class TestQNN(unittest.TestCase):
                     adb.extra_cmds += (
                         f" --performance_output_path {self.inference_speed_output_path}"
                     )
+                adb.execute(custom_runner_cmd=f"rm -rf {adb.output_folder}")
                 adb.execute(method_index=method_index, output_callback=output_callback)
                 adb.pull(host_output_path=tmp_dir, callback=post_process)
                 self._assert_outputs_equal(outputs, ref_outputs)
@@ -642,6 +643,7 @@ class TestQNN(unittest.TestCase):
         inputs: Tuple[torch.Tensor],
         is_conv_per_channel: Optional[bool] = True,
         is_linear_per_channel: Optional[bool] = False,
+        is_embedding_per_channel: Optional[bool] = False,
         custom_quant_annotations: Tuple[Callable] = (),
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
         dynamic_shapes: Dict = None,
@@ -658,6 +660,7 @@ class TestQNN(unittest.TestCase):
             custom_annotations=custom_quant_annotations,
             per_channel_conv=is_conv_per_channel,
             per_channel_linear=is_linear_per_channel,
+            per_channel_embedding=is_embedding_per_channel,
             submodule_qconfig_list=submodule_qconfig_list,
             backend=get_backend_type(self.backend),
             soc_model=self.model,

@@ -514,9 +514,10 @@ class MetalSDPA(nn.Module):
 class StandardSDPA(nn.Module):
     """Scaled dot-product attention using F.scaled_dot_product_attention.
 
-    Supports GQA via repeat_interleave when n_heads != n_kv_heads.
-    Expects Q in [B, S, H, D]; K/V in [B, H, S, D] by default
-    (set transpose_kv=True if K/V arrive in [B, S, H, D]).
+    Supports GQA via enable_gqa=True — the kernel maps Q heads to KV heads
+    internally, avoiding redundant K/V memory expansion.
+    Expects Q in [B, S, H_q, D]; K/V in [B, H_kv, S, D] by default
+    (set transpose_kv=True if K/V arrive in [B, S, H_kv, D]).
     """
 
     def __init__(
@@ -525,7 +526,7 @@ class StandardSDPA(nn.Module):
         super().__init__()
         self.n_heads = n_heads
         self.n_kv_heads = n_kv_heads
-        self.n_rep = n_heads // n_kv_heads
+        self.enable_gqa = n_heads != n_kv_heads
         self.head_dim = head_dim
         self.dim = n_heads * head_dim
         self.transpose_kv = transpose_kv
@@ -545,15 +546,11 @@ class StandardSDPA(nn.Module):
             k = k.transpose(1, 2)
             v = v.transpose(1, 2)
 
-        if self.n_rep > 1:
-            k = k.repeat_interleave(self.n_rep, dim=1)
-            v = v.repeat_interleave(self.n_rep, dim=1)
-
         if attn_mask is None:
             attn_mask = _build_causal_mask_bool(input_pos, k.shape[2], q.device)
 
         y = F.scaled_dot_product_attention(
-            q, k, v, attn_mask=attn_mask, is_causal=False
+            q, k, v, attn_mask=attn_mask, is_causal=False, enable_gqa=self.enable_gqa
         )
 
         y = y.transpose(1, 2).contiguous()

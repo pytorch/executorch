@@ -47,7 +47,11 @@ def define_arm_tests():
         "misc/test_custom_partition.py",
         "misc/test_debug_hook.py",
         # "misc/test_dim_order.py", (TODO - T238390249)
-        "misc/test_outputs_order.py",
+    ]
+
+    # Deprecation tests
+    test_files += [
+        "deprecation/test_arm_compile_spec_deprecation.py",
     ]
 
     TESTS = {}
@@ -74,8 +78,10 @@ def define_arm_tests():
                 "//executorch/backends/arm/tosa:compile_spec",
                 "//executorch/backends/arm/tosa:partitioner",
                 "//executorch/backends/arm:vgf",
+                "//executorch/backends/test:graph_builder",
                 "//executorch/exir:lib",
                 "fbsource//third-party/pypi/pytest:pytest",
                 "fbsource//third-party/pypi/parameterized:parameterized",
+                "fbsource//third-party/tosa_tools:tosa_reference_model",
             ],
         )
