@@ -802,6 +802,32 @@ lib.define(
 lib.impl(name, apply_rotary_emb_impl, "CompositeExplicitAutograd")
 apply_rotary_emb_op = getattr(getattr(torch.ops, namespace), name)
 
+#########################
+## apply_rotary_emb_hf ##
+#########################
+
+
+def apply_rotary_emb_hf_impl(
+    xq: torch.Tensor,
+    xk: torch.Tensor,
+    freqs_cos: torch.Tensor,
+    freqs_sin: torch.Tensor,
+    start_pos: int,
+):
+    seq_len = xq.shape[1]
+    freqs_cos = freqs_cos[start_pos : start_pos + seq_len]
+    freqs_sin = freqs_sin[start_pos : start_pos + seq_len]
+    pattern = vk_patterns.HfRotaryEmbeddingPattern()
+    return pattern.forward(xq, xk, freqs_cos, freqs_sin)
+
+
+name = "apply_rotary_emb_hf"
+lib.define(
+    f"{name}(Tensor xq, Tensor xk, Tensor freqs_cos, Tensor freqs_sin, SymInt start_pos) -> (Tensor, Tensor)"
+)
+lib.impl(name, apply_rotary_emb_hf_impl, "CompositeExplicitAutograd")
+apply_rotary_emb_hf_op = getattr(getattr(torch.ops, namespace), name)
+
 ########################
 ## q8ta_add ##
 ########################

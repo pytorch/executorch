@@ -40,7 +40,6 @@ from executorch.backends.cadence.aot.quantizer.utils import (
     copy_node_metadata,
     create_zero_bias_int32,
     find_sequential_partitions_aten,
-    get_conv_args,
     quantize_tensor_multiplier,
 )
 from executorch.exir.pass_base import ExportPass
@@ -263,10 +262,10 @@ def get_args_and_kwargs_conv(
     weight_zero_point = dequants_weights[0].args[2]
     # pyre-fixme[58]: Unsupported operand types
     bias_scale = dequants_inputs[0].args[1] * weight_scale
-    stride = [1, 1] if len(op_node.args) < 4 else get_conv_args(op_node.args[3], 1)
-    padding = [0, 0] if len(op_node.args) < 5 else get_conv_args(op_node.args[4], 0)
-    dilation = [1, 1] if len(op_node.args) < 6 else get_conv_args(op_node.args[5], 1)
-    groups = 1 if len(op_node.args) < 7 else op_node.args[6]
+    stride = get_arg(op_node, "stride", list[int])
+    padding = get_arg(op_node, "padding", list[int])
+    dilation = get_arg(op_node, "dilation", list[int])
+    groups = get_arg(op_node, "groups", int)
 
     # If bias is not available, create a bias tensor with the shape of weight[0]
     if not bias_inputs:
