@@ -57,7 +57,7 @@ First, clone the ExecuTorch repository with the Raspberry Pi support:
 
 ```bash
 # Create project directory
-mkdir ~/executorch-rpi && cd ~/executorch-rpi &&  git clone -b release/1.0 https://github.com/pytorch/executorch.git &&
+mkdir ~/executorch-rpi && cd ~/executorch-rpi &&  git clone -b release/1.2 https://github.com/pytorch/executorch.git &&
 cd executorch
 ```
 
