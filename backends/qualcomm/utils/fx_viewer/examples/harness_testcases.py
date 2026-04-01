@@ -473,74 +473,67 @@ api.log('Trigger controls and inspect event stream in the right log panel.');
         },
         {
             "id": "js_08_compare_basics",
-            "title": "JS 08: Compare + Shared Taskbar",
-            "description": "Two-view compare with shared taskbar (theme, layers+colorBy, zoom, sync, fullscreen). Toggle the taskbar on/off to compare both modes.",
+            "title": "JS 08: 3-Graph Compare + Auto debug_handle Sync",
+            "description": "Three-view compare (Reference, Candidate A, Candidate B) using Map API. Default sync is 'Auto (handle→id)' — tries debug_handle first, falls back to node name.",
             "html": """
 <div style="display:grid;grid-template-rows:auto 1fr;gap:10px;height:100%;">
   <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-    <label><input id="c8_shared_taskbar" type="checkbox" checked /> Shared taskbar</label>
-    <label><input id="c8_sync_selection" type="checkbox" checked /> Sync selection</label>
-    <label>Columns
-      <select id="c8_cols"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select>
-    </label>
-    <span style="font-size:12px;color:#6b7280;">Shared taskbar: theme &#x25BE; | layers+colorBy &#x25BE; | zoom | sync &#x25BE; | fullscreen</span>
+    <span style="font-size:12px;color:#6b7280;">3-graph compare with auto debug_handle sync. Sidebar: Auto (handle→id) | ID only | Ext: per_layer_accuracy.debug_handle | Don't sync</span>
   </div>
   <div id="c8_grid" style="min-height:0;">
-    <div id="c8_left_mount" style="display:none;"></div>
-    <div id="c8_right_mount" style="display:none;"></div>
+    <div id="c8_ref_mount" style="display:none;"></div>
+    <div id="c8_cand1_mount" style="display:none;"></div>
+    <div id="c8_cand2_mount" style="display:none;"></div>
   </div>
 </div>
 """.strip(),
             "js": """
-// Recreate compare when shared taskbar toggle changes
 let compare = null;
 
 function buildCompare() {
   if (compare) { compare.destroy(); compare = null; }
 
-  const useSharedTaskbar = document.getElementById('c8_shared_taskbar').checked;
-  const syncMode = document.getElementById('c8_sync_selection').checked ? 'id' : 'none';
-
-  const left = FXGraphViewer.create({
+  const ref = FXGraphViewer.create({
     payload: api.payloads.accuracy_reference,
-    mount: { root: '#c8_left_mount' },
+    mount: { root: '#c8_ref_mount' },
     layout: { preset: 'split' },
-    config: { title: 'Reference' },
-    state: { activeExtensions: ['color_by_type'], colorBy: 'color_by_type' },
+    state: { activeExtensions: ['per_layer_accuracy', 'color_by_type'], colorBy: 'color_by_type' },
   });
-  left.init();
-  api.registerViewer(left);
+  ref.init();
+  api.registerViewer(ref);
 
-  const right = FXGraphViewer.create({
+  const cand1 = FXGraphViewer.create({
     payload: api.payloads.accuracy_candidate,
-    mount: { root: '#c8_right_mount' },
+    mount: { root: '#c8_cand1_mount' },
     layout: { preset: 'split' },
-    config: { title: 'Candidate' },
     state: { activeExtensions: ['per_layer_accuracy'], colorBy: 'per_layer_accuracy' },
   });
-  right.init();
-  api.registerViewer(right);
+  cand1.init();
+  api.registerViewer(cand1);
+
+  const cand2Payload = api.payloads.accuracy_candidate_2 || api.payloads.accuracy_candidate;
+  const cand2 = FXGraphViewer.create({
+    payload: cand2Payload,
+    mount: { root: '#c8_cand2_mount' },
+    layout: { preset: 'split' },
+    state: { activeExtensions: ['per_layer_accuracy'], colorBy: 'per_layer_accuracy' },
+  });
+  cand2.init();
+  api.registerViewer(cand2);
 
   compare = FXGraphCompare.create({
-    viewers: [left, right],
-    layout: { columns: Number(document.getElementById('c8_cols').value), container: '#c8_grid' },
-    sync: { mode: syncMode },
-    sharedTaskbar: { enabled: useSharedTaskbar },
+    viewers: new Map([
+      ['Reference', ref],
+      ['Candidate A', cand1],
+      ['Candidate B', cand2],
+    ]),
+    layout: { container: '#c8_grid' },
+    // sync defaults to { mode: 'auto' }
   });
   api.registerCompare(compare);
 
-  api.log(useSharedTaskbar
-    ? 'Shared taskbar ON — use theme/layers/colorBy/zoom/sync/fullscreen controls above the grid'
-    : 'Shared taskbar OFF — per-viewer toolbars fully hidden');
+  api.log('3-graph compare ready. Sidebar shows Auto (handle→id) sync by default.');
 }
-
-document.getElementById('c8_shared_taskbar').addEventListener('change', buildCompare);
-document.getElementById('c8_sync_selection').addEventListener('change', (e) => {
-  if (compare) compare.setSync({ mode: e.target.checked ? 'id' : 'none' });
-});
-document.getElementById('c8_cols').addEventListener('change', (e) => {
-  if (compare) compare.setColumns(Number(e.target.value));
-});
 
 buildCompare();
 api.setCleanup(() => { if (compare) compare.destroy(); });
@@ -750,26 +743,40 @@ api.log('Use taskbar fullscreen button or side controls to validate API + UI int
         },
         {
             "id": "adv_04_tiled_compare",
-            "title": "ADV 04: Compare + Shared Taskbar + Layer Sync",
-            "description": "Two-graph compare with shared taskbar, sync by ID and by layer field, merged info panel.",
+            "title": "ADV 04: 3-Graph Compare + Extension Sync Key",
+            "description": "Three-graph compare demonstrating set_sync_key('debug_handle') on per_layer_accuracy. Sidebar shows 'Ext: per_layer_accuracy.debug_handle' as an explicit sync option.",
             "html": """
 <div id="adv4_grid" style="width:100%;height:100%;">
+  <div id="adv4_ref_mount" style="display:none;"></div>
   <div id="adv4_left_mount" style="display:none;"></div>
   <div id="adv4_right_mount" style="display:none;"></div>
 </div>
 """.strip(),
             "js": """
-const left = FXGraphViewer.create({
+const ref = FXGraphViewer.create({
   payload: api.payloads.accuracy_reference,
+  mount: { root: '#adv4_ref_mount' },
+  layout: { preset: 'split' },
+  state: { activeExtensions: ['per_layer_accuracy', 'topological_order'], colorBy: 'topological_order' },
+});
+ref.init();
+api.registerViewer(ref);
+
+const left = FXGraphViewer.create({
+  payload: api.payloads.accuracy_candidate,
   mount: { root: '#adv4_left_mount' },
   layout: { preset: 'split' },
-  state: { activeExtensions: ['topological_order'], colorBy: 'topological_order' },
+  state: {
+    activeExtensions: ['per_layer_accuracy', 'topological_order'],
+    colorBy: 'per_layer_accuracy',
+  },
 });
 left.init();
 api.registerViewer(left);
 
+const cand2Payload = api.payloads.accuracy_candidate_2 || api.payloads.accuracy_candidate;
 const right = FXGraphViewer.create({
-  payload: api.payloads.accuracy_candidate,
+  payload: cand2Payload,
   mount: { root: '#adv4_right_mount' },
   layout: { preset: 'split' },
   state: {
@@ -781,17 +788,17 @@ right.init();
 api.registerViewer(right);
 
 const compare = FXGraphCompare.create({
-  viewers: [left, right],
-  layout: { columns: 2, container: '#adv4_grid' },
-  sharedTaskbar: {
-    enabled: true,
-    controls: { theme: true, layers: true, zoomFit: true, fullscreen: true, syncMode: true },
-  },
-  sync: { mode: 'id' },
+  viewers: new Map([
+    ['Reference', ref],
+    ['Candidate A', left],
+    ['Candidate B', right],
+  ]),
+  layout: { container: '#adv4_grid' },
+  sync: { mode: 'layer', layer: 'per_layer_accuracy', field: 'debug_handle' },
 });
 api.registerCompare(compare);
 
-api.log('ADV04: compare active. Use shared taskbar to change theme, sync mode, or zoom all.');
+api.log('ADV04: 3-graph compare with extension sync key per_layer_accuracy.debug_handle active.');
 """.strip(),
         },
         {

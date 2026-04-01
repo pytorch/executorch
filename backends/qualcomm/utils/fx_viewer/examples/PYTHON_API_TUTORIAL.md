@@ -79,23 +79,62 @@ Use cases:
 2. `export_json` + JS runtime: best for custom host applications.
 3. `export_js`: quick embed in existing HTML.
 
-## 5) Connect Python Output to JS Harness Thinking
+## 5) debug_handle Extraction and Compare Sync
+
+`debug_handle` is a per-node integer assigned by `generate_missing_debug_handles`. The exporter
+extracts it explicitly so it is always present in `node.info` regardless of type:
+
+```python
+from executorch.exir.passes.debug_handle_generator_pass import generate_missing_debug_handles
+
+ep = torch.export.export(model, sample, strict=False)
+generate_missing_debug_handles(ep)
+gm = ep.module()
+
+exporter = FXGraphExporter(gm)
+payload = exporter.generate_json_payload()
+# payload["base"]["nodes"][i]["info"]["debug_handle"] is now int or list[int]
+```
+
+Fused nodes may carry a tuple handle `(h1, h2)`. The exporter normalizes:
+- `int` → stored as `int`
+- `tuple/list` with one element → stored as `int`
+- `tuple/list` with multiple elements → stored as `list[int]`
+
+### Registering a sync key for compare mode
+
+To expose an extension field as an explicit sync option in the compare sidebar:
+
+```python
+ext = GraphExtension(id="my_ext", name="My Extension")
+ext.add_node_data(node_id, {"debug_handle": 42, "latency_ms": 1.5})
+ext.set_sync_key("debug_handle")   # appears as "Ext: my_ext.debug_handle" in sidebar
+```
+
+The `per_layer_accuracy` extension (built by `_add_accuracy_extension`) automatically registers
+`debug_handle` as a sync key. This enables the compare sidebar to offer
+`Ext: per_layer_accuracy.debug_handle` as an explicit sync option alongside the default
+`Auto (handle→id)` mode.
+
+## 6) Connect Python Output to JS Harness Thinking
 
 If Python emits:
-1. `extensions["per_layer_accuracy"]`
+1. `extensions["per_layer_accuracy"]` (with `set_sync_key("debug_handle")`)
 2. `extensions["topological_order"]`
 
 Then JS harness can immediately use:
 1. `viewer.setLayers(["per_layer_accuracy", "topological_order"])`
 2. `viewer.setColorBy("per_layer_accuracy")`
 3. `viewer.patchLayerNodes("per_layer_accuracy", patchByNodeId)`
+4. `FXGraphCompare.create({ viewers, layout, sync: { mode: 'auto' } })` — auto sync via `debug_handle`
 
 This is the core Python/JS contract boundary.
 
-## 6) Recommended Practice Path
+## 7) Recommended Practice Path
 
 1. Start with `minimal_graph.html`.
 2. Add one extension with one field.
 3. Add categorical color.
 4. Add numeric metric layer.
-5. Validate behavior in JS harness beginner cases (`js_04`, `js_05`).
+5. Add `set_sync_key` and test in compare mode (`js_08`, `adv_04`).
+6. Run `demo_3graph_compare.py` to see all three `debug_handle` mapping patterns.

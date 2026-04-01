@@ -1,3 +1,28 @@
+// FXGraphViewer: public facade for the graph viewer runtime.
+//
+// Construction:
+//   FXGraphViewer.create(config)  — preferred factory
+//   new FXGraphViewer(containerId, payload)  — legacy compat
+//
+// Key public methods:
+//   init()                          — initial zoom-to-fit / position
+//   getState() / setState(patch)    — state snapshot and update
+//   setTheme(name)                  — 'light' | 'dark' | custom
+//   setLayers(ids[]) / setColorBy(id)
+//   selectNode(id, opts?) / clearSelection()
+//   panToNode(id) / animateToNode(id, opts?) / zoomToFit()
+//   upsertLayer / removeLayer / patchLayerNodes / setLayerLabel / setColorRule
+//   enterFullscreen() / exitFullscreen()
+//   on(event, fn) / off(event, fn)
+//   destroy()
+//
+// Highlight group API (programmatic overlay, independent of selection):
+//   addHighlightGroup(groupId, nodeIds, color)  — add/replace a named group
+//   removeHighlightGroup(groupId)               — remove one group
+//   clearAllHighlightGroups()                   — remove all groups
+//   getHighlightGroups()                        — Map<groupId, {nodeIds, color}>
+//
+// Events: 'selectionchange', 'statechange', 'layoutchange', 'themechange', 'error'
 class FXGraphViewer {
     static create(config) {
         return new FXGraphViewer(config);
@@ -246,7 +271,6 @@ class FXGraphViewer {
             .fx-taskbar { position: absolute; top: 10px; left: 10px; right: 10px; min-height: 40px; border-radius: 4px; display: flex; align-items: center; padding: 0 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); z-index: 10; border: 1px solid transparent; overflow: visible; flex-wrap: wrap; gap: 6px; }
             .fx-search-container { position: relative; flex: 1; max-width: 400px; }
             .fx-search-input { width: 100%; padding: 6px; box-sizing: border-box; }
-            .fx-search-menu { position: absolute; top: 100%; left: 0; right: 0; max-height: 300px; overflow-y: auto; display: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 1px solid transparent; border-top: none; z-index: 100; }
             .fx-layers-menu { position: absolute; top: 100%; right: 0; min-width: 260px; max-width: 420px; max-height: 60vh; overflow-y: auto; display: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 1px solid transparent; z-index: 200; }
             .fx-search-item { padding: 8px; cursor: pointer; border-bottom: 1px solid transparent; }
             .fx-search-item:hover, .fx-search-item.active { background: var(--fx-ui-hover, #f0f8ff); }
@@ -266,22 +290,27 @@ class FXGraphViewer {
             .fx-resizer-h { height: 6px; background: #ccc; cursor: row-resize; z-index: 20; transition: background 0.2s; flex-shrink: 0; }
             .fx-resizer-h:hover, .fx-resizer-h.dragging { background: #999; }
             .fx-hidden { display: none !important; }
-            .fx-compare-root { display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden; }
-            .fx-compare-taskbar { flex: 0 0 auto; display: flex; align-items: center; padding: 6px 10px; gap: 8px; border-bottom: 1px solid #ccc; background: rgba(255,255,255,0.95); flex-wrap: wrap; }
-            .fx-compare-grid { flex: 1; min-height: 0; display: grid; gap: 8px; padding: 8px; }
-            .fx-compare-col { display: flex; flex-direction: column; min-height: 0; overflow: hidden; border: 1px solid #e5e7eb; border-radius: 6px; }
-            .fx-compare-col-header { flex: 0 0 auto; padding: 4px 8px; font-size: 12px; font-weight: 600; background: rgba(0,0,0,0.03); border-bottom: 1px solid #e5e7eb; }
-            .fx-compare-minimap-row { flex: 0 0 auto; overflow: hidden; border-bottom: 1px solid #e5e7eb; }
-            .fx-compare-minimap-row .fx-minimap-container { width: 100%; height: 100%; border-top: none; }
-            .fx-compare-canvas-row { flex: 1; min-height: 0; position: relative; overflow: hidden; }
-            .fx-compare-canvas-row .fx-main-area { min-width: 0; }
-            .fx-compare-info-bar { flex: 0 0 auto; overflow-y: auto; border-top: 1px solid #ccc; font-size: 13px; max-height: 220px; background: #fff; }
-            .fx-compare-info-grid { display: grid; padding: 4px 8px; gap: 0 8px; font-size: 12px; }
-            .fx-compare-info-hdr { font-weight: 600; padding: 3px 6px; border-bottom: 2px solid #ccc; background: rgba(0,0,0,0.04); position: sticky; top: 0; }
-            .fx-compare-info-prop { font-weight: 600; padding: 3px 6px; border-bottom: 1px solid #eee; background: rgba(0,0,0,0.02); }
-            .fx-compare-info-val { padding: 3px 6px; border-bottom: 1px solid #eee; }
-            .fx-compare-info-diff { background: rgba(255,200,0,0.2); }
-            .fx-compare-info-placeholder { color: #888; text-align: center; padding: 12px; }
+            .fx-compare-root { --cmp-bg: #fff; --cmp-text: #000; --cmp-border: #e5e7eb; --cmp-border-strong: #ccc; --cmp-sidebar-bg: rgba(0,0,0,0.02); --cmp-info-bg: #fff; --cmp-prop-bg: rgba(0,0,0,0.02); --cmp-hdr-bg: rgba(0,0,0,0.04); --cmp-diff-bg: rgba(255,200,0,0.2); --cmp-name-bg: rgba(0,0,0,0.06); --cmp-ui-bg: rgba(255,255,255,0.95); --cmp-ui-hover: #f0f8ff; display: flex; flex-direction: column; width: 100%; height: 100%; overflow-y: auto; overflow-x: hidden; background: var(--cmp-bg); color: var(--cmp-text); padding-bottom: 24px; box-sizing: border-box; position: relative; }
+            .fx-compare-grid { display: grid; grid-template-rows: minmax(100px, 200px) auto minmax(400px, 80vh) auto; overflow: visible; border: 6px solid var(--cmp-border-strong); margin: 0 8px 8px 0; }
+            .fx-compare-sidebar-cell { grid-column: 1; grid-row: 1 / 4; display: flex; flex-direction: column; border-right: 1px solid var(--cmp-border); background: var(--cmp-sidebar-bg); overflow: hidden; position: sticky; top: 0; align-self: start; max-height: 100vh; z-index: 10; padding: 6px 4px; gap: 4px; }
+            .fx-compare-sidebar-info-cell { grid-column: 1; grid-row: 4; border-right: 1px solid var(--cmp-border); border-top: 1px solid var(--cmp-border-strong); background: var(--cmp-sidebar-bg); overflow: hidden; }
+            .fx-compare-minimap-cell { overflow: hidden; border-bottom: 6px solid var(--cmp-border-strong); border-left: 6px solid var(--cmp-border-strong); }
+            .fx-compare-minimap-cell .fx-minimap-container { width: 100%; height: 100% !important; border-top: none; }
+            .fx-compare-name-cell { grid-row: 2; display: flex; align-items: center; justify-content: center; height: 24px; padding: 0 6px; font-size: 11px; font-weight: 600; background: var(--cmp-name-bg); border-bottom: 6px solid var(--cmp-border-strong); border-left: 6px solid var(--cmp-border-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-sizing: border-box; }
+            .fx-compare-canvas-cell { overflow: hidden; border-left: 6px solid var(--cmp-border-strong); position: relative; }
+            .fx-compare-canvas-cell .fx-main-area { min-width: 0; width: 100%; height: 100%; }
+            .fx-compare-info-row { grid-column: 1 / -1; grid-row: 4; display: grid; grid-template-columns: subgrid; align-content: start; border-top: 3px solid var(--cmp-border-strong); overflow: visible; font-size: 13px; background: var(--cmp-info-bg); }
+            .fx-compare-info-prop { font-weight: 600; padding: 6px 10px; border-bottom: 1px solid var(--cmp-border); background: var(--cmp-prop-bg); border-right: 2px solid var(--cmp-border-strong); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; position: sticky; left: 0; z-index: 2; letter-spacing: 0.2px; }
+            .fx-compare-info-val { font-family: monospace; padding: 6px 12px; border-bottom: 1px solid var(--cmp-border); border-left: 2px solid var(--cmp-border-strong); min-width: 0; overflow: hidden; white-space: normal; word-break: break-word; }
+            .fx-compare-info-hdr { font-weight: 700; padding: 7px 10px; border-bottom: 3px solid var(--cmp-border-strong); border-left: 6px solid var(--cmp-border-strong); background: var(--cmp-hdr-bg); position: sticky; top: 0; min-width: 0; overflow: hidden; white-space: normal; word-break: break-word; z-index: 1; letter-spacing: 0.4px; font-size: 12px; text-transform: uppercase; }
+            .fx-compare-info-diff { background: var(--cmp-diff-bg); font-weight: 600; }
+            .fx-compare-info-row-alt { background: rgba(0,0,0,0.018); }
+            .fx-compare-root:fullscreen, .fx-compare-root:-webkit-full-screen, .fx-compare-root:-moz-full-screen, .fx-compare-root:-ms-fullscreen { background: var(--cmp-bg); color: var(--cmp-text); width: 100vw; height: 100vh; overflow-y: auto; overflow-x: hidden; }
+            .fx-compare-root:fullscreen .fx-compare-sidebar-cell, .fx-compare-root:-webkit-full-screen .fx-compare-sidebar-cell, .fx-compare-root:-moz-full-screen .fx-compare-sidebar-cell, .fx-compare-root:-ms-fullscreen .fx-compare-sidebar-cell { background: var(--cmp-sidebar-bg); border-right-color: var(--cmp-border); }
+            .fx-compare-info-placeholder { color: #888; text-align: center; padding: 12px; grid-column: 1 / -1; }
+            .fx-compare-canvas-cell .fx-legend-overlay { max-width: 40%; max-height: 20%; overflow: auto; font-size: 11px; }
+            .fx-compare-portal-menu { position: absolute; min-width: 220px; max-height: 60vh; overflow-y: auto; background: rgba(255,255,255,0.95); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); border: 1px solid #ccc; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 4px; z-index: 9999; padding: 4px 0; font-size: 13px; }
+            .fx-search-menu { position: absolute; top: 100%; left: 0; right: 0; max-height: 300px; overflow-y: auto; display: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 1px solid transparent; border-top: none; z-index: 100; background: rgba(255,255,255,0.88); backdrop-filter: blur(2px); }
         `;
         document.head.appendChild(style);
     }
@@ -754,6 +783,26 @@ class FXGraphViewer {
             return document.exitFullscreen();
         }
         return Promise.resolve();
+    }
+
+    addHighlightGroup(groupId, nodeIds, color) {
+        const groups = new Map(this.controller.state.highlightGroups);
+        groups.set(groupId, { nodeIds: new Set(nodeIds), color: color || '#ff6600' });
+        this.controller.setState({ highlightGroups: groups });
+    }
+
+    removeHighlightGroup(groupId) {
+        const groups = new Map(this.controller.state.highlightGroups);
+        groups.delete(groupId);
+        this.controller.setState({ highlightGroups: groups });
+    }
+
+    clearAllHighlightGroups() {
+        this.controller.setState({ highlightGroups: new Map() });
+    }
+
+    getHighlightGroups() {
+        return new Map(this.controller.state.highlightGroups);
     }
 
     destroy() {

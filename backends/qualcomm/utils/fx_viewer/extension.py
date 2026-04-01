@@ -21,6 +21,7 @@ class GraphExtension:
         self.id = clean_id
         self.name = name
         self.nodes_data: Dict[str, Dict[str, Any]] = {}
+        self.sync_keys: list[str] = []
 
         self.color_rule: Optional[ColorRule] = None
         self.label_formatter: Optional[Callable[[Dict[str, Any]], list[str]]] = None
@@ -33,6 +34,23 @@ class GraphExtension:
 
     def set_color_rule(self, rule: ColorRule):
         self.color_rule = rule
+
+    def set_sync_key(self, field: str):
+        """Mark a data field as a compare-mode sync key.
+
+        When registered, the field appears as an explicit option in the compare
+        sidebar under "Ext: <ext_id>.<field>". Selecting it activates
+        ``mode: 'layer'`` sync with this extension and field.
+
+        Example::
+
+            ext.set_sync_key("debug_handle")
+            # sidebar shows: "Ext: my_ext.debug_handle"
+
+        Multiple sync keys can be registered on the same extension.
+        """
+        if field not in self.sync_keys:
+            self.sync_keys.append(field)
 
     def set_label_formatter(self, formatter: Callable[[Dict[str, Any]], list[str]]):
         self.label_formatter = formatter
@@ -110,6 +128,7 @@ class GraphExtension:
             name=self.name,
             legend=legend,
             nodes=compiled_nodes,
+            sync_keys=list(self.sync_keys),
         )
 
     def build(self) -> Dict[str, Any]:

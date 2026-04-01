@@ -1,4 +1,16 @@
 // Centralized state machine managing interactions, camera transforms, selections, and extension visibility.
+//
+// State fields:
+//   hoveredNodeId, hoveredEdge, selectedNodeId, selectedEdge, previewNodeId
+//   ancestors / descendants (Sets) — BFS results for the active selection
+//   searchCandidates, searchSelectedIndex
+//   highlightAncestors (bool) — dim non-ancestor nodes when a node is selected
+//   themeName (string)
+//   activeExtensions (Set<string>) — which extension layers are visible
+//   colorBy (string) — which extension drives node fill color ('base' or extId)
+//   highlightGroups (Map<groupId, {nodeIds: Set<string>, color: string}>)
+//     — programmatic overlay groups; drawn as thick colored borders after node rendering;
+//       independent of selection state; set via FXGraphViewer.addHighlightGroup() API.
 class ViewerController {
     constructor(viewer, initialState = {}) {
         this.viewer = viewer;
@@ -27,7 +39,8 @@ class ViewerController {
             
             // V3 Extensibility State
             activeExtensions: initialExtensions,
-            colorBy: initialColorBy
+            colorBy: initialColorBy,
+            highlightGroups: new Map(),
         };
         
         // Initial computation of the virtual graph
@@ -48,6 +61,7 @@ class ViewerController {
             theme: this.state.themeName,
             activeExtensions: Array.from(this.state.activeExtensions),
             colorBy: this.state.colorBy,
+            highlightGroups: new Map(this.state.highlightGroups),
             searchQuery: this.viewer.ui && this.viewer.ui.searchInput ? this.viewer.ui.searchInput.value : "",
             camera: { ...this.transform },
             uiVisibility: { ...(this.state.uiVisibility || {}) },

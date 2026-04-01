@@ -164,7 +164,11 @@ class UIManager {
         if (this.searchInput) {
             fxOn(this._teardownFns, this.searchInput, 'input', (e) => {
                 this.controller.handleSearch(e.target.value);
-                this.searchMenu.style.display = e.target.value ? 'block' : 'none';
+                if (e.target.value) {
+                    this._showSearchMenu();
+                } else {
+                    this.searchMenu.style.display = 'none';
+                }
             });
 
             fxOn(this._teardownFns, this.searchInput, 'keydown', (e) => {
@@ -408,11 +412,22 @@ class UIManager {
         if (this.searchMenu) this.searchMenu.style.display = 'none';
     }
 
+    _showSearchMenu() {
+        if (!this.searchMenu) return;
+        const canvas = this.viewer.canvasRenderer?.canvas;
+        if (canvas) {
+            const rect = canvas.getBoundingClientRect();
+            this.searchMenu.style.maxHeight = Math.floor(rect.height * 0.5) + 'px';
+            this.searchMenu.style.maxWidth = Math.floor(rect.width * 0.5) + 'px';
+        }
+        this.searchMenu.style.display = 'block';
+    }
+
     updateSearchResults(candidates, selectedIndex) {
         if (!this.searchMenu) return;
         this.searchMenu.innerHTML = '';
         if (candidates.length === 0) return;
-        this.searchMenu.style.display = 'block';
+        this._showSearchMenu();
         
         this.visibleCandidatesCount = 50;
         this.renderSearchCandidatesChunk(candidates, selectedIndex, 0, this.visibleCandidatesCount);

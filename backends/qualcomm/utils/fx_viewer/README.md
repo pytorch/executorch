@@ -77,16 +77,21 @@ Runtime layer mutation:
 1. `upsertLayer`, `removeLayer`, `patchLayerNodes`, `setLayerLabel`, `setColorRule`
 
 Compare:
-1. `FXGraphCompare.create({ viewers, layout, sharedTaskbar, sync })`
-2. `setColumns(n)`, `setSync(patch)`, `destroy()`
+1. `FXGraphCompare.create({ viewers, layout, sync })` — `viewers` accepts `FXGraphViewer[]` or `Map<name, FXGraphViewer>`
+2. `setSync(patch)`, `destroy()`
 3. `setTiled()` / `setCompact()` — no-ops (tiled layout is always used in compare mode)
-4. `sharedTaskbar.enabled` — opt-in (`false` by default); when `true`, injects a shared taskbar above the grid
-5. `sharedTaskbar.controls`: `{ theme, layers, zoomFit, fullscreen, syncMode }` — all default `true` when taskbar is enabled
-6. `sync.mode`: `'none' | 'id' | 'layer'`; when `'layer'`: also set `sync.layer` (extension id) and `sync.field` (info key)
-7. `layout.container`: CSS selector or `HTMLElement` — required; `FXGraphCompare` builds its DOM inside this element
-8. `layout.columns`: number of side-by-side viewer columns (default `2`)
-9. `layout.minimapHeight`: minimap row height in px (default `180`)
-10. `layout.infoHeight`: merged info bar max-height in px (default `200`)
+4. `sync.mode`: `'auto'` (default) | `'id'` | `'layer'` | `'none'`
+   - `'auto'`: tries `debug_handle` set-intersection first, falls back to node-ID match
+   - `'id'`: matches by node id only
+   - `'layer'`: matches by `extensions[layer].nodes[nodeId].info[field]`; set `sync.layer` and `sync.field`
+   - `'none'`: no sync
+5. `layout.container`: CSS selector or `HTMLElement` — required
+
+Highlight groups (programmatic overlay, independent of selection):
+1. `viewer.addHighlightGroup(groupId, nodeIds, color)` — add/replace a named group
+2. `viewer.removeHighlightGroup(groupId)` — remove one group
+3. `viewer.clearAllHighlightGroups()` — remove all groups
+4. `viewer.getHighlightGroups()` — returns `Map<groupId, {nodeIds, color}>`
 
 ## Compare View Architecture
 
@@ -97,54 +102,65 @@ Compare:
 ```
 layout.container  (user-supplied div)
   .fx-compare-root  (flex column, fills container — created by FXGraphCompare)
-    .fx-compare-taskbar  (flex row — only present when sharedTaskbar.enabled)
-    .fx-compare-grid  (CSS grid, repeat(N, 1fr) columns)
-      .fx-compare-col  (one per viewer, flex column)
-        .fx-compare-col-header  (graph title label)
-        .fx-compare-minimap-row  (fixed height — same across all columns)
-          viewer.minimapRenderer.container  (moved here from viewer.sidebar)
-        .fx-compare-canvas-row  (flex: 1 — same height across all columns)
-          viewer.mainArea  (moved here from viewer.wrapper)
-    .fx-compare-info-bar  (single shared merged info panel, spans full width)
+    .fx-compare-grid  (CSS grid: 160px sidebar + N×1fr graph columns, 3 rows)
+      .fx-compare-sidebar-cell  (col 1, rows 1-2 — shared controls)
+      .fx-compare-minimap-cell  (col i+2, row 1 — one per viewer)
+        viewer.minimapRenderer.container  (moved here from viewer.sidebar)
+        .fx-compare-graph-name  (graph title label, absolute overlay)
+      .fx-compare-canvas-cell  (col i+2, row 2 — one per viewer)
+        viewer.mainArea  (moved here from viewer.wrapper)
+      .fx-compare-info-row  (col 1..-1, row 3 — CSS subgrid, merged info panel)
+        .fx-compare-sidebar-info-cell  (col 1 — empty spacer)
+        .fx-compare-info-hdr  (col i+2 — graph name header, one per visible viewer)
+        .fx-compare-info-prop  (col 1 — property name, sticky left)
+        .fx-compare-info-val  (col i+2 — property value, one per visible viewer)
 ```
 
 Each viewer's own `.fx-viewer-wrapper` (sidebar, resizer, etc.) is hidden (`display: none`) while compare is active. The viewer's public API (`setTheme`, `selectNode`, `renderAll`, etc.) continues to work normally because it operates on `mainArea` and `minimapRenderer.container` regardless of where they are in the DOM.
 
 ### Uniform Row Heights
 
-All minimap rows are the same fixed height (`layout.minimapHeight`). All canvas rows share `flex: 1` inside the same flex column, so they expand to fill identical remaining space. Vertical boundaries are aligned across graphs because the columns are siblings in the same CSS grid row — no per-column height negotiation needed.
+All minimap cells are the same fixed height (CSS `minmax(100px, 200px)`). All canvas cells share `minmax(50vh, 100vh)` in the same grid row, so they expand to fill identical space. Vertical boundaries are aligned across graphs because the cells are siblings in the same CSS grid — no per-column height negotiation needed.
 
 ### Ownership and Lifecycle
 
-1. **`FXGraphCompare` owns the compare DOM.** It creates `.fx-compare-root`, `.fx-compare-grid`, `.fx-compare-col` elements and appends them to `layout.container`.
+1. **`FXGraphCompare` owns the compare DOM.** It creates `.fx-compare-root`, `.fx-compare-grid`, `.fx-compare-sidebar-cell`, `.fx-compare-minimap-cell`, `.fx-compare-canvas-cell`, and `.fx-compare-info-row` elements and appends them to `layout.container`.
 2. **Viewers own their renderers.** `FXGraphCompare` only moves `viewer.mainArea` and `viewer.minimapRenderer.container` — it does not touch canvas contexts, event listeners, or state machines.
 3. **DOM snapshots for teardown.** Before moving any element, `FXGraphCompare` records its original parent and next sibling in a `WeakMap`. `destroy()` calls `_teardownCompareDOM()` which restores every element to its original position and un-hides each viewer wrapper.
-4. **`FXCompareTaskbar` is instantiated by `FXGraphCompare`** when `sharedTaskbar.enabled` is true. It prepends its element to `.fx-compare-root` (not to `layout.container`), so it sits above the grid inside the flex column. `FXCompareTaskbar.destroy()` is called by `FXGraphCompare.destroy()`.
-5. **Canvas resize.** A `ResizeObserver` is attached to each `.fx-compare-canvas-row`. When the row resizes (window resize, column count change), it calls `viewer.canvasRenderer.resize()` + `viewer.renderAll()`. An initial `requestAnimationFrame` resize fires after `_buildCompareDOM()` to handle the first layout pass.
+4. **Canvas resize.** A `ResizeObserver` is attached to each `.fx-compare-canvas-cell`. When the cell resizes (window resize, column visibility change), it calls `viewer.canvasRenderer.resize()` + `viewer.renderAll()`. An initial `requestAnimationFrame` resize fires after `_buildCompareDOM()` to handle the first layout pass.
 
 ### Interaction Control
 
 | Action | Owner | Mechanism |
 |--------|-------|-----------|
 | Node selection sync | `FXGraphCompare._wireSelectionSync()` | Listens to `viewer.on('selectionchange')`; propagates via `viewer.selectNode()` with source guard to prevent loops |
-| Theme sync (shared taskbar) | `FXCompareTaskbar` | Calls `viewer.setTheme()` on all viewers directly |
-| Theme sync (state change) | `FXGraphCompare._wireStateSync()` | Listens to `viewer.on('statechange')`; propagates theme changes to other viewers |
-| Layers / ColorBy | `FXCompareTaskbar` | Builds union of all extension ids; calls `viewer.setLayers()` per viewer |
-| Zoom to Fit | `FXCompareTaskbar` | Calls `viewer.controller.zoomToFit()` on all viewers |
-| Fullscreen | `FXCompareTaskbar` | Calls `requestFullscreen()` on `.fx-compare-root` |
-| Column count | `FXGraphCompare.setColumns()` | Updates `_grid.style.gridTemplateColumns`; triggers resize RAF |
-| Sync mode | `FXCompareTaskbar` → `FXGraphCompare.setSync()` | Updates `this.sync`; next selection event uses new mode |
-| Merged info panel | `FXGraphCompare._updateMergedInfo()` | Called after selection sync; renders a diff table into `.fx-compare-info-bar` |
+| Theme sync (state change) | `FXGraphCompare._wireStateSync()` | Listens to `viewer.on('statechange')`; propagates theme changes to other viewers; calls `_applyCompareTheme()` |
+| Theme (compare shell) | `FXGraphCompare._applyCompareTheme()` | Sets CSS custom properties on `.fx-compare-root`; styles sidebar controls inline |
+| Layers / ColorBy | Sidebar Layers button | Builds union of all extension ids; calls `viewer.setLayers()` / `viewer.setColorBy()` per viewer |
+| Zoom to Fit | Sidebar Fit button | Calls `viewer.controller.zoomToFit()` on all viewers |
+| Fullscreen | Sidebar Full button | Calls `requestFullscreen()` on `.fx-compare-root`; `fullscreenchange` listener updates button icon |
+| Sync mode | Sidebar sync selector → `FXGraphCompare.setSync()` | Updates `this.sync`; next selection event uses new mode |
+| Merged info panel | `FXGraphCompare._updateMergedInfo()` | Called after selection sync; renders a diff table into `.fx-compare-info-row` |
 
 ### Selection Sync Modes
 
-- `mode: 'none'` — no cross-viewer selection propagation.
-- `mode: 'id'` (default) — selects the node with the same id in each other viewer; no-op if id is absent.
-- `mode: 'layer'` — matches by `extensions[layer].nodes[nodeId].info[field]` value; on multiple matches, picks the node with the highest `topo_index` in that extension (or last in `activeNodes` order if no topo index).
+| Mode | Sidebar label | Behavior |
+|------|--------------|----------|
+| `'auto'` (default) | Auto (handle→id) | `debug_handle` set-intersection first; falls back to node-ID match |
+| `'id'` | ID only | Matches by node id; no-op if absent |
+| `'layer'` | Ext: \<extId\>.\<field\> | Matches by extension field value; picks last in topo order on multiple matches |
+| `'none'` | Don't sync | No propagation |
+
+`debug_handle` normalization: `int` → `{int}`, `int[]` → `Set(int[])`, `null/0/[]` → empty set. Two nodes match if their sets have a non-empty intersection. The **last in topological order** is selected on multiple matches.
+
+Three mapping patterns:
+- **1-to-1**: same handle on both sides.
+- **1-to-many** (decomposed ops): `linear` → `t + mm + add`, all share the same handle; last decomposed op is selected.
+- **many-to-1** (fused ops): fused node carries union tuple handle `(h1, h2)`; any source node whose handle intersects `{h1, h2}` matches.
 
 ### Merged Info Panel
 
-When a node is selected (and sync propagates), `_updateMergedInfo(nodeIdMap)` renders a comparison table into `.fx-compare-info-bar`:
+When a node is selected (and sync propagates), `_updateMergedInfo(nodeIdMap)` renders a comparison table into `.fx-compare-info-row`:
 - Header row: "Property" | Graph 1 | Graph 2 | ...
 - One row per property (union of all `node.info` keys across all selected nodes)
 - Rows where values differ across graphs are highlighted amber (`.fx-diff`)
@@ -181,6 +197,18 @@ What formatters do not receive implicitly:
 If you need base attributes (for example `target`, `op`) in extension label/tooltip,
 copy them into extension data before formatter use.
 
+### Sync key registration
+
+To expose an extension field as an explicit sync option in the compare sidebar:
+
+```python
+ext.set_sync_key("debug_handle")
+```
+
+This makes `Ext: <ext_id>.debug_handle` appear as a selectable option in the compare sidebar. Selecting it activates `mode: 'layer'` with that extension and field.
+
+The `per_layer_accuracy` extension automatically registers `debug_handle` as a sync key when built via `_add_accuracy_extension`.
+
 ## Color Rules
 
 Available rules:
@@ -192,6 +220,26 @@ Rule selection:
 2. Use numeric for continuous measured metrics.
 3. Keep `handle_outliers=True` for noisy distributions.
 4. For rank/index-like metrics, set `handle_outliers=False`.
+
+## 3-Graph Compare Demo
+
+Standalone demo showing all three `debug_handle` mapping patterns in one compare view:
+
+```bash
+python backends/qualcomm/utils/fx_viewer/examples/demo_3graph_compare.py
+```
+
+Output: `demo_3graph_compare.html`
+
+Three graphs:
+1. **Reference (float)**: unique int handle per node.
+2. **Decomposed (1→many)**: each `linear` → `t + mm + add`, all three share the same handle.
+3. **Fused (many→1)**: `relu` nodes that follow a `linear` carry a union tuple handle `(linear_h, relu_h)`.
+
+Expected sync behavior (mode `auto`, set intersection):
+- Click `linear` (handle `{6}`) in Graph 1 → Graph 2: `add_tensor` (last of `{t,mm,add}`). Graph 3: `relu` (handle `{6,7}`).
+- Click `relu` (handle `{7}`) in Graph 1 → Graph 2: `relu_default`. Graph 3: `relu` (handle `{6,7}`).
+- Click `relu` (handle `{6,7}`) in Graph 3 → Graph 1: `relu` (last among `{linear,relu}`). Graph 2: `relu_default`.
 
 ## Unified API Harness
 
