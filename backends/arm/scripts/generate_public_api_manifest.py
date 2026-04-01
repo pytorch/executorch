@@ -60,6 +60,9 @@ def _api_kind(obj: object) -> str:
 
 
 def _api_signature(path: str, obj: object) -> str:
+    if inspect.isclass(obj) and issubclass(obj, enum.Enum):
+        # EnumMeta.__call__ renders differently across Python versions.
+        return f"{path}(*values)"
     try:
         return f"{path}{inspect.signature(cast(Any, obj))}"
     except (TypeError, ValueError):
