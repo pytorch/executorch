@@ -262,9 +262,9 @@ void quantized_conv1d_nlc_per_tensor_out(
   ScalarType dtype = out.scalar_type();
 
   if (dtype == ScalarType::Char) {
-    // HiFi nnlib conv2d kernel produces incorrect results with stride > 1
-    // on some backends (e.g., Artemis HiFi4). Fall back to generic.
-    if (stride[0] > 1) {
+    // HiFi nnlib conv2d kernel does not support depthwise (groups > 1)
+    // or stride > 1. Fall back to generic implementation.
+    if (groups > 1 || stride[0] > 1) {
       impl::generic::native::quantized_conv1d_nlc_per_tensor_out(
           ctx,
           input,
