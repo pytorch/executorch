@@ -412,13 +412,19 @@ Tensor& custom_sdpa_out_impl(
       InvalidArgument,
       output);
 
-  // TODO(task): replace the template param selection logic
-  // with whatever apprpriately makes more sense for
+  bool use_unfused_sdpa = q.scalar_type() != ScalarType::Char &&
+      seq_len == 1;
+  if (use_unfused_sdpa) {
+    ET_SWITCH_FLOAT_TYPES(
+        output.scalar_type(), ctx, "sdpa", CTYPE, [&] {
+          sdpa::impl::cpu_sdpa<CTYPE>(
+              ctx, output, q, k, v, is_causal, attn_mask, scale,
+              seq_dim,
+              start_pos, num_keys_for_causal_attention);
+        });
+  } else {
   ET_SWITCH_FLOAT_TYPES(
       output.scalar_type(), ctx, "flash_attention", CTYPE, [&] {
-        // TODO we need to re-evaluate this for ARM CPUs
-        // And there can be many so instead of templatizing
-        // we might consider another appraoch
         if (seq_len >= 768) {
           sdpa::impl::cpu_flash_attention<CTYPE, 256, 512>(
               ctx,
@@ -430,13 +436,13 @@ Tensor& custom_sdpa_out_impl(
               is_causal,
               attn_mask,
               scale,
-              q_zero_points, // q_zero_points
-              q_scales, // q_scales
-              k_zero_points, // k_zero_points
-              k_scales, // k_scales
-              v_zero_points, // v_zero_points
-              v_scales, // v_scales
-              seq_dim, /* seq_dim */
+              q_zero_points,
+              q_scales,
+              k_zero_points,
+              k_scales,
+              v_zero_points,
+              v_scales,
+              seq_dim,
               start_pos,
               num_keys_for_causal_attention);
         } else if (seq_len >= 192) {
@@ -450,13 +456,13 @@ Tensor& custom_sdpa_out_impl(
               is_causal,
               attn_mask,
               scale,
-              q_zero_points, // q_zero_points
-              q_scales, // q_scales
-              k_zero_points, // k_zero_points
-              k_scales, // k_scales
-              v_zero_points, // v_zero_points
-              v_scales, // v_scales
-              seq_dim, /* seq_dim */
+              q_zero_points,
+              q_scales,
+              k_zero_points,
+              k_scales,
+              v_zero_points,
+              v_scales,
+              seq_dim,
               start_pos,
               num_keys_for_causal_attention);
         } else {
@@ -470,17 +476,18 @@ Tensor& custom_sdpa_out_impl(
               is_causal,
               attn_mask,
               scale,
-              q_zero_points, // q_zero_points
-              q_scales, // q_scales
-              k_zero_points, // k_zero_points
-              k_scales, // k_scales
-              v_zero_points, // v_zero_points
-              v_scales, // v_scales
-              seq_dim, /* seq_dim */
+              q_zero_points,
+              q_scales,
+              k_zero_points,
+              k_scales,
+              v_zero_points,
+              v_scales,
+              seq_dim,
               start_pos,
               num_keys_for_causal_attention);
         }
       });
+  }
   return output;
 }
 
