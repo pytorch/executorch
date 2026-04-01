@@ -132,7 +132,7 @@ ET_NODISCARD Error validateTensorLayout(
   ET_CHECK_OR_RETURN_ERROR(
       s_tensor->dim_order()->size() == static_cast<size_t>(dim),
       InvalidExternalData,
-      "Dim order size mismatch. Expected %d, got %zu.",
+      "Dim order size mismatch. Expected %d, got %u.",
       dim,
       s_tensor->dim_order()->size());
   for (int i = 0; i < dim; i++) {
