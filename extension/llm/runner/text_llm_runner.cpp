@@ -108,7 +108,6 @@ Error TextLLMRunner::generate(
   // return a response token.
 
   stats_->inference_start_ms = time_in_ms();
-  shouldStop_ = false;
 
   // Capture remaining KV cache capacity before prefill (pos_ will change)
   int64_t max_context_len = metadata_.at(kMaxContextLen) - pos_;

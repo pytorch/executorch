@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -162,8 +161,6 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
   void stop() override;
 
  private:
-  std::atomic<bool> shouldStop_{false};
-
   // Components
   std::unique_ptr<::tokenizers::Tokenizer> tokenizer_;
   std::unordered_map<std::string, int64_t> metadata_;
