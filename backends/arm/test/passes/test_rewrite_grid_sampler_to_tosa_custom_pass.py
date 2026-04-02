@@ -3,8 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import json
-
 import executorch.backends.arm.tosa.dialect  # noqa: F401
 import torch
 import torch.nn.functional as F
@@ -14,6 +12,15 @@ from executorch.backends.arm.tosa.specification import (
 )
 from executorch.backends.arm.vgf._passes.rewrite_grid_sampler_to_tosa_custom import (
     RewriteGridSamplerToTosaCustomPass,
+)
+from executorch.backends.arm.vgf.shaders.grid_sampler import (
+    CUSTOM_SHADER_DOMAIN_NAME,
+    decode_payload,
+    GRID_SAMPLER_2D_OPERATOR_NAME,
+    GRID_SAMPLER_2D_SHADER_ENTRY_POINT,
+    GRID_SAMPLER_2D_SHADER_LANGUAGE,
+    GRID_SAMPLER_2D_VK_FORMAT,
+    GRID_SAMPLER_2D_WORKGROUP_SIZES,
 )
 from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -62,11 +69,22 @@ def test_rewrite_grid_sampler_to_tosa_custom_no_target():
     custom_node = next(
         node for node in nodes if node.target == exir_ops.backend.tosa.CUSTOM.default
     )
-    assert custom_node.kwargs["operator_name"] == "grid_sampler_2d"
-    assert custom_node.kwargs["domain_name"] == "arm.custom_shader"
+    assert custom_node.kwargs["operator_name"] == GRID_SAMPLER_2D_OPERATOR_NAME
+    assert custom_node.kwargs["domain_name"] == CUSTOM_SHADER_DOMAIN_NAME
 
-    payload = json.loads(
-        bytes(custom_node.kwargs["implementation_attrs"]).decode("utf-8")
-    )
-    assert payload["op"] == "grid_sampler_2d"
-    assert payload["shader"]["encoding"] == "placeholder"
+    payload = decode_payload(custom_node.kwargs["implementation_attrs"])
+    assert payload["entry_point"] == GRID_SAMPLER_2D_SHADER_ENTRY_POINT
+    assert payload["workgroup_sizes"] == GRID_SAMPLER_2D_WORKGROUP_SIZES
+    assert payload["shader_language"] == GRID_SAMPLER_2D_SHADER_LANGUAGE
+    assert payload["input_0_type"] == "Tensor"
+    assert payload["input_0_vkformat"] == GRID_SAMPLER_2D_VK_FORMAT
+    assert payload["input_0_binding"] == 0
+    assert payload["input_0_descriptorset"] == 0
+    assert payload["input_1_type"] == "Tensor"
+    assert payload["input_1_vkformat"] == GRID_SAMPLER_2D_VK_FORMAT
+    assert payload["input_1_binding"] == 1
+    assert payload["input_1_descriptorset"] == 0
+    assert payload["output_0_type"] == "Tensor"
+    assert payload["output_0_vkformat"] == GRID_SAMPLER_2D_VK_FORMAT
+    assert payload["output_0_binding"] == 2
+    assert payload["output_0_descriptorset"] == 0
