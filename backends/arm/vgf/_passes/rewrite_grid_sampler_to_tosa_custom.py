@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import json
 import operator
 from typing import Set, Type
 
@@ -11,11 +10,17 @@ import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm.tosa.dialect.ops.custom import register_fake_tosa
+from executorch.backends.arm.vgf.shaders.grid_sampler import (
+    build_grid_sampler_2d_payload,
+    CUSTOM_SHADER_DOMAIN_NAME,
+    encode_payload,
+    GRID_SAMPLER_2D_OPERATOR_NAME,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-@register_fake_tosa("grid_sampler_2d")
+@register_fake_tosa(GRID_SAMPLER_2D_OPERATOR_NAME)
 def _grid_sampler_2d_custom_fake_impl(
     inputs, operator_name, domain_name, implementation_attrs
 ) -> list[torch.Tensor]:
@@ -46,16 +51,12 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
     def _encode_payload(
         interpolation_mode: int, padding_mode: int, align_corners: bool
     ) -> list[int]:
-        payload = {
-            "version": 1,
-            "type": "arm_custom_shader",
-            "op": "grid_sampler_2d",
-            "interpolation_mode": int(interpolation_mode),
-            "padding_mode": int(padding_mode),
-            "align_corners": bool(align_corners),
-            "shader": {"encoding": "placeholder", "entry_point": "main"},
-        }
-        return list(json.dumps(payload, sort_keys=True).encode("utf-8"))
+        payload = build_grid_sampler_2d_payload(
+            interpolation_mode=interpolation_mode,
+            padding_mode=padding_mode,
+            align_corners=align_corners,
+        )
+        return encode_payload(payload)
 
     def call(self, graph_module):
         modified = False
@@ -83,8 +84,8 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
                     op_target=exir_ops.backend.tosa.CUSTOM.default,
                     args=([input_tensor, grid],),
                     kwargs={
-                        "operator_name": "grid_sampler_2d",
-                        "domain_name": "arm.custom_shader",
+                        "operator_name": GRID_SAMPLER_2D_OPERATOR_NAME,
+                        "domain_name": CUSTOM_SHADER_DOMAIN_NAME,
                         "implementation_attrs": implementation_attrs,
                     },
                     from_node=node,
