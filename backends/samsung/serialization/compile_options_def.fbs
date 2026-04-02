@@ -14,10 +14,16 @@ file_identifier "EETO";
 // Extension of written files.
 file_extension "eeto";
 
+enum PerformanceMode : byte {
+    DEFAULT = 0,
+    HIGH_PERFORMANCE = 1,
+}
 
 table EnnExecuTorchOptions {
   // The version of chipset. Specify the soc to compile and execute model.
   chipset: int;
+
+  perf_mode: PerformanceMode = DEFAULT;
 }
 
 root_type EnnExecuTorchOptions;
