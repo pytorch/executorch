@@ -37,6 +37,7 @@
 
 // Include our shim layer headers
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
+#include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
@@ -444,7 +445,9 @@ class ET_EXPERIMENTAL CudaBackend final
           from_etensor(*cpu_tensor, CPU_DEVICE, DEFAULT_CUDA_DEVICE));
     }
 
-    // Process output tensors: create GPU SlimTensors for kernel output
+    // Process output tensors: create GPU SlimTensors for kernel output.
+    // Save pre-run handles to detect orphans after run().
+    std::vector<SlimTensor*> pre_run_outputs(n_outputs, nullptr);
     for (size_t i = 0; i < n_outputs; i++) {
       auto* cpu_output_tensor = &(args[i + n_inputs]->toTensor());
       auto sizes = cpu_output_tensor->sizes();
@@ -459,16 +462,29 @@ class ET_EXPERIMENTAL CudaBackend final
           slim::makeArrayRef(strides_vec),
           static_cast<slim::c10::ScalarType>(scalar_type),
           DEFAULT_CUDA_DEVICE));
+      pre_run_outputs[i] = gpu_outputs[i];
     }
 
-    // Run the AOTI container with SlimTensors.
-    //
-    // NOTE: The handle->run function (defined in aoti_delegate_handle.h)
-    // expects ETensor* as input/output. We avoid changing its signature since
-    // it's shared with the Metal backend. Instead, we reinterpret_cast
-    // SlimTensor* to Tensor*
-    //
-    // Get current CUDA stream and pass it to AOTInductorModelContainerRun
+    bool run_called = false;
+
+    // Scope guard: deletes any non-null gpu_outputs on exit. Normal paths
+    // null entries as they take ownership, so the guard only fires on
+    // early-return error paths. Also cleans up inputs if run() was never
+    // called (run() steals them via internal RAII).
+    executorch::backends::aoti::ScopeGuard cleanup([&]() noexcept {
+      if (!run_called) {
+        delete_slimtensor_vector(gpu_inputs);
+      }
+      for (size_t i = 0; i < gpu_outputs.size(); i++) {
+        if (gpu_outputs[i]) {
+          delete gpu_outputs[i];
+        }
+      }
+    });
+
+    // Run the AOTI container.
+    // NOTE: run() steals input handles (RAII wraps them at the start of
+    // run_impl) and may replace output handles with its own.
     Result<cudaStream_t> cuda_stream_ret = getCurrentCUDAStream(0);
     cudaStream_t cuda_stream = cuda_stream_ret.get();
     ET_CHECK_OK_OR_RETURN_ERROR(cuda_stream_ret.error());
@@ -480,6 +496,16 @@ class ET_EXPERIMENTAL CudaBackend final
         n_outputs,
         static_cast<void*>(cuda_stream),
         nullptr);
+    run_called = true;
+
+    // Delete orphaned pre-created outputs that run() replaced.
+    // Must happen before the error check — if run() fails after
+    // replacing some outputs, the originals would otherwise leak.
+    for (size_t i = 0; i < n_outputs; i++) {
+      if (pre_run_outputs[i] != gpu_outputs[i]) {
+        delete pre_run_outputs[i];
+      }
+    }
 
     ET_CHECK_OR_RETURN_ERROR(
         error == Error::Ok,
@@ -497,40 +523,30 @@ class ET_EXPERIMENTAL CudaBackend final
                 gpu_outputs[i], cpu_output_tensor, cuda_stream),
             "Failed to copy GPU output %zu back to CPU ETensor",
             i);
+        delete gpu_outputs[i];
+        gpu_outputs[i] = nullptr;
       }
-      // Cleanup gpu_outputs after copying - they are no longer needed
-      delete_slimtensor_vector(gpu_outputs);
     } else {
       // Skip-copy optimization: point ETensor directly to GPU data.
-      // The caller is responsible for handling GPU data directly.
-      //
-      // Lifetime management: We cache the newly created GPU tensors and delete
-      // the previous round's tensors, since they are no longer needed.
+      // Lifetime management: cache GPU tensors and delete previous round's.
       {
         std::lock_guard<std::mutex> guard(cached_outputs_mutex_);
         auto& cached_outputs = cached_outputs_[handle];
 
-        // Delete the previous round's tensors since they are no longer in use.
         delete_slimtensor_vector(cached_outputs);
 
         for (size_t i = 0; i < n_outputs; i++) {
-          // Cache this output tensor to keep the underlying GPU data alive.
           cached_outputs.push_back(gpu_outputs[i]);
+          gpu_outputs[i] = nullptr;
 
-          // Wrap the GPU SlimTensor data into the ETensor (zero-copy).
-          // This resizes the ETensor to match the SlimTensor shape and sets
-          // its data pointer to point directly to the GPU data.
           auto* output_etensor = &(args[i + n_inputs]->toTensor());
           ET_CHECK_OK_OR_RETURN_ERROR(
-              wrap_slimtensor_to_etensor(gpu_outputs[i], output_etensor),
+              wrap_slimtensor_to_etensor(cached_outputs.back(), output_etensor),
               "Failed to wrap GPU output %zu into ETensor",
               i);
         }
       }
     }
-
-    // Cleanup gpu_inputs - they are no longer needed after kernel execution
-    delete_slimtensor_vector(gpu_inputs);
 
     return Error::Ok;
   }

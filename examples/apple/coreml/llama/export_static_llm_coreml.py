@@ -106,6 +106,20 @@ def remove_graph_break_(edge_manager):
         ep.graph_module.graph.eliminate_dead_code()
 
 
+_STATIC_ATTENTION_KEY_RENAMES = [("wq", "wqs.0"), ("wk", "wks.0"), ("wv", "wvs.0")]
+
+
+def _rename_static_attention_keys(state_dict, n_layers):
+    """Rename wq/wk/wv keys to wqs.0/wks.0/wvs.0 for StaticAttention."""
+    for i in range(n_layers):
+        for old_proj, new_proj in _STATIC_ATTENTION_KEY_RENAMES:
+            prefix = f"layers.{i}.attention."
+            for key in list(state_dict.keys()):
+                if key.startswith(f"{prefix}{old_proj}."):
+                    suffix = key[len(f"{prefix}{old_proj}.") :]
+                    state_dict[f"{prefix}{new_proj}.{suffix}"] = state_dict.pop(key)
+
+
 def load_model(
     checkpoint_path: str,
     params_path: str,
@@ -156,19 +170,7 @@ def load_model(
     # Rename attention weight keys for static attention:
     # wq.weight -> wqs.0.weight, wk.weight -> wks.0.weight, wv.weight -> wvs.0.weight
     # LoRALinear._load_from_state_dict remaps weight -> linear.weight automatically.
-    for i in range(len(model.layers)):
-        if f"layers.{i}.attention.wq.weight" in checkpoint:
-            checkpoint[f"layers.{i}.attention.wqs.0.weight"] = checkpoint.pop(
-                f"layers.{i}.attention.wq.weight"
-            )
-        if f"layers.{i}.attention.wk.weight" in checkpoint:
-            checkpoint[f"layers.{i}.attention.wks.0.weight"] = checkpoint.pop(
-                f"layers.{i}.attention.wk.weight"
-            )
-        if f"layers.{i}.attention.wv.weight" in checkpoint:
-            checkpoint[f"layers.{i}.attention.wvs.0.weight"] = checkpoint.pop(
-                f"layers.{i}.attention.wv.weight"
-            )
+    _rename_static_attention_keys(checkpoint, len(model.layers))
 
     if adapter_checkpoint is not None:
         from executorch.examples.models.llama.convert_weights import (
@@ -176,19 +178,7 @@ def load_model(
         )
 
         adapter_weights = load_and_convert_unsloth_to_meta(adapter_checkpoint)
-        # Rename adapter keys: wq.lora_*.weight -> wqs.0.lora_*.weight
-        for i in range(len(model.layers)):
-            for old_proj, new_proj in [
-                ("wq", "wqs.0"),
-                ("wk", "wks.0"),
-                ("wv", "wvs.0"),
-            ]:
-                for suffix in ["lora_a.weight", "lora_b.weight"]:
-                    old_key = f"layers.{i}.attention.{old_proj}.{suffix}"
-                    if old_key in adapter_weights:
-                        new_key = f"layers.{i}.attention.{new_proj}.{suffix}"
-                        adapter_weights[new_key] = adapter_weights.pop(old_key)
-
+        _rename_static_attention_keys(adapter_weights, len(model.layers))
         checkpoint.update(adapter_weights)
 
     missing, unexpected = model.load_state_dict(
@@ -426,6 +416,19 @@ def _transform_eager_model(model, args, float_dtype):
     return model
 
 
+def _export_model(m, inputs, label="model"):
+    print(f"\nTesting eager execution ({label})...")
+    with torch.no_grad():
+        m(*inputs)
+    print(f"Eager execution successful ({label})!")
+
+    print(f"\nExporting {label}...")
+    ep = torch.export.export(m, inputs)
+    print(f"Export successful ({label})!")
+    print(ep)
+    return ep
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Export static attention Llama model to CoreML"
@@ -539,9 +542,6 @@ def main():
         )
     else:
         print("\tSingle method: fixed seqlen, generate_full_logits=True (lookahead)")
-    if has_adapters:
-        print(f"\tAdapters: {[a[0] for a in args.adapter]}")
-
     print("\nQuantization and datatype:")
     print(f"\tEmbedding quantize: {args.embedding_quantize}")
     print(f"\tLinear quantize: {args.linear_quantize}")
@@ -590,18 +590,6 @@ def main():
             )
             lora_model = _transform_eager_model(lora_model, args, float_dtype)
             lora_models[name] = lora_model
-
-    def _export_model(m, inputs, label="model"):
-        print(f"\nTesting eager execution ({label})...")
-        with torch.no_grad():
-            m(*inputs)
-        print(f"Eager execution successful ({label})!")
-
-        print(f"\nExporting {label}...")
-        ep = torch.export.export(m, inputs)
-        print(f"Export successful ({label})!")
-        print(ep)
-        return ep
 
     if args.multifunction:
         # Multifunction mode: separate prefill and decode graphs with weight sharing
@@ -683,8 +671,6 @@ def main():
             "prefill_mask_specs": prefill_metadata["mask_specs"],
             "prefill_kv_cache_specs": prefill_metadata["kv_cache_specs"],
         }
-        if has_adapters:
-            constant_methods["has_lora"] = True
     else:
         # Fixed seqlen mode: base + optional adapter methods
         print(f"\nCreating example inputs (seqlen={args.input_len})...")
@@ -702,8 +688,9 @@ def main():
         constant_methods = _get_metadata(
             model_args, example_inputs, args.input_len, example_cache_len, float_dtype
         )
-        if has_adapters:
-            constant_methods["has_lora"] = True
+
+    if has_adapters:
+        constant_methods["has_lora"] = True
 
     # Setup CoreML partitioner
     print("\nSetting up CoreML partitioner...")
