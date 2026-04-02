@@ -12,10 +12,10 @@
 #include <executorch/runtime/platform/platform.h>
 
 #if defined(ESP_PLATFORM)
+#include <esp_clk_tree.h>
 #include <esp_cpu.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
-#include <esp_clk_tree.h>
 #endif
 
 extern "C" {
@@ -56,8 +56,10 @@ et_timestamp_t et_pal_current_ticks(void) {
 et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
 #if defined(ESP_PLATFORM)
   uint32_t cpu_freq_hz;
-  if (esp_clk_tree_src_get_freq_hz(SOC_MOD_CLK_CPU, ESP_CLK_TREE_SRC_FREQ_PRECISION_CACHED, &cpu_freq_hz) ==
-      ESP_OK) {
+  if (esp_clk_tree_src_get_freq_hz(
+          SOC_MOD_CLK_CPU,
+          ESP_CLK_TREE_SRC_FREQ_PRECISION_CACHED,
+          &cpu_freq_hz) == ESP_OK) {
     return {1000000000u, cpu_freq_hz};
   }
 #endif

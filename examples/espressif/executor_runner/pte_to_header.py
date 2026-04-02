@@ -77,10 +77,8 @@ if __name__ == "__main__":
     with open(args.pte, "rb") as fr, open(outfile, "w") as fw:
         data = fr.read()
         hexstream = binascii.hexlify(data).decode("utf-8")
-        
-        fw.write(
-            "/* Auto-generated model header for ESP32 ExecuTorch runner. */\n"
-        )
+
+        fw.write("/* Auto-generated model header for ESP32 ExecuTorch runner. */\n")
         fw.write(f"/* Source: {os.path.basename(args.pte)} ({len(data)} bytes) */\n\n")
         fw.write("#pragma once\n\n")
         fw.write(attr + "model_pte[] = {")

@@ -16,22 +16,21 @@
  * while still delegating to executor_runner_main().
  */
 
-
 #include <stdio.h>
-#include "sdkconfig.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_system.h"
+#include "sdkconfig.h"
 
 extern void executor_runner_main(void);
 
 extern "C" void app_main(void) {
-    printf("Starting executorch runner !\n");
-    fflush(stdout);
-    // Custom initialization here
-    executor_runner_main();
-    for (int i = 5; i >= 0; i--) {
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
-    esp_restart();
+  printf("Starting executorch runner !\n");
+  fflush(stdout);
+  // Custom initialization here
+  executor_runner_main();
+  for (int i = 5; i >= 0; i--) {
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+  }
+  esp_restart();
 }

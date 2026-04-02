@@ -9,7 +9,6 @@
 
 #include <executorch/runtime/core/memory_allocator.h>
 
-
 /**
  * Custom allocator for Espressif ESP32/ESP32-S3 targets that tracks
  * used and free memory. Extends the ExecuTorch MemoryAllocator with
