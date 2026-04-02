@@ -71,6 +71,7 @@ class FXGraphCompare {
         this._domSnapshots = new WeakMap();
         this._followSelection = true;
         this._openPortalMenus = [];
+        this._currentTheme = this.viewers[0]?.controller?.state?.themeName || 'light';
 
         if (this.container) {
             this._buildCompareDOM();
@@ -396,7 +397,7 @@ class FXGraphCompare {
 
     _rebuildSyncPanel() {
         if (!this._syncSelect) return;
-        let html = '<option value="auto">Auto (handle→id)</option>'
+        let html = '<option value="auto">Auto (handle -> id)</option>'
                  + '<option value="id">ID only</option>'
                  + '<option value="none">Don\'t sync</option>';
         const seen = new Set(['auto', 'id', 'none']);
@@ -447,6 +448,15 @@ class FXGraphCompare {
         menu.style.maxHeight = Math.min(window.innerHeight - btnRect.top - 8, window.innerHeight * 0.6) + 'px';
         this._root.appendChild(menu);
         this._openPortalMenus.push(menu);
+        const theme = (typeof THEMES !== 'undefined' && THEMES[this._currentTheme]) || THEMES?.light;
+        if (theme) {
+            menu.style.backgroundColor = theme.uiBg;
+            menu.style.color = theme.text;
+            menu.style.borderColor = theme.uiBorder;
+            menu.querySelectorAll('label, .fx-button, .fx-select').forEach((el) => {
+                el.style.color = theme.text;
+            });
+        }
     }
 
     _closePortalMenu(menu) {
@@ -763,6 +773,7 @@ class FXGraphCompare {
     setCompact() {}
 
     _applyCompareTheme(themeName) {
+        this._currentTheme = themeName;
         const isDark = themeName === 'dark';
         const r = this._root.style;
         if (isDark) {
@@ -799,6 +810,16 @@ class FXGraphCompare {
                 el.style.color = theme.text;
                 el.style.borderColor = theme.uiBorder;
             });
+        }
+        if (theme) {
+            for (const menu of this._openPortalMenus) {
+                menu.style.backgroundColor = theme.uiBg;
+                menu.style.color = theme.text;
+                menu.style.borderColor = theme.uiBorder;
+                menu.querySelectorAll('label, .fx-button, .fx-select').forEach((el) => {
+                    el.style.color = theme.text;
+                });
+            }
         }
     }
 

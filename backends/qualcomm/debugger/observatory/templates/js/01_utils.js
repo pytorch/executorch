@@ -116,7 +116,12 @@
   }
 
   function destroyGraphRuntime() {
+    const persistentCompares = new Set(
+      Array.from(state.graphCompareInstances.values()).map(inst => inst.compare)
+    );
+
     for (const compare of state.mountedCompares) {
+      if (persistentCompares.has(compare)) continue;
       try {
         if (compare && typeof compare.destroy === 'function') compare.destroy();
       } catch (_e) {}
@@ -132,6 +137,13 @@
     state.mountedViewers = [];
   }
 
+  function destroyAllGraphCompares() {
+    for (const [, inst] of state.graphCompareInstances) {
+      try { inst.compare.destroy(); } catch (_) {}
+    }
+    state.graphCompareInstances.clear();
+  }
+
   OBS.utils = {
     safeStr,
     escapeHtml,
@@ -142,6 +154,7 @@
     toArraySet,
     buildViewerPayload,
     destroyGraphRuntime,
+    destroyAllGraphCompares,
     buildViewerCacheKey,
     evictViewerCache,
     MAX_CACHED_VIEWERS,
