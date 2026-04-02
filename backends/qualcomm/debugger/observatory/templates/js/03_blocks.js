@@ -353,122 +353,134 @@
     }
   }
 
-  function renderGraphCompare(content, entries, compareSpec, lensName, blockId) {
-    const maxParallel = Math.max(1, Number(compareSpec.max_parallel || 2));
-    const syncEnabledByDefault = compareSpec.sync_toggle !== false;
-    const selected = entries.slice(0, maxParallel);
+  function ensureCompareInstance(content, allEntries, compareSpec, lensName, blockId) {
+    const cacheKey = `${lensName}:${blockId}`;
+    const cached = state.graphCompareInstances.get(cacheKey);
 
-    const controls = document.createElement('div');
-    controls.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;';
-    const syncId = `sync_${Math.random().toString(36).slice(2)}`;
-    controls.innerHTML = `
-      <label style="display:flex;align-items:center;gap:6px;">
-        <input id="${syncId}" type="checkbox" ${syncEnabledByDefault ? 'checked' : ''} />
-        Sync Selection
-      </label>
-    `;
-    content.appendChild(controls);
-
-    const split = document.createElement('div');
-    split.className = 'split-view';
-    content.appendChild(split);
-
-    const snapKey = buildViewerCacheKey('compare', null, lensName, blockId);
-    const snap = state.compareStateCache.get(snapKey);
-
-    const viewers = [];
-    for (const entry of selected) {
-      const pane = document.createElement('div');
-      pane.className = 'split-pane';
-
-      const h3 = document.createElement('h3');
-      const span = document.createElement('span');
-      span.className = 'clickable-name';
-      span.textContent = entry.record.name || `record_${entry.idx}`;
-      span.onclick = () => window.selectRecord(entry.idx, true);
-      h3.appendChild(span);
-      pane.appendChild(h3);
-
-      const root = document.createElement('div');
-      root.style.height = '520px';
-      root.style.minHeight = '360px';
-      root.style.border = '1px solid var(--border-color)';
-      root.style.borderRadius = '8px';
-      root.style.overflow = 'hidden';
-      pane.appendChild(root);
-
-      const options = Object.assign({}, (entry.block && entry.block.record && entry.block.record.viewer_options) || {}, compareSpec.viewer_options_compare || {});
-      const fallbackGraphRef = (entry.record && entry.record.name) || '';
-      const viewer = mountGraphViewer(root, entry.block.record || {}, options, fallbackGraphRef, null);
-
-      if (viewer) {
-        requestAnimationFrame(() => {
-          if (snap) {
-            if (Array.isArray(snap.activeExtensions) && typeof viewer.setLayers === 'function') {
-              try { viewer.setLayers(snap.activeExtensions); } catch (_) {}
-            }
-            if (snap.colorBy && typeof viewer.setColorBy === 'function') {
-              try { viewer.setColorBy(snap.colorBy); } catch (_) {}
-            }
-            const nodeExists = snap.selectedNodeId &&
-              viewer.store && viewer.store.activeNodeMap &&
-              viewer.store.activeNodeMap.has(snap.selectedNodeId);
-            if (nodeExists) {
-              try { viewer.selectNode(snap.selectedNodeId, { animate: true }); } catch (_) {}
-            } else {
-              // zoomToFit is always safer than restoring a camera position that may
-              // point to empty space in a different record's graph layout.
-              try { viewer.zoomToFit(); } catch (_) {}
-            }
-          }
-
-          if (typeof viewer.on === 'function') {
-            viewer.on('statechange', () => {
-              try {
-                const s = viewer.getState();
-                const prev = state.compareStateCache.get(snapKey) || {};
-                state.compareStateCache.set(snapKey, {
-                  camera: s.camera,
-                  // Preserve a selection set by any viewer; don't overwrite with null
-                  selectedNodeId: s.selectedNodeId || prev.selectedNodeId || null,
-                  activeExtensions: s.activeExtensions || prev.activeExtensions || [],
-                  colorBy: s.colorBy || prev.colorBy || 'base',
-                });
-              } catch (_) {}
-            });
-          }
-        });
-        viewers.push(viewer);
-      }
-
-      split.appendChild(pane);
+    if (cached) {
+      content.appendChild(cached.compare._root);
+      requestAnimationFrame(() => {
+        for (const v of cached.compare.viewers) {
+          try { v.canvasRenderer.resize(); } catch (_) {}
+          try { v.renderAll(); } catch (_) {}
+        }
+      });
+      return cacheKey;
     }
 
-    const hasCompareCtor = typeof FXGraphCompare !== 'undefined' || !!(window && window.FXGraphCompare);
-    if (viewers.length > 1 && hasCompareCtor) {
-      const CompareCtor = typeof FXGraphCompare !== 'undefined' ? FXGraphCompare : window.FXGraphCompare;
-      const syncConfig = {
-        selection: syncEnabledByDefault,
-        camera: false,
-        theme: false,
-        layers: false,
-      };
-      const compare = CompareCtor.create({
-        viewers,
-        layout: { columns: Math.min(maxParallel, viewers.length), compact: true },
-        sync: syncConfig,
-      });
-      state.mountedCompares.push(compare);
+    const placeholder = document.createElement('div');
+    placeholder.className = 'loading';
+    placeholder.textContent = 'Building graph compare view\u2026';
+    content.appendChild(placeholder);
 
-      const syncInput = document.getElementById(syncId);
-      if (syncInput) {
-        syncInput.addEventListener('change', () => {
-          const enabled = syncInput.checked;
-          if (typeof compare.setSync === 'function') {
-            compare.setSync({ selection: enabled, camera: false, theme: false, layers: false });
+    buildCompareAsync(content, placeholder, compareSpec, lensName, blockId, cacheKey);
+    return cacheKey;
+  }
+
+  async function buildCompareAsync(content, placeholder, compareSpec, lensName, blockId, cacheKey) {
+    const CompareCtor = typeof FXGraphCompare !== 'undefined' ? FXGraphCompare : (window && window.FXGraphCompare);
+    if (!CompareCtor) {
+      if (placeholder) placeholder.innerHTML = '<span style="color:red">FXGraphCompare unavailable.</span>';
+      return;
+    }
+
+    const records = state.data.records || [];
+    const viewerMap = new Map();
+    const nameToIndex = new Map();
+    const isOnscreen = placeholder !== null;
+
+    for (let idx = 0; idx < records.length; idx++) {
+      if (isOnscreen && !content.isConnected) return;
+
+      const record = records[idx];
+      if (!record) continue;
+      const blocks = getLensBlocks(record, lensName);
+      const block = blocks.find(b => (b.id || `${lensName}_${b.type}`) === (blockId || `${lensName}_graph`));
+      if (!block || block.type !== 'graph') continue;
+
+      const graphRoot = document.createElement('div');
+      graphRoot.style.height = '520px';
+      graphRoot.style.minHeight = '360px';
+      graphRoot.style.overflow = 'hidden';
+
+      const options = Object.assign({}, (block.record && block.record.viewer_options) || {});
+      const fallbackGraphRef = record.name || '';
+      const viewer = mountGraphViewer(graphRoot, block.record || {}, options, fallbackGraphRef, null);
+      if (!viewer) continue;
+
+      const name = record.name || `record_${idx}`;
+      viewerMap.set(name, viewer);
+      nameToIndex.set(name, idx);
+
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    }
+
+    if (isOnscreen && !content.isConnected) return;
+
+    if (viewerMap.size === 0) {
+      if (placeholder) placeholder.innerHTML = '<span style="color:red">No graph viewers could be created.</span>';
+      return;
+    }
+
+    if (placeholder && placeholder.parentNode) placeholder.parentNode.removeChild(placeholder);
+
+    const compare = CompareCtor.create({
+      viewers: viewerMap,
+      layout: { container: content },
+      sync: { mode: 'auto' },
+    });
+
+    state.graphCompareInstances.set(cacheKey, { compare, nameToIndex });
+
+    const compareViewerSet = new Set(viewerMap.values());
+    state.mountedViewers = state.mountedViewers.filter(v => !compareViewerSet.has(v));
+
+    const visibleIndices = getCurrentVisibleIndices();
+    if (visibleIndices) syncCompareVisibility(cacheKey, visibleIndices);
+  }
+
+  function getCurrentVisibleIndices() {
+    if (state.selectionMode) return toArraySet(state.selectedIndices);
+    if (typeof state.activeRecordIndex === 'object' && state.activeRecordIndex !== null) {
+      return state.activeRecordIndex.pool
+        ? state.activeRecordIndex.pool
+        : [state.activeRecordIndex.base, state.activeRecordIndex.new].filter(x => Number.isInteger(x));
+    }
+    return null;
+  }
+
+  async function warmCompareInstances() {
+    const records = state.data.records || [];
+    if (records.length < 2) return;
+
+    const graphBlockIds = new Map();
+    for (const record of records) {
+      for (const lensName of Object.keys((record && record.views) || {})) {
+        const blocks = getLensBlocks(record, lensName);
+        for (const block of blocks) {
+          if (block.type !== 'graph') continue;
+          const id = block.id || `${lensName}_${block.type}`;
+          const key = `${lensName}:${id}`;
+          if (!graphBlockIds.has(key)) {
+            graphBlockIds.set(key, { lensName, blockId: id, compareSpec: block.compare || {} });
           }
-        });
+        }
       }
+    }
+
+    for (const [, spec] of graphBlockIds) {
+      const cacheKey = `${spec.lensName}:${spec.blockId}`;
+      if (state.graphCompareInstances.has(cacheKey)) continue;
+      const offscreen = document.createElement('div');
+      await buildCompareAsync(offscreen, null, spec.compareSpec, spec.lensName, spec.blockId, cacheKey);
+    }
+  }
+
+  function syncCompareVisibility(cacheKey, visibleIndices) {
+    const inst = state.graphCompareInstances.get(cacheKey);
+    if (!inst) return;
+    for (const [name, index] of inst.nameToIndex) {
+      inst.compare.setViewerVisible(name, visibleIndices.includes(index));
     }
   }
 
@@ -524,7 +536,8 @@
       } else if (sample.type === 'html' && mode === 'auto') {
         renderHtmlCompare(content, entries);
       } else if (sample.type === 'graph' && mode === 'auto') {
-        renderGraphCompare(content, entries, compareSpec, lensName, sample.id);
+        const cacheKey = ensureCompareInstance(content, entries, compareSpec, lensName, sample.id);
+        syncCompareVisibility(cacheKey, indices);
       } else if (mode === 'custom') {
         renderCustomCompare(content, entries, compareSpec, sample, lensName, sample.id);
       } else {
@@ -615,5 +628,6 @@
     renderDashboard,
     renderUnifiedView,
     mountGraphViewer,
+    warmCompareInstances,
   };
 })();

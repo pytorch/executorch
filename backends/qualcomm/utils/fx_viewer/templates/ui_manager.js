@@ -385,7 +385,12 @@ class UIManager {
 
         this.infoPanel.style.backgroundColor = theme.bg;
         
-        const controls = this.viewer.wrapper.querySelectorAll('.fx-button, .fx-search-input, .fx-select, .fx-layers-menu');
+        const sel = '.fx-button, .fx-search-input, .fx-select, .fx-layers-menu';
+        const wrapperControls = this.viewer.wrapper.querySelectorAll(sel);
+        const mainAreaControls = this.viewer.mainArea && this.viewer.mainArea !== this.viewer.wrapper
+            ? this.viewer.mainArea.querySelectorAll(sel)
+            : [];
+        const controls = new Set([...wrapperControls, ...mainAreaControls]);
         controls.forEach(ctrl => {
             ctrl.style.borderColor = theme.uiBorder;
             ctrl.style.color = theme.text;

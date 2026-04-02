@@ -17,13 +17,11 @@
         if (typeof viewer.setTheme === 'function') viewer.setTheme(theme);
       } catch (_) {}
     }
-    for (const compare of (state.mountedCompares || [])) {
-      try {
-        if (typeof compare.setSync === 'function') compare.setSync({ theme: false });
-        for (const v of (compare.viewers || [])) {
-          if (typeof v.setTheme === 'function') v.setTheme(theme);
-        }
-      } catch (_) {}
+    for (const [, inst] of (state.graphCompareInstances || new Map())) {
+      const firstViewer = inst.compare.viewers[0];
+      if (firstViewer && typeof firstViewer.setTheme === 'function') {
+        try { firstViewer.setTheme(theme); } catch (_) {}
+      }
     }
   }
 

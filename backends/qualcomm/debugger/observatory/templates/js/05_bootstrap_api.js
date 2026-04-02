@@ -137,6 +137,10 @@
     renderIndex();
     renderMain();
     setupDelegatedActions();
+
+    if (OBS.render.warmCompareInstances) {
+      requestAnimationFrame(() => OBS.render.warmCompareInstances());
+    }
   }
 
   init();

@@ -189,14 +189,7 @@ class GraphCompareSpec:
     mode: Literal["auto", "disabled", "custom"] = "auto"
     max_parallel: int = 2
     sync_toggle: bool = True
-    viewer_options_compare: Dict[str, Serializable] = field(
-        default_factory=lambda: {
-            "layout_mode": "compare_compact",
-            "sidebar_mode": "hidden",
-            "minimap_mode": "off",
-            "info_mode": "external",
-        }
-    )
+    viewer_options_compare: Dict[str, Serializable] = field(default_factory=dict)
     js_func: Optional[str] = None
     args: Dict[str, Serializable] = field(default_factory=dict)
 

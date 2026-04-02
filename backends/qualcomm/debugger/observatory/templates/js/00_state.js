@@ -11,7 +11,7 @@
     mountedViewers: [],
     mountedCompares: [],
     viewerCache: new Map(),
-    compareStateCache: new Map(),
+    graphCompareInstances: new Map(),
   };
 
   OBS.app = document.getElementById('app');

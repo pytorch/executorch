@@ -855,7 +855,6 @@ class _AccuracyFrontend(Frontend):
                     if abs(curr_val - prev_val) < 0.0001:
                         continue
                     result[key] = f"{curr_val - prev_val:+.4f}"
-                breakpoint()
         return result
 
     def check_badges(
