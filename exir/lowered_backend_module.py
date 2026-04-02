@@ -223,16 +223,19 @@ class LoweredBackendModule(torch.nn.Module):
 
         lowered_exported_program = copy.deepcopy(self._original_exported_program)
 
+        # Cache these properties to avoid rebuilding the dict on each access.
+        sig = lowered_exported_program.graph_signature
+        params_map = sig.inputs_to_parameters
+        buffers_map = sig.inputs_to_buffers
+
         # The real input nodes are the ones not buffer or parameter
         all_input_nodes = [
             node
             for node in lowered_exported_program.graph.nodes
             if (
                 node.op == "placeholder"
-                and node.name
-                not in lowered_exported_program.graph_signature.inputs_to_buffers
-                and node.name
-                not in lowered_exported_program.graph_signature.inputs_to_parameters
+                and node.name not in buffers_map
+                and node.name not in params_map
             )
         ]
 
@@ -250,9 +253,7 @@ class LoweredBackendModule(torch.nn.Module):
         # Find placeholders that are parameters or buffers, remove them from the main graph
         for node in lowered_exported_program.graph.nodes:
             if node.op == "placeholder" and (
-                node.name in lowered_exported_program.graph_signature.inputs_to_buffers
-                or node.name
-                in lowered_exported_program.graph_signature.inputs_to_parameters
+                node.name in buffers_map or node.name in params_map
             ):
                 lowered_exported_program.graph.erase_node(node)
 
@@ -402,6 +403,9 @@ def arrange_graph_placeholders(
     graph_sign = owning_program.graph_signature
 
     # Add all placeholders into the graph first:
+    # Cache these properties — each call rebuilds the dict from input_specs.
+    params_map = graph_sign.inputs_to_parameters
+    buffers_map = graph_sign.inputs_to_buffers
     param_nodes = []
     buffer_nodes = []
     input_nodes = []
@@ -409,15 +413,9 @@ def arrange_graph_placeholders(
         if node.op != "placeholder":
             continue
 
-        if (
-            node.name in graph_sign.inputs_to_parameters
-            and node.meta.get("delegation_tag", None) == tag
-        ):
+        if node.name in params_map and node.meta.get("delegation_tag", None) == tag:
             param_nodes.append(node)
-        elif (
-            node.name in graph_sign.inputs_to_buffers
-            and node.meta.get("delegation_tag", None) == tag
-        ):
+        elif node.name in buffers_map and node.meta.get("delegation_tag", None) == tag:
             buffer_nodes.append(node)
         else:
             input_nodes.append(node)

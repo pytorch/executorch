@@ -186,7 +186,7 @@ This approach is useful for checking your change against this workflow on your o
 These scripts also install the necessary dependencies to run the tests.
 Below is an overview of some of the testing options this script provides:
 
-| Command                                        | Description                                  |
+| Command                                              | Description                                                  |
 | ---------------------------------------------------- | ------------------------------------------------------------ |
 | `test_arm_baremetal.sh test_pytest_ops_no_target`    | Runs operator unit tests for non-target specific use-cases.  |
 | `test_arm_baremetal.sh test_pytest_models_no_target` | Runs model unit tests for non-target specific use-cases.     |
@@ -201,9 +201,9 @@ Below is an overview of some of the testing options this script provides:
 | `test_arm_baremetal.sh test_run_ethos_u85`           | Runs end-to-end unit tests for Ethos-U85 specific use-cases. |
 | `test_arm_baremetal.sh test_pytest_ops_vkml`         | Runs operator unit tests for VGF specific use-cases.         |
 | `test_arm_baremetal.sh test_pytest_models_vkml`      | Runs model unit tests for VGF specific use-cases.            |
-| `test_arm_baremetal.sh test_run_vkml`                | Runs end-to-end unit tests for VGF specific use-cases. |
-| `test_arm_baremetal.sh test_model_smollm2-135M`      | Runs some models with Corstone FVP.          |
-| `test_arm_baremetal.sh test_smaller_stories_llama`   | Runs E2E model tests on Corstone FVP.        |
+| `test_arm_baremetal.sh test_run_vkml`                | Runs end-to-end unit tests for VGF specific use-cases.       |
+| `test_arm_baremetal.sh test_model_smollm2-135M`      | Runs some models with Corstone FVP.                          |
+| `test_arm_baremetal.sh test_smaller_stories_llama`   | Runs E2E model tests on Corstone FVP.                        |
 | `test_arm_baremetal.sh test_memory_allocation`       | Runs memory allocation tests for Ethos-U specific targets    |
 
 For more information, please refer to the `backends/arm/test/test_arm_baremetal.sh` script.

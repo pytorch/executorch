@@ -74,31 +74,9 @@ Args:
 - **output_path**: Path to dump intermediate results to.
 
 ```python
-def EthosUCompileSpec.get_intermediate_path(self) -> str | None:
-```
-Gets the path used for dumping intermediate results such as tosa and
-pte.
-
-Returns:
-    Path where intermediate results are saved.
-
-```python
-def EthosUCompileSpec.get_output_format() -> str:
-```
-Return the artifact format emitted by this compile spec.
-
-```python
 def EthosUCompileSpec.get_output_order_workaround(self) -> bool:
 ```
 Gets whether the output order workaround is being applied.
-
-```python
-def EthosUCompileSpec.get_pass_pipeline_config(self) -> executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig:
-```
-Returns configuration that controls how the Arm pass pipeline should
-behave.
-
-Subclasses may override to tweak defaults for specific targets.
 
 ```python
 def EthosUCompileSpec.set_output_order_workaround(self, output_order_workaround: bool):

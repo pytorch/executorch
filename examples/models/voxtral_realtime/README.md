@@ -15,9 +15,10 @@ conversion. At inference time, the C++ runner loads both `.pte` files
 and the Tekken tokenizer, then transcribes audio to text.
 
 Two modes are supported: **streaming** (process 80ms chunks in real time,
-including live microphone input) and **offline** (encode full audio, then
-decode). The examples below use streaming mode. Omit `--streaming` from
-export and run commands for offline mode.
+including live microphone input, with unlimited duration) and **offline**
+(encode full audio, then decode, bounded by `--max-seq-len`). The examples
+below use streaming mode. Omit `--streaming` from export and run commands
+for offline mode.
 
 ## Demo: streaming on Metal backend with microphone input
 
@@ -71,6 +72,7 @@ python export_voxtral_rt.py \
     --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
     --backend xnnpack \
     --streaming \
+    --sliding-window 2048 \
     --output-dir ./voxtral_rt_exports \
     --qlinear-encoder 8da4w \
     --qlinear 8da4w \
@@ -86,6 +88,7 @@ python export_voxtral_rt.py \
     --backend metal \
     --dtype bf16 \
     --streaming \
+    --sliding-window 2048 \
     --output-dir ./voxtral_rt_exports \
     --qlinear-encoder fpa4w \
     --qlinear fpa4w
@@ -112,6 +115,7 @@ python export_voxtral_rt.py \
     --backend cuda \
     --dtype bf16 \
     --streaming \
+    --sliding-window 2048 \
     --output-dir ./voxtral_rt_exports \
     --qlinear-encoder 4w \
     --qlinear-encoder-packing-format tile_packed_to_4d \
@@ -137,6 +141,7 @@ python export_voxtral_rt.py \
     --backend cuda-windows \
     --dtype bf16 \
     --streaming \
+    --sliding-window 2048 \
     --output-dir ./voxtral_rt_exports \
     --qlinear-encoder 4w \
     --qlinear-encoder-packing-format tile_packed_to_4d \
@@ -159,7 +164,7 @@ python export_voxtral_rt.py \
 | `--backend` | `xnnpack` | `xnnpack`, `metal`, `cuda`, `cuda-windows`, or `portable` |
 | `--dtype` | `fp32` | Model dtype: `fp32` or `bf16` |
 | `--output-dir` | `./voxtral_rt_exports` | Output directory |
-| `--max-seq-len` | `4096` | KV cache length |
+| `--max-seq-len` | `4096` | KV cache length (offline mode only; ignored with `--streaming`) |
 | `--delay-tokens` | `6` | Transcription delay in tokens (6 = 480ms) |
 | `--qlinear` | (none) | Decoder linear layer quantization (`4w`, `8w`, `8da4w`, `8da8w`, `fpa4w`) |
 | `--qlinear-group-size` | `32` | Group size for decoder linear quantization |
@@ -168,12 +173,14 @@ python export_voxtral_rt.py \
 | `--qlinear-encoder-group-size` | `32` | Group size for encoder linear quantization |
 | `--qlinear-encoder-packing-format` | (none) | Packing format for encoder 4w quantization (`tile_packed_to_4d` for CUDA) |
 | `--qembedding` | (none) | Embedding layer quantization (`8w`) |
-| `--streaming` | off | Export streaming encoder with KV cache |
+| `--streaming` | off | Export streaming model with ring buffer KV caches (unlimited duration) |
 | `--max-enc-len` | `750` | Encoder sliding window size (streaming only) |
+| `--sliding-window` | from `params.json` | Decoder sliding window size (streaming only; ignored in offline mode). Smaller values reduce memory and improve decode speed but limit context |
 
 **Notes:**
 - `fpa4w` quantization requires `--backend metal`.
 - The model was trained with `--delay-tokens 6`. Other values may degrade accuracy.
+- The decoder sliding window controls how far back the decoder can attend. At 80ms/step: 2048 = ~2.7 min, 4096 = ~5.5 min, 8192 = ~10.9 min.
 
 ## Build
 
@@ -198,7 +205,6 @@ capability to avoid "invalid device function" errors (the `int4mm` kernels
 require SM 80+).
 
 ```powershell
-$env:CMAKE_CUDA_ARCHITECTURES="80;86;89;90;120"
 cmake --workflow --preset llm-release-cuda
 Push-Location examples/models/voxtral_realtime
 cmake --workflow --preset voxtral-realtime-cuda
@@ -269,7 +275,7 @@ Ctrl+C stops recording and flushes remaining text.
 | `--preprocessor_path` | (none) | Path to mel preprocessor `.pte` |
 | `--audio_path` | (none) | Path to 16kHz mono WAV file |
 | `--temperature` | `0.0` | Sampling temperature (0 = greedy) |
-| `--max_new_tokens` | `500` | Maximum tokens to generate |
+| `--offline_max_new_tokens` | `500` | Offline-only: maximum extra tokens after audio embeddings are exhausted |
 | `--streaming` | off | Use streaming transcription (from WAV file) |
 | `--mic` | off | Live microphone mode (reads raw f32le PCM from stdin) |
 | `--mic_chunk_ms` | `80` | Mic read chunk size in ms (multiples of 80 recommended) |
@@ -279,8 +285,8 @@ Ctrl+C stops recording and flushes remaining text.
 
 - **Audio format**: Input must be 16kHz mono WAV. Convert with
   `ffmpeg -i input.mp3 -ar 16000 -ac 1 output.wav`.
-- **OOM during export**: Reduce `--max-seq-len` or skip encoder
-  quantization (`--qlinear-encoder`).
+- **OOM during export**: Reduce `--max-seq-len` (offline mode) or skip
+  encoder quantization (`--qlinear-encoder`).
 - **"Model was not exported with --streaming"**: Re-export with the
   `--streaming` flag. Both `--streaming` and `--mic` runner modes
   require a streaming-exported model.

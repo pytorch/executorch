@@ -72,6 +72,43 @@ Tensor& quantized_mul_out(
   return out;
 }
 
+Tensor& quantized_mul_per_tensor_out(
+    ET_UNUSED KernelRuntimeContext& ctx,
+    const Tensor& X,
+    double X_scale,
+    int64_t X_zero_point,
+    const Tensor& Y,
+    double Y_scale,
+    int64_t Y_zero_point,
+    double out_scale,
+    int64_t out_zero_point,
+    Tensor& out) {
+#define typed_quantized_mul_per_tensor(ctype, dtype) \
+  case ScalarType::dtype: {                          \
+    quantized_mul_<ctype>(                           \
+        X,                                           \
+        static_cast<float>(X_scale),                 \
+        static_cast<int32_t>(X_zero_point),          \
+        Y,                                           \
+        static_cast<float>(Y_scale),                 \
+        static_cast<int32_t>(Y_zero_point),          \
+        static_cast<float>(out_scale),               \
+        static_cast<int32_t>(out_zero_point),        \
+        out);                                        \
+    break;                                           \
+  }
+
+  ScalarType dtype = out.scalar_type();
+  switch (dtype) {
+    ET_FORALL_CADENCE_QUANTIZED_TYPES(typed_quantized_mul_per_tensor)
+    default:
+      ET_DCHECK_MSG(
+          false, "Unhandled dtype %s", torch::executor::toString(dtype));
+  }
+#undef typed_quantized_mul_per_tensor
+  return out;
+}
+
 // Generate kernels that perform elementwise arithmetic on a quantized tensor,
 // and a scalar.
 #define DECLARE_POINTWISE_SCALAR_QUANTIZED_BINARY_OP(BINARY_FUNC_NAME, OP) \

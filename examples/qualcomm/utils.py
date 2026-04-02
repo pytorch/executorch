@@ -266,7 +266,6 @@ class SimpleADB:
         method_index=0,
         output_callback: Optional[Callable[[str], None]] = None,
     ):
-        self._adb(["shell", f"rm -rf {self.output_folder}"])
         self._adb(["shell", f"mkdir -p {self.output_folder}"])
         # run the delegation
         if custom_runner_cmd is None:
@@ -367,13 +366,14 @@ def make_quantizer(
     custom_annotations=(),
     per_channel_conv=True,
     per_channel_linear=False,
+    per_channel_embedding=False,
     act_observer=MovingAverageMinMaxObserver,
     act_symmetric=False,
     is_qat=False,
     submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
-    eps=None,
     backend=QnnExecuTorchBackendType.kHtpBackend,
     soc_model="SM8750",
+    eps=None,
 ):
     quantizer = QnnQuantizer(backend=backend, soc_model=getattr(QcomChipset, soc_model))
     quantizer.add_custom_quant_annotations(custom_annotations)
@@ -382,6 +382,7 @@ def make_quantizer(
         is_qat=is_qat,
         is_conv_per_channel=per_channel_conv,
         is_linear_per_channel=per_channel_linear,
+        is_embedding_per_channel=per_channel_embedding,
         act_observer=act_observer,
         act_symmetric=act_symmetric,
         eps=eps,

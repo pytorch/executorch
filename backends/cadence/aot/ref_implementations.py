@@ -403,6 +403,67 @@ def quantized_add_asym8uxasym8u_asym8u_per_tensor(
     )
 
 
+@impl_tracked(m, "quantized_mul.per_tensor")
+def quantized_mul_per_tensor(
+    X: torch.Tensor,
+    X_scale: float,
+    X_zero_point: int,
+    Y: torch.Tensor,
+    Y_scale: float,
+    Y_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    """
+    Multiplies two quantized tensors and returns another quantized tensor. The intuition
+    is that we want dequant(out) ~= dequant(X) * dequant(Y)
+
+    If we do that math, we get
+    out_scale(out - out_zero_point) = X_scale(X - X_zero_point) * Y_scale(Y - Y_zero_point)
+
+    Rearranging, we get
+    out = (X_scale(X - X_zero_point) * Y_scale(Y - Y_zero_point)) / out_scale + out_zero_point
+
+    Args:
+        - X: The first operand
+        - X_scale: The ratio between the sizes of X's floating point and quantized
+            ranges
+        - X_zero_point: The quantized mapping of zero for X
+        - Y: The second operand
+        - Y_scale: The ratio between the sizes of Y's floating point and quantized
+            ranges
+        - Y_zero_point: The quantized mapping of zero for Y
+        - out_scale: The ratio between the sizes of the output's floating point and
+            quantized ranges
+        - out_zero_point: The quantized mapping of zero for the output
+    """
+    supported_dtypes = [torch.int8, torch.uint8]
+    if X.dtype != Y.dtype:
+        raise ValueError("X and Y dtypes need to match")
+
+    dtype = X.dtype
+    if dtype not in supported_dtypes:
+        raise ValueError(
+            f"X and Y dtypes need to be in {supported_dtypes}. Got {dtype}"
+        )
+
+    if dtype == torch.uint8:
+        X = X.to(torch.int8)
+        Y = Y.to(torch.int8)
+
+    dequant_X = X_scale * (X - X_zero_point)
+    dequant_Y = Y_scale * (Y - Y_zero_point)
+
+    return quantize_per_tensor(
+        dequant_X * dequant_Y,
+        out_scale,
+        out_zero_point,
+        torch.iinfo(dtype).min,
+        torch.iinfo(dtype).max,
+        dtype,
+    )
+
+
 def quantized_linear_common(
     src: torch.Tensor,
     weight: torch.Tensor,
@@ -1868,6 +1929,66 @@ def rms_norm(
     return W * nn.RMSNorm(list(normalized_shape), eps=eps, dtype=X.dtype)(X)
 
 
+@impl_tracked(m, "quantized_max_pool2d_nchw")
+def quantized_max_pool2d_nchw(
+    input: torch.Tensor,
+    kernel_size: list[int],
+    stride: list[int],
+    padding: list[int],
+    dilation: list[int],
+    ceil_mode: bool,
+) -> torch.Tensor:
+    """
+    Quantized max pooling operation.
+
+    Max pooling is order-preserving, so max(a, b) in the quantized domain gives
+    the same result as quantizing max(dequant(a), dequant(b)) when using the same
+    scale/zero_point. This means we can perform max pooling directly on quantized
+    integer values without dequantization/requantization.
+    """
+    # Directly apply max_pool2d on quantized values
+    # Since max is order-preserving, the result is correct without any dequant/requant
+    return F.max_pool2d(
+        input,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        ceil_mode=ceil_mode,
+    )
+
+
+@impl_tracked(m, "quantized_max_pool2d_nhwc")
+def quantized_max_pool2d_nhwc(
+    input: torch.Tensor,
+    kernel_size: list[int],
+    stride: list[int],
+    padding: list[int],
+    dilation: list[int],
+    ceil_mode: bool,
+) -> torch.Tensor:
+    """
+    Quantized max pooling in NHWC layout.
+
+    Converts NHWC→NCHW, performs max pooling, then converts back NCHW→NHWC.
+    """
+    # Convert NHWC [N, H, W, C] to NCHW [N, C, H, W]
+    input_nchw = input.permute(0, 3, 1, 2).contiguous()
+
+    # Call the NCHW version
+    output_nchw = quantized_max_pool2d_nchw(
+        input_nchw,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        ceil_mode=ceil_mode,
+    )
+
+    # Convert NCHW [N, C, H_out, W_out] back to NHWC [N, H_out, W_out, C]
+    return output_nchw.permute(0, 2, 3, 1).contiguous()
+
+
 @impl_tracked(m, "where_Scalar")
 def where_Scalar(
     condition: torch.Tensor,
@@ -2359,6 +2480,8 @@ def quantized_softmax_per_tensor_common(
     input_tensor: torch.Tensor,
     mask: torch.Tensor | None,
     dim: int,
+    mask_type: int,
+    pos: torch.Tensor,
     in_scale: float,
     in_zero_point: int,
     out_scale: float,
@@ -2371,6 +2494,8 @@ def quantized_softmax_per_tensor_common(
         - input_tensor (Tensor): The quantized input tensor
         - mask (Tensor): Mask tensor
         - dim (int): The dimension along which softmax is computed
+        - mask_type (int): Masking strategy (0=none, 1=position-based causal)
+        - pos (Tensor): Position tensor for causal masking
         - in_scale (float): The scale of the input quantization
         - in_zero_point (int): The zero point of the input quantization
         - out_scale (float): The scale of the output quantization
@@ -2378,6 +2503,9 @@ def quantized_softmax_per_tensor_common(
     """
     # TODO: T228751479 - Add support for mask parameter in softmax
     assert mask is None
+    assert (
+        mask_type == 0
+    ), f"Only mask_type=0 (no masking) is supported, got {mask_type}"
     supported_dtypes = [torch.int8, torch.uint8, torch.int16]
     if input_tensor.dtype not in supported_dtypes:
         raise ValueError(
@@ -2410,6 +2538,8 @@ def quantized_softmax_per_tensor(
     input_tensor: torch.Tensor,
     mask: torch.Tensor | None,
     dim: int,
+    mask_type: int,
+    pos: torch.Tensor,
     in_scale: float,
     in_zero_point: int,
     out_scale: float,
@@ -2419,6 +2549,8 @@ def quantized_softmax_per_tensor(
         input_tensor,
         mask,
         dim,
+        mask_type,
+        pos,
         in_scale,
         in_zero_point,
         out_scale,
@@ -2431,6 +2563,8 @@ def quantized_softmax(
     input_tensor: torch.Tensor,
     mask: torch.Tensor | None,
     dim: int,
+    mask_type: int,
+    pos: torch.Tensor,
     in_scale: torch.Tensor,
     in_zero_point: torch.Tensor,
     out_scale: float,
@@ -2440,6 +2574,8 @@ def quantized_softmax(
         input_tensor,
         mask,
         dim,
+        mask_type,
+        pos,
         float(in_scale.item()),
         int(in_zero_point.item()),
         out_scale,

@@ -1310,6 +1310,22 @@ class InstanceNorm2d(torch.nn.Module):
         return self.instance_norm(x)
 
 
+class IsInf(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.isinf(x)
+
+
+class IsNan(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.isnan(x)
+
+
 class LargeTensorLinear(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1480,6 +1496,30 @@ class LogSoftmax(torch.nn.Module):
 
     def forward(self, x):
         return torch.nn.functional.log_softmax(x, dim=-1)
+
+
+class Log10(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.log10(x)
+
+
+class Log1p(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.log1p(x)
+
+
+class Log2(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.log2(x)
 
 
 class MaxPool2d(torch.nn.Module):
@@ -1763,6 +1803,14 @@ class PReLUPerChannel(torch.nn.Module):
 
     def forward(self, x):
         return self.prelu(x)
+
+
+class Rand(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.rand_like(x) + x
 
 
 class Reciprocal(torch.nn.Module):
@@ -2265,6 +2313,14 @@ class TriuConstant(torch.nn.Module):
             mask = torch.zeros(x.shape, dtype=x.dtype).masked_fill_(mask, -10000.0)
         # Add x to avoid no input in graph
         return mask + x
+
+
+class Trunc(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.trunc(x)
 
 
 class Unbind(torch.nn.Module):

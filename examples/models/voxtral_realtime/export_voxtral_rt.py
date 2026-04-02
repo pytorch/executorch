@@ -248,6 +248,7 @@ def export_all(
         "dim": model.config.dim,
         "vocab_size": model.config.vocab_size,
         "max_seq_len": max_seq_len,
+        "sliding_window": model.config.sliding_window,
     }
 
     return programs, metadata
@@ -346,6 +347,7 @@ def export_streaming(
         "enc_dim": model.config.enc_dim,
         "vocab_size": model.config.vocab_size,
         "max_seq_len": max_seq_len,
+        "sliding_window": model.config.sliding_window,
         "streaming": 1,
         "step_samples": step_samples,
         "chunk_mel_len": chunk_mel_len,
@@ -542,6 +544,14 @@ def main():
         help="Encoder sliding window size for streaming (default: 750).",
     )
     parser.add_argument(
+        "--sliding-window",
+        type=int,
+        default=None,
+        help="Decoder sliding window size for streaming (default: from params.json, "
+        "typically 8192). Smaller values reduce memory and improve decode speed "
+        "but limit how far back the decoder can attend. Only used with --streaming.",
+    )
+    parser.add_argument(
         "--dtype",
         default="fp32",
         choices=["fp32", "bf16"],
@@ -555,6 +565,8 @@ def main():
         parser.error("--qlinear=fpa4w can only be used with --backend=metal")
     if args.qlinear_encoder == "fpa4w" and backend_for_export != "metal":
         parser.error("--qlinear-encoder=fpa4w can only be used with --backend=metal")
+    if args.sliding_window is not None and not args.streaming:
+        parser.error("--sliding-window only applies to --streaming mode")
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -567,6 +579,8 @@ def main():
         n_delay_tokens=args.delay_tokens,
         dtype=model_dtype,
         backend=backend_for_export,
+        streaming=args.streaming,
+        sliding_window=args.sliding_window,
     )
 
     # Move to CUDA for CUDA backend export (AOTInductor needs CUDA tensors)
@@ -599,6 +613,8 @@ def main():
         )
     else:
         programs, metadata = export_all(model, args.max_seq_len, **quant_args)
+
+    metadata["delay_tokens"] = args.delay_tokens
 
     # Lower
     et = lower_to_executorch(programs, metadata, backend=args.backend)

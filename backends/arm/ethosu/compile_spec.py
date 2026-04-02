@@ -119,20 +119,20 @@ class EthosUCompileSpec(ArmCompileSpec):
         )
         tosa_spec = self._tosa_spec_for_target(target_lower)
         self._set_compile_specs(tosa_spec, compiler_flags)
-        self.validate()
+        self._validate()
 
-    def to_list(self):
+    def _to_list(self):
         """Return compile specs including the encoded Ethos-U target."""
-        compile_specs = super().to_list()
+        compile_specs = super()._to_list()
         compile_specs.append(CompileSpec(self._TARGET_KEY, self.target.encode()))
         return compile_specs
 
     @classmethod
-    def from_list_hook(cls, compile_spec, specs: dict[str, str]):
+    def _from_list_hook(cls, compile_spec, specs: dict[str, str]):
         """Restore target-specific metadata from serialized compile specs."""
         compile_spec.target = specs.get(cls._TARGET_KEY, None)
 
-    def validate(self):
+    def _validate(self):
         """Validate the configuration against supported Ethos-U settings."""
         if len(self.compiler_flags) == 0:
             raise ValueError(
@@ -144,7 +144,7 @@ class EthosUCompileSpec(ArmCompileSpec):
             )
 
     @classmethod
-    def get_output_format(cls) -> str:
+    def _get_output_format(cls) -> str:
         """Return the artifact format emitted by this compile spec."""
         return "vela"
 
