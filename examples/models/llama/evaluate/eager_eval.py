@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -28,12 +29,13 @@ class EagerEvalWrapper(eval_wrapper):
         tokenizer: Union[SentencePieceTokenizer, Tiktoken, HuggingFaceTokenizer],
         max_seq_length: Optional[int] = None,
         use_kv_cache: bool = False,
+        device: Optional[str] = None,
     ):
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        super().__init__(device=device, pretrained="gpt2")
+        resolved_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        super().__init__(device=resolved_device, pretrained="gpt2")
         self._model = model
         self._tokenizer = tokenizer
-        self._device = torch.device(device)
+        self._device = torch.device(resolved_device)
         self._max_seq_length = 2048 if max_seq_length is None else max_seq_length
         self._use_kv_cache = use_kv_cache
 
