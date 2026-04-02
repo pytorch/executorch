@@ -58,9 +58,9 @@ void xa_opt_quantized_conv1d_nlc_asym8sxsym8s_asym8s(
   WORD32 out_width = out.size(1);
   WORD32 out_height = 1;
   WORD32 x_stride = 1;
-  WORD32 y_stride = stride[0];
+  WORD32 y_stride = stride[stride.size() - 1];
   WORD32 x_padding = 0;
-  WORD32 y_padding = padding[0];
+  WORD32 y_padding = padding[padding.size() - 1];
   WORD32 dilation_height = 1;
   WORD32 dilation_width = 1;
   WORD32 input_zero_bias = -in_zero_point;
@@ -173,8 +173,8 @@ void xa_opt_quantized_conv1d_nlc_asym8uxsym8u_asym8u(
   WORD32 out_channels = weight.size(0);
   WORD32 kernel_width = weight.size(1);
   WORD32 out_width = out.size(1);
-  WORD32 x_stride = stride[0];
-  WORD32 x_padding = padding[0];
+  WORD32 x_stride = stride[stride.size() - 1];
+  WORD32 x_padding = padding[padding.size() - 1];
   WORD32 input_zero_bias = -in_zero_point;
   WORD32 out_multiplier32 = bias_scale * (1. / output_scale) * 2147483648;
   WORD32 out_shift32 = 0;
@@ -238,7 +238,7 @@ void quantized_conv1d_nlc_per_tensor_out(
   // HiFi nnlib kernels only support dilation=1.
   // Fall back to generic implementation for dilation > 1.
   // Note: For 1D convolution, dilation is a single-element array.
-  if (dilation[0] != 1) {
+  if (dilation[dilation.size() - 1] != 1) {
     impl::generic::native::quantized_conv1d_nlc_per_tensor_out(
         ctx,
         input,
@@ -264,7 +264,7 @@ void quantized_conv1d_nlc_per_tensor_out(
   if (dtype == ScalarType::Char) {
     // HiFi nnlib conv2d kernel does not support depthwise (groups > 1)
     // or stride > 1. Fall back to generic implementation.
-    if (groups > 1 || stride[0] > 1) {
+    if (groups > 1 || stride[stride.size() - 1] > 1) {
       impl::generic::native::quantized_conv1d_nlc_per_tensor_out(
           ctx,
           input,
