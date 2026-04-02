@@ -19,6 +19,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <c10/util/safe_numerics.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
@@ -157,10 +158,12 @@ Result<FreeableBuffer> FileDescriptorDataLoader::load(
       fd_ >= 0,
       InvalidState,
       "Uninitialized");
+  size_t total_size;
+  bool overflow = c10::add_overflows(offset, size, &total_size);
   ET_CHECK_OR_RETURN_ERROR(
-      offset <= file_size_ && size <= file_size_ - offset,
+      !overflow && total_size <= file_size_,
       InvalidArgument,
-      "File %s: offset %zu + size %zu > file_size_ %zu",
+      "File %s: offset %zu + size %zu > file_size_ %zu, or overflow detected",
       file_descriptor_uri_,
       offset,
       size,
@@ -218,10 +221,12 @@ ET_NODISCARD Error FileDescriptorDataLoader::load_into(
       fd_ >= 0,
       InvalidState,
       "Uninitialized");
+  size_t total_size;
+  bool overflow = c10::add_overflows(offset, size, &total_size);
   ET_CHECK_OR_RETURN_ERROR(
-      offset <= file_size_ && size <= file_size_ - offset,
+      !overflow && total_size <= file_size_,
       InvalidArgument,
-      "File %s: offset %zu + size %zu > file_size_ %zu",
+      "File %s: offset %zu + size %zu > file_size_ %zu, or overflow detected",
       file_descriptor_uri_,
       offset,
       size,
