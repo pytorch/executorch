@@ -104,6 +104,7 @@ def export_and_run_model(
     file_name: str = "CadenceDemoModel",
     eps_error: float = 1e-1,
     eps_warn: float = 1e-5,
+    force_rebuild: bool = False,
 ):
     # create work directory for outputs and model binary
     working_dir = tempfile.mkdtemp(dir="/tmp")
@@ -118,4 +119,5 @@ def export_and_run_model(
         eps_error=eps_error,
         eps_warn=eps_warn,
         file_name=file_name,
+        force_rebuild=force_rebuild,
     )

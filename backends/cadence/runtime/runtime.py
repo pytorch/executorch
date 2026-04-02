@@ -57,6 +57,7 @@ def run(
     ref_outputs: Optional[Sequence[torch.Tensor]] = None,
     working_dir: Optional[str] = None,
     file_name: str = "CadenceDemoModel",
+    force_rebuild: bool = False,
 ) -> Any:
     # Get the Program
     program = executorch_prog.executorch_program
@@ -70,7 +71,7 @@ def run(
         working_dir = tempfile.mkdtemp(dir="/tmp")
 
     # initialize e2e Executor with executorch_cfg.
-    executor = Executor(working_dir, file_name=file_name)
+    executor = Executor(working_dir, file_name=file_name, force_rebuild=force_rebuild)
 
     # run Executor
     executor()
@@ -138,9 +139,15 @@ def run_and_compare(
     eps_error: float = 1e-1,
     eps_warn: float = 1e-5,
     file_name: str = "CadenceDemoModel",
+    force_rebuild: bool = False,
 ) -> Any:
     outputs = run(
-        executorch_prog, inputs, ref_outputs, working_dir, file_name=file_name
+        executorch_prog,
+        inputs,
+        ref_outputs,
+        working_dir,
+        file_name=file_name,
+        force_rebuild=force_rebuild,
     )
     compare(outputs, ref_outputs, eps_error=eps_error, eps_warn=eps_warn)
 
