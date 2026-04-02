@@ -95,11 +95,26 @@ class PipelineGraphCollectorLens(Lens):
 
             def patched_export(*args, **kwargs):
                 result = original(*args, **kwargs)
+                # from_node is absent on the raw export output; it is populated by
+                # run_decompositions({}), which re-traces the graph through an Interpreter.
+                # We work on a copy so the original result returned to the caller is not mutated.
+                collect_target = result
+                try:
+                    from executorch.exir.passes import DebugHandleGeneratorPass
+                    collect_target = result.run_decompositions({})
+                    pass_result = DebugHandleGeneratorPass()(collect_target.graph_module)
+                    breakpoint()
+                except Exception as exc:
+                    logging.debug(
+                        "[PipelineGraphCollector] DebugHandleGeneratorPass skipped: %s",
+                        exc,
+                    )
                 try:
                     # torch.export.export(mod, args, ...) — args[1] is the input tuple
                     if len(args) >= 2:
                         cls._last_export_inputs = args[1]
-                    cls._collect_fn("Exported Float", result)
+
+                    cls._collect_fn("Exported Float", collect_target)
                 except Exception as exc:
                     logging.debug(
                         "[PipelineGraphCollector] collect skipped (Exported Float): %s",
@@ -181,24 +196,26 @@ class PipelineGraphCollectorLens(Lens):
     def _install_edge_lower_patch(cls) -> None:
         try:
             import executorch.exir.program._program as program_module
+            import executorch.exir as exir_module 
 
-            original = program_module.to_edge_transform_and_lower
-            cls._originals["to_edge_transform_and_lower"] = original
+            for i, module in enumerate([program_module, exir_module]):
+                original = module.to_edge_transform_and_lower
+                cls._originals[f"to_edge_transform_and_lower_{i}"] = original
 
-            def patched_to_edge_transform_and_lower(*args, **kwargs):
-                kwargs["generate_etrecord"] = True
-                result = original(*args, **kwargs)
-                try:
-                    cls._collect_fn("Edge", result.exported_program())
-                except Exception as exc:
-                    logging.debug(
-                        "[PipelineGraphCollector] collect skipped (Edge): %s", exc
-                    )
-                return result
+                def patched_to_edge_transform_and_lower(*args, **kwargs):
+                    kwargs["generate_etrecord"] = True
+                    result = original(*args, **kwargs)
+                    try:
+                        cls._collect_fn("Edge", result.exported_program())
+                    except Exception as exc:
+                        logging.debug(
+                            "[PipelineGraphCollector] collect skipped (Edge): %s", exc
+                        )
+                    return result
 
-            program_module.to_edge_transform_and_lower = (
-                patched_to_edge_transform_and_lower
-            )
+                module.to_edge_transform_and_lower = (
+                    patched_to_edge_transform_and_lower
+                )
             logging.info(
                 "[PipelineGraphCollector] Installed patch: to_edge_transform_and_lower"
             )
@@ -311,10 +328,13 @@ class PipelineGraphCollectorLens(Lens):
                     import torchao.quantization.pt2e.quantize_pt2e as qt_module
 
                     qt_module.convert_pt2e = original
-                elif key == "to_edge_transform_and_lower":
+                elif key.startswith("to_edge_transform_and_lower"):
                     import executorch.exir.program._program as program_module
+                    import executorch.exir as exir_module 
+                    for i, module in enumerate([program_module, exir_module]):
+                        if str(i) == key[-1]:
+                            module.to_edge_transform_and_lower = original
 
-                    program_module.to_edge_transform_and_lower = original
                 elif key.startswith("ETRecord."):
                     try:
                         from executorch.devtools.etrecord._etrecord import ETRecord

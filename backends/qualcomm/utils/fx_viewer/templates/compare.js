@@ -397,7 +397,7 @@ class FXGraphCompare {
 
     _rebuildSyncPanel() {
         if (!this._syncSelect) return;
-        let html = '<option value="auto">Auto (handle -> id)</option>'
+        let html = '<option value="auto">Auto (handle &#x2192; id)</option>'
                  + '<option value="id">ID only</option>'
                  + '<option value="none">Don\'t sync</option>';
         const seen = new Set(['auto', 'id', 'none']);
@@ -566,6 +566,10 @@ class FXGraphCompare {
     _wireSelectionSync() {
         this.viewers.forEach((viewer) => {
             const off = viewer.on('selectionchange', (evt) => {
+                if (evt.nextSelection){
+                    if (this._followSelection) viewer.controller.zoomToFit();
+                } 
+
                 if (this._guards.has(viewer)) return;
                 if (!evt.nextSelection) {
                     this.viewers.forEach((other) => {
@@ -587,7 +591,7 @@ class FXGraphCompare {
                         nodeIdMap.set(other, targetId);
                         this._applyGuarded(other, () => {
                             other.selectNode(targetId, { center: false });
-                            if (this._followSelection) other.controller.zoomToFit();
+                            if (this._followSelection) other.controller.panToNode(targetId, {});
                         });
                     } else {
                         this._applyGuarded(other, () => other.clearSelection());
@@ -722,7 +726,7 @@ class FXGraphCompare {
                 .filter(({ name }) => this._visibleViewers.has(name));
             const vals = visViewerPairs.map(({ v }) => {
                 const d = rowData.get(v);
-                return d && d[prop] !== undefined ? String(d[prop]) : '—';
+                return d && d[prop] !== undefined ? String(d[prop]) : ' -- ';
             });
             const allSame = vals.every((v) => v === vals[0]);
             this._infoRow.appendChild(makeCell('fx-compare-info-prop' + rowCls, prop));
