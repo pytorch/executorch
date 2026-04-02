@@ -63,7 +63,7 @@ et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
     return {1000000000u, cpu_freq_hz};
   }
 #endif
-  return {1000, 240}; // Default to 240 MHz if we can't get the actual frequency
+  return {1000000000u, 240000000u}; // Default to 240 MHz if we can't get the actual frequency
 }
 
 void et_pal_emit_log_message(
