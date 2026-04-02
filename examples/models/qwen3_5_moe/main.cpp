@@ -54,22 +54,34 @@ int main(int argc, char** argv) {
   }
 
   // Create LLM runner
+  fprintf(stderr, "Creating runner from %s...\n", FLAGS_model_path.c_str());
   auto runner = llm::create_text_llm_runner(
       FLAGS_model_path, std::move(tokenizer), data_files, FLAGS_temperature);
 
   if (runner == nullptr) {
-    ET_LOG(Error, "Failed to create runner");
+    fprintf(stderr, "FATAL: Failed to create runner\n");
     return 1;
   }
+  fprintf(stderr, "Runner created successfully\n");
 
   // Generate
   llm::GenerationConfig config;
   config.temperature = FLAGS_temperature;
   config.max_new_tokens = FLAGS_max_new_tokens;
 
-  auto error = runner->generate(FLAGS_prompt.c_str(), config);
-  if (error != executorch::runtime::Error::Ok) {
-    ET_LOG(Error, "Generation failed");
+  fprintf(stderr, "Starting generation with prompt: %s\n", FLAGS_prompt.c_str());
+  try {
+    auto error = runner->generate(FLAGS_prompt.c_str(), config);
+    if (error != executorch::runtime::Error::Ok) {
+      fprintf(stderr, "Generation failed with error code: %d\n", static_cast<int>(error));
+      return 1;
+    }
+    fprintf(stderr, "Generation completed successfully\n");
+  } catch (const std::exception& e) {
+    fprintf(stderr, "Exception during generation: %s\n", e.what());
+    return 1;
+  } catch (...) {
+    fprintf(stderr, "Unknown exception during generation\n");
     return 1;
   }
 

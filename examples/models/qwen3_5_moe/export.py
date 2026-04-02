@@ -365,7 +365,7 @@ def export_and_lower(model, config, args):
         to_edge_transform_and_lower,
     )
     from executorch.exir.passes import MemoryPlanningPass
-    from torch.export import Dim, export
+    from torch.export import export
 
     # Coordinate descent recompiles each kernel trying config perturbations,
     # adding minutes with negligible runtime benefit for this model's shapes.
@@ -374,18 +374,16 @@ def export_and_lower(model, config, args):
     # -O0 compiles ~8x faster than -O1 with no measurable runtime impact.
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
 
-    # Dynamic shapes
-    example_tokens = torch.tensor([[0, 1]], dtype=torch.long)
-    example_input_pos = torch.tensor([0, 1], dtype=torch.long)
-    seq_dim = Dim("seq_len", min=1, max=config.max_seq_len - 1)
-    dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
+    # Static T=1: the C++ runner does token-by-token prefill
+    # (enable_dynamic_shape=False), so T is always 1 at runtime.
+    example_tokens = torch.tensor([[0]], dtype=torch.long)
+    example_input_pos = torch.tensor([0], dtype=torch.long)
 
     print("Exporting with torch.export...")
     with torch.no_grad():
         exported = export(
             model,
             (example_tokens, example_input_pos),
-            dynamic_shapes=dynamic_shapes,
             strict=True,
         )
     print("Export successful!")
@@ -399,7 +397,7 @@ def export_and_lower(model, config, args):
         "get_n_layers": config.num_hidden_layers,
         "use_kv_cache": True,
         "use_sdpa_with_kv_cache": False,
-        "enable_dynamic_shape": True,
+        "enable_dynamic_shape": False,
     }
     et_prog = to_edge_transform_and_lower(
         exported,
