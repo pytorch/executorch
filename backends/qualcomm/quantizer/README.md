@@ -128,7 +128,7 @@ def ptq_per_channel_quant_config(
         quant_max=torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=0,
-        observer_or_fake_quant_ctr=PerChannelMinMaxObserver.with_args(**extra_args),
+        observer_or_fake_quant_ctr=PerChannelParamObserver.with_args(**extra_args),
     )
 
     bias_quantization_spec = _derived_bias_quant_spec
@@ -142,7 +142,7 @@ def ptq_per_channel_quant_config(
 
     return quantization_config
 ```
-Here we choose `torch.uint8` + `MinMaxObserver` for better coverage of IO activation and apply rules to `weight` w/`PerChannelMinMaxObserver`, `bias` w/`_derived_bias_quant_spec` (a callable method to calculate encoding in desired way) to meet aforementioned constraints. The well-defined `quantizaton_config` will then be shipped to callback for annotation.<br/>
+Here we choose `torch.uint8` + `MinMaxObserver` for better coverage of IO activation and apply rules to `weight` w/`PerChannelParamObserver`, `bias` w/`_derived_bias_quant_spec` (a callable method to calculate encoding in desired way) to meet aforementioned constraints. The well-defined `quantizaton_config` will then be shipped to callback for annotation.<br/>
 
 Now, we can start to fill in the function body:
 - Register annotator

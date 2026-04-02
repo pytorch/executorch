@@ -9,14 +9,17 @@ Voice activity detection answers "when is someone speaking" — the model output
 ```bash
 # Export to .pte
 cd examples/models/silero_vad
-python export_silero_vad.py --jit-model /path/to/silero_vad.jit
+python export_silero_vad.py \
+    --jit-model /path/to/silero_vad.jit \
+    --backend xnnpack \
+    --output-dir ./silero_vad_xnnpack
 
-# Build the C++ runner (from repo root)
+# Build the C++ runners (from repo root)
 make silero-vad-cpu
 
-# Run VAD
+# Run WAV-based VAD
 ./cmake-out/examples/models/silero_vad/silero_vad_runner \
-    --model_path examples/models/silero_vad/silero_vad_exports/silero_vad.pte \
+    --model_path examples/models/silero_vad/silero_vad_xnnpack/silero_vad.pte \
     --audio_path /path/to/audio.wav
 ```
 
@@ -67,9 +70,9 @@ python export_silero_vad.py --jit-model /path/to/silero-vad/src/silero_vad/data/
 | `--backend` | `portable` or `xnnpack` (default: `xnnpack`) |
 | `--output-dir` | Output directory (default: `./silero_vad_exports`) |
 
-Output: `silero_vad_exports/silero_vad.pte` (~2 MB).
+Output: `silero_vad_xnnpack/silero_vad.pte` (~1.2 MB with XNNPACK, may vary by export settings).
 
-## C++ Runner
+## C++ Runners
 
 ### Build
 
@@ -79,15 +82,43 @@ From the repository root:
 make silero-vad-cpu
 ```
 
-Binary: `cmake-out/examples/models/silero_vad/silero_vad_runner`
+This builds:
+
+- `cmake-out/examples/models/silero_vad/silero_vad_runner`
+- `cmake-out/examples/models/silero_vad/silero_vad_stream_runner`
+
+The build configures and installs ExecuTorch first, then builds the two Silero VAD binaries from `examples/models/silero_vad/`.
 
 ### Arguments
+
+#### `silero_vad_runner`
 
 | Argument | Description |
 |----------|-------------|
 | `--model_path` | Path to `.pte` file (default: `silero_vad.pte`) |
 | `--audio_path` | Path to input WAV file (16kHz mono, required) |
 | `--threshold` | Speech probability threshold, 0.0–1.0 (default: `0.5`) |
+
+#### `silero_vad_stream_runner`
+
+| Argument | Description |
+|----------|-------------|
+| `--model_path` | Path to `.pte` file (default: `silero_vad.pte`) |
+
+The stream runner reads 16kHz mono `float32` PCM from `stdin` and prints:
+
+```text
+READY
+PROB <time_seconds> <probability>
+```
+
+Example:
+
+```bash
+ffmpeg -i input.wav -ar 16000 -ac 1 -f f32le -nostats -loglevel error pipe:1 | \
+  ./cmake-out/examples/models/silero_vad/silero_vad_stream_runner \
+    --model_path examples/models/silero_vad/silero_vad_xnnpack/silero_vad.pte
+```
 
 ### How It Works
 
