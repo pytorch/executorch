@@ -48,7 +48,9 @@ cv::Mat scale_with_padding(
     return source;
   }
 
-  *scale = std::min(m_inputWidth / static_cast<float>(col), m_inputHeight / static_cast<float>(row));
+  *scale = std::min(
+      m_inputWidth / static_cast<float>(col),
+      m_inputHeight / static_cast<float>(row));
   int resized_w = static_cast<int>(col * *scale);
   int resized_h = static_cast<int>(row * *scale);
   *pad_x = (m_inputWidth - resized_w) / 2;

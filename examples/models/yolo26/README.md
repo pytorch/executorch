@@ -14,7 +14,13 @@ To install ExecuTorch, follow this [guide](https://pytorch.org/executorch/stable
 
 ### Step 2: Install the backend of your choice
 
-- [OpenVINO backend installation guide](../../../backends/openvino/README.md#build-instructions)
+- [OpenVINO backend installation guide](../../../backends/openvino/README.md#quick-start-pip-wheel)
+
+> **_NOTE:_**  Please install the OpenVINO nightly version that supports the YOLO26 model.
+```bash
+python -m pip install --pre openvino==2026.1.0.dev20260131 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+```
+
 - [XNNPACK backend installation guilde](https://pytorch.org/executorch/stable/tutorial-xnnpack-delegate-lowering.html#running-the-xnnpack-model-with-cmake)
 
 ### Step 3: Install the demo requirements
