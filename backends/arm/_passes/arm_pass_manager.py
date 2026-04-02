@@ -61,6 +61,7 @@ from executorch.backends.arm._passes import (
     DecomposeGluPass,
     DecomposeGroupedConvPass,
     DecomposeGroupNormPass,
+    DecomposeGruPass,
     DecomposeIndexCopyPass,
     DecomposeIndexSelectToGatherPass,
     DecomposeIndexTensorToGatherPass,
@@ -365,6 +366,7 @@ class ArmPassManager(PassManager):
                 ConvertToClampPass(),
                 DecomposeTOSAUnsupportedClampPass(),
                 DecomposeGroupNormPass(),
+                DecomposeGruPass(),
                 DecomposeLayerNormPass(),
                 DecomposeVarPass(),
                 DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec),
@@ -585,6 +587,7 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 NormalizeWhileInitialArgsPass(use_exir_clone=False, tfa_pass=True),
+                DecomposeGruPass(tfa_pass=True),
                 DecomposeNotEqualPass(tfa_pass=True),
                 DecomposeCosineSimilarityPass(tfa_pass=True),
                 DecomposeGluPass(tfa_pass=True),
