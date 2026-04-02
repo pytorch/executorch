@@ -16,6 +16,10 @@ from executorch.examples.models.torchvision_vit import TorchVisionViTModel
 
 
 class TestMilestoneTorchVisionViT(unittest.TestCase):
+
+    # This model is skipped because transformers=5.0.0rc1. 
+    # it will re-enable after fixing the issue
+    @unittest.skip
     def test_torchvision_vit_fp16(self):
         torch.manual_seed(8)
         model = TorchVisionViTModel().get_eager_model()
