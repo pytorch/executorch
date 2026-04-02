@@ -14,6 +14,7 @@
 #include <xnnpack.h>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #pragma clang diagnostic ignored "-Wmissing-prototypes"
@@ -1876,19 +1877,27 @@ ET_NODISCARD Error XNNCompiler::compileModel(
   // Invalid ids do not need to be remapped
   remapped_ids.emplace(XNN_INVALID_VALUE_ID, XNN_INVALID_VALUE_ID);
 
-  // If weight cache is not on we hold onto all the unpacked buffers
-  // and we free them at the end
+  // Buffers loaded from the named data map. After xnn_create_runtime,
+  // buffers consumed by packing operators are freed; the rest are moved
+  // into the executor to keep them alive for non-packing operators.
   std::vector<FreeableBuffer> unpacked_buffers;
+
+  // Maps xvalue index to unpacked_buffers index for values whose data was
+  // loaded from the named data map. Used to selectively retain buffers that
+  // are still referenced at runtime (non-packing operators).
+  std::unordered_map<uint32_t, size_t> named_data_buffer_map;
 
   // External Ids for inputs and outputs
   std::vector<uint32_t> input_ids;
   std::vector<uint32_t> output_ids;
   Error err = Error::Ok;
-  for (auto value : *flatbuffer_graph->xvalues()) {
+  auto xvalues = flatbuffer_graph->xvalues();
+  for (uint32_t i = 0; i < xvalues->size(); i++) {
+    size_t prev_buffers = unpacked_buffers.size();
     err = defineTensor(
         subgraph.get(),
         remapped_ids,
-        value,
+        xvalues->Get(i),
         flatbuffer_graph,
         constant_data,
         input_ids,
@@ -1900,6 +1909,10 @@ ET_NODISCARD Error XNNCompiler::compileModel(
 
     if (err != Error::Ok) {
       return err;
+    }
+
+    if (unpacked_buffers.size() > prev_buffers) {
+      named_data_buffer_map[i] = prev_buffers;
     }
   }
 
@@ -1956,8 +1969,55 @@ ET_NODISCARD Error XNNCompiler::compileModel(
       Internal,
       "Failed to finalize weights cache after creating the xnn runtime")
 #else
-  for (auto& buffer : unpacked_buffers) {
-    buffer.Free();
+
+  // Operators like convolution and fully-connected pack weights during
+  // load, so those buffers can be freed. Other operators (PreLU) retain
+  // raw pointers to the original constant data, so those buffers need
+  // to remain alive.
+  if (!named_data_buffer_map.empty()) {
+    // Collect xvalue indices whose data was packed by create_runtime.
+    // These are the filter and bias inputs of weight-packing operators.
+    std::unordered_set<uint32_t> packed_value_indices;
+    for (auto node : *flatbuffer_graph->xnodes()) {
+      auto type = node->xnode_union_type();
+      switch (type) {
+        case fb_xnnpack::XNodeUnion::XNNFullyConnected: {
+          auto n = node->xnode_union_as_XNNFullyConnected();
+          packed_value_indices.insert(n->filter_id());
+          packed_value_indices.insert(n->bias_id());
+          break;
+        }
+        case fb_xnnpack::XNodeUnion::XNNConv2d: {
+          auto n = node->xnode_union_as_XNNConv2d();
+          packed_value_indices.insert(n->filter_id());
+          packed_value_indices.insert(n->bias_id());
+          break;
+        }
+        case fb_xnnpack::XNodeUnion::XNNDepthwiseConv2d: {
+          auto n = node->xnode_union_as_XNNDepthwiseConv2d();
+          packed_value_indices.insert(n->filter_id());
+          packed_value_indices.insert(n->bias_id());
+          break;
+        }
+        case fb_xnnpack::XNodeUnion::XNNConvTranspose2d: {
+          auto n = node->xnode_union_as_XNNConvTranspose2d();
+          packed_value_indices.insert(n->filter_id());
+          packed_value_indices.insert(n->bias_id());
+          break;
+        }
+        default:
+          break;
+      }
+    }
+
+    for (auto& [value_idx, buffer_idx] : named_data_buffer_map) {
+      if (packed_value_indices.count(value_idx)) {
+        unpacked_buffers[buffer_idx].Free();
+      } else {
+        executor->unpacked_buffers_.push_back(
+            std::move(unpacked_buffers[buffer_idx]));
+      }
+    }
   }
   Result<std::vector<std::string>> packed_weights_names =
       std::vector<std::string>();
