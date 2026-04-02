@@ -49,7 +49,7 @@ public interface LlmCallback {
   default void onError(int errorCode, String message) {
     try {
       android.util.Log.e("ExecuTorch", "LLM error " + errorCode + ": " + message);
-    } catch (RuntimeException e) {
+    } catch (Throwable t) {
       System.err.println("ExecuTorch LLM error " + errorCode + ": " + message);
     }
   }
