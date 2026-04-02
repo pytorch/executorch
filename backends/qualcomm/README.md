@@ -51,8 +51,8 @@ backends/qualcomm
 |   |       # models on a device.
 |   └── backends # Backends supported by QNN.
 |       └── gpu / htp
-|           ├── aarch64 # Configuration required to run on device. (Device Part).
-|           └── x86_64 # Configuration required to compile graph on host. (AoT Part).
+|           ├── target # Configuration required to run on device. (Device Part).
+|           └── host # Configuration required to compile graph on host. (AoT Part).
 ├── scripts # Misc supporting scripts, not related to core functionality.
 ├── serialization # Contains files related to serializing QNN compiler options and SoC information
 ├── tests # Unit tests and model tests go here.

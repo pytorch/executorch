@@ -15,5 +15,7 @@ def define_common_targets():
         visibility = ["PUBLIC"],
         deps = [
             "//executorch/backends/transforms:decompose_sdpa",
+            "//executorch/extension/pybindings:portable_lib",
+            "//executorch/kernels/quantized:quantized_ops_lib",
         ],
     )
