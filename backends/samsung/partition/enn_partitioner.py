@@ -15,6 +15,7 @@ from executorch.backends.samsung.enn_preprocess import EnnBackend
 from executorch.backends.samsung.serialization.compile_options import (
     ENN_COMPILE_OPTION_TITLE,
 )
+from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 from executorch.backends.samsung.utils.utils import get_compile_spec
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
@@ -70,8 +71,15 @@ class EnnOperatorSupport(OperatorSupportBase):
         ]:
             return False
 
-        if node.target in SUPPORTED_OPS or node.target.__name__ in self.node_visitors:
+        if node.target in SUPPORTED_OPS:
             return True
+
+        if node.target.__name__ in self.node_visitors:
+            enn_graph = EnnGraph()
+            vals_to_ids: Dict[torch.fx.Node, int] = {}
+            return self.node_visitors[node.target.__name__].define_node(
+                node, enn_graph, vals_to_ids
+            )
 
         supported = self.enn_wrapper.IsNodeSupportedByBackend()
         return supported

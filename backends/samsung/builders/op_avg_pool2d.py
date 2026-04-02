@@ -26,7 +26,7 @@ class AvgPool2dVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
 
@@ -64,3 +64,5 @@ class AvgPool2dVisitor(NodeVisitor):
             ), "Not supported divisor_override which is not equal to pooling region."
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
         enn_graph.define_op(node.name, "AVGPOOL2D", [input_id], [output_id], params)
+
+        return True

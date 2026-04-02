@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from typing import cast, Dict, List
 
 import torch
@@ -27,7 +28,7 @@ class ExpandVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ):
+    ) -> bool:
         # inputs
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
@@ -35,6 +36,8 @@ class ExpandVisitor(NodeVisitor):
         in_shape = get_shape(input)
         sizes = cast(List[int], node.args[1])
         expand_dims = self.check_expand_dims(sizes, in_shape)
+        if expand_dims is None:
+            return False
 
         # output
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
@@ -53,7 +56,10 @@ class ExpandVisitor(NodeVisitor):
                 params,
             )
         else:
-            raise NotImplementedError("Don't support expanding at more than one axes.")
+            logging.warning("Don't support expanding at more than one axes.")
+            return False
+
+        return True
 
     def check_expand_dims(self, sizes, in_shape):
         expand_dims = []
@@ -72,6 +78,8 @@ class ExpandVisitor(NodeVisitor):
 
         while new_size_index > 0:
             new_size_index -= 1
-            assert sizes[new_size_index] == 1, "Current expand is unsupported!"
+            if sizes[new_size_index] != 1:
+                logging.warning("Current expand is unsupported!")
+                return None
 
         return expand_dims

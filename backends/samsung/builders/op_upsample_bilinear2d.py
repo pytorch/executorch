@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from typing import cast, Dict, List
 
 import torch
@@ -27,11 +28,14 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
         in_shape = get_shape(input)
         output_size = cast(List[int], node.args[1])
+        if output_size is None:
+            logging.warning("output is None for this case.")
+            return False
         scale_factor = [
             output_size[0] * 1.0 / in_shape[-2],
             output_size[1] * 1.0 / in_shape[-1],
@@ -51,3 +55,5 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
         enn_graph.define_op(
             node.name, "RESIZE_BILINEAR", [input_id], [output_id], params
         )
+
+        return True

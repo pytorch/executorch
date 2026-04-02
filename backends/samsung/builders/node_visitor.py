@@ -31,7 +31,7 @@ class NodeVisitor:
     def exported_program(self) -> ExportedProgram:
         return self._exported_program
 
-    def define_node(self, node: torch.fx.Node, enn_graph: EnnGraph):
+    def define_node(self, node: torch.fx.Node, enn_graph: EnnGraph) -> bool:
         raise NotImplementedError("NodeVisitor must be extended!")
 
     def define_tensor(
@@ -58,7 +58,9 @@ class NodeVisitor:
         if is_param_node(self.exported_program, node):
             if swap_nc_for_weights:
                 tensor = torch.swapdims(tensor, 0, 1)
-            const_data = tensor.contiguous().detach().numpy()
+            if not isinstance(tensor, torch._subclasses.fake_tensor.FakeTensor):
+                # .numpy() is not supported for tensor subclasses if the tensor is a fake tensor.
+                const_data = tensor.contiguous().detach().numpy()
 
         dims = [1] if len(tensor.size()) == 0 else list(tensor.size())
 

@@ -25,7 +25,7 @@ class BatchNormVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         all_input_tensors = []
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
@@ -58,3 +58,5 @@ class BatchNormVisitor(NodeVisitor):
         enn_graph.define_op(
             node.name, "BatchNormalization", all_input_tensors, [output_id], params
         )
+
+        return True

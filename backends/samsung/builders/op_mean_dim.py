@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from typing import cast, Dict, List
 
 import torch
@@ -27,7 +28,7 @@ class ReduceMeanVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         # input
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
@@ -37,6 +38,9 @@ class ReduceMeanVisitor(NodeVisitor):
         dims = cast(List[int], node.args[1])
         reduce_axes = []
         in_shape = get_shape(input)
+        if dims is None:
+            logging.warning("dims is None for this case.")
+            return False
         for dim in dims:
             reduce_axes.append(dim % len(in_shape))
 
@@ -47,3 +51,5 @@ class ReduceMeanVisitor(NodeVisitor):
         params = {"keep_dims": keep_dim, "axis": reduce_axes}
         self._update_params_qdtype(node, params)
         enn_graph.define_op(node.name, "REDUCEMEAN", [input_id], [output_id], params)
+
+        return True

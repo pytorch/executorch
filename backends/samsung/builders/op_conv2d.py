@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from typing import cast, Dict, List
 
 import torch
@@ -27,7 +28,7 @@ class Conv2dVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         all_input_tensors = []
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
@@ -52,6 +53,11 @@ class Conv2dVisitor(NodeVisitor):
         padding = cast(List[int], node.args[4])
         dilation = cast(List[int], node.args[5])
         groups = cast(int, node.args[8])
+        if len(padding) < 2:
+            logging.warning(
+                "For conv1d decomposed to conv2d(with conv1d params), Conv1dToConv2d pass will update the params."
+            )
+            return True
         explicit_padding = [padding[0], padding[1], padding[0], padding[1]]
 
         input_shape = get_shape(input)
@@ -87,3 +93,5 @@ class Conv2dVisitor(NodeVisitor):
             enn_graph.define_op(
                 node.name, conv_type, all_input_tensors, [output_id], params
             )
+
+        return True

@@ -28,5 +28,5 @@ class OpSkipVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
-        return
+    ) -> bool:
+        return True

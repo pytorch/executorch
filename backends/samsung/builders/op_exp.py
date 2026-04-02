@@ -23,9 +23,11 @@ class ExpVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         input_id = self.define_tensor(node.args[0], enn_graph, vals_to_ids)
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
         enn_graph.define_op(node.name, "Exp", [input_id], [output_id])
+
+        return True
