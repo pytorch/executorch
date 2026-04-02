@@ -118,7 +118,7 @@ class ModuleInstrumentationTest {
 
     module.destroy()
 
-    Assert.assertThrows(RuntimeException::class.java) { module.loadMethod(FORWARD_METHOD) }
+    Assert.assertThrows(IllegalStateException::class.java) { module.loadMethod(FORWARD_METHOD) }
   }
 
   @Test
