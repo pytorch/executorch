@@ -25,7 +25,7 @@ def input_file_path(path):
     if os.path.exists(path):
         return path
     else:
-        raise ArgumentTypeError(f"input filepath:{path} does not exist")
+        raise ArgumentTypeError(f"input filepath: {path} does not exist")
 
 
 parser = ArgumentParser(description="Convert .pte model to C header for ESP32")
