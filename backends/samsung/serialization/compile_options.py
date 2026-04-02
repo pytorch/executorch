@@ -15,6 +15,7 @@ from importlib.resources import files
 
 from executorch.exir._serialize._dataclass import _DataclassEncoder
 from executorch.exir._serialize._flatbuffer import _flatc_compile
+from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import CompileSpec
 
 
@@ -25,9 +26,20 @@ class SamsungChipset(IntEnum):
     E9965 = 9965
 
 
+@experimental(
+    "This API is experimental. If you use this mode, you should verify pte file on device farm which can be used on "
+    "exynos developer society site ( https://soc-developer.semiconductor.samsung.com/)"
+)
+@unique
+class PerformanceMode(IntEnum):
+    DEFAULT = 0
+    HIGH_PERFORMANCE = 1
+
+
 @dataclass
 class EnnExecuTorchOptions:
     chipset: SamsungChipset = SamsungChipset.UNDEFINED_CHIP_V
+    perf_mode: PerformanceMode = PerformanceMode.DEFAULT
 
 
 ENN_COMPILE_OPTION_TITLE = "enn_compile_options"
@@ -61,6 +73,7 @@ def gen_samsung_backend_compile_spec_core(options: EnnExecuTorchOptions) -> Comp
 
 def gen_samsung_backend_compile_spec(
     chipset: str,
+    perf_mode: PerformanceMode = None,
 ):
     """
     A function to generate an ExecuTorch binary for Samsung Backend.
@@ -71,8 +84,12 @@ def gen_samsung_backend_compile_spec(
     Returns:
         CompileSpec: key is COMPILE_OPTION_SCHEMA_NAME, value is serialization binary of fb schema
     """
+
+    perf_mode = PerformanceMode.DEFAULT if perf_mode is None else perf_mode
+
     option = EnnExecuTorchOptions(
         getattr(SamsungChipset, chipset.upper()),
+        perf_mode,
     )
 
     return gen_samsung_backend_compile_spec_core(option)
