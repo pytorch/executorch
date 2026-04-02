@@ -594,9 +594,21 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
 
   jint load() {
     if (!runner_) {
+      ET_LOG(
+          Error,
+          "ExecuTorchLlmJni::load() called but runner_ is null. "
+          "The model runner was not created or failed to initialize due to a "
+          "previous configuration or initialization error.");
       return static_cast<jint>(Error::InvalidArgument);
     }
-    return static_cast<jint>(runner_->load());
+    const auto load_result = static_cast<jint>(runner_->load());
+    if (load_result != static_cast<jint>(Error::Ok)) {
+      ET_LOG(
+          Error,
+          "ExecuTorchLlmJni::load() failed in runner_->load() with error code %d.",
+          static_cast<int>(load_result));
+    }
+    return load_result;
   }
 
   static void registerNatives() {
