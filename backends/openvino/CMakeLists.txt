@@ -35,7 +35,11 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 add_library(openvino_backend STATIC)
 
 # Enable exceptions and RTTI for OpenVINO backend
-target_compile_options(openvino_backend PRIVATE -frtti -fexceptions)
+target_compile_options(
+  openvino_backend PRIVATE
+  $<$<CXX_COMPILER_ID:MSVC>:/GR /EHsc>
+  $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-frtti -fexceptions>
+)
 
 # Add source files for OpenVINO backend
 target_sources(

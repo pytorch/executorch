@@ -34,8 +34,8 @@ import torch as _torch
 logger = logging.getLogger(__name__)
 
 # Auto-discover the OpenVINO C library path from the pip-installed openvino
-# package so the C++ backend's dlopen("libopenvino_c.so") works without the
-# user having to set LD_LIBRARY_PATH or OPENVINO_LIB_PATH manually.
+# package so the C++ backend's dlopen/LoadLibrary call works without the user
+# having to set LD_LIBRARY_PATH or OPENVINO_LIB_PATH manually.
 if not os.environ.get("OPENVINO_LIB_PATH"):
     try:
         import glob
@@ -44,18 +44,24 @@ if not os.environ.get("OPENVINO_LIB_PATH"):
         spec = importlib.util.find_spec("openvino")
         if spec is not None and spec.submodule_search_locations:
             _ov_dir = spec.submodule_search_locations[0]
-            _ov_libs = sorted(
-                glob.glob(os.path.join(_ov_dir, "libs", "libopenvino_c.so*"))
-            )
+            _ov_libs_dir = os.path.join(_ov_dir, "libs")
+            if sys.platform == "win32":
+                _lib_pattern = os.path.join(_ov_libs_dir, "openvino_c.dll")
+            else:
+                _lib_pattern = os.path.join(_ov_libs_dir, "libopenvino_c.so*")
+            _ov_libs = sorted(glob.glob(_lib_pattern))
             if _ov_libs:
                 os.environ["OPENVINO_LIB_PATH"] = _ov_libs[0]
+                if sys.platform == "win32":
+                    os.add_dll_directory(_ov_libs_dir)
             else:
                 logger.warning(
-                    "OpenVINO package found but libopenvino_c.so not in %s; "
+                    "OpenVINO package found but %s not in %s; "
                     "set OPENVINO_LIB_PATH manually if needed",
-                    os.path.join(_ov_dir, "libs"),
+                    "openvino_c.dll" if sys.platform == "win32" else "libopenvino_c.so",
+                    _ov_libs_dir,
                 )
-            del _ov_libs, _ov_dir, spec
+            del _ov_libs, _ov_libs_dir, _lib_pattern, _ov_dir, spec
     except Exception as e:
         logger.debug("OpenVINO auto-discovery failed: %s", e)
 
