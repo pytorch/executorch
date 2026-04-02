@@ -68,6 +68,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       endif()
     endif()
   endif()
+  set_overridable_option(EXECUTORCH_BUILD_OPENVINO OFF)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
                                                "WIN32"
 )
