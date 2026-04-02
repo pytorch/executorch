@@ -20,10 +20,10 @@ from executorch.exir import (
 )
 from executorch.extension.export_util.utils import save_pte_program
 
-from ..models import MODEL_NAME_TO_MODEL
-from ..models.model_factory import EagerModelFactory
-from . import MODEL_NAME_TO_OPTIONS
-from .quantization.utils import quantize
+from executorch.examples.models import MODEL_NAME_TO_MODEL
+from executorch.examples.models.model_factory import EagerModelFactory
+from executorch.examples.xnnpack import MODEL_NAME_TO_OPTIONS
+from executorch.examples.xnnpack.quantization.utils import quantize
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
