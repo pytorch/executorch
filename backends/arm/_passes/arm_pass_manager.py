@@ -103,6 +103,7 @@ from executorch.backends.arm._passes import (
     FuseConsecutiveRescalesPass,
     FuseConstantArgsPass,
     FuseDuplicateUsersPass,
+    FuseConsecutiveTosaTransposesPass,
     FuseEqualPlaceholdersPass,
     FuseQuantizedActivationPass,
     FuseViewCopyTransformPass,
@@ -509,6 +510,7 @@ class ArmPassManager(PassManager):
                 FuseEqualPlaceholdersPass(exported_program),
                 FuseConsecutiveConcatShapesPass(),
                 ToTosaMemoryFormatPass(exported_program),
+                FuseConsecutiveTosaTransposesPass(),
                 RemoveNoopPass(),
                 InsertRescalePass(),
             ]
