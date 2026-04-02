@@ -594,30 +594,17 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
 
   jint load() {
     if (!runner_) {
-      std::stringstream ss;
-      ss << "Invalid model type category: " << model_type_category_
-         << ". Valid values are: " << MODEL_TYPE_CATEGORY_LLM << " or "
-         << MODEL_TYPE_CATEGORY_MULTIMODAL;
-      executorch::jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
-      return -1;
+      return static_cast<jint>(Error::InvalidArgument);
     }
-    int result = static_cast<jint>(runner_->load());
-    if (result != 0) {
-      std::stringstream ss;
-      ss << "Failed to load runner: [" << result << "]";
-      executorch::jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(result), ss.str().c_str());
-    }
-    return result;
+    return static_cast<jint>(runner_->load());
   }
 
   static void registerNatives() {
     registerHybrid({
         makeNativeMethod("initHybrid", ExecuTorchLlmJni::initHybrid),
-        makeNativeMethod("generate", ExecuTorchLlmJni::generate),
+        makeNativeMethod("generateNative", ExecuTorchLlmJni::generate),
         makeNativeMethod("stop", ExecuTorchLlmJni::stop),
-        makeNativeMethod("load", ExecuTorchLlmJni::load),
+        makeNativeMethod("loadNative", ExecuTorchLlmJni::load),
         makeNativeMethod(
             "prefillImagesInput", ExecuTorchLlmJni::prefill_images_input),
         makeNativeMethod(
@@ -638,7 +625,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
             "prefillRawAudioInput", ExecuTorchLlmJni::prefill_raw_audio_input),
         makeNativeMethod(
             "prefillTextInput", ExecuTorchLlmJni::prefill_text_input),
-        makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
+        makeNativeMethod("resetContextNative", ExecuTorchLlmJni::reset_context),
     });
   }
 };
