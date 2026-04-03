@@ -59,9 +59,9 @@ def _unwrap(kernel):
 # ---------------------------------------------------------------------------
 # Recurrent kernel: fused single-step gated delta rule for T=1 decode.
 #
-# Each thread block handles one (batch, head) pair.
-# Iterates over V-tiles: for each V-tile, loads the K-dim of state, q, k, v,
-# computes the gated delta rule update and output dot product.
+# Grid: (V // BV, B * H) — one block per (batch, head, v_tile).
+# Each block handles a [K, BV] slice of the state matrix.
+# Parallelizing over V tiles increases SM occupancy from 32 to 128+ blocks.
 # ---------------------------------------------------------------------------
 
 
@@ -79,12 +79,18 @@ def _recurrent_gated_delta_rule_kernel(
     # Dims
     K: tl.constexpr,
     V: tl.constexpr,
-    BK: tl.constexpr,  # block size for K dimension
-    BV: tl.constexpr,  # block size for V dimension
+    BK: tl.constexpr,  # block size for K dimension (= K, power of 2)
+    BV: tl.constexpr,  # block size for V dimension (tile size)
     scale: tl.constexpr,
 ):
-    # One block per (batch, head)
-    bh = tl.program_id(0)
+    # Grid: (V // BV, B * H)
+    v_tile_idx = tl.program_id(0)
+    bh = tl.program_id(1)
+
+    # V-tile range for this block
+    v_start = v_tile_idx * BV
+    v_range = v_start + tl.arange(0, BV)
+    v_mask = v_range < V
 
     # Load scalar g and beta for this (b, h)
     g_val = tl.load(g_ptr + bh).to(tl.float32)
@@ -92,61 +98,51 @@ def _recurrent_gated_delta_rule_kernel(
     decay = tl.exp(g_val)
 
     # Load full q and k vectors: [K]
-    q_base = bh * K
-    k_base = bh * K
+    qk_base = bh * K
     k_range = tl.arange(0, BK)
     k_mask = k_range < K
 
-    q_vec = tl.load(q_ptr + q_base + k_range, mask=k_mask, other=0.0).to(tl.float32)
-    k_vec = tl.load(k_ptr + k_base + k_range, mask=k_mask, other=0.0).to(tl.float32)
+    q_vec = tl.load(q_ptr + qk_base + k_range, mask=k_mask, other=0.0).to(tl.float32)
+    k_vec = tl.load(k_ptr + qk_base + k_range, mask=k_mask, other=0.0).to(tl.float32)
 
-    # Process V in tiles
+    # Load v tile: [BV]
     v_base = bh * V
-    state_base = bh * K * V  # state: [K, V] for this (b, h)
+    v_tile = tl.load(v_ptr + v_base + v_range, mask=v_mask, other=0.0).to(tl.float32)
 
-    for v_start in range(0, V, BV):
-        v_range = v_start + tl.arange(0, BV)
-        v_mask = v_range < V
+    # Load state tile: [BK, BV] — state[k, v] at state_base + k*V + v
+    state_base = bh * K * V
+    s_offsets = k_range[:, None] * V + v_range[None, :]
+    s_mask = k_mask[:, None] & v_mask[None, :]
+    state_tile = tl.load(
+        state_ptr + state_base + s_offsets, mask=s_mask, other=0.0
+    ).to(tl.float32)
 
-        # Load v tile: [BV]
-        v_tile = tl.load(v_ptr + v_base + v_range, mask=v_mask, other=0.0).to(
-            tl.float32
-        )
+    # Step 1: state *= exp(g)
+    state_tile = state_tile * decay
 
-        # Load state tile: [BK, BV] — state[k, v] at state_base + k*V + v
-        s_offsets = k_range[:, None] * V + v_range[None, :]
-        s_mask = k_mask[:, None] & v_mask[None, :]
-        state_tile = tl.load(
-            state_ptr + state_base + s_offsets, mask=s_mask, other=0.0
-        ).to(tl.float32)
+    # Step 2: Sk = state^T @ k → [BV] (dot product along K)
+    Sk = tl.sum(state_tile * k_vec[:, None], axis=0)
 
-        # Step 1: state *= exp(g)
-        state_tile = state_tile * decay
+    # Step 3: delta = v - Sk
+    delta = v_tile - Sk
 
-        # Step 2: Sk = state^T @ k → [BV] (dot product along K)
-        # Sk[v] = sum_k state[k, v] * k[k]
-        Sk = tl.sum(state_tile * k_vec[:, None], axis=0)
+    # Step 4: state += beta * outer(k, delta)
+    state_tile = state_tile + beta_val * (k_vec[:, None] * delta[None, :])
 
-        # Step 3: delta = v - Sk
-        delta = v_tile - Sk
+    # Step 5: o = state^T @ q → [BV]
+    o_tile = tl.sum(state_tile * q_vec[:, None], axis=0) * scale
 
-        # Step 4: state += beta * outer(k, delta)
-        state_tile = state_tile + beta_val * (k_vec[:, None] * delta[None, :])
+    # Store output tile
+    tl.store(
+        o_ptr + v_base + v_range, o_tile.to(o_ptr.dtype.element_ty), mask=v_mask
+    )
 
-        # Step 5: o = state^T @ q → [BV]
-        o_tile = tl.sum(state_tile * q_vec[:, None], axis=0) * scale
-
-        # Store output tile
-        tl.store(
-            o_ptr + v_base + v_range, o_tile.to(o_ptr.dtype.element_ty), mask=v_mask
-        )
-
-        # Store new state tile
-        tl.store(
-            new_state_ptr + state_base + s_offsets,
-            state_tile.to(new_state_ptr.dtype.element_ty),
-            mask=s_mask,
-        )
+    # Store new state tile
+    tl.store(
+        new_state_ptr + state_base + s_offsets,
+        state_tile.to(new_state_ptr.dtype.element_ty),
+        mask=s_mask,
+    )
 
 
 def _launch_recurrent(q, k, v, g, beta, initial_state, scale):
@@ -164,20 +160,20 @@ def _launch_recurrent(q, k, v, g, beta, initial_state, scale):
     B, _, H, K = q.shape
     V = v.shape[-1]
 
-    # Squeeze T=1 dim for kernel: [B, H, *]
-    q_2d = q[:, 0].contiguous()  # [B, H, K]
-    k_2d = k[:, 0].contiguous()  # [B, H, K]
-    v_2d = v[:, 0].contiguous()  # [B, H, V]
-    g_2d = g[:, 0].contiguous()  # [B, H]
-    beta_2d = beta[:, 0].contiguous()  # [B, H]
+    # Squeeze T=1 dim via slicing (avoids .contiguous() copy)
+    q_2d = q[:, 0]  # [B, H, K]
+    k_2d = k[:, 0]  # [B, H, K]
+    v_2d = v[:, 0]  # [B, H, V]
+    g_2d = g[:, 0]  # [B, H]
+    beta_2d = beta[:, 0]  # [B, H]
 
     o_2d = torch.empty(B, H, V, device=q.device, dtype=q.dtype)
     final_state = torch.empty(B, H, K, V, device=q.device, dtype=torch.float32)
 
     BK = triton.next_power_of_2(K)
-    BV = min(triton.next_power_of_2(V), 128)  # cap tile size
+    BV = 32  # small tiles → low register pressure, high SM occupancy
 
-    grid = (B * H,)
+    grid = (triton.cdiv(V, BV), B * H)
     wrap_triton(_recurrent_gated_delta_rule_kernel)[grid](
         q_ptr=q_2d,
         k_ptr=k_2d,
