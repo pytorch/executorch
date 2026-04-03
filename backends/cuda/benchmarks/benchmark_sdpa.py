@@ -22,7 +22,10 @@ from functools import partial
 import torch
 import torch.nn.functional as F
 
-from executorch.backends.cuda.triton.kernels.sdpa import sdpa as triton_sdpa
+from executorch.backends.cuda.triton.kernels.sdpa import (
+    sdpa as triton_sdpa,
+    sdpa_decode_splitk as triton_splitk,
+)
 from torch.nn.attention import sdpa_kernel, SDPBackend
 from triton.testing import do_bench
 
@@ -48,6 +51,10 @@ def _expand_mask(mask, H_q):
 
 def _run_triton(q, k, v, attn_mask, enable_gqa):
     return triton_sdpa(q, k, v, attn_mask=attn_mask, enable_gqa=enable_gqa)
+
+
+def _run_splitk(q, k, v, attn_mask, enable_gqa):
+    return triton_splitk(q, k, v, attn_mask=attn_mask, enable_gqa=enable_gqa)
 
 
 def _run_pytorch_default(q, k, v, attn_mask, enable_gqa):
@@ -77,6 +84,7 @@ def _run_flash(q, k, v, attn_mask, enable_gqa):
 
 BACKENDS = {
     "triton": ("ET Triton (GQA)", _run_triton),
+    "splitk": ("ET Split-K (GQA)", _run_splitk),
     "pytorch": ("PyTorch", _run_pytorch_default),
     "flash": ("Flash (expanded KV)", _run_flash),
     "efficient": (
@@ -92,7 +100,7 @@ _NEEDS_KV_EXPAND = {"flash", "efficient", "math"}
 # -- Shapes ------------------------------------------------------------------
 
 # Qwen3.5 MoE: B=1, H_q=16, H_kv=2, D=256
-QWEN35_BASE = dict(B=1, H_q=16, H_kv=2, D=256)
+QWEN35_BASE = {"B": 1, "H_q": 16, "H_kv": 2, "D": 256}
 
 DECODE_SHAPES = [
     dict(**QWEN35_BASE, Lq=1, Lk=64),
