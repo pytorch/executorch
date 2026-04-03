@@ -19,6 +19,9 @@ from nncf.experimental.torch.fx.transformations import (  # type: ignore[import-
     module_insertion,
     node_removal,
 )
+from nncf.quantization.algorithms.weight_compression.parameters import (  # type: ignore[import-untyped]
+    CompressedWeight
+)
 from nncf.quantization.algorithms.weight_compression.config import (  # type: ignore[import-untyped]
     WeightCompressionParameters,
 )
@@ -71,6 +74,22 @@ class WeightObserverBase(ObserverBase, ABC):
         wc_param = self._wc_param
         wc_config = wc_param.compression_config
         reduction_axes = wc_param.reduction_axes
+        nncf_compressed_weight = do_integer_quantization(
+            NNCFTensor(weight), wc_config, reduction_axes=reduction_axes
+        )
+
+        q_weight, scale, zp = None, None, None
+        if isinstance(nncf_compressed_weight, CompressedWeight):
+            q_weight = nncf_compressed_weight.tensor
+            scale = nncf_compressed_weight.scale
+            zp = nncf_compressed_weight.zero_point
+        if isinstance(nncf_compressed_weight, tuple):
+            # depreceate this part. For backwards compatability with older NNCF commit
+            q_weight, scale, zp = nncf_compressed_weight
+        assert all(val is not None for val in (q_weight, scale)), \
+        f"Could not calculate quantization parameters for weight compression observer. " \
+        f"None values: { {name: val for name, val in [('quantized_weight', q_weight), ('scale', scale)] if val is None} }"
+
         q_weight, scale, zp = do_integer_quantization(
             NNCFTensor(weight), wc_config, reduction_axes=reduction_axes
         )
