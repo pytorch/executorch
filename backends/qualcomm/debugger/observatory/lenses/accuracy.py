@@ -473,14 +473,6 @@ class AccuracyLens(Lens):
         ):
             return None
 
-        # For "Exported Float", use the cached GraphModule instead of the raw
-        # ExportedProgram.  ExportedProgram.module() creates a NEW GraphModule
-        # via copy.deepcopy(graph) + _unlift on every call.  If we let the
-        # evaluator call .module() again it would produce a second instance
-        # whose outputs may differ from the golden outputs (computed from the
-        # first instance) due to floating-point non-determinism in the
-        # unlifting/recompilation path.  Reusing the same GraphModule
-        # guarantees golden == prediction → PSNR=MAX_PSNR, cosine=1.0.
         eval_artifact = artifact
         if record_name == "Exported Float" and cls._float_model is not None:
             eval_artifact = cls._float_model
@@ -589,14 +581,13 @@ class AccuracyLens(Lens):
             if cls._captured_dataset is None:
                 from .pipeline_graph_collector import PipelineGraphCollectorLens
 
-                sample_inputs = PipelineGraphCollectorLens._last_export_inputs
+                calibration_dataset = PipelineGraphCollectorLens._last_calibration_dataset
                 # cls._captured_dataset might already be captured
                 # from dataloader patching in _install_dataset_patches
-                if sample_inputs is not None:
-                    dataset = [sample_inputs]
-                    cls._captured_dataset = dataset
+                if calibration_dataset is not None:
+                    cls._captured_dataset = calibration_dataset
                     logging.info(
-                        "[AccuracyLens] Using sample input from torch.export.export as fallback dataset"
+                        "[AccuracyLens] Using calibration dataset from ptq_calibrate as fallback dataset"
                     )
 
             if cls._captured_dataset is None:

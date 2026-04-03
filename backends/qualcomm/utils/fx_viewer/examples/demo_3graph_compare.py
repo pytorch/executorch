@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
 """Standalone 3-graph compare demo: Reference → Decomposed (1-to-many) → Fused (many-to-1).
 
-Demonstrates debug_handle as the primary sync mode:
-- Graph 1 (Reference):   torch.export float model with unique int handles per node.
-- Graph 2 (Decomposed):  linear → t + mm + add (3 nodes share the same handle as linear).
-- Graph 3 (Fused):       relu nodes that follow a linear get a union tuple handle (linear_h, relu_h).
+Demonstrates from_node_root as the primary sync mode:
+- Graph 1 (Reference):   torch.export float model; run_decompositions populates from_node.
+- Graph 2 (Decomposed):  linear → t + mm + add (3 nodes share from_node_root="linear").
+- Graph 3 (Fused):       deepcopy of ref_gm; relu nodes get union debug_handle for many-to-1.
 
-Sync mode 'auto' (set intersection matching) connects all three graphs:
-- Click linear (handle {6}) in Graph 1 → Graph 2: add_tensor (last of {t,mm,add} with {6}).
-  Graph 3: relu (handle {6,7}, intersects {6}).
-- Click relu (handle {7}) in Graph 1 → Graph 2: relu_default. Graph 3: relu (handle {6,7}).
-- Click add_tensor (handle {6}) in Graph 2 → Graph 1: linear. Graph 3: relu.
-- Click relu (handle {6,7}) in Graph 3 → Graph 1: relu (last among {linear,relu} intersecting {6,7}).
-  Graph 2: relu_default.
+Sync mode 'auto' (from_node_root → debug_handle → id) connects all three graphs:
+- Click linear in Graph 1 → Graph 2: add_tensor (last of {t,mm,add} with from_node_root=linear).
+- Click t_default/mm_default/add_tensor in Graph 2 → Graph 1: linear (from_node_root match).
+- Click relu in Graph 1 → Graph 2: relu_default (from_node_root=relu).
+- Click relu in Graph 3 (union handle) → Graph 1: relu. Graph 2: relu_default.
 
 Run from repo root:
   python backends/qualcomm/utils/fx_viewer/examples/demo_3graph_compare.py
@@ -22,14 +20,11 @@ from __future__ import annotations
 
 import copy
 import json
-import sys
 from pathlib import Path
 from typing import Any, Dict
 
 import torch
 import torch.fx
-
-from executorch.exir.passes.debug_handle_generator_pass import generate_missing_debug_handles
 
 from executorch.backends.qualcomm.utils.fx_viewer import (
     FXGraphExporter,
@@ -78,29 +73,18 @@ class _DecomposeLinearPass(torch.fx.Transformer):
         return super().call_function(target, args, kwargs)
 
 
-def _propagate_debug_handles(gm: torch.fx.GraphModule, ref_handle_map: Dict[str, int]) -> None:
-    """Propagate debug handles from source nodes to decomposed nodes (1-to-many)."""
-    max_handle = max(ref_handle_map.values(), default=0)
-    for node in gm.graph.nodes:
-        if node.op in ("placeholder", "output"):
-            continue
-        if node.meta.get("debug_handle") and node.meta["debug_handle"] != 0:
-            continue
-        fn = node.meta.get("from_node", [])
-        ancestor = fn[-1].name if fn else None
-        if ancestor and ancestor in ref_handle_map:
-            node.meta["debug_handle"] = ref_handle_map[ancestor]
-        else:
-            max_handle += 1
-            node.meta["debug_handle"] = max_handle
 
 
 # ---------------------------------------------------------------------------
 # many-to-1: fused graph (no Transformer needed)
 # ---------------------------------------------------------------------------
 
-def _build_fused_graph(ref_gm: torch.fx.GraphModule, ref_handle_map: Dict[str, int]) -> torch.fx.GraphModule:
-    """Simulate fusion: relu nodes that follow a linear get a union handle (linear_h, relu_h)."""
+def _build_fused_graph(ref_gm: torch.fx.GraphModule) -> torch.fx.GraphModule:
+    """Simulate fusion: relu nodes that follow a linear get a union handle (linear_h, relu_h).
+
+    from_node is preserved from ref_gm via deepcopy, so from_node_root sync still works.
+    The union debug_handle demonstrates many-to-1 matching as a secondary sync mechanism.
+    """
     fused_gm = copy.deepcopy(ref_gm)
     nodes = list(fused_gm.graph.nodes)
     for i, node in enumerate(nodes):
@@ -108,8 +92,8 @@ def _build_fused_graph(ref_gm: torch.fx.GraphModule, ref_handle_map: Dict[str, i
             continue
         prev = nodes[i - 1] if i > 0 else None
         if prev and prev.op == "call_function" and "linear" in prev.name:
-            lh = ref_handle_map.get(prev.name)
-            rh = ref_handle_map.get(node.name)
+            lh = prev.meta.get("debug_handle")
+            rh = node.meta.get("debug_handle")
             if lh and rh:
                 node.meta["debug_handle"] = (lh, rh)  # union tuple → many-to-1
     return fused_gm
@@ -163,7 +147,7 @@ def _write_compare_html(
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>3-Graph Compare: debug_handle Sync Demo</title>
+  <title>3-Graph Compare: from_node_root Sync Demo</title>
   <style>
     html, body {{ margin: 0; padding: 0; width: 100%; height: 100%; font-family: sans-serif; background: #f3f4f6; }}
     .topbar {{ min-height: 48px; display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-bottom: 1px solid #d1d5db; background: #ffffff; flex-wrap: wrap; }}
@@ -179,16 +163,16 @@ def _write_compare_html(
 </head>
 <body>
   <div class="topbar">
-    <div class="title">3-Graph Compare: debug_handle Sync Demo</div>
+    <div class="title">3-Graph Compare: from_node_root Sync Demo</div>
     <button class="btn" id="btn_highlight_demo">Highlight Demo</button>
     <button class="btn" id="btn_clear_highlight">Clear Highlights</button>
     <details>
       <summary>About this demo</summary>
       <p>
-        <b>Graph 1 (Reference):</b> float model exported with unique int debug_handle per node.<br>
-        <b>Graph 2 (Decomposed, 1→many):</b> each linear → t + mm + add, all 3 share the same handle as the original linear.<br>
-        <b>Graph 3 (Fused, many→1):</b> relu nodes that follow a linear get a union tuple handle (linear_h, relu_h).<br>
-        <b>Sync mode 'Auto (handle→id)'</b> uses set intersection: clicking any node syncs to all graphs sharing any handle value.
+        <b>Graph 1 (Reference):</b> float model exported; run_decompositions populates from_node on all nodes.<br>
+        <b>Graph 2 (Decomposed, 1→many):</b> each linear → t + mm + add; all 3 share from_node_root="linear".<br>
+        <b>Graph 3 (Fused, many→1):</b> deepcopy of ref; relu nodes that follow a linear get a union debug_handle.<br>
+        <b>Sync mode 'Auto (from_node→handle→id)'</b>: from_node_root is tried first, then debug_handle set intersection.
       </p>
     </details>
   </div>
@@ -294,21 +278,17 @@ def main() -> None:
 
     print("Exporting reference graph...")
     ref_ep = torch.export.export(model, sample, strict=False)
-    generate_missing_debug_handles(ref_ep)
-    ref_gm = ref_ep.module()
-    ref_handles: Dict[str, int] = {
-        n.name: n.meta["debug_handle"]
-        for n in ref_gm.graph.nodes
-        if isinstance(n.meta.get("debug_handle"), int) and n.meta["debug_handle"] != 0
-    }
-    print(f"  Reference handles: {ref_handles}")
+    # run_decompositions populates from_node on all nodes
+    ref_ep_decomp = ref_ep.run_decompositions({})
+    ref_gm = ref_ep_decomp.module()
 
-    print("Building decomposed graph (1-to-many)...")
+    print("Building decomposed graph (1-to-many via Transformer)...")
+    # _DecomposeLinearPass is a torch.fx.Transformer — it auto-propagates from_node
     decomp_gm = _DecomposeLinearPass(ref_gm).transform()
-    _propagate_debug_handles(decomp_gm, ref_handles)
+    # from_node_root is now set on t_default, mm_default, add_tensor → "linear"
 
     print("Building fused graph (many-to-1)...")
-    fused_gm = _build_fused_graph(ref_gm, ref_handles)
+    fused_gm = _build_fused_graph(ref_gm)
 
     print("Exporting payloads...")
     ref_exp = FXGraphExporter(ref_gm)
@@ -325,11 +305,11 @@ def main() -> None:
     _write_compare_html(output, ref_payload, decomp_payload, fused_payload)
     print(f"Wrote: {output}")
     print()
-    print("Expected sync behavior (mode: auto, set intersection):")
-    print("  Click linear (handle {6}) in Graph 1 → Graph 2: add_tensor (last of {t,mm,add} with {6}). Graph 3: relu (handle {6,7}).")
-    print("  Click relu (handle {7}) in Graph 1 → Graph 2: relu_default. Graph 3: relu (handle {6,7}).")
-    print("  Click add_tensor (handle {6}) in Graph 2 → Graph 1: linear. Graph 3: relu.")
-    print("  Click relu (handle {6,7}) in Graph 3 → Graph 1: relu (last among {linear,relu}). Graph 2: relu_default.")
+    print("Expected sync behavior (mode: auto, from_node_root → debug_handle → id):")
+    print("  Click linear in Graph 1 → Graph 2: add_tensor (last of {t,mm,add} with from_node_root=linear).")
+    print("  Click t_default/mm_default/add_tensor in Graph 2 → Graph 1: linear (from_node_root match).")
+    print("  Click relu in Graph 1 → Graph 2: relu_default (from_node_root=relu).")
+    print("  Click relu in Graph 3 (union handle) → Graph 1: relu. Graph 2: relu_default.")
 
 
 if __name__ == "__main__":

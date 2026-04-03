@@ -75,6 +75,16 @@ class FXGraphExporter:
         self.extensions.append(extension)
 
     @staticmethod
+    def _get_from_node_root_name(from_node_list):
+        """Walk from_node chain to root, return root node name."""
+        if not from_node_list:
+            return None
+        ns = from_node_list[-1]
+        while getattr(ns, "from_node", None):
+            ns = ns.from_node[-1]
+        return getattr(ns, "name", None)
+
+    @staticmethod
     def _format_arg(arg):
         if isinstance(arg, torch.fx.Node):
             return arg.name
@@ -114,13 +124,19 @@ class FXGraphExporter:
 
             # Explicitly handle debug_handle (may be int or tuple — not caught by scalar loop)
             raw_dh = fx_node.meta.get("debug_handle")
-            if raw_dh is not None and raw_dh != 0 and raw_dh != () and raw_dh != []:
+            if raw_dh is not None and raw_dh != () and raw_dh != []:
                 if isinstance(raw_dh, int):
                     info["debug_handle"] = raw_dh
                 elif isinstance(raw_dh, (tuple, list)):
                     ints = [int(x) for x in raw_dh if isinstance(x, int) and x != 0]
                     if ints:
                         info["debug_handle"] = ints[0] if len(ints) == 1 else ints
+
+            raw_fn = fx_node.meta.get("from_node")
+            if raw_fn and isinstance(raw_fn, list) and len(raw_fn) > 0:
+                root_name = self._get_from_node_root_name(raw_fn)
+                if root_name:
+                    info["from_node_root"] = root_name
 
             nodes[fx_node.name] = GraphNode(id=fx_node.name, topo_index=idx, info=info)
 
