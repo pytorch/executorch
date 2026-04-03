@@ -5,7 +5,7 @@
 //   Row 2: info row using CSS subgrid for aligned property columns.
 //
 // Selection sync modes (config.sync.mode):
-//   'auto'  (default) — tries debug_handle set-intersection first, falls back to node-ID match.
+//   'auto'  (default) — tries from_node_root first, then debug_handle set-intersection, falls back to node-ID match.
 //   'id'              — matches by node id only.
 //   'layer'           — matches by extensions[layer].nodes[nodeId].info[field] value equality;
 //                       picks last in topological order on multiple matches.
@@ -18,10 +18,10 @@
 // Two nodes match if their normalized sets have a non-empty intersection.
 //
 // Sidebar sync selector options (rebuilt by _rebuildSyncPanel):
-//   "Auto (handle→id)"          → mode: 'auto'
-//   "ID only"                   → mode: 'id'
-//   "Don't sync"                → mode: 'none'
-//   "Ext: <extId>.<field>"      → mode: 'layer' (one per registered sync_key)
+//   "Auto (from_node→handle→id)"  → mode: 'auto'
+//   "ID only"                     → mode: 'id'
+//   "Don't sync"                  → mode: 'none'
+//   "Ext: <extId>.<field>"        → mode: 'layer' (one per registered sync_key)
 
 class FXGraphCompare {
     static create(config) {
@@ -397,7 +397,7 @@ class FXGraphCompare {
 
     _rebuildSyncPanel() {
         if (!this._syncSelect) return;
-        let html = '<option value="auto">Auto (handle &#x2192; id)</option>'
+        let html = '<option value="auto">Auto (from_node&#x2192;handle&#x2192;id)</option>'
                  + '<option value="id">ID only</option>'
                  + '<option value="none">Don\'t sync</option>';
         const seen = new Set(['auto', 'id', 'none']);
@@ -600,15 +600,17 @@ class FXGraphCompare {
 
                 this._updateMergedInfo(nodeIdMap);
 
-                // Auto mode: highlight all debug_handle candidates across all viewers
+                // Auto mode: highlight all from_node_root + debug_handle candidates across all viewers
                 if (this.sync.mode === 'auto') {
                     // Clear own highlight group first (handles cross-viewer click sequence)
                     viewer.removeHighlightGroup('_sync_candidates');
                     this.viewers.forEach((other) => {
                         if (other === viewer) return;
-                        const candidates = this._getAllDebugHandleCandidates(viewer, evt.nextSelection, other);
-                        if (candidates.length > 1) {
-                            other.addHighlightGroup('_sync_candidates', candidates, '#ffaa00');
+                        const rootCandidates = this._getAllFromNodeRootCandidates(viewer, evt.nextSelection, other);
+                        const handleCandidates = this._getAllDebugHandleCandidates(viewer, evt.nextSelection, other);
+                        const allCandidates = [...new Set([...rootCandidates, ...handleCandidates])];
+                        if (allCandidates.length > 1) {
+                            other.addHighlightGroup('_sync_candidates', allCandidates, '#ffaa00');
                         } else {
                             other.removeHighlightGroup('_sync_candidates');
                         }
@@ -623,6 +625,8 @@ class FXGraphCompare {
         const mode = this.sync.mode;
         if (mode === 'none') return null;
         if (mode === 'auto') {
+            const byRoot = this._syncByFromNodeRoot(sourceViewer, nodeId, targetViewer);
+            if (byRoot) return byRoot;
             const byHandle = this._syncByDebugHandle(sourceViewer, nodeId, targetViewer);
             if (byHandle) return byHandle;
             return targetViewer.store.activeNodeMap.has(nodeId) ? nodeId : null;
@@ -650,6 +654,30 @@ class FXGraphCompare {
         if (typeof dh === 'number') return dh !== 0 ? new Set([dh]) : new Set();
         if (Array.isArray(dh)) return new Set(dh.filter((x) => typeof x === 'number' && x !== 0));
         return new Set();
+    }
+
+    _syncByFromNodeRoot(sourceViewer, nodeId, targetViewer) {
+        const srcNode = sourceViewer.store.activeNodeMap.get(nodeId);
+        const srcRoot = srcNode?.info?.from_node_root;
+        if (!srcRoot) return null;
+        const candidates = targetViewer.store.activeNodes.filter((n) => {
+            const tgtNode = targetViewer.store.activeNodeMap.get(n.id);
+            return tgtNode?.info?.from_node_root === srcRoot;
+        });
+        if (candidates.length === 0) return null;
+        return candidates[candidates.length - 1].id;
+    }
+
+    _getAllFromNodeRootCandidates(sourceViewer, nodeId, targetViewer) {
+        const srcNode = sourceViewer.store.activeNodeMap.get(nodeId);
+        const srcRoot = srcNode?.info?.from_node_root;
+        if (!srcRoot) return [];
+        return targetViewer.store.activeNodes
+            .filter((n) => {
+                const tgtNode = targetViewer.store.activeNodeMap.get(n.id);
+                return tgtNode?.info?.from_node_root === srcRoot;
+            })
+            .map((n) => n.id);
     }
 
     _syncByDebugHandle(sourceViewer, nodeId, targetViewer) {

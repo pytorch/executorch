@@ -39,7 +39,7 @@ class PipelineGraphCollectorLens(Lens):
     _installed: bool = False
     _originals: Dict[str, Any] = {}
     _collect_fn: Optional[Callable[[str, Any], None]] = None
-    _last_export_inputs: Optional[tuple] = None
+    _last_calibration_dataset: Optional[list] = None
 
     @classmethod
     def get_name(cls) -> str:
@@ -53,7 +53,7 @@ class PipelineGraphCollectorLens(Lens):
         from ..observatory import Observatory
 
         cls._collect_fn = Observatory.collect
-        cls._install_export_patch()
+        cls._install_ptq_calibrate_patch()
         cls._install_quantizer_patches()
         cls._install_edge_lower_patch()
         cls._install_etrecord_patches()
@@ -66,7 +66,7 @@ class PipelineGraphCollectorLens(Lens):
     @classmethod
     def clear(cls) -> None:
         cls._uninstall_all()
-        cls._last_export_inputs = None
+        cls._last_calibration_dataset = None
 
     @classmethod
     def observe(cls, artifact: Any, context: ObservationContext) -> Any:
@@ -81,52 +81,54 @@ class PipelineGraphCollectorLens(Lens):
         return AnalysisResult()
 
     # ------------------------------------------------------------------
-    # Patch: torch.export.export
-    # Captures the ExportedProgram produced from the float model.
+    # Patch: ptq_calibrate
+    # Captures the float ExportedProgram with from_node metadata populated.
+    # Fires after quantization calibration, when from_node is available.
     # ------------------------------------------------------------------
 
     @classmethod
-    def _install_export_patch(cls) -> None:
+    def _install_ptq_calibrate_patch(cls) -> None:
         try:
-            import torch.export as export_module
+            import examples.qualcomm.utils as qnn_utils_module
 
-            original = export_module.export
-            cls._originals["torch.export.export"] = original
+            original = qnn_utils_module.ptq_calibrate
+            cls._originals["ptq_calibrate"] = original
 
-            def patched_export(*args, **kwargs):
-                result = original(*args, **kwargs)
-                # from_node is absent on the raw export output; it is populated by
-                # run_decompositions({}), which re-traces the graph through an Interpreter.
-                # We work on a copy so the original result returned to the caller is not mutated.
-                collect_target = result
+            def patched_ptq_calibrate(captured_model, quantizer, dataset):
+                # Store dataset for AccuracyLens fallback
                 try:
-                    from executorch.exir.passes import DebugHandleGeneratorPass
-                    collect_target = result.run_decompositions({})
-                    pass_result = DebugHandleGeneratorPass()(collect_target.graph_module)
-                    breakpoint()
+                    dataset_list = list(dataset) if not isinstance(dataset, list) else dataset
+                    cls._last_calibration_dataset = dataset_list
+                except Exception:
+                    pass
+
+                # Re-export with dataset[0] to get from_node metadata
+                collect_target = captured_model
+                try:
+                    sample = cls._last_calibration_dataset[0] if cls._last_calibration_dataset else None
+                    if sample is not None:
+                        import torch
+                        ep = torch.export.export(captured_model, sample, strict=False)
+                        collect_target = ep.run_decompositions({})
                 except Exception as exc:
                     logging.debug(
-                        "[PipelineGraphCollector] DebugHandleGeneratorPass skipped: %s",
-                        exc,
+                        "[PipelineGraphCollector] from_node re-export skipped: %s", exc
                     )
-                try:
-                    # torch.export.export(mod, args, ...) — args[1] is the input tuple
-                    if len(args) >= 2:
-                        cls._last_export_inputs = args[1]
 
+                try:
                     cls._collect_fn("Exported Float", collect_target)
                 except Exception as exc:
                     logging.debug(
-                        "[PipelineGraphCollector] collect skipped (Exported Float): %s",
-                        exc,
+                        "[PipelineGraphCollector] collect skipped (Exported Float): %s", exc
                     )
-                return result
 
-            export_module.export = patched_export
-            logging.info("[PipelineGraphCollector] Installed patch: torch.export.export")
+                return original(captured_model, quantizer, dataset)
+
+            qnn_utils_module.ptq_calibrate = patched_ptq_calibrate
+            logging.info("[PipelineGraphCollector] Installed patch: ptq_calibrate")
         except Exception as exc:
             logging.warning(
-                "[PipelineGraphCollector] Failed to patch torch.export.export: %s", exc
+                "[PipelineGraphCollector] Failed to patch ptq_calibrate: %s", exc
             )
 
     # ------------------------------------------------------------------
@@ -316,10 +318,9 @@ class PipelineGraphCollectorLens(Lens):
 
         for key, original in cls._originals.items():
             try:
-                if key == "torch.export.export":
-                    import torch.export as export_module
-
-                    export_module.export = original
+                if key == "ptq_calibrate":
+                    import examples.qualcomm.utils as qnn_utils_module
+                    qnn_utils_module.ptq_calibrate = original
                 elif key == "prepare_pt2e":
                     import torchao.quantization.pt2e.quantize_pt2e as qt_module
 
@@ -350,6 +351,6 @@ class PipelineGraphCollectorLens(Lens):
 
         cls._originals.clear()
         cls._collect_fn = None
-        cls._last_export_inputs = None
+        cls._last_calibration_dataset = None
         cls._installed = False
         logging.info("[PipelineGraphCollector] Uninstalled all patches")
