@@ -23,19 +23,21 @@ monkey-patches in `on_session_start()` and remove them in `on_session_end()`.
 ### Purpose
 
 Automatically collects graph snapshots at each stage of the export -> quantize ->
-lower pipeline by monkey-patching framework-level functions. All patches are
-framework-level (torchao, executorch.exir), so they work for ALL backends.
+lower pipeline by monkey-patching framework-level functions plus backend-specific
+entrypoints. Framework-level patches cover common stages (`prepare_pt2e`,
+`convert_pt2e`, `to_edge_transform_and_lower`), while backend-specific patches
+are used to collect "Exported Float" with stable fallback dataset capture.
 
 ### Observation Points
 
 | # | Pipeline Stage | Record Name | Patched Function | Source File | Collected Artifact |
 |---|---------------|-------------|-----------------|-------------|-------------------|
-| 1 | Export | "Exported Float" | `torch.export.export()` | `torch/export/__init__.py` | Output ExportedProgram |
-| 2 | Quantizer Prepare | "Annotated Model" | `prepare_pt2e()` | `torchao/.../quantize_pt2e.py` | Output GraphModule with observers |
-| 3 | Quantizer Convert (input) | "Calibrated Model" | `convert_pt2e()` | same | Input GraphModule (post-calibration) |
-| 4 | Quantizer Convert (output) | "Quantized Model" | `convert_pt2e()` | same | Output GraphModule with Q/DQ ops |
-| 5 | Edge Lowering | "Edge" | `to_edge_transform_and_lower()` | `executorch/exir/program/_program.py` | Output EdgeProgramManager |
-| 6 | Edge Transform | "Transformed Edge" | same | same | After transform passes |
+| 1 | Backend-specific pre-quant (QNN) | "Exported Float" | `ptq_calibrate()` | `executorch/examples/qualcomm/utils.py` | `ExportedProgram` (`run_decompositions({})`) |
+| 2 | Backend-specific pre-quant (XNNPACK) | "Exported Float" | `quantize()` | `executorch/examples/xnnpack/quantization/utils.py` | `ExportedProgram` (`run_decompositions({})`) |
+| 3 | Quantizer Prepare | "Annotated Model" | `prepare_pt2e()` | `torchao/.../quantize_pt2e.py` | Output `GraphModule` with observers |
+| 4 | Quantizer Convert (input) | "Calibrated Model" | `convert_pt2e()` | same | Input `GraphModule` (post-calibration) |
+| 5 | Quantizer Convert (output) | "Quantized Model" | `convert_pt2e()` | same | Output `GraphModule` with Q/DQ ops |
+| 6 | Edge Lowering | "Edge" | `to_edge_transform_and_lower()` | `executorch/exir/program/_program.py` + `executorch/exir/__init__.py` | `EdgeProgramManager.exported_program()` |
 | 7 | ETRecord Export | "ETRecord Exported/{method}" | `ETRecord.add_exported_program()` | `executorch/devtools/etrecord/` | Exported program |
 | 8 | ETRecord Edge | "ETRecord Edge/{method}" | `ETRecord.add_edge_dialect_program()` | same | Edge dialect program |
 | 9 | ETRecord Extra | "ETRecord Extra/{module}" | `ETRecord.add_extra_export_modules()` | same | Extra modules |
@@ -48,13 +50,32 @@ Each patch follows the same pattern:
 3. Replace function in module namespace via `setattr`
 4. On session end, restore all originals
 
+Patch install order is explicit:
+1. backend-agnostic framework patches (`torchao`, `executorch.exir`, ETRecord)
+2. backend-specific patches (QNN/XNNPACK)
+
+This ordering avoids early-import alias freezing in e2e scripts.
+
 The `to_edge_transform_and_lower` patch also forces `generate_etrecord=True` to
 ensure ETRecord collection fires (rows 7-9).
 
-### Additional Data Captured
+### Backend Contract for AccuracyLens
 
-The `torch.export.export` patch also stores the sample input arguments as
-`_last_export_inputs` for use by AccuracyLens as a fallback dataset.
+`PipelineGraphCollectorLens` owns a cross-lens fallback dataset field:
+
+- `_last_calibration_dataset`
+
+Contract:
+- Any backend-specific patch that emits `"Exported Float"` must also populate
+  `_last_calibration_dataset`.
+- This is done through `_set_accuracy_fallback_dataset(...)` in
+  `pipeline_graph_collector.py`.
+- AccuracyLens uses this field when dataset loader patches did not provide
+  `_captured_dataset`.
+
+Current backend-specific implementations:
+- QNN: `ptq_calibrate` patch
+- XNNPACK: `quantize` patch
 
 ---
 
@@ -89,23 +110,26 @@ Observatory.collect("Quantized Model", quantized_model)
 
 | Data | Primary Source | Fallback | When Fallback Triggers |
 |------|---------------|----------|----------------------|
-| Dataset (inputs) | `get_imagenet_dataset` patch | Sample input from `torch.export.export` args | Custom dataset loader, non-Qualcomm backend |
+| Dataset (inputs) | `get_imagenet_dataset` / `get_masked_language_model_dataset` patches | `PipelineGraphCollectorLens._last_calibration_dataset` from backend-specific patch | Dataset loader patches do not fire or do not capture usable inputs |
 | Targets (labels) | `get_imagenet_dataset` / `get_masked_language_model_dataset` patch | None (skip target-specific metrics) | Custom dataset, non-classification task |
 | Float model | "Exported Float" artifact (ExportedProgram) | -- | Always available |
 | Golden outputs | Computed from float model + dataset | -- | Always available if dataset exists |
 | Post-process | Auto-detected from model output type | Identity function | Detection failure |
 
 **Fallback behavior when dataset patches don't fire:**
-- AccuracyLens uses the single sample input captured by PipelineGraphCollectorLens
-- Only PSNR and CosineSimilarity metrics are available (no TopK/MaskedTokenAccuracy)
-- This still provides useful signal-to-noise comparison between float and quantized models
+- AccuracyLens uses backend-captured fallback dataset from PipelineGraphCollectorLens
+- Target-dependent metrics (TopK/MaskedTokenAccuracy) are skipped when targets are unavailable
+- Golden-output metrics (PSNR, CosineSimilarity, MSE, AbsErr) still run when fallback inputs exist
 
 ### Dataset Loader Patches
 
 | Patched Function | Module | Return Format | What's Captured |
 |-----------------|--------|---------------|-----------------|
-| `get_imagenet_dataset` | `examples.qualcomm.utils` | `(List[Tuple[Tensor]], List[Tensor])` | inputs + class targets |
-| `get_masked_language_model_dataset` | `examples.qualcomm.utils` | `(List[Tuple[Tensor, Tensor]], List[Tensor])` | inputs + masked targets |
+| `get_imagenet_dataset` | `executorch.examples.qualcomm.utils` | `(List[Tuple[Tensor]], List[Tensor])` | inputs + class targets |
+| `get_masked_language_model_dataset` | `executorch.examples.qualcomm.utils` | `(List[Tuple[Tensor, Tensor]], List[Tensor])` | inputs + masked targets |
+
+Note: `AccuracyLens` no longer patches `build_executorch_binary`; dataset fallback is
+owned by `PipelineGraphCollectorLens` backend-specific contract.
 
 ### Auto-Detection
 

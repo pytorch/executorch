@@ -20,6 +20,10 @@ Collection points (in pipeline order):
 
 Patching strategy:
   - Framework-level patches (torchao, executorch.exir) work for ALL backends.
+  - Backend-specific patches are installed after framework-level patches to avoid
+    early module-import alias freezing.
+  - Contract: a backend-specific patch that emits "Exported Float" must also
+    populate `_last_calibration_dataset` so AccuracyLens can auto-configure.
   - ETRecord patches fire when generate_etrecord=True (forced by the
     to_edge_transform_and_lower patch).
   - All originals are saved in _originals and restored on session end.
@@ -39,6 +43,7 @@ class PipelineGraphCollectorLens(Lens):
     _installed: bool = False
     _originals: Dict[str, Any] = {}
     _collect_fn: Optional[Callable[[str, Any], None]] = None
+    # Cross-lens contract for AccuracyLens fallback dataset.
     _last_calibration_dataset: Optional[list] = None
 
     @classmethod
@@ -53,10 +58,12 @@ class PipelineGraphCollectorLens(Lens):
         from ..observatory import Observatory
 
         cls._collect_fn = Observatory.collect
-        cls._install_ptq_calibrate_patch()
+        # Install backend-agnostic patches first.
         cls._install_quantizer_patches()
         cls._install_edge_lower_patch()
         cls._install_etrecord_patches()
+        # Install backend-specific patches last (QNN currently).
+        cls._install_backend_specific_patches()
         cls._installed = True
 
     @classmethod
@@ -80,27 +87,57 @@ class PipelineGraphCollectorLens(Lens):
     def analyze(records: List[RecordDigest], config: Dict[str, Any]) -> AnalysisResult:
         return AnalysisResult()
 
+    @classmethod
+    def _set_accuracy_fallback_dataset(cls, dataset: Any, source: str) -> None:
+        """Store dataset for AccuracyLens fallback.
+
+        Backend-specific patch contract:
+        any patch that emits "Exported Float" should call this helper first.
+        """
+        try:
+            dataset_list = list(dataset) if not isinstance(dataset, list) else dataset
+            if not dataset_list:
+                return
+            cls._last_calibration_dataset = dataset_list
+            logging.debug(
+                "[PipelineGraphCollector] Stored fallback dataset from %s (%d samples)",
+                source,
+                len(dataset_list),
+            )
+        except Exception:
+            # Best-effort only; collection flow must not fail on dataset capture.
+            pass
+
     # ------------------------------------------------------------------
-    # Patch: ptq_calibrate
+    # Backend-specific patches
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _install_backend_specific_patches(cls) -> None:
+        # QNN backend specific hooks.
+        cls._install_qnn_ptq_calibrate_patch()
+        # XNNPACK backend specific hooks.
+        cls._install_xnnpack_quantize_patch()
+
+    # ------------------------------------------------------------------
+    # QNN Patch: ptq_calibrate
     # Captures the float ExportedProgram with from_node metadata populated.
     # Fires after quantization calibration, when from_node is available.
     # ------------------------------------------------------------------
 
     @classmethod
-    def _install_ptq_calibrate_patch(cls) -> None:
+    def _install_qnn_ptq_calibrate_patch(cls) -> None:
         try:
-            import examples.qualcomm.utils as qnn_utils_module
+            import executorch.examples.qualcomm.utils as qnn_utils_module
 
             original = qnn_utils_module.ptq_calibrate
-            cls._originals["ptq_calibrate"] = original
+            cls._originals["qnn.ptq_calibrate"] = original
 
             def patched_ptq_calibrate(captured_model, quantizer, dataset):
                 # Store dataset for AccuracyLens fallback
-                try:
-                    dataset_list = list(dataset) if not isinstance(dataset, list) else dataset
-                    cls._last_calibration_dataset = dataset_list
-                except Exception:
-                    pass
+                cls._set_accuracy_fallback_dataset(
+                    dataset, source="qnn.ptq_calibrate"
+                )
 
                 # Re-export with dataset[0] to get from_node metadata
                 collect_target = captured_model
@@ -125,10 +162,72 @@ class PipelineGraphCollectorLens(Lens):
                 return original(captured_model, quantizer, dataset)
 
             qnn_utils_module.ptq_calibrate = patched_ptq_calibrate
-            logging.info("[PipelineGraphCollector] Installed patch: ptq_calibrate")
+            logging.info("[PipelineGraphCollector] Installed QNN patch: ptq_calibrate")
         except Exception as exc:
             logging.warning(
-                "[PipelineGraphCollector] Failed to patch ptq_calibrate: %s", exc
+                "[PipelineGraphCollector] Failed to patch QNN ptq_calibrate: %s", exc
+            )
+
+    # ------------------------------------------------------------------
+    # XNNPACK Patch: quantize
+    # Captures the float ExportedProgram with from_node metadata populated.
+    # Also stores example inputs as fallback dataset for AccuracyLens.
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _install_xnnpack_quantize_patch(cls) -> None:
+        try:
+            import executorch.examples.xnnpack.quantization.utils as xnnpack_qutils
+
+            original = xnnpack_qutils.quantize
+            cls._originals["xnnpack.quantize"] = original
+
+            def patched_quantize(model, example_inputs, quant_type=None):
+                # Store a single-sample fallback dataset for AccuracyLens.
+                sample = None
+                try:
+                    if isinstance(example_inputs, (tuple, list)):
+                        sample = tuple(example_inputs)
+                    else:
+                        sample = (example_inputs,)
+                    cls._set_accuracy_fallback_dataset(
+                        [sample], source="xnnpack.quantize"
+                    )
+                except Exception:
+                    pass
+
+                # Re-export before quantization to collect an "Exported Float" record
+                # with from_node metadata populated.
+                collect_target = model
+                try:
+                    import torch
+
+                    if sample is not None:
+                        ep = torch.export.export(model, sample, strict=False)
+                        collect_target = ep.run_decompositions({})
+                except Exception as exc:
+                    logging.debug(
+                        "[PipelineGraphCollector] XNNPACK from_node re-export skipped: %s",
+                        exc,
+                    )
+
+                try:
+                    cls._collect_fn("Exported Float", collect_target)
+                except Exception as exc:
+                    logging.debug(
+                        "[PipelineGraphCollector] collect skipped (Exported Float): %s",
+                        exc,
+                    )
+
+                if quant_type is None:
+                    return original(model, example_inputs)
+                return original(model, example_inputs, quant_type)
+
+            xnnpack_qutils.quantize = patched_quantize
+            logging.info("[PipelineGraphCollector] Installed XNNPACK patch: quantize")
+        except Exception as exc:
+            logging.warning(
+                "[PipelineGraphCollector] Failed to patch XNNPACK quantize: %s", exc
             )
 
     # ------------------------------------------------------------------
@@ -318,9 +417,13 @@ class PipelineGraphCollectorLens(Lens):
 
         for key, original in cls._originals.items():
             try:
-                if key == "ptq_calibrate":
-                    import examples.qualcomm.utils as qnn_utils_module
+                if key in ("ptq_calibrate", "qnn.ptq_calibrate"):
+                    import executorch.examples.qualcomm.utils as qnn_utils_module
                     qnn_utils_module.ptq_calibrate = original
+                elif key == "xnnpack.quantize":
+                    import executorch.examples.xnnpack.quantization.utils as xnnpack_qutils
+
+                    xnnpack_qutils.quantize = original
                 elif key == "prepare_pt2e":
                     import torchao.quantization.pt2e.quantize_pt2e as qt_module
 

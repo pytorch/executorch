@@ -430,7 +430,6 @@ class AccuracyLens(Lens):
         if cls._installed:
             return
         cls._install_dataset_patches()
-        cls._install_build_executorch_binary_patch()
         cls._installed = True
 
     @classmethod
@@ -577,7 +576,8 @@ class AccuracyLens(Lens):
             cls._float_model = model
 
             # Primary: captured dataset from dataset loader patches
-            # Fallback: sample input from PipelineGraphCollectorLens
+            # Fallback: sample input captured by backend-specific patches in
+            # PipelineGraphCollectorLens.
             if cls._captured_dataset is None:
                 from .pipeline_graph_collector import PipelineGraphCollectorLens
 
@@ -587,7 +587,7 @@ class AccuracyLens(Lens):
                 if calibration_dataset is not None:
                     cls._captured_dataset = calibration_dataset
                     logging.info(
-                        "[AccuracyLens] Using calibration dataset from ptq_calibrate as fallback dataset"
+                        "[AccuracyLens] Using backend-captured fallback dataset from PipelineGraphCollectorLens"
                     )
 
             if cls._captured_dataset is None:
@@ -696,53 +696,6 @@ class AccuracyLens(Lens):
         except ImportError:
             logging.debug(
                 "[AccuracyLens] qualcomm utils not available, skipping dataset patches"
-            )
-
-
-    @classmethod
-    def _install_build_executorch_binary_patch(cls) -> None:
-        # We want to get input dataset (loaded from imagenet or masked_language_model)
-        # The only reason why we need to patch this function is that
-        # 
-        # The `input` data from dataset function
-        # `get_imagenet_dataset` and `get_masked_language_model_dataset` 
-        # might be further post_processed before feeding to model or qantizer
-        # See oss_scripts/roberta.py for example
-        try:
-            import executorch.examples.qualcomm.utils as utils_module
-
-            # get_imagenet_dataset
-            if hasattr(utils_module, "build_executorch_binary"):
-                original = utils_module.build_executorch_binary
-                cls._originals["build_executorch_binary"] = original
-
-                def patched_build_executorch_binary(*args, **kwargs):
-                    if len(args) >=5:
-                        dataset = args[4]
-                        logging.info(
-                            "[AccuracyLens] Captured inputs dataset from build_executorch_binary (%d samples)",
-                            len(dataset),
-                        )
-                    elif "dataset" in kwargs:
-                        dataset = kwargs["dataset"]
-                        logging.info(
-                            "[AccuracyLens] Captured inputs dataset from build_executorch_binary (%d samples)",
-                            len(dataset),
-                        )
-                    else:
-                        dataset = None
-                        logging.info(
-                            "[AccuracyLens] Unable to get dataset from build_executorch_binary"
-                        )
-                        
-                    cls._captured_dataset = dataset
-                    return original(*args, **kwargs)
-
-                utils_module.build_executorch_binary = patched_build_executorch_binary
-                logging.info("[AccuracyLens] Installed patch: build_executorch_binary")
-        except ImportError:
-            logging.debug(
-                "[AccuracyLens] qualcomm utils not available, skipping build_executorch_binary patches"
             )
 
 
