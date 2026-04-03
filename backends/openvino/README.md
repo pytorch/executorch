@@ -110,7 +110,7 @@ Follow the steps below to setup your build environment:
    python -m venv env
    env\Scripts\Activate.ps1
    ```
-2. **Clone ExecuTorch Repository from Github**
+2. **Clone ExecuTorch Repository from GitHub**
 - On Windows, enable symlinks before cloning. Refer to [Building from Source](https://docs.pytorch.org/executorch/main/using-executorch-building-from-source.html#environment-setup) for more details.
 - Clone Executorch repository by executing the command below.
    ```bash

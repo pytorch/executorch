@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+
 """API for loading and executing ExecuTorch PTE files using the C++ runtime.
 
 .. warning::
@@ -29,6 +30,7 @@ _warnings.warn(
 # the pybindings shared library extension. This will load libtorch.so and
 # related libs, ensuring that the pybindings lib can resolve those runtime
 # dependencies.
+
 import torch as _torch
 
 logger = logging.getLogger(__name__)
@@ -36,6 +38,7 @@ logger = logging.getLogger(__name__)
 # Auto-discover the OpenVINO C library path from the pip-installed openvino
 # package so the C++ backend's dlopen/LoadLibrary call works without the user
 # having to set LD_LIBRARY_PATH or OPENVINO_LIB_PATH manually.
+
 if not os.environ.get("OPENVINO_LIB_PATH"):
     try:
         import glob
@@ -64,12 +67,13 @@ if not os.environ.get("OPENVINO_LIB_PATH"):
             del _ov_libs, _ov_libs_dir, _lib_pattern, _ov_dir, spec
     except Exception as e:
         logger.debug("OpenVINO auto-discovery failed: %s", e)
-
 # Update the DLL search path on Windows. This is the recommended way to handle native
 # extensions.
+
 if sys.platform == "win32":
     try:
         # The extension DLL should be in the same directory as this file.
+
         pybindings_dir = os.path.dirname(os.path.abspath(__file__))
         os.add_dll_directory(pybindings_dir)
     except Exception as e:
@@ -77,12 +81,12 @@ if sys.platform == "win32":
             "Failed to add the pybinding extension DLL to the search path. The extension may not work.",
             e,
         )
-
 # Let users import everything from the C++ _portable_lib extension as if this
 # python file defined them. Although we could import these dynamically, it
 # wouldn't preserve the static type annotations.
 #
 # Note that all of these are experimental, and subject to change without notice.
+
 from executorch.extension.pybindings._portable_lib import (  # noqa: F401
     # Disable "imported but unused" (F401) checks.
     _create_profile_block,  # noqa: F401
@@ -109,6 +113,7 @@ from executorch.extension.pybindings._portable_lib import (  # noqa: F401
 
 # Clean up so that `dir(portable_lib)` is the same as `dir(_portable_lib)`
 # (apart from some __dunder__ names).
+
 del _torch
 del _exir_warnings
 del _warnings

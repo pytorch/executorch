@@ -36,9 +36,9 @@ add_library(openvino_backend STATIC)
 
 # Enable exceptions and RTTI for OpenVINO backend
 target_compile_options(
-  openvino_backend PRIVATE
-  $<$<CXX_COMPILER_ID:MSVC>:/GR /EHsc>
-  $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-frtti -fexceptions>
+  openvino_backend
+  PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/GR /EHsc>
+          $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-frtti -fexceptions>
 )
 
 # Add source files for OpenVINO backend

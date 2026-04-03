@@ -32,8 +32,8 @@ constexpr const char* kDefaultLibName = "libopenvino_c.so";
 template <typename FuncPtr>
 FuncPtr load_symbol(void* handle, const char* name) {
 #ifdef _WIN32
-  void* sym =
-      reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>(handle), name));
+  void* sym = reinterpret_cast<void*>(
+      GetProcAddress(static_cast<HMODULE>(handle), name));
   if (!sym) {
     ET_LOG(
         Error,
@@ -70,8 +70,8 @@ bool OpenvinoBackend::ensure_loaded() const {
       ET_LOG(
           Error,
           "OpenVINO runtime not found (LoadLibrary failed: error %lu). "
-          "Ensure 'openvino_c.dll' is on your PATH "
-          "(set OPENVINO_LIB_PATH), or install with: "
+          "Set OPENVINO_LIB_PATH to the full path of 'openvino_c.dll', "
+          "or add its containing directory to PATH, or install with: "
           "pip install \"openvino>=2025.1.0,<2026.0.0\"",
           GetLastError());
       return;
