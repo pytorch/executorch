@@ -84,7 +84,7 @@ class WeightObserverBase(ObserverBase, ABC):
             scale = nncf_compressed_weight.scale
             zp = nncf_compressed_weight.zero_point
         if isinstance(nncf_compressed_weight, tuple):
-            # depreceate this part. For backwards compatability with older NNCF commit
+            # depreceate this part. For backwards compatibility with older NNCF commit
             q_weight, scale, zp = nncf_compressed_weight
 
         if not all(val is not None for val in (q_weight, scale)):
