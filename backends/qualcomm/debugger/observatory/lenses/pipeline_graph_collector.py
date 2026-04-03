@@ -15,7 +15,7 @@ Collection points (in pipeline order):
   2. prepare_pt2e               → "Annotated Model" (GraphModule with observers)
   3. convert_pt2e (input)       → "Calibrated Model" (post-calibration, pre-convert)
   4. convert_pt2e (output)      → "Quantized Model" (GraphModule with Q/DQ ops)
-  5. to_edge_transform_and_lower → "Edge" / "Transformed Edge"
+  5. to_edge_transform_and_lower → "Pre-EdgeTransform/{method}" and "EdgeProgramManager EP"
   6. ETRecord.add_*             → "ETRecord Exported/…", "ETRecord Edge/…", etc.
 
 Patching strategy:
@@ -290,7 +290,9 @@ class PipelineGraphCollectorLens(Lens):
 
     # ------------------------------------------------------------------
     # Patch: to_edge_transform_and_lower
-    # Forces generate_etrecord=True and collects edge programs.
+    # Forces generate_etrecord=True and collects:
+    # 1) pre-transform input programs, and
+    # 2) post-call EdgeProgramManager.exported_program().
     # ------------------------------------------------------------------
 
     @classmethod
@@ -299,23 +301,53 @@ class PipelineGraphCollectorLens(Lens):
             import executorch.exir.program._program as program_module
             import executorch.exir as exir_module 
 
-            for i, module in enumerate([program_module, exir_module]):
-                original = module.to_edge_transform_and_lower
-                cls._originals[f"to_edge_transform_and_lower_{i}"] = original
+            def _collect_pre_edge_transform_inputs(args, kwargs):
+                programs = kwargs.get("programs")
+                if programs is None and len(args) > 0:
+                    programs = args[0]
+                if programs is None:
+                    return
 
-                def patched_to_edge_transform_and_lower(*args, **kwargs):
-                    kwargs["generate_etrecord"] = True
-                    result = original(*args, **kwargs)
+                if isinstance(programs, dict):
+                    for method_name, program in programs.items():
+                        try:
+                            cls._collect_fn(f"Pre-EdgeTransform/{method_name}", program)
+                        except Exception as exc:
+                            logging.debug(
+                                "[PipelineGraphCollector] collect skipped (Pre-EdgeTransform/%s): %s",
+                                method_name,
+                                exc,
+                            )
+                else:
                     try:
-                        cls._collect_fn("Edge", result.exported_program())
+                        cls._collect_fn("Pre-EdgeTransform/forward", programs)
                     except Exception as exc:
                         logging.debug(
-                            "[PipelineGraphCollector] collect skipped (Edge): %s", exc
+                            "[PipelineGraphCollector] collect skipped (Pre-EdgeTransform/forward): %s",
+                            exc,
+                        )
+
+            def _make_patched_to_edge_transform_and_lower(original_fn):
+                def patched_to_edge_transform_and_lower(*args, **kwargs):
+                    _collect_pre_edge_transform_inputs(args, kwargs)
+                    kwargs["generate_etrecord"] = True
+                    result = original_fn(*args, **kwargs)
+                    try:
+                        cls._collect_fn("EdgeProgramManager EP", result.exported_program())
+                    except Exception as exc:
+                        logging.debug(
+                            "[PipelineGraphCollector] collect skipped (EdgeProgramManager EP): %s",
+                            exc,
                         )
                     return result
 
-                module.to_edge_transform_and_lower = (
-                    patched_to_edge_transform_and_lower
+                return patched_to_edge_transform_and_lower
+
+            for i, module in enumerate([program_module, exir_module]):
+                original = module.to_edge_transform_and_lower
+                cls._originals[f"to_edge_transform_and_lower_{i}"] = original
+                module.to_edge_transform_and_lower = _make_patched_to_edge_transform_and_lower(
+                    original
                 )
             logging.info(
                 "[PipelineGraphCollector] Installed patch: to_edge_transform_and_lower"

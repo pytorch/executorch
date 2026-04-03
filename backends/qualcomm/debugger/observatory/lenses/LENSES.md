@@ -37,10 +37,11 @@ are used to collect "Exported Float" with stable fallback dataset capture.
 | 3 | Quantizer Prepare | "Annotated Model" | `prepare_pt2e()` | `torchao/.../quantize_pt2e.py` | Output `GraphModule` with observers |
 | 4 | Quantizer Convert (input) | "Calibrated Model" | `convert_pt2e()` | same | Input `GraphModule` (post-calibration) |
 | 5 | Quantizer Convert (output) | "Quantized Model" | `convert_pt2e()` | same | Output `GraphModule` with Q/DQ ops |
-| 6 | Edge Lowering | "Edge" | `to_edge_transform_and_lower()` | `executorch/exir/program/_program.py` + `executorch/exir/__init__.py` | `EdgeProgramManager.exported_program()` |
+| 6 | Edge transform input | "Pre-EdgeTransform/{method}" | `to_edge_transform_and_lower()` | `executorch/exir/program/_program.py` + `executorch/exir/__init__.py` | Input `ExportedProgram` (single or dict entry) |
 | 7 | ETRecord Export | "ETRecord Exported/{method}" | `ETRecord.add_exported_program()` | `executorch/devtools/etrecord/` | Exported program |
 | 8 | ETRecord Edge | "ETRecord Edge/{method}" | `ETRecord.add_edge_dialect_program()` | same | Edge dialect program |
 | 9 | ETRecord Extra | "ETRecord Extra/{module}" | `ETRecord.add_extra_export_modules()` | same | Extra modules |
+| 10 | Edge transform output (final) | "EdgeProgramManager EP" | `to_edge_transform_and_lower()` | `executorch/exir/program/_program.py` + `executorch/exir/__init__.py` | `EdgeProgramManager.exported_program()` |
 
 ### Patching Strategy
 
@@ -57,7 +58,8 @@ Patch install order is explicit:
 This ordering avoids early-import alias freezing in e2e scripts.
 
 The `to_edge_transform_and_lower` patch also forces `generate_etrecord=True` to
-ensure ETRecord collection fires (rows 7-9).
+ensure ETRecord collection fires (rows 7-9). The post-call edge output record
+("EdgeProgramManager EP") is collected after ETRecord hooks complete.
 
 ### Backend Contract for AccuracyLens
 
