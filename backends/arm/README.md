@@ -247,12 +247,14 @@ To run these tests, you need to install the required dependencies by running the
 Please note that installing model test dependencies is a standalone process. When using the `--setup-test-dependency` flag,
 the script will install only the necessary dependencies for model tests, skipping all other setup procedures.
 
-## Using pre-commit
+## Using git hooks
 
-A pre-commit script is available in the backend to help developers. Follow the steps below to enable it:
+The repo-wide pre-commit hook (lintrunner + torch_pin sync) is installed automatically
+by `./install_executorch.sh`. To install the Arm-specific pre-push hook (license checks,
+commit message format, docgen):
 
 ```
-cp backends/arm/scripts/pre-commit .git/hooks/
+cp backends/arm/scripts/pre-push .git/hooks/
 ```
 
 ## Notes on model specific and optional passes
