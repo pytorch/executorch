@@ -12,10 +12,10 @@ import os
 import re
 import shutil
 import subprocess
-
 import tempfile
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence
 
 # If this environment variable is set to true, save the flatc input files when
@@ -125,7 +125,19 @@ class _ResourceFiles:
         # Map each name to its contents.
         self._files: Dict[str, bytes] = {}
         for name in resource_names:
-            self._files[name] = importlib.resources.read_binary(__package__, name)
+            self._files[name] = self._read_binary_resource(name)
+
+    @staticmethod
+    def _read_binary_resource(name: str) -> bytes:
+        try:
+            return importlib.resources.read_binary(__package__, name)
+        except FileNotFoundError:
+            # Editable/source-tree usage may not have copied the schemas into
+            # exir/_serialize yet. Fall back to the source schema directory.
+            repo_schema = Path(__file__).resolve().parents[2] / "schema" / name
+            if repo_schema.exists():
+                return repo_schema.read_bytes()
+            raise
 
     def patch_files(self, patch_fn: Callable[[bytes], bytes]) -> None:
         """Uses the provided patching function to update the contents of all

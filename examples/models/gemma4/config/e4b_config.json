@@ -1,0 +1,40 @@
+{
+  "dim": 2560,
+  "hidden_dim": 10240,
+  "n_layers": 42,
+  "n_heads": 8,
+  "n_kv_heads": 2,
+  "head_dim": 256,
+  "global_head_dim": 512,
+  "vocab_size": 262144,
+  "vocab_size_per_layer_input": 262144,
+  "hidden_size_per_layer_input": 256,
+  "num_kv_shared_layers": 18,
+  "use_double_wide_mlp": false,
+  "act_fn": "gelu_pytorch_tanh",
+  "norm_eps": 1e-06,
+  "post_attention_norm": true,
+  "post_ffn_norm": true,
+  "apply_embedding": true,
+  "embedding_scale_factor": 50.59644256269407,
+  "use_hf_rope": true,
+  "attention_qkv_bias": false,
+  "attention_type": "gemma4_mha",
+  "attention_multiplier": 1.0,
+  "final_logit_softcapping": 30.0,
+  "use_qk_norm": true,
+  "qk_norm_before_rope": true,
+  "sliding_window": 512,
+  "layer_types": ["sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention", "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention", "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention", "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention", "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention", "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention", "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention"],
+  "rope_parameters": {
+    "full_attention": {
+      "partial_rotary_factor": 0.25,
+      "rope_theta": 1000000.0,
+      "rope_type": "proportional"
+    },
+    "sliding_attention": {
+      "rope_theta": 10000.0,
+      "rope_type": "default"
+    }
+  }
+}

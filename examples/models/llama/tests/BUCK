@@ -127,3 +127,17 @@ fbcode_target(_kind = python_unittest,
         "//executorch/examples/models/llama:llama_transformer",
     ],
 )
+
+fbcode_target(_kind = python_unittest,
+    name = "test_gemma4_support",
+    srcs = [
+        "test_gemma4_support.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/gemma4:gemma4",
+        "//executorch/examples/models/llama:llama_transformer",
+        "//executorch/extension/export_util:export_util",
+        "//executorch/extension/pybindings:portable_lib",
+    ],
+)

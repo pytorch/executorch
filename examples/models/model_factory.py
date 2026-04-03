@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import importlib
-import os
 from typing import Any, Dict, Tuple
 
 import torch
@@ -34,10 +33,8 @@ class EagerModelFactory:
         Raises:
             ValueError: If the provided model class is not found in the module.
         """
-        package_prefix = "executorch." if not os.getcwd().endswith("executorch") else ""
-        module = importlib.import_module(
-            f"{package_prefix}examples.models.{module_name}"
-        )
+        package_root = __package__ or "executorch.examples.models"
+        module = importlib.import_module(f"{package_root}.{module_name}")
 
         if hasattr(module, model_class_name):
             model_class = getattr(module, model_class_name)

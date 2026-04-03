@@ -11,10 +11,13 @@ class ActFn(Enum):
     SILU = "silu"
     GELU = "gelu"
     GELU_APPROX = "gelu_approx"
+    GELU_PYTORCH_TANH = "gelu_pytorch_tanh"
 
     @classmethod
     def from_string(cls, value: str) -> "ActFn":
         """Convert string to ActFn enum."""
+        if value == "gelu_pytorch_tanh":
+            return cls.GELU_PYTORCH_TANH
         try:
             return cls(value)
         except ValueError:
@@ -29,7 +32,7 @@ class ActFn(Enum):
             return F.silu
         elif self == ActFn.GELU:
             return F.gelu
-        elif self == ActFn.GELU_APPROX:
+        elif self == ActFn.GELU_APPROX or self == ActFn.GELU_PYTORCH_TANH:
             return partial(F.gelu, approximate="tanh")
         else:
             raise ValueError(f"Unsupported activation function: {self}")
@@ -110,6 +113,7 @@ class ModelArgs:
         None  # Interval at which to skip RoPE. From Rope to Nope and Back Again: A New Hybrid Attention Strategy (https://huggingface.co/papers/2501.18795).
     )
     partial_rotary_factor: float = 1.0
+    rope_parameters: Optional[Dict[str, Dict[str, Any]]] = None
     rope_theta: Optional[float] = (
         None  # The official name to override self.rope_freq_base.
     )
@@ -145,6 +149,12 @@ class ModelArgs:
     attention_kwargs: Dict[str, Any] = dataclasses.field(default_factory=dict)
     # Hybrid models can have layer types different from attention
     layer_types: Optional[list] = None
+    vocab_size_per_layer_input: Optional[int] = None
+    hidden_size_per_layer_input: int = 0
+    num_global_key_value_heads: Optional[int] = None
+    global_head_dim: Optional[int] = None
+    attention_k_eq_v: bool = False
+    use_double_wide_mlp: bool = False
     model_architecture: Optional[str] = (
         None  # Architecture of model. For HF models, please refer to the HF model.config.architectures. This is used in QNN backend only for now.
     )
@@ -162,6 +172,10 @@ class ModelArgs:
     def __post_init__(self):  # noqa: C901
         if self.n_kv_heads is None:
             self.n_kv_heads = self.n_heads
+        if self.num_global_key_value_heads is None:
+            self.num_global_key_value_heads = self.n_kv_heads
+        if self.global_head_dim is None:
+            self.global_head_dim = self.head_dim
 
         # rope_theta overrides rope_freq_base since it's the official name.
         if self.rope_theta is not None:
@@ -188,6 +202,10 @@ class ModelArgs:
 
         if self.head_dim is None:
             self.head_dim = self.dim // self.n_heads
+        if self.global_head_dim is None:
+            self.global_head_dim = self.head_dim
+        if self.vocab_size_per_layer_input is None:
+            self.vocab_size_per_layer_input = self.vocab_size
 
         if self.linear_key_head_dim is None:
             self.linear_key_head_dim = self.head_dim
