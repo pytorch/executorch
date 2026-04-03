@@ -1,0 +1,2785 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+  <meta name="robots" content="noindex">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+
+    <title>Advanced Pathway &#8212; ExecuTorch main documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=72e443bf" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery.css?v=61a4c737" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="_static/documentation_options.js?v=a8da1a53"></script>
+    <script src="_static/doctools.js?v=888ff710"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="_static/copybutton.js?v=f281be69"></script>
+    <script src="_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'pathway-advanced';</script>
+    <script>
+        DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
+        DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'main';
+        DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
+        </script>
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/pathway-advanced.html" />
+    <link rel="icon" href="_static/executorch-chip-logo.svg"/>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Edge" href="edge-platforms-section.html" />
+    <link rel="prev" title="Quick Start Pathway" href="pathway-quickstart.html" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
+<script>
+  if (window.location.hostname === 'docs.pytorch.org' || window.location.hostname === 'docs-preview.pytorch.org') {
+    const script = document.createElement('script');
+    script.src = 'https://cmp.osano.com/16A0DbT9yDNIaQkvZ/31b1b91a-e0b6-47ea-bde2-7f2bd13dbe5c/osano.js?variant=one';
+    document.head.appendChild(script);
+  }
+</script>
+<script>
+  // Cookie banner for non-LF projects
+  document.addEventListener('DOMContentLoaded', function () {
+    // Hide cookie banner on local environments and LF owned docs
+    if (window.location.hostname === 'localhost' ||
+      window.location.hostname === '0.0.0.0' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === 'docs.pytorch.org' ||
+      window.location.hostname === 'docs-preview.pytorch.org' ||
+      window.location.hostname.startsWith('192.168.')) {
+      const banner = document.querySelector('.cookie-banner-wrapper');
+      if (banner) {
+        banner.style.display = 'none';
+      }
+    }
+  });
+</script>
+<!-- Conditional CSS for header and footer height adjustment -->
+
+<style>
+  :root {
+    --header-height: 0px !important;
+    --header-height-desktop: 0px !important;
+  }
+  /* Ensure proper mobile layout when LF header is hidden */
+  @media (max-width: 960px) {
+    .bd-header {
+      top: 0 !important;
+      position: sticky !important;
+      z-index: 1020 !important;
+    }
+    .bd-main {
+      padding-top: 0 !important;
+      margin-top: 0 !important;
+    }
+    .bd-article-container {
+      padding-top: 0 !important;
+    }
+    .header-article__inner {
+      padding-top: 1rem !important;
+    }
+
+  }
+</style>
+
+
+<link rel="stylesheet" type="text/css" href="_static/css/theme.css" crossorigin="anonymous">
+<script type="text/javascript" src="_static/js/theme.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
+<meta property="og:image" content="https://docs.pytorch.org/docs/stable/_static/img/pytorch_seo.png" />
+<link rel="stylesheet" href="_static/webfonts/all.min.css" crossorigin="anonymous">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval' blob:;">
+<meta name="pytorch_project" content="">
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS" height="0" width="0"
+    style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+<!-- Google Tag Manager -->
+<script>(function (w, d, s, l, i) {
+    w[l] = w[l] || []; w[l].push({
+      'gtm.start':
+        new Date().getTime(), event: 'gtm.js'
+    }); var f = d.getElementsByTagName(s)[0],
+      j = d.createElement(s), dl = l != 'dataLayer' ? '&l=' + l : ''; j.async = true; j.src =
+        'https://www.googletagmanager.com/gtm.js?id=' + i + dl; f.parentNode.insertBefore(j, f);
+    j.onload = function () {
+      window.dispatchEvent(new Event('gtm_loaded'));
+      console.log('GTM loaded successfully');
+    };
+  })(window, document, 'script', 'dataLayer', 'GTM-T8XT4PS');
+</script>
+<!-- End Google Tag Manager -->
+<!-- Facebook Pixel Code -->
+<script>
+  !function (f, b, e, v, n, t, s) {
+    if (f.fbq) return; n = f.fbq = function () {
+      n.callMethod ?
+        n.callMethod.apply(n, arguments) : n.queue.push(arguments)
+    };
+    if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = '2.0';
+    n.queue = []; t = b.createElement(e); t.async = !0;
+    t.src = v; s = b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t, s)
+  }(window, document, 'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', '243028289693773');
+  fbq('track', 'PageView');
+</script>
+<script>
+  document.documentElement.setAttribute('data-version', 'main');
+</script>
+<noscript>
+  <img height="1" width="1" src="https://www.facebook.com/tr?id=243028289693773&ev=PageView&noscript=1" />
+</noscript>
+<script>
+  function gtag() {
+    window.dataLayer.push(arguments);
+  }
+</script>
+<!-- End Facebook Pixel Code -->
+<!-- Repository configuration for tutorials -->
+
+
+<!-- Script to Fix scrolling with fast fixed-duration animation -->
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const SCROLL_DURATION = 150; // Fixed duration in ms regardless of distance
+    let lockedTargetId = null; // Lock the TOC to this target until user scrolls manually
+    let isUpdatingToc = false; // Guard against infinite loops
+
+    function smoothScrollTo(targetY, duration, onComplete) {
+      const startY = window.pageYOffset;
+      const difference = targetY - startY;
+      const startTime = performance.now();
+
+      function step(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        // Ease-out cubic for smooth deceleration
+        const easeOut = 1 - Math.pow(1 - progress, 3);
+        window.scrollTo(0, startY + difference * easeOut);
+        if (progress < 1) {
+          requestAnimationFrame(step);
+        } else if (onComplete) {
+          onComplete();
+        }
+      }
+      requestAnimationFrame(step);
+    }
+
+    function updateTocHighlight(targetId) {
+      if (isUpdatingToc) return; // Prevent infinite loop
+      isUpdatingToc = true;
+
+      // Find the TOC link that points to this target
+      const tocNav = document.querySelector('.bd-toc-nav');
+      if (!tocNav) {
+        isUpdatingToc = false;
+        return;
+      }
+
+      // Remove active class from all TOC items
+      tocNav.querySelectorAll('.nav-link').forEach(link => {
+        link.classList.remove('active');
+        link.parentElement.classList.remove('active');
+      });
+
+      // Add active class to the matching link
+      const matchingLink = tocNav.querySelector(`a[href="#${CSS.escape(targetId)}"]`);
+      if (matchingLink) {
+        matchingLink.classList.add('active');
+        matchingLink.parentElement.classList.add('active');
+      }
+
+      // Use setTimeout to reset the guard after the current call stack
+      setTimeout(function() {
+        isUpdatingToc = false;
+      }, 0);
+    }
+
+    // Watch for ScrollSpy trying to change the active state and override it
+    const tocNav = document.querySelector('.bd-toc-nav');
+    if (tocNav) {
+      const observer = new MutationObserver(function(mutations) {
+        if (lockedTargetId && !isUpdatingToc) {
+          // Force our target to stay highlighted
+          updateTocHighlight(lockedTargetId);
+        }
+      });
+      observer.observe(tocNav, {
+        attributes: true,
+        attributeFilter: ['class'],
+        subtree: true
+      });
+    }
+
+    // Release the lock when user scrolls manually (not programmatically)
+    window.addEventListener('wheel', function() {
+      lockedTargetId = null;
+    });
+    window.addEventListener('touchmove', function() {
+      lockedTargetId = null;
+    });
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        const targetId = this.getAttribute('href').substring(1);
+        if (!targetId) return; // Skip empty hash links
+        const targetElement = document.getElementById(targetId);
+
+        if (targetElement) {
+          e.preventDefault();
+
+          // Lock the TOC to this target
+          lockedTargetId = targetId;
+
+          const headerHeight =
+            (document.querySelector('.header-holder') ? document.querySelector('.header-holder').offsetHeight : 0) +
+            (document.querySelector('.bd-header') ? document.querySelector('.bd-header').offsetHeight : 0) + 20;
+
+          const targetPosition = targetElement.getBoundingClientRect().top + window.pageYOffset - headerHeight;
+
+          // Update TOC highlight immediately
+          updateTocHighlight(targetId);
+
+          smoothScrollTo(targetPosition, SCROLL_DURATION, function() {
+            // Keep it highlighted after scroll
+            updateTocHighlight(targetId);
+          });
+
+          // Update URL hash without scrolling
+          history.pushState(null, null, '#' + targetId);
+        }
+      });
+    });
+  });
+</script>
+
+<script async src="https://cse.google.com/cse.js?cx=e65585f8c3ea1440e"></script>
+<!-- RunLLM Widget Configuration -->
+
+<script>
+  window.runllmConfig = {
+    assistant_id: "1632",
+    name: "Assistant",
+    position: "BOTTOM_RIGHT",
+    keyboard_shortcut: ""
+  };
+</script>
+<script type="text/javascript" src="_static/js/runllm-widget.js"></script>
+
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+
+  </head>
+
+<body data-feedback-url="https://github.com/pytorch/executorch" class="pytorch-body">
+  
+  
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+
+  
+  <div class="navbar-header-items__mobile-logo">
+    
+
+
+
+
+
+
+
+  
+  
+  
+
+
+<a class="navbar-brand logo" href="index.html">
+  
+    
+    <img src="_static/img/et-logo.png" class="logo__image only-light" alt="ExecuTorch - Home"/>
+    
+    
+    <script>document.write(`<img src="_static/img/et-logo.png" class="logo__image only-dark" alt="ExecuTorch - Home"/>`);</script>
+    
+  
+</a>
+  </div>
+
+  
+  
+  <div class=" navbar-header-items__start">
+    
+      
+      
+        <div class="navbar-item">
+          
+
+
+
+
+
+
+
+  
+  
+  
+
+
+<a class="navbar-brand logo" href="index.html">
+  
+    
+    <img src="_static/img/et-logo.png" class="logo__image only-light" alt="ExecuTorch - Home"/>
+    
+    
+    <script>document.write(`<img src="_static/img/et-logo.png" class="logo__image only-dark" alt="ExecuTorch - Home"/>`);</script>
+    
+  
+</a>
+        </div>
+      
+    
+      
+      
+        
+        <div class="navbar-item desktop-only-version">
+          
+<script>
+document.write(`
+  <div class="version-switcher__container dropdown">
+    <button id="pst-version-switcher-button-2"
+      type="button"
+      class="version-switcher__button btn btn-sm dropdown-toggle"
+      data-bs-toggle="dropdown"
+      aria-haspopup="listbox"
+      aria-controls="pst-version-switcher-list-2"
+      aria-label="Version switcher list"
+    >
+      Choose version  <!-- this text may get changed later by javascript -->
+      <span class="caret"></span>
+    </button>
+    <div id="pst-version-switcher-list-2"
+      class="version-switcher__menu dropdown-menu list-group-flush py-0"
+      role="listbox" aria-labelledby="pst-version-switcher-button-2">
+      <!-- dropdown will be populated by javascript on page load -->
+    </div>
+  </div>
+`);
+</script>
+        </div>
+      
+    
+  </div>
+  
+  <div class=" navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="intro-section.html">
+              Intro
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-1">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="intro-overview.html">
+                  ExecuTorch Overview
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="intro-how-it-works.html">
+                  How ExecuTorch Works
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="getting-started-architecture.html">
+                  Architecture and Components
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="concepts.html">
+                  Concepts
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="quick-start-section.html">
+              Quick Start
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-2">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="getting-started.html">
+                  Getting Started with ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                  Model Export and Lowering
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-building-from-source.html">
+                  Building from Source
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="user-pathways.html">
+              Find Your Path in ExecuTorch
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-3">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="pathway-beginner.html">
+                  Beginner Pathway
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="pathway-quickstart.html">
+                  Quick Start Pathway
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="#">
+                  Advanced Pathway
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="edge-platforms-section.html">
+              Edge
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-4">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="android-section.html">
+                  Android
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="ios-section.html">
+                  iOS
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="desktop-section.html">
+                  Desktop & Laptop Platforms
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="embedded-section.html">
+                  Embedded Systems
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-troubleshooting.html">
+                  Profiling and Debugging
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="backends-section.html">
+              Backends
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-5">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/xnnpack/xnnpack-overview.html">
+                  XNNPACK Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/cuda/cuda-overview.html">
+                  CUDA Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/coreml/coreml-overview.html">
+                  Core ML Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/mps/mps-overview.html">
+                  MPS Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/vulkan/vulkan-overview.html">
+                  Vulkan Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends-qualcomm.html">
+                  Qualcomm AI Engine Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends-mediatek.html">
+                  MediaTek Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/arm-ethos-u/arm-ethos-u-overview.html">
+                  Arm Ethos-U Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/arm-cortex-m/arm-cortex-m-overview.html">
+                  Arm Cortex-M Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/arm-vgf/arm-vgf-overview.html">
+                  Arm VGF Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="build-run-openvino.html">
+                  Building and Running ExecuTorch with OpenVINO Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/nxp/nxp-overview.html">
+                  NXP eIQ Neutron Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends-cadence.html">
+                  Cadence Xtensa Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/samsung/samsung-overview.html">
+                  Samsung Exynos Backend
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+              LLMs
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-6">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/getting-started.html">
+                  Deploying LLMs to ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm.html">
+                  Exporting LLMs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm-optimum.html">
+                  Exporting LLMs with HuggingFace’s Optimum ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/export-custom-llm.html">
+                  Exporting custom LLMs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/run-with-c-plus-plus.html">
+                  Running LLMs with C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">
+                  Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/run-on-ios.html">
+                  Running LLMs on iOS
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="advanced-topics-section.html">
+              Advanced
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-7">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="quantization-optimization.html">
+                  Quantization & Optimization
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                  Model Export and Lowering
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="kernel-library-advanced.html">
+                  Kernel Library Deep Dive
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backend-delegate-advanced.html">
+                  Backend & Delegates
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="runtime-integration-advanced.html">
+                  Runtime & Integration
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="compiler-ir-advanced.html">
+                  Compiler & IR
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="file-formats-advanced.html">
+                  File Formats
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="tools-section.html">
+              Tools
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-8">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="devtools-overview.html">
+                  Introduction to the ExecuTorch Developer Tools
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="bundled-io.html">
+                  Bundled Program – a Tool for ExecuTorch Model Validation
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="etrecord.html">
+                  Prerequisite | ETRecord - ExecuTorch Record
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="etdump.html">
+                  Prerequisite | ETDump - ExecuTorch Dump
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="runtime-profiling.html">
+                  Profiling Models in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="model-debugging.html">
+                  Debugging Models in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="model-inspector.html">
+                  Inspector APIs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="memory-planning-inspection.html">
+                  Memory Planning Inspection in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="devtools-tutorial.html">
+                  Developer Tools Usage Tutorials
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+
+    
+    
+      <li class="nav-item dropdown more-dropdown">
+        <div class="nav-item-with-toggle">
+          <span class="nav-link more-toggle" tabindex="0" role="button" aria-expanded="false" aria-controls="pst-nav-more-links">
+            More
+          </span>
+        </div>
+        <ul id="pst-nav-more-links" class="dropdown-menu">
+          
+            <li class="">
+              <a class="nav-link dropdown-item nav-internal" href="api-section.html">
+                API
+              </a>
+            </li>
+          
+            <li class="">
+              <a class="nav-link dropdown-item nav-internal" href="support-section.html">
+                Support
+              </a>
+            </li>
+          
+        </ul>
+      </li>
+    
+  </ul>
+</nav>
+</div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+      
+      
+        <div class="navbar-item"><!-- PyTorch.org site link - desktop only, two-line layout -->
+<!-- Note: The show_pytorch_org_link check is handled in layout.html's navbar_end block -->
+<a href="https://pytorch.org" class="pytorch-site-link nav-link nav-external" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-title="Go to PyTorch.org">
+  <span class="pytorch-site-link-text">
+    <span>Go to</span>
+    <span>pytorch.org <i class="fa-solid fa-arrow-up-right-from-square external-icon"></i></span>
+  </span>
+</a></div>
+      
+      
+        <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+      
+        <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    <div class="sidebar-header-items__start">
+      <div class="navbar-item">
+        
+<script>
+document.write(`
+  <div class="version-switcher__container dropdown">
+    <button id="pst-version-switcher-button-3"
+      type="button"
+      class="version-switcher__button btn btn-sm dropdown-toggle"
+      data-bs-toggle="dropdown"
+      aria-haspopup="listbox"
+      aria-controls="pst-version-switcher-list-3"
+      aria-label="Version switcher list"
+    >
+      Choose version  <!-- this text may get changed later by javascript -->
+      <span class="caret"></span>
+    </button>
+    <div id="pst-version-switcher-list-3"
+      class="version-switcher__menu dropdown-menu list-group-flush py-0"
+      role="listbox" aria-labelledby="pst-version-switcher-button-3">
+      <!-- dropdown will be populated by javascript on page load -->
+    </div>
+  </div>
+`);
+</script>
+      </div>
+    </div>
+    
+
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="intro-section.html">
+              Intro
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-1">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="intro-overview.html">
+                  ExecuTorch Overview
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="intro-how-it-works.html">
+                  How ExecuTorch Works
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="getting-started-architecture.html">
+                  Architecture and Components
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="concepts.html">
+                  Concepts
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="quick-start-section.html">
+              Quick Start
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-2">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="getting-started.html">
+                  Getting Started with ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                  Model Export and Lowering
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-building-from-source.html">
+                  Building from Source
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="user-pathways.html">
+              Find Your Path in ExecuTorch
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-3">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="pathway-beginner.html">
+                  Beginner Pathway
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="pathway-quickstart.html">
+                  Quick Start Pathway
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="#">
+                  Advanced Pathway
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="edge-platforms-section.html">
+              Edge
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-4">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="android-section.html">
+                  Android
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="ios-section.html">
+                  iOS
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="desktop-section.html">
+                  Desktop & Laptop Platforms
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="embedded-section.html">
+                  Embedded Systems
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-troubleshooting.html">
+                  Profiling and Debugging
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="backends-section.html">
+              Backends
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-5">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/xnnpack/xnnpack-overview.html">
+                  XNNPACK Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/cuda/cuda-overview.html">
+                  CUDA Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/coreml/coreml-overview.html">
+                  Core ML Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/mps/mps-overview.html">
+                  MPS Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/vulkan/vulkan-overview.html">
+                  Vulkan Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends-qualcomm.html">
+                  Qualcomm AI Engine Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends-mediatek.html">
+                  MediaTek Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/arm-ethos-u/arm-ethos-u-overview.html">
+                  Arm Ethos-U Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/arm-cortex-m/arm-cortex-m-overview.html">
+                  Arm Cortex-M Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/arm-vgf/arm-vgf-overview.html">
+                  Arm VGF Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="build-run-openvino.html">
+                  Building and Running ExecuTorch with OpenVINO Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/nxp/nxp-overview.html">
+                  NXP eIQ Neutron Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends-cadence.html">
+                  Cadence Xtensa Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/samsung/samsung-overview.html">
+                  Samsung Exynos Backend
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+              LLMs
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-6">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/getting-started.html">
+                  Deploying LLMs to ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm.html">
+                  Exporting LLMs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm-optimum.html">
+                  Exporting LLMs with HuggingFace’s Optimum ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/export-custom-llm.html">
+                  Exporting custom LLMs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/run-with-c-plus-plus.html">
+                  Running LLMs with C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">
+                  Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/run-on-ios.html">
+                  Running LLMs on iOS
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="advanced-topics-section.html">
+              Advanced
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-7">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="quantization-optimization.html">
+                  Quantization & Optimization
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                  Model Export and Lowering
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="kernel-library-advanced.html">
+                  Kernel Library Deep Dive
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backend-delegate-advanced.html">
+                  Backend & Delegates
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="runtime-integration-advanced.html">
+                  Runtime & Integration
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="compiler-ir-advanced.html">
+                  Compiler & IR
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="file-formats-advanced.html">
+                  File Formats
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="tools-section.html">
+              Tools
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-8">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="devtools-overview.html">
+                  Introduction to the ExecuTorch Developer Tools
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="bundled-io.html">
+                  Bundled Program – a Tool for ExecuTorch Model Validation
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="etrecord.html">
+                  Prerequisite | ETRecord - ExecuTorch Record
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="etdump.html">
+                  Prerequisite | ETDump - ExecuTorch Dump
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="runtime-profiling.html">
+                  Profiling Models in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="model-debugging.html">
+                  Debugging Models in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="model-inspector.html">
+                  Inspector APIs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="memory-planning-inspection.html">
+                  Memory Planning Inspection in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="devtools-tutorial.html">
+                  Developer Tools Usage Tutorials
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="api-section.html">
+              API
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-9">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="export-to-executorch-api-reference.html">
+                  Export API Reference
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="executorch-runtime-api-reference.html">
+                  Runtime API Reference
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="runtime-python-api-reference.html">
+                  Runtime Python API Reference
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="api-life-cycle.html">
+                  API Life Cycle and Deprecation Policy
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="extension-module.html">
+                  Running an ExecuTorch Model Using the Module Extension in C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="extension-tensor.html">
+                  Managing Tensor Memory in C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="running-a-model-cpp-tutorial.html">
+                  Detailed C++ Runtime APIs Tutorial
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="support-section.html">
+              Support
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-10">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-faqs.html">
+                  Frequently Asked Questions
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-troubleshooting.html">
+                  Profiling and Debugging
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="contributing.html">
+                  Contributing to ExecuTorch
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+
+    
+    
+  </ul>
+</nav>
+</div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+        
+          <div class="navbar-item"><!-- PyTorch.org site link - desktop only, two-line layout -->
+<!-- Note: The show_pytorch_org_link check is handled in layout.html's navbar_end block -->
+<a href="https://pytorch.org" class="pytorch-site-link nav-link nav-external" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-title="Go to PyTorch.org">
+  <span class="pytorch-site-link-text">
+    <span>Go to</span>
+    <span>pytorch.org <i class="fa-solid fa-arrow-up-right-from-square external-icon"></i></span>
+  </span>
+</a></div>
+        
+        
+          <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+        
+          <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+<nav class="bd-docs-nav bd-links"
+     aria-label="Section Navigation">
+  <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
+  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">User Pathways</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="pathway-beginner.html">Beginner Pathway</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pathway-quickstart.html">Quick Start Pathway</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Advanced Pathway</a></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+<div id="rtd-footer-container"></div>
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="user-pathways.html" class="nav-link">Find Your Path in ExecuTorch</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page">Advanced Pathway</li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
+    </div>
+</div>
+</div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="searchbox"></div>
+<div id="pytorch-article">
+  <!-- Hidden breadcrumb schema for SEO only -->
+  <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
+    
+    <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+      <link itemprop="item" href="user-pathways.html">
+      <meta itemprop="name" content="Find Your Path in ExecuTorch">
+      <meta itemprop="position" content="1">
+    </div>
+    
+    <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+      <meta itemprop="name" content="Advanced Pathway">
+      <meta itemprop="position" content="2">
+    </div>
+  </div>
+
+  
+  
+
+  
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="advanced-pathway">
+<span id="pathway-advanced"></span><h1>Advanced Pathway<a class="headerlink" href="#advanced-pathway" title="Link to this heading">#</a></h1>
+<p>This pathway is for engineers building production-grade deployments, implementing custom backends, optimizing for constrained hardware, or working with large language models on edge devices. It assumes familiarity with the ExecuTorch export pipeline and at least one successful model deployment.</p>
+<hr class="docutils" />
+<section id="advanced-topic-areas">
+<h2>Advanced Topic Areas<a class="headerlink" href="#advanced-topic-areas" title="Link to this heading">#</a></h2>
+<p>Select the area most relevant to your current work. Each section provides a curated sequence of documentation with dependencies noted.</p>
+<hr class="docutils" />
+<section id="quantization-and-optimization">
+<h3>Quantization and Optimization<a class="headerlink" href="#quantization-and-optimization" title="Link to this heading">#</a></h3>
+<p>Quantization is the most impactful optimization available in ExecuTorch, reducing model size by 2–8× and improving latency significantly on supported backends.</p>
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 sd-g-2 sd-g-xs-2 sd-g-sm-2 sd-g-md-2 sd-g-lg-2 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Quantization Overview</div>
+<p class="sd-card-text">Introduction to ExecuTorch’s quantization framework, including supported schemes (INT8, INT4, FP16) and the relationship between quantization and backend selection.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Intermediate</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="quantization.html"><span class="doc">Quantization</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Quantization &amp; Optimization (Advanced)</div>
+<p class="sd-card-text">Advanced quantization techniques including mixed-precision, per-channel quantization, and calibration workflows for production models.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="quantization-optimization.html"><span class="doc">Quantization &amp; Optimization</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Model Export and Lowering</div>
+<p class="sd-card-text">Full reference for <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code>, including quantization integration, dynamic shapes, and multi-backend lowering.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="using-executorch-export.html"><span class="doc">Model Export and Lowering</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Backend Dialect</div>
+<p class="sd-card-text">Understanding the Backend Dialect IR and how it differs from Edge Dialect — essential for backend developers and advanced export customization.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="compiler-backend-dialect.html"><span class="doc">Backend Dialect</span></a></div>
+</div>
+</div>
+</div>
+</section>
+<hr class="docutils" />
+<section id="memory-planning-and-runtime-optimization">
+<h3>Memory Planning and Runtime Optimization<a class="headerlink" href="#memory-planning-and-runtime-optimization" title="Link to this heading">#</a></h3>
+<p>Memory planning is critical for constrained devices. ExecuTorch provides ahead-of-time memory planning to eliminate runtime allocations.</p>
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 sd-g-2 sd-g-xs-2 sd-g-sm-2 sd-g-md-2 sd-g-lg-2 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Memory Planning</div>
+<p class="sd-card-text">How ExecuTorch plans tensor memory at compile time, including memory hierarchy, buffer reuse strategies, and how to customize the planner.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="compiler-memory-planning.html"><span class="doc">Memory Planning</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Memory Planning Inspection</div>
+<p class="sd-card-text">Tools for inspecting memory plans and diagnosing memory-related issues in exported programs.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="memory-planning-inspection.html"><span class="doc">Memory Planning Inspection in ExecuTorch</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Managing Tensor Memory in C++</div>
+<p class="sd-card-text">The <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> and <code class="docutils literal notranslate"><span class="pre">from_blob</span></code> APIs for zero-copy tensor management in C++ runtime integrations.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Intermediate</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="extension-tensor.html"><span class="doc">Managing Tensor Memory in C++</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Portable C++ Programming</div>
+<p class="sd-card-text">Guidelines for writing ExecuTorch C++ code that runs on bare-metal and RTOS environments without dynamic allocation or standard library dependencies.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="portable-cpp-programming.html"><span class="doc">Portable C++ Programming</span></a></div>
+</div>
+</div>
+</div>
+</section>
+<hr class="docutils" />
+<section id="custom-compiler-passes-and-kernel-registration">
+<h3>Custom Compiler Passes and Kernel Registration<a class="headerlink" href="#custom-compiler-passes-and-kernel-registration" title="Link to this heading">#</a></h3>
+<p>ExecuTorch’s compiler pass interface allows you to transform the exported graph before lowering, enabling model-specific optimizations and operator fusion.</p>
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 sd-g-2 sd-g-xs-2 sd-g-sm-2 sd-g-md-2 sd-g-lg-2 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Custom Compiler Passes</div>
+<p class="sd-card-text">Writing and registering custom graph transformation passes that run during the export and lowering pipeline.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="compiler-custom-compiler-passes.html"><span class="doc">Custom Compiler Passes and Partitioners</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Kernel Registration</div>
+<p class="sd-card-text">Registering custom ATen kernel implementations to replace or supplement the portable operator library with hardware-optimized versions.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="kernel-library-custom-aten-kernel.html"><span class="doc">Kernel Registration</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Kernel Library Overview</div>
+<p class="sd-card-text">Architecture of ExecuTorch’s kernel library system, including the portable library, custom kernels, and selective build.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="kernel-library-overview.html"><span class="doc">Overview of ExecuTorch’s Kernel Libraries</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Selective Build</div>
+<p class="sd-card-text">Reduce binary size by including only the operators required by your specific model using the selective build system.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="kernel-library-selective-build.html"><span class="doc">Kernel Library Selective Build</span></a></div>
+</div>
+</div>
+</div>
+</section>
+<hr class="docutils" />
+<section id="backend-delegate-development">
+<h3>Backend Delegate Development<a class="headerlink" href="#backend-delegate-development" title="Link to this heading">#</a></h3>
+<p>Implementing a new hardware backend for ExecuTorch requires understanding the delegate interface, partitioner API, and runtime integration.</p>
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 sd-g-2 sd-g-xs-2 sd-g-sm-2 sd-g-md-2 sd-g-lg-2 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Backend Development Guide</div>
+<p class="sd-card-text">Complete guide to implementing a new ExecuTorch backend delegate, including the <code class="docutils literal notranslate"><span class="pre">BackendInterface</span></code>, <code class="docutils literal notranslate"><span class="pre">preprocess</span></code>, and <code class="docutils literal notranslate"><span class="pre">execute</span></code> methods.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="backend-development.html"><span class="doc">Backend Development</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Integrating a Backend Delegate</div>
+<p class="sd-card-text">Step-by-step walkthrough of integrating an existing backend delegate into the ExecuTorch build system and runtime.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Beginner (for integration) / Advanced (for implementation)</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="backend-delegates-integration.html"><span class="doc">Integrating a Backend Delegate into ExecuTorch</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Delegate and Partitioner</div>
+<p class="sd-card-text">The <code class="docutils literal notranslate"><span class="pre">Partitioner</span></code> interface for selecting which subgraphs to delegate, including pattern matching and constraint specification.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc">Understanding Backends and Delegates</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Backend Delegate Implementation and Linking</div>
+<p class="sd-card-text">Linking backend delegate implementations into the ExecuTorch runtime, including static and dynamic registration patterns.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="runtime-backend-delegate-implementation-and-linking.html"><span class="doc">Backend Delegate Implementation and Linking</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Lowering a Model as a Delegate</div>
+<p class="sd-card-text">End-to-end example of using <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> to lower a model subgraph to a custom delegate.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html"><span class="doc">Lowering a Model as a Delegate</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Debugging Backend Delegates</div>
+<p class="sd-card-text">Techniques for debugging delegate execution, including intermediate output comparison and delegate-specific logging.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="debug-backend-delegate.html"><span class="doc">Debugging Delegation</span></a></div>
+</div>
+</div>
+</div>
+</section>
+<hr class="docutils" />
+<section id="c-runtime-integration">
+<h3>C++ Runtime Integration<a class="headerlink" href="#c-runtime-integration" title="Link to this heading">#</a></h3>
+<p>For embedded, mobile native, and server deployments, the C++ runtime APIs provide full control over model loading, execution, and memory management.</p>
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 sd-g-2 sd-g-xs-2 sd-g-sm-2 sd-g-md-2 sd-g-lg-2 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Module Extension (High-Level API)</div>
+<p class="sd-card-text">The <code class="docutils literal notranslate"><span class="pre">Module</span></code> class provides a high-level C++ API for loading and running <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files with minimal boilerplate. Recommended for most C++ integrations.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Intermediate</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="extension-module.html"><span class="doc">Running an ExecuTorch Model Using the Module Extension in C++</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Detailed C++ Runtime APIs</div>
+<p class="sd-card-text">Low-level C++ runtime APIs for fine-grained control over memory allocation, operator dispatch, and execution planning. Required for bare-metal targets.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Intermediate</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="running-a-model-cpp-tutorial.html"><span class="doc">Detailed C++ Runtime APIs Tutorial</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Using ExecuTorch with C++</div>
+<p class="sd-card-text">CMake integration, target linking, cross-compilation setup, and C++ API reference for production deployments.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="using-executorch-cpp.html"><span class="doc">Using ExecuTorch with C++</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Runtime Platform Abstraction Layer</div>
+<p class="sd-card-text">The PAL interface for porting ExecuTorch to new operating systems and bare-metal environments.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="runtime-platform-abstraction-layer.html"><span class="doc">Runtime Platform Abstraction Layer (PAL)</span></a></div>
+</div>
+</div>
+</div>
+</section>
+<hr class="docutils" />
+<section id="large-language-models-on-edge">
+<h3>Large Language Models on Edge<a class="headerlink" href="#large-language-models-on-edge" title="Link to this heading">#</a></h3>
+<p>Deploying LLMs to edge devices involves additional complexity around quantization, tokenization, KV-cache management, and platform-specific optimizations.</p>
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 sd-g-2 sd-g-xs-2 sd-g-sm-2 sd-g-md-2 sd-g-lg-2 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+LLM Overview</div>
+<p class="sd-card-text">Complete overview of the ExecuTorch LLM workflow, supported models, and platform-specific deployment paths.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Intermediate</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="llm/working-with-llms.html"><span class="doc">LLMs</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Exporting LLMs</div>
+<p class="sd-card-text">The <code class="docutils literal notranslate"><span class="pre">export_llm</span></code> module for exporting supported LLMs (Llama, Qwen, Phi, SmolLM) with quantization and optimization.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Intermediate</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="llm/export-llm.html"><span class="doc">Exporting LLMs</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Exporting Custom LLMs</div>
+<p class="sd-card-text">Adapting the export pipeline for custom LLM architectures beyond the officially supported models, using nanoGPT as a worked example.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Intermediate</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="llm/export-custom-llm.html"><span class="doc">Exporting custom LLMs</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Running LLMs with C++</div>
+<p class="sd-card-text">C++ runtime integration for LLM inference, including tokenizer setup, KV-cache configuration, and streaming output.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Intermediate</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="llm/run-with-c-plus-plus.html"><span class="doc">Running LLMs with C++</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Llama on Qualcomm Android</div>
+<p class="sd-card-text">Deploying Llama 3 3B Instruct on Android using the Qualcomm AI Engine Direct backend with hardware acceleration.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html"><span class="doc">Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+ExecuTorch on Raspberry Pi</div>
+<p class="sd-card-text">Deploying Llama models on Raspberry Pi 4/5 edge devices using the ExecuTorch runtime.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Intermediate</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="raspberry_pi_llama_tutorial.html"><span class="doc">ExecuTorch on Raspberry Pi</span></a></div>
+</div>
+</div>
+</div>
+</section>
+<hr class="docutils" />
+<section id="developer-tools-and-debugging">
+<h3>Developer Tools and Debugging<a class="headerlink" href="#developer-tools-and-debugging" title="Link to this heading">#</a></h3>
+<p>ExecuTorch provides a comprehensive suite of profiling and debugging tools for diagnosing performance and correctness issues.</p>
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 sd-g-2 sd-g-xs-2 sd-g-sm-2 sd-g-md-2 sd-g-lg-2 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Developer Tools Overview</div>
+<p class="sd-card-text">Overview of the ExecuTorch developer tools suite, including ETRecord, ETDump, and the Inspector API.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Intermediate</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="devtools-overview.html"><span class="doc">Introduction to the ExecuTorch Developer Tools</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Profiling a Model</div>
+<p class="sd-card-text">Step-by-step tutorial for profiling model execution using ETRecord and ETDump to identify performance bottlenecks.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Intermediate</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="devtools-tutorial.html"><span class="doc">Developer Tools Usage Tutorials</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Profiling and Debugging</div>
+<p class="sd-card-text">Comprehensive debugging guide covering numerical debugging, operator-level profiling, and common failure modes.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="using-executorch-troubleshooting.html"><span class="doc">Profiling and Debugging</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Delegate Debugging</div>
+<p class="sd-card-text">Techniques specific to debugging backend delegate execution, including output comparison and delegate-level tracing.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="delegate-debugging.html"><span class="doc">Delegate Debugging</span></a></div>
+</div>
+</div>
+</div>
+</section>
+<hr class="docutils" />
+<section id="ir-and-compiler-internals">
+<h3>IR and Compiler Internals<a class="headerlink" href="#ir-and-compiler-internals" title="Link to this heading">#</a></h3>
+<p>For contributors and advanced backend developers who need to understand ExecuTorch’s compiler internals.</p>
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 sd-g-2 sd-g-xs-2 sd-g-sm-2 sd-g-md-2 sd-g-lg-2 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Export Overview</div>
+<p class="sd-card-text">The complete export pipeline from <code class="docutils literal notranslate"><span class="pre">torch.export</span></code> to <code class="docutils literal notranslate"><span class="pre">.pte</span></code>, including the role of each compilation stage.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Intermediate</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="export-overview.html"><span class="doc">Exporting to ExecuTorch</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Compiler Entry Points</div>
+<p class="sd-card-text">The public API surface for the ExecuTorch compiler, including <code class="docutils literal notranslate"><span class="pre">to_edge</span></code>, <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code>, and <code class="docutils literal notranslate"><span class="pre">to_executorch</span></code>.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Intermediate</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="compiler-entry-points.html"><span class="doc">Compiler Entry Points</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+IR Specification</div>
+<p class="sd-card-text">Formal specification of the ExecuTorch IR, including operator semantics, type system, and serialization format.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="ir-specification.html"><span class="doc">IR Specification</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Compiler &amp; IR (Advanced)</div>
+<p class="sd-card-text">Advanced IR topics including graph transformations, custom dialects, and the relationship between Export IR and Edge Dialect.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="compiler-ir-advanced.html"><span class="doc">Compiler &amp; IR</span></a></div>
+</div>
+</div>
+</div>
+</section>
+</section>
+<hr class="docutils" />
+<section id="contributing-to-executorch">
+<h2>Contributing to ExecuTorch<a class="headerlink" href="#contributing-to-executorch" title="Link to this heading">#</a></h2>
+<p>If you are working on ExecuTorch internals or want to contribute upstream, start with the contributor guide.</p>
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 sd-g-2 sd-g-xs-2 sd-g-sm-2 sd-g-md-2 sd-g-lg-2 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+New Contributor Guide</div>
+<p class="sd-card-text">Development environment setup, code style, testing requirements, and the pull request process for ExecuTorch contributors.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Advanced</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="new-contributor-guide.html"><span class="doc">New Contributor Guide</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+API Life Cycle and Deprecation Policy</div>
+<p class="sd-card-text">How ExecuTorch manages API stability, deprecation timelines, and backward compatibility across releases.</p>
+<p class="sd-card-text"><strong>Difficulty:</strong> Intermediate</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="api-life-cycle.html"><span class="doc">API Life Cycle and Deprecation Policy</span></a></div>
+</div>
+</div>
+</div>
+</section>
+<hr class="docutils" />
+<section id="advanced-learning-sequence">
+<h2>Advanced Learning Sequence<a class="headerlink" href="#advanced-learning-sequence" title="Link to this heading">#</a></h2>
+<p>If you prefer a structured progression rather than topic-based navigation, follow this sequence for a comprehensive advanced curriculum.</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 30%" />
+<col style="width: 60%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p><strong>Order</strong></p></th>
+<th class="head"><p><strong>Topic</strong></p></th>
+<th class="head"><p><strong>Goal</strong></p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p><a class="reference internal" href="export-overview.html"><span class="doc">Exporting to ExecuTorch</span></a></p></td>
+<td><p>Understand the full compilation pipeline</p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p><a class="reference internal" href="using-executorch-export.html"><span class="doc">Model Export and Lowering</span></a></p></td>
+<td><p>Master advanced export options</p></td>
+</tr>
+<tr class="row-even"><td><p>3</p></td>
+<td><p><a class="reference internal" href="quantization-optimization.html"><span class="doc">Quantization &amp; Optimization</span></a></p></td>
+<td><p>Apply production-grade quantization</p></td>
+</tr>
+<tr class="row-odd"><td><p>4</p></td>
+<td><p><a class="reference internal" href="compiler-memory-planning.html"><span class="doc">Memory Planning</span></a></p></td>
+<td><p>Optimize memory for constrained devices</p></td>
+</tr>
+<tr class="row-even"><td><p>5</p></td>
+<td><p><a class="reference internal" href="compiler-custom-compiler-passes.html"><span class="doc">Custom Compiler Passes and Partitioners</span></a></p></td>
+<td><p>Write custom graph transformations</p></td>
+</tr>
+<tr class="row-odd"><td><p>6</p></td>
+<td><p><a class="reference internal" href="backend-development.html"><span class="doc">Backend Development</span></a></p></td>
+<td><p>Implement a custom backend delegate</p></td>
+</tr>
+<tr class="row-even"><td><p>7</p></td>
+<td><p><a class="reference internal" href="running-a-model-cpp-tutorial.html"><span class="doc">Detailed C++ Runtime APIs Tutorial</span></a></p></td>
+<td><p>Master the low-level C++ runtime</p></td>
+</tr>
+<tr class="row-odd"><td><p>8</p></td>
+<td><p><a class="reference internal" href="devtools-tutorial.html"><span class="doc">Developer Tools Usage Tutorials</span></a></p></td>
+<td><p>Profile and debug production models</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+
+
+                </article>
+              
+</div>
+
+              
+              
+                <footer class="bd-footer-article">
+                  <div class="footer-article-items footer-article__inner">
+  
+    <div class="footer-article-item">
+<div class="feedback">
+  
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
+    </div>
+</div>
+
+  <div class="feedback-send">
+    <button class="feedback-btn"
+            onclick="openGitHubIssue()"
+            data-bs-title="Create a GitHub Issue"
+            data-bs-placement="bottom"
+            data-bs-toggle="tooltip"
+            data-gtm="feedback-btn-click">Send Feedback
+    </button>
+  </div>
+</div>
+
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="pathway-quickstart.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Quick Start Pathway</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="edge-platforms-section.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Edge</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+
+<div class="footer-info">
+  <p class="copyright">
+    
+  </p>
+
+  <p class="theme-version">
+    Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+  </p>
+</div>
+</div>
+  
+</div>
+                </footer>
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="pathway-quickstart.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Quick Start Pathway</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="edge-platforms-section.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Edge</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc">
+<div class="sidebar-secondary-items sidebar-secondary__inner">
+    
+       <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#advanced-topic-areas">Advanced Topic Areas</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#quantization-and-optimization">Quantization and Optimization</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#memory-planning-and-runtime-optimization">Memory Planning and Runtime Optimization</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#custom-compiler-passes-and-kernel-registration">Custom Compiler Passes and Kernel Registration</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#backend-delegate-development">Backend Delegate Development</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#c-runtime-integration">C++ Runtime Integration</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#large-language-models-on-edge">Large Language Models on Edge</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#developer-tools-and-debugging">Developer Tools and Debugging</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ir-and-compiler-internals">IR and Compiler Internals</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#contributing-to-executorch">Contributing to ExecuTorch</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#advanced-learning-sequence">Advanced Learning Sequence</a></li>
+</ul>
+  </nav></div>
+    
+       <div class="sidebar-secondary-item">
+
+  
+  <div class="tocsection editthispage">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/pathway-advanced.md">
+      <i class="fa-solid fa-pencil"></i>
+      
+      
+        
+          Edit on GitHub
+        
+      
+    </a>
+  </div>
+</div>
+    
+       <div class="sidebar-secondary-item">
+    <div class="tocsection sourcelink">
+      <a href="_sources/pathway-advanced.md.txt">
+        <i class="fa-solid fa-file-lines"></i> Show Source
+      </a>
+    </div>
+</div>
+    
+
+
+
+
+</div>
+</div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  
+
+<div class="container-fluid docs-tutorials-resources" id="docs-tutorials-resources">
+  <div class="container">
+    <div class="row">
+      <div class="col-md-4">
+        <h2>Docs</h2>
+        <p>Access comprehensive developer documentation for PyTorch</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/docs/stable/index.html">View Docs</a>
+      </div>
+
+      <div class="col-md-4">
+        <h2>Tutorials</h2>
+        <p>Get in-depth tutorials for beginners and advanced developers</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/tutorials">View Tutorials</a>
+      </div>
+
+      <div class="col-md-4">
+        <h2>Resources</h2>
+        <p>Find development resources and get your questions answered</p>
+        <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+
+<footer class="site-footer">
+
+  <div class="container footer-container">
+
+    <div class="newsletter" id="newsletter">
+
+      <p class="newsletter__title is-style-max-width-800"><strong>Stay in touch</strong> for updates, event info, and
+        the latest news</p>
+
+
+      <script charset="utf-8" type="text/javascript" src="//js.hsforms.net/forms/embed/v2.js"></script>
+      <script>
+        hbspt.forms.create({
+          region: "na1",
+          portalId: "8112310",
+          formId: "2fb2231c-000b-4ec5-88a0-1ab242549c9e"
+        });
+      </script>
+
+
+      <p class="newsletter__privacy">By submitting this form, I consent to receive marketing emails from the LF and its
+        projects regarding their events, training, research, developments, and related announcements. I understand that
+        I can unsubscribe at any time using the links in the footers of the emails I receive. <a
+          href="https://www.linuxfoundation.org/privacy/">Privacy Policy</a>.</p>
+
+    </div>
+
+    <div class="lf-grid">
+      <ul class="social-links">
+        <li><a href="https://www.facebook.com/pytorch" target="_blank" title="PyTorch on Facebook">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-0.51 -0.26 26.45 26.45" aria-label="Facebook">
+              <path fill="currentColor"
+                d="M25.497 13.075c0-2.45-.698-4.848-2.011-6.911a12.765 12.765 0 0 0-5.398-4.73A12.671 12.671 0 0 0 11.008.38a12.705 12.705 0 0 0-6.529 2.95A12.827 12.827 0 0 0 .563 9.358a12.896 12.896 0 0 0-.07 7.201 12.831 12.831 0 0 0 3.801 6.103 12.709 12.709 0 0 0 6.471 3.078v-8.957H7.53v-3.708h3.235v-2.824c0-3.213 1.903-4.988 4.813-4.988.956.014 1.909.097 2.852.25V8.67h-1.607a1.83 1.83 0 0 0-1.518.497 1.854 1.854 0 0 0-.561 1.505v2.404h3.535l-.563 3.708h-2.97v8.957a12.725 12.725 0 0 0 7.697-4.337 12.87 12.87 0 0 0 3.054-8.328z" />
+            </svg>
+          </a></li>
+        <li><a href="https://twitter.com/pytorch" target="_blank" title="PyTorch on X">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 300 300" aria-label="X">
+              <path fill="currentColor"
+                d="M178.57 127.15 290.27 0h-26.46l-97.03 110.38L89.34 0H0l117.13 166.93L0 300.25h26.46l102.4-116.59 81.8 116.59h89.34M36.01 19.54H76.66l187.13 262.13h-40.66" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.youtube.com/pytorch" target="_blank" title="PyTorch on YouTube">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0.21 0.27 34.45 25.07" aria-label="YouTube">
+              <path fill="currentColor"
+                d="M33.729 6.084s-.327-2.33-1.317-3.356a4.691 4.691 0 0 0-3.32-1.432c-4.634-.34-11.589-.34-11.589-.34h-.014s-6.954 0-11.59.342a4.692 4.692 0 0 0-3.32 1.432c-.993 1.025-1.315 3.354-1.315 3.354a52.189 52.189 0 0 0-.331 5.473v2.566c.014 1.829.125 3.656.331 5.472 0 0 .322 2.33 1.316 3.36 1.26 1.345 2.916 1.3 3.653 1.445 2.65.26 11.263.34 11.263.34s6.96-.01 11.597-.353a4.691 4.691 0 0 0 3.32-1.432c.993-1.026 1.316-3.356 1.316-3.356.206-1.817.316-3.644.33-5.473v-2.57a52.26 52.26 0 0 0-.33-5.472zM14.076 17.232V7.729l8.951 4.768-8.95 4.735z" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.linkedin.com/company/pytorch" target="_blank" title="PyTorch on LinkedIn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-10.23 -10.23 531.96 531.96" aria-label="LinkedIn">
+              <rect width="512" height="512" rx="0" fill="currentColor" />
+              <circle fill="#000" cx="142" cy="138" r="37" />
+              <path stroke="#000" stroke-width="66" d="M244 194v198M142 194v198" />
+              <path fill="#000"
+                d="M276 282c0-20 13-40 36-40 24 0 33 18 33 45v105h66V279c0-61-32-89-76-89-34 0-51 19-59 32" />
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.slack.com" target="_blank" title="PyTorch Slack">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.16 -0.03 21.19 21.19" aria-label="Slack">
+              <path fill="currentColor"
+                d="M4.896 13.27a2.147 2.147 0 0 1-2.141 2.142A2.147 2.147 0 0 1 .613 13.27c0-1.178.963-2.141 2.142-2.141h2.141v2.141zm1.08 0c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.363a2.147 2.147 0 0 1-2.142 2.141 2.147 2.147 0 0 1-2.141-2.142V13.27zm2.141-8.6a2.147 2.147 0 0 1-2.141-2.14c0-1.18.962-2.142 2.141-2.142s2.142.963 2.142 2.141v2.142H8.117zm0 1.08c1.179 0 2.141.962 2.141 2.141a2.147 2.147 0 0 1-2.141 2.142H2.755A2.147 2.147 0 0 1 .613 7.89c0-1.179.963-2.141 2.142-2.141h5.362zm8.599 2.141c0-1.179.963-2.141 2.141-2.141 1.179 0 2.143.962 2.143 2.14a2.147 2.147 0 0 1-2.142 2.142h-2.141V7.89zm-1.08 0a2.147 2.147 0 0 1-2.141 2.142 2.147 2.147 0 0 1-2.141-2.142V2.53c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.362zm-2.141 8.6c1.179 0 2.142.962 2.142 2.14a2.147 2.147 0 0 1-2.142 2.142 2.147 2.147 0 0 1-2.141-2.141V16.49h2.141zm0-1.08a2.147 2.147 0 0 1-2.141-2.141c0-1.179.962-2.142 2.141-2.142h5.362c1.179 0 2.142.963 2.142 2.142a2.147 2.147 0 0 1-2.142 2.142h-5.362z">
+              </path>
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.org/wechat" title="PyTorch on WeChat">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.14 -0.17 38.02 33.02" aria-label="WeChat">
+              <path fill="currentColor"
+                d="M26.289 10.976a12.972 12.972 0 0 0-8.742 3.53 10.386 10.386 0 0 0-3.224 8.795c-1.326-.164-2.535-.345-3.75-.448a2.332 2.332 0 0 0-1.273.216c-1.18.666-2.311 1.418-3.652 2.255.246-1.112.405-2.087.687-3.024a1.15 1.15 0 0 0-.523-1.52C1.737 17.902.02 13.601 1.307 9.165c1.189-4.1 4.11-6.587 8.077-7.884A13.54 13.54 0 0 1 24.18 5.617a10.135 10.135 0 0 1 2.109 5.359zM10.668 9.594a1.564 1.564 0 0 0-2.095-1.472 1.52 1.52 0 0 0-.895 1.964 1.502 1.502 0 0 0 1.391.966 1.545 1.545 0 0 0 1.598-1.46v.002zm8.15-1.566a1.567 1.567 0 0 0-1.528 1.543 1.528 1.528 0 0 0 1.571 1.492 1.52 1.52 0 0 0 1.375-2.117 1.518 1.518 0 0 0-1.415-.919l-.003.001z">
+              </path>
+              <path fill="currentColor"
+                d="M33.914 32.137c-1.075-.478-2.062-1.196-3.11-1.306-1.049-.11-2.145.494-3.24.605a10.821 10.821 0 0 1-8.781-2.864c-4.682-4.33-4.013-10.97 1.403-14.518 4.811-3.154 11.874-2.102 15.268 2.273a8.671 8.671 0 0 1-1.002 12.095c-1.046.929-1.422 1.693-.751 2.917.102.257.174.525.213.798zM21.68 20.292a1.264 1.264 0 1 0 .01-2.528 1.264 1.264 0 0 0-.01 2.528zm7.887-2.526a1.266 1.266 0 0 0-1.256 1.21 1.247 1.247 0 1 0 1.256-1.21z">
+              </path>
+            </svg>
+          </a></li>
+      </ul>
+    </div>
+    
+    <div class="privacy-policy">
+      <div class="copyright">
+      
+        <p>
+          &copy; PyTorch. Copyright © The Linux Foundation®. All rights reserved. The Linux Foundation has registered
+          trademarks and uses trademarks. For more information, including terms of use, privacy policy, and trademark
+          usage, please see our <a href="https://www.linuxfoundation.org/legal/policies">Policies</a> page. <a
+            href="https://www.linuxfoundation.org/trademark-usage">Trademark Usage</a>. <a
+            href="http://www.linuxfoundation.org/privacy">Privacy Policy</a>.
+        </p>
+        
+      </div>
+    </div>
+
+
+  </div>
+</footer>
+
+<div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="_static/img/pytorch-x.svg">
+  </div>
+</div>
+  
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2024, ExecuTorch.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+    <br/>
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  <script type="application/ld+json">
+    {
+       "@context": "https://schema.org",
+       "@type": "Article",
+       "name": "Advanced Pathway",
+       "headline": "Advanced Pathway",
+       "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
+       "url": "/pathway-advanced.html",
+       "articleBody": "Advanced Pathway# This pathway is for engineers building production-grade deployments, implementing custom backends, optimizing for constrained hardware, or working with large language models on edge devices. It assumes familiarity with the ExecuTorch export pipeline and at least one successful model deployment. Advanced Topic Areas# Select the area most relevant to your current work. Each section provides a curated sequence of documentation with dependencies noted. Quantization and Optimization# Quantization is the most impactful optimization available in ExecuTorch, reducing model size by 2\u20138\u00d7 and improving latency significantly on supported backends. Quantization Overview Introduction to ExecuTorch\u2019s quantization framework, including supported schemes (INT8, INT4, FP16) and the relationship between quantization and backend selection. Difficulty: Intermediate Quantization Quantization \u0026 Optimization (Advanced) Advanced quantization techniques including mixed-precision, per-channel quantization, and calibration workflows for production models. Difficulty: Advanced Quantization \u0026 Optimization Model Export and Lowering Full reference for to_edge_transform_and_lower, including quantization integration, dynamic shapes, and multi-backend lowering. Difficulty: Advanced Model Export and Lowering Backend Dialect Understanding the Backend Dialect IR and how it differs from Edge Dialect \u2014 essential for backend developers and advanced export customization. Difficulty: Advanced Backend Dialect Memory Planning and Runtime Optimization# Memory planning is critical for constrained devices. ExecuTorch provides ahead-of-time memory planning to eliminate runtime allocations. Memory Planning How ExecuTorch plans tensor memory at compile time, including memory hierarchy, buffer reuse strategies, and how to customize the planner. Difficulty: Advanced Memory Planning Memory Planning Inspection Tools for inspecting memory plans and diagnosing memory-related issues in exported programs. Difficulty: Advanced Memory Planning Inspection in ExecuTorch Managing Tensor Memory in C++ The TensorPtr and from_blob APIs for zero-copy tensor management in C++ runtime integrations. Difficulty: Intermediate Managing Tensor Memory in C++ Portable C++ Programming Guidelines for writing ExecuTorch C++ code that runs on bare-metal and RTOS environments without dynamic allocation or standard library dependencies. Difficulty: Advanced Portable C++ Programming Custom Compiler Passes and Kernel Registration# ExecuTorch\u2019s compiler pass interface allows you to transform the exported graph before lowering, enabling model-specific optimizations and operator fusion. Custom Compiler Passes Writing and registering custom graph transformation passes that run during the export and lowering pipeline. Difficulty: Advanced Custom Compiler Passes and Partitioners Kernel Registration Registering custom ATen kernel implementations to replace or supplement the portable operator library with hardware-optimized versions. Difficulty: Advanced Kernel Registration Kernel Library Overview Architecture of ExecuTorch\u2019s kernel library system, including the portable library, custom kernels, and selective build. Difficulty: Advanced Overview of ExecuTorch\u2019s Kernel Libraries Selective Build Reduce binary size by including only the operators required by your specific model using the selective build system. Difficulty: Advanced Kernel Library Selective Build Backend Delegate Development# Implementing a new hardware backend for ExecuTorch requires understanding the delegate interface, partitioner API, and runtime integration. Backend Development Guide Complete guide to implementing a new ExecuTorch backend delegate, including the BackendInterface, preprocess, and execute methods. Difficulty: Advanced Backend Development Integrating a Backend Delegate Step-by-step walkthrough of integrating an existing backend delegate into the ExecuTorch build system and runtime. Difficulty: Beginner (for integration) / Advanced (for implementation) Integrating a Backend Delegate into ExecuTorch Delegate and Partitioner The Partitioner interface for selecting which subgraphs to delegate, including pattern matching and constraint specification. Difficulty: Advanced Understanding Backends and Delegates Backend Delegate Implementation and Linking Linking backend delegate implementations into the ExecuTorch runtime, including static and dynamic registration patterns. Difficulty: Advanced Backend Delegate Implementation and Linking Lowering a Model as a Delegate End-to-end example of using to_backend to lower a model subgraph to a custom delegate. Difficulty: Advanced Lowering a Model as a Delegate Debugging Backend Delegates Techniques for debugging delegate execution, including intermediate output comparison and delegate-specific logging. Difficulty: Advanced Debugging Delegation C++ Runtime Integration# For embedded, mobile native, and server deployments, the C++ runtime APIs provide full control over model loading, execution, and memory management. Module Extension (High-Level API) The Module class provides a high-level C++ API for loading and running .pte files with minimal boilerplate. Recommended for most C++ integrations. Difficulty: Intermediate Running an ExecuTorch Model Using the Module Extension in C++ Detailed C++ Runtime APIs Low-level C++ runtime APIs for fine-grained control over memory allocation, operator dispatch, and execution planning. Required for bare-metal targets. Difficulty: Intermediate Detailed C++ Runtime APIs Tutorial Using ExecuTorch with C++ CMake integration, target linking, cross-compilation setup, and C++ API reference for production deployments. Difficulty: Advanced Using ExecuTorch with C++ Runtime Platform Abstraction Layer The PAL interface for porting ExecuTorch to new operating systems and bare-metal environments. Difficulty: Advanced Runtime Platform Abstraction Layer (PAL) Large Language Models on Edge# Deploying LLMs to edge devices involves additional complexity around quantization, tokenization, KV-cache management, and platform-specific optimizations. LLM Overview Complete overview of the ExecuTorch LLM workflow, supported models, and platform-specific deployment paths. Difficulty: Intermediate LLMs Exporting LLMs The export_llm module for exporting supported LLMs (Llama, Qwen, Phi, SmolLM) with quantization and optimization. Difficulty: Intermediate Exporting LLMs Exporting Custom LLMs Adapting the export pipeline for custom LLM architectures beyond the officially supported models, using nanoGPT as a worked example. Difficulty: Intermediate Exporting custom LLMs Running LLMs with C++ C++ runtime integration for LLM inference, including tokenizer setup, KV-cache configuration, and streaming output. Difficulty: Intermediate Running LLMs with C++ Llama on Qualcomm Android Deploying Llama 3 3B Instruct on Android using the Qualcomm AI Engine Direct backend with hardware acceleration. Difficulty: Advanced Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend) ExecuTorch on Raspberry Pi Deploying Llama models on Raspberry Pi 4/5 edge devices using the ExecuTorch runtime. Difficulty: Intermediate ExecuTorch on Raspberry Pi Developer Tools and Debugging# ExecuTorch provides a comprehensive suite of profiling and debugging tools for diagnosing performance and correctness issues. Developer Tools Overview Overview of the ExecuTorch developer tools suite, including ETRecord, ETDump, and the Inspector API. Difficulty: Intermediate Introduction to the ExecuTorch Developer Tools Profiling a Model Step-by-step tutorial for profiling model execution using ETRecord and ETDump to identify performance bottlenecks. Difficulty: Intermediate Developer Tools Usage Tutorials Profiling and Debugging Comprehensive debugging guide covering numerical debugging, operator-level profiling, and common failure modes. Difficulty: Advanced Profiling and Debugging Delegate Debugging Techniques specific to debugging backend delegate execution, including output comparison and delegate-level tracing. Difficulty: Advanced Delegate Debugging IR and Compiler Internals# For contributors and advanced backend developers who need to understand ExecuTorch\u2019s compiler internals. Export Overview The complete export pipeline from torch.export to .pte, including the role of each compilation stage. Difficulty: Intermediate Exporting to ExecuTorch Compiler Entry Points The public API surface for the ExecuTorch compiler, including to_edge, to_edge_transform_and_lower, and to_executorch. Difficulty: Intermediate Compiler Entry Points IR Specification Formal specification of the ExecuTorch IR, including operator semantics, type system, and serialization format. Difficulty: Advanced IR Specification Compiler \u0026 IR (Advanced) Advanced IR topics including graph transformations, custom dialects, and the relationship between Export IR and Edge Dialect. Difficulty: Advanced Compiler \u0026 IR Contributing to ExecuTorch# If you are working on ExecuTorch internals or want to contribute upstream, start with the contributor guide. New Contributor Guide Development environment setup, code style, testing requirements, and the pull request process for ExecuTorch contributors. Difficulty: Advanced New Contributor Guide API Life Cycle and Deprecation Policy How ExecuTorch manages API stability, deprecation timelines, and backward compatibility across releases. Difficulty: Intermediate API Life Cycle and Deprecation Policy Advanced Learning Sequence# If you prefer a structured progression rather than topic-based navigation, follow this sequence for a comprehensive advanced curriculum. Order Topic Goal 1 Exporting to ExecuTorch Understand the full compilation pipeline 2 Model Export and Lowering Master advanced export options 3 Quantization \u0026 Optimization Apply production-grade quantization 4 Memory Planning Optimize memory for constrained devices 5 Custom Compiler Passes and Partitioners Write custom graph transformations 6 Backend Development Implement a custom backend delegate 7 Detailed C++ Runtime APIs Tutorial Master the low-level C++ runtime 8 Developer Tools Usage Tutorials Profile and debug production models",
+       "author": {
+         "@type": "Organization",
+         "name": "PyTorch Contributors",
+         "url": "https://pytorch.org"
+       },
+       "image": "https://pytorch.org/docs/stable/_static/img/pytorch_seo.png",
+       "mainEntityOfPage": {
+         "@type": "WebPage",
+         "@id": "/pathway-advanced.html"
+       },
+       "datePublished": "2023-01-01T00:00:00Z",
+       "dateModified": "2023-01-01T00:00:00Z"
+     }
+ </script>
+  <script>
+    // Tutorials Call to action event tracking
+    $("[data-behavior='call-to-action-event']").on('click', function () {
+      fbq('trackCustom', "Download", {
+        tutorialTitle: $('h1:first').text(),
+        downloadLink: this.href,
+        tutorialLink: window.location.href,
+        downloadTitle: $(this).attr("data-response")
+      });
+      if (typeof gtag === 'function') {
+        gtag('event', 'click', {
+          'event_category': $(this).attr("data-response"),
+          'event_label': $("h1").first().text(),
+          'tutorial_link': window.location.href
+        });
+      }
+    });
+  </script>
+  
+  </body>
+</html>
