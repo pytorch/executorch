@@ -1,0 +1,162 @@
+Current Python version 3.10 is below the recommended 3.11 version. It is recommended to upgrade to Python 3.11 or higher for the best experience.
+Loading prequantized weights from /home/gasoonjia/models/Qwen3.5-35B-A3B-HQQ-INT4-local/model.safetensors...
+Building model on meta device...
+Model: 40 layers, 2048d, 256 experts top-8
+Exporting model (single method, dynamic T, torch.cond dispatch)...
+Export successful!
+Lowering to ExecuTorch with CUDA...
+/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/executorch/examples/models/qwen3_5_moe/export.py:411: ExperimentalWarning: This API and all of cuda backend related functionality are experimental.
+  partitioner=[CudaPartitioner(compile_specs)],
+/home/gasoonjia/.conda/envs/et/lib/python3.10/copyreg.py:101: FutureWarning: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+  return cls.__new__(cls, *args)
+/home/gasoonjia/.conda/envs/et/lib/python3.10/copyreg.py:101: FutureWarning: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+  return cls.__new__(cls, *args)
+Traceback (most recent call last):
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/executorch/examples/models/qwen3_5_moe/export.py", line 505, in <module>
+    main()
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/executorch/examples/models/qwen3_5_moe/export.py", line 501, in main
+    export_and_lower(model, config, args)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/executorch/examples/models/qwen3_5_moe/export.py", line 409, in export_and_lower
+    et_prog = to_edge_transform_and_lower(
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/executorch/exir/program/_program.py", line 116, in wrapper
+    return func(*args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/executorch/exir/program/_program.py", line 1405, in to_edge_transform_and_lower
+    edge_manager = edge_manager.to_backend(method_to_partitioner)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/executorch/exir/program/_program.py", line 116, in wrapper
+    return func(*args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/executorch/exir/program/_program.py", line 1707, in to_backend
+    new_edge_programs = to_backend(method_to_programs_and_partitioners)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/functools.py", line 889, in wrapper
+    return dispatch(args[0].__class__)(*args, **kw)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/executorch/exir/backend/backend_api.py", line 762, in _
+    lower_all_submodules_to_backend(
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/executorch/exir/backend/backend_api.py", line 591, in lower_all_submodules_to_backend
+    backend_name_to_subclass[backend_id].preprocess_multimethod(
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/executorch/exir/backend/backend_details.py", line 145, in preprocess_multimethod
+    preprocess_result = cls.preprocess(program, compile_spec_for_program)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/executorch/backends/aoti/aoti_backend.py", line 199, in preprocess
+    paths = torch._inductor.aot_compile(
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_inductor/__init__.py", line 310, in aot_compile
+    return compile_fx_aot(
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_inductor/compile_fx.py", line 2048, in compile_fx_aot
+    compiled_artifacts = compile_fx(
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_inductor/compile_fx.py", line 2527, in compile_fx
+    return compile_fx(
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_inductor/compile_fx.py", line 2566, in compile_fx
+    return _maybe_wrap_and_compile_fx_main(
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_inductor/compile_fx.py", line 2655, in _maybe_wrap_and_compile_fx_main
+    return _compile_fx_main(
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_inductor/compile_fx.py", line 2783, in _compile_fx_main
+    gm, graph_signature = aot_export_module(
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_functorch/aot_autograd.py", line 1593, in aot_export_module
+    fx_g, metadata, in_spec, out_spec = _aot_export_function(
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_functorch/aot_autograd.py", line 1862, in _aot_export_function
+    aot_state = create_aot_state(
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_functorch/aot_autograd.py", line 583, in create_aot_state
+    fw_metadata = run_functionalized_fw_and_collect_metadata(
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_functorch/_aot_autograd/collect_metadata_analysis.py", line 222, in inner
+    flat_f_outs = f(*flat_f_args)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_functorch/_aot_autograd/utils.py", line 204, in flat_fn
+    tree_out = fn(*args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_functorch/_aot_autograd/graph_capture_wrappers.py", line 1500, in functional_call
+    out = PropagateUnbackedSymInts(mod).run(*args)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/fx/interpreter.py", line 200, in run
+    self.env[node] = self.run_node(node)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/fx/experimental/symbolic_shapes.py", line 8187, in run_node
+    result = super().run_node(n)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/fx/interpreter.py", line 297, in run_node
+    return getattr(self, n.op)(n.target, args, kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/fx/interpreter.py", line 380, in call_function
+    return target(*args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_higher_order_ops/cond.py", line 54, in __call__
+    return super().__call__(pred, true_fn, false_fn, operands)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_ops.py", line 533, in __call__
+    return self.dispatch(dispatch_key_set.highestPriorityTypeId(), *args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_ops.py", line 522, in dispatch
+    return kernel(*args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_ops.py", line 330, in maybe_run_autograd
+    return self(*args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_higher_order_ops/cond.py", line 54, in __call__
+    return super().__call__(pred, true_fn, false_fn, operands)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_ops.py", line 533, in __call__
+    return self.dispatch(dispatch_key_set.highestPriorityTypeId(), *args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_ops.py", line 416, in dispatch
+    result = handler(mode, *args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_ops.py", line 193, in functionalize_dispatch_mode_fn
+    return fn(PythonFunctionalizeAPI(mode), *args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_higher_order_ops/cond.py", line 700, in cond_func
+    _check_alias_and_mutation(
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_higher_order_ops/utils.py", line 460, in _check_alias_and_mutation
+    aliases, inp_mutation = has_potential_input_alias_or_mutation(
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_higher_order_ops/utils.py", line 400, in has_potential_input_alias_or_mutation
+    ) = potential_input_alias_or_mutation(gm, inputs, pre_dispatch)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_higher_order_ops/utils.py", line 350, in potential_input_alias_or_mutation
+    raise e
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_higher_order_ops/utils.py", line 344, in potential_input_alias_or_mutation
+    gm = _maybe_fake_tracing(gm, inputs, pre_dispatch)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_higher_order_ops/utils.py", line 326, in _maybe_fake_tracing
+    gm = make_fx(
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/fx/experimental/proxy_tensor.py", line 2824, in wrapped
+    return make_fx_tracer.trace(f, *args)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/fx/experimental/proxy_tensor.py", line 2725, in trace
+    return self._trace_inner(f, *args)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/fx/experimental/proxy_tensor.py", line 2686, in _trace_inner
+    t = dispatch_trace(
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_compile.py", line 54, in inner
+    return disable_fn(*args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 1262, in _fn
+    return fn(*args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/fx/experimental/proxy_tensor.py", line 1533, in dispatch_trace
+    graph = tracer.trace(root, concrete_args)  # type: ignore[arg-type]
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 1262, in _fn
+    return fn(*args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/fx/_symbolic_trace.py", line 890, in trace
+    (self.create_arg(fn(*args)),),
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/fx/experimental/proxy_tensor.py", line 1603, in wrapped
+    out = f(*tensors)  # type:ignore[call-arg]
+  File "<string>", line 1, in <lambda>
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/fx/graph_module.py", line 949, in call_wrapped
+    return self._wrapped_call(self, *args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/fx/graph_module.py", line 461, in __call__
+    raise e
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/fx/graph_module.py", line 447, in __call__
+    return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/fx/_symbolic_trace.py", line 864, in module_call_wrapper
+    return self.call_module(mod, forward, args, kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/fx/experimental/proxy_tensor.py", line 1352, in call_module
+    return forward(*args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/fx/_symbolic_trace.py", line 857, in forward
+    return _orig_module_call(mod, *args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "<eval_with_key>.7106", line 53, in forward
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/executorch/exir/dialects/edge/_ops.py", line 332, in __call__
+    return self._op(*args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_ops.py", line 865, in __call__
+    return self._op(*args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/fx/experimental/proxy_tensor.py", line 1654, in __torch_function__
+    return func(*args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_ops.py", line 865, in __call__
+    return self._op(*args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_subclasses/functional_tensor.py", line 225, in __torch_dispatch__
+    raise RuntimeError(
+RuntimeError: Attempting to use FunctionalTensor on its own. Instead, please use it with a corresponding FunctionalTensorMode()
+
+While executing %cond : [num_users=2] = call_function[target=torch.ops.higher_order.cond](args = (%aten_eq_tensor, %submodule_0, %submodule_1, [%aten_sigmoid_default, %aten_mul_tensor_8, %aten_slice_scatter_default_1, %aten_repeat_interleave_self_int_1, %aten_repeat_interleave_self_int, %aten_view_copy_default_5]), kwargs = {})
+Original traceback:
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/torch/_dynamo/functional_export.py", line 221, in forward
+    res = self._export_root(*args, **kwargs)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/executorch/examples/models/qwen3_5_moe/model.py", line 583, in forward
+    x = layer(x, input_pos)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/executorch/examples/models/qwen3_5_moe/model.py", line 561, in forward
+    x = x + self.attn(self.ln_1(x), input_pos)
+  File "/home/gasoonjia/.conda/envs/et/lib/python3.10/site-packages/executorch/examples/models/qwen3_5_moe/model.py", line 427, in forward
+    output, state = torch.cond(
+
+Use tlparse to see full graph. (https://github.com/pytorch/tlparse?tab=readme-ov-file#tlparse-parse-structured-pt2-logs)

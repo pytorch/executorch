@@ -68,13 +68,13 @@ def _unwrap(kernel):
 @triton.jit
 def _recurrent_gated_delta_rule_kernel(
     # Pointers — all inputs [B, 1, H, *] squeezed to [B, H, *]
-    q_ptr,      # [B, H, K]
-    k_ptr,      # [B, H, K]
-    v_ptr,      # [B, H, V]
-    g_ptr,      # [B, H]
-    beta_ptr,   # [B, H]
+    q_ptr,  # [B, H, K]
+    k_ptr,  # [B, H, K]
+    v_ptr,  # [B, H, V]
+    g_ptr,  # [B, H]
+    beta_ptr,  # [B, H]
     state_ptr,  # [B, H, K, V] input state (read)
-    o_ptr,      # [B, H, V] output
+    o_ptr,  # [B, H, V] output
     new_state_ptr,  # [B, H, K, V] output state (write)
     # Dims
     K: tl.constexpr,
@@ -137,7 +137,9 @@ def _recurrent_gated_delta_rule_kernel(
         o_tile = tl.sum(state_tile * q_vec[:, None], axis=0) * scale
 
         # Store output tile
-        tl.store(o_ptr + v_base + v_range, o_tile.to(o_ptr.dtype.element_ty), mask=v_mask)
+        tl.store(
+            o_ptr + v_base + v_range, o_tile.to(o_ptr.dtype.element_ty), mask=v_mask
+        )
 
         # Store new state tile
         tl.store(
@@ -212,34 +214,74 @@ def _launch_chunked(q, k, v, g, beta, initial_state, scale):
     # 1. chunk_local_cumsum
     g_cumsum = torch.empty(B, T, H, dtype=torch.float32, device=q.device)
     wrap_triton(_unwrap(chunk_local_cumsum_scalar_kernel))[(NT, B * H)](
-        s=g, o=g_cumsum, scale=0, cu_seqlens=0, chunk_indices=0,
-        T=T, B=B, H=H, BT=BT,
-        HEAD_FIRST=False, REVERSE=False, HAS_SCALE=False, IS_VARLEN=False,
+        s=g,
+        o=g_cumsum,
+        scale=0,
+        cu_seqlens=0,
+        chunk_indices=0,
+        T=T,
+        B=B,
+        H=H,
+        BT=BT,
+        HEAD_FIRST=False,
+        REVERSE=False,
+        HAS_SCALE=False,
+        IS_VARLEN=False,
     )
 
     # 2. chunk_scaled_dot_kkt
     A = torch.empty(B, T, H, BT, device=q.device, dtype=torch.float32)
     wrap_triton(_unwrap(chunk_scaled_dot_kkt_fwd_kernel))[(NT, B * H)](
-        k=k, g=g_cumsum, beta=beta, A=A,
-        cu_seqlens=0, chunk_indices=0,
-        T=T, H=H, K=K, BT=BT, USE_G=True, IS_VARLEN=False,
+        k=k,
+        g=g_cumsum,
+        beta=beta,
+        A=A,
+        cu_seqlens=0,
+        chunk_indices=0,
+        T=T,
+        H=H,
+        K=K,
+        BT=BT,
+        USE_G=True,
+        IS_VARLEN=False,
     )
 
     # 3. solve_tril
     Ai = torch.zeros_like(A, dtype=k.dtype)
     wrap_triton(_unwrap(merge_16x16_to_64x64_inverse_kernel))[NT, B * H](
-        A=A, Ai=Ai, cu_seqlens=0, chunk_indices=0,
-        T=T, H=H, BT=BT, USE_TMA=IS_TMA_SUPPORTED, IS_VARLEN=False,
+        A=A,
+        Ai=Ai,
+        cu_seqlens=0,
+        chunk_indices=0,
+        T=T,
+        H=H,
+        BT=BT,
+        USE_TMA=IS_TMA_SUPPORTED,
+        IS_VARLEN=False,
     )
 
     # 4. recompute_w_u
     w = torch.empty_like(k)
     u = torch.empty_like(v)
     wrap_triton(_unwrap(recompute_w_u_fwd_kernel))[(NT, B * H)](
-        k=k, v=v, beta=beta, w=w, u=u, A=Ai, g=g_cumsum,
-        cu_seqlens=0, chunk_indices=0,
-        T=T, H=H, K=K, V=V, BT=BT, BK=64, BV=64,
-        USE_G=True, IS_VARLEN=False,
+        k=k,
+        v=v,
+        beta=beta,
+        w=w,
+        u=u,
+        A=Ai,
+        g=g_cumsum,
+        cu_seqlens=0,
+        chunk_indices=0,
+        T=T,
+        H=H,
+        K=K,
+        V=V,
+        BT=BT,
+        BK=64,
+        BV=64,
+        USE_G=True,
+        IS_VARLEN=False,
     )
 
     # 5. chunk_gated_delta_rule_fwd_h
@@ -251,13 +293,30 @@ def _launch_chunked(q, k, v, g, beta, initial_state, scale):
         return (triton.cdiv(V, meta["BV"]), B * H)
 
     wrap_triton(_unwrap(chunk_gated_delta_rule_fwd_kernel_h_blockdim64))[grid_h](
-        k=k, v=u, w=w, v_new=v_new, g=g_cumsum, gk=0,
-        h=h, h0=initial_state, ht=final_state,
-        cu_seqlens=0, chunk_offsets=0,
-        T=T, H=H, K=K, V=V, BT=BT,
-        USE_EXP2=False, TRANSPOSE_STATE=False, USE_G=True, USE_GK=False,
-        USE_INITIAL_STATE=True, STORE_FINAL_STATE=True,
-        SAVE_NEW_VALUE=True, IS_VARLEN=False,
+        k=k,
+        v=u,
+        w=w,
+        v_new=v_new,
+        g=g_cumsum,
+        gk=0,
+        h=h,
+        h0=initial_state,
+        ht=final_state,
+        cu_seqlens=0,
+        chunk_offsets=0,
+        T=T,
+        H=H,
+        K=K,
+        V=V,
+        BT=BT,
+        USE_EXP2=False,
+        TRANSPOSE_STATE=False,
+        USE_G=True,
+        USE_GK=False,
+        USE_INITIAL_STATE=True,
+        STORE_FINAL_STATE=True,
+        SAVE_NEW_VALUE=True,
+        IS_VARLEN=False,
     )
 
     # 6. chunk_fwd_o
@@ -267,10 +326,25 @@ def _launch_chunked(q, k, v, g, beta, initial_state, scale):
         return (triton.cdiv(V, meta["BV"]), NT, B * H)
 
     wrap_triton(_unwrap(chunk_fwd_kernel_o))[grid_o](
-        q=q, k=k, v=v_new, h=h, g=g_cumsum, g_gamma=0, o=o,
-        cu_seqlens=0, chunk_indices=0, scale=scale,
-        T=T, H=H, K=K, V=V, BT=BT,
-        TRANSPOSE_STATE=False, USE_G=True, USE_G_GAMMA=False, IS_VARLEN=False,
+        q=q,
+        k=k,
+        v=v_new,
+        h=h,
+        g=g_cumsum,
+        g_gamma=0,
+        o=o,
+        cu_seqlens=0,
+        chunk_indices=0,
+        scale=scale,
+        T=T,
+        H=H,
+        K=K,
+        V=V,
+        BT=BT,
+        TRANSPOSE_STATE=False,
+        USE_G=True,
+        USE_G_GAMMA=False,
+        IS_VARLEN=False,
     )
 
     return o, final_state
@@ -299,8 +373,12 @@ def _validate_inputs(q, k, v, g, beta, initial_state):
     if not (q.dtype == k.dtype == v.dtype):
         raise ValueError("q, k, v must have the same dtype")
     if not (
-        q.device == k.device == v.device
-        == g.device == beta.device == initial_state.device
+        q.device
+        == k.device
+        == v.device
+        == g.device
+        == beta.device
+        == initial_state.device
     ):
         raise ValueError("All tensors must be on the same device")
     if K > 256:

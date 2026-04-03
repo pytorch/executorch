@@ -98,7 +98,11 @@ def _make_inputs_from_fla(
     q = torch.rand(B, seq_len, H, K, dtype=dtype, device=device)
     k = torch.rand(B, seq_len, H, K, dtype=dtype, device=device)
     v = torch.rand(B, seq_len, H, V, dtype=dtype, device=device)
-    beta = torch.rand(B, seq_len, H, dtype=torch.float32, device=device).sigmoid().to(dtype)
+    beta = (
+        torch.rand(B, seq_len, H, dtype=torch.float32, device=device)
+        .sigmoid()
+        .to(dtype)
+    )
     g = F.logsigmoid(torch.rand(B, seq_len, H, dtype=torch.float32, device=device))
     g = (g / gate_logit_normalizer).to(dtype)
     if mask_p > 0:
@@ -261,7 +265,9 @@ class TestChunkGatedDeltaRule(unittest.TestCase):
         model = ChunkGatedDeltaModel().eval()
         for seed, norm, mask_p, nonzero_h0, desc in FLA_TEST_CONFIGS:
             with self.subTest(desc=desc):
-                inputs = _make_inputs_from_fla(seed, norm, mask_p, nonzero_h0, seq_len=1)
+                inputs = _make_inputs_from_fla(
+                    seed, norm, mask_p, nonzero_h0, seq_len=1
+                )
                 q, k, v, g, beta, h0 = inputs
 
                 with torch.no_grad():
@@ -312,12 +318,8 @@ class TestChunkGatedDeltaRule(unittest.TestCase):
                 self.assertEqual(s_ours.shape, torch.Size([B, H, K, V]))
                 o_diff = (o_ours.float() - o_ref.float()).abs().max().item()
                 s_diff = (s_ours.float() - s_ref.float()).abs().max().item()
-                self.assertLess(
-                    o_diff, 0.02, f"T={seq_len}: output diff {o_diff}"
-                )
-                self.assertLess(
-                    s_diff, 0.02, f"T={seq_len}: state diff {s_diff}"
-                )
+                self.assertLess(o_diff, 0.02, f"T={seq_len}: output diff {o_diff}")
+                self.assertLess(s_diff, 0.02, f"T={seq_len}: state diff {s_diff}")
 
     def test_export_cuda(self):
         with tempfile.TemporaryDirectory() as tmpdir:
