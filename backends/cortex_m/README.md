@@ -1,7 +1,7 @@
 # Cortex-M Backend
 
 > [!NOTE]
-> Beta. This backend is functional and tested but APIs may change between releases.
+> Beta. This backend has been validated with a set of small models (e.g. MLPerf Tiny, MobileNetV2) and provides broad operator coverage through CMSIS-NN accelerated kernels with portable-ops fallback.
 
 ## Overview
 
