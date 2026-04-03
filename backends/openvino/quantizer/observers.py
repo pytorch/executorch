@@ -86,9 +86,11 @@ class WeightObserverBase(ObserverBase, ABC):
         if isinstance(nncf_compressed_weight, tuple):
             # depreceate this part. For backwards compatability with older NNCF commit
             q_weight, scale, zp = nncf_compressed_weight
-        assert all(val is not None for val in (q_weight, scale)), \
-        f"Could not calculate quantization parameters for weight compression observer. " \
-        f"None values: { {name: val for name, val in [('quantized_weight', q_weight), ('scale', scale)] if val is None} }"
+
+        if not all(val is not None for val in (q_weight, scale)):
+            msg = f"Could not calculate quantization parameters for weight compression observer. " \
+                  f"None values: { {name: val for name, val in [('quantized_weight', q_weight), ('scale', scale)] if val is None} }"
+            raise ValueError(msg)
 
         zp = zp.data if zp is not None else None
         return q_weight.data, scale.data, zp
