@@ -90,9 +90,6 @@ class WeightObserverBase(ObserverBase, ABC):
         f"Could not calculate quantization parameters for weight compression observer. " \
         f"None values: { {name: val for name, val in [('quantized_weight', q_weight), ('scale', scale)] if val is None} }"
 
-        q_weight, scale, zp = do_integer_quantization(
-            NNCFTensor(weight), wc_config, reduction_axes=reduction_axes
-        )
         zp = zp.data if zp is not None else None
         return q_weight.data, scale.data, zp
 
