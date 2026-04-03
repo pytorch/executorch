@@ -390,35 +390,11 @@ class GatedDeltaNet(nn.Module):
         beta = b.sigmoid()
         g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
 
-        # Recurrent gated delta rule — single-step update.
-        # The model is exported with static T=1 and the C++ runner does
-        # token-by-token prefill (enable_dynamic_shape=False), so T is
-        # always 1 at runtime.  This replaces the 6-kernel chunked FLA
-        # pipeline with plain PyTorch ops that Inductor can fuse.
-        scale = self.head_k_dim**-0.5
-        state = self.recurrent_state[:B].float()  # [B, H, K, V]
-
-        q_f = q[:, 0].float()  # [B, H, K]
-        k_f = k[:, 0].float()  # [B, H, K]
-        v_f = v[:, 0].float()  # [B, H, V]
-        g_f = g[:, 0]  # [B, H]
-        beta_f = beta[:, 0].float()  # [B, H]
-
-        # Decay state
-        state = state * g_f.exp().unsqueeze(-1).unsqueeze(-1)
-
-        # Delta rule: error = v - S @ k
-        Sk = torch.einsum("bhkv,bhk->bhv", state, k_f)
-        delta = v_f - Sk
-
-        # State update: S += beta * outer(k, delta)
-        state = state + beta_f.unsqueeze(-1).unsqueeze(-1) * torch.einsum(
-            "bhk,bhv->bhkv", k_f, delta
+        # Gated delta rule: dispatch happens inside the triton_op
+        # (recurrent kernel for T=1 decode, chunked FLA for T>1 prefill).
+        output, state = torch.ops.triton.chunk_gated_delta_rule(
+            q, k, v, g, beta, self.recurrent_state[:B]
         )
-
-        # Output: o = S @ q * scale
-        o = torch.einsum("bhkv,bhk->bhv", state, q_f) * scale
-        output = o.unsqueeze(1).to(v.dtype)  # [B, 1, H, V]
 
         with torch.no_grad():
             self.recurrent_state[:B].copy_(state)

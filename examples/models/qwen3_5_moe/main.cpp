@@ -9,12 +9,11 @@
 #include <gflags/gflags.h>
 
 #include <executorch/extension/llm/runner/text_llm_runner.h>
-#include <executorch/extension/module/module.h>
 #include <executorch/runtime/platform/log.h>
 #include <pytorch/tokenizers/hf_tokenizer.h>
 
+#include <optional>
 #include <string>
-#include <vector>
 
 DEFINE_string(model_path, "", "Model .pte file path.");
 DEFINE_string(data_path, "", "Data file (.ptd) for CUDA backend.");
@@ -24,6 +23,7 @@ DEFINE_double(temperature, 0.8, "Sampling temperature (0 = greedy).");
 DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
 
 namespace llm = ::executorch::extension::llm;
+using ::executorch::runtime::Error;
 
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -37,11 +37,6 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  std::vector<std::string> data_files;
-  if (!FLAGS_data_path.empty()) {
-    data_files.push_back(FLAGS_data_path);
-  }
-
   // Load tokenizer
   auto tokenizer = std::make_unique<tokenizers::HFTokenizer>();
   auto tok_status = tokenizer->load(FLAGS_tokenizer_path);
@@ -53,15 +48,17 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // Create LLM runner
-  fprintf(stderr, "Creating runner from %s...\n", FLAGS_model_path.c_str());
+  // Single-method runner: "forward" handles both prefill (T>1) and decode (T=1)
+  // via torch.cond dispatch inside the model.
+  fprintf(stderr, "Loading model from %s...\n", FLAGS_model_path.c_str());
+  std::optional<const std::string> data_path =
+      FLAGS_data_path.empty() ? std::nullopt
+                              : std::optional<const std::string>(FLAGS_data_path);
   auto runner = llm::create_text_llm_runner(
-      FLAGS_model_path, std::move(tokenizer), data_files, FLAGS_temperature);
-
-  if (runner == nullptr) {
-    fprintf(stderr, "FATAL: Failed to create runner\n");
-    return 1;
-  }
+      FLAGS_model_path,
+      std::move(tokenizer),
+      data_path,
+      FLAGS_temperature);
   fprintf(stderr, "Runner created successfully\n");
 
   // Generate
@@ -72,7 +69,7 @@ int main(int argc, char** argv) {
   fprintf(stderr, "Starting generation with prompt: %s\n", FLAGS_prompt.c_str());
   try {
     auto error = runner->generate(FLAGS_prompt.c_str(), config);
-    if (error != executorch::runtime::Error::Ok) {
+    if (error != Error::Ok) {
       fprintf(stderr, "Generation failed with error code: %d\n", static_cast<int>(error));
       return 1;
     }
