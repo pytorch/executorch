@@ -114,9 +114,9 @@ class GemmaRMSNorm(nn.Module):
         self.eps = eps
 
     def forward(self, x):
-        x_fp32 = x.float()
-        rms = torch.rsqrt(x_fp32.pow(2).mean(-1, keepdim=True) + self.eps)
-        return (x_fp32 * rms * (1.0 + self.weight.float())).to(x.dtype)
+        x_float = x.float()
+        normed = x_float * torch.rsqrt(x_float.pow(2).mean(-1, keepdim=True) + self.eps)
+        return (normed * (1.0 + self.weight.float())).type_as(x)
 
 
 class RMSNormGated(nn.Module):
@@ -128,10 +128,10 @@ class RMSNormGated(nn.Module):
         self.eps = eps
 
     def forward(self, x, z):
-        x_fp32 = x.float()
-        rms = torch.rsqrt(x_fp32.pow(2).mean(-1, keepdim=True) + self.eps)
-        normed = x_fp32 * rms
-        return (self.weight.float() * normed * torch.nn.functional.silu(z.float())).to(x.dtype)
+        x_float = x.float()
+        normed = x_float * torch.rsqrt(x_float.pow(2).mean(-1, keepdim=True) + self.eps)
+        normed = self.weight * normed.type_as(x)
+        return (normed * F.silu(z.float())).type_as(x)
 
 
 # ---------------------------------------------------------------------------
@@ -390,8 +390,7 @@ class GatedDeltaNet(nn.Module):
         beta = b.sigmoid()
         g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
 
-        # Gated delta rule: dispatch happens inside the triton_op
-        # (recurrent kernel for T=1 decode, chunked FLA for T>1 prefill).
+        # FLA Triton kernel (returns final_state separately, does not mutate initial_state)
         output, state = torch.ops.triton.chunk_gated_delta_rule(
             q, k, v, g, beta, self.recurrent_state[:B]
         )

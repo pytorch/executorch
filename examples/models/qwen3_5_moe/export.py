@@ -374,19 +374,17 @@ def export_and_lower(model, config, args):
     # -O0 compiles ~8x faster than -O1 with no measurable runtime impact.
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
 
-    # --- Single method: dynamic T ---
-    # Runtime dispatch between recurrent (T=1) and chunked (T>1) happens
-    # inside the chunk_gated_delta_rule triton_op, not at model level.
-    tokens = torch.tensor([[0, 1]], dtype=torch.long)
-    input_pos = torch.tensor([0, 1], dtype=torch.long)
+    # Dynamic shapes
+    example_tokens = torch.tensor([[0, 1]], dtype=torch.long)
+    example_input_pos = torch.tensor([0, 1], dtype=torch.long)
     seq_dim = Dim("seq_len", min=1, max=config.max_seq_len - 1)
     dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
 
-    print("Exporting model (single method, dynamic T)...")
+    print("Exporting with torch.export...")
     with torch.no_grad():
-        prog = export(
+        exported = export(
             model,
-            (tokens, input_pos),
+            (example_tokens, example_input_pos),
             dynamic_shapes=dynamic_shapes,
             strict=True,
         )
@@ -404,7 +402,7 @@ def export_and_lower(model, config, args):
         "enable_dynamic_shape": True,
     }
     et_prog = to_edge_transform_and_lower(
-        prog,
+        exported,
         partitioner=[CudaPartitioner(compile_specs)],
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False,
