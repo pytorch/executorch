@@ -1,7 +1,7 @@
 # Arm Cortex-M Backend
 
 :::{note}
-This backend is a work-in-progress proof of concept. It is not intended for production use, and APIs may change without notice.
+This backend is in **beta**. It is functional and tested, but APIs may change between releases.
 :::
 
 The Arm&reg; Cortex&reg;-M backend accelerates quantized model execution on Arm Cortex-M CPUs using [CMSIS-NN](https://arm-software.github.io/CMSIS-NN/latest/) optimized kernels. Unlike delegate-based backends, it operates as an operator library: quantized subgraphs are replaced with CMSIS-NN accelerated kernels during the pass-lowering stage, while unsupported operators fall back to portable fp32 kernels.
