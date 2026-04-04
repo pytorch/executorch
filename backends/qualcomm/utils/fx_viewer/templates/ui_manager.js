@@ -507,22 +507,25 @@ class UIManager {
         };
 
         // 1. Core PyTorch Properties
-        const coreKeys = ['op', 'name', 'target', 'args', 'kwargs', 'shape', 'dtype', 'tensor_shape'];
+        const coreKeys = ['op', 'name', 'target', 'schema', 'args', 'kwargs', 'named_args', 'shape', 'dtype', 'tensor_shape'];
         if (node.info) {
             coreKeys.forEach(k => {
-                if (k in node.info) {
-                    let val = node.info[k];
-                    if (k === 'args' || k === 'kwargs') {
-                        if (val !== '()' && val !== '{}') {
-                            renderRow(k.charAt(0).toUpperCase() + k.slice(1), `<pre style="margin:0; font-size:10px; white-space:pre-wrap; max-width: 250px;">${val}</pre>`);
-                        }
-                    } else if (k === 'shape' || k === 'tensor_shape') {
-                        renderRow("Shape", JSON.stringify(val).replace(/"/g, ''));
-                    } else if (k === 'dtype') {
-                        renderRow("Dtype", val.replace('torch.', ''));
-                    } else {
-                        renderRow(k.charAt(0).toUpperCase() + k.slice(1), val);
+                if (!(k in node.info)) return;
+                let val = node.info[k];
+                if (k === 'args' || k === 'kwargs') {
+                    if (typeof val === 'object') val = JSON.stringify(val, null, 2);
+                    if (val !== '()' && val !== '{}') {
+                        renderRow(k.charAt(0).toUpperCase() + k.slice(1), `<pre style="margin:0; font-size:10px; white-space:pre-wrap; max-width: 250px;">${fxEsc(String(val))}</pre>`);
                     }
+                } else if (k === 'named_args' || k === 'schema') {
+                    let display = typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val);
+                    renderRow(k === 'schema' ? 'Schema' : 'Named Args', `<pre style="margin:0; font-size:10px; white-space:pre-wrap; max-width: 250px;">${fxEsc(display)}</pre>`);
+                } else if (k === 'shape' || k === 'tensor_shape') {
+                    renderRow("Shape", JSON.stringify(val).replace(/"/g, ''));
+                } else if (k === 'dtype') {
+                    renderRow("Dtype", val.replace('torch.', ''));
+                } else {
+                    renderRow(k.charAt(0).toUpperCase() + k.slice(1), fxEsc(String(val)));
                 }
             });
         }

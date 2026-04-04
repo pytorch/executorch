@@ -76,12 +76,14 @@ class Observatory:
             return
 
         from .lenses.graph import GraphLens
+        from .lenses.graph_color import GraphColorLens
         from .lenses.metadata import MetadataLens
         from .lenses.stack_trace import StackTraceLens
 
         cls.register_lens(GraphLens)
         cls.register_lens(MetadataLens)
         cls.register_lens(StackTraceLens)
+        cls.register_lens(GraphColorLens)
         cls._lenses_initialized = True
 
     @classmethod
