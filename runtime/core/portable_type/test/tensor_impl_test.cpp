@@ -10,6 +10,7 @@
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
 
 #include <gtest/gtest.h>
+#include <limits>
 #include <random>
 
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -39,6 +40,33 @@ class TensorImplTest : public ::testing::Test {
     executorch::runtime::runtime_init();
   }
 };
+
+TEST_F(TensorImplTest, SafeNumelReturnsCorrectValue) {
+  SizesType sizes[2] = {3, 2};
+  TensorImpl t(ScalarType::Float, 2, sizes);
+  auto result = t.safe_numel();
+  ASSERT_TRUE(result.ok());
+  EXPECT_EQ(*result, 6);
+}
+
+TEST_F(TensorImplTest, SafeNumelScalar) {
+  TensorImpl t(ScalarType::Float, 0, nullptr);
+  auto result = t.safe_numel();
+  ASSERT_TRUE(result.ok());
+  EXPECT_EQ(*result, 1);
+}
+
+TEST_F(TensorImplTest, SafeNumelOverflowReturnsError) {
+  // Three large dimensions whose product overflows ssize_t on any platform:
+  // On 64-bit: INT32_MAX^2 * 3 > INT64_MAX; on 32-bit: INT32_MAX^2 > INT32_MAX.
+  SizesType sizes[3] = {
+      std::numeric_limits<SizesType>::max(),
+      std::numeric_limits<SizesType>::max(),
+      3};
+  TensorImpl t(ScalarType::Float, 3, sizes);
+  auto result = t.safe_numel();
+  EXPECT_FALSE(result.ok());
+}
 
 TEST_F(TensorImplTest, TestCtorAndGetters) {
   SizesType sizes[2] = {3, 2};

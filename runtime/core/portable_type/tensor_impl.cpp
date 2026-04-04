@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 
 #include <c10/util/irange.h>
 
@@ -66,6 +67,25 @@ TensorImpl::TensorImpl(
   ET_CHECK_MSG(
       isValid(type_), "Invalid type %" PRId8, static_cast<int8_t>(type_));
   ET_CHECK_MSG(dim_ >= 0, "Dimension must be non-negative, got %zd", dim_);
+}
+
+Result<ssize_t> TensorImpl::safe_numel() const {
+  ssize_t numel = 1;
+  for (const auto i : c10::irange(dim_)) {
+    ET_CHECK_OR_RETURN_ERROR(
+        sizes_[i] >= 0,
+        InvalidArgument,
+        "Size must be non-negative, got %zd at dimension %zd",
+        static_cast<ssize_t>(sizes_[i]),
+        i);
+    ET_CHECK_OR_RETURN_ERROR(
+        sizes_[i] == 0 ||
+            numel <= std::numeric_limits<ssize_t>::max() / sizes_[i],
+        InvalidArgument,
+        "Tensor numel overflows ssize_t");
+    numel *= sizes_[i];
+  }
+  return numel;
 }
 
 size_t TensorImpl::nbytes() const {
