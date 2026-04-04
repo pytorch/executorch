@@ -11,7 +11,7 @@
 namespace vkcompute {
 namespace vkapi {
 
-bool test_host_cached_available(VkPhysicalDevice physical_device) {
+VmaAllocationCreateFlags test_host_cached_available(VkPhysicalDevice physical_device) {
   VkPhysicalDeviceMemoryProperties mem_props;
   vkGetPhysicalDeviceMemoryProperties(physical_device, &mem_props);
 
