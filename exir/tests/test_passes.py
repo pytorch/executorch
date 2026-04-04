@@ -940,6 +940,42 @@ class TestPasses(unittest.TestCase):
             torch.allclose(prog.exported_program().module()(inp), model(inp))
         )
 
+    def test_remove_invalid_ops_filters_aliased_list_returns(self) -> None:
+        """Verify _remove_invalid_ops_for_not_decompose filters ops that return
+        aliased tensor lists (e.g. split, chunk) even when torchgen's
+        aliased_return_names() fails to detect them. Regression test for
+        https://github.com/pytorch/executorch/issues/11723
+        """
+        from executorch.exir.program._program import (
+            _remove_invalid_ops_for_not_decompose,
+        )
+
+        # These ops return Tensor(a)[] — a list of aliased views.
+        # torchgen's aliased_return_names() misses the alias annotation on
+        # list returns, so the fallback check on op._schema.returns is needed.
+        aliased_list_ops = [
+            torch.ops.aten.split.Tensor,
+            torch.ops.aten.chunk.default,
+            torch.ops.aten.tensor_split.sections,
+        ]
+        for op in aliased_list_ops:
+            result = _remove_invalid_ops_for_not_decompose([op])
+            self.assertNotIn(
+                op,
+                result,
+                f"{op} should be filtered out because it returns aliased tensors",
+            )
+
+        # Non-aliased ops should be preserved.
+        preserved_ops = [torch.ops.aten.linear.default]
+        for op in preserved_ops:
+            result = _remove_invalid_ops_for_not_decompose([op])
+            self.assertIn(
+                op,
+                result,
+                f"{op} should be preserved because it has no aliased returns",
+            )
+
     def test_convert_symb_ops(self) -> None:
         class Foo(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:

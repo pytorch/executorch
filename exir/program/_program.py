@@ -1122,6 +1122,16 @@ def _remove_invalid_ops_for_not_decompose(
                 )
                 return False
 
+        # Fallback: torchgen may fail to detect alias annotations on ops
+        # returning lists of tensors (e.g. split.Tensor returns Tensor(a)[]).
+        # Check op._schema.returns directly as a more reliable source.
+        for ret in schema.returns:
+            if ret.alias_info is not None:
+                log_warning(
+                    f"Op {op} was requested for preservation by partitioner.  This request is ignored because it aliases output."
+                )
+                return False
+
         # Explicit block list of ops that don't work if asked for
         # preservation
         if op in [
