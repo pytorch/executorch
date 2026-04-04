@@ -577,18 +577,16 @@ class FXGraphCompare {
                         this._applyGuarded(other, () => other.clearSelection());
                     });
                     this._updateMergedInfo(null);
-                    // Clear candidate highlights on all viewers
                     this.viewers.forEach((v) => v.removeHighlightGroup('_sync_candidates'));
                     return;
                 }
 
-                const nodeIdMap = new Map([[viewer, evt.nextSelection]]);
+                const nodeIdMap = this._buildSyncedNodeMap(viewer, evt.nextSelection);
 
                 this.viewers.forEach((other) => {
                     if (other === viewer) return;
-                    const targetId = this._findSyncTarget(viewer, evt.nextSelection, other);
+                    const targetId = nodeIdMap.get(other);
                     if (targetId) {
-                        nodeIdMap.set(other, targetId);
                         this._applyGuarded(other, () => {
                             other.selectNode(targetId, { center: false });
                             if (this._followSelection) other.controller.panToNode(targetId, {});
@@ -599,26 +597,128 @@ class FXGraphCompare {
                 });
 
                 this._updateMergedInfo(nodeIdMap);
-
-                // Auto mode: highlight all from_node_root + debug_handle candidates across all viewers
-                if (this.sync.mode === 'auto') {
-                    // Clear own highlight group first (handles cross-viewer click sequence)
-                    viewer.removeHighlightGroup('_sync_candidates');
-                    this.viewers.forEach((other) => {
-                        if (other === viewer) return;
-                        const rootCandidates = this._getAllFromNodeRootCandidates(viewer, evt.nextSelection, other);
-                        const handleCandidates = this._getAllDebugHandleCandidates(viewer, evt.nextSelection, other);
-                        const allCandidates = [...new Set([...rootCandidates, ...handleCandidates])];
-                        if (allCandidates.length > 1) {
-                            other.addHighlightGroup('_sync_candidates', allCandidates, '#ffaa00');
-                        } else {
-                            other.removeHighlightGroup('_sync_candidates');
-                        }
-                    });
-                }
+                this._applyAutoCandidateHighlights(viewer, evt.nextSelection);
             });
             this._offs.push(off);
         });
+    }
+
+    _buildSyncedNodeMap(sourceViewer, nodeId) {
+        const map = new Map();
+        if (!nodeId) return map;
+        map.set(sourceViewer, nodeId);
+        this.viewers.forEach((viewer) => {
+            if (viewer === sourceViewer) return;
+            const targetId = this._findSyncTarget(sourceViewer, nodeId, viewer);
+            if (targetId) {
+                map.set(viewer, targetId);
+            }
+        });
+        return map;
+    }
+
+    _collectCurrentSelectionMap() {
+        const map = new Map();
+        this.viewers.forEach((viewer) => {
+            const selectedNodeId = viewer.controller?.state?.selectedNodeId;
+            if (selectedNodeId) {
+                map.set(viewer, selectedNodeId);
+            }
+        });
+        return map.size > 0 ? map : null;
+    }
+
+    _buildAutoCandidates(sourceViewer, nodeId, targetViewer) {
+        const rootCandidates = this._getAllFromNodeRootCandidates(sourceViewer, nodeId, targetViewer);
+        const handleCandidates = this._getAllDebugHandleCandidates(sourceViewer, nodeId, targetViewer);
+        const targetId = this._findSyncTarget(sourceViewer, nodeId, targetViewer);
+        const candidates = [...rootCandidates, ...handleCandidates];
+        if (targetId) candidates.push(targetId);
+        if (targetViewer === sourceViewer) candidates.push(nodeId);
+        return [...new Set(candidates)];
+    }
+
+    _applyAutoCandidateHighlights(sourceViewer, nodeId) {
+        if (this.sync.mode !== 'auto' || !nodeId) {
+            this.viewers.forEach((v) => v.removeHighlightGroup('_sync_candidates'));
+            return;
+        }
+
+        this.viewers.forEach((viewer) => {
+            const allCandidates = this._buildAutoCandidates(sourceViewer, nodeId, viewer);
+            if (allCandidates.length > 0) {
+                viewer.addHighlightGroup('_sync_candidates', allCandidates, '#ffaa00');
+            } else {
+                viewer.removeHighlightGroup('_sync_candidates');
+            }
+        });
+    }
+
+    _syncPreviewAcrossViewers(sourceViewer, previewNodeId) {
+        if (!previewNodeId) {
+            this.viewers.forEach((other) => {
+                if (other === sourceViewer) return;
+                this._applyGuarded(other, () => {
+                    const selectedNodeId = other.controller.state.selectedNodeId;
+                    const selectedEdge = other.controller.state.selectedEdge;
+                    let ancestors = new Set();
+                    let descendants = new Set();
+                    if (selectedNodeId) {
+                        ancestors = other.store.getAncestors(selectedNodeId);
+                        descendants = other.store.getDescendants(selectedNodeId);
+                    } else if (selectedEdge) {
+                        ancestors = other.store.getAncestors(selectedEdge.v);
+                        descendants = other.store.getDescendants(selectedEdge.w);
+                    }
+                    other.controller.setState({
+                        previewNodeId: null,
+                        ancestors,
+                        descendants,
+                    }, { source: 'compare-preview-sync' });
+                });
+            });
+            this._updateMergedInfo(this._collectCurrentSelectionMap());
+            this._applyAutoCandidateHighlights(sourceViewer, sourceViewer.controller?.state?.selectedNodeId || null);
+            return;
+        }
+
+        const nodeIdMap = this._buildSyncedNodeMap(sourceViewer, previewNodeId);
+        this.viewers.forEach((other) => {
+            if (other === sourceViewer) return;
+            const targetPreviewId = nodeIdMap.get(other) || null;
+            this._applyGuarded(other, () => {
+                if (!targetPreviewId) {
+                    const selectedNodeId = other.controller.state.selectedNodeId;
+                    const selectedEdge = other.controller.state.selectedEdge;
+                    let ancestors = new Set();
+                    let descendants = new Set();
+                    if (selectedNodeId) {
+                        ancestors = other.store.getAncestors(selectedNodeId);
+                        descendants = other.store.getDescendants(selectedNodeId);
+                    } else if (selectedEdge) {
+                        ancestors = other.store.getAncestors(selectedEdge.v);
+                        descendants = other.store.getDescendants(selectedEdge.w);
+                    }
+                    other.controller.setState({
+                        previewNodeId: null,
+                        ancestors,
+                        descendants,
+                    }, { source: 'compare-preview-sync' });
+                    return;
+                }
+
+                other.controller.setState({
+                    previewNodeId: targetPreviewId,
+                    ancestors: other.store.getAncestors(targetPreviewId),
+                    descendants: other.store.getDescendants(targetPreviewId),
+                }, { source: 'compare-preview-sync' });
+                if (this._followSelection) {
+                    other.controller.panToNode(targetPreviewId);
+                }
+            });
+        });
+        this._updateMergedInfo(nodeIdMap);
+        this._applyAutoCandidateHighlights(sourceViewer, previewNodeId);
     }
 
     _findSyncTarget(sourceViewer, nodeId, targetViewer) {
@@ -770,20 +870,26 @@ class FXGraphCompare {
                 if (this._guards.has(viewer)) return;
                 const prev = evt.prevState || {};
                 const next = evt.nextState || {};
-                this.viewers.forEach((other) => {
-                    if (other === viewer) return;
-                    this._applyGuarded(other, () => {
-                        if (prev.theme !== next.theme && typeof next.theme === 'string') {
+                const themeChanged = prev.theme !== next.theme && typeof next.theme === 'string';
+                if (themeChanged) {
+                    this.viewers.forEach((other) => {
+                        if (other === viewer) return;
+                        this._applyGuarded(other, () => {
                             other.setTheme(next.theme);
-                        }
+                        });
                     });
-                });
-                // Sync theme selector in sidebar
-                if (this._themeSelect && typeof next.themeName === 'string') {
+                }
+
+                const themeNameChanged = prev.themeName !== next.themeName && typeof next.themeName === 'string';
+                if (themeNameChanged && this._themeSelect) {
                     this._themeSelect.value = next.themeName;
                 }
-                if (typeof next.themeName === 'string') {
+                if (themeNameChanged) {
                     this._applyCompareTheme(next.themeName);
+                }
+
+                if (prev.previewNodeId !== next.previewNodeId) {
+                    this._syncPreviewAcrossViewers(viewer, next.previewNodeId || null);
                 }
             });
             this._offs.push(off);

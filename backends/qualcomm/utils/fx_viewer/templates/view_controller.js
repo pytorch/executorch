@@ -159,7 +159,7 @@ class ViewerController {
 
         if (this.state.selectedNodeId) {
             bounds = this.store.computeBoundsForNodes(
-                this._collect2HopNeighbors(this.state.selectedNodeId)
+                this._collectNeighbors(this.state.selectedNodeId)
             ) || bounds;
         } else if (this.state.selectedEdge) {
             bounds = this.store.computeBoundsForNodes(
@@ -185,15 +185,13 @@ class ViewerController {
         this.animateToTransform(targetX, targetY, targetK);
     }
 
-    _collect2HopNeighbors(nodeId) {
+    _collectNeighbors(nodeId) {
         const nodes = new Set([nodeId]);
         for (const e of this.store.revAdjList.get(nodeId) || []) {
             nodes.add(e.v);
-            for (const e2 of this.store.revAdjList.get(e.v) || []) nodes.add(e2.v);
         }
         for (const e of this.store.adjList.get(nodeId) || []) {
             nodes.add(e.w);
-            for (const e2 of this.store.adjList.get(e.w) || []) nodes.add(e2.w);
         }
         return nodes;
     }

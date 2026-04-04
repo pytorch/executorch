@@ -5,8 +5,8 @@
 //   2. Apply DPR scale + camera transform (translate + scale).
 //   3. Draw edges (with midpoint tensor-shape labels).
 //   4. Draw node rectangles with multi-line labels and interaction-state coloring.
-//   5. Highlight group overlay pass — iterates state.highlightGroups; draws a 6px solid border
-//      outside each node rect (offset by borderWidth/2 so it does not clip fill or text).
+//   5. Highlight group overlay pass — iterates state.highlightGroups; draws a thick solid border
+//      outside each node rect with an explicit outer gap from the single-selection border.
 //      Multiple groups coexist; last group in Map iteration order wins on overlapping nodes.
 //   6. Draw smart tooltip for hovered node or edge.
 class CanvasRenderer {
@@ -184,6 +184,20 @@ class CanvasRenderer {
         const transform = this.viewer.controller.transform;
         const state = this.viewer.controller.state;
         const theme = THEMES[state.themeName];
+        const edgeLineWidths = {
+            normal: 2,
+            input: 4,
+            output: 4,
+            hover: 5,
+        };
+        const nodeBorderWidths = {
+            selected: 5,
+            preview: 5,
+            hover: 5,
+        };
+        const hoverDashPattern = [8, 6];
+        const groupBorderWidth = 5;
+        const groupBorderGap = 5;
         
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.fillStyle = theme.bg;
@@ -234,19 +248,19 @@ class CanvasRenderer {
             if (isHovered) {
                 ctx.strokeStyle = theme.edgeHover;
                 ctx.globalAlpha = opacity;
-                ctx.lineWidth = 3;
+                ctx.lineWidth = edgeLineWidths.hover;
             } else if (isInputEdge) {
                 ctx.strokeStyle = theme.edgeInput;
                 ctx.globalAlpha = opacity;
-                ctx.lineWidth = 2;
+                ctx.lineWidth = edgeLineWidths.input;
             } else if (isOutputEdge) {
                 ctx.strokeStyle = theme.edgeOutput;
                 ctx.globalAlpha = opacity;
-                ctx.lineWidth = 2;
+                ctx.lineWidth = edgeLineWidths.output;
             } else {
                 ctx.strokeStyle = theme.edgeNormal;
                 ctx.globalAlpha = opacity;
-                ctx.lineWidth = 1;
+                ctx.lineWidth = edgeLineWidths.normal;
             }
             
             ctx.beginPath();
@@ -363,9 +377,13 @@ class CanvasRenderer {
             
             if (isSelected || isPreview || isHovered) {
                 ctx.strokeStyle = theme.edgeHover;
-                ctx.lineWidth = 2;
+                if (isSelected || isPreview) {
+                    ctx.lineWidth = isSelected ? nodeBorderWidths.selected : nodeBorderWidths.preview;
+                } else {
+                    ctx.lineWidth = nodeBorderWidths.hover;
+                }
                 if (isHovered && !isSelected && !isPreview) {
-                    ctx.setLineDash([5, 5]);
+                    ctx.setLineDash(hoverDashPattern);
                 } else {
                     ctx.setLineDash([]);
                 }
@@ -392,21 +410,26 @@ class CanvasRenderer {
         });
 
         // Highlight group overlay pass — drawn after all nodes
-        const borderWidth = 6;
-        const half = borderWidth / 2;
+        const singleBorderHalf = Math.max(
+            nodeBorderWidths.selected,
+            nodeBorderWidths.preview,
+            nodeBorderWidths.hover
+        ) / 2;
+        const groupHalf = groupBorderWidth / 2;
+        const outerOffset = singleBorderHalf + groupBorderGap + groupHalf;
         if (state.highlightGroups && state.highlightGroups.size > 0) {
             state.highlightGroups.forEach(({ nodeIds, color }) => {
                 ctx.strokeStyle = color;
-                ctx.lineWidth = borderWidth;
+                ctx.lineWidth = groupBorderWidth;
                 ctx.setLineDash([]);
                 nodeIds.forEach((id) => {
                     const node = this.viewer.store.activeNodeMap.get(id);
                     if (!node) return;
                     ctx.strokeRect(
-                        node.x - node.width / 2 - half,
-                        node.y - node.height / 2 - half,
-                        node.width + borderWidth,
-                        node.height + borderWidth
+                        node.x - node.width / 2 - outerOffset,
+                        node.y - node.height / 2 - outerOffset,
+                        node.width + outerOffset * 2,
+                        node.height + outerOffset * 2
                     );
                 });
             });
