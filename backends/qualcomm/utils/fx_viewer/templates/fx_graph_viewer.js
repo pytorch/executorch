@@ -771,7 +771,19 @@ class FXGraphViewer {
     }
 
     enterFullscreen() {
-        const target = this.rootContainer;
+        let target = this.rootContainer;
+        if (!target || !target.isConnected) {
+            const fallback = this.wrapper && this.wrapper.parentElement ? this.wrapper.parentElement : null;
+            if (fallback && fallback.isConnected) {
+                target = fallback;
+                this.rootContainer = fallback;
+                if (this.config && this.config.mount) this.config.mount.root = fallback;
+                if (this.config && this.config._resolved) this.config._resolved.root = fallback;
+            }
+        }
+        if (!target || !target.isConnected) {
+            return Promise.resolve();
+        }
         if (target.requestFullscreen) {
             return target.requestFullscreen();
         }
