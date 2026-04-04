@@ -738,14 +738,30 @@ class FXGraphCompare {
             const { layer, field } = this.sync;
             const srcVal = sourceViewer.store.extensions[layer]?.nodes[nodeId]?.info[field];
             if (srcVal === undefined) return null;
+            const sourceNode = sourceViewer.store.activeNodeMap.get(nodeId);
             const candidates = targetViewer.store.activeNodes.filter(
                 (n) => targetViewer.store.extensions[layer]?.nodes[n.id]?.info[field] === srcVal
             );
-            if (candidates.length === 0) return null;
-            // activeNodes is in topological order; last candidate = highest topo index
-            return candidates[candidates.length - 1].id;
+            const picked = this._pickCandidateByTargetMode(sourceNode, candidates);
+            return picked ? picked.id : null;
         }
         return null;
+    }
+
+    _getTargetMode(node) {
+        const target = String(node?.info?.target || '').toLowerCase();
+        if (target.includes('dequantize')) return 'dequantize';
+        if (target.includes('quantize') || target.includes('activation_post_process')) return 'quantize';
+        return 'none';
+    }
+
+    _pickCandidateByTargetMode(sourceNode, candidates) {
+        if (!Array.isArray(candidates) || candidates.length === 0) return null;
+        const sourceMode = this._getTargetMode(sourceNode);
+        for (let i = candidates.length - 1; i >= 0; i--) {
+            if (this._getTargetMode(candidates[i]) === sourceMode) return candidates[i];
+        }
+        return candidates[candidates.length - 1];
     }
 
     // Normalize debug_handle (int | int[] | null) → Set<int>
@@ -764,8 +780,8 @@ class FXGraphCompare {
             const tgtNode = targetViewer.store.activeNodeMap.get(n.id);
             return tgtNode?.info?.from_node_root === srcRoot;
         });
-        if (candidates.length === 0) return null;
-        return candidates[candidates.length - 1].id;
+        const picked = this._pickCandidateByTargetMode(srcNode, candidates);
+        return picked ? picked.id : null;
     }
 
     _getAllFromNodeRootCandidates(sourceViewer, nodeId, targetViewer) {
@@ -791,8 +807,8 @@ class FXGraphCompare {
             for (const v of srcSet) { if (tgtSet.has(v)) return true; }
             return false;
         });
-        if (candidates.length === 0) return null;
-        return candidates[candidates.length - 1].id;
+        const picked = this._pickCandidateByTargetMode(srcNode, candidates);
+        return picked ? picked.id : null;
     }
 
     _getAllDebugHandleCandidates(sourceViewer, nodeId, targetViewer) {
