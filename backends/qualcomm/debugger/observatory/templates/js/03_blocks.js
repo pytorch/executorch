@@ -102,6 +102,15 @@
       const entry = state.viewerCache.get(cacheKey);
       entry.lastAccessed = Date.now();
       root.appendChild(entry.wrapper);
+      if (entry.viewer && entry.viewer.rootContainer !== root) {
+        entry.viewer.rootContainer = root;
+        if (entry.viewer.config && entry.viewer.config.mount) {
+          entry.viewer.config.mount.root = root;
+        }
+        if (entry.viewer.config && entry.viewer.config._resolved) {
+          entry.viewer.config._resolved.root = root;
+        }
+      }
       requestAnimationFrame(() => {
         try { entry.viewer.canvasRenderer.resize(); } catch (_) {}
         try { entry.viewer.renderAll(); } catch (_) {}
