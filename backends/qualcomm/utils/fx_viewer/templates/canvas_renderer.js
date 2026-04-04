@@ -184,20 +184,21 @@ class CanvasRenderer {
         const transform = this.viewer.controller.transform;
         const state = this.viewer.controller.state;
         const theme = THEMES[state.themeName];
+        const minEdgeWidth = 1 / Math.max(transform.k, 1e-6);
         const edgeLineWidths = {
             normal: 2,
-            input: 4,
-            output: 4,
-            hover: 5,
+            input: 3,
+            output: 3,
+            hover: 3,
         };
         const nodeBorderWidths = {
-            selected: 5,
-            preview: 5,
-            hover: 5,
+            selected: 4,
+            preview: 4,
+            hover: 4,
         };
         const hoverDashPattern = [8, 6];
-        const groupBorderWidth = 5;
-        const groupBorderGap = 5;
+        const groupBorderWidth = 3;
+        const groupBorderGap = 0;
         
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.fillStyle = theme.bg;
@@ -248,19 +249,19 @@ class CanvasRenderer {
             if (isHovered) {
                 ctx.strokeStyle = theme.edgeHover;
                 ctx.globalAlpha = opacity;
-                ctx.lineWidth = edgeLineWidths.hover;
+                ctx.lineWidth = Math.max(edgeLineWidths.hover, minEdgeWidth);
             } else if (isInputEdge) {
                 ctx.strokeStyle = theme.edgeInput;
                 ctx.globalAlpha = opacity;
-                ctx.lineWidth = edgeLineWidths.input;
+                ctx.lineWidth = Math.max(edgeLineWidths.input, minEdgeWidth);
             } else if (isOutputEdge) {
                 ctx.strokeStyle = theme.edgeOutput;
                 ctx.globalAlpha = opacity;
-                ctx.lineWidth = edgeLineWidths.output;
+                ctx.lineWidth = Math.max(edgeLineWidths.output, minEdgeWidth);
             } else {
                 ctx.strokeStyle = theme.edgeNormal;
                 ctx.globalAlpha = opacity;
-                ctx.lineWidth = edgeLineWidths.normal;
+                ctx.lineWidth = Math.max(edgeLineWidths.normal, minEdgeWidth);
             }
             
             ctx.beginPath();

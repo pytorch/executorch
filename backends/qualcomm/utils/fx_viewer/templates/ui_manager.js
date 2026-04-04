@@ -422,8 +422,8 @@ class UIManager {
         const canvas = this.viewer.canvasRenderer?.canvas;
         if (canvas) {
             const rect = canvas.getBoundingClientRect();
-            this.searchMenu.style.maxHeight = min(Math.floor(rect.height * 0.7), 400) + 'px';
-            this.searchMenu.style.maxWidth = min(Math.floor(rect.width * 0.7), 400)  + 'px';
+            this.searchMenu.style.maxHeight = Math.min(Math.floor(rect.height * 0.7), 500) + 'px';
+            this.searchMenu.style.maxWidth = Math.min(Math.floor(rect.width * 0.7), 500)  + 'px';
         }
         this.searchMenu.style.display = 'block';
     }

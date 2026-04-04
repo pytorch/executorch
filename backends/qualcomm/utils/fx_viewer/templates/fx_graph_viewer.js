@@ -286,7 +286,7 @@ class FXGraphViewer {
             .fx-link { color: #0366d6; cursor: pointer; text-decoration: none; font-family: monospace; display: inline-block; margin-bottom: 4px; word-break: break-all; }
             .fx-link:hover { text-decoration: underline; }
             .fx-button { margin-left: 10px; padding: 6px 12px; cursor: pointer; background: transparent; border: 1px solid transparent; border-radius: 4px; font-size: 16px; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
-            .fx-select { margin-left: 10px; padding: 4px; border-radius: 4px; font-size: 14px; }
+            .fx-select { margin-left: 10px; padding: 4px; border-radius: 4px; font-size: 14px; text-align-last: center; }
             .fx-resizer-h { height: 6px; background: #ccc; cursor: row-resize; z-index: 20; transition: background 0.2s; flex-shrink: 0; }
             .fx-resizer-h:hover, .fx-resizer-h.dragging { background: #999; }
             .fx-hidden { display: none !important; }

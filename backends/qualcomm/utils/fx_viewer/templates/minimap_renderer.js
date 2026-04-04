@@ -80,7 +80,8 @@ class MinimapRenderer {
         ctx.scale(this.minimapScale, this.minimapScale);
         
         ctx.strokeStyle = theme.edgeNormal;
-        ctx.lineWidth = 1 / this.minimapScale;
+        const dpr = window.devicePixelRatio || 1;
+        ctx.lineWidth = Math.max(1 / this.minimapScale, dpr / this.minimapScale);
         ctx.beginPath();
         this.viewer.store.baseData.edges.forEach(edge => {
             const v = this.viewer.store.activeNodeMap.get(edge.v);
@@ -173,6 +174,7 @@ class MinimapRenderer {
         
         const state = this.viewer.controller.state;
         const theme = THEMES[state.themeName];
+        const minEdgeWidth = dpr / Math.max(this.minimapScale, 1e-6);
         
         this.ctx.setTransform(1, 0, 0, 1, 0, 0);
         this.ctx.fillStyle = theme.bg;
@@ -190,11 +192,11 @@ class MinimapRenderer {
         this.ctx.translate(this.thumbnailOffset.x, this.thumbnailOffset.y);
         this.ctx.scale(this.minimapScale, this.minimapScale);
         
-        const drawNodes = (nodes, padding=0) => {
+        const drawNodes = (nodes, padding = 0, fillColor = null) => {
             nodes.forEach(nid => {
                 const node = this.viewer.store.activeNodeMap.get(nid);
                 if (node) {
-                    this.ctx.fillStyle = node.fill_color ? node.fill_color : theme.nodeFill;
+                    this.ctx.fillStyle = fillColor || (node.fill_color ? node.fill_color : theme.nodeFill);
                     const minSize = 3 / this.minimapScale;
                     const w = Math.max(node.width, minSize) + padding;
                     const h = Math.max(node.height, minSize) + padding;
@@ -202,20 +204,74 @@ class MinimapRenderer {
                 }
             });
         };
-        
-        if (state.searchCandidates.length > 0) {
-            drawNodes(state.searchCandidates.map(c => c.node.id), 7 / this.minimapScale);
-        }
 
-        if (state.selectedNodeId || state.previewNodeId) {
+        const drawEdgePath = (edge, v, w) => {
+            if (edge.points && edge.points.length > 0) {
+                this.ctx.moveTo(edge.points[0].x, edge.points[0].y);
+                for (let i = 1; i < edge.points.length; i++) {
+                    this.ctx.lineTo(edge.points[i].x, edge.points[i].y);
+                }
+            } else {
+                this.ctx.moveTo(v.x, v.y);
+                this.ctx.lineTo(w.x, w.y);
+            }
+        };
+
+        const drawEdges = (edges, color, width) => {
+            const edgeList = Array.from(edges || []);
+            if (edgeList.length === 0) return;
+            this.ctx.strokeStyle = color;
+            this.ctx.lineWidth = Math.max(width, minEdgeWidth);
+            this.ctx.beginPath();
+            edgeList.forEach((edge) => {
+                const v = this.viewer.store.activeNodeMap.get(edge.v);
+                const w = this.viewer.store.activeNodeMap.get(edge.w);
+                if (!v || !w) return;
+                drawEdgePath(edge, v, w);
+            });
+            this.ctx.stroke();
+        };
+
+        const selectionEdges = new Set();
+        const target = state.previewNodeId || state.selectedNodeId;
+
+        if (target) {
+            (this.viewer.store.revAdjList.get(target) || []).forEach((edge) => selectionEdges.add(edge));
+            (this.viewer.store.adjList.get(target) || []).forEach((edge) => selectionEdges.add(edge));
+        }
+        if (state.selectedEdge) selectionEdges.add(state.selectedEdge);
+        drawEdges(selectionEdges, theme.edgeInput, 2 / this.minimapScale);
+        
+        if (target) {
             if (state.highlightAncestors) {
                 drawNodes(Array.from(state.ancestors));
                 drawNodes(Array.from(state.descendants));
             }
-            const target = state.previewNodeId || state.selectedNodeId;
-            drawNodes([target], 7 / this.minimapScale);
         }
-        
+
+        if (state.highlightGroups && state.highlightGroups.size > 0) {
+            state.highlightGroups.forEach(({ nodeIds, color }) => {
+                const nodeSet = new Set(nodeIds || []);
+                const edges = this.viewer.store.baseData.edges.filter(
+                    (edge) => nodeSet.has(edge.v) && nodeSet.has(edge.w)
+                );
+                drawEdges(edges, color, 2 / this.minimapScale);
+                drawNodes(Array.from(nodeSet), 0, color);
+            });
+        }
+
+        if (state.selectedEdge) {
+            drawNodes([state.selectedEdge.v, state.selectedEdge.w], 0, theme.nodeSelected);
+        }
+
+        if (state.searchCandidates.length > 0) {
+            drawNodes(state.searchCandidates.map(c => c.node.id), 0, theme.nodeSelected);
+        }
+
+        if (target) {
+            drawNodes([target], 1 / this.minimapScale, theme.nodeSelected);
+        }
+       
         this.ctx.restore();
         
         const transform = this.viewer.controller.transform;
