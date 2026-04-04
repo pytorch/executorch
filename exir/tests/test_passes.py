@@ -957,6 +957,7 @@ class TestPasses(unittest.TestCase):
             torch.ops.aten.split.Tensor,
             torch.ops.aten.chunk.default,
             torch.ops.aten.tensor_split.sections,
+            torch.ops.aten.split_with_sizes.default,
         ]
         for op in aliased_list_ops:
             result = _remove_invalid_ops_for_not_decompose([op])

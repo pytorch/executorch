@@ -1122,9 +1122,9 @@ def _remove_invalid_ops_for_not_decompose(
                 )
                 return False
 
-        # Fallback: torchgen may fail to detect alias annotations on ops
-        # returning lists of tensors (e.g. split.Tensor returns Tensor(a)[]).
-        # Check op._schema.returns directly as a more reliable source.
+        # Fallback: torchgen does not detect alias annotations on ops
+        # returning lists of aliased tensors (e.g. split.Tensor returns
+        # Tensor(a)[]). Check op._schema.returns directly.
         for ret in schema.returns:
             if ret.alias_info is not None:
                 log_warning(
