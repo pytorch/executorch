@@ -12,6 +12,11 @@ import torch.fx
 
 from .color_rules import ColorRule
 from .extension import GraphExtension
+
+try:
+    from executorch.exir.dialects.edge._ops import EdgeOpOverload
+except ImportError:
+    EdgeOpOverload = None
 from .grandalf.layouts import SugiyamaLayout
 from .grandalf.routing import route_with_lines
 from .grandalf.utils.nx import convert_nextworkx_graph_to_grandalf
@@ -101,13 +106,45 @@ class FXGraphExporter:
         edges: list[GraphEdge] = []
 
         for idx, fx_node in enumerate(self.graph_module.graph.nodes):
+            target = fx_node.target
+            schema = None
+            if EdgeOpOverload is not None and isinstance(target, EdgeOpOverload):
+                target_str = target.__name__
+                schema = target._schema.schema
+            elif isinstance(target, torch._ops.OpOverload):
+                target_str = str(target)
+                schema = getattr(target, "_schema", None)
+            else:
+                target_str = str(target)
+
             info: dict[str, Any] = {
                 "op": fx_node.op,
                 "name": fx_node.name,
-                "target": str(fx_node.target),
+                "target": target_str,
                 "args": self._format_arg(fx_node.args),
                 "kwargs": self._format_arg(fx_node.kwargs),
             }
+
+            if schema is not None:
+                info["schema"] = str(schema)
+                pos_schema_args = [
+                    a for a in schema.arguments if not a.kwarg_only
+                ]
+                formatted_args = self._format_arg(fx_node.args)
+                if not isinstance(formatted_args, (list, tuple)):
+                    formatted_args = (formatted_args,) if formatted_args else ()
+                named = {}
+                for i, val in enumerate(formatted_args):
+                    name = (
+                        pos_schema_args[i].name
+                        if i < len(pos_schema_args)
+                        else f"arg_{i}"
+                    )
+                    named[name] = val
+                formatted_kwargs = self._format_arg(fx_node.kwargs)
+                if isinstance(formatted_kwargs, dict):
+                    named.update(formatted_kwargs)
+                info["named_args"] = named
 
             if "tensor_meta" in fx_node.meta:
                 tm = fx_node.meta["tensor_meta"]

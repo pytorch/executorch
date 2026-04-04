@@ -870,7 +870,9 @@ class FXGraphCompare {
                 .filter(({ name }) => this._visibleViewers.has(name));
             const vals = visViewerPairs.map(({ v }) => {
                 const d = rowData.get(v);
-                return d && d[prop] !== undefined ? String(d[prop]) : ' -- ';
+                if (!d || d[prop] === undefined) return ' -- ';
+                const raw = d[prop];
+                return (raw !== null && typeof raw === 'object') ? JSON.stringify(raw, null, 2) : String(raw);
             });
             const allSame = vals.every((v) => v === vals[0]);
             this._infoRow.appendChild(makeCell('fx-compare-info-prop' + rowCls, prop));
@@ -939,7 +941,8 @@ class FXGraphCompare {
             r.setProperty('--cmp-info-bg', '#1e1e1e');
             r.setProperty('--cmp-prop-bg', 'rgba(255,255,255,0.05)');
             r.setProperty('--cmp-hdr-bg', 'rgba(255,255,255,0.08)');
-            r.setProperty('--cmp-diff-bg', 'rgba(255,200,0,0.15)');
+            r.setProperty('--cmp-diff-bg', 'rgba(255,160,40,0.10)');
+            r.setProperty('--cmp-diff-accent', '#c87830');
             r.setProperty('--cmp-name-bg', 'rgba(255,255,255,0.1)');
             r.setProperty('--cmp-ui-bg', 'rgba(30,30,30,0.95)');
             r.setProperty('--cmp-ui-hover', '#333333');
@@ -952,7 +955,8 @@ class FXGraphCompare {
             r.setProperty('--cmp-info-bg', '#ffffff');
             r.setProperty('--cmp-prop-bg', 'rgba(0,0,0,0.02)');
             r.setProperty('--cmp-hdr-bg', 'rgba(0,0,0,0.04)');
-            r.setProperty('--cmp-diff-bg', 'rgba(255,200,0,0.2)');
+            r.setProperty('--cmp-diff-bg', 'rgba(255,140,0,0.06)');
+            r.setProperty('--cmp-diff-accent', '#e08a3c');
             r.setProperty('--cmp-name-bg', 'rgba(0,0,0,0.06)');
             r.setProperty('--cmp-ui-bg', 'rgba(255,255,255,0.95)');
             r.setProperty('--cmp-ui-hover', '#f0f8ff');
