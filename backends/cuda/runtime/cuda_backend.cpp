@@ -262,6 +262,27 @@ class ET_EXPERIMENTAL CudaBackend final
       FreeableBuffer* processed, // This will be a empty buffer
       ArrayRef<CompileSpec> compile_specs // This will be my empty list
   ) const override {
+    // Apply runtime_specs from LoadBackendOptionsMap (if provided)
+    auto runtime_specs = context.runtime_specs();
+    if (runtime_specs.size() > 0) {
+      for (size_t i = 0; i < runtime_specs.size(); ++i) {
+        const auto& opt = runtime_specs[i];
+        if (std::strcmp(opt.key, kSkipCopyOutputToCpuForMethod) == 0) {
+          if (auto* val =
+                  std::get_if<std::array<char, kMaxOptionValueLength>>(
+                      &opt.value)) {
+            const_cast<CudaBackend*>(this)->set_skip_copy_method(*val);
+          }
+        } else if (std::strcmp(opt.key, kUseSharedCudaStream) == 0) {
+          if (auto* val = std::get_if<bool>(&opt.value)) {
+            if (*val) {
+              const_cast<CudaBackend*>(this)->create_shared_cuda_stream();
+            }
+          }
+        }
+      }
+    }
+
     std::string method_name;
     for (const CompileSpec& spec : compile_specs) {
       if (std::strcmp(spec.key, "method_name") == 0) {

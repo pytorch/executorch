@@ -107,9 +107,6 @@ def load_prequantized_model(prequantized_dir, max_seq_len=4096):
     # Any missing weight key indicates a version mismatch between the
     # checkpoint and the model (e.g., unfused vs fused projections).
     runtime_prefixes = (
-        ".kv_cache.",
-        ".conv_state",
-        ".recurrent_state",
         ".mask",
         ".inv_freq",
     )
@@ -312,10 +309,10 @@ def _materialize_buffers(model, config):
     """Materialize meta-device buffers before torch.export.
 
     Replaces meta buffers with real tensors on CPU, recomputes RoPE
-    inv_freq and causal masks.
+    inv_freq and causal masks. State buffers (KV cache, conv/recurrent
+    state) are no longer registered buffers — they are explicit function args.
     """
-    # State buffers (KV cache, conv/recurrent state) are bf16 to match
-    # compute dtype. Masks stay bool, inv_freq stays float32.
+    # Masks stay bool, inv_freq stays float32.
     for fqn, buf in list(model.named_buffers()):
         if buf.device.type == "meta":
             dtype = torch.bfloat16 if buf.dtype != torch.bool else torch.bool
@@ -354,7 +351,17 @@ def _materialize_buffers(model, config):
 
 
 def export_and_lower(model, config, args):
-    """Export model to .pte via torch.export + CUDA backend."""
+    """Export model to .pte via torch.export + CUDA backend.
+
+    Exports two methods:
+      - "forward": decode path (T=1), uses native PyTorch recurrent FLA
+        so AOTI can fuse with surrounding ops for maximum decode throughput.
+      - "prefill": prefill path (T>=2), uses chunked FLA triton_op with
+        dynamic sequence length.
+
+    Both methods take explicit state tensors (conv_states, recurrent_states,
+    k_caches, v_caches) as inputs and return updated state as outputs.
+    """
     import torch._inductor.config as inductor_config
 
     from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -374,25 +381,58 @@ def export_and_lower(model, config, args):
     # -O0 compiles ~8x faster than -O1 with no measurable runtime impact.
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
 
-    # Dynamic shapes
-    example_tokens = torch.tensor([[0, 1]], dtype=torch.long)
-    example_input_pos = torch.tensor([0, 1], dtype=torch.long)
-    seq_dim = Dim("seq_len", min=1, max=config.max_seq_len - 1)
-    dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
+    # Create initial state tensors
+    conv_states, recurrent_states, k_caches, v_caches = \
+        Qwen35MoE.make_initial_state(config)
 
-    print("Exporting with torch.export...")
+    # --- Decode method (T=1, static shape) ---
+    print("Exporting decode method (forward)...")
+    decode_tokens = torch.tensor([[0]], dtype=torch.long)
+    decode_pos = torch.tensor([0], dtype=torch.long)
     with torch.no_grad():
-        exported = export(
+        decode_ep = export(
             model,
-            (example_tokens, example_input_pos),
-            dynamic_shapes=dynamic_shapes,
+            (decode_tokens, decode_pos,
+             conv_states, recurrent_states, k_caches, v_caches),
             strict=True,
         )
-    print("Export successful!")
+    print("Decode export successful!")
 
-    # Lower with CUDA backend
+    # --- Prefill method (T>=2, dynamic shape) ---
+    print("Exporting prefill method...")
+    prefill_tokens = torch.tensor([[0, 1]], dtype=torch.long)
+    prefill_pos = torch.tensor([0, 1], dtype=torch.long)
+    seq_dim = Dim("seq_len", min=2, max=config.max_seq_len - 1)
+    # Dynamic shapes: only tokens dim 1 and pos dim 0 are dynamic;
+    # state tensors have static shapes.
+    prefill_dynamic_shapes = (
+        {1: seq_dim},   # tokens
+        {0: seq_dim},   # input_pos
+        None,           # conv_states
+        None,           # recurrent_states
+        None,           # k_caches
+        None,           # v_caches
+    )
+    with torch.no_grad():
+        prefill_ep = export(
+            model,
+            (prefill_tokens, prefill_pos,
+             conv_states, recurrent_states, k_caches, v_caches),
+            dynamic_shapes=prefill_dynamic_shapes,
+            strict=True,
+        )
+    print("Prefill export successful!")
+
+    # Lower with CUDA backend (per-method partitioners to avoid so_blob collision)
     print("Lowering to ExecuTorch with CUDA...")
-    compile_specs = [CudaBackend.generate_method_name_compile_spec("forward")]
+
+    num_fla = sum(1 for t in config.layer_types if t == "linear_attention")
+    num_attn = sum(1 for t in config.layer_types if t == "full_attention")
+    conv_dim = (
+        config.linear_num_key_heads * config.linear_key_head_dim * 2
+        + config.linear_num_value_heads * config.linear_value_head_dim
+    )
+
     metadata = {
         "get_max_seq_len": config.max_seq_len,
         "get_vocab_size": config.vocab_size,
@@ -400,10 +440,27 @@ def export_and_lower(model, config, args):
         "use_kv_cache": True,
         "use_sdpa_with_kv_cache": False,
         "enable_dynamic_shape": True,
+        # State shape metadata for C++ runner
+        "get_num_fla_layers": num_fla,
+        "get_num_attn_layers": num_attn,
+        "get_conv_dim": conv_dim,
+        "get_conv_kernel_size": config.linear_conv_kernel_dim,
+        "get_num_v_heads": config.linear_num_value_heads,
+        "get_head_k_dim": config.linear_key_head_dim,
+        "get_head_v_dim": config.linear_value_head_dim,
+        "get_n_kv_heads": config.num_kv_heads,
+        "get_head_dim": config.head_dim,
     }
     et_prog = to_edge_transform_and_lower(
-        exported,
-        partitioner=[CudaPartitioner(compile_specs)],
+        {"forward": decode_ep, "prefill": prefill_ep},
+        partitioner={
+            "forward": [CudaPartitioner(
+                [CudaBackend.generate_method_name_compile_spec("forward")]
+            )],
+            "prefill": [CudaPartitioner(
+                [CudaBackend.generate_method_name_compile_spec("prefill")]
+            )],
+        },
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False,
             _skip_dim_order=True,

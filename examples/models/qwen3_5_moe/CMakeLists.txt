@@ -44,7 +44,7 @@ list(
 
 # CUDA backend (required)
 find_package(CUDAToolkit REQUIRED)
-list(APPEND link_libraries aoti_cuda_backend)
+list(APPEND link_libraries aoti_cuda_backend CUDA::cudart)
 executorch_target_link_options_shared_lib(aoti_cuda_backend)
 
 # Tokenizer
