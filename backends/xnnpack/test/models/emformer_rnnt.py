@@ -48,6 +48,24 @@ class TestEmformerModel(unittest.TestCase):
             .run_method_and_compare_outputs()
         )
 
+    def test_fp32_emformer_joiner_dynamic(self):
+        joiner = self.Joiner()
+        dynamic_shapes = (
+            {0: torch.export.Dim("batch", min=1, max=4)},
+            None,
+            {0: torch.export.Dim("batch", min=1, max=4)},
+            None,
+        )
+        (
+            Tester(joiner, joiner.get_example_inputs(), dynamic_shapes=dynamic_shapes)
+            .export()
+            .to_edge_transform_and_lower()
+            .check(["torch.ops.higher_order.executorch_call_delegate"])
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
     class Predictor(EmformerRnnt):
         def forward(self, a, b):
             return self.rnnt.predict(a, b, None)
@@ -89,6 +107,26 @@ class TestEmformerModel(unittest.TestCase):
         transcriber = self.Transcriber()
         (
             Tester(transcriber, transcriber.get_example_inputs())
+            .export()
+            .to_edge_transform_and_lower()
+            .check(["torch.ops.higher_order.executorch_call_delegate"])
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
+    def test_fp32_emformer_transcriber_dynamic(self):
+        transcriber = self.Transcriber()
+        dynamic_shapes = (
+            {0: torch.export.Dim("batch", min=1, max=4)},
+            None,
+        )
+        (
+            Tester(
+                transcriber,
+                transcriber.get_example_inputs(),
+                dynamic_shapes=dynamic_shapes,
+            )
             .export()
             .to_edge_transform_and_lower()
             .check(["torch.ops.higher_order.executorch_call_delegate"])
