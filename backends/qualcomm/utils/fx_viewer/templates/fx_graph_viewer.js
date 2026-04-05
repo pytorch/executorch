@@ -183,7 +183,7 @@ class FXGraphViewer {
                 panels: {
                     sidebar: { visible: true, width: 500, resizable: true, collapsible: true },
                     info: { visible: true, dock: 'sidebar' },
-                    minimap: { visible: true, dock: 'sidebar', height: 240, resizable: true },
+                    minimap: { visible: true, dock: 'sidebar', height: 500, resizable: true },
                     legend: { visible: true, dock: 'canvas' },
                 },
                 fullscreen: { enabled: true, button: false },
@@ -291,7 +291,7 @@ class FXGraphViewer {
             .fx-resizer-h:hover, .fx-resizer-h.dragging { background: #999; }
             .fx-hidden { display: none !important; }
             .fx-compare-root { --cmp-bg: #fff; --cmp-text: #000; --cmp-border: #e5e7eb; --cmp-border-strong: #ccc; --cmp-sidebar-bg: rgba(0,0,0,0.02); --cmp-info-bg: #fff; --cmp-prop-bg: rgba(0,0,0,0.02); --cmp-hdr-bg: rgba(0,0,0,0.04); --cmp-diff-bg: rgba(255,140,0,0.06); --cmp-diff-accent: #e08a3c; --cmp-name-bg: rgba(0,0,0,0.06); --cmp-ui-bg: rgba(255,255,255,0.95); --cmp-ui-hover: #f0f8ff; display: flex; flex-direction: column; width: 100%; height: 100%; overflow-y: auto; overflow-x: hidden; background: var(--cmp-bg); color: var(--cmp-text); padding-bottom: 24px; box-sizing: border-box; position: relative; }
-            .fx-compare-grid { display: grid; grid-template-rows: minmax(100px, 200px) auto minmax(400px, 80vh) auto; overflow: visible; border: 6px solid var(--cmp-border-strong); margin: 0 8px 8px 0; }
+            .fx-compare-grid { display: grid; grid-template-rows: minmax(300px, 600px) auto minmax(400px, 80vh) auto; overflow: visible; border: 6px solid var(--cmp-border-strong); margin: 0 8px 8px 0; }
             .fx-compare-sidebar-cell { grid-column: 1; grid-row: 1 / 4; display: flex; flex-direction: column; border-right: 1px solid var(--cmp-border); background: var(--cmp-sidebar-bg); overflow: hidden; position: sticky; top: 0; align-self: start; max-height: 100vh; z-index: 10; padding: 6px 4px; gap: 4px; }
             .fx-compare-sidebar-info-cell { grid-column: 1; grid-row: 4; border-right: 1px solid var(--cmp-border); border-top: 1px solid var(--cmp-border-strong); background: var(--cmp-sidebar-bg); overflow: hidden; }
             .fx-compare-minimap-cell { overflow: hidden; border-bottom: 6px solid var(--cmp-border-strong); border-left: 6px solid var(--cmp-border-strong); }
