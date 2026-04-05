@@ -202,8 +202,8 @@
       }
     } else if (block.type === 'graph') {
       const graphRoot = document.createElement('div');
-      graphRoot.style.height = '640px';
-      graphRoot.style.minHeight = '400px';
+      graphRoot.style.height = '1200px';
+      graphRoot.style.minHeight = '1000px';
       graphRoot.style.border = '1px solid var(--border-color)';
       graphRoot.style.borderRadius = '8px';
       graphRoot.style.overflow = 'hidden';
