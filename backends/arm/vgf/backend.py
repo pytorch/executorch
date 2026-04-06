@@ -28,6 +28,7 @@ from executorch.backends.arm.vgf.compile_spec import (  # type: ignore[import-no
     VgfCompileSpec,
 )
 from executorch.backends.arm.vgf.model_converter import (  # type: ignore[import-not-found]
+    model_converter_env,
     require_model_converter_binary,
 )
 from executorch.exir.backend.backend_details import (  # type: ignore[import-not-found]
@@ -72,7 +73,7 @@ class VgfBackend(BackendDetails):
 
         """
         compile_flags = compile_spec.compiler_flags
-        artifact_path = compile_spec.get_intermediate_path()
+        artifact_path = compile_spec._get_intermediate_path()
         # Pass on the TOSA flatbuffer to the vgf compiler.
         binary = vgf_compile(tosa_flatbuffer, compile_flags, artifact_path, tag_name)
         return binary
@@ -95,7 +96,7 @@ class VgfBackend(BackendDetails):
         """
         logger.info(f"{VgfBackend.__name__} preprocess")
 
-        compile_spec = VgfCompileSpec.from_list(compile_specs)
+        compile_spec = VgfCompileSpec._from_list(compile_specs)
         # deduce TOSA compile_spec from VGF compile spec. We get a new
         # compile spec list, containing only elements relevant for the
         # TOSABackend.
@@ -157,7 +158,11 @@ def vgf_compile(
         ]
         try:
             subprocess.run(  # nosec B602, B603 - shell invocation constrained to trusted converter binary with trusted inputs
-                conversion_command, shell=False, check=True, capture_output=True
+                conversion_command,
+                shell=False,
+                check=True,
+                capture_output=True,
+                env=model_converter_env(),
             )
         except subprocess.CalledProcessError as process_error:
             conversion_command_str = " ".join(conversion_command)

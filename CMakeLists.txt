@@ -846,6 +846,9 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
   set(TORCHAO_ENABLE_ARM_NEON_DOT ON)
   set(TORCHAO_BUILD_KLEIDIAI ON)
 
+  # TorchAO requires find_package(Torch) for include dirs; add its cmake path.
+  add_torch_to_cmake_prefix_path()
+
   # TorchAO kernels look for EXECUTORCH_INCLUDE_DIRS
   if(DEFINED EXECUTORCH_INCLUDE_DIRS)
     message(FATAL_ERROR "EXECUTORCH_INCLUDE_DIRS is already defined")

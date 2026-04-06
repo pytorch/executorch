@@ -4,12 +4,23 @@
 #
 
 import logging
+import warnings
+
+warnings.warn(
+    "The MPS partitioner is deprecated and will be removed in ExecuTorch 1.4. "
+    "Use CoreMLPartitioner for iOS/macOS GPU acceleration instead. "
+    "See https://docs.pytorch.org/executorch/main/backends-overview.html "
+    "for migration guidance.",
+    FutureWarning,
+    stacklevel=2,
+)
 from typing import Any, cast, Dict, List, Union
 
 import torch
 from executorch.backends.apple.mps import MPSBackend
 from executorch.backends.apple.mps.operators.node_visitor import get_node_visitors
 from executorch.backends.transforms import get_shape
+from executorch.exir._warnings import deprecated
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_partitions_from_list_of_nodes,
@@ -51,7 +62,22 @@ class MPSOperatorSupport(OperatorSupportBase):
         return True
 
 
+@deprecated(
+    "The MPS partitioner is deprecated and will be removed in ExecuTorch 1.4. "
+    "Use CoreMLPartitioner for iOS/macOS GPU acceleration instead. "
+    "See https://docs.pytorch.org/executorch/main/backends-overview.html "
+    "for migration guidance.",
+    category=FutureWarning,
+)
 class MPSPartitioner(Partitioner):
+    """Partitioner for the MPS backend.
+
+    .. warning::
+
+        ``MPSPartitioner`` is deprecated and will be removed in ExecuTorch 1.4.
+        Use ``CoreMLPartitioner`` instead.
+    """
+
     def __init__(self, compile_specs: List[CompileSpec]) -> None:
         self.compile_specs = compile_specs
         self.delegation_spec = DelegationSpec(MPSBackend.__name__, compile_specs)

@@ -315,8 +315,7 @@ Module::make_planned_memory_with_shared_arenas(
   return planned;
 }
 
-std::unique_ptr<Module::PlannedMemory>
-Module::make_planned_memory_with_devices(
+std::unique_ptr<Module::PlannedMemory> Module::make_planned_memory_with_devices(
     const ET_RUNTIME_NAMESPACE::MethodMeta& method_meta) {
   auto planned = std::make_unique<PlannedMemory>();
   const size_t num_buffers = method_meta.num_memory_planned_buffers();
@@ -429,15 +428,13 @@ runtime::Error Module::load_method(
             "when using models with device-planned memory.");
 
         // Device-aware path: allocate CPU and device buffers, build metadata.
-        method_holder.planned_memory =
-            make_planned_memory_with_devices(meta);
+        method_holder.planned_memory = make_planned_memory_with_devices(meta);
 
         // Build per-buffer device type array for MemoryManager metadata.
         for (size_t i = 0; i < meta.num_memory_planned_buffers(); ++i) {
           auto dev = meta.memory_planned_buffer_device(i);
           method_holder.buffer_devices.push_back(
-              dev.ok() ? dev->type()
-                       : runtime::etensor::DeviceType::CPU);
+              dev.ok() ? dev->type() : runtime::etensor::DeviceType::CPU);
         }
         planned_memory = method_holder.planned_memory->planned_memory.get();
 

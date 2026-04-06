@@ -59,6 +59,8 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_clone.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_gelu.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_max_pool2d_with_indices.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_native_layer_norm.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/normalization_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_to_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/pattern/unary_ufunc_realhbbf16_to_floathbf16.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/activation_ops_util.cpp"
@@ -99,7 +101,10 @@ set(_generic_kernels__srcs
 # impl::generic::native implementations called by HiFi operators.
 set(_generic_custom_ops__srcs
     "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_linear.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_conv1d_ncl.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_conv1d_nlc.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_conv2d.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_max_pool2d.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_matmul.cpp"
 )
 
@@ -140,6 +145,7 @@ add_library(
   "op_quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_out.cpp"
   "op_quantized_conv2d_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor_out.cpp"
   "op_quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor_out.cpp"
+  "op_quantized_max_pool2d_nhwc.cpp"
   "op_quantized_fully_connected_out.cpp"
   "op_quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_out.cpp"
   "op_quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_out.cpp"

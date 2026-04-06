@@ -68,7 +68,10 @@ void add_where_node(
       // Push Constants
       {},
       // Specialization Constants
-      {},
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(cond),
+       graph.hashed_layout_of(self),
+       graph.hashed_layout_of(other)},
       // Resize Arguments
       {},
       // Resizing Logic
