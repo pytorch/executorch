@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import copy
 import json
 import os
 import warnings
 from dataclasses import asdict
-from typing import Callable, List, Optional, Any, Dict
+from typing import Callable, List, Optional, Any, Dict, Sequence
 
 import networkx as nx
 import torch
@@ -50,6 +51,15 @@ class FXGraphExporter:
         self.base_label_formatter: Callable[[GraphNode], str] = self._default_base_label
         self.base_tooltip_formatter: Callable[[GraphNode], List[str]] = self._default_base_tooltip
         self.base_color_rule: Optional[ColorRule] = None
+
+    _NODE_CHAR_WIDTH = 7
+    _NODE_MIN_WIDTH = 100
+    _NODE_X_PADDING = 20
+    _NODE_LINE_HEIGHT = 16
+    _NODE_Y_PADDING = 20
+    _LAYOUT_XSPACE = 20
+    _LAYOUT_YSPACE = 40
+    _LAYOUT_DRAW_ITER = 5.5
 
     def _default_base_label(self, node: GraphNode) -> str:
         target = str(node.info.get("target") or node.info.get("op") or "")
@@ -229,13 +239,39 @@ class FXGraphExporter:
             context=f"extension '{extension.id}' label formatter(node='{node_id}')",
         )
 
-    def _compute_layout(self, nodes: dict[str, GraphNode], edges: list[GraphEdge]) -> None:
+    @classmethod
+    def _compute_node_box_size(
+        cls,
+        base_label: str,
+        extension_lines: Sequence[str] | None = None,
+    ) -> tuple[int, int]:
+        max_char_width = len(base_label or "")
+        total_lines = 1
+
+        if extension_lines:
+            for line in extension_lines:
+                max_char_width = max(max_char_width, len(line))
+                total_lines += 1
+
+        width = max(max_char_width * cls._NODE_CHAR_WIDTH + cls._NODE_X_PADDING, cls._NODE_MIN_WIDTH)
+        height = total_lines * cls._NODE_LINE_HEIGHT + cls._NODE_Y_PADDING
+        return width, height
+
+    @classmethod
+    def _compute_layout_with_ext_lines(
+        cls,
+        nodes: dict[str, GraphNode],
+        edges: list[GraphEdge],
+        ext_label_lines_by_node: dict[str, list[str]],
+        base_label_getter: Callable[[GraphNode], str],
+    ) -> None:
         print("Converting to Grandalf graph and computing layout...")
         graph_nx = nx.DiGraph()
         for node_id in nodes:
             graph_nx.add_node(node_id)
         for edge in edges:
-            graph_nx.add_edge(edge.v, edge.w)
+            if edge.v in nodes and edge.w in nodes:
+                graph_nx.add_edge(edge.v, edge.w)
 
         g_grandalf = convert_nextworkx_graph_to_grandalf(graph_nx)
 
@@ -256,19 +292,9 @@ class FXGraphExporter:
 
         for vertex in g_grandalf.V():
             node = nodes[vertex.data]
-
-            base_label = self._safe_base_label(node)
-            max_char_width = len(base_label)
-            total_lines = 1
-
-            for ext in self.extensions:
-                ext_lines = self._ext_label_lines_for_layout(ext, node.id)
-                for line in ext_lines:
-                    max_char_width = max(max_char_width, len(line))
-                    total_lines += 1
-
-            node.width = max(max_char_width * 7 + 20, 100)
-            node.height = total_lines * 16 + 20
+            base_label = base_label_getter(node)
+            ext_lines = ext_label_lines_by_node.get(node.id, [])
+            node.width, node.height = cls._compute_node_box_size(base_label, ext_lines)
             vertex.view = NodeView(node.width, node.height)
 
         for edge in g_grandalf.E():
@@ -278,10 +304,10 @@ class FXGraphExporter:
         for component in g_grandalf.C:
             sug = SugiyamaLayout(component)
             sug.route_edge = route_with_lines
-            sug.xspace = 20
-            sug.yspace = 40
+            sug.xspace = cls._LAYOUT_XSPACE
+            sug.yspace = cls._LAYOUT_YSPACE
             sug.init_all(optimize=True)
-            sug.draw(N=5.5)
+            sug.draw(N=cls._LAYOUT_DRAW_ITER)
 
         for vertex in g_grandalf.V():
             node = nodes[vertex.data]
@@ -296,6 +322,129 @@ class FXGraphExporter:
             if hasattr(edge, "view") and hasattr(edge.view, "points"):
                 points = [{"x": float(p[0]), "y": float(p[1])} for p in edge.view.points]
             edge_map[key].points = points
+
+    def _compute_layout(self, nodes: dict[str, GraphNode], edges: list[GraphEdge]) -> None:
+        ext_label_lines_by_node: dict[str, list[str]] = {}
+        for node_id in nodes:
+            ext_lines: list[str] = []
+            for ext in self.extensions:
+                ext_lines.extend(self._ext_label_lines_for_layout(ext, node_id))
+            ext_label_lines_by_node[node_id] = ext_lines
+
+        self._compute_layout_with_ext_lines(
+            nodes,
+            edges,
+            ext_label_lines_by_node=ext_label_lines_by_node,
+            base_label_getter=self._safe_base_label,
+        )
+
+    @staticmethod
+    def _coerce_str_lines(value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [x for x in value if isinstance(x, str)]
+
+    @classmethod
+    def relayout_payload_base(
+        cls,
+        base_payload: Dict[str, Any],
+        extensions_payload: Optional[Dict[str, Any]] = None,
+        include_layers: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Recompute base graph node/edge layout using extension label lines.
+
+        This API operates on payload dictionaries and does not require
+        a ``torch.fx.GraphModule`` instance.
+        """
+        if not isinstance(base_payload, dict):
+            raise TypeError("base_payload must be a dict")
+
+        relaid = copy.deepcopy(base_payload)
+
+        raw_nodes = relaid.get("nodes")
+        raw_edges = relaid.get("edges")
+        if not isinstance(raw_nodes, list) or not isinstance(raw_edges, list):
+            raise ValueError("base_payload must contain list fields: 'nodes' and 'edges'")
+
+        nodes: dict[str, GraphNode] = {}
+        for idx, node_data in enumerate(raw_nodes):
+            if not isinstance(node_data, dict):
+                continue
+            node_id = str(node_data.get("id", "")).strip()
+            if not node_id:
+                continue
+
+            info_value = node_data.get("info", {})
+            tooltip_value = node_data.get("tooltip", [])
+            node = GraphNode(
+                id=node_id,
+                label=str(node_data.get("label", "")),
+                topo_index=int(node_data.get("topo_index", idx)),
+                info=info_value if isinstance(info_value, dict) else {},
+                tooltip=tooltip_value if isinstance(tooltip_value, list) else [],
+                fill_color=node_data.get("fill_color"),
+            )
+            nodes[node_id] = node
+
+        edges: list[GraphEdge] = []
+        for edge_data in raw_edges:
+            if not isinstance(edge_data, dict):
+                continue
+            v = str(edge_data.get("v", "")).strip()
+            w = str(edge_data.get("w", "")).strip()
+            if not v or not w or v not in nodes or w not in nodes:
+                continue
+            edges.append(GraphEdge(v=v, w=w, points=[]))
+
+        ext_payloads = extensions_payload if isinstance(extensions_payload, dict) else {}
+        if include_layers is None:
+            active_layer_ids = list(ext_payloads.keys())
+        else:
+            active_layer_ids = [layer_id for layer_id in include_layers if layer_id in ext_payloads]
+
+        ext_label_lines_by_node: dict[str, list[str]] = {node_id: [] for node_id in nodes}
+        for layer_id in active_layer_ids:
+            layer_payload = ext_payloads.get(layer_id)
+            if not isinstance(layer_payload, dict):
+                continue
+            layer_nodes = layer_payload.get("nodes")
+            if not isinstance(layer_nodes, dict):
+                continue
+            for node_id, node_payload in layer_nodes.items():
+                if node_id not in ext_label_lines_by_node or not isinstance(node_payload, dict):
+                    continue
+                ext_label_lines_by_node[node_id].extend(
+                    cls._coerce_str_lines(node_payload.get("label_append"))
+                )
+
+        cls._compute_layout_with_ext_lines(
+            nodes,
+            edges,
+            ext_label_lines_by_node=ext_label_lines_by_node,
+            base_label_getter=lambda node: str(node.label or ""),
+        )
+
+        node_by_id = {node.get("id"): node for node in raw_nodes if isinstance(node, dict)}
+        for node_id, node in nodes.items():
+            node_dict = node_by_id.get(node_id)
+            if not isinstance(node_dict, dict):
+                continue
+            node_dict["x"] = node.x
+            node_dict["y"] = node.y
+            node_dict["width"] = node.width
+            node_dict["height"] = node.height
+
+        edge_points_by_key = {(edge.v, edge.w): edge.points for edge in edges}
+        for edge_data in raw_edges:
+            if not isinstance(edge_data, dict):
+                continue
+            key = (
+                str(edge_data.get("v", "")).strip(),
+                str(edge_data.get("w", "")).strip(),
+            )
+            edge_data["points"] = edge_points_by_key.get(key, [])
+
+        return relaid
 
     def _build_base_payload(self, nodes: dict[str, GraphNode], edges: list[GraphEdge]) -> BaseGraphPayload:
         print("[FX Graph Viewer] Compiling base graph payload...")
