@@ -335,6 +335,21 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Whether to use sdpa_with_kv_cache update op when using kv cache",
     )
     parser.add_argument(
+        "--no_transposed_cache",
+        dest="use_transposed_cache",
+        default=True,
+        action="store_false",
+        help="Disable transposed KV cache layout [B, H, S, D]. By default transposed cache is used for better SDPA performance.",
+    )
+    parser.add_argument(
+        "--cache_transpose",
+        type=str,
+        default=None,
+        choices=["none", "all", "v_only", "k_only"],
+        help="Per-cache transpose control. Overrides --no_transposed_cache. "
+             "'v_only' transposes only the V cache for SDPA locality benefits.",
+    )
+    parser.add_argument(
         "--disable_dynamic_shape",
         dest="enable_dynamic_shape",
         default=True,  # Enable this by default
@@ -766,6 +781,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             ),
             use_sdpa_with_kv_cache=llm_config.model.use_sdpa_with_kv_cache,
             use_transposed_cache=llm_config.model.use_transposed_cache,
+            cache_transpose=llm_config.model.cache_transpose,
             quantize_kv_cache=llm_config.model.quantize_kv_cache,
             use_kv_cache=llm_config.model.use_kv_cache,
             qnn=llm_config.backend.qnn.enabled,
@@ -1605,6 +1621,7 @@ def _get_source_transforms(  # noqa
     use_custom_sdpa_with_attention_mask: bool = False,
     use_sdpa_with_kv_cache: bool = False,
     use_transposed_cache: bool = True,
+    cache_transpose: Optional[str] = None,
     quantize_kv_cache: bool = False,
     use_kv_cache: bool = False,
     qnn: bool = False,
@@ -1642,6 +1659,7 @@ def _get_source_transforms(  # noqa
         use_custom_sdpa_with_attention_mask: Whether to use custom SDPA with attention mask.
         use_sdpa_with_kv_cache: Whether to use SDPA with KV cache.
         use_transposed_cache: Whether to store KV cache in transposed layout [B, H, S, D].
+        cache_transpose: Per-cache transpose control ('none','all','v_only','k_only'). Overrides use_transposed_cache.
         quantize_kv_cache: Whether to quantize KV cache.
         use_kv_cache: Whether to use KV cache.
         qnn: Whether to use QNN.
@@ -1737,19 +1755,28 @@ def _get_source_transforms(  # noqa
     use_attention_mask_for_custom_sdpa = use_custom_sdpa_with_attention_mask
 
     if use_sdpa_with_kv_cache:
+        # Resolve per-cache transpose flags
+        if cache_transpose is not None:
+            transpose_k = cache_transpose in ("all", "k_only")
+            transpose_v = cache_transpose in ("all", "v_only")
+        else:
+            transpose_k = use_transposed_cache
+            transpose_v = use_transposed_cache
+
+        # SDPA uses is_seq_at_dim_2=True when any cache is transposed,
+        # since KVCache always returns [B, H, S, D] for Attention.
+        sdpa_seq_at_dim_2 = transpose_k or transpose_v
+
         transforms.append(
-            partial(replace_kv_cache_with_custom_kv_cache, is_seq_at_dim_2=use_transposed_cache)
+            partial(replace_kv_cache_with_custom_kv_cache, transpose_k=transpose_k, transpose_v=transpose_v)
         )
-        # todo: do this optionally
-        # if use attention mask instead of causal attention
-        # then create partial function that sets use_attention_mask=True
         if use_attention_mask_for_custom_sdpa:
             transforms.append(
-                partial(replace_sdpa_with_custom_op, use_attention_mask=True, is_seq_at_dim_2=use_transposed_cache)
+                partial(replace_sdpa_with_custom_op, use_attention_mask=True, is_seq_at_dim_2=sdpa_seq_at_dim_2)
             )
         else:
             transforms.append(
-                partial(replace_sdpa_with_custom_op, is_seq_at_dim_2=use_transposed_cache)
+                partial(replace_sdpa_with_custom_op, is_seq_at_dim_2=sdpa_seq_at_dim_2)
             )
 
     if quantize_kv_cache:
