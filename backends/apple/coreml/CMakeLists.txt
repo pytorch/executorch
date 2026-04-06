@@ -32,6 +32,7 @@ set(DELEGATE_SOURCES
     runtime/delegate/ETCoreMLAsset.mm
     runtime/delegate/ETCoreMLAssetManager.mm
     runtime/delegate/ETCoreMLDefaultModelExecutor.mm
+    runtime/delegate/ETCoreMLModelCache.mm
     runtime/delegate/ETCoreMLModelLoader.mm
     runtime/delegate/ETCoreMLModelCompiler.mm
     runtime/delegate/ETCoreMLLogging.mm
