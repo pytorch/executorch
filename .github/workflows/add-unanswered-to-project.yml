@@ -52,9 +52,10 @@ jobs:
               "MatthiasHertel80", "AlexTawseArm", "jmahbs", "morgolock", "Christoffer-JL", "ArmRyan", "xingguo01", "tgonzalezorlandoarm", 
               "chizkiyahu", "sarah-blades", "itsMarco-G", "usamahz", "Rob-Hughes-Arm", 
               "haowhsu-quic", "shewu-quic", "winskuo-quic", "chunit-quic", "DannyYuyang-quic", "chuntl", "thchenqti", "jethroqti", 
-              "chenweng-quic", "qti-horodnic", "qti-mmadhava", "quic-boyuc", "cymbalrush", "DenisVieriu97", "billmguo", "StrycekSimon", 
-              "jirioc", "robert-kalmar", "skywall", "MartinPavella", "roman-janik-nxp", "novak-vaclav", "irtrukhina", "neuropilot-captain", 
-              "dijopaul", "cad-rlc", "cad-audio", "ynimmaga", "daniil-lyakhov", 
+              "chenweng-quic", "qti-horodnic", "qti-mmadhava", "quic-boyuc", "zhaoxul-qti", 
+              "cymbalrush", "DenisVieriu97", "billmguo", 
+              "StrycekSimon", "jirioc", "robert-kalmar", "skywall", "MartinPavella", "roman-janik-nxp", "novak-vaclav", "irtrukhina", 
+              "neuropilot-captain", "dijopaul", "cad-rlc", "cad-audio", "ynimmaga", "daniil-lyakhov", 
               "emmanuel-ferdman", "cavusmustafa", "anzr299", "suryasidd", "Jiseong-oh", "alexdean08",
               // explicitly include the dependabot bot login seen in PRs
               "dependabot[bot]"
