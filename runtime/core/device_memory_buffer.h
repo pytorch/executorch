@@ -40,10 +40,8 @@ class DeviceMemoryBuffer final {
    * @param index The device index (e.g., 0 for cuda:0).
    * @return A Result containing the DeviceMemoryBuffer on success, or an error.
    */
-  static Result<DeviceMemoryBuffer> create(
-      size_t size,
-      etensor::DeviceType type,
-      etensor::DeviceIndex index = 0);
+  static Result<DeviceMemoryBuffer>
+  create(size_t size, etensor::DeviceType type, etensor::DeviceIndex index = 0);
 
   DeviceMemoryBuffer() = default;
 

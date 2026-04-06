@@ -5,7 +5,7 @@
 
 
 import torch
-from executorch.backends.arm.test.common import parametrize
+from executorch.backends.arm.test.common import parametrize, xfail_type
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
@@ -82,10 +82,10 @@ fallback_test_cases = {
     ),
 }
 
-xfails_max_pool2d = {
+xfails_max_pool2d: dict[str, xfail_type] = {
     "maxpool_2x2_indices": (
         "Indices output not supported; quantizer does not handle getitem on max_pool2d_with_indices.",
-        (NotImplementedError, AssertionError, RuntimeError, Exception),
+        Exception,
     ),
 }
 

@@ -30,8 +30,8 @@ using executorch::extension::Module;
 using executorch::runtime::DeviceAllocator;
 using executorch::runtime::DeviceMemoryBuffer;
 using executorch::runtime::Error;
-using executorch::runtime::Result;
 using executorch::runtime::register_device_allocator;
+using executorch::runtime::Result;
 using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
 
@@ -155,9 +155,7 @@ TEST_F(ModuleDeviceMemoryTest, DeviceModelMethodMetaReportsCudaBuffer) {
   EXPECT_EQ(device->index(), 0);
 }
 
-TEST_F(
-    ModuleDeviceMemoryTest,
-    DeviceModelWithSharedArenasReturnsNotSupported) {
+TEST_F(ModuleDeviceMemoryTest, DeviceModelWithSharedArenasReturnsNotSupported) {
   const char* path = std::getenv("ET_MODULE_ADD_WITH_DEVICE_PATH");
   ASSERT_NE(path, nullptr) << "ET_MODULE_ADD_WITH_DEVICE_PATH not set";
 
