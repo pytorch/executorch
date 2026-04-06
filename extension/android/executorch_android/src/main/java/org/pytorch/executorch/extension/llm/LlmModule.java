@@ -34,6 +34,7 @@ public class LlmModule {
   private static final float DEFAULT_TEMPERATURE = -1.0f;
   private static final int DEFAULT_BOS = 0;
   private static final int DEFAULT_EOS = 0;
+  private static final int DEFAULT_LOAD_MODE = LlmModuleConfig.LOAD_MODE_MMAP;
 
   @DoNotStrip
   private static native HybridData initHybrid(
@@ -43,7 +44,26 @@ public class LlmModule {
       float temperature,
       List<String> dataFiles,
       int numBos,
-      int numEos);
+      int numEos,
+      int loadMode);
+
+  private LlmModule(
+      int modelType,
+      String modulePath,
+      String tokenizerPath,
+      float temperature,
+      List<String> dataFiles,
+      int numBos,
+      int numEos,
+      int loadMode) {
+    ExecuTorchRuntime.getRuntime();
+    ExecuTorchRuntime.validateFilePath(modulePath, "model path");
+    ExecuTorchRuntime.validateFilePath(tokenizerPath, "tokenizer path");
+
+    mHybridData =
+        initHybrid(
+            modelType, modulePath, tokenizerPath, temperature, dataFiles, numBos, numEos, loadMode);
+  }
 
   /**
    * Constructs a LLM Module for a model with given type, model path, tokenizer, temperature, and
@@ -57,12 +77,15 @@ public class LlmModule {
       List<String> dataFiles,
       int numBos,
       int numEos) {
-    ExecuTorchRuntime.getRuntime();
-    ExecuTorchRuntime.validateFilePath(modulePath, "model path");
-    ExecuTorchRuntime.validateFilePath(tokenizerPath, "tokenizer path");
-
-    mHybridData =
-        initHybrid(modelType, modulePath, tokenizerPath, temperature, dataFiles, numBos, numEos);
+    this(
+        modelType,
+        modulePath,
+        tokenizerPath,
+        temperature,
+        dataFiles,
+        numBos,
+        numEos,
+        DEFAULT_LOAD_MODE);
   }
 
   /**
@@ -75,7 +98,15 @@ public class LlmModule {
       String tokenizerPath,
       float temperature,
       List<String> dataFiles) {
-    this(modelType, modulePath, tokenizerPath, temperature, dataFiles, DEFAULT_BOS, DEFAULT_EOS);
+    this(
+        modelType,
+        modulePath,
+        tokenizerPath,
+        temperature,
+        dataFiles,
+        DEFAULT_BOS,
+        DEFAULT_EOS,
+        DEFAULT_LOAD_MODE);
   }
 
   /**
@@ -148,9 +179,10 @@ public class LlmModule {
         config.getModulePath(),
         config.getTokenizerPath(),
         config.getTemperature(),
-        config.getDataPath(),
+        config.getDataPath() != null ? List.of(config.getDataPath()) : List.of(),
         config.getNumBos(),
-        config.getNumEos());
+        config.getNumEos(),
+        config.getLoadMode());
   }
 
   public void resetNative() {

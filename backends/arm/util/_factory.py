@@ -26,11 +26,11 @@ def parse_compile_spec(compile_specs: list[CompileSpec]) -> ArmCompileSpec:
     else:
         raise ValueError("Compile spec without output format.")
     if output_format == TosaCompileSpec._get_output_format():
-        return TosaCompileSpec.from_list(compile_specs)
+        return TosaCompileSpec._from_list(compile_specs)
     if output_format == EthosUCompileSpec._get_output_format():
-        return EthosUCompileSpec.from_list(compile_specs)
+        return EthosUCompileSpec._from_list(compile_specs)
     if output_format == VgfCompileSpec._get_output_format():
-        return VgfCompileSpec.from_list(compile_specs)
+        return VgfCompileSpec._from_list(compile_specs)
     raise ValueError(f"Unknown output format {output_format}")
 
 

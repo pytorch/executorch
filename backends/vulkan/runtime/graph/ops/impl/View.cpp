@@ -70,43 +70,25 @@ void resize_to_dim_order_copy_node(
   graph->virtual_resize(out, in_sizes);
 }
 
-void add_view_node(
+void add_view_copy_node(
     ComputeGraph& graph,
     ValueRef in,
-    ValueRef sizes,
-    ValueRef out) {
-  std::string kernel_name = "view";
+    ValueRef out,
+    const std::vector<ValueRef>& resize_args,
+    const ExecuteNode::ResizeFunction& resize_fn) {
+  std::string kernel_name =
+      graph.is_buffer_storage(out) ? "view_buffer" : "view_texture";
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
-      graph,
-      VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
-      // Inputs and Outputs
-      {{out, vkapi::MemoryAccessType::WRITE},
-       {in, vkapi::MemoryAccessType::READ}},
-      // Parameter Buffers
-      {},
-      // Push Constants
-      {{graph.sizes_pc_of(out), graph.sizes_pc_of(in)}},
-      // Specialization Constants
-      {graph.packed_dim_of(in), graph.packed_dim_of(out)},
-      // Resize Args
-      {sizes},
-      // Resizing Logic
-      resize_view_node));
-}
+  vkapi::ParamsBindList ubos = {graph.meta_ubo(out), graph.meta_ubo(in)};
 
-void add_view_copy_buffer_node(
-    ComputeGraph& graph,
-    ValueRef in,
-    ValueRef out,
-    const std::vector<ValueRef>& resize_args,
-    const ExecuteNode::ResizeFunction& resize_fn) {
-  std::string kernel_name = "view_buffer";
-  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+  // Spec constant order differs between buffer and texture shaders.
+  vkapi::SpecVarList spec_constants = graph.is_buffer_storage(out)
+      ? vkapi::
+            SpecVarList{graph.hashed_layout_of(out), graph.hashed_layout_of(in)}
+      : vkapi::SpecVarList{
+            graph.hashed_layout_of(in), graph.hashed_layout_of(out)};
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -116,24 +98,37 @@ void add_view_copy_buffer_node(
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Parameter Buffers
-      {graph.buffer_meta_ubo(out), graph.buffer_meta_ubo(in)},
+      ubos,
       // Push Constants
       {},
       // Specialization Constants
-      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
+      spec_constants,
       // Resize Args
       resize_args,
       // Resizing Logic
       resize_fn));
 }
 
-void add_view_copy_convert_texture_node(
+void add_view_copy_convert_node(
     ComputeGraph& graph,
     ValueRef in,
     ValueRef out,
     const std::vector<ValueRef>& resize_args,
     const ExecuteNode::ResizeFunction& resize_fn) {
-  std::string kernel_name = "view_convert_texture";
+  std::string kernel_name;
+  vkapi::ParamsBindList ubos;
+  std::vector<PushConstantDataInfo> push_constants;
+  vkapi::SpecVarList spec_constants;
+
+  if (graph.is_buffer_storage(out)) {
+    kernel_name = "view_convert_buffer";
+    ubos = {graph.buffer_meta_ubo(out), graph.buffer_meta_ubo(in)};
+    spec_constants = {graph.hashed_layout_of(out), graph.hashed_layout_of(in)};
+  } else {
+    kernel_name = "view_convert_texture";
+    push_constants = {graph.sizes_pc_of(out)};
+    spec_constants = {graph.packed_dim_of(out)};
+  }
   add_dtype_suffix(kernel_name, graph.dtype_of(in));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
@@ -145,40 +140,11 @@ void add_view_copy_convert_texture_node(
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Parameter Buffers
-      {},
+      ubos,
       // Push Constants
-      {{graph.sizes_pc_of(out)}},
+      {push_constants},
       // Specialization Constants
-      {graph.packed_dim_of(out)},
-      // Resize Args
-      resize_args,
-      // Resizing Logic
-      resize_fn));
-}
-
-void add_view_copy_convert_buffer_node(
-    ComputeGraph& graph,
-    ValueRef in,
-    ValueRef out,
-    const std::vector<ValueRef>& resize_args,
-    const ExecuteNode::ResizeFunction& resize_fn) {
-  std::string kernel_name = "view_convert_buffer";
-  add_dtype_suffix(kernel_name, graph.dtype_of(in));
-  add_dtype_suffix(kernel_name, graph.dtype_of(out));
-
-  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
-      graph,
-      VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
-      // Inputs and Outputs
-      {{out, vkapi::kWrite}, {in, vkapi::kRead}},
-      // Parameter Buffers
-      {graph.buffer_meta_ubo(out), graph.buffer_meta_ubo(in)},
-      // Push Constants
-      {},
-      // Specialization Constants
-      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
+      spec_constants,
       // Resize Args
       resize_args,
       // Resizing Logic
@@ -191,13 +157,7 @@ void view(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef sizes = args.at(idx++);
   const ValueRef out = args.at(idx++);
 
-  std::vector<ValueRef> resize_args = {sizes};
-
-  if (graph.is_buffer_storage(out)) {
-    return add_view_copy_buffer_node(
-        graph, in, out, resize_args, resize_view_node);
-  }
-  return add_view_node(graph, in, sizes, out);
+  return add_view_copy_node(graph, in, out, {sizes}, resize_view_node);
 }
 
 void to_dim_order_copy(ComputeGraph& graph, const std::vector<ValueRef>& args) {
@@ -221,11 +181,11 @@ void to_dim_order_copy(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   VK_CHECK_COND(graph.is_buffer_storage(in) && graph.is_buffer_storage(out));
 
   if (graph.dtype_of(in) == graph.dtype_of(out)) {
-    return add_view_copy_buffer_node(
+    return add_view_copy_node(
         graph, in, out, {}, resize_to_dim_order_copy_node);
   }
 
-  return add_view_copy_convert_buffer_node(
+  return add_view_copy_convert_node(
       graph, in, out, {}, resize_to_dim_order_copy_node);
 }
 
