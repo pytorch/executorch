@@ -125,8 +125,13 @@ def test_per_layer_accuracy_observe_analyze_and_frontend_defaults() -> None:
         assert "Quantized Model" in analysis.per_record_data
         rec_analysis = analysis.per_record_data["Quantized Model"]
         assert "psnr" in rec_analysis.graph_layers
+        assert "cosine_sim" in rec_analysis.graph_layers
+        assert "mse" in rec_analysis.graph_layers
+        assert "abs_err" in rec_analysis.graph_layers
         psnr_payload = rec_analysis.graph_layers["psnr"].to_payload()
         assert "sparse_match_key" in psnr_payload.sync_keys
+        mse_payload = rec_analysis.graph_layers["mse"].to_payload()
+        assert "sparse_match_key" in mse_payload.sync_keys
 
         frontend = PerLayerAccuracyLens.get_frontend_spec()
         view = frontend.record(target_digest, {"record": {}}, {"name": "Quantized Model", "index": 1})

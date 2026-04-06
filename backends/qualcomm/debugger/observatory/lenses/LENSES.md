@@ -237,7 +237,7 @@ class PerLayerAccuracyLens(Lens):
 Computes sparse per-layer metrics between an anchor graph (default:
 `"Exported Float"`) and each collected graph, then renders:
 
-1. Lens-specific graph overlay with raw-PSNR-based coloring.
+1. Lens-specific graph overlays with per-metric coloring.
 2. One merged per-layer metrics table (worst -> best).
 
 ### Sparse Matching Rule
@@ -274,10 +274,17 @@ Per matched node:
 - `AbsErr`
 
 Graph layers emitted in analyze phase:
-- `per_layer_accuracy/psnr` (color by raw `psnr`, low PSNR = severe red)
+- `per_layer_accuracy/psnr` (low PSNR = severe red)
+- `per_layer_accuracy/cosine_sim` (low cosine similarity = severe red)
+- `per_layer_accuracy/mse` (high MSE = severe red)
+- `per_layer_accuracy/abs_err` (high AbsErr = severe red)
+
+Each layer includes all metric values in node labels/tooltips so users can
+inspect cross-metric behavior even when a different metric is selected for
+coloring.
 
 Default lens graph section:
-- `default_layers = ["per_layer_accuracy/psnr"]`
+- `default_layers = ["per_layer_accuracy/psnr"]` (other metric layers are still available in layer controls)
 - `default_color_by = "per_layer_accuracy/psnr"`
 
 ### Frontend Sections

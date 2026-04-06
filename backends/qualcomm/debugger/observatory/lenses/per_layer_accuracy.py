@@ -490,10 +490,43 @@ class PerLayerAccuracyLens(Lens):
         return observation
 
     @staticmethod
-    def _build_psnr_extension(
+    def _metric_specs() -> Dict[str, Dict[str, Any]]:
+        return {
+            # Lower value is worse for PSNR/Cosine.
+            "psnr": {
+                "name": "Per-layer PSNR",
+                "label": "PSNR",
+                "inverse": True,
+            },
+            "cosine_sim": {
+                "name": "Per-layer Cosine Similarity",
+                "label": "Cosine",
+                "inverse": True,
+            },
+            # Higher value is worse for error metrics.
+            "mse": {
+                "name": "Per-layer MSE",
+                "label": "MSE",
+                "inverse": False,
+            },
+            "abs_err": {
+                "name": "Per-layer AbsErr",
+                "label": "AbsErr",
+                "inverse": False,
+            },
+        }
+
+    @classmethod
+    def _build_metric_extension(
+        cls,
         rows: List[Dict[str, Any]],
+        metric_name: str,
     ) -> GraphExtension:
-        ext = GraphExtension(id="psnr", name="Per-layer PSNR")
+        spec = cls._metric_specs().get(metric_name)
+        if not spec:
+            raise ValueError(f"Unsupported per-layer metric extension: {metric_name}")
+
+        ext = GraphExtension(id=metric_name, name=str(spec["name"]))
         for row in rows:
             node_id = str(row["target_node"])
             info = {
@@ -515,37 +548,36 @@ class PerLayerAccuracyLens(Lens):
             ext.add_node_data(node_id, info)
 
         ext.set_sync_key("sparse_match_key")
-        ext.set_sync_key("from_node_root")
-        ext.set_label_formatter(
-            lambda d: [
-                f"PSNR={float(d.get('psnr', 0.0)):.4f}",
-                f"Cos={float(d.get('cosine_sim', 0.0)):.4f}",
-            ]
-        )
-        ext.set_tooltip_formatter(
-            lambda d: [
-                f"match_key={d.get('sparse_match_key', '')}",
-                f"root={d.get('from_node_root', 'n/a')}",
-                f"anchor_node={d.get('anchor_node', 'n/a')}",
+
+        def _format_metric_value(value: float, *, tooltip: bool = False) -> str:
+            if metric_name in ("mse", "abs_err"):
+                return f"{value:.6e}" if tooltip else f"{value:.3e}"
+            return f"{value:.6f}" if tooltip else f"{value:.4f}"
+
+        def _label_formatter(d: Dict[str, Any]) -> List[str]:
+            primary = float(d.get(metric_name, 0.0))
+            primary_label = str(spec["label"])
+            return [f"{primary_label}={_format_metric_value(primary)}"]
+
+        ext.set_label_formatter(_label_formatter)
+
+        def _tooltip_formatter(d: Dict[str, Any]) -> List[str]:
+            primary = float(d.get(metric_name, 0.0))
+            primary_label = str(spec["label"])
+            return [
                 f"target_node={d.get('target_node', 'n/a')}",
-                f"anchor_topo={d.get('anchor_topo_index', -1)}",
-                f"target_topo={d.get('target_topo_index', -1)}",
-                f"numel={d.get('numel_compared', 0)}",
-                f"shape(anchor)={d.get('anchor_shape', 'n/a')}",
-                f"shape(target)={d.get('target_shape', 'n/a')}",
-                f"PSNR={float(d.get('psnr', 0.0)):.6f}",
-                f"Cosine={float(d.get('cosine_sim', 0.0)):.6f}",
-                f"MSE={float(d.get('mse', 0.0)):.6e}",
-                f"AbsErr={float(d.get('abs_err', 0.0)):.6e}",
+                f"match_key={d.get('sparse_match_key', '')}",
+                f"{primary_label}={_format_metric_value(primary, tooltip=True)}",
             ]
-        )
+
+        ext.set_tooltip_formatter(_tooltip_formatter)
         ext.set_color_rule(
             _MetricNumericColorRule(
-                attribute="psnr",
-                # Low PSNR is severe -> darker red.
+                attribute=metric_name,
+                # Severe values map to darker red.
                 low_rgb=(254, 224, 210),
                 high_rgb=(165, 15, 21),
-                inverse=True,
+                inverse=bool(spec["inverse"]),
             )
         )
         return ext
@@ -569,8 +601,12 @@ class PerLayerAccuracyLens(Lens):
                 }
             )
 
-            psnr_ext = PerLayerAccuracyLens._build_psnr_extension(rows)
-            analysis.add_graph_layer("psnr", psnr_ext)
+            for metric_name in ("cosine_sim",):
+                # TODO other options "psnr"  "mse", "abs_err"
+                metric_ext = PerLayerAccuracyLens._build_metric_extension(
+                    rows, metric_name
+                )
+                analysis.add_graph_layer(metric_name, metric_ext)
 
             result.per_record_data[record.name] = analysis
 
@@ -773,8 +809,8 @@ class PerLayerAccuracyLens(Lens):
                     id="per_layer_accuracy_graph",
                     title="Per-layer Accuracy Graph",
                     graph_ref=graph_ref,
-                    default_layers=[f"{lens_name}/psnr"],
-                    default_color_by=f"{lens_name}/psnr",
+                    default_layers=[f"{lens_name}/cosine_sim"],
+                    default_color_by=f"{lens_name}/cosine_sim",
                     order=21,
                 ).as_block(),
                 HtmlBlock(
