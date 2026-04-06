@@ -169,15 +169,37 @@ def update_features(aten_op):
         # Guard and assert ops
         torch.ops.aten._assert_scalar.default,
         torch.ops.aten.sym_constrain_range_for_size.default,
-        # copy.default is a no-op when src dtype matches dst dtype; removed by
-        # RemoveRedundantOpsTransform before execution.
-        exir_ops.edge.aten.copy.default,
     ]
 )
 def register_ephemeral_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         supports_resize=True,
+    )
+
+
+def _check_copy_is_noop(node: torch.fx.Node) -> bool:
+    """Only support copy.default when it's a no-op (same dtype and shape)."""
+    src = node.args[1]
+    if not isinstance(src, torch.fx.Node):
+        return False
+    src_val = src.meta.get("val")
+    dst_val = node.meta.get("val")
+    if src_val is None or dst_val is None:
+        return False
+    return src_val.dtype == dst_val.dtype and src_val.shape == dst_val.shape
+
+
+@update_features(
+    [
+        exir_ops.edge.aten.copy.default,
+    ]
+)
+def register_copy_op():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        supports_resize=True,
+        are_node_inputs_supported_fn=_check_copy_is_noop,
     )
 
 
@@ -193,6 +215,7 @@ def register_ephemeral_ops():
         exir_ops.edge.aten.exp.default,
         exir_ops.edge.aten.gelu.default,
         exir_ops.edge.aten.hardshrink.default,
+        exir_ops.edge.aten.hardswish.default,
         exir_ops.edge.aten.hardtanh.default,
         exir_ops.edge.aten.neg.default,
         exir_ops.edge.aten.relu.default,
@@ -802,6 +825,47 @@ def register_convolution_cpp_ops():
 
         return True
 
+    def pick_conv_storage(
+        node: torch.fx.Node,
+    ) -> Tuple[List[utils.TensorRepSet], utils.TensorRepSet]:
+        x = node.args[0]
+        assert isinstance(x, torch.fx.Node)
+        x_shape = x.meta["val"].size()
+
+        # Default: channels-packed texture (conv2d and fallback conv1d)
+        input_storage = utils.CHANNELS_PACKED_TEXTURE
+        output_storage = utils.CHANNELS_PACKED_TEXTURE
+
+        if len(x_shape) == 3:
+            # Conv1d: check if we can use height-packed
+            weight = node.args[1]
+            assert isinstance(weight, torch.fx.Node)
+            w_shape = weight.meta["val"].size()
+            groups = node.args[8]
+
+            c_in = x_shape[1]
+            c_out = w_shape[0]
+            kernel_size = w_shape[2]
+
+            is_pointwise = kernel_size == 1
+            is_depthwise = (
+                isinstance(groups, int)
+                and groups == c_in
+                and c_out == c_in
+                and w_shape[1] == 1
+            )
+            if is_pointwise or is_depthwise:
+                input_storage = utils.HEIGHT_PACKED_TEXTURE
+                output_storage = utils.HEIGHT_PACKED_TEXTURE
+
+        # Build per-input storage list. The convolution op has variable args:
+        # aten.convolution.default: input, weight, bias, stride, padding,
+        #   dilation, transposed, output_padding, groups
+        # et_vk.conv_with_clamp.default: + output_min, output_max
+        # All args after input are NO_STORAGE (prepacked or non-tensor)
+        inputs = [input_storage] + [utils.NO_STORAGE] * 10
+        return inputs, output_storage
+
     return OpFeatures(
         inputs_storage=[
             utils.CHANNELS_PACKED_TEXTURE,  # input
@@ -820,6 +884,7 @@ def register_convolution_cpp_ops():
         supports_resize=True,
         supports_prepacking=True,
         are_node_inputs_supported_fn=check_conv_node,
+        pick_io_storage_fn=pick_conv_storage,
     )
 
 
@@ -1021,6 +1086,16 @@ def register_apply_rotary_emb():
     )
 
 
+@update_features(exir_ops.edge.et_vk.apply_rotary_emb_hf.default)
+def register_apply_rotary_emb_hf():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
 # =============================================================================
 # Permute.cpp
 # =============================================================================
@@ -1117,6 +1192,20 @@ def register_clone():
 
 @update_features(exir_ops.edge.dim_order_ops._clone_dim_order.default)
 def register_clone_dim_order():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+# alias_copy is a no-op identity operation (same as clone/alias). It is removed
+# by RemoveRedundantOpsTransform during preprocess, so the C++ runtime never sees
+# it. Registering it here ensures the partitioner delegates it to Vulkan rather
+# than creating partition boundaries that break the graph.
+@update_features(exir_ops.edge.aten.alias_copy.default)
+def register_alias_copy():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,

@@ -2,7 +2,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
+from typing import Any, Callable
 
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer_utils import (
@@ -23,6 +23,7 @@ from torchao.quantization.pt2e import (
 from torchao.quantization.pt2e.quantizer import (
     FixedQParamsQuantizationSpec,
     QuantizationSpec,
+    QuantizationSpecBase,
     SharedQuantizationSpec,
 )
 
@@ -95,13 +96,15 @@ class CortexMQuantizationConfig(QuantizationConfig):
 
     def get_input_act_qspec(
         self, node: Node | None = None, input_node: Node | None = None
-    ) -> QuantizationSpec | None:
+    ) -> QuantizationSpecBase | None:
         """
         Returns the configured input activation spec, no specific adjustments.
         """
         return super().get_input_act_qspec()
 
-    def get_output_act_qspec(self, node: Node | None = None) -> QuantizationSpec | None:
+    def get_output_act_qspec(
+        self, node: Node | None = None
+    ) -> QuantizationSpecBase | None:
         """
         Returns the configured output activation spec with the following cortex-m specific adjustments:
         - For softmax, returns a fixed quantization spec matching CMSIS-NN requirements.
@@ -114,10 +117,13 @@ class CortexMQuantizationConfig(QuantizationConfig):
         if node is not None and node.target in POOL_SHARE_OUTPUT_TARGETS:
             if len(node.args) == 0:
                 return super().get_output_act_qspec()
-            return SharedQuantizationSpec((node.args[0], node))
+            input_node = node.args[0]
+            if isinstance(input_node, Node):
+                return SharedQuantizationSpec((input_node, node))
+            return super().get_output_act_qspec()
         return super().get_output_act_qspec()
 
-    def get_weight_qspec(self, node: Node | None = None) -> QuantizationSpec | None:
+    def get_weight_qspec(self, node: Node | None = None) -> QuantizationSpecBase | None:
         """
         Returns the configured weight quantization spec with the following cortex-m specific adjustments:
         - For conv transpose, returns the per-channel quantization spec with ch_axis=1 to match the IOHW weight format used by CMSIS-NN, instead of the default ch_axis=0
@@ -127,16 +133,19 @@ class CortexMQuantizationConfig(QuantizationConfig):
             node is not None
             and node.target in CONV_TRANSPOSE_TARGETS
             and weight_qspec is not None
+            and isinstance(weight_qspec, QuantizationSpec)
             and weight_qspec.dtype == torch.int8
         ):
             return INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC
         return weight_qspec
 
-    def get_bias_qspec(self, node: Node) -> QuantizationSpec | None:
+    def get_bias_qspec(
+        self, node: Node | None = None
+    ) -> QuantizationSpecBase | Callable[[Any], Any] | None:
         """
         Returns the configured bias quantization spec, no specific adjustments.
         """
-        if callable(self.bias):
+        if callable(self.bias) and node is not None:
             return self.bias(node)
         return super().get_bias_qspec(node)
 

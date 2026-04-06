@@ -81,7 +81,7 @@ void add_embedding_node(
       // Push Constants
       {},
       // Specialization Constants
-      {},
+      {graph.hashed_layout_of(out), graph.hashed_layout_of(indices)},
       // Resize Args
       {},
       // Resizing Logic
