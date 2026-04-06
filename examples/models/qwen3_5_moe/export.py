@@ -109,6 +109,9 @@ def load_prequantized_model(prequantized_dir, max_seq_len=4096):
     runtime_prefixes = (
         ".mask",
         ".inv_freq",
+        ".kv_cache.",
+        ".conv_state",
+        ".recurrent_state",
     )
     expected_missing = {k for k in missing if any(p in k for p in runtime_prefixes)}
     weight_missing = set(missing) - expected_missing
@@ -310,7 +313,8 @@ def _materialize_buffers(model, config):
 
     Replaces meta buffers with real tensors on CPU, recomputes RoPE
     inv_freq and causal masks. State buffers (KV cache, conv/recurrent
-    state) are no longer registered buffers — they are explicit function args.
+    state) are zero-initialized registered buffers that will be shared
+    across methods via share_mutable_buffers.
     """
     # Masks stay bool, inv_freq stays float32.
     for fqn, buf in list(model.named_buffers()):
@@ -359,8 +363,9 @@ def export_and_lower(model, config, args):
       - "prefill": prefill path (T>=2), uses chunked FLA triton_op with
         dynamic sequence length.
 
-    Both methods take explicit state tensors (conv_states, recurrent_states,
-    k_caches, v_caches) as inputs and return updated state as outputs.
+    Both methods share mutable state buffers (KV cache, conv_state,
+    recurrent_state) via share_mutable_buffers=True. The model uses
+    registered buffers with in-place updates — no state in/out args.
     """
     import torch._inductor.config as inductor_config
 
@@ -381,10 +386,6 @@ def export_and_lower(model, config, args):
     # -O0 compiles ~8x faster than -O1 with no measurable runtime impact.
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
 
-    # Create initial state tensors
-    conv_states, recurrent_states, k_caches, v_caches = \
-        Qwen35MoE.make_initial_state(config)
-
     # --- Decode method (T=1, static shape) ---
     print("Exporting decode method (forward)...")
     decode_tokens = torch.tensor([[0]], dtype=torch.long)
@@ -392,8 +393,7 @@ def export_and_lower(model, config, args):
     with torch.no_grad():
         decode_ep = export(
             model,
-            (decode_tokens, decode_pos,
-             conv_states, recurrent_states, k_caches, v_caches),
+            (decode_tokens, decode_pos),
             strict=True,
         )
     print("Decode export successful!")
@@ -403,21 +403,14 @@ def export_and_lower(model, config, args):
     prefill_tokens = torch.tensor([[0, 1]], dtype=torch.long)
     prefill_pos = torch.tensor([0, 1], dtype=torch.long)
     seq_dim = Dim("seq_len", min=2, max=config.max_seq_len - 1)
-    # Dynamic shapes: only tokens dim 1 and pos dim 0 are dynamic;
-    # state tensors have static shapes.
     prefill_dynamic_shapes = (
         {1: seq_dim},   # tokens
         {0: seq_dim},   # input_pos
-        None,           # conv_states
-        None,           # recurrent_states
-        None,           # k_caches
-        None,           # v_caches
     )
     with torch.no_grad():
         prefill_ep = export(
             model,
-            (prefill_tokens, prefill_pos,
-             conv_states, recurrent_states, k_caches, v_caches),
+            (prefill_tokens, prefill_pos),
             dynamic_shapes=prefill_dynamic_shapes,
             strict=True,
         )
@@ -426,13 +419,6 @@ def export_and_lower(model, config, args):
     # Lower with CUDA backend (per-method partitioners to avoid so_blob collision)
     print("Lowering to ExecuTorch with CUDA...")
 
-    num_fla = sum(1 for t in config.layer_types if t == "linear_attention")
-    num_attn = sum(1 for t in config.layer_types if t == "full_attention")
-    conv_dim = (
-        config.linear_num_key_heads * config.linear_key_head_dim * 2
-        + config.linear_num_value_heads * config.linear_value_head_dim
-    )
-
     metadata = {
         "get_max_seq_len": config.max_seq_len,
         "get_vocab_size": config.vocab_size,
@@ -440,16 +426,6 @@ def export_and_lower(model, config, args):
         "use_kv_cache": True,
         "use_sdpa_with_kv_cache": False,
         "enable_dynamic_shape": True,
-        # State shape metadata for C++ runner
-        "get_num_fla_layers": num_fla,
-        "get_num_attn_layers": num_attn,
-        "get_conv_dim": conv_dim,
-        "get_conv_kernel_size": config.linear_conv_kernel_dim,
-        "get_num_v_heads": config.linear_num_value_heads,
-        "get_head_k_dim": config.linear_key_head_dim,
-        "get_head_v_dim": config.linear_value_head_dim,
-        "get_n_kv_heads": config.num_kv_heads,
-        "get_head_dim": config.head_dim,
     }
     et_prog = to_edge_transform_and_lower(
         {"forward": decode_ep, "prefill": prefill_ep},
@@ -471,7 +447,11 @@ def export_and_lower(model, config, args):
         config=ExecutorchBackendConfig(
             extract_delegate_segments=True,
             do_quant_fusion_and_const_prop=True,
-            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+            memory_planning_pass=MemoryPlanningPass(
+                alloc_graph_input=False,
+                share_mutable_buffers=True,
+            ),
+            emit_mutable_buffer_names=True,
         ),
     )
 

@@ -71,34 +71,24 @@ def _move_to_cuda(model, config):
 
 
 def generate(
-    model, config, tokenizer, prompt, max_new_tokens=128, temperature=0.0, eos_token_ids=None
+    model, tokenizer, prompt, max_new_tokens=128, temperature=0.0, eos_token_ids=None
 ):
-    """Generate text autoregressively with explicit state passing.
+    """Generate text autoregressively.
 
-    Prefills one token at a time (the chunk_gated_delta_rule kernel's chunked
-    path has numerical issues with T>1 in eager mode; token-by-token uses the
-    stable recurrent path).
+    State (KV cache, conv_state, recurrent_state) is managed internally
+    via registered buffers — the model signature is just (tokens, input_pos).
     """
-    from executorch.examples.models.qwen3_5_moe.model import Qwen35MoE
-
     if eos_token_ids is None:
         eos_token_ids = set()
 
     input_ids = tokenizer.encode(prompt).ids
 
-    # Initialize state tensors
-    conv_states, recurrent_states, k_caches, v_caches = (
-        Qwen35MoE.make_initial_state(config, dtype=torch.bfloat16, device="cuda")
-    )
-
-    # Prefill: one token at a time
+    # Prefill: one token at a time (recurrent path is stable for T=1)
     with torch.no_grad():
         for i, tok_id in enumerate(input_ids):
             tok = torch.tensor([[tok_id]], dtype=torch.long, device="cuda")
             pos = torch.tensor([i], dtype=torch.long, device="cuda")
-            logits, conv_states, recurrent_states, k_caches, v_caches = model(
-                tok, pos, conv_states, recurrent_states, k_caches, v_caches
-            )
+            logits = model(tok, pos)
 
     # Sample first generated token
     next_token = _sample(logits[:, -1, :], temperature)
@@ -109,10 +99,7 @@ def generate(
     with torch.no_grad():
         for i in range(max_new_tokens - 1):
             pos = torch.tensor([seq_len + i], device="cuda")
-            logits, conv_states, recurrent_states, k_caches, v_caches = model(
-                next_token.unsqueeze(0), pos,
-                conv_states, recurrent_states, k_caches, v_caches
-            )
+            logits = model(next_token.unsqueeze(0), pos)
             next_token = _sample(logits[:, -1, :], temperature)
             tok_id = next_token.item()
             generated.append(tok_id)
@@ -193,7 +180,6 @@ def main():
     t0 = time.perf_counter()
     output = generate(
         model,
-        config,
         tokenizer,
         args.prompt,
         max_new_tokens=args.max_new_tokens,

@@ -178,9 +178,28 @@ class RotaryEmbedding(nn.Module):
 
 
 # ---------------------------------------------------------------------------
+# KV Cache
+
+
+class KVCache(nn.Module):
+
+    def __init__(self, n_kv_heads, head_dim, max_seq_len):
+        super().__init__()
+        self.register_buffer(
+            "k_cache", torch.zeros(1, n_kv_heads, max_seq_len, head_dim)
+        )
+        self.register_buffer(
+            "v_cache", torch.zeros(1, n_kv_heads, max_seq_len, head_dim)
+        )
+
+    def update(self, input_pos, k_val, v_val):
+        self.k_cache[:, :, input_pos] = k_val
+        self.v_cache[:, :, input_pos] = v_val
+        return self.k_cache, self.v_cache
+
+
+# ---------------------------------------------------------------------------
 # Full Attention with output gate, QK-norm, partial RoPE
-# KV cache state is passed as explicit function arguments (not registered buffers)
-# to enable cross-method state sharing in dual-method PTE.
 
 
 class FullAttention(nn.Module):
@@ -209,12 +228,14 @@ class FullAttention(nn.Module):
             self.head_dim, config.partial_rotary_factor, config.rope_theta
         )
 
+        self.kv_cache = KVCache(self.n_kv_heads, self.head_dim, config.max_seq_len)
+
         mask = torch.tril(
             torch.ones(config.max_seq_len, config.max_seq_len, dtype=torch.bool)
         )
         self.register_buffer("mask", mask)
 
-    def forward(self, x, input_pos, k_cache, v_cache):
+    def forward(self, x, input_pos):
         B, T, _ = x.size()
         dtype = x.dtype
 
@@ -243,16 +264,13 @@ class FullAttention(nn.Module):
         k = k.to(dtype).transpose(1, 2)
         v = v.transpose(1, 2)
 
-        # Functional KV cache update (clone + scatter avoids input mutation)
-        new_k_cache = k_cache.clone()
-        new_k_cache[:, :, input_pos] = k
-        new_v_cache = v_cache.clone()
-        new_v_cache[:, :, input_pos] = v
+        # KV cache
+        k, v = self.kv_cache.update(input_pos, k, v)
 
         # SDPA with GQA — kernel maps Q heads to KV heads internally
         attn_mask = self.mask[input_pos].unsqueeze(0).unsqueeze(0)
         y = F.scaled_dot_product_attention(
-            q, new_k_cache, new_v_cache, attn_mask=attn_mask, enable_gqa=True
+            q, k, v, attn_mask=attn_mask, enable_gqa=True
         )
 
         y = y.transpose(1, 2).contiguous().view(B, T, -1)
@@ -261,7 +279,7 @@ class FullAttention(nn.Module):
         gate = gate.reshape(B, T, -1)
         y = y * torch.sigmoid(gate)
 
-        return self.o_proj(y), new_k_cache, new_v_cache
+        return self.o_proj(y)
 
 
 # ---------------------------------------------------------------------------
@@ -306,20 +324,29 @@ class GatedDeltaNet(nn.Module):
         self.norm = RMSNormGated(self.head_v_dim, eps=config.rms_norm_eps)
         self.out_proj = nn.Linear(self.value_dim, config.hidden_size, bias=False)
 
-        # State is passed as explicit args, not registered buffers.
-        # Shapes for reference:
-        #   conv_state:      [1, conv_dim, conv_kernel_size]
-        #   recurrent_state: [1, num_v_heads, head_k_dim, head_v_dim]
+        # State buffers
+        self.register_buffer(
+            "conv_state", torch.zeros(1, self.conv_dim, config.linear_conv_kernel_dim)
+        )
+        self.register_buffer(
+            "recurrent_state",
+            torch.zeros(1, self.num_v_heads, self.head_k_dim, self.head_v_dim),
+        )
 
-    def _prepare_fla_inputs(self, x, input_pos, conv_state, recurrent_state):
-        """Shared preprocessing: projection, conv1d, split, normalize, gating."""
+    def forward(self, x, input_pos):
+        """GatedDeltaNet with trace-time dispatch.
+
+        When traced with T=1: uses native PyTorch recurrent delta rule
+        (AOTI fuses with surrounding ops for maximum decode throughput).
+        When traced with T>1: uses chunked FLA via triton_op.
+        """
         B, T, _ = x.size()
 
-        # Reset state at position 0 (functional — no in-place mutation)
-        reset = (input_pos[0] == 0).to(conv_state.dtype)
+        # Reset state at position 0
+        reset = (input_pos[0] == 0).to(self.conv_state.dtype)
         keep = 1.0 - reset
-        conv_state = conv_state * keep
-        recurrent_state = recurrent_state * keep
+        self.conv_state[:B].mul_(keep)
+        self.recurrent_state[:B].mul_(keep)
 
         # Fused projection: split into qkv, z, b, a
         proj = self.in_proj(x)
@@ -333,8 +360,9 @@ class GatedDeltaNet(nn.Module):
 
         # Causal depthwise conv1d with state (manual, avoids conv1d→conv2d decomposition)
         qkv_t = mixed_qkv.transpose(1, 2)
-        conv_input = torch.cat([conv_state, qkv_t], dim=-1)
-        new_conv_state = conv_input[:, :, -self.conv_kernel_size :]
+        conv_input = torch.cat([self.conv_state[:B], qkv_t], dim=-1)
+        with torch.no_grad():
+            self.conv_state[:B].copy_(conv_input[:, :, -self.conv_kernel_size :])
         w = self.conv1d.weight.squeeze(1).float()  # [C, 1, K] -> [C, K]
         T_conv = conv_input.shape[-1] - self.conv_kernel_size + 1
         acc = torch.zeros(
@@ -368,28 +396,6 @@ class GatedDeltaNet(nn.Module):
         beta = b.sigmoid()
         g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
 
-        return q, k, v, g, beta, z, B, T, new_conv_state, recurrent_state
-
-    def _fla_output(self, output, z, B, T):
-        """Shared postprocessing: RMSNorm(output) * silu(z) + out_proj."""
-        output = output.reshape(-1, self.head_v_dim)
-        z = z.reshape(-1, self.head_v_dim)
-        output = self.norm(output, z)
-        output = output.reshape(B, T, -1)
-        return self.out_proj(output)
-
-    def forward(self, x, input_pos, conv_state, recurrent_state):
-        """GatedDeltaNet with runtime dispatch.
-
-        When traced with T=1: uses native PyTorch recurrent delta rule
-        (AOTI fuses with surrounding ops for maximum decode throughput).
-        When traced with T>1: uses chunked FLA via triton_op.
-
-        Returns (output, new_conv_state, new_recurrent_state).
-        """
-        q, k, v, g, beta, z, B, T, new_conv_state, recurrent_state = \
-            self._prepare_fla_inputs(x, input_pos, conv_state, recurrent_state)
-
         if T == 1:
             # Native recurrent delta rule — AOTI fuses with surrounding ops
             scale = self.head_k_dim ** -0.5
@@ -400,7 +406,7 @@ class GatedDeltaNet(nn.Module):
             g_s = g[:, 0]             # [B, H]
             beta_s = beta[:, 0]       # [B, H]
 
-            state = recurrent_state.float()  # [B, H, K, V]
+            state = self.recurrent_state[:B].float()  # [B, H, K, V]
 
             # Decay state by exp(g)
             decay = torch.exp(g_s).unsqueeze(-1).unsqueeze(-1)  # [B, H, 1, 1]
@@ -417,14 +423,24 @@ class GatedDeltaNet(nn.Module):
             output = torch.einsum('bhkv,bhk->bhv', state, q_s) * scale
             output = output.unsqueeze(1).to(q.dtype)  # [B, 1, H, V]
 
-            new_recurrent_state = state.to(recurrent_state.dtype)
+            with torch.no_grad():
+                self.recurrent_state[:B].copy_(state.to(self.recurrent_state.dtype))
         else:
             # Chunked FLA triton_op for prefill
-            output, new_recurrent_state = torch.ops.triton.chunk_gated_delta_rule(
-                q, k, v, g, beta, recurrent_state
+            output, new_state = torch.ops.triton.chunk_gated_delta_rule(
+                q, k, v, g, beta, self.recurrent_state[:B]
             )
 
-        return self._fla_output(output, z, B, T), new_conv_state, new_recurrent_state
+            with torch.no_grad():
+                self.recurrent_state[:B].copy_(new_state)
+
+        # Output: RMSNorm(output) * silu(z)
+        output = output.reshape(-1, self.head_v_dim)
+        z = z.reshape(-1, self.head_v_dim)
+        output = self.norm(output, z)
+        output = output.reshape(B, T, -1)
+
+        return self.out_proj(output)
 
 
 # ---------------------------------------------------------------------------
@@ -543,11 +559,10 @@ class Block(nn.Module):
 
         self.mlp = SparseMoE(config)
 
-    def forward(self, x, input_pos, *layer_state):
-        attn_out, *new_state = self.attn(self.ln_1(x), input_pos, *layer_state)
-        x = x + attn_out
+    def forward(self, x, input_pos):
+        x = x + self.attn(self.ln_1(x), input_pos)
         x = x + self.mlp(self.ln_2(x))
-        return (x, *new_state)
+        return x
 
 
 class Qwen35MoE(nn.Module):
@@ -563,77 +578,13 @@ class Qwen35MoE(nn.Module):
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
     def forward(
-        self,
-        tokens: torch.LongTensor,
-        input_pos: torch.LongTensor,
-        conv_states: torch.Tensor,
-        recurrent_states: torch.Tensor,
-        k_caches: torch.Tensor,
-        v_caches: torch.Tensor,
-    ) -> tuple:
-        """Forward with explicit state I/O for dual-method PTE.
-
-        State tensors are packed by type:
-          conv_states:      [num_fla, 1, conv_dim, conv_kernel_size]
-          recurrent_states: [num_fla, 1, num_v_heads, head_k_dim, head_v_dim]
-          k_caches:         [num_attn, 1, n_kv_heads, max_seq_len, head_dim]
-          v_caches:         [num_attn, 1, n_kv_heads, max_seq_len, head_dim]
-
-        Returns (logits, conv_states, recurrent_states, k_caches, v_caches).
-        """
+        self, tokens: torch.LongTensor, input_pos: torch.LongTensor
+    ) -> torch.Tensor:
         x = self.embed_tokens(tokens)
-        fla_idx = 0
-        attn_idx = 0
         for layer in self.layers:
-            if layer.layer_type == "full_attention":
-                x, new_k, new_v = layer(
-                    x, input_pos, k_caches[attn_idx], v_caches[attn_idx]
-                )
-                k_caches = torch.select_scatter(k_caches, new_k, 0, attn_idx)
-                v_caches = torch.select_scatter(v_caches, new_v, 0, attn_idx)
-                attn_idx += 1
-            else:
-                x, new_conv, new_rec = layer(
-                    x, input_pos, conv_states[fla_idx], recurrent_states[fla_idx]
-                )
-                conv_states = torch.select_scatter(conv_states, new_conv, 0, fla_idx)
-                recurrent_states = torch.select_scatter(
-                    recurrent_states, new_rec, 0, fla_idx
-                )
-                fla_idx += 1
+            x = layer(x, input_pos)
         x = self.norm(x)
-        logits = self.lm_head(x)
-        return logits, conv_states, recurrent_states, k_caches, v_caches
-
-    @staticmethod
-    def make_initial_state(config, dtype=torch.bfloat16, device="cpu"):
-        """Create zero-initialized state tensors for export/inference."""
-        num_fla = sum(1 for t in config.layer_types if t == "linear_attention")
-        num_attn = sum(1 for t in config.layer_types if t == "full_attention")
-
-        conv_dim = (
-            config.linear_num_key_heads * config.linear_key_head_dim * 2
-            + config.linear_num_value_heads * config.linear_value_head_dim
-        )
-
-        conv_states = torch.zeros(
-            num_fla, 1, conv_dim, config.linear_conv_kernel_dim,
-            dtype=dtype, device=device,
-        )
-        recurrent_states = torch.zeros(
-            num_fla, 1, config.linear_num_value_heads,
-            config.linear_key_head_dim, config.linear_value_head_dim,
-            dtype=dtype, device=device,
-        )
-        k_caches = torch.zeros(
-            num_attn, 1, config.num_kv_heads, config.max_seq_len, config.head_dim,
-            dtype=dtype, device=device,
-        )
-        v_caches = torch.zeros(
-            num_attn, 1, config.num_kv_heads, config.max_seq_len, config.head_dim,
-            dtype=dtype, device=device,
-        )
-        return conv_states, recurrent_states, k_caches, v_caches
+        return self.lm_head(x)
 
     @staticmethod
     def from_hf_checkpoint(model_dir, max_seq_len=4096):
@@ -660,6 +611,9 @@ class Qwen35MoE(nn.Module):
         # Validate
         runtime_prefixes = (
             "lm_head.weight",
+            ".kv_cache.",
+            ".conv_state",
+            ".recurrent_state",
             ".mask",
             ".inv_freq",
         )
