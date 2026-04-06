@@ -105,6 +105,21 @@ fbcode_target(_kind = runtime.python_test,
     ],
 )
 
+fbcode_target(_kind = runtime.python_binary,
+    name = "bench_transposed_cache_py",
+    srcs = [
+        "bench_transposed_cache.py",
+    ],
+    main_function = "executorch.extension.llm.custom_ops.bench_transposed_cache.main",
+    preload_deps = [
+        ":custom_ops_aot_lib_mkl_noomp",
+        ":custom_ops_aot_py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
 fbcode_target(_kind = cpp_benchmark,
     name = "bench_sdpa",
     srcs = ["bench_sdpa.cpp"],
@@ -113,6 +128,17 @@ fbcode_target(_kind = cpp_benchmark,
         "//executorch/extension/llm/custom_ops:custom_ops_mkl_noomp",
         "//executorch/extension/threadpool:threadpool",
         "//executorch/kernels/optimized:libblas",
+        "//executorch/runtime/core/exec_aten:lib",
+        "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+cpp_benchmark(
+    name = "bench_transposed_cache",
+    srcs = ["bench_transposed_cache.cpp"],
+    deps = [
+        "fbsource//third-party/benchmark:benchmark",
+        "//executorch/extension/llm/custom_ops:custom_ops_mkl_noomp",
         "//executorch/runtime/core/exec_aten:lib",
         "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
     ],
