@@ -307,7 +307,7 @@ def dump_error_output(
     # Capture assertion error and print more info
     banner = "=" * 40 + "TOSA debug info" + "=" * 40
     logger.error(banner)
-    path_to_tosa_files = tester.compile_spec.get_intermediate_path()
+    path_to_tosa_files = tester.compile_spec._get_intermediate_path()
 
     if path_to_tosa_files is None:
         path_to_tosa_files = tempfile.mkdtemp(prefix="executorch_result_dump_")

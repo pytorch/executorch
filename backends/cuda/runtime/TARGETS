@@ -86,6 +86,7 @@ runtime.cxx_library(
     preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
     visibility = ["PUBLIC"],
     deps = [
+        ":cuda_platform",
         ":runtime_shims",
         "//executorch/backends/aoti:aoti_common_slim",
         "//executorch/backends/aoti/slim/core:slimtensor",
