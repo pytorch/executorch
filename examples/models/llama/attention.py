@@ -21,6 +21,10 @@ class ForwardOptions(TypedDict, total=False):
     in_cache_state: Optional[Any]
     out_cache_state: Optional[Any]
     last_valid_token_pos: Optional[torch.LongTensor]
+    # YOCO (You Only Cache Once): shared K/V from a donor layer.
+    # When provided, the attention layer skips its own K/V projection
+    # and reuses the donor's K/V instead.
+    shared_kv: Optional[Tuple[torch.Tensor, torch.Tensor]]
 
 
 class Attention(nn.Module, ABC):
@@ -314,6 +318,28 @@ class RingKVCache(KVCache):
         return self.k_cache, self.v_cache
 
 
+def _create_projection(
+    args: ModelArgs,
+    in_dim: int,
+    out_dim: int,
+    target_names: Tuple[str, ...],
+    bias: bool = False,
+) -> nn.Module:
+    """Create a Linear or LoRALinear projection based on target_modules config."""
+    if args.target_modules is not None and any(
+        n in args.target_modules for n in target_names
+    ):
+        return LoRALinear(
+            in_dim=in_dim,
+            out_dim=out_dim,
+            rank=args.r,
+            alpha=args.lora_alpha,
+            dropout=0.0,
+            use_bias=bias,
+        )
+    return nn.Linear(in_dim, out_dim, bias=bias)
+
+
 @register_attention("mha")
 class AttentionMHA(Attention):
     def __init__(
@@ -351,78 +377,22 @@ class AttentionMHA(Attention):
         self.enable_dynamic_shape = args.enable_dynamic_shape
         q_out_dim = self.n_heads * self.head_dim * (2 if self.use_q_gate else 1)
 
-        if self.use_qk_norm:
-            q_norm_dim = self.head_dim
-            k_norm_dim = self.head_dim
-            self.q_norm_fn = RMSNorm(
-                q_norm_dim,
-                eps=args.norm_eps,
-                add_unit_offset=args.rms_norm_add_unit_offset,
-            )
-            self.k_norm_fn = RMSNorm(
-                k_norm_dim,
-                eps=args.norm_eps,
-                add_unit_offset=args.rms_norm_add_unit_offset,
-            )
+        # YOCO: Determine if this is a KV shared layer (receives shared KV from donor).
+        num_kv_shared = args.num_kv_shared_layers
+        n_layers = args.n_layers
+        if num_kv_shared > 0:
+            first_shared = n_layers - num_kv_shared
+            self.is_kv_shared_layer = layer_id >= first_shared and first_shared > 0
+        else:
+            self.is_kv_shared_layer = False
 
-        self.wq = (
-            LoRALinear(
-                in_dim=args.dim,
-                out_dim=q_out_dim,
-                rank=args.r,
-                alpha=args.lora_alpha,
-                dropout=0.0,
-                use_bias=args.attention_qkv_bias,
-            )
-            if args.target_modules is not None and "q_proj" in args.target_modules
-            else nn.Linear(self.dim, q_out_dim, bias=self.attention_qkv_bias)
-        )
-        self.wk = (
-            LoRALinear(
-                in_dim=args.dim,
-                out_dim=args.n_kv_heads * args.head_dim,
-                rank=args.r,
-                alpha=args.lora_alpha,
-                dropout=0.0,
-                use_bias=args.attention_qkv_bias,
-            )
-            if args.target_modules is not None and "k_proj" in args.target_modules
-            else nn.Linear(
-                self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
-            )
-        )
-        self.wv = (
-            LoRALinear(
-                in_dim=args.dim,
-                out_dim=args.n_kv_heads * args.head_dim,
-                rank=args.r,
-                alpha=args.lora_alpha,
-                dropout=0.0,
-                use_bias=args.attention_qkv_bias,
-            )
-            if args.target_modules is not None and "v_proj" in args.target_modules
-            else nn.Linear(
-                self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
-            )
-        )
-        self.wo = (
-            LoRALinear(
-                in_dim=args.n_heads * args.head_dim,
-                out_dim=args.dim,
-                rank=args.r,
-                alpha=args.lora_alpha,
-                dropout=0.0,
-                use_bias=args.attention_qkv_bias,
-            )
-            if args.target_modules is not None
-            and (
-                "output_proj" in args.target_modules or "o_proj" in args.target_modules
-            )
-            else nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
-        )
+        self.num_kv_shared_layers = num_kv_shared
+        self.has_kv_weights = not self.is_kv_shared_layer
+
+        self._init_norms(args)
+        self._init_projections(args, q_out_dim)
 
         self.layer_id = layer_id
-
         self.rope = rope
 
         causal_mask = torch.tril(
@@ -436,6 +406,56 @@ class AttentionMHA(Attention):
         self.register_buffer("mask", causal_mask, persistent=False)
 
         if self.use_kv_cache:
+            self._init_kv_cache(args)
+            self.SDPA = SDPA(
+                dim=self.n_local_heads * self.head_dim,
+                head_dim=self.head_dim,
+                n_rep=self.n_rep,
+                max_context_len=self.max_context_len,
+            )
+
+    def _init_norms(self, args: ModelArgs) -> None:
+        """Initialize QK normalization layers."""
+        if self.use_qk_norm:
+            self.q_norm_fn = RMSNorm(
+                self.head_dim,
+                eps=args.norm_eps,
+                add_unit_offset=args.rms_norm_add_unit_offset,
+            )
+            if self.has_kv_weights:
+                self.k_norm_fn = RMSNorm(
+                    self.head_dim,
+                    eps=args.norm_eps,
+                    add_unit_offset=args.rms_norm_add_unit_offset,
+                )
+
+    def _init_projections(self, args: ModelArgs, q_out_dim: int) -> None:
+        """Initialize Q/K/V/O projection layers."""
+        self.wq = _create_projection(
+            args, args.dim, q_out_dim, ("q_proj",), bias=self.attention_qkv_bias
+        )
+        if self.has_kv_weights:
+            kv_dim = self.n_kv_heads * self.head_dim
+            self.wk = _create_projection(
+                args, args.dim, kv_dim, ("k_proj",), bias=self.attention_qkv_bias
+            )
+            self.wv = _create_projection(
+                args, args.dim, kv_dim, ("v_proj",), bias=self.attention_qkv_bias
+            )
+        else:
+            self.wk = None
+            self.wv = None
+        self.wo = _create_projection(
+            args,
+            args.n_heads * args.head_dim,
+            args.dim,
+            ("output_proj", "o_proj"),
+            bias=False,
+        )
+
+    def _init_kv_cache(self, args: ModelArgs) -> None:
+        """Initialize KV cache (only for non-shared layers)."""
+        if self.has_kv_weights:
             self.kv_cache = KVCache(
                 args.max_batch_size,
                 args.max_context_len,
@@ -443,12 +463,64 @@ class AttentionMHA(Attention):
                 self.head_dim,
                 args.enable_dynamic_shape,
             )
-            self.SDPA = SDPA(
-                dim=self.n_local_heads * self.head_dim,
-                head_dim=self.head_dim,
-                n_rep=self.n_rep,
-                max_context_len=self.max_context_len,
-            )
+        else:
+            self.kv_cache = None
+
+    def _prepare_qkv_shared(
+        self,
+        q: torch.Tensor,
+        shared_kv: Tuple[torch.Tensor, torch.Tensor],
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Prepare Q/K/V when using shared KV from a donor layer (YOCO)."""
+        k, v = shared_kv
+
+        if self.use_qk_norm and self.qk_norm_before_rope:
+            q = self.q_norm_fn(q)
+
+        # Apply RoPE to Q only (K already has RoPE from donor layer)
+        q, _ = self.rope.forward(q, q, freqs_cos, freqs_sin)
+        q = q.transpose(1, 2)
+
+        if self.use_qk_norm and not self.qk_norm_before_rope:
+            q = self.q_norm_fn(q)
+
+        return q, k, v
+
+    def _prepare_qkv(
+        self,
+        q: torch.Tensor,
+        x: torch.Tensor,
+        bsz: int,
+        seqlen: int,
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Prepare Q/K/V with standard projection (non-YOCO path)."""
+        assert self.wk is not None and self.wv is not None, (
+            "wk/wv projections are required when shared_kv is not provided. "
+            "This layer may be a YOCO shared layer that requires shared_kv from a donor."
+        )
+        k, v = self.wk(x), self.wv(x)
+        k = k.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
+        v = v.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
+
+        if self.use_qk_norm and self.qk_norm_before_rope:
+            q = self.q_norm_fn(q)
+            k = self.k_norm_fn(k)
+
+        q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
+
+        q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
+
+        if self.use_qk_norm and not self.qk_norm_before_rope:
+            q = self.q_norm_fn(q)
+            k = self.k_norm_fn(k)
+
+        return q, k, v
 
     def forward(
         self,
@@ -458,6 +530,7 @@ class AttentionMHA(Attention):
         **kwargs: ForwardOptions,
     ) -> Tuple[torch.Tensor, Optional[Any]]:
         input_pos = kwargs.get("input_pos")
+        shared_kv = kwargs.get("shared_kv")
         bsz, seqlen, _ = x.shape
 
         if self.use_q_gate:
@@ -470,24 +543,10 @@ class AttentionMHA(Attention):
             q = self.wq(x).view(bsz, seqlen, self.n_local_heads, self.head_dim)
             gate = None
 
-        k, v = self.wk(x), self.wv(x)
-        k = k.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
-        v = v.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
-
-        if self.use_qk_norm and self.qk_norm_before_rope:
-            q = self.q_norm_fn(q)
-            k = self.k_norm_fn(k)
-
-        # RoPE relative positional embeddings
-        q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
-
-        q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-        k = k.transpose(1, 2)
-        v = v.transpose(1, 2)
-
-        if self.use_qk_norm and not self.qk_norm_before_rope:
-            q = self.q_norm_fn(q)
-            k = self.k_norm_fn(k)
+        if shared_kv is not None:
+            q, k, v = self._prepare_qkv_shared(q, shared_kv, freqs_cos, freqs_sin)
+        else:
+            q, k, v = self._prepare_qkv(q, x, bsz, seqlen, freqs_cos, freqs_sin)
 
         if self.use_kv_cache:
             assert input_pos is not None
@@ -501,15 +560,29 @@ class AttentionMHA(Attention):
             else:
                 # mask is always 2D
                 attn_mask = self.mask[input_pos]
-            k, v = self.kv_cache.update(input_pos, k, v)
+
+            # Only update KV cache for non-shared layers
+            if shared_kv is None:
+                assert self.kv_cache is not None, (
+                    "kv_cache is required when shared_kv is not provided. "
+                    "This layer may be a YOCO shared layer that requires shared_kv from a donor."
+                )
+                k, v = self.kv_cache.update(input_pos, k, v)
+
             if getattr(self.kv_cache, "is_ring_buffer", False):
                 attn_mask = self.kv_cache.create_causal_mask_for_ring_buffer(
                     input_pos[0].item(), seqlen
                 )
+
             output = self.SDPA(input_pos, q, k, v, bsz, seqlen, attn_mask)
             if gate is not None:
                 output = output * torch.sigmoid(gate)
-            return self.wo(output), None
+
+            if shared_kv is None and self.num_kv_shared_layers > 0:
+                update = {"kv_to_share": (k, v)}
+            else:
+                update = None
+            return self.wo(output), update
 
         # grouped multiquery attention: expand out keys and values
         k = k.repeat_interleave(self.n_rep, dim=1)
