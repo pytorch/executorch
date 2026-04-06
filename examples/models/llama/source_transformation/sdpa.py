@@ -69,6 +69,8 @@ class SDPACustom(torch.nn.Module):
                 0,  # dropout probability. Ignored by the code
                 True,  # is_causal
             )
+        if self.is_seq_at_dim_2:
+            output = output.transpose(1, 2).contiguous()
         return output.view(bsz, seqlen, self.dim).to(dtype=input_dtype)
 
 
@@ -198,6 +200,8 @@ class QuantizedSDPA(torch.nn.Module):
                 v_scale_fp32,
             )
 
+        if self.is_seq_at_dim_2:
+            output = output.transpose(1, 2).contiguous()
         return output.view(bsz, seqlen, self.dim)
 
 

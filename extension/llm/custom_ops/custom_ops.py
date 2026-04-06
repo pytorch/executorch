@@ -167,8 +167,9 @@ def custom_sdpa(
     drpout_p=0.0,
     is_causal=False,
     scale=None,
+    is_seq_dim_2=False,
 ):
-    seq_len = query.size(1)
+    seq_len = query.size(2) if is_seq_dim_2 else query.size(1)
     _validate_params(
         query,
         key_cache,
