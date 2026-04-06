@@ -86,13 +86,13 @@ class UpdateQuantizedKVCacheTest(unittest.TestCase):
         self._update_k(start_pos, k, k_scales, k_zero_points)
         self._update_v(start_pos, v, v_scales, v_zero_points)
 
-        torch.ops.llama.update_cache(k, k_cache, start_pos)
-        torch.ops.llama.update_cache(k_scales, k_scales_cache, start_pos)
-        torch.ops.llama.update_cache(k_zero_points, k_zero_points_cache, start_pos)
+        torch.ops.llama.update_cache(k, k_cache, start_pos, False)
+        torch.ops.llama.update_cache(k_scales, k_scales_cache, start_pos, False)
+        torch.ops.llama.update_cache(k_zero_points, k_zero_points_cache, start_pos, False)
 
-        torch.ops.llama.update_cache(v, v_cache, start_pos)
-        torch.ops.llama.update_cache(v_scales, v_scales_cache, start_pos)
-        torch.ops.llama.update_cache(v_zero_points, v_zero_points_cache, start_pos)
+        torch.ops.llama.update_cache(v, v_cache, start_pos, False)
+        torch.ops.llama.update_cache(v_scales, v_scales_cache, start_pos, False)
+        torch.ops.llama.update_cache(v_zero_points, v_zero_points_cache, start_pos, False)
 
         self.assertTrue(torch.allclose(k_cache, self.quantized_k_cache))
         self.assertTrue(torch.allclose(v_cache, self.quantized_v_cache))
@@ -120,12 +120,12 @@ class UpdateQuantizedKVCacheTest(unittest.TestCase):
                     ]
 
         # Update using custom op
-        torch.ops.llama.update_cache_with_indices(k, k_cache, start_pos, indices)
+        torch.ops.llama.update_cache_with_indices(k, k_cache, start_pos, indices, False)
         torch.ops.llama.update_cache_with_indices(
-            k_scales, k_scales_cache, start_pos, indices
+            k_scales, k_scales_cache, start_pos, indices, False
         )
         torch.ops.llama.update_cache_with_indices(
-            k_zero_points, k_zero_points_cache, start_pos, indices
+            k_zero_points, k_zero_points_cache, start_pos, indices, False
         )
 
         # Validate results
@@ -218,7 +218,7 @@ class UpdateQuantizedKVCacheTest(unittest.TestCase):
 
         @run_in_subprocess
         def run_and_catch(k, k_cache, start_pos, indices):
-            torch.ops.llama.update_cache(k, k_cache, start_pos, indices)
+            torch.ops.llama.update_cache_with_indices(k, k_cache, start_pos, indices, False)
 
         exception_raised = False
         try:
@@ -238,7 +238,7 @@ class UpdateQuantizedKVCacheTest(unittest.TestCase):
 
         @run_in_subprocess
         def run_and_catch(k, k_cache, start_pos, indices):
-            torch.ops.llama.update_cache(k, k_cache, start_pos, indices)
+            torch.ops.llama.update_cache_with_indices(k, k_cache, start_pos, indices, False)
 
         exception_raised = False
         try:
@@ -270,19 +270,19 @@ class UpdateQuantizedKVCacheTest(unittest.TestCase):
         v_zero_points_cache = self.v_zero_points_cache.clone()
 
         # Update using custom op
-        torch.ops.llama.update_cache_with_indices(k, k_cache, start_pos, indices)
+        torch.ops.llama.update_cache_with_indices(k, k_cache, start_pos, indices, False)
         torch.ops.llama.update_cache_with_indices(
-            k_scales, k_scales_cache, start_pos, indices
+            k_scales, k_scales_cache, start_pos, indices, False
         )
         torch.ops.llama.update_cache_with_indices(
-            k_zero_points, k_zero_points_cache, start_pos, indices
+            k_zero_points, k_zero_points_cache, start_pos, indices, False
         )
-        torch.ops.llama.update_cache_with_indices(v, v_cache, start_pos, indices)
+        torch.ops.llama.update_cache_with_indices(v, v_cache, start_pos, indices, False)
         torch.ops.llama.update_cache_with_indices(
-            v_scales, v_scales_cache, start_pos, indices
+            v_scales, v_scales_cache, start_pos, indices, False
         )
         torch.ops.llama.update_cache_with_indices(
-            v_zero_points, v_zero_points_cache, start_pos, indices
+            v_zero_points, v_zero_points_cache, start_pos, indices, False
         )
 
         # Position 3 should have the value from the last update (index 2 in the sequence)
@@ -338,7 +338,7 @@ class UpdateQuantizedKVCacheTest(unittest.TestCase):
 
         @run_in_subprocess
         def run_and_catch(k, k_cache, start_pos, indices):
-            torch.ops.llama.update_cache(k, k_cache, start_pos, indices)
+            torch.ops.llama.update_cache_with_indices(k, k_cache, start_pos, indices, False)
 
         exception_raised = False
         try:
@@ -431,3 +431,75 @@ class UpdateQuantizedKVCacheTest(unittest.TestCase):
         self._update_and_validate(
             k, v, k_scales, v_scales, k_zero_points, v_zero_points, start_pos
         )
+
+    def test_update_cache_with_seq_dim_2(self):
+        """Test update_cache with is_seq_dim_2=True (layout: [batch, heads, seq, head_dim])."""
+        # Reset and prepare caches in the new layout
+        batch_size = 1
+        seq_len = 10
+        num_heads = 8
+        head_dim = 4
+
+        # Cache with layout [batch, heads, seq, head_dim]
+        k_cache = torch.zeros(
+            (batch_size, num_heads, seq_len, head_dim),
+            dtype=torch.int8,
+        )
+        k_scales_cache = torch.zeros(
+            (batch_size, num_heads, seq_len, 1), dtype=torch.float64
+        )
+        k_zero_points_cache = torch.zeros(
+            (batch_size, num_heads, seq_len, 1), dtype=torch.int64
+        )
+
+        # Value with layout [batch, heads, seq=1, head_dim]
+        k = torch.randint(0, 50, (batch_size, num_heads, 1, head_dim), dtype=torch.int8)
+        k_scales = torch.rand((batch_size, num_heads, 1, 1), dtype=torch.float64)
+        k_zero_points = torch.randint(0, 20, (batch_size, num_heads, 1, 1), dtype=torch.int64)
+
+        start_pos = 3
+
+        # Update using custom op with is_seq_dim_2=True
+        torch.ops.llama.update_cache(k, k_cache, start_pos, True)
+        torch.ops.llama.update_cache(k_scales, k_scales_cache, start_pos, True)
+        torch.ops.llama.update_cache(k_zero_points, k_zero_points_cache, start_pos, True)
+
+        # Verify the update happened at the correct position
+        # The sequence dimension is at index 2 when is_seq_dim_2=True
+        self.assertTrue(torch.allclose(k_cache[:, :, start_pos:start_pos+1, :], k))
+        self.assertTrue(torch.allclose(k_scales_cache[:, :, start_pos:start_pos+1, :], k_scales))
+        self.assertTrue(torch.allclose(k_zero_points_cache[:, :, start_pos:start_pos+1, :], k_zero_points))
+
+    def test_update_cache_with_indices_seq_dim_2(self):
+        """Test update_cache_with_indices with is_seq_dim_2=True."""
+        batch_size = 1
+        seq_len = 10
+        num_heads = 8
+        head_dim = 4
+
+        # Cache with layout [batch, heads, seq, head_dim]
+        k_cache = torch.zeros(
+            (batch_size, num_heads, seq_len, head_dim),
+            dtype=torch.int8,
+        )
+        k_scales_cache = torch.zeros(
+            (batch_size, num_heads, seq_len, 1), dtype=torch.float64
+        )
+
+        # Value with layout [batch, heads, seq=3, head_dim]
+        k = torch.randint(0, 50, (batch_size, num_heads, 3, head_dim), dtype=torch.int8)
+        k_scales = torch.rand((batch_size, num_heads, 3, 1), dtype=torch.float64)
+
+        # Update positions 2, 5, 7
+        indices = torch.tensor([[2, 5, 7]], dtype=torch.int64)
+        start_pos = 0
+
+        # Update using custom op with is_seq_dim_2=True
+        torch.ops.llama.update_cache_with_indices(k, k_cache, start_pos, indices, True)
+        torch.ops.llama.update_cache_with_indices(k_scales, k_scales_cache, start_pos, indices, True)
+
+        # Verify the updates happened at the correct positions
+        for seq_idx in range(3):
+            target_pos = indices[0, seq_idx].item()
+            self.assertTrue(torch.allclose(k_cache[:, :, target_pos:target_pos+1, :], k[:, :, seq_idx:seq_idx+1, :]))
+            self.assertTrue(torch.allclose(k_scales_cache[:, :, target_pos:target_pos+1, :], k_scales[:, :, seq_idx:seq_idx+1, :]))

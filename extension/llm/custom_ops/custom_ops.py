@@ -190,9 +190,15 @@ def _validate_update_cache_params(
     value,
     cache,
     start_pos,
+    is_seq_dim_2=False,
     indices=None,
 ):
-    seq_len = value.size(1)
+    # Determine sequence dimension based on is_seq_dim_2
+    # If is_seq_dim_2 is False: [batch, seq, heads, head_dim]
+    # If is_seq_dim_2 is True:  [batch, heads, seq, head_dim]
+    seq_dim = 2 if is_seq_dim_2 else 1
+    seq_len = value.size(seq_dim)
+
     assert (
         value.dim() == 4
     ), f"Expected value to be 4 dimensional but got {value.dim()} dimensions."
@@ -201,22 +207,31 @@ def _validate_update_cache_params(
         value.dtype == cache.dtype
     ), f"Expected value and cache to be of the same type but got value type {value.dtype} and cache type {cache.dtype}"
 
-    for i in [0, 2, 3]:
-        assert value.size(i) == cache.size(
-            i
-        ), f"Expected value and cache to have same size in dimension {i} but got {value.size(i)} and {cache.size(i)}"
+    # Validate batch and head_dim dimensions match
+    assert value.size(0) == cache.size(
+        0
+    ), f"Expected value and cache to have same size in dimension 0 (batch) but got {value.size(0)} and {cache.size(0)}"
+    assert value.size(3) == cache.size(
+        3
+    ), f"Expected value and cache to have same size in dimension 3 (head_dim) but got {value.size(3)} and {cache.size(3)}"
+
+    # Validate heads dimension matches based on layout
+    heads_dim = 1 if is_seq_dim_2 else 2
+    assert value.size(heads_dim) == cache.size(
+        heads_dim
+    ), f"Expected value and cache to have same size in dimension {heads_dim} (heads) but got {value.size(heads_dim)} and {cache.size(heads_dim)}"
 
     torch._check_is_size(start_pos)
     if indices is None:
-        torch._check(start_pos < cache.size(1))
+        torch._check(start_pos < cache.size(seq_dim))
         assert start_pos < cache.size(
-            1
-        ), f"Start position {start_pos} must be less than sequence length {cache.size(1)}"
+            seq_dim
+        ), f"Start position {start_pos} must be less than sequence length {cache.size(seq_dim)}"
 
-        torch._check((start_pos + seq_len) <= cache.size(1))
+        torch._check((start_pos + seq_len) <= cache.size(seq_dim))
         assert (start_pos + seq_len) <= cache.size(
-            1
-        ), f"Start position  + length = {start_pos + seq_len} must be less than sequence length {cache.size(1)}"
+            seq_dim
+        ), f"Start position  + length = {start_pos + seq_len} must be less than sequence length {cache.size(seq_dim)}"
 
     if indices is not None:
         assert (
@@ -229,8 +244,8 @@ def _validate_update_cache_params(
             0
         ), f"Expected indices batch dimension to match value batch dimension but got {indices.size(0)} and {value.size(0)}"
         assert indices.size(1) == value.size(
-            1
-        ), f"Expected indices sequence length dimension to match value sequence length dimension but got {indices.size(1)} and {value.size(1)}"
+            seq_dim
+        ), f"Expected indices sequence length dimension to match value sequence length dimension but got {indices.size(1)} and {value.size(seq_dim)}"
 
 
 @impl(custom_ops_lib, "update_cache", "Meta")
@@ -238,11 +253,13 @@ def update_cache_meta(
     value,
     cache,
     start_pos,
+    is_seq_dim_2=False,
 ):
     _validate_update_cache_params(
         value,
         cache,
         start_pos,
+        is_seq_dim_2,
     )
 
     # Update cache doesnt really return anything but I dont know a better
@@ -257,11 +274,13 @@ def update_cache_with_indices_meta(
     cache,
     start_pos,
     indices,
+    is_seq_dim_2=False,
 ):
     _validate_update_cache_params(
         value,
         cache,
         start_pos,
+        is_seq_dim_2,
         indices,
     )
 
