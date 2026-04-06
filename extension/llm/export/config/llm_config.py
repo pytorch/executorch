@@ -174,6 +174,10 @@ class ModelConfig:
         use_sdpa_with_kv_cache: Whether to use flash attention by substituting
             for our custom SDPA op. Note that the naming is poor and this
             doesn't actually have anything to do with the kv_cache at the moment.
+        use_transposed_cache: Whether to store KV cache in transposed layout
+            [B, H, S, D] instead of standard [B, S, H, D]. Transposed layout
+            improves SDPA performance by enabling contiguous memory access in
+            the attn_score @ V GEMM (stride D instead of H*D along seq dim).
         expand_rope_table: Temporary workaround to expand sin/cos table in head
             dim to take vectorized path in optimized kernels.
         use_attention_sink: Whether to use attention sink to support multi-round
@@ -194,6 +198,7 @@ class ModelConfig:
     enable_dynamic_shape: bool = True
     use_shared_embedding: bool = False
     use_sdpa_with_kv_cache: bool = False
+    use_transposed_cache: bool = True
     expand_rope_table: bool = False
     use_attention_sink: Optional[str] = None
     output_prune_map: Optional[str] = None

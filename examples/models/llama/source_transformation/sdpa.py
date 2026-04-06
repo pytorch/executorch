@@ -82,7 +82,7 @@ class SDPACustom(torch.nn.Module):
 
 
 def _replace_sdpa_with_custom_op(
-    module: torch.nn.Module, use_attention_mask: bool = False
+    module: torch.nn.Module, use_attention_mask: bool = False, is_seq_at_dim_2: bool = True
 ):
     for name, child in module.named_children():
         if isinstance(child, SDPA):
@@ -92,19 +92,19 @@ def _replace_sdpa_with_custom_op(
                 SDPACustom(
                     child.dim,
                     use_attention_mask=use_attention_mask,
-                    is_seq_at_dim_2=True, # hacking temporarily
+                    is_seq_at_dim_2=is_seq_at_dim_2,
                 ),
             )
         else:
-            _replace_sdpa_with_custom_op(child, use_attention_mask=use_attention_mask)
+            _replace_sdpa_with_custom_op(child, use_attention_mask=use_attention_mask, is_seq_at_dim_2=is_seq_at_dim_2)
 
 
 def replace_sdpa_with_custom_op(
-    module: torch.nn.Module, use_attention_mask: bool = False
+    module: torch.nn.Module, use_attention_mask: bool = False, is_seq_at_dim_2: bool = True
 ) -> torch.nn.Module:
     from executorch.extension.llm.custom_ops import custom_ops  # noqa
 
-    _replace_sdpa_with_custom_op(module, use_attention_mask=use_attention_mask)
+    _replace_sdpa_with_custom_op(module, use_attention_mask=use_attention_mask, is_seq_at_dim_2=is_seq_at_dim_2)
     return module
 
 

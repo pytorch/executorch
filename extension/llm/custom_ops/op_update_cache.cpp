@@ -119,17 +119,17 @@ Tensor& update_cache_impl(
 
   ET_CHECK_MSG(
       value_batch_size == cache_batch_size,
-      "projected_value batch size (%zd) should be equal to the cache batch size (%zd).",
+      "projected_value batch size (%" PRId64 ") should be equal to the cache batch size (%" PRId64 ").",
       value_batch_size,
       cache_batch_size);
   ET_CHECK_MSG(
       value_num_heads == cache_num_heads,
-      "projected_value number of heads (%zd) should be equal to the cache number of heads (%zd).",
+      "projected_value number of heads (%" PRId64 ") should be equal to the cache number of heads (%" PRId64 ").",
       value_num_heads,
       cache_num_heads);
   ET_CHECK_MSG(
       value_head_dim == cache_head_dim,
-      "projected_value embedding dimension (%zd) should be equal to the cache embedding dimension (%zd).",
+      "projected_value embedding dimension (%" PRId64 ") should be equal to the cache embedding dimension (%" PRId64 ").",
       value_head_dim,
       cache_head_dim);
   ET_CHECK_MSG(
@@ -210,7 +210,7 @@ Tensor& update_cache_impl(
         // Ensure the target position is valid
         ET_CHECK_MSG(
             target_pos >= 0 && target_pos < cache_seq_len,
-            "Index out of bounds: %" PRId64 " not in [0, %zd)",
+            "Index out of bounds: %" PRId64 " not in [0, %" PRId64 ")",
             target_pos,
             cache_seq_len);
 

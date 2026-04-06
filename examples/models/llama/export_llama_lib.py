@@ -765,6 +765,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
                 llm_config.model, "use_custom_sdpa_with_attention_mask", False
             ),
             use_sdpa_with_kv_cache=llm_config.model.use_sdpa_with_kv_cache,
+            use_transposed_cache=llm_config.model.use_transposed_cache,
             quantize_kv_cache=llm_config.model.quantize_kv_cache,
             use_kv_cache=llm_config.model.use_kv_cache,
             qnn=llm_config.backend.qnn.enabled,
@@ -1603,6 +1604,7 @@ def _get_source_transforms(  # noqa
     expand_rope_table: bool = False,
     use_custom_sdpa_with_attention_mask: bool = False,
     use_sdpa_with_kv_cache: bool = False,
+    use_transposed_cache: bool = True,
     quantize_kv_cache: bool = False,
     use_kv_cache: bool = False,
     qnn: bool = False,
@@ -1639,6 +1641,7 @@ def _get_source_transforms(  # noqa
         expand_rope_table: Whether to expand rope table.
         use_custom_sdpa_with_attention_mask: Whether to use custom SDPA with attention mask.
         use_sdpa_with_kv_cache: Whether to use SDPA with KV cache.
+        use_transposed_cache: Whether to store KV cache in transposed layout [B, H, S, D].
         quantize_kv_cache: Whether to quantize KV cache.
         use_kv_cache: Whether to use KV cache.
         qnn: Whether to use QNN.
@@ -1734,16 +1737,20 @@ def _get_source_transforms(  # noqa
     use_attention_mask_for_custom_sdpa = use_custom_sdpa_with_attention_mask
 
     if use_sdpa_with_kv_cache:
-        transforms.append(replace_kv_cache_with_custom_kv_cache)
+        transforms.append(
+            partial(replace_kv_cache_with_custom_kv_cache, is_seq_at_dim_2=use_transposed_cache)
+        )
         # todo: do this optionally
         # if use attention mask instead of causal attention
         # then create partial function that sets use_attention_mask=True
         if use_attention_mask_for_custom_sdpa:
             transforms.append(
-                partial(replace_sdpa_with_custom_op, use_attention_mask=True)
+                partial(replace_sdpa_with_custom_op, use_attention_mask=True, is_seq_at_dim_2=use_transposed_cache)
             )
         else:
-            transforms.append(replace_sdpa_with_custom_op)
+            transforms.append(
+                partial(replace_sdpa_with_custom_op, is_seq_at_dim_2=use_transposed_cache)
+            )
 
     if quantize_kv_cache:
         assert use_kv_cache, "quantize_kv_cache requires use_kv_cache=True"
