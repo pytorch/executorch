@@ -325,6 +325,7 @@ def _replace_kv_cache_with_quantized_kv_cache(module):
                     child,
                     QuantizedCacheType.AffineAsymmetric,
                     use_custom_update_cache_op=True,
+                    is_seq_at_dim_2=child.is_seq_at_dim_2,
                 ),
             )
         else:
@@ -421,6 +422,7 @@ def _replace_kv_cache_with_custom_kv_cache(module):
                     n_heads,
                     head_dim,
                     dtype=cache_dtype,
+                    is_seq_at_dim_2=True, # hacking temporarily
                 ),
             )
         else:
