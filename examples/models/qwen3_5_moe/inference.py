@@ -73,18 +73,17 @@ def _move_to_cuda(model, config):
 def generate(
     model, tokenizer, prompt, max_new_tokens=128, temperature=0.0, eos_token_ids=None
 ):
-    """Generate text autoregressively with KV cache.
+    """Generate text autoregressively.
 
-    Prefills one token at a time (the chunk_gated_delta_rule kernel's chunked
-    path has numerical issues with T>1 in eager mode; token-by-token uses the
-    stable recurrent path).
+    State (KV cache, conv_state, recurrent_state) is managed internally
+    via registered buffers — the model signature is just (tokens, input_pos).
     """
     if eos_token_ids is None:
         eos_token_ids = set()
 
     input_ids = tokenizer.encode(prompt).ids
 
-    # Prefill: one token at a time
+    # Prefill: one token at a time (recurrent path is stable for T=1)
     with torch.no_grad():
         for i, tok_id in enumerate(input_ids):
             tok = torch.tensor([[tok_id]], dtype=torch.long, device="cuda")

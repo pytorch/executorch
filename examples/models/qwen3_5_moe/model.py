@@ -414,13 +414,13 @@ class GatedDeltaNet(nn.Module):
 
         if T == 1:
             # Native recurrent delta rule — AOTI fuses with surrounding ops
-            scale = self.head_k_dim ** -0.5
+            scale = self.head_k_dim**-0.5
 
-            q_s = q[:, 0].float()     # [B, H, K]
-            k_s = k[:, 0].float()     # [B, H, K]
-            v_s = v[:, 0].float()     # [B, H, V]
-            g_s = g[:, 0]             # [B, H]
-            beta_s = beta[:, 0]       # [B, H]
+            q_s = q[:, 0].float()  # [B, H, K]
+            k_s = k[:, 0].float()  # [B, H, K]
+            v_s = v[:, 0].float()  # [B, H, V]
+            g_s = g[:, 0]  # [B, H]
+            beta_s = beta[:, 0]  # [B, H]
 
             state = self.recurrent_state[:B].float()  # [B, H, K, V]
 
@@ -429,14 +429,14 @@ class GatedDeltaNet(nn.Module):
             state = state * decay
 
             # Sk = state @ k (project state by key)
-            Sk = torch.einsum('bhkv,bhk->bhv', state, k_s)
+            Sk = torch.einsum("bhkv,bhk->bhv", state, k_s)
 
             # Delta rule state update
             delta = beta_s.unsqueeze(-1) * (v_s - Sk)  # [B, H, V]
-            state = state + torch.einsum('bhk,bhv->bhkv', k_s, delta)
+            state = state + torch.einsum("bhk,bhv->bhkv", k_s, delta)
 
             # Output = state @ q * scale
-            output = torch.einsum('bhkv,bhk->bhv', state, q_s) * scale
+            output = torch.einsum("bhkv,bhk->bhv", state, q_s) * scale
             output = output.unsqueeze(1).to(q.dtype)  # [B, 1, H, V]
 
             with torch.no_grad():

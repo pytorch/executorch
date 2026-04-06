@@ -430,8 +430,8 @@ def export_and_lower(model, config, args):
     prefill_pos = torch.tensor([0, 1], dtype=torch.long)
     seq_dim = Dim("seq_len", min=2, max=config.max_seq_len - 1)
     prefill_dynamic_shapes = (
-        {1: seq_dim},   # tokens
-        {0: seq_dim},   # input_pos
+        {1: seq_dim},  # tokens
+        {0: seq_dim},  # input_pos
     )
     with torch.no_grad():
         prefill_ep = export(
@@ -456,12 +456,16 @@ def export_and_lower(model, config, args):
     et_prog = to_edge_transform_and_lower(
         {"decode": decode_ep, "prefill": prefill_ep},
         partitioner={
-            "decode": [CudaPartitioner(
-                [CudaBackend.generate_method_name_compile_spec("decode")]
-            )],
-            "prefill": [CudaPartitioner(
-                [CudaBackend.generate_method_name_compile_spec("prefill")]
-            )],
+            "decode": [
+                CudaPartitioner(
+                    [CudaBackend.generate_method_name_compile_spec("decode")]
+                )
+            ],
+            "prefill": [
+                CudaPartitioner(
+                    [CudaBackend.generate_method_name_compile_spec("prefill")]
+                )
+            ],
         },
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False,

@@ -28,11 +28,11 @@ DEFINE_double(temperature, 0.8, "Sampling temperature (0 = greedy).");
 DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
 
 namespace llm = ::executorch::extension::llm;
-using ::executorch::extension::Module;
 using ::executorch::extension::from_blob;
+using ::executorch::extension::Module;
 using ::executorch::extension::TensorPtr;
-using ::executorch::runtime::EValue;
 using ::executorch::runtime::Error;
+using ::executorch::runtime::EValue;
 
 using SizesType = executorch::aten::SizesType;
 
@@ -146,9 +146,9 @@ int main(int argc, char** argv) {
       std::make_shared<executorch::aten::Tensor>(std::move(logits_tensor));
   uint64_t cur_token = llm::logits_to_token(*logits_ptr, FLAGS_temperature);
 
-  double prefill_ms = std::chrono::duration<double, std::milli>(
-                          prefill_end - prefill_start)
-                          .count();
+  double prefill_ms =
+      std::chrono::duration<double, std::milli>(prefill_end - prefill_start)
+          .count();
   printf(
       "Prefill: %ld tokens in %.1f ms (%.1f tok/s)\n",
       num_prompt_tokens,
@@ -213,9 +213,9 @@ int main(int argc, char** argv) {
 
   printf("\n");
   int64_t num_generated = pos - num_prompt_tokens;
-  double decode_ms = std::chrono::duration<double, std::milli>(
-                         decode_end - decode_start)
-                         .count();
+  double decode_ms =
+      std::chrono::duration<double, std::milli>(decode_end - decode_start)
+          .count();
   printf(
       "Decode: %ld tokens in %.1f ms (%.1f tok/s)\n",
       num_generated,
