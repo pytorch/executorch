@@ -79,15 +79,13 @@ TEST_F(TensorParserDeviceTest, CUDADeviceParsedFromPteFile) {
 
   int cuda_tensor_count = 0;
   int cpu_tensor_count = 0;
-  int total_tensor_count = 0;
 
-  for (size_t i = 0; i < flatbuffer_values->size(); ++i) {
+  for (uint32_t i = 0; i < flatbuffer_values->size(); ++i) {
     auto* serialization_value = flatbuffer_values->Get(i);
     if (serialization_value->val_type() !=
         executorch_flatbuffer::KernelTypes::Tensor) {
       continue;
     }
-    total_tensor_count++;
 
     auto* s_tensor = serialization_value->val_as_Tensor();
 
@@ -117,10 +115,10 @@ TEST_F(TensorParserDeviceTest, CUDADeviceParsedFromPteFile) {
     }
   }
 
-  EXPECT_GT(total_tensor_count, 0) << "Should have at least one tensor";
-  // The model has add(a, b) delegated to CUDA — 2 inputs + 1 output = 3 CUDA
   EXPECT_EQ(cuda_tensor_count, 3)
       << "Expected 3 CUDA tensors (2 delegate inputs + 1 delegate output)";
+  EXPECT_EQ(cpu_tensor_count, 0)
+      << "Expected 0 CPU tensors (all annotated as CUDA)";
 }
 
 TEST_F(TensorParserDeviceTest, NonDelegatedTensorsDefaultToCPU) {
@@ -136,7 +134,7 @@ TEST_F(TensorParserDeviceTest, NonDelegatedTensorsDefaultToCPU) {
       internal_program->execution_plan()->GetMutableObject(0);
   auto* flatbuffer_values = execution_plan->values();
 
-  for (size_t i = 0; i < flatbuffer_values->size(); ++i) {
+  for (uint32_t i = 0; i < flatbuffer_values->size(); ++i) {
     auto* serialization_value = flatbuffer_values->Get(i);
     if (serialization_value->val_type() !=
         executorch_flatbuffer::KernelTypes::Tensor) {

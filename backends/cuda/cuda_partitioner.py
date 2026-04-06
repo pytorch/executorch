@@ -29,15 +29,15 @@ class CudaPartitioner(AotiPartitioner):
     def __init__(
         self,
         compile_spec: List[CompileSpec],
-        device_index: int = 0,
     ) -> None:
         """
         Initialize the CUDA partitioner.
 
         Args:
-            compile_spec: List of compile specs for the backend.
-            device_index: The CUDA device index (default: 0). This is used to
-                         generate the target_device compile spec (e.g., "cuda:0").
+            compile_spec: List of compile specs for the backend. To specify a
+                         target CUDA device, include a CompileSpec with key
+                         "target_device" (e.g., value "cuda:1"). If not
+                         provided, defaults to "cuda:0".
         """
         # Add target_device compile spec for device propagation if not already present
         has_target_device = any(
@@ -47,7 +47,7 @@ class CudaPartitioner(AotiPartitioner):
             compile_spec = list(compile_spec) + [
                 CompileSpec(
                     TARGET_DEVICE_COMPILE_SPEC_KEY,
-                    f"cuda:{device_index}".encode("utf-8"),
+                    b"cuda:0",
                 )
             ]
         super().__init__(CudaBackend.__name__, compile_spec)
