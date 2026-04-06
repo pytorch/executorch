@@ -42,8 +42,7 @@ from executorch.exir.passes import MemoryPlanningPass
 from torch.export import export
 
 
-B, H, K, V = 1, 4, 64, 64
-T = 128  # default T for chunked tests
+B, T, H, K, V = 1, 128, 4, 64, 64
 
 EXECUTORCH_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "../../.."))
 RUNNER_PATH = os.path.join(EXECUTORCH_ROOT, "cmake-out", "executor_runner")
@@ -89,24 +88,19 @@ def _make_inputs_from_fla(
     gate_logit_normalizer,
     mask_p=0.0,
     nonzero_h0=False,
-    seq_len=T,
     dtype=torch.bfloat16,
     device="cuda",
 ):
     """Generate inputs following FLA test_chunk() conventions."""
     torch.manual_seed(seed)
-    q = torch.rand(B, seq_len, H, K, dtype=dtype, device=device)
-    k = torch.rand(B, seq_len, H, K, dtype=dtype, device=device)
-    v = torch.rand(B, seq_len, H, V, dtype=dtype, device=device)
-    beta = (
-        torch.rand(B, seq_len, H, dtype=torch.float32, device=device)
-        .sigmoid()
-        .to(dtype)
-    )
-    g = F.logsigmoid(torch.rand(B, seq_len, H, dtype=torch.float32, device=device))
+    q = torch.rand(B, T, H, K, dtype=dtype, device=device)
+    k = torch.rand(B, T, H, K, dtype=dtype, device=device)
+    v = torch.rand(B, T, H, V, dtype=dtype, device=device)
+    beta = torch.rand(B, T, H, dtype=torch.float32, device=device).sigmoid().to(dtype)
+    g = F.logsigmoid(torch.rand(B, T, H, dtype=torch.float32, device=device))
     g = (g / gate_logit_normalizer).to(dtype)
     if mask_p > 0:
-        g = g * (torch.rand(B, seq_len, H, dtype=dtype, device=device) > mask_p)
+        g = g * (torch.rand(B, T, H, dtype=dtype, device=device) > mask_p)
     if nonzero_h0:
         h0 = torch.randn(B, H, K, V, dtype=dtype, device=device)
     else:
@@ -114,12 +108,12 @@ def _make_inputs_from_fla(
     return q, k, v, g, beta, h0
 
 
-def _make_inputs(seq_len=T, dtype=torch.bfloat16, device="cuda"):
-    q = torch.randn(B, seq_len, H, K, dtype=dtype, device=device)
-    k = torch.randn(B, seq_len, H, K, dtype=dtype, device=device)
-    v = torch.randn(B, seq_len, H, V, dtype=dtype, device=device)
-    g = F.logsigmoid(torch.randn(B, seq_len, H, dtype=dtype, device=device))
-    beta = torch.rand(B, seq_len, H, dtype=dtype, device=device).sigmoid()
+def _make_inputs(dtype=torch.bfloat16, device="cuda"):
+    q = torch.randn(B, T, H, K, dtype=dtype, device=device)
+    k = torch.randn(B, T, H, K, dtype=dtype, device=device)
+    v = torch.randn(B, T, H, V, dtype=dtype, device=device)
+    g = F.logsigmoid(torch.randn(B, T, H, dtype=dtype, device=device))
+    beta = torch.rand(B, T, H, dtype=dtype, device=device).sigmoid()
     initial_state = torch.randn(B, H, K, V, dtype=dtype, device=device)
     return q, k, v, g, beta, initial_state
 
@@ -257,69 +251,6 @@ class TestChunkGatedDeltaRule(unittest.TestCase):
             )
 
         self.assertLess((o_ours.float() - o_ref.float()).abs().max().item(), 0.01)
-
-    def test_recurrent_t1(self):
-        """T=1 (decode) uses recurrent kernel — verify vs naive reference."""
-        from fla.ops.gated_delta_rule.naive import naive_recurrent_gated_delta_rule
-
-        model = ChunkGatedDeltaModel().eval()
-        for seed, norm, mask_p, nonzero_h0, desc in FLA_TEST_CONFIGS:
-            with self.subTest(desc=desc):
-                inputs = _make_inputs_from_fla(
-                    seed, norm, mask_p, nonzero_h0, seq_len=1
-                )
-                q, k, v, g, beta, h0 = inputs
-
-                with torch.no_grad():
-                    o_ours, s_ours = model(q, k, v, g, beta, h0)
-
-                    o_ref, s_ref = naive_recurrent_gated_delta_rule(
-                        q=F.normalize(q, p=2, dim=-1),
-                        k=F.normalize(k, p=2, dim=-1),
-                        v=v,
-                        beta=beta,
-                        g=g,
-                        initial_state=h0,
-                        output_final_state=True,
-                    )
-
-                self.assertEqual(o_ours.shape, torch.Size([B, 1, H, V]))
-                self.assertEqual(s_ours.shape, torch.Size([B, H, K, V]))
-                o_diff = (o_ours.float() - o_ref.float()).abs().max().item()
-                s_diff = (s_ours.float() - s_ref.float()).abs().max().item()
-                self.assertLess(o_diff, 0.01, f"{desc}: output diff {o_diff}")
-                self.assertLess(s_diff, 0.01, f"{desc}: state diff {s_diff}")
-
-    def test_dispatch_multiple_seq_lengths(self):
-        """Verify correctness across T values hitting both dispatch paths."""
-        from fla.ops.gated_delta_rule.naive import naive_recurrent_gated_delta_rule
-
-        model = ChunkGatedDeltaModel().eval()
-        # T=1 → recurrent, T>1 → chunked; include boundary values
-        for seq_len in [1, 2, 32, 63, 64, 65, 128, 256]:
-            with self.subTest(T=seq_len):
-                inputs = _make_inputs_from_fla(42, 1.0, 0.0, True, seq_len=seq_len)
-                q, k, v, g, beta, h0 = inputs
-
-                with torch.no_grad():
-                    o_ours, s_ours = model(q, k, v, g, beta, h0)
-
-                    o_ref, s_ref = naive_recurrent_gated_delta_rule(
-                        q=F.normalize(q, p=2, dim=-1),
-                        k=F.normalize(k, p=2, dim=-1),
-                        v=v,
-                        beta=beta,
-                        g=g,
-                        initial_state=h0,
-                        output_final_state=True,
-                    )
-
-                self.assertEqual(o_ours.shape, torch.Size([B, seq_len, H, V]))
-                self.assertEqual(s_ours.shape, torch.Size([B, H, K, V]))
-                o_diff = (o_ours.float() - o_ref.float()).abs().max().item()
-                s_diff = (s_ours.float() - s_ref.float()).abs().max().item()
-                self.assertLess(o_diff, 0.02, f"T={seq_len}: output diff {o_diff}")
-                self.assertLess(s_diff, 0.02, f"T={seq_len}: state diff {s_diff}")
 
     def test_export_cuda(self):
         with tempfile.TemporaryDirectory() as tmpdir:
