@@ -41,9 +41,20 @@ install_vulkan_sdk() {
   tar -C "${_vulkan_sdk_dir}" -xJf "${_tmp_archive}"
 
   export PATH="${PATH}:${_vulkan_sdk_dir}/${VULKAN_SDK_VERSION}/x86_64/bin/"
+  export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:${_vulkan_sdk_dir}/${VULKAN_SDK_VERSION}/x86_64/lib/"
 }
 
 VULKAN_SDK_VERSION="1.4.321.1"
 
-install_swiftshader
+# Parse arguments: --gpu skips SwiftShader (use NVIDIA driver's Vulkan ICD instead)
+USE_GPU=false
+for arg in "$@"; do
+  case $arg in
+    --gpu) USE_GPU=true ;;
+  esac
+done
+
+if [ "$USE_GPU" = false ]; then
+  install_swiftshader
+fi
 install_vulkan_sdk "${VULKAN_SDK_VERSION}"

@@ -14,7 +14,7 @@ Usage: test_model_e2e.sh <device> <hf_model> <quant_name> [model_dir] [mode]
 Build and run end-to-end tests for CUDA/Metal/XNNPACK models.
 
 Arguments:
-  device      cuda, metal, or xnnpack (required)
+  device      cuda, metal, vulkan, or xnnpack (required)
 
   hf_model    HuggingFace model ID (required)
               Supported models:
@@ -47,6 +47,7 @@ Examples:
   test_model_e2e.sh metal "openai/whisper-small" "non-quantized"
   test_model_e2e.sh cuda "mistralai/Voxtral-Mini-3B-2507" "quantized-int4-tile-packed" "./model_output"
   test_model_e2e.sh cuda "nvidia/diar_streaming_sortformer_4spk-v2" "non-quantized" "./model_output"
+  test_model_e2e.sh vulkan "nvidia/parakeet-tdt" "non-quantized" "./model_output"
   test_model_e2e.sh cuda "nvidia/parakeet-tdt" "non-quantized" "./model_output"
   test_model_e2e.sh xnnpack "nvidia/parakeet-tdt" "quantized-8da4w" "./model_output"
   test_model_e2e.sh metal "mistralai/Voxtral-Mini-4B-Realtime-2602" "non-quantized" "." "vr-streaming"
@@ -274,8 +275,8 @@ echo "::endgroup::"
 
 echo "::group::Build $MODEL_NAME Runner"
 
-if [ "$DEVICE" != "cuda" ] && [ "$DEVICE" != "metal" ] && [ "$DEVICE" != "xnnpack" ]; then
-  echo "Error: Unsupported device '$DEVICE'. Must be 'cuda', 'metal', or 'xnnpack'."
+if [ "$DEVICE" != "cuda" ] && [ "$DEVICE" != "metal" ] && [ "$DEVICE" != "vulkan" ] && [ "$DEVICE" != "xnnpack" ]; then
+  echo "Error: Unsupported device '$DEVICE'. Must be 'cuda', 'metal', 'vulkan', or 'xnnpack'."
   exit 1
 fi
 
