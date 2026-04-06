@@ -90,9 +90,9 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "Failed to load prefill method");
     return 1;
   }
-  err = module->load_method("forward");
+  err = module->load_method("decode");
   if (err != Error::Ok) {
-    ET_LOG(Error, "Failed to load forward method");
+    ET_LOG(Error, "Failed to load decode method");
     return 1;
   }
 
@@ -179,7 +179,7 @@ int main(int argc, char** argv) {
     decode_inputs.push_back(EValue(decode_tokens));
     decode_inputs.push_back(EValue(decode_pos));
 
-    auto decode_result = module->execute("forward", decode_inputs);
+    auto decode_result = module->execute("decode", decode_inputs);
     if (decode_result.error() != Error::Ok) {
       ET_LOG(Error, "Decode step %d failed", step);
       return 1;

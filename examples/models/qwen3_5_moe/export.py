@@ -112,6 +112,8 @@ def load_prequantized_model(prequantized_dir, max_seq_len=4096):
         ".kv_cache.",
         ".conv_state",
         ".recurrent_state",
+        ".cache_positions",
+        ".inv_freq",
     )
     expected_missing = {k for k in missing if any(p in k for p in runtime_prefixes)}
     weight_missing = set(missing) - expected_missing
@@ -340,13 +342,37 @@ def _materialize_buffers(model, config):
             )
             rope.inv_freq = inv_freq
 
-    # Recompute causal masks for full attention layers
+    # Recompute cache_positions for full attention layers
     for layer in model.layers:
-        if hasattr(layer.attn, "mask"):
-            mask = torch.tril(
-                torch.ones(config.max_seq_len, config.max_seq_len, dtype=torch.bool)
+        if hasattr(layer.attn, "cache_positions"):
+            layer.attn.cache_positions = torch.arange(
+                config.max_seq_len, dtype=torch.long
             )
-            layer.attn.register_buffer("mask", mask)
+
+
+def _apply_turboquant(model, config):
+    """Replace KV caches in full-attention layers with TurboQuantKVCache.
+
+    Runs after _materialize_buffers so the new TQ4 buffers are created
+    with correct dtypes and not affected by any blanket cast in _quantize.
+    """
+    from executorch.extension.llm.modules.turboquant import TurboQuantKVCache
+
+    count = 0
+    for layer in model.layers:
+        if layer.layer_type != "full_attention":
+            continue
+        old_cache = layer.attn.kv_cache
+        _, n_heads, max_seq_len, head_dim = old_cache.k_cache.shape
+        layer.attn.kv_cache = TurboQuantKVCache(
+            n_heads,
+            head_dim,
+            max_seq_len,
+        )
+        layer.attn.turboquant = True
+        count += 1
+
+    print(f"Replaced {count} KV caches with TurboQuantKVCache (TQ4)")
 
 
 # ---------------------------------------------------------------------------
@@ -358,7 +384,7 @@ def export_and_lower(model, config, args):
     """Export model to .pte via torch.export + CUDA backend.
 
     Exports two methods:
-      - "forward": decode path (T=1), uses native PyTorch recurrent FLA
+      - "decode": decode path (T=1), uses native PyTorch recurrent FLA
         so AOTI can fuse with surrounding ops for maximum decode throughput.
       - "prefill": prefill path (T>=2), uses chunked FLA triton_op with
         dynamic sequence length.
@@ -387,7 +413,7 @@ def export_and_lower(model, config, args):
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
 
     # --- Decode method (T=1, static shape) ---
-    print("Exporting decode method (forward)...")
+    print("Exporting decode method...")
     decode_tokens = torch.tensor([[0]], dtype=torch.long)
     decode_pos = torch.tensor([0], dtype=torch.long)
     with torch.no_grad():
@@ -428,10 +454,10 @@ def export_and_lower(model, config, args):
         "enable_dynamic_shape": True,
     }
     et_prog = to_edge_transform_and_lower(
-        {"forward": decode_ep, "prefill": prefill_ep},
+        {"decode": decode_ep, "prefill": prefill_ep},
         partitioner={
-            "forward": [CudaPartitioner(
-                [CudaBackend.generate_method_name_compile_spec("forward")]
+            "decode": [CudaPartitioner(
+                [CudaBackend.generate_method_name_compile_spec("decode")]
             )],
             "prefill": [CudaPartitioner(
                 [CudaBackend.generate_method_name_compile_spec("prefill")]
@@ -517,6 +543,11 @@ def main():
         "containing model.safetensors and config.json. "
         "Skips quantization; --model-dir is not needed.",
     )
+    parser.add_argument(
+        "--turboquant",
+        action="store_true",
+        help="Enable TurboQuant TQ4 KV cache compression (3.8x cache savings).",
+    )
     args = parser.parse_args()
 
     if not args.prequantized and not args.model_dir:
@@ -530,6 +561,10 @@ def main():
 
     model, config = load_and_quantize(args)
     _materialize_buffers(model, config)
+
+    if args.turboquant:
+        _apply_turboquant(model, config)
+
     export_and_lower(model, config, args)
 
 

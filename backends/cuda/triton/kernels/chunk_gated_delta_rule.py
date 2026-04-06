@@ -23,17 +23,11 @@ FLA kernels use @triton.heuristics which wrap_triton doesn't support directly.
 We unwrap via kernel.fn to get the inner @triton.autotune kernel and pass the
 heuristic-computed constexprs explicitly.
 
-Runtime dispatch: when T=1 (decode), uses a fused recurrent kernel that is
-~25% faster than the chunked path. When T>1 (prefill), uses the full chunked
-FLA pipeline. Dispatch happens inside the triton_op Python wrapper, following
-the same pattern as sdpa.py's pow2/non-pow2 dispatch.
-
 Requires: pip install flash-linear-attention
 """
 
 import torch
 import triton
-import triton.language as tl
 
 from fla.ops.common.chunk_delta_h import chunk_gated_delta_rule_fwd_kernel_h_blockdim64
 from fla.ops.common.chunk_o import chunk_fwd_kernel_o
@@ -54,301 +48,6 @@ def _unwrap(kernel):
     ):
         return kernel.fn
     return kernel
-
-
-# ---------------------------------------------------------------------------
-# Recurrent kernel: fused single-step gated delta rule for T=1 decode.
-#
-# Grid: (V // BV, B * H) — one block per (batch, head, v_tile).
-# Each block handles a [K, BV] slice of the state matrix.
-# Parallelizing over V tiles increases SM occupancy from 32 to 128+ blocks.
-# ---------------------------------------------------------------------------
-
-
-@triton.jit
-def _recurrent_gated_delta_rule_kernel(
-    # Pointers — all inputs [B, 1, H, *] squeezed to [B, H, *]
-    q_ptr,  # [B, H, K]
-    k_ptr,  # [B, H, K]
-    v_ptr,  # [B, H, V]
-    g_ptr,  # [B, H]
-    beta_ptr,  # [B, H]
-    state_ptr,  # [B, H, K, V] input state (read)
-    o_ptr,  # [B, H, V] output
-    new_state_ptr,  # [B, H, K, V] output state (write)
-    # Dims
-    K: tl.constexpr,
-    V: tl.constexpr,
-    BK: tl.constexpr,  # block size for K dimension (= K, power of 2)
-    BV: tl.constexpr,  # block size for V dimension (tile size)
-    scale: tl.constexpr,
-):
-    # Grid: (V // BV, B * H)
-    v_tile_idx = tl.program_id(0)
-    bh = tl.program_id(1)
-
-    # V-tile range for this block
-    v_start = v_tile_idx * BV
-    v_range = v_start + tl.arange(0, BV)
-    v_mask = v_range < V
-
-    # Load scalar g and beta for this (b, h)
-    g_val = tl.load(g_ptr + bh).to(tl.float32)
-    beta_val = tl.load(beta_ptr + bh).to(tl.float32)
-    decay = tl.exp(g_val)
-
-    # Load full q and k vectors: [K]
-    qk_base = bh * K
-    k_range = tl.arange(0, BK)
-    k_mask = k_range < K
-
-    q_vec = tl.load(q_ptr + qk_base + k_range, mask=k_mask, other=0.0).to(tl.float32)
-    k_vec = tl.load(k_ptr + qk_base + k_range, mask=k_mask, other=0.0).to(tl.float32)
-
-    # Load v tile: [BV]
-    v_base = bh * V
-    v_tile = tl.load(v_ptr + v_base + v_range, mask=v_mask, other=0.0).to(tl.float32)
-
-    # Load state tile: [BK, BV] — state[k, v] at state_base + k*V + v
-    state_base = bh * K * V
-    s_offsets = k_range[:, None] * V + v_range[None, :]
-    s_mask = k_mask[:, None] & v_mask[None, :]
-    state_tile = tl.load(
-        state_ptr + state_base + s_offsets, mask=s_mask, other=0.0
-    ).to(tl.float32)
-
-    # Step 1: state *= exp(g)
-    state_tile = state_tile * decay
-
-    # Step 2: Sk = state^T @ k → [BV] (dot product along K)
-    Sk = tl.sum(state_tile * k_vec[:, None], axis=0)
-
-    # Step 3: delta = v - Sk
-    delta = v_tile - Sk
-
-    # Step 4: state += beta * outer(k, delta)
-    state_tile = state_tile + beta_val * (k_vec[:, None] * delta[None, :])
-
-    # Step 5: o = state^T @ q → [BV]
-    o_tile = tl.sum(state_tile * q_vec[:, None], axis=0) * scale
-
-    # Store output tile
-    tl.store(
-        o_ptr + v_base + v_range, o_tile.to(o_ptr.dtype.element_ty), mask=v_mask
-    )
-
-    # Store new state tile
-    tl.store(
-        new_state_ptr + state_base + s_offsets,
-        state_tile.to(new_state_ptr.dtype.element_ty),
-        mask=s_mask,
-    )
-
-
-def _launch_recurrent(q, k, v, g, beta, initial_state, scale):
-    """Launch the recurrent kernel for T=1 decode.
-
-    Args:
-        q, k, v: [B, 1, H, K/V] — single-step inputs
-        g, beta: [B, 1, H] — gating and write strength
-        initial_state: [B, H, K, V] — input hidden state
-
-    Returns:
-        o: [B, 1, H, V] — output
-        final_state: [B, H, K, V] — updated hidden state (float32)
-    """
-    B, _, H, K = q.shape
-    V = v.shape[-1]
-
-    # Squeeze T=1 dim via slicing (avoids .contiguous() copy)
-    q_2d = q[:, 0]  # [B, H, K]
-    k_2d = k[:, 0]  # [B, H, K]
-    v_2d = v[:, 0]  # [B, H, V]
-    g_2d = g[:, 0]  # [B, H]
-    beta_2d = beta[:, 0]  # [B, H]
-
-    o_2d = torch.empty(B, H, V, device=q.device, dtype=q.dtype)
-    final_state = torch.empty(B, H, K, V, device=q.device, dtype=torch.float32)
-
-    BK = triton.next_power_of_2(K)
-    BV = 32  # small tiles → low register pressure, high SM occupancy
-
-    grid = (triton.cdiv(V, BV), B * H)
-    wrap_triton(_recurrent_gated_delta_rule_kernel)[grid](
-        q_ptr=q_2d,
-        k_ptr=k_2d,
-        v_ptr=v_2d,
-        g_ptr=g_2d,
-        beta_ptr=beta_2d,
-        state_ptr=initial_state,
-        o_ptr=o_2d,
-        new_state_ptr=final_state,
-        K=K,
-        V=V,
-        BK=BK,
-        BV=BV,
-        scale=scale,
-    )
-
-    # Unsqueeze back to [B, 1, H, V]
-    o = o_2d.unsqueeze(1)
-    return o, final_state
-
-
-# ---------------------------------------------------------------------------
-# Chunked kernel: full FLA pipeline for T>1 prefill.
-# ---------------------------------------------------------------------------
-
-
-def _launch_chunked(q, k, v, g, beta, initial_state, scale):
-    """Launch the chunked FLA pipeline for T>1 prefill."""
-    B, T, H, K = q.shape
-    V = v.shape[-1]
-    BT = CHUNK_SIZE
-    NT = triton.cdiv(T, BT)
-
-    # 1. chunk_local_cumsum
-    g_cumsum = torch.empty(B, T, H, dtype=torch.float32, device=q.device)
-    wrap_triton(_unwrap(chunk_local_cumsum_scalar_kernel))[(NT, B * H)](
-        s=g,
-        o=g_cumsum,
-        scale=0,
-        cu_seqlens=0,
-        chunk_indices=0,
-        T=T,
-        B=B,
-        H=H,
-        BT=BT,
-        HEAD_FIRST=False,
-        REVERSE=False,
-        HAS_SCALE=False,
-        IS_VARLEN=False,
-    )
-
-    # 2. chunk_scaled_dot_kkt
-    A = torch.empty(B, T, H, BT, device=q.device, dtype=torch.float32)
-    wrap_triton(_unwrap(chunk_scaled_dot_kkt_fwd_kernel))[(NT, B * H)](
-        k=k,
-        g=g_cumsum,
-        beta=beta,
-        A=A,
-        cu_seqlens=0,
-        chunk_indices=0,
-        T=T,
-        H=H,
-        K=K,
-        BT=BT,
-        USE_G=True,
-        IS_VARLEN=False,
-    )
-
-    # 3. solve_tril
-    Ai = torch.zeros_like(A, dtype=k.dtype)
-    wrap_triton(_unwrap(merge_16x16_to_64x64_inverse_kernel))[NT, B * H](
-        A=A,
-        Ai=Ai,
-        cu_seqlens=0,
-        chunk_indices=0,
-        T=T,
-        H=H,
-        BT=BT,
-        USE_TMA=IS_TMA_SUPPORTED,
-        IS_VARLEN=False,
-    )
-
-    # 4. recompute_w_u
-    w = torch.empty_like(k)
-    u = torch.empty_like(v)
-    wrap_triton(_unwrap(recompute_w_u_fwd_kernel))[(NT, B * H)](
-        k=k,
-        v=v,
-        beta=beta,
-        w=w,
-        u=u,
-        A=Ai,
-        g=g_cumsum,
-        cu_seqlens=0,
-        chunk_indices=0,
-        T=T,
-        H=H,
-        K=K,
-        V=V,
-        BT=BT,
-        BK=64,
-        BV=64,
-        USE_G=True,
-        IS_VARLEN=False,
-    )
-
-    # 5. chunk_gated_delta_rule_fwd_h
-    h = torch.empty(B, NT, H, K, V, dtype=q.dtype, device=q.device)
-    final_state = torch.zeros(B, H, K, V, dtype=torch.float32, device=q.device)
-    v_new = torch.empty_like(v)
-
-    def grid_h(meta):
-        return (triton.cdiv(V, meta["BV"]), B * H)
-
-    wrap_triton(_unwrap(chunk_gated_delta_rule_fwd_kernel_h_blockdim64))[grid_h](
-        k=k,
-        v=u,
-        w=w,
-        v_new=v_new,
-        g=g_cumsum,
-        gk=0,
-        h=h,
-        h0=initial_state,
-        ht=final_state,
-        cu_seqlens=0,
-        chunk_offsets=0,
-        T=T,
-        H=H,
-        K=K,
-        V=V,
-        BT=BT,
-        USE_EXP2=False,
-        TRANSPOSE_STATE=False,
-        USE_G=True,
-        USE_GK=False,
-        USE_INITIAL_STATE=True,
-        STORE_FINAL_STATE=True,
-        SAVE_NEW_VALUE=True,
-        IS_VARLEN=False,
-    )
-
-    # 6. chunk_fwd_o
-    o = torch.empty_like(v)
-
-    def grid_o(meta):
-        return (triton.cdiv(V, meta["BV"]), NT, B * H)
-
-    wrap_triton(_unwrap(chunk_fwd_kernel_o))[grid_o](
-        q=q,
-        k=k,
-        v=v_new,
-        h=h,
-        g=g_cumsum,
-        g_gamma=0,
-        o=o,
-        cu_seqlens=0,
-        chunk_indices=0,
-        scale=scale,
-        T=T,
-        H=H,
-        K=K,
-        V=V,
-        BT=BT,
-        TRANSPOSE_STATE=False,
-        USE_G=True,
-        USE_G_GAMMA=False,
-        IS_VARLEN=False,
-    )
-
-    return o, final_state
-
-
-# ---------------------------------------------------------------------------
-# Public API: single triton_op with runtime dispatch.
-# ---------------------------------------------------------------------------
 
 
 def _validate_inputs(q, k, v, g, beta, initial_state):
@@ -391,10 +90,7 @@ def chunk_gated_delta_rule(
     initial_state: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
-    Gated delta rule linear attention (forward only).
-
-    Runtime dispatch: T=1 uses a fused recurrent kernel (faster for decode),
-    T>1 uses the full chunked FLA pipeline (efficient for prefill).
+    Chunked gated delta rule linear attention (forward only).
 
     Args:
         q: [B, T, H, K] queries (should be L2-normalized, K <= 256)
@@ -411,12 +107,149 @@ def chunk_gated_delta_rule(
     _validate_inputs(q, k, v, g, beta, initial_state)
 
     B, T, H, K = q.shape
+    V = v.shape[-1]
+    BT = CHUNK_SIZE
+    NT = triton.cdiv(T, BT)
     scale = K**-0.5
 
-    if T == 1:
-        return _launch_recurrent(q, k, v, g, beta, initial_state, scale)
-    else:
-        return _launch_chunked(q, k, v, g, beta, initial_state, scale)
+    # 1. chunk_local_cumsum: cumulative sum of g within each chunk
+    g_cumsum = torch.empty(B, T, H, dtype=torch.float32, device=q.device)
+    wrap_triton(_unwrap(chunk_local_cumsum_scalar_kernel))[(NT, B * H)](
+        s=g,
+        o=g_cumsum,
+        scale=0,
+        cu_seqlens=0,
+        chunk_indices=0,
+        T=T,
+        B=B,
+        H=H,
+        BT=BT,
+        HEAD_FIRST=False,
+        REVERSE=False,
+        HAS_SCALE=False,
+        IS_VARLEN=False,
+    )
+
+    # 2. chunk_scaled_dot_kkt: compute beta * K * K^T with gating
+    A = torch.empty(B, T, H, BT, device=q.device, dtype=torch.float32)
+    wrap_triton(_unwrap(chunk_scaled_dot_kkt_fwd_kernel))[(NT, B * H)](
+        k=k,
+        g=g_cumsum,
+        beta=beta,
+        A=A,
+        cu_seqlens=0,
+        chunk_indices=0,
+        T=T,
+        H=H,
+        K=K,
+        BT=BT,
+        USE_G=True,
+        IS_VARLEN=False,
+    )
+
+    # 3. solve_tril: (I + A)^{-1} via block triangular solve
+    # Output in k.dtype (not float32) to match FLA's solve_tril(output_dtype=k.dtype)
+    Ai = torch.zeros_like(A, dtype=k.dtype)
+    wrap_triton(_unwrap(merge_16x16_to_64x64_inverse_kernel))[NT, B * H](
+        A=A,
+        Ai=Ai,
+        cu_seqlens=0,
+        chunk_indices=0,
+        T=T,
+        H=H,
+        BT=BT,
+        USE_TMA=IS_TMA_SUPPORTED,
+        IS_VARLEN=False,
+    )
+
+    # 4. recompute_w_u: WY representation
+    w = torch.empty_like(k)
+    u = torch.empty_like(v)
+    wrap_triton(_unwrap(recompute_w_u_fwd_kernel))[(NT, B * H)](
+        k=k,
+        v=v,
+        beta=beta,
+        w=w,
+        u=u,
+        A=Ai,
+        g=g_cumsum,
+        cu_seqlens=0,
+        chunk_indices=0,
+        T=T,
+        H=H,
+        K=K,
+        V=V,
+        BT=BT,
+        BK=64,
+        BV=64,
+        USE_G=True,
+        IS_VARLEN=False,
+    )
+
+    # 5. chunk_gated_delta_rule_fwd_h: inter-chunk recurrence
+    h = torch.empty(B, NT, H, K, V, dtype=q.dtype, device=q.device)
+    final_state = torch.zeros(B, H, K, V, dtype=torch.float32, device=q.device)
+    v_new = torch.empty_like(v)
+
+    def grid_h(meta):
+        return (triton.cdiv(V, meta["BV"]), B * H)
+
+    wrap_triton(_unwrap(chunk_gated_delta_rule_fwd_kernel_h_blockdim64))[grid_h](
+        k=k,
+        v=u,
+        w=w,
+        v_new=v_new,
+        g=g_cumsum,
+        gk=0,
+        h=h,
+        h0=initial_state,
+        ht=final_state,
+        cu_seqlens=0,
+        chunk_offsets=0,
+        T=T,
+        H=H,
+        K=K,
+        V=V,
+        BT=BT,
+        USE_EXP2=False,
+        TRANSPOSE_STATE=False,
+        USE_G=True,
+        USE_GK=False,
+        USE_INITIAL_STATE=True,
+        STORE_FINAL_STATE=True,
+        SAVE_NEW_VALUE=True,
+        IS_VARLEN=False,
+    )
+
+    # 6. chunk_fwd_o: output computation
+    o = torch.empty_like(v)
+
+    def grid_o(meta):
+        return (triton.cdiv(V, meta["BV"]), NT, B * H)
+
+    wrap_triton(_unwrap(chunk_fwd_kernel_o))[grid_o](
+        q=q,
+        k=k,
+        v=v_new,
+        h=h,
+        g=g_cumsum,
+        g_gamma=0,
+        o=o,
+        cu_seqlens=0,
+        chunk_indices=0,
+        scale=scale,
+        T=T,
+        H=H,
+        K=K,
+        V=V,
+        BT=BT,
+        TRANSPOSE_STATE=False,
+        USE_G=True,
+        USE_G_GAMMA=False,
+        IS_VARLEN=False,
+    )
+
+    return o, final_state
 
 
 @chunk_gated_delta_rule.register_fake
