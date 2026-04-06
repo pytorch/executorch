@@ -1,4 +1,10 @@
-// (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
 
 /*
  * Benchmark for SDPA (scaled dot-product attention) implementations.
@@ -49,7 +55,8 @@ void fill_random(Tensor& t, std::mt19937& gen) {
 // NOTE: executorch::cpublas::gemm uses COLUMN-MAJOR (Fortran) convention
 // internally (CblasColMajor). Our data is row-major. The conversion is:
 //   row-major C[M,N] = A[M,K] * trans(B)[K,N]  (B stored as [N,K])
-//   becomes col-major: gemm(Trans, NoTrans, N, M, K, a, B, ldb, A, lda, b, C, ldc)
+//   becomes col-major: gemm(Trans, NoTrans, N, M, K, a, B, ldb, A, lda, b, C,
+//   ldc)
 // where lda/ldb/ldc are the row-major strides (row strides = col-major ld).
 void run_standard_sdpa(
     const float* q_data,
@@ -104,10 +111,19 @@ void run_standard_sdpa(
           // Row-major: scores[qSeqLen,kvSize] = Q[qSeqLen,D] @ K^T[D,kvSize]
           // Col-major: gemm(Trans, NoTrans, kvSize, qSeqLen, D, ...)
           executorch::cpublas::gemm(
-              TransposeType::Transpose, TransposeType::NoTranspose,
-              kvSize, q_seq_len, D,
-              1.0f, k_ptr, ldk, q_ptr, ldq,
-              0.0f, scores, kvSize);
+              TransposeType::Transpose,
+              TransposeType::NoTranspose,
+              kvSize,
+              q_seq_len,
+              D,
+              1.0f,
+              k_ptr,
+              ldk,
+              q_ptr,
+              ldq,
+              0.0f,
+              scores,
+              kvSize);
 
           // Scale, causal mask, and softmax per query row
           for (int64_t qi = 0; qi < q_seq_len; ++qi) {
@@ -139,10 +155,19 @@ void run_standard_sdpa(
           // Row-major: output[qSeqLen,D] = scores[qSeqLen,kvSize] @ V[kvSize,D]
           // Col-major: gemm(NoTrans, NoTrans, D, qSeqLen, kvSize, ...)
           executorch::cpublas::gemm(
-              TransposeType::NoTranspose, TransposeType::NoTranspose,
-              D, q_seq_len, kvSize,
-              1.0f, v_ptr, ldv, scores, kvSize,
-              0.0f, out_ptr, ldo);
+              TransposeType::NoTranspose,
+              TransposeType::NoTranspose,
+              D,
+              q_seq_len,
+              kvSize,
+              1.0f,
+              v_ptr,
+              ldv,
+              scores,
+              kvSize,
+              0.0f,
+              out_ptr,
+              ldo);
         }
       });
 }
@@ -174,8 +199,8 @@ bool validate_config(
   std::mt19937 gen(42);
 
   // Standard [B, S, H, D] layout
-  Tensor q = tf.zeros(
-      {(int32_t)batch, (int32_t)q_seq_len, (int32_t)Hq, (int32_t)D});
+  Tensor q =
+      tf.zeros({(int32_t)batch, (int32_t)q_seq_len, (int32_t)Hq, (int32_t)D});
   Tensor k = tf.zeros(
       {(int32_t)batch, (int32_t)max_seq_len, (int32_t)Hkv, (int32_t)D});
   Tensor v = tf.zeros(
@@ -186,17 +211,15 @@ bool validate_config(
   fill_random(v, gen);
 
   // Reference: ET custom_sdpa_out (10-param signature, standard layout)
-  Tensor out_ref = tf.zeros(
-      {(int32_t)batch, (int32_t)q_seq_len, (int32_t)Hq, (int32_t)D});
+  Tensor out_ref =
+      tf.zeros({(int32_t)batch, (int32_t)q_seq_len, (int32_t)Hq, (int32_t)D});
   KernelRuntimeContext ctx{};
   torch::executor::native::custom_sdpa_out(
-      ctx, q, k, v, start_pos,
-      std::nullopt, 0.0, true, std::nullopt,
-      out_ref);
+      ctx, q, k, v, start_pos, std::nullopt, 0.0, true, std::nullopt, out_ref);
 
   // Test: GEMM-based standard SDPA
-  Tensor out_test = tf.zeros(
-      {(int32_t)batch, (int32_t)q_seq_len, (int32_t)Hq, (int32_t)D});
+  Tensor out_test =
+      tf.zeros({(int32_t)batch, (int32_t)q_seq_len, (int32_t)Hq, (int32_t)D});
   int64_t kvSize = start_pos + q_seq_len;
   std::vector<float> scores_buf(batch * Hq * q_seq_len * kvSize);
   run_standard_sdpa(
@@ -205,7 +228,13 @@ bool validate_config(
       v.const_data_ptr<float>(),
       out_test.mutable_data_ptr<float>(),
       scores_buf.data(),
-      batch, Hq, Hkv, D, max_seq_len, start_pos, q_seq_len,
+      batch,
+      Hq,
+      Hkv,
+      D,
+      max_seq_len,
+      start_pos,
+      q_seq_len,
       false /* is_transposed */);
 
   float diff = max_abs_diff(out_ref, out_test);
@@ -215,16 +244,29 @@ bool validate_config(
         stderr,
         "FAIL: StandardSDPA standard %s (B=%ld Hq=%ld Hkv=%ld D=%ld sp=%ld sl=%ld) "
         "max_abs_diff=%.6e > atol=%.6e\n",
-        mode, (long)batch, (long)Hq, (long)Hkv, (long)D,
-        (long)start_pos, (long)q_seq_len, diff, atol);
+        mode,
+        (long)batch,
+        (long)Hq,
+        (long)Hkv,
+        (long)D,
+        (long)start_pos,
+        (long)q_seq_len,
+        diff,
+        atol);
     return false;
   }
   fprintf(
       stderr,
       "PASS: StandardSDPA standard %s (B=%ld Hq=%ld Hkv=%ld D=%ld sp=%ld sl=%ld) "
       "max_abs_diff=%.6e\n",
-      mode, (long)batch, (long)Hq, (long)Hkv, (long)D,
-      (long)start_pos, (long)q_seq_len, diff);
+      mode,
+      (long)batch,
+      (long)Hq,
+      (long)Hkv,
+      (long)D,
+      (long)start_pos,
+      (long)q_seq_len,
+      diff);
 
   return true;
 }
@@ -277,14 +319,26 @@ class SDPABenchFixture : public benchmark::Fixture {
     std::mt19937 gen(42);
 
     // Standard [B, S, H, D] layout
-    q_.emplace(tf_.zeros({(int32_t)batch, (int32_t)q_seq_len,
-                          (int32_t)num_heads_q, (int32_t)head_dim}));
-    k_cache_.emplace(tf_.zeros({(int32_t)batch, (int32_t)max_seq_len,
-                                (int32_t)num_heads_kv, (int32_t)head_dim}));
-    v_cache_.emplace(tf_.zeros({(int32_t)batch, (int32_t)max_seq_len,
-                                (int32_t)num_heads_kv, (int32_t)head_dim}));
-    output_.emplace(tf_.zeros({(int32_t)batch, (int32_t)q_seq_len,
-                               (int32_t)num_heads_q, (int32_t)head_dim}));
+    q_.emplace(tf_.zeros(
+        {(int32_t)batch,
+         (int32_t)q_seq_len,
+         (int32_t)num_heads_q,
+         (int32_t)head_dim}));
+    k_cache_.emplace(tf_.zeros(
+        {(int32_t)batch,
+         (int32_t)max_seq_len,
+         (int32_t)num_heads_kv,
+         (int32_t)head_dim}));
+    v_cache_.emplace(tf_.zeros(
+        {(int32_t)batch,
+         (int32_t)max_seq_len,
+         (int32_t)num_heads_kv,
+         (int32_t)head_dim}));
+    output_.emplace(tf_.zeros(
+        {(int32_t)batch,
+         (int32_t)q_seq_len,
+         (int32_t)num_heads_q,
+         (int32_t)head_dim}));
 
     fill_random(*q_, gen);
     fill_random(*k_cache_, gen);
@@ -320,8 +374,8 @@ BENCHMARK_DEFINE_F(SDPABenchFixture, CustomSDPA)
         *v_cache_,
         start_pos_,
         std::nullopt, // attn_mask
-        0.0,          // dropout_p
-        true,         // is_causal
+        0.0, // dropout_p
+        true, // is_causal
         std::nullopt, // scale
         *output_);
   }
@@ -347,24 +401,48 @@ class StandardSDPABenchFixture : public benchmark::Fixture {
 
     if (is_transposed) {
       // [B, H, S, D]
-      q_.emplace(tf_.zeros({(int32_t)batch, (int32_t)num_heads_q,
-                            (int32_t)q_seq_len, (int32_t)head_dim}));
-      k_cache_.emplace(tf_.zeros({(int32_t)batch, (int32_t)num_heads_kv,
-                                  (int32_t)max_seq_len, (int32_t)head_dim}));
-      v_cache_.emplace(tf_.zeros({(int32_t)batch, (int32_t)num_heads_kv,
-                                  (int32_t)max_seq_len, (int32_t)head_dim}));
-      output_.emplace(tf_.zeros({(int32_t)batch, (int32_t)num_heads_q,
-                                 (int32_t)q_seq_len, (int32_t)head_dim}));
+      q_.emplace(tf_.zeros(
+          {(int32_t)batch,
+           (int32_t)num_heads_q,
+           (int32_t)q_seq_len,
+           (int32_t)head_dim}));
+      k_cache_.emplace(tf_.zeros(
+          {(int32_t)batch,
+           (int32_t)num_heads_kv,
+           (int32_t)max_seq_len,
+           (int32_t)head_dim}));
+      v_cache_.emplace(tf_.zeros(
+          {(int32_t)batch,
+           (int32_t)num_heads_kv,
+           (int32_t)max_seq_len,
+           (int32_t)head_dim}));
+      output_.emplace(tf_.zeros(
+          {(int32_t)batch,
+           (int32_t)num_heads_q,
+           (int32_t)q_seq_len,
+           (int32_t)head_dim}));
     } else {
       // [B, S, H, D]
-      q_.emplace(tf_.zeros({(int32_t)batch, (int32_t)q_seq_len,
-                            (int32_t)num_heads_q, (int32_t)head_dim}));
-      k_cache_.emplace(tf_.zeros({(int32_t)batch, (int32_t)max_seq_len,
-                                  (int32_t)num_heads_kv, (int32_t)head_dim}));
-      v_cache_.emplace(tf_.zeros({(int32_t)batch, (int32_t)max_seq_len,
-                                  (int32_t)num_heads_kv, (int32_t)head_dim}));
-      output_.emplace(tf_.zeros({(int32_t)batch, (int32_t)q_seq_len,
-                                 (int32_t)num_heads_q, (int32_t)head_dim}));
+      q_.emplace(tf_.zeros(
+          {(int32_t)batch,
+           (int32_t)q_seq_len,
+           (int32_t)num_heads_q,
+           (int32_t)head_dim}));
+      k_cache_.emplace(tf_.zeros(
+          {(int32_t)batch,
+           (int32_t)max_seq_len,
+           (int32_t)num_heads_kv,
+           (int32_t)head_dim}));
+      v_cache_.emplace(tf_.zeros(
+          {(int32_t)batch,
+           (int32_t)max_seq_len,
+           (int32_t)num_heads_kv,
+           (int32_t)head_dim}));
+      output_.emplace(tf_.zeros(
+          {(int32_t)batch,
+           (int32_t)q_seq_len,
+           (int32_t)num_heads_q,
+           (int32_t)head_dim}));
     }
 
     fill_random(*q_, gen);
@@ -423,9 +501,19 @@ BENCHMARK_DEFINE_F(StandardSDPABenchFixture, StandardSDPA)
 
   for (auto _ : state) {
     run_standard_sdpa(
-        q_data, k_data, v_data, out_data, scores_buf_.data(),
-        batch_, num_heads_q_, num_heads_kv_, head_dim_,
-        max_seq_len_, start_pos_, q_seq_len_, is_transposed_);
+        q_data,
+        k_data,
+        v_data,
+        out_data,
+        scores_buf_.data(),
+        batch_,
+        num_heads_q_,
+        num_heads_kv_,
+        head_dim_,
+        max_seq_len_,
+        start_pos_,
+        q_seq_len_,
+        is_transposed_);
   }
 }
 
@@ -475,8 +563,7 @@ BENCHMARK_REGISTER_F(StandardSDPABenchFixture, StandardSDPA)
     // Llama 2 style (32 heads, no GQA)
     ->Args({1, 32, 32, 128, 2048, 256, 1, 0})
     ->Args({1, 32, 32, 128, 2048, 256, 1, 1})
-    ->ArgNames(
-        {"B", "Hq", "Hkv", "D", "MaxS", "StartPos", "SeqLen", "Trans"});
+    ->ArgNames({"B", "Hq", "Hkv", "D", "MaxS", "StartPos", "SeqLen", "Trans"});
 
 } // namespace
 
