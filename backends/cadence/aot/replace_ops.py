@@ -1327,7 +1327,7 @@ class MakeSliceAndCatDimOutermostPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
+@register_cadence_pass(CadencePassAttribute(opt_level=2, use_im2row_transform=True))
 class ReplaceConvWithIm2RowAndLinear(RemoveOrReplacePassInterface):
     """
     Replace convolution where groups=1 with im2row followed by a linear op.
