@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+import dataclasses
 from abc import abstractmethod
 from dataclasses import dataclass
 from typing import Callable, List, Optional, override, Set, Type, TypeVar, Union
@@ -28,11 +29,20 @@ def allow_lifetime_and_storage_overlap(opt_level: int) -> bool:
     return opt_level >= 2
 
 
+# A dataclass that bundles feature flags for edge passes.
+# When adding a new flag, add a matching bool field to both this class and
+# CadencePassAttribute; the pass filter will pick it up automatically.
+@dataclass(frozen=True)
+class EdgePassesConfig:
+    use_im2row_transform: bool = False
+
+
 # A dataclass that stores the attributes of an ExportPass.
 @dataclass(frozen=True)
 class CadencePassAttribute:
     opt_level: Optional[int] = None
     debug_pass: bool = False
+    use_im2row_transform: bool = False
 
 
 # A dictionary that maps an ExportPass to its attributes.
@@ -58,10 +68,30 @@ def get_all_available_cadence_passes() -> Set[Type[PassBase]]:
     return set(ALL_CADENCE_PASSES.keys())
 
 
+def _check_feature_flags(
+    pass_attribute: CadencePassAttribute,
+    config: EdgePassesConfig,
+) -> bool:
+    """Check all feature flags: a pass is included only if every feature it
+    requires is enabled in the config. Iterates over EdgePassesConfig fields
+    so new flags are handled automatically."""
+    for field in dataclasses.fields(EdgePassesConfig):
+        if getattr(pass_attribute, field.name, False) and not getattr(
+            config, field.name
+        ):
+            return False
+    return True
+
+
 # Create a new filter to filter out relevant passes from all passes.
 def create_cadence_pass_filter(
-    opt_level: int, debug: bool = False
+    opt_level: int,
+    debug: bool = False,
+    edge_passes_config: Optional[EdgePassesConfig] = None,
 ) -> Callable[[Type[PassBase]], bool]:
+    if edge_passes_config is None:
+        edge_passes_config = EdgePassesConfig()
+
     def _filter(p: Type[PassBase]) -> bool:
         pass_attribute = get_cadence_pass_attribute(p)
         return (
@@ -69,6 +99,7 @@ def create_cadence_pass_filter(
             and pass_attribute.opt_level is not None
             and pass_attribute.opt_level <= opt_level
             and (not pass_attribute.debug_pass or debug)
+            and _check_feature_flags(pass_attribute, edge_passes_config)
         )
 
     return _filter
