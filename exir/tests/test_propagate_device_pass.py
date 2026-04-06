@@ -9,6 +9,9 @@ import unittest
 from copy import deepcopy
 from typing import Dict, final, List
 
+# Import to register et_copy ops
+import executorch.exir.passes._device_copy_ops_registry  # noqa: F401
+
 import torch
 from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (

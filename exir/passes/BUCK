@@ -454,6 +454,7 @@ fbcode_target(_kind = runtime.python_library,
         "propagate_device_pass.py",
     ],
     deps = [
+        ":device_copy_ops_registry",
         "//caffe2:torch",
         "//executorch/exir:delegate",
         "//executorch/exir:lowered_backend_module",
