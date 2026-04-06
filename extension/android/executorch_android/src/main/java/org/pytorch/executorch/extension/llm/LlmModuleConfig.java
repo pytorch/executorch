@@ -21,6 +21,19 @@ public class LlmModuleConfig {
   private final int modelType;
   private final int numBos;
   private final int numEos;
+  private final int loadMode;
+
+  /** Load entire model file into a buffer (no mmap). */
+  public static final int LOAD_MODE_FILE = 0;
+
+  /** Load model via mmap without mlock (default). Pages faulted in on demand. */
+  public static final int LOAD_MODE_MMAP = 1;
+
+  /** Load model via mmap and pin all pages with mlock. */
+  public static final int LOAD_MODE_MMAP_USE_MLOCK = 2;
+
+  /** Load model via mmap and attempt mlock, ignoring mlock failures. */
+  public static final int LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS = 3;
 
   private LlmModuleConfig(Builder builder) {
     this.modulePath = builder.modulePath;
@@ -30,6 +43,7 @@ public class LlmModuleConfig {
     this.modelType = builder.modelType;
     this.numBos = builder.numBos;
     this.numEos = builder.numEos;
+    this.loadMode = builder.loadMode;
   }
 
   /** Model type constant for text-only models. */
@@ -101,6 +115,13 @@ public class LlmModuleConfig {
   }
 
   /**
+   * @return Load mode for the model file (one of LOAD_MODE_* constants)
+   */
+  public int getLoadMode() {
+    return loadMode;
+  }
+
+  /**
    * Builder class for constructing LlmModuleConfig instances with optional parameters.
    *
    * <p>The builder provides a fluent interface for configuring model parameters and validates
@@ -114,6 +135,7 @@ public class LlmModuleConfig {
     private int modelType = MODEL_TYPE_TEXT;
     private int numBos = 0;
     private int numEos = 0;
+    private int loadMode = LOAD_MODE_MMAP;
 
     Builder() {}
 
@@ -191,6 +213,26 @@ public class LlmModuleConfig {
      */
     public Builder numEos(int numEos) {
       this.numEos = numEos;
+      return this;
+    }
+
+    /**
+     * Sets the load mode for the model file. Defaults to {@link #LOAD_MODE_MMAP} (mmap without
+     * mlock), which avoids pinning model pages in RAM.
+     *
+     * @param loadMode One of LOAD_MODE_FILE, LOAD_MODE_MMAP, LOAD_MODE_MMAP_USE_MLOCK,
+     *     LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS
+     * @return This builder instance for method chaining
+     * @throws IllegalArgumentException if {@code loadMode} is not one of the supported constants
+     */
+    public Builder loadMode(int loadMode) {
+      if (loadMode != LOAD_MODE_FILE
+          && loadMode != LOAD_MODE_MMAP
+          && loadMode != LOAD_MODE_MMAP_USE_MLOCK
+          && loadMode != LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS) {
+        throw new IllegalArgumentException("Unknown load mode: " + loadMode);
+      }
+      this.loadMode = loadMode;
       return this;
     }
 

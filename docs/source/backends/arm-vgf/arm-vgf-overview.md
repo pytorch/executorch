@@ -65,26 +65,9 @@ Args:
 - **output_path**: Path to dump intermediate results to.
 
 ```python
-def VgfCompileSpec.get_intermediate_path(self) -> str | None:
-```
-Gets the path used for dumping intermediate results such as tosa and
-pte.
-
-Returns:
-    Path where intermediate results are saved.
-
-```python
 def VgfCompileSpec.get_output_order_workaround(self) -> bool:
 ```
 Gets whether the output order workaround is being applied.
-
-```python
-def VgfCompileSpec.get_pass_pipeline_config(self) -> executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig:
-```
-Returns configuration that controls how the Arm pass pipeline should
-behave.
-
-Subclasses may override to tweak defaults for specific targets.
 
 ```python
 def VgfCompileSpec.set_output_order_workaround(self, output_order_workaround: bool):

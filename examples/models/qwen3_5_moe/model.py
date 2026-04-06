@@ -229,11 +229,12 @@ class FullAttention(nn.Module):
         )
 
         self.kv_cache = KVCache(self.n_kv_heads, self.head_dim, config.max_seq_len)
+        self.turboquant = False
 
-        mask = torch.tril(
-            torch.ones(config.max_seq_len, config.max_seq_len, dtype=torch.bool)
+        self.register_buffer(
+            "cache_positions",
+            torch.arange(config.max_seq_len, dtype=torch.long),
         )
-        self.register_buffer("mask", mask)
 
     def forward(self, x, input_pos):
         B, T, _ = x.size()
@@ -264,17 +265,29 @@ class FullAttention(nn.Module):
         k = k.to(dtype).transpose(1, 2)
         v = v.transpose(1, 2)
 
-        # KV cache
-        k, v = self.kv_cache.update(input_pos, k, v)
+        attn_mask = (
+            (self.cache_positions[None, :] <= input_pos[:, None])
+            .unsqueeze(0)
+            .unsqueeze(0)
+        )
 
-        # GQA expansion
-        if self.n_kv_groups > 1:
-            k = k.repeat_interleave(self.n_kv_groups, dim=1)
-            v = v.repeat_interleave(self.n_kv_groups, dim=1)
-
-        # SDPA with bool mask
-        attn_mask = self.mask[input_pos].unsqueeze(0).unsqueeze(0)
-        y = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
+        if self.turboquant:
+            k_packed, k_norms, v_packed, v_norms = self.kv_cache.update(input_pos, k, v)
+            y = torch.ops.triton.tq4_sdpa(
+                q,
+                k_packed,
+                k_norms,
+                v_packed,
+                v_norms,
+                self.kv_cache.centroids,
+                self.kv_cache.rotation,
+                attn_mask,
+            )
+        else:
+            k, v = self.kv_cache.update(input_pos, k, v)
+            y = F.scaled_dot_product_attention(
+                q, k, v, attn_mask=attn_mask, enable_gqa=True
+            )
 
         y = y.transpose(1, 2).contiguous().view(B, T, -1)
 

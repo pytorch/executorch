@@ -47,11 +47,12 @@ void main() {
   // Convert the thread position to output tensor indices in element space.
   // out_tidx.data[packed_dim] is the element index of the first component in
   // this texel; the remaining three dims are scalar element indices.
-  TensorIndex4D out_tidx = texture_pos_to_tensor4d_idx_simple(outp, out_pos);
+  TensorIndex4D out_tidx =
+      texture_pos_to_tensor4d_idx_simple(outp, out_pos, out_layout);
 
   // Tail texels may have fewer than 4 valid elements; leave extras as 0.
   const int limit =
-      min(4, outp.sizes[packed_dim] - out_tidx.data[packed_dim]);
+      min(4, safe_idx(outp.sizes, packed_dim) - out_tidx.data[packed_dim]);
 
   VEC4_T out_texel = VEC4_T(0);
 
@@ -74,7 +75,8 @@ void main() {
         in_tidx.data[2] >= 0 && in_tidx.data[2] < inp.sizes[2] &&
         in_tidx.data[3] >= 0 && in_tidx.data[3] < inp.sizes[3]) {
       TextureElementIndex elem =
-          tensor4d_idx_to_texture_element_idx_simple(inp, in_tidx);
+          tensor4d_idx_to_texture_element_idx_simple(
+              inp, in_tidx, out_layout);
       VEC4_T in_texel = texelFetch(t_in, elem.pos, 0);
       out_texel[comp] = T(in_texel[elem.comp]);
     } else {
