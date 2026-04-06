@@ -1339,6 +1339,46 @@ jobs:
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
 
+  test-vulkan-models-macos:
+    name: test-vulkan-models-macos
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: macos-m1-stable
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        # Setup MoltenVK and Vulkan SDK which are required to build the Vulkan delegate
+        source .ci/scripts/setup-vulkan-macos-deps.sh
+
+        bash .ci/scripts/setup-conda.sh
+
+        # Setup MacOS dependencies and build ExecuTorch with Vulkan enabled
+        PYTHON_EXECUTABLE=python \
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" \
+        ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "cmake"
+
+        # Build Vulkan test libraries
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/vulkan/test/scripts/test_model.sh --build
+
+        # Test models with static shapes
+        models="mv2 mv3 edsr resnet18 resnet50 dl3 w2l ic3 ic4"
+        for model in $models; do
+          ${CONDA_RUN} python -m examples.vulkan.export --model_name=$model --test
+        done
+
+        # Test selected models with dynamic shapes
+        models="mv2 resnet18 resnet50 ic3 densenet161"
+        for model in $models; do
+          ${CONDA_RUN} python -m examples.vulkan.export --model_name=$model --test -d
+        done
+
   test-coreml-bc-macos:
     name: test-coreml-bc-macos (${{ matrix.runner }})
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
