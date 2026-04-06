@@ -124,8 +124,82 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
             return False
         return True
 
+    def _check_transposed_conv_u55(self, node: fx.Node) -> bool:
+        """Implement the condition checks specified in
+        https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela/-/blob/main/SUPPORTED_OPS.md?ref_type=heads#ethos-u55-and-ethos-u65-tosa-transpose_conv2d-constraints
+        for the TransposeConv2D for Ethos-U55.
+        """
+        input_fake_tensor = get_first_fake_tensor(cast(fx.Node, node.args[0]))
+        if input_fake_tensor.dim() != 4:
+            self.reporter.report_reject(
+                node,
+                f"TransposeConv2d requires 4D input, got rank {input_fake_tensor.dim()}.",
+            )
+            return False
+        # For TransposeConv2D, the input tensor can only be 4D, hence we don't expect 3D input tensor.
+        # In case of a 3D input tensor, the user should first unsqueeze the tensor and then pass it
+        # to the TransposeConv2D, otherwise PyTorch throws an error.
+        if input_fake_tensor.dim_order() == (0, 1, 2, 3):
+            input_C = input_fake_tensor.shape[1]
+            input_H = input_fake_tensor.shape[2]
+            input_W = input_fake_tensor.shape[3]
+        elif input_fake_tensor.dim_order() == (0, 2, 3, 1):
+            input_C = input_fake_tensor.shape[3]
+            input_H = input_fake_tensor.shape[1]
+            input_W = input_fake_tensor.shape[2]
+        else:
+            self.reporter.report_reject(
+                node,
+                f"Unsupported dim order. Support dim orders (0,1,2,3) or (0,2,3,1) and got dim_order {input_fake_tensor.dim_order()}",
+            )
+            return False
+        kernel = cast(fx.Node, node.args[1]).meta["val"].shape
+        kernel_h = kernel[2]
+        kernel_w = kernel[3] if len(kernel) > 3 else 1
+        if (
+            input_C > 65536
+            or input_C < 1
+            or input_H > 65536
+            or input_H < 1
+            or input_W > 65536
+            or input_W < 1
+        ):
+            self.reporter.report_reject(
+                node,
+                f"HWC must be in the range [1;65536] but got {input_C} {input_H} {input_W}",
+            )
+            return False
+
+        if (
+            kernel_h * kernel_w > 4096
+            or kernel_h * kernel_w < 1
+            or kernel_h > 64
+            or kernel_h < 1
+        ):
+            self.reporter.report_reject(
+                node,
+                f"Kernel Height * Kernel Width must be in the range [1;4096] but got {kernel_h * kernel_w}",
+            )
+            return False
+        strides = expand_around_channel(cast(list[int], node.args[3]), 2)
+        stride = (strides[0], strides[1])
+        ok = False
+        if stride in ((1, 1), (2, 2)):
+            ok = True
+        elif stride == (1, 2):
+            ok = input_H == 1 and kernel_h == 1
+        elif stride == (2, 1):
+            ok = input_W == 1 and kernel_w == 1
+        if not ok:
+            self.reporter.report_reject(
+                node,
+                f"Unsupported stride of {stride} for Ethos-U55. You can use stride of (1,1) or (2,2), stride (1,2) for IFM height kernel height of 1 and stride(2,1) for IFM width and kernel width of 1",
+            )
+            return False
+        return True
+
     def _is_node_supported_u55(self, node: fx.Node) -> bool:
-        """Enforce Ethos-U55-specific constraints (Vela 4.2.0).
+        """Enforce Ethos-U55-specific constraints (Vela 5.0.0).
 
         Check channel dimensions, kernel sizes, and stride/pad/dilation
         combinations permitted on U55.
@@ -139,23 +213,7 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
         """
         transposed = cast(bool, node.args[6])
         if transposed:
-            kernel = cast(fx.Node, node.args[1]).meta["val"].shape
-            kernel_h = kernel[2]
-            kernel_w = kernel[3] if len(kernel) > 3 else 1
-            if kernel_h != kernel_w:
-                self.reporter.report_reject(
-                    node,
-                    f"Transpose convolution on U55 requires square kernels, got ({kernel_w}, {kernel_h}).",
-                )
-                return False
-
-            strides = expand_around_channel(cast(list[int], node.args[3]), 2)
-            if strides[0] != strides[1]:
-                self.reporter.report_reject(
-                    node,
-                    f"Transpose convolution on U55 requires equal strides, got {strides}.",
-                )
-                return False
+            return self._check_transposed_conv_u55(node)
 
         shape_in = cast(torch.Tensor, node.all_input_nodes[0].meta["val"]).shape
         shape_out = node.meta["val"].shape

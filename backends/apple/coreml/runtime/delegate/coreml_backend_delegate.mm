@@ -263,6 +263,24 @@ CoreMLBackendDelegate::init(BackendInitContext& context,
         specs_map.emplace(spec.key, std::move(buffer));
     }
 
+    // Check RuntimeSpec for compute_unit override.
+    // RuntimeSpec takes precedence over CompileSpec for load-time configuration.
+    std::string runtime_compute_unit_value;
+    auto runtime_specs = context.runtime_specs();
+    if (runtime_specs.size() > 0) {
+        auto compute_unit_result = context.get_runtime_spec<const char*>("compute_unit");
+        if (compute_unit_result.ok()) {
+            runtime_compute_unit_value = compute_unit_result.get();
+            ET_LOG(Debug, "%s: Using compute_unit from RuntimeSpec: %s",
+                   ETCoreMLStrings.delegateIdentifier.UTF8String,
+                   runtime_compute_unit_value.c_str());
+            // Override the compile spec with runtime spec value
+            std::string compute_units_key(ETCoreMLStrings.computeUnitsKeyName.UTF8String);
+            auto buffer = Buffer(runtime_compute_unit_value.data(), runtime_compute_unit_value.size());
+            specs_map.insert_or_assign(compute_units_key, std::move(buffer));
+        }
+    }
+
     // This will hold the NamedDataStore data if needed, keeping it alive until scope exit
     std::optional<FreeableBuffer> namedDataStoreBuffer;
     Buffer buffer(nullptr, 0);

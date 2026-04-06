@@ -1,4 +1,4 @@
-name: Build Cadence
+name: Cadence Build & Test
 
 on:
   pull_request:
@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  cpu:
+  cpu-build:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -25,6 +25,7 @@ jobs:
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      upload-artifact: cadence-runner-build
       script: |
         set -eux
         # The generic Linux job chooses to use base env, not the one setup by the image
@@ -33,3 +34,15 @@ jobs:
 
         ./install_requirements.sh > /dev/null
         bash backends/cadence/build_cadence_runner.sh
+
+        # Copy runner binary to artifact dir for downstream test jobs
+        cp cmake-out/backends/cadence/cadence_runner "${RUNNER_ARTIFACT_DIR}/"
+
+  cpu-test:
+    needs: cpu-build
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_test_cadence.yml
+    with:
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
