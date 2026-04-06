@@ -391,21 +391,20 @@ class CustomKVCache(nn.Module):
             return (self.k_cache, self.v_cache)
 
 
-def replace_kv_cache_with_custom_kv_cache(module):
+def replace_kv_cache_with_custom_kv_cache(module, is_seq_at_dim_2=True):
     """
     Replace KVCache with CustomKVCache. This modifies the model in place.
-    At the moment custom kv cache only supports cache with shape
-    [B, S, H, D] as opposed to [B, H, S, D]
-    This is because the custom op treats second dim as sequence dim.
-    Future work: support [B, H, S, D]
+    When is_seq_at_dim_2=True, cache is stored as [B, H, S, D] (transposed),
+    which improves SDPA GEMM performance via better memory locality.
+    When is_seq_at_dim_2=False, cache is stored as [B, S, H, D] (standard).
     """
     logging.info(
         "Replacing KVCache with CustomKVCache. This modifies the model in place."
     )
-    return _replace_kv_cache_with_custom_kv_cache(module)
+    return _replace_kv_cache_with_custom_kv_cache(module, is_seq_at_dim_2=is_seq_at_dim_2)
 
 
-def _replace_kv_cache_with_custom_kv_cache(module):
+def _replace_kv_cache_with_custom_kv_cache(module, is_seq_at_dim_2=True):
     for name, child in module.named_children():
         if isinstance(child, KVCache):
             cache_dtype = child.k_cache.dtype
@@ -422,11 +421,11 @@ def _replace_kv_cache_with_custom_kv_cache(module):
                     n_heads,
                     head_dim,
                     dtype=cache_dtype,
-                    is_seq_at_dim_2=True, # hacking temporarily
+                    is_seq_at_dim_2=is_seq_at_dim_2,
                 ),
             )
         else:
-            _replace_kv_cache_with_custom_kv_cache(child)
+            _replace_kv_cache_with_custom_kv_cache(child, is_seq_at_dim_2=is_seq_at_dim_2)
     return module
 
 
