@@ -532,11 +532,10 @@ TODO: Just handle conversion of bool mask to float
  * @param k_scales Optional scales for quantized key
  * @param v_zero_points Optional zero points for quantized value
  * @param v_scales Optional scales for quantized value
- * @param seq_dim Which dimension is sequence dimension.
- If SeqDim::One, then query, key, value are
- expected to be in shape [Batch x Q_seq_len x Dim_per_head x Num_heads] and
- output is expected to be in shape [Batch x Q_seq_len x Dim_per_head x
- Num_heads]
+ * @param q_seq_dim Sequence dimension for query and output tensors.
+ * @param k_seq_dim Sequence dimension for key tensor (can differ from q/v
+ *   to support mixed cache layouts without runtime transposes).
+ * @param v_seq_dim Sequence dimension for value tensor.
  * @param start_pos Starting position for causal masking in generation
  * @param num_keys_for_causal_attention Number of keys to consider for causal
  attention (-1 for all)
@@ -558,7 +557,9 @@ void cpu_flash_attention(
     const optional<Tensor>& k_scales,
     const optional<Tensor>& v_zero_points,
     const optional<Tensor>& v_scales,
-    const SeqDim seq_dim = SeqDim::TWO,
+    const SeqDim q_seq_dim = SeqDim::TWO,
+    const SeqDim k_seq_dim = SeqDim::TWO,
+    const SeqDim v_seq_dim = SeqDim::TWO,
     const int64_t start_pos = 0,
     const int64_t num_keys_for_causal_attention = -1) {
   (void)dropout_p;
@@ -580,19 +581,17 @@ void cpu_flash_attention(
   using Vec = vec::Vectorized<accum_t>;
   accum_t scaling_factor = static_cast<accum_t>(calculate_scale(query, scale));
 
-  int64_t batchSize = query.size(0);
-  int64_t num_head = query.size(1);
-  int64_t qSize = query.size(2);
-  int64_t headSize = query.size(3);
-  int64_t kvSize = value.size(2);
-  int64_t num_heads_kv = key.size(1);
+  // Compute head/seq dimension indices for each tensor.
+  // SeqDim::TWO means [B, H, S, D], SeqDim::ONE means [B, S, H, D].
+  int64_t q_head_idx = 3 - static_cast<int64_t>(q_seq_dim);
+  int64_t k_head_idx = 3 - static_cast<int64_t>(k_seq_dim);
 
-  if (seq_dim == SeqDim::ONE) {
-    num_head = query.size(2);
-    num_heads_kv = key.size(2);
-    qSize = query.size(1);
-    kvSize = value.size(1);
-  }
+  int64_t batchSize = query.size(0);
+  int64_t num_head = query.size(q_head_idx);
+  int64_t qSize = query.size(static_cast<int64_t>(q_seq_dim));
+  int64_t headSize = query.size(3);
+  int64_t kvSize = key.size(static_cast<int64_t>(k_seq_dim));
+  int64_t num_heads_kv = key.size(k_head_idx);
 
   if (num_keys_for_causal_attention > 0) {
     ET_CHECK_MSG(
@@ -644,33 +643,19 @@ void cpu_flash_attention(
 
   auto strides = query.strides();
   int64_t qStrideB = strides[0];
-  int64_t qStrideH = strides[1];
-  int64_t qStrideM = strides[2];
-
-  if (seq_dim == SeqDim::ONE) {
-    qStrideH = strides[2];
-    qStrideM = strides[1];
-  }
+  int64_t qStrideH = strides[q_head_idx];
+  int64_t qStrideM = strides[static_cast<int64_t>(q_seq_dim)];
 
   strides = key.strides();
   int64_t kStrideB = strides[0];
-  int64_t kStrideH = strides[1];
-  int64_t kStrideN = strides[2];
+  int64_t kStrideH = strides[k_head_idx];
+  int64_t kStrideN = strides[static_cast<int64_t>(k_seq_dim)];
 
-  if (seq_dim == SeqDim::ONE) {
-    kStrideH = strides[2];
-    kStrideN = strides[1];
-  }
-
+  int64_t v_head_idx = 3 - static_cast<int64_t>(v_seq_dim);
   strides = value.strides();
   int64_t vStrideB = strides[0];
-  int64_t vStrideH = strides[1];
-  int64_t vStrideN = strides[2];
-
-  if (seq_dim == SeqDim::ONE) {
-    vStrideH = strides[2];
-    vStrideN = strides[1];
-  }
+  int64_t vStrideH = strides[v_head_idx];
+  int64_t vStrideN = strides[static_cast<int64_t>(v_seq_dim)];
 
   int64_t q_quant_params_StrideB = 0;
   int64_t q_quant_params_StrideH = 0;
@@ -685,45 +670,29 @@ void cpu_flash_attention(
   if (is_quantized_sdpa) {
     auto q_strides = q_zero_points.value().strides();
     q_quant_params_StrideB = q_strides[0];
-    q_quant_params_StrideH = q_strides[1];
-    q_quant_params_StrideM = q_strides[2];
+    q_quant_params_StrideH = q_strides[q_head_idx];
+    q_quant_params_StrideM = q_strides[static_cast<int64_t>(q_seq_dim)];
 
     auto k_strides = k_zero_points.value().strides();
     k_quant_params_StrideB = k_strides[0];
-    k_quant_params_StrideH = k_strides[1];
-    k_quant_params_StrideN = k_strides[2];
+    k_quant_params_StrideH = k_strides[k_head_idx];
+    k_quant_params_StrideN = k_strides[static_cast<int64_t>(k_seq_dim)];
 
     auto v_strides = v_zero_points.value().strides();
     v_quant_params_StrideB = v_strides[0];
-    v_quant_params_StrideH = v_strides[1];
-    v_quant_params_StrideN = v_strides[2];
+    v_quant_params_StrideH = v_strides[v_head_idx];
+    v_quant_params_StrideN = v_strides[static_cast<int64_t>(v_seq_dim)];
 
     ET_CHECK_MSG(
         (v_quant_params_StrideN == k_quant_params_StrideN) &&
             (v_quant_params_StrideN == q_quant_params_StrideM),
         "Quant params strides must be same for seq dim");
-
-    if (seq_dim == SeqDim::ONE) {
-      q_quant_params_StrideH = q_strides[2];
-      q_quant_params_StrideM = q_strides[1];
-
-      k_quant_params_StrideH = k_strides[2];
-      k_quant_params_StrideN = k_strides[1];
-
-      v_quant_params_StrideH = v_strides[2];
-      v_quant_params_StrideN = v_strides[1];
-    }
   }
 
   strides = output.strides();
   int64_t oStrideB = strides[0];
-  int64_t oStrideH = strides[1];
-  int64_t oStrideM = strides[2];
-
-  if (seq_dim == SeqDim::ONE) {
-    oStrideH = strides[2];
-    oStrideM = strides[1];
-  }
+  int64_t oStrideH = strides[q_head_idx];
+  int64_t oStrideM = strides[static_cast<int64_t>(q_seq_dim)];
 
   int64_t mStrideB = 0;
   int64_t mStrideH = 0;

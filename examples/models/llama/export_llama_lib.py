@@ -1763,20 +1763,25 @@ def _get_source_transforms(  # noqa
             transpose_k = use_transposed_cache
             transpose_v = use_transposed_cache
 
-        # SDPA uses is_seq_at_dim_2=True when any cache is transposed,
-        # since KVCache always returns [B, H, S, D] for Attention.
-        sdpa_seq_at_dim_2 = transpose_k or transpose_v
-
         transforms.append(
             partial(replace_kv_cache_with_custom_kv_cache, transpose_k=transpose_k, transpose_v=transpose_v)
         )
         if use_attention_mask_for_custom_sdpa:
             transforms.append(
-                partial(replace_sdpa_with_custom_op, use_attention_mask=True, is_seq_at_dim_2=sdpa_seq_at_dim_2)
+                partial(
+                    replace_sdpa_with_custom_op,
+                    use_attention_mask=True,
+                    is_k_seq_at_dim_2=transpose_k,
+                    is_v_seq_at_dim_2=transpose_v,
+                )
             )
         else:
             transforms.append(
-                partial(replace_sdpa_with_custom_op, is_seq_at_dim_2=sdpa_seq_at_dim_2)
+                partial(
+                    replace_sdpa_with_custom_op,
+                    is_k_seq_at_dim_2=transpose_k,
+                    is_v_seq_at_dim_2=transpose_v,
+                )
             )
 
     if quantize_kv_cache:
