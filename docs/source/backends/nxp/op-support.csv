@@ -5,6 +5,7 @@ aten.addmm.default,int8,static int8,2D tensor only
 aten.add.Tensor,int8,static int8,"alpha = 1, input tensors of equal shape"
 aten.avg_pool1d.default,int8,static int8,"ceil_mode=False, count_include_pad=False, divisor_override=False"
 aten.avg_pool2d.default,int8,static int8,"ceil_mode=False, count_include_pad=False, divisor_override=False"
+aten.bmm.default,int8,static int8,"width and channels dim of both args %8 = 0, 3D tensors only"
 aten.cat.default,int8,static int8,"input_channels % 8 = 0, output_channels %8 = 0"
 aten.clamp.default,int8,static int8,"Bounds = (-1, 1) or (0, 1) or (0, 6) or (0, None)"
 aten.clone.default,int8,static int8,

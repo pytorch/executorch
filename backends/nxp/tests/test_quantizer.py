@@ -26,10 +26,17 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
 from executorch.backends.nxp.tests.executors import (
     convert_run_compare,
     graph_contains_any_of_ops,
+    tflite,
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
+
 from executorch.exir.dialects._ops import ops as exir_ops
+
+requires_tflite = pytest.mark.skipif(
+    tflite is None, reason="tensorflow/tflite not available"
+)
+
 from torch.export import export, ExportedProgram
 from torch.fx import GraphModule
 from torchao.quantization.pt2e import (
@@ -400,6 +407,7 @@ def test_quantizers_order_invariance():
     assert all(n == n_reversed for n, n_reversed in zip(nodes, nodes_reversed))
 
 
+@requires_tflite
 @pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
 def test_quantizer__linear_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
@@ -447,6 +455,7 @@ def test_quantizer__linear_w_activation(mocker, activation, inplace, use_qat):
     )
 
 
+@requires_tflite
 @pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
 def test_quantizer__addmm_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
@@ -491,6 +500,7 @@ def test_quantizer__addmm_w_activation(mocker, activation, inplace, use_qat):
     )
 
 
+@requires_tflite
 @pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
 def test_quantizer__mm_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
@@ -535,6 +545,7 @@ def test_quantizer__mm_w_activation(mocker, activation, inplace, use_qat):
     )
 
 
+@requires_tflite
 @pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
 def test_quantizer__conv_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")

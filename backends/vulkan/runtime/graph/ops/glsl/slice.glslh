@@ -56,7 +56,7 @@ TensorIndex4D out_tidx_to_in_tidx(const TensorIndex4D out_tidx) {
 
   int adjusted_start = start;
   if (start < 0) {
-    adjusted_start = start + inp.sizes[selected_dim];
+    adjusted_start = start + safe_idx(inp.sizes, selected_dim);
   }
 
   in_tidx.data[selected_dim] = adjusted_start + out_tidx.data[selected_dim] * step;
