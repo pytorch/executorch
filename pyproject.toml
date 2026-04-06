@@ -76,6 +76,11 @@ dependencies=[
   "omegaconf>=2.3.0",
 ]
 
+[project.optional-dependencies]
+openvino = [
+  "openvino>=2025.1.0,<2026.0.0; platform_system == 'Linux'",
+]
+
 [project.urls]
 # The keys are arbitrary but will be visible on PyPI.
 Homepage = "https://pytorch.org/executorch/"

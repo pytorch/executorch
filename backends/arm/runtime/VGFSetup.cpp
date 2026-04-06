@@ -538,7 +538,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
       .pNext = nullptr,
       .flags = 0,
       .bindingCount = static_cast<uint32_t>(layout_bindings.size()),
-      layout_bindings.data(),
+      .pBindings = layout_bindings.data(),
   };
   result =
       vkCreateDescriptorSetLayout(vk_device, &layout_info, nullptr, &vk_layout);

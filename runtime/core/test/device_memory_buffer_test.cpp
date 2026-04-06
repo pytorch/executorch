@@ -15,9 +15,9 @@
 using executorch::runtime::DeviceAllocator;
 using executorch::runtime::DeviceMemoryBuffer;
 using executorch::runtime::Error;
-using executorch::runtime::Result;
 using executorch::runtime::get_device_allocator;
 using executorch::runtime::register_device_allocator;
+using executorch::runtime::Result;
 using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
 
@@ -152,9 +152,7 @@ TEST_F(DeviceMemoryBufferTest, MoveAssignmentTransfersOwnership) {
 }
 
 TEST_F(DeviceMemoryBufferTest, DestructorNoOpForDefaultConstructed) {
-  {
-    DeviceMemoryBuffer buf;
-  }
+  { DeviceMemoryBuffer buf; }
   EXPECT_EQ(g_mock_cuda.deallocate_count_, 0);
 }
 

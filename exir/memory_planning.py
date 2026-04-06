@@ -1203,6 +1203,74 @@ def _apply_algo_to_submodules(
     return bufsizes
 
 
+_CPU_KEY: tuple[DeviceType, int] = (DeviceType.CPU, 0)
+
+
+def _partition_specs_by_device(
+    all_specs: set[TensorSpec],
+    enable_non_cpu_memory_planning: bool,
+) -> dict[tuple[DeviceType, int], set[TensorSpec]]:
+    """Partition specs by (device_type, device_index).
+
+    Different device indices on the same device type (e.g. CUDA:0 vs CUDA:1)
+    get separate memory buffers.
+
+    When ``enable_non_cpu_memory_planning`` is False (legacy), all specs are
+    placed into a single CPU:0 bucket regardless of their device attribute.
+    """
+    specs_by_device: dict[tuple[DeviceType, int], set[TensorSpec]] = defaultdict(set)
+    if not enable_non_cpu_memory_planning:
+        specs_by_device[_CPU_KEY] = all_specs
+        return specs_by_device
+
+    has_non_cpu_specs = False
+    has_pre_assigned_mem_id = False
+    for spec in all_specs:
+        device_key = (spec.device, spec.device_index)
+        specs_by_device[device_key].add(spec)
+        if spec.device != DeviceType.CPU:
+            has_non_cpu_specs = True
+        if spec.mem_id is not None:
+            has_pre_assigned_mem_id = True
+
+    # Custom pool passes pre-assign mem_ids (e.g. mem_id=2, 3, …) to place
+    # tensors into specific memory arenas.  Per-device partitioning appends
+    # device buffers after the CPU buffers, and the remap formula
+    #   global_mem_id = (local_mem_id - 1) + base_mem_id
+    # assumes the algo-local numbering starts at 1.  If a custom pass has
+    # already set mem_ids > 1 on the CPU side, the device-buffer slots may
+    # collide with those custom pool slots.
+    # TODO(gasoonjia): support custom pools + per-device planning by reserving
+    # device slots after the highest custom pool id.
+    if has_non_cpu_specs and has_pre_assigned_mem_id:
+        raise NotImplementedError(
+            "enable_non_cpu_memory_planning is not yet compatible with "
+            "custom memory pool passes that pre-assign spec.mem_id. "
+            "The per-device buffer slots may collide with custom pool "
+            "mem_ids. Please disable enable_non_cpu_memory_planning or "
+            "remove the custom mem_id assignments."
+        )
+
+    return specs_by_device
+
+
+def _build_non_const_buffer_device(
+    buffer_devices: list[tuple[DeviceType, int]],
+) -> Optional[list[NonConstBufferDevice]]:
+    """Build the non-CPU buffer device list for serialization.
+
+    Returns ``None`` when all buffers are CPU (the default), so that no
+    redundant device metadata is emitted.
+    """
+    if not any(dk[0] != DeviceType.CPU for dk in buffer_devices):
+        return None
+    return [
+        NonConstBufferDevice(buffer_idx=i, device_type=dt, device_index=di)
+        for i, (dt, di) in enumerate(buffer_devices)
+        if (dt, di) != _CPU_KEY
+    ]
+
+
 def apply_algo(
     algo: Callable[..., list[int]],
     graph_module: torch.fx.GraphModule,
@@ -1270,46 +1338,12 @@ def apply_algo(
     if _contains_xnnpack_delegate(graph_module):
         extra_padding = 64
 
-    # 1. Partition specs by (device_type, device_index).
-    # Different device indices on the same device type (e.g. CUDA:0 vs CUDA:1)
-    # get separate memory buffers.
-    _CPU_KEY: tuple[DeviceType, int] = (DeviceType.CPU, 0)
-    specs_by_device: dict[tuple[DeviceType, int], set[TensorSpec]] = defaultdict(set)
-    if enable_non_cpu_memory_planning:
-        has_non_cpu_specs = False
-        has_pre_assigned_mem_id = False
-        for spec in all_specs:
-            device_key = (spec.device, spec.device_index)
-            specs_by_device[device_key].add(spec)
-            if spec.device != DeviceType.CPU:
-                has_non_cpu_specs = True
-            if spec.mem_id is not None:
-                has_pre_assigned_mem_id = True
+    specs_by_device = _partition_specs_by_device(
+        all_specs, enable_non_cpu_memory_planning
+    )
 
-        # Custom pool passes pre-assign mem_ids (e.g. mem_id=2, 3, …) to place
-        # tensors into specific memory arenas.  Per-device partitioning appends
-        # device buffers after the CPU buffers, and the remap formula
-        #   global_mem_id = (local_mem_id - 1) + base_mem_id
-        # assumes the algo-local numbering starts at 1.  If a custom pass has
-        # already set mem_ids > 1 on the CPU side, the device-buffer slots may
-        # collide with those custom pool slots.
-        # TODO(gasoonjia): support custom pools + per-device planning by reserving
-        # device slots after the highest custom pool id.
-        if has_non_cpu_specs and has_pre_assigned_mem_id:
-            raise NotImplementedError(
-                "enable_non_cpu_memory_planning is not yet compatible with "
-                "custom memory pool passes that pre-assign spec.mem_id. "
-                "The per-device buffer slots may collide with custom pool "
-                "mem_ids. Please disable enable_non_cpu_memory_planning or "
-                "remove the custom mem_id assignments."
-            )
-    else:
-        # Legacy behavior: all specs planned into CPU memory regardless of device
-        specs_by_device[_CPU_KEY] = all_specs
-
-    # 2. Plan each device independently
+    # Plan each device independently
     global_bufsizes: list[int] = [0]  # index 0 reserved for constants
-    # Track (device_type, device_index) for each buffer slot
     buffer_devices: list[tuple[DeviceType, int]] = [_CPU_KEY]
 
     # Process CPU:0 first (if present), then other devices sorted by
@@ -1361,20 +1395,10 @@ def apply_algo(
         global_bufsizes.append(0)
         buffer_devices.append(_CPU_KEY)
 
-    # 3. Insert free calls and build device buffer mapping
+    # Insert free calls and build device buffer mapping
     insert_calls_to_free(graph_module, all_specs)
 
-    # Only record non-CPU buffer entries.  CPU buffers are the default and
-    # do not need explicit device metadata in the serialized program.
-    non_const_buffer_device: Optional[list[NonConstBufferDevice]] = None
-    has_device_buffers = any(dk[0] != DeviceType.CPU for dk in buffer_devices)
-    if has_device_buffers:
-        non_const_buffer_device = [
-            NonConstBufferDevice(buffer_idx=i, device_type=dt, device_index=di)
-            for i, (dt, di) in enumerate(buffer_devices)
-            if (dt, di) != _CPU_KEY
-        ]
-
+    non_const_buffer_device = _build_non_const_buffer_device(buffer_devices)
     graph_module.meta["non_const_buffer_sizes"] = global_bufsizes
     if non_const_buffer_device is not None:
         graph_module.meta["non_const_buffer_device"] = non_const_buffer_device
