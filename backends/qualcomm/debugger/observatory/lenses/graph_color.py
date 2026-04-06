@@ -36,7 +36,7 @@ _OP_COLOR_MAP = {
     "output": "#E85D5D",
     "call_module": "#9B6DC6",
     "call_method": "#E8A838",
-    "get_attr": "#7EC8C8",
+    "get_attr": "#7190C9",
 }
 
 
