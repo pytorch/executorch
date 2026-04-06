@@ -267,14 +267,11 @@ class FullAttention(nn.Module):
         # KV cache
         k, v = self.kv_cache.update(input_pos, k, v)
 
-        # GQA expansion
-        if self.n_kv_groups > 1:
-            k = k.repeat_interleave(self.n_kv_groups, dim=1)
-            v = v.repeat_interleave(self.n_kv_groups, dim=1)
-
-        # SDPA with bool mask
+        # SDPA with GQA — kernel maps Q heads to KV heads internally
         attn_mask = self.mask[input_pos].unsqueeze(0).unsqueeze(0)
-        y = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
+        y = F.scaled_dot_product_attention(
+            q, k, v, attn_mask=attn_mask, enable_gqa=True
+        )
 
         y = y.transpose(1, 2).contiguous().view(B, T, -1)
 

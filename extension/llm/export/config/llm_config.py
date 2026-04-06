@@ -306,10 +306,15 @@ class MethodConfig:
     Attributes:
         method_name: Name of the method to export.
         lora_config: Optional LoRA configuration.
+        export_seq_len: Sequence length of example inputs used during
+            torch.export tracing. Controls which graph path is captured, e.g.
+            prefill vs decode, or for YOCO, where all layers run for decode
+            but not prefill. When unset, uses the model's default input length.
     """
 
     method_name: str
     lora_config: Optional[LoraConfig] = None
+    export_seq_len: Optional[int] = None
 
 
 @dataclass
