@@ -417,6 +417,30 @@ class Observatory:
                 dashboard_views[lens_name] = dashboard_view
 
         graph_payload = graph_hub.build_payload()
+        graph_assets = graph_payload["graph_assets"]
+        graph_layers = graph_payload["graph_layers"]
+        for graph_ref, asset in graph_assets.items():
+            if not isinstance(asset, dict):
+                continue
+            base_payload = asset.get("base")
+            if not isinstance(base_payload, dict):
+                continue
+
+            extensions_payload = graph_layers.get(graph_ref, {})
+            if not isinstance(extensions_payload, dict) or not extensions_payload:
+                continue
+
+            try:
+                asset["base"] = FXGraphExporter.relayout_payload_base(
+                    base_payload,
+                    extensions_payload=extensions_payload,
+                )
+            except Exception as exc:
+                logging.warning(
+                    "[Observatory] FX relayout failed for graph_ref=%s: %s",
+                    graph_ref,
+                    exc,
+                )
 
         payload = {
             "resources": resources,
@@ -436,8 +460,8 @@ class Observatory:
                 "start_data": session.start_data,
                 "end_data": session.end_data,
             },
-            "graph_assets": graph_payload["graph_assets"],
-            "graph_layers": graph_payload["graph_layers"],
+            "graph_assets": graph_assets,
+            "graph_layers": graph_layers,
         }
 
         Observatory._encode_html_blocks(serialized_records, dashboard_views)
