@@ -296,13 +296,14 @@ bool validate_config(
   fill_random(k, gen);
   fill_random(v, gen);
 
-  // Reference: ET custom_sdpa_out (10-param signature, standard layout)
+  // Reference: ET custom_sdpa_out (standard [B,S,H,D] layout)
   Tensor out_ref = tf.zeros(
       {(int32_t)batch, (int32_t)q_seq_len, (int32_t)Hq, (int32_t)D});
   KernelRuntimeContext ctx{};
   torch::executor::native::custom_sdpa_out(
       ctx, q, k, v, start_pos,
       std::nullopt, 0.0, true, std::nullopt,
+      false, false, false,
       out_ref);
 
   // Test: GEMM-based standard SDPA
@@ -473,6 +474,9 @@ BENCHMARK_DEFINE_F(SDPABenchFixture, CustomSDPA)
         0.0,          // dropout_p
         true,         // is_causal
         std::nullopt, // scale
+        false,        // is_seq_dim_2
+        false,        // is_k_seq_dim_2
+        false,        // is_v_seq_dim_2
         *output_);
   }
 }
