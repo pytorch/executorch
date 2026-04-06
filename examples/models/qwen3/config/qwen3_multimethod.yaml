@@ -22,12 +22,13 @@ quantization:
   qmode: "8da4w"
   group_size: 32
 
-multimethod_lora:
+multimethod:
   methods:
     # LoRA method - adapter paths from environment variables
-    lora_forward:
-      adapter_checkpoint: ${oc.env:LORA_ADAPTER_CHECKPOINT}
-      adapter_config: ${oc.env:LORA_ADAPTER_CONFIG}
+    - method_name: lora_forward
+      lora_config:
+        adapter_checkpoint: ${oc.env:LORA_ADAPTER_CHECKPOINT}
+        adapter_config: ${oc.env:LORA_ADAPTER_CONFIG}
     # Base method - no LoRA
-    base_forward: null
+    - method_name: base_forward
   share_mutable_buffers: True
