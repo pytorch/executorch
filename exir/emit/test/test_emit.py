@@ -2632,14 +2632,14 @@ class TestEmit(unittest.TestCase):
 
         plan = program.execution_plan[0]
         tensor_values = [v.val for v in plan.values if isinstance(v.val, Tensor)]
-        cuda_tensors = [
+        non_cpu_tensors = [
             t
             for t in tensor_values
             if t.extra_tensor_info is not None
-            and t.extra_tensor_info.device_type == schema.DeviceType.CUDA
+            and t.extra_tensor_info.device_type is not None
         ]
         self.assertEqual(
-            len(cuda_tensors),
+            len(non_cpu_tensors),
             0,
-            "No tensor should have CUDA device when model runs entirely on CPU",
+            "No tensor should have extra device info when model runs entirely on CPU",
         )
