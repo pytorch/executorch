@@ -7,6 +7,7 @@
  */
 
 #include <lib.h>
+#include <dump_tensor.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -102,8 +103,8 @@ Tensor& mean_out(
     float32_t* out_buff[2];
     
     // Check if DRAM buffers are available
-    bool dram0_available = (ptr_dram0 != nullptr) && (DRAM0_BUFF_SIZE > 0);
-    bool dram1_available = (ptr_dram1 != nullptr) && (DRAM1_BUFF_SIZE > 0);
+    bool dram0_available = (ptr_dram0 != nullptr) && (IDMA_BUFFER_SIZE_DRAM0 > 0);
+    bool dram1_available = (ptr_dram1 != nullptr) && (IDMA_BUFFER_SIZE_DRAM1 > 0);
     
     // DMA threshold: beneficial for larger channel counts
     // Each channel: 4 float32 input (16 bytes) + 1 float32 output (4 bytes)
@@ -114,8 +115,8 @@ Tensor& mean_out(
     // Split: 80% input (4 floats/channel), 20% output (1 float/channel)
     if (use_dma && dram0_available && dram1_available && (total_channels >= 2)) {
       // Calculate 80% of DRAM for input, aligned to 64 bytes for DMA efficiency
-      size_t inp_buffer_bytes = ((DRAM0_BUFF_SIZE * 4) / 5) & ~0x3F;  // 64-byte aligned
-      size_t out_buffer_bytes = ((DRAM0_BUFF_SIZE * 1) / 5) & ~0x3F;  // 64-byte aligned
+      size_t inp_buffer_bytes = ((IDMA_BUFFER_SIZE_DRAM0 * 4) / 5) & ~0x3F;  // 64-byte aligned
+      size_t out_buffer_bytes = ((IDMA_BUFFER_SIZE_DRAM0 * 1) / 5) & ~0x3F;  // 64-byte aligned
       
       // How many channels fit in input buffer (4 floats per channel = 16 bytes)
       // CRITICAL: SIMD function processes 16 channels at a time (64 input floats)
@@ -141,8 +142,8 @@ Tensor& mean_out(
     
     // Strategy 2: Ping-process-pong (1 input + 1 output buffer)
     if (use_dma && !ping_pong_process && dram0_available && dram1_available) {
-      size_t inp_capacity = DRAM0_BUFF_SIZE / (4 * FLT32_SIZE);  // channels (4 floats each)
-      size_t out_capacity = DRAM1_BUFF_SIZE / FLT32_SIZE;  // channels (1 float each)
+      size_t inp_capacity = IDMA_BUFFER_SIZE_DRAM0 / (4 * FLT32_SIZE);  // channels (4 floats each)
+      size_t out_capacity = IDMA_BUFFER_SIZE_DRAM1 / FLT32_SIZE;  // channels (1 float each)
       
       if ((inp_capacity > 0) && (out_capacity >= inp_capacity)) {
         inp_buff[0] = (float32_t*)ptr_dram0;
@@ -157,9 +158,11 @@ Tensor& mean_out(
       const float32_t* ptr_inp = input_data;
       float32_t* ptr_out = out_data;
       
+      // Writeback input from cache to system memory for DMA coherency
+      xthal_dcache_region_writeback((void*)input_data, sizeof(float) * in.numel());
+
       // Initialize DMA Channel 0
-      idma_init(0, 0, MAX_BLOCK_16, 8, TICK_CYCLES_1, 0, NULL);
-      idma_init_loop(0, buffer_idma_ch_2d, IDMA_2D_DESC, 1, NULL, NULL);
+      dma_2dm_init(0);
       
       if (ping_pong_process) {
         // Ping-pong: overlap load/compute/store
@@ -203,8 +206,12 @@ Tensor& mean_out(
           channels_remaining -= current_chunk_channels;
         }
         
+        // Invalidate output cache: DMA wrote to system memory, CPU must not see stale cache
+        xthal_dcache_region_invalidate(out_data, sizeof(float) * out.numel());
+
         TIME_END(mean_simd_optimized);
         TIME_DISPLAY(mean_simd_optimized, total_channels, "channels (DMA ping-pong)");
+        DUMP_TENSOR(mean, out);
         return out;
         
       } else if (ping_process_pong) {
@@ -240,8 +247,12 @@ Tensor& mean_out(
           channels_remaining -= current_chunk_channels;
         }
         
+        // Invalidate output cache: DMA wrote to system memory, CPU must not see stale cache
+        xthal_dcache_region_invalidate(out_data, sizeof(float) * out.numel());
+
         TIME_END(mean_simd_optimized);
         TIME_DISPLAY(mean_simd_optimized, total_channels, "channels (DMA sequential)");
+        DUMP_TENSOR(mean, out);
         return out;
       }
     }
@@ -252,9 +263,13 @@ Tensor& mean_out(
         input_data, 
         total_channels * 4);
     
+    // Writeback output from cache to system memory for coherency with next op
+    xthal_dcache_region_writeback(out_data, sizeof(float) * out.numel());
+
     TIME_END(mean_simd_optimized);
     TIME_DISPLAY(mean_simd_optimized, total_channels, "channels (SIMD no-DMA)");
-    
+    DUMP_TENSOR(mean, out);
+
     return out;
   }
 
@@ -283,6 +298,7 @@ Tensor& mean_out(
 
   TIME_END(mean_portable_fallback);
   TIME_DISPLAY(mean_portable_fallback, out.numel(), "elements (portable)");
+  DUMP_TENSOR(mean, out);
 
   return out;
 }

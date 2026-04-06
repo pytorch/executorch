@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <lib.h>
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -28,6 +29,8 @@ Tensor& requantize_out(
     const Tensor& out_zero_point_t,
     const ScalarType out_dtype,
     Tensor& out) {
+  TIME_DECL(requantize);
+  TIME_START(requantize);
   ET_KERNEL_CHECK_MSG(
       ctx,
       in_scale_t.scalar_type() == ScalarType::Float,
@@ -151,6 +154,9 @@ Tensor& requantize_out(
   }
 #undef typed_requantize_in
 #undef typed_requantize
+
+  TIME_END(requantize);
+  TIME_DISPLAY(requantize, (int)out.numel(), "elements");
   return out;
 }
 
@@ -165,6 +171,8 @@ Tensor& requantize_per_tensor_out(
     int64_t out_zero_point,
     const ScalarType out_dtype,
     Tensor& out) {
+  TIME_DECL(requantize_per_tensor);
+  TIME_START(requantize_per_tensor);
   ET_KERNEL_CHECK_MSG(
       ctx,
       out.scalar_type() == out_dtype,
@@ -253,6 +261,9 @@ Tensor& requantize_per_tensor_out(
   }
 #undef typed_requantize_in
 #undef typed_requantize
+
+  TIME_END(requantize_per_tensor);
+  TIME_DISPLAY(requantize_per_tensor, (int)out.numel(), "elements");
   return out;
 }
 

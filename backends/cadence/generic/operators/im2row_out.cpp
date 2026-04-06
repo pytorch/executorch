@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <lib.h>
 #include <executorch/backends/cadence/generic/operators/operators.h>
 
 #include <algorithm>
@@ -125,6 +126,8 @@ void im2row_out(
     const Tensor& in_zero_point,
     bool channel_last,
     Tensor& out) {
+  TIME_DECL(im2row);
+  TIME_START(im2row);
   // Compute the input tensor's dims
   bool unit_height = input.dim() == 3;
   const int32_t batch_size = input.size(0);
@@ -205,6 +208,9 @@ void im2row_out(
           torch::executor::toString(dtype));
   }
 #undef typed_im2row
+
+  TIME_END(im2row);
+  TIME_DISPLAY(im2row, (int)out.numel(), "elements");
 }
 
 void im2row_per_tensor_out(
@@ -217,6 +223,8 @@ void im2row_per_tensor_out(
     int64_t in_zero_point,
     bool channel_last,
     Tensor& out) {
+  TIME_DECL(im2row_per_tensor);
+  TIME_START(im2row_per_tensor);
   // Compute the input tensor's dims
   bool unit_height = input.dim() == 3;
   const int32_t batch_size = input.size(0);
@@ -291,6 +299,9 @@ void im2row_per_tensor_out(
           torch::executor::toString(dtype));
   }
 #undef typed_im2row_per_tensor
+
+  TIME_END(im2row_per_tensor);
+  TIME_DISPLAY(im2row_per_tensor, (int)out.numel(), "elements");
 }
 
 } // namespace native

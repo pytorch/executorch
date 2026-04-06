@@ -7,6 +7,7 @@
  */
 
 #include <lib.h>
+#include <dump_tensor.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
@@ -265,8 +266,6 @@ Tensor& add_out(
       TIME_END(add_float);
       TIME_DISPLAY(add_float, numel, "elements (HW-optimized, no DMA)");
     }
-    
-    return out;
   } else {
     // Fallback: Use full generic portable implementation
     // This handles: broadcasting, non-float dtypes, alpha!=1.0, small tensors, all corner cases
@@ -334,9 +333,9 @@ Tensor& add_out(
     
     TIME_END(add_generic);
     TIME_DISPLAY(add_generic, numel, "elements (generic template)");
-    
-    return out;
   }
+  DUMP_TENSOR(add, out);
+  return out;
 }
 
 } // namespace native

@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <lib.h>
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/backends/cadence/generic/operators/operators.h>
 
@@ -158,6 +159,9 @@ void quantized_conv2d_nhwc(
     float output_scale,
     int32_t output_zero_point,
     Tensor& out) {
+  TIME_DECL(quantized_conv2d_nhwc);
+  TIME_START(quantized_conv2d_nhwc);
+
   bool conv1d = input.dim() == 3;
   // input = [n, h, w, c]
   const int n = input.size(0);
@@ -213,6 +217,9 @@ void quantized_conv2d_nhwc(
   }
 
 #undef typed_quantized_conv2d_nhwc
+
+  TIME_END(quantized_conv2d_nhwc);
+  TIME_DISPLAY(quantized_conv2d_nhwc, (int)out.numel(), "elements");
 }
 
 void quantized_conv2d_nhwc_out(

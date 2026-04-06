@@ -8,6 +8,7 @@
 
 #include <api.h>
 #include <lib.h>
+#include <dump_tensor.h>
 #include <algorithm>
 #include <cmath>
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
@@ -99,6 +100,11 @@ void quantized_linear_per_tensor_out(
     const int8_t* weight_data = weight.const_data_ptr<int8_t>();
     const int32_t* bias_data = bias.const_data_ptr<int32_t>();
     int8_t* out_data = out.mutable_data_ptr<int8_t>();
+
+    // Cache coherency: invalidate inputs that may have been DMA-written by prior ops
+    xthal_dcache_region_invalidate((void*)in_data, sizeof(int8_t) * src.numel());
+    xthal_dcache_region_invalidate((void*)weight_data, sizeof(int8_t) * weight.numel());
+    xthal_dcache_region_invalidate((void*)bias_data, sizeof(int32_t) * bias.numel());
     
     const int32_t in_zp = static_cast<int32_t>(src_zero_point);
     const int32_t weight_zp = static_cast<int32_t>(weight_zero_point);
@@ -109,8 +115,8 @@ void quantized_linear_per_tensor_out(
         -out_multiplier * 1.0f / (1 << 31) * std::pow(2.0f, (float)out_shift);
     
     // Check if DRAM buffers are available for DMA
-    bool dram0_available = (ptr_dram0 != nullptr) && (DRAM0_BUFF_SIZE > 0);
-    bool dram1_available = (ptr_dram1 != nullptr) && (DRAM1_BUFF_SIZE > 0);
+    bool dram0_available = (ptr_dram0 != nullptr) && (IDMA_BUFFER_SIZE_DRAM0 > 0);
+    bool dram1_available = (ptr_dram1 != nullptr) && (IDMA_BUFFER_SIZE_DRAM1 > 0);
     
     // DMA threshold: only beneficial for larger problems
     const size_t DMA_THRESHOLD = 512;  // Minimum input dimension
@@ -120,7 +126,7 @@ void quantized_linear_per_tensor_out(
       // Single sample: DMA-optimized tiling (block prefetch) processing
       size_t input_buffer_size = in_dim;  // One input row
       // Determine max number of weight rows (tile) that fit in DRAM1
-      size_t max_tile_rows = DRAM1_BUFF_SIZE / in_dim;
+      size_t max_tile_rows = IDMA_BUFFER_SIZE_DRAM1 / in_dim;
       if (max_tile_rows == 0) max_tile_rows = 1;
       // Limit tile size to out_dim if needed
       size_t tile_rows = (max_tile_rows < out_dim) ? max_tile_rows : out_dim;
@@ -128,8 +134,7 @@ void quantized_linear_per_tensor_out(
       int8_t* input_cache = (int8_t*)ptr_dram0;
       int8_t* weight_tile = (int8_t*)ptr_dram1;
       // Initialize DMA Channel 0
-      idma_init(0, 0, MAX_BLOCK_16, 8, TICK_CYCLES_1, 0, NULL);
-      idma_init_loop(0, buffer_idma_ch_2d, IDMA_2D_DESC, 1, NULL, NULL);
+      dma_2dm_init(0);
       // Load input row ONCE and cache it
       int32_t idx_in = idma_copy_2d_desc(0, input_cache, (void*)in_data, 
                                         input_buffer_size, DESC_IDMA_PRIOR_H, 1, 0, 0);
@@ -154,6 +159,9 @@ void quantized_linear_per_tensor_out(
           out_data[j_tile + j] = ::impl::generic::kernels::quantize<int8_t>(acc, requant_scale, out_zp);
         }
       }
+      // Writeback output from cache to system memory for DMA coherency
+      xthal_dcache_region_writeback(out_data, sizeof(int8_t) * numel);
+
       TIME_END(quantized_linear);
       TIME_DISPLAY(quantized_linear, numel, "SIMD elements (DMA tiling)");
       return;
@@ -180,6 +188,9 @@ void quantized_linear_per_tensor_out(
       }
     }
     
+    // Writeback output from cache to system memory for DMA coherency
+    xthal_dcache_region_writeback(out_data, sizeof(int8_t) * numel);
+
     TIME_END(quantized_linear);
     TIME_DISPLAY(quantized_linear, numel, "SIMD elements (no DMA)");
     
@@ -207,6 +218,7 @@ void quantized_linear_per_tensor_out(
     TIME_END(quantized_linear);
     TIME_DISPLAY(quantized_linear, numel, "Generic elements");
   }
+  DUMP_TENSOR(quantized_linear, out);
 }
 
 // Wrapper functions for different quantization schemes

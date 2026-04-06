@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <lib.h>
+#include <dump_tensor.h>
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/backends/cadence/generic/operators/operators.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -52,6 +54,9 @@ void quantized_relu_out(
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     Tensor& output) {
+  TIME_DECL(quantized_relu);
+  TIME_START(quantized_relu);
+
   if (input.scalar_type() == executorch::aten::ScalarType::Byte) {
     quantized_relu_<uint8_t>(
         input,
@@ -74,6 +79,9 @@ void quantized_relu_out(
         "Unhandled input dtype %hhd",
         static_cast<int8_t>(input.scalar_type()));
   }
+
+  TIME_END(quantized_relu);
+  TIME_DISPLAY(quantized_relu, (int)output.numel(), "elements");
 }
 
 template <typename T>
@@ -105,6 +113,9 @@ void quantized_relu_per_tensor_out(
     const int64_t out_multiplier,
     const int64_t out_shift,
     Tensor& output) {
+  TIME_DECL(quantized_relu_per_tensor);
+  TIME_START(quantized_relu_per_tensor);
+
 #define typed_quantized_relu(ctype, dtype)    \
   case executorch::aten::ScalarType::dtype: { \
     quantized_relu_per_tensor_out_<ctype>(    \
@@ -127,6 +138,10 @@ void quantized_relu_per_tensor_out(
   }
 
 #undef typed_quantized_relu
+
+  TIME_END(quantized_relu_per_tensor);
+  TIME_DISPLAY(quantized_relu_per_tensor, (int)output.numel(), "elements");
+  DUMP_TENSOR(quantized_relu_per_tensor, output);
 }
 
 void quantized_relu_asym8s_asym8s_per_tensor_out(

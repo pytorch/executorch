@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <lib.h>
+#include <dump_tensor.h>
 #include <executorch/backends/cadence/generic/operators/operators.h>
 #include <executorch/backends/cadence/generic/operators/quantized_ops.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -86,6 +88,9 @@ void quantized_linear_out(
     int64_t out_zero_point,
     __ET_UNUSED const std::optional<Tensor>& offset,
     Tensor& out) {
+  TIME_DECL(quantized_linear);
+  TIME_START(quantized_linear);
+
   // TODO: refactor to use switch case as quantized_linear_per_tensor_out
   if (out.scalar_type() == executorch::aten::ScalarType::Byte) {
     _typed_quantized_linear<uint8_t>(
@@ -115,6 +120,9 @@ void quantized_linear_out(
         "Unhandled input dtype %hhd",
         static_cast<int8_t>(src.scalar_type()));
   }
+
+  TIME_END(quantized_linear);
+  TIME_DISPLAY(quantized_linear, (int)out.numel(), "elements");
 }
 
 void quantized_linear_per_tensor_out(
@@ -129,6 +137,9 @@ void quantized_linear_per_tensor_out(
     const int64_t out_zero_point,
     __ET_UNUSED const std::optional<Tensor>& offset,
     Tensor& out) {
+  TIME_DECL(quantized_linear_per_tensor);
+  TIME_START(quantized_linear_per_tensor);
+
 #define typed_quantized_linear_per_tensor(ctype, dtype) \
   case executorch::aten::ScalarType::dtype: {           \
     quantized_linear_per_tensor_<ctype>(                \
@@ -152,6 +163,10 @@ void quantized_linear_per_tensor_out(
           false, "Unhandled dtype %s", executorch::runtime::toString(dtype));
   }
 #undef typed_quantized_linear_per_tensor
+
+  TIME_END(quantized_linear_per_tensor);
+  TIME_DISPLAY(quantized_linear_per_tensor, (int)out.numel(), "elements");
+  DUMP_TENSOR(quantized_linear_per_tensor, out);
 }
 
 void quantized_linear_asym8sxasym8s_asym8s_per_tensor_out(

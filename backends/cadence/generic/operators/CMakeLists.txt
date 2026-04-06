@@ -75,6 +75,8 @@ set(_common_include_directories
 target_include_directories(
   aten_ops_cadence PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
                           ${_common_include_directories}
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../vision/third-party/include
+          ${CMAKE_CURRENT_SOURCE_DIR}/../../vision/third-party/include_private
 )
 
 # Custom ops that are needed to run the test model.
@@ -96,6 +98,8 @@ add_library(
 target_include_directories(
   custom_ops PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
                     ${_common_include_directories}
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../vision/third-party/include
+          ${CMAKE_CURRENT_SOURCE_DIR}/../../vision/third-party/include_private
 )
 
 target_link_libraries(custom_ops PUBLIC executorch)

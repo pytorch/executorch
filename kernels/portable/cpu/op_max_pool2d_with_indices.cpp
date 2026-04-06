@@ -9,6 +9,10 @@
 #include <cstring>
 #include <tuple>
 
+#if __has_include(<lib.h>)
+#include <lib.h>
+#include <dump_tensor.h>
+#endif
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -30,6 +34,11 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
     bool ceil_mode,
     Tensor& out,
     Tensor& indices) {
+#ifdef TIME_DECL
+  TIME_DECL(max_pool2d);
+  TIME_START(max_pool2d);
+#endif
+
   std::tuple<Tensor&, Tensor&> ret_val(out, indices);
 
   ET_KERNEL_CHECK(
@@ -93,6 +102,12 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
             out,
             {indices});
       });
+
+#ifdef TIME_DECL
+  TIME_END(max_pool2d);
+  TIME_DISPLAY(max_pool2d, (int)out.numel(), "elements");
+  DUMP_TENSOR(max_pool2d, out);
+#endif
 
   return ret_val;
 }

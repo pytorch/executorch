@@ -7,6 +7,7 @@
  */
 
 #include <lib.h>
+#include <dump_tensor.h>
 #include <cstring>
 #include <tuple>
 
@@ -98,8 +99,13 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
     executorch::runtime::Result<void*> temp_mem_res = 
         ctx.allocate_temp(padded_size * sizeof(float));
     float* padded_data = (float*)(temp_mem_res.ok() ? temp_mem_res.get() : nullptr);
+
     
     ET_KERNEL_CHECK(ctx, padded_data != nullptr, MemoryAllocationFailed, ret_val);
+    
+    // Invalidate input cache: previous op (dequantize) may have written via DMA,
+    // bypassing cache. CPU memcpy below would read stale cache lines.
+    xthal_dcache_region_invalidate((void*)ptr_inp, sizeof(float) * in.numel());
     
     // Initialize entire buffer with MIN_FLT32
     std::fill_n(padded_data, padded_size, MIN_FLT32);
@@ -116,15 +122,26 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
       }
     }
 
-    maxpool2d_j2x2_f32(ptr_out, padded_data, inp_height, inp_width,
-        out_height, out_width, padded_width, padded_height,
-        out_pitch_width, out_pitch_height, kernel_height, kernel_width);
+    // Writeback padded buffer from cache to system memory so HW kernel sees it
+    xthal_dcache_region_writeback(padded_data, sizeof(float) * padded_size);
 
-    // Writeback output from cache to system memory for DMA coherency
-    xthal_dcache_region_writeback(ptr_out, sizeof(float) * out.numel());
+    // Process each batch*channel plane independently
+    for (int bc = 0; bc < batch * channels; bc++) {
+      float32_t* plane_out = ptr_out + bc * out_height * out_width;
+      const float32_t* plane_inp = padded_data + bc * padded_height * padded_width;
+
+      maxpool2d_j2x2_f32(plane_out, plane_inp, inp_height, inp_width,
+          out_height, out_width, padded_width, padded_height,
+          out_pitch_width, out_pitch_height, kernel_height, kernel_width);
+    }
+
+    // Invalidate output cache lines: HW kernel wrote to system memory,
+    // CPU/next-op must not see stale cache
+    xthal_dcache_region_invalidate(ptr_out, sizeof(float) * out.numel());
 
     TIME_END(maxpool);
     TIME_DISPLAY(maxpool, in.numel(), "floats");
+    DUMP_TENSOR(max_pool2d, out);
 
     return ret_val;
   }
@@ -156,6 +173,7 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
 
   TIME_END(maxpool);
   TIME_DISPLAY(maxpool, in.numel(), "floats");
+  DUMP_TENSOR(max_pool2d, out);
 
   return ret_val;
 }

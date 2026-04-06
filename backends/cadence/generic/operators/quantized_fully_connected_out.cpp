@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <lib.h>
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/backends/cadence/generic/operators/operators.h>
 #include <executorch/backends/cadence/generic/operators/quantized_ops.h>
@@ -30,6 +31,8 @@ void quantized_fully_connected_out(
     int64_t out_zero_point,
     __ET_UNUSED const optional<Tensor>& offset,
     Tensor& out) {
+  TIME_DECL(quantized_fc);
+  TIME_START(quantized_fc);
 #define typed_quantized_linear(ctype, dtype) \
   case ScalarType::dtype: {                  \
     quantized_linear_<ctype>(                \
@@ -53,6 +56,9 @@ void quantized_fully_connected_out(
           false, "Unhandled dtype %s", torch::executor::toString(dtype));
   }
 #undef typed_quantized_linear
+
+  TIME_END(quantized_fc);
+  TIME_DISPLAY(quantized_fc, (int)out.numel(), "elements");
 }
 
 void quantized_fully_connected_per_tensor_out(

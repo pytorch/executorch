@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <lib.h>
+#include <dump_tensor.h>
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -27,6 +29,9 @@ Tensor& dequantize_per_tensor_out(
     int64_t quant_max,
     ScalarType dtype,
     Tensor& out) {
+  TIME_DECL(dequantize_per_tensor);
+  TIME_START(dequantize_per_tensor);
+
   float* out_data = out.mutable_data_ptr<float>();
   size_t numel = out.numel();
 
@@ -53,6 +58,11 @@ Tensor& dequantize_per_tensor_out(
         "Unhandled input dtype %hhd",
         static_cast<int8_t>(input.scalar_type()));
   }
+
+  TIME_END(dequantize_per_tensor);
+  TIME_DISPLAY(dequantize_per_tensor, (int)numel, "elements");
+  DUMP_TENSOR(dequantize_per_tensor, out);
+
   return out;
 }
 

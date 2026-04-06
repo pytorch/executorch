@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <lib.h>
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -120,6 +121,9 @@ void quantized_matmul_out(
     int64_t out_zero_point,
     bool transposed,
     Tensor& out) {
+  TIME_DECL(quantized_matmul);
+  TIME_START(quantized_matmul);
+
   if (out.scalar_type() == executorch::aten::ScalarType::Byte) {
     _typed_quantized_matmul<uint8_t>(
         X,
@@ -150,6 +154,9 @@ void quantized_matmul_out(
         "Unhandled input dtype %hhd",
         static_cast<int8_t>(X.scalar_type()));
   }
+
+  TIME_END(quantized_matmul);
+  TIME_DISPLAY(quantized_matmul, (int)out.numel(), "elements");
 }
 
 void quantized_matmul_asym8sxasym8s_asym8s_out(

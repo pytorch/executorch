@@ -7,6 +7,10 @@
  */
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
+#if __has_include(<lib.h>)
+#include <lib.h>
+#include <dump_tensor.h>
+#endif
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -22,6 +26,11 @@ Tensor& add_out(
     const Tensor& b,
     const Scalar& alpha,
     Tensor& out) {
+#ifdef TIME_DECL
+  TIME_DECL(add);
+  TIME_START(add);
+#endif
+
   // Common Dtype
   ScalarType common_type = promoteTypes(a.scalar_type(), b.scalar_type());
 
@@ -91,6 +100,12 @@ Tensor& add_out(
           out);
     });
   }
+
+#ifdef TIME_DECL
+  TIME_END(add);
+  TIME_DISPLAY(add, (int)out.numel(), "elements");
+  DUMP_TENSOR(add, out);
+#endif
 
   return out;
 }

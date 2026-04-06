@@ -7,6 +7,7 @@
  */
 
 #include <lib.h>
+#include <dump_tensor.h>
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -241,6 +242,7 @@ Tensor& quantize_per_tensor_out(
         "Unhandled input dtype %hhd",
         static_cast<int8_t>(out.scalar_type()));
   }
+  DUMP_TENSOR(quantize_per_tensor, out);
   return out;
 }
 

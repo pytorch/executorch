@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <lib.h>
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/backends/cadence/generic/operators/operators.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -103,6 +104,9 @@ void quantized_add_per_tensor_out(
     Tensor& out) {
   (void)ctx;
 
+  TIME_DECL(quantized_add);
+  TIME_START(quantized_add);
+
   executorch::aten::ScalarType dtype = X.scalar_type();
   switch (dtype) {
     case executorch::aten::ScalarType::Byte:
@@ -133,6 +137,9 @@ void quantized_add_per_tensor_out(
       ET_CHECK_MSG(
           false, "Unhandled input dtype %hhd", static_cast<int8_t>(dtype));
   }
+
+  TIME_END(quantized_add);
+  TIME_DISPLAY(quantized_add, (int)out.numel(), "elements");
 }
 
 // int8-specific quantized add

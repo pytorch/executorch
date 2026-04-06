@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <lib.h>
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -126,6 +127,9 @@ void quantized_layer_norm_out(
     double output_scale,
     int64_t output_zero_point,
     Tensor& out) {
+  TIME_DECL(quantized_layer_norm);
+  TIME_START(quantized_layer_norm);
+
   if (input.scalar_type() == executorch::aten::ScalarType::Byte) {
     quantized_layer_norm_<uint8_t>(
         input,
@@ -154,6 +158,9 @@ void quantized_layer_norm_out(
         "Unhandled input dtype %hhd",
         static_cast<int8_t>(input.scalar_type()));
   }
+
+  TIME_END(quantized_layer_norm);
+  TIME_DISPLAY(quantized_layer_norm, (int)out.numel(), "elements");
 }
 
 void quantized_layer_norm_per_tensor_out(
@@ -168,6 +175,9 @@ void quantized_layer_norm_per_tensor_out(
     double output_scale,
     int64_t output_zero_point,
     Tensor& out) {
+  TIME_DECL(quantized_layer_norm_pt);
+  TIME_START(quantized_layer_norm_pt);
+
   if (input.scalar_type() == executorch::aten::ScalarType::Byte) {
     quantized_layer_norm_per_tensor_<uint8_t>(
         input,
@@ -196,6 +206,9 @@ void quantized_layer_norm_per_tensor_out(
         "Unhandled input dtype %hhd",
         static_cast<int8_t>(input.scalar_type()));
   }
+
+  TIME_END(quantized_layer_norm_pt);
+  TIME_DISPLAY(quantized_layer_norm_pt, (int)out.numel(), "elements");
 }
 
 } // namespace native
