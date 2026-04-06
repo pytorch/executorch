@@ -43,6 +43,7 @@ from .decompose_cosine_similarity_pass import DecomposeCosineSimilarityPass  # n
 from .decompose_cumsum_pass import DecomposeCumsumPass  # noqa
 from .decompose_div_pass import DecomposeDivPass  # noqa
 from .decompose_div_tensor_mode import DecomposeDivTensorModePass  # noqa
+from .decompose_einsum_pass import DecomposeEinsumPass  # noqa
 from .decompose_elu_pass import DecomposeEluPass  # noqa
 from .decompose_embedding_pass import DecomposeEmbeddingPass  # noqa  # noqa
 from .decompose_erfinv_pass import DecomposeErfinvPass  # noqa
@@ -102,6 +103,7 @@ from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     QuantizeClampArgumentsPass,
 )
 from .fuse_batch_norm2d_pass import FuseBatchNorm2dPass  # noqa
+from .fuse_consecutive_concat_shapes import FuseConsecutiveConcatShapesPass  # noqa
 from .fuse_consecutive_rescales_pass import FuseConsecutiveRescalesPass  # noqa
 from .fuse_constant_ops_pass import (  # noqa
     ComputeConstantOpsAOTPass,
@@ -125,6 +127,9 @@ from .insert_table_ops import InsertTableOpsPass  # noqa
 from .match_arg_dtype_pass import MatchArgDtypePass  # noqa
 from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
+from .normalize_index_put_bool_index_tensor_pass import (  # noqa
+    NormalizeIndexPutBoolIndexTensorPass,
+)
 from .normalize_index_put_none_indices_pass import (  # noqa
     NormalizeIndexPutNoneIndicesPass,
 )

@@ -190,6 +190,17 @@ class SliceTensorModule(torch.nn.Module):
         return x
 
 
+class HardTanhModule(torch.nn.Module):
+    def __init__(self, min_val, max_val, inplace=True):
+        super().__init__()
+        self.hardtanh = torch.nn.Hardtanh(
+            min_val=min_val, max_val=max_val, inplace=inplace
+        )
+
+    def forward(self, x):
+        return self.hardtanh(x)
+
+
 class SliceTensorConvModule(torch.nn.Module):
     def __init__(self, dims, starts, ends, in_channels, out_channels):
         super().__init__()
@@ -889,3 +900,27 @@ class NonstaticDivLinearModel(torch.nn.Module):
     def forward(self, x, divisor):
         x = self.linear(x)
         return x / divisor
+
+
+class BatchMatMulModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.bmm(x, y)
+
+
+class BatchMatMulConvModel(torch.nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv = Conv1dModule(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            stride=1,
+            padding=1,
+            kernel_size=3,
+        )
+
+    def forward(self, x, y):
+        x = self.conv(x)
+        return torch.bmm(x, y)

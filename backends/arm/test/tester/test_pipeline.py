@@ -49,6 +49,7 @@ from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
 from executorch.backends.test.harness.stages import StageType
 from executorch.exir.pass_base import ExportPass
 from torch._export.pass_base import PassType
+from torch.export.graph_signature import InputKind, OutputKind
 from torchao.quantization.pt2e.quantizer import QuantizationSpec
 
 logger = logging.getLogger(__name__)
@@ -319,6 +320,30 @@ class BasePipeline(Generic[T]):
             "to_edge_transform_and_lower",
             _count_tosa_ops,
             suffix="tosa_ops",
+        )
+        return self
+
+    def count_program_io_kinds(
+        self,
+        expected_inputs: dict[InputKind, int] | None,
+        expected_outputs: dict[OutputKind, int] | None,
+    ):
+        """Assert the count of inputs/output specs of the ExportedProgram is
+        correct.
+        """
+        if not self.has_stage("to_edge_transform_and_lower"):
+            raise RuntimeError(
+                "count_program_io requires to_edge_transform_and_lower in the pipeline."
+            )
+
+        def _count_program_io_kinds():
+            stage = self.tester.get_artifact(StageType.TO_EDGE_TRANSFORM_AND_LOWER)
+            arm_tester_module.count_program_io_kinds(
+                stage.exported_program(), expected_inputs, expected_outputs
+            )
+
+        self.add_stage_after(
+            "to_edge_transform_and_lower", _count_program_io_kinds, suffix="count_io"
         )
         return self
 
