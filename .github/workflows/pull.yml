@@ -1339,6 +1339,46 @@ jobs:
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
 
+  test-vulkan-genai:
+    name: test-vulkan-genai
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.g5.4xlarge.nvidia.gpu
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      gpu-arch-type: cuda
+      gpu-arch-version: "12.6"
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # Setup Vulkan SDK (no SwiftShader — use NVIDIA driver's Vulkan ICD)
+        source .ci/scripts/setup-vulkan-linux-deps.sh --gpu
+
+        # Install ExecuTorch Python package (for export step).
+        ./install_executorch.sh
+
+        # Export parakeet with Vulkan backend
+        bash .ci/scripts/export_model_artifact.sh vulkan "nvidia/parakeet-tdt" "quantized-8da4w" "${RUNNER_ARTIFACT_DIR}"
+
+        # Clean cmake-out/ — install_executorch.sh creates a CMake cache with
+        # most extensions OFF, and set_overridable_option in the Makefile
+        # presets cannot override cached variables. Without this, the
+        # llm-debug-vulkan preset fails to enable EXECUTORCH_BUILD_EXTENSION_LLM
+        # and the tokenizers header is never installed.
+        rm -rf cmake-out
+
+        # Build runner and test e2e (make parakeet-vulkan handles the full C++ build)
+        bash .ci/scripts/test_model_e2e.sh vulkan "nvidia/parakeet-tdt" "quantized-8da4w" "${RUNNER_ARTIFACT_DIR}"
+
   test-coreml-bc-macos:
     name: test-coreml-bc-macos (${{ matrix.runner }})
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main

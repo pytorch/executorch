@@ -14,7 +14,7 @@ Usage: export_model_artifact.sh <device> <hf_model> [quant_name] [output_dir] [m
 Export a HuggingFace model to CUDA/Metal/XNNPACK format with optional quantization.
 
 Arguments:
-  device       cuda, metal, or xnnpack (required)
+  device       cuda, metal, vulkan, or xnnpack (required)
 
   hf_model     HuggingFace model ID (required)
                Supported models:
@@ -49,6 +49,7 @@ Examples:
   export_model_artifact.sh cuda "mistralai/Voxtral-Mini-3B-2507" "quantized-int4-tile-packed"
   export_model_artifact.sh cuda-windows "nvidia/diar_streaming_sortformer_4spk-v2" "non-quantized" "./output"
   export_model_artifact.sh cuda "google/gemma-3-4b-it" "non-quantized" "./output"
+  export_model_artifact.sh vulkan "nvidia/parakeet-tdt" "non-quantized" "./output"
   export_model_artifact.sh cuda "nvidia/parakeet-tdt" "non-quantized" "./output"
   export_model_artifact.sh xnnpack "nvidia/parakeet-tdt" "quantized-8da4w" "./output"
   export_model_artifact.sh xnnpack "mistralai/Voxtral-Mini-4B-Realtime-2602" "quantized-8da4w" "./output"
@@ -103,9 +104,11 @@ case "$DEVICE" in
     ;;
   xnnpack)
     ;;
+  vulkan)
+    ;;
   *)
     echo "Error: Unsupported device '$DEVICE'"
-    echo "Supported devices: cuda, cuda-windows, metal, xnnpack"
+    echo "Supported devices: cuda, cuda-windows, metal, vulkan, xnnpack"
     exit 1
     ;;
 esac
@@ -226,8 +229,8 @@ case "$QUANT_NAME" in
     EXTRA_ARGS="--qlinear fpa4w --qlinear_encoder fpa4w"
     ;;
   quantized-8da4w)
-    if [ "$DEVICE" != "xnnpack" ]; then
-      echo "Error: quantized-8da4w is only supported with xnnpack device"
+    if [ "$DEVICE" != "xnnpack" ] && [ "$DEVICE" != "vulkan" ]; then
+      echo "Error: quantized-8da4w is only supported with xnnpack or vulkan device"
       exit 1
     fi
     EXTRA_ARGS="--qlinear 8da4w --qlinear_group_size 32 --qlinear_encoder 8da4w --qlinear_encoder_group_size 32"
@@ -250,9 +253,11 @@ pip list
 if [ "$MODEL_NAME" = "parakeet" ]; then
   pip install -r examples/models/parakeet/install_requirements.txt
 
-  # Set dtype based on backend (XNNPACK uses fp32, CUDA/Metal use bf16)
+  # Set dtype based on backend (XNNPACK uses fp32, Vulkan uses fp16, CUDA/Metal use bf16)
   if [ "$DEVICE" = "xnnpack" ]; then
     DTYPE_ARG=""
+  elif [ "$DEVICE" = "vulkan" ]; then
+    DTYPE_ARG="--vulkan_force_fp16"
   else
     DTYPE_ARG="--dtype bf16"
   fi
