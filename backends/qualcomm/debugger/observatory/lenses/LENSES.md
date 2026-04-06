@@ -15,6 +15,7 @@ monkey-patches in `on_session_start()` and remove them in `on_session_end()`.
 | StackTraceLens | Captures repo-local call stack at collection time | No |
 | PipelineGraphCollectorLens | Auto-collects graphs at each pipeline stage | Yes |
 | AccuracyLens | Evaluates model accuracy at each stage | Yes |
+| PerLayerAccuracyLens | Sparse per-layer accuracy via `from_node_root` matching | No |
 
 ---
 
@@ -226,6 +227,89 @@ class PerLayerAccuracyLens(Lens):
 - Only populated when dataset has >1 sample
 - AccuracyLens must be registered before any lens that reads `_worst_indices`
   (lenses run in registration order within each `Observatory.collect()` call)
+
+---
+
+## PerLayerAccuracyLens
+
+### Purpose
+
+Computes sparse per-layer metrics between an anchor graph (default:
+`"Exported Float"`) and each collected graph, then renders:
+
+1. Lens-specific graph overlay with raw-PSNR-based coloring.
+2. One merged per-layer metrics table (worst -> best).
+
+### Sparse Matching Rule
+
+For each graph:
+1. Iterate nodes in topological order.
+2. Build key per node:
+   - `root:<from_node_root>` when available.
+   - `id:<node_name>` fallback when root is missing.
+3. Store key -> node using overwrite semantics.
+
+Effect:
+- Last topological node for a key is selected (sparse map).
+- Pairwise correspondence uses key intersection only.
+- No group aggregation.
+
+### Data / Sample Selection
+
+Input sample source:
+1. `AccuracyLens._captured_dataset` (primary)
+2. `PipelineGraphCollectorLens._last_calibration_dataset` (fallback)
+
+Sample index selection:
+1. `config["per_layer_accuracy"]["sample_index"]` if provided.
+2. `AccuracyLens._worst_indices` using metric priority list.
+3. Fallback index `0`.
+
+### Metrics and Visual Layers
+
+Per matched node:
+- `PSNR`
+- `CosineSimilarity`
+- `MSE`
+- `AbsErr`
+
+Graph layers emitted in analyze phase:
+- `per_layer_accuracy/psnr` (color by raw `psnr`, low PSNR = severe red)
+
+Default lens graph section:
+- `default_layers = ["per_layer_accuracy/psnr"]`
+- `default_color_by = "per_layer_accuracy/psnr"`
+
+### Frontend Sections
+
+Record view includes:
+1. Summary table.
+2. Lens-specific graph section.
+3. One merged metrics table with metric-specific column coloring:
+   - PSNR column (low PSNR is severe)
+   - Cosine column (low cosine is severe)
+   - MSE column (high MSE is severe)
+   - AbsErr column (high AbsErr is severe)
+   - text color is auto-contrasted per cell background
+
+### Config
+
+```python
+config = {
+    "per_layer_accuracy": {
+        "anchor_record_name": "Exported Float",
+        # optional explicit sample index
+        # "sample_index": 0,
+        # optional priority when sample_index is omitted
+        "worst_metric_priority": ["psnr", "cosine_sim", "mse", "abs_err"],
+    }
+}
+```
+
+### Registration Note
+
+Register `AccuracyLens` before `PerLayerAccuracyLens` so worst-index hints are
+available in the same `collect()` call.
 
 ---
 

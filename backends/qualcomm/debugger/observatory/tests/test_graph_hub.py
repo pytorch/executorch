@@ -26,6 +26,7 @@ def test_graph_hub_register_and_layers() -> None:
             id="error",
             name="Error",
             legend=[{"label": "L", "color": "#000"}],
+            sync_keys=["debug_handle"],
             nodes={
                 "n0": GraphExtensionNodePayload(
                     fill_color="#000",
@@ -38,6 +39,7 @@ def test_graph_hub_register_and_layers() -> None:
     payload = hub.build_payload()
     assert "r0" in payload["graph_assets"]
     assert "accuracy/error" in payload["graph_layers"]["r0"]
+    assert payload["graph_layers"]["r0"]["accuracy/error"]["sync_keys"] == ["debug_handle"]
 
 
 def test_build_viewer_payload() -> None:
