@@ -24,6 +24,20 @@ non_fbcode_target(_kind = runtime.cxx_binary,
     ],
 )
 
+non_fbcode_target(_kind = runtime.cxx_binary,
+    name = "bench_transposed_cache",
+    srcs = ["bench_transposed_cache.cpp"],
+    compiler_flags = ["-O2"],
+    deps = [
+        "fbsource//third-party/benchmark:benchmark",
+        "//executorch/extension/llm/custom_ops:custom_ops",
+        "//executorch/extension/threadpool:threadpool",
+        "//executorch/kernels/optimized:libblas",
+        "//executorch/runtime/core/exec_aten:lib",
+        "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
 # !!!! fbcode/executorch/extension/llm/custom_ops/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
 
 # Any targets that should be shared between fbcode and xplat must be defined in
@@ -133,7 +147,7 @@ fbcode_target(_kind = cpp_benchmark,
     ],
 )
 
-cpp_benchmark(
+fbcode_target(_kind = cpp_benchmark,
     name = "bench_transposed_cache",
     srcs = ["bench_transposed_cache.cpp"],
     deps = [
