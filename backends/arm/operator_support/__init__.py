@@ -13,6 +13,7 @@ from . import (  # noqa
     embedding_support,
     ethos_u55_support,
     gather_support,
+    index_put_support,
     index_select_support,
     index_tensor_support,
     minmax_support,

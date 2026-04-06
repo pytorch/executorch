@@ -97,7 +97,10 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
     for target, subpath in spv_filegroups.items():
         glsl_paths.append("$(location {})/{}".format(target, subpath))
 
-    nthreads = read_config("etvk", "shader_compile_nthreads", "-1")
+    # Default to single-threaded shader compilation on macOS to avoid
+    # multiprocessing issues with the local build toolchain.
+    default_nthreads = "1" if host_info().os.is_macos else "-1"
+    nthreads = read_config("etvk", "shader_compile_nthreads", default_nthreads)
 
     genrule_cmd = (
         "$(exe {}) ".format(gen_vulkan_spv_target) +

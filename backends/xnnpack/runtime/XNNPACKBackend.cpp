@@ -44,7 +44,7 @@ using executorch::runtime::Span;
 class XnnpackBackend final
     : public ::executorch::ET_RUNTIME_NAMESPACE::BackendInterface {
  public:
-  ~XnnpackBackend() = default;
+  ~XnnpackBackend() override = default;
 
   XnnpackBackend() {
     // Initialize XNNPACK
