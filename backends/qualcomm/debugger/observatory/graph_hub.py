@@ -52,6 +52,7 @@ class GraphHub:
             slot[namespaced_id] = {
                 "name": payload.name,
                 "legend": payload.legend,
+                "sync_keys": payload.sync_keys,
                 "nodes": {
                     node_id: asdict(node_payload)
                     for node_id, node_payload in payload.nodes.items()
