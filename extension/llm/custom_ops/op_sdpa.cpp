@@ -420,15 +420,26 @@ Tensor& custom_sdpa_out_impl(
   if (use_unfused_sdpa) {
     ET_SWITCH_FLOAT_TYPES(
         output.scalar_type(), ctx, "sdpa", CTYPE, [&] {
-          sdpa::impl::cpu_sdpa<CTYPE>(
-              ctx, output, q, k, v, is_causal, attn_mask, scale,
-              seq_dim,
-              start_pos, num_keys_for_causal_attention,
-              q_zero_points, q_scales,
-              k_zero_points, k_scales,
-              v_zero_points, v_scales);
-        });
+	  sdpa::impl::cpu_sdpa<CTYPE>(
+	      ctx,
+	      output,
+	      q,
+	      k,
+	      v,
+	      is_causal,
+	      attn_mask,
+	      scale,
+	      q_seq_dim,
+	      k_seq_dim,
+	      v_seq_dim,
+	      start_pos,
+	      num_keys_for_causal_attention,
+	      q_zero_points, q_scales,
+	      k_zero_points, k_scales,
+	      v_zero_points, v_scales);
+	});
   } else {
+  // Flash attention path (default) with tile-size selection
   ET_SWITCH_FLOAT_TYPES(
       output.scalar_type(), ctx, "flash_attention", CTYPE, [&] {
         if (seq_len >= 768) {
