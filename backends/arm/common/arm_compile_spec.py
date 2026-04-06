@@ -11,12 +11,14 @@
 #
 
 import json
+import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 
 from executorch.backends.arm.common.pipeline_config import ArmPassPipelineConfig
 from executorch.backends.arm.tosa import TosaSpecification
+from executorch.exir._warnings import deprecated
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
@@ -54,17 +56,24 @@ class ArmCompileSpec(ABC):
         self.compiler_flags = compiler_flags
         self.path_for_intermediates = path_for_intermediates
         self.tosa_debug_mode = tosa_debug_mode
-        self.output_order_workaround = output_order_workaround
         self._pipeline_config = pipeline_config
+        self.output_order_workaround = output_order_workaround
+        if output_order_workaround:
+            warnings.warn(
+                "ArmCompileSpec(output_order_workaround=True) is deprecated and will be "
+                "removed in v1.5; please remove this flag.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
     @classmethod
-    def from_list(cls, compile_specs: list[CompileSpec]):  # noqa: C901
+    def _from_list(cls, compile_specs: list[CompileSpec]):  # noqa: C901
         tosa_spec: TosaSpecification | None = None
         output_format: str | None = None
         compiler_flags: list[str] | None = None
         path_for_intermediates: str | None = None
         tosa_debug_mode: ArmCompileSpec.DebugMode | None = None
-        output_order_workaround: bool = True
+        output_order_workaround: bool = False
         pipeline_config: ArmPassPipelineConfig | None = None
         unknown_specs: dict[str, str] = {}
         for spec in compile_specs:
@@ -104,6 +113,12 @@ class ArmCompileSpec(ABC):
                 tosa_debug_mode = ArmCompileSpec.DebugMode[val]
             elif key == ArmCompileSpec._OUTPUT_REORDER_KEY:
                 output_order_workaround = val  # type: ignore[assignment]
+                if output_order_workaround:
+                    warnings.warn(
+                        "The 'output_order_workaround' compile spec entry is deprecated and will be removed in v1.5; please remove this entry.",
+                        DeprecationWarning,
+                        stacklevel=2,
+                    )
             elif key == ArmCompileSpec._TRANSFORM_PIPELINE_CONFIG_KEY:
                 if pipeline_config is not None:
                     raise ValueError(
@@ -147,10 +162,10 @@ class ArmCompileSpec(ABC):
     def _validate(self):
         """Throws an error if the compile spec is not valid."""
 
-    def to_list(self):
+    def _to_list(self):
         """Get the ArmCompileSpec in list form."""
         if not self.tosa_spec:
-            raise ValueError("tosa_spec must be set before calling to_list()")
+            raise ValueError("tosa_spec must be set before calling _to_list()")
 
         # Always supply a TOSA version
         compile_spec = [
@@ -211,7 +226,7 @@ class ArmCompileSpec(ABC):
             )
         return compile_spec
 
-    def get_pass_pipeline_config(self) -> ArmPassPipelineConfig:
+    def _get_pass_pipeline_config(self) -> ArmPassPipelineConfig:
         """Returns configuration that controls how the Arm pass pipeline should
         behave.
 
@@ -238,7 +253,7 @@ class ArmCompileSpec(ABC):
             config.disable_masked_softmax()
         return config
 
-    def get_intermediate_path(self) -> str | None:
+    def _get_intermediate_path(self) -> str | None:
         """Gets the path used for dumping intermediate results such as tosa and
         pte.
 
@@ -269,6 +284,9 @@ class ArmCompileSpec(ABC):
         self.tosa_debug_mode = debug_mode
         return self
 
+    @deprecated(
+        "set_output_order_workaround() is deprecated and will be removed in v1.5; please remove this call."
+    )
     def set_output_order_workaround(self, output_order_workaround: bool):
         """Sets whether to apply the output order workaround.
 
@@ -279,6 +297,9 @@ class ArmCompileSpec(ABC):
         self.output_order_workaround = output_order_workaround
         return self
 
+    @deprecated(
+        "get_output_order_workaround() is deprecated and will be removed in v1.5; please remove this call."
+    )
     def get_output_order_workaround(self) -> bool:
         """Gets whether the output order workaround is being applied."""
         return self.output_order_workaround

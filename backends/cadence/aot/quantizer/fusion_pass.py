@@ -40,7 +40,6 @@ from executorch.backends.cadence.aot.quantizer.utils import (
     copy_node_metadata,
     create_zero_bias_int32,
     find_sequential_partitions_aten,
-    get_conv_args,
     quantize_tensor_multiplier,
 )
 from executorch.exir.pass_base import ExportPass
@@ -243,9 +242,8 @@ def get_args_and_kwargs_cat(
     inputs_inputs: List[fx.Node], other_inputs: List[fx.Node], op_node: fx.Node
 ) -> Tuple[Tuple[ArgsType], Dict[str, ArgsType]]:
     args = tuple([inputs_inputs] + other_inputs)
-    dim = op_node.args[1] if len(op_node.args) > 1 else 0
-    # pyre-fixme[6]: Incompatible parameter type
-    kwargs = {"dim": int(dim)}
+    dim = get_arg(op_node, "dim", int)
+    kwargs = {"dim": dim}
     return args, kwargs
 
 
@@ -263,10 +261,10 @@ def get_args_and_kwargs_conv(
     weight_zero_point = dequants_weights[0].args[2]
     # pyre-fixme[58]: Unsupported operand types
     bias_scale = dequants_inputs[0].args[1] * weight_scale
-    stride = [1, 1] if len(op_node.args) < 4 else get_conv_args(op_node.args[3], 1)
-    padding = [0, 0] if len(op_node.args) < 5 else get_conv_args(op_node.args[4], 0)
-    dilation = [1, 1] if len(op_node.args) < 6 else get_conv_args(op_node.args[5], 1)
-    groups = 1 if len(op_node.args) < 7 else op_node.args[6]
+    stride = get_arg(op_node, "stride", list[int])
+    padding = get_arg(op_node, "padding", list[int])
+    dilation = get_arg(op_node, "dilation", list[int])
+    groups = get_arg(op_node, "groups", int)
 
     # If bias is not available, create a bias tensor with the shape of weight[0]
     if not bias_inputs:
@@ -378,6 +376,21 @@ def get_args_and_kwargs_softmax(
     with fake_mode:
         mask_tensor.meta["val"] = torch.full(mask_shape, 0.0, dtype=torch.int32)
     copy_node_metadata(mask_tensor, inputs_inputs[0])
+
+    # Default mask_type=0 (no masking) and dummy pos tensor
+    mask_type = 0
+    pos_tensor = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        (
+            [1],
+            0,
+        ),
+        {"dtype": torch.int64},
+    )
+    with fake_mode:
+        pos_tensor.meta["val"] = torch.full([1], 0, dtype=torch.int64)
+    copy_node_metadata(pos_tensor, inputs_inputs[0])
+
     # Make the scale and zero_point tensors
     in_scale = dequants_inputs[0].args[1]
     in_zero_point = dequants_inputs[0].args[2]
@@ -388,7 +401,9 @@ def get_args_and_kwargs_softmax(
     args = (
         inputs_inputs[0],
         mask_tensor,
-        op_node.args[1],
+        get_arg(op_node, "dim", int),
+        mask_type,
+        pos_tensor,
         in_scale,
         in_zero_point,
         out_scale,
@@ -409,14 +424,10 @@ def get_args_and_kwargs_mixed_w8a32_conv(
     op_node: fx.Node,
 ) -> Tuple[Tuple[ArgsType, ...], Dict[str, ArgsType]]:
     # Stride, padding, dilation, groups not supported yet
-    if len(op_node.args) > 3:
-        assert op_node.args[3] == [1]  # Stride
-    if len(op_node.args) > 4:
-        assert op_node.args[4] == [0]  # Padding
-    if len(op_node.args) > 5:
-        assert op_node.args[5] == [1]  # Dilation
-    if len(op_node.args) > 6:
-        assert op_node.args[6] == 1  # Groups
+    assert get_arg(op_node, "stride", list[int]) == [1]  # Stride
+    assert get_arg(op_node, "padding", list[int]) == [0]  # Padding
+    assert get_arg(op_node, "dilation", list[int]) == [1]  # Dilation
+    assert get_arg(op_node, "groups", int) == 1  # Groups
 
     assert len(dequants_weights) == 1
     assert len(dequants_biases) == 1
