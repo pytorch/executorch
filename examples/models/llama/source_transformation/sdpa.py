@@ -23,10 +23,12 @@ class SDPACustom(torch.nn.Module):
         self,
         dim: int,
         use_attention_mask: bool = False,
+        is_seq_at_dim_2: bool = False,
     ):
         super().__init__()
         self.dim = dim
         self.use_attention_mask = use_attention_mask
+        self.is_seq_at_dim_2 = is_seq_at_dim_2
 
     def forward(
         self,
@@ -38,9 +40,10 @@ class SDPACustom(torch.nn.Module):
         seqlen,
         mask,
     ):
-        q = q.transpose(1, 2)  # (bs, seqlen, n_local_heads, head_dim)
-        k = k.transpose(1, 2)
-        v = v.transpose(1, 2)
+        if not self.is_seq_at_dim_2:
+            q = q.transpose(1, 2)  # (bs, seqlen, n_local_heads, head_dim)
+            k = k.transpose(1, 2)
+            v = v.transpose(1, 2)
 
         # Custom op only supports float32 currently. Converting to/from float32 is
         # faster than not having the op.
@@ -58,6 +61,8 @@ class SDPACustom(torch.nn.Module):
                 mask,  # Attention mask
                 0,  # dropout probability. Ignored by the code
                 False,  # is_causal
+                scale=None,
+                is_seq_dim_2=self.is_seq_at_dim_2,
             )
         else:
             output = torch.ops.llama.custom_sdpa(
@@ -68,6 +73,8 @@ class SDPACustom(torch.nn.Module):
                 None,  # Attention mask
                 0,  # dropout probability. Ignored by the code
                 True,  # is_causal
+                scale=None,
+                is_seq_dim_2=self.is_seq_at_dim_2,
             )
         if self.is_seq_at_dim_2:
             output = output.transpose(1, 2).contiguous()
@@ -120,7 +127,7 @@ class QuantizedSDPA(torch.nn.Module):
     """
 
     def __init__(
-        self, dim: int, kv_cache: QuantizedKVCache, use_attention_mask: bool = False
+        self, dim: int, kv_cache: QuantizedKVCache, use_attention_mask: bool = False, is_seq_at_dim_2: bool = False
     ):
         super().__init__()
         self.dim = dim
@@ -128,6 +135,7 @@ class QuantizedSDPA(torch.nn.Module):
         self.float_dtype = torch.float32
         self.kv_cache = kv_cache
         self.use_attention_mask = use_attention_mask
+        self.is_seq_at_dim_2 = is_seq_at_dim_2
 
     def forward(
         self,
@@ -139,9 +147,10 @@ class QuantizedSDPA(torch.nn.Module):
         seqlen,
         mask,
     ):
-        q = q.transpose(1, 2)  # (bs, seqlen, n_local_heads, head_dim)
-        k_quantized = k_quantized.transpose(1, 2)
-        v_quantized = v_quantized.transpose(1, 2)
+        if not self.is_seq_at_dim_2:
+            q = q.transpose(1, 2)  # (bs, seqlen, n_local_heads, head_dim)
+            k_quantized = k_quantized.transpose(1, 2)
+            v_quantized = v_quantized.transpose(1, 2)
 
         q_scale, q_zero_point = (
             torch.ops.quantized_decomposed.choose_qparams_per_token_asymmetric.default(
@@ -181,6 +190,7 @@ class QuantizedSDPA(torch.nn.Module):
                 k_scale_fp32,
                 v_zero_point_int8,
                 v_scale_fp32,
+                self.is_seq_at_dim_2,
             )
         else:
             output = torch.ops.llama.custom_quantized_sdpa(
@@ -198,6 +208,7 @@ class QuantizedSDPA(torch.nn.Module):
                 k_scale_fp32,
                 v_zero_point_int8,
                 v_scale_fp32,
+                self.is_seq_at_dim_2,
             )
 
         if self.is_seq_at_dim_2:
@@ -210,9 +221,9 @@ def _update_attention_module_with_quantized_sdpa(
 ):
     sdpa = getattr(module, "SDPA", None)
     assert sdpa is not None
+    assert isinstance(sdpa, SDPACustom)
     # TODO: add support for SDPA with attention mask
-    # pyre-ignore
-    setattr(module, "SDPA", QuantizedSDPA(sdpa.dim, kv_cache))  # noqa: B010
+    setattr(module, "SDPA", QuantizedSDPA(sdpa.dim, kv_cache, is_seq_at_dim_2=sdpa.is_seq_at_dim_2))  # noqa: B010
 
 
 def _replace_sdpa_with_quantized_sdpa(module: torch.nn.Module):
