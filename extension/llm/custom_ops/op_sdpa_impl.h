@@ -1229,16 +1229,22 @@ void cpu_sdpa(
       const scalar_t* v_ptr = v_data + b * vStrideB + kv_h * vStrideH;
       scalar_t* o_ptr = out_data + b * oStrideB + h * oStrideH;
 
-      // GEMM 1: scores[qSize, kvSize] = scaling_factor * Q[qSize, D] @ K^T[D, kvSize]
+      // GEMM 1: scores[qSize, kvSize] = scaling_factor * Q[qSize, D] @ K^T[D,
+      // kvSize]
       ::executorch::cpublas::gemm(
           ::executorch::cpublas::TransposeType::Transpose,
           ::executorch::cpublas::TransposeType::NoTranspose,
-          kvSize, qSize, headSize,
+          kvSize,
+          qSize,
+          headSize,
           scaling_factor,
-          k_ptr, kStrideN,
-          q_ptr, qStrideM,
+          k_ptr,
+          kStrideN,
+          q_ptr,
+          qStrideM,
           static_cast<accum_t>(0),
-          scores, kvSize);
+          scores,
+          kvSize);
 
       // Causal mask + attention mask + softmax per query row
       for (int64_t qi = 0; qi < qSize; ++qi) {
@@ -1262,8 +1268,7 @@ void cpu_sdpa(
 
         // Softmax: find max, compute exp, normalize
         accum_t max_val = vec::reduce_all<accum_t>(
-            [](Vec& x, Vec& y) { return vec::maximum(x, y); },
-            row, kvSize);
+            [](Vec& x, Vec& y) { return vec::maximum(x, y); }, row, kvSize);
 
         if (max_val == -std::numeric_limits<accum_t>::infinity()) {
           fill_stub(row, static_cast<accum_t>(0), kvSize);
@@ -1273,8 +1278,7 @@ void cpu_sdpa(
           _exp_reduce_sum_fusion_kernel(row, kvSizeInt, row, sum_val);
           accum_t inv_sum = static_cast<accum_t>(1) / sum_val;
           vec::map<accum_t>(
-              [inv_sum](Vec x) { return x * Vec(inv_sum); },
-              row, row, kvSize);
+              [inv_sum](Vec x) { return x * Vec(inv_sum); }, row, row, kvSize);
         }
       }
 
@@ -1282,16 +1286,20 @@ void cpu_sdpa(
       ::executorch::cpublas::gemm(
           ::executorch::cpublas::TransposeType::NoTranspose,
           ::executorch::cpublas::TransposeType::NoTranspose,
-          headSize, qSize, kvSize,
+          headSize,
+          qSize,
+          kvSize,
           static_cast<accum_t>(1),
-          v_ptr, vStrideN,
-          scores, kvSize,
+          v_ptr,
+          vStrideN,
+          scores,
+          kvSize,
           static_cast<accum_t>(0),
-          o_ptr, oStrideM);
+          o_ptr,
+          oStrideM);
     }
   };
-  torch::executor::parallel_for(
-      0, batchSize * num_head, 1, compute_lambda);
+  torch::executor::parallel_for(0, batchSize * num_head, 1, compute_lambda);
 }
 
 } // namespace sdpa::impl
