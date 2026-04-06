@@ -41,6 +41,7 @@ install_vulkan_sdk() {
   tar -C "${_vulkan_sdk_dir}" -xJf "${_tmp_archive}"
 
   export PATH="${PATH}:${_vulkan_sdk_dir}/${VULKAN_SDK_VERSION}/x86_64/bin/"
+  export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:${_vulkan_sdk_dir}/${VULKAN_SDK_VERSION}/x86_64/lib/"
 }
 
 VULKAN_SDK_VERSION="1.4.321.1"
