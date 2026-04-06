@@ -51,9 +51,13 @@ executorch::aten::Tensor call_custom_sdpa(
  */
 void compute_reference_sdpa(
     const float* q_data,
-    int B, int qS, int qH, int D,
+    int B,
+    int qS,
+    int qH,
+    int D,
     const float* k_data,
-    int kvS, int kvH,
+    int kvS,
+    int kvH,
     const float* v_data,
     float* out_data,
     bool is_causal,
@@ -71,8 +75,8 @@ void compute_reference_sdpa(
         for (int kvs = 0; kvs < num_valid_keys; kvs++) {
           float dot = 0;
           for (int d = 0; d < D; d++) {
-            float qv = q_data[b*qS*qH*D + qs*qH*D + h*D + d];
-            float kv = k_data[b*kvS*kvH*D + kvs*kvH*D + kv_h*D + d];
+            float qv = q_data[b * qS * qH * D + qs * qH * D + h * D + d];
+            float kv = k_data[b * kvS * kvH * D + kvs * kvH * D + kv_h * D + d];
             dot += qv * kv;
           }
           scores[kvs] = dot * scale;
@@ -81,8 +85,7 @@ void compute_reference_sdpa(
         // Causal mask
         if (is_causal) {
           int64_t valid = std::min(
-              start_pos + qs + 1,
-              static_cast<int64_t>(num_valid_keys));
+              start_pos + qs + 1, static_cast<int64_t>(num_valid_keys));
           for (int64_t j = valid; j < num_valid_keys; j++) {
             scores[j] = -std::numeric_limits<float>::infinity();
           }
@@ -105,10 +108,10 @@ void compute_reference_sdpa(
         for (int d = 0; d < D; d++) {
           float val = 0;
           for (int kvs = 0; kvs < num_valid_keys; kvs++) {
-            float vv = v_data[b*kvS*kvH*D + kvs*kvH*D + kv_h*D + d];
+            float vv = v_data[b * kvS * kvH * D + kvs * kvH * D + kv_h * D + d];
             val += scores[kvs] * vv;
           }
-          out_data[b*qS*qH*D + qs*qH*D + h*D + d] = val;
+          out_data[b * qS * qH * D + qs * qH * D + h * D + d] = val;
         }
       }
     }
@@ -121,7 +124,11 @@ void compute_reference_sdpa(
  * dequant(x) = (x - zero_point) * scale
  */
 void dequantize_per_token(
-    const int8_t* data, int B, int S, int H, int D,
+    const int8_t* data,
+    int B,
+    int S,
+    int H,
+    int D,
     const float* scales,
     const int8_t* zps,
     float* out) {
@@ -159,9 +166,23 @@ executorch::aten::Tensor call_custom_quantized_sdpa(
     executorch::aten::Tensor& out) {
   executorch::runtime::KernelRuntimeContext ctx{};
   return torch::executor::native::custom_quantized_sdpa_out(
-      ctx, q, k, v, start_pos, attn_mask, dropout_p, is_causal, scale,
-      q_zp, q_sc, k_zp, k_sc, v_zp, v_sc,
-      /*is_seq_at_dim_1=*/false, out);
+      ctx,
+      q,
+      k,
+      v,
+      start_pos,
+      attn_mask,
+      dropout_p,
+      is_causal,
+      scale,
+      q_zp,
+      q_sc,
+      k_zp,
+      k_sc,
+      v_zp,
+      v_sc,
+      /*is_seq_at_dim_1=*/false,
+      out);
 }
 
 } // namespace
@@ -172,24 +193,20 @@ TEST(OpCustomSdpaTest, DecodeSingleKV) {
 
   executorch::aten::Tensor q = tf.make(
       {1, 1, 2, 4},
-      {0.8823, 0.9150, 0.3829, 0.9593,
-       0.3904, 0.6009, 0.2566, 0.7936});
+      {0.8823, 0.9150, 0.3829, 0.9593, 0.3904, 0.6009, 0.2566, 0.7936});
 
   executorch::aten::Tensor k = tf.make(
       {1, 1, 2, 4},
-      {0.8854, 0.5739, 0.2666, 0.6274,
-       0.2696, 0.4414, 0.2969, 0.8317});
+      {0.8854, 0.5739, 0.2666, 0.6274, 0.2696, 0.4414, 0.2969, 0.8317});
 
   executorch::aten::Tensor v = tf.make(
       {1, 1, 2, 4},
-      {0.6343, 0.3644, 0.7104, 0.9464,
-       0.7890, 0.2814, 0.7886, 0.5895});
+      {0.6343, 0.3644, 0.7104, 0.9464, 0.7890, 0.2814, 0.7886, 0.5895});
 
   // softmax of a single score is always 1.0, so output == V
   executorch::aten::Tensor expected = tf.make(
       {1, 1, 2, 4},
-      {0.6343, 0.3644, 0.7104, 0.9464,
-       0.7890, 0.2814, 0.7886, 0.5895});
+      {0.6343, 0.3644, 0.7104, 0.9464, 0.7890, 0.2814, 0.7886, 0.5895});
 
   executorch::aten::Tensor out = tf.zeros({1, 1, 2, 4});
   call_custom_sdpa(q, k, v, /*start_pos=*/0, {}, 0.0, false, {}, out);
@@ -203,33 +220,41 @@ TEST(OpCustomSdpaTest, DecodeNonCausal) {
   // Q: [B=1, S=1, H=2, D=4]
   executorch::aten::Tensor q = tf.make(
       {1, 1, 2, 4},
-      {0.8823, 0.9150, 0.3829, 0.9593,
-       0.3904, 0.6009, 0.2566, 0.7936});
+      {0.8823, 0.9150, 0.3829, 0.9593, 0.3904, 0.6009, 0.2566, 0.7936});
 
   // K, V: [B=1, kv_len=4, H=2, D=4], first 3 entries valid
   executorch::aten::Tensor k = tf.make(
       {1, 4, 2, 4},
-      {0.8854, 0.5739, 0.2666, 0.6274,  0.2696, 0.4414, 0.2969, 0.8317,
-       0.1053, 0.2695, 0.3588, 0.1994,  0.5472, 0.0062, 0.9516, 0.0753,
-       0.8860, 0.5832, 0.3376, 0.8090,  0.5779, 0.9040, 0.5547, 0.3423,
-       0.0000, 0.0000, 0.0000, 0.0000,  0.0000, 0.0000, 0.0000, 0.0000});
+      {0.8854, 0.5739, 0.2666, 0.6274, 0.2696, 0.4414, 0.2969, 0.8317,
+       0.1053, 0.2695, 0.3588, 0.1994, 0.5472, 0.0062, 0.9516, 0.0753,
+       0.8860, 0.5832, 0.3376, 0.8090, 0.5779, 0.9040, 0.5547, 0.3423,
+       0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000});
 
   executorch::aten::Tensor v = tf.make(
       {1, 4, 2, 4},
-      {0.6343, 0.3644, 0.7104, 0.9464,  0.7890, 0.2814, 0.7886, 0.5895,
-       0.7539, 0.1952, 0.0050, 0.3068,  0.1165, 0.9103, 0.6440, 0.7071,
-       0.6581, 0.4913, 0.8913, 0.1447,  0.5315, 0.1587, 0.6542, 0.3278,
-       0.0000, 0.0000, 0.0000, 0.0000,  0.0000, 0.0000, 0.0000, 0.0000});
+      {0.6343, 0.3644, 0.7104, 0.9464, 0.7890, 0.2814, 0.7886, 0.5895,
+       0.7539, 0.1952, 0.0050, 0.3068, 0.1165, 0.9103, 0.6440, 0.7071,
+       0.6581, 0.4913, 0.8913, 0.1447, 0.5315, 0.1587, 0.6542, 0.3278,
+       0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000});
 
   int64_t start_pos = 2;
   int num_valid = 3;
 
   std::vector<float> ref(8, 0.0f);
   compute_reference_sdpa(
-      q.const_data_ptr<float>(), 1, 1, 2, 4,
-      k.const_data_ptr<float>(), 4, 2,
+      q.const_data_ptr<float>(),
+      1,
+      1,
+      2,
+      4,
+      k.const_data_ptr<float>(),
+      4,
+      2,
       v.const_data_ptr<float>(),
-      ref.data(), false, start_pos, num_valid);
+      ref.data(),
+      false,
+      start_pos,
+      num_valid);
 
   executorch::aten::Tensor expected = tf.make({1, 1, 2, 4}, ref);
   executorch::aten::Tensor out = tf.zeros({1, 1, 2, 4});
@@ -244,34 +269,55 @@ TEST(OpCustomSdpaTest, DecodeGQA) {
   // Q: [B=1, S=1, H_q=4, D=4]
   executorch::aten::Tensor q = tf.make(
       {1, 1, 4, 4},
-      {0.8823, 0.9150, 0.3829, 0.9593,
-       0.3904, 0.6009, 0.2566, 0.7936,
-       0.9408, 0.1332, 0.9346, 0.5936,
-       0.8694, 0.5677, 0.7411, 0.4294});
+      {0.8823,
+       0.9150,
+       0.3829,
+       0.9593,
+       0.3904,
+       0.6009,
+       0.2566,
+       0.7936,
+       0.9408,
+       0.1332,
+       0.9346,
+       0.5936,
+       0.8694,
+       0.5677,
+       0.7411,
+       0.4294});
 
   // K: [B=1, kv_len=3, H_kv=2, D=4]
-  executorch::aten::Tensor k = tf.make(
-      {1, 3, 2, 4},
-      {0.8854, 0.5739, 0.2666, 0.6274,  0.2696, 0.4414, 0.2969, 0.8317,
-       0.1053, 0.2695, 0.3588, 0.1994,  0.5472, 0.0062, 0.9516, 0.0753,
-       0.8860, 0.5832, 0.3376, 0.8090,  0.5779, 0.9040, 0.5547, 0.3423});
+  executorch::aten::Tensor k =
+      tf.make({1, 3, 2, 4}, {0.8854, 0.5739, 0.2666, 0.6274, 0.2696, 0.4414,
+                             0.2969, 0.8317, 0.1053, 0.2695, 0.3588, 0.1994,
+                             0.5472, 0.0062, 0.9516, 0.0753, 0.8860, 0.5832,
+                             0.3376, 0.8090, 0.5779, 0.9040, 0.5547, 0.3423});
 
   // V: [B=1, kv_len=3, H_kv=2, D=4]
-  executorch::aten::Tensor v = tf.make(
-      {1, 3, 2, 4},
-      {0.6343, 0.3644, 0.7104, 0.9464,  0.7890, 0.2814, 0.7886, 0.5895,
-       0.7539, 0.1952, 0.0050, 0.3068,  0.1165, 0.9103, 0.6440, 0.7071,
-       0.6581, 0.4913, 0.8913, 0.1447,  0.5315, 0.1587, 0.6542, 0.3278});
+  executorch::aten::Tensor v =
+      tf.make({1, 3, 2, 4}, {0.6343, 0.3644, 0.7104, 0.9464, 0.7890, 0.2814,
+                             0.7886, 0.5895, 0.7539, 0.1952, 0.0050, 0.3068,
+                             0.1165, 0.9103, 0.6440, 0.7071, 0.6581, 0.4913,
+                             0.8913, 0.1447, 0.5315, 0.1587, 0.6542, 0.3278});
 
   int64_t start_pos = 2;
   int num_valid = 3;
 
   std::vector<float> ref(16, 0.0f);
   compute_reference_sdpa(
-      q.const_data_ptr<float>(), 1, 1, 4, 4,
-      k.const_data_ptr<float>(), 3, 2,
+      q.const_data_ptr<float>(),
+      1,
+      1,
+      4,
+      4,
+      k.const_data_ptr<float>(),
+      3,
+      2,
       v.const_data_ptr<float>(),
-      ref.data(), false, start_pos, num_valid);
+      ref.data(),
+      false,
+      start_pos,
+      num_valid);
 
   executorch::aten::Tensor expected = tf.make({1, 1, 4, 4}, ref);
   executorch::aten::Tensor out = tf.zeros({1, 1, 4, 4});
@@ -286,22 +332,21 @@ TEST(OpCustomSdpaTest, DecodeCausalMatchesNonCausal) {
 
   executorch::aten::Tensor q = tf.make(
       {1, 1, 2, 4},
-      {0.8823, 0.9150, 0.3829, 0.9593,
-       0.3904, 0.6009, 0.2566, 0.7936});
+      {0.8823, 0.9150, 0.3829, 0.9593, 0.3904, 0.6009, 0.2566, 0.7936});
 
   executorch::aten::Tensor k = tf.make(
       {1, 4, 2, 4},
-      {0.8854, 0.5739, 0.2666, 0.6274,  0.2696, 0.4414, 0.2969, 0.8317,
-       0.1053, 0.2695, 0.3588, 0.1994,  0.5472, 0.0062, 0.9516, 0.0753,
-       0.8860, 0.5832, 0.3376, 0.8090,  0.5779, 0.9040, 0.5547, 0.3423,
-       0.0000, 0.0000, 0.0000, 0.0000,  0.0000, 0.0000, 0.0000, 0.0000});
+      {0.8854, 0.5739, 0.2666, 0.6274, 0.2696, 0.4414, 0.2969, 0.8317,
+       0.1053, 0.2695, 0.3588, 0.1994, 0.5472, 0.0062, 0.9516, 0.0753,
+       0.8860, 0.5832, 0.3376, 0.8090, 0.5779, 0.9040, 0.5547, 0.3423,
+       0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000});
 
   executorch::aten::Tensor v = tf.make(
       {1, 4, 2, 4},
-      {0.6343, 0.3644, 0.7104, 0.9464,  0.7890, 0.2814, 0.7886, 0.5895,
-       0.7539, 0.1952, 0.0050, 0.3068,  0.1165, 0.9103, 0.6440, 0.7071,
-       0.6581, 0.4913, 0.8913, 0.1447,  0.5315, 0.1587, 0.6542, 0.3278,
-       0.0000, 0.0000, 0.0000, 0.0000,  0.0000, 0.0000, 0.0000, 0.0000});
+      {0.6343, 0.3644, 0.7104, 0.9464, 0.7890, 0.2814, 0.7886, 0.5895,
+       0.7539, 0.1952, 0.0050, 0.3068, 0.1165, 0.9103, 0.6440, 0.7071,
+       0.6581, 0.4913, 0.8913, 0.1447, 0.5315, 0.1587, 0.6542, 0.3278,
+       0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000});
 
   int64_t start_pos = 2;
 
@@ -321,30 +366,24 @@ TEST(OpCustomSdpaTest, DecodeQuantized) {
   TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
 
   // Q: [B=1, S=1, H=2, D=4] as int8
-  auto q = tfChar.make(
-      {1, 1, 2, 4},
-      {10, 20, -5, 15, -10, 5, 25, -20});
+  auto q = tfChar.make({1, 1, 2, 4}, {10, 20, -5, 15, -10, 5, 25, -20});
 
   // K: [B=1, kv_len=3, H=2, D=4] as int8
   auto k = tfChar.make(
-      {1, 3, 2, 4},
-      {8, -12, 18, 5,    -3, 22, -8, 14,
-       15, 7, -20, 10,   12, -15, 9, 6,
-       -5, 25, 3, -10,   20, 8, -12, 17});
+      {1, 3, 2, 4}, {8,  -12, 18, 5, -3, 22, -8, 14,  15, 7, -20, 10,
+                     12, -15, 9,  6, -5, 25, 3,  -10, 20, 8, -12, 17});
 
   // V: [B=1, kv_len=3, H=2, D=4] as int8
   auto v = tfChar.make(
-      {1, 3, 2, 4},
-      {5, 15, -8, 20,    10, -5, 18, 12,
-       -12, 8, 22, -3,   7, 20, -10, 15,
-       18, -5, 10, 3,    -8, 12, 5, -20});
+      {1, 3, 2, 4}, {5, 15, -8,  20, 10, -5, 18, 12, -12, 8,  22, -3,
+                     7, 20, -10, 15, 18, -5, 10, 3,  -8,  12, 5,  -20});
 
   // Per-token scales [B, S/kv, H, 1] and zero_points [B, S/kv, H, 1]
   auto q_sc = tfFloat.make({1, 1, 2, 1}, {0.05f, 0.05f});
-  auto k_sc = tfFloat.make({1, 3, 2, 1},
-      {0.05f, 0.05f, 0.05f, 0.05f, 0.05f, 0.05f});
-  auto v_sc = tfFloat.make({1, 3, 2, 1},
-      {0.05f, 0.05f, 0.05f, 0.05f, 0.05f, 0.05f});
+  auto k_sc =
+      tfFloat.make({1, 3, 2, 1}, {0.05f, 0.05f, 0.05f, 0.05f, 0.05f, 0.05f});
+  auto v_sc =
+      tfFloat.make({1, 3, 2, 1}, {0.05f, 0.05f, 0.05f, 0.05f, 0.05f, 0.05f});
   auto q_zp = tfChar.make({1, 1, 2, 1}, {0, 0});
   auto k_zp = tfChar.make({1, 3, 2, 1}, {0, 0, 0, 0, 0, 0});
   auto v_zp = tfChar.make({1, 3, 2, 1}, {0, 0, 0, 0, 0, 0});
@@ -355,30 +394,67 @@ TEST(OpCustomSdpaTest, DecodeQuantized) {
   // Dequantize and compute float reference
   std::vector<float> q_deq(8), k_deq(24), v_deq(24);
   dequantize_per_token(
-      q.const_data_ptr<int8_t>(), 1, 1, 2, 4,
-      q_sc.const_data_ptr<float>(), q_zp.const_data_ptr<int8_t>(),
+      q.const_data_ptr<int8_t>(),
+      1,
+      1,
+      2,
+      4,
+      q_sc.const_data_ptr<float>(),
+      q_zp.const_data_ptr<int8_t>(),
       q_deq.data());
   dequantize_per_token(
-      k.const_data_ptr<int8_t>(), 1, 3, 2, 4,
-      k_sc.const_data_ptr<float>(), k_zp.const_data_ptr<int8_t>(),
+      k.const_data_ptr<int8_t>(),
+      1,
+      3,
+      2,
+      4,
+      k_sc.const_data_ptr<float>(),
+      k_zp.const_data_ptr<int8_t>(),
       k_deq.data());
   dequantize_per_token(
-      v.const_data_ptr<int8_t>(), 1, 3, 2, 4,
-      v_sc.const_data_ptr<float>(), v_zp.const_data_ptr<int8_t>(),
+      v.const_data_ptr<int8_t>(),
+      1,
+      3,
+      2,
+      4,
+      v_sc.const_data_ptr<float>(),
+      v_zp.const_data_ptr<int8_t>(),
       v_deq.data());
 
   std::vector<float> ref(8, 0.0f);
   compute_reference_sdpa(
-      q_deq.data(), 1, 1, 2, 4,
-      k_deq.data(), 3, 2,
+      q_deq.data(),
+      1,
+      1,
+      2,
+      4,
+      k_deq.data(),
+      3,
+      2,
       v_deq.data(),
-      ref.data(), false, start_pos, num_valid);
+      ref.data(),
+      false,
+      start_pos,
+      num_valid);
 
   auto expected = tfFloat.make({1, 1, 2, 4}, ref);
   auto out = tfFloat.zeros({1, 1, 2, 4});
   call_custom_quantized_sdpa(
-      q, k, v, start_pos, {}, 0.0, false, {},
-      q_zp, q_sc, k_zp, k_sc, v_zp, v_sc, out);
+      q,
+      k,
+      v,
+      start_pos,
+      {},
+      0.0,
+      false,
+      {},
+      q_zp,
+      q_sc,
+      k_zp,
+      k_sc,
+      v_zp,
+      v_sc,
+      out);
   EXPECT_TENSOR_CLOSE_WITH_TOL(out, expected, 1e-3, 1e-3);
 }
 
@@ -390,28 +466,23 @@ TEST(OpCustomSdpaTest, DecodeQuantizedGQA) {
   // Q: [B=1, S=1, H_q=4, D=4] as int8
   auto q = tfChar.make(
       {1, 1, 4, 4},
-      {10, 20, -5, 15,   -10, 5, 25, -20,
-       8, -3, 12, 7,     -15, 18, 4, -8});
+      {10, 20, -5, 15, -10, 5, 25, -20, 8, -3, 12, 7, -15, 18, 4, -8});
 
   // K: [B=1, kv_len=3, H_kv=2, D=4] as int8
   auto k = tfChar.make(
-      {1, 3, 2, 4},
-      {8, -12, 18, 5,    -3, 22, -8, 14,
-       15, 7, -20, 10,   12, -15, 9, 6,
-       -5, 25, 3, -10,   20, 8, -12, 17});
+      {1, 3, 2, 4}, {8,  -12, 18, 5, -3, 22, -8, 14,  15, 7, -20, 10,
+                     12, -15, 9,  6, -5, 25, 3,  -10, 20, 8, -12, 17});
 
   // V: [B=1, kv_len=3, H_kv=2, D=4] as int8
   auto v = tfChar.make(
-      {1, 3, 2, 4},
-      {5, 15, -8, 20,    10, -5, 18, 12,
-       -12, 8, 22, -3,   7, 20, -10, 15,
-       18, -5, 10, 3,    -8, 12, 5, -20});
+      {1, 3, 2, 4}, {5, 15, -8,  20, 10, -5, 18, 12, -12, 8,  22, -3,
+                     7, 20, -10, 15, 18, -5, 10, 3,  -8,  12, 5,  -20});
 
   auto q_sc = tfFloat.make({1, 1, 4, 1}, {0.05f, 0.05f, 0.05f, 0.05f});
-  auto k_sc = tfFloat.make({1, 3, 2, 1},
-      {0.05f, 0.05f, 0.05f, 0.05f, 0.05f, 0.05f});
-  auto v_sc = tfFloat.make({1, 3, 2, 1},
-      {0.05f, 0.05f, 0.05f, 0.05f, 0.05f, 0.05f});
+  auto k_sc =
+      tfFloat.make({1, 3, 2, 1}, {0.05f, 0.05f, 0.05f, 0.05f, 0.05f, 0.05f});
+  auto v_sc =
+      tfFloat.make({1, 3, 2, 1}, {0.05f, 0.05f, 0.05f, 0.05f, 0.05f, 0.05f});
   auto q_zp = tfChar.make({1, 1, 4, 1}, {0, 0, 0, 0});
   auto k_zp = tfChar.make({1, 3, 2, 1}, {0, 0, 0, 0, 0, 0});
   auto v_zp = tfChar.make({1, 3, 2, 1}, {0, 0, 0, 0, 0, 0});
@@ -421,29 +492,66 @@ TEST(OpCustomSdpaTest, DecodeQuantizedGQA) {
 
   std::vector<float> q_deq(16), k_deq(24), v_deq(24);
   dequantize_per_token(
-      q.const_data_ptr<int8_t>(), 1, 1, 4, 4,
-      q_sc.const_data_ptr<float>(), q_zp.const_data_ptr<int8_t>(),
+      q.const_data_ptr<int8_t>(),
+      1,
+      1,
+      4,
+      4,
+      q_sc.const_data_ptr<float>(),
+      q_zp.const_data_ptr<int8_t>(),
       q_deq.data());
   dequantize_per_token(
-      k.const_data_ptr<int8_t>(), 1, 3, 2, 4,
-      k_sc.const_data_ptr<float>(), k_zp.const_data_ptr<int8_t>(),
+      k.const_data_ptr<int8_t>(),
+      1,
+      3,
+      2,
+      4,
+      k_sc.const_data_ptr<float>(),
+      k_zp.const_data_ptr<int8_t>(),
       k_deq.data());
   dequantize_per_token(
-      v.const_data_ptr<int8_t>(), 1, 3, 2, 4,
-      v_sc.const_data_ptr<float>(), v_zp.const_data_ptr<int8_t>(),
+      v.const_data_ptr<int8_t>(),
+      1,
+      3,
+      2,
+      4,
+      v_sc.const_data_ptr<float>(),
+      v_zp.const_data_ptr<int8_t>(),
       v_deq.data());
 
   std::vector<float> ref(16, 0.0f);
   compute_reference_sdpa(
-      q_deq.data(), 1, 1, 4, 4,
-      k_deq.data(), 3, 2,
+      q_deq.data(),
+      1,
+      1,
+      4,
+      4,
+      k_deq.data(),
+      3,
+      2,
       v_deq.data(),
-      ref.data(), false, start_pos, num_valid);
+      ref.data(),
+      false,
+      start_pos,
+      num_valid);
 
   auto expected = tfFloat.make({1, 1, 4, 4}, ref);
   auto out = tfFloat.zeros({1, 1, 4, 4});
   call_custom_quantized_sdpa(
-      q, k, v, start_pos, {}, 0.0, false, {},
-      q_zp, q_sc, k_zp, k_sc, v_zp, v_sc, out);
+      q,
+      k,
+      v,
+      start_pos,
+      {},
+      0.0,
+      false,
+      {},
+      q_zp,
+      q_sc,
+      k_zp,
+      k_sc,
+      v_zp,
+      v_sc,
+      out);
   EXPECT_TENSOR_CLOSE_WITH_TOL(out, expected, 1e-3, 1e-3);
 }
