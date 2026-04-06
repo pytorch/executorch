@@ -58,6 +58,16 @@ fi
 # Step 1: Cross compile ExecuTorch from root dir
 echo "Cross compiling ExecuTorch baremetal ARM..."
 
+# Resolve the model path for selective build. Using EXECUTORCH_SELECT_OPS_MODEL
+# auto-detects the exact operators the model needs from the .pte file, avoiding
+# "Operator missing" errors at runtime.
+SELECT_OPS_FLAGS=""
+if [ -n "$MODEL_INPUT" ] && [ -f "${PICO2_DIR}/${MODEL_INPUT}" ]; then
+  MODEL_ABS_PATH="$(cd "${PICO2_DIR}" && realpath "${MODEL_INPUT}")"
+  SELECT_OPS_FLAGS="-DEXECUTORCH_SELECT_OPS_MODEL=${MODEL_ABS_PATH}"
+  echo "Using selective build from model: ${MODEL_ABS_PATH}"
+fi
+
 cmake -B "${EXECUTORCH_BUILD_DIR}" \
   -DCMAKE_TOOLCHAIN_FILE="${ROOT_DIR}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake" \
   -DTARGET_CPU=cortex-m0plus \
@@ -69,6 +79,7 @@ cmake -B "${EXECUTORCH_BUILD_DIR}" \
   -DEXECUTORCH_SELECT_ALL_OPS=OFF \
   -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
   -DCMAKE_INSTALL_PREFIX="${EXECUTORCH_BUILD_DIR}" \
+  ${SELECT_OPS_FLAGS} \
   "${ROOT_DIR}"
 
 cmake --build "${EXECUTORCH_BUILD_DIR}" --target install -j$(nproc)

@@ -368,6 +368,9 @@ def make_tensor_value(
 
     extra_tensor_info = spec.extra_tensor_info
     # Propagate device from TensorSpec into ExtraTensorInfo for serialization.
+    # Note: we don't propagate Device on CPU; if no device info will be noticed,
+    # tensor_parser will automatic treat it as CPU:0, to prevent pte size
+    # regression as much as possible.
     if spec.device != schema.DeviceType.CPU:
         if extra_tensor_info is None:
             extra_tensor_info = schema.ExtraTensorInfo(
