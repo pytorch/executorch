@@ -626,9 +626,14 @@ def _export_cuda(model, config, args):
     print("Decode export successful!")
 
     # --- Prefill method (T>=2, dynamic shape) ---
+    # Example T must equal max_seq_len-1 so AOTI compiles kernels (especially
+    # chunk_gated_delta_rule with CHUNK_SIZE=64) for the full range of sequence
+    # lengths. Smaller examples cause AOTI to bake in intermediate buffer sizes
+    # that reject longer prompts at runtime.
     print("Exporting prefill method...")
-    prefill_tokens = torch.tensor([[0, 1]], dtype=torch.long)
-    prefill_pos = torch.tensor([0, 1], dtype=torch.long)
+    example_prefill_len = config.max_seq_len - 1
+    prefill_tokens = torch.zeros((1, example_prefill_len), dtype=torch.long)
+    prefill_pos = torch.arange(example_prefill_len, dtype=torch.long)
     seq_dim = Dim("seq_len", min=2, max=config.max_seq_len - 1)
     prefill_dynamic_shapes = (
         {1: seq_dim},  # tokens
