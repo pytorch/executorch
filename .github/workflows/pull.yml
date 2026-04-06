@@ -1363,15 +1363,20 @@ jobs:
         # Setup Vulkan SDK (no SwiftShader — use NVIDIA driver's Vulkan ICD)
         source .ci/scripts/setup-vulkan-linux-deps.sh --gpu
 
-        # Setup ExecuTorch
-        PYTHON_EXECUTABLE=python \
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" \
-        .ci/scripts/setup-linux.sh --build-tool "cmake"
+        # Install ExecuTorch Python package (for export step).
+        ./install_executorch.sh
 
         # Export parakeet with Vulkan backend
         bash .ci/scripts/export_model_artifact.sh vulkan "nvidia/parakeet-tdt" "quantized-8da4w" "${RUNNER_ARTIFACT_DIR}"
 
-        # Build runner and test e2e
+        # Clean cmake-out/ — install_executorch.sh creates a CMake cache with
+        # most extensions OFF, and set_overridable_option in the Makefile
+        # presets cannot override cached variables. Without this, the
+        # llm-debug-vulkan preset fails to enable EXECUTORCH_BUILD_EXTENSION_LLM
+        # and the tokenizers header is never installed.
+        rm -rf cmake-out
+
+        # Build runner and test e2e (make parakeet-vulkan handles the full C++ build)
         bash .ci/scripts/test_model_e2e.sh vulkan "nvidia/parakeet-tdt" "quantized-8da4w" "${RUNNER_ARTIFACT_DIR}"
 
   test-coreml-bc-macos:

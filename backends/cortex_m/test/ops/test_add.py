@@ -73,6 +73,50 @@ class CortexMAlphaAdd(ModelAlpha):
     }
 
 
+class CortexMAddReLU(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_add_Tensor": 1,
+        "executorch_exir_dialects_edge__ops_aten_relu_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 3,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 3,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x, y):
+        return self.relu(x + y)
+
+
+class CortexMAddHardtanh(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_add_Tensor": 1,
+        "executorch_exir_dialects_edge__ops_aten_hardtanh_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 3,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 3,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    def __init__(self, min_val=-0.5, max_val=0.5):
+        super().__init__()
+        self.act = torch.nn.Hardtanh(min_val=min_val, max_val=max_val)
+
+    def forward(self, x, y):
+        return self.act(x + y)
+
+
 test_cases = {
     "self_rank_1": McuTestCase(
         CortexMSelfAdd(),
@@ -147,6 +191,34 @@ test_cases = {
         (
             ramp_tensor(-10, 10, (4, 5)),
             ramp_tensor(-20, 20, (4, 5)),
+        ),
+    ),
+    "add_relu": McuTestCase(
+        CortexMAddReLU(),
+        (
+            ramp_tensor(-5, 5, (2, 4)),
+            ramp_tensor(-3, 3, (2, 4)),
+        ),
+    ),
+    "add_relu_channels_last": McuTestCase(
+        CortexMAddReLU(),
+        (
+            ramp_tensor(-5, 5, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+            ramp_tensor(-3, 3, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "add_hardtanh": McuTestCase(
+        CortexMAddHardtanh(min_val=-0.5, max_val=0.5),
+        (
+            ramp_tensor(-2, 2, (2, 4)),
+            ramp_tensor(-1, 1, (2, 4)),
+        ),
+    ),
+    "add_hardtanh_channels_last": McuTestCase(
+        CortexMAddHardtanh(min_val=-1.0, max_val=1.0),
+        (
+            ramp_tensor(-3, 3, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+            ramp_tensor(-2, 2, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
         ),
     ),
 }
