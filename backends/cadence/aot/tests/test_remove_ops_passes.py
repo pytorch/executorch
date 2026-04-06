@@ -14,7 +14,6 @@ from typing import cast, List, Tuple
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
 from executorch.backends.cadence.aot.fuse_ops import FuseQuantDequantToRequantizePass
-from executorch.backends.cadence.aot.graph_builder import GraphBuilder
 
 from executorch.backends.cadence.aot.pass_utils import count_node
 from executorch.backends.cadence.aot.remove_ops import (
@@ -36,6 +35,7 @@ from executorch.backends.cadence.aot.remove_ops import (
     RemoveZeroSizedConstantPadNd,
 )
 from executorch.backends.cadence.aot.typing_stubs import expand
+from executorch.backends.test.graph_builder import GraphBuilder
 from executorch.exir.dialects._ops import ops as exir_ops
 from pyre_extensions import none_throws
 

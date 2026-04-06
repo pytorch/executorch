@@ -754,7 +754,7 @@ class TOSAQuantizer(Quantizer):
                         f"Quantizer detected operator {node.name} with different device inputs: {devices}."
                     )
 
-    def quantize_with_submodules(
+    def _quantize_with_submodules(
         self,
         model: GraphModule,
         calibration_samples: list[tuple],
@@ -808,17 +808,19 @@ class TOSAQuantizer(Quantizer):
         for _, submodule, _ in get_cond_while_submodules_nested(
             prepared, apply_quantization=True
         ):
-            converted = convert_pt2e(submodule)
+            converted = convert_pt2e(submodule, fold_quantize=fold_quantize)
             for submodule_node in submodule.graph.nodes:
                 if is_submodule_node(submodule_node):
                     for nested_name, nested_sub, _ in get_cond_while_submodules_nested(
                         submodule, apply_quantization=True
                     ):
                         converted.set_submodule(
-                            nested_name, convert_pt2e(nested_sub), strict=True
+                            nested_name,
+                            convert_pt2e(nested_sub, fold_quantize=fold_quantize),
+                            strict=True,
                         )
 
-        return convert_pt2e(prepared)
+        return convert_pt2e(prepared, fold_quantize=fold_quantize)
 
 
 class _TOSAQuantizerV1(Quantizer):

@@ -4,10 +4,11 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import List
+from typing import cast, List, Optional
 
 from executorch.backends.arm.quantizer.arm_quantizer_utils import (
     _mark_node_as_quantized,
+    PatternCheck,
     PatternQuantizer,
     SharedQspecQuantizer,
 )
@@ -28,6 +29,7 @@ from executorch.backends.cortex_m.quantizer.quantizer_support import (
     CONV_TRANSPOSE_OP_PATTERNS,
     CORTEX_M_QUANTIZER_SUPPORT_DICT,
 )
+from torch._ops import OpOverload
 from torch.fx import GraphModule
 from torchao.quantization.pt2e.quantizer import ComposableQuantizer, Quantizer
 
@@ -44,7 +46,7 @@ def mark_node_as_annotated(
 class CortexMQuantizer(ComposableQuantizer):
 
     def __init__(self) -> None:
-        conv_targets = set()
+        conv_targets: set[OpOverload] = set()
         for key in CONV_OP_PATTERNS.keys() | CONV_TRANSPOSE_OP_PATTERNS.keys():
             conv_targets.update(key)
 
@@ -52,13 +54,16 @@ class CortexMQuantizer(ComposableQuantizer):
             cortex_m_quantizer_support_module + ".CORTEX_M_QUANTIZER_SUPPORT_DICT"
         )
         pattern_matcher = PatternMatcher(
-            CORTEX_M_QUANTIZER_SUPPORT_DICT,
+            cast(
+                dict[tuple[OpOverload, ...], Optional[type[PatternCheck]]],
+                CORTEX_M_QUANTIZER_SUPPORT_DICT,
+            ),
             support_dict_name=support_dict_name,
         )
         quantizers: List[Quantizer] = [
             PatternQuantizer(
                 INT8_PER_CHANNEL_CONFIG,
-                node_finder=NodeTargetNodeFinder(conv_targets),
+                node_finder=NodeTargetNodeFinder(list(conv_targets)),
                 pattern_matcher=pattern_matcher,
             ),
             PatternQuantizer(
@@ -76,8 +81,8 @@ class CortexMQuantizer(ComposableQuantizer):
         reporter.log_quantizer_report(model)
         return model
 
-    def validate(self, model: GraphModule) -> bool:
-        return True
+    def validate(self, model: GraphModule) -> None:
+        return None
 
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
         pass_manager = CortexMPassManager(None)

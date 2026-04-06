@@ -1,0 +1,77 @@
+name: Test Cadence
+
+permissions:
+  id-token: write
+  contents: read
+
+on:
+  workflow_call:
+    inputs:
+      docker-image:
+        description: 'Docker image to use'
+        required: false
+        type: string
+        default: ci-image:executorch-ubuntu-22.04-clang12
+      runner:
+        description: 'Runner type'
+        required: false
+        type: string
+        default: linux.8xlarge.memory
+      ref:
+        description: 'Git ref to checkout'
+        required: false
+        type: string
+        default: ${{ github.sha }}
+      timeout:
+        description: 'Job timeout in minutes'
+        required: false
+        type: number
+        default: 90
+
+jobs:
+  test-aot:
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    with:
+      job-name: test-aot
+      runner: ${{ inputs.runner }}
+      docker-image: ${{ inputs.docker-image }}
+      submodules: recursive
+      ref: ${{ inputs.ref }}
+      timeout: ${{ inputs.timeout }}
+      script: |
+        set -eux
+        conda create -y -n cadence_test python=3.12 > /dev/null
+        conda activate cadence_test
+
+        ./install_requirements.sh > /dev/null
+        pip install -e . --no-build-isolation > /dev/null
+        pip install beartype later pyre_extensions pytest-xdist
+
+        python -m pytest backends/cadence/aot/tests/ -v -n auto
+
+  test-ops:
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    with:
+      job-name: test-ops
+      runner: ${{ inputs.runner }}
+      docker-image: ${{ inputs.docker-image }}
+      submodules: recursive
+      ref: ${{ inputs.ref }}
+      timeout: ${{ inputs.timeout }}
+      download-artifact: cadence-runner-build
+      script: |
+        set -eux
+        conda create -y -n cadence_test python=3.12 > /dev/null
+        conda activate cadence_test
+
+        ./install_requirements.sh > /dev/null
+        pip install -e . --no-build-isolation > /dev/null
+        pip install beartype later pyre_extensions pytest-xdist
+
+        # Use the pre-built runner from the build job
+        mkdir -p cmake-out/backends/cadence
+        cp "${RUNNER_ARTIFACT_DIR}/cadence_runner" cmake-out/backends/cadence/cadence_runner
+        chmod +x cmake-out/backends/cadence/cadence_runner
+
+        export PYTHONPATH="${PYTHONPATH:-}:$(pwd)/backends/cadence/utils/FACTO"
+        python -m pytest examples/cadence/operators/ -v -n auto
