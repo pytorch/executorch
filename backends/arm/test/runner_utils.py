@@ -35,7 +35,10 @@ from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.specification import Tosa_1_00, TosaSpecification
 from executorch.backends.arm.vgf import VgfCompileSpec
-from executorch.backends.arm.vgf.model_converter import find_model_converter_binary
+from executorch.backends.arm.vgf.model_converter import (
+    find_model_converter_binary,
+    model_converter_env,
+)
 from executorch.exir import ExecutorchProgramManager, ExportedProgram
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from torch.fx.node import Node
@@ -202,7 +205,7 @@ def numpy_to_torch_tensor(array: np.ndarray, output_node: Node) -> torch.Tensor:
         tensor = torch.from_numpy(array).reshape(shape_with_dim_order)
         return tensor.permute(NNHWC_INVERSE_ORDER).to(memory_format=torch.channels_last)
     else:
-        if type(array.dtype) is np.dtypes.VoidDType:
+        if array.dtype.type is np.void:
             # If dtype is void, "cheat" and use the output_tensor dtype.
             tensor = torch.frombuffer(array, dtype=output_tensor.dtype)
         else:
@@ -818,7 +821,7 @@ def model_converter_installed() -> bool:
         return False
 
     try:
-        _run_cmd([model_converter, "--version"], check=True)
+        _run_cmd([model_converter, "--version"], check=True, env=model_converter_env())
     except Exception:
         return False
 

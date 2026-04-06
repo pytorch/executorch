@@ -26,7 +26,7 @@ def test_from_list_with_output_order_workaround_warns():
         CompileSpec("ouput_reorder_workaround", b"true"),
     ]
     with pytest.warns(DeprecationWarning):
-        spec = TosaCompileSpec.from_list(compile_specs)
+        spec = TosaCompileSpec._from_list(compile_specs)
     assert isinstance(spec, TosaCompileSpec)
 
 
