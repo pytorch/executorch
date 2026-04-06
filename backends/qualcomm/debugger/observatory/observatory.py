@@ -345,19 +345,12 @@ class Observatory:
             for lens in lens_registry:
                 lens_name = lens.get_name()
                 digest = record.data.get(lens_name)
-                if digest is None:
-                    continue
 
                 analysis = analysis_results.get(lens_name, AnalysisResult())
                 record_analysis: RecordAnalysis | None = analysis.per_record_data.get(record.name)
-                analysis_ctx = {
-                    "global": analysis.global_data,
-                    "record": (record_analysis.data if record_analysis else {}),
-                }
-
                 graph_ref = record.name
-                # extract graph data from graph Lense
-                if lens_name == "graph":
+                # extract graph data from graph lens runtime digest
+                if lens_name == "graph" and digest is not None:
                     assert isinstance(digest, dict) and isinstance(digest.get("base"), dict), "[Observatory] error validating graph lense output."
                     assert digest["graph_ref"] == graph_ref, "[Observatory] graph ref should be consistant with record name"
                     graph_hub.register_asset(
@@ -365,7 +358,18 @@ class Observatory:
                         digest["base"],
                         digest.get("meta", {}),
                     )
+
+                # Merge analyze-phase graph layers even for analyze-only lenses.
                 graph_hub.add_analysis_layers(graph_ref, lens_name, record_analysis)
+
+                # Everything below depends on runtime digest presence.
+                if digest is None:
+                    continue
+
+                analysis_ctx = {
+                    "global": analysis.global_data,
+                    "record": (record_analysis.data if record_analysis else {}),
+                }
 
                 frontend = lens.get_frontend_spec()
                 try:
