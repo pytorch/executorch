@@ -92,6 +92,7 @@ def _replace_sdpa_with_custom_op(
                 SDPACustom(
                     child.dim,
                     use_attention_mask=use_attention_mask,
+                    is_seq_at_dim_2=True, # hacking temporarily
                 ),
             )
         else:
