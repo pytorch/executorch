@@ -358,7 +358,7 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   STREAMING_ARG=""
   PREPROCESSOR_ARGS="--feature_size 128 --output_file ${OUTPUT_DIR}/preprocessor.pte"
   if [ "$USE_STREAMING" = "true" ]; then
-    STREAMING_ARG="--streaming"
+    STREAMING_ARG="--streaming --sliding-window 2048"
     PREPROCESSOR_ARGS="$PREPROCESSOR_ARGS --streaming"
   else
     PREPROCESSOR_ARGS="$PREPROCESSOR_ARGS --stack_output --max_audio_len 300"

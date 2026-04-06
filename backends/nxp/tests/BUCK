@@ -23,7 +23,7 @@ fbcode_target(_kind = runtime.python_library,
     deps = [
         "//executorch/exir:lib",
         "//executorch/extension/export_util:export_util",
-        "//pytorch/ao:torchao",  
+        "//pytorch/ao:torchao",
         "//executorch/backends/nxp:quantizer",
         "//executorch/backends/nxp:neutron_backend",
         "//executorch/backends/nxp:edge_passes",
@@ -39,6 +39,8 @@ fbcode_target(_kind = python_pytest,
         "//executorch/backends/nxp:quantizer",
         "//caffe2:torch",
         "//executorch/backends/nxp/tests:models",
+        ":executorch_pipeline",
+        "fbsource//third-party/pypi/pytest-mock:pytest-mock",  # @manual
     ],
 )
 
