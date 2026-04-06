@@ -178,6 +178,12 @@ class ModelConfig:
             [B, H, S, D] instead of standard [B, S, H, D]. Transposed layout
             improves SDPA performance by enabling contiguous memory access in
             the attn_score @ V GEMM (stride D instead of H*D along seq dim).
+            Controls both K and V caches together. For per-cache control, use
+            cache_transpose instead.
+        cache_transpose: Per-cache transpose control. One of 'none', 'all',
+            'v_only', 'k_only'. Overrides use_transposed_cache when set.
+            'v_only' transposes only the V cache, which may give SDPA locality
+            benefits for the attn @ V GEMM without the overhead of transposing K.
         expand_rope_table: Temporary workaround to expand sin/cos table in head
             dim to take vectorized path in optimized kernels.
         use_attention_sink: Whether to use attention sink to support multi-round
@@ -199,6 +205,7 @@ class ModelConfig:
     use_shared_embedding: bool = False
     use_sdpa_with_kv_cache: bool = False
     use_transposed_cache: bool = True
+    cache_transpose: Optional[str] = None
     expand_rope_table: bool = False
     use_attention_sink: Optional[str] = None
     output_prune_map: Optional[str] = None
@@ -686,6 +693,10 @@ class LlmConfig:
             llm_config.model.use_shared_embedding = args.use_shared_embedding
         if hasattr(args, "use_sdpa_with_kv_cache"):
             llm_config.model.use_sdpa_with_kv_cache = args.use_sdpa_with_kv_cache
+        if hasattr(args, "use_transposed_cache"):
+            llm_config.model.use_transposed_cache = args.use_transposed_cache
+        if hasattr(args, "cache_transpose") and args.cache_transpose is not None:
+            llm_config.model.cache_transpose = args.cache_transpose
         if hasattr(args, "expand_rope_table"):
             llm_config.model.expand_rope_table = args.expand_rope_table
         if hasattr(args, "use_attention_sink"):

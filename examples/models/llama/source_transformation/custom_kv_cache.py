@@ -334,6 +334,14 @@ def _replace_kv_cache_with_quantized_kv_cache(module):
 
 
 class CustomKVCache(nn.Module):
+    """Custom KV cache with independent K/V transpose control.
+
+    Args:
+        transpose_k: If True, K cache is stored as [B, H, S, D] (transposed).
+            If False, stored as [B, S, H, D] (standard).
+        transpose_v: If True, V cache is stored as [B, H, S, D] (transposed).
+            If False, stored as [B, S, H, D] (standard).
+    """
     def __init__(
         self,
         max_batch_size: int,
@@ -341,24 +349,24 @@ class CustomKVCache(nn.Module):
         n_heads: int,
         head_dim: int,
         dtype=torch.float32,
-        is_seq_at_dim_2: bool = False,
+        transpose_k: bool = False,
+        transpose_v: bool = False,
     ):
-        self.is_seq_at_dim_2 = is_seq_at_dim_2
         super().__init__()
+        self.transpose_k = transpose_k
+        self.transpose_v = transpose_v
         self.max_context_length = max_context_length
-        if self.is_seq_at_dim_2:
-            cache_shape = (max_batch_size, n_heads, max_context_length, head_dim)
-        else:
-            cache_shape = (max_batch_size, max_context_length, n_heads, head_dim)
-
         self.max_batch_size = max_batch_size
         self.n_heads = n_heads
         self.head_dim = head_dim
+
+        transposed_shape = (max_batch_size, n_heads, max_context_length, head_dim)
+        standard_shape = (max_batch_size, max_context_length, n_heads, head_dim)
         self.register_buffer(
-            "k_cache", torch.zeros(cache_shape, dtype=dtype, device="cpu")
+            "k_cache", torch.zeros(transposed_shape if transpose_k else standard_shape, dtype=dtype, device="cpu")
         )
         self.register_buffer(
-            "v_cache", torch.zeros(cache_shape, dtype=dtype, device="cpu")
+            "v_cache", torch.zeros(transposed_shape if transpose_v else standard_shape, dtype=dtype, device="cpu")
         )
 
     def update(
@@ -368,43 +376,45 @@ class CustomKVCache(nn.Module):
         v_val: torch.Tensor,
         indices: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        # input_pos: [S], k_val: [B, H, S, D]
-        if not self.is_seq_at_dim_2:
-            k_val = k_val.transpose(1, 2)
-            v_val = v_val.transpose(1, 2)
+        # input_pos: [S], k_val/v_val: [B, H, S, D] from Attention
         start_pos = input_pos[0].item()
+
+        # Transpose k_val to match cache layout if needed
+        k_for_cache = k_val if self.transpose_k else k_val.transpose(1, 2)
+        v_for_cache = v_val if self.transpose_v else v_val.transpose(1, 2)
 
         if indices is not None:
             _ = torch.ops.llama.update_cache_with_indices(
-                k_val, self.k_cache, start_pos, indices, self.is_seq_at_dim_2
+                k_for_cache, self.k_cache, start_pos, indices, self.transpose_k
             )
             _ = torch.ops.llama.update_cache_with_indices(
-                v_val, self.v_cache, start_pos, indices, self.is_seq_at_dim_2
+                v_for_cache, self.v_cache, start_pos, indices, self.transpose_v
             )
         else:
-            _ = torch.ops.llama.update_cache(k_val, self.k_cache, start_pos, self.is_seq_at_dim_2)
-            _ = torch.ops.llama.update_cache(v_val, self.v_cache, start_pos, self.is_seq_at_dim_2)
+            _ = torch.ops.llama.update_cache(k_for_cache, self.k_cache, start_pos, self.transpose_k)
+            _ = torch.ops.llama.update_cache(v_for_cache, self.v_cache, start_pos, self.transpose_v)
 
-        if not self.is_seq_at_dim_2:
-            return (k_val.transpose(1, 2), v_val.transpose(1, 2))
-        else:
-            return (self.k_cache, self.v_cache)
+        # Return both caches in [B, H, S, D] for Attention
+        k_out = self.k_cache if self.transpose_k else self.k_cache.transpose(1, 2)
+        v_out = self.v_cache if self.transpose_v else self.v_cache.transpose(1, 2)
+        return (k_out, v_out)
 
 
-def replace_kv_cache_with_custom_kv_cache(module, is_seq_at_dim_2=True):
+def replace_kv_cache_with_custom_kv_cache(module, transpose_k=False, transpose_v=False):
     """
     Replace KVCache with CustomKVCache. This modifies the model in place.
-    When is_seq_at_dim_2=True, cache is stored as [B, H, S, D] (transposed),
-    which improves SDPA GEMM performance via better memory locality.
-    When is_seq_at_dim_2=False, cache is stored as [B, S, H, D] (standard).
+    K and V caches can be independently transposed:
+    - transpose_k=True: K cache stored as [B, H, S, D] (transposed)
+    - transpose_v=True: V cache stored as [B, H, S, D] (transposed)
+    - When False, cache is stored as [B, S, H, D] (standard)
     """
     logging.info(
         "Replacing KVCache with CustomKVCache. This modifies the model in place."
     )
-    return _replace_kv_cache_with_custom_kv_cache(module, is_seq_at_dim_2=is_seq_at_dim_2)
+    return _replace_kv_cache_with_custom_kv_cache(module, transpose_k=transpose_k, transpose_v=transpose_v)
 
 
-def _replace_kv_cache_with_custom_kv_cache(module, is_seq_at_dim_2=True):
+def _replace_kv_cache_with_custom_kv_cache(module, transpose_k=False, transpose_v=False):
     for name, child in module.named_children():
         if isinstance(child, KVCache):
             cache_dtype = child.k_cache.dtype
@@ -421,11 +431,12 @@ def _replace_kv_cache_with_custom_kv_cache(module, is_seq_at_dim_2=True):
                     n_heads,
                     head_dim,
                     dtype=cache_dtype,
-                    is_seq_at_dim_2=is_seq_at_dim_2,
+                    transpose_k=transpose_k,
+                    transpose_v=transpose_v,
                 ),
             )
         else:
-            _replace_kv_cache_with_custom_kv_cache(child, is_seq_at_dim_2=is_seq_at_dim_2)
+            _replace_kv_cache_with_custom_kv_cache(child, transpose_k=transpose_k, transpose_v=transpose_v)
     return module
 
 
