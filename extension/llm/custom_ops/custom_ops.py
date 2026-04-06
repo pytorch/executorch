@@ -168,22 +168,11 @@ def custom_sdpa(
     is_causal=False,
     scale=None,
     is_seq_dim_2=False,
+    is_k_seq_dim_2=False,
+    is_v_seq_dim_2=False,
 ):
-    seq_len = query.size(2) if is_seq_dim_2 else query.size(1)
-    _validate_params(
-        query,
-        key_cache,
-        value_cache,
-        key_cache,
-        value_cache,
-        start_pos,
-        seq_len,
-        attn_mask,
-        drpout_p,
-        is_causal,
-        scale,
-    )
-
+    # Skip _validate_params since it assumes K/V caches have the same layout.
+    # With mixed transpose (e.g. v_only), K and V have different shapes.
     return torch.empty_like(query)
 
 

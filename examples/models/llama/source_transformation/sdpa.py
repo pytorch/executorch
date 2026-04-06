@@ -23,14 +23,17 @@ class SDPACustom(torch.nn.Module):
         self,
         dim: int,
         use_attention_mask: bool = False,
-        is_seq_at_dim_2: bool = False,
+        is_k_seq_at_dim_2: bool = False,
+        is_v_seq_at_dim_2: bool = False,
     ):
         super().__init__()
         self.dim = dim
         self.use_attention_mask = use_attention_mask
-        # When True, Q/K/V are in [B, H, S, D] and custom_sdpa uses seq_dim=2.
-        # When False, they are transposed to [B, S, H, D] and custom_sdpa uses seq_dim=1.
-        self.is_seq_at_dim_2 = is_seq_at_dim_2
+        # Separate seq dim flags for K and V allow mixed cache layouts.
+        # Q and output always use seq_dim=2 ([B, H, S, D]) since Q is
+        # always small (current step) and the transpose is negligible.
+        self.is_k_seq_at_dim_2 = is_k_seq_at_dim_2
+        self.is_v_seq_at_dim_2 = is_v_seq_at_dim_2
 
     def forward(
         self,
@@ -42,13 +45,8 @@ class SDPACustom(torch.nn.Module):
         seqlen,
         mask,
     ):
-        # Q, K, V arrive in [B, H, S, D] from Attention.
-        # If is_seq_at_dim_2=False, transpose to [B, S, H, D] for the op.
-        if not self.is_seq_at_dim_2:
-            q = q.transpose(1, 2)
-            k = k.transpose(1, 2)
-            v = v.transpose(1, 2)
-
+        # Q arrives in [B, H, S, D] from Attention - always passed with seq_dim=2.
+        # K and V arrive in their native cache layout (may differ).
         input_dtype = q.dtype
         q = q.to(dtype=torch.float)
         k = k.to(dtype=torch.float)
@@ -64,7 +62,9 @@ class SDPACustom(torch.nn.Module):
                 0,
                 False,
                 scale=None,
-                is_seq_dim_2=self.is_seq_at_dim_2,
+                is_seq_dim_2=True,
+                is_k_seq_dim_2=self.is_k_seq_at_dim_2,
+                is_v_seq_dim_2=self.is_v_seq_at_dim_2,
             )
         else:
             output = torch.ops.llama.custom_sdpa(
@@ -76,15 +76,20 @@ class SDPACustom(torch.nn.Module):
                 0,
                 True,
                 scale=None,
-                is_seq_dim_2=self.is_seq_at_dim_2,
+                is_seq_dim_2=True,
+                is_k_seq_dim_2=self.is_k_seq_at_dim_2,
+                is_v_seq_dim_2=self.is_v_seq_at_dim_2,
             )
-        if self.is_seq_at_dim_2:
-            output = output.transpose(1, 2).contiguous()
+        # Output is [B, H, S, D] (matches Q layout), transpose for reshape
+        output = output.transpose(1, 2).contiguous()
         return output.view(bsz, seqlen, self.dim).to(dtype=input_dtype)
 
 
 def _replace_sdpa_with_custom_op(
-    module: torch.nn.Module, use_attention_mask: bool = False, is_seq_at_dim_2: bool = True
+    module: torch.nn.Module,
+    use_attention_mask: bool = False,
+    is_k_seq_at_dim_2: bool = False,
+    is_v_seq_at_dim_2: bool = False,
 ):
     for name, child in module.named_children():
         if isinstance(child, SDPA):
@@ -94,19 +99,33 @@ def _replace_sdpa_with_custom_op(
                 SDPACustom(
                     child.dim,
                     use_attention_mask=use_attention_mask,
-                    is_seq_at_dim_2=is_seq_at_dim_2,
+                    is_k_seq_at_dim_2=is_k_seq_at_dim_2,
+                    is_v_seq_at_dim_2=is_v_seq_at_dim_2,
                 ),
             )
         else:
-            _replace_sdpa_with_custom_op(child, use_attention_mask=use_attention_mask, is_seq_at_dim_2=is_seq_at_dim_2)
+            _replace_sdpa_with_custom_op(
+                child,
+                use_attention_mask=use_attention_mask,
+                is_k_seq_at_dim_2=is_k_seq_at_dim_2,
+                is_v_seq_at_dim_2=is_v_seq_at_dim_2,
+            )
 
 
 def replace_sdpa_with_custom_op(
-    module: torch.nn.Module, use_attention_mask: bool = False, is_seq_at_dim_2: bool = True
+    module: torch.nn.Module,
+    use_attention_mask: bool = False,
+    is_k_seq_at_dim_2: bool = False,
+    is_v_seq_at_dim_2: bool = False,
 ) -> torch.nn.Module:
     from executorch.extension.llm.custom_ops import custom_ops  # noqa
 
-    _replace_sdpa_with_custom_op(module, use_attention_mask=use_attention_mask, is_seq_at_dim_2=is_seq_at_dim_2)
+    _replace_sdpa_with_custom_op(
+        module,
+        use_attention_mask=use_attention_mask,
+        is_k_seq_at_dim_2=is_k_seq_at_dim_2,
+        is_v_seq_at_dim_2=is_v_seq_at_dim_2,
+    )
     return module
 
 
@@ -138,6 +157,7 @@ class QuantizedSDPA(torch.nn.Module):
         self.float_dtype = torch.float32
         self.kv_cache = kv_cache
         self.use_attention_mask = use_attention_mask
+        # Quantized path uses a single flag for all tensors
         self.is_seq_at_dim_2 = is_seq_at_dim_2
 
     def forward(
@@ -225,8 +245,10 @@ def _update_attention_module_with_quantized_sdpa(
     sdpa = getattr(module, "SDPA", None)
     assert sdpa is not None
     assert isinstance(sdpa, SDPACustom)
-    # TODO: add support for SDPA with attention mask
-    setattr(module, "SDPA", QuantizedSDPA(sdpa.dim, kv_cache, is_seq_at_dim_2=sdpa.is_seq_at_dim_2))  # noqa: B010
+    # Quantized SDPA uses a single is_seq_at_dim_2 flag;
+    # derive from K/V flags (both must match for quantized path).
+    is_seq_at_dim_2 = sdpa.is_k_seq_at_dim_2 and sdpa.is_v_seq_at_dim_2
+    setattr(module, "SDPA", QuantizedSDPA(sdpa.dim, kv_cache, is_seq_at_dim_2=is_seq_at_dim_2))  # noqa: B010
 
 
 def _replace_sdpa_with_quantized_sdpa(module: torch.nn.Module):

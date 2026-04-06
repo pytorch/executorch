@@ -379,7 +379,7 @@ class CustomKVCache(nn.Module):
         # input_pos: [S], k_val/v_val: [B, H, S, D] from Attention
         start_pos = input_pos[0].item()
 
-        # Transpose k_val to match cache layout if needed
+        # Transpose k_val/v_val to match cache layout if needed
         k_for_cache = k_val if self.transpose_k else k_val.transpose(1, 2)
         v_for_cache = v_val if self.transpose_v else v_val.transpose(1, 2)
 
@@ -394,10 +394,15 @@ class CustomKVCache(nn.Module):
             _ = torch.ops.llama.update_cache(k_for_cache, self.k_cache, start_pos, self.transpose_k)
             _ = torch.ops.llama.update_cache(v_for_cache, self.v_cache, start_pos, self.transpose_v)
 
-        # Return both caches in [B, H, S, D] for Attention
-        k_out = self.k_cache if self.transpose_k else self.k_cache.transpose(1, 2)
-        v_out = self.v_cache if self.transpose_v else self.v_cache.transpose(1, 2)
-        return (k_out, v_out)
+        # Return caches in their native layout. The SDPA op handles
+        # mixed K/V layouts via separate seq dim parameters, avoiding
+        # expensive runtime transpose copies.
+        return (self.k_cache, self.v_cache)
+
+    @property
+    def is_seq_at_dim_2(self):
+        """Backward compat for quantized KV cache path."""
+        return self.transpose_k and self.transpose_v
 
 
 def replace_kv_cache_with_custom_kv_cache(module, transpose_k=False, transpose_v=False):
@@ -519,7 +524,6 @@ class QuantizedRingKVCache(QuantizedKVCache):
             kv_cache.cache_type,
             kv_cache.use_custom_update_cache_op,
             kv_cache.return_float_values,
-            kv_cache.is_seq_at_dim_2,
             is_seq_at_dim_2=kv_cache.is_seq_at_dim_2,
         )
 
@@ -532,11 +536,13 @@ class CustomRingKVCache(CustomKVCache):
         n_heads,
         head_dim,
         dtype=torch.float32,
-        is_seq_at_dim_2: bool = False,
+        transpose_k: bool = False,
+        transpose_v: bool = False,
     ):
         # Look at attention.py for explanation on why max_context_length * 2
         super().__init__(
-            max_batch_size, max_context_length * 2, n_heads, head_dim, dtype, is_seq_at_dim_2
+            max_batch_size, max_context_length * 2, n_heads, head_dim, dtype,
+            transpose_k=transpose_k, transpose_v=transpose_v,
         )
         self.cache_positions_manager = CachePositionsManager(self.max_context_length)
         self.is_ring_buffer = True
@@ -551,18 +557,10 @@ class CustomRingKVCache(CustomKVCache):
     def update(self, input_pos, k_val, v_val):
         """
         k_val, v_val: [B, H, S, D]
-        return: [B, H, S, D]
-        However the storage is [B, S, H, D] so we incur transpose in, transpose out
-        This shall be removed by subsequent post-export graph pass
+        Returns K/V caches in their native storage layout.
         """
-        # Need to transpose for two reasons
-        # 1. kv cache is stored as [B, S, H, D]
-        # 2. If seq_len = k_val.size(2), we wont be able be able to optimize
-        #    away transpose at the output of k, v projection
-        if not self.is_seq_at_dim_2:
-            seq_len = k_val.transpose(1, 2).size(1)
-        else:
-            seq_len = k_val.size(2)
+        # k_val is always [B, H, S, D] from Attention. Get seq_len from dim 2.
+        seq_len = k_val.size(2)
         assert seq_len <= self.k_cache.size(
             1
         ), f"Update sequence length({seq_len}) for kv cache must be smaller than the cache size({self.k_cache.size(2)})"
@@ -593,7 +591,8 @@ class CustomRingKVCache(CustomKVCache):
             n_heads,
             head_dim,
             dtype=kv_cache.k_cache.dtype,
-            is_seq_at_dim_2=kv_cache.is_seq_at_dim_2,
+            transpose_k=kv_cache.transpose_k,
+            transpose_v=kv_cache.transpose_v,
         )
 
 
