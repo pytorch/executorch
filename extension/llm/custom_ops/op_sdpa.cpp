@@ -360,16 +360,13 @@ Tensor& custom_sdpa_out_impl(
       output,
       "Invalid arguments");
 
-  int64_t seq_len = q.size(1);
   SeqDim seq_dim{SeqDim::TWO};
   if (!is_seq_at_dim_2) {
     seq_dim = SeqDim::ONE;
   }
+  int64_t seq_len = q.size(static_cast<int64_t>(seq_dim));
 
   if (q.scalar_type() == ScalarType::Char) {
-    if (seq_dim == SeqDim::TWO) {
-      seq_len = q.size(2);
-    }
     ET_KERNEL_CHECK_MSG(
         ctx,
         q_scales.has_value() && q_zero_points.has_value() &&
@@ -564,9 +561,26 @@ Tensor& custom_sdpa_out(
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
     const optional<double> scale,
+    const bool is_seq_dim_2,
     Tensor& output) {
   return custom_sdpa_out_impl(
-      ctx, q, k, v, start_pos, attn_mask, dropout_p, is_causal, scale, output);
+      ctx,
+      q,
+      k,
+      v,
+      start_pos,
+      attn_mask,
+      dropout_p,
+      is_causal,
+      scale,
+      output,
+      nullopt,
+      nullopt,
+      nullopt,
+      nullopt,
+      nullopt,
+      nullopt,
+      is_seq_dim_2);
 }
 /*
   Input params
@@ -621,6 +635,7 @@ Tensor& sdpa_with_kv_cache_out(
       dropout_p,
       is_causal,
       scale,
+      false, // is_seq_dim_2 - default to false for backward compatibility
       output);
 
   return output;

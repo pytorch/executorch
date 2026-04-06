@@ -42,6 +42,7 @@ Tensor& custom_sdpa_out(
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
     const optional<double> scale,
+    const bool is_seq_dim_2,
     Tensor& output);
 
 Tensor& flash_attention_kernel_out(
