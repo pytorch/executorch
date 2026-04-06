@@ -370,6 +370,14 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "device_copy_ops_registry",
+    srcs = ["_device_copy_ops_registry.py"],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "memory_format_ops_pass",
     srcs = [
         "memory_format_ops_pass.py",
