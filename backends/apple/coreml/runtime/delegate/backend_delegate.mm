@@ -19,7 +19,7 @@
 namespace  {
 using namespace executorchcoreml;
 
-MLComputeUnits get_compute_units(const Buffer& buffer) {
+std::optional<MLComputeUnits> get_compute_units(const Buffer& buffer) {
     std::string value(reinterpret_cast<const char *>(buffer.data()), buffer.size());
     if (value == std::string(ETCoreMLStrings.cpuComputeUnitName.UTF8String)) {
         return MLComputeUnitsCPUOnly;
@@ -27,22 +27,41 @@ MLComputeUnits get_compute_units(const Buffer& buffer) {
         return MLComputeUnitsCPUAndGPU;
     } else if (value == std::string(ETCoreMLStrings.cpuAndNeuralEngineComputeUnitsName.UTF8String)) {
         return MLComputeUnitsCPUAndNeuralEngine;
-    } else {
+    } else if (value == std::string(ETCoreMLStrings.allComputeUnitsName.UTF8String)) {
         return MLComputeUnitsAll;
+    } else {
+        return std::nullopt;
     }
 }
 
-MLModelConfiguration *get_model_configuration(const std::unordered_map<std::string, Buffer>& specs) {
+MLModelConfiguration * _Nullable get_model_configuration(const std::unordered_map<std::string, Buffer>& specs,
+                                                         NSError * __autoreleasing *error) {
     std::string compute_units_key(ETCoreMLStrings.computeUnitsKeyName.UTF8String);
     MLModelConfiguration *configuration = [[MLModelConfiguration alloc] init];
-    
+
     for (const auto& [key, buffer] : specs) {
         if (key == compute_units_key) {
-            configuration.computeUnits = get_compute_units(buffer);
+            auto compute_units = get_compute_units(buffer);
+            if (!compute_units.has_value()) {
+                std::string value(reinterpret_cast<const char *>(buffer.data()), buffer.size());
+                NSString *errorMessage = [NSString stringWithFormat:@"Invalid compute_unit value: '%s'. Valid values are: %@, %@, %@, %@",
+                    value.c_str(),
+                    ETCoreMLStrings.cpuComputeUnitName,
+                    ETCoreMLStrings.cpuAndGpuComputeUnitsName,
+                    ETCoreMLStrings.cpuAndNeuralEngineComputeUnitsName,
+                    ETCoreMLStrings.allComputeUnitsName];
+                if (error) {
+                    *error = [NSError errorWithDomain:ETCoreMLStrings.productIdentifier
+                                                 code:-1
+                                             userInfo:@{NSLocalizedDescriptionKey: errorMessage}];
+                }
+                return nil;
+            }
+            configuration.computeUnits = compute_units.value();
             break;
         }
     }
-    
+
     return configuration;
 }
 
@@ -112,7 +131,7 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
         _config = std::move(config);
         _syncQueue = dispatch_queue_create("com.executorchcoreml.modelmanagerdelegate.sync", DISPATCH_QUEUE_SERIAL_WITH_AUTORELEASE_POOL);
     }
-    
+
     return self;
 }
 
@@ -120,7 +139,7 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
     if (self.impl != nil) {
         return YES;
     }
-    
+
     ETCoreMLAssetManager *assetManager = create_asset_manager(ETCoreMLStrings.assetsDirectoryPath,
                                                               ETCoreMLStrings.trashDirectoryPath,
                                                               ETCoreMLStrings.databaseDirectoryPath,
@@ -130,14 +149,14 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
     if (!assetManager) {
         return NO;
     }
-    
+
     ETCoreMLModelManager *modelManager = [[ETCoreMLModelManager alloc] initWithAssetManager:assetManager];
     if (!modelManager) {
         return NO;
     }
-    
+
     self.impl = modelManager;
-    
+
     if (self.config.should_prewarm_asset) {
         [modelManager prewarmRecentlyUsedAssetsWithMaxCount:1];
     }
@@ -151,11 +170,11 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
     dispatch_sync(self.syncQueue, ^{
         result = [self _loadAndReturnError:&localError];
     });
-    
+
     if (error) {
         *error = localError;
     }
-    
+
     return result;
 }
 
@@ -183,7 +202,7 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
     if (![self loadAndReturnError:error]) {
         return nil;
     }
-    
+
     auto handle = [self.impl loadModelFromAOTData:data
                                     configuration:configuration
                                        methodName:methodName
@@ -223,7 +242,7 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
     if (![self loadAndReturnError:error]) {
         return NO;
     }
-    
+
     return [self.impl purgeModelsCacheAndReturnError:error];;
 }
 
@@ -231,7 +250,7 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
     if (![self loadAndReturnError:nil]) {
         return NO;
     }
-    
+
     return YES;
 }
 
@@ -267,20 +286,24 @@ public:
     {
         [model_manager_ loadAsynchronously];
     }
-    
+
     BackendDelegateImpl(BackendDelegateImpl const&) = delete;
     BackendDelegateImpl& operator=(BackendDelegateImpl const&) = delete;
-    
+
 Handle *init(Buffer processed,
                      const std::unordered_map<std::string, Buffer>& specs,
                      const char* method_name = nullptr,
                      const char* function_name = nullptr) const noexcept override {
         NSError *localError = nil;
-        MLModelConfiguration *configuration = get_model_configuration(specs);
-        
+        MLModelConfiguration *configuration = get_model_configuration(specs, &localError);
+        if (configuration == nil) {
+            ETCoreMLLogError(localError, "Invalid model configuration");
+            return nullptr;
+        }
+
         NSString *methodNameStr = method_name ? @(method_name) : nil;
         NSString *functionNameStr = function_name ? @(function_name) : nil;
-        
+
         NSData *data = [NSData dataWithBytesNoCopy:const_cast<void *>(processed.data())
                                             length:processed.size()
                                       freeWhenDone:NO];
@@ -294,7 +317,7 @@ Handle *init(Buffer processed,
         }
         return modelHandle;
     }
-    
+
     bool execute(Handle* handle,
                  std::vector<MultiArray>& args,
                  const ModelLoggingOptions& logging_options,
@@ -309,36 +332,36 @@ Handle *init(Buffer processed,
             if (localError != nil) {
                 ETCoreMLLogError(localError, "Model execution failed");
                 ec = static_cast<ErrorCode>(localError.code);
-            }                                    
+            }
             return false;
         }
-        
+
         return true;
     }
-    
+
     bool is_valid_handle(Handle* handle) const noexcept override {
         return [model_manager_ modelWithHandle:handle] != nil;
     }
-    
+
     bool is_available() const noexcept override {
         return static_cast<bool>(model_manager_.isAvailable);
     }
-    
+
     std::pair<size_t, size_t> get_num_arguments(Handle* handle) const noexcept override {
         ETCoreMLModel *model = [model_manager_ modelWithHandle:handle];
         return {model.orderedInputNames.count, model.orderedOutputNames.count};
     }
-    
+
     void destroy(Handle* handle) const noexcept override {
         [model_manager_ unloadModelWithHandle:handle];
     }
-    
+
     bool purge_models_cache() const noexcept override {
         NSError *localError = nil;
         bool result = static_cast<bool>([model_manager_ purgeModelsCacheAndReturnError:&localError]);
         return result;
     }
-    
+
     ETCoreMLModelManagerDelegate *model_manager_;
     Config config_;
 };

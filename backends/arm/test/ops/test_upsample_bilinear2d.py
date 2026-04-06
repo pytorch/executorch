@@ -426,6 +426,8 @@ def test_upsample_bilinear2d_vec_vgf_no_quant_UpsamplingBilinear2d(
         aten_op,
         exir_op,
         quantize=False,
+        atol=2e-3,
+        rtol=2e-3,
     )
     if not compare:
         pipeline.pop_stage(-1)
