@@ -212,12 +212,27 @@ class TestQNN(unittest.TestCase):
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
         for i in range(len(ref_output)):
-            self.assertTrue(
-                torch.allclose(
-                    model_output[i], ref_output[i], atol=self.atol, rtol=self.rtol
-                ),
-                msg=f"ref_output:\n{ref_output[i]}\n\nmodel_output:\n{model_output[i]}",
-            )
+            if model_output[i].dtype == torch.bool or ref_output[i].dtype == torch.bool:
+                model_bool = model_output[i].to(torch.bool)
+                ref_bool = ref_output[i].to(torch.bool)
+                model_bool, ref_bool = torch.broadcast_tensors(model_bool, ref_bool)
+                self.assertTrue(
+                    torch.equal(model_bool, ref_bool),
+                    msg=f"Output {i} does not match reference output.\n"
+                    f"\tOutput tensor shape: {model_output[i].shape}, dtype: {model_output[i].dtype}\n"
+                    f"\tReference tensor shape: {ref_output[i].shape}, dtype: {ref_output[i].dtype}\n"
+                    f"\tMismatch count: {torch.count_nonzero(model_bool ^ ref_bool).item()} / {model_bool.numel()}\n",
+                )
+            else:
+                self.assertTrue(
+                    torch.allclose(
+                        model_output[i],
+                        ref_output[i],
+                        atol=self.atol,
+                        rtol=self.rtol,
+                    ),
+                    msg=f"ref_output:\n{ref_output[i]}\n\nmodel_output:\n{model_output[i]}",
+                )
 
     def _save_model_and_expected_output(
         self,

@@ -4,8 +4,9 @@
 # LICENSE file in the root directory of this source tree.
 
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 import torch
 from executorch.backends.arm.test.common import get_u55_compile_spec
@@ -84,6 +85,7 @@ class CortexMTester(TesterBase):
         ops_before_transforms,
         ops_after_transforms,
         qtol=0,
+        atol=1e-03,
         calibration_samples=None,
     ):
         """
@@ -102,9 +104,11 @@ class CortexMTester(TesterBase):
         self.check_count(ops_before_transforms)
         self.run_passes()
         self.check_count(ops_after_transforms)
-        self.run_method_and_compare_outputs(inputs=self.example_inputs, qtol=qtol)
+        self.run_method_and_compare_outputs(
+            inputs=self.example_inputs, qtol=qtol, atol=atol
+        )
 
-    def test_implementation(self, qtol=0, calibration_samples=None):
+    def test_implementation(self, qtol=0, atol=1e-03, calibration_samples=None):
         """
         Test the optimized op implementation in simulation
         """
@@ -122,7 +126,9 @@ class CortexMTester(TesterBase):
         self.run_passes()
         self.to_executorch()
         self.serialize()
-        self.run_method_and_compare_outputs(inputs=self.example_inputs, qtol=qtol)
+        self.run_method_and_compare_outputs(
+            inputs=self.example_inputs, qtol=qtol, atol=atol
+        )
 
 
 @dataclass
