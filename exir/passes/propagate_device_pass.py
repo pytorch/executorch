@@ -46,9 +46,7 @@ def _parse_device_spec_value(value: bytes) -> tuple[schema.DeviceType, int]:
     )
     if device_type is None:
         valid = ", ".join(dt.name for dt in schema.DeviceType)
-        raise ValueError(
-            f"Unknown device type '{type_str}'. Valid types: {valid}"
-        )
+        raise ValueError(f"Unknown device type '{type_str}'. Valid types: {valid}")
     return device_type, device_index
 
 

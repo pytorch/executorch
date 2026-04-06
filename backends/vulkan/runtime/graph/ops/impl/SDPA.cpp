@@ -15,7 +15,6 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/RepeatInterleave.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Slice.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Softmax.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Transpose.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
 
