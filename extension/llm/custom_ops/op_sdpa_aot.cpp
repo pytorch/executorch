@@ -63,6 +63,8 @@ Tensor& custom_sdpa_out_no_context(
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
     const optional<double> scale,
     const bool is_seq_dim_2,
+    const bool is_k_seq_dim_2,
+    const bool is_v_seq_dim_2,
     Tensor& output);
 
 at::Tensor custom_sdpa_aten(
@@ -77,7 +79,9 @@ at::Tensor custom_sdpa_aten(
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
     const std::optional<double> scale,
-    const bool is_seq_dim_2);
+    const bool is_seq_dim_2,
+    const bool is_k_seq_dim_2,
+    const bool is_v_seq_dim_2);
 
 Tensor& custom_quantized_sdpa_out_no_context(
     const Tensor& q,
@@ -232,6 +236,8 @@ Tensor& custom_sdpa_out_no_context(
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
     const optional<double> scale,
     const bool is_seq_dim_2,
+    const bool is_k_seq_dim_2,
+    const bool is_v_seq_dim_2,
     Tensor& output) {
   executorch::aten::RuntimeContext context{};
   return torch::executor::native::custom_sdpa_out(
@@ -245,6 +251,8 @@ Tensor& custom_sdpa_out_no_context(
       is_causal,
       scale,
       is_seq_dim_2,
+      is_k_seq_dim_2,
+      is_v_seq_dim_2,
       output);
 }
 
@@ -260,12 +268,14 @@ at::Tensor custom_sdpa_aten(
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
     const std::optional<double> scale,
-    const bool is_seq_dim_2) {
+    const bool is_seq_dim_2,
+    const bool is_k_seq_dim_2,
+    const bool is_v_seq_dim_2) {
   auto q_projected = q.contiguous();
   auto k_projected = k.contiguous();
   auto v_projected = v.contiguous();
   auto output = at::empty_like(q_projected);
-  WRAP_TO_ATEN(custom_sdpa_out_no_context, 9)
+  WRAP_TO_ATEN(custom_sdpa_out_no_context, 11)
   (q_projected,
    k_projected,
    v_projected,
@@ -275,6 +285,8 @@ at::Tensor custom_sdpa_aten(
    is_causal,
    scale,
    is_seq_dim_2,
+   is_k_seq_dim_2,
+   is_v_seq_dim_2,
    output);
   return output;
 }
@@ -426,11 +438,14 @@ TORCH_LIBRARY_FRAGMENT(llama, m) {
   m.def(
       "custom_sdpa(Tensor query, Tensor key, Tensor value, SymInt start_pos, "
       "Tensor? attn_mask=None, float drpout_p=0.0, bool is_causal=False, "
-      "float? scale=None, bool is_seq_dim_2=False) -> Tensor");
+      "float? scale=None, bool is_seq_dim_2=False, "
+      "bool is_k_seq_dim_2=False, bool is_v_seq_dim_2=False) -> Tensor");
   m.def(
       "custom_sdpa.out(Tensor query, Tensor key, Tensor value, SymInt start_pos, "
       "Tensor? attn_mask=None, float drpout_p=0.0, bool is_causal=False, "
-      "float? scale=None, bool is_seq_dim_2=False, *, Tensor(a!) out) -> Tensor(a!)");
+      "float? scale=None, bool is_seq_dim_2=False, "
+      "bool is_k_seq_dim_2=False, bool is_v_seq_dim_2=False, "
+      "*, Tensor(a!) out) -> Tensor(a!)");
   m.def(
       "update_cache(Tensor value, Tensor(a!) cache, "
       "SymInt start_pos, bool is_seq_dim_2=False) -> Tensor");
@@ -468,7 +483,7 @@ TORCH_LIBRARY_IMPL(llama, CompositeExplicitAutograd, m) {
   m.impl("custom_sdpa", torch::executor::native::custom_sdpa_aten);
   m.impl(
       "custom_sdpa.out",
-      WRAP_TO_ATEN(torch::executor::native::custom_sdpa_out_no_context, 9));
+      WRAP_TO_ATEN(torch::executor::native::custom_sdpa_out_no_context, 11));
   m.impl("update_cache", torch::executor::native::update_cache_aten);
   m.impl(
       "update_cache.out",

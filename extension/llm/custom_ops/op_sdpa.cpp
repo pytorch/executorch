@@ -345,7 +345,9 @@ Tensor& custom_sdpa_out_impl(
     const optional<Tensor>& k_scales = nullopt,
     const optional<Tensor>& v_zero_points = nullopt,
     const optional<Tensor>& v_scales = nullopt,
-    bool is_seq_at_dim_2 = false) {
+    bool is_seq_at_dim_2 = false,
+    bool is_k_seq_at_dim_2 = false,
+    bool is_v_seq_at_dim_2 = false) {
   ET_KERNEL_CHECK_MSG(
       ctx,
       !attn_mask.has_value() || !is_causal,
@@ -360,11 +362,10 @@ Tensor& custom_sdpa_out_impl(
       output,
       "Invalid arguments");
 
-  SeqDim seq_dim{SeqDim::TWO};
-  if (!is_seq_at_dim_2) {
-    seq_dim = SeqDim::ONE;
-  }
-  int64_t seq_len = q.size(static_cast<int64_t>(seq_dim));
+  SeqDim q_seq_dim = is_seq_at_dim_2 ? SeqDim::TWO : SeqDim::ONE;
+  SeqDim k_seq_dim = is_k_seq_at_dim_2 ? SeqDim::TWO : SeqDim::ONE;
+  SeqDim v_seq_dim = is_v_seq_at_dim_2 ? SeqDim::TWO : SeqDim::ONE;
+  int64_t seq_len = q.size(static_cast<int64_t>(q_seq_dim));
 
   if (q.scalar_type() == ScalarType::Char) {
     ET_KERNEL_CHECK_MSG(
@@ -447,7 +448,9 @@ Tensor& custom_sdpa_out_impl(
               k_scales,
               v_zero_points,
               v_scales,
-              seq_dim,
+              q_seq_dim,
+              k_seq_dim,
+              v_seq_dim,
               start_pos,
               num_keys_for_causal_attention);
         } else if (seq_len >= 192) {
@@ -467,7 +470,9 @@ Tensor& custom_sdpa_out_impl(
               k_scales,
               v_zero_points,
               v_scales,
-              seq_dim,
+              q_seq_dim,
+              k_seq_dim,
+              v_seq_dim,
               start_pos,
               num_keys_for_causal_attention);
         } else {
@@ -487,7 +492,9 @@ Tensor& custom_sdpa_out_impl(
               k_scales,
               v_zero_points,
               v_scales,
-              seq_dim,
+              q_seq_dim,
+              k_seq_dim,
+              v_seq_dim,
               start_pos,
               num_keys_for_causal_attention);
         }
@@ -532,6 +539,8 @@ Tensor& custom_quantized_sdpa_out(
       k_scales,
       v_zero_points,
       v_scales,
+      is_seq_at_dim_2,
+      is_seq_at_dim_2,
       is_seq_at_dim_2);
 }
 
@@ -562,6 +571,8 @@ Tensor& custom_sdpa_out(
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
     const optional<double> scale,
     const bool is_seq_dim_2,
+    const bool is_k_seq_dim_2,
+    const bool is_v_seq_dim_2,
     Tensor& output) {
   return custom_sdpa_out_impl(
       ctx,
@@ -580,7 +591,9 @@ Tensor& custom_sdpa_out(
       nullopt,
       nullopt,
       nullopt,
-      is_seq_dim_2);
+      is_seq_dim_2,
+      is_k_seq_dim_2,
+      is_v_seq_dim_2);
 }
 /*
   Input params
@@ -635,7 +648,9 @@ Tensor& sdpa_with_kv_cache_out(
       dropout_p,
       is_causal,
       scale,
-      false, // is_seq_dim_2 - default to false for backward compatibility
+      false, // is_seq_dim_2
+      false, // is_k_seq_dim_2
+      false, // is_v_seq_dim_2
       output);
 
   return output;
