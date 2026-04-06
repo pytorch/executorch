@@ -30,9 +30,8 @@ class CudaAllocator final : public executorch::runtime::DeviceAllocator {
       size_t nbytes,
       executorch::runtime::etensor::DeviceIndex index) override;
 
-  void deallocate(
-      void* ptr,
-      executorch::runtime::etensor::DeviceIndex index) override;
+  void deallocate(void* ptr, executorch::runtime::etensor::DeviceIndex index)
+      override;
 
   executorch::runtime::Error copy_host_to_device(
       void* dst,

@@ -250,7 +250,8 @@ TEST_F(MethodMetaTest, MethodMetaBufferDeviceReturnsCudaForDeviceBuffer) {
   // ModuleAddWithDevice exports with enable_non_cpu_memory_planning=True.
   // The model delegates add(a,b) to CUDA, producing:
   //   non_const_buffer_sizes: [0, 48]  (index 0 reserved)
-  //   non_const_buffer_device: [{buffer_idx=1, device_type=CUDA, device_index=0}]
+  //   non_const_buffer_device: [{buffer_idx=1, device_type=CUDA,
+  //   device_index=0}]
   // So there is exactly 1 planned buffer (user-facing index 0), on CUDA.
   ASSERT_EQ(method_meta->num_memory_planned_buffers(), 1);
 

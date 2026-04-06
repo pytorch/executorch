@@ -121,9 +121,9 @@ class EthosUCompileSpec(ArmCompileSpec):
         self._set_compile_specs(tosa_spec, compiler_flags)
         self._validate()
 
-    def to_list(self):
+    def _to_list(self):
         """Return compile specs including the encoded Ethos-U target."""
-        compile_specs = super().to_list()
+        compile_specs = super()._to_list()
         compile_specs.append(CompileSpec(self._TARGET_KEY, self.target.encode()))
         return compile_specs
 

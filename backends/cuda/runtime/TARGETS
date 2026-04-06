@@ -113,6 +113,7 @@ runtime.cxx_library(
     preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
     visibility = ["PUBLIC"],
     deps = [
+        ":cuda_platform",
         ":runtime_shims",
         ":cuda_allocator",
         ":cuda_platform",
