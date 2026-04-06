@@ -242,9 +242,8 @@ def get_args_and_kwargs_cat(
     inputs_inputs: List[fx.Node], other_inputs: List[fx.Node], op_node: fx.Node
 ) -> Tuple[Tuple[ArgsType], Dict[str, ArgsType]]:
     args = tuple([inputs_inputs] + other_inputs)
-    dim = op_node.args[1] if len(op_node.args) > 1 else 0
-    # pyre-fixme[6]: Incompatible parameter type
-    kwargs = {"dim": int(dim)}
+    dim = get_arg(op_node, "dim", int)
+    kwargs = {"dim": dim}
     return args, kwargs
 
 
@@ -402,7 +401,7 @@ def get_args_and_kwargs_softmax(
     args = (
         inputs_inputs[0],
         mask_tensor,
-        op_node.args[1],
+        get_arg(op_node, "dim", int),
         mask_type,
         pos_tensor,
         in_scale,
@@ -425,14 +424,10 @@ def get_args_and_kwargs_mixed_w8a32_conv(
     op_node: fx.Node,
 ) -> Tuple[Tuple[ArgsType, ...], Dict[str, ArgsType]]:
     # Stride, padding, dilation, groups not supported yet
-    if len(op_node.args) > 3:
-        assert op_node.args[3] == [1]  # Stride
-    if len(op_node.args) > 4:
-        assert op_node.args[4] == [0]  # Padding
-    if len(op_node.args) > 5:
-        assert op_node.args[5] == [1]  # Dilation
-    if len(op_node.args) > 6:
-        assert op_node.args[6] == 1  # Groups
+    assert get_arg(op_node, "stride", list[int]) == [1]  # Stride
+    assert get_arg(op_node, "padding", list[int]) == [0]  # Padding
+    assert get_arg(op_node, "dilation", list[int]) == [1]  # Dilation
+    assert get_arg(op_node, "groups", int) == 1  # Groups
 
     assert len(dequants_weights) == 1
     assert len(dequants_biases) == 1
