@@ -75,6 +75,24 @@ def define_common_targets():
         ],
     )
 
+    # Device copy ops (h2d_copy, d2h_copy) for transferring data between
+    # CPU and device memory. Uses DeviceAllocator interface.
+    runtime.cxx_library(
+        name = "op__device_copy",
+        srcs = ["op__device_copy.cpp"],
+        visibility = ["PUBLIC"],
+        # Constructor needed for op registration.
+        compiler_flags = ["-Wno-global-constructors"],
+        deps = [
+            "//executorch/runtime/core:device_allocator",
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/extension/kernel_util:kernel_util",
+        ],
+        # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
+        link_whole = True,
+    )
+
     # Used for dtype selective build. Collect source and header files.
     runtime.filegroup(
         name = "portable_source_files",
