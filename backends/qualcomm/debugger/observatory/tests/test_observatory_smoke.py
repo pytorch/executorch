@@ -18,6 +18,16 @@ class _SmokeModel(torch.nn.Module):
         return self.fc(x)
 
 
+def _build_report_payload_for_tests():
+    Observatory._ensure_default_lenses()
+    return Observatory._generate_report_payload(
+        list(Observatory._records.values()),
+        Observatory._session_result,
+        {},
+        Observatory._lens_registry,
+    )
+
+
 def test_observatory_collect_and_export_html(tmp_path) -> None:
     Observatory.clear()
 
@@ -32,5 +42,37 @@ def test_observatory_collect_and_export_html(tmp_path) -> None:
 
     assert out.exists()
     assert out.stat().st_size > 0
+
+    Observatory.clear()
+
+
+def test_observatory_merges_analyze_only_graph_layers_and_defaults() -> None:
+    Observatory.clear()
+
+    model = _SmokeModel().eval()
+    graph_module = torch.fx.symbolic_trace(model)
+
+    with Observatory.enable_context():
+        Observatory.collect("smoke", graph_module)
+
+    payload = _build_report_payload_for_tests()
+    assert "smoke" in payload["graph_assets"]
+
+    graph_layers = payload["graph_layers"].get("smoke", {})
+    assert "graph_color/op_type" in graph_layers
+    assert "graph_color/op_target" in graph_layers
+
+    records = payload["records"]
+    assert len(records) == 1
+    graph_record = records[0]["views"]["graph"]["blocks"][0]["record"]
+
+    default_layers = graph_record["default_layers"]
+    default_color_by = graph_record["default_color_by"]
+
+    assert default_layers == ["graph_color/op_type", "graph_color/op_target"]
+    assert default_color_by == "graph_color/op_type"
+    for layer_id in default_layers:
+        assert layer_id in graph_layers
+    assert default_color_by in graph_layers
 
     Observatory.clear()

@@ -80,8 +80,8 @@ class GraphLens(Lens):
                 id="graph_main",
                 title="Graph",
                 graph_ref=str(digest.get("graph_ref", "")),
-                default_layers=["op_type", "op_target"],
-                default_color_by="op_type",
+                default_layers=["graph_color/op_type", "graph_color/op_target"],
+                default_color_by="graph_color/op_type",
                 order=10,
             )
             return ViewList(blocks=[view.as_block()])
