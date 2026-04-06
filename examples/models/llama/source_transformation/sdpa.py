@@ -28,6 +28,8 @@ class SDPACustom(torch.nn.Module):
         super().__init__()
         self.dim = dim
         self.use_attention_mask = use_attention_mask
+        # When True, Q/K/V are in [B, H, S, D] and custom_sdpa uses seq_dim=2.
+        # When False, they are transposed to [B, S, H, D] and custom_sdpa uses seq_dim=1.
         self.is_seq_at_dim_2 = is_seq_at_dim_2
 
     def forward(
@@ -40,13 +42,13 @@ class SDPACustom(torch.nn.Module):
         seqlen,
         mask,
     ):
+        # Q, K, V arrive in [B, H, S, D] from Attention.
+        # If is_seq_at_dim_2=False, transpose to [B, S, H, D] for the op.
         if not self.is_seq_at_dim_2:
-            q = q.transpose(1, 2)  # (bs, seqlen, n_local_heads, head_dim)
+            q = q.transpose(1, 2)
             k = k.transpose(1, 2)
             v = v.transpose(1, 2)
 
-        # Custom op only supports float32 currently. Converting to/from float32 is
-        # faster than not having the op.
         input_dtype = q.dtype
         q = q.to(dtype=torch.float)
         k = k.to(dtype=torch.float)
@@ -58,9 +60,9 @@ class SDPACustom(torch.nn.Module):
                 k,
                 v,
                 input_pos[0].item(),
-                mask,  # Attention mask
-                0,  # dropout probability. Ignored by the code
-                False,  # is_causal
+                mask,
+                0,
+                False,
                 scale=None,
                 is_seq_dim_2=self.is_seq_at_dim_2,
             )
@@ -70,9 +72,9 @@ class SDPACustom(torch.nn.Module):
                 k,
                 v,
                 input_pos[0].item(),
-                None,  # Attention mask
-                0,  # dropout probability. Ignored by the code
-                True,  # is_causal
+                None,
+                0,
+                True,
                 scale=None,
                 is_seq_dim_2=self.is_seq_at_dim_2,
             )
