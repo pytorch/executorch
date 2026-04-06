@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -73,13 +74,18 @@ cortex_m_stage_classes = {
 
 class CortexMTester(TesterBase):
     def __init__(self, module, example_inputs):
-        super().__init__(module, example_inputs, cortex_m_stage_classes)
+        if callable(example_inputs):
+            resolved_example_inputs = example_inputs()
+        else:
+            resolved_example_inputs = example_inputs
+        super().__init__(module, resolved_example_inputs, cortex_m_stage_classes)
 
     def test_dialect(
         self,
         ops_before_transforms,
         ops_after_transforms,
         qtol=0,
+        atol=1e-03,
         calibration_samples=None,
     ):
         """
@@ -98,9 +104,11 @@ class CortexMTester(TesterBase):
         self.check_count(ops_before_transforms)
         self.run_passes()
         self.check_count(ops_after_transforms)
-        self.run_method_and_compare_outputs(inputs=self.example_inputs, qtol=qtol)
+        self.run_method_and_compare_outputs(
+            inputs=self.example_inputs, qtol=qtol, atol=atol
+        )
 
-    def test_implementation(self, qtol=0, calibration_samples=None):
+    def test_implementation(self, qtol=0, atol=1e-03, calibration_samples=None):
         """
         Test the optimized op implementation in simulation
         """
@@ -118,16 +126,22 @@ class CortexMTester(TesterBase):
         self.run_passes()
         self.to_executorch()
         self.serialize()
-        self.run_method_and_compare_outputs(inputs=self.example_inputs, qtol=qtol)
+        self.run_method_and_compare_outputs(
+            inputs=self.example_inputs, qtol=qtol, atol=atol
+        )
 
 
 @dataclass
 class McuTestCase:
     model: torch.nn.Module
-    example_inputs: tuple[Any, ...]
+    example_inputs: tuple[Any, ...] | Callable[[], tuple[Any, ...]]
+
+    def get_example_inputs(self) -> tuple[Any, ...]:
+        if callable(self.example_inputs):
+            return self.example_inputs()
+        return self.example_inputs
 
 
-def ramp_tensor(start: int, end: int, shape: tuple[int, ...]) -> torch.Tensor:
-    return torch.linspace(start, end, steps=torch.prod(torch.tensor(shape))).reshape(
-        shape
-    )
+def ramp_tensor(start: float, end: float, shape: tuple[int, ...]) -> torch.Tensor:
+    steps = int(torch.prod(torch.tensor(shape)).item())
+    return torch.linspace(start, end, steps=steps).reshape(shape)
