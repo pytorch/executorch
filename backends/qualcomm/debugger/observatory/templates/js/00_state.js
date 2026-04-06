@@ -4,7 +4,7 @@
   OBS.state = {
     data: window.OBSERVATORY_DATA || {},
     activeRecordIndex: -1,
-    theme: localStorage.getItem('graphCollectorTheme') || 'light',
+    theme: localStorage.getItem('graphCollectorTheme') || 'dark',
     viewPrefs: JSON.parse(localStorage.getItem('graphCollectorViewPrefs') || '{}'),
     selectionMode: false,
     selectedIndices: new Set(),

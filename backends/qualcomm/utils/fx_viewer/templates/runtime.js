@@ -26,7 +26,7 @@ const THEMES = {
         nodeFill: '#66ccee',
         nodeInput: '#75dcfe',
         nodeOutput: '#75dcfe',
-        nodeSelected: '#ffeb3b',
+        nodeSelected: '#fbc02d ',
         edgeNormal: '#333333',
         edgeInput: '#ff9800',
         edgeOutput: '#ff9800',
