@@ -40,7 +40,7 @@ add_subdirectory(
 )
 
 set(runner_deps executorch_core extension_module extension_tensor
-                extension_llm_sampler tokenizers::tokenizers
+                extension_llm_sampler extension_memory_allocator tokenizers::tokenizers
 )
 
 # depend on arange_utils
