@@ -6,8 +6,6 @@
 
 from typing import Tuple
 
-import pytest
-
 import torch
 from executorch.backends.arm._passes import (
     ConvertInt64ConstOpsToInt32Pass,
@@ -41,20 +39,17 @@ class TestCLIPTextModelWithProjection:
     ops_after_partitioner_FP = {
         "executorch_exir_dialects_edge__ops_aten_argmax_default": 1,
         "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 2,
-        "torch.ops.higher_order.executorch_call_delegate": 1,
+        "torch.ops.higher_order.executorch_call_delegate": 2,
     }
 
     ops_after_partitioner_INT = {
         "executorch_exir_dialects_edge__ops_aten_argmax_default": 1,
         "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 2,
+        "torch.ops.higher_order.executorch_call_delegate": 1,
     }
 
-    ops_after_partitioner_vgf_quantize = ops_after_partitioner_FP
-    ops_after_partitioner_vgf_no_quantize = {
-        "executorch_exir_dialects_edge__ops_aten_argmax_default": 1,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 2,
-        "torch.ops.higher_order.executorch_call_delegate": 2,
-    }
+    ops_after_partitioner_vgf_quantize = ops_after_partitioner_INT
+    ops_after_partitioner_vgf_no_quantize = ops_after_partitioner_FP
 
     def _prepare_inputs(
         self,
@@ -80,9 +75,6 @@ class TestCLIPTextModelWithProjection:
         return text_encoder_model, text_encoder_model_inputs
 
 
-@pytest.mark.xfail(
-    reason="MLETORCH-1601: Delegate output order mismatch from TOSA reference model."
-)
 def test_clip_text_with_projection_tosa_FP():
     text_encoder_model, text_encoder_model_inputs = (
         TestCLIPTextModelWithProjection().prepare_model_and_inputs()

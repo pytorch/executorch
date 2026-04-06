@@ -38,8 +38,9 @@ void main() {
 
   VEC4_T outtex = VEC4_T(fill_value);
 
-  TensorIndex4D tidx = texture_pos_to_tensor4d_idx_simple(outp, pos);
-  const int packed_dim_size = outp.sizes[packed_dim];
+  TensorIndex4D tidx =
+      texture_pos_to_tensor4d_idx_simple(outp, pos, out_layout);
+  const int packed_dim_size = safe_idx(outp.sizes, packed_dim);
   int packed_idx = tidx.data[packed_dim];
 
   if (packed_idx + 3 >= packed_dim_size) {

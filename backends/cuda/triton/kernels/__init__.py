@@ -22,3 +22,10 @@ try:
     __all__.append("chunk_gated_delta_rule")
 except ImportError:
     pass
+
+try:
+    from executorch.backends.cuda.triton.kernels.tq4_sdpa import tq4_sdpa  # noqa: F401
+
+    __all__.append("tq4_sdpa")
+except ImportError:
+    pass
