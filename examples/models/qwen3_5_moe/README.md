@@ -48,6 +48,42 @@ python export.py \
 | `--qlinear` | (none) | Linear layer quantization: `4w`, `8w`, `8da4w`, `8da8w` |
 | `--qlinear-group-size` | `32` | Group size for linear quantization |
 | `--qembedding` | (none) | Embedding quantization: `8w` |
+| `--hqq` | off | Use HQQ scale-only optimization for expert quantization (slower, better accuracy) |
+| `--prequantized` | (none) | Path to prequantized bundle directory (skips quantization) |
+| `--turboquant` | off | Enable TurboQuant TQ4 KV cache compression (3.8x cache savings) |
+
+### TurboQuant KV Cache Compression
+
+The `--turboquant` flag enables [TurboQuant](https://arxiv.org/abs/2504.19874)
+KV cache compression (3.8x savings) on the 10 full-attention layers.
+
+```bash
+python export.py --prequantized qwen35_moe_int4_hqq --turboquant
+```
+
+### Prequantized Export
+
+Quantization is slow (~30 min with HQQ). To avoid re-quantizing on every
+export, use `quantize_and_save.py` to create a self-contained bundle, then
+export from it:
+
+```bash
+# Step 1: Quantize once (slow)
+python quantize_and_save.py \
+    --model-dir ~/models/Qwen3.5-35B-A3B \
+    --qlinear 4w \
+    --qembedding 8w \
+    --qlinear-group-size 128 \
+    --hqq \
+    --output qwen35_moe_int4_hqq
+
+# Step 2: Export from bundle (fast, no --model-dir needed)
+python export.py \
+    --prequantized qwen35_moe_int4_hqq
+```
+
+The bundle contains `model.safetensors`, `config.json`, and tokenizer files.
+It can be uploaded to HuggingFace Hub for easy sharing.
 
 ## Build
 

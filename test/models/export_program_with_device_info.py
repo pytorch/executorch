@@ -104,35 +104,6 @@ def main() -> None:
     os.makedirs(args.outdir, exist_ok=True)
     outfile = os.path.join(args.outdir, "ModuleAddWithDevice.pte")
 
-    # Verify device annotations are present in the serialized program
-    from executorch.exir.schema import DeviceType, Tensor as SchemaTensor
-
-    program = et_prog._emitter_output.program
-    plan = program.execution_plan[0]
-    print(f"Delegates: {len(plan.delegates)}")
-    cuda_count = 0
-    for i, v in enumerate(plan.values):
-        if isinstance(v.val, SchemaTensor):
-            t = v.val
-            eti = t.extra_tensor_info
-            dev = eti.device_type if eti else "no_eti"
-            print(f"  Tensor[{i}]: sizes={list(t.sizes)}, device={dev}")
-            if eti and eti.device_type == DeviceType.CUDA:
-                cuda_count += 1
-    print(f"CUDA tensors: {cuda_count}")
-
-    # Also check graph module specs
-    from executorch.exir.delegate import executorch_call_delegate
-    from executorch.exir.tensor import TensorSpec
-
-    gm = et_prog.exported_program().graph_module
-    for node in gm.graph.nodes:
-        if node.op == "call_function" and node.target == executorch_call_delegate:
-            specs = node.meta.get("spec")
-            print(
-                f"  Delegate node '{node.name}' spec.device = {specs.device if isinstance(specs, TensorSpec) else [s.device for s in specs if isinstance(s, TensorSpec)]}"
-            )
-
     with open(outfile, "wb") as fp:
         fp.write(et_prog.buffer)
     print(f"Exported ModuleAddWithDevice to {outfile}")
