@@ -134,6 +134,12 @@ fbcode_target(_kind = runtime.python_binary,
     ],
 )
 
+fbcode_target(_kind = runtime.python_binary,
+    name = "run_bench_on_device",
+    srcs = ["run_bench_on_device.py"],
+    main_function = "executorch.extension.llm.custom_ops.run_bench_on_device.main",
+)
+
 fbcode_target(_kind = cpp_benchmark,
     name = "bench_sdpa",
     srcs = ["bench_sdpa.cpp"],
