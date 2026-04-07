@@ -48,11 +48,38 @@ class COMPILE_SPEC_KEYS(Enum):
 
 
 class MULTIMETHOD_WEIGHT_SHARING_STRATEGY(Enum):
-    # Methods are processed independently with no weight sharing.
+    """Strategy for sharing weights across methods in multi-method models.
+
+    When exporting a model with multiple methods (e.g., prefill and decode),
+    these strategies control how CoreML models are organized and how weights
+    are shared. Different strategies have different tradeoffs — experiment
+    with them to find the best fit for your use case.
+
+    DISABLED:
+        Each method is compiled into its own independent CoreML model.
+        No weight sharing occurs; weights are duplicated across methods.
+        Simplest strategy with no constraints on model structure.
+
+    POSITIONAL:
+        Partitions are aligned by index across methods. Partition 0 from
+        all methods are combined into one multifunction CoreML model,
+        partition 1 into another, and so on. This enables weight sharing
+        for parameters that appear at the same partition index. Requires
+        all methods to have the same number of partitions.
+
+    ONE_BLOB:
+        All partitions from all methods are packed into a single
+        multifunction CoreML model. This maximizes weight sharing
+        opportunities (any parameter can be shared across any method)
+        and does not require partition counts to match. However, it may
+        result in longer compile times and higher peak memory since the
+        entire model — including any method-specific (non-shared) weights
+        — lives in a single blob.
+    """
+
     DISABLED = "disabled"
-    # Partitions must align positionally across methods; enables weight sharing
-    # via NamedDataStore. Raises an error if partition counts don't match.
     POSITIONAL = "positional"
+    ONE_BLOB = "one_blob"
 
 
 class MODEL_PATHS(Enum):
@@ -284,6 +311,8 @@ class CoreMLBackend(BackendDetails):
             strategy: The weight sharing strategy to use when combining methods.
                 POSITIONAL: Partitions must align positionally across methods; enables
                     weight sharing via NamedDataStore. Raises error if partitions don't align.
+                ONE_BLOB: All partitions from all methods are combined into a single
+                    multifunction model. No partition count alignment required.
                 DISABLED: Methods are processed independently with no weight sharing.
         """
         return CompileSpec(
@@ -297,7 +326,7 @@ class CoreMLBackend(BackendDetails):
     ) -> "MULTIMETHOD_WEIGHT_SHARING_STRATEGY":
         """
         Returns the multimethod weight sharing strategy by parsing the list of compile specs.
-        Defaults to POSITIONAL if not specified.
+        Defaults to DISABLED if not specified.
         """
         for compile_spec in compile_specs:
             if (
@@ -308,7 +337,7 @@ class CoreMLBackend(BackendDetails):
                     compile_spec.value.decode("utf-8")
                 )
 
-        return MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL
+        return MULTIMETHOD_WEIGHT_SHARING_STRATEGY.DISABLED
 
     @staticmethod
     def generate_enumerated_shapes_compile_spec(
@@ -739,19 +768,10 @@ class CoreMLBackend(BackendDetails):
             )
             return super().preprocess_multimethod(edge_programs, compile_specs)
 
-        assert weight_sharing_strategy == MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL
-
-        # POSITIONAL strategy: verify all methods have the same number of partitions
-        num_partitions = len(edge_programs[first_method])
-        for method_name, programs in edge_programs.items():
-            if len(programs) != num_partitions:
-                raise ValueError(
-                    f"Method '{method_name}' has {len(programs)} partitions, but "
-                    f"'{first_method}' has {num_partitions}. POSITIONAL weight sharing "
-                    "strategy requires all methods to have the same number of partitions. "
-                    "Use MULTIMETHOD_WEIGHT_SHARING_STRATEGY.DISABLED if methods should "
-                    "be processed independently."
-                )
+        assert weight_sharing_strategy in (
+            MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL,
+            MULTIMETHOD_WEIGHT_SHARING_STRATEGY.ONE_BLOB,
+        )
 
         model_type: CoreMLBackend.MODEL_TYPE = cls.model_type_from_compile_specs(
             first_compile_specs
@@ -796,160 +816,304 @@ class CoreMLBackend(BackendDetails):
                         f"Saved method '{method_name}' partition {partition_idx} to {mlpackage_path}"
                     )
 
-            # For each partition index, combine that partition from all methods
-            # into a single multifunction model.
-            # Store combined_processed_bytes[partition_idx] = bytes (for first method)
-            combined_processed_bytes: List[bytes] = []
-            debug_handle_maps: List[Optional[Dict[str, Tuple[int]]]] = []
-            model_keys: List[str] = []  # Keys for NamedDataStore lookup
-
-            for partition_idx in range(num_partitions):
-                logger.info(
-                    f"Combining partition {partition_idx} from all methods into multifunction model..."
+            if weight_sharing_strategy == MULTIMETHOD_WEIGHT_SHARING_STRATEGY.ONE_BLOB:
+                return cls._preprocess_one_blob(
+                    method_names=method_names,
+                    edge_programs=edge_programs,
+                    method_mlpackage_paths=method_mlpackage_paths,
+                    model_type=model_type,
+                    named_data_store=named_data_store,
+                    temp_dir=temp_dir,
                 )
 
-                desc = ct.utils.MultiFunctionDescriptor()
-                for method_name in method_names:
-                    mlpackage_path = method_mlpackage_paths[method_name][partition_idx]
-                    desc.add_function(
-                        str(mlpackage_path),
-                        src_function_name="main",
-                        target_function_name=method_name,
-                    )
-
-                # Set the first method as default
-                desc.default_function_name = first_method
-
-                # Save the combined multifunction model for this partition
-                combined_path = (
-                    temp_dir / f"combined_partition_{partition_idx}.mlpackage"
-                )
-                ct.utils.save_multifunction(desc, str(combined_path))
-
-                logger.info(
-                    f"Saved combined multifunction model for partition {partition_idx} to {combined_path}"
-                )
-
-                # Create output directory for this partition's combined model
-                model_dir_path = temp_dir / f"lowered_module_partition_{partition_idx}"
-                model_dir_path.mkdir(exist_ok=True)
-
-                # Handle model type (compiled vs mlpackage)
-                if model_type == CoreMLBackend.MODEL_TYPE.COMPILED_MODEL:
-                    output_model_path = (
-                        model_dir_path / MODEL_PATHS.COMPILED_MODEL.value
-                    )
-                    combined_model_loaded = ct.models.MLModel(str(combined_path))
-                    compiled_path = combined_model_loaded.get_compiled_model_path()
-                    shutil.move(compiled_path, str(output_model_path))
-                else:
-                    output_model_path = model_dir_path / MODEL_PATHS.MODEL.value
-                    shutil.copytree(str(combined_path), str(output_model_path))
-
-                # For multifunction models, we store all method metadata in a single file
-                # with method names as keys. Each method can have different input/output
-                # names (e.g., masks_1023 vs masks_992).
-                identifier = "executorch_" + str(uuid.uuid4())
-
-                # Extract metadata for each method
-                methods_metadata: Dict[str, MethodMetadata] = {}
-                for method_name in method_names:
-                    method_mlpackage_path = method_mlpackage_paths[method_name][
-                        partition_idx
-                    ]
-                    method_model = ct.models.MLModel(
-                        str(method_mlpackage_path), skip_model_load=True
-                    )
-                    method_spec = method_model.get_spec()
-                    input_names = [inp.name for inp in method_spec.description.input]
-                    output_names = [out.name for out in method_spec.description.output]
-                    methods_metadata[method_name] = MethodMetadata(
-                        inputNames=input_names,
-                        outputNames=output_names,
-                    )
-                    logger.info(
-                        f"Extracted metadata for method '{method_name}' partition {partition_idx}: "
-                        f"{len(input_names)} inputs, {len(output_names)} outputs"
-                    )
-
-                # Create consolidated multifunction metadata
-                multifunction_metadata = MultifunctionModelMetadata(
-                    identifier=identifier,
-                    methods={k: asdict(v) for k, v in methods_metadata.items()},
-                )
-
-                # Save consolidated metadata
-                cls.save_model_metadata(multifunction_metadata, model_dir_path)
-
-                # Note: Debug info is not supported for multifunction models.
-                # The combined model's debug mapping doesn't accurately map back to
-                # individual methods, so we skip it rather than provide incorrect info.
-
-                # Flatten the model directory (with model + metadata) to bytes
-                processed_bytes = (
-                    executorchcoreml.flatten_directory_contents(
-                        str(model_dir_path.resolve())
-                    )
-                    or b""
-                )
-                combined_processed_bytes.append(processed_bytes)
-
-                # Store in NamedDataStore and save the key for later reference
-                model_key = f"coreml_{identifier}"
-                model_keys.append(model_key)
-                named_data_store.add_named_data(model_key, processed_bytes)
-
-                logger.info(
-                    f"Created combined processed bytes for partition {partition_idx} ({len(processed_bytes)} bytes)"
-                )
-                logger.info(f"Stored in NamedDataStore with key '{model_key}'")
-
-                # Debug handle map is not supported for multifunction models
-                debug_handle_maps.append(None)
-
-            # Get the NamedDataStoreOutput to share across PreprocessResults
-            named_data_store_output = named_data_store.get_named_data_store_output()
-
-            # Build PreprocessResults for each method and partition.
-            # All methods get a JSON reference to the model in NamedDataStore.
-            # The model is stored ONLY in NamedDataStore to avoid duplication.
-            # Runtime will detect the JSON reference and load from NamedDataMap.
-            preprocess_results: Dict[str, List[PreprocessResult]] = {
-                method_name: [] for method_name in method_names
-            }
-
-            for partition_idx in range(num_partitions):
-                debug_handle_map = debug_handle_maps[partition_idx]
-
-                for method_name in method_names:
-                    # Create JSON reference for runtime to look up model in NamedDataStore.
-                    # functionName specifies which CoreML function to invoke within the
-                    # multifunction model. The runtime gets the ExecuTorch method name
-                    # separately via BackendInitContext::get_method_name().
-                    #
-                    # We prefix the JSON with a magic number so runtime can identify this
-                    # as a JSON reference rather than raw model bytes.
-                    reference = {
-                        "version": 1,
-                        "key": model_keys[partition_idx],
-                        "functionName": method_name,
-                    }
-                    # Magic number "CMJR" (CoreML JSON Reference) followed by JSON bytes
-                    MAGIC_NUMBER = b"CMJR"
-                    reference_bytes = MAGIC_NUMBER + json.dumps(reference).encode(
-                        "utf-8"
-                    )
-
-                    preprocess_results[method_name].append(
-                        PreprocessResult(
-                            processed_bytes=reference_bytes,
-                            debug_handle_map=debug_handle_map,
-                            data_store_output=named_data_store_output,
-                        )
-                    )
-
-            return preprocess_results
+            assert (
+                weight_sharing_strategy
+                == MULTIMETHOD_WEIGHT_SHARING_STRATEGY.POSITIONAL
+            )
+            return cls._preprocess_positional(
+                method_names=method_names,
+                edge_programs=edge_programs,
+                method_mlpackage_paths=method_mlpackage_paths,
+                model_type=model_type,
+                named_data_store=named_data_store,
+                temp_dir=temp_dir,
+            )
 
         finally:
             # Clean up temporary directory
             shutil.rmtree(str(temp_dir))
+
+    @classmethod
+    def _preprocess_positional(
+        cls,
+        method_names: List[str],
+        edge_programs: Dict[str, List[ExportedProgram]],
+        method_mlpackage_paths: Dict[str, List[Path]],
+        model_type: "CoreMLBackend.MODEL_TYPE",
+        named_data_store: Any,
+        temp_dir: Path,
+    ) -> Dict[str, List[PreprocessResult]]:
+        """
+        POSITIONAL strategy: for each partition index, combine that partition
+        from all methods into a single multifunction model.
+        """
+        first_method = method_names[0]
+        num_partitions = len(edge_programs[first_method])
+
+        for method_name, programs in edge_programs.items():
+            if len(programs) != num_partitions:
+                raise ValueError(
+                    f"Method '{method_name}' has {len(programs)} partitions, but "
+                    f"'{first_method}' has {num_partitions}. POSITIONAL weight sharing "
+                    "strategy requires all methods to have the same number of partitions. "
+                    "Use MULTIMETHOD_WEIGHT_SHARING_STRATEGY.ONE_BLOB (which supports "
+                    "different partition counts per method) or "
+                    "MULTIMETHOD_WEIGHT_SHARING_STRATEGY.DISABLED if methods should "
+                    "be processed independently."
+                )
+
+        combined_processed_bytes: List[bytes] = []
+        debug_handle_maps: List[Optional[Dict[str, Tuple[int]]]] = []
+        model_keys: List[str] = []
+
+        for partition_idx in range(num_partitions):
+            logger.info(
+                f"Combining partition {partition_idx} from all methods into multifunction model..."
+            )
+
+            desc = ct.utils.MultiFunctionDescriptor()
+            for method_name in method_names:
+                mlpackage_path = method_mlpackage_paths[method_name][partition_idx]
+                desc.add_function(
+                    str(mlpackage_path),
+                    src_function_name="main",
+                    target_function_name=method_name,
+                )
+
+            desc.default_function_name = first_method
+
+            combined_path = temp_dir / f"combined_partition_{partition_idx}.mlpackage"
+            ct.utils.save_multifunction(desc, str(combined_path))
+
+            logger.info(
+                f"Saved combined multifunction model for partition {partition_idx} to {combined_path}"
+            )
+
+            model_dir_path = temp_dir / f"lowered_module_partition_{partition_idx}"
+            model_dir_path.mkdir(exist_ok=True)
+
+            if model_type == CoreMLBackend.MODEL_TYPE.COMPILED_MODEL:
+                output_model_path = model_dir_path / MODEL_PATHS.COMPILED_MODEL.value
+                combined_model_loaded = ct.models.MLModel(str(combined_path))
+                compiled_path = combined_model_loaded.get_compiled_model_path()
+                shutil.move(compiled_path, str(output_model_path))
+            else:
+                output_model_path = model_dir_path / MODEL_PATHS.MODEL.value
+                shutil.copytree(str(combined_path), str(output_model_path))
+
+            identifier = "executorch_" + str(uuid.uuid4())
+
+            methods_metadata: Dict[str, MethodMetadata] = {}
+            for method_name in method_names:
+                method_mlpackage_path = method_mlpackage_paths[method_name][
+                    partition_idx
+                ]
+                method_model = ct.models.MLModel(
+                    str(method_mlpackage_path), skip_model_load=True
+                )
+                method_spec = method_model.get_spec()
+                input_names = [inp.name for inp in method_spec.description.input]
+                output_names = [out.name for out in method_spec.description.output]
+                methods_metadata[method_name] = MethodMetadata(
+                    inputNames=input_names,
+                    outputNames=output_names,
+                )
+                logger.info(
+                    f"Extracted metadata for method '{method_name}' partition {partition_idx}: "
+                    f"{len(input_names)} inputs, {len(output_names)} outputs"
+                )
+
+            multifunction_metadata = MultifunctionModelMetadata(
+                identifier=identifier,
+                methods={k: asdict(v) for k, v in methods_metadata.items()},
+            )
+
+            cls.save_model_metadata(multifunction_metadata, model_dir_path)
+
+            processed_bytes = (
+                executorchcoreml.flatten_directory_contents(
+                    str(model_dir_path.resolve())
+                )
+                or b""
+            )
+            combined_processed_bytes.append(processed_bytes)
+
+            model_key = f"coreml_{identifier}"
+            model_keys.append(model_key)
+            named_data_store.add_named_data(model_key, processed_bytes)
+
+            logger.info(
+                f"Created combined processed bytes for partition {partition_idx} ({len(processed_bytes)} bytes)"
+            )
+            logger.info(f"Stored in NamedDataStore with key '{model_key}'")
+
+            debug_handle_maps.append(None)
+
+        named_data_store_output = named_data_store.get_named_data_store_output()
+
+        preprocess_results: Dict[str, List[PreprocessResult]] = {
+            method_name: [] for method_name in method_names
+        }
+
+        for partition_idx in range(num_partitions):
+            debug_handle_map = debug_handle_maps[partition_idx]
+
+            for method_name in method_names:
+                reference = {
+                    "version": 1,
+                    "key": model_keys[partition_idx],
+                    "functionName": method_name,
+                }
+                MAGIC_NUMBER = b"CMJR"
+                reference_bytes = MAGIC_NUMBER + json.dumps(reference).encode("utf-8")
+
+                preprocess_results[method_name].append(
+                    PreprocessResult(
+                        processed_bytes=reference_bytes,
+                        debug_handle_map=debug_handle_map,
+                        data_store_output=named_data_store_output,
+                    )
+                )
+
+        return preprocess_results
+
+    @classmethod
+    def _preprocess_one_blob(
+        cls,
+        method_names: List[str],
+        edge_programs: Dict[str, List[ExportedProgram]],
+        method_mlpackage_paths: Dict[str, List[Path]],
+        model_type: "CoreMLBackend.MODEL_TYPE",
+        named_data_store: Any,
+        temp_dir: Path,
+    ) -> Dict[str, List[PreprocessResult]]:
+        """
+        ONE_BLOB strategy: combine ALL partitions from ALL methods into a single
+        multifunction model. Function names use "{method_name}__{partition_idx}"
+        encoding. No partition count alignment is required.
+        """
+        first_method = method_names[0]
+
+        logger.info(
+            "ONE_BLOB: Combining all partitions from all methods into a single multifunction model..."
+        )
+
+        # Build a single MultiFunctionDescriptor with all method x partition combinations
+        desc = ct.utils.MultiFunctionDescriptor()
+        for method_name in method_names:
+            for partition_idx, mlpackage_path in enumerate(
+                method_mlpackage_paths[method_name]
+            ):
+                function_name = f"{method_name}__{partition_idx}"
+                desc.add_function(
+                    str(mlpackage_path),
+                    src_function_name="main",
+                    target_function_name=function_name,
+                )
+                logger.info(
+                    f"ONE_BLOB: Added function '{function_name}' from {mlpackage_path}"
+                )
+
+        desc.default_function_name = f"{first_method}__0"
+
+        combined_path = temp_dir / "combined_all.mlpackage"
+        ct.utils.save_multifunction(desc, str(combined_path))
+
+        logger.info(f"ONE_BLOB: Saved combined multifunction model to {combined_path}")
+
+        # Create output directory for the single combined model
+        model_dir_path = temp_dir / "lowered_module_one_blob"
+        model_dir_path.mkdir(exist_ok=True)
+
+        if model_type == CoreMLBackend.MODEL_TYPE.COMPILED_MODEL:
+            output_model_path = model_dir_path / MODEL_PATHS.COMPILED_MODEL.value
+            combined_model_loaded = ct.models.MLModel(str(combined_path))
+            compiled_path = combined_model_loaded.get_compiled_model_path()
+            shutil.move(compiled_path, str(output_model_path))
+        else:
+            output_model_path = model_dir_path / MODEL_PATHS.MODEL.value
+            shutil.copytree(str(combined_path), str(output_model_path))
+
+        identifier = "executorch_" + str(uuid.uuid4())
+
+        # Extract metadata for every method x partition function
+        methods_metadata: Dict[str, MethodMetadata] = {}
+        for method_name in method_names:
+            for partition_idx, mlpackage_path in enumerate(
+                method_mlpackage_paths[method_name]
+            ):
+                function_name = f"{method_name}__{partition_idx}"
+                method_model = ct.models.MLModel(
+                    str(mlpackage_path), skip_model_load=True
+                )
+                method_spec = method_model.get_spec()
+                input_names = [inp.name for inp in method_spec.description.input]
+                output_names = [out.name for out in method_spec.description.output]
+                methods_metadata[function_name] = MethodMetadata(
+                    inputNames=input_names,
+                    outputNames=output_names,
+                )
+                logger.info(
+                    f"ONE_BLOB: Extracted metadata for '{function_name}': "
+                    f"{len(input_names)} inputs, {len(output_names)} outputs"
+                )
+
+        multifunction_metadata = MultifunctionModelMetadata(
+            identifier=identifier,
+            methods={k: asdict(v) for k, v in methods_metadata.items()},
+        )
+
+        cls.save_model_metadata(multifunction_metadata, model_dir_path)
+
+        # Flatten the single model directory to bytes
+        processed_bytes = (
+            executorchcoreml.flatten_directory_contents(str(model_dir_path.resolve()))
+            or b""
+        )
+
+        # Store in NamedDataStore with a single key
+        model_key = f"coreml_{identifier}"
+        named_data_store.add_named_data(model_key, processed_bytes)
+
+        logger.info(
+            f"ONE_BLOB: Stored {len(processed_bytes)} bytes in NamedDataStore with key '{model_key}'"
+        )
+
+        named_data_store_output = named_data_store.get_named_data_store_output()
+
+        # Build PreprocessResults — all point to the same NamedDataStore key,
+        # differing only in functionName.
+        preprocess_results: Dict[str, List[PreprocessResult]] = {
+            method_name: [] for method_name in method_names
+        }
+
+        MAGIC_NUMBER = b"CMJR"
+        for method_name in method_names:
+            for partition_idx in range(len(edge_programs[method_name])):
+                function_name = f"{method_name}__{partition_idx}"
+                reference = {
+                    "version": 1,
+                    "key": model_key,
+                    "functionName": function_name,
+                }
+                reference_bytes = MAGIC_NUMBER + json.dumps(reference).encode("utf-8")
+
+                preprocess_results[method_name].append(
+                    PreprocessResult(
+                        processed_bytes=reference_bytes,
+                        debug_handle_map=None,
+                        data_store_output=named_data_store_output,
+                    )
+                )
+
+        return preprocess_results

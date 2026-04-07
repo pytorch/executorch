@@ -656,16 +656,22 @@ NSString *raw_model_identifier(NSString *identifier) {
             return nil;
         }
         
-        std::string method_name_str = [methodName UTF8String];
-        const MethodMetadata* method_metadata = metadataValue.get_method_metadata(method_name_str);
+        if (functionName == nil || functionName.length == 0) {
+            ETCoreMLLogErrorAndSetNSError(error,
+                                          ETCoreMLErrorCorruptedModel,
+                                          "functionName must be non-nil and non-empty for multifunction model metadata lookup.");
+            return nil;
+        }
+        std::string lookup_key = [functionName UTF8String];
+        const MethodMetadata* method_metadata = metadataValue.get_method_metadata(lookup_key);
         if (method_metadata != nullptr) {
             metadataValue.input_names = method_metadata->input_names;
             metadataValue.output_names = method_metadata->output_names;
         } else {
             ETCoreMLLogErrorAndSetNSError(error,
                                           ETCoreMLErrorCorruptedModel,
-                                          "Method '%@' not found in multifunction model metadata.",
-                                          methodName);
+                                          "Function '%@' not found in multifunction model metadata.",
+                                          functionName);
             return nil;
         }
     }

@@ -24,9 +24,7 @@ import json
 
 import coremltools as ct
 import torch
-import torch.nn as nn
 import torch.utils._pytree as pytree
-
 from executorch.backends.apple.coreml.compiler.coreml_preprocess import (
     CoreMLBackend,
     MULTIMETHOD_WEIGHT_SHARING_STRATEGY,
@@ -42,68 +40,12 @@ from executorch.examples.models.llama.static_attention import StaticAttentionIOM
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from executorch.exir.backend.utils import format_delegated_graph
 from executorch.exir.capture._config import ExecutorchBackendConfig
+from executorch.exir.graph_break import BlockWithGraphBreak, remove_graph_break_ops
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.extension.export_util.utils import save_pte_program
-from torch.library import impl, Library
 from torchao.quantization.granularity import PerAxis, PerGroup
 from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
-
-# Define custom graph break op
-lib = Library("executorch_utils", "DEF")
-lib.define("graph_break.Tensor(Tensor x) -> Tensor")
-
-
-@impl(lib, "graph_break.Tensor", "CompositeExplicitAutograd")
-def graph_break_impl(x):
-    return x
-
-
-class ExecutorchGraphBreakModule(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, *args, **kwargs):
-        return tuple(
-            (
-                torch.ops.executorch_utils.graph_break.Tensor(a)
-                if isinstance(a, torch.Tensor)
-                else a
-            )
-            for a in args
-        )
-
-
-class BlockWithGraphBreak(nn.Module):
-    def __init__(self, block: nn.Module, break_before: bool = True):
-        super().__init__()
-        self.graph_break = ExecutorchGraphBreakModule()
-        self.block = block
-        self.break_before = break_before
-
-    def forward(self, *args, **kwargs):
-        if self.break_before:
-            new_args = self.graph_break(*args)
-            out = self.block(*new_args, **kwargs)
-            return out
-        else:
-            out = self.block(*args, **kwargs)
-            out = self.graph_break(*out)
-            return out
-
-
-def remove_graph_break_(edge_manager):
-    """Remove graph break ops from all methods in the edge manager."""
-    from executorch.exir.dialects._ops import ops as exir_ops
-
-    # Get all method names
-    method_names = edge_manager.methods
-    for method_name in method_names:
-        ep = edge_manager.exported_program(method_name)
-        for n in ep.graph_module.graph.nodes:
-            if n.target == exir_ops.edge.executorch_utils.graph_break.Tensor:
-                n.replace_all_uses_with(n.args[0])
-        ep.graph_module.graph.eliminate_dead_code()
 
 
 def load_model(
@@ -696,7 +638,7 @@ def main():
 
     # Convert to ExecuTorch
     print("\nConverting to ExecuTorch...")
-    remove_graph_break_(edge_manager)
+    remove_graph_break_ops(edge_manager)
     executorch_program = edge_manager.to_executorch(
         ExecutorchBackendConfig(
             extract_delegate_segments=True,
