@@ -50,6 +50,16 @@ python export.py \
 | `--qembedding` | (none) | Embedding quantization: `8w` |
 | `--hqq` | off | Use HQQ scale-only optimization for expert quantization (slower, better accuracy) |
 | `--prequantized` | (none) | Path to prequantized bundle directory (skips quantization) |
+| `--turboquant` | off | Enable TurboQuant TQ4 KV cache compression (3.8x cache savings) |
+
+### TurboQuant KV Cache Compression
+
+The `--turboquant` flag enables [TurboQuant](https://arxiv.org/abs/2504.19874)
+KV cache compression (3.8x savings) on the 10 full-attention layers.
+
+```bash
+python export.py --prequantized qwen35_moe_int4_hqq --turboquant
+```
 
 ### Prequantized Export
 
