@@ -6,9 +6,16 @@
 from pathlib import Path
 
 import executorch.backends.arm.scripts.public_api_manifest.validate_public_api_manifest as vpam
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib  # type: ignore[import-not-found,no-redef]
+
 from executorch.backends.arm.scripts.public_api_manifest.validate_public_api_manifest import (
     format_validation_report,
     get_current_python_symbols,
+    get_manifest_python_symbols,
     validate_symbols,
 )
 
@@ -34,6 +41,61 @@ def test_public_api_manifest_exact_comparison_rejects_signature_expansion():
     assert len(issues) == 1
     assert issues[0][0] == "foo"
     assert issues[0][1] == "signature changed"
+
+
+def test_get_manifest_python_symbols_flattens_nested_tables():
+    manifest = tomllib.loads(
+        """
+        [python]
+
+        [python.Foo]
+        kind = "class"
+        signature = "Foo()"
+
+        [python.Foo.bar]
+        kind = "function"
+        signature = "Foo.bar() -> None"
+        """
+    )
+
+    assert get_manifest_python_symbols(manifest) == {
+        "Foo": {"kind": "class", "signature": "Foo()"},
+        "Foo.bar": {"kind": "function", "signature": "Foo.bar() -> None"},
+    }
+
+
+def test_nested_python_manifest_entries_are_validated():
+    manifest_symbols = get_manifest_python_symbols(
+        tomllib.loads(
+            """
+            [python]
+
+            [python.Foo]
+            kind = "class"
+            signature = "Foo()"
+
+            [python.Foo.bar]
+            kind = "function"
+            signature = "Foo.bar(x: int) -> int"
+            """
+        )
+    )
+
+    issues = validate_symbols(
+        manifest_symbols,
+        {
+            "Foo": {"kind": "class", "signature": "Foo()"},
+        },
+    )
+
+    assert issues == [
+        (
+            "Foo.bar",
+            "entry is present in the manifest but missing from the current API",
+            "Foo.bar(x: int) -> int",
+            None,
+        )
+    ]
 
 
 def test_public_api_manifest_static_accepts_backward_compatible_signature_expansion():
