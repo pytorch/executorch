@@ -15,6 +15,18 @@ fbcode_target(_kind = runtime.python_library,
     ],
 )
 
+fbcode_target(_kind = runtime.python_library,
+    name = "pte_info_lib",
+    srcs = [
+        "pte_info.py",
+    ],
+    deps = [
+        "//executorch/devtools/bundled_program/serialize:lib",
+        "//executorch/exir/_serialize:lib",
+        "//executorch/exir/backend:compile_spec_schema",
+    ],
+)
+
 fbcode_target(_kind = runtime.python_binary,
     name = "diff_pte",
     srcs = [
@@ -25,5 +37,18 @@ fbcode_target(_kind = runtime.python_binary,
         "//executorch/exir:scalar_type",
         "//executorch/exir:schema",
         "//executorch/exir/_serialize:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_binary,
+    name = "pte_info",
+    srcs = [
+        "pte_info.py",
+    ],
+    main_function = "executorch.devtools.pte_tool.pte_info.main",
+    deps = [
+        "//executorch/devtools/bundled_program/serialize:lib",
+        "//executorch/exir/_serialize:lib",
+        "//executorch/exir/backend:compile_spec_schema",
     ],
 )

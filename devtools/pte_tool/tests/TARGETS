@@ -13,3 +13,16 @@ python_unittest(
         "//executorch/exir/_serialize:lib",
     ],
 )
+
+python_unittest(
+    name = "test_pte_info",
+    srcs = [
+        "test_pte_info.py",
+    ],
+    deps = [
+        "//executorch/devtools/pte_tool:pte_info_lib",
+        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/exir:schema",
+        "//executorch/exir/_serialize:lib",
+    ],
+)
