@@ -29,6 +29,7 @@ output_folder="."
 bundleio=false
 build_with_etdump=false
 build_type="Release"
+build_dir=""
 extra_build_flags=""
 build_only=false
 system_config=""
@@ -40,6 +41,7 @@ arm_scratch_dir=${script_dir}/arm-scratch
 scratch_dir_set=false
 toolchain=arm-none-eabi-gcc
 select_ops_list="aten::_softmax.out"
+select_ops_list_overridden=false
 qdq_fusion_op=false
 model_explorer=false
 perf_overlay=false
@@ -57,8 +59,7 @@ function help() {
     echo "  --aot_arm_compiler_flags=<FLAGS>       Extra flags to pass to aot compiler"
     echo "  --no_delegate                          Do not delegate the model (can't override builtin models)"
     echo "  --no_quantize                          Do not quantize the model (can't override builtin models)"
-    echo "  --portable_kernels=<OPS>               TO BE DEPRECATED: Alias to select_ops_list."
-    echo "  --select_ops_list=<OPS>                Comma separated list of portable (non delagated) kernels to include Default: ${select_ops_list}"
+    echo "  --select_ops_list=<OPS>                Comma separated list of portable (non delegated) kernels to include. Default: ${select_ops_list}"
     echo "                                           NOTE: This is only used when building for semihosting."
     echo "                                           See https://docs.pytorch.org/executorch/stable/kernel-library-selective-build.html for more information."
     echo "  --target=<TARGET>                      Target to build and run for Default: ${target}"
@@ -66,9 +67,10 @@ function help() {
     echo "  --bundleio                             Create Bundled pte using Devtools BundelIO with Input/RefOutput included"
     echo "  --etdump                               Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
     echo "  --build_type=<TYPE>                    Build with Release, Debug, RelWithDebInfo, UndefinedSanitizer or AddressSanitizer, default is ${build_type}"
-    echo "  --extra_build_flags=<FLAGS>            Extra flags to pass to cmake like -DET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=60000 Default: none "
+    echo "  --build-dir=<DIR>                      Optional: reuse an existing arm_executor_runner build directory (configured via 'cmake -S examples/arm/executor_runner -B <DIR> ...'). If omitted, run.sh auto-configures one under ${et_build_root} for bare-metal targets."
     echo "  --build_only                           Only build, don't run"
-    echo "  --toolchain=<TOOLCHAIN>                Ethos-U: Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc Default: ${toolchain}"
+    echo "  --extra_build_flags=\"<FLAGS>\"         Extra -D style flags to pass to cmake when run.sh auto-configures the build"
+    echo "  --toolchain=<arm-none-eabi-gcc|arm-zephyr-eabi-gcc>  Toolchain preset to use when run.sh auto-configures the build. Default: ${toolchain}"
     echo "  --system_config=<CONFIG>               Ethos-U: System configuration to select from the Vela configuration file (see vela.ini). Default: Ethos_U55_High_End_Embedded for EthosU55 targets, Ethos_U85_SYS_DRAM_Mid for EthosU85 targets."
     echo "                                            NOTE: If given, this option must match the given target. This option also sets timing adapter values customized for specific hardware, see ./executor_runner/CMakeLists.txt."
     echo "  --config=<FILEPATH>                    Ethos-U: System configuration file that specifies system configurations (vela.ini)"
@@ -76,11 +78,11 @@ function help() {
     echo "  --pte_placement=<elf|ADDR>             Ethos-U: Control if runtime has PTE baked into the elf or if its placed in memory outside of the elf, defaults to ${pte_placement}"
     echo "  --specify_ethosu_scratch               Use actual Ethos-U scratch size for given model to size temp allocator"
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
-    echo "  --scratch-dir=<FOLDER>                 Path to your Arm scrach dir if you not using default ${arm_scratch_dir}"
+    echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scratch dir if you not using default ${arm_scratch_dir}"
     echo "  --qdq_fusion_op                        Enable QDQ fusion op"
     echo "  --model_explorer                       Enable model explorer to visualize a TOSA or PTE model graph."
     echo "  --visualize_pte                        With --model_explorer, visualize PTE flatbuffer model and delegates. Cannot be used with --visualize_tosa"
-    echo "                                            NOTE:  If PTE contains an Ethos-U delegate, the Ethos-U subgraph will be visualized if aot_arm_compiler_flags is set with the -i flag to include intermediate tosa files."
+    echo "                                            NOTE: If PTE contains an Ethos-U delegate, the Ethos-U subgraph will be visualized if aot_arm_compiler_flags includes -i for TOSA dumps."
     echo "  --visualize_tosa                       With --model_explorer, visualize TOSA flatbuffer model. Cannot be used with --visualize_pte"
     echo "  --perf_overlay                         With --model_explorer and --visualize_tosa, include performance data from FVP PMU trace."
     exit 0
@@ -94,13 +96,16 @@ for arg in "$@"; do
       --aot_arm_compiler_flags=*) aot_arm_compiler_flags="${arg#*=}";;
       --no_delegate) aot_arm_compiler_flag_delegate="" ;;
       --no_quantize) aot_arm_compiler_flag_quantize="" ;;
-      --portable_kernels=*) select_ops_list="${arg#*=}" ; echo "WARNING: --portable_kernels is DEPRECATED use select_ops_list." ;;
-      --select_ops_list=*) select_ops_list="${arg#*=}";;
+      --select_ops_list=*)
+        select_ops_list="${arg#*=}"
+        select_ops_list_overridden=true
+        ;;
       --target=*) target="${arg#*=}";;
       --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
       --bundleio) bundleio=true ;;
       --etdump) build_with_etdump=true ;;
       --build_type=*) build_type="${arg#*=}";;
+      --build-dir=*) build_dir="${arg#*=}";;
       --extra_build_flags=*) extra_build_flags="${arg#*=}";;
       --build_only) build_only=true ;;
       --toolchain=*) toolchain="${arg#*=}";;
