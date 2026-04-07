@@ -70,6 +70,9 @@ class QuantizedOpFusionPass(ExportPass):
             max_scale_2x / (output_scale * (1 << SHIFT_INT8))
         )
 
+        activation_min = meta["output_qparams"][0].qmin
+        activation_max = meta["output_qparams"][0].qmax
+
         args = (
             args[0],
             zero_point1,
@@ -82,6 +85,8 @@ class QuantizedOpFusionPass(ExportPass):
             output_zero_point,
             output_mult,
             output_shift,
+            activation_min,
+            activation_max,
         )
 
         return exir_ops.edge.cortex_m.quantized_add.default, args

@@ -128,6 +128,10 @@ VoxtralRealtimeRunner::VoxtralRealtimeRunner(
     if (dt.ok())
       delay_tokens_ = dt.get()[0].toInt();
 
+    auto sw = model_->execute("sliding_window", empty);
+    if (sw.ok())
+      sliding_window_ = sw.get()[0].toInt();
+
     ET_LOG(
         Info,
         "Streaming: chunk_mel=%ld, max_enc=%ld, enc_dim=%ld",
@@ -486,9 +490,11 @@ bool StreamingSession::try_process_step() {
     return false;
   }
 
-  // Guard: decoder cache capacity (encoder uses ring buffer, no limit).
+  // Old .pte files use a flat decoder KV cache bounded by max_seq_len.
+  // New .pte files (with sliding_window metadata) use a ring buffer with
+  // no position limit.
   const int64_t enc_frames_per_chunk = chunk_mel_len / 2;
-  if (dec_pos_ >= runner_.max_seq_len_) {
+  if (runner_.sliding_window_ == 0 && dec_pos_ >= runner_.max_seq_len_) {
     return false;
   }
 
