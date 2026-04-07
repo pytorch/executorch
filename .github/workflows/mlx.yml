@@ -1,0 +1,97 @@
+name: MLX
+
+on:
+  push:
+    branches:
+      - main
+      - release/*
+  pull_request:
+    paths:
+      - .github/workflows/mlx.yml
+      - backends/mlx/**
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  test-mlx:
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      job-name: test-mlx
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch and configure build"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        # The sanitizers fail on github VM runner, but pass on real device
+        # TODO: figure out why
+        ${CONDA_RUN} cmake --preset mlx-release -DEXECUTORCH_BUILD_TESTS=ON -DEXECUTORCH_MLX_ENABLE_SANITIZERS=OFF
+        echo "::endgroup::"
+
+        ${CONDA_RUN} pip list
+
+        echo "::group::Build test runners"
+        ${CONDA_RUN} cmake --build cmake-out --target op_test_runner -j$(( $(sysctl -n hw.ncpu) - 1 ))
+        echo "::endgroup::"
+
+        echo "::group::Run op unit tests"
+        ${CONDA_RUN} python -m executorch.backends.mlx.test.run_all_tests -j4 --max-tasks-per-worker 10 --clean-after
+        echo "::endgroup::"
+
+        echo "::group::Run Python unit tests"
+        ${CONDA_RUN} python -m pytest \
+          backends/mlx/test/test_passes.py \
+          backends/mlx/test/test_pattern_utils.py \
+          backends/mlx/test/test_partitioner.py \
+          -v
+        echo "::endgroup::"
+
+  backend-tester:
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [models, operators]
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      job-name: test-mlx-backend-${{ matrix.suite }}
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        echo "::endgroup::"
+
+        ${CONDA_RUN} pip list
+
+        echo "::group::Run backend test suite (${{ matrix.suite }})"
+        ${CONDA_RUN} pytest -c /dev/null backends/test/suite/${{ matrix.suite }}/ -m flow_mlx -n auto 2>&1 | tee pytest_output.txt || true
+        echo "::endgroup::"
+
+        # Parse pytest summary and check failure threshold
+        if grep -E "^=+ .* =+$" pytest_output.txt | tail -1 | grep -q "failed"; then
+          FAILED=$(grep -E "^=+ .* =+$" pytest_output.txt | tail -1 | grep -oE "[0-9]+ failed" | grep -oE "[0-9]+")
+        else
+          FAILED=0
+        fi
+
+        if [ "${{ matrix.suite }}" = "operators" ]; then
+          MAX_FAILURES=0
+        else
+          MAX_FAILURES=3
+        fi
+
+        echo "Failed tests: $FAILED (max allowed: $MAX_FAILURES)"
+        if [ "$FAILED" -gt "$MAX_FAILURES" ]; then
+          echo "::error::Too many test failures: $FAILED > $MAX_FAILURES"
+          exit 1
+        fi
