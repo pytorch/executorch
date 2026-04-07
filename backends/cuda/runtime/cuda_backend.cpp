@@ -418,8 +418,6 @@ class ET_EXPERIMENTAL CudaBackend final
         handle->update_user_managed_constant_buffer_pairs) {
       size_t num_constants = 0;
       handle->get_num_constants(handle->container_handle, &num_constants);
-      printf("[CudaBackend] Method '%s': %zu constants found\n",
-             method_name.c_str(), num_constants);
 
       if (num_constants > 0) {
         // Build FQN → internal_name mapping for this container.
@@ -432,8 +430,6 @@ class ET_EXPERIMENTAL CudaBackend final
               handle->container_handle, i, &fqn);
           if (name && fqn && fqn[0] != '\0') {
             fqn_to_name[fqn] = name;
-            printf("[CudaBackend]   constant[%zu]: name='%s' fqn='%s'\n",
-                   i, name, fqn);
           }
         }
 
@@ -448,15 +444,6 @@ class ET_EXPERIMENTAL CudaBackend final
               /*use_inactive=*/false);
 
           if (extract_err == Error::Ok) {
-            printf("[CudaBackend] Extracted %zu constants from container\n",
-                   extracted_map.size());
-            // Debug: print first few extracted map keys
-            size_t dbg_count = 0;
-            for (const auto& [key, val] : extracted_map) {
-              if (dbg_count++ < 5) {
-                printf("[CudaBackend]   extracted key='%s'\n", key.c_str());
-              }
-            }
             for (const auto& [fqn, internal_name] : fqn_to_name) {
               auto it = extracted_map.find(fqn);
               if (it != extracted_map.end()) {
@@ -464,10 +451,10 @@ class ET_EXPERIMENTAL CudaBackend final
               }
             }
             constants_extracted_ = true;
-            printf("[CudaBackend] Stored %zu shared constants from method '%s'\n",
+            ET_LOG(Info, "Extracted %zu shared constants from method '%s'",
                    shared_constant_tensors_.size(), method_name.c_str());
           } else {
-            printf("[CudaBackend] ERROR: Failed to extract constants from '%s'\n",
+            ET_LOG(Error, "Failed to extract constants from '%s'",
                    method_name.c_str());
           }
         } else {
@@ -479,14 +466,10 @@ class ET_EXPERIMENTAL CudaBackend final
               // UpdateUserManagedConstantBufferPairs matches against the
               // codegen constant name (underscored), not the original FQN.
               pairs.push_back({internal_name.c_str(), it->second});
-              printf("[CudaBackend]   sharing fqn='%s' as codegen_name='%s'\n",
-                     fqn.c_str(), internal_name.c_str());
             }
           }
 
           if (!pairs.empty()) {
-            printf("[CudaBackend] Updating %zu constants in method '%s'\n",
-                   pairs.size(), method_name.c_str());
             auto update_err =
                 handle->update_user_managed_constant_buffer_pairs(
                     handle->container_handle,
@@ -496,26 +479,18 @@ class ET_EXPERIMENTAL CudaBackend final
                     /*validate_full_update=*/false);
 
             if (update_err == Error::Ok) {
-              printf("[CudaBackend] Successfully shared %zu constants into '%s'\n",
+              ET_LOG(Info, "Shared %zu constants into method '%s'",
                      pairs.size(), method_name.c_str());
             } else {
-              printf("[CudaBackend] ERROR: Failed to share constants into '%s'\n",
+              ET_LOG(Error, "Failed to share constants into '%s'",
                      method_name.c_str());
             }
           }
         }
       }
     } else {
-      printf("[CudaBackend] Constant sharing APIs not available for method '%s' "
-             "(get_num_constants=%p, get_constant_name=%p, "
-             "get_constant_original_fqn=%p, extract_constants_map=%p, "
-             "update_user_managed=%p)\n",
-             method_name.c_str(),
-             (void*)handle->get_num_constants,
-             (void*)handle->get_constant_name,
-             (void*)handle->get_constant_original_fqn,
-             (void*)handle->extract_constants_map,
-             (void*)handle->update_user_managed_constant_buffer_pairs);
+      ET_LOG(Info, "Constant sharing APIs not available for method '%s'",
+             method_name.c_str());
     }
 
     return (DelegateHandle*)handle; // Return the handle post-processing
