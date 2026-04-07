@@ -94,13 +94,46 @@ option(
   OFF
 )
 
-option(FETCH_ETHOS_U_CONTENT
-       "Fetch ethos_u dependencies instead of relying on pre-downloads" ON
+if(NOT DEFINED PYTHON_EXECUTABLE)
+  find_package(
+    Python3
+    COMPONENTS Interpreter
+    REQUIRED
+  )
+  set(PYTHON_EXECUTABLE "${Python3_EXECUTABLE}")
+endif()
+
+include(${EXECUTORCH_ROOT}/backends/arm/scripts/corstone_utils.cmake)
+include(${EXECUTORCH_ROOT}/backends/arm/cmake/ArmEthosUSDK.cmake)
+include(${EXECUTORCH_ROOT}/backends/arm/cmake/ArmRunnerUtils.cmake)
+
+arm_runner_require_baremetal_targets()
+
+# Keep the default scratch location aligned with the scratch tree used by
+# setup.sh/run.sh so developers who just ran those scripts do not need extra
+# CMake flags.
+set(ETHOS_SDK_PATH
+    "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u"
+    CACHE PATH "Path to Ethos-U bare metal driver/env"
 )
 
-if(NOT DEFINED ET_MODEL_PTE_ADDR
-   AND NOT DEFINED ET_PTE_FILE_PATH
-   AND NOT DEFINED SEMIHOSTING
+arm_ethos_u_default_fetch("${ETHOS_SDK_PATH}" _fetch_ethos_u_default)
+option(FETCH_ETHOS_U_CONTENT
+       "Fetch ethos_u dependencies instead of relying on pre-downloads"
+       ${_fetch_ethos_u_default}
+)
+arm_ensure_ethos_u_content(
+  "${ETHOS_SDK_PATH}" "${EXECUTORCH_ROOT}" ${FETCH_ETHOS_U_CONTENT}
+)
+
+set(ET_PTE_FILE_PATH
+    ""
+    CACHE PATH "Path to ExecuTorch model pte"
+)
+
+if(NOT ET_MODEL_PTE_ADDR
+   AND "${ET_PTE_FILE_PATH}" STREQUAL ""
+   AND NOT SEMIHOSTING
 )
   message(
     FATAL_ERROR
@@ -111,39 +144,16 @@ if(NOT DEFINED ET_MODEL_PTE_ADDR
   )
 endif()
 
-# Example ExecuTorch demo for bare metal Cortex-M based systems
-set(ET_DIR_PATH
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../.."
-    CACHE PATH "Path to ExecuTorch dir"
+if(NOT SEMIHOSTING
+   AND NOT ET_MODEL_PTE_ADDR
+   AND NOT "${ET_PTE_FILE_PATH}" STREQUAL ""
 )
-include(${ET_DIR_PATH}/tools/cmake/Utils.cmake)
-set(ET_BUILD_DIR_PATH
-    "${ET_DIR_PATH}/cmake-out-arm"
-    CACHE PATH "Path to ExecuTorch build/install dir"
-)
-set(ET_INCLUDE_PATH
-    "${ET_DIR_PATH}/.."
-    CACHE PATH "Path to ExecuTorch headers"
-)
-set(ET_PTE_FILE_PATH
-    ""
-    CACHE PATH "Path to ExecuTorch model pte"
-)
-set(ETHOS_SDK_PATH
-    "${ET_DIR_PATH}/examples/arm/arm-scratch/ethos-u"
-    CACHE PATH "Path to Ethos-U bare metal driver/env"
-)
-set(PYTHON_EXECUTABLE
-    "python"
-    CACHE PATH "Define to override python executable used"
-)
-
-# Include corstone help functions
-include(${ET_DIR_PATH}/backends/arm/scripts/corstone_utils.cmake)
-
-if(FETCH_ETHOS_U_CONTENT)
-  # Download ethos_u dependency if needed.
-  fetch_ethos_u_content(${ETHOS_SDK_PATH} ${ET_DIR_PATH})
+  if(NOT EXISTS "${ET_PTE_FILE_PATH}")
+    message(
+      FATAL_ERROR
+        "ET_PTE_FILE_PATH is set to ${ET_PTE_FILE_PATH}, but no file was found. Generate the model first or point ET_PTE_FILE_PATH at an existing .pte/.bpte."
+    )
+  endif()
 endif()
 
 # Selects timing adapter values matching system_config. Default is
