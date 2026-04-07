@@ -20,6 +20,7 @@ from executorch.backends.qualcomm.utils.constants import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 
 
 class InsertIOQDQ(ExportPass):
@@ -156,6 +157,5 @@ class InsertIOQDQ(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule):
         self._insert(graph_module)
-        graph_module.graph.eliminate_dead_code()
-        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)
