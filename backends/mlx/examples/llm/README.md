@@ -44,14 +44,14 @@ python -m executorch.backends.mlx.examples.llm.export_llm_hf \
     --use-custom-sdpa \
     --use-custom-kv-cache
 
-# With INT4 quantization
+# With 4-bit quantization
 python -m executorch.backends.mlx.examples.llm.export_llm_hf \
     --model-id "unsloth/Llama-3.2-1B-Instruct" \
     --output llama_hf_int4.pte \
     --use-custom-sdpa \
     --use-custom-kv-cache \
-    --quantize-linear int4 \
-    --quantize-embeddings int4
+    --qlinear 4w \
+    --qembedding 4w
 ```
 
 ### Options
@@ -62,8 +62,8 @@ python -m executorch.backends.mlx.examples.llm.export_llm_hf \
 | `--output` | *(required)* | Output .pte file path |
 | `--max-seq-len` | `1024` | Maximum sequence length for KV cache |
 | `--dtype` | `bf16` | Model dtype (`fp32`, `fp16`, `bf16`) |
-| `--quantize-linear` | None | Quantization for linear layers (`int4`, `int8`) |
-| `--quantize-embeddings` | None | Quantization for embedding layers (`int4`, `int8`) |
+| `--qlinear` | None | Quantization for linear layers (`4w`, `8w`, `nvfp4`) |
+| `--qembedding` | None | Quantization for embedding layers (`4w`, `8w`, `nvfp4`) |
 | `--no-tie-word-embeddings` | `False` | Disable re-tying lm_head to embedding after quantization |
 | `--use-custom-sdpa` | `False` | Use MLX custom SDPA (`mlx::custom_sdpa`) |
 | `--use-custom-kv-cache` | `False` | Use MLX custom KV cache (`mlx::kv_cache_update`) |

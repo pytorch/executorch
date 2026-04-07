@@ -102,6 +102,11 @@
     - arg_meta: null
       kernel_name: impl::HiFi::eq_Tensor_out
 
+- op: exp.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::exp_out
+
 - op: fmod.Tensor_out
   kernels:
     - arg_meta: null
@@ -192,6 +197,11 @@
     - arg_meta: null
       kernel_name: impl::HiFi::minimum_out
 
+- op: native_layer_norm.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::native_layer_norm_out
+
 - op: mm.out
   kernels:
     - arg_meta: null
@@ -201,6 +211,11 @@
   kernels:
     - arg_meta: null
       kernel_name: impl::HiFi::mul_out
+
+- op: neg.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::neg_out
 
 - op: ne.Tensor_out
   kernels:
@@ -499,6 +514,11 @@
     - arg_meta: null
       kernel_name: impl::HiFi::quantized_relu_asym8u_asym8u_per_tensor_out
 
+- func: cadence::quantized_max_pool2d_nchw.out(Tensor input, int[] kernel_size, int[] stride, int[] padding, int[] dilation, bool ceil_mode, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::generic::quantized_max_pool2d_nchw_out
+
 - func: cadence::quantized_max_pool2d_nhwc.out(Tensor input, int[] kernel_size, int[] stride, int[] padding, int[] dilation, bool ceil_mode, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
@@ -552,9 +572,9 @@
 - func: cadence::quantized_conv1d_ncl.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::HiFi::native::quantized_conv1d_ncl_per_tensor_out
+      kernel_name: impl::HiFi::quantized_conv1d_ncl_per_tensor_out
 
 - func: cadence::quantized_conv1d_nlc.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::HiFi::native::quantized_conv1d_nlc_per_tensor_out
+      kernel_name: impl::HiFi::quantized_conv1d_nlc_per_tensor_out
