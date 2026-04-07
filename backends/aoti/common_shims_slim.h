@@ -76,6 +76,7 @@ AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int64();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int32();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int16();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int8();
+AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_uint8();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_bool();
 
 // ============================================================
