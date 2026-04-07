@@ -110,42 +110,45 @@ int main(int argc, char** argv) {
   printf("Prompt tokens: %ld\n", num_prompt_tokens);
 
   // ---------------------------------------------------------------
-  // Prefill — process all prompt tokens at once
+  // Prefill — process prompt tokens one at a time via decode method
+  // (token-by-token uses the stable recurrent path, matching inference.py;
+  //  the chunked FLA triton_op in prefill method has numerical issues)
+  // Both decode and prefill containers share the same KV cache GPU tensors
+  // via UpdateUserManagedConstantBufferPairs.
   // ---------------------------------------------------------------
-  std::vector<int64_t> pos_data(num_prompt_tokens);
-  for (int64_t i = 0; i < num_prompt_tokens; i++) {
-    pos_data[i] = i;
-  }
-
   auto S = [](int64_t v) -> SizesType { return static_cast<SizesType>(v); };
-  std::vector<int64_t> token_data(prompt_tokens.begin(), prompt_tokens.end());
-  auto tokens_tensor = from_blob(
-      token_data.data(),
-      {1, S(num_prompt_tokens)},
-      executorch::aten::ScalarType::Long);
-  auto pos_tensor = from_blob(
-      pos_data.data(),
-      {S(num_prompt_tokens)},
-      executorch::aten::ScalarType::Long);
 
-  std::vector<EValue> prefill_inputs;
-  prefill_inputs.push_back(tokens_tensor);
-  prefill_inputs.push_back(pos_tensor);
-
+  uint64_t cur_token = 0;
   auto prefill_start = std::chrono::steady_clock::now();
-  auto prefill_result = module->execute("prefill", prefill_inputs);
-  if (prefill_result.error() != Error::Ok) {
-    ET_LOG(Error, "Prefill failed");
-    return 1;
+
+  for (int64_t i = 0; i < num_prompt_tokens; i++) {
+    std::vector<int64_t> tok_data = {static_cast<int64_t>(prompt_tokens[i])};
+    std::vector<int64_t> pos_data_single = {i};
+    auto tok_tensor = from_blob(
+        tok_data.data(), {1, 1}, executorch::aten::ScalarType::Long);
+    auto pos_tensor = from_blob(
+        pos_data_single.data(), {1}, executorch::aten::ScalarType::Long);
+
+    std::vector<EValue> inputs;
+    inputs.push_back(tok_tensor);
+    inputs.push_back(pos_tensor);
+
+    auto result = module->execute("decode", inputs);
+    if (result.error() != Error::Ok) {
+      ET_LOG(Error, "Prefill token %ld failed", i);
+      return 1;
+    }
+
+    if (i == num_prompt_tokens - 1) {
+      auto& outputs = result.get();
+      auto logits_tensor = outputs[0].toTensor();
+      auto logits_ptr =
+          std::make_shared<executorch::aten::Tensor>(std::move(logits_tensor));
+      cur_token = llm::logits_to_token(*logits_ptr, FLAGS_temperature);
+    }
   }
-  auto& prefill_outputs = prefill_result.get();
+
   auto prefill_end = std::chrono::steady_clock::now();
-
-  auto logits_tensor = prefill_outputs[0].toTensor();
-  auto logits_ptr =
-      std::make_shared<executorch::aten::Tensor>(std::move(logits_tensor));
-  uint64_t cur_token = llm::logits_to_token(*logits_ptr, FLAGS_temperature);
-
   double prefill_ms =
       std::chrono::duration<double, std::milli>(prefill_end - prefill_start)
           .count();
