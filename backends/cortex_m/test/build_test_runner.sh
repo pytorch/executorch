@@ -31,4 +31,4 @@ aten::unsqueeze_copy.out,\
 aten::select_copy.int_out,\
 aten::amax.out"
 
-${build_executor_runner} --pte=semihosting --bundleio --target=ethos-u55-128 --output="${build_root_test_dir}" --select_ops_list="${select_ops_list}" --extra_build_flags="-DET_ATOL=5.0 -DET_RTOL=1.0"
+${build_executor_runner} --pte=semihosting --bundleio --target=ethos-u55-128 --output="${build_root_test_dir}" --select_ops_list="${select_ops_list}"

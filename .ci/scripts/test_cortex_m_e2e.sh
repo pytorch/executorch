@@ -14,6 +14,15 @@
 set -eux
 
 MODEL=$1
+
+# Per-model BundleIO tolerances. Int8 quantized models need relaxed bounds
+# due to quantization error accumulating through layers. Models not listed
+# use the tight default (1e-3); override here for models that need it.
+declare -A MODEL_ATOL=( [mv2]="5.0" [mv3]="5.0" )
+declare -A MODEL_RTOL=( [mv2]="2.5" [mv3]="2.5" )
+ATOL="${MODEL_ATOL[$MODEL]:-1e-3}"
+RTOL="${MODEL_RTOL[$MODEL]:-1e-3}"
+
 mkdir -p "./cortex_m_e2e/${MODEL}"
 WORK_DIR=$(realpath "./cortex_m_e2e/${MODEL}")
 
@@ -51,7 +60,7 @@ FVP_Corstone_SSE-300_Ethos-U55 \
     -C cpu0.semihosting-heap_limit=0 \
     -C "cpu0.semihosting-cwd=${WORK_DIR}" \
     -C "ethosu.extra_args='--fast'" \
-    -C "cpu0.semihosting-cmd_line='executor_runner -m ${MODEL}.bpte -i dummy.bin -o out'" \
+    -C "cpu0.semihosting-cmd_line='executor_runner -m ${MODEL}.bpte -i dummy.bin -o out -atol ${ATOL} -rtol ${RTOL}'" \
     -a "${ELF}" \
     --timelimit 300 2>&1 | tee "${LOG_FILE}" || true
 
