@@ -1,11 +1,15 @@
 name: Cadence Build & Test
 
 on:
-  pull_request:
+  schedule:
+    - cron: 0 2 * * *
   push:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/nightly/*
+  pull_request:
   workflow_dispatch:
 
 concurrency:
