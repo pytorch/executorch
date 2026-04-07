@@ -20,12 +20,15 @@
 #include <string>
 #include <vector>
 
+#include <cuda_runtime.h>
+
 DEFINE_string(model_path, "", "Model .pte file path.");
 DEFINE_string(data_path, "", "Data file (.ptd) for CUDA backend.");
 DEFINE_string(tokenizer_path, "", "HuggingFace tokenizer.json path.");
 DEFINE_string(prompt, "Hello", "Prompt text.");
 DEFINE_double(temperature, 0.8, "Sampling temperature (0 = greedy).");
 DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
+DEFINE_bool(decode_only, false, "Use decode method for everything (no prefill).");
 
 namespace llm = ::executorch::extension::llm;
 using ::executorch::extension::from_blob;
@@ -110,42 +113,66 @@ int main(int argc, char** argv) {
   printf("Prompt tokens: %ld\n", num_prompt_tokens);
 
   // ---------------------------------------------------------------
-  // Prefill — process prompt tokens one at a time via decode method
-  // (token-by-token uses the stable recurrent path, matching inference.py;
-  //  the chunked FLA triton_op in prefill method has numerical issues)
-  // Both decode and prefill containers share the same KV cache GPU tensors
-  // via UpdateUserManagedConstantBufferPairs.
+  // Prefill or decode-only
   // ---------------------------------------------------------------
   auto S = [](int64_t v) -> SizesType { return static_cast<SizesType>(v); };
 
   uint64_t cur_token = 0;
   auto prefill_start = std::chrono::steady_clock::now();
 
-  for (int64_t i = 0; i < num_prompt_tokens; i++) {
-    std::vector<int64_t> tok_data = {static_cast<int64_t>(prompt_tokens[i])};
-    std::vector<int64_t> pos_data_single = {i};
-    auto tok_tensor = from_blob(
-        tok_data.data(), {1, 1}, executorch::aten::ScalarType::Long);
+  if (FLAGS_decode_only) {
+    // Token-by-token using decode method
+    for (int64_t i = 0; i < num_prompt_tokens; i++) {
+      std::vector<int64_t> tok_data = {static_cast<int64_t>(prompt_tokens[i])};
+      std::vector<int64_t> pos_data = {i};
+      auto tok_t = from_blob(tok_data.data(), {1, 1}, executorch::aten::ScalarType::Long);
+      auto pos_t = from_blob(pos_data.data(), {1}, executorch::aten::ScalarType::Long);
+      std::vector<EValue> inputs;
+      inputs.push_back(tok_t);
+      inputs.push_back(pos_t);
+      auto result = module->execute("decode", inputs);
+      if (result.error() != Error::Ok) {
+        ET_LOG(Error, "Decode prefill step %ld failed", i);
+        return 1;
+      }
+      if (i == num_prompt_tokens - 1) {
+        auto& outputs = result.get();
+        auto logits = outputs[0].toTensor();
+        auto logits_ptr = std::make_shared<executorch::aten::Tensor>(std::move(logits));
+        cur_token = llm::logits_to_token(*logits_ptr, FLAGS_temperature);
+      }
+    }
+  } else {
+    // Chunked prefill
+    std::vector<int64_t> pos_data(num_prompt_tokens);
+    for (int64_t i = 0; i < num_prompt_tokens; i++) {
+      pos_data[i] = i;
+    }
+    std::vector<int64_t> token_data(prompt_tokens.begin(), prompt_tokens.end());
+    auto tokens_tensor = from_blob(
+        token_data.data(),
+        {1, S(num_prompt_tokens)},
+        executorch::aten::ScalarType::Long);
     auto pos_tensor = from_blob(
-        pos_data_single.data(), {1}, executorch::aten::ScalarType::Long);
+        pos_data.data(),
+        {S(num_prompt_tokens)},
+        executorch::aten::ScalarType::Long);
 
-    std::vector<EValue> inputs;
-    inputs.push_back(tok_tensor);
-    inputs.push_back(pos_tensor);
+    std::vector<EValue> prefill_inputs;
+    prefill_inputs.push_back(tokens_tensor);
+    prefill_inputs.push_back(pos_tensor);
 
-    auto result = module->execute("decode", inputs);
-    if (result.error() != Error::Ok) {
-      ET_LOG(Error, "Prefill token %ld failed", i);
+    auto prefill_result = module->execute("prefill", prefill_inputs);
+    if (prefill_result.error() != Error::Ok) {
+      ET_LOG(Error, "Prefill failed");
       return 1;
     }
+    auto& prefill_outputs = prefill_result.get();
 
-    if (i == num_prompt_tokens - 1) {
-      auto& outputs = result.get();
-      auto logits_tensor = outputs[0].toTensor();
-      auto logits_ptr =
-          std::make_shared<executorch::aten::Tensor>(std::move(logits_tensor));
-      cur_token = llm::logits_to_token(*logits_ptr, FLAGS_temperature);
-    }
+    auto logits_tensor = prefill_outputs[0].toTensor();
+    auto logits_ptr =
+        std::make_shared<executorch::aten::Tensor>(std::move(logits_tensor));
+    cur_token = llm::logits_to_token(*logits_ptr, FLAGS_temperature);
   }
 
   auto prefill_end = std::chrono::steady_clock::now();
@@ -157,6 +184,11 @@ int main(int argc, char** argv) {
       num_prompt_tokens,
       prefill_ms,
       num_prompt_tokens * 1000.0 / prefill_ms);
+
+  // Synchronize CUDA device to ensure prefill's writes to shared mutable
+  // buffers (KV cache, conv_state, recurrent_state) are visible to the
+  // decode method, which may run on a different CUDA stream.
+  cudaDeviceSynchronize();
 
   // ---------------------------------------------------------------
   // Decode — generate tokens one at a time

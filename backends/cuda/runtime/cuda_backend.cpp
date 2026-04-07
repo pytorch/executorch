@@ -476,8 +476,11 @@ class ET_EXPERIMENTAL CudaBackend final
           for (const auto& [fqn, internal_name] : fqn_to_name) {
             auto it = shared_constant_tensors_.find(fqn);
             if (it != shared_constant_tensors_.end()) {
-              pairs.push_back({fqn.c_str(), it->second});
-              printf("[CudaBackend]   sharing fqn='%s'\n", fqn.c_str());
+              // UpdateUserManagedConstantBufferPairs matches against the
+              // codegen constant name (underscored), not the original FQN.
+              pairs.push_back({internal_name.c_str(), it->second});
+              printf("[CudaBackend]   sharing fqn='%s' as codegen_name='%s'\n",
+                     fqn.c_str(), internal_name.c_str());
             }
           }
 
