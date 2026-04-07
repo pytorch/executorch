@@ -416,6 +416,63 @@ def export_and_lower(model, config, args):
 
     # Lower with CUDA backend
     print("Lowering to ExecuTorch with CUDA...")
+
+    # torch.cond + AOTI workarounds:
+    # 1. Disable decomposition (conv1d→conv2d isn't needed and re-traces
+    #    cond branches through edge IR ops that fail FunctionalTensor).
+    # 2. Replace edge ops with aten ops inside cond branch submodules
+    #    (to_edge's passes only fix the top-level graph, not cond submodules).
+    #    This must run before aot_compile so that _check_alias_and_mutation
+    #    can re-trace the branches without hitting EdgeOpOverload dispatch errors.
+    _orig_decomp = CudaBackend.get_decomposition_table
+    CudaBackend.get_decomposition_table = classmethod(lambda cls: {})
+
+    _orig_passes = CudaBackend.get_custom_passes
+
+    @classmethod
+    def _patched_get_custom_passes(cls, compile_specs):
+        from executorch.exir.dialects.edge._ops import EdgeOpOverload
+
+        # view_copy-style ops that should be replaced with view ops in
+        # cond subgraphs (ReplaceViewCopyWithViewPass only handles top-level)
+        _VIEW_COPY_TO_VIEW = {
+            torch.ops.aten.slice_copy.Tensor: torch.ops.aten.slice.Tensor,
+            torch.ops.aten.select_copy.int: torch.ops.aten.select.int,
+        }
+
+        class _FixCondBranchOps:
+            """Fix ops in torch.cond branch submodule graphs for AOTI compat.
+
+            1. Replace EdgeOpOverload targets with underlying aten ops
+               (edge ops don't support FunctionalTensor dispatch).
+            2. Replace view_copy ops with view ops (ReplaceViewCopyWithViewPass
+               only processes the top-level graph, not cond submodules).
+            """
+
+            def __call__(self, gm):
+                for _, submod in gm.named_modules():
+                    if not isinstance(submod, torch.fx.GraphModule):
+                        continue
+                    changed = False
+                    for node in submod.graph.nodes:
+                        if node.op != "call_function":
+                            continue
+                        if isinstance(node.target, EdgeOpOverload):
+                            node.target = node.target._op
+                            changed = True
+                        if node.target in _VIEW_COPY_TO_VIEW:
+                            node.target = _VIEW_COPY_TO_VIEW[node.target]
+                            changed = True
+                    if changed:
+                        submod.graph.lint()
+                        submod.recompile()
+
+        passes = _orig_passes.__func__(cls, compile_specs)
+        passes.append(_FixCondBranchOps())
+        return passes
+
+    CudaBackend.get_custom_passes = _patched_get_custom_passes
+
     compile_specs = [CudaBackend.generate_method_name_compile_spec("forward")]
     metadata = {
         "get_max_seq_len": config.max_seq_len,
@@ -434,6 +491,9 @@ def export_and_lower(model, config, args):
         ),
         constant_methods=metadata,
     )
+    CudaBackend.get_decomposition_table = _orig_decomp
+    CudaBackend.get_custom_passes = _orig_passes
+
     et_program = et_prog.to_executorch(
         config=ExecutorchBackendConfig(
             extract_delegate_segments=True,

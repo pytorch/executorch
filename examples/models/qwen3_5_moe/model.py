@@ -406,13 +406,56 @@ class GatedDeltaNet(nn.Module):
         beta = b.sigmoid()
         g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
 
-        # FLA Triton kernel (returns final_state separately, does not mutate initial_state)
-        output, state = torch.ops.triton.chunk_gated_delta_rule(
-            q, k, v, g, beta, self.recurrent_state[:B]
+        # Dispatch: recurrent delta rule for T=1 (decode), chunked FLA for T>1
+        # (prefill). torch.cond enables both paths in a single exported method
+        # with dynamic seq_len. Branches are pure; state is copied outside.
+        # scale is passed as tensor operand (not closure) to avoid AOTI
+        # tensor_tracker errors with constants inside cond branches.
+        scale = torch.tensor(self.head_k_dim**-0.5)
+        initial_state = self.recurrent_state[:B]
+
+        def recurrent_fn(q, k, v, g, beta, state, scale):
+            """T=1 native recurrent delta rule — AOTI fuses with surrounding
+            ops for maximum decode throughput.  Returns [B, T, H, V] to match
+            chunked branch shape (only position-0 result is meaningful)."""
+            q_s = q[:, 0].float()
+            k_s = k[:, 0].float()
+            v_s = v[:, 0].float()
+            g_s = g[:, 0]
+            beta_s = beta[:, 0]
+
+            st = state.float()
+            decay = torch.exp(g_s).unsqueeze(-1).unsqueeze(-1)
+            st = st * decay
+            Sk = torch.einsum("bhkv,bhk->bhv", st, k_s)
+            delta = beta_s.unsqueeze(-1) * (v_s - Sk)
+            st = st + torch.einsum("bhk,bhv->bhkv", k_s, delta)
+            o = torch.einsum("bhkv,bhk->bhv", st, q_s) * scale
+            # Expand to [B, T, H, V] so both cond branches have matching shapes.
+            # At runtime this branch only runs for T=1, so the expand is a no-op.
+            o = o.unsqueeze(1).expand(-1, q.shape[1], -1, -1).contiguous().to(q.dtype)
+            # Return float32 state to match chunked FLA's output dtype
+            return o, st
+
+        def chunked_fn(q, k, v, g, beta, state, scale):
+            """T>1 chunked FLA via triton_op for prefill throughput."""
+            return torch.ops.triton.chunk_gated_delta_rule(
+                q, k, v, g, beta, state
+            )
+
+        # Predicate must use tensor SIZE (symbolic in torch.export) not
+        # tensor VALUES (concrete during tracing → constant-folded away).
+        # input_pos.shape[0] == 1 ↔ single token decode.
+        is_decode = input_pos.shape[0] == 1
+        output, new_state = torch.cond(
+            is_decode,
+            recurrent_fn,
+            chunked_fn,
+            (q, k, v, g, beta, initial_state, scale),
         )
 
         with torch.no_grad():
-            self.recurrent_state[:B].copy_(state)
+            self.recurrent_state[:B].copy_(new_state)
 
         # Output: RMSNorm(output) * silu(z)
         output = output.reshape(-1, self.head_v_dim)
