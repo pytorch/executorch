@@ -9,9 +9,16 @@ from functools import partial
 from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 # To support quantize op lowering in AOT
-import executorch.extension.pybindings.portable_lib  # noqa[F401]
-import executorch.kernels.quantized  # noqa[F401]
+try:
+    import executorch.extension.pybindings.portable_lib  # noqa[F401]
+    import executorch.kernels.quantized  # noqa[F401]
+except:
+    import logging
 
+    logging.info(
+        "Failed to load portable_lib and quantized_aot_lib. To run on LPAI backend, please build ExecuTorch with portable_lib"
+    )
+    del logging
 import torch
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 
