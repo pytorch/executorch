@@ -48,14 +48,37 @@ class COMPILE_SPEC_KEYS(Enum):
 
 
 class MULTIMETHOD_WEIGHT_SHARING_STRATEGY(Enum):
-    # Methods are processed independently with no weight sharing.
+    """Strategy for sharing weights across methods in multi-method models.
+
+    When exporting a model with multiple methods (e.g., prefill and decode),
+    these strategies control how CoreML models are organized and how weights
+    are shared. Different strategies have different tradeoffs — experiment
+    with them to find the best fit for your use case.
+
+    DISABLED:
+        Each method is compiled into its own independent CoreML model.
+        No weight sharing occurs; weights are duplicated across methods.
+        Simplest strategy with no constraints on model structure.
+
+    POSITIONAL:
+        Partitions are aligned by index across methods. Partition 0 from
+        all methods are combined into one multifunction CoreML model,
+        partition 1 into another, and so on. This enables weight sharing
+        for parameters that appear at the same partition index. Requires
+        all methods to have the same number of partitions.
+
+    ONE_BLOB:
+        All partitions from all methods are packed into a single
+        multifunction CoreML model. This maximizes weight sharing
+        opportunities (any parameter can be shared across any method)
+        and does not require partition counts to match. However, it may
+        result in longer compile times and higher peak memory since the
+        entire model — including any method-specific (non-shared) weights
+        — lives in a single blob.
+    """
+
     DISABLED = "disabled"
-    # Partitions must align positionally across methods; enables weight sharing
-    # via NamedDataStore. Raises an error if partition counts don't match.
     POSITIONAL = "positional"
-    # All partitions from all methods are combined into a single multifunction
-    # model. No partition count alignment is required. Function names use
-    # "{method_name}__{partition_idx}" encoding.
     ONE_BLOB = "one_blob"
 
 
@@ -843,7 +866,9 @@ class CoreMLBackend(BackendDetails):
                     f"Method '{method_name}' has {len(programs)} partitions, but "
                     f"'{first_method}' has {num_partitions}. POSITIONAL weight sharing "
                     "strategy requires all methods to have the same number of partitions. "
-                    "Use MULTIMETHOD_WEIGHT_SHARING_STRATEGY.DISABLED if methods should "
+                    "Use MULTIMETHOD_WEIGHT_SHARING_STRATEGY.ONE_BLOB (which supports "
+                    "different partition counts per method) or "
+                    "MULTIMETHOD_WEIGHT_SHARING_STRATEGY.DISABLED if methods should "
                     "be processed independently."
                 )
 
@@ -1034,7 +1059,7 @@ class CoreMLBackend(BackendDetails):
                 method_spec = method_model.get_spec()
                 input_names = [inp.name for inp in method_spec.description.input]
                 output_names = [out.name for out in method_spec.description.output]
-                methods_metadata[method_name] = MethodMetadata(
+                methods_metadata[function_name] = MethodMetadata(
                     inputNames=input_names,
                     outputNames=output_names,
                 )

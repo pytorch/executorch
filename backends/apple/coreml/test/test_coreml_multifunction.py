@@ -9,13 +9,14 @@ from typing import Dict, Optional, Tuple
 
 import coremltools as ct
 import torch
-
+import torch.nn as nn
 from executorch.backends.apple.coreml.compiler.coreml_preprocess import (
     CoreMLBackend,
     MULTIMETHOD_WEIGHT_SHARING_STRATEGY,
 )
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+from executorch.exir.graph_break import remove_graph_break_ops
 
 
 def is_fbcode():
@@ -320,6 +321,92 @@ class TestCoreMLMultifunction(unittest.TestCase):
                 )
             )
 
+    def test_multifunction_one_blob_multiple_partitions(self):
+        """Test ONE_BLOB with multiple partitions per method.
+
+        Uses graph breaks to force the CoreML partitioner to create multiple
+        partitions within each method (forward and prefill). The two partitions
+        have a different number of inputs and outputs so their metadata
+        (input/output name lists) differ.
+
+        Partition 0: 1 input (x) → 2 outputs (a, b)
+        Partition 1: 2 inputs (a, b) → 1 output (result)
+        """
+
+        class _GraphBreak(nn.Module):
+            def forward(self, x):
+                return torch.ops.executorch_utils.graph_break.Tensor(x)
+
+        class MultiPartitionModel(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear_a = nn.Linear(16, 16)
+                self.linear_b = nn.Linear(16, 16)
+                self.graph_break_a = _GraphBreak()
+                self.graph_break_b = _GraphBreak()
+                self.linear_out = nn.Linear(32, 16)
+
+            def forward(self, x):
+                a = self.linear_a(x)
+                b = self.linear_b(x)
+                a = self.graph_break_a(a)
+                b = self.graph_break_b(b)
+                combined = torch.cat([a, b], dim=-1)
+                return self.linear_out(combined)
+
+        model = MultiPartitionModel()
+        model.eval()
+
+        decode_inputs = (torch.randn(1, 1, 16),)
+        prefill_inputs = (torch.randn(1, 8, 16),)
+
+        exported_programs = {
+            "forward": torch.export.export(model, decode_inputs),
+            "prefill": torch.export.export(model, prefill_inputs),
+        }
+
+        partitioner = CoreMLPartitioner(
+            compile_specs=self._get_compile_specs(
+                strategy=MULTIMETHOD_WEIGHT_SHARING_STRATEGY.ONE_BLOB,
+            ),
+        )
+
+        edge_manager = to_edge_transform_and_lower(
+            exported_programs,
+            partitioner=[partitioner],
+            compile_config=self.edge_compile_config,
+        )
+
+        self.assertIn("forward", edge_manager.methods)
+        self.assertIn("prefill", edge_manager.methods)
+
+        remove_graph_break_ops(edge_manager)
+
+        et_program = edge_manager.to_executorch()
+
+        if _TEST_RUNTIME:
+            runtime = Runtime.get()
+            program = runtime.load_program(et_program.buffer)
+
+            self.assertIn("forward", program.method_names)
+            self.assertIn("prefill", program.method_names)
+
+            forward_method = program.load_method("forward")
+            decode_output = forward_method.execute(decode_inputs)
+            expected_decode = model(*decode_inputs)
+            self.assertTrue(
+                torch.allclose(decode_output[0], expected_decode, atol=1e-4, rtol=1e-4)
+            )
+
+            prefill_method = program.load_method("prefill")
+            prefill_output = prefill_method.execute(prefill_inputs)
+            expected_prefill = model(*prefill_inputs)
+            self.assertTrue(
+                torch.allclose(
+                    prefill_output[0], expected_prefill, atol=1e-4, rtol=1e-4
+                )
+            )
+
 
 if __name__ == "__main__":
     test_runner = TestCoreMLMultifunction()
@@ -328,4 +415,5 @@ if __name__ == "__main__":
     test_runner.test_multifunction_without_weight_sharing()
     test_runner.test_multifunction_with_constant_methods()
     test_runner.test_multifunction_one_blob_simple_model()
+    test_runner.test_multifunction_one_blob_multiple_partitions()
     print("All tests passed!")
