@@ -210,12 +210,11 @@ class ET_EXPERIMENTAL CudaBackend final
 
     // Load constant management symbols (optional — needed for cross-method
     // buffer sharing). These are available in torch >= 2.6.
-#define LOAD_OPTIONAL_SYMBOL(member, name)                                 \
-  do {                                                                     \
-    auto res = get_function(so_handle, #name);                             \
-    handle->member = res.ok()                                              \
-        ? reinterpret_cast<name##Func>(res.get())                          \
-        : nullptr;                                                         \
+#define LOAD_OPTIONAL_SYMBOL(member, name)                            \
+  do {                                                                \
+    auto res = get_function(so_handle, #name);                        \
+    handle->member =                                                  \
+        res.ok() ? reinterpret_cast<name##Func>(res.get()) : nullptr; \
   } while (0)
 
     LOAD_OPTIONAL_SYMBOL(
@@ -226,8 +225,7 @@ class ET_EXPERIMENTAL CudaBackend final
         get_constant_original_fqn,
         AOTInductorModelContainerGetConstantOriginalFQN);
     LOAD_OPTIONAL_SYMBOL(
-        extract_constants_map,
-        AOTInductorModelContainerExtractConstantsMap);
+        extract_constants_map, AOTInductorModelContainerExtractConstantsMap);
     LOAD_OPTIONAL_SYMBOL(
         update_user_managed_constant_buffer_pairs,
         AOTInductorModelContainerUpdateUserManagedConstantBufferPairs);
@@ -426,8 +424,7 @@ class ET_EXPERIMENTAL CudaBackend final
           const char* name = nullptr;
           const char* fqn = nullptr;
           handle->get_constant_name(handle->container_handle, i, &name);
-          handle->get_constant_original_fqn(
-              handle->container_handle, i, &fqn);
+          handle->get_constant_original_fqn(handle->container_handle, i, &fqn);
           if (name && fqn && fqn[0] != '\0') {
             fqn_to_name[fqn] = name;
           }
@@ -451,11 +448,16 @@ class ET_EXPERIMENTAL CudaBackend final
               }
             }
             constants_extracted_ = true;
-            ET_LOG(Info, "Extracted %zu shared constants from method '%s'",
-                   shared_constant_tensors_.size(), method_name.c_str());
+            ET_LOG(
+                Info,
+                "Extracted %zu shared constants from method '%s'",
+                shared_constant_tensors_.size(),
+                method_name.c_str());
           } else {
-            ET_LOG(Error, "Failed to extract constants from '%s'",
-                   method_name.c_str());
+            ET_LOG(
+                Error,
+                "Failed to extract constants from '%s'",
+                method_name.c_str());
           }
         } else {
           // Subsequent container: share matching constants from the first.
@@ -470,27 +472,33 @@ class ET_EXPERIMENTAL CudaBackend final
           }
 
           if (!pairs.empty()) {
-            auto update_err =
-                handle->update_user_managed_constant_buffer_pairs(
-                    handle->container_handle,
-                    pairs.data(),
-                    pairs.size(),
-                    /*use_inactive=*/false,
-                    /*validate_full_update=*/false);
+            auto update_err = handle->update_user_managed_constant_buffer_pairs(
+                handle->container_handle,
+                pairs.data(),
+                pairs.size(),
+                /*use_inactive=*/false,
+                /*validate_full_update=*/false);
 
             if (update_err == Error::Ok) {
-              ET_LOG(Info, "Shared %zu constants into method '%s'",
-                     pairs.size(), method_name.c_str());
+              ET_LOG(
+                  Info,
+                  "Shared %zu constants into method '%s'",
+                  pairs.size(),
+                  method_name.c_str());
             } else {
-              ET_LOG(Error, "Failed to share constants into '%s'",
-                     method_name.c_str());
+              ET_LOG(
+                  Error,
+                  "Failed to share constants into '%s'",
+                  method_name.c_str());
             }
           }
         }
       }
     } else {
-      ET_LOG(Info, "Constant sharing APIs not available for method '%s'",
-             method_name.c_str());
+      ET_LOG(
+          Info,
+          "Constant sharing APIs not available for method '%s'",
+          method_name.c_str());
     }
 
     return (DelegateHandle*)handle; // Return the handle post-processing

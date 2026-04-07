@@ -29,7 +29,6 @@ DEFINE_string(prompt, "Hello", "Prompt text.");
 DEFINE_double(temperature, 0.8, "Sampling temperature (0 = greedy).");
 DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
 
-
 namespace llm = ::executorch::extension::llm;
 using ::executorch::extension::from_blob;
 using ::executorch::extension::Module;
