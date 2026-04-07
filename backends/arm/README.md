@@ -308,6 +308,17 @@ List of model specific and optional passes:
     - backends/arm/test/models/stable_diffusion/test_CLIPTextModelWithProjection.py
     - backends/arm/test/models/stable_diffusion/test_T5EncoderModel.py
 
+- ToDevicePass
+  - This is a utility for moving an already-quantized or already-decomposed GraphModule to another device.
+  - it is intended to be used immediately before rerunning / retracing / torch.export.export(...)
+  - Functionalities:
+    - Calls `.to(device)` on the GraphModule and rewrites explicit `device=` kwargs on `call_function` nodes to a user-specified device.
+    - Useful when manually moving an already-quantized or already-decomposed graph module to another device for validation, since some constant-producing nodes may still carry an export-time device kwarg.
+  - Example usage:
+    - `from executorch.exir.passes import ToDevicePass`
+    - `graph_module = ToDevicePass("cpu")(graph_module).graph_module`
+    - backends/arm/test/misc/test_post_quant_device_switch.py
+
 ## Help & Improvements
 
 If you have problems or questions, or have suggestions for ways to improve the Arm backend, please reach out
