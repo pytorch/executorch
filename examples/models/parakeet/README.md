@@ -25,7 +25,7 @@ python export_parakeet_tdt.py --audio /path/to/audio.wav
 | Argument | Description |
 |----------|-------------|
 | `--output-dir` | Output directory for exports (default: `./parakeet_tdt_exports`) |
-| `--backend` | Backend for acceleration: `portable`, `xnnpack`, `metal`, `cuda`, `cuda-windows` (default: `xnnpack`) |
+| `--backend` | Backend for acceleration: `portable`, `xnnpack`, `vulkan`, `metal`, `cuda`, `cuda-windows` (default: `xnnpack`) |
 | `--dtype` | Data type: `fp32`, `bf16`, `fp16` (default: `fp32`). Metal backend supports `fp32` and `bf16` only (no `fp16`). |
 | `--audio` | Path to audio file for transcription test |
 
@@ -54,7 +54,7 @@ The export script supports quantizing encoder and decoder linear layers using [t
 |--------|-------------|----------|
 | `4w` | 4-bit weight only quantization | CUDA |
 | `8w` | 8-bit weight only quantization | CUDA |
-| `8da4w` | 8-bit dynamic activation, 4-bit weight | CUDA |
+| `8da4w` | 8-bit dynamic activation, 4-bit weight | Vulkan, CUDA |
 | `8da8w` | 8-bit dynamic activation, 8-bit weight | CUDA |
 | `fpa4w` | Floating point activation, 4-bit weight | Metal |
 
@@ -69,6 +69,23 @@ python export_parakeet_tdt.py \
     --qlinear_group_size 32 \
     --output-dir ./parakeet_quantized_xnnpack
 ```
+
+#### Example: Dynamic Quantization for Vulkan
+
+```bash
+python export_parakeet_tdt.py \
+    --backend vulkan \
+    --qlinear_encoder 8da4w \
+    --qlinear_encoder_group_size 32 \
+    --qlinear 8da4w \
+    --qlinear_group_size 32 \
+    --output-dir ./parakeet_quantized_vulkan
+```
+
+An additional `--vulkan_force_fp16` flag is available to have the Vulkan backend
+internally downcast FP32 tensors to FP16 within the Vulkan backend, forcing
+half-precision computation. This will significantly improve latency at the cost
+of some accuracy.
 
 #### Example: 4-bit Weight Quantization with Tile Packing for CUDA
 
@@ -186,6 +203,9 @@ make parakeet-cpu
 # Metal build (macOS)
 make parakeet-metal
 
+# Vulkan build (Linux / Android)
+make parakeet-vulkan
+
 # CUDA build (Linux)
 make parakeet-cuda
 ```
@@ -215,6 +235,12 @@ DYLD_LIBRARY_PATH=/usr/lib ./cmake-out/examples/models/parakeet/parakeet_runner 
   --model_path examples/models/parakeet/parakeet_metal/model.pte \
   --audio_path /path/to/audio.wav \
   --tokenizer_path examples/models/parakeet/parakeet_metal/tokenizer.model
+
+# Vulkan
+./cmake-out/examples/models/parakeet/parakeet_runner \
+  --model_path examples/models/parakeet/parakeet_vulkan/model.pte \
+  --audio_path /path/to/audio.wav \
+  --tokenizer_path examples/models/parakeet/parakeet_vulkan/tokenizer.model
 
 # CUDA (include .ptd data file)
 ./cmake-out/examples/models/parakeet/parakeet_runner \
