@@ -1,4 +1,6 @@
-# MLX Delegate for ExecuTorch (experimental)
+# MLX Delegate for ExecuTorch
+
+**Note: The MLX delegate is experimental and under active development.**
 
 The MLX delegate compiles PyTorch models to run on Apple Silicon GPUs via the
 [MLX](https://github.com/ml-explore/mlx) framework. It consists of:
