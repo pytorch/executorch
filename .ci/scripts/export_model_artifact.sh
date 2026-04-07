@@ -184,6 +184,14 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  mistralai/Voxtral-4B-TTS-2603)
+    MODEL_NAME="voxtral_tts"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""  # deps installed in handler below
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4)
     MODEL_NAME="qwen3_5_moe"
     TASK=""
@@ -322,6 +330,56 @@ if [ "$MODEL_NAME" = "dinov2" ]; then
   if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
     test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
   fi
+  ls -al "${OUTPUT_DIR}"
+  echo "::endgroup::"
+  exit 0
+fi
+
+# Voxtral TTS uses a custom export script
+if [ "$MODEL_NAME" = "voxtral_tts" ]; then
+  pip install safetensors huggingface_hub
+
+  LOCAL_MODEL_DIR="${OUTPUT_DIR}/model_weights"
+  python -c "from huggingface_hub import snapshot_download; snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')"
+
+  VT_QUANT_ARGS=""
+  VT_DTYPE_ARGS=""
+  VT_BACKEND="xnnpack"
+  if [ "$QUANT_NAME" = "quantized-8da4w" ]; then
+    VT_QUANT_ARGS="--qlinear 8da4w --qlinear-group-size 32"
+    VT_BACKEND="xnnpack"
+  elif [ "$QUANT_NAME" = "quantized-int4-metal" ]; then
+    VT_QUANT_ARGS="--qlinear fpa4w"
+    VT_DTYPE_ARGS="--dtype bf16"
+    VT_BACKEND="metal"
+  elif [ "$QUANT_NAME" = "non-quantized" ] && [ "$DEVICE" = "metal" ]; then
+    VT_DTYPE_ARGS="--dtype bf16"
+    VT_BACKEND="metal"
+  fi
+
+  python -m executorch.examples.models.voxtral_tts.export_voxtral_tts \
+      --model-path "$LOCAL_MODEL_DIR" \
+      --backend "$VT_BACKEND" \
+      --output-dir "${OUTPUT_DIR}" \
+      ${VT_QUANT_ARGS} \
+      ${VT_DTYPE_ARGS}
+
+  test -f "${OUTPUT_DIR}/model.pte"
+  test -f "${OUTPUT_DIR}/codec.pte"
+
+  # Convert a voice embedding for testing
+  python -c "
+import torch, struct
+v = torch.load('${LOCAL_MODEL_DIR}/voice_embedding/casual_male.pt', map_location='cpu', weights_only=True).float()
+with open('${OUTPUT_DIR}/voice.bin', 'wb') as f:
+    f.write(struct.pack('<qq', *v.shape))
+    f.write(v.numpy().tobytes())
+print(f'Voice: {v.shape}')
+"
+
+  # Copy tokenizer
+  cp "$LOCAL_MODEL_DIR/tekken.json" "${OUTPUT_DIR}/tekken.json"
+  rm -rf "$LOCAL_MODEL_DIR"
   ls -al "${OUTPUT_DIR}"
   echo "::endgroup::"
   exit 0

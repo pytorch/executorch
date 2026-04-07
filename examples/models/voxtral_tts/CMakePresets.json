@@ -1,0 +1,87 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "voxtral-tts-base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/voxtral_tts",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
+            }
+        },
+        {
+            "name": "voxtral-tts-cpu",
+            "displayName": "Voxtral TTS runner (CPU/XNNPACK)",
+            "inherits": [
+                "voxtral-tts-base"
+            ]
+        },
+        {
+            "name": "voxtral-tts-metal",
+            "displayName": "Voxtral TTS runner (Metal)",
+            "inherits": [
+                "voxtral-tts-base"
+            ],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_METAL": "ON"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Darwin"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "voxtral-tts-cpu",
+            "displayName": "Build Voxtral TTS runner (CPU/XNNPACK)",
+            "configurePreset": "voxtral-tts-cpu",
+            "configuration": "Release",
+            "targets": [
+                "voxtral_tts_runner"
+            ]
+        },
+        {
+            "name": "voxtral-tts-metal",
+            "displayName": "Build Voxtral TTS runner (Metal)",
+            "configurePreset": "voxtral-tts-metal",
+            "configuration": "Release",
+            "targets": [
+                "voxtral_tts_runner"
+            ]
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "voxtral-tts-cpu",
+            "displayName": "Configure and build Voxtral TTS runner (CPU/XNNPACK)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "voxtral-tts-cpu"
+                },
+                {
+                    "type": "build",
+                    "name": "voxtral-tts-cpu"
+                }
+            ]
+        },
+        {
+            "name": "voxtral-tts-metal",
+            "displayName": "Configure and build Voxtral TTS runner (Metal)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "voxtral-tts-metal"
+                },
+                {
+                    "type": "build",
+                    "name": "voxtral-tts-metal"
+                }
+            ]
+        }
+    ]
+}

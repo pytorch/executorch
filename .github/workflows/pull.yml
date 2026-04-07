@@ -233,6 +233,40 @@ jobs:
         bash .ci/scripts/test_model_e2e.sh xnnpack "mistralai/Voxtral-Mini-4B-Realtime-2602" "quantized-8da4w" "./voxtral_realtime_output"
         echo "::endgroup::"
 
+  test-voxtral-tts-metal-macos:
+    name: test-voxtral-tts-metal-macos
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      runner: macos-m1-stable
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 180
+      secrets-env: VOXTRAL_TTS_HF_TOKEN
+      script: |
+        set -eux
+
+        eval "$(conda shell.bash hook)"
+        conda activate
+
+        export HF_TOKEN="${SECRET_VOXTRAL_TTS_HF_TOKEN}"
+
+        echo "::group::Setup ExecuTorch"
+        EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Export Voxtral TTS with Metal"
+        bash .ci/scripts/export_model_artifact.sh metal "mistralai/Voxtral-4B-TTS-2603" "quantized-int4-metal" "./voxtral_tts_output"
+        echo "::endgroup::"
+
+        echo "::group::Test Voxtral TTS with Metal"
+        bash .ci/scripts/test_model_e2e.sh metal "mistralai/Voxtral-4B-TTS-2603" "quantized-int4-metal" "./voxtral_tts_output"
+        echo "::endgroup::"
+
   test-llama-runner-linux:
     # Test Both linux x86 and linux aarch64
     name: test-llama-runner-linux
