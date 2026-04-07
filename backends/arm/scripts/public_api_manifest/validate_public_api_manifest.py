@@ -56,23 +56,36 @@ def read_manifest(manifest_path: Path) -> dict:
         return tomllib.load(manifest_file)
 
 
+def _collect_python_symbols(
+    table: dict[str, object],
+    *,
+    prefix: str = "",
+) -> dict[str, dict[str, str]]:
+    symbols: dict[str, dict[str, str]] = {}
+    kind = table.get("kind")
+    signature = table.get("signature")
+    if kind is not None or signature is not None:
+        if not isinstance(kind, str) or not isinstance(signature, str):
+            raise ValueError(
+                f"Entry [python.{prefix}] must define `kind` and `signature`"
+            )
+        symbols[prefix] = {"kind": kind, "signature": signature}
+
+    for name, entry in table.items():
+        if name in {"kind", "signature"}:
+            continue
+        if not isinstance(entry, dict):
+            raise ValueError(f"Entry [python.{prefix}] contains invalid child {name}")
+        child_prefix = f"{prefix}.{name}" if prefix else name
+        symbols.update(_collect_python_symbols(entry, prefix=child_prefix))
+    return symbols
+
+
 def get_manifest_python_symbols(manifest: dict) -> dict[str, dict[str, str]]:
     python_manifest = manifest.get("python")
     if not isinstance(python_manifest, dict):
         raise ValueError("Manifest is missing [python] section")
-
-    symbols: dict[str, dict[str, str]] = {}
-    for name, entry in python_manifest.items():
-        if not isinstance(entry, dict):
-            raise ValueError(f"Entry [python.{name}] must be a table")
-        kind = entry.get("kind")
-        signature = entry.get("signature")
-        if not isinstance(kind, str) or not isinstance(signature, str):
-            raise ValueError(
-                f"Entry [python.{name}] must define `kind` and `signature`"
-            )
-        symbols[name] = {"kind": kind, "signature": signature}
-    return symbols
+    return _collect_python_symbols(python_manifest)
 
 
 def get_current_python_symbols(
