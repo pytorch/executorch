@@ -426,7 +426,14 @@ Error QnnManager::Execute(
           QNN_TENSOR_VER_PTR(output_tensor)->dimensions +
               QNN_TENSOR_VER_PTR(output_tensor)->rank);
 
-      std::vector<executorch::aten::StridesType> stride_size(sizes.size(), 0);
+      // Compute contiguous strides from sizes (e.g. [2,3,4] -> [12,4,1]).
+      std::vector<executorch::aten::StridesType> stride_size(sizes.size());
+      if (!sizes.empty()) {
+        stride_size.back() = 1;
+        for (int i = sizes.size() - 2; i >= 0; --i) {
+          stride_size[i] = stride_size[i + 1] * sizes[i + 1];
+        }
+      }
       // Avoid using from_blob as it significantly increases shared library
       // size.
       executorch::aten::TensorImpl tensor_impl(
