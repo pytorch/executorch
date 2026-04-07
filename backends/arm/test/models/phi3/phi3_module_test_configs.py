@@ -18,7 +18,7 @@ def get_phi3_test_config() -> Phi3Config:
         original_max_position_embeddings=32,
         use_cache=False,
         tie_word_embeddings=False,
-    )
+    )  # type: ignore[call-arg]
     # Force eager attention path to keep the module exportable in tests.
     config._attn_implementation = "eager"
     return config

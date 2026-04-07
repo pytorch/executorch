@@ -54,9 +54,6 @@ class TestFlow:
         return self.name
 
 
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
 def _register_flow(
     import_fn: Callable[[], list[TestFlow]], backend_name: str
 ) -> list[TestFlow]:
@@ -65,11 +62,6 @@ def _register_flow(
     except Exception as e:
         logger.info(f"Skipping {backend_name} flow registration: {e}")
         return []
-=======
->>>>>>> mlx-delegate-part1
-def all_flows() -> dict[str, TestFlow]:  # noqa: C901
-    flows = []
->>>>>>> af6810bfa4 (up)
 
 
 def _load_xnnpack() -> list[TestFlow]:
@@ -171,15 +163,6 @@ def all_flows() -> dict[str, TestFlow]:
         + _register_flow(_load_qnn, "QNN")
         + _register_flow(_load_arm, "ARM")
     )
-
-    try:
-        from executorch.backends.test.suite.flows.mlx import MLX_TEST_FLOW
-
-        flows += [
-            MLX_TEST_FLOW,
-        ]
-    except Exception as e:
-        logger.info(f"Skipping MLX flow registration: {e}")
 
     try:
         from executorch.backends.test.suite.flows.mlx import MLX_TEST_FLOW

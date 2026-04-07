@@ -737,6 +737,15 @@ class CustomBuild(build):
                 f"-DQNN_SDK_ROOT={qnn_sdk_root}",
             ]
 
+        # Enable OpenVINO backend on Linux. The backend uses dlopen at
+        # runtime so it has no build-time SDK dependency.
+        if sys.platform == "linux" and install_utils.is_cmake_option_on(
+            cmake_configuration_args,
+            "EXECUTORCH_BUILD_OPENVINO",
+            default=True,
+        ):
+            cmake_configuration_args += ["-DEXECUTORCH_BUILD_OPENVINO=ON"]
+
         with Buck2EnvironmentFixer():
             # Generate the cmake cache from scratch to ensure that the cache state
             # is predictable.
@@ -816,6 +825,9 @@ class CustomBuild(build):
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_QNN"):
             cmake_build_args += ["--target", "qnn_executorch_backend"]
             cmake_build_args += ["--target", "PyQnnManagerAdaptor"]
+
+        if cmake_cache.is_enabled("EXECUTORCH_BUILD_OPENVINO"):
+            cmake_build_args += ["--target", "openvino_backend"]
 
         # Set PYTHONPATH to the location of the pip package.
         os.environ["PYTHONPATH"] = (

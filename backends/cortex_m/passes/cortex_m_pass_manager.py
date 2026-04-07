@@ -17,7 +17,7 @@ from executorch.backends.transforms.replace_scalar_with_tensor import (
 )
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassManager
-from executorch.exir.program._program import _transform
+from executorch.exir.program._program import _transform, lift_constant_tensor_pass
 from torch.export import ExportedProgram
 from torch.fx.passes.infra.pass_base import PassResult
 
@@ -81,4 +81,8 @@ class CortexMPassManager(PassManager):
                 transform_pass = pass_cls()
             pass_callable = cast(Callable[[Module], PassResult], transform_pass)
             ep = _transform(ep, pass_callable)
+
+        # All constant tensors should be lifted to buffers at this point, re-run
+        # lift_constant_tensor_pass in case new ones have been introduced by the passes above.
+        ep = lift_constant_tensor_pass(ep)
         return ep
