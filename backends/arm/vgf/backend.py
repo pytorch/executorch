@@ -28,6 +28,7 @@ from executorch.backends.arm.vgf.compile_spec import (  # type: ignore[import-no
     VgfCompileSpec,
 )
 from executorch.backends.arm.vgf.model_converter import (  # type: ignore[import-not-found]
+    model_converter_env,
     require_model_converter_binary,
 )
 from executorch.exir.backend.backend_details import (  # type: ignore[import-not-found]
@@ -157,7 +158,11 @@ def vgf_compile(
         ]
         try:
             subprocess.run(  # nosec B602, B603 - shell invocation constrained to trusted converter binary with trusted inputs
-                conversion_command, shell=False, check=True, capture_output=True
+                conversion_command,
+                shell=False,
+                check=True,
+                capture_output=True,
+                env=model_converter_env(),
             )
         except subprocess.CalledProcessError as process_error:
             conversion_command_str = " ".join(conversion_command)
