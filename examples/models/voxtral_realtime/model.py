@@ -700,7 +700,10 @@ class LMAttention(nn.Module):
             if self.backend == "mlx":
                 cache_dtype = self.wq.weight.dtype
                 self.kv_cache = MLXKVCache(
-                    config.sliding_window, self.n_kv_heads, self.head_dim, dtype=cache_dtype
+                    config.sliding_window,
+                    self.n_kv_heads,
+                    self.head_dim,
+                    dtype=cache_dtype,
                 )
                 self.sdpa = MLXSDPA(self.n_heads, self.head_dim)
             elif self.backend == "metal":
@@ -1170,7 +1173,7 @@ class StreamingAudioEncoderExport(nn.Module):
         elif config.backend == "metal":
             self.kv_caches = nn.ModuleList(
                 [
-                    StandardEncoderRingKVCache(
+                    StandardRingKVCache(
                         max_enc_len, config.enc_n_heads, config.enc_head_dim
                     )
                     for _ in range(config.enc_n_layers)
@@ -1184,7 +1187,7 @@ class StreamingAudioEncoderExport(nn.Module):
         elif config.backend == "cuda":
             self.kv_caches = nn.ModuleList(
                 [
-                    StandardEncoderRingKVCache(
+                    StandardRingKVCache(
                         max_enc_len, config.enc_n_heads, config.enc_head_dim
                     )
                     for _ in range(config.enc_n_layers)
@@ -1198,9 +1201,7 @@ class StreamingAudioEncoderExport(nn.Module):
         else:
             self.kv_caches = nn.ModuleList(
                 [
-                    EncoderRingKVCache(
-                        max_enc_len, config.enc_n_heads, config.enc_head_dim
-                    )
+                    RingKVCache(max_enc_len, config.enc_n_heads, config.enc_head_dim)
                     for _ in range(config.enc_n_layers)
                 ]
             )

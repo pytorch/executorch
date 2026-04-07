@@ -640,7 +640,15 @@ def main():
         "--backend",
         type=str,
         default="xnnpack",
-        choices=["portable", "xnnpack", "metal", "mlx", "cuda", "cuda-windows", "vulkan"],
+        choices=[
+            "portable",
+            "xnnpack",
+            "metal",
+            "mlx",
+            "cuda",
+            "cuda-windows",
+            "vulkan",
+        ],
         help="Backend for acceleration (default: xnnpack)",
     )
     parser.add_argument(
