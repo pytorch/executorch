@@ -25,6 +25,7 @@ Usage:
     python generate_layer_configs.py resnet_conv_list.csv --output conv_layer_configs_cache.h --dram0 64000 --dram1 64000 --cache-mode
 """
 
+import os
 import sys
 import json
 import argparse
@@ -215,6 +216,184 @@ def load_layers_from_model(model_names, input_size=(1, 3, 64, 64)):
             'stride': tuple(info['stride']),
             'padding': tuple(info['padding']),
             'dilation': tuple(info['dilation']),
+        })
+    return layers
+
+
+# ---------------------------------------------------------------------------
+# PTE-based loader (ExecuTorch .pte binary via exir source tree)
+# ---------------------------------------------------------------------------
+
+# Default paths relative to this script's location
+# backends/cadence/vision/config_generator/ → .parent×5 → ext_test/executorch
+_EXECUTORCH_SRC = str(Path(__file__).parent.parent.parent.parent.parent)  # ext_test/executorch
+_EXECUTORCH_PARENT = str(Path(__file__).parent.parent.parent.parent.parent.parent)  # ext_test
+_FLATC_DEFAULT = str(Path(__file__).parent.parent.parent.parent.parent /
+                     "cmake-out/third-party/flatc_ep/bin/flatc")
+
+
+def _bootstrap_executorch_imports(flatc_path=None):
+    """
+    Bootstrap executorch.exir from the local source tree without a pip install.
+
+    Bypasses exir/__init__.py (which pulls in many optional deps) by pre-populating
+    sys.modules with lightweight stub packages for 'executorch' and 'executorch.exir'.
+    Only the _serialize sub-package is actually loaded.
+
+    Also sets FLATC_EXECUTABLE so _flatbuffer.py can find the flatc binary.
+    """
+    import types
+
+    # Add ext_test/ so `import executorch…` works, and ext_test/executorch/ so
+    # internal sub-imports like `from executorch.exir._serialize…` resolve correctly.
+    if _EXECUTORCH_PARENT not in sys.path:
+        sys.path.insert(0, _EXECUTORCH_PARENT)
+    if _EXECUTORCH_SRC not in sys.path:
+        sys.path.insert(0, _EXECUTORCH_SRC)
+
+    # Stub 'executorch' and 'executorch.exir' so Python never runs their
+    # __init__.py files (which have heavy, optional dependencies).
+    for pkg, pkg_dir in [
+        ('executorch',       _EXECUTORCH_SRC),
+        ('executorch.exir',  _EXECUTORCH_SRC + '/exir'),
+    ]:
+        if pkg not in sys.modules:
+            m = types.ModuleType(pkg)
+            m.__path__ = [pkg_dir]
+            m.__package__ = pkg
+            sys.modules[pkg] = m
+
+    # Tell _flatbuffer.py where to find the flatc binary.
+    resolved = flatc_path or _FLATC_DEFAULT
+    if os.path.isfile(resolved):
+        os.environ.setdefault('FLATC_EXECUTABLE', resolved)
+
+
+def load_layers_from_pte(pte_file, flatc_path=None):
+    """
+    Extract unique conv2d layers directly from an ExecuTorch .pte binary.
+
+    Mirrors load_layers_from_model() but reads the serialised execution plan
+    instead of running a live forward pass.  Works without a full executorch
+    pip install by loading the _serialize sub-package from the local source
+    tree.
+
+    Args:
+        pte_file:   Path to the .pte file (str or Path).
+        flatc_path: Optional path to the flatc binary.  Defaults to the
+                    cmake-out copy built alongside the source tree.
+
+    Returns:
+        list of layer dicts in the internal format expected by
+        calculate_layer_config(), same as load_layers_from_model().
+    """
+    _bootstrap_executorch_imports(flatc_path)
+
+    from executorch.exir._serialize._program import deserialize_pte_binary
+    from executorch.exir.schema import KernelCall, Int, IntList, Tensor
+
+    pte_path = Path(pte_file)
+    print(f"Loading PTE: {pte_path} ...")
+
+    with open(pte_path, 'rb') as f:
+        program = deserialize_pte_binary(f.read())
+
+    plan   = program.execution_plan[0]
+    values = plan.values
+
+    # ------------------------------------------------------------------
+    # Helpers to dereference EValue indices from the values table
+    # ------------------------------------------------------------------
+    def _tensor(idx):
+        v = values[idx].val
+        return v if isinstance(v, Tensor) else None
+
+    def _int_val(idx):
+        v = values[idx].val
+        return v.int_val if isinstance(v, Int) else None
+
+    def _intlist_val(idx):
+        """IntList.items are EValue indices pointing to Int EVals."""
+        v = values[idx].val
+        if isinstance(v, IntList):
+            return [_int_val(i) for i in v.items]
+        return None
+
+    # ------------------------------------------------------------------
+    # Walk all KernelCall instructions and collect conv layers
+    # ------------------------------------------------------------------
+    # cadence::quantized_conv2d_nchw arg order (from quantized_conv2d_nchw_out.cpp):
+    #   [0] input  [1] weight  [2] bias
+    #   [3] stride  [4] padding  [5] dilation
+    #   [6] groups  [7] in_zero_point  … [−2/−1] out
+    CONV_OPS = {
+        'cadence::quantized_conv2d_nchw',
+        'aten::conv2d',
+        'aten::convolution',
+    }
+
+    seen_keys = set()
+    unique_layers = []
+
+    for instr in plan.chains[0].instructions:
+        ia = instr.instr_args
+        if not isinstance(ia, KernelCall):
+            continue
+        op_name = plan.operators[ia.op_index].name
+        if op_name not in CONV_OPS:
+            continue
+
+        args = ia.args
+        input_t  = _tensor(args[0])
+        weight_t = _tensor(args[1])
+        output_t = _tensor(args[-1])   # last arg is always the output tensor
+
+        if input_t is None or weight_t is None or output_t is None:
+            continue
+
+        stride   = _intlist_val(args[3]) or [1, 1]
+        padding  = _intlist_val(args[4]) or [0, 0]
+        dilation = _intlist_val(args[5]) or [1, 1]
+
+        # shapes are NCHW
+        _, in_c,  in_h,  in_w  = input_t.sizes
+        _, out_c, out_h, out_w = output_t.sizes
+        _oc, _ic, k_h, k_w    = weight_t.sizes
+
+        info = {
+            'input':   (in_w,  in_h,  in_c),
+            'output':  (out_w, out_h, out_c),
+            'kernel':  (k_w,   k_h,   _ic,   _oc),
+            'stride':  tuple(stride),
+            'padding': tuple(padding),
+            'dilation':tuple(dilation),
+        }
+
+        key = (info['input'], info['output'], info['kernel'],
+               info['stride'], info['padding'], info['dilation'])
+        if key not in seen_keys:
+            seen_keys.add(key)
+            unique_layers.append(info)
+
+    print(f"Extracted {len(unique_layers)} unique conv layers from PTE")
+
+    # Convert to the internal layer-dict format (same as load_layers_from_model)
+    layers = []
+    for layer_id, info in enumerate(unique_layers):
+        in_w,  in_h,  in_c  = info['input']
+        out_w, out_h, out_c = info['output']
+        k_w,   k_h,   _ic,  _oc = info['kernel']
+        # Derive a friendly name from the kernel shape
+        name = f"conv_{k_h}x{k_w}_s{info['stride'][0]}_ic{in_c}_oc{out_c}"
+        layers.append({
+            'layer_id':  layer_id,
+            'name':      name,
+            'input':     info['input'],
+            'output':    info['output'],
+            'kernel':    info['kernel'],
+            'stride':    info['stride'],
+            'padding':   info['padding'],
+            'dilation':  info['dilation'],
         })
     return layers
 
@@ -856,16 +1035,21 @@ static inline const conv_layer_config_t* get_layer_config_by_key(const char* con
 def main():
     parser = argparse.ArgumentParser(
         description='Generate convolution layer configuration lookup table',
-        epilog='Either --model or a positional input_file (csv/json) is required.'
+        epilog='One of --model, --pte, or a positional input_file (csv/json) is required.'
     )
     parser.add_argument('input_file', nargs='?', default=None,
                        help='Input file (layers_config.json or resnet_conv_list.csv). '
-                            'Not needed when using --model.')
+                            'Not needed when using --model or --pte.')
     parser.add_argument('--model', '-m', default=None,
                        help='Extract layers directly from PyTorch model(s). '
                             'Comma or + separated list. '
                             f'Supported: {", ".join(SUPPORTED_MODELS)}. '
                             'Example: --model resnet18+resnet50')
+    parser.add_argument('--pte', default=None,
+                       help='Extract layers directly from an ExecuTorch .pte binary. '
+                            'Example: --pte resnet18_quantized.pte')
+    parser.add_argument('--flatc', default=None,
+                       help='Path to flatc binary (default: cmake-out/third-party/flatc_ep/bin/flatc)')
     parser.add_argument('--input-size', default='1,3,64,64',
                        help='Model input tensor shape as N,C,H,W (default: 1,3,64,64)')
     parser.add_argument('--output', '-o', default='conv_layer_configs.h',
@@ -879,8 +1063,15 @@ def main():
     
     args = parser.parse_args()
     
-    # ---- Load layers: either from --model or from input_file ----
-    if args.model:
+    # ---- Load layers: --model, --pte, or input_file ----
+    if args.pte:
+        pte_path = Path(args.pte)
+        if not pte_path.exists():
+            print(f"ERROR: PTE file not found: {pte_path}")
+            return 1
+        print(f"Extracting layers from PTE: {pte_path}")
+        layers = load_layers_from_pte(pte_path, flatc_path=args.flatc)
+    elif args.model:
         # Parse model names (accept comma or + as separator)
         model_names = [n.strip() for n in args.model.replace('+', ',').split(',') if n.strip()]
         input_size = tuple(int(x) for x in args.input_size.split(','))
@@ -901,7 +1092,7 @@ def main():
             print("Supported: .json, .csv")
             return 1
     else:
-        parser.error('Either --model or a positional input_file is required.')
+        parser.error('One of --model, --pte, or a positional input_file is required.')
         return 1
     
     print(f"Loaded {len(layers)} layers")
