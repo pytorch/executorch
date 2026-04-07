@@ -109,13 +109,6 @@ XAI_ERR_TYPE conv_exec_7x7j2d1VQ(
     idma_hw_wait_all(0);  // coeff + bias + outscale on ch0
     idma_hw_wait_all(1);  // input on ch1
     
-    // Invalidate cached copies of DMA destination buffers.
-    // iDMA does not maintain cache coherency.
-    xthal_dcache_region_invalidate(p_coeff, config->coeff_buffer_size);
-    xthal_dcache_region_invalidate(p_bias, config->bias_buffer_size);
-    xthal_dcache_region_invalidate(p_outscale, config->outscale_buffer_size);
-    xthal_dcache_region_invalidate(p_input0, config->input_buffer_size);
-    
     // ========================================================================
     // Configure Input Tile Descriptor
     // ========================================================================
@@ -308,13 +301,6 @@ XAI_ERR_TYPE conv_exec_7x7j2d1VQ(
             XAI_TILE3D_SET_DATA_PTR(&tile_output, &(p_output1[0]));
             XAI_TILE3D_SET_DIM2_COORD(&tile_output, (config->out_dim2_size)*(idx_h));
             
-            // Wait for any in-flight DMA to complete before using buffers
-            idma_hw_wait_all(0);  // previous output store / coeff prefetch on ch0
-            idma_hw_wait_all(1);  // input prefetch on ch1
-            
-            // Invalidate cached copies of DMA-written input buffer.
-            xthal_dcache_region_invalidate(p_input0, config->input_buffer_size);
-            
             // ================================================================
             // Perform Edge Extension and Convolution
             // ================================================================
@@ -451,12 +437,6 @@ XAI_ERR_TYPE conv_exec_7x7j2d1(
     // Wait for all initial DMA transfers to complete
     idma_hw_wait_all(0);  // coeff + bias on ch0
     idma_hw_wait_all(1);  // input on ch1
-    
-    // Invalidate cached copies of DMA destination buffers.
-    // iDMA does not maintain cache coherency.
-    xthal_dcache_region_invalidate(p_coeff, config->coeff_buffer_size);
-    xthal_dcache_region_invalidate(p_bias, config->bias_buffer_size);
-    xthal_dcache_region_invalidate(p_input0, config->input_buffer_size);
     
     // ========================================================================
     // Configure Input Tile Descriptor
@@ -636,13 +616,6 @@ XAI_ERR_TYPE conv_exec_7x7j2d1(
             XAI_TILE3D_SET_BUFF_PTR(&tile_output, p_output1);
             XAI_TILE3D_SET_DATA_PTR(&tile_output, &(p_output1[0]));
             XAI_TILE3D_SET_DIM2_COORD(&tile_output, (config->out_dim2_size)*(idx_h));
-            
-            // Wait for any in-flight DMA to complete before using buffers
-            idma_hw_wait_all(0);  // previous output store / coeff prefetch on ch0
-            idma_hw_wait_all(1);  // input prefetch on ch1
-            
-            // Invalidate cached copies of DMA-written input buffer.
-            xthal_dcache_region_invalidate(p_input0, config->input_buffer_size);
             
             // ================================================================
             // Perform Edge Extension and Convolution
