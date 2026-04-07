@@ -3,6 +3,8 @@ load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+_ENABLE_VGF = True
+
 def define_arm_tests():
     # TODO [fbonly] Add more tests
     test_files = []
@@ -67,7 +69,7 @@ def define_arm_tests():
             resources = ["conftest.py"],
             compile = "with-source",
             typing = False,
-            env = {} if runtime.is_oss else {
+            env = {} if runtime.is_oss else ({
                 "MODEL_CONVERTER_PATH": "$(location fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.8.0:model-converter-bin)",
                 "MODEL_CONVERTER_LIB_DIR": "$(location fbsource//third-party/nvidia-nsight-systems:linux-x86_64)/host-linux-x64",
                 "LAVAPIPE_LIB_PATH": "$(location fbsource//third-party/mesa/src/gallium/frontends/lavapipe:vulkan_lvp)",
@@ -75,10 +77,10 @@ def define_arm_tests():
                 "EMULATION_LAYER_GRAPH_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Graph)",
                 "EMULATION_LAYER_TENSOR_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Tensor_json)",
                 "EMULATION_LAYER_GRAPH_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Graph_json)",
-            },
+            } if _ENABLE_VGF else {}),
             preload_deps = [
                 "//executorch/kernels/quantized:custom_ops_generated_lib",
-            ] + ([] if runtime.is_oss else [
+            ] + ([] if runtime.is_oss or not _ENABLE_VGF else [
                 "fbsource//third-party/khronos:vulkan",
                 "//executorch/backends/arm/runtime:vgf_backend",
             ]),
