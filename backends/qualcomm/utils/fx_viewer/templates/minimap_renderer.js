@@ -256,20 +256,20 @@ class MinimapRenderer {
                     (edge) => nodeSet.has(edge.v) && nodeSet.has(edge.w)
                 );
                 drawEdges(edges, color, 2 / this.minimapScale);
-                drawNodes(Array.from(nodeSet), 0, color);
+                drawNodes(Array.from(nodeSet), 2/this.minimapScale, color);
             });
         }
 
         if (state.selectedEdge) {
-            drawNodes([state.selectedEdge.v, state.selectedEdge.w], 0, theme.nodeSelected);
+            drawNodes([state.selectedEdge.v, state.selectedEdge.w], 2/this.minimapScale, theme.nodeSelected);
         }
 
         if (state.searchCandidates.length > 0) {
-            drawNodes(state.searchCandidates.map(c => c.node.id), 0, theme.nodeSelected);
+            drawNodes(state.searchCandidates.map(c => c.node.id), 2/this.minimapScale, theme.nodeSelected);
         }
 
         if (target) {
-            drawNodes([target], 1 / this.minimapScale, theme.nodeSelected);
+            drawNodes([target], 3/ this.minimapScale, theme.nodeSelected);
         }
        
         this.ctx.restore();
