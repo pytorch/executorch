@@ -538,11 +538,12 @@ class StandardSDPA(nn.Module):
         return y.view(bsz, seqlen, self.dim)
 
 
-class MLXKVCache(nn.Module):
-    """Wrapper that adapts MLX BHSD KV cache for model's BSHD convention.
+class MLXStaticKVCache(nn.Module):
+    """Wrapper that adapts MLX static KV cache for model's BSHD convention.
 
-    The model's QKV projections produce [B, S, H, D] tensors, but MLX's
-    KVCache expects [B, H, S, D]. This wrapper transposes on the way in.
+    For offline (non-streaming) mode. The model's QKV projections produce
+    [B, S, H, D] tensors, but MLX's KVCache expects [B, H, S, D].
+    This wrapper transposes on the way in.
     """
 
     def __init__(
@@ -569,12 +570,13 @@ class MLXKVCache(nn.Module):
         return self.cache.update(input_pos, k_val, v_val)
 
 
-class MLXEncoderRingKVCache(nn.Module):
-    """Wrapper that adapts MLX RingBufferKVCache for the encoder's BSHD convention.
+class MLXRingKVCache(nn.Module):
+    """Wrapper that adapts MLX RingBufferKVCache for model's BSHD convention.
 
-    The encoder's QKV projections produce [B, S, H, D] tensors, but MLX's
-    RingBufferKVCache expects [B, H, S, D]. This wrapper transposes on the
-    way in and delegates ring buffer semantics to the MLX implementation.
+    For streaming mode (both encoder and decoder). The model's QKV projections
+    produce [B, S, H, D] tensors, but MLX's RingBufferKVCache expects
+    [B, H, S, D]. This wrapper transposes on the way in and delegates
+    ring buffer semantics to the MLX implementation.
     """
 
     def __init__(
@@ -603,7 +605,9 @@ class MLXEncoderRingKVCache(nn.Module):
         v_val = v_val.transpose(1, 2)
         return self.ring_cache.update(input_pos, k_val, v_val)
 
-    def create_causal_mask(self, start_pos, seq_len, bool_mask=False) -> torch.Tensor:
+    def create_causal_mask(
+        self, start_pos, seq_len, bool_mask=False, **kwargs
+    ) -> torch.Tensor:
         return self.ring_cache.create_sliding_window_mask(start_pos, seq_len)
 
 
@@ -637,9 +641,10 @@ class MLXSDPA(nn.Module):
         return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
 
 
-class MLXEncoderSDPA(nn.Module):
-    """SDPA for streaming encoder with MLX ring buffer KV cache.
+class MLXMaskedSDPA(nn.Module):
+    """SDPA with explicit mask for MLX ring buffer KV cache.
 
+    Used with MLXRingKVCache for streaming mode (both encoder and decoder).
     Uses F.scaled_dot_product_attention with explicit attn_mask from the
     ring buffer. KV cache is in BHSD layout, queries are in BSHD.
     """
@@ -662,7 +667,7 @@ class MLXEncoderSDPA(nn.Module):
         Args:
             input_pos: (seq_len,) position indices (unused, kept for interface).
             q: (B, seq_len, n_heads, head_dim) in BSHD layout.
-            k, v: (B, n_heads, buf_size, head_dim) in BHSD from MLXEncoderRingKVCache.
+            k, v: (B, n_heads, buf_size, head_dim) in BHSD from MLXRingKVCache.
             bsz, seqlen: batch size and query length.
             mask: (1, 1, seq_len, buf_size) additive attention mask from ring buffer.
         """
@@ -699,7 +704,7 @@ class LMAttention(nn.Module):
             # Ring buffer KV cache for unlimited streaming.
             if self.backend == "mlx":
                 cache_dtype = self.wq.weight.dtype
-                self.kv_cache = MLXKVCache(
+                self.kv_cache = MLXRingKVCache(
                     config.sliding_window,
                     self.n_kv_heads,
                     self.head_dim,
@@ -723,7 +728,16 @@ class LMAttention(nn.Module):
                 self.sdpa = SDPA(self.n_heads, self.head_dim)
         else:
             # Flat KV cache for offline mode (capped at max_seq_len).
-            if self.backend == "metal":
+            if self.backend == "mlx":
+                cache_dtype = self.wq.weight.dtype
+                self.kv_cache = MLXStaticKVCache(
+                    config.max_seq_len,
+                    self.n_kv_heads,
+                    self.head_dim,
+                    dtype=cache_dtype,
+                )
+                self.sdpa = MLXSDPA(self.n_heads, self.head_dim)
+            elif self.backend == "metal":
                 self.kv_cache = StaticKVCache(
                     config.max_seq_len, self.n_kv_heads, self.head_dim
                 )
@@ -1160,7 +1174,7 @@ class StreamingAudioEncoderExport(nn.Module):
             cache_dtype = self.layers[0].attention.wq.weight.dtype
             self.kv_caches = nn.ModuleList(
                 [
-                    MLXEncoderRingKVCache(
+                    MLXRingKVCache(
                         max_enc_len,
                         config.enc_n_heads,
                         config.enc_head_dim,
@@ -1169,7 +1183,7 @@ class StreamingAudioEncoderExport(nn.Module):
                     for _ in range(config.enc_n_layers)
                 ]
             )
-            self.sdpa = MLXEncoderSDPA(config.enc_n_heads, config.enc_head_dim)
+            self.sdpa = MLXMaskedSDPA(config.enc_n_heads, config.enc_head_dim)
         elif config.backend == "metal":
             self.kv_caches = nn.ModuleList(
                 [

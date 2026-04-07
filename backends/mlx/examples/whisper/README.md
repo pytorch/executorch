@@ -34,6 +34,10 @@ python -m executorch.backends.mlx.examples.whisper.export_whisper \
 | `--output-dir` | `whisper_mlx` | Output directory for `.pte` files |
 | `--max-decoder-seq-len` | `256` | Maximum decoder sequence length |
 | `--dtype` | `bf16` | Model dtype (`fp32`, `fp16`, `bf16`) |
+| `--qlinear` | None | Quantization for linear layers (`4w`, `8w`, `nvfp4`) |
+| `--qembedding` | None | Quantization for embedding layers (`4w`, `8w`, `nvfp4`) |
+| `--qlinear-group-size` | auto | Group size for linear quantization |
+| `--qembedding-group-size` | auto | Group size for embedding quantization |
 
 
 ## Run
