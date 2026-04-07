@@ -49,3 +49,23 @@ target_link_libraries(
   strict_compile_test PRIVATE mlx_schema executorch_core mlx
 )
 add_dependencies(op_test_runner strict_compile_test)
+
+# Multi-threaded inference test
+include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
+
+et_cxx_test(
+  multi_thread_test_runner
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/multi_thread_test_runner.cpp
+  EXTRA_LIBS
+  extension_module
+  extension_tensor
+  mlxdelegate
+)
+
+# Add sanitizer link flags to multi_thread_test_runner if enabled
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_link_options(
+    multi_thread_test_runner PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
