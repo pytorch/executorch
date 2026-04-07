@@ -3,8 +3,41 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-cmake_minimum_required(VERSION 3.20)
-project(arm_executor_runner)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  cmake_minimum_required(VERSION 3.20)
+  project(arm_executor_runner_redirect LANGUAGES C CXX)
+  message(
+    FATAL_ERROR
+      "Configure standalone arm_executor_runner builds from ${CMAKE_CURRENT_LIST_DIR}/standalone instead of ${CMAKE_CURRENT_LIST_DIR}."
+  )
+endif()
+
+get_filename_component(
+  _default_executorch_root "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE
+)
+
+if(NOT DEFINED EXECUTORCH_ROOT)
+  set(EXECUTORCH_ROOT
+      "${_default_executorch_root}"
+      CACHE PATH "Path to an ExecuTorch checkout"
+  )
+endif()
+
+set(ET_DIR_PATH
+    "${EXECUTORCH_ROOT}"
+    CACHE PATH "Kept for backward compatibility; synonym for EXECUTORCH_ROOT"
+)
+
+if(NOT EXISTS "${EXECUTORCH_ROOT}/CMakeLists.txt")
+  message(
+    FATAL_ERROR
+      "EXECUTORCH_ROOT (${EXECUTORCH_ROOT}) does not contain an ExecuTorch CMake project."
+  )
+endif()
+
+if(NOT COMMAND executorch_target_link_options_shared_lib)
+  include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+endif()
 
 option(
   ET_MODEL_PTE_ADDR
@@ -21,6 +54,12 @@ option(ET_LOG_DUMP_INPUT "Dump input in log" OFF)
 option(ET_LOG_DUMP_OUTPUT "Dump output in log" ON)
 
 option(ET_BUNDLE_IO "Set to compile in BundleIO support" OFF)
+set(BUNDLED_PROGRAM_LIBRARY_DIR
+    ""
+    CACHE
+      PATH
+      "Optional directory that contains a prebuilt libbundled_program.a when ET_BUNDLE_IO is enabled without building devtools."
+)
 set(ET_ATOL
     "0.01"
     CACHE STRING "Set atol to use for BundleIO testing (Requires ET_BUNDLE_IO)"
@@ -154,13 +193,8 @@ message(
 add_corstone_subdirectory(${SYSTEM_CONFIG} ${ETHOS_SDK_PATH})
 configure_timing_adapters(${SYSTEM_CONFIG} ${MEMORY_MODE})
 
-# Dependencies from the ExecuTorch build
-find_package(
-  executorch REQUIRED HINTS "${ET_BUILD_DIR_PATH}/lib/cmake/ExecuTorch"
-)
-
 # Convert pte to header
-if(NOT ${ET_MODEL_PTE_ADDR} AND NOT SEMIHOSTING)
+if(NOT "${ET_MODEL_PTE_ADDR}" AND NOT SEMIHOSTING)
   add_custom_target(
     gen_model_header DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
   )
@@ -199,12 +233,12 @@ endif()
 # Proceed with specific actions if either is found
 if(NOT U55_FOUND EQUAL -1)
   message(STATUS "SYSTEM_CONFIG contains 'U55'.")
-  set(LINK_FILE_IN "${CMAKE_SOURCE_DIR}/Corstone-300.ld")
+  set(LINK_FILE_IN "${CMAKE_CURRENT_LIST_DIR}/Corstone-300.ld")
 endif()
 
 if(NOT U85_FOUND EQUAL -1)
   message(STATUS "SYSTEM_CONFIG contains 'U85'.")
-  set(LINK_FILE_IN "${CMAKE_SOURCE_DIR}/Corstone-320.ld")
+  set(LINK_FILE_IN "${CMAKE_CURRENT_LIST_DIR}/Corstone-320.ld")
 endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -213,9 +247,9 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(COMPILER_PREPROCESSOR_OPTIONS -E -x c -P)
 endif()
 
-get_filename_component(LINK_FILE_OUT_BASE ${LINK_FILE} NAME)
+get_filename_component(LINK_FILE_OUT_BASE "${LINK_FILE}" NAME)
 set(LINK_FILE_OUT
-    ${CMAKE_CURRENT_BINARY_DIR}/${LINK_FILE_OUT_BASE}.${LINK_FILE_EXT}
+    "${CMAKE_CURRENT_BINARY_DIR}/${LINK_FILE_OUT_BASE}.${LINK_FILE_EXT}"
 )
 
 execute_process(
@@ -333,7 +367,50 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
 endif()
 
 if(ET_BUNDLE_IO)
-  list(APPEND arm_executor_runner_link bundled_program)
+  if(TARGET bundled_program)
+    list(APPEND arm_executor_runner_link bundled_program)
+    target_link_directories(
+      arm_executor_runner PRIVATE $<TARGET_FILE_DIR:bundled_program>
+    )
+  else()
+    set(_bundled_program_library "")
+    set(_bundled_program_search_paths "")
+    if(ET_BUILD_DIR_PATH)
+      list(
+        APPEND
+        _bundled_program_search_paths
+        "${ET_BUILD_DIR_PATH}"
+        "${ET_BUILD_DIR_PATH}/lib"
+        "${ET_BUILD_DIR_PATH}/devtools/bundled_program"
+        "${ET_BUILD_DIR_PATH}/devtools/bundled_program/lib"
+      )
+    endif()
+    if(BUNDLED_PROGRAM_LIBRARY_DIR)
+      list(APPEND _bundled_program_search_paths
+           "${BUNDLED_PROGRAM_LIBRARY_DIR}"
+      )
+    endif()
+    if(_bundled_program_search_paths)
+      list(REMOVE_DUPLICATES _bundled_program_search_paths)
+      find_library(
+        _bundled_program_library
+        NAMES bundled_program
+        PATHS ${_bundled_program_search_paths}
+        NO_DEFAULT_PATH
+      )
+    endif()
+    if(NOT _bundled_program_library)
+      find_library(_bundled_program_library NAMES bundled_program)
+    endif()
+    if(_bundled_program_library)
+      list(APPEND arm_executor_runner_link ${_bundled_program_library})
+    else()
+      message(
+        FATAL_ERROR
+          "ET_BUNDLE_IO enabled but bundled_program is unavailable. Either configure this build with EXECUTORCH_BUILD_DEVTOOLS=ON so the target exists or set BUNDLED_PROGRAM_LIBRARY_DIR/ET_BUILD_DIR_PATH to a build directory that contains libbundled_program.a."
+      )
+    endif()
+  endif()
 endif()
 
 # Need whole-archive to ensure C++ ctor's are called - this may be wasteful for
@@ -386,7 +463,7 @@ target_compile_definitions(
   arm_executor_runner PRIVATE C10_USING_CUSTOM_GENERATED_MACROS
 )
 
-if(NOT ${ET_MODEL_PTE_ADDR} AND NOT SEMIHOSTING)
+if(NOT "${ET_MODEL_PTE_ADDR}" AND NOT SEMIHOSTING)
   add_dependencies(arm_executor_runner gen_model_header)
 endif()
 
