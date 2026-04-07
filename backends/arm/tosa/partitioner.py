@@ -352,12 +352,14 @@ class TOSAPartitioner(Partitioner):
             torch.ops.aten.linear.default,
             torch.ops.aten.linspace.default,
             torch.ops.aten.silu.default,
+            torch.ops.aten.pad.default,
         }
         ops_to_not_decompose_if_fp = {
             torch.ops.aten.eye.default,
             torch.ops.aten.logit.default,
             torch.ops.aten.linear.default,
             torch.ops.aten.linspace.default,
+            torch.ops.aten.pad.default,
         }
         ops_to_not_decompose_always = {
             torch.ops.aten.logit.default,

@@ -245,6 +245,45 @@ conv3d_3x3_1x3x12x12_st2_pd1 = Conv3d(
     batches=1,
 )
 
+conv3d_3x3_1x3x12x12_st1_pd1_reflect = Conv3d(
+    in_channels=3,
+    out_channels=4,
+    kernel_size=(3, 3, 3),
+    stride=1,
+    padding=1,
+    width=12,
+    height=12,
+    depth=12,
+    batches=1,
+    padding_mode="reflect",
+)
+
+conv3d_3x3_1x3x12x12_st1_pd1_replicate = Conv3d(
+    in_channels=3,
+    out_channels=4,
+    kernel_size=(3, 3, 3),
+    stride=1,
+    padding=1,
+    width=12,
+    height=12,
+    depth=12,
+    batches=1,
+    padding_mode="replicate",
+)
+
+conv3d_3x3_1x3x12x12_st1_pd1_circular = Conv3d(
+    in_channels=3,
+    out_channels=4,
+    kernel_size=(3, 3, 3),
+    stride=1,
+    padding=1,
+    width=12,
+    height=12,
+    depth=12,
+    batches=1,
+    padding_mode="circular",
+)
+
 conv3d_1x1_1x2x16x16_st1 = Conv3d(
     in_channels=2,
     out_channels=1,
@@ -400,6 +439,9 @@ test_data_FP = {
     "2x2_3x2x14x14_nobias": lambda: conv3d_2x2_3x2x14x14_nobias,
     "3x3_1x3x24x24_st1": lambda: conv3d_3x3_1x3x24x24_st1,
     "3x3_1x3x12x12_st2_pd1": lambda: conv3d_3x3_1x3x12x12_st2_pd1,
+    "3x3_1x3x12x12_st1_pd1_reflect": lambda: conv3d_3x3_1x3x12x12_st1_pd1_reflect,
+    "3x3_1x3x12x12_st1_pd1_replicate": lambda: conv3d_3x3_1x3x12x12_st1_pd1_replicate,
+    "3x3_1x3x12x12_st1_pd1_circular": lambda: conv3d_3x3_1x3x12x12_st1_pd1_circular,
     "1x1_1x2x16x16_st1": lambda: conv3d_1x1_1x2x16x16_st1,
     "2x2_1x1x14x13_st2_needs_adjust_pass": lambda: conv3d_2x2_1x1x14x13_st2,
     "5x5_1x3x14x15_st3_pd1_needs_adjust_pass": lambda: conv3d_5x5_1x3x14x15_st3_pd1,

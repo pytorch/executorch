@@ -18,12 +18,14 @@ ${define_active_storage_type("buffer")}
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "w", "concat_offset", DTYPE, "buffer")}
+#include "indexing.glslh"
 
-${layout_declare_ubo(B, "int", "concat_dim")}
+${layout_declare_tensor(B, "w", "concat_offset", DTYPE, "buffer")}
 
 $for i in range(NUM_INPUTS):
   ${layout_declare_ubo(B, "ivec4", "in" + str(i+1) + "_sizes")}
+
+${layout_declare_spec_const(C, "int", "concat_dim", "0")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -36,7 +38,7 @@ void main() {
   // Sum up the sizes along the concat dimension for all input tensors
   int total_size = 0;
   $for i in range(NUM_INPUTS):
-    total_size += in${i+1}_sizes[concat_dim];
+    total_size += safe_idx(in${i+1}_sizes, concat_dim);
 
   // Add to the current offset
   concat_offset[0] += T(total_size);

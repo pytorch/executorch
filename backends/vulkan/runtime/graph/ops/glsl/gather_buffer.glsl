@@ -32,7 +32,7 @@ ${layout_declare_ubo(B, "BufferMetadata", "index")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int gather_dim = 0;
+${layout_declare_spec_const(C, "int", "gather_dim", "0")}
 
 void main() {
   const uint out_bufi = gl_GlobalInvocationID.x;
