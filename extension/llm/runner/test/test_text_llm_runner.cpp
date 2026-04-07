@@ -549,4 +549,73 @@ TEST_F(RunnerTest, NonKvCacheGenerateCompletesSuccessfully) {
   EXPECT_EQ(step_count, max_new_tokens);
 }
 
+// Test that multi-turn generation with seq_len correctly accounts for pos_.
+// Regression test for a bug where max_context_len was pre-adjusted by pos_,
+// causing resolve_max_new_tokens to under-count occupied positions when
+// seq_len is set.
+TEST_F(RunnerTest, MultiTurnWithSeqLenRespectsPos) {
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
+
+  ON_CALL(*tokenizer, encode(_, _, _))
+      .WillByDefault([&](const std::string&, int8_t, int8_t) {
+        return ::tokenizers::Result<std::vector<uint64_t>>(
+            std::vector<uint64_t>{1, 2, 3});
+      });
+
+  ON_CALL(*text_prefiller, prefill(_, _))
+      .WillByDefault([&](std::vector<uint64_t>& tokens, int64_t& pos) {
+        pos += tokens.size();
+        return Result<uint64_t>(4);
+      });
+
+  ON_CALL(*text_prefiller, is_loaded()).WillByDefault(Return(true));
+
+  std::unique_ptr<executorch::llm::Stats> stats =
+      std::make_unique<executorch::llm::Stats>();
+  auto text_token_generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), stats.get());
+
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
+  TextLLMRunner runner(
+      createDefaultMetadata(), // kMaxContextLen = 128
+      std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
+      std::move(module),
+      std::move(text_decoder_runner),
+      std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
+          text_prefiller.release()),
+      std::move(io_manager),
+      std::move(text_token_generator),
+      std::move(stats));
+
+  runner.load();
+
+  // First turn: advance pos_ to 7 (3 prompt + 4 generated)
+  GenerationConfig config1;
+  config1.max_new_tokens = 5; // prefill generates 1, loop generates 4
+  config1.echo = false;
+  Error err1 = runner.generate("first turn", config1);
+  EXPECT_EQ(err1, Error::Ok);
+
+  // Second turn with seq_len=20: pos_ is now 7, prompt adds 3 more → pos_=10
+  // Correct max_new_tokens = min(20, 128) - 10 = 10
+  // Bug would give: min(20, 128-7) - 3 = 17
+  GenerationConfig config2;
+  config2.seq_len = 20;
+  config2.echo = false;
+
+  CallbackCounter counter;
+  Error err2 = runner.generate(
+      "second turn", config2, [&counter](const std::string& token) {
+        counter.callback(token);
+      });
+
+  EXPECT_EQ(err2, Error::Ok);
+  // With correct pos_ accounting: min(20, 128) - 10 = 10 new tokens
+  EXPECT_EQ(counter.getCount(), 10);
+}
+
 } // namespace
