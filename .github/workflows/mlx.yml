@@ -180,8 +180,7 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Install Voxtral requirements"
-        ${CONDA_RUN} pip install -U "huggingface_hub[cli]<1.0"
-        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        ${CONDA_RUN} pip install mistral_common librosa soundfile datasets
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         ${CONDA_RUN} pip install "optimum-executorch @ git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}"
         echo "::endgroup::"
@@ -238,15 +237,14 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Install Voxtral Realtime requirements"
-        ${CONDA_RUN} pip install -U "huggingface_hub[cli]<1.0" safetensors
-        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        ${CONDA_RUN} pip install safetensors
         echo "::endgroup::"
 
         ${CONDA_RUN} pip list
 
         echo "::group::Download model"
-        ${CONDA_RUN} huggingface-cli download mistralai/Voxtral-Mini-4B-Realtime-2602
-        MODEL_PATH=$(${CONDA_RUN} python -c "from huggingface_hub import snapshot_download; print(snapshot_download('mistralai/Voxtral-Mini-4B-Realtime-2602'))")
+        HF_TOKEN=$SECRET_EXECUTORCH_HF_TOKEN ${CONDA_RUN} python -c "from huggingface_hub import snapshot_download; snapshot_download('mistralai/Voxtral-Mini-4B-Realtime-2602')"
+        MODEL_PATH=$(HF_TOKEN=$SECRET_EXECUTORCH_HF_TOKEN ${CONDA_RUN} python -c "from huggingface_hub import snapshot_download; print(snapshot_download('mistralai/Voxtral-Mini-4B-Realtime-2602'))")
         echo "Model path: ${MODEL_PATH}"
         echo "::endgroup::"
 
