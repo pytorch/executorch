@@ -27,6 +27,14 @@ set(ET_DIR_PATH
     "${EXECUTORCH_ROOT}"
     CACHE PATH "Kept for backward compatibility; synonym for EXECUTORCH_ROOT"
 )
+if(NOT DEFINED ET_INCLUDE_PATH)
+  set(ET_INCLUDE_PATH
+      "${EXECUTORCH_ROOT}"
+      CACHE
+        PATH
+        "Kept for backward compatibility; include root for ExecuTorch headers"
+  )
+endif()
 
 if(NOT EXISTS "${EXECUTORCH_ROOT}/CMakeLists.txt")
   message(
@@ -203,6 +211,22 @@ message(
 add_corstone_subdirectory(${SYSTEM_CONFIG} ${ETHOS_SDK_PATH})
 configure_timing_adapters(${SYSTEM_CONFIG} ${MEMORY_MODE})
 
+if(NOT CMAKE_SKIP_INSTALL_RULES AND TARGET ethosu_core_driver)
+  get_property(
+    _et_ethosu_core_driver_exported GLOBAL
+    PROPERTY ET_ETHOSU_CORE_DRIVER_EXPORTED
+  )
+  if(NOT _et_ethosu_core_driver_exported)
+    install(
+      TARGETS ethosu_core_driver
+      EXPORT ExecuTorchTargets
+      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+    set_property(GLOBAL PROPERTY ET_ETHOSU_CORE_DRIVER_EXPORTED TRUE)
+  endif()
+endif()
+
 # Convert pte to header
 if(NOT "${ET_MODEL_PTE_ADDR}" AND NOT SEMIHOSTING)
   add_custom_target(
@@ -211,10 +235,9 @@ if(NOT "${ET_MODEL_PTE_ADDR}" AND NOT SEMIHOSTING)
 
   add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
-    COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_SOURCE_DIR}/pte_to_header.py --pte
-            ${ET_PTE_FILE_PATH} --outdir ${CMAKE_CURRENT_BINARY_DIR}
+    COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/pte_to_header.py
+            --pte ${ET_PTE_FILE_PATH} --outdir ${CMAKE_CURRENT_BINARY_DIR}
     DEPENDS ${ET_PTE_FILE_PATH}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   )
 endif()
 
@@ -295,26 +318,31 @@ list(
 # (user-set)SELECT_OPS_MODEL variable. For normal build, use
 # EXECUTORCH_SELECT_OPS_MODEL to include ops automatically. If the pte contains
 # no undelegated ops, use neither.
-execute_process(
-  COMMAND
-    python "${ET_DIR_PATH}/codegen/tools/gen_oplist.py"
-    --model_file_path=${ET_PTE_FILE_PATH}
-    --output_path=${CMAKE_CURRENT_BINARY_DIR}/temp.yaml
-  OUTPUT_VARIABLE CMD_RESULT
+set(FOUND_OPS_IN_FILE FALSE)
+if(NOT SEMIHOSTING
+   AND NOT ET_MODEL_PTE_ADDR
+   AND NOT "${ET_PTE_FILE_PATH}" STREQUAL ""
+   AND EXISTS "${ET_PTE_FILE_PATH}"
 )
+  execute_process(
+    COMMAND
+      ${PYTHON_EXECUTABLE} "${EXECUTORCH_ROOT}/codegen/tools/gen_oplist.py"
+      --model_file_path=${ET_PTE_FILE_PATH}
+      --output_path=${CMAKE_CURRENT_BINARY_DIR}/temp.yaml
+    OUTPUT_VARIABLE CMD_RESULT
+  )
 
-if(CMD_RESULT MATCHES "aten::" OR CMD_RESULT MATCHES "dim_order_ops::")
-  set(FOUND_OPS_IN_FILE "true")
-else()
-  set(FOUND_OPS_IN_FILE "false")
+  if(CMD_RESULT MATCHES "aten::" OR CMD_RESULT MATCHES "dim_order_ops::")
+    set(FOUND_OPS_IN_FILE TRUE)
+  endif()
 endif()
 
-if(${SEMIHOSTING})
+if(SEMIHOSTING)
   set(EXECUTORCH_SELECT_OPS_MODEL "")
   message(
     "gen_oplist: Building with semihosting, no model is used to auto generate ops from will use EXECUTORCH_SELECT_OPS_LIST=${EXECUTORCH_SELECT_OPS_LIST}"
   )
-elseif(${FOUND_OPS_IN_FILE})
+elseif(FOUND_OPS_IN_FILE)
   set(EXECUTORCH_SELECT_OPS_LIST "")
   set(EXECUTORCH_SELECT_OPS_MODEL "${ET_PTE_FILE_PATH}")
   message(
@@ -333,10 +361,6 @@ endif()
 if(NOT ("${EXECUTORCH_SELECT_OPS_LIST}" STREQUAL ""
         AND "${EXECUTORCH_SELECT_OPS_MODEL}" STREQUAL "")
 )
-  set(EXECUTORCH_ROOT ${ET_DIR_PATH})
-  include(${ET_DIR_PATH}/tools/cmake/Utils.cmake)
-  include(${ET_DIR_PATH}/tools/cmake/Codegen.cmake)
-
   gen_selected_ops(
     LIB_NAME
     "arm_portable_ops_lib"
@@ -354,7 +378,7 @@ if(NOT ("${EXECUTORCH_SELECT_OPS_LIST}" STREQUAL ""
 
   generate_bindings_for_kernels(
     LIB_NAME "arm_portable_ops_lib" FUNCTIONS_YAML
-    ${ET_DIR_PATH}/kernels/portable/functions.yaml DTYPE_SELECTIVE_BUILD
+    ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml DTYPE_SELECTIVE_BUILD
     "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
   )
   gen_operators_lib(
@@ -402,15 +426,16 @@ if(ET_BUNDLE_IO)
     endif()
     if(_bundled_program_search_paths)
       list(REMOVE_DUPLICATES _bundled_program_search_paths)
+      # BundleIO can reuse a separate ExecuTorch build tree where
+      # bundled_program is not part of this CMake graph. Restrict the fallback
+      # lookup to the caller-provided build directories so we do not
+      # accidentally pick up an unrelated library from the host system.
       find_library(
         _bundled_program_library
         NAMES bundled_program
         PATHS ${_bundled_program_search_paths}
         NO_DEFAULT_PATH
       )
-    endif()
-    if(NOT _bundled_program_library)
-      find_library(_bundled_program_library NAMES bundled_program)
     endif()
     if(_bundled_program_library)
       list(APPEND arm_executor_runner_link ${_bundled_program_library})
@@ -427,9 +452,15 @@ endif()
 # bin size as we link in a number of other symbols
 target_link_libraries(arm_executor_runner PUBLIC ${arm_executor_runner_link})
 
+# Ensure the ELF lands next to the CMake build tree so run.sh (and downstream
+# tooling) can locate it deterministically regardless of multi-config vs
+# single-config generators.
 target_link_options(
   arm_executor_runner PUBLIC LINKER:-Map=arm_executor_runner.map
 )
+# Reuse a parent build's output directory if it already set one; otherwise keep
+# the runner ELF next to this build tree so run.sh can find it predictably.
+arm_runner_configure_runtime_output(arm_executor_runner "${CMAKE_BINARY_DIR}")
 
 # Sanitizers
 if(CMAKE_BUILD_TYPE MATCHES "UndefinedSanitizer")
@@ -438,7 +469,7 @@ if(CMAKE_BUILD_TYPE MATCHES "UndefinedSanitizer")
   target_link_options(arm_executor_runner PRIVATE ${_et_runner_ubsan_flag})
   if(NOT TARGET executorch_ubsan)
     add_subdirectory(
-      ${ET_DIR_PATH}/examples/arm/ubsan
+      ${EXECUTORCH_ROOT}/examples/arm/ubsan
       ${CMAKE_CURRENT_BINARY_DIR}/ubsan_runtime
     )
   endif()
@@ -454,7 +485,8 @@ if(CMAKE_BUILD_TYPE MATCHES "AddressSanitizer")
   target_link_options(arm_executor_runner PRIVATE ${_et_runner_asan_flags})
   if(NOT TARGET executorch_asan)
     add_subdirectory(
-      ${ET_DIR_PATH}/examples/arm/asan ${CMAKE_CURRENT_BINARY_DIR}/asan_runtime
+      ${EXECUTORCH_ROOT}/examples/arm/asan
+      ${CMAKE_CURRENT_BINARY_DIR}/asan_runtime
     )
   endif()
   target_link_libraries(arm_executor_runner PRIVATE executorch_asan)
@@ -464,10 +496,12 @@ if(CMAKE_BUILD_TYPE MATCHES "AddressSanitizer")
 endif()
 
 # ET headers and generated headers includes
+set(_arm_runner_include_dirs
+    ${ET_INCLUDE_PATH} ${ET_INCLUDE_PATH}/runtime/core/portable_type/c10
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
 target_include_directories(
-  arm_executor_runner
-  PRIVATE ${ET_INCLUDE_PATH} ${ET_DIR_PATH}/runtime/core/portable_type/c10
-          ${CMAKE_CURRENT_BINARY_DIR}
+  arm_executor_runner PRIVATE ${_arm_runner_include_dirs}
 )
 target_compile_definitions(
   arm_executor_runner PRIVATE C10_USING_CUSTOM_GENERATED_MACROS
