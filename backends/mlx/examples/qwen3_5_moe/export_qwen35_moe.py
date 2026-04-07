@@ -44,8 +44,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 from executorch.examples.models.qwen3_5_moe.model import (
-    FusedMoEExperts,
     FullAttention,
+    FusedMoEExperts,
     GatedDeltaNet,
     GemmaRMSNorm,
     KVCache,
@@ -140,10 +140,10 @@ class UnfusedMoEExperts(nn.Module):
             x_input = x.unsqueeze(-2).unsqueeze(-2)  # [N, 1, 1, D]
             idx = expert_indices
 
-        gate = self.gate_proj.forward_raw(x_input, idx, sorted_indices=do_sort)
-        up = self.up_proj.forward_raw(x_input, idx, sorted_indices=do_sort)
+        gate = self.gate_proj.forward(x_input, idx, sorted_indices=do_sort)
+        up = self.up_proj.forward(x_input, idx, sorted_indices=do_sort)
         h = torch.nn.functional.silu(gate) * up
-        down = self.down_proj.forward_raw(h, idx, sorted_indices=do_sort)
+        down = self.down_proj.forward(h, idx, sorted_indices=do_sort)
 
         if do_sort:
             # down: [N*top_k, 1, D] → squeeze → unsort → reshape to [N, top_k, D]
@@ -169,7 +169,9 @@ def _rms_norm_gated_forward(self, x, z):
     Uses F.rms_norm which maps to fast::rms_norm (handles precision internally)
     and F.silu which also handles bf16 natively in MLX.
     """
-    return torch.nn.functional.rms_norm(x, (x.shape[-1],), self.weight, self.eps) * torch.nn.functional.silu(z)
+    return torch.nn.functional.rms_norm(
+        x, (x.shape[-1],), self.weight, self.eps
+    ) * torch.nn.functional.silu(z)
 
 
 def _gemma_rms_norm_forward(self, x):
@@ -196,7 +198,11 @@ def _sparse_moe_forward(self, x):
     expert_weights = expert_weights.softmax(dim=-1)
 
     routed_out = self.experts(
-        x_flat, expert_weights, expert_indices, self.top_k
+        x_flat,
+        expert_weights,
+        expert_indices,
+        self.top_k,
+        sort_experts=getattr(self, "_sort_experts", False),
     )
 
     shared_out = self.shared_expert(x_flat)
@@ -221,9 +227,7 @@ def _full_attention_forward(self, x, input_pos):
     k = qkv[..., self.q_dim : self.q_dim + self.k_dim].view(
         B, T, self.n_kv_heads, self.head_dim
     )
-    v = qkv[..., self.q_dim + self.k_dim :].view(
-        B, T, self.n_kv_heads, self.head_dim
-    )
+    v = qkv[..., self.q_dim + self.k_dim :].view(B, T, self.n_kv_heads, self.head_dim)
 
     q = self.q_norm(q)
     k = self.k_norm(k)
@@ -236,12 +240,8 @@ def _full_attention_forward(self, x, input_pos):
     # Use mlx::rope custom op — fuses to a single RopeNode per tensor,
     # replacing ~14 decomposed ops (outer, cos, sin, slice, mul, cat, etc.)
     pos = input_pos[0].item()
-    q = torch.ops.mlx.rope(
-        q, self._rope_dims, pos, False, self._rope_base, 1.0, None
-    )
-    k = torch.ops.mlx.rope(
-        k, self._rope_dims, pos, False, self._rope_base, 1.0, None
-    )
+    q = torch.ops.mlx.rope(q, self._rope_dims, pos, False, self._rope_base, 1.0, None)
+    k = torch.ops.mlx.rope(k, self._rope_dims, pos, False, self._rope_base, 1.0, None)
 
     k, v = self.kv_cache.update(input_pos, k, v)
 
@@ -294,7 +294,9 @@ def _exportable_gated_delta_net_forward(self, x, input_pos):
     # (attribute reassignment would break mutation tracking)
     self.conv_state[:B].copy_(conv_input[:, :, conv_len - self.conv_kernel_size :])
     # Use native F.conv1d — maps to fused Conv1DNode (1 op instead of 12)
-    conv_out = torch.nn.functional.conv1d(conv_input, self.conv1d.weight, groups=self.conv_dim)
+    conv_out = torch.nn.functional.conv1d(
+        conv_input, self.conv1d.weight, groups=self.conv_dim
+    )
     conv_start = conv_out.shape[-1] - T
     qkv_conv = torch.nn.functional.silu(conv_out[:, :, conv_start:]).transpose(1, 2)
 
@@ -307,7 +309,7 @@ def _exportable_gated_delta_net_forward(self, x, input_pos):
     # RMS-normalize Q and K with asymmetric scaling (matches mlx-lm exactly)
     # mlx-lm: q = (1/Dk) * rms_norm(q), k = (1/√Dk) * rms_norm(k)
     # Uses pre-registered _qk_rms_weight (bf16 ones) so rms_norm returns bf16
-    inv_scale = torch.tensor(self.head_k_dim ** -0.5, dtype=x.dtype)
+    inv_scale = torch.tensor(self.head_k_dim**-0.5, dtype=x.dtype)
     q = (inv_scale * inv_scale) * torch.nn.functional.rms_norm(
         q, (self.head_k_dim,), self._qk_rms_weight, eps=1e-6
     )
@@ -336,8 +338,11 @@ def _exportable_gated_delta_net_forward(self, x, input_pos):
     import executorch.backends.mlx.examples.qwen3_5_moe.gated_delta_rule as _  # noqa: ensure op registered
 
     output = torch.ops.mlx.gated_delta_rule(
-        q, k, v,
-        g, beta,
+        q,
+        k,
+        v,
+        g,
+        beta,
         self.recurrent_state[:B],
     )
 
@@ -351,7 +356,13 @@ def _exportable_gated_delta_net_forward(self, x, input_pos):
     return self.out_proj(output)
 
 
-def replace_triton_ops(model, model_dtype=torch.bfloat16, config=None, sort_experts=False):
+def replace_triton_ops(
+    model,
+    model_dtype=torch.bfloat16,
+    config=None,
+    sort_experts=False,
+    fuse_gate_up=False,
+):
     """Replace all Triton-dependent modules with pure PyTorch equivalents."""
     from executorch.backends.mlx.llm.cache import KVCache as MLXKVCache
 
@@ -359,30 +370,46 @@ def replace_triton_ops(model, model_dtype=torch.bfloat16, config=None, sort_expe
     count_gdn = 0
     count_kv = 0
 
-    # Swap FusedMoEExperts → UnfusedMoEExperts (SwitchLinear gate/up/down)
+    # Swap FusedMoEExperts → SwitchMLP
     for name, module in model.named_modules():
         if not isinstance(module, FusedMoEExperts):
             continue
-        unfused = UnfusedMoEExperts(
-            module.num_experts, module.hidden_size, module.intermediate_size,
-            sort_experts=sort_experts,
+        from executorch.backends.mlx.llm.switch import SwitchMLP
+
+        switch_mlp = SwitchMLP(
+            module.hidden_size,
+            module.intermediate_size,
+            module.num_experts,
+            fuse_gate_up=fuse_gate_up,
         )
         # Match dtype of original weights
-        unfused.to(dtype=module.w1_weight.dtype)
-        # Copy weights: split fused w1_weight [E, 2*inter, D] into gate + up
+        switch_mlp.to(dtype=module.w1_weight.dtype)
+
         inter = module.intermediate_size
         with torch.no_grad():
-            for e in range(module.num_experts):
-                unfused.gate_proj.experts[e].weight.copy_(module.w1_weight[e, :inter, :])
-                unfused.up_proj.experts[e].weight.copy_(module.w1_weight[e, inter:, :])
-                unfused.down_proj.experts[e].weight.copy_(module.w2_weight[e])
+            if fuse_gate_up:
+                # w1_weight [E, 2*inter, D] goes directly into fused gate_up_proj
+                for e in range(module.num_experts):
+                    switch_mlp.gate_up_proj.experts[e].weight.copy_(module.w1_weight[e])
+                    switch_mlp.down_proj.experts[e].weight.copy_(module.w2_weight[e])
+            else:
+                # Split fused w1_weight [E, 2*inter, D] into gate + up
+                for e in range(module.num_experts):
+                    switch_mlp.gate_proj.experts[e].weight.copy_(
+                        module.w1_weight[e, :inter, :]
+                    )
+                    switch_mlp.up_proj.experts[e].weight.copy_(
+                        module.w1_weight[e, inter:, :]
+                    )
+                    switch_mlp.down_proj.experts[e].weight.copy_(module.w2_weight[e])
+
         # Replace on parent
         parts = name.rsplit(".", 1)
         if len(parts) == 1:
-            setattr(model, parts[0], unfused)
+            setattr(model, parts[0], switch_mlp)
         else:
             parent = model.get_submodule(parts[0])
-            setattr(parent, parts[1], unfused)
+            setattr(parent, parts[1], switch_mlp)
         count_moe += 1
 
     for _name, module in model.named_modules():
@@ -401,9 +428,7 @@ def replace_triton_ops(model, model_dtype=torch.bfloat16, config=None, sort_expe
             #     module.dt_bias.data = module.dt_bias.data.float()
             # Swap RMSNormGated.forward to avoid explicit .float()/.type_as() casts.
             # fast::rms_norm and silu handle bf16 natively.
-            module.norm.forward = types.MethodType(
-                _rms_norm_gated_forward, module.norm
-            )
+            module.norm.forward = types.MethodType(_rms_norm_gated_forward, module.norm)
             # Register bf16 ones weight for Q/K rms_norm so it returns bf16
             # (weight=None causes rms_norm to return f32 from decomposition)
             module.register_buffer(
@@ -452,6 +477,7 @@ def replace_triton_ops(model, model_dtype=torch.bfloat16, config=None, sort_expe
     count_moe_fwd = 0
     for _name, module in model.named_modules():
         if isinstance(module, SparseMoE):
+            module._sort_experts = sort_experts
             module.forward = types.MethodType(_sparse_moe_forward, module)
             count_moe_fwd += 1
 
@@ -578,7 +604,9 @@ def export_to_mlx(model, config, output_path=None):
         if node.op == "call_function":
             target = str(node.target)
             op_counts[target] = op_counts.get(target, 0) + 1
-    logger.info(f"Exported graph: {len(graph.nodes)} nodes, {len(op_counts)} unique ops")
+    logger.info(
+        f"Exported graph: {len(graph.nodes)} nodes, {len(op_counts)} unique ops"
+    )
     for op, count in sorted(op_counts.items()):
         logger.info(f"  {op}: {count}")
 
@@ -589,8 +617,8 @@ def export_to_mlx(model, config, output_path=None):
     logger.info("Lowering to ExecuTorch with MLX backend...")
     try:
         import cProfile
-        import pstats
         import io as _io
+        import pstats
 
         profiler = cProfile.Profile()
         t0 = time.time()
@@ -606,7 +634,9 @@ def export_to_mlx(model, config, output_path=None):
         )
         profiler.disable()
         timings["to_edge_transform_and_lower"] = time.time() - t0
-        logger.info(f"Lowering complete ({timings['to_edge_transform_and_lower']:.1f}s)")
+        logger.info(
+            f"Lowering complete ({timings['to_edge_transform_and_lower']:.1f}s)"
+        )
 
         # Print profile results
         s = _io.StringIO()
@@ -620,6 +650,7 @@ def export_to_mlx(model, config, output_path=None):
         logger.info(f"Profile (top 40 by internal time):\n{s.getvalue()}")
     except Exception as e:
         import traceback
+
         logger.error(f"Partitioning failed: {type(e).__name__}: {e}")
         traceback.print_exc()
         return None
@@ -692,6 +723,14 @@ def main():
         "No effect on decode (single token).",
     )
     parser.add_argument(
+        "--fuse-gate-up",
+        action="store_true",
+        default=False,
+        help="Fuse gate and up projections into a single SwitchLinear with "
+        "output dim 2*intermediate_size. Reduces gather_qmm calls from 3 "
+        "to 2 per MoE layer. May not improve performance on all hardware.",
+    )
+    parser.add_argument(
         "--sampling",
         type=str,
         choices=["none", "greedy"],
@@ -729,7 +768,7 @@ def main():
 
     # Override default group size to 64 to match mlx-lm (better GPU tiling)
     for action in parser._actions:
-        if hasattr(action, 'dest') and action.dest == 'qlinear_group_size':
+        if hasattr(action, "dest") and action.dest == "qlinear_group_size":
             action.default = 64
             break
 
@@ -757,7 +796,13 @@ def main():
     else:
         model, config = build_tiny_model(dtype=load_dtype)
 
-    replace_triton_ops(model, model_dtype=model_dtype, config=config, sort_experts=args.sort_experts)
+    replace_triton_ops(
+        model,
+        model_dtype=model_dtype,
+        config=config,
+        sort_experts=args.sort_experts,
+        fuse_gate_up=args.fuse_gate_up,
+    )
 
     # Quantize if requested (before upcasting — quantization compresses weights)
     if args.qlinear or args.qembedding:
@@ -772,7 +817,6 @@ def main():
             qlinear_group_size=args.qlinear_group_size,
             qembedding_config=args.qembedding,
             qembedding_group_size=args.qembedding_group_size,
-            choose_qparams_algorithm=args.qlinear_algorithm,
         )
         logger.info("Quantization done")
 
@@ -802,7 +846,9 @@ def main():
         tokens = torch.zeros((1, 2), dtype=torch.long)
         input_pos = torch.arange(2, dtype=torch.long)
         output = model(tokens, input_pos)
-        logger.info(f"Forward pass OK: output shape {output.shape}, dtype {output.dtype}")
+        logger.info(
+            f"Forward pass OK: output shape {output.shape}, dtype {output.dtype}"
+        )
 
     # Wrap model with greedy argmax if requested
     if args.sampling == "greedy":

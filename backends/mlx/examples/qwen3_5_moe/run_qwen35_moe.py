@@ -103,8 +103,7 @@ def run_inference(
 
     prefill_time = time.time() - start_time
     logger.info(
-        f"Prefill: {prefill_time:.3f}s "
-        f"({prompt_len / prefill_time:.1f} tokens/sec)"
+        f"Prefill: {prefill_time:.3f}s " f"({prompt_len / prefill_time:.1f} tokens/sec)"
     )
 
     # Detect if model includes greedy sampling (returns token id vs logits)
@@ -168,9 +167,15 @@ def run_inference(
     n_decode = num_generated - 1  # exclude first token (from prefill)
     if n_decode > 0:
         print(f"\nDecode timing breakdown ({n_decode} steps):")
-        print(f"  Prep (tensor creation):  {t_prep*1000:.1f}ms total, {t_prep/n_decode*1000:.2f}ms/step")
-        print(f"  Execute (forward.execute): {t_execute*1000:.1f}ms total, {t_execute/n_decode*1000:.2f}ms/step")
-        print(f"  Post (argmax/sample):    {t_post*1000:.1f}ms total, {t_post/n_decode*1000:.2f}ms/step")
+        print(
+            f"  Prep (tensor creation):  {t_prep*1000:.1f}ms total, {t_prep/n_decode*1000:.2f}ms/step"
+        )
+        print(
+            f"  Execute (forward.execute): {t_execute*1000:.1f}ms total, {t_execute/n_decode*1000:.2f}ms/step"
+        )
+        print(
+            f"  Post (argmax/sample):    {t_post*1000:.1f}ms total, {t_post/n_decode*1000:.2f}ms/step"
+        )
 
     # Print results
     print(f"\nPrefill: {prefill_time:.3f}s ({prompt_len / prefill_time:.1f} tok/s)")
@@ -188,9 +193,7 @@ def run_inference(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Run exported Qwen 3.5 MoE model"
-    )
+    parser = argparse.ArgumentParser(description="Run exported Qwen 3.5 MoE model")
     parser.add_argument(
         "--pte",
         type=str,

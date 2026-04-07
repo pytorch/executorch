@@ -41,12 +41,12 @@ from torch.fx.node import Node
 
 @torch.library.custom_op("mlx::gated_delta_rule", mutates_args=("state",))
 def gated_delta_rule(
-    q: Tensor,          # [B, T, Hk, Dk]
-    k: Tensor,          # [B, T, Hk, Dk]
-    v: Tensor,          # [B, T, Hv, Dv]
-    g: Tensor,          # [B, T, Hv] — decay gate
-    beta: Tensor,       # [B, T, Hv] — update gate
-    state: Tensor,      # [B, Hv, Dv, Dk] — recurrent state (MUTATED in place)
+    q: Tensor,  # [B, T, Hk, Dk]
+    k: Tensor,  # [B, T, Hk, Dk]
+    v: Tensor,  # [B, T, Hv, Dv]
+    g: Tensor,  # [B, T, Hv] — decay gate
+    beta: Tensor,  # [B, T, Hv] — update gate
+    state: Tensor,  # [B, Hv, Dv, Dk] — recurrent state (MUTATED in place)
 ) -> Tensor:
     """
     Gated delta rule recurrence — sequential scan over T.
@@ -93,6 +93,8 @@ def gated_delta_rule_fake(
     return v.new_empty(B, T, Hv, Dv)
 
 
+from executorch.backends.mlx.builder.op_helpers import torch_dtype_to_scalar_type
+
 # ---------------------------------------------------------------------------
 # Pattern handler
 # ---------------------------------------------------------------------------
@@ -111,7 +113,6 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     SubtractNode,
     SumNode,
 )
-from executorch.backends.mlx.builder.op_helpers import torch_dtype_to_scalar_type
 from torch.export.exported_program import ExportedProgram
 
 # Set to True to emit MetalKernelNode (fused GPU kernel) instead of
@@ -250,8 +251,14 @@ class GatedDeltaRuleHandler(PatternHandler):
         )
 
         q_slot, k_slot, v_slot, g_slot, beta_slot, state_slot = P.slot_map(
-            [self.q_node, self.k_node, self.v_node, self.g_node,
-             self.beta_node, self.state_node]
+            [
+                self.q_node,
+                self.k_node,
+                self.v_node,
+                self.g_node,
+                self.beta_node,
+                self.state_node,
+            ]
         )
 
         # Extract shapes from metadata
@@ -264,34 +271,42 @@ class GatedDeltaRuleHandler(PatternHandler):
 
         # B and T are potentially dynamic — extract as runtime Vids via SymSizeNode
         _, b_val = P.make_tmp_value_slot()
-        P.emit(SymSizeNode(
-            a=P.slot_to_tid(q_slot),
-            dim=0,
-            out=P.slot_to_vid(b_val),
-        ))
+        P.emit(
+            SymSizeNode(
+                a=P.slot_to_tid(q_slot),
+                dim=0,
+                out=P.slot_to_vid(b_val),
+            )
+        )
         _, t_val = P.make_tmp_value_slot()
-        P.emit(SymSizeNode(
-            a=P.slot_to_tid(q_slot),
-            dim=1,
-            out=P.slot_to_vid(t_val),
-        ))
+        P.emit(
+            SymSizeNode(
+                a=P.slot_to_tid(q_slot),
+                dim=1,
+                out=P.slot_to_vid(t_val),
+            )
+        )
 
         # grid[2] = B * Hv (computed at runtime)
         _, b_times_hv = P.make_tmp_value_slot()
-        P.emit(MultiplyIntNode(
-            a=P.to_int_or_vid(b_val),
-            b=IntOrVid.from_literal(int(Hv)),
-            out=P.slot_to_vid(b_times_hv),
-        ))
+        P.emit(
+            MultiplyIntNode(
+                a=P.to_int_or_vid(b_val),
+                b=IntOrVid.from_literal(int(Hv)),
+                out=P.slot_to_vid(b_times_hv),
+            )
+        )
 
         # T as a 0-D int32 tensor for the kernel input (created at runtime from Vid)
         _, t_tensor = P.make_tmp_slot()
-        P.emit(FullNode(
-            out=P.slot_to_tid(t_tensor),
-            shape=[],
-            v=P.to_float_or_vid(t_val),
-            scalar_type=torch_dtype_to_scalar_type(torch.int32),
-        ))
+        P.emit(
+            FullNode(
+                out=P.slot_to_tid(t_tensor),
+                shape=[],
+                v=P.to_float_or_vid(t_val),
+                scalar_type=torch_dtype_to_scalar_type(torch.int32),
+            )
+        )
 
         # B as IntOrVid for output shapes
         b_iov = P.to_int_or_vid(b_val)
@@ -379,46 +394,52 @@ class GatedDeltaRuleHandler(PatternHandler):
         # B and T are dynamic (Vids), Hv/Dv/Dk are static literals
         output_shapes_flat = [
             # y shape
-            b_iov, t_iov,
-            IntOrVid.from_literal(int(Hv)), IntOrVid.from_literal(int(Dv)),
+            b_iov,
+            t_iov,
+            IntOrVid.from_literal(int(Hv)),
+            IntOrVid.from_literal(int(Dv)),
             # state_out shape
-            b_iov, IntOrVid.from_literal(int(Hv)),
-            IntOrVid.from_literal(int(Dv)), IntOrVid.from_literal(int(Dk)),
+            b_iov,
+            IntOrVid.from_literal(int(Hv)),
+            IntOrVid.from_literal(int(Dv)),
+            IntOrVid.from_literal(int(Dk)),
         ]
         output_shape_lengths = [4, 4]
 
-        P.emit(MetalKernelNode(
-            name="gated_delta_step",
-            source=source,
-            inputs=[
-                P.slot_to_tid(q_slot),
-                P.slot_to_tid(k_slot),
-                P.slot_to_tid(v_slot),
-                P.slot_to_tid(g_slot),
-                P.slot_to_tid(beta_slot),
-                P.slot_to_tid(state_slot),
-                P.slot_to_tid(t_tensor),
-            ],
-            outputs=[P.slot_to_tid(out), P.slot_to_tid(carry)],
-            grid=[
-                IntOrVid.from_literal(32),
-                IntOrVid.from_literal(int(Dv)),
-                P.to_int_or_vid(b_times_hv),
-            ],
-            threadgroup=[
-                IntOrVid.from_literal(32),
-                IntOrVid.from_literal(4),
-                IntOrVid.from_literal(1),
-            ],
-            input_names=["q", "k", "v", "g", "beta", "state_in", "T"],
-            output_names=["y", "state_out"],
-            output_shapes_flat=output_shapes_flat,
-            output_shape_lengths=output_shape_lengths,
-            output_dtypes=[dtype_int, dtype_int],
-            template_arg_names=["InT", "Dk", "Dv", "Hk", "Hv"],
-            template_arg_kinds=[2, 0, 0, 0, 0],  # 2=dtype, 0=int
-            template_arg_values=[dtype_int, int(Dk), int(Dv), int(Hk), int(Hv)],
-        ))
+        P.emit(
+            MetalKernelNode(
+                name="gated_delta_step",
+                source=source,
+                inputs=[
+                    P.slot_to_tid(q_slot),
+                    P.slot_to_tid(k_slot),
+                    P.slot_to_tid(v_slot),
+                    P.slot_to_tid(g_slot),
+                    P.slot_to_tid(beta_slot),
+                    P.slot_to_tid(state_slot),
+                    P.slot_to_tid(t_tensor),
+                ],
+                outputs=[P.slot_to_tid(out), P.slot_to_tid(carry)],
+                grid=[
+                    IntOrVid.from_literal(32),
+                    IntOrVid.from_literal(int(Dv)),
+                    P.to_int_or_vid(b_times_hv),
+                ],
+                threadgroup=[
+                    IntOrVid.from_literal(32),
+                    IntOrVid.from_literal(4),
+                    IntOrVid.from_literal(1),
+                ],
+                input_names=["q", "k", "v", "g", "beta", "state_in", "T"],
+                output_names=["y", "state_out"],
+                output_shapes_flat=output_shapes_flat,
+                output_shape_lengths=output_shape_lengths,
+                output_dtypes=[dtype_int, dtype_int],
+                template_arg_names=["InT", "Dk", "Dv", "Hk", "Hv"],
+                template_arg_kinds=[2, 0, 0, 0, 0],  # 2=dtype, 0=int
+                template_arg_values=[dtype_int, int(Dk), int(Dv), int(Hk), int(Hv)],
+            )
+        )
 
         # HEAD is getitem[1] = mutated state → bind to carry
         P.set_slot(n, carry)
@@ -433,8 +454,14 @@ class GatedDeltaRuleHandler(PatternHandler):
         # and reuse idx values — each allocation remains distinct in
         # build()'s used_slots set and _create_slot_mappings dict.
         q_slot, k_slot, v_slot, g_slot, beta_slot, state_slot = P.slot_map(
-            [self.q_node, self.k_node, self.v_node, self.g_node,
-             self.beta_node, self.state_node]
+            [
+                self.q_node,
+                self.k_node,
+                self.v_node,
+                self.g_node,
+                self.beta_node,
+                self.state_node,
+            ]
         )
 
         # Carry needs a writable temp slot
@@ -466,63 +493,79 @@ class GatedDeltaRuleHandler(PatternHandler):
 
         with P.new_chain() as body_idx:
             # state = state * g_t[:, :, None, None]
-            P.emit(ExpandDimsNode(
-                x=P.slot_to_tid(g_s), out=P.slot_to_tid(t0), axis=-1))
-            P.emit(ExpandDimsNode(
-                x=P.slot_to_tid(t0), out=P.slot_to_tid(t0), axis=-1))
-            P.emit(MultiplyNode(
-                a=P.slot_to_tid(carry), b=P.slot_to_tid(t0),
-                out=P.slot_to_tid(carry)))
+            P.emit(ExpandDimsNode(x=P.slot_to_tid(g_s), out=P.slot_to_tid(t0), axis=-1))
+            P.emit(ExpandDimsNode(x=P.slot_to_tid(t0), out=P.slot_to_tid(t0), axis=-1))
+            P.emit(
+                MultiplyNode(
+                    a=P.slot_to_tid(carry),
+                    b=P.slot_to_tid(t0),
+                    out=P.slot_to_tid(carry),
+                )
+            )
 
             # kv_mem = (state * k_t[:, :, None, :]).sum(-1)
-            P.emit(ExpandDimsNode(
-                x=P.slot_to_tid(k_s), out=P.slot_to_tid(t0), axis=-2))
-            P.emit(MultiplyNode(
-                a=P.slot_to_tid(carry), b=P.slot_to_tid(t0),
-                out=P.slot_to_tid(t1)))
-            P.emit(SumNode(
-                x=P.slot_to_tid(t1), out=P.slot_to_tid(t1), axes=[-1]))
+            P.emit(ExpandDimsNode(x=P.slot_to_tid(k_s), out=P.slot_to_tid(t0), axis=-2))
+            P.emit(
+                MultiplyNode(
+                    a=P.slot_to_tid(carry), b=P.slot_to_tid(t0), out=P.slot_to_tid(t1)
+                )
+            )
+            P.emit(SumNode(x=P.slot_to_tid(t1), out=P.slot_to_tid(t1), axes=[-1]))
 
             # delta = (v_t - kv_mem) * beta_t[:, :, None]
-            P.emit(SubtractNode(
-                a=P.slot_to_tid(v_s), b=P.slot_to_tid(t1),
-                out=P.slot_to_tid(t1)))
-            P.emit(ExpandDimsNode(
-                x=P.slot_to_tid(beta_s), out=P.slot_to_tid(t2), axis=-1))
-            P.emit(MultiplyNode(
-                a=P.slot_to_tid(t1), b=P.slot_to_tid(t2),
-                out=P.slot_to_tid(t1)))
+            P.emit(
+                SubtractNode(
+                    a=P.slot_to_tid(v_s), b=P.slot_to_tid(t1), out=P.slot_to_tid(t1)
+                )
+            )
+            P.emit(
+                ExpandDimsNode(x=P.slot_to_tid(beta_s), out=P.slot_to_tid(t2), axis=-1)
+            )
+            P.emit(
+                MultiplyNode(
+                    a=P.slot_to_tid(t1), b=P.slot_to_tid(t2), out=P.slot_to_tid(t1)
+                )
+            )
 
             # state = state + k[:,:,None,:] * delta[:,:,:,None]
-            P.emit(ExpandDimsNode(
-                x=P.slot_to_tid(k_s), out=P.slot_to_tid(t2), axis=-2))
-            P.emit(ExpandDimsNode(
-                x=P.slot_to_tid(t1), out=P.slot_to_tid(t1), axis=-1))
-            P.emit(MultiplyNode(
-                a=P.slot_to_tid(t2), b=P.slot_to_tid(t1),
-                out=P.slot_to_tid(t2)))
-            P.emit(AddNode(
-                a=P.slot_to_tid(carry), b=P.slot_to_tid(t2),
-                out=P.slot_to_tid(carry)))
+            P.emit(ExpandDimsNode(x=P.slot_to_tid(k_s), out=P.slot_to_tid(t2), axis=-2))
+            P.emit(ExpandDimsNode(x=P.slot_to_tid(t1), out=P.slot_to_tid(t1), axis=-1))
+            P.emit(
+                MultiplyNode(
+                    a=P.slot_to_tid(t2), b=P.slot_to_tid(t1), out=P.slot_to_tid(t2)
+                )
+            )
+            P.emit(
+                AddNode(
+                    a=P.slot_to_tid(carry),
+                    b=P.slot_to_tid(t2),
+                    out=P.slot_to_tid(carry),
+                )
+            )
 
             # y_t = (state * q_t[:,:,None,:]).sum(-1)
-            P.emit(ExpandDimsNode(
-                x=P.slot_to_tid(q_s), out=P.slot_to_tid(t0), axis=-2))
-            P.emit(MultiplyNode(
-                a=P.slot_to_tid(carry), b=P.slot_to_tid(t0),
-                out=P.slot_to_tid(t0)))
-            P.emit(SumNode(
-                x=P.slot_to_tid(t0), out=P.slot_to_tid(out), axes=[-1]))
+            P.emit(ExpandDimsNode(x=P.slot_to_tid(q_s), out=P.slot_to_tid(t0), axis=-2))
+            P.emit(
+                MultiplyNode(
+                    a=P.slot_to_tid(carry), b=P.slot_to_tid(t0), out=P.slot_to_tid(t0)
+                )
+            )
+            P.emit(SumNode(x=P.slot_to_tid(t0), out=P.slot_to_tid(out), axes=[-1]))
 
         # Emit the ScanNode
-        P.emit(ScanNode(
-            body_chain_idx=body_idx,
-            scan_axis=1,
-            originals=[P.slot_to_tid(s) for s in [q_slot, k_slot, v_slot, g_slot, beta_slot]],
-            sliced=[P.slot_to_tid(s) for s in [q_s, k_s, v_s, g_s, beta_s]],
-            outputs=[P.slot_to_tid(out)],
-            carry=[P.slot_to_tid(carry)],
-        ))
+        P.emit(
+            ScanNode(
+                body_chain_idx=body_idx,
+                scan_axis=1,
+                originals=[
+                    P.slot_to_tid(s)
+                    for s in [q_slot, k_slot, v_slot, g_slot, beta_slot]
+                ],
+                sliced=[P.slot_to_tid(s) for s in [q_s, k_s, v_s, g_s, beta_s]],
+                outputs=[P.slot_to_tid(out)],
+                carry=[P.slot_to_tid(carry)],
+            )
+        )
 
         # HEAD is getitem[1] = mutated state → bind to carry
         P.set_slot(n, carry)

@@ -21,10 +21,10 @@ Usage:
 
 from typing import Dict, List, Optional, Tuple
 
+import executorch.backends.mlx.examples.qwen3_5_moe.gated_delta_rule as gdr_module  # noqa: F401
+
 import torch
 import torch.nn as nn
-
-import executorch.backends.mlx.examples.qwen3_5_moe.gated_delta_rule as gdr_module  # noqa: F401
 
 from executorch.backends.mlx.test.test_utils import OpTestCase
 
@@ -170,15 +170,67 @@ class GatedDeltaRuleTest(OpTestCase):
         for use_kernel in [False]:
             configs.append(cls(use_custom_kernel=use_kernel))
             configs.append(cls(seq_len=1, use_custom_kernel=use_kernel))
-            configs.append(cls(seq_len=8, num_heads=4, head_dim=32, value_dim=32, use_custom_kernel=use_kernel))
-            configs.append(cls(dtype=torch.bfloat16, rtol=0.05, atol=0.15, use_custom_kernel=use_kernel))
+            configs.append(
+                cls(
+                    seq_len=8,
+                    num_heads=4,
+                    head_dim=32,
+                    value_dim=32,
+                    use_custom_kernel=use_kernel,
+                )
+            )
+            configs.append(
+                cls(
+                    dtype=torch.bfloat16,
+                    rtol=0.05,
+                    atol=0.15,
+                    use_custom_kernel=use_kernel,
+                )
+            )
         # Dims with Dk multiple of 32 — both scan and custom kernel
         for use_kernel in [False, True]:
-            configs.append(cls(num_heads=2, head_dim=64, value_dim=64, use_custom_kernel=use_kernel))
-            configs.append(cls(seq_len=1, num_heads=2, head_dim=64, value_dim=64, use_custom_kernel=use_kernel))
-            configs.append(cls(seq_len=8, num_heads=4, head_dim=64, value_dim=64, use_custom_kernel=use_kernel))
-            configs.append(cls(num_heads=2, head_dim=64, value_dim=64, dtype=torch.bfloat16, rtol=0.05, atol=0.15, use_custom_kernel=use_kernel))
-            configs.append(cls(num_heads=2, head_dim=128, value_dim=128, use_custom_kernel=use_kernel))
+            configs.append(
+                cls(
+                    num_heads=2, head_dim=64, value_dim=64, use_custom_kernel=use_kernel
+                )
+            )
+            configs.append(
+                cls(
+                    seq_len=1,
+                    num_heads=2,
+                    head_dim=64,
+                    value_dim=64,
+                    use_custom_kernel=use_kernel,
+                )
+            )
+            configs.append(
+                cls(
+                    seq_len=8,
+                    num_heads=4,
+                    head_dim=64,
+                    value_dim=64,
+                    use_custom_kernel=use_kernel,
+                )
+            )
+            configs.append(
+                cls(
+                    num_heads=2,
+                    head_dim=64,
+                    value_dim=64,
+                    dtype=torch.bfloat16,
+                    rtol=0.05,
+                    atol=0.15,
+                    use_custom_kernel=use_kernel,
+                )
+            )
+            configs.append(
+                cls(
+                    num_heads=2,
+                    head_dim=128,
+                    value_dim=128,
+                    use_custom_kernel=use_kernel,
+                )
+            )
         return configs
 
     def generate_test_files(self, verbose=False):
@@ -191,7 +243,10 @@ class GatedDeltaRuleTest(OpTestCase):
 
     def create_model(self) -> nn.Module:
         model = GatedDeltaRuleModel(
-            self.batch_size, self.num_heads, self.head_dim, self.value_dim,
+            self.batch_size,
+            self.num_heads,
+            self.head_dim,
+            self.value_dim,
         )
         return model.to(self.dtype)
 
@@ -200,12 +255,40 @@ class GatedDeltaRuleTest(OpTestCase):
         # Without this, bf16 accumulation diverges at larger head dims (dk64+)
         # because sum-of-64 products grows to ~O(√Dk) per step, compounding
         # exponentially through the recurrence.
-        scale = self.head_dim ** -0.5
-        q = torch.randn(self.batch_size, self.seq_len, self.num_heads, self.head_dim, dtype=self.dtype) * scale
-        k = torch.randn(self.batch_size, self.seq_len, self.num_heads, self.head_dim, dtype=self.dtype) * scale
-        v = torch.randn(self.batch_size, self.seq_len, self.num_heads, self.value_dim, dtype=self.dtype)
-        g = torch.randn(self.batch_size, self.seq_len, self.num_heads, dtype=self.dtype).sigmoid()
-        beta = torch.randn(self.batch_size, self.seq_len, self.num_heads, dtype=self.dtype).sigmoid()
+        scale = self.head_dim**-0.5
+        q = (
+            torch.randn(
+                self.batch_size,
+                self.seq_len,
+                self.num_heads,
+                self.head_dim,
+                dtype=self.dtype,
+            )
+            * scale
+        )
+        k = (
+            torch.randn(
+                self.batch_size,
+                self.seq_len,
+                self.num_heads,
+                self.head_dim,
+                dtype=self.dtype,
+            )
+            * scale
+        )
+        v = torch.randn(
+            self.batch_size,
+            self.seq_len,
+            self.num_heads,
+            self.value_dim,
+            dtype=self.dtype,
+        )
+        g = torch.randn(
+            self.batch_size, self.seq_len, self.num_heads, dtype=self.dtype
+        ).sigmoid()
+        beta = torch.randn(
+            self.batch_size, self.seq_len, self.num_heads, dtype=self.dtype
+        ).sigmoid()
         return (q, k, v, g, beta)
 
 
@@ -260,11 +343,17 @@ class GatedDeltaRuleDynamicSeqTest(OpTestCase):
         configs = []
         for use_kernel in [False, True]:
             # Export with T=4, test with T=1 (decode)
-            configs.append(cls(export_seq_len=4, test_seq_len=1, use_custom_kernel=use_kernel))
+            configs.append(
+                cls(export_seq_len=4, test_seq_len=1, use_custom_kernel=use_kernel)
+            )
             # Export with T=2, test with T=8 (longer prefill)
-            configs.append(cls(export_seq_len=2, test_seq_len=8, use_custom_kernel=use_kernel))
+            configs.append(
+                cls(export_seq_len=2, test_seq_len=8, use_custom_kernel=use_kernel)
+            )
             # Export with T=4, test with T=4 (same — control)
-            configs.append(cls(export_seq_len=4, test_seq_len=4, use_custom_kernel=use_kernel))
+            configs.append(
+                cls(export_seq_len=4, test_seq_len=4, use_custom_kernel=use_kernel)
+            )
         return configs
 
     def get_dynamic_shapes(self):
@@ -287,30 +376,61 @@ class GatedDeltaRuleDynamicSeqTest(OpTestCase):
 
     def create_model(self) -> nn.Module:
         model = GatedDeltaRuleModel(
-            self.batch_size, self.num_heads, self.head_dim, self.value_dim,
+            self.batch_size,
+            self.num_heads,
+            self.head_dim,
+            self.value_dim,
         )
         return model.to(self.dtype)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         """Inputs for export tracing (uses export_seq_len)."""
-        scale = self.head_dim ** -0.5
+        scale = self.head_dim**-0.5
         T = self.export_seq_len
-        q = torch.randn(self.batch_size, T, self.num_heads, self.head_dim, dtype=self.dtype) * scale
-        k = torch.randn(self.batch_size, T, self.num_heads, self.head_dim, dtype=self.dtype) * scale
-        v = torch.randn(self.batch_size, T, self.num_heads, self.value_dim, dtype=self.dtype)
+        q = (
+            torch.randn(
+                self.batch_size, T, self.num_heads, self.head_dim, dtype=self.dtype
+            )
+            * scale
+        )
+        k = (
+            torch.randn(
+                self.batch_size, T, self.num_heads, self.head_dim, dtype=self.dtype
+            )
+            * scale
+        )
+        v = torch.randn(
+            self.batch_size, T, self.num_heads, self.value_dim, dtype=self.dtype
+        )
         g = torch.randn(self.batch_size, T, self.num_heads, dtype=self.dtype).sigmoid()
-        beta = torch.randn(self.batch_size, T, self.num_heads, dtype=self.dtype).sigmoid()
+        beta = torch.randn(
+            self.batch_size, T, self.num_heads, dtype=self.dtype
+        ).sigmoid()
         return (q, k, v, g, beta)
 
     def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
         """Inputs for runtime test (uses test_seq_len — may differ from export)."""
-        scale = self.head_dim ** -0.5
+        scale = self.head_dim**-0.5
         T = self.test_seq_len
-        q = torch.randn(self.batch_size, T, self.num_heads, self.head_dim, dtype=self.dtype) * scale
-        k = torch.randn(self.batch_size, T, self.num_heads, self.head_dim, dtype=self.dtype) * scale
-        v = torch.randn(self.batch_size, T, self.num_heads, self.value_dim, dtype=self.dtype)
+        q = (
+            torch.randn(
+                self.batch_size, T, self.num_heads, self.head_dim, dtype=self.dtype
+            )
+            * scale
+        )
+        k = (
+            torch.randn(
+                self.batch_size, T, self.num_heads, self.head_dim, dtype=self.dtype
+            )
+            * scale
+        )
+        v = torch.randn(
+            self.batch_size, T, self.num_heads, self.value_dim, dtype=self.dtype
+        )
         g = torch.randn(self.batch_size, T, self.num_heads, dtype=self.dtype).sigmoid()
-        beta = torch.randn(self.batch_size, T, self.num_heads, dtype=self.dtype).sigmoid()
+        beta = torch.randn(
+            self.batch_size, T, self.num_heads, dtype=self.dtype
+        ).sigmoid()
         return (q, k, v, g, beta)
 
 
@@ -369,17 +489,33 @@ class GatedDeltaRuleGQATest(OpTestCase):
         configs = []
         for use_kernel in [False, True]:
             # Tiny config: Hk=1, Hv=2 (head_repeat=2)
-            configs.append(cls(num_k_heads=1, num_v_heads=2, use_custom_kernel=use_kernel))
+            configs.append(
+                cls(num_k_heads=1, num_v_heads=2, use_custom_kernel=use_kernel)
+            )
             # Decode (T=1) with GQA
-            configs.append(cls(seq_len=1, num_k_heads=1, num_v_heads=2, use_custom_kernel=use_kernel))
+            configs.append(
+                cls(
+                    seq_len=1,
+                    num_k_heads=1,
+                    num_v_heads=2,
+                    use_custom_kernel=use_kernel,
+                )
+            )
             # Larger head ratio: Hk=2, Hv=8 (head_repeat=4)
-            configs.append(cls(num_k_heads=2, num_v_heads=8, use_custom_kernel=use_kernel))
+            configs.append(
+                cls(num_k_heads=2, num_v_heads=8, use_custom_kernel=use_kernel)
+            )
             # bf16 with GQA
-            configs.append(cls(
-                num_k_heads=1, num_v_heads=2,
-                dtype=torch.bfloat16, rtol=0.05, atol=0.15,
-                use_custom_kernel=use_kernel,
-            ))
+            configs.append(
+                cls(
+                    num_k_heads=1,
+                    num_v_heads=2,
+                    dtype=torch.bfloat16,
+                    rtol=0.05,
+                    atol=0.15,
+                    use_custom_kernel=use_kernel,
+                )
+            )
         return configs
 
     def generate_test_files(self, verbose=False):
@@ -391,20 +527,51 @@ class GatedDeltaRuleGQATest(OpTestCase):
 
     def create_model(self) -> nn.Module:
         model = GatedDeltaRuleGQAModel(
-            self.batch_size, self.num_k_heads, self.num_v_heads,
-            self.head_dim, self.value_dim,
+            self.batch_size,
+            self.num_k_heads,
+            self.num_v_heads,
+            self.head_dim,
+            self.value_dim,
         )
         return model.to(self.dtype)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        scale = self.head_dim ** -0.5
+        scale = self.head_dim**-0.5
         # Q and K have num_k_heads (model does repeat_interleave internally)
-        q = torch.randn(self.batch_size, self.seq_len, self.num_k_heads, self.head_dim, dtype=self.dtype) * scale
-        k = torch.randn(self.batch_size, self.seq_len, self.num_k_heads, self.head_dim, dtype=self.dtype) * scale
+        q = (
+            torch.randn(
+                self.batch_size,
+                self.seq_len,
+                self.num_k_heads,
+                self.head_dim,
+                dtype=self.dtype,
+            )
+            * scale
+        )
+        k = (
+            torch.randn(
+                self.batch_size,
+                self.seq_len,
+                self.num_k_heads,
+                self.head_dim,
+                dtype=self.dtype,
+            )
+            * scale
+        )
         # V, g, beta have num_v_heads
-        v = torch.randn(self.batch_size, self.seq_len, self.num_v_heads, self.value_dim, dtype=self.dtype)
-        g = torch.randn(self.batch_size, self.seq_len, self.num_v_heads, dtype=self.dtype).sigmoid()
-        beta = torch.randn(self.batch_size, self.seq_len, self.num_v_heads, dtype=self.dtype).sigmoid()
+        v = torch.randn(
+            self.batch_size,
+            self.seq_len,
+            self.num_v_heads,
+            self.value_dim,
+            dtype=self.dtype,
+        )
+        g = torch.randn(
+            self.batch_size, self.seq_len, self.num_v_heads, dtype=self.dtype
+        ).sigmoid()
+        beta = torch.randn(
+            self.batch_size, self.seq_len, self.num_v_heads, dtype=self.dtype
+        ).sigmoid()
         return (q, k, v, g, beta)
 
 
@@ -422,7 +589,9 @@ class GatedDeltaRuleFloatCastModel(nn.Module):
         # fp32 state buffer — NOT bf16. Avoids .float() cast that breaks mutation.
         self.register_buffer(
             "state",
-            torch.zeros(batch_size, num_heads, value_dim, head_dim, dtype=torch.float32),
+            torch.zeros(
+                batch_size, num_heads, value_dim, head_dim, dtype=torch.float32
+            ),
         )
 
     def forward(
@@ -434,8 +603,11 @@ class GatedDeltaRuleFloatCastModel(nn.Module):
         beta: torch.Tensor,
     ) -> torch.Tensor:
         output = torch.ops.mlx.gated_delta_rule(
-            q.float(), k.float(), v.float(),
-            g.float(), beta.float(),
+            q.float(),
+            k.float(),
+            v.float(),
+            g.float(),
+            beta.float(),
             self.state,  # already fp32, no cast needed
         )
         return output.to(q.dtype)
@@ -470,15 +642,40 @@ class GatedDeltaRuleFloatCastTest(OpTestCase):
 
     def create_model(self) -> nn.Module:
         return GatedDeltaRuleFloatCastModel(
-            self.batch_size, self.num_heads, self.head_dim, self.value_dim,
+            self.batch_size,
+            self.num_heads,
+            self.head_dim,
+            self.value_dim,
         )
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        q = torch.randn(self.batch_size, self.seq_len, self.num_heads, self.head_dim, dtype=self.dtype)
-        k = torch.randn(self.batch_size, self.seq_len, self.num_heads, self.head_dim, dtype=self.dtype)
-        v = torch.randn(self.batch_size, self.seq_len, self.num_heads, self.value_dim, dtype=self.dtype)
-        g = torch.randn(self.batch_size, self.seq_len, self.num_heads, dtype=self.dtype).sigmoid()
-        beta = torch.randn(self.batch_size, self.seq_len, self.num_heads, dtype=self.dtype).sigmoid()
+        q = torch.randn(
+            self.batch_size,
+            self.seq_len,
+            self.num_heads,
+            self.head_dim,
+            dtype=self.dtype,
+        )
+        k = torch.randn(
+            self.batch_size,
+            self.seq_len,
+            self.num_heads,
+            self.head_dim,
+            dtype=self.dtype,
+        )
+        v = torch.randn(
+            self.batch_size,
+            self.seq_len,
+            self.num_heads,
+            self.value_dim,
+            dtype=self.dtype,
+        )
+        g = torch.randn(
+            self.batch_size, self.seq_len, self.num_heads, dtype=self.dtype
+        ).sigmoid()
+        beta = torch.randn(
+            self.batch_size, self.seq_len, self.num_heads, dtype=self.dtype
+        ).sigmoid()
         return (q, k, v, g, beta)
 
 
@@ -502,7 +699,9 @@ class GatedDeltaRuleWithProjectionModel(nn.Module):
         # fp32 state buffer (same as export model)
         self.register_buffer(
             "state",
-            torch.zeros(batch_size, num_heads, value_dim, head_dim, dtype=torch.float32),
+            torch.zeros(
+                batch_size, num_heads, value_dim, head_dim, dtype=torch.float32
+            ),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -527,8 +726,11 @@ class GatedDeltaRuleWithProjectionModel(nn.Module):
 
         # .float() casts create ASTYPE temp slots that can alias
         output = torch.ops.mlx.gated_delta_rule(
-            q.float(), k.float(), v.float(),
-            g.float(), beta.float(),
+            q.float(),
+            k.float(),
+            v.float(),
+            g.float(),
+            beta.float(),
             self.state,  # already fp32
         )
         return output.to(x.dtype)
@@ -570,17 +772,21 @@ class GatedDeltaRuleWithProjectionTest(OpTestCase):
 
     def create_model(self) -> nn.Module:
         model = GatedDeltaRuleWithProjectionModel(
-            self.batch_size, self.num_heads, self.head_dim, self.value_dim,
+            self.batch_size,
+            self.num_heads,
+            self.head_dim,
+            self.value_dim,
         )
         return model.to(torch.bfloat16)  # bf16 weights so .float() casts are real
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         x = torch.randn(
-            self.batch_size, self.seq_len, self.num_heads * self.head_dim,
+            self.batch_size,
+            self.seq_len,
+            self.num_heads * self.head_dim,
             dtype=torch.bfloat16,
         )
         return (x,)
-
 
 
 class GatedDeltaRuleMultiStepTest(OpTestCase):
@@ -646,25 +852,69 @@ class GatedDeltaRuleMultiStepTest(OpTestCase):
             # Dk=64 with custom kernel — exposes [int8] serialization bug
             # if state_out dtype is corrupted to u8
             cls(num_heads=2, head_dim=64, value_dim=64, use_custom_kernel=True),
-            cls(seq_len=1, num_heads=2, head_dim=64, value_dim=64, use_custom_kernel=True),
+            cls(
+                seq_len=1,
+                num_heads=2,
+                head_dim=64,
+                value_dim=64,
+                use_custom_kernel=True,
+            ),
             # bf16 multistep with kernel — tests precision over two calls
-            cls(num_heads=2, head_dim=64, value_dim=64, dtype=torch.bfloat16,
-                rtol=0.05, atol=0.15, use_custom_kernel=True),
+            cls(
+                num_heads=2,
+                head_dim=64,
+                value_dim=64,
+                dtype=torch.bfloat16,
+                rtol=0.05,
+                atol=0.15,
+                use_custom_kernel=True,
+            ),
         ]
 
     def create_model(self) -> nn.Module:
         model = GatedDeltaRuleMultiStepModel(
-            self.batch_size, self.num_heads, self.head_dim, self.value_dim,
+            self.batch_size,
+            self.num_heads,
+            self.head_dim,
+            self.value_dim,
         )
         return model.to(self.dtype)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        scale = self.head_dim ** -0.5
-        q = torch.randn(self.batch_size, self.seq_len, self.num_heads, self.head_dim, dtype=self.dtype) * scale
-        k = torch.randn(self.batch_size, self.seq_len, self.num_heads, self.head_dim, dtype=self.dtype) * scale
-        v = torch.randn(self.batch_size, self.seq_len, self.num_heads, self.value_dim, dtype=self.dtype)
-        g = torch.randn(self.batch_size, self.seq_len, self.num_heads, dtype=self.dtype).sigmoid()
-        beta = torch.randn(self.batch_size, self.seq_len, self.num_heads, dtype=self.dtype).sigmoid()
+        scale = self.head_dim**-0.5
+        q = (
+            torch.randn(
+                self.batch_size,
+                self.seq_len,
+                self.num_heads,
+                self.head_dim,
+                dtype=self.dtype,
+            )
+            * scale
+        )
+        k = (
+            torch.randn(
+                self.batch_size,
+                self.seq_len,
+                self.num_heads,
+                self.head_dim,
+                dtype=self.dtype,
+            )
+            * scale
+        )
+        v = torch.randn(
+            self.batch_size,
+            self.seq_len,
+            self.num_heads,
+            self.value_dim,
+            dtype=self.dtype,
+        )
+        g = torch.randn(
+            self.batch_size, self.seq_len, self.num_heads, dtype=self.dtype
+        ).sigmoid()
+        beta = torch.randn(
+            self.batch_size, self.seq_len, self.num_heads, dtype=self.dtype
+        ).sigmoid()
         return (q, k, v, g, beta)
 
 
@@ -687,15 +937,26 @@ if __name__ == "__main__":
         help="Action: generate (export), compare (check outputs), run (full test), list (show configs)",
     )
     parser.add_argument("--verbose", "-v", action="store_true")
-    parser.add_argument("--rebuild", action="store_true", help="Rebuild C++ runner first")
-    parser.add_argument("--config", type=str, default=None, help="Run specific config by name")
+    parser.add_argument(
+        "--rebuild", action="store_true", help="Rebuild C++ runner first"
+    )
+    parser.add_argument(
+        "--config", type=str, default=None, help="Run specific config by name"
+    )
     args = parser.parse_args()
 
     if args.rebuild:
         if not rebuild_op_test_runner(verbose=args.verbose):
             sys.exit(1)
 
-    configs = GatedDeltaRuleTest.get_test_configs() + GatedDeltaRuleDynamicSeqTest.get_test_configs() + GatedDeltaRuleGQATest.get_test_configs() + GatedDeltaRuleFloatCastTest.get_test_configs() + GatedDeltaRuleWithProjectionTest.get_test_configs() + GatedDeltaRuleMultiStepTest.get_test_configs()
+    configs = (
+        GatedDeltaRuleTest.get_test_configs()
+        + GatedDeltaRuleDynamicSeqTest.get_test_configs()
+        + GatedDeltaRuleGQATest.get_test_configs()
+        + GatedDeltaRuleFloatCastTest.get_test_configs()
+        + GatedDeltaRuleWithProjectionTest.get_test_configs()
+        + GatedDeltaRuleMultiStepTest.get_test_configs()
+    )
 
     if args.action == "list":
         for cfg in configs:
@@ -714,7 +975,9 @@ if __name__ == "__main__":
 
     for test in configs:
         if args.action == "generate":
-            pte_path, input_path, expected_path = test.generate_test_files(verbose=args.verbose)
+            pte_path, input_path, expected_path = test.generate_test_files(
+                verbose=args.verbose
+            )
             print(f"Generated: {pte_path}")
         elif args.action == "compare":
             actual_path = test.get_test_dir() / "actual_output.bin"

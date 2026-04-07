@@ -50,7 +50,7 @@ from executorch.backends.mlx import custom_ops as _mlx_custom_ops  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["SwitchLinear", "pack_all_switch_linears"]
+__all__ = ["SwitchLinear", "SwitchMLP", "pack_all_switch_linears"]
 
 
 class SwitchLinear(nn.Module):
@@ -81,10 +81,9 @@ class SwitchLinear(nn.Module):
         self._packed = False
         self._is_quantized = False
 
-        self.experts = nn.ModuleList([
-            nn.Linear(input_dims, output_dims, bias=bias)
-            for _ in range(num_experts)
-        ])
+        self.experts = nn.ModuleList(
+            [nn.Linear(input_dims, output_dims, bias=bias) for _ in range(num_experts)]
+        )
 
     def pack(self):
         """Stack per-expert weights into 3D buffers and delete the ModuleList.
@@ -128,7 +127,7 @@ class SwitchLinear(nn.Module):
         del self.experts
         self._packed = True
 
-    def forward_raw(
+    def forward(
         self,
         x: torch.Tensor,
         indices: torch.Tensor,
@@ -161,55 +160,115 @@ class SwitchLinear(nn.Module):
                 sorted_indices=sorted_indices,
             )
 
+
+class SwitchMLP(nn.Module):
+    """Gated MoE MLP using SwitchLinear for each projection.
+
+    Bundles gate + up + down projections with gated activation and optional
+    expert sorting into a single reusable component. Works with any gated
+    activation (SwiGLU, GeGLU, ReGLU, etc.).
+
+    When fuse_gate_up=True, gate and up projections share a single
+    SwitchLinear with output dim 2*intermediate_size. This reduces
+    gather_mm/gather_qmm calls from 3 to 2 per forward pass (one
+    fused gate+up gather, one down gather). The output is split via
+    a cheap tensor slice.
+
+    Args:
+        hidden_size: Model hidden dimension (input/output of MLP)
+        intermediate_size: MLP intermediate dimension (per expert)
+        num_experts: Number of experts
+        activation: Gating activation function (default: F.silu for SwiGLU)
+        bias: Whether expert linears use bias
+        fuse_gate_up: Fuse gate and up projections into a single SwitchLinear
+            (default: False). When True, uses one [E, 2*inter, D] weight
+            instead of two [E, inter, D] weights, saving one gather call.
+    """
+
+    def __init__(
+        self,
+        hidden_size: int,
+        intermediate_size: int,
+        num_experts: int,
+        activation=None,
+        bias: bool = False,
+        fuse_gate_up: bool = False,
+    ):
+        super().__init__()
+        if activation is None:
+            activation = nn.functional.silu
+        self.activation = activation
+        self.num_experts = num_experts
+        self.intermediate_size = intermediate_size
+        self.fuse_gate_up = fuse_gate_up
+
+        if fuse_gate_up:
+            self.gate_up_proj = SwitchLinear(
+                hidden_size, 2 * intermediate_size, num_experts, bias=bias
+            )
+        else:
+            self.gate_proj = SwitchLinear(
+                hidden_size, intermediate_size, num_experts, bias=bias
+            )
+            self.up_proj = SwitchLinear(
+                hidden_size, intermediate_size, num_experts, bias=bias
+            )
+        self.down_proj = SwitchLinear(
+            intermediate_size, hidden_size, num_experts, bias=bias
+        )
+
     def forward(
         self,
         x: torch.Tensor,
-        indices: torch.Tensor,
-        sorted_indices: bool = False,
+        expert_weights: torch.Tensor,
+        expert_indices: torch.Tensor,
+        top_k: int,
+        sort_experts: bool = False,
     ) -> torch.Tensor:
-        """Forward pass with expert selection.
+        """Forward pass through the gated MoE MLP.
 
         Args:
-            x: Input tensor [N, input_dims]
-            indices: Expert indices [N] — which expert for each token
-            sorted_indices: Whether indices are pre-sorted by expert
-                (enables kernel optimizations, caller is responsible for
-                sorting/unsorting)
+            x: Input activations [N, D]
+            expert_weights: Routing weights [N, top_k] (already softmaxed)
+            expert_indices: Expert assignments [N, top_k]
+            top_k: Number of experts per token
+            sort_experts: Sort tokens by expert index for coalesced memory
+                access during prefill. No effect on decode (single token).
 
         Returns:
-            Output tensor [N, output_dims]
+            Output tensor [N, D]
         """
-        if not self._packed:
-            raise RuntimeError(
-                "SwitchLinear.pack() must be called before forward. "
-                "Call it after quantization (if any) and before export."
-            )
+        N = x.shape[0]
 
-        # Unsqueeze to [N, 1, K] for gather_mm/gather_qmm (MLX expects [..., M, K])
-        x = x.unsqueeze(-2)
-
-        if self._is_quantized:
-            out = torch.ops.mlx.gather_qmm(
-                x,
-                self.qdata,
-                self.scale,
-                biases=self.zero_point,
-                rhs_indices=indices,
-                transpose=True,
-                group_size=self.group_size,
-                sorted_indices=sorted_indices,
-            )
+        if sort_experts:
+            flat_indices = expert_indices.flatten()
+            order = flat_indices.argsort().to(torch.int32)
+            inv_order = order.argsort().to(torch.int32)
+            sorted_idx = flat_indices[order].to(torch.int32)
+            x_sorted = x[(order // top_k).to(torch.int64)]
+            x_input = x_sorted.unsqueeze(-2)
+            idx = sorted_idx
         else:
-            # Weight is already pretransposed to [E, in, out]
-            out = torch.ops.mlx.gather_mm(
-                x,
-                self.weight,
-                rhs_indices=indices,
-                sorted_indices=sorted_indices,
-            )
+            x_input = x.unsqueeze(-2).unsqueeze(-2)
+            idx = expert_indices
 
-        # Squeeze back to [N, output_dims]
-        return out.squeeze(-2)
+        if self.fuse_gate_up:
+            gate_up = self.gate_up_proj(x_input, idx, sorted_indices=sort_experts)
+            gate = gate_up[..., : self.intermediate_size]
+            up = gate_up[..., self.intermediate_size :]
+        else:
+            gate = self.gate_proj(x_input, idx, sorted_indices=sort_experts)
+            up = self.up_proj(x_input, idx, sorted_indices=sort_experts)
+        h = self.activation(gate) * up
+        down = self.down_proj(h, idx, sorted_indices=sort_experts)
+
+        if sort_experts:
+            down = down.squeeze(-2)
+            down = down[inv_order].reshape(N, top_k, -1)
+        else:
+            down = down.squeeze(-2)
+
+        return (down * expert_weights.unsqueeze(-1)).sum(dim=-2)
 
 
 def pack_all_switch_linears(model: nn.Module) -> int:
