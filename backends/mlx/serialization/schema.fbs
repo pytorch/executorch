@@ -119,7 +119,7 @@ table TakeNode {
 
 table RMSNormNode {
     x: Tid (required);
-    weight: Tid (required);
+    weight: Tid;  // optional (None = no per-element scaling, same as ones)
     out: Tid (required);
     eps: float;
 }
