@@ -13,7 +13,7 @@ import numpy as np
 import torch
 
 from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
-    PerChannelParamObserver,
+    PerChannelParamObserverWithLossEvaluation,
 )
 from executorch.backends.qualcomm.quantizer.qconfig import (
     _derived_bias_quant_spec,
@@ -92,7 +92,7 @@ def main(args):
             quant_max=torch.iinfo(torch.int8).max,
             qscheme=torch.per_channel_symmetric,
             ch_axis=0,
-            observer_or_fake_quant_ctr=PerChannelParamObserver.with_args(
+            observer_or_fake_quant_ctr=PerChannelParamObserverWithLossEvaluation.with_args(
                 **{"steps": 100, "use_mse": True}
             ),
         )

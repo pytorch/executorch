@@ -7,10 +7,11 @@
 set_overridable_option(EXECUTORCH_BUILD_PYBIND ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT ON)
-# Enable logging even when in release mode. We are building for desktop, where
-# saving a few kB is less important than showing useful error information to
-# users.
+# Enable logging and program verification even when in release mode. We are
+# building for desktop, where saving a few kB is less important than showing
+# useful error information to users.
 set_overridable_option(EXECUTORCH_ENABLE_LOGGING ON)
+set_overridable_option(EXECUTORCH_ENABLE_PROGRAM_VERIFICATION ON)
 set_overridable_option(EXECUTORCH_LOG_LEVEL Info)
 set_overridable_option(EXECUTORCH_BUILD_XNNPACK ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
@@ -68,6 +69,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       endif()
     endif()
   endif()
+  set_overridable_option(EXECUTORCH_BUILD_OPENVINO OFF)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
                                                "WIN32"
 )
