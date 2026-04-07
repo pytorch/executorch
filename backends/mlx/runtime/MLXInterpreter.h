@@ -212,7 +212,10 @@ inline void exec_take(const TakeNode& n, ExecutionState& st, StreamOrDevice s) {
 inline void
 exec_rms_norm(const RMSNormNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
-  const auto& w = st.const_tensor_ref(n.weight);
+  std::optional<array> w = std::nullopt;
+  if (n.weight) {
+    w = st.const_tensor_ref(*n.weight);
+  }
   st.set_tensor(n.out, fast::rms_norm(x, w, n.eps, s));
 }
 
