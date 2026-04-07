@@ -243,21 +243,36 @@ def to_mlx_qparams(
     """
     assert qdata.dtype == torch.int8
     offset = 2 ** (bits - 1)
-    Q = qdata.to(torch.int32) + offset
 
     # Pack data tightly into uint32
     assert 32 % bits == 0
     vals_per_uint32 = 32 // bits
     assert qdata.shape[1] % vals_per_uint32 == 0
+    rows, cols = qdata.shape
 
-    Q = Q.reshape(-1, vals_per_uint32)
-    shifts = torch.arange(0, 32, bits, dtype=torch.int64)
-
-    # Convert to int64 for shift/packing
-    Q = Q.to(torch.int64)
-    Q = (Q << shifts).sum(dim=-1)
-    Q = Q.to(torch.uint32)
-    Q = Q.reshape(qdata.shape[0], -1)
+    if bits == 4:
+        # 4-bit: view(uint8) + wrapping add + pack 2 nibbles per byte → view as uint32
+        q = qdata.view(torch.uint8) + offset
+        q3 = q.reshape(rows, cols // 2, 2)
+        Q = (q3[:, :, 0] | (q3[:, :, 1] << 4)).view(torch.uint32)
+    elif bits == 2:
+        # 2-bit: pack 4×2-bit values per byte in uint8, then view as uint32
+        Q = ((qdata.view(torch.uint8) + offset) & 0x3).reshape(rows, cols // 4, 4)
+        packed = Q[:, :, 0] | (Q[:, :, 1] << 2) | (Q[:, :, 2] << 4) | (Q[:, :, 3] << 6)
+        Q = packed.contiguous().view(torch.uint32)
+    elif bits == 8:
+        # 8-bit: each byte maps 1:1 to a uint32 slot — no shifting needed
+        q = qdata.view(torch.uint8) + offset
+        Q = q.contiguous().view(torch.uint32).reshape(rows, -1)
+    else:
+        # General fallback for other bit widths
+        Q = (qdata.to(torch.int32) + offset).reshape(-1, vals_per_uint32)
+        shifts = torch.arange(0, 32, bits, dtype=torch.int32)
+        shifted = Q << shifts
+        packed = shifted[:, 0]
+        for i in range(1, vals_per_uint32):
+            packed = packed | shifted[:, i]
+        Q = packed.view(torch.uint32).reshape(rows, -1)
 
     if compute_biases:
         B = -scale * (zero_point.to(scale.dtype) + offset)

@@ -35,6 +35,13 @@ class Slot:
     id_type: IdType
     id_space: IdSpace
     idx: Optional[int] = None
+    # Unique allocation ID — ensures Slots with the same (id_type, id_space, idx)
+    # remain distinct in sets/dicts after an idx is freed and reused.
+    # Without this, the delete-as-you-go allocator can free idx=5, then
+    # make_tmp_slot reuses idx=5, and the new Slot equals the old one.
+    # In build()'s _collect_used_slots (a set) and _create_slot_mappings (a dict),
+    # they merge into one entry and get the same global Tid — causing aliasing.
+    alloc_id: Optional[int] = None
 
 
 class IdManager:
@@ -59,6 +66,13 @@ class SlotManager:
         self.tid_managers: Dict[IdSpace, IdManager] = defaultdict(IdManager)
         self.vid_managers: Dict[IdSpace, IdManager] = defaultdict(IdManager)
         self.name_to_slot: Dict[str, Slot] = {}
+        self._next_alloc_id: int = 0
+
+    def _alloc_id(self) -> int:
+        """Return a globally unique allocation ID."""
+        aid = self._next_alloc_id
+        self._next_alloc_id += 1
+        return aid
 
     def set_slot(self, node_or_name: Union[Node, str], slot: Slot):
         if isinstance(node_or_name, Node):
@@ -110,7 +124,9 @@ class SlotManager:
         id_space = IdSpace.Constant
         manager = self.tid_managers[id_space]
         idx = manager.get_id()
-        slot = Slot(id_type=IdType.Tensor, id_space=id_space, idx=idx)
+        slot = Slot(
+            id_type=IdType.Tensor, id_space=id_space, idx=idx, alloc_id=self._alloc_id()
+        )
         self.name_to_slot[name] = slot
         return slot
 
@@ -119,7 +135,9 @@ class SlotManager:
         id_space = IdSpace.Temp
         manager = self.tid_managers[id_space]
         idx = manager.get_id()
-        slot = Slot(id_type=IdType.Tensor, id_space=id_space, idx=idx)
+        slot = Slot(
+            id_type=IdType.Tensor, id_space=id_space, idx=idx, alloc_id=self._alloc_id()
+        )
         self.name_to_slot[name] = slot
         return name, slot
 
@@ -129,7 +147,9 @@ class SlotManager:
         id_space = IdSpace.Temp
         manager = self.vid_managers[id_space]
         idx = manager.get_id()
-        slot = Slot(id_type=IdType.SymInt, id_space=id_space, idx=idx)
+        slot = Slot(
+            id_type=IdType.SymInt, id_space=id_space, idx=idx, alloc_id=self._alloc_id()
+        )
         self.name_to_slot[name] = slot
         return name, slot
 
@@ -162,7 +182,14 @@ class SlotManager:
             else:
                 manager = self.vid_managers[id_space]
             idx = manager.get_id()
-            slots.append(Slot(id_type=id_type, id_space=id_space, idx=idx))
+            slots.append(
+                Slot(
+                    id_type=id_type,
+                    id_space=id_space,
+                    idx=idx,
+                    alloc_id=self._alloc_id(),
+                )
+            )
         slots = tuple(slots)
 
         # Store in the format that matches the node's output structure
