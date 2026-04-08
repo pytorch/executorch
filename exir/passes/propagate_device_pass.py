@@ -163,8 +163,12 @@ class PropagateDevicePass(PassBase):
 
     def __init__(
         self,
+        skip_h2d_for_method_inputs: bool = False,
+        skip_d2h_for_method_outputs: bool = False,
     ) -> None:
         super().__init__()
+        self.skip_h2d_for_method_inputs = skip_h2d_for_method_inputs
+        self.skip_d2h_for_method_outputs = skip_d2h_for_method_outputs
 
     def _is_placeholder(self, node: torch.fx.Node) -> bool:
         """Check if a node is a graph-level input (placeholder)."""
@@ -189,6 +193,11 @@ class PropagateDevicePass(PassBase):
                 continue
             arg_spec = arg.meta.get("spec")
             if not isinstance(arg_spec, TensorSpec):
+                continue
+
+            if self.skip_h2d_for_method_inputs and self._is_placeholder(arg):
+                _set_device_on_spec(arg_spec, target_device_type, device_index)
+                changed = True
                 continue
 
             with graph_module.graph.inserting_before(node):
@@ -240,6 +249,9 @@ class PropagateDevicePass(PassBase):
             return False
 
         _set_device_on_spec(spec, source_spec.device, source_spec.device_index)
+
+        if self.skip_d2h_for_method_outputs and self._feeds_directly_to_output(node):
+            return True
 
         with graph_module.graph.inserting_after(node):
             d2h_node = graph_module.graph.call_function(
