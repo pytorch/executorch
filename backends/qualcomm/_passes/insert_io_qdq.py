@@ -20,6 +20,7 @@ from executorch.backends.qualcomm.utils.constants import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 
 
 class InsertIOQDQ(ExportPass):
@@ -31,11 +32,16 @@ class InsertIOQDQ(ExportPass):
     """
 
     q_dq_map = {
-        # per tensor
+        # per tensor (quantize -> dequantize)
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-        # per channel
+        # per tensor (dequantize -> dequantize, for pre-quantized params)
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+        # per channel (quantize -> dequantize)
         exir_ops.edge.quantized_decomposed.quantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        # per channel (dequantize -> dequantize, for pre-quantized params)
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
     }
 
     def __init__(self, edge_program: torch.export.ExportedProgram):
@@ -80,7 +86,7 @@ class InsertIOQDQ(ExportPass):
             (node, *self._ceate_args(target, quant_attrs)),
         )
         meta_val = node.meta["val"]
-        if target in self.q_dq_map:
+        if target in q_ops:
             inserted_node.meta[QCOM_QUANT_ATTRS] = node.meta.pop(QCOM_QUANT_ATTRS)
             meta_val = meta_val.to(quant_attrs["dtype"])
 
@@ -118,7 +124,9 @@ class InsertIOQDQ(ExportPass):
                     user.replace_input_with(node, inserted_node)
 
     def _insert(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
-        for n in graph_module.graph.nodes:
+        # Snapshot nodes: inserting Q/DQ nodes mutates the graph's linked list,
+        # so iterating the live list can revisit newly inserted nodes.
+        for n in list(graph_module.graph.nodes):
             # do nothing when a node is expected to output a quant tensor
             if n.meta.get(QCOM_QUANTIZED_IO):
                 continue
@@ -149,6 +157,5 @@ class InsertIOQDQ(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule):
         self._insert(graph_module)
-        graph_module.graph.eliminate_dead_code()
-        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)
