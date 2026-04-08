@@ -147,6 +147,18 @@ Result<Tensor> parseTensor(
       Internal,
       "dim_order_to_stride returned invalid status");
 
+  // Extract device info from serialized tensor metadata.
+  // Defaults to CPU/0 for backward compatibility when extra_tensor_info is
+  // absent (e.g., older PTE files without device annotations).
+  auto device_type = executorch::runtime::etensor::DeviceType::CPU;
+  executorch::runtime::etensor::DeviceIndex device_index = 0;
+  if (s_tensor->extra_tensor_info() != nullptr) {
+    device_type = static_cast<executorch::runtime::etensor::DeviceType>(
+        s_tensor->extra_tensor_info()->device_type());
+    device_index = static_cast<executorch::runtime::etensor::DeviceIndex>(
+        s_tensor->extra_tensor_info()->device_index());
+  }
+
   auto* tensor_impl = method_allocator->allocateInstance<TensorImpl>();
   if (tensor_impl == nullptr) {
     return Error::MemoryAllocationFailed;
@@ -161,7 +173,9 @@ Result<Tensor> parseTensor(
       /*data=*/nullptr,
       dim_order,
       strides,
-      dynamism);
+      dynamism,
+      device_type,
+      device_index);
 
   // Now that we know how big the tensor is, find and assign its memory.
   Result<void*> data_ptr = getTensorDataPtr(
