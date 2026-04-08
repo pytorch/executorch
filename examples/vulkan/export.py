@@ -51,6 +51,9 @@ def is_vision_model(model_name):
         "convnext_small",
         "densenet161",
         "shufflenet_v2_x1_0",
+        # New vision models
+        "efficientnet_b0",
+        "swin_t",
     ]:
         return True
 
