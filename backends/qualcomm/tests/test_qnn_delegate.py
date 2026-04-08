@@ -7192,6 +7192,32 @@ class TestExampleOssScript(TestQNN):
                 self.assertGreaterEqual(msg["top_1"], 76)
                 self.assertGreaterEqual(msg["top_5"], 92)
 
+    def test_depthanything_v2_small(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/depthanything_v2_small.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+        ]
+        self.add_default_cmds(cmds)
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["sqnr"], 15)
+
     def test_dino_v2(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")
