@@ -475,7 +475,7 @@ def build_executorch_binary(
     metadata=None,
     dump_intermediate_outputs=False,
     qnn_intermediate_debugger: QNNIntermediateDebugger = None,
-    backend=QnnExecuTorchBackendType.kHtpBackend,
+    backend: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend,
     passes_job=None,
     passes_dependency=None,
     qat_training_data=None,
@@ -491,7 +491,6 @@ def build_executorch_binary(
         model (torch.nn.Module): The model to be converted into an ExecuTorch binary.
         inputs (torch.Tensor): Sample input tensors required for model export.
         soc_model (QcomChipset): The target Qualcomm System on Chip (SoC) model.
-        backend (QnnExecuTorchBackendType): The target backend.
         file_name (str): Name for the output binary file (.pte).
         dataset (List[torch.Tensor] | Callable): A dataset for quantization calibration.
         skip_node_id_set (set, optional): Set of node IDs to be skipped during partition.
@@ -501,6 +500,8 @@ def build_executorch_binary(
         shared_buffer (bool, optional): Applies zero-copy mechanism to optimize runtime memory allocation.
         metadata (dict, optional): An optional dictionary that maps each method name to a constant value in eager mode.
         dump_intermediate_outputs (bool, optional): Enables dumping model intermediate outputs.
+        qnn_intermediate_debugger (QNNIntermediateDebugger, optional): A debugger instance capable of retrieving intermediate tensor results.
+        backend (QnnExecuTorchBackendType, optional): The target backend.
         passes_job (OrderedDict, optional): Custom passes job in capture_program, users can enable/disable specific passes or modify their attributes.
         passes_dependency (Dict, optional): A dictionary mapping each pass to its corresponding list of dependencies.
         qat_training_data (List[torch.Tensor], optional): A dataset for quantization aware training(QAT). Typically is a pair of tensors, such as [features, ground truth].

@@ -6,6 +6,7 @@
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 
 from .utils import copy_meta
 
@@ -117,5 +118,5 @@ class DecomposeColIm(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule):
         self._decompose_im2col(graph_module)
         self._decompose_col2im(graph_module)
-        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)
