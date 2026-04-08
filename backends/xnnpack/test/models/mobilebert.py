@@ -31,9 +31,7 @@ class TestMobilebert(unittest.TestCase):
         "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default",
     }
 
-    dynamic_shapes = (
-        {1: torch.export.Dim("seq_length", min=2, max=32)},
-    )
+    dynamic_shapes = ({1: torch.export.Dim("seq_length", min=2, max=32)},)
 
     def test_fp32_mobilebert(self):
         (
