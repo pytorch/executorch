@@ -9,7 +9,6 @@
 
 #if __has_include(<lib.h>)
 #include <lib.h>
-#include <dump_tensor.h>
 #endif
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
@@ -83,7 +82,6 @@ Tensor& mean_dim_out(
 #ifdef TIME_DECL
   TIME_END(mean);
   TIME_DISPLAY(mean, (int)out.numel(), "elements");
-  DUMP_TENSOR(mean, out);
 #endif
 
   return out;

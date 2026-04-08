@@ -7,7 +7,6 @@
  */
 
 #include <lib.h>
-#include <dump_tensor.h>
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -61,7 +60,6 @@ Tensor& dequantize_per_tensor_out(
 
   TIME_END(dequantize_per_tensor);
   TIME_DISPLAY(dequantize_per_tensor, (int)numel, "elements");
-  DUMP_TENSOR(dequantize_per_tensor, out);
 
   return out;
 }

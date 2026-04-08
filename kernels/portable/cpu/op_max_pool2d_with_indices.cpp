@@ -11,7 +11,6 @@
 
 #if __has_include(<lib.h>)
 #include <lib.h>
-#include <dump_tensor.h>
 #endif
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -106,7 +105,6 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
 #ifdef TIME_DECL
   TIME_END(max_pool2d);
   TIME_DISPLAY(max_pool2d, (int)out.numel(), "elements");
-  DUMP_TENSOR(max_pool2d, out);
 #endif
 
   return ret_val;

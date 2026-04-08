@@ -7,7 +7,6 @@
  */
 
 #include <lib.h>
-#include <dump_tensor.h>
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/backends/cadence/generic/operators/operators.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -141,7 +140,6 @@ void quantized_relu_per_tensor_out(
 
   TIME_END(quantized_relu_per_tensor);
   TIME_DISPLAY(quantized_relu_per_tensor, (int)output.numel(), "elements");
-  DUMP_TENSOR(quantized_relu_per_tensor, output);
 }
 
 void quantized_relu_asym8s_asym8s_per_tensor_out(

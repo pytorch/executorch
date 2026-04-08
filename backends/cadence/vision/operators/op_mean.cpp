@@ -7,7 +7,6 @@
  */
 
 #include <lib.h>
-#include <dump_tensor.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -211,7 +210,6 @@ Tensor& mean_out(
 
         TIME_END(mean_simd_optimized);
         TIME_DISPLAY(mean_simd_optimized, total_channels, "channels (DMA ping-pong)");
-        DUMP_TENSOR(mean, out);
         return out;
         
       } else if (ping_process_pong) {
@@ -252,7 +250,6 @@ Tensor& mean_out(
 
         TIME_END(mean_simd_optimized);
         TIME_DISPLAY(mean_simd_optimized, total_channels, "channels (DMA sequential)");
-        DUMP_TENSOR(mean, out);
         return out;
       }
     }
@@ -268,7 +265,6 @@ Tensor& mean_out(
 
     TIME_END(mean_simd_optimized);
     TIME_DISPLAY(mean_simd_optimized, total_channels, "channels (SIMD no-DMA)");
-    DUMP_TENSOR(mean, out);
 
     return out;
   }
@@ -298,7 +294,6 @@ Tensor& mean_out(
 
   TIME_END(mean_portable_fallback);
   TIME_DISPLAY(mean_portable_fallback, out.numel(), "elements (portable)");
-  DUMP_TENSOR(mean, out);
 
   return out;
 }

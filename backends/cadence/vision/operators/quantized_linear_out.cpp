@@ -8,7 +8,6 @@
 
 #include <api.h>
 #include <lib.h>
-#include <dump_tensor.h>
 #include <algorithm>
 #include <cmath>
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
@@ -218,7 +217,6 @@ void quantized_linear_per_tensor_out(
     TIME_END(quantized_linear);
     TIME_DISPLAY(quantized_linear, numel, "Generic elements");
   }
-  DUMP_TENSOR(quantized_linear, out);
 }
 
 // Wrapper functions for different quantization schemes

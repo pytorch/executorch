@@ -1,0 +1,6 @@
+PERF_LOG : quantize_asym8s : 12288 : elements (DMA ping-pong) : 6675 : cycles : 1.84 : elements (DMA ping-pong)/cycle : 0.54 : cycles/elements (DMA ping-pong)
+PERF_LOG : conv2d : 12288 : elements : 248261 : cycles : 0.05 : elements/cycle : 20.20 : cycles/elements
+PERF_LOG : quantized_relu : 65536 : elements (DMA ping-pong) : 23590 : cycles : 2.78 : elements (DMA ping-pong)/cycle : 0.36 : cycles/elements (DMA ping-pong)
+PERF_LOG : dequantize_asym8s : 65536 : elements (DMA ping-pong) : 21994 : cycles : 2.98 : elements (DMA ping-pong)/cycle : 0.34 : cycles/elements (DMA ping-pong)
+PERF_LOG : maxpool : 65536 : floats : 128876 : cycles : 0.51 : floats/cycle : 1.97 : cycles/floats
+PERF_LOG : quantize_asym8s : 16384 : elements (DMA ping-pong) : 8291 : cycles : 1.98 : elements (DMA ping-pong)/cycle : 0.51 : cycles/elements (DMA ping-pong)

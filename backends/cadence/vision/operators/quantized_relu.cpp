@@ -7,7 +7,6 @@
  */
 
 #include <lib.h>
-#include <dump_tensor.h>
 #include <algorithm>
 #include <cmath>
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
@@ -314,7 +313,6 @@ void quantized_relu_per_tensor_out(
     TIME_END(quantized_relu);
     TIME_DISPLAY(quantized_relu, numel, "elements (generic template)");
   }
-  DUMP_TENSOR(quantized_relu, output);
 }
 
 } // namespace native

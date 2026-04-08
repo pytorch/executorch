@@ -7,7 +7,6 @@
  */
 
 #include <lib.h>
-#include <dump_tensor.h>
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/backends/cadence/generic/operators/operators.h>
 
@@ -234,7 +233,6 @@ void quantized_conv2d_nchw(
 
   TIME_END(quantized_conv2d_nchw);
   TIME_DISPLAY(quantized_conv2d_nchw, (int)out.numel(), "elements");
-  DUMP_TENSOR(quantized_conv2d_nchw, out);
 }
 
 void quantized_conv2d_nchw_out(

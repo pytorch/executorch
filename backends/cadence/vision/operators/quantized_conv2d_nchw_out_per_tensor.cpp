@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include <lib.h>
-#include <dump_tensor.h>
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/backends/cadence/generic/operators/operators.h>
 #include <executorch/backends/cadence/vision/operators/conv/conv_layer_configs.h>
@@ -480,7 +479,6 @@ void quantized_conv2d_nchw(
 
   TIME_END(conv2d);
   TIME_DISPLAY(conv2d, input.numel(), "elements");
-  DUMP_TENSOR(conv2d, out);
 }
 
 void quantized_conv2d_nchw_out(

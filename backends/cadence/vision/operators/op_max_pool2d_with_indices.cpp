@@ -7,7 +7,6 @@
  */
 
 #include <lib.h>
-#include <dump_tensor.h>
 #include <cstring>
 #include <tuple>
 
@@ -141,7 +140,6 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
 
     TIME_END(maxpool);
     TIME_DISPLAY(maxpool, in.numel(), "floats");
-    DUMP_TENSOR(max_pool2d, out);
 
     return ret_val;
   }
@@ -173,7 +171,6 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
 
   TIME_END(maxpool);
   TIME_DISPLAY(maxpool, in.numel(), "floats");
-  DUMP_TENSOR(max_pool2d, out);
 
   return ret_val;
 }

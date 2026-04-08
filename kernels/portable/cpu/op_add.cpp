@@ -9,7 +9,6 @@
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #if __has_include(<lib.h>)
 #include <lib.h>
-#include <dump_tensor.h>
 #endif
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
@@ -104,7 +103,6 @@ Tensor& add_out(
 #ifdef TIME_DECL
   TIME_END(add);
   TIME_DISPLAY(add, (int)out.numel(), "elements");
-  DUMP_TENSOR(add, out);
 #endif
 
   return out;

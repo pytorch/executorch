@@ -7,7 +7,6 @@
  */
 
 #include <lib.h>
-#include <dump_tensor.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
@@ -334,7 +333,6 @@ Tensor& add_out(
     TIME_END(add_generic);
     TIME_DISPLAY(add_generic, numel, "elements (generic template)");
   }
-  DUMP_TENSOR(add, out);
   return out;
 }
 
