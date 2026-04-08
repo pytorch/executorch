@@ -50,6 +50,19 @@
                     "Windows"
                 ]
             }
+        },
+        {
+            "name": "voxtral-realtime-mlx",
+            "displayName": "Voxtral Realtime runner (MLX)",
+            "inherits": ["voxtral-realtime-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_MLX": "ON"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Darwin"
+            }
         }
     ],
     "buildPresets": [
@@ -76,6 +89,15 @@
             "displayName": "Build Voxtral Realtime runner (CUDA)",
             "configuration": "Release",
             "configurePreset": "voxtral-realtime-cuda",
+            "targets": [
+                "voxtral_realtime_runner"
+            ]
+        },
+        {
+            "name": "voxtral-realtime-mlx",
+            "displayName": "Build Voxtral Realtime runner (MLX)",
+            "configurePreset": "voxtral-realtime-mlx",
+            "configuration": "Release",
             "targets": [
                 "voxtral_realtime_runner"
             ]
@@ -121,6 +143,20 @@
                 {
                     "type": "build",
                     "name": "voxtral-realtime-cuda"
+                }
+            ]
+        },
+        {
+            "name": "voxtral-realtime-mlx",
+            "displayName": "Configure and build Voxtral Realtime runner (MLX)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "voxtral-realtime-mlx"
+                },
+                {
+                    "type": "build",
+                    "name": "voxtral-realtime-mlx"
                 }
             ]
         }
