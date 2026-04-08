@@ -75,6 +75,5 @@ class FoldQDQ(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule):
         self._fold_dq(graph_module)
         self._fold_q(graph_module)
-        graph_module.recompile()
         dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)
