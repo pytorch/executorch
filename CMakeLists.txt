@@ -682,6 +682,11 @@ if(EXECUTORCH_BUILD_MPS)
   list(APPEND _executorch_backends mpsdelegate)
 endif()
 
+if(EXECUTORCH_BUILD_MLX)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mlx)
+  list(APPEND _executorch_backends mlxdelegate)
+endif()
+
 if(EXECUTORCH_BUILD_NEURON)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mediatek)
   list(APPEND _executorch_backends neuron_backend)
@@ -846,6 +851,9 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
   set(TORCHAO_ENABLE_ARM_NEON_DOT ON)
   set(TORCHAO_BUILD_KLEIDIAI ON)
 
+  # TorchAO requires find_package(Torch) for include dirs; add its cmake path.
+  add_torch_to_cmake_prefix_path()
+
   # TorchAO kernels look for EXECUTORCH_INCLUDE_DIRS
   if(DEFINED EXECUTORCH_INCLUDE_DIRS)
     message(FATAL_ERROR "EXECUTORCH_INCLUDE_DIRS is already defined")
@@ -979,6 +987,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs mpsdelegate)
   endif()
 
+  if(EXECUTORCH_BUILD_MLX)
+    list(APPEND _dep_libs mlxdelegate)
+  endif()
+
   if(EXECUTORCH_BUILD_OPENVINO)
     list(APPEND _dep_libs openvino_backend)
   endif()
@@ -1079,6 +1091,12 @@ if(EXECUTORCH_BUILD_PYBIND)
   install(TARGETS data_loader
           LIBRARY DESTINATION executorch/extension/pybindings
   )
+
+  # Copy MLX metallib next to _portable_lib.so for editable installs. MLX uses
+  # dladdr() to find the directory containing the library with MLX code, then
+  # looks for mlx.metallib in that directory. When MLX is statically linked into
+  # _portable_lib.so, we need the metallib colocated with it.
+  executorch_target_copy_mlx_metallib(portable_lib)
 endif()
 
 if(EXECUTORCH_BUILD_WASM)

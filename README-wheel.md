@@ -6,7 +6,7 @@ PyTorch programs.
 
 The `executorch` pip package is in beta.
 * Supported python versions: 3.10, 3.11, 3.12, 3.13
-* Compatible systems: Linux x86_64, macOS aarch64
+* Compatible systems: Linux x86_64, Linux aarch64, macOS aarch64
 
 The prebuilt `executorch.runtime` module included in this package provides a way
 to run ExecuTorch `.pte` files, with some restrictions:
@@ -14,6 +14,10 @@ to run ExecuTorch `.pte` files, with some restrictions:
 * Only the [XNNPACK backend delegate](docs/source/backends/xnnpack/xnnpack-overview.md) is linked into the prebuilt module.
 * \[macOS only] [Core ML](docs/source/backends/coreml/coreml-overview.md) and [MPS](docs/source/backends/mps/mps-overview.md) backend
   are also linked into the prebuilt module.
+* \[Linux x86_64] [QNN](docs/source/backends-qualcomm.md) backend is linked into the prebuilt module.
+* \[Linux] [OpenVINO](docs/source/build-run-openvino.md) backend is also linked into the
+  prebuilt module. OpenVINO requires the runtime to be installed separately:
+  `pip install executorch[openvino]`
 
 Please visit the [ExecuTorch website](https://pytorch.org/executorch) for
 tutorials and documentation. Here are some starting points:

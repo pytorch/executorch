@@ -45,11 +45,11 @@ $else:
 // Scales are ALWAYS buffer, loaded as scalar
 ${layout_declare_tensor(B, "r", "t_scales", SCALES_DTYPE, "buffer")}
 
+// Output sizes in WHCN order
+${layout_declare_ubo(B, "ivec4", "out_sizes")}
+
 layout(push_constant) uniform PushConstants {
   int group_size;
-  int embed_dim;
-  int num_indices;
-  int out_height;
   int is_linear_weight;
 };
 
@@ -66,6 +66,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 VEC4_T load_embedding_weights(
     const int embedding_idx,
     const int dim,
+    const int embed_dim,
     const float scale) {
   const int n8 = embedding_idx >> 3;
   const int n_local = embedding_idx & 7;
@@ -96,6 +97,7 @@ VEC4_T load_embedding_weights(
 VEC4_T load_embedding_weights(
     const int embedding_idx,
     const int dim,
+    const int embed_dim,
     const float scale) {
   const int blocks_per_row = embed_dim >> 5;
   const int block_in_row = dim >> 5;
@@ -124,7 +126,12 @@ void main() {
   const int y_idx = int(gl_GlobalInvocationID.y);
   const int z_idx = int(gl_GlobalInvocationID.z);
 
+  // out_sizes is in WHCN order: x=W(embed_dim), y=H, z=C, w=N
+  const int embed_dim = out_sizes.x;
   const int blocks_per_row = embed_dim >> 5;
+  const int out_height = out_sizes.y;
+  const int num_indices = out_sizes.y * out_sizes.z * out_sizes.w;
+
   const int indices_idx = z_idx * out_height + y_idx;
   if (block_in_row >= blocks_per_row || indices_idx >= num_indices) {
     return;
@@ -147,7 +154,7 @@ void main() {
         float(t_scales[embedding_idx * groups_per_row + dim / group_size]);
 
     const VEC4_T vals =
-        load_embedding_weights(embedding_idx, dim, scale);
+        load_embedding_weights(embedding_idx, dim, embed_dim, scale);
 
 #ifdef OUTPUT_BUFFER
     const int out_base = indices_idx * embed_dim + dim;

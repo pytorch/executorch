@@ -51,6 +51,7 @@ from executorch.backends.arm._passes import (
     DecomposeCumsumPass,
     DecomposeDivPass,
     DecomposeDivTensorModePass,
+    DecomposeEinsumPass,
     DecomposeEluPass,
     DecomposeEmbeddingPass,
     DecomposeErfinvPass,
@@ -98,6 +99,7 @@ from executorch.backends.arm._passes import (
     DecorateFp32toInt32CastingPass,
     FoldAndAnnotateQParamsPass,
     FuseBatchNorm2dPass,
+    FuseConsecutiveConcatShapesPass,
     FuseConsecutiveRescalesPass,
     FuseConstantArgsPass,
     FuseDuplicateUsersPass,
@@ -112,6 +114,7 @@ from executorch.backends.arm._passes import (
     InsertTableOpsPass,
     MatchArgDtypePass,
     MatchArgRanksPass,
+    NormalizeIndexPutBoolIndexTensorPass,
     NormalizeIndexPutNoneIndicesPass,
     NormalizeWhileInitialArgsPass,
     PromoteBoolOperandsPass,
@@ -449,6 +452,7 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 NormalizeIndexPutNoneIndicesPass(),
+                NormalizeIndexPutBoolIndexTensorPass(),
                 RewriteIndexPutPass(),
                 RewriteBoolBitwiseToLogicalPass(),
                 DecomposeRemainderPass(),
@@ -503,6 +507,7 @@ class ArmPassManager(PassManager):
             [
                 CastInt64BuffersToInt32Pass(exported_program),
                 FuseEqualPlaceholdersPass(exported_program),
+                FuseConsecutiveConcatShapesPass(),
                 ToTosaMemoryFormatPass(exported_program),
                 RemoveNoopPass(),
                 InsertRescalePass(),
@@ -556,6 +561,7 @@ class ArmPassManager(PassManager):
                 DecomposeFloorDividePass(tfa_pass=True),
                 DecomposeDivTensorModePass(tfa_pass=True),
                 DecomposeWhereScalarOtherPass(tfa_pass=True),
+                DecomposeEinsumPass(tfa_pass=True),
                 RewriteInplaceArithmeticPass(tfa_pass=True),
                 DecomposeAddSubAlphaPass(tfa_pass=True),
                 DecomposeLeakyReLUPass(tfa_pass=True),

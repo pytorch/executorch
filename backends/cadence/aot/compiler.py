@@ -43,6 +43,7 @@ from executorch.exir.program._program import _transform, to_edge
 from torch.export.exported_program import ExportedProgram
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e
 
+from .pass_utils import EdgePassesConfig
 from .passes import apply_exir_ops_passes, apply_torch_ops_passes
 from .utils import print_ops_info
 
@@ -355,12 +356,15 @@ def _lower_ep_to_cadence(
     program: ExportedProgram,
     dump_graphs: bool = False,
     opt_level: int = 1,
+    edge_passes_config: Optional[EdgePassesConfig] = None,
 ) -> EdgeProgramManager:
     """
     Lower an existing ExportedProgram to edge IR and apply frontend optimization passes.
     """
     edge_prog_manager = _lower_ep_to_edge(program, dump_graphs=dump_graphs)
-    cadence_prog_manager = apply_exir_ops_passes(opt_level, edge_prog_manager)
+    cadence_prog_manager = apply_exir_ops_passes(
+        opt_level, edge_prog_manager, edge_passes_config
+    )
     return cadence_prog_manager
 
 
@@ -369,9 +373,12 @@ def export_to_cadence(
     inputs: tuple[object, ...],
     dump_graphs: bool = False,
     opt_level: int = 1,
+    edge_passes_config: Optional[EdgePassesConfig] = None,
 ) -> EdgeProgramManager:
     edge_prog_manager = export_to_edge(model, inputs, dump_graphs=dump_graphs)
-    cadence_prog_manager = apply_exir_ops_passes(opt_level, edge_prog_manager)
+    cadence_prog_manager = apply_exir_ops_passes(
+        opt_level, edge_prog_manager, edge_passes_config
+    )
     return cadence_prog_manager
 
 
@@ -380,6 +387,7 @@ def quantize_and_export_to_cadence(
     inputs: tuple[object, ...],
     dump_graphs: bool = False,
     opt_level: int = 1,
+    edge_passes_config: Optional[EdgePassesConfig] = None,
 ) -> EdgeProgramManager:
     """
     Trace, quantize, lower a model/inputs pair to edge IR and apply frontend
@@ -391,6 +399,7 @@ def quantize_and_export_to_cadence(
         quantized_model,
         opt_level=opt_level,
         dump_graphs=dump_graphs,
+        edge_passes_config=edge_passes_config,
     )
 
 
