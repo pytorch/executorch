@@ -404,6 +404,26 @@ class ET_EXPERIMENTAL CudaBackend final
         n_outputs,
         args.size())
 
+    // Verify device info on all memory-planned, ET-driven IO tensors.
+    // All input and output tensors should have device_type = CUDA, which
+    // is set during serialization by PropagateDevicePass based on the
+    // target_device compile spec from CudaPartitioner.
+    //
+    // Note: At this stage, the tensor memory is still on CPU. The device_type
+    // is metadata indicating where the tensor *should* reside. The backend
+    // is responsible for copying data to the actual CUDA device.
+    for (size_t i = 0; i < n_inputs + n_outputs; i++) {
+      auto* tensor = &(args[i]->toTensor());
+      auto device_type = tensor->unsafeGetTensorImpl()->device_type();
+      ET_CHECK_OR_RETURN_ERROR(
+          device_type == executorch::runtime::etensor::DeviceType::CUDA,
+          InvalidArgument,
+          "Tensor %zu expected device_type=CUDA (1), got %d. "
+          "Device info may not be properly propagated from CudaPartitioner.",
+          i,
+          static_cast<int>(device_type));
+    }
+
     // NOTE: ExecuTorch tensors may be on CPU or GPU due to the skip-copy
     // optimization. We need to create GPU copies for CUDA kernel execution
     // using SlimTensor.
