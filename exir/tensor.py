@@ -172,6 +172,9 @@ class TensorSpec:
         self.init_mem_planning_fields()
         self.shape_dynamism: TensorShapeDynamism = determine_tensor_dynanism(self.shape)
         self.extra_tensor_info = extra_tensor_info
+        # device type will be only updated during PropagateDevicePass.
+        self.device: schema.DeviceType = schema.DeviceType.CPU
+        self.device_index: int = 0
 
     @property
     def allocated_memory(self) -> int:
@@ -254,6 +257,7 @@ class TensorSpec:
             + f", is_sparse={self.is_sparse}"
             + f", shape_dynamism={self.shape_dynamism}"
             + f", const={self.const}, requires_grad={self.requires_grad}"
+            + f", device={self.device.name}:{self.device_index}"
             + ")"
         )
 
