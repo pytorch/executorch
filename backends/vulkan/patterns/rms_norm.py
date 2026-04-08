@@ -26,11 +26,12 @@ _CAST_OPS = {
 
 def _skip_casts(node: torch.fx.Node) -> torch.fx.Node:
     """Unwrap chains of dtype-cast nodes to find the underlying value."""
-    while isinstance(node, torch.fx.Node) and node.target in _CAST_OPS:
-        if node.args and isinstance(node.args[0], torch.fx.Node):
-            node = node.args[0]
-        else:
+    while node.target in _CAST_OPS:
+        arg0 = node.args[0] if node.args else None
+        if not isinstance(arg0, torch.fx.Node):
             break
+        node = arg0
+    # pyre-ignore[7]: node is always a Node; Pyre cannot narrow through loops
     return node
 
 
