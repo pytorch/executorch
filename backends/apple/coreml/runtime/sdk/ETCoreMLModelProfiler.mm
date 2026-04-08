@@ -276,6 +276,7 @@ void set_model_outputs(id<MLFeatureProvider> output_features,
         self = [super init];
         if (self) {
             _model = model;
+            _outputNames = model.orderedOutputNames;
             _computePlan = computePlan;
             _operationToPathMap = operationToPathMap;
             _topologicallySortedOperations = topologicallySortedOperations;
