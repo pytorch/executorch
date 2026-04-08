@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -30,7 +31,6 @@ from executorch.exir.operator.convert import (
     to_out_variant,
     to_scratch_op,
 )
-
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassManager, PassType
 from executorch.exir.passes.const_prop_pass import ConstPropPass
@@ -59,6 +59,8 @@ from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
 from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
+
+from executorch.exir.passes.to_device_pass import ToDevicePass
 from executorch.exir.passes.weights_to_outputs_pass import weights_to_outputs_pass
 from torch import fx
 from torch._subclasses import FakeTensor
@@ -71,6 +73,7 @@ __all__ = [
     "ConstPropPass",
     "QuantFusionPass",
     "OpReplacePass",
+    "ToDevicePass",
     "EdgeToBackendOpsPass",
     "MemoryFormatOpsPass",
     "MemoryPlanningPass",
