@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import os
 
 from dataclasses import dataclass, field
 from typing import Callable
@@ -53,98 +54,123 @@ class TestFlow:
         return self.name
 
 
-def all_flows() -> dict[str, TestFlow]:
-    flows = []
+def _register_flow(
+    import_fn: Callable[[], list[TestFlow]], backend_name: str
+) -> list[TestFlow]:
+    try:
+        return import_fn()
+    except Exception as e:
+        logger.info(f"Skipping {backend_name} flow registration: {e}")
+        return []
 
-    from executorch.backends.test.suite.flows.portable import PORTABLE_TEST_FLOW
 
-    flows += [
-        PORTABLE_TEST_FLOW,
+def _load_xnnpack() -> list[TestFlow]:
+    from executorch.backends.test.suite.flows.xnnpack import (
+        XNNPACK_DYNAMIC_INT8_PER_CHANNEL_TEST_FLOW,
+        XNNPACK_STATIC_INT8_PER_CHANNEL_TEST_FLOW,
+        XNNPACK_STATIC_INT8_PER_TENSOR_TEST_FLOW,
+        XNNPACK_TEST_FLOW,
+    )
+
+    return [
+        XNNPACK_TEST_FLOW,
+        XNNPACK_DYNAMIC_INT8_PER_CHANNEL_TEST_FLOW,
+        XNNPACK_STATIC_INT8_PER_CHANNEL_TEST_FLOW,
+        XNNPACK_STATIC_INT8_PER_TENSOR_TEST_FLOW,
     ]
 
+
+def _load_coreml() -> list[TestFlow]:
+    from executorch.backends.test.suite.flows.coreml import (
+        COREML_STATIC_INT8_TEST_FLOW,
+        COREML_TEST_FLOW,
+    )
+
+    return [COREML_TEST_FLOW, COREML_STATIC_INT8_TEST_FLOW]
+
+
+def _load_vulkan() -> list[TestFlow]:
+    from executorch.backends.test.suite.flows.vulkan import (
+        VULKAN_STATIC_INT8_PER_CHANNEL_TEST_FLOW,
+        VULKAN_TEST_FLOW,
+    )
+
+    return [VULKAN_TEST_FLOW, VULKAN_STATIC_INT8_PER_CHANNEL_TEST_FLOW]
+
+
+def _load_openvino() -> list[TestFlow]:
+    from executorch.backends.test.suite.flows.openvino import (
+        OPENVINO_INT8_TEST_FLOW,
+        OPENVINO_TEST_FLOW,
+    )
+
+    return [OPENVINO_TEST_FLOW, OPENVINO_INT8_TEST_FLOW]
+
+
+def _load_qnn() -> list[TestFlow]:
+    if not os.environ.get("QNN_SDK_ROOT"):
+        logger.info("Skipping QNN flow registration: QNN_SDK_ROOT not set")
+        return []
+
+    from executorch.backends.test.suite.flows.qualcomm import (
+        QNN_16A16W_TEST_FLOW,
+        QNN_16A4W_BLOCK_TEST_FLOW,
+        QNN_16A4W_TEST_FLOW,
+        QNN_16A8W_TEST_FLOW,
+        QNN_8A8W_TEST_FLOW,
+        QNN_TEST_FLOW,
+    )
+
+    return [
+        QNN_TEST_FLOW,
+        QNN_16A16W_TEST_FLOW,
+        QNN_16A8W_TEST_FLOW,
+        QNN_16A4W_TEST_FLOW,
+        QNN_16A4W_BLOCK_TEST_FLOW,
+        QNN_8A8W_TEST_FLOW,
+    ]
+
+
+def _load_arm() -> list[TestFlow]:
+    from executorch.backends.test.suite.flows.arm import (
+        ARM_ETHOS_U55_FLOW,
+        ARM_ETHOS_U85_FLOW,
+        ARM_TOSA_FP_FLOW,
+        ARM_TOSA_INT_FLOW,
+        ARM_VGF_FP_FLOW,
+        ARM_VGF_INT_FLOW,
+    )
+
+    return [
+        ARM_TOSA_FP_FLOW,
+        ARM_TOSA_INT_FLOW,
+        ARM_ETHOS_U55_FLOW,
+        ARM_ETHOS_U85_FLOW,
+        ARM_VGF_FP_FLOW,
+        ARM_VGF_INT_FLOW,
+    ]
+
+
+def all_flows() -> dict[str, TestFlow]:
+    from executorch.backends.test.suite.flows.portable import PORTABLE_TEST_FLOW
+
+    flows = (
+        [PORTABLE_TEST_FLOW]
+        + _register_flow(_load_xnnpack, "XNNPACK")
+        + _register_flow(_load_coreml, "Core ML")
+        + _register_flow(_load_vulkan, "Vulkan")
+        + _register_flow(_load_openvino, "OpenVINO")
+        + _register_flow(_load_qnn, "QNN")
+        + _register_flow(_load_arm, "ARM")
+    )
+
     try:
-        from executorch.backends.test.suite.flows.xnnpack import (
-            XNNPACK_DYNAMIC_INT8_PER_CHANNEL_TEST_FLOW,
-            XNNPACK_STATIC_INT8_PER_CHANNEL_TEST_FLOW,
-            XNNPACK_STATIC_INT8_PER_TENSOR_TEST_FLOW,
-            XNNPACK_TEST_FLOW,
-        )
+        from executorch.backends.test.suite.flows.mlx import MLX_TEST_FLOW
 
         flows += [
-            XNNPACK_TEST_FLOW,
-            XNNPACK_DYNAMIC_INT8_PER_CHANNEL_TEST_FLOW,
-            XNNPACK_STATIC_INT8_PER_CHANNEL_TEST_FLOW,
-            XNNPACK_STATIC_INT8_PER_TENSOR_TEST_FLOW,
+            MLX_TEST_FLOW,
         ]
     except Exception as e:
-        logger.info(f"Skipping XNNPACK flow registration: {e}")
-
-    try:
-        from executorch.backends.test.suite.flows.coreml import (
-            COREML_STATIC_INT8_TEST_FLOW,
-            COREML_TEST_FLOW,
-        )
-
-        flows += [
-            COREML_TEST_FLOW,
-            COREML_STATIC_INT8_TEST_FLOW,
-        ]
-    except Exception as e:
-        logger.info(f"Skipping Core ML flow registration: {e}")
-
-    try:
-        from executorch.backends.test.suite.flows.vulkan import (
-            VULKAN_STATIC_INT8_PER_CHANNEL_TEST_FLOW,
-            VULKAN_TEST_FLOW,
-        )
-
-        flows += [
-            VULKAN_TEST_FLOW,
-            VULKAN_STATIC_INT8_PER_CHANNEL_TEST_FLOW,
-        ]
-    except Exception as e:
-        logger.info(f"Skipping Vulkan flow registration: {e}")
-
-    try:
-        from executorch.backends.test.suite.flows.qualcomm import (
-            QNN_16A16W_TEST_FLOW,
-            QNN_16A4W_BLOCK_TEST_FLOW,
-            QNN_16A4W_TEST_FLOW,
-            QNN_16A8W_TEST_FLOW,
-            QNN_8A8W_TEST_FLOW,
-            QNN_TEST_FLOW,
-        )
-
-        flows += [
-            QNN_TEST_FLOW,
-            QNN_16A16W_TEST_FLOW,
-            QNN_16A8W_TEST_FLOW,
-            QNN_16A4W_TEST_FLOW,
-            QNN_16A4W_BLOCK_TEST_FLOW,
-            QNN_8A8W_TEST_FLOW,
-        ]
-    except Exception as e:
-        logger.info(f"Skipping QNN flow registration: {e}")
-
-    try:
-        from executorch.backends.test.suite.flows.arm import (
-            ARM_ETHOS_U55_FLOW,
-            ARM_ETHOS_U85_FLOW,
-            ARM_TOSA_FP_FLOW,
-            ARM_TOSA_INT_FLOW,
-            ARM_VGF_FP_FLOW,
-            ARM_VGF_INT_FLOW,
-        )
-
-        flows += [
-            ARM_TOSA_FP_FLOW,
-            ARM_TOSA_INT_FLOW,
-            ARM_ETHOS_U55_FLOW,
-            ARM_ETHOS_U85_FLOW,
-            ARM_VGF_FP_FLOW,
-            ARM_VGF_INT_FLOW,
-        ]
-    except Exception as e:
-        logger.info(f"Skipping ARM flow registration: {e}")
+        logger.info(f"Skipping MLX flow registration: {e}")
 
     return {f.name: f for f in flows if f is not None}

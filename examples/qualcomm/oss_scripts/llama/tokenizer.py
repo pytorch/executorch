@@ -7,7 +7,9 @@
 import argparse
 import json
 import logging
-from typing import Callable
+import re
+import warnings
+from typing import Callable, List
 
 from executorch.examples.qualcomm.oss_scripts.llama import LLMModelConfig
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
@@ -18,16 +20,19 @@ from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenize
 
 from transformers import AutoTokenizer
 
+IMG_TOKEN = "<image>"
+AUDIO_TOKEN = "<audio>"
+
 # Special tokens for Vision-Language Model
 VLM_SPECIAL_TOKENS = {
     "smolvlm_500m_instruct": {
-        "image_token": "<image>",
+        IMG_TOKEN: "<image>",
         "global_img": "<global-img>",
         "fake_wrap_start": "<fake_token_around_image>",
         "fake_wrap_end": "<fake_token_around_image>",
     },
     "internvl3_1b": {
-        "image_token": "<IMG_CONTEXT>",
+        IMG_TOKEN: "<IMG_CONTEXT>",
         "fake_wrap_start": "<img>",
         "fake_wrap_end": "</img>",
     },
@@ -53,6 +58,7 @@ class TokenizerWrapper:
         self.decoder_model = control_args.decoder_model
         self.verbose = control_args.verbose
 
+        self.control_args = control_args
         self.config = config
         self.repo_id = config.repo_id
         self.apply_chat_template = config.instruct_model
@@ -118,6 +124,100 @@ class TokenizerWrapper:
 
         return runtime_tokenizer_path, tokenizer, chat_template
 
+    def prepare_messages(self, prompts: List[str]):
+        """
+        Validate and normalize a multi-turn prompt sequence, then prepare it into
+        a message list.
+
+        This function checks image-token usage against provided image paths, auto-injects
+        image tokens when none of them were present, and constructs a per-turn message structure.
+
+        Args:
+            prompts (List[str]):
+                A list of user prompts representing a multi-turn conversation.
+                If `VISION_ENCODER` is present in `self.config`, image usage is validated:
+                - The total count of image tokens (IMG_TOKEN) across all prompts must
+                    match the number of image paths, unless no image token is present at all
+                    (in which case tokens will be auto-prepended to the first prompt).
+
+        Returns:
+            List[Dict[str, Any]]:
+                A list of message dictionaries, one per prompt/turn, in the same order as `prompts`.
+                Each message has the following schema:
+
+                - `id` (int): 0-based turn index (i.e., position in `prompts`).
+                - `text` (str): The raw prompt text for this turn. If no image tokens were
+                present anywhere and images were provided/assumed, the first prompt's text
+                is auto-prefixed with `IMG_TOKEN * num_images`.
+                - `files_path` (List[str]): Image paths (local or URLs) associated with this
+                turn, assigned left-to-right based on the number of `IMG_TOKEN` occurrences
+                in `text`. Empty when the turn contains no image tokens.
+
+                Example return value:
+                [
+                    {"id": 0, "text": "<image><image> Compare these images", "files_path": ["a.png", "b.png"]},
+                    {"id": 1, "text": "Answer the question: What's the main object in first image?", "files_path": []},
+                ]
+
+        Raises:
+            ValueError:
+                Raised only if the user has already included one or more image tokens (IMG_TOKEN)
+                across `prompts` and the total number of those tokens does not equal the number of
+                provided `image_paths`.
+
+        Examples:
+            >>> self.control_args.image_path = ["img1.jpg", "img2.jpg"]
+            >>> prompts = ["<image><image>Compare these images above and list the differences.", "Answer the question: What's the main object in first image?"]
+            >>> prepare_messages(prompts)
+            [
+                {"id": 0, "text": "<image><image>Compare these images above and list the differences.", "files_path": ["img1.jpg", "img2.jpg"]},
+                {"id": 1, "text": "Answer the question: What's the main object in first image?", "files_path": []},
+            ]
+        """
+
+        messages = []
+
+        image_paths = self.control_args.image_path
+        if hasattr(self.config, VISION_ENCODER):
+            # Load image from user-specified path (URL or local file)
+            # fall back to the default image URL if no image is provided.
+            if not image_paths:
+                image_paths = [getattr(self.config, VISION_ENCODER).img_url]
+                warnings.warn(
+                    f"No image path/URL provided, using default image URL: {image_paths}",
+                    UserWarning,
+                    stacklevel=1,
+                )
+
+            num_images = len(image_paths)
+
+            total_image_tokens = sum(prompt.count(IMG_TOKEN) for prompt in prompts)
+
+            if total_image_tokens == 0:
+                prompts[0] = (IMG_TOKEN * num_images) + prompts[0]
+            elif total_image_tokens != num_images:
+                raise ValueError(
+                    f"Number of <image> tokens ({total_image_tokens}) does not match "
+                    f"number of images ({num_images}). Please check your prompts and image paths."
+                    "Please check your prompts and image paths.\n\n"
+                    f"=== Prompt ===\n{prompts}\n"
+                    f"=== Image paths ===\n{image_paths}"
+                )
+
+        img_idx = 0
+        for i, prompt in enumerate(prompts):
+            message = {"id": i, "text": prompt, "files_path": []}
+            if IMG_TOKEN in prompt:
+                num_img = prompt.count(IMG_TOKEN)
+                message["files_path"] = image_paths[img_idx : img_idx + num_img]
+                img_idx += num_img
+            messages.append(message)
+
+        if self.control_args.verbose:
+            logging.info("Simulation multi-turn:")
+            logging.info(messages)
+        return messages
+
     def prepare_multimodal_prompt(
         self,
         prompt: str,
@@ -153,12 +253,11 @@ class TokenizerWrapper:
             image_prompt = (
                 f"{specials['fake_wrap_start']}"
                 f"{specials.get('global_img', '')}"
-                f"{specials['image_token'] * image_seq_len}"
+                f"{specials[IMG_TOKEN] * image_seq_len}"
                 f"{specials['fake_wrap_end']}"
             )
             # Replace image token with expanded version
-            expanded = prompt.replace(specials["image_token"], image_prompt)
-
+            expanded = prompt.replace(specials[IMG_TOKEN], image_prompt)
             if self.verbose:
                 logging.info(f"Prompt after expanding image token: {expanded}")
 
@@ -168,6 +267,27 @@ class TokenizerWrapper:
             raise NotImplementedError(
                 "Audio-language model expanded tokens still under development"
             )
+
+    def _split_prompt(self, prompt: str):
+        """
+        Split user prompt by special tokens.
+
+        Args:
+            prompt (str): Input prompt containing special tokens
+
+        Returns:
+            List[str]: List of prompt segments split by special tokens
+        """
+        split_tokens = set()
+        if self.decoder_model in VLM_SPECIAL_TOKENS:
+            split_tokens.add(IMG_TOKEN)
+        if self.decoder_model in ALM_SPECIAL_TOKENS:
+            split_tokens.add(AUDIO_TOKEN)
+
+        if not split_tokens:
+            return [prompt]
+        pattern = f"({'|'.join(map(re.escape, split_tokens))})"
+        return [part for part in re.split(pattern, prompt) if part]
 
     def apply_prompt_template(
         self,
@@ -186,36 +306,31 @@ class TokenizerWrapper:
         Returns:
             Formatted prompt string
         """
-        if self.decoder_model in VLM_SPECIAL_TOKENS:
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image"},
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ]
-        elif self.decoder_model in ALM_SPECIAL_TOKENS:
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "audio"},
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ]
-        else:
-            messages = [{"role": "user", "content": prompt}]
 
+        messages = []
+        message = {"role": "user", "content": prompt}
+        if self.decoder_model in VLM_SPECIAL_TOKENS:
+            contents = self._split_prompt(prompt)
+            message["content"] = []
+            for content in contents:
+                if content == IMG_TOKEN:
+                    message["content"].append(
+                        {"type": "image"},
+                    )
+                else:
+                    message["content"].append(
+                        {"type": "text", "text": content},
+                    )
+        elif self.decoder_model in ALM_SPECIAL_TOKENS:
+            message["content"] = prompt
+
+        messages.append(message)
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
 
         template_prompt = chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-        logging.info(f"Prompt after applying template: {template_prompt}")
 
         # edge cases handling:
         # Gemma may produce unexpected output if the prompt contains an extra <bos> token.

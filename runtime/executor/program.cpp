@@ -128,6 +128,25 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   }
   EXECUTORCH_END_PROF(prof_tok);
 
+  // The flatbuffer data must start at an aligned address to ensure internal
+  // alignment of flatbuffer fields.
+  ET_CHECK_OR_RETURN_ERROR(
+      IsAligned(program_data->data()),
+      InvalidArgument,
+      "Program data 0x%p must be aligned to %zu",
+      program_data->data(),
+      kMinimumAlignment);
+
+  // Minimum size: root offset + file identifier (i.e., the flatbuffer header
+  // before the extended header begins).
+  constexpr size_t kMinBufferSize = ExtendedHeader::kHeaderOffset;
+  ET_CHECK_OR_RETURN_ERROR(
+      program_data->size() >= kMinBufferSize,
+      InvalidProgram,
+      "Program data size %zu is too small (minimum %zu)",
+      program_data->size(),
+      kMinBufferSize);
+
   // Make sure the magic header matches the expected version.
   if (!executorch_flatbuffer::ProgramBufferHasIdentifier(
           program_data->data())) {
@@ -139,7 +158,7 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
     return Error::InvalidProgram;
   }
 
-  // Do extra verification if requested.
+  // Do verification based on the requested level.
   if (verification == Verification::InternalConsistency) {
 #if ET_ENABLE_PROGRAM_VERIFICATION
     EXECUTORCH_SCOPE_PROF("Program::verify_internal_consistency");
@@ -160,19 +179,34 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
         "Program validation failed: likely a corrupt file");
 #else
     ET_LOG(
-        Info, "InternalConsistency verification requested but not available");
+        Info,
+        "InternalConsistency verification requested but not available; "
+        "falling back to Minimal verification. "
+        "Build with ET_ENABLE_PROGRAM_VERIFICATION=1 for full verification.");
 #endif
   }
 
-  // The flatbuffer data must start at an aligned address to ensure internal
-  // alignment of flatbuffer fields.
-  ET_CHECK_OR_RETURN_ERROR(
-      IsAligned(program_data->data()),
-      InvalidArgument,
-      "Program data 0x%p must be aligned to %zu",
-      program_data->data(),
-      kMinimumAlignment);
-
+  if (verification == Verification::Minimal
+#if !ET_ENABLE_PROGRAM_VERIFICATION
+      || verification == Verification::InternalConsistency
+#endif
+  ) {
+    // Verify that the root table offset is within bounds.
+    // In InternalConsistency mode this is done by VerifyProgramBuffer above.
+    uint32_t root_offset =
+        flatbuffers::ReadScalar<flatbuffers::uoffset_t>(program_data->data());
+    // The root table is at buf + root_offset. It must not point into the
+    // header (offset + file identifier = 8 bytes) and must leave room for
+    // at least a vtable offset (soffset_t) at its position.
+    ET_CHECK_OR_RETURN_ERROR(
+        root_offset >= kMinBufferSize &&
+            root_offset <=
+                program_data->size() - sizeof(flatbuffers::soffset_t),
+        InvalidProgram,
+        "Root table offset %u is invalid for program size %zu",
+        root_offset,
+        program_data->size());
+  }
   // Get the pointer to the root flatbuffer table.
   const executorch_flatbuffer::Program* flatbuffer_program =
       executorch_flatbuffer::GetProgram(program_data->data());

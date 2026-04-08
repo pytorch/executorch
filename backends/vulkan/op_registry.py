@@ -159,6 +159,8 @@ def update_features(aten_op):
         torch.ops.aten.sym_size.int,
         operator.add,
         operator.sub,
+        operator.floordiv,
+        operator.mul,
         operator.lt,
         operator.gt,
         operator.ge,
@@ -167,15 +169,37 @@ def update_features(aten_op):
         # Guard and assert ops
         torch.ops.aten._assert_scalar.default,
         torch.ops.aten.sym_constrain_range_for_size.default,
-        # copy.default is a no-op when src dtype matches dst dtype; removed by
-        # RemoveRedundantOpsTransform before execution.
-        exir_ops.edge.aten.copy.default,
     ]
 )
 def register_ephemeral_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         supports_resize=True,
+    )
+
+
+def _check_copy_is_noop(node: torch.fx.Node) -> bool:
+    """Only support copy.default when it's a no-op (same dtype and shape)."""
+    src = node.args[1]
+    if not isinstance(src, torch.fx.Node):
+        return False
+    src_val = src.meta.get("val")
+    dst_val = node.meta.get("val")
+    if src_val is None or dst_val is None:
+        return False
+    return src_val.dtype == dst_val.dtype and src_val.shape == dst_val.shape
+
+
+@update_features(
+    [
+        exir_ops.edge.aten.copy.default,
+    ]
+)
+def register_copy_op():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        supports_resize=True,
+        are_node_inputs_supported_fn=_check_copy_is_noop,
     )
 
 
@@ -191,6 +215,7 @@ def register_ephemeral_ops():
         exir_ops.edge.aten.exp.default,
         exir_ops.edge.aten.gelu.default,
         exir_ops.edge.aten.hardshrink.default,
+        exir_ops.edge.aten.hardswish.default,
         exir_ops.edge.aten.hardtanh.default,
         exir_ops.edge.aten.neg.default,
         exir_ops.edge.aten.relu.default,
@@ -279,6 +304,26 @@ def register_bitwise_and():
     )
 
 
+@update_features(exir_ops.edge.aten.bitwise_not.default)
+def register_bitwise_not():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features(exir_ops.edge.aten.logical_and.default)
+def register_logical_and():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
 # =============================================================================
 # BinaryScalarOp.cpp
 # =============================================================================
@@ -301,16 +346,22 @@ def register_pow_tensor_scalar():
 
 @update_features(exir_ops.edge.aten._to_copy.default)
 def register_to_copy():
-    def check_to_copy_node(node: torch.fx.Node) -> bool:
-        # Only single-arg _to_copy is supported
-        return len(node.args) == 1
+    def pick_to_copy_storage(
+        node: torch.fx.Node,
+    ) -> Tuple[utils.TensorRepSet, utils.TensorRepSet]:
+        in_dtype = node.args[0].meta["val"].dtype  # type: ignore[union-attr]
+        out_dtype = node.meta["val"].dtype
+        fp_types = {torch.float16, torch.float32}
+        if in_dtype in fp_types and out_dtype in fp_types:
+            return utils.ANY_STORAGE, utils.ANY_STORAGE
+        return utils.CONTIGUOUS_BUFFER, utils.CONTIGUOUS_BUFFER
 
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
-        inputs_dtypes=utils.FP_INT_T,
-        outputs_dtypes=utils.FP_INT_T,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        outputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
-        are_node_inputs_supported_fn=check_to_copy_node,
+        pick_io_storage_fn=pick_to_copy_storage,
     )
 
 
@@ -327,7 +378,7 @@ def register_to_copy():
 )
 def register_softmax_cpp_ops():
     return OpFeatures(
-        inputs_storage=utils.ANY_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
     )
@@ -705,7 +756,7 @@ def register_reduce_cpp_ops():
 )
 def register_argreduce_cpp_ops():
     return OpFeatures(
-        inputs_storage=utils.ANY_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_T,
         outputs_dtypes=utils.INT_T,
         supports_resize=True,
@@ -774,6 +825,47 @@ def register_convolution_cpp_ops():
 
         return True
 
+    def pick_conv_storage(
+        node: torch.fx.Node,
+    ) -> Tuple[List[utils.TensorRepSet], utils.TensorRepSet]:
+        x = node.args[0]
+        assert isinstance(x, torch.fx.Node)
+        x_shape = x.meta["val"].size()
+
+        # Default: channels-packed texture (conv2d and fallback conv1d)
+        input_storage = utils.CHANNELS_PACKED_TEXTURE
+        output_storage = utils.CHANNELS_PACKED_TEXTURE
+
+        if len(x_shape) == 3:
+            # Conv1d: check if we can use height-packed
+            weight = node.args[1]
+            assert isinstance(weight, torch.fx.Node)
+            w_shape = weight.meta["val"].size()
+            groups = node.args[8]
+
+            c_in = x_shape[1]
+            c_out = w_shape[0]
+            kernel_size = w_shape[2]
+
+            is_pointwise = kernel_size == 1
+            is_depthwise = (
+                isinstance(groups, int)
+                and groups == c_in
+                and c_out == c_in
+                and w_shape[1] == 1
+            )
+            if is_pointwise or is_depthwise:
+                input_storage = utils.HEIGHT_PACKED_TEXTURE
+                output_storage = utils.HEIGHT_PACKED_TEXTURE
+
+        # Build per-input storage list. The convolution op has variable args:
+        # aten.convolution.default: input, weight, bias, stride, padding,
+        #   dilation, transposed, output_padding, groups
+        # et_vk.conv_with_clamp.default: + output_min, output_max
+        # All args after input are NO_STORAGE (prepacked or non-tensor)
+        inputs = [input_storage] + [utils.NO_STORAGE] * 10
+        return inputs, output_storage
+
     return OpFeatures(
         inputs_storage=[
             utils.CHANNELS_PACKED_TEXTURE,  # input
@@ -792,6 +884,7 @@ def register_convolution_cpp_ops():
         supports_resize=True,
         supports_prepacking=True,
         are_node_inputs_supported_fn=check_conv_node,
+        pick_io_storage_fn=pick_conv_storage,
     )
 
 
@@ -993,6 +1086,16 @@ def register_apply_rotary_emb():
     )
 
 
+@update_features(exir_ops.edge.et_vk.apply_rotary_emb_hf.default)
+def register_apply_rotary_emb_hf():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
 # =============================================================================
 # Permute.cpp
 # =============================================================================
@@ -1097,6 +1200,20 @@ def register_clone_dim_order():
     )
 
 
+# alias_copy is a no-op identity operation (same as clone/alias). It is removed
+# by RemoveRedundantOpsTransform during preprocess, so the C++ runtime never sees
+# it. Registering it here ensures the partitioner delegates it to Vulkan rather
+# than creating partition boundaries that break the graph.
+@update_features(exir_ops.edge.aten.alias_copy.default)
+def register_alias_copy():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
 # =============================================================================
 # Gather.cpp
 # =============================================================================
@@ -1120,7 +1237,7 @@ def register_gather():
 @update_features(exir_ops.edge.aten.expand_copy.default)
 def register_expand_copy():
     return OpFeatures(
-        inputs_storage=utils.ANY_BUFFER,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=False,
         supports_highdim=True,
@@ -1285,7 +1402,7 @@ def register_index_tensor():
 @update_features(exir_ops.edge.aten.arange.start_step)
 def register_arange():
     return OpFeatures(
-        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_T,
     )
 
@@ -1298,8 +1415,9 @@ def register_arange():
 @update_features(exir_ops.edge.aten.constant_pad_nd.default)
 def register_constant_pad_nd():
     return OpFeatures(
-        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
     )
 
 
@@ -1320,7 +1438,7 @@ def register_constant_pad_nd():
 )
 def register_full_cpp_ops():
     return OpFeatures(
-        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
     )
 
@@ -1335,6 +1453,7 @@ def register_scalar_tensor():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
         inputs_dtypes=utils.FP_INT_T,
+        supports_resize=True,
     )
 
 
@@ -1377,7 +1496,7 @@ def register_grid_priors():
 @update_features(exir_ops.edge.aten.repeat.default)
 def register_repeat():
     return OpFeatures(
-        inputs_storage=utils.ANY_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
     )
 
@@ -1389,9 +1508,50 @@ def register_repeat():
 
 @update_features(exir_ops.edge.aten.embedding.default)
 def register_embedding():
+    def check_embedding_weight_size(node: torch.fx.Node) -> bool:
+        weight = node.args[0]
+        if isinstance(weight, torch.fx.Node) and utils.is_tensor_node(weight):
+            numel = weight.meta["val"].numel()
+            if numel > utils.DEFAULT_BUFFER_LIMIT:
+                return False
+        return True
+
     return OpFeatures(
-        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=[utils.FP_T, utils.INT_T],
+        supports_prepacking=True,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_embedding_weight_size,
+    )
+
+
+# =============================================================================
+# EmbeddingQ4gsw (Quantized Embedding)
+# =============================================================================
+
+
+@update_features(exir_ops.edge.quantized_decomposed.embedding_4bit.dtype)
+def register_quantized_decomposed_embedding_4bit():
+    def check_embedding_4bit_weight_size(node: torch.fx.Node) -> bool:
+        weight = node.args[0]
+        if isinstance(weight, torch.fx.Node) and utils.is_tensor_node(weight):
+            numel = weight.meta["val"].numel()
+            if numel > utils.DEFAULT_BUFFER_LIMIT:
+                return False
+        return True
+
+    return OpFeatures(
+        inputs_storage=utils.ANY_BUFFER,
+        supports_prepacking=True,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_embedding_4bit_weight_size,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.embedding_q4gsw.default)
+def register_embedding_q4gsw():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
         supports_prepacking=True,
         supports_resize=True,
     )
@@ -1439,7 +1599,7 @@ def register_native_group_norm():
 @update_features(exir_ops.edge.aten.native_layer_norm.default)
 def register_native_layer_norm():
     return OpFeatures(
-        inputs_storage=utils.ANY_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
         supports_resize=True,

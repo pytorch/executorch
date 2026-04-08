@@ -66,10 +66,13 @@ def get_passes_dependency_for_capture_program():
         AnnotateUnbind,
         CanonicalizeConv,
         ConvertBmmToMatmul,
+        DecomposeAcos,
         DecomposeAny,
         DecomposeColIm,
         DecomposeLinalgVectorNorm,
+        DecomposeLogVariants,
         DecomposeMaxPool3d,
+        DecomposeTrunc,
         ExpandBroadcastTensorShape,
         FixedLinearKeepDim,
         FoldQDQ,
@@ -79,6 +82,7 @@ def get_passes_dependency_for_capture_program():
         RecomposePixelUnshuffle,
         RecomposeRmsNorm,
         RemoveRedundancy,
+        ResolveDebugHandle,
         TagQuantIO,
     )
 
@@ -92,10 +96,13 @@ def get_passes_dependency_for_capture_program():
         AnnotateStack: [RemoveRedundancy],
         AnnotateUnbind: [RemoveRedundancy],
         ConvertBmmToMatmul: [RecomposePixelUnshuffle],
+        DecomposeAcos: [RemoveRedundancy],
         DecomposeAny: [RemoveRedundancy],
         DecomposeColIm: [FoldQDQ],
         DecomposeLinalgVectorNorm: [RemoveRedundancy],
+        DecomposeLogVariants: [RemoveRedundancy],
         DecomposeMaxPool3d: [RemoveRedundancy],
+        DecomposeTrunc: [RemoveRedundancy],
         ExpandBroadcastTensorShape: [FoldQDQ],
         FixedLinearKeepDim: [FoldQDQ],
         FoldQDQ: [AnnotateQuantAttrs, AnnotateStack, AnnotateUnbind],
@@ -110,6 +117,9 @@ def get_passes_dependency_for_capture_program():
         RecomposePixelUnshuffle: [RemoveRedundancy],
         RecomposeRmsNorm: [RemoveRedundancy],
         TagQuantIO: [LayoutTransform],
+        ResolveDebugHandle: [
+            TagQuantIO
+        ],  # IMPORTANT: Please always ensure ResolveDebugHandle is the last executed pass.
     }
 
 
@@ -281,3 +291,25 @@ def append_qdq(
             dq_node = graph_module.graph.create_node("call_function", dq_op, dq_args)
             dq_node.meta = copy_meta(node.meta)
     return dq_node
+
+
+def get_const_node(
+    graph: torch.fx.Graph,
+    graph_module: torch.fx.GraphModule,
+    attr_name: str,
+    value,
+    source_node: torch.fx.Node,
+) -> torch.fx.Node:
+    """
+    Register a scalar constant as a named buffer on the graph module and return a get_attr node referencing it.
+    Used in edge dialect op decomposition passes where raw scalar arguments are not accepted by QNN op builders which need the inputs to be graph nodes.
+    """
+    dtype = source_node.meta["val"].dtype
+    tensor = torch.tensor(value, dtype=dtype)
+    graph_module.register_buffer(attr_name, tensor)
+
+    fake_mode = source_node.meta["val"].fake_mode
+    with graph.inserting_before(next(iter(graph.nodes))):
+        const_node = graph.get_attr(attr_name)
+        const_node.meta["val"] = fake_mode.from_tensor(tensor)
+    return const_node

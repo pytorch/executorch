@@ -266,7 +266,6 @@ class SimpleADB:
         method_index=0,
         output_callback: Optional[Callable[[str], None]] = None,
     ):
-        self._adb(["shell", f"rm -rf {self.output_folder}"])
         self._adb(["shell", f"mkdir -p {self.output_folder}"])
         # run the delegation
         if custom_runner_cmd is None:
@@ -367,13 +366,14 @@ def make_quantizer(
     custom_annotations=(),
     per_channel_conv=True,
     per_channel_linear=False,
+    per_channel_embedding=False,
     act_observer=MovingAverageMinMaxObserver,
     act_symmetric=False,
     is_qat=False,
     submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
-    eps=None,
     backend=QnnExecuTorchBackendType.kHtpBackend,
     soc_model="SM8750",
+    eps=None,
 ):
     quantizer = QnnQuantizer(backend=backend, soc_model=getattr(QcomChipset, soc_model))
     quantizer.add_custom_quant_annotations(custom_annotations)
@@ -382,6 +382,7 @@ def make_quantizer(
         is_qat=is_qat,
         is_conv_per_channel=per_channel_conv,
         is_linear_per_channel=per_channel_linear,
+        is_embedding_per_channel=per_channel_embedding,
         act_observer=act_observer,
         act_symmetric=act_symmetric,
         eps=eps,
@@ -474,7 +475,7 @@ def build_executorch_binary(
     metadata=None,
     dump_intermediate_outputs=False,
     qnn_intermediate_debugger: QNNIntermediateDebugger = None,
-    backend=QnnExecuTorchBackendType.kHtpBackend,
+    backend: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend,
     passes_job=None,
     passes_dependency=None,
     qat_training_data=None,
@@ -490,7 +491,6 @@ def build_executorch_binary(
         model (torch.nn.Module): The model to be converted into an ExecuTorch binary.
         inputs (torch.Tensor): Sample input tensors required for model export.
         soc_model (QcomChipset): The target Qualcomm System on Chip (SoC) model.
-        backend (QnnExecuTorchBackendType): The target backend.
         file_name (str): Name for the output binary file (.pte).
         dataset (List[torch.Tensor] | Callable): A dataset for quantization calibration.
         skip_node_id_set (set, optional): Set of node IDs to be skipped during partition.
@@ -500,6 +500,8 @@ def build_executorch_binary(
         shared_buffer (bool, optional): Applies zero-copy mechanism to optimize runtime memory allocation.
         metadata (dict, optional): An optional dictionary that maps each method name to a constant value in eager mode.
         dump_intermediate_outputs (bool, optional): Enables dumping model intermediate outputs.
+        qnn_intermediate_debugger (QNNIntermediateDebugger, optional): A debugger instance capable of retrieving intermediate tensor results.
+        backend (QnnExecuTorchBackendType, optional): The target backend.
         passes_job (OrderedDict, optional): Custom passes job in capture_program, users can enable/disable specific passes or modify their attributes.
         passes_dependency (Dict, optional): A dictionary mapping each pass to its corresponding list of dependencies.
         qat_training_data (List[torch.Tensor], optional): A dataset for quantization aware training(QAT). Typically is a pair of tensors, such as [features, ground truth].
@@ -1074,13 +1076,18 @@ def parse_skip_delegation_node(args):
     return skip_node_id_set, skip_node_op_set
 
 
-def generate_inputs(dest_path: str, file_name: str, inputs=None):
+def generate_inputs(
+    dest_path: str,
+    input_list_filename: str,
+    inputs=None,
+    prefix_input_filename: str = "",
+):
     input_list_file = None
     input_files = []
 
     def prepare_input_file(tensor, fd, index, sub_index):
         # transform torch.Tensor to raw file
-        input_file_name = f"input_{index}_{sub_index}.raw"
+        input_file_name = f"{prefix_input_filename}_input_{index}_{sub_index}.raw"
         input_file_path = f"{dest_path}/{input_file_name}"
         if not isinstance(tensor, torch.Tensor):
             tensor = torch.tensor(tensor)
@@ -1093,7 +1100,7 @@ def generate_inputs(dest_path: str, file_name: str, inputs=None):
 
     # Prepare input data
     if inputs is not None:
-        input_list_file = f"{dest_path}/{file_name}"
+        input_list_file = f"{dest_path}/{input_list_filename}"
 
         with open(input_list_file, "w") as f:
             for idx, data in enumerate(inputs):

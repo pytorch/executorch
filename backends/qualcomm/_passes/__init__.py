@@ -13,6 +13,7 @@ from .convert_bmm_to_matmul import ConvertBmmToMatmul
 from .convert_linear_to_conv2d import ConvertLinearToConv2d
 from .convert_mha_to_sha import ConvertMhaToSha
 from .convert_square_to_pow import ConvertSquareToPow
+from .decompose_acos import DecomposeAcos
 from .decompose_any import DecomposeAny
 from .decompose_binary_alpha import DecomposeBinaryAlpha
 from .decompose_cdist import DecomposeCDist
@@ -22,12 +23,15 @@ from .decompose_expm1 import DecomposeExpM1
 from .decompose_floor_divide import DecomposeFloorDivide
 from .decompose_glu import DecomposeGlu
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
+from .decompose_log_variants import DecomposeLogVariants
 from .decompose_maxpool3d import DecomposeMaxPool3d
 from .decompose_minmaxdim import DecomposeMinMaxDim
+from .decompose_reciprocal import DecomposeReciprocal
 from .decompose_roll import DecomposeRoll
 from .decompose_silu import DecomposeSilu
 from .decompose_threshold import DecomposeThreshold
 from .decompose_triu import DecomposeTriu
+from .decompose_trunc import DecomposeTrunc
 from .decompose_wrap_with_autocast import DecomposeWrapWithAutocast
 from .expand_broadcast_tensor_shape import ExpandBroadcastTensorShape
 from .fixed_linear_keep_dim import FixedLinearKeepDim
@@ -48,6 +52,7 @@ from .remove_0d_tensor import Remove0DTensor
 from .remove_redundancy import RemoveRedundancy
 from .replace_arange_args import ReplaceArangeArgs
 from .replace_inf_values import ReplaceInfValues
+from .resolve_debug_handle import ResolveDebugHandle
 from .seq_mse import SeqMSE
 from .tag_quant_io import TagQuantIO
 
@@ -61,6 +66,7 @@ __all__ = [
     ConvertLinearToConv2d,
     ConvertMhaToSha,
     ConvertSquareToPow,
+    DecomposeAcos,
     DecomposeAny,
     DecomposeBinaryAlpha,
     DecomposeCDist,
@@ -70,12 +76,15 @@ __all__ = [
     DecomposeFloorDivide,
     DecomposeGlu,
     DecomposeLinalgVectorNorm,
+    DecomposeLogVariants,
     DecomposeMaxPool3d,
     DecomposeMinMaxDim,
+    DecomposeReciprocal,
     DecomposeRoll,
     DecomposeSilu,
     DecomposeThreshold,
     DecomposeTriu,
+    DecomposeTrunc,
     DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
@@ -96,6 +105,7 @@ __all__ = [
     RemoveRedundancy,
     ReplaceArangeArgs,
     ReplaceInfValues,
+    ResolveDebugHandle,
     SeqMSE,
     TagQuantIO,
 ]

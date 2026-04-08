@@ -503,6 +503,12 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--mlx",
+        action="store_true",
+        help="Delegate to MLX backend (Apple Silicon). Use with --use_kv_cache=True.",
+    )
+
+    parser.add_argument(
         "--expand_rope_table",
         default=False,
         action="store_true",
@@ -774,6 +780,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             coreml=llm_config.backend.coreml.enabled,
             coreml_ios=llm_config.backend.coreml.ios,
             vulkan=llm_config.backend.vulkan.enabled,
+            mlx=llm_config.backend.mlx.enabled,
             use_qat=llm_config.quantization.use_qat,
             use_lora=llm_config.base.use_lora,
             preq_mode=(
@@ -897,15 +904,15 @@ def _validate_args(llm_config):
                 "Shared embedding is only supported with torchao quantization."
             )
 
-    if llm_config.multimethod_lora.enabled:
+    if llm_config.multimethod.enabled:
         if llm_config.base.lora_config is not None:
             raise ValueError(
-                "Cannot use both base.lora_config and multimethod_lora.methods. "
-                "Use multimethod_lora.methods for all LoRA variants."
+                "Cannot use both base.lora_config and multimethod.methods. "
+                "Use multimethod.methods for all LoRA variants."
             )
         if llm_config.quantization.pt2e_quantize is not None:
             raise ValueError(
-                "PT2E quantization is not supported with multimethod_lora export."
+                "PT2E quantization is not supported with multimethod export."
             )
         if (
             llm_config.backend.coreml.enabled
@@ -915,7 +922,7 @@ def _validate_args(llm_config):
             or llm_config.backend.openvino.enabled
         ):
             raise ValueError(
-                "multimethod_lora export only supports XNNPACK backend or portable ops"
+                "multimethod export only supports XNNPACK backend or portable ops. "
                 "Please disable other backends (coreml, vulkan, qnn, mps, openvino)."
             )
 
@@ -1047,6 +1054,34 @@ def _to_edge_and_lower_llama_arm(
 
     builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
         partitioners
+    )
+
+    if verbose:
+        print_delegation_info(builder.edge_manager.exported_program().graph_module)
+
+    return builder.to_executorch(passes=additional_passes)
+
+
+def _to_edge_and_lower_llama_mlx(
+    builder_exported,
+    modelname,
+    quantizers,
+    additional_passes,
+    verbose: bool = False,
+) -> LLMEdgeManager:
+    """
+    Lower Llama model to MLX backend using to_edge_transform_and_lower.
+    """
+    logging.info("Lowering model using MLX partitioner")
+
+    from executorch.backends.mlx.partitioner import MLXPartitioner
+    from executorch.backends.mlx.passes import get_default_passes
+
+    partitioners = [MLXPartitioner()]
+
+    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
+        partitioners,
+        transform_passes=get_default_passes(),
     )
 
     if verbose:
@@ -1233,7 +1268,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
 
 
 def _get_xnnpack_partitioners(llm_config: LlmConfig) -> Optional[List[Partitioner]]:
-    """Get XNNPACK partitioners for multimethod_lora export."""
+    """Get XNNPACK partitioners for multimethod export."""
     partitioners = []
 
     # Order matters here, dynamic quantization should be applied first when
@@ -1271,20 +1306,20 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
     """
     Export multiple methods (base + LoRA variants) to a single .pte file.
 
-    For each method in llm_config.multimethod_lora.methods:
+    For each method in llm_config.multimethod.methods:
     - If LoraConfig is None: use base model
     - If LoraConfig is provided: create model with LoRA weights
 
     Limitations:
-    - Only XNNPACK backend is supported for multimethod_lora export.
+    - Only XNNPACK backend is supported for multimethod export.
     - PT2E quantization is not supported.
     - Each method is exported separately; export time scales linearly
       with the number of methods.
     - The final .pte file deduplicates shared weights automatically.
     """
-    num_methods = len(llm_config.multimethod_lora.methods)
+    num_methods = len(llm_config.multimethod.methods)
     logging.info(
-        f"multimethod_lora export: exporting {num_methods} method(s). "
+        f"multimethod export: exporting {num_methods} method(s). "
         "Each method requires separate model instantiation and export."
     )
 
@@ -1296,14 +1331,14 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
     method_to_program: Dict[str, ExportedProgram] = {}
     first_builder = None
 
-    for method_name, lora_config in llm_config.multimethod_lora.methods.items():
-        logging.info(f"Exporting method: {method_name}")
+    for method in llm_config.multimethod.methods:
+        logging.info(f"Exporting method: {method.method_name}")
 
         # Create a copy of config with this method's LoRA setting
         method_config = copy.deepcopy(llm_config)
-        method_config.base.lora_config = lora_config
-        # Disable multimethod_lora to avoid infinite recursion
-        method_config.multimethod_lora.methods = {}
+        method_config.base.lora_config = method.lora_config
+        # Disable multimethod to avoid infinite recursion
+        method_config.multimethod.methods = []
 
         # Load and prepare model for this method
         builder = _prepare_for_llama_export(method_config)
@@ -1312,7 +1347,7 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
 
         # Get the exported program
         exported_program = builder._export(builder.pre_autograd_graph_module)
-        method_to_program[method_name] = exported_program
+        method_to_program[method.method_name] = exported_program
 
         if first_builder is None:
             first_builder = builder
@@ -1322,7 +1357,7 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
     # Get partitioners based on backend config
     partitioners = _get_xnnpack_partitioners(llm_config)
 
-    # Lower all methods together using multimethod_lora API
+    # Lower all methods together using multimethod API
     edge_config = first_builder._get_edge_config()
     edge_manager = to_edge_transform_and_lower(
         method_to_program,
@@ -1336,7 +1371,7 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
     first_builder.edge_manager = edge_manager
     first_builder = first_builder.to_executorch(
         passes=additional_passes,
-        share_mutable_buffers=llm_config.multimethod_lora.share_mutable_buffers,
+        share_mutable_buffers=llm_config.multimethod.share_mutable_buffers,
     )
 
     output_file = _get_output_filename(
@@ -1353,8 +1388,8 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
 def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     _validate_args(llm_config)
 
-    # Check for multimethod_lora export
-    if llm_config.multimethod_lora.enabled:
+    # Check for multimethod export
+    if llm_config.multimethod.enabled:
         return _export_llama_multimethod(llm_config)
 
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(
@@ -1431,6 +1466,14 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             llm_config,
             verbose=llm_config.debug.verbose,
         )
+    elif llm_config.backend.mlx.enabled:
+        builder = _to_edge_and_lower_llama_mlx(
+            builder_exported,
+            modelname,
+            quantizers,
+            additional_passes,
+            verbose=llm_config.debug.verbose,
+        )
     else:
         builder = _to_edge_and_lower_llama(
             builder_exported,
@@ -1489,6 +1532,7 @@ def _load_llama_model_metadata(
     n_layers: int,
     vocab_size: int,
     metadata_str: Optional[str] = None,
+    num_kv_shared_layers: int = 0,
 ):
     metadata = {
         "get_max_seq_len": max_seq_len,
@@ -1499,6 +1543,9 @@ def _load_llama_model_metadata(
         "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,
         "enable_dynamic_shape": enable_dynamic_shape,
     }
+    # YOCO (You Only Cache Once) KV sharing metadata
+    if num_kv_shared_layers > 0:
+        metadata["get_num_kv_shared_layers"] = num_kv_shared_layers
     if metadata_str:
         try:
             extra = json.loads(metadata_str)
@@ -1578,6 +1625,9 @@ def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
             #  Module]`.
             model.vocab_size,
             llm_config.base.metadata,
+            # pyre-fixme[6]: For 10th argument expected `int` but got `Union[Tensor,
+            #  Module]`.
+            num_kv_shared_layers=getattr(model, "num_kv_shared_layers", 0),
         ),
     )
 
@@ -1608,6 +1658,7 @@ def _get_source_transforms(  # noqa
     coreml: bool = False,
     coreml_ios: int = 15,
     vulkan: bool = False,
+    mlx: bool = False,
     use_qat: bool = False,
     use_lora: int = 0,
     preq_mode: Optional[str] = None,
@@ -1784,6 +1835,19 @@ def _get_source_transforms(  # noqa
             else:
                 transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_kv_cache_with_coreml_kv_cache)
+
+        elif mlx:
+            from executorch.backends.mlx.llm.source_transformation import (
+                replace_et_kv_cache_with_mlx,
+                transform_attention_mha_to_mlx,
+            )
+            from executorch.examples.models.llama.source_transformation.rms_norm import (
+                replace_rms_norm_with_native_rms_norm,
+            )
+
+            transforms.append(transform_attention_mha_to_mlx)
+            transforms.append(replace_et_kv_cache_with_mlx)
+            transforms.append(replace_rms_norm_with_native_rms_norm)
 
     if local_global_attention:
         transforms.append(

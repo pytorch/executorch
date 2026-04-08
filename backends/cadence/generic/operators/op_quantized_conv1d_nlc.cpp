@@ -177,9 +177,9 @@ void quantized_conv1d_nlc(
         ww,                                                      \
         wc,                                                      \
         ow,                                                      \
-        stride[0],                                               \
-        padding[0],                                              \
-        dilation[0],                                             \
+        stride[stride.size() - 1],                               \
+        padding[padding.size() - 1],                             \
+        dilation[dilation.size() - 1],                           \
         groups,                                                  \
         in_zero_point,                                           \
         weight_zero_point,                                       \
@@ -247,7 +247,7 @@ void quantized_conv1d_nlc(
     const Tensor& bias,
     IntArrayRef stride,
     IntArrayRef padding,
-    __ET_UNUSED IntArrayRef dilation,
+    IntArrayRef dilation,
     int64_t groups,
     int64_t input_zero_point,
     int64_t weight_zero_point,
@@ -264,7 +264,7 @@ void quantized_conv1d_nlc(
       bias,
       stride,
       padding,
-      {1},
+      dilation,
       static_cast<int16_t>(groups),
       static_cast<int32_t>(input_zero_point),
       static_cast<int32_t>(weight_zero_point),
