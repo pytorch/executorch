@@ -6,6 +6,7 @@
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 
 
 class RecomposePixelUnshuffle(ExportPass):
@@ -76,6 +77,5 @@ class RecomposePixelUnshuffle(ExportPass):
                     # copy metadata
                     pixel_unshuffle_node.meta = node.meta
 
-        graph.eliminate_dead_code()
-        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)
