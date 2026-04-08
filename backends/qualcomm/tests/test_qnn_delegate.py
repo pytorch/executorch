@@ -125,6 +125,19 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(1, 2, 3, 4),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_acos(self):
+        module = Acos()  # noqa: F405
+        sample_input = (torch.rand(3, 4) * 2 - 1,)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_acos_multi_node(self):
+        module = AcosMultiNode()  # noqa: F405
+        sample_input = (
+            torch.tensor([0.0, 0.5, -0.5, 1.0, -1.0]),
+            torch.tensor([0.1, -0.1, 0.9, -0.9, 0.0]),
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_adaptive_avg_pool1d(self):
         module = AdaptiveAvgPool1D()  # noqa: F405
         sample_input = (torch.randn(1, 512, 7),)
@@ -1455,6 +1468,14 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([1, 4, 8, 8]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_log_variants_multi_node(self):
+        module = LogVariantsMultiNode()  # noqa: F405
+        sample_input = (
+            torch.abs(torch.rand(2, 3, 4)) + 0.1,
+            torch.abs(torch.rand(2, 3, 4)) + 0.1,
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_log10(self):
         module = Log10()  # noqa: F405
         sample_input = (torch.abs(torch.rand(2, 5, 1, 3) + 0.1),)
@@ -2359,6 +2380,21 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_abs(self):
         module = Abs()  # noqa: F405
         sample_input = (torch.randn(1, 2, 3, 4),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_acos(self):
+        module = Acos()  # noqa: F405
+        sample_input = (torch.rand(3, 4) * 2 - 1,)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_acos_multi_node(self):
+        module = AcosMultiNode()  # noqa: F405
+        sample_input = (
+            torch.tensor([0.0, 0.5, -0.5, 1.0, -1.0]),
+            torch.tensor([0.1, -0.1, 0.9, -0.9, 0.0]),
+        )
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -3810,6 +3846,15 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_log_softmax(self):
         module = LogSoftmax()  # noqa: F405
         sample_input = (torch.randn([1, 4, 8, 8]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_log_variants_multi_node(self):
+        module = LogVariantsMultiNode()  # noqa: F405
+        sample_input = (
+            torch.abs(torch.rand(2, 3, 4)) + 0.1,
+            torch.abs(torch.rand(2, 3, 4)) + 0.1,
+        )
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -7146,6 +7191,32 @@ class TestExampleOssScript(TestQNN):
             else:
                 self.assertGreaterEqual(msg["top_1"], 76)
                 self.assertGreaterEqual(msg["top_5"], 92)
+
+    def test_depthanything_v2_small(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/depthanything_v2_small.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+        ]
+        self.add_default_cmds(cmds)
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["sqnr"], 15)
 
     def test_dino_v2(self):
         if not self.required_envs([self.image_dataset]):
