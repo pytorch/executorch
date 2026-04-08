@@ -849,7 +849,10 @@ def edge_to_executorch_passes(
         # there exists an unbacked symint operation.
         *config.passes,
         SpecPropPass(),
-        PropagateDevicePass(),
+        PropagateDevicePass(
+            skip_h2d_for_method_inputs=config.skip_h2d_for_method_inputs,
+            skip_d2h_for_method_outputs=config.skip_d2h_for_method_outputs,
+        ),
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
     ] + pre_memory_planning_passes(config, name)
