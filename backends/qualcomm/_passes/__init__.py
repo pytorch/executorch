@@ -13,6 +13,7 @@ from .convert_bmm_to_matmul import ConvertBmmToMatmul
 from .convert_linear_to_conv2d import ConvertLinearToConv2d
 from .convert_mha_to_sha import ConvertMhaToSha
 from .convert_square_to_pow import ConvertSquareToPow
+from .decompose_acos import DecomposeAcos
 from .decompose_any import DecomposeAny
 from .decompose_binary_alpha import DecomposeBinaryAlpha
 from .decompose_cdist import DecomposeCDist
@@ -65,6 +66,7 @@ __all__ = [
     ConvertLinearToConv2d,
     ConvertMhaToSha,
     ConvertSquareToPow,
+    DecomposeAcos,
     DecomposeAny,
     DecomposeBinaryAlpha,
     DecomposeCDist,
