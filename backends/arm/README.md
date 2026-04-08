@@ -247,12 +247,14 @@ To run these tests, you need to install the required dependencies by running the
 Please note that installing model test dependencies is a standalone process. When using the `--setup-test-dependency` flag,
 the script will install only the necessary dependencies for model tests, skipping all other setup procedures.
 
-## Using pre-commit
+## Using git hooks
 
-A pre-commit script is available in the backend to help developers. Follow the steps below to enable it:
+The repo-wide pre-commit hook (lintrunner + torch_pin sync) is installed automatically
+by `./install_executorch.sh`. To install the Arm-specific pre-push hook (license checks,
+commit message format, docgen):
 
 ```
-cp backends/arm/scripts/pre-commit .git/hooks/
+cp backends/arm/scripts/pre-push .git/hooks/
 ```
 
 ## Notes on model specific and optional passes
@@ -307,6 +309,17 @@ List of model specific and optional passes:
     - backends/arm/test/models/test_llama.py
     - backends/arm/test/models/stable_diffusion/test_CLIPTextModelWithProjection.py
     - backends/arm/test/models/stable_diffusion/test_T5EncoderModel.py
+
+- ToDevicePass
+  - This is a utility for moving an already-quantized or already-decomposed GraphModule to another device.
+  - it is intended to be used immediately before rerunning / retracing / torch.export.export(...)
+  - Functionalities:
+    - Calls `.to(device)` on the GraphModule and rewrites explicit `device=` kwargs on `call_function` nodes to a user-specified device.
+    - Useful when manually moving an already-quantized or already-decomposed graph module to another device for validation, since some constant-producing nodes may still carry an export-time device kwarg.
+  - Example usage:
+    - `from executorch.exir.passes import ToDevicePass`
+    - `graph_module = ToDevicePass("cpu")(graph_module).graph_module`
+    - backends/arm/test/misc/test_post_quant_device_switch.py
 
 ## Help & Improvements
 
