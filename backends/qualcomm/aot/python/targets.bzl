@@ -26,6 +26,8 @@ def define_common_targets():
             "-DEXECUTORCH_PYTHON_MODULE_NAME={}".format(PYTHON_MODULE_NAME),
         ],
         deps = [
+            "//executorch/kernels/quantized:aot_lib",
+            "//executorch/kernels/quantized:quantized_ops_lib",
             "//executorch/runtime/core:core",
             "//executorch/backends/qualcomm/aot/python:python_lib",
             "//executorch/backends/qualcomm/aot/wrappers:wrappers",
