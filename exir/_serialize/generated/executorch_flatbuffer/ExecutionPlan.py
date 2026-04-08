@@ -10,6 +10,7 @@ from executorch.exir._serialize.generated.executorch_flatbuffer.BackendDelegate 
 from executorch.exir._serialize.generated.executorch_flatbuffer.Chain import Chain
 from executorch.exir._serialize.generated.executorch_flatbuffer.ContainerMetadata import ContainerMetadata
 from executorch.exir._serialize.generated.executorch_flatbuffer.EValue import EValue
+from executorch.exir._serialize.generated.executorch_flatbuffer.NonConstBufferDevice import NonConstBufferDevice
 from executorch.exir._serialize.generated.executorch_flatbuffer.Operator import Operator
 from typing import Optional
 np = import_numpy()
@@ -230,8 +231,32 @@ class ExecutionPlan(object):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(20))
         return o == 0
 
+    # ExecutionPlan
+    def NonConstBufferDevice(self, j: int) -> Optional[NonConstBufferDevice]:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(22))
+        if o != 0:
+            x = self._tab.Vector(o)
+            x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
+            x = self._tab.Indirect(x)
+            obj = NonConstBufferDevice()
+            obj.Init(self._tab.Bytes, x)
+            return obj
+        return None
+
+    # ExecutionPlan
+    def NonConstBufferDeviceLength(self) -> int:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(22))
+        if o != 0:
+            return self._tab.VectorLen(o)
+        return 0
+
+    # ExecutionPlan
+    def NonConstBufferDeviceIsNone(self) -> bool:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(22))
+        return o == 0
+
 def ExecutionPlanStart(builder: flatbuffers.Builder):
-    builder.StartObject(9)
+    builder.StartObject(10)
 
 def Start(builder: flatbuffers.Builder):
     ExecutionPlanStart(builder)
@@ -332,6 +357,18 @@ def ExecutionPlanStartNonConstBufferSizesVector(builder, numElems: int) -> int:
 def StartNonConstBufferSizesVector(builder, numElems: int) -> int:
     return ExecutionPlanStartNonConstBufferSizesVector(builder, numElems)
 
+def ExecutionPlanAddNonConstBufferDevice(builder: flatbuffers.Builder, nonConstBufferDevice: int):
+    builder.PrependUOffsetTRelativeSlot(9, flatbuffers.number_types.UOffsetTFlags.py_type(nonConstBufferDevice), 0)
+
+def AddNonConstBufferDevice(builder: flatbuffers.Builder, nonConstBufferDevice: int):
+    ExecutionPlanAddNonConstBufferDevice(builder, nonConstBufferDevice)
+
+def ExecutionPlanStartNonConstBufferDeviceVector(builder, numElems: int) -> int:
+    return builder.StartVector(4, numElems, 4)
+
+def StartNonConstBufferDeviceVector(builder, numElems: int) -> int:
+    return ExecutionPlanStartNonConstBufferDeviceVector(builder, numElems)
+
 def ExecutionPlanEnd(builder: flatbuffers.Builder) -> int:
     return builder.EndObject()
 
@@ -342,6 +379,7 @@ from executorch.exir._serialize.generated.executorch_flatbuffer import BackendDe
 from executorch.exir._serialize.generated.executorch_flatbuffer import Chain
 from executorch.exir._serialize.generated.executorch_flatbuffer import ContainerMetadata
 from executorch.exir._serialize.generated.executorch_flatbuffer import EValue
+from executorch.exir._serialize.generated.executorch_flatbuffer import NonConstBufferDevice
 from executorch.exir._serialize.generated.executorch_flatbuffer import Operator
 try:
     from typing import List, Optional
@@ -361,6 +399,7 @@ class ExecutionPlanT(object):
         self.operators = None  # type: List[executorch_flatbuffer.Operator.OperatorT]
         self.delegates = None  # type: List[executorch_flatbuffer.BackendDelegate.BackendDelegateT]
         self.nonConstBufferSizes = None  # type: List[int]
+        self.nonConstBufferDevice = None  # type: List[executorch_flatbuffer.NonConstBufferDevice.NonConstBufferDeviceT]
 
     @classmethod
     def InitFromBuf(cls, buf, pos):
@@ -389,7 +428,8 @@ class ExecutionPlanT(object):
             self.chains == other.chains and \
             self.operators == other.operators and \
             self.delegates == other.delegates and \
-            self.nonConstBufferSizes == other.nonConstBufferSizes
+            self.nonConstBufferSizes == other.nonConstBufferSizes and \
+            self.nonConstBufferDevice == other.nonConstBufferDevice
 
     # ExecutionPlanT
     def _UnPack(self, executionPlan):
@@ -451,6 +491,14 @@ class ExecutionPlanT(object):
                     self.nonConstBufferSizes.append(executionPlan.NonConstBufferSizes(i))
             else:
                 self.nonConstBufferSizes = executionPlan.NonConstBufferSizesAsNumpy()
+        if not executionPlan.NonConstBufferDeviceIsNone():
+            self.nonConstBufferDevice = []
+            for i in range(executionPlan.NonConstBufferDeviceLength()):
+                if executionPlan.NonConstBufferDevice(i) is None:
+                    self.nonConstBufferDevice.append(None)
+                else:
+                    nonConstBufferDevice_ = executorch_flatbuffer.NonConstBufferDevice.NonConstBufferDeviceT.InitFromObj(executionPlan.NonConstBufferDevice(i))
+                    self.nonConstBufferDevice.append(nonConstBufferDevice_)
 
     # ExecutionPlanT
     def Pack(self, builder):
@@ -514,6 +562,14 @@ class ExecutionPlanT(object):
                 for i in reversed(range(len(self.nonConstBufferSizes))):
                     builder.PrependInt64(self.nonConstBufferSizes[i])
                 nonConstBufferSizes = builder.EndVector()
+        if self.nonConstBufferDevice is not None:
+            nonConstBufferDevicelist = []
+            for i in range(len(self.nonConstBufferDevice)):
+                nonConstBufferDevicelist.append(self.nonConstBufferDevice[i].Pack(builder))
+            ExecutionPlanStartNonConstBufferDeviceVector(builder, len(self.nonConstBufferDevice))
+            for i in reversed(range(len(self.nonConstBufferDevice))):
+                builder.PrependUOffsetTRelative(nonConstBufferDevicelist[i])
+            nonConstBufferDevice = builder.EndVector()
         ExecutionPlanStart(builder)
         if self.name is not None:
             ExecutionPlanAddName(builder, name)
@@ -533,5 +589,7 @@ class ExecutionPlanT(object):
             ExecutionPlanAddDelegates(builder, delegates)
         if self.nonConstBufferSizes is not None:
             ExecutionPlanAddNonConstBufferSizes(builder, nonConstBufferSizes)
+        if self.nonConstBufferDevice is not None:
+            ExecutionPlanAddNonConstBufferDevice(builder, nonConstBufferDevice)
         executionPlan = ExecutionPlanEnd(builder)
         return executionPlan
