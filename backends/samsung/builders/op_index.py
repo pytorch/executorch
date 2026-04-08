@@ -43,7 +43,7 @@ class IndexVisitor(NodeVisitor):
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
-        params = {"axis": axis, "input_type": "params"}
+        params = {"axis": axis}
         enn_graph.define_op(
             node.name, "GATHER", [input_id, indices_id], [output_id], params
         )
