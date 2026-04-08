@@ -26,7 +26,7 @@ class ConvModule(torch.nn.Module):
         return self.conv(x)
 
 
-def test_insert_dynamic_padding_no_target():
+def test_insert_dynamic_padding():
     model = ConvModule()
     example_inputs = (torch.randn(1, 3, 8, 8),)
     ep = export(
