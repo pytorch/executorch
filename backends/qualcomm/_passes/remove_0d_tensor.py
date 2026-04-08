@@ -7,6 +7,7 @@
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 
 
 class Remove0DTensor(ExportPass):
@@ -31,6 +32,5 @@ class Remove0DTensor(ExportPass):
                     user_n.replace_input_with(node, node.args[0])
                 graph.erase_node(node)
 
-        graph.eliminate_dead_code()
-        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)
