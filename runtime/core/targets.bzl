@@ -142,6 +142,33 @@ def define_common_targets():
         )
 
     runtime.cxx_library(
+        name = "device_allocator",
+        srcs = ["device_allocator.cpp"],
+        exported_headers = [
+            "device_allocator.h",
+        ],
+        exported_deps = [
+            ":core",
+            "//executorch/runtime/core/portable_type:portable_type",
+        ],
+        deps = [
+            "//executorch/runtime/platform:platform",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "device_memory_buffer",
+        srcs = ["device_memory_buffer.cpp"],
+        exported_headers = ["device_memory_buffer.h"],
+        exported_deps = [
+            ":core",
+            ":device_allocator",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
         name = "tag",
         srcs = ["tag.cpp"],
         exported_headers = [
