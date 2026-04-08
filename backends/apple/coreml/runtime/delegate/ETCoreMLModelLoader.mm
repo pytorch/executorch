@@ -23,7 +23,7 @@ namespace {
         for (const auto& value : values) {
             [result addObject:@(value.c_str())];
         }
-        
+
         return result;
     }
 } // namespace
@@ -37,13 +37,13 @@ namespace {
     if (compiledAsset == nil) {
         return nil;
     }
-    
+
     // Use the metadata's ordered input/output names.
     // For multifunction models, the caller should load the per-method metadata
     // which contains the correct input/output names for that method.
     NSOrderedSet<NSString *> *orderedInputNames = ::get_ordered_set(metadata.input_names);
     NSOrderedSet<NSString *> *orderedOutputNames = ::get_ordered_set(metadata.output_names);
-    
+
     NSError *localError = nil;
     ETCoreMLModel *model = [[ETCoreMLModel alloc] initWithAsset:compiledAsset
                                                   configuration:configuration
@@ -53,14 +53,14 @@ namespace {
     if (model) {
         return model;
     }
-    
+
     if (error) {
         *error = localError;
     }
-    
+
     return nil;
 }
-                                        
+
 
 + (nullable ETCoreMLModel *)loadModelWithContentsOfURL:(NSURL *)compiledModelURL
                                          configuration:(MLModelConfiguration *)configuration
@@ -75,7 +75,7 @@ namespace {
     } else {
         asset = [assetManager storeAssetAtURL:compiledModelURL withIdentifier:identifier error:&localError];
     }
-    
+
     ETCoreMLModel *model;
     if (asset != nil) {
         model = [self loadModelWithCompiledAsset:asset configuration:configuration metadata:metadata error:&localError];

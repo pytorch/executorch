@@ -110,8 +110,7 @@ Error TextLLMRunner::generate(
   stats_->inference_start_ms = time_in_ms();
   shouldStop_ = false;
 
-  // Capture remaining KV cache capacity before prefill (pos_ will change)
-  int64_t max_context_len = metadata_.at(kMaxContextLen) - pos_;
+  int64_t max_context_len = metadata_.at(kMaxContextLen);
 
   uint64_t cur_token = 0;
   int num_prompt_tokens = 0;
@@ -139,10 +138,11 @@ Error TextLLMRunner::generate(
         InvalidArgument,
         "Expected at least 1 prompt token");
     ET_CHECK_OR_RETURN_ERROR(
-        num_prompt_tokens < max_context_len,
+        pos_ + num_prompt_tokens < max_context_len,
         InvalidArgument,
-        "num_prompt_tokens %d >= max_context_len %" PRId64
+        "pos_ %" PRId64 " + num_prompt_tokens %d >= max_context_len %" PRId64
         ", Max seq length exceeded - please increase max seq len value in your export script",
+        pos_,
         num_prompt_tokens,
         max_context_len);
 
@@ -168,10 +168,9 @@ Error TextLLMRunner::generate(
     prefill_next_token_.reset();
   }
 
-  // Determine max_new_tokens using the GenerationConfig's resolve method,
-  // then subtract pos_ for max_new_tokens.
-  int max_new_tokens =
-      config.resolve_max_new_tokens(max_context_len, num_prompt_tokens);
+  // Resolve max_new_tokens. pos_ now reflects all occupied positions
+  // (including prompt tokens just prefilled).
+  int max_new_tokens = config.resolve_max_new_tokens(max_context_len, pos_);
 
   ET_LOG(
       Info,
