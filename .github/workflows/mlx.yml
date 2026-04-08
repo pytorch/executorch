@@ -63,6 +63,51 @@ jobs:
           ./cmake-out/backends/mlx/test/multi_thread_test_runner
         echo "::endgroup::"
 
+        echo "::group::Run gated_delta_rule op tests"
+        ${CONDA_RUN} python -m executorch.backends.mlx.model_ops.test_gated_delta_rule run -v
+        echo "::endgroup::"
+
+  test-mlx-qwen35-moe:
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      job-name: test-mlx-qwen35-moe
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        echo "::endgroup::"
+
+        ${CONDA_RUN} pip list
+
+        echo "::group::Export Qwen 3.5 MoE (tiny model)"
+        ${CONDA_RUN} python -m executorch.examples.models.qwen3_5_moe.export \
+          --tiny-test \
+          --backend mlx \
+          --qlinear 4w \
+          --qlinear-group-size 32 \
+          --output-dir /tmp/qwen35_moe_mlx_tiny
+        echo "::endgroup::"
+
+        echo "::group::Run Qwen 3.5 MoE inference"
+        OUTPUT=$(${CONDA_RUN} python -m executorch.examples.models.qwen3_5_moe.run \
+          --pte /tmp/qwen35_moe_mlx_tiny/model.pte \
+          --prompt-len 4 \
+          --max-new-tokens 5 2>&1)
+        echo "$OUTPUT"
+        if echo "$OUTPUT" | grep -q "Generated token ids:"; then
+          echo "Success: Qwen 3.5 MoE MLX export + inference completed"
+        else
+          echo "Failed: inference did not complete"
+          exit 1
+        fi
+        echo "::endgroup::"
+
   backend-tester:
     strategy:
       fail-fast: false

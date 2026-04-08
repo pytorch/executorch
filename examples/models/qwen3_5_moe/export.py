@@ -1,10 +1,13 @@
 """
-Export Qwen 3.5 MoE to ExecuTorch .pte format (CUDA only).
+Export Qwen 3.5 MoE to ExecuTorch .pte format.
+
+Supports CUDA and MLX backends.
 
 Usage:
   python export.py --model-dir /path/to/Qwen3.5-MoE-A3B
   python export.py --model-dir /path/to/model --qlinear 4w
   python export.py --prequantized /path/to/quantized_bundle/
+  python export.py --model-dir /path/to/model --backend mlx --qlinear 4w
 """
 
 import argparse
@@ -25,28 +28,135 @@ from executorch.examples.models.qwen3_5_moe.model import (
 # ---------------------------------------------------------------------------
 
 
+def _prepare_and_quantize_mlx(model, config, args):
+    """MLX: apply source transforms, quantize via torchao, pack experts."""
+    from executorch.backends.mlx.llm.switch import pack_all_switch_linears
+    from executorch.examples.models.qwen3_5_moe.mlx_source_transformations import (
+        mlx_source_transformations,
+    )
+
+    model.to(dtype=torch.bfloat16)
+
+    # Materialize meta-device buffers before source transforms
+    for fqn, buf in list(model.named_buffers()):
+        if buf.device.type == "meta":
+            parts = fqn.rsplit(".", 1)
+            parent = model.get_submodule(parts[0]) if len(parts) > 1 else model
+            parent.register_buffer(
+                parts[-1],
+                torch.zeros(buf.shape, dtype=buf.dtype, device="cpu"),
+            )
+
+    mlx_source_transformations(
+        model,
+        model_dtype=torch.bfloat16,
+        config=config,
+        sort_experts=True,
+        fuse_gate_up=False,
+    )
+    if args.qlinear or args.qembedding:
+        from executorch.extension.llm.export.quantize import quantize_model_
+
+        quantize_model_(
+            model,
+            qlinear_config=args.qlinear,
+            qlinear_group_size=args.qlinear_group_size,
+            qembedding_config=args.qembedding,
+            qembedding_group_size=getattr(args, "qembedding_group_size", None),
+        )
+    pack_all_switch_linears(model)
+
+
 def load_and_quantize(args):
-    """Load model from checkpoint, optionally quantize, move to CUDA.
+    """Load model from checkpoint, optionally quantize.
+
+    For CUDA: quantizes experts with packed INT4, then transformer layers on CUDA.
+    For MLX: applies source transforms first, then quantizes via torchao, then packs.
 
     Returns (model, config) ready for export.
     """
-    if args.prequantized:
-        return load_prequantized_model(args.prequantized, args.max_seq_len)
+    backend = getattr(args, "backend", "cuda")
 
-    print("Loading model...")
-    model, config = Qwen35MoE.from_hf_checkpoint(
-        args.model_dir, max_seq_len=args.max_seq_len
-    )
-    model.eval()
-    print(
-        f"Model: {config.num_hidden_layers} layers, {config.hidden_size}d, "
-        f"{config.num_experts} experts top-{config.num_experts_per_tok}"
-    )
+    if not args.prequantized:
+        if getattr(args, "tiny_test", False):
+            # Build tiny model with random weights for CI testing.
+            # Exercises the same architectural features as the real model:
+            #   - GQA in full attention (n_heads=4, n_kv_heads=2 → 2:1 ratio)
+            #   - GDN key/value head ratio (k_heads=2, v_heads=4 → 1:2 ratio)
+            #   - Partial RoPE (25% of head_dim)
+            #   - Mixed attention (full_attention_interval=2 → alternating layers)
+            #   - Top-k MoE routing (top_k=2 from 8 experts)
+            #   - Shared expert with gating
+            #   - Fused gate+up expert weights [E, 2*inter, D]
+            #   - Depthwise conv1d with state (kernel_dim=4)
+            tiny_config = Qwen35MoEConfig(
+                vocab_size=256,
+                hidden_size=128,
+                num_hidden_layers=4,  # 4 layers: 2 linear + 2 full attention
+                num_attention_heads=4,  # GQA: 4 heads with 2 KV heads (2:1 ratio)
+                num_kv_heads=2,
+                head_dim=64,
+                partial_rotary_factor=0.25,
+                linear_num_key_heads=2,  # GDN: 2 key heads, 4 value heads (1:2 ratio)
+                linear_num_value_heads=4,
+                linear_key_head_dim=64,
+                linear_value_head_dim=64,
+                linear_conv_kernel_dim=4,
+                num_experts=8,  # 8 experts, top-2 routing
+                num_experts_per_tok=2,
+                moe_intermediate_size=128,
+                shared_expert_intermediate_size=128,
+                full_attention_interval=2,  # alternating: linear, full, linear, full
+                rms_norm_eps=1e-6,
+                rope_theta=10_000.0,
+                max_seq_len=64,
+            )
+            print("Building tiny model with random weights...")
+            torch.manual_seed(42)
+            model = Qwen35MoE(tiny_config)
+            model.to(dtype=torch.bfloat16)
+            for p in model.parameters():
+                if p.device.type != "meta":
+                    p.data.normal_(0, 0.02)
+            model.eval()
+            for p in model.parameters():
+                p.requires_grad_(False)
+            config = tiny_config
+            print(
+                f"Tiny model: {config.num_hidden_layers} layers, "
+                f"{config.num_experts} experts top-{config.num_experts_per_tok}, "
+                f"layer_types={config.layer_types}"
+            )
+        else:
+            print("Loading model...")
+            model, config = Qwen35MoE.from_hf_checkpoint(
+                args.model_dir, max_seq_len=args.max_seq_len
+            )
+            model.eval()
+            print(
+                f"Model: {config.num_hidden_layers} layers, {config.hidden_size}d, "
+                f"{config.num_experts} experts top-{config.num_experts_per_tok}"
+            )
 
-    if args.qlinear or args.qembedding:
-        _quantize(model, config, args)
+    if backend == "mlx":
+        if args.prequantized:
+            raise ValueError(
+                "MLX backend does not support custom prequantized weights. Use a prequantized torchao checkpoint instead."
+            )
+        _prepare_and_quantize_mlx(model, config, args)
+
+    elif backend == "cuda":
+        if args.prequantized:
+            return load_prequantized_model(args.prequantized, args.max_seq_len)
+
+        # CUDA: quantize experts with packed INT4 for Triton kernel
+        if args.qlinear or args.qembedding:
+            _quantize(model, config, args)
+        else:
+            model.to(dtype=torch.bfloat16)
+
     else:
-        model.to(dtype=torch.bfloat16)
+        raise ValueError(f"Unsupported backend: {backend}")
 
     return model, config
 
@@ -378,6 +488,96 @@ def _apply_turboquant(model, config):
 
 
 def export_and_lower(model, config, args):
+    """Export model to .pte via torch.export + backend-specific lowering."""
+    backend = getattr(args, "backend", "cuda")
+
+    if backend == "mlx":
+        _export_mlx(model, config, args)
+    else:
+        _export_cuda(model, config, args)
+
+
+def _export_mlx(model, config, args):
+    """Export model to .pte via torch.export + MLX backend."""
+    import gc
+
+    from executorch.backends.mlx import MLXPartitioner
+    from executorch.backends.mlx.passes import get_default_passes
+    from executorch.exir import (
+        EdgeCompileConfig,
+        ExecutorchBackendConfig,
+        to_edge_transform_and_lower,
+    )
+    from executorch.exir.passes import MemoryPlanningPass
+    from torch.export import Dim, export
+
+    example_tokens = torch.tensor([[0, 1]], dtype=torch.long)
+    example_input_pos = torch.tensor([0, 1], dtype=torch.long)
+    seq_dim = Dim("seq_len", min=1, max=config.max_seq_len - 1)
+    dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
+
+    print("Exporting with torch.export...")
+    with torch.no_grad():
+        exported = export(
+            model,
+            (example_tokens, example_input_pos),
+            dynamic_shapes=dynamic_shapes,
+            strict=True,
+        )
+    print("Export successful!")
+
+    del model
+    gc.collect()
+
+    print("Lowering to ExecuTorch with MLX backend...")
+    metadata = {
+        "get_max_seq_len": config.max_seq_len,
+        "get_vocab_size": config.vocab_size,
+        "get_n_layers": config.num_hidden_layers,
+        "use_kv_cache": True,
+        "use_sdpa_with_kv_cache": False,
+        "enable_dynamic_shape": True,
+    }
+    et_prog = to_edge_transform_and_lower(
+        exported,
+        transform_passes=get_default_passes(),
+        partitioner=[MLXPartitioner()],
+        compile_config=EdgeCompileConfig(
+            _check_ir_validity=False,
+            _skip_dim_order=True,
+        ),
+        constant_methods=metadata,
+    )
+
+    del exported
+    gc.collect()
+
+    et_program = et_prog.to_executorch(
+        config=ExecutorchBackendConfig(
+            extract_delegate_segments=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+        ),
+    )
+
+    del et_prog
+    gc.collect()
+
+    os.makedirs(args.output_dir, exist_ok=True)
+    pte_path = os.path.join(args.output_dir, "model.pte")
+    print(f"Saving to {pte_path}...")
+    with open(pte_path, "wb") as f:
+        et_program.write_to_file(f)
+    size_mb = os.path.getsize(pte_path) / (1024 * 1024)
+    print(f"Saved {size_mb:.1f} MB")
+
+    if et_program._tensor_data:
+        et_program.write_tensor_data_to_file(args.output_dir)
+        print(f"Saved tensor data to {args.output_dir}/")
+
+    print("Done!")
+
+
+def _export_cuda(model, config, args):
     """Export model to .pte via torch.export + CUDA backend."""
     import torch._inductor.config as inductor_config
 
@@ -466,7 +666,7 @@ def export_and_lower(model, config, args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Export Qwen3.5 MoE to ExecuTorch (CUDA)"
+        description="Export Qwen3.5 MoE to ExecuTorch (CUDA or MLX)"
     )
     parser.add_argument(
         "--model-dir",
@@ -477,6 +677,12 @@ def main():
         "--output-dir", default="./qwen35_moe_exports", help="Output directory"
     )
     parser.add_argument("--max-seq-len", type=int, default=4096, help="KV cache length")
+    parser.add_argument(
+        "--backend",
+        default="cuda",
+        choices=["cuda", "mlx"],
+        help="Backend for export: cuda (default) or mlx.",
+    )
     parser.add_argument(
         "--qlinear",
         default=None,
@@ -491,6 +697,12 @@ def main():
     )
     parser.add_argument(
         "--qembedding", default=None, choices=["8w"], help="Quantize embedding layers."
+    )
+    parser.add_argument(
+        "--qembedding-group-size",
+        type=int,
+        default=None,
+        help="Group size for embedding quantization.",
     )
     parser.add_argument(
         "--hqq",
@@ -509,22 +721,40 @@ def main():
         action="store_true",
         help="Enable TurboQuant TQ4 KV cache compression (3.8x cache savings).",
     )
+    parser.add_argument(
+        "--tiny-test",
+        action="store_true",
+        default=False,
+        help="Build a tiny model with random weights for CI pipeline testing. "
+        "No checkpoint download needed. Tests all architectural features "
+        "(GQA, GDN head ratio, mixed attention, MoE routing) at small scale.",
+    )
     args = parser.parse_args()
 
-    if not args.prequantized and not args.model_dir:
-        parser.error("--model-dir is required unless --prequantized is provided.")
+    if not args.prequantized and not args.model_dir and not args.tiny_test:
+        parser.error(
+            "--model-dir is required unless --prequantized or --tiny-test is provided."
+        )
 
     if args.hqq and not args.qlinear:
         parser.error("--hqq requires --qlinear")
 
-    # Register FLA Triton kernel
-    import executorch.backends.cuda.triton.kernels  # noqa: F401
+    if args.backend == "cuda":
+        # Register FLA Triton kernel (CUDA only)
+        import executorch.backends.cuda.triton.kernels  # noqa: F401
+
+    if args.backend == "mlx":
+        if args.prequantized:
+            parser.error("--prequantized is not supported with --backend mlx")
+        if args.turboquant:
+            parser.error("--turboquant is not supported with --backend mlx")
 
     model, config = load_and_quantize(args)
-    _materialize_buffers(model, config)
 
-    if args.turboquant:
-        _apply_turboquant(model, config)
+    if args.backend == "cuda":
+        _materialize_buffers(model, config)
+        if args.turboquant:
+            _apply_turboquant(model, config)
 
     export_and_lower(model, config, args)
 

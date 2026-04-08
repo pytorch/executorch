@@ -47,6 +47,7 @@ def gated_delta_rule(
     g: Tensor,  # [B, T, Hv] — decay gate
     beta: Tensor,  # [B, T, Hv] — update gate
     state: Tensor,  # [B, Hv, Dv, Dk] — recurrent state (MUTATED in place)
+    use_custom_kernel: bool = True,
 ) -> Tensor:
     """
     Gated delta rule recurrence — sequential scan over T.
@@ -87,6 +88,7 @@ def gated_delta_rule_fake(
     g: Tensor,
     beta: Tensor,
     state: Tensor,
+    use_custom_kernel: bool = True,
 ) -> Tensor:
     B, T = q.shape[:2]
     Hv, Dv = v.shape[-2:]
@@ -114,11 +116,6 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     SumNode,
 )
 from torch.export.exported_program import ExportedProgram
-
-# Set to True to emit MetalKernelNode (fused GPU kernel) instead of
-# ScanNode decomposition. Requires ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION
-# to be enabled at C++ build time.
-USE_CUSTOM_KERNEL = True
 
 
 class GatedDeltaRuleHandler(PatternHandler):
@@ -233,11 +230,14 @@ class GatedDeltaRuleHandler(PatternHandler):
         q_meta = self.q_node.meta["val"]
         Dk = int(q_meta.shape[-1])
 
-        if USE_CUSTOM_KERNEL:
+        # Read use_custom_kernel from the op's kwargs in the graph
+        use_custom_kernel = self.auto_func_node.kwargs.get("use_custom_kernel", True)
+
+        if use_custom_kernel:
             if Dk % 32 != 0:
                 raise ValueError(
                     f"MetalKernelNode requires Dk to be a multiple of 32, got Dk={Dk}. "
-                    f"Set USE_CUSTOM_KERNEL = False to use the ScanNode fallback."
+                    f"Set use_custom_kernel=False to use the ScanNode fallback."
                 )
             return self._emit_metal_kernel(P, n)
         return self._emit_scan(P, n)
@@ -264,7 +264,6 @@ class GatedDeltaRuleHandler(PatternHandler):
         # Extract shapes from metadata
         q_meta = self.q_node.meta["val"]
         v_meta = self.v_node.meta["val"]
-        state_meta = self.state_node.meta["val"]
         _, _, Hk, Dk = q_meta.shape
         Hv, Dv = v_meta.shape[-2:]
         dtype_int = torch_dtype_to_scalar_type(q_meta.dtype)

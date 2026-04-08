@@ -10,18 +10,18 @@ Tests for mlx::gated_delta_rule custom op + pattern handler.
 
 Usage:
     # Run all configs:
-    python -m executorch.backends.mlx.examples.qwen3_5_moe.test_gated_delta_rule run
+    python -m executorch.backends.mlx.model_ops.test_gated_delta_rule run
 
     # Run with verbose output:
-    python -m executorch.backends.mlx.examples.qwen3_5_moe.test_gated_delta_rule run -v
+    python -m executorch.backends.mlx.model_ops.test_gated_delta_rule run -v
 
     # Rebuild C++ runner first:
-    python -m executorch.backends.mlx.examples.qwen3_5_moe.test_gated_delta_rule run --rebuild
+    python -m executorch.backends.mlx.model_ops.test_gated_delta_rule run --rebuild
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import List, Tuple
 
-import executorch.backends.mlx.examples.qwen3_5_moe.gated_delta_rule as gdr_module  # noqa: F401
+import executorch.backends.mlx.model_ops.gated_delta_rule  # noqa: F401
 
 import torch
 import torch.nn as nn
@@ -32,8 +32,16 @@ from executorch.backends.mlx.test.test_utils import OpTestCase
 class GatedDeltaRuleModel(nn.Module):
     """Model using mlx::gated_delta_rule for sequential recurrence."""
 
-    def __init__(self, batch_size: int, num_heads: int, head_dim: int, value_dim: int):
+    def __init__(
+        self,
+        batch_size: int,
+        num_heads: int,
+        head_dim: int,
+        value_dim: int,
+        use_custom_kernel: bool = True,
+    ):
         super().__init__()
+        self.use_custom_kernel = use_custom_kernel
         self.register_buffer(
             "state",
             torch.zeros(batch_size, num_heads, value_dim, head_dim),
@@ -47,7 +55,9 @@ class GatedDeltaRuleModel(nn.Module):
         g: torch.Tensor,
         beta: torch.Tensor,
     ) -> torch.Tensor:
-        return torch.ops.mlx.gated_delta_rule(q, k, v, g, beta, self.state)
+        return torch.ops.mlx.gated_delta_rule(
+            q, k, v, g, beta, self.state, use_custom_kernel=self.use_custom_kernel
+        )
 
 
 class GatedDeltaRuleGQAModel(nn.Module):
@@ -65,12 +75,14 @@ class GatedDeltaRuleGQAModel(nn.Module):
         num_v_heads: int,
         head_dim: int,
         value_dim: int,
+        use_custom_kernel: bool = True,
     ):
         super().__init__()
         assert num_v_heads % num_k_heads == 0
         self.num_k_heads = num_k_heads
         self.num_v_heads = num_v_heads
         self.head_repeat = num_v_heads // num_k_heads
+        self.use_custom_kernel = use_custom_kernel
         self.register_buffer(
             "state",
             torch.zeros(batch_size, num_v_heads, value_dim, head_dim),
@@ -87,7 +99,9 @@ class GatedDeltaRuleGQAModel(nn.Module):
         if self.head_repeat > 1:
             q = q.repeat_interleave(self.head_repeat, dim=2)
             k = k.repeat_interleave(self.head_repeat, dim=2)
-        return torch.ops.mlx.gated_delta_rule(q, k, v, g, beta, self.state)
+        return torch.ops.mlx.gated_delta_rule(
+            q, k, v, g, beta, self.state, use_custom_kernel=self.use_custom_kernel
+        )
 
 
 class GatedDeltaRuleMultiStepModel(nn.Module):
@@ -98,8 +112,16 @@ class GatedDeltaRuleMultiStepModel(nn.Module):
     zero state — which is wrong.
     """
 
-    def __init__(self, batch_size: int, num_heads: int, head_dim: int, value_dim: int):
+    def __init__(
+        self,
+        batch_size: int,
+        num_heads: int,
+        head_dim: int,
+        value_dim: int,
+        use_custom_kernel: bool = False,
+    ):
         super().__init__()
+        self.use_custom_kernel = use_custom_kernel
         self.register_buffer(
             "state",
             torch.zeros(batch_size, num_heads, value_dim, head_dim),
@@ -114,9 +136,13 @@ class GatedDeltaRuleMultiStepModel(nn.Module):
         beta: torch.Tensor,
     ) -> torch.Tensor:
         # Step 1: process inputs, mutates self.state
-        out1 = torch.ops.mlx.gated_delta_rule(q, k, v, g, beta, self.state)
+        out1 = torch.ops.mlx.gated_delta_rule(
+            q, k, v, g, beta, self.state, use_custom_kernel=self.use_custom_kernel
+        )
         # Step 2: same inputs, but state carries from step 1
-        out2 = torch.ops.mlx.gated_delta_rule(q, k, v, g, beta, self.state)
+        out2 = torch.ops.mlx.gated_delta_rule(
+            q, k, v, g, beta, self.state, use_custom_kernel=self.use_custom_kernel
+        )
         # Return concatenated so we can verify both outputs
         return torch.cat([out1, out2], dim=1)
 
@@ -233,20 +259,13 @@ class GatedDeltaRuleTest(OpTestCase):
             )
         return configs
 
-    def generate_test_files(self, verbose=False):
-        # Set the module-level flag before export
-        gdr_module.USE_CUSTOM_KERNEL = self.use_custom_kernel
-        try:
-            return super().generate_test_files(verbose=verbose)
-        finally:
-            gdr_module.USE_CUSTOM_KERNEL = True  # restore default
-
     def create_model(self) -> nn.Module:
         model = GatedDeltaRuleModel(
             self.batch_size,
             self.num_heads,
             self.head_dim,
             self.value_dim,
+            use_custom_kernel=self.use_custom_kernel,
         )
         return model.to(self.dtype)
 
@@ -367,19 +386,13 @@ class GatedDeltaRuleDynamicSeqTest(OpTestCase):
             "beta": {1: seq_dim},
         }
 
-    def generate_test_files(self, verbose=False):
-        gdr_module.USE_CUSTOM_KERNEL = self.use_custom_kernel
-        try:
-            return super().generate_test_files(verbose=verbose)
-        finally:
-            gdr_module.USE_CUSTOM_KERNEL = True
-
     def create_model(self) -> nn.Module:
         model = GatedDeltaRuleModel(
             self.batch_size,
             self.num_heads,
             self.head_dim,
             self.value_dim,
+            use_custom_kernel=self.use_custom_kernel,
         )
         return model.to(self.dtype)
 
@@ -518,13 +531,6 @@ class GatedDeltaRuleGQATest(OpTestCase):
             )
         return configs
 
-    def generate_test_files(self, verbose=False):
-        gdr_module.USE_CUSTOM_KERNEL = self.use_custom_kernel
-        try:
-            return super().generate_test_files(verbose=verbose)
-        finally:
-            gdr_module.USE_CUSTOM_KERNEL = True
-
     def create_model(self) -> nn.Module:
         model = GatedDeltaRuleGQAModel(
             self.batch_size,
@@ -532,6 +538,7 @@ class GatedDeltaRuleGQATest(OpTestCase):
             self.num_v_heads,
             self.head_dim,
             self.value_dim,
+            use_custom_kernel=self.use_custom_kernel,
         )
         return model.to(self.dtype)
 
@@ -609,6 +616,7 @@ class GatedDeltaRuleFloatCastModel(nn.Module):
             g.float(),
             beta.float(),
             self.state,  # already fp32, no cast needed
+            use_custom_kernel=False,
         )
         return output.to(q.dtype)
 
@@ -623,13 +631,6 @@ class GatedDeltaRuleFloatCastTest(OpTestCase):
     @classmethod
     def get_test_configs(cls) -> List["GatedDeltaRuleFloatCastTest"]:
         return [cls()]
-
-    def generate_test_files(self, verbose=False):
-        gdr_module.USE_CUSTOM_KERNEL = False
-        try:
-            return super().generate_test_files(verbose=verbose)
-        finally:
-            gdr_module.USE_CUSTOM_KERNEL = True
 
     def __init__(self):
         self.batch_size = 1
@@ -732,6 +733,7 @@ class GatedDeltaRuleWithProjectionModel(nn.Module):
             g.float(),
             beta.float(),
             self.state,  # already fp32
+            use_custom_kernel=False,
         )
         return output.to(x.dtype)
 
@@ -751,13 +753,6 @@ class GatedDeltaRuleWithProjectionTest(OpTestCase):
     @classmethod
     def get_test_configs(cls) -> List["GatedDeltaRuleWithProjectionTest"]:
         return [cls()]
-
-    def generate_test_files(self, verbose=False):
-        gdr_module.USE_CUSTOM_KERNEL = False
-        try:
-            return super().generate_test_files(verbose=verbose)
-        finally:
-            gdr_module.USE_CUSTOM_KERNEL = True
 
     def __init__(self):
         self.batch_size = 1
@@ -801,13 +796,6 @@ class GatedDeltaRuleMultiStepTest(OpTestCase):
     name = "gated_delta_rule_multistep"
     rtol = 1e-4
     atol = 1e-4
-
-    def generate_test_files(self, verbose=False):
-        gdr_module.USE_CUSTOM_KERNEL = self.use_custom_kernel
-        try:
-            return super().generate_test_files(verbose=verbose)
-        finally:
-            gdr_module.USE_CUSTOM_KERNEL = True
 
     def __init__(
         self,
@@ -877,6 +865,7 @@ class GatedDeltaRuleMultiStepTest(OpTestCase):
             self.num_heads,
             self.head_dim,
             self.value_dim,
+            use_custom_kernel=self.use_custom_kernel,
         )
         return model.to(self.dtype)
 
@@ -918,11 +907,7 @@ class GatedDeltaRuleMultiStepTest(OpTestCase):
         return (q, k, v, g, beta)
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
+if __name__ == "__main__":  # noqa: C901
     import argparse
     import sys
 

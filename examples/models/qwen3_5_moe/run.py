@@ -8,18 +8,18 @@
 """
 Run exported Qwen 3.5 MoE model using ExecuTorch pybindings.
 
-Companion to export_qwen35_moe.py. Supports both real model inference
+Companion to export.py --backend mlx. Supports both real model inference
 (with HuggingFace tokenizer) and fake-weight validation (random tokens).
 
 Usage:
     # Run with real tokenizer:
-    python -m executorch.backends.mlx.examples.qwen3_5_moe.run_qwen35_moe \
+    python -m executorch.examples.models.qwen3_5_moe.run \
         --pte qwen35_moe_mlx.pte \
         --tokenizer Qwen/Qwen3.5-35B-A3B \
         --prompt "Hello, world!"
 
     # Run with random tokens (fake weights, no tokenizer needed):
-    python -m executorch.backends.mlx.examples.qwen3_5_moe.run_qwen35_moe \
+    python -m executorch.examples.models.qwen3_5_moe.run \
         --pte qwen35_moe_mlx.pte \
         --prompt-len 8 \
         --max-new-tokens 20
@@ -52,6 +52,16 @@ def run_inference(
     program = et_runtime.load_program(pte_path, verification=Verification.Minimal)
     forward = program.load_method("forward")
     logger.info("Model loaded successfully")
+
+    # Read vocab size from model metadata if available
+    try:
+        meta_method = program.load_method("get_vocab_size")
+        result = meta_method.execute([])
+        model_vocab_size = result[0] if isinstance(result[0], int) else result[0].item()
+        logger.info(f"Vocab size from model metadata: {model_vocab_size}")
+        vocab_size = model_vocab_size
+    except Exception:
+        logger.info(f"No vocab size in metadata, using default: {vocab_size}")
 
     # Tokenize or generate random tokens
     tokenizer = None
@@ -106,20 +116,13 @@ def run_inference(
         f"Prefill: {prefill_time:.3f}s " f"({prompt_len / prefill_time:.1f} tokens/sec)"
     )
 
-    # Detect if model includes greedy sampling (returns token id vs logits)
-    greedy_in_model = logits.dim() == 2 and logits.shape[-1] == 1
-    logger.info(f"Output shape: {logits.shape}, greedy_in_model: {greedy_in_model}")
-
     # First generated token
-    if greedy_in_model:
-        next_token = logits[0, -1].item()
+    next_token_logits = logits[0, -1, :]
+    if temperature > 0:
+        probs = torch.softmax(next_token_logits / temperature, dim=-1)
+        next_token = torch.multinomial(probs, 1).item()
     else:
-        next_token_logits = logits[0, -1, :]
-        if temperature > 0:
-            probs = torch.softmax(next_token_logits / temperature, dim=-1)
-            next_token = torch.multinomial(probs, 1).item()
-        else:
-            next_token = torch.argmax(next_token_logits).item()
+        next_token = torch.argmax(next_token_logits).item()
     generated_tokens = [next_token]
 
     # --- Decode ---
@@ -129,7 +132,7 @@ def run_inference(
     t_prep = 0
     t_post = 0
 
-    for i in range(max_new_tokens - 1):
+    for _i in range(max_new_tokens - 1):
         t0 = time.time()
         pos = prompt_len + len(generated_tokens) - 1
         input_pos = torch.tensor([pos], dtype=torch.long)
@@ -142,15 +145,12 @@ def run_inference(
         t2 = time.time()
         t_execute += t2 - t1
 
-        if greedy_in_model:
-            next_token = logits[0, -1].item()
+        next_token_logits = logits[0, -1, :]
+        if temperature > 0:
+            probs = torch.softmax(next_token_logits / temperature, dim=-1)
+            next_token = torch.multinomial(probs, 1).item()
         else:
-            next_token_logits = logits[0, -1, :]
-            if temperature > 0:
-                probs = torch.softmax(next_token_logits / temperature, dim=-1)
-                next_token = torch.multinomial(probs, 1).item()
-            else:
-                next_token = torch.argmax(next_token_logits).item()
+            next_token = torch.argmax(next_token_logits).item()
         generated_tokens.append(next_token)
         t3 = time.time()
         t_post += t3 - t2
@@ -198,7 +198,7 @@ def main():
         "--pte",
         type=str,
         required=True,
-        help="Path to the .pte file from export_qwen35_moe.py",
+        help="Path to the .pte file from export.py --backend mlx",
     )
     parser.add_argument(
         "--tokenizer",
@@ -235,12 +235,6 @@ def main():
         type=float,
         default=0.0,
         help="Sampling temperature (0.0 = greedy)",
-    )
-    parser.add_argument(
-        "--greedy",
-        action="store_true",
-        default=False,
-        help="Model was exported with --sampling greedy (returns token id, not logits)",
     )
 
     args = parser.parse_args()
