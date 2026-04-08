@@ -259,8 +259,19 @@ class PropagateDevicePass(PassBase):
         return True
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        # Two-pass approach:
+        #   Pass 1 – For each delegate with a target_device CompileSpec, insert
+        #            H2D copy nodes before delegate inputs and tag the delegate
+        #            output specs with the target device.  Delegates without a
+        #            target_device are left untouched (no copies, specs stay CPU).
+        #   Pass 2 – For each getitem that extracts from a device-tagged delegate
+        #            (tracked in device_delegates), propagate the device onto the
+        #            getitem spec and insert a D2H copy after it so downstream
+        #            non-delegated ops receive CPU tensors.
         changed = False
+        device_delegates: set[torch.fx.Node] = set()
 
+        # Pass 1: insert H2D copies and tag delegate output specs.
         for node in list(graph_module.graph.nodes):
             if node.op == "call_function" and node.target == executorch_call_delegate:
                 lowered_module = _get_lowered_module(graph_module, node)
@@ -272,6 +283,7 @@ class PropagateDevicePass(PassBase):
                     continue
 
                 target_device_type, device_index = result
+                device_delegates.add(node)
 
                 changed |= self._insert_h2d_copies(
                     graph_module, node, target_device_type, device_index
@@ -291,10 +303,13 @@ class PropagateDevicePass(PassBase):
                     lowered_module.backend_id,
                 )
 
-        # Second pass: propagate device through getitem nodes and insert D2H.
+        # Second pass: propagate device through getitem nodes and insert D2H
+        # only for delegates that have a target_device.
         for node in list(graph_module.graph.nodes):
             if node.op == "call_function" and node.target == operator.getitem:
-                changed |= self._insert_d2h_for_getitem(graph_module, node)
+                source = node.args[0]
+                if isinstance(source, torch.fx.Node) and source in device_delegates:
+                    changed |= self._insert_d2h_for_getitem(graph_module, node)
 
         graph_module.recompile()
         return PassResult(graph_module, changed)
