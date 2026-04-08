@@ -223,6 +223,7 @@ exclude_patterns = [
     '**/*.gif',
     'extension/llm/tokenizers',
     'extension/llm/tokenizers/**',
+    'backends/cadence/utils/FACTO',
     'examples/cuda',
     'kernels/portable',
     # File contains @generated
@@ -376,7 +377,6 @@ exclude_patterns = [
     'scripts/check_binary_dependencies.py',
     'profiler/test/test_profiler_e2e.py',
     'backends/arm/test/ops/*.py',
-    'backends/cortex_m/test/**/*.py',
 ]
 command = [
     'python',
@@ -410,7 +410,6 @@ include_patterns = [
 exclude_patterns = [
     'third-party/**',
     '**/third-party/**',
-    'backends/cortex_m/test/**/*.py',
 ]
 command = [
     'python',

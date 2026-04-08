@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 set -e
 
-pip install pydot
+pip install -r backends/qualcomm/requirements.txt
 
 # Check if running on macOS/Darwin
 if [[ "$(uname -s)" == "Darwin" ]]; then

@@ -145,11 +145,8 @@ jobs:
         # Run CUDA backend Python tests
         python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts="
 
-        # Run quantize roundtrip tests (Qwen 3.5 MoE save/load prequantized)
-        python -m pytest examples/models/qwen3_5_moe/test_quantize_roundtrip.py -v -o "addopts="
-
-        # Build Qwen3.5 MoE runner (ExecuTorch already built above)
-        cd examples/models/qwen3_5_moe && cmake --workflow --preset qwen3-5-moe-cuda
+        # Run Qwen 3.5 MoE tests (quantize roundtrip + TurboQuant KV cache)
+        python -m pytest examples/models/qwen3_5_moe/test_quantize_roundtrip.py examples/models/qwen3_5_moe/test_turboquant.py -v -o "addopts="
 
   export-model-cuda-artifact:
     name: export-model-cuda-artifact
@@ -182,6 +179,8 @@ jobs:
             name: "parakeet-tdt"
           - repo: "facebook"
             name: "dinov2-small-imagenet1k-1-layer"
+          - repo: "SocialLocalMobile"
+            name: "Qwen3.5-35B-A3B-HQQ-INT4"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -191,6 +190,15 @@ jobs:
           - model:
               repo: "google"
               name: "gemma-3-4b-it"
+            quant: "quantized-int4-weight-only"
+          # Qwen3.5 MoE uses a prequantized checkpoint, only tile-packed
+          - model:
+              repo: "SocialLocalMobile"
+              name: "Qwen3.5-35B-A3B-HQQ-INT4"
+            quant: "non-quantized"
+          - model:
+              repo: "SocialLocalMobile"
+              name: "Qwen3.5-35B-A3B-HQQ-INT4"
             quant: "quantized-int4-weight-only"
           # Voxtral Realtime only supports int4-tile-packed on CUDA
           - model:
@@ -246,7 +254,7 @@ jobs:
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: linux.g5.4xlarge.nvidia.gpu
+      runner: ${{ matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
       gpu-arch-type: cuda
       gpu-arch-version: 12.6
       use-custom-docker-registry: false
@@ -301,6 +309,8 @@ jobs:
             name: "parakeet-tdt"
           - repo: "facebook"
             name: "dinov2-small-imagenet1k-1-layer"
+          - repo: "SocialLocalMobile"
+            name: "Qwen3.5-35B-A3B-HQQ-INT4"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -310,6 +320,15 @@ jobs:
           - model:
               repo: "google"
               name: "gemma-3-4b-it"
+            quant: "quantized-int4-weight-only"
+          # Qwen3.5 MoE uses a prequantized checkpoint, only tile-packed
+          - model:
+              repo: "SocialLocalMobile"
+              name: "Qwen3.5-35B-A3B-HQQ-INT4"
+            quant: "non-quantized"
+          - model:
+              repo: "SocialLocalMobile"
+              name: "Qwen3.5-35B-A3B-HQQ-INT4"
             quant: "quantized-int4-weight-only"
           # Voxtral Realtime only supports int4-tile-packed on CUDA
           - model:
@@ -359,7 +378,7 @@ jobs:
             quant: "non-quantized"
     with:
       timeout: 90
-      runner: linux.g5.4xlarge.nvidia.gpu
+      runner: ${{ matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
       gpu-arch-type: cuda
       gpu-arch-version: 12.6
       use-custom-docker-registry: false

@@ -16,14 +16,12 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
     ComputeGraph& graph,
     const ValueRef dst,
     const vkapi::ScalarType staging_dtype,
-    bool int8_buffer_enabled = true,
-    bool push_constant_variant = true);
+    bool int8_buffer_enabled = true);
 
 vkapi::ShaderInfo get_tensor_to_nchw_shader(
     ComputeGraph& graph,
     const ValueRef src,
     const vkapi::ScalarType staging_dtype,
-    bool int8_buffer_enabled = true,
-    bool push_constant_variant = true);
+    bool int8_buffer_enabled = true);
 
 } // namespace vkcompute
