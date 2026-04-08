@@ -164,4 +164,13 @@ def all_flows() -> dict[str, TestFlow]:
         + _register_flow(_load_arm, "ARM")
     )
 
+    try:
+        from executorch.backends.test.suite.flows.mlx import MLX_TEST_FLOW
+
+        flows += [
+            MLX_TEST_FLOW,
+        ]
+    except Exception as e:
+        logger.info(f"Skipping MLX flow registration: {e}")
+
     return {f.name: f for f in flows if f is not None}
