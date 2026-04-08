@@ -38,6 +38,7 @@
 // Include our shim layer headers
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
 #include <executorch/backends/aoti/utils.h>
+#include <executorch/backends/cuda/runtime/cuda_allocator.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
@@ -653,5 +654,14 @@ auto cls = cuda::CudaBackend();
 executorch::runtime::Backend backend{"CudaBackend", &cls};
 static executorch::runtime::Error success_with_compiler =
     register_backend(backend);
+
+// Auto-register the CudaAllocator so that DeviceMemoryBuffer::create(CUDA)
+// works whenever the CUDA backend library is linked.
+static bool cuda_allocator_registered = [] {
+  executorch::runtime::register_device_allocator(
+      executorch::runtime::etensor::DeviceType::CUDA,
+      &cuda::CudaAllocator::instance());
+  return true;
+}();
 } // namespace
 } // namespace executorch::backends

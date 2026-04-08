@@ -71,6 +71,33 @@ runtime.cxx_library(
 )
 
 runtime.cxx_library(
+    name = "cuda_allocator",
+    srcs = [
+        "cuda_allocator.cpp",
+    ],
+    headers = [
+        "cuda_allocator.h",
+    ],
+    # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
+    link_whole = True,
+    supports_python_dlopen = True,
+    visibility = ["PUBLIC"],
+    exported_deps = [
+        "//executorch/runtime/core:device_allocator",
+    ],
+    deps = [
+        "//executorch/runtime/platform:platform",
+    ],
+    nvcc_flags = get_nvcc_arch_args() + [
+        "-_NVCC_HOST_COMPILER_FLAG_",
+        "gcc",
+    ],
+    external_deps = [
+        ("cuda", None, "cuda-lazy"),
+    ],
+)
+
+runtime.cxx_library(
     name = "cuda_backend",
     srcs = [
         "cuda_backend.cpp",
@@ -88,6 +115,8 @@ runtime.cxx_library(
     deps = [
         ":cuda_platform",
         ":runtime_shims",
+        ":cuda_allocator",
+        ":cuda_platform",
         "//executorch/backends/aoti:aoti_common_slim",
         "//executorch/backends/aoti/slim/core:slimtensor",
         "//executorch/backends/aoti/slim/factory:empty",

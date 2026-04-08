@@ -13,6 +13,7 @@
 #ifdef CUDA_AVAILABLE
 #include <executorch/backends/aoti/slim/c10/cuda/Exception.h>
 #include <executorch/backends/aoti/slim/cuda/guard.h>
+#include <executorch/backends/cuda/runtime/cuda_allocator.h>
 #endif
 
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
@@ -107,9 +108,6 @@ struct DeviceTraits<c10::DeviceType::CUDA> {
   /// @param device The target CUDA device (used to get the stream).
   /// @return Pointer to allocated device memory.
   static void* allocate(size_t nbytes, const c10::Device& device) {
-    // Get the current stream for this device (set by CUDAStreamGuard if any)
-    // This follows PyTorch's pattern where the allocator assumes the caller
-    // has already set the correct device via CUDAStreamGuard.
     auto stream_result =
         executorch::backends::cuda::getCurrentCUDAStream(device.index());
     ET_CHECK_MSG(
@@ -118,31 +116,23 @@ struct DeviceTraits<c10::DeviceType::CUDA> {
         static_cast<int>(device.index()));
 
     cudaStream_t stream = stream_result.get();
-    void* data = nullptr;
-    ET_CUDA_CHECK(cudaMallocAsync(&data, nbytes, stream));
-    return data;
+    auto result = executorch::backends::cuda::CudaAllocator::allocate_async(
+        nbytes, device.index(), stream);
+    ET_CHECK_MSG(
+        result.ok(),
+        "CudaAllocator::allocate_async failed for %zu bytes on device %d",
+        nbytes,
+        static_cast<int>(device.index()));
+    return result.get();
   }
 
-  /// Frees CUDA device memory on the current stream.
-  /// @param ptr Pointer to device memory to free.
   static void free(void* ptr) {
-    // Get the current stream for the current device
-    // Currently all cuda slimtensors should be on the same device same stream,
-    // so we can just use the stream on current device.
-    // TODO(gasoonjia): add cuda stream as a member of MaybeOwningStorage to
-    // support multiple devices.
     auto stream_result = executorch::backends::cuda::getCurrentCUDAStream(-1);
     ET_CHECK_MSG(stream_result.ok(), "Failed to get current CUDA stream");
-    ET_CUDA_LOG_WARN(cudaFreeAsync(ptr, stream_result.get()));
+    executorch::backends::cuda::CudaAllocator::deallocate_async(
+        ptr, -1, stream_result.get());
   }
 
-  /// Copies memory between CPU and CUDA or CUDA and CUDA asynchronously.
-  /// @param dst Destination pointer.
-  /// @param src Source pointer.
-  /// @param nbytes Number of bytes to copy.
-  /// @param dst_device Destination device.
-  /// @param src_device Source device.
-  /// @param stream CUDA stream for async copy.
   static void memcpy_async(
       void* dst,
       const void* src,
@@ -151,7 +141,6 @@ struct DeviceTraits<c10::DeviceType::CUDA> {
       const c10::Device& src_device,
       cudaStream_t stream) {
     cudaMemcpyKind direction = cudaMemcpyDeviceToDevice;
-
     if (src_device.is_cpu()) {
       direction = cudaMemcpyHostToDevice;
     } else if (dst_device.is_cpu()) {
@@ -164,15 +153,11 @@ struct DeviceTraits<c10::DeviceType::CUDA> {
           static_cast<int>(dst_device.index()));
     }
 
-    ET_CUDA_CHECK(cudaMemcpyAsync(dst, src, nbytes, direction, stream));
+    auto err = executorch::backends::cuda::CudaAllocator::memcpy_async(
+        dst, src, nbytes, direction, stream);
+    ET_CHECK_MSG(err == executorch::runtime::Error::Ok, "memcpy_async failed");
   }
 
-  /// Copies memory between CPU and CUDA or CUDA and CUDA synchronously.
-  /// @param dst Destination pointer.
-  /// @param src Source pointer.
-  /// @param nbytes Number of bytes to copy.
-  /// @param dst_device Destination device.
-  /// @param src_device Source device.
   static void memcpy(
       void* dst,
       const void* src,
@@ -180,7 +165,6 @@ struct DeviceTraits<c10::DeviceType::CUDA> {
       const c10::Device& dst_device,
       const c10::Device& src_device) {
     cudaMemcpyKind direction = cudaMemcpyDeviceToDevice;
-
     if (src_device.is_cpu()) {
       direction = cudaMemcpyHostToDevice;
     } else if (dst_device.is_cpu()) {
