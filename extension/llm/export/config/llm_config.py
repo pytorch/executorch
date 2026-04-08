@@ -598,6 +598,15 @@ class VgfConfig:
 
 
 @dataclass
+class MLXConfig:
+    """
+    Configures the MLX backend for Apple Silicon.
+    """
+
+    enabled: bool = False
+
+
+@dataclass
 class BackendConfig:
     """
     Configures which backends should be used and how the backends
@@ -614,6 +623,7 @@ class BackendConfig:
     tosa: TosaConfig = field(default_factory=TosaConfig)
     ethosu: EthosUConfig = field(default_factory=EthosUConfig)
     vgf: VgfConfig = field(default_factory=VgfConfig)
+    mlx: MLXConfig = field(default_factory=MLXConfig)
 
 
 ################################################################################
@@ -783,6 +793,12 @@ class LlmConfig:
         # MPS
         if hasattr(args, "mps"):
             llm_config.backend.mps.enabled = args.mps
+
+        # MLX - auto-enable use_kv_cache when MLX is enabled
+        if hasattr(args, "mlx"):
+            llm_config.backend.mlx.enabled = args.mlx
+            if args.mlx:
+                llm_config.model.use_kv_cache = True
 
         # Openvino
         if hasattr(args, "openvino"):
