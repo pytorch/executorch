@@ -10,6 +10,8 @@
 
 #include <executorch/runtime/core/hierarchical_allocator.h>
 #include <executorch/runtime/core/memory_allocator.h>
+#include <executorch/runtime/core/portable_type/device.h>
+#include <executorch/runtime/core/span.h>
 
 namespace executorch {
 namespace runtime {
@@ -62,6 +64,32 @@ class MemoryManager final {
   }
 
   /**
+   * Constructs a new MemoryManager with per-buffer device metadata.
+   *
+   * @param[in] method_allocator Same as above.
+   * @param[in] planned_memory Same as above. May contain a mix of CPU and
+   *     device pointers — HierarchicalAllocator only does pointer arithmetic,
+   *     so device pointers are valid.
+   * @param[in] temp_allocator Same as above.
+   * @param[in] planned_buffer_devices One entry per planned memory buffer
+   *     (same count as planned_memory buffers), indicating the device type for
+   *     each buffer. For CPU-only programs, use the 3-arg constructor instead.
+   */
+  MemoryManager(
+      MemoryAllocator* method_allocator,
+      HierarchicalAllocator* planned_memory,
+      MemoryAllocator* temp_allocator,
+      Span<const etensor::DeviceType> planned_buffer_devices)
+      : method_allocator_(method_allocator),
+        planned_memory_(planned_memory),
+        temp_allocator_(temp_allocator),
+        planned_buffer_devices_(planned_buffer_devices) {
+    ET_CHECK_MSG(
+        method_allocator != temp_allocator,
+        "method allocator cannot be the same as temp allocator");
+  }
+
+  /**
    * DEPRECATED: Use the constructor without `constant_allocator` instead.
    *
    * TODO(T162089316): Remove this once all users migrate to the new ctor.
@@ -105,10 +133,28 @@ class MemoryManager final {
     return temp_allocator_;
   }
 
+  /**
+   * Returns per-buffer device metadata. One entry per planned memory buffer,
+   * same count as planned_memory buffers. Empty if no device metadata was
+   * provided (CPU-only program).
+   */
+  Span<const etensor::DeviceType> planned_buffer_devices() const {
+    return planned_buffer_devices_;
+  }
+
+  /**
+   * Returns true if any planned buffer is on a non-CPU device.
+   * When false, the memory setup is CPU-only and follows the legacy path.
+   */
+  bool has_device_memory() const {
+    return planned_buffer_devices_.size() > 0;
+  }
+
  private:
   MemoryAllocator* method_allocator_;
   HierarchicalAllocator* planned_memory_;
   MemoryAllocator* temp_allocator_;
+  Span<const etensor::DeviceType> planned_buffer_devices_;
 };
 
 } // namespace runtime

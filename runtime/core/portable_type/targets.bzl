@@ -28,6 +28,7 @@ def define_common_targets():
             "//executorch/extension/fb/dynamic_shim/...",
             "//executorch/kernels/portable/cpu/...",
             "//executorch/runtime/core/...",
+            "//executorch/runtime/executor/...",
             "//executorch/runtime/core/exec_aten/...",
             "//executorch/runtime/core/portable_type/test/...",
         ],
