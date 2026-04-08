@@ -99,7 +99,12 @@ def main() -> None:
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )
     lowered = edge.to_backend(_DeviceAwarePartitioner())
-    et_prog = lowered.to_executorch(ExecutorchBackendConfig(emit_stacktrace=False))
+    et_prog = lowered.to_executorch(
+        ExecutorchBackendConfig(  # type: ignore[call-arg]
+            emit_stacktrace=False,
+            enable_non_cpu_memory_planning=True,
+        )
+    )
 
     os.makedirs(args.outdir, exist_ok=True)
     outfile = os.path.join(args.outdir, "ModuleAddWithDevice.pte")
