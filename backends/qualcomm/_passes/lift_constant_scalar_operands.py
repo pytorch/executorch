@@ -181,6 +181,5 @@ class LiftConstantScalarOperands(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule):
         self._lift(graph_module)
-        graph_module.recompile()
         dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)
