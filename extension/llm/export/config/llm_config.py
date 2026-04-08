@@ -310,11 +310,15 @@ class MethodConfig:
             torch.export tracing. Controls which graph path is captured, e.g.
             prefill vs decode, or for YOCO, where all layers run for decode
             but not prefill. When unset, uses the model's default input length.
+        phase: Optional inference phase tag ("prefill" or "decode"). When set,
+            the method name is recorded in llm_methods metadata so the runtime
+            can pick the correct method for each inference phase.
     """
 
     method_name: str
     lora_config: Optional[LoraConfig] = None
     export_seq_len: Optional[int] = None
+    phase: Optional[str] = None
 
 
 @dataclass
