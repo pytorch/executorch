@@ -50,7 +50,7 @@ def define_common_targets():
             "//executorch/runtime/core:core",
         ],
     )
-    
+
     runtime.cxx_test(
         name = "event_tracer_test",
         srcs = [
