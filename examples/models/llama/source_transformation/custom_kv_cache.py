@@ -371,8 +371,24 @@ def replace_kv_cache_with_custom_kv_cache(module):
 
 
 def _replace_kv_cache_with_custom_kv_cache(module):
+    # Import here to avoid circular imports
+    from executorch.examples.models.llama.source_transformation.attention_sink import (
+        KVCacheWithAttentionSink,
+    )
+
     for name, child in module.named_children():
-        if isinstance(child, KVCache):
+        if isinstance(child, KVCacheWithAttentionSink):
+            # Replace with custom op variant for performance
+            setattr(
+                module,
+                name,
+                CustomKVCacheWithAttentionSink.from_kv_cache_with_attention_sink(child),
+            )
+            # If parent has SDPACustom, enable explicit mask mode
+            sdpa = getattr(module, "SDPA", None)
+            if sdpa is not None and hasattr(sdpa, "use_attention_mask"):
+                sdpa.use_attention_mask = True
+        elif isinstance(child, KVCache):
             cache_shape = child.k_cache.shape
             cache_dtype = child.k_cache.dtype
             max_batch_size, n_heads, max_context_length, head_dim = cache_shape
@@ -463,6 +479,81 @@ class QuantizedRingKVCache(QuantizedKVCache):
             kv_cache.cache_type,
             kv_cache.use_custom_update_cache_op,
             kv_cache.return_float_values,
+        )
+
+
+class CustomKVCacheWithAttentionSink(CustomKVCache):
+    """
+    CustomKVCache variant for attention sink models.
+
+    Uses the custom update_cache_with_indices op for performance while
+    supporting sink tokens (fixed slots) + ring buffer (sliding window).
+    Modeled after CustomRingKVCache but with CachePositionsManagerWithSink.
+    """
+
+    def __init__(
+        self,
+        max_batch_size,
+        n_heads,
+        head_dim,
+        window_size,
+        sink_size,
+        dtype=torch.float32,
+    ):
+        # Total cache size: sink slots + ring buffer (2x window for wrap safety)
+        total_cache_size = sink_size + window_size * 2
+        super().__init__(
+            max_batch_size, total_cache_size, n_heads, head_dim, dtype
+        )
+        from executorch.examples.models.llama.source_transformation.attention_sink import (
+            CachePositionsManagerWithSink,
+            _create_causal_mask_for_attention_sink,
+        )
+
+        self.cache_positions_manager = CachePositionsManagerWithSink(
+            total_cache_size, sink_size
+        )
+        self.is_ring_buffer = True
+        self.window_size = window_size
+        self.sink_size = sink_size
+        self._create_causal_mask_for_attention_sink = (
+            _create_causal_mask_for_attention_sink
+        )
+
+    def create_causal_mask_for_ring_buffer(self, start_pos, seq_len):
+        cache_positions = self.cache_positions_manager.cache_positions
+        if self.sink_size > 0:
+            return self._create_causal_mask_for_attention_sink(
+                cache_positions, self.window_size, self.sink_size, start_pos, seq_len
+            )
+        else:
+            return _create_causal_mask_for_ring_buffer(
+                cache_positions, self.window_size, start_pos, seq_len
+            )
+
+    def update(self, input_pos, k_val, v_val):
+        seq_len = k_val.transpose(1, 2).size(1)
+        assert seq_len <= self.k_cache.size(
+            1
+        ), f"Update sequence length({seq_len}) for kv cache must be smaller than the cache size({self.k_cache.size(1)})"
+        indices = self.cache_positions_manager.calculate_positions_and_update_indices(
+            input_pos, seq_len
+        )
+        indices = indices.unsqueeze(0)
+
+        return super().update(input_pos, k_val, v_val, indices)
+
+    @classmethod
+    def from_kv_cache_with_attention_sink(cls, kv_cache):
+        """Create from an existing KVCacheWithAttentionSink."""
+        max_batch_size, n_heads, _, head_dim = kv_cache.k_cache.shape
+        return cls(
+            max_batch_size,
+            n_heads,
+            head_dim,
+            kv_cache.window_size,
+            kv_cache.sink_size,
+            dtype=kv_cache.k_cache.dtype,
         )
 
 
