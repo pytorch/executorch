@@ -179,14 +179,20 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
         "Program validation failed: likely a corrupt file");
 #else
     ET_LOG(
-        Error,
+        Info,
         "InternalConsistency verification requested but not available; "
-        "build with ET_ENABLE_PROGRAM_VERIFICATION=1");
-    return Error::NotSupported;
+        "falling back to Minimal verification. "
+        "Build with ET_ENABLE_PROGRAM_VERIFICATION=1 for full verification.");
 #endif
-  } else {
-    // Verification::Minimal: Verify that the root table offset is within
-    // bounds. This is done in InternalConsistency by VerifyProgramBuffer.
+  }
+
+  if (verification == Verification::Minimal
+#if !ET_ENABLE_PROGRAM_VERIFICATION
+      || verification == Verification::InternalConsistency
+#endif
+  ) {
+    // Verify that the root table offset is within bounds.
+    // In InternalConsistency mode this is done by VerifyProgramBuffer above.
     uint32_t root_offset =
         flatbuffers::ReadScalar<flatbuffers::uoffset_t>(program_data->data());
     // The root table is at buf + root_offset. It must not point into the
