@@ -566,6 +566,23 @@ class Qwen35MoE(nn.Module):
         x = self.norm(x)
         return self.lm_head(x)
 
+    def sample(self, logits: torch.Tensor, temperature: torch.Tensor) -> torch.Tensor:
+        """Temperature-based sampling from the last token's logits.
+
+        Uses the Gumbel-max trick with GPU-generated noise (via torch.rand_like).
+        Mathematically equivalent to multinomial(softmax(logits / T), 1).
+
+        Args:
+            logits: (B, T, vocab_size) float tensor from forward()
+            temperature: scalar tensor controlling randomness (0→greedy, higher→more random)
+        Returns:
+            next_token: (B, 1) LongTensor with the selected token ID
+        """
+        logits = logits[:, -1, :] / temperature.clamp(min=1e-6)
+        noise = torch.rand_like(logits)
+        gumbel = -torch.log(-torch.log(noise + 1e-20) + 1e-20)
+        return (logits.float() + gumbel).argmax(dim=-1, keepdim=True)
+
     @staticmethod
     def from_hf_checkpoint(model_dir, max_seq_len=4096):
         config_path = os.path.join(model_dir, "config.json")
