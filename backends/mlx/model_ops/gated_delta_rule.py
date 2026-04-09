@@ -34,11 +34,6 @@ from torch import Tensor
 from torch.fx.node import Node
 
 
-# ---------------------------------------------------------------------------
-# Custom op definition
-# ---------------------------------------------------------------------------
-
-
 @torch.library.custom_op("mlx::gated_delta_rule", mutates_args=("state",))
 def gated_delta_rule(
     q: Tensor,  # [B, T, Hk, Dk]
@@ -96,11 +91,6 @@ def gated_delta_rule_fake(
 
 
 from executorch.backends.mlx.builder.op_helpers import torch_dtype_to_scalar_type
-
-# ---------------------------------------------------------------------------
-# Pattern handler
-# ---------------------------------------------------------------------------
-
 from executorch.backends.mlx.builder.op_registry import PatternHandler, REGISTRY
 from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.builder.slot_manager import Slot
@@ -311,12 +301,9 @@ class GatedDeltaRuleHandler(PatternHandler):
         b_iov = P.to_int_or_vid(b_val)
         t_iov = P.to_int_or_vid(t_val)
 
-        # Output slot for y
-        existing = P.slot_manager.get_slot(self.getitem_0)
-        if existing is not None:
-            out = existing if not isinstance(existing, tuple) else existing[0]
-        else:
-            _, out = P.make_tmp_slot()
+        # Output slot for y — use existing IO slot if getitem_0 is a graph output,
+        # otherwise create a new temp slot.
+        out = P.make_or_get_slot(self.getitem_0)
 
         # Output slot for state_out (carry)
         _, carry = P.make_tmp_slot()
@@ -449,9 +436,6 @@ class GatedDeltaRuleHandler(PatternHandler):
     def _emit_scan(self, P: MLXProgramBuilder, n: Node) -> Slot:
         """Emit ScanNode decomposition of the gated delta recurrence."""
 
-        # With alloc_id on Slot, slot_map's _mark_read can safely free
-        # and reuse idx values — each allocation remains distinct in
-        # build()'s used_slots set and _create_slot_mappings dict.
         q_slot, k_slot, v_slot, g_slot, beta_slot, state_slot = P.slot_map(
             [
                 self.q_node,
@@ -475,15 +459,7 @@ class GatedDeltaRuleHandler(PatternHandler):
         _, beta_s = P.make_tmp_slot()
 
         # Output slot for the recurrence output.
-        # getitem_0 already has an Output slot from _make_io_slots (it's a
-        # USER_OUTPUT). Use that existing slot so the ScanNode writes directly
-        # into the output slot. Don't call make_or_get_slots on auto_func_node
-        # (deferred body node must not have slots per _verify_build).
-        existing = P.slot_manager.get_slot(self.getitem_0)
-        if existing is not None:
-            out = existing if not isinstance(existing, tuple) else existing[0]
-        else:
-            _, out = P.make_tmp_slot()
+        out = P.make_or_get_slot(self.getitem_0)
 
         # Body temp slots
         _, t0 = P.make_tmp_slot()
@@ -574,10 +550,6 @@ class GatedDeltaRuleHandler(PatternHandler):
 
         return carry
 
-
-# ---------------------------------------------------------------------------
-# Registration
-# ---------------------------------------------------------------------------
 
 _registered = False
 
