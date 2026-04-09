@@ -743,9 +743,9 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             f"Checkpoint dtype {checkpoint_dtype} precision is higher than dtype override {dtype_override.to_torch_dtype()}."
         )
 
-    # We want to quantize (in the source transforms) the weights of the model
-    # in the checkpoint dtype, so we apply quantization before casting to the
-    # dtype override.
+    # Quantize weights in checkpoint dtype for accuracy, then cast to
+    # dtype_override afterward. IntxUnpackedToInt8Tensor.to() properly
+    # propagates the dtype change to scale/zero_point/output dtype.
     logging.info(f"Checkpoint dtype: {edge_manager.model.checkpoint_dtype}")
     edge_manager = edge_manager.set_output_dir(output_dir_path).source_transform(
         _get_source_transforms(
@@ -790,6 +790,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             local_global_attention=llm_config.model.local_global_attention,
             use_torchao_kernels_linear=llm_config.backend.torchao.use_torchao_kernels_linear,
             use_torchao_kernels_tied_embedding=llm_config.backend.torchao.use_torchao_kernels_tied_embedding,
+            quantize_with_hqq=llm_config.quantization.use_hqq,
         )
     )
 
@@ -1739,8 +1740,7 @@ def _get_source_transforms(  # noqa
             get_quant_embedding_transform(
                 embedding_quantize,
                 use_shared_embedding,
-                checkpoint_dtype,
-                quantize_with_hqq,
+                quantize_with_hqq=quantize_with_hqq,
             )
         )
 
