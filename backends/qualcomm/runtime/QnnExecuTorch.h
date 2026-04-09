@@ -63,14 +63,18 @@ struct CustomMemTensorInfo {
 /// alignment as MemoryAllocator::kDefaultAlignment.
 /// See runtime/core/memory_allocator.h. The function returns a valid pointer
 /// if allocation is successful.
-void* QnnExecuTorchAllocCustomMem(size_t bytes, size_t alignment);
+__attribute__((__visibility__("default"))) void* QnnExecuTorchAllocCustomMem(
+    size_t bytes,
+    size_t alignment);
 
 /// Add tensor to custom memory with custom type descriptor. Create memory
 /// handle to tensor wrapper during execution
-void QnnExecuTorchAddCustomMemTensorAddr(void* tensor_addr, void* custom_mem);
+__attribute__((__visibility__("default"))) void
+QnnExecuTorchAddCustomMemTensorAddr(void* tensor_addr, void* custom_mem);
 
 /// Free the allocated shared memory.
-void QnnExecuTorchFreeCustomMem(void* buffer_ptr);
+__attribute__((__visibility__("default"))) void QnnExecuTorchFreeCustomMem(
+    void* buffer_ptr);
 
 #ifdef __cplusplus
 }
