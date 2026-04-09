@@ -62,7 +62,9 @@ TensorPtr make_tensor_ptr(
     std::vector<executorch::aten::StridesType> strides,
     executorch::aten::ScalarType type,
     executorch::aten::TensorShapeDynamism dynamism,
-    std::function<void(void*)> deleter) {
+    std::function<void(void*)> deleter,
+    runtime::etensor::DeviceType device_type,
+    runtime::etensor::DeviceIndex device_index) {
   const auto dim = sizes.size();
   ET_CHECK_MSG(
       dim_order.empty() || dim_order.size() == dim,
@@ -102,6 +104,7 @@ TensorPtr make_tensor_ptr(
 
   strides = std::move(computed_strides);
 
+  TensorPtr cpu_tensor;
 #ifndef USE_ATEN_LIB
   executorch::aten::TensorImpl tensor_impl(
       type,
@@ -117,9 +120,9 @@ TensorPtr make_tensor_ptr(
       std::move(dim_order),
       std::move(strides),
       std::move(deleter));
-  const auto tensor_ptr = &storage->tensor;
-  return std::shared_ptr<executorch::aten::Tensor>(
-      std::move(storage), tensor_ptr);
+  const auto raw_tensor_ptr = &storage->tensor;
+  cpu_tensor = std::shared_ptr<executorch::aten::Tensor>(
+      std::move(storage), raw_tensor_ptr);
 #else
   auto options = c10::TensorOptions()
                      .dtype(c10::scalarTypeToTypeMeta(type))
@@ -137,8 +140,13 @@ TensorPtr make_tensor_ptr(
       c10::DispatchKeySet(c10::DispatchKey::CPU),
       options.dtype());
   tensor_impl->set_sizes_and_strides(sizes, strides);
-  return std::make_shared<executorch::aten::Tensor>(std::move(tensor_impl));
+  cpu_tensor =
+      std::make_shared<executorch::aten::Tensor>(std::move(tensor_impl));
 #endif // USE_ATEN_LIB
+  if (device_type != runtime::etensor::DeviceType::CPU) {
+    return clone_tensor_ptr_to_device(cpu_tensor, device_type, device_index);
+  }
+  return cpu_tensor;
 }
 
 TensorPtr make_tensor_ptr(
@@ -147,7 +155,9 @@ TensorPtr make_tensor_ptr(
     std::vector<executorch::aten::DimOrderType> dim_order,
     std::vector<executorch::aten::StridesType> strides,
     executorch::aten::ScalarType type,
-    executorch::aten::TensorShapeDynamism dynamism) {
+    executorch::aten::TensorShapeDynamism dynamism,
+    runtime::etensor::DeviceType device_type,
+    runtime::etensor::DeviceIndex device_index) {
   ET_CHECK_MSG(
       data.size() ==
           executorch::aten::compute_numel(sizes.data(), sizes.size()) *
@@ -162,7 +172,9 @@ TensorPtr make_tensor_ptr(
       type,
       dynamism,
       // Data is moved into the deleter and is destroyed together with Storage.
-      [data = std::move(data)](void*) {});
+      [data = std::move(data)](void*) {},
+      device_type,
+      device_index);
 }
 
 TensorPtr clone_tensor_ptr(
