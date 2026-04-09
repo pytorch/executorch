@@ -9,7 +9,7 @@ from collections import OrderedDict
 from typing import Dict
 
 from executorch.backends.qualcomm._passes import (
-    AnnotateAdaptiveAvgPool1D,
+    AnnotateAvgPool1D,
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
@@ -95,7 +95,7 @@ def get_capture_program_passes():
     # The second value in each tuple in `default_passes_and_setting` indicates whether the corresponding pass is activated by default.
     # If a pass is activated, it will be executed by default.
     default_passes_and_setting = [
-        (AnnotateAdaptiveAvgPool1D, True),
+        (AnnotateAvgPool1D, True),
         (AnnotateQuantAttrs, True),
         (AnnotateStack, True),
         (AnnotateUnbind, True),
