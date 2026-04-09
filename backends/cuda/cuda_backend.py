@@ -145,6 +145,7 @@ class CudaBackend(AotiBackend, BackendDetails):
     def get_supported_fallback_kernels(cls) -> Dict[str, Any]:
         return {
             "at::_ops::_weight_int4pack_mm::call": None,
+            "aoti_torch_cuda_randint_low_out": None,
         }
 
     @classmethod
@@ -170,8 +171,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 mode = spec.value.decode("utf-8").upper()
                 if mode not in ["ON", "OFF"]:
                     raise ValueError(
-                        f"Invalid triton_kernel_mode: {mode}. "
-                        f"Expected 'ON' or 'OFF'."
+                        f"Invalid triton_kernel_mode: {mode}. Expected 'ON' or 'OFF'."
                     )
                 triton_kernel_mode = mode
         passes = [MoveCondPredicateToCpuPass()]
