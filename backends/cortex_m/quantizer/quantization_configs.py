@@ -10,10 +10,7 @@ from executorch.backends.arm.quantizer.arm_quantizer_utils import (
     _get_int32_per_channel_bias_qspec,
 )
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
-from executorch.backends.cortex_m.quantizer_reporter import (
-    SUPPORTED_QCONFIGS,
-    SUPPORTED_QSPECS,
-)
+from executorch.backends.cortex_m.quantizer_reporter import SUPPORTED_QSPECS
 from torch.fx import Node
 from torchao.quantization.pt2e import (
     HistogramObserver,
@@ -156,6 +153,7 @@ INT8_PER_TENSOR_CONFIG = CortexMQuantizationConfig(
     INT8_ACTIVATION_PER_TENSOR_QSPEC,
     INT8_WEIGHT_PER_TENSOR_QSPEC,
     _get_int32_bias_qspec,
+    f"{__name__}.INT8_PER_TENSOR_CONFIG",
 )
 
 
@@ -164,17 +162,9 @@ INT8_PER_CHANNEL_CONFIG = CortexMQuantizationConfig(
     INT8_ACTIVATION_PER_TENSOR_QSPEC,
     INT8_WEIGHT_PER_CHANNEL_QSPEC,
     _get_int32_per_channel_bias_qspec,
+    f"{__name__}.INT8_PER_CHANNEL_CONFIG",
 )
 
-
-# Register supported quantization configs and qspecs in the reporter for human-readable reporting
-# MLETORCH-1854: Temporary solution, refactor to automatically register these instead
-SUPPORTED_QCONFIGS.update(
-    {
-        INT8_PER_CHANNEL_CONFIG: f"{__name__}.INT8_PER_CHANNEL_QCONFIG",
-        INT8_PER_TENSOR_CONFIG: f"{__name__}.INT8_PER_TENSOR_QCONFIG",
-    }
-)
 
 SUPPORTED_QSPECS.update(
     {

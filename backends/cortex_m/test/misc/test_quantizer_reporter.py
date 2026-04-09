@@ -38,7 +38,7 @@ class _DummyQuantizer(QuantizerReporterUser):
         return QuantizerInfo(
             name="DummyQuantizer",
             targeted_nodes_description="dummy nodes",
-            quantization_config_path="dummy.config",
+            qconfig_label="dummy.config",
             support_config_path="dummy.support",
         )
 

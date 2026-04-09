@@ -21,7 +21,10 @@ import torch
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.constants import DISALLOW_TFA_META_KEY
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
-from executorch.backends.cortex_m.quantizer_reporter import QuantizerReporterUser
+from executorch.backends.cortex_m.quantizer_reporter import (
+    QuantizerInfo,
+    QuantizerReporterUser,
+)
 from torch.fx import Node
 
 from torchao.quantization.pt2e.quantizer import (
@@ -253,22 +256,19 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
         self.pattern_matcher: "PatternMatcher" = pattern_matcher
 
     def get_quantizer_info(self):
-        from executorch.backends.cortex_m.quantizer_reporter import (
-            QuantizerInfo,
-            SUPPORTED_QCONFIGS,
-        )
-
         name = self.__class__.__name__
         targeted_nodes_description = str(self.node_finder)
-        quantization_config_path = SUPPORTED_QCONFIGS.get(
-            self.quantization_config, "UNREGISTERED_QCONFIG"
+        qconfig_label = (
+            self.quantization_config.label
+            if self.quantization_config.label is not None
+            else self.quantization_config.__class__.__name__  # no label, fallback to class name
         )
         support_config_path = self.pattern_matcher.support_dict_name
 
         return QuantizerInfo(
             name,
             targeted_nodes_description,
-            quantization_config_path,
+            qconfig_label,
             support_config_path,
         )
 
@@ -490,16 +490,14 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
             )
 
     def get_quantizer_info(self):
-        from executorch.backends.cortex_m.quantizer_reporter import QuantizerInfo
-
         name = self.__class__.__name__
         targeted_nodes_description = ""
-        quantization_config_path = "SHARED_QCONFIG"
+        qconfig_label = "shared qparams for connected targeted nodes"
         support_config_path = self.support_config_path
         return QuantizerInfo(
             name,
             targeted_nodes_description,
-            quantization_config_path,
+            qconfig_label,
             support_config_path,
         )
 

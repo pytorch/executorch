@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from importlib import import_module
-from typing import Any, Callable, cast, Dict, List, NamedTuple, Optional
+from typing import Callable, cast, Dict, List, NamedTuple, Optional
 
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e.quantizer import (
@@ -32,8 +32,7 @@ from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 logger = logging.getLogger(__name__)
 tabulate = cast(Callable[..., str], import_module("tabulate").tabulate)
 
-# Look-up dicts used to get human readable names for supported quantization configs and specs
-SUPPORTED_QCONFIGS: dict[Any, str] = {}
+# Look-up dicts used to get human readable names for supported quantization specs
 SUPPORTED_QSPECS: dict[QuantizationSpecBase | None, str] = {}
 
 
@@ -77,7 +76,7 @@ class QuantizerInfo(NamedTuple):
 
     name: str
     targeted_nodes_description: str
-    quantization_config_path: str
+    qconfig_label: str
     support_config_path: str
 
 
@@ -112,8 +111,8 @@ class QuantizerReport:
 
     _PREVIOUS_ANNOTATION_REJECT_REASON = "Tried annotating already quantized node."
 
-    def __init__(self, quantizer):
-        self.quantizer = quantizer.get_quantizer_info()
+    def __init__(self, quantizer_info: QuantizerInfo):
+        self.quantizer_info = quantizer_info
         self.accepted_patterns: List[AnnotatedPatternReport] = []
         self.rejected_patterns: List[RejectedPatternReport] = []
 
@@ -180,11 +179,11 @@ class QuantizerReport:
     def get_quantizer_info_rows(self) -> List[str]:
         rows = []
         rows.append(
-            f"{self.quantizer.name} using {self.quantizer.targeted_nodes_description}"
+            f"{self.quantizer_info.name} using {self.quantizer_info.targeted_nodes_description}"
         )
-        rows.append(f"Annotating with {self.quantizer.quantization_config_path}")
+        rows.append(f"Annotating with {self.quantizer_info.qconfig_label}")
         rows.append(
-            f"Supported operators and patterns defined by {self.quantizer.support_config_path}"
+            f"Supported operators and patterns defined by {self.quantizer_info.support_config_path}"
         )
 
         if (
@@ -317,7 +316,7 @@ class QuantizerReporter:
                     f"Quantizer {quantizer.__class__.__name__} does not implement QuantizerReporterUser interface and will not report quantization decisions."
                 )
 
-            self.quantizers[quantizer] = QuantizerReport(quantizer)
+            self.quantizers[quantizer] = QuantizerReport(quantizer.get_quantizer_info())
 
     def report_reject(
         self, quantizer: QuantizerReporterUser, pattern: List[Node], reason: str
