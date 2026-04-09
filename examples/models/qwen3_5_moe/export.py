@@ -12,12 +12,7 @@ import os
 
 import torch
 import torch.nn as nn
-
-from executorch.examples.models.qwen3_5_moe.model import (
-    FusedMoEExperts,
-    Qwen35MoE,
-    Qwen35MoEConfig,
-)
+from model import FusedMoEExperts, Qwen35MoE, Qwen35MoEConfig
 
 
 # ---------------------------------------------------------------------------
@@ -61,9 +56,7 @@ def load_prequantized_model(prequantized_dir, max_seq_len=4096):
     Returns:
         (model, config) ready for export.
     """
-    from executorch.examples.models.qwen3_5_moe.quantize_and_save import (
-        load_quantized_state_dict,
-    )
+    from quantize_and_save import load_quantized_state_dict
 
     config_path = os.path.join(prequantized_dir, "config.json")
     safetensors_path = os.path.join(prequantized_dir, "model.safetensors")
@@ -380,7 +373,6 @@ def _apply_turboquant(model, config):
 def export_and_lower(model, config, args):
     """Export model to .pte via torch.export + CUDA backend."""
     import torch._inductor.config as inductor_config
-
     from executorch.backends.cuda.cuda_backend import CudaBackend
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
     from executorch.exir import (
@@ -398,25 +390,44 @@ def export_and_lower(model, config, args):
     # -O0 compiles ~8x faster than -O1 with no measurable runtime impact.
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
 
-    # Dynamic shapes
+    # Dynamic shapes for forward method
     example_tokens = torch.tensor([[0, 1]], dtype=torch.long)
     example_input_pos = torch.tensor([0, 1], dtype=torch.long)
     seq_dim = Dim("seq_len", min=1, max=config.max_seq_len - 1)
     dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
 
-    print("Exporting with torch.export...")
+    print("Exporting forward method with torch.export...")
     with torch.no_grad():
-        exported = export(
+        exported_forward = export(
             model,
             (example_tokens, example_input_pos),
             dynamic_shapes=dynamic_shapes,
             strict=True,
         )
-    print("Export successful!")
+    print("Forward export successful!")
 
-    # Lower with CUDA backend
+    # Export sample method by temporarily swapping model.forward
+    print("Exporting sample method with torch.export...")
+    original_forward = model.forward
+    model.forward = model.sample
+    example_logits = torch.zeros(1, 2, config.vocab_size, dtype=torch.bfloat16)
+    example_temperature = torch.tensor([0.8], dtype=torch.float32)
+    sample_dynamic_shapes = ({1: seq_dim}, None)
+    with torch.no_grad():
+        exported_sample = export(
+            model,
+            (example_logits, example_temperature),
+            dynamic_shapes=sample_dynamic_shapes,
+            strict=True,
+        )
+    model.forward = original_forward
+    print("Sample export successful!")
+
+    # Lower with CUDA backend (multi-method)
     print("Lowering to ExecuTorch with CUDA...")
-    compile_specs = [CudaBackend.generate_method_name_compile_spec("forward")]
+    forward_compile_specs = [CudaBackend.generate_method_name_compile_spec("forward")]
+    sample_compile_specs = [CudaBackend.generate_method_name_compile_spec("sample")]
+
     metadata = {
         "get_max_seq_len": config.max_seq_len,
         "get_vocab_size": config.vocab_size,
@@ -426,8 +437,11 @@ def export_and_lower(model, config, args):
         "enable_dynamic_shape": True,
     }
     et_prog = to_edge_transform_and_lower(
-        exported,
-        partitioner=[CudaPartitioner(compile_specs)],
+        {"forward": exported_forward, "sample": exported_sample},
+        partitioner={
+            "forward": [CudaPartitioner(forward_compile_specs)],
+            "sample": [CudaPartitioner(sample_compile_specs)],
+        },
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False,
             _skip_dim_order=True,
@@ -439,6 +453,9 @@ def export_and_lower(model, config, args):
             extract_delegate_segments=True,
             do_quant_fusion_and_const_prop=True,
             memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+            enable_non_cpu_memory_planning=True,
+            skip_h2d_for_method_inputs=True,
+            skip_d2h_for_method_outputs=True,
         ),
     )
 
