@@ -33,6 +33,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     LpaiHardwareVersion,
     QcomChipset,
     QnnExecuTorchBackendType,
+    QnnExecuTorchHtpPerformanceMode,
     QnnExecuTorchOpPackageOptions,
 )
 from executorch.backends.qualcomm.utils.constants import (
@@ -93,6 +94,7 @@ class QnnConfig:
         skip_push: If specified, skip pushing files to device. Assumes all required files are on device already.
         ci (bool): This flag is for Continuous Integration(CI) purpose and is NOT recommended to turn on for typical use cases. It will use random inputs instead of real inputs.
         seed (int): Set the seed for generating random numbers in both torch and random.
+        htp_performance_mode (QnnExecuTorchHtpPerformanceMode, optional): Option to set the performance mode for htp backend.
     """
 
     soc_model: str
@@ -116,6 +118,9 @@ class QnnConfig:
     skip_push: Optional[bool] = False
     ci: Optional[bool] = False
     seed: Optional[int] = None
+    htp_performance_mode: QnnExecuTorchHtpPerformanceMode = (
+        QnnExecuTorchHtpPerformanceMode.kHtpBurst,
+    )
 
     def __post_init__(self):
         assert self.soc_model, "Please provide the soc_model"
@@ -522,7 +527,8 @@ def build_executorch_binary(
         QnnExecuTorchBackendType.kLpaiBackend: generate_lpai_compiler_spec(),
         QnnExecuTorchBackendType.kGpuBackend: generate_gpu_compiler_spec(),
         QnnExecuTorchBackendType.kHtpBackend: generate_htp_compiler_spec(
-            use_fp16=not any([quant_dtype, custom_quantizer])
+            use_fp16=False if quant_dtype is not None else True,
+            htp_performance_mode=qnn_config.htp_performance_mode,
         ),
     }[qnn_config.backend]
     compile_spec = generate_qnn_executorch_compiler_spec(
@@ -817,6 +823,14 @@ def setup_common_args_and_variables():
         help="Path to cmake binary directory for direct_mode. E.g., path/to/build-hexagon."
         "If enabled, run self-defined protocol to control fastrpc communication.",
         type=str,
+    )
+
+    parser.add_argument(
+        "--htp_performance_mode",
+        type=int,
+        choices=list(QnnExecuTorchHtpPerformanceMode),
+        help="Specify performance mode for htp from 0-8, default to burst(2). For more info, refer to qc_schema.py",
+        default=2,
     )
 
     return parser

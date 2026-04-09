@@ -4951,7 +4951,7 @@ class TestQNNFloatingPointUtils(TestQNN):
             htp_performance_mode=QnnExecuTorchHtpPerformanceMode.kHtpHighPowerSaver,
         )
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.chipset_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.soc_model],
             backend_options=backend_options,
         )
         module = SimpleModel()  # noqa: F405
@@ -5584,7 +5584,7 @@ class TestQNNQuantizedUtils(TestQNN):
             htp_performance_mode=QnnExecuTorchHtpPerformanceMode.kHtpHighPowerSaver,
         )
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.chipset_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.soc_model],
             backend_options=backend_options,
         )
         module = SimpleModel()  # noqa: F405
