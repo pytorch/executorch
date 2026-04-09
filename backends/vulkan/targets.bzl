@@ -186,7 +186,7 @@ def define_common_targets(is_fbcode = False):
         suffix = "_no_volk" if no_volk else ""
 
         VK_API_DEPS = [
-            "fbsource//third-party/VulkanMemoryAllocator/3.0.1:VulkanMemoryAllocator_xplat",
+            "fbsource//third-party/VulkanMemoryAllocator/3.2.0:VulkanMemoryAllocator_xplat",
         ]
 
         default_deps = []

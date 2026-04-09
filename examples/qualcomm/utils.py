@@ -33,8 +33,10 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
     QuantDtype,
 )
 from executorch.backends.qualcomm.serialization.qc_schema import (
+    LpaiHardwareVersion,
     QcomChipset,
     QnnExecuTorchBackendType,
+    QnnExecuTorchHtpPerformanceMode,
     QnnExecuTorchOpPackageOptions,
 )
 from executorch.backends.qualcomm.utils.constants import (
@@ -45,9 +47,13 @@ from executorch.backends.qualcomm.utils.constants import (
 from executorch.backends.qualcomm.utils.utils import (
     generate_gpu_compiler_spec,
     generate_htp_compiler_spec,
+    generate_lpai_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     get_qnn_context_binary_alignment,
-    get_soc_to_arch_map,
+    get_sdk_build_id,
+    get_soc_to_htp_arch_map,
+    get_soc_to_lpai_hw_ver_map,
+    is_qnn_sdk_version_less_than,
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.exir.backend.utils import get_delegates
@@ -132,7 +138,9 @@ class SimpleADB:
         self.dump_intermediate_outputs = dump_intermediate_outputs
         self.debug_output_path = f"{self.workspace}/debug_output.bin"
         self.output_folder = f"{self.workspace}/outputs"
-        self.htp_arch = get_soc_to_arch_map()[soc_model]
+        self.htp_arch = get_soc_to_htp_arch_map()[soc_model]
+        self.lpai_hw_ver = get_soc_to_lpai_hw_ver_map().get(soc_model, None)
+        self.soc_model = soc_model
         self.error_only = error_only
         self.shared_buffer = shared_buffer
         self.runner = runner
@@ -182,6 +190,15 @@ class SimpleADB:
                     ],
                     QnnExecuTorchBackendType.kGpuBackend: [
                         f"{self.qnn_sdk}/lib/{self.target}/libQnnGpu.so",
+                    ],
+                    # please note that users need to sign LPAI related libs manually
+                    QnnExecuTorchBackendType.kLpaiBackend: [
+                        f"{self.qnn_sdk}/lib/{self.target}/libQnnLpai.so",
+                        (
+                            f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/"
+                            f"signed/libQnnLpaiSkel.so"
+                        ),
+                        f"{self.qnn_sdk}/lib/{self.target}/libQnnLpaiStub.so",
                     ],
                 }
             )
@@ -475,7 +492,7 @@ def build_executorch_binary(
     metadata=None,
     dump_intermediate_outputs=False,
     qnn_intermediate_debugger: QNNIntermediateDebugger = None,
-    backend=QnnExecuTorchBackendType.kHtpBackend,
+    backend: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend,
     passes_job=None,
     passes_dependency=None,
     qat_training_data=None,
@@ -483,6 +500,7 @@ def build_executorch_binary(
     optrace=False,
     op_package_options: QnnExecuTorchOpPackageOptions = None,
     direct_mode_build_path=None,
+    htp_performance_mode: QnnExecuTorchHtpPerformanceMode = QnnExecuTorchHtpPerformanceMode.kHtpBurst,
 ):
     """
     A function to generate an ExecuTorch binary for Qualcomm platforms.
@@ -491,7 +509,6 @@ def build_executorch_binary(
         model (torch.nn.Module): The model to be converted into an ExecuTorch binary.
         inputs (torch.Tensor): Sample input tensors required for model export.
         soc_model (QcomChipset): The target Qualcomm System on Chip (SoC) model.
-        backend (QnnExecuTorchBackendType): The target backend.
         file_name (str): Name for the output binary file (.pte).
         dataset (List[torch.Tensor] | Callable): A dataset for quantization calibration.
         skip_node_id_set (set, optional): Set of node IDs to be skipped during partition.
@@ -501,6 +518,8 @@ def build_executorch_binary(
         shared_buffer (bool, optional): Applies zero-copy mechanism to optimize runtime memory allocation.
         metadata (dict, optional): An optional dictionary that maps each method name to a constant value in eager mode.
         dump_intermediate_outputs (bool, optional): Enables dumping model intermediate outputs.
+        qnn_intermediate_debugger (QNNIntermediateDebugger, optional): A debugger instance capable of retrieving intermediate tensor results.
+        backend (QnnExecuTorchBackendType, optional): The target backend.
         passes_job (OrderedDict, optional): Custom passes job in capture_program, users can enable/disable specific passes or modify their attributes.
         passes_dependency (Dict, optional): A dictionary mapping each pass to its corresponding list of dependencies.
         qat_training_data (List[torch.Tensor], optional): A dataset for quantization aware training(QAT). Typically is a pair of tensors, such as [features, ground truth].
@@ -508,16 +527,22 @@ def build_executorch_binary(
         optrace (bool, optional): Enable optrace mode for performance analysis if set to True.
         op_package_options: Optional structure to specify op packages
             loaded and used by the backend.
+        direct_mode_build_path (string, optional): Path to build folder for direct mode.
+        htp_performance_mode (QnnExecuTorchHtpPerformanceMode, optional): Option to set the performance mode for htp backend.
 
     Returns:
         None: The function writes the output to a specified .pte file.
     """
     if backend == QnnExecuTorchBackendType.kGpuBackend and not online_prepare:
         raise RuntimeError("Currently GPU backend only supports online_prepare.")
+    if backend == QnnExecuTorchBackendType.kLpaiBackend and online_prepare:
+        raise RuntimeError("Currently LPAI backend only supports offline_prepare.")
     backend_options = {
+        QnnExecuTorchBackendType.kLpaiBackend: generate_lpai_compiler_spec(),
         QnnExecuTorchBackendType.kGpuBackend: generate_gpu_compiler_spec(),
         QnnExecuTorchBackendType.kHtpBackend: generate_htp_compiler_spec(
-            use_fp16=False if quant_dtype is not None else True
+            use_fp16=False if quant_dtype is not None else True,
+            htp_performance_mode=htp_performance_mode,
         ),
     }[backend]
     compile_spec = generate_qnn_executorch_compiler_spec(
@@ -964,8 +989,8 @@ def setup_common_args_and_variables():
 
     parser.add_argument(
         "--backend",
-        help="Backend to be deployed ('htp'/'gpu' are currently supported).",
-        choices=["htp", "gpu"],
+        help="Backend to be deployed ('htp'/'gpu'/'lpai' are currently supported).",
+        choices=["htp", "gpu", "lpai"],
         default="htp",
         type=str,
     )
@@ -1038,6 +1063,14 @@ def setup_common_args_and_variables():
         type=str,
     )
 
+    parser.add_argument(
+        "--htp_performance_mode",
+        type=int,
+        choices=list(QnnExecuTorchHtpPerformanceMode),
+        help="Specify performance mode for htp from 0-8, default to burst(2). For more info, refer to qc_schema.py",
+        default=2,
+    )
+
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.
     # So maybe it's fine to just use the environment.
     if "QNN_SDK_ROOT" not in os.environ:
@@ -1045,11 +1078,26 @@ def setup_common_args_and_variables():
     print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
 
     def validate(args):
-        if not args.compile_only and args.device is None:
+        if (not args.compile_only and not args.enable_x86_64) and args.device is None:
             raise RuntimeError(
-                "device serial is required if not compile only. "
+                "device serial is required if not compile only or run on x86 emulator. "
                 "Please specify a device serial by -s/--device argument."
             )
+        if args.backend == "lpai":
+            if args.model not in get_soc_to_lpai_hw_ver_map():
+                raise RuntimeError(
+                    f"Target soc_model({args.model}) doesn't support LPAI backend. \n"
+                    "Please choose the following SOC: "
+                    f"{list(get_soc_to_lpai_hw_ver_map().keys())}"
+                )
+            elif get_soc_to_lpai_hw_ver_map()[
+                args.model
+            ] == LpaiHardwareVersion.V6 and is_qnn_sdk_version_less_than("2.39"):
+                raise RuntimeError(
+                    f"Target soc_model({args.model}) with LPAI backend v6 requires QNN SDK version >= 2.39. \n"
+                    f"Current QNN SDK version: {get_sdk_build_id()}"
+                )
+
         if args.seed:
             torch.manual_seed(args.seed)
             np.random.seed(args.seed)

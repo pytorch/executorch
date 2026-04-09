@@ -16,32 +16,12 @@ namespace qnn {
 using namespace qnn_delegate;
 
 template <typename T>
-T get_option(T aot_option) {
+T get_option(T aot_option, const char* aot_key) {
   executorch::runtime::Error status;
   executorch::runtime::BackendOption backend_option;
-
-  if constexpr (std::is_same_v<T, QnnExecuTorchLogLevel>) {
-    std::strncpy(
-        backend_option.key,
-        QNN_RUNTIME_LOG_LEVEL,
-        runtime::kMaxOptionKeyLength);
-    backend_option.key[runtime::kMaxOptionKeyLength - 1] = '\0';
-    backend_option.value = -1;
-  } else if constexpr (std::is_same_v<T, QnnExecuTorchHtpPerformanceMode>) {
-    std::strncpy(
-        backend_option.key,
-        QNN_RUNTIME_HTP_PERFORMANCE_MODE,
-        runtime::kMaxOptionKeyLength);
-    backend_option.key[runtime::kMaxOptionKeyLength - 1] = '\0';
-    backend_option.value = -1;
-  } else if constexpr (std::is_same_v<T, QnnExecuTorchProfileLevel>) {
-    std::strncpy(
-        backend_option.key,
-        QNN_RUNTIME_PROFILE_LEVEL,
-        runtime::kMaxOptionKeyLength);
-    backend_option.key[runtime::kMaxOptionKeyLength - 1] = '\0';
-    backend_option.value = -1;
-  }
+  std::strncpy(backend_option.key, aot_key, runtime::kMaxOptionKeyLength);
+  backend_option.key[runtime::kMaxOptionKeyLength - 1] = '\0';
+  backend_option.value = -1;
 
   // This will call get_option under runtime backend interface
   status = get_option(QNN_BACKEND, backend_option);
@@ -55,11 +35,22 @@ T get_option(T aot_option) {
 
 // Explicit instantiations
 template QnnExecuTorchLogLevel get_option<QnnExecuTorchLogLevel>(
-    QnnExecuTorchLogLevel);
-template QnnExecuTorchHtpPerformanceMode get_option<
-    QnnExecuTorchHtpPerformanceMode>(QnnExecuTorchHtpPerformanceMode);
+    QnnExecuTorchLogLevel,
+    const char*);
+template QnnExecuTorchHtpPerformanceMode
+get_option<QnnExecuTorchHtpPerformanceMode>(
+    QnnExecuTorchHtpPerformanceMode,
+    const char*);
+template int32_t get_option<int32_t>(int32_t, const char*);
+template QnnExecuTorchLpaiClientPerf get_option<QnnExecuTorchLpaiClientPerf>(
+    QnnExecuTorchLpaiClientPerf,
+    const char*);
+template QnnExecuTorchLpaiCoreAffinity get_option<
+    QnnExecuTorchLpaiCoreAffinity>(QnnExecuTorchLpaiCoreAffinity, const char*);
+template uint32_t get_option<uint32_t>(uint32_t, const char*);
 template QnnExecuTorchProfileLevel get_option<QnnExecuTorchProfileLevel>(
-    QnnExecuTorchProfileLevel);
+    QnnExecuTorchProfileLevel,
+    const char*);
 
 } // namespace qnn
 } // namespace backends
