@@ -41,6 +41,8 @@ using TensorPtr = std::shared_ptr<executorch::aten::Tensor>;
  * @param deleter A custom deleter function for managing the lifetime of the
  * data buffer. If provided, this deleter will be called when the managed Tensor
  * object is destroyed.
+ * @param device_type The target device type (default CPU, meaning no copy).
+ * @param device_index The target device index (default 0).
  * @return A TensorPtr that manages the newly created Tensor.
  */
 TensorPtr make_tensor_ptr(
@@ -52,7 +54,10 @@ TensorPtr make_tensor_ptr(
         executorch::aten::ScalarType::Float,
     const executorch::aten::TensorShapeDynamism dynamism =
         executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
-    std::function<void(void*)> deleter = nullptr);
+    std::function<void(void*)> deleter = nullptr,
+    runtime::etensor::DeviceType device_type =
+        runtime::etensor::DeviceType::CPU,
+    runtime::etensor::DeviceIndex device_index = 0);
 
 /**
  * Creates a TensorPtr that manages a Tensor with the specified properties.
@@ -64,6 +69,8 @@ TensorPtr make_tensor_ptr(
  * @param deleter A custom deleter function for managing the lifetime of the
  * data buffer. If provided, this deleter will be called when the managed Tensor
  * object is destroyed.
+ * @param device_type The target device type (default CPU, meaning no copy).
+ * @param device_index The target device index (default 0).
  * @return A TensorPtr that manages the newly created Tensor.
  */
 inline TensorPtr make_tensor_ptr(
@@ -73,9 +80,20 @@ inline TensorPtr make_tensor_ptr(
         executorch::aten::ScalarType::Float,
     const executorch::aten::TensorShapeDynamism dynamism =
         executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
-    std::function<void(void*)> deleter = nullptr) {
+    std::function<void(void*)> deleter = nullptr,
+    runtime::etensor::DeviceType device_type =
+        runtime::etensor::DeviceType::CPU,
+    runtime::etensor::DeviceIndex device_index = 0) {
   return make_tensor_ptr(
-      std::move(sizes), data, {}, {}, type, dynamism, std::move(deleter));
+      std::move(sizes),
+      data,
+      {},
+      {},
+      type,
+      dynamism,
+      std::move(deleter),
+      device_type,
+      device_index);
 }
 
 /**
@@ -96,6 +114,8 @@ inline TensorPtr make_tensor_ptr(
  * @param type The scalar type of the tensor elements. If it differs from the
  * deduced type, the data will be cast to this type if allowed.
  * @param dynamism Specifies the mutability of the tensor's shape.
+ * @param device_type The target device type (default CPU, meaning no copy).
+ * @param device_index The target device index (default 0).
  * @return A TensorPtr that manages the newly created TensorImpl.
  */
 template <
@@ -109,7 +129,10 @@ inline TensorPtr make_tensor_ptr(
     std::vector<executorch::aten::StridesType> strides = {},
     executorch::aten::ScalarType type = deduced_type,
     executorch::aten::TensorShapeDynamism dynamism =
-        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
+    runtime::etensor::DeviceType device_type =
+        runtime::etensor::DeviceType::CPU,
+    runtime::etensor::DeviceIndex device_index = 0) {
   ET_CHECK_MSG(
       data.size() ==
           executorch::aten::compute_numel(sizes.data(), sizes.size()),
@@ -145,7 +168,9 @@ inline TensorPtr make_tensor_ptr(
         std::move(strides),
         type,
         dynamism,
-        [data_ptr = std::move(data_ptr)](void*) {});
+        [data_ptr = std::move(data_ptr)](void*) {},
+        device_type,
+        device_index);
   }
   const auto raw_data_ptr = data.data();
   auto data_ptr = std::make_shared<std::vector<T>>(std::move(data));
@@ -156,7 +181,9 @@ inline TensorPtr make_tensor_ptr(
       std::move(strides),
       type,
       dynamism,
-      [data_ptr = std::move(data_ptr)](void*) {});
+      [data_ptr = std::move(data_ptr)](void*) {},
+      device_type,
+      device_index);
 }
 
 /**
@@ -174,6 +201,8 @@ inline TensorPtr make_tensor_ptr(
  * @param type The scalar type of the tensor elements. If it differs from the
  * deduced type, the data will be cast to this type if allowed.
  * @param dynamism Specifies the mutability of the tensor's shape.
+ * @param device_type The target device type (default CPU, meaning no copy).
+ * @param device_index The target device index (default 0).
  * @return A TensorPtr that manages the newly created TensorImpl.
  */
 template <
@@ -184,11 +213,21 @@ inline TensorPtr make_tensor_ptr(
     std::vector<T> data,
     executorch::aten::ScalarType type = deduced_type,
     executorch::aten::TensorShapeDynamism dynamism =
-        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
+    runtime::etensor::DeviceType device_type =
+        runtime::etensor::DeviceType::CPU,
+    runtime::etensor::DeviceIndex device_index = 0) {
   std::vector<executorch::aten::SizesType> sizes{
       executorch::aten::SizesType(data.size())};
   return make_tensor_ptr(
-      std::move(sizes), std::move(data), {0}, {1}, type, dynamism);
+      std::move(sizes),
+      std::move(data),
+      {0},
+      {1},
+      type,
+      dynamism,
+      device_type,
+      device_index);
 }
 
 /**
@@ -211,6 +250,8 @@ inline TensorPtr make_tensor_ptr(
  * @param type The scalar type of the tensor elements. If it differs from the
  * deduced type, the data will be cast to this type if allowed.
  * @param dynamism Specifies the mutability of the tensor's shape.
+ * @param device_type The target device type (default CPU, meaning no copy).
+ * @param device_index The target device index (default 0).
  * @return A TensorPtr that manages the newly created TensorImpl.
  */
 template <
@@ -224,14 +265,19 @@ inline TensorPtr make_tensor_ptr(
     std::vector<executorch::aten::StridesType> strides = {},
     executorch::aten::ScalarType type = deduced_type,
     executorch::aten::TensorShapeDynamism dynamism =
-        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
+    runtime::etensor::DeviceType device_type =
+        runtime::etensor::DeviceType::CPU,
+    runtime::etensor::DeviceIndex device_index = 0) {
   return make_tensor_ptr(
       std::move(sizes),
       std::vector<T>(std::move(list)),
       std::move(dim_order),
       std::move(strides),
       type,
-      dynamism);
+      dynamism,
+      device_type,
+      device_index);
 }
 
 /**
@@ -251,6 +297,8 @@ inline TensorPtr make_tensor_ptr(
  * @param type The scalar type of the tensor elements. If it differs from the
  * deduced type, the data will be cast to this type if allowed.
  * @param dynamism Specifies the mutability of the tensor's shape.
+ * @param device_type The target device type (default CPU, meaning no copy).
+ * @param device_index The target device index (default 0).
  * @return A TensorPtr that manages the newly created TensorImpl.
  */
 template <
@@ -261,11 +309,21 @@ inline TensorPtr make_tensor_ptr(
     std::initializer_list<T> list,
     executorch::aten::ScalarType type = deduced_type,
     executorch::aten::TensorShapeDynamism dynamism =
-        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
+    runtime::etensor::DeviceType device_type =
+        runtime::etensor::DeviceType::CPU,
+    runtime::etensor::DeviceIndex device_index = 0) {
   std::vector<executorch::aten::SizesType> sizes{
       executorch::aten::SizesType(list.size())};
   return make_tensor_ptr(
-      std::move(sizes), std::move(list), {0}, {1}, type, dynamism);
+      std::move(sizes),
+      std::move(list),
+      {0},
+      {1},
+      type,
+      dynamism,
+      device_type,
+      device_index);
 }
 
 /**
@@ -294,6 +352,8 @@ inline TensorPtr make_tensor_ptr(T value) {
  * @param strides A vector specifying the strides of each dimension.
  * @param type The scalar type of the tensor elements.
  * @param dynamism Specifies the mutability of the tensor's shape.
+ * @param device_type The target device type (default CPU, meaning no copy).
+ * @param device_index The target device index (default 0).
  * @return A TensorPtr managing the newly created Tensor.
  */
 TensorPtr make_tensor_ptr(
@@ -303,7 +363,10 @@ TensorPtr make_tensor_ptr(
     std::vector<executorch::aten::StridesType> strides,
     executorch::aten::ScalarType type = executorch::aten::ScalarType::Float,
     executorch::aten::TensorShapeDynamism dynamism =
-        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND);
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
+    runtime::etensor::DeviceType device_type =
+        runtime::etensor::DeviceType::CPU,
+    runtime::etensor::DeviceIndex device_index = 0);
 
 /**
  * Creates a TensorPtr that manages a Tensor with the specified properties.
@@ -316,6 +379,8 @@ TensorPtr make_tensor_ptr(
  * @param data A vector containing the raw memory for the tensor's data.
  * @param type The scalar type of the tensor elements.
  * @param dynamism Specifies the mutability of the tensor's shape.
+ * @param device_type The target device type (default CPU, meaning no copy).
+ * @param device_index The target device index (default 0).
  * @return A TensorPtr managing the newly created Tensor.
  */
 inline TensorPtr make_tensor_ptr(
@@ -323,9 +388,19 @@ inline TensorPtr make_tensor_ptr(
     std::vector<uint8_t> data,
     executorch::aten::ScalarType type = executorch::aten::ScalarType::Float,
     executorch::aten::TensorShapeDynamism dynamism =
-        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
+    runtime::etensor::DeviceType device_type =
+        runtime::etensor::DeviceType::CPU,
+    runtime::etensor::DeviceIndex device_index = 0) {
   return make_tensor_ptr(
-      std::move(sizes), std::move(data), {}, {}, type, dynamism);
+      std::move(sizes),
+      std::move(data),
+      {},
+      {},
+      type,
+      dynamism,
+      device_type,
+      device_index);
 }
 
 /**
