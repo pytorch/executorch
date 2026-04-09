@@ -59,10 +59,10 @@ void xa_opt_quantized_conv1d_ncl_asym8sxsym8s_asym8s(
   WORD32 kernel_width = weight.size(2);
   WORD32 out_width = out.size(2);
   WORD32 out_height = 1;
-  WORD32 x_stride = 1;
-  WORD32 y_stride = stride[0];
-  WORD32 x_padding = 0;
-  WORD32 y_padding = padding[0];
+  WORD32 x_stride = stride[0];
+  WORD32 y_stride = 1;
+  WORD32 x_padding = padding[0];
+  WORD32 y_padding = 0;
   WORD32 dilation_height = 1;
   WORD32 dilation_width = 1;
   WORD32 input_zero_bias = -in_zero_point;
