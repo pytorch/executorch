@@ -9,7 +9,7 @@ from collections import OrderedDict
 from typing import Dict
 
 from executorch.backends.qualcomm._passes import (
-    AnnotateAdaptiveAvgPool1D,
+    AnnotateAvgPool1D,
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
@@ -63,6 +63,9 @@ from executorch.backends.qualcomm._passes import (
 from executorch.backends.qualcomm._passes.utils import (
     get_passes_dependency_for_capture_program,
 )
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
@@ -92,7 +95,7 @@ def get_capture_program_passes():
     # The second value in each tuple in `default_passes_and_setting` indicates whether the corresponding pass is activated by default.
     # If a pass is activated, it will be executed by default.
     default_passes_and_setting = [
-        (AnnotateAdaptiveAvgPool1D, True),
+        (AnnotateAvgPool1D, True),
         (AnnotateQuantAttrs, True),
         (AnnotateStack, True),
         (AnnotateUnbind, True),
@@ -151,6 +154,7 @@ class QnnPassManager(PassManager):
         exported_program: ExportedProgram,
         passes_job: OrderedDict = None,
         dep_table: Dict = None,
+        backend_type: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend,
     ):
         # TODO: remove this workaround when target could be correctly detected
         from executorch.backends.qualcomm.builders import node_visitor
@@ -183,6 +187,8 @@ class QnnPassManager(PassManager):
             kwargs = passes_job[p][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY]
             if "edge_program" in kwargs:
                 kwargs["edge_program"] = exported_program
+            if "backend_type" in kwargs:
+                kwargs["backend_type"] = backend_type
             self.add_pass(p(**kwargs))
         assert isinstance(
             self.passes[-1], ResolveDebugHandle
