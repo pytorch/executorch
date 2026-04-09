@@ -21,3 +21,14 @@ def define_common_targets():
                 "//executorch/extension/tensor:tensor" + aten_suffix,
             ],
         )
+
+        runtime.cxx_test(
+            name = "tensor_ptr_device_test" + aten_suffix,
+            srcs = [
+                "tensor_ptr_device_test.cpp",
+            ],
+            deps = [
+                "//executorch/extension/tensor:tensor" + aten_suffix,
+                "//executorch/runtime/core:device_allocator",
+            ],
+        )
