@@ -5,21 +5,25 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Export LFM2.5-VL-1.6B as a single multi-method PTE for ExecuTorch's
-generic MultimodalRunner (C++ llava_main).
+Export LFM2.5-VL as a single multi-method PTE for ExecuTorch's generic
+MultimodalRunner (C++ llava_main). Supports both LFM2.5-VL-1.6B (text dim
+2048) and LFM2.5-VL-450M (text dim 1024); the architecture config is picked
+from the bundled config/ directory based on --model_dir, or you can pass
+--params to point at a custom JSON.
 
-Methods:
-  vision_encoder  : [1, 3, 512, 512] f32 NCHW pixels [0,255] -> [1, 256, 2048] f32
-  token_embedding : [1, seq_len] i64                          -> [1, seq_len, 2048] f32
-  text_decoder    : ([1, seq_len, 2048] f32, [seq_len] i64)   -> [1, 65536] f32
+Methods (D = text hidden dim: 2048 for 1.6B, 1024 for 450M):
+  vision_encoder  : [1, 3, 512, 512] f32 NCHW pixels [0,255] -> [1, 256, D] f32
+  token_embedding : [1, seq_len] i64                          -> [1, seq_len, D] f32
+  text_decoder    : ([1, seq_len, D] f32, [seq_len] i64)      -> [1, 65536] f32
 
 Usage:
     python examples/models/lfm2_5_vl/export_lfm2_5_vl.py \
-        --model_dir /path/to/LFM2-VL-1.6B \
+        --model_dir LiquidAI/LFM2.5-VL-450M \
         [--dtype fp32|fp16] [--quantize] [--output lfm2_5_vl_xnnpack.pte]
 """
 
 import logging
+import os
 from argparse import ArgumentParser, BooleanOptionalAction
 from typing import Optional
 
@@ -65,6 +69,23 @@ from torch.nn.attention import SDPBackend
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
+
+_CONFIG_DIR = os.path.join(os.path.dirname(__file__), "config")
+
+
+def _resolve_params_path(model_dir: str, params: Optional[str]) -> Optional[str]:
+    """Pick a bundled config based on model_dir if --params was not provided.
+
+    Returns None to fall back to model.py's default (1.6B).
+    """
+    if params is not None:
+        return params
+    name = model_dir.lower()
+    if "450m" in name:
+        return os.path.join(_CONFIG_DIR, "lfm2_5_vl_450m_config.json")
+    if "1.6b" in name or "1_6b" in name:
+        return os.path.join(_CONFIG_DIR, "lfm2_5_vl_1_6b_config.json")
+    return None
 
 
 class Lfm2p5VlEdgeManager(LLMEdgeManager):
@@ -354,11 +375,14 @@ def export_all(
 
 
 def main():
-    parser = ArgumentParser(description="Export LFM2.5-VL-1.6B to ExecuTorch")
+    parser = ArgumentParser(description="Export LFM2.5-VL to ExecuTorch")
     parser.add_argument(
         "--model_dir",
         default="LiquidAI/LFM2-VL-1.6B",
-        help="HuggingFace model ID or local path",
+        help=(
+            "HuggingFace model ID or local path. Supported: "
+            "LiquidAI/LFM2-VL-1.6B, LiquidAI/LFM2.5-VL-450M."
+        ),
     )
     parser.add_argument(
         "--dtype",
@@ -388,8 +412,8 @@ def main():
         "--params",
         default=None,
         help=(
-            "Path to model params JSON (architecture config). "
-            "Defaults to the bundled config/lfm2_5_vl_1_6b_config.json."
+            "Path to model params JSON (architecture config). When omitted, "
+            "the bundled 1.6B or 450M config is selected from --model_dir."
         ),
     )
     parser.add_argument(
@@ -400,8 +424,12 @@ def main():
     args = parser.parse_args()
 
     dtype = DType.fp16 if args.dtype == "fp16" else DType.fp32
-    suffix = ("_fp16" if dtype == DType.fp16 else "") + (
-        "_quantized" if args.quantize else ""
+    params_path = _resolve_params_path(args.model_dir, args.params)
+    size_tag = "_450m" if (params_path or "").endswith("450m_config.json") else ""
+    suffix = (
+        size_tag
+        + ("_fp16" if dtype == DType.fp16 else "")
+        + ("_quantized" if args.quantize else "")
     )
     output = args.output or f"lfm2_5_vl{suffix}_xnnpack.pte"
 
@@ -412,7 +440,7 @@ def main():
         args.quantize,
         args.max_seq_len,
         args.max_context_len,
-        args.params,
+        params_path,
     )
 
 
