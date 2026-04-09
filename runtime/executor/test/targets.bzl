@@ -329,6 +329,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/executor:program",
                 "//executorch/runtime/core:device_allocator",
                 "//executorch/runtime/core:device_memory_buffer",
+                "//executorch/runtime/core/test:mock_cuda_allocator",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/schema:program",
             ],

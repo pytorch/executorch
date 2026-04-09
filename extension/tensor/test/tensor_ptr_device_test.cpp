@@ -15,6 +15,7 @@
 
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/core/device_allocator.h>
+#include <executorch/runtime/core/test/mock_cuda_allocator.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 
@@ -22,73 +23,16 @@ using namespace ::executorch::extension;
 using namespace ::executorch::runtime;
 using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
+using executorch::runtime::testing::MockCudaAllocator;
 
-namespace {
+static MockCudaAllocator g_mock_cuda;
 
-// A fake device allocator that uses host memory (malloc/free/memcpy) to
-// simulate device memory operations, enabling end-to-end data roundtrip
-// verification without requiring actual device hardware.
-class FakeDeviceAllocator : public DeviceAllocator {
- public:
-  explicit FakeDeviceAllocator(DeviceType type) : type_(type) {}
-
-  Result<void*> allocate(size_t nbytes, DeviceIndex /*index*/) override {
-    void* ptr = std::malloc(nbytes);
-    if (!ptr) {
-      return Error::MemoryAllocationFailed;
-    }
-    allocate_count_++;
-    return ptr;
-  }
-
-  void deallocate(void* ptr, DeviceIndex /*index*/) override {
-    std::free(ptr);
-    deallocate_count_++;
-  }
-
-  Error copy_host_to_device(
-      void* dst,
-      const void* src,
-      size_t nbytes,
-      DeviceIndex /*index*/) override {
-    std::memcpy(dst, src, nbytes);
-    h2d_count_++;
-    return Error::Ok;
-  }
-
-  Error copy_device_to_host(
-      void* dst,
-      const void* src,
-      size_t nbytes,
-      DeviceIndex /*index*/) override {
-    std::memcpy(dst, src, nbytes);
-    d2h_count_++;
-    return Error::Ok;
-  }
-
-  DeviceType device_type() const override {
-    return type_;
-  }
-
-  int allocate_count_ = 0;
-  int deallocate_count_ = 0;
-  int h2d_count_ = 0;
-  int d2h_count_ = 0;
-
- private:
-  DeviceType type_;
-};
-
-FakeDeviceAllocator g_fake_cuda_allocator(DeviceType::CUDA);
-
-struct RegisterFakeAllocator {
-  RegisterFakeAllocator() {
-    register_device_allocator(DeviceType::CUDA, &g_fake_cuda_allocator);
+struct RegisterMockAllocator {
+  RegisterMockAllocator() {
+    register_device_allocator(DeviceType::CUDA, &g_mock_cuda);
   }
 };
-static RegisterFakeAllocator s_register;
-
-} // namespace
+static RegisterMockAllocator s_register;
 
 class TensorPtrDeviceTest : public ::testing::Test {
  protected:
@@ -97,10 +41,10 @@ class TensorPtrDeviceTest : public ::testing::Test {
   }
 
   void SetUp() override {
-    g_fake_cuda_allocator.allocate_count_ = 0;
-    g_fake_cuda_allocator.deallocate_count_ = 0;
-    g_fake_cuda_allocator.h2d_count_ = 0;
-    g_fake_cuda_allocator.d2h_count_ = 0;
+    g_mock_cuda.allocate_count_ = 0;
+    g_mock_cuda.deallocate_count_ = 0;
+    g_mock_cuda.h2d_count_ = 0;
+    g_mock_cuda.d2h_count_ = 0;
   }
 };
 
@@ -122,8 +66,8 @@ TEST_F(TensorPtrDeviceTest, CpuToDeviceTensor) {
   EXPECT_EQ(device_tensor->unsafeGetTensorImpl()->device_index(), 0);
 #endif
 
-  EXPECT_EQ(g_fake_cuda_allocator.allocate_count_, 1);
-  EXPECT_EQ(g_fake_cuda_allocator.h2d_count_, 1);
+  EXPECT_EQ(g_mock_cuda.allocate_count_, 1);
+  EXPECT_EQ(g_mock_cuda.h2d_count_, 1);
 }
 
 TEST_F(TensorPtrDeviceTest, CpuToDeviceFromRawData) {
@@ -144,8 +88,8 @@ TEST_F(TensorPtrDeviceTest, CpuToDeviceFromRawData) {
       device_tensor->unsafeGetTensorImpl()->device_type(), DeviceType::CUDA);
 #endif
 
-  EXPECT_EQ(g_fake_cuda_allocator.allocate_count_, 1);
-  EXPECT_EQ(g_fake_cuda_allocator.h2d_count_, 1);
+  EXPECT_EQ(g_mock_cuda.allocate_count_, 1);
+  EXPECT_EQ(g_mock_cuda.h2d_count_, 1);
 }
 
 #ifndef USE_ATEN_LIB
@@ -168,7 +112,7 @@ TEST_F(TensorPtrDeviceTest, DeviceToCpuTensor) {
     EXPECT_FLOAT_EQ(result_data[i], original_data[i]);
   }
 
-  EXPECT_EQ(g_fake_cuda_allocator.d2h_count_, 1);
+  EXPECT_EQ(g_mock_cuda.d2h_count_, 1);
 }
 #endif
 
@@ -231,10 +175,10 @@ TEST_F(TensorPtrDeviceTest, DeviceMemoryCleanup) {
     auto cpu_tensor = make_tensor_ptr({2}, {1.0f, 2.0f});
     auto device_tensor =
         clone_tensor_ptr_to_device(cpu_tensor, DeviceType::CUDA);
-    EXPECT_EQ(g_fake_cuda_allocator.allocate_count_, 1);
-    EXPECT_EQ(g_fake_cuda_allocator.deallocate_count_, 0);
+    EXPECT_EQ(g_mock_cuda.allocate_count_, 1);
+    EXPECT_EQ(g_mock_cuda.deallocate_count_, 0);
   }
-  EXPECT_EQ(g_fake_cuda_allocator.deallocate_count_, 1);
+  EXPECT_EQ(g_mock_cuda.deallocate_count_, 1);
 }
 
 #ifndef USE_ATEN_LIB

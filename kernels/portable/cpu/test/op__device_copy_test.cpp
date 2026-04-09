@@ -19,6 +19,7 @@
 #include <executorch/runtime/core/device_allocator.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
+#include <executorch/runtime/core/test/mock_cuda_allocator.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/platform/runtime.h>
 
@@ -32,6 +33,7 @@ using executorch::runtime::register_device_allocator;
 using executorch::runtime::Result;
 using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
+using executorch::runtime::testing::MockCudaAllocator;
 
 using TensorShapeDynamism = executorch::runtime::TensorShapeDynamism;
 
@@ -43,56 +45,7 @@ Tensor&
 _d2h_copy_out(KernelRuntimeContext& ctx, const Tensor& self, Tensor& out);
 } // namespace executorch::runtime::native
 
-namespace {
-
-class MockDeviceAllocator : public DeviceAllocator {
- public:
-  Result<void*> allocate(size_t nbytes, DeviceIndex index) override {
-    return Error::NotSupported;
-  }
-
-  void deallocate(void* ptr, DeviceIndex index) override {}
-
-  Error copy_host_to_device(
-      void* dst,
-      const void* src,
-      size_t nbytes,
-      DeviceIndex index) override {
-    h2d_call_count_++;
-    last_h2d_nbytes_ = nbytes;
-    last_h2d_device_index_ = index;
-    // Actually copy so we can verify data
-    std::memcpy(dst, src, nbytes);
-    return Error::Ok;
-  }
-
-  Error copy_device_to_host(
-      void* dst,
-      const void* src,
-      size_t nbytes,
-      DeviceIndex index) override {
-    d2h_call_count_++;
-    last_d2h_nbytes_ = nbytes;
-    last_d2h_device_index_ = index;
-    std::memcpy(dst, src, nbytes);
-    return Error::Ok;
-  }
-
-  DeviceType device_type() const override {
-    return DeviceType::CUDA;
-  }
-
-  int h2d_call_count_ = 0;
-  int d2h_call_count_ = 0;
-  size_t last_h2d_nbytes_ = 0;
-  size_t last_d2h_nbytes_ = 0;
-  DeviceIndex last_h2d_device_index_ = -1;
-  DeviceIndex last_d2h_device_index_ = -1;
-};
-
-} // namespace
-
-static MockDeviceAllocator g_mock_cuda;
+static MockCudaAllocator g_mock_cuda;
 
 class OpDeviceCopyTest : public ::testing::Test {
  protected:
@@ -102,12 +55,12 @@ class OpDeviceCopyTest : public ::testing::Test {
   }
 
   void SetUp() override {
-    g_mock_cuda.h2d_call_count_ = 0;
-    g_mock_cuda.d2h_call_count_ = 0;
-    g_mock_cuda.last_h2d_nbytes_ = 0;
-    g_mock_cuda.last_d2h_nbytes_ = 0;
-    g_mock_cuda.last_h2d_device_index_ = -1;
-    g_mock_cuda.last_d2h_device_index_ = -1;
+    g_mock_cuda.h2d_count_ = 0;
+    g_mock_cuda.d2h_count_ = 0;
+    g_mock_cuda.last_h2d_size_ = 0;
+    g_mock_cuda.last_d2h_size_ = 0;
+    g_mock_cuda.last_h2d_index_ = -1;
+    g_mock_cuda.last_d2h_index_ = -1;
   }
 };
 
@@ -147,9 +100,9 @@ TEST_F(OpDeviceCopyTest, H2dCopyCopiesDataAndCallsAllocator) {
   Tensor& result = executorch::runtime::native::_h2d_copy_out(ctx, src, dst);
 
   // Verify the allocator was called correctly.
-  EXPECT_EQ(g_mock_cuda.h2d_call_count_, 1);
-  EXPECT_EQ(g_mock_cuda.last_h2d_nbytes_, 4 * sizeof(float));
-  EXPECT_EQ(g_mock_cuda.last_h2d_device_index_, 0);
+  EXPECT_EQ(g_mock_cuda.h2d_count_, 1);
+  EXPECT_EQ(g_mock_cuda.last_h2d_size_, 4 * sizeof(float));
+  EXPECT_EQ(g_mock_cuda.last_h2d_index_, 0);
 
   // Verify data was copied (mock does a real memcpy).
   EXPECT_EQ(dst_data[0], 1.0f);
@@ -197,9 +150,9 @@ TEST_F(OpDeviceCopyTest, D2hCopyCopiesDataAndCallsAllocator) {
   Tensor& result = executorch::runtime::native::_d2h_copy_out(ctx, src, dst);
 
   // Verify the allocator was called correctly.
-  EXPECT_EQ(g_mock_cuda.d2h_call_count_, 1);
-  EXPECT_EQ(g_mock_cuda.last_d2h_nbytes_, 4 * sizeof(float));
-  EXPECT_EQ(g_mock_cuda.last_d2h_device_index_, 0);
+  EXPECT_EQ(g_mock_cuda.d2h_count_, 1);
+  EXPECT_EQ(g_mock_cuda.last_d2h_size_, 4 * sizeof(float));
+  EXPECT_EQ(g_mock_cuda.last_d2h_index_, 0);
 
   // Verify data was copied.
   EXPECT_EQ(dst_data[0], 5.0f);
@@ -246,8 +199,8 @@ TEST_F(OpDeviceCopyTest, H2dCopyWithDeviceIndex1) {
   KernelRuntimeContext ctx{};
   executorch::runtime::native::_h2d_copy_out(ctx, src, dst);
 
-  EXPECT_EQ(g_mock_cuda.h2d_call_count_, 1);
-  EXPECT_EQ(g_mock_cuda.last_h2d_device_index_, 1);
+  EXPECT_EQ(g_mock_cuda.h2d_count_, 1);
+  EXPECT_EQ(g_mock_cuda.last_h2d_index_, 1);
 }
 
 TEST_F(OpDeviceCopyTest, H2dCopyMultidimensionalTensor) {
@@ -285,8 +238,8 @@ TEST_F(OpDeviceCopyTest, H2dCopyMultidimensionalTensor) {
   KernelRuntimeContext ctx{};
   executorch::runtime::native::_h2d_copy_out(ctx, src, dst);
 
-  EXPECT_EQ(g_mock_cuda.h2d_call_count_, 1);
-  EXPECT_EQ(g_mock_cuda.last_h2d_nbytes_, 6 * sizeof(float));
+  EXPECT_EQ(g_mock_cuda.h2d_count_, 1);
+  EXPECT_EQ(g_mock_cuda.last_h2d_size_, 6 * sizeof(float));
 
   for (int i = 0; i < 6; ++i) {
     EXPECT_EQ(dst_data[i], src_data[i]);

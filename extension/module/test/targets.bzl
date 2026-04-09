@@ -78,6 +78,7 @@ def define_common_targets(is_fbcode=False):
                     "//executorch/extension/module:module" + aten_suffix,
                     "//executorch/runtime/core:device_allocator",
                     "//executorch/runtime/core:device_memory_buffer",
+                    "//executorch/runtime/core/test:mock_cuda_allocator",
                 ],
                 env = {
                     "ET_MODULE_ADD_WITH_DEVICE_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddWithDevice.pte])",

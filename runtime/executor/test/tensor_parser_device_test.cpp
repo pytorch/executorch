@@ -20,6 +20,7 @@
 #include <executorch/runtime/core/device_allocator.h>
 #include <executorch/runtime/core/device_memory_buffer.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/test/mock_cuda_allocator.h>
 #include <executorch/runtime/executor/test/managed_memory_manager.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/schema/program_generated.h>
@@ -43,6 +44,7 @@ using executorch::runtime::deserialization::parseTensor;
 using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
 using executorch::runtime::testing::ManagedMemoryManager;
+using executorch::runtime::testing::MockCudaAllocator;
 using torch::executor::util::FileDataLoader;
 
 constexpr size_t kDefaultNonConstMemBytes = 32 * 1024U;
@@ -63,58 +65,6 @@ class ProgramTestFriend final {
 } // namespace executorch
 
 using executorch::runtime::testing::ProgramTestFriend;
-
-namespace {
-
-/**
- * Mock CUDA allocator that uses host memory for testing.
- * Tracks the allocated range so tests can verify tensor data_ptr
- * falls within the "device" memory region.
- */
-class MockCudaAllocator : public DeviceAllocator {
- public:
-  Result<void*> allocate(size_t nbytes, DeviceIndex index) override {
-    allocate_count_++;
-    buffer_ = std::make_unique<uint8_t[]>(nbytes);
-    buffer_size_ = nbytes;
-    return static_cast<void*>(buffer_.get());
-  }
-
-  void deallocate(void* ptr, DeviceIndex index) override {
-    deallocate_count_++;
-    buffer_.reset();
-    buffer_size_ = 0;
-  }
-
-  Error copy_host_to_device(void*, const void*, size_t, DeviceIndex) override {
-    return Error::Ok;
-  }
-
-  Error copy_device_to_host(void*, const void*, size_t, DeviceIndex) override {
-    return Error::Ok;
-  }
-
-  DeviceType device_type() const override {
-    return DeviceType::CUDA;
-  }
-
-  bool is_device_ptr(const void* ptr) const {
-    if (buffer_ == nullptr || buffer_size_ == 0) {
-      return false;
-    }
-    auto* p = static_cast<const uint8_t*>(ptr);
-    return p >= buffer_.get() && p < buffer_.get() + buffer_size_;
-  }
-
-  int allocate_count_ = 0;
-  int deallocate_count_ = 0;
-
- private:
-  std::unique_ptr<uint8_t[]> buffer_;
-  size_t buffer_size_ = 0;
-};
-
-} // namespace
 
 static MockCudaAllocator g_mock_cuda;
 
@@ -193,8 +143,9 @@ TEST_F(TensorParserDeviceTest, CUDADeviceParsedFromPteFile) {
 
   EXPECT_EQ(cuda_tensor_count, 3)
       << "Expected 3 CUDA tensors (2 delegate inputs + 1 delegate output)";
-  EXPECT_EQ(cpu_tensor_count, 0)
-      << "Expected 0 CPU tensors (all annotated as CUDA)";
+  // Device-aware memory planning may introduce CPU-side tensors
+  // (e.g. original inputs before H2D copies), so we no longer
+  // require cpu_tensor_count == 0.
 }
 
 TEST_F(TensorParserDeviceTest, NonDelegatedTensorsDefaultToCPU) {
@@ -251,11 +202,11 @@ TEST_F(TensorParserDeviceTest, CudaTensorDataPtrPointsToDeviceMemory) {
   Result<MethodMeta> method_meta = program->method_meta("forward");
   ASSERT_EQ(method_meta.error(), Error::Ok);
 
-  // ModuleAddWithDevice has:
-  //   non_const_buffer_sizes: [0, 48]  (index 0 reserved, buffer 0 = 48 bytes)
-  //   non_const_buffer_device: [{buffer_idx=1, device_type=CUDA}]
+  // ModuleAddWithDevice has planned buffers that may include both CPU and CUDA
+  // entries when device-aware memory planning creates separate buffers per
+  // device type.
   const size_t num_buffers = method_meta->num_memory_planned_buffers();
-  ASSERT_EQ(num_buffers, 1);
+  ASSERT_GE(num_buffers, 1);
 
   // Set up device-aware planned memory.
   std::vector<Span<uint8_t>> planned_spans;

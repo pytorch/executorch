@@ -36,6 +36,7 @@ def define_common_targets():
             "//executorch/runtime/core:device_allocator",
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/core/portable_type:portable_type",
+            "//executorch/runtime/core/test:mock_cuda_allocator",
             "//executorch/runtime/kernel:kernel_runtime_context",
             "//executorch/runtime/platform:platform",
         ],
