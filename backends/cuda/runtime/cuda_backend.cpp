@@ -372,9 +372,18 @@ class ET_EXPERIMENTAL CudaBackend final
       const void* weights_blob = buffer_res->data();
       // Feed the weights blob into the container. Under the hood it's copying
       // weights, so we should free the buffer immediately.
-      ET_CHECK_OK_OR_RETURN_ERROR(handle->update_constants_from_blob(
-          handle->container_handle, static_cast<const uint8_t*>(weights_blob)));
+      auto update_err = handle->update_constants_from_blob(
+          handle->container_handle, static_cast<const uint8_t*>(weights_blob));
+      if (update_err != Error::Ok) {
+        ET_LOG(Error, "update_constants_from_blob failed");
+        return update_err;
+      }
+      // Ensure all weight transfers are complete before execution
+      cudaDeviceSynchronize();
       buffer_res->Free();
+    } else {
+      ET_LOG(Info, "weights_blob '%s' not found or update fn is null",
+          weights_blob_key.c_str());
     }
 
     // Use shared CUDA stream if enabled via options, otherwise create one.
