@@ -12,7 +12,12 @@ import os
 
 import torch
 import torch.nn as nn
-from model import FusedMoEExperts, Qwen35MoE, Qwen35MoEConfig
+
+from executorch.examples.models.qwen3_5_moe.model import (
+    FusedMoEExperts,
+    Qwen35MoE,
+    Qwen35MoEConfig,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -56,7 +61,9 @@ def load_prequantized_model(prequantized_dir, max_seq_len=4096):
     Returns:
         (model, config) ready for export.
     """
-    from quantize_and_save import load_quantized_state_dict
+    from executorch.examples.models.qwen3_5_moe.quantize_and_save import (
+        load_quantized_state_dict,
+    )
 
     config_path = os.path.join(prequantized_dir, "config.json")
     safetensors_path = os.path.join(prequantized_dir, "model.safetensors")
@@ -373,6 +380,7 @@ def _apply_turboquant(model, config):
 def export_and_lower(model, config, args):
     """Export model to .pte via torch.export + CUDA backend."""
     import torch._inductor.config as inductor_config
+
     from executorch.backends.cuda.cuda_backend import CudaBackend
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
     from executorch.exir import (
