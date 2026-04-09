@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+
 """API for loading and executing ExecuTorch PTE files using the C++ runtime.
 
 .. warning::
@@ -29,13 +30,15 @@ _warnings.warn(
 # the pybindings shared library extension. This will load libtorch.so and
 # related libs, ensuring that the pybindings lib can resolve those runtime
 # dependencies.
+
 import torch as _torch
 
 logger = logging.getLogger(__name__)
 
 # Auto-discover the OpenVINO C library path from the pip-installed openvino
-# package so the C++ backend's dlopen("libopenvino_c.so") works without the
-# user having to set LD_LIBRARY_PATH or OPENVINO_LIB_PATH manually.
+# package so the C++ backend's dlopen/LoadLibrary call works without the user
+# having to set LD_LIBRARY_PATH or OPENVINO_LIB_PATH manually.
+
 if not os.environ.get("OPENVINO_LIB_PATH"):
     try:
         import glob
@@ -44,26 +47,33 @@ if not os.environ.get("OPENVINO_LIB_PATH"):
         spec = importlib.util.find_spec("openvino")
         if spec is not None and spec.submodule_search_locations:
             _ov_dir = spec.submodule_search_locations[0]
-            _ov_libs = sorted(
-                glob.glob(os.path.join(_ov_dir, "libs", "libopenvino_c.so*"))
-            )
+            _ov_libs_dir = os.path.join(_ov_dir, "libs")
+            if sys.platform == "win32":
+                _lib_pattern = os.path.join(_ov_libs_dir, "openvino_c.dll")
+            else:
+                _lib_pattern = os.path.join(_ov_libs_dir, "libopenvino_c.so*")
+            _ov_libs = sorted(glob.glob(_lib_pattern))
             if _ov_libs:
                 os.environ["OPENVINO_LIB_PATH"] = _ov_libs[0]
+                if sys.platform == "win32":
+                    os.add_dll_directory(_ov_libs_dir)
             else:
                 logger.warning(
-                    "OpenVINO package found but libopenvino_c.so not in %s; "
+                    "OpenVINO package found but %s not in %s; "
                     "set OPENVINO_LIB_PATH manually if needed",
-                    os.path.join(_ov_dir, "libs"),
+                    "openvino_c.dll" if sys.platform == "win32" else "libopenvino_c.so",
+                    _ov_libs_dir,
                 )
-            del _ov_libs, _ov_dir, spec
+            del _ov_libs, _ov_libs_dir, _lib_pattern, _ov_dir, spec
     except Exception as e:
         logger.debug("OpenVINO auto-discovery failed: %s", e)
-
 # Update the DLL search path on Windows. This is the recommended way to handle native
 # extensions.
+
 if sys.platform == "win32":
     try:
         # The extension DLL should be in the same directory as this file.
+
         pybindings_dir = os.path.dirname(os.path.abspath(__file__))
         os.add_dll_directory(pybindings_dir)
     except Exception as e:
@@ -71,12 +81,12 @@ if sys.platform == "win32":
             "Failed to add the pybinding extension DLL to the search path. The extension may not work.",
             e,
         )
-
 # Let users import everything from the C++ _portable_lib extension as if this
 # python file defined them. Although we could import these dynamically, it
 # wouldn't preserve the static type annotations.
 #
 # Note that all of these are experimental, and subject to change without notice.
+
 from executorch.extension.pybindings._portable_lib import (  # noqa: F401
     # Disable "imported but unused" (F401) checks.
     _create_profile_block,  # noqa: F401
@@ -103,6 +113,7 @@ from executorch.extension.pybindings._portable_lib import (  # noqa: F401
 
 # Clean up so that `dir(portable_lib)` is the same as `dir(_portable_lib)`
 # (apart from some __dunder__ names).
+
 del _torch
 del _exir_warnings
 del _warnings
