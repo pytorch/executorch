@@ -9002,7 +9002,6 @@ def setup_environment():
     )
 
     args, ns_args = parser.parse_known_args(namespace=unittest)
-    args.validate(args)
     TestQNN.host = args.host
     TestQNN.device = args.device
     TestQNN.soc_model = args.soc_model

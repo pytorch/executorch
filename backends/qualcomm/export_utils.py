@@ -517,7 +517,9 @@ def build_executorch_binary(
         qnn_config.backend == QnnExecuTorchBackendType.kGpuBackend
         and not qnn_config.online_prepare
     ):
-        raise RuntimeError("Currently GPU backend only supports online_prepare.")
+        raise RuntimeError(
+            "Currently GPU backend only supports online_prepare. Please add --online_prepare flag."
+        )
     if (
         qnn_config.backend == QnnExecuTorchBackendType.kLpaiBackend
         and qnn_config.online_prepare
