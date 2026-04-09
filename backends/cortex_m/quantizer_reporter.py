@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 """Contains classes for reporting quantization decisions made by Quantizers.
 
-Basic useage:
+Basic usage:
 1. Implement the QuantizerReporterUser API for all quantizers intending to use the reporter.
 2. Instantiate the QuantizerReporter with a list of quantizers to be reported.
 3. After annotation, log the report using QuantizerReporter.log_quantizer_report(model).
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from importlib import import_module
-from typing import Callable, cast, Dict, List, NamedTuple, Optional
+from typing import Any, Callable, cast, Dict, List, NamedTuple, Optional
 
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e.quantizer import (
@@ -32,43 +32,29 @@ from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 logger = logging.getLogger(__name__)
 tabulate = cast(Callable[..., str], import_module("tabulate").tabulate)
 
-# Look-up dicts used to get human readable names for supported quantization specs
-SUPPORTED_QSPECS: dict[QuantizationSpecBase | None, str] = {}
 
+def qspec_repr(qspec: Optional[QuantizationSpecBase]) -> str:
+    """Get a human-readable representation of a QuantizationSpec."""
 
-def _qspec_repr(qspec):
-    """Get a human readable representation of QuantizationSpecs.
-
-    Note that the observer_or_fake_quant_ctr field is created dynamically with
-    the qspec so two qspecs created at different times will not evaluate as
-    equal. Therefore a custom comparison is required.
-
-    #TODO: Clean up qconfig/ qspec string representation logic in cortex_m/arm
-    backend.
-
-    """
     if isinstance(qspec, SharedQuantizationSpec):
-        return "SHARED_QSPEC"
+        return f"SharedQuantizationSpec(edge_or_node={qspec.edge_or_node})"
     elif isinstance(qspec, DerivedQuantizationSpec):
-        return "DERIVED_QSPEC"
-    elif qspec is None:
-        return "NO_QSPEC"
+        return f"DerivedQuantizationSpec(derived_from={qspec.derived_from}, dtype={qspec.dtype})"
     elif isinstance(qspec, QuantizationSpec):
-        for key, val in SUPPORTED_QSPECS.items():
-            if type(qspec) is not type(key):
-                continue
-            if qspec.dtype != key.dtype:
-                continue
-            if qspec.quant_min != key.quant_min:
-                continue
-            if qspec.quant_max != key.quant_max:
-                continue
-            if qspec.qscheme != key.qscheme:
-                continue
-            if qspec.is_dynamic != key.is_dynamic:
-                continue
-            return val
-    return "UNREGISTERED_QSPEC"
+
+        def _fmt(obj: Any) -> str:
+            return str(obj).removeprefix("torch.").upper()
+
+        q_range_fmt = (
+            f", range=({qspec.quant_min},{qspec.quant_max})"
+            if (qspec.quant_min is not None or qspec.quant_max is not None)
+            else ""
+        )
+        return f"QuantizationSpec(dtype={_fmt(qspec.dtype)}{q_range_fmt})"
+    elif qspec is None:
+        return "None"
+    else:
+        return qspec.__class__.__name__
 
 
 class QuantizerInfo(NamedTuple):
@@ -154,7 +140,7 @@ class QuantizerReport:
                     f"Node {node.name} was reported as annotated but annotation metadata is missing."
                 )
             qspec_input_map_lines = [
-                f"{node.name}: {_qspec_repr(qspec)}"
+                f"{node.name}: {qspec_repr(qspec)}"
                 for node, qspec in annotation.input_qspec_map.items()
             ]
 
@@ -162,7 +148,7 @@ class QuantizerReport:
                 NodeQSpecReport(
                     node.name,
                     qspec_input_map_lines,
-                    _qspec_repr(annotation.output_qspec),
+                    qspec_repr(annotation.output_qspec),
                 )
             )
 

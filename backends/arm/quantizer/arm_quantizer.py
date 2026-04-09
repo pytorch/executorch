@@ -39,10 +39,7 @@ from executorch.backends.cortex_m.quantizer.node_finders import (
 )
 from executorch.backends.cortex_m.quantizer.pattern_matcher import PatternMatcher
 
-from executorch.backends.cortex_m.quantizer_reporter import (
-    QuantizerReporter,
-    SUPPORTED_QSPECS,
-)
+from executorch.backends.cortex_m.quantizer_reporter import QuantizerReporter
 
 from torch._ops import OpOverload
 
@@ -390,32 +387,6 @@ def get_symmetric_a16w8_quantization_config(
         label,
     )
 
-
-# Register supported quantization configs and qspecs in the reporter for human-readable reporting
-# MLETORCH-1854: Temporary solution, refactor to automatically register these instead
-_symmetric_a8w4_config_per_channel = get_symmetric_a8w4_quantization_config()
-_symmetric_a8w8_config_per_channel = get_symmetric_quantization_config()
-_symmetric_a16w8_config_per_channel = get_symmetric_a16w8_quantization_config()
-_symmetric_a8w4_config_per_tensor = get_symmetric_a8w4_quantization_config(
-    is_per_channel=False
-)
-_symmetric_a8w8_config_per_tensor = get_symmetric_quantization_config(
-    is_per_channel=False
-)
-_symmetric_a16w8_config_per_tensor = get_symmetric_a16w8_quantization_config(
-    is_per_channel=False
-)
-
-SUPPORTED_QSPECS.update(
-    {
-        _symmetric_a8w4_config_per_channel.get_weight_qspec(): "INT4_PER_CHANNEL_QSPEC",
-        _symmetric_a8w8_config_per_channel.get_weight_qspec(): "INT8_PER_CHANNEL_QSPEC",
-        _symmetric_a8w8_config_per_tensor.get_weight_qspec(): "INT8_PER_TENSOR_QSPEC",
-        _symmetric_a8w4_config_per_tensor.get_weight_qspec(): "INT4_PER_TENSOR_QSPEC",
-        _symmetric_a8w8_config_per_tensor.get_input_act_qspec(): "INT8_PER_TENSOR_QSPEC",
-        _symmetric_a16w8_config_per_tensor.get_input_act_qspec(): "INT16_PER_TENSOR_QSPEC",
-    }
-)
 
 NodeFilterType = Callable[[Node], bool]
 """Type for a Node Filter used by annotators.

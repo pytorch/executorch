@@ -10,7 +10,6 @@ from executorch.backends.arm.quantizer.arm_quantizer_utils import (
     _get_int32_per_channel_bias_qspec,
 )
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
-from executorch.backends.cortex_m.quantizer_reporter import SUPPORTED_QSPECS
 from torch.fx import Node
 from torchao.quantization.pt2e import (
     HistogramObserver,
@@ -163,16 +162,4 @@ INT8_PER_CHANNEL_CONFIG = CortexMQuantizationConfig(
     INT8_WEIGHT_PER_CHANNEL_QSPEC,
     _get_int32_per_channel_bias_qspec,
     f"{__name__}.INT8_PER_CHANNEL_CONFIG",
-)
-
-
-SUPPORTED_QSPECS.update(
-    {
-        INT8_ACTIVATION_PER_TENSOR_QSPEC: "INT8_ACTIVATION_PER_TENSOR_QSPEC",
-        INT8_ACTIVATION_PER_CHANNEL_QSPEC: "INT8_ACTIVATION_PER_CHANNEL_QSPEC",
-        INT8_WEIGHT_PER_TENSOR_QSPEC: "INT8_WEIGHT_PER_TENSOR_QSPEC",
-        INT8_WEIGHT_PER_CHANNEL_QSPEC: "INT8_WEIGHT_PER_CHANNEL_QSPEC",
-        INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC: "INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC",
-        SOFTMAX_OUTPUT_FIXED_QSPEC: "SOFTMAX_OUTPUT_FIXED_QSPEC",
-    }
 )
