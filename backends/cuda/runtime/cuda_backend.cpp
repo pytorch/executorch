@@ -382,7 +382,9 @@ class ET_EXPERIMENTAL CudaBackend final
       cudaDeviceSynchronize();
       buffer_res->Free();
     } else {
-      ET_LOG(Info, "weights_blob '%s' not found or update fn is null",
+      ET_LOG(
+          Info,
+          "weights_blob '%s' not found or update fn is null",
           weights_blob_key.c_str());
     }
 
