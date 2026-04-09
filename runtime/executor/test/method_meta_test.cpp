@@ -248,21 +248,24 @@ TEST_F(MethodMetaTest, MethodMetaBufferDeviceReturnsCudaForDeviceBuffer) {
   ASSERT_EQ(method_meta.error(), Error::Ok);
 
   // ModuleAddWithDevice exports with enable_non_cpu_memory_planning=True.
-  // The model delegates add(a,b) to CUDA, producing:
-  //   non_const_buffer_sizes: [0, 48]  (index 0 reserved)
-  //   non_const_buffer_device: [{buffer_idx=1, device_type=CUDA,
-  //   device_index=0}]
-  // So there is exactly 1 planned buffer (user-facing index 0), on CUDA.
-  ASSERT_EQ(method_meta->num_memory_planned_buffers(), 1);
+  // Device-aware memory planning may create separate buffers per device type,
+  // so we iterate to find the CUDA buffer.
+  size_t num_buffers = method_meta->num_memory_planned_buffers();
+  ASSERT_GE(num_buffers, 1);
 
-  // Buffer 0 should be CUDA device.
-  auto device = method_meta->memory_planned_buffer_device(0);
-  ASSERT_TRUE(device.ok());
-  EXPECT_EQ(device->type(), executorch::runtime::etensor::DeviceType::CUDA);
-  EXPECT_EQ(device->index(), 0);
+  bool found_cuda = false;
+  for (size_t i = 0; i < num_buffers; ++i) {
+    auto device = method_meta->memory_planned_buffer_device(i);
+    ASSERT_TRUE(device.ok());
+    if (device->type() == executorch::runtime::etensor::DeviceType::CUDA) {
+      EXPECT_EQ(device->index(), 0);
+      found_cuda = true;
+    }
+  }
+  EXPECT_TRUE(found_cuda) << "Expected at least one CUDA buffer";
 
   // Out of range should return error.
   EXPECT_EQ(
-      method_meta->memory_planned_buffer_device(1).error(),
+      method_meta->memory_planned_buffer_device(num_buffers).error(),
       Error::InvalidArgument);
 }

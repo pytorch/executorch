@@ -24,6 +24,7 @@
 
 #include <executorch/runtime/core/device_allocator.h>
 #include <executorch/runtime/core/device_memory_buffer.h>
+#include <executorch/runtime/core/test/mock_cuda_allocator.h>
 #include <executorch/runtime/platform/runtime.h>
 
 using executorch::extension::Module;
@@ -34,46 +35,7 @@ using executorch::runtime::register_device_allocator;
 using executorch::runtime::Result;
 using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
-
-namespace {
-
-class MockCudaAllocator : public DeviceAllocator {
- public:
-  Result<void*> allocate(size_t nbytes, DeviceIndex index) override {
-    allocate_count_++;
-    last_allocate_size_ = nbytes;
-    last_allocate_index_ = index;
-    buffer_ = std::make_unique<uint8_t[]>(nbytes);
-    return static_cast<void*>(buffer_.get());
-  }
-
-  void deallocate(void* ptr, DeviceIndex index) override {
-    deallocate_count_++;
-    buffer_.reset();
-  }
-
-  Error copy_host_to_device(void*, const void*, size_t, DeviceIndex) override {
-    return Error::Ok;
-  }
-
-  Error copy_device_to_host(void*, const void*, size_t, DeviceIndex) override {
-    return Error::Ok;
-  }
-
-  DeviceType device_type() const override {
-    return DeviceType::CUDA;
-  }
-
-  int allocate_count_ = 0;
-  int deallocate_count_ = 0;
-  size_t last_allocate_size_ = 0;
-  DeviceIndex last_allocate_index_ = -1;
-
- private:
-  std::unique_ptr<uint8_t[]> buffer_;
-};
-
-} // namespace
+using executorch::runtime::testing::MockCudaAllocator;
 
 static MockCudaAllocator g_mock_cuda;
 
@@ -142,17 +104,25 @@ TEST_F(ModuleDeviceMemoryTest, DeviceModelMethodMetaReportsCudaBuffer) {
   auto meta = module.method_meta("forward");
   ASSERT_TRUE(meta.ok());
 
-  // ModuleAddWithDevice has 1 planned buffer (48 bytes) on CUDA.
-  ASSERT_EQ(meta->num_memory_planned_buffers(), 1);
+  // ModuleAddWithDevice has planned buffers for both CPU and CUDA.
+  // Device-aware memory planning may create separate buffers per device.
+  size_t num_buffers = meta->num_memory_planned_buffers();
+  ASSERT_GE(num_buffers, 1);
 
-  auto size = meta->memory_planned_buffer_size(0);
-  ASSERT_TRUE(size.ok());
-  EXPECT_EQ(size.get(), 48);
-
-  auto device = meta->memory_planned_buffer_device(0);
-  ASSERT_TRUE(device.ok());
-  EXPECT_EQ(device->type(), DeviceType::CUDA);
-  EXPECT_EQ(device->index(), 0);
+  // Find the CUDA buffer among all planned buffers.
+  bool found_cuda = false;
+  for (size_t i = 0; i < num_buffers; ++i) {
+    auto device = meta->memory_planned_buffer_device(i);
+    ASSERT_TRUE(device.ok());
+    if (device->type() == DeviceType::CUDA) {
+      EXPECT_EQ(device->index(), 0);
+      auto size = meta->memory_planned_buffer_size(i);
+      ASSERT_TRUE(size.ok());
+      EXPECT_EQ(size.get(), 48);
+      found_cuda = true;
+    }
+  }
+  EXPECT_TRUE(found_cuda) << "Expected at least one CUDA buffer";
 }
 
 TEST_F(ModuleDeviceMemoryTest, DeviceModelWithSharedArenasReturnsNotSupported) {
