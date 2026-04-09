@@ -401,10 +401,10 @@ void quantized_conv2d_nchw(
         config->output_shift = best_shift;
         config->output_scale = raw_scale;
 
-        // Writeback DMA source data from cache to system memory.
-        // CPU-computed kernel_bias and runtime-loaded weight/input data may
+        // Invalidate input cache: previous op wrote via DMA, CPU must not see stale cache.
+        // CPU-computed kernel_bias and runtime-loaded weight data may
         // reside only in cache; DMA bypasses cache and reads system memory.
-        xthal_dcache_region_writeback(
+        xthal_dcache_region_invalidate(
             const_cast<int8_t*>(input.const_data_ptr<int8_t>()),
             n * c * h * w * sizeof(int8_t));
         xthal_dcache_region_writeback(

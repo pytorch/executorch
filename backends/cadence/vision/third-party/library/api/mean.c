@@ -78,7 +78,7 @@ void simd_mean_pool_2x2_to_1x1_float32(float32_t* restrict output,
     if (N <= 0) return;
    
     __Pragma("no_reorder");
-    __Pragma("loop_count min=1");
+    // __Pragma("loop_count min=1");
     
     for (n = 0; n < (N >> (LOG2_IVP_SIMD_WIDTH + 1)); n++) {
         // Load 64 float32 values (4 vectors) - 16 channels × 4 values each

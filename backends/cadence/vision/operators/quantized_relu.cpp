@@ -180,8 +180,8 @@ void quantized_relu_per_tensor_out(
         // Load first chunk via ch0
         size_t current_chunk = (numel < chunk_size) ? numel : chunk_size;
 
-        // Writeback input from cache to system memory for DMA coherency
-        xthal_dcache_region_writeback((void*)ptr_inp, sizeof(int8_t) * numel);
+        // Invalidate input cache: previous op wrote via DMA, CPU must not see stale cache
+        xthal_dcache_region_invalidate((void*)ptr_inp, sizeof(int8_t) * numel);
 
         dma_1dm(0, ptr_in, inp_buff[pp_swap], sizeof(int8_t) * current_chunk);
 
@@ -267,6 +267,8 @@ void quantized_relu_per_tensor_out(
       }
     } else {
       // Fallback: use SIMD function directly without DMA
+      // Invalidate input cache: previous op wrote via DMA, CPU must not see stale cache
+      xthal_dcache_region_invalidate((void*)in_data, sizeof(int8_t) * numel);
       // Use common parameters already computed above
       
       vrelU_quantized(

@@ -129,8 +129,8 @@ Tensor& quantize_per_tensor_out(
         // Load first chunk via ch0
         size_t current_chunk = (numel < chunk_size) ? numel : chunk_size;
 
-        // Writeback input from cache to system memory for DMA coherency
-        xthal_dcache_region_writeback((void*)ptr_inp, FLT32_SIZE * numel);
+        // Invalidate input cache: previous op wrote via DMA, CPU must not see stale cache
+        xthal_dcache_region_invalidate((void*)ptr_inp, FLT32_SIZE * numel);
 
         dma_1dm(0, ptr_in, inp_buff[pp_swap], FLT32_SIZE * current_chunk);
 
@@ -215,6 +215,8 @@ Tensor& quantize_per_tensor_out(
       // TIME_END and TIME_DISPLAY now called inside each branch
     } else {
       // No DMA: use hardware function on full tensor at once
+      // Invalidate input cache: previous op wrote via DMA, CPU must not see stale cache
+      xthal_dcache_region_invalidate((void*)input_data, FLT32_SIZE * numel);
       quantize_f32_asym8s(out_data, input_data, (float)scale, (int)zero_point, (int)numel);
 
       // Writeback output from cache to system memory for DMA coherency

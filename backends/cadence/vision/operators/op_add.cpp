@@ -165,9 +165,9 @@ Tensor& add_out(
         // Load first chunk (both inputs) into buffer 0 via ch0
         size_t current_chunk = (numel < chunk_size) ? numel : chunk_size;
 
-        // Writeback inputs from cache to system memory for DMA coherency
-        xthal_dcache_region_writeback((void*)a_data, FLT32_SIZE * numel);
-        xthal_dcache_region_writeback((void*)b_data, FLT32_SIZE * numel);
+        // Invalidate input cache: previous ops wrote via DMA, CPU must not see stale cache
+        xthal_dcache_region_invalidate((void*)a_data, FLT32_SIZE * numel);
+        xthal_dcache_region_invalidate((void*)b_data, FLT32_SIZE * numel);
 
         dma_1dm(0, (void*)ptr_a, inp_a_buff[pp_swap], FLT32_SIZE * current_chunk);
         dma_1dm(0, (void*)ptr_b, inp_b_buff[pp_swap], FLT32_SIZE * current_chunk);
@@ -257,6 +257,9 @@ Tensor& add_out(
       }
     } else {
       // Fallback: use hardware-optimized vector addition directly without DMA
+      // Invalidate input cache: previous ops wrote via DMA, CPU must not see stale cache
+      xthal_dcache_region_invalidate((void*)a_data, FLT32_SIZE * numel);
+      xthal_dcache_region_invalidate((void*)b_data, FLT32_SIZE * numel);
       rvaddf(out_data, a_data, b_data, (int)numel);
 
       // Writeback output from cache to system memory for DMA coherency

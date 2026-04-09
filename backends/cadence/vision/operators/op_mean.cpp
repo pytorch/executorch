@@ -87,185 +87,58 @@ Tensor& mean_out(
     const float* input_data = in.const_data_ptr<float>();
     float* out_data = out.mutable_data_ptr<float>();
     
-    // Calculate number of elements to process
-    // For NCHW with 2x2 spatial: N * C * 4 input -> N * C output
     int batch_size = in.size(0);
     int channels = in.size(1);
     int total_channels = batch_size * channels;
+
+    // Invalidate input cache so DMA reads fresh data from system memory
+    xthal_dcache_region_invalidate((void*)input_data, sizeof(float) * in.numel());
     
-    // DMA optimization for large channel counts
-    bool ping_pong_process = false;
-    bool ping_process_pong = false;
-    size_t chunk_channels = 0;
-    
-    float32_t* inp_buff[2];
-    float32_t* out_buff[2];
-    
-    // Check if DRAM buffers are available
+    // Check if DRAM buffers are available for DMA
     bool dram0_available = (ptr_dram0 != nullptr) && (IDMA_BUFFER_SIZE_DRAM0 > 0);
     bool dram1_available = (ptr_dram1 != nullptr) && (IDMA_BUFFER_SIZE_DRAM1 > 0);
     
-    // DMA threshold: beneficial for larger channel counts
-    // Each channel: 4 float32 input (16 bytes) + 1 float32 output (4 bytes)
-    const size_t DMA_THRESHOLD = 128;  // 128 channels = 2KB input
-    bool use_dma = (total_channels >= DMA_THRESHOLD);
+    size_t inp_bytes = total_channels * 4 * FLT32_SIZE;  // 4 floats per channel
+    size_t out_bytes = total_channels * FLT32_SIZE;       // 1 float per channel
     
-    // Strategy 1: Ping-pong (2 input + 2 output buffers)
-    // Split: 80% input (4 floats/channel), 20% output (1 float/channel)
-    if (use_dma && dram0_available && dram1_available && (total_channels >= 2)) {
-      // Calculate 80% of DRAM for input, aligned to 64 bytes for DMA efficiency
-      size_t inp_buffer_bytes = ((IDMA_BUFFER_SIZE_DRAM0 * 4) / 5) & ~0x3F;  // 64-byte aligned
-      size_t out_buffer_bytes = ((IDMA_BUFFER_SIZE_DRAM0 * 1) / 5) & ~0x3F;  // 64-byte aligned
-      
-      // How many channels fit in input buffer (4 floats per channel = 16 bytes)
-      // CRITICAL: SIMD function processes 16 channels at a time (64 input floats)
-      // So chunk_channels MUST be multiple of 16 for correct SIMD operation
-      size_t inp_per_buffer = inp_buffer_bytes / (4 * FLT32_SIZE);
-      inp_per_buffer = (inp_per_buffer / 16) * 16;  // Round down to multiple of 16
-      size_t out_per_buffer = out_buffer_bytes / FLT32_SIZE;
-      
-      // Check if buffers fit (minimum 16 channels = 64 input floats = 256 bytes)
-      if ((inp_per_buffer >= 16) && (out_per_buffer >= inp_per_buffer)) {
-        
-        // Allocate with 80/20 split, aligned offsets
-        inp_buff[0] = (float32_t*)ptr_dram0;
-        out_buff[0] = (float32_t*)((uint8_t*)ptr_dram0 + inp_buffer_bytes);
-        
-        inp_buff[1] = (float32_t*)ptr_dram1;
-        out_buff[1] = (float32_t*)((uint8_t*)ptr_dram1 + inp_buffer_bytes);
-        
-        chunk_channels = inp_per_buffer;
-        ping_pong_process = true;
-      }
-    }
+    // Use DMA with separate DRAM banks: DRAM0 for input, DRAM1 for output
+    // This avoids same-bank buffer sharing issues
+    bool use_dma = dram0_available && dram1_available &&
+                   (inp_bytes <= IDMA_BUFFER_SIZE_DRAM0) &&
+                   (out_bytes <= IDMA_BUFFER_SIZE_DRAM1);
     
-    // Strategy 2: Ping-process-pong (1 input + 1 output buffer)
-    if (use_dma && !ping_pong_process && dram0_available && dram1_available) {
-      size_t inp_capacity = IDMA_BUFFER_SIZE_DRAM0 / (4 * FLT32_SIZE);  // channels (4 floats each)
-      size_t out_capacity = IDMA_BUFFER_SIZE_DRAM1 / FLT32_SIZE;  // channels (1 float each)
+    if (use_dma) {
+      float32_t* inp_local = (float32_t*)ptr_dram0;
+      float32_t* out_local = (float32_t*)ptr_dram1;
       
-      if ((inp_capacity > 0) && (out_capacity >= inp_capacity)) {
-        inp_buff[0] = (float32_t*)ptr_dram0;
-        out_buff[0] = (float32_t*)ptr_dram1;
-        
-        chunk_channels = (inp_capacity < out_capacity) ? inp_capacity : out_capacity;
-        ping_process_pong = true;
-      }
-    }
-    
-    if (ping_pong_process || ping_process_pong) {
-      const float32_t* ptr_inp = input_data;
-      float32_t* ptr_out = out_data;
-      
-      // Writeback input from cache to system memory for DMA coherency
-      xthal_dcache_region_writeback((void*)input_data, sizeof(float) * in.numel());
-
-      // Initialize DMA Channel 0
       dma_2dm_init(0);
+      dma_2dm_init(1);
       
-      if (ping_pong_process) {
-        // Ping-pong: overlap load/compute/store
-        size_t num_chunks = (total_channels + chunk_channels - 1) / chunk_channels;
-        size_t channels_remaining = total_channels;
-        
-        int32_t idx_in = 0, idx_out = 0;
-        size_t current_chunk_channels = 0;
-        
-        for (size_t chunk_idx = 0; chunk_idx < num_chunks; chunk_idx++) {
-          current_chunk_channels = (channels_remaining > chunk_channels) ? chunk_channels : channels_remaining;
-          
-          // Ensure transfer sizes are properly aligned (64-byte minimum for DMA)
-          size_t current_chunk_inp_bytes = current_chunk_channels * 4 * FLT32_SIZE;  // 4 floats/channel
-          size_t current_chunk_out_bytes = current_chunk_channels * FLT32_SIZE;  // 1 float/channel
-          
-          int swap = chunk_idx & 1;
-          
-          // Load input chunk (async)
-          idx_in = idma_copy_2d_desc(0, inp_buff[swap], (void*)ptr_inp,
-                                     current_chunk_inp_bytes, DESC_IDMA_PRIOR_H, 1, 0, 0);
-          
-          // Wait for load to complete
-          idma_desc_done(0, idx_in);
-          
-          // Process chunk
-          simd_mean_pool_2x2_to_1x1_float32(
-              out_buff[swap], 
-              inp_buff[swap],
-              current_chunk_channels * 4);
-          
-          // Store output chunk (async)
-          idx_out = idma_copy_2d_desc(0, (void*)ptr_out, out_buff[swap],
-                                      current_chunk_out_bytes, DESC_IDMA_PRIOR_H, 1, 0, 0);
-          
-          // Wait for store to complete before next iteration
-          idma_desc_done(0, idx_out);
-          
-          ptr_inp += current_chunk_channels * 4;
-          ptr_out += current_chunk_channels;
-          channels_remaining -= current_chunk_channels;
-        }
-        
-        // Invalidate output cache: DMA wrote to system memory, CPU must not see stale cache
-        xthal_dcache_region_invalidate(out_data, sizeof(float) * out.numel());
-
-        TIME_END(mean_simd_optimized);
-        TIME_DISPLAY(mean_simd_optimized, total_channels, "channels (DMA ping-pong)");
-        return out;
-        
-      } else if (ping_process_pong) {
-        // Ping-process-pong: load→process→store sequentially
-        size_t num_chunks = (total_channels + chunk_channels - 1) / chunk_channels;
-        size_t channels_remaining = total_channels;
-        
-        int32_t idx_in = 0, idx_out = 0;
-        
-        for (size_t chunk_idx = 0; chunk_idx < num_chunks; chunk_idx++) {
-          size_t current_chunk_channels = (channels_remaining > chunk_channels) ? chunk_channels : channels_remaining;
-          size_t current_chunk_inp_bytes = current_chunk_channels * 4 * FLT32_SIZE;
-          size_t current_chunk_out_bytes = current_chunk_channels * FLT32_SIZE;
-          
-          // Load
-          idx_in = idma_copy_2d_desc(0, inp_buff[0], (void*)ptr_inp,
-                                     current_chunk_inp_bytes, DESC_IDMA_PRIOR_H, 1, 0, 0);
-          idma_desc_done(0, idx_in);
-          
-          // Process
-          simd_mean_pool_2x2_to_1x1_float32(
-              out_buff[0],
-              inp_buff[0],
-              current_chunk_channels * 4);
-          
-          // Store
-          idx_out = idma_copy_2d_desc(0, (void*)ptr_out, out_buff[0],
-                                      current_chunk_out_bytes, DESC_IDMA_PRIOR_H, 1, 0, 0);
-          idma_desc_done(0, idx_out);
-          
-          ptr_inp += current_chunk_channels * 4;
-          ptr_out += current_chunk_channels;
-          channels_remaining -= current_chunk_channels;
-        }
-        
-        // Invalidate output cache: DMA wrote to system memory, CPU must not see stale cache
-        xthal_dcache_region_invalidate(out_data, sizeof(float) * out.numel());
-
-        TIME_END(mean_simd_optimized);
-        TIME_DISPLAY(mean_simd_optimized, total_channels, "channels (DMA sequential)");
-        return out;
-      }
+      // DMA load input via channel 0: system memory -> DRAM0
+      dma_1dm(0, (void*)input_data, inp_local, inp_bytes);
+      idma_hw_wait_all(0);
+      
+      // SIMD process: DRAM0 input -> DRAM1 output
+      simd_mean_pool_2x2_to_1x1_float32(out_local, inp_local, total_channels * 4);
+      
+      // DMA store output via channel 1: DRAM1 -> system memory
+      dma_1dm(0, out_local, (void*)out_data, out_bytes);
+      idma_hw_wait_all(0);
+      
+      // // Invalidate output cache so next operator sees DMA-written data
+      // xthal_dcache_region_invalidate(out_data, sizeof(float) * out.numel());
+      
+      TIME_END(mean_simd_optimized);
+      TIME_DISPLAY(mean_simd_optimized, total_channels, "channels (DMA)");
+      return out;
     }
     
-    // Fallback: Direct SIMD without DMA
-    simd_mean_pool_2x2_to_1x1_float32(
-        out_data, 
-        input_data, 
-        total_channels * 4);
-    
-    // Writeback output from cache to system memory for coherency with next op
+    // Fallback: Direct SIMD without DMA (data fits or no DRAM)
+    simd_mean_pool_2x2_to_1x1_float32(out_data, input_data, total_channels * 4);
     xthal_dcache_region_writeback(out_data, sizeof(float) * out.numel());
 
     TIME_END(mean_simd_optimized);
     TIME_DISPLAY(mean_simd_optimized, total_channels, "channels (SIMD no-DMA)");
-
     return out;
   }
 
