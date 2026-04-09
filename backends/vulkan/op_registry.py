@@ -1606,6 +1606,21 @@ def register_native_layer_norm():
     )
 
 
+# =============================================================================
+# RmsNorm.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.rms_norm.default)
+def register_rms_norm():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_prepacking=True,
+        supports_resize=True,
+    )
+
+
 #######################
 ## Utility functions ##
 #######################

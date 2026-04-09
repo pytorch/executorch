@@ -35,6 +35,7 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QcomChipset,
     QnnExecuTorchBackendType,
+    QnnExecuTorchHtpPerformanceMode,
     QnnExecuTorchOpPackageOptions,
 )
 from executorch.backends.qualcomm.utils.constants import (
@@ -483,6 +484,7 @@ def build_executorch_binary(
     optrace=False,
     op_package_options: QnnExecuTorchOpPackageOptions = None,
     direct_mode_build_path=None,
+    htp_performance_mode: QnnExecuTorchHtpPerformanceMode = QnnExecuTorchHtpPerformanceMode.kHtpBurst,
 ):
     """
     A function to generate an ExecuTorch binary for Qualcomm platforms.
@@ -509,6 +511,8 @@ def build_executorch_binary(
         optrace (bool, optional): Enable optrace mode for performance analysis if set to True.
         op_package_options: Optional structure to specify op packages
             loaded and used by the backend.
+        direct_mode_build_path (string, optional): Path to build folder for direct mode.
+        htp_performance_mode (QnnExecuTorchHtpPerformanceMode, optional): Option to set the performance mode for htp backend.
 
     Returns:
         None: The function writes the output to a specified .pte file.
@@ -518,7 +522,8 @@ def build_executorch_binary(
     backend_options = {
         QnnExecuTorchBackendType.kGpuBackend: generate_gpu_compiler_spec(),
         QnnExecuTorchBackendType.kHtpBackend: generate_htp_compiler_spec(
-            use_fp16=False if quant_dtype is not None else True
+            use_fp16=False if quant_dtype is not None else True,
+            htp_performance_mode=htp_performance_mode,
         ),
     }[backend]
     compile_spec = generate_qnn_executorch_compiler_spec(
@@ -1037,6 +1042,14 @@ def setup_common_args_and_variables():
         help="Path to cmake binary directory for direct_mode. E.g., path/to/build-hexagon."
         "If enabled, run self-defined protocol to control fastrpc communication.",
         type=str,
+    )
+
+    parser.add_argument(
+        "--htp_performance_mode",
+        type=int,
+        choices=list(QnnExecuTorchHtpPerformanceMode),
+        help="Specify performance mode for htp from 0-8, default to burst(2). For more info, refer to qc_schema.py",
+        default=2,
     )
 
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.
