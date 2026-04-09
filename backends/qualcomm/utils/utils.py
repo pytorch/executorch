@@ -994,6 +994,7 @@ def generate_htp_compiler_spec(
     use_multi_contexts: bool = False,
     use_weight_sharing: bool = False,
     use_slc_allocator: bool = False,
+    htp_performance_mode: QnnExecuTorchHtpPerformanceMode = QnnExecuTorchHtpPerformanceMode.kHtpBurst,
 ) -> QnnExecuTorchBackendOptions:
     """
     Helper function generating backend options for QNN HTP
@@ -1025,7 +1026,7 @@ def generate_htp_compiler_spec(
     # This actually is not an option which can affect the compiled blob.
     # But we don't have other place to pass this option at execution stage.
     # TODO: enable voting mechanism in runtime and make this as an option
-    htp_options.performance_mode = QnnExecuTorchHtpPerformanceMode.kHtpBurst
+    htp_options.performance_mode = htp_performance_mode
     htp_options.use_multi_contexts = use_multi_contexts
     htp_options.use_weight_sharing = use_weight_sharing
     htp_options.use_dlbc = use_dlbc
