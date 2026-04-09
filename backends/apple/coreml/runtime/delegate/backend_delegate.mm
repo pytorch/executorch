@@ -11,6 +11,7 @@
 #import "ETCoreMLAssetManager.h"
 #import "ETCoreMLLogging.h"
 #import "ETCoreMLModel.h"
+#import "ETCoreMLModelCache.h"
 #import "ETCoreMLModelManager.h"
 #import "ETCoreMLStrings.h"
 #import "model_event_logger.h"
@@ -100,7 +101,14 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
                        configuration:(MLModelConfiguration*)configuration
                           methodName:(nullable NSString*)methodName
                         functionName:(nullable NSString*)functionName
-                               error:(NSError* __autoreleasing*)error;
+                                error:(NSError* __autoreleasing*)error;
+
+- (ModelHandle*)loadModelFromAOTData:(NSData*)data
+                       configuration:(MLModelConfiguration*)configuration
+                          methodName:(nullable NSString*)methodName
+                        functionName:(nullable NSString*)functionName
+                           cachePath:(nullable NSString*)cachePath
+                                error:(NSError* __autoreleasing*)error;
 
 - (ModelHandle*)loadModelFromAOTData:(NSData*)data
                        configuration:(MLModelConfiguration*)configuration
@@ -199,14 +207,47 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
                           methodName:(nullable NSString*)methodName
                         functionName:(nullable NSString*)functionName
                                error:(NSError* __autoreleasing*)error {
+    return [self loadModelFromAOTData:data
+                        configuration:configuration
+                           methodName:methodName
+                         functionName:functionName
+                            cachePath:nil
+                                error:error];
+}
+
+- (ModelHandle*)loadModelFromAOTData:(NSData*)data
+                       configuration:(MLModelConfiguration*)configuration
+                          methodName:(nullable NSString*)methodName
+                        functionName:(nullable NSString*)functionName
+                           cachePath:(nullable NSString*)cachePath
+                               error:(NSError* __autoreleasing*)error {
     if (![self loadAndReturnError:error]) {
         return nil;
     }
+
+    id<ETCoreMLCache> cache = nil;
+    if (cachePath != nil) {
+        // Use NEW filesystem cache at specified path
+        NSURL *cacheURL = [NSURL fileURLWithPath:cachePath isDirectory:YES];
+        ETCoreMLModelCache *modelCache = [[ETCoreMLModelCache alloc] initWithCacheRootDirectory:cacheURL];
+        if (!modelCache.isReady) {
+            // Fallback error if initializationError is unexpectedly nil
+            NSError *cacheError = modelCache.initializationError
+                ?: [NSError errorWithDomain:ETCoreMLModelCacheErrorDomain
+                                       code:ETCoreMLModelCacheErrorCodeInitializationFailed
+                                   userInfo:@{NSLocalizedDescriptionKey: @"Cache initialization failed"}];
+            if (error) *error = cacheError;
+            return nil;
+        }
+        cache = modelCache;
+    }
+    // cache == nil means loadModelFromAOTData will use self.cache (default cache)
 
     auto handle = [self.impl loadModelFromAOTData:data
                                     configuration:configuration
                                        methodName:methodName
                                      functionName:functionName
+                                            cache:cache
                                             error:error];
     if ((handle != NULL) && self.config.should_prewarm_model) {
         [self.impl prewarmModelWithHandle:handle error:nil];
@@ -291,9 +332,10 @@ public:
     BackendDelegateImpl& operator=(BackendDelegateImpl const&) = delete;
 
 Handle *init(Buffer processed,
-                     const std::unordered_map<std::string, Buffer>& specs,
-                     const char* method_name = nullptr,
-                     const char* function_name = nullptr) const noexcept override {
+             const std::unordered_map<std::string, Buffer>& specs,
+             const char* method_name = nullptr,
+             const char* function_name = nullptr,
+             executorch::runtime::Span<const executorch::runtime::BackendOption> runtime_specs = {}) const noexcept override {
         NSError *localError = nil;
         MLModelConfiguration *configuration = get_model_configuration(specs, &localError);
         if (configuration == nil) {
@@ -304,6 +346,18 @@ Handle *init(Buffer processed,
         NSString *methodNameStr = method_name ? @(method_name) : nil;
         NSString *functionNameStr = function_name ? @(function_name) : nil;
 
+        // Parse cache_dir from runtime_specs
+        NSString *cachePath = nil;
+        for (size_t i = 0; i < runtime_specs.size(); ++i) {
+            const auto& opt = runtime_specs[i];
+            if (std::strcmp(opt.key, "cache_dir") == 0) {
+                if (auto* arr = std::get_if<std::array<char, executorch::runtime::kMaxOptionValueLength>>(&opt.value)) {
+                    cachePath = @(arr->data());
+                }
+                break;
+            }
+        }
+
         NSData *data = [NSData dataWithBytesNoCopy:const_cast<void *>(processed.data())
                                             length:processed.size()
                                       freeWhenDone:NO];
@@ -311,6 +365,7 @@ Handle *init(Buffer processed,
                                                           configuration:configuration
                                                              methodName:methodNameStr
                                                            functionName:functionNameStr
+                                                              cachePath:cachePath
                                                                   error:&localError];
         if (localError != nil) {
             ETCoreMLLogError(localError, "Model init failed");
