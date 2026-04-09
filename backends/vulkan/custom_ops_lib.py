@@ -959,3 +959,24 @@ name = "select_as_symint"
 lib.define(f"{name}(Tensor x, int dim, int index) -> SymInt")
 lib.impl(name, select_as_symint_impl, "Meta")
 select_as_symint_op = getattr(getattr(torch.ops, namespace), name)
+
+################
+## rms_norm ##
+################
+
+
+def rms_norm_impl(
+    x: torch.Tensor,
+    weight: torch.Tensor,
+    eps: float,
+) -> torch.Tensor:
+    input_dtype = x.dtype
+    variance = x.float().pow(2).mean(-1, keepdim=True)
+    x_normed = x.float() * torch.rsqrt(variance + eps)
+    return (x_normed * weight.float()).to(input_dtype)
+
+
+name = "rms_norm"
+lib.define(f"{name}(Tensor x, Tensor weight, float eps) -> Tensor")
+lib.impl(name, rms_norm_impl, "CompositeExplicitAutograd")
+rms_norm_op = getattr(getattr(torch.ops, namespace), name)
