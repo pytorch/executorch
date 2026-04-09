@@ -4919,6 +4919,9 @@ class TestQNNFloatingPointUtils(TestQNN):
     def setUp(self):
         TestQNN.atol = 1e-1
         TestQNN.rtol = 1e-1
+        TestQNN.dump_intermediate_outputs = False
+        TestQNN.enable_profile = False
+        TestQNN.shared_buffer = False
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.model],
@@ -5547,6 +5550,10 @@ class TestQNNQuantizedUtils(TestQNN):
                 raise ValueError("Backend is not implemented yet")
         TestQNN.atol = 1e-1
         TestQNN.rtol = 1
+        TestQNN.dump_intermediate_outputs = False
+        TestQNN.enable_profile = False
+        TestQNN.shared_buffer = False
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
