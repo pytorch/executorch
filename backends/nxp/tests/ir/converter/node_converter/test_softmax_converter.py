@@ -17,12 +17,19 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
+
+from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
+
+from executorch.backends.nxp.tests.model_output_comparator import (
+    NumericalStatsOutputComparator,
+)
 from executorch.backends.nxp.tests.models import SoftmaxModule
-from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.ops_aliases import Softmax
 
 # noinspection PyProtectedMember
+
 ExecutorchDelegateCall = torch._higher_order_ops.executorch_call_delegate
-Softmax = exir_ops.edge.aten._softmax.default
 
 
 @pytest.fixture(autouse=True)
@@ -207,3 +214,70 @@ def test_softmax_delegation__1d():
     model = SoftmaxModule(dim)
     delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
     assert_softmax_not_delegated(delegated_ep.graph)
+
+
+class TestSoftmaxNewNeutronFlow:
+    @pytest.mark.parametrize(
+        "input_shape, dim",
+        [
+            # Dim must always be the last dimension.
+            pytest.param((10,), -1, id="1D_dim_-1"),
+            pytest.param((5, 21), -1, id="2D_dim_-1"),
+            pytest.param((2, 3, 13), -1, id="3D_dim_-1"),
+            pytest.param((1, 3, 3, 200), -1, id="4D_dim_-1"),
+            pytest.param((5, 4, 3, 2, 180), -1, id="5D_dim_-1"),
+        ],
+    )
+    def test__basic_nsys_inference(self, input_shape, dim):
+        model = SoftmaxModule(dim)
+        graph_verifier = BaseGraphVerifier(
+            exp_num_delegate_call_nodes=1,  # Delegated Softmax.
+            exp_non_delegated_nodes=[],
+        )
+        output_comparator = NumericalStatsOutputComparator(
+            max_mse_error=0.001, is_classification_task=True
+        )
+        lower_run_compare(
+            model,
+            input_shape,
+            graph_verifier,
+            use_new_flow_neutron_c=True,
+            output_comparator=output_comparator,
+        )
+
+    @pytest.mark.parametrize(
+        "input_shape, dim",
+        [
+            pytest.param((4096, 8), -1, id="2D_spatial_size_limit"),
+            pytest.param((2040,), -1, id="1D_channels_limit"),
+            pytest.param((4096, 128), -1, id="2D_total_size_limit"),
+            pytest.param((1, 64, 64, 8), -1, id="4D_spatial_size_limit"),
+        ],
+    )
+    def test__limits(self, input_shape, dim, mocker):
+        model = SoftmaxModule(dim)
+        delegated_ep = to_quantized_edge_program(
+            model, input_shape, use_new_flow_neutron_c=True
+        ).exported_program()
+
+        # Make sure the `softmax` was delegated.
+        assert_softmax_delegated(delegated_ep.graph)
+
+    @pytest.mark.parametrize(
+        "input_shape, dim",
+        [
+            pytest.param((4097, 8), -1, id="2D_spatial_size_exceeded"),
+            pytest.param((2048,), -1, id="1D_channels_exceeded"),
+            pytest.param((4096, 129), -1, id="2D_total_size_exceeded"),
+            pytest.param((1, 64, 65, 8), -1, id="4D_spatial_size_exceeded"),
+        ],
+    )
+    def test__limits_exceeded(self, input_shape, dim):
+        model = SoftmaxModule(dim)
+        delegated_ep = to_quantized_edge_program(
+            model, input_shape, use_new_flow_neutron_c=True
+        ).exported_program()
+
+        # Make sure the `softmax` was NOT delegated.
+
+        assert_softmax_not_delegated(delegated_ep.graph)

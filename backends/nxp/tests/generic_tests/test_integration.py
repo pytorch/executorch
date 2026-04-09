@@ -28,8 +28,8 @@ def test_conv_fc_softmax__to_executorch_program(use_qat):
 
     delegation_info = get_delegation_info(program.graph_module)
     assert delegation_info.num_delegated_subgraphs == 1
-    assert delegation_info.num_non_delegated_nodes == 11
-    assert delegation_info.num_delegated_nodes == 13
+    assert delegation_info.num_non_delegated_nodes == 5
+    assert delegation_info.num_delegated_nodes == 16
 
     for node in program.graph.nodes:
         # Make sure Convolution and AddMM are delegated
@@ -46,8 +46,8 @@ def test_cifarnet(use_qat):
 
     delegation_info = get_delegation_info(exec_prog.exported_program().graph_module)
     assert delegation_info.num_delegated_subgraphs == 1
-    assert delegation_info.num_non_delegated_nodes == 11
-    assert delegation_info.num_delegated_nodes == 45
+    assert delegation_info.num_non_delegated_nodes == 5
+    assert delegation_info.num_delegated_nodes == 48
 
     nodes = list(exec_prog.exported_program().graph.nodes)
     assert nodes[2].name == "quantized_decomposed_quantize_per_tensor_default"

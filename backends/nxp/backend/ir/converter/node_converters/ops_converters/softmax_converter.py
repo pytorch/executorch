@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+import torch
 
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
@@ -58,14 +59,43 @@ class SoftmaxConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        """Check if the softmax operation can be executed on Neutron hardware.
+        if custom_delegation_options.use_new_flow_neutron_c:
+            """New flow: Hardware constraints for the new flow:
+            1. Input and Output must be INT8/UINT8
+            2. Channels < 4096 / num_pipes * 4
+            3. Total spatial size (N*H*W) <= 4096
+            4. (channels * spatial_size) / num_macs <= 65536
+            """
+            # Constraint 1: Input and Output must be INT8/UINT8.
+            supported_types = [torch.int8, torch.uint8]
+            if not NodeConverter.uses_quantization_type_for_io(
+                node, supported_types, [0], [0]
+            ):
+                return False
 
-        Hardware constraints:
+            # Constraint 2: Channel size limit
+            num_pipes = neutron_target_spec.get_num_pipes()
+            channels = SoftmaxConverter._get_channels(node)
+            if channels >= 4096 / num_pipes * 4:
+                return False
+
+            # Constraint 3: Spatial size limit
+            total_spatial_size = SoftmaxConverter._get_total_spatial_size(node)
+            if total_spatial_size > 4096:
+                return False
+
+            # Constraint 4: Total processing size limit
+            num_macs = neutron_target_spec.get_num_macs()
+            if channels * total_spatial_size / num_macs > 65536:
+                return False
+
+            return True
+
+        """Old flow. Hardware constraints for the old flow:
         1. Input rank must be >= 2 (Neutron does not support 1D)
-        2. Channels must be a multiple of num_macs
-        3. Channels < 4096 / num_pipes * 4
-        4. Total spatial size (N*H*W) <= 4096
-        5. (channels * spatial_size) / num_macs <= 65536
+        2. Channels < 4096 / num_pipes * 4
+        3. Total spatial size (N*H*W) <= 4096
+        4. (channels * spatial_size) / num_macs <= 65536
         """
         input_shape = node.meta["val"].shape
 
@@ -78,19 +108,15 @@ class SoftmaxConverter(NodeConverter):
         channels = SoftmaxConverter._get_channels(node)
         total_spatial_size = SoftmaxConverter._get_total_spatial_size(node)
 
-        # Constraint 2: Channels must be a multiple of num_macs
-        if channels % num_macs != 0:
-            return False
-
-        # Constraint 3: Channel size limit
+        # Constraint 2: Channel size limit
         if channels >= 4096 / num_pipes * 4:
             return False
 
-        # Constraint 4: Spatial size limit
+        # Constraint 3: Spatial size limit
         if total_spatial_size > 4096:
             return False
 
-        # Constraint 5: Total processing size limit
+        # Constraint 4: Total processing size limit
         if channels * total_spatial_size / num_macs > 65536:
             return False
 
