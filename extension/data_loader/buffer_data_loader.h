@@ -40,7 +40,7 @@ class BufferDataLoader final : public executorch::runtime::DataLoader {
     ET_CHECK_OR_RETURN_ERROR(
         !overflow && total_size <= size_,
         InvalidArgument,
-        "offset %zu + size %zu > size_ %zu, or overflow detected",
+        "offset %zu + size %zu > size_ %zu",
         offset,
         size,
         size_);

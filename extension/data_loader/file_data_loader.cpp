@@ -19,7 +19,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include <c10/util/safe_numerics.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
@@ -144,12 +143,10 @@ Result<FreeableBuffer> FileDataLoader::load(
       fd_ >= 0,
       InvalidState,
       "Uninitialized");
-  size_t total_size;
-  bool overflow = c10::add_overflows(offset, size, &total_size);
   ET_CHECK_OR_RETURN_ERROR(
-      !overflow && total_size <= file_size_,
+      offset + size <= file_size_,
       InvalidArgument,
-      "File %s: offset %zu + size %zu > file_size_ %zu, or overflow detected",
+      "File %s: offset %zu + size %zu > file_size_ %zu",
       file_name_,
       offset,
       size,
@@ -207,12 +204,10 @@ ET_NODISCARD Error FileDataLoader::load_into(
       fd_ >= 0,
       InvalidState,
       "Uninitialized");
-  size_t total_size;
-  bool overflow = c10::add_overflows(offset, size, &total_size);
   ET_CHECK_OR_RETURN_ERROR(
-      !overflow && total_size <= file_size_,
+      offset + size <= file_size_,
       InvalidArgument,
-      "File %s: offset %zu + size %zu > file_size_ %zu, or overflow detected",
+      "File %s: offset %zu + size %zu > file_size_ %zu",
       file_name_,
       offset,
       size,

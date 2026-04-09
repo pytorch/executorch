@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include <c10/util/safe_numerics.h>
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
@@ -34,12 +33,10 @@ class SharedPtrDataLoader final : public executorch::runtime::DataLoader {
       size_t offset,
       size_t size,
       ET_UNUSED const DataLoader::SegmentInfo& segment_info) const override {
-    size_t total_size;
-    bool overflow = c10::add_overflows(offset, size, &total_size);
     ET_CHECK_OR_RETURN_ERROR(
-        !overflow && total_size <= size_,
+        offset + size <= size_,
         InvalidArgument,
-        "offset %zu + size %zu > size_ %zu, or overflow detected",
+        "offset %zu + size %zu > size_ %zu",
         offset,
         size,
         size_);
