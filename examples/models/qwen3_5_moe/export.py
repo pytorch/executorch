@@ -4,10 +4,11 @@ Export Qwen 3.5 MoE to ExecuTorch .pte format.
 Supports CUDA and MLX backends.
 
 Usage:
+  python export.py --model-id Qwen/Qwen3.5-35B-A3B
   python export.py --model-dir /path/to/Qwen3.5-MoE-A3B
   python export.py --model-dir /path/to/model --qlinear 4w
   python export.py --prequantized /path/to/quantized_bundle/
-  python export.py --model-dir /path/to/model --backend mlx --qlinear 4w
+  python export.py --model-id Qwen/Qwen3.5-35B-A3B --backend mlx --qlinear 4w
 """
 
 import argparse
@@ -674,6 +675,11 @@ def main():
         help="HuggingFace model directory (not needed with --prequantized)",
     )
     parser.add_argument(
+        "--model-id",
+        default=None,
+        help="HuggingFace model-id",
+    )
+    parser.add_argument(
         "--output-dir", default="./qwen35_moe_exports", help="Output directory"
     )
     parser.add_argument("--max-seq-len", type=int, default=4096, help="KV cache length")
@@ -730,6 +736,13 @@ def main():
         "(GQA, GDN head ratio, mixed attention, MoE routing) at small scale.",
     )
     args = parser.parse_args()
+
+    if args.model_id:
+        if args.model_dir is not None:
+            raise ValueError("Cannot specify model_dir when model_id is provided.")
+        from huggingface_hub import snapshot_download
+
+        args.model_dir = snapshot_download(repo_id=args.model_id)
 
     if not args.prequantized and not args.model_dir and not args.tiny_test:
         parser.error(

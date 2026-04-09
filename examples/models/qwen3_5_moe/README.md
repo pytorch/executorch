@@ -32,6 +32,16 @@ recommended — the model is too large to fit in VRAM at bf16.
 
 ```bash
 python export.py \
+    --model-id Qwen/Qwen3.5-35B-A3B \
+    --output-dir ./qwen35_moe_exports \
+    --qlinear 4w \
+    --qembedding 8w
+```
+
+Or with a local directory:
+
+```bash
+python export.py \
     --model-dir ~/models/Qwen3.5-35B-A3B \
     --output-dir ./qwen35_moe_exports \
     --qlinear 4w \
@@ -42,7 +52,8 @@ python export.py \
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--model-dir` | (required) | HuggingFace model directory with `config.json` + safetensors |
+| `--model-id` | (none) | HuggingFace model ID (e.g. `Qwen/Qwen3.5-35B-A3B`). Downloads automatically. |
+| `--model-dir` | (none) | Local HuggingFace model directory with `config.json` + safetensors |
 | `--output-dir` | `./qwen35_moe_exports` | Output directory |
 | `--max-seq-len` | `4096` | KV cache length |
 | `--qlinear` | (none) | Linear layer quantization: `4w`, `8w`, `8da4w`, `8da8w` |
@@ -146,6 +157,17 @@ with MLX custom ops (`mlx::gather_qmm`, `mlx::gated_delta_rule`, `mlx::rope`).
 
 ```bash
 python export.py \
+    --model-id Qwen/Qwen3.5-35B-A3B \
+    --backend mlx \
+    --qlinear 4w \
+    --qlinear-group-size 64 \
+    --output-dir ./qwen35_moe_mlx
+```
+
+Or with a local directory:
+
+```bash
+python export.py \
     --model-dir ~/models/Qwen3.5-35B-A3B \
     --backend mlx \
     --qlinear 4w \
@@ -158,6 +180,8 @@ python export.py \
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--backend mlx` | `cuda` | Use MLX backend for Apple Silicon |
+| `--model-id` | (none) | HuggingFace model ID (downloads automatically) |
+| `--model-dir` | (none) | Local model directory |
 | `--qlinear` | (none) | Linear layer quantization: `4w`, `8w` |
 | `--qlinear-group-size` | `32` | Group size (64 recommended for MLX) |
 | `--qembedding` | (none) | Embedding quantization: `8w` |
