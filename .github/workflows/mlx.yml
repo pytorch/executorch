@@ -13,6 +13,7 @@ on:
       - extension/audio/**
       - examples/models/parakeet/**
       - examples/models/voxtral_realtime/**
+      - examples/models/qwen3_5_moe/**
   workflow_dispatch:
 
 permissions: {}
@@ -94,16 +95,26 @@ jobs:
           --output-dir /tmp/qwen35_moe_mlx_tiny
         echo "::endgroup::"
 
+        echo "::group::Check AsType node count"
+        ASTYPE_COUNT=$(${CONDA_RUN} python -m executorch.backends.mlx.pte_inspector \
+          /tmp/qwen35_moe_mlx_tiny/model.pte --mlx-instructions 2>&1 | grep -c "AsTypeNode" || true)
+        echo "AsType nodes: ${ASTYPE_COUNT}"
+        if [ "$ASTYPE_COUNT" -gt 23 ]; then
+          echo "Failed: expected no more than 23 AsType nodes, got ${ASTYPE_COUNT}"
+          exit 1
+        fi
+        echo "::endgroup::"
+
         echo "::group::Run Qwen 3.5 MoE inference"
         OUTPUT=$(${CONDA_RUN} python -m executorch.examples.models.qwen3_5_moe.run \
           --pte /tmp/qwen35_moe_mlx_tiny/model.pte \
           --prompt-len 4 \
           --max-new-tokens 5 2>&1)
         echo "$OUTPUT"
-        if echo "$OUTPUT" | grep -q "Generated token ids:"; then
-          echo "Success: Qwen 3.5 MoE MLX export + inference completed"
+        if echo "$OUTPUT" | grep -q "Generated token ids: \[167, 167, 81, 167, 81\]"; then
+          echo "Success: Qwen 3.5 MoE MLX export + inference completed with expected output"
         else
-          echo "Failed: inference did not complete"
+          echo "Failed: unexpected output (expected [167, 167, 81, 167, 81])"
           exit 1
         fi
         echo "::endgroup::"

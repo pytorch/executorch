@@ -161,7 +161,7 @@ def _exportable_gated_delta_net_forward(self, x, input_pos):
     # Update conv_state in-place to preserve buffer identity
     # (attribute reassignment would break mutation tracking)
     self.conv_state[:B].copy_(conv_input[:, :, conv_len - self.conv_kernel_size :])
-    # Use native F.conv1d — maps to fused Conv1DNode (1 op instead of 12)
+
     conv_out = torch.nn.functional.conv1d(
         conv_input, self.conv1d.weight, groups=self.conv_dim
     )
@@ -174,8 +174,7 @@ def _exportable_gated_delta_net_forward(self, x, input_pos):
     k = qkv_conv[..., kd : 2 * kd].reshape(B, T, self.num_k_heads, self.head_k_dim)
     v = qkv_conv[..., 2 * kd :].reshape(B, T, self.num_v_heads, self.head_v_dim)
 
-    # RMS-normalize Q and K with asymmetric scaling (matches mlx-lm exactly)
-    # mlx-lm: q = (1/Dk) * rms_norm(q), k = (1/√Dk) * rms_norm(k)
+    # RMS-normalize Q and K with asymmetric scaling
     # Uses pre-registered _qk_rms_weight (bf16 ones) so rms_norm returns bf16
     inv_scale = torch.tensor(self.head_k_dim**-0.5, dtype=x.dtype)
     q = (inv_scale * inv_scale) * torch.nn.functional.rms_norm(
@@ -192,17 +191,9 @@ def _exportable_gated_delta_net_forward(self, x, input_pos):
 
     # Mamba-style gating
     beta = b.sigmoid()
-    # Use logaddexp(x, 0) for softplus — maps to a single LogAddExpNode.
-    # torch.nn.functional.softplus decomposes into log(1+exp(x)) with f32
-    # lifted constants, promoting bf16 tensors to f32 and generating ~90
-    # unnecessary AsType nodes. logaddexp(x, 0) = log(exp(x) + 1) = softplus(x)
-    # and stays in bf16. This matches mlx-lm's nn.softplus which is mx.logaddexp.
     x = a + self.dt_bias
     g = (-self.A_log.exp() * torch.logaddexp(x, torch.zeros_like(x))).exp()
 
-    # Gated delta rule recurrence via custom op (replaces Python loop)
-    # Use bf16 inputs directly — matches mlx-lm's decomposed ops path.
-    # MLX auto-promotes when mixing bf16 activations with bf16 state.
     import executorch.backends.mlx.model_ops.gated_delta_rule as _  # noqa: ensure op registered
 
     output = torch.ops.mlx.gated_delta_rule(
