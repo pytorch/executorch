@@ -397,6 +397,11 @@ def export_and_lower(model, config, args):
     # The wrapper.cpp is pure kernel launch orchestration — no heavy compute.
     # -O0 compiles ~8x faster than -O1 with no measurable runtime impact.
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
+    # Inductor's memory planner has a bug with torch.cond branches: the
+    # scheduler_node_index for buffers inside cond subgraphs can exceed the
+    # segmented tree size, leading to incorrect buffer aliasing and garbage
+    # output.  Disable buffer reuse to work around this.
+    inductor_config.allow_buffer_reuse = False
 
     # Dynamic shapes
     example_tokens = torch.tensor([[0, 1]], dtype=torch.long)

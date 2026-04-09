@@ -1296,6 +1296,10 @@ if(EXECUTORCH_BUILD_ANDROID_JNI)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
 endif()
 
+if(EXECUTORCH_BUILD_CUDA)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/models/qwen3_5_moe)
+endif()
+
 include(Test.cmake)
 
 install(

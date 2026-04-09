@@ -16,8 +16,10 @@ Wraps Triton kernels from flash-linear-attention (FLA):
   https://github.com/fla-org/flash-linear-attention
 
 Uses the same pattern as backends/cuda/triton/kernels/sdpa.py: all FLA Triton
-kernels are launched via wrap_triton() so AOTInductor compiles them directly
-into the generated .so (no C++ shim needed).
+kernels are launched via capture_triton() so AOTInductor compiles them directly
+into the generated .so (no C++ shim needed). capture_triton is preferred over
+wrap_triton because it doesn't introduce spurious shape guards inside
+torch.cond branches.
 
 FLA kernels use @triton.heuristics which wrap_triton doesn't support directly.
 We unwrap via kernel.fn to get the inner @triton.autotune kernel and pass the
@@ -36,7 +38,8 @@ from fla.ops.gated_delta_rule.wy_fast import recompute_w_u_fwd_kernel
 from fla.ops.utils.cumsum import chunk_local_cumsum_scalar_kernel
 from fla.ops.utils.solve_tril import merge_16x16_to_64x64_inverse_kernel
 from fla.utils import IS_TMA_SUPPORTED
-from torch.library import triton_op, wrap_triton
+from torch._library import capture_triton
+from torch.library import triton_op
 
 CHUNK_SIZE = 64
 
@@ -106,6 +109,13 @@ def chunk_gated_delta_rule(
     """
     _validate_inputs(q, k, v, g, beta, initial_state)
 
+    # Triton kernels require contiguous tensors — FLA's @input_guard handles
+    # this in the upstream API, but we must do it explicitly here since
+    # triton_op doesn't apply that decorator.
+    q, k, v = q.contiguous(), k.contiguous(), v.contiguous()
+    g, beta = g.contiguous(), beta.contiguous()
+    initial_state = initial_state.contiguous()
+
     B, T, H, K = q.shape
     V = v.shape[-1]
     BT = CHUNK_SIZE
@@ -114,7 +124,7 @@ def chunk_gated_delta_rule(
 
     # 1. chunk_local_cumsum: cumulative sum of g within each chunk
     g_cumsum = torch.empty(B, T, H, dtype=torch.float32, device=q.device)
-    wrap_triton(_unwrap(chunk_local_cumsum_scalar_kernel))[(NT, B * H)](
+    capture_triton(_unwrap(chunk_local_cumsum_scalar_kernel))[(NT, B * H)](
         s=g,
         o=g_cumsum,
         scale=0,
@@ -132,7 +142,7 @@ def chunk_gated_delta_rule(
 
     # 2. chunk_scaled_dot_kkt: compute beta * K * K^T with gating
     A = torch.empty(B, T, H, BT, device=q.device, dtype=torch.float32)
-    wrap_triton(_unwrap(chunk_scaled_dot_kkt_fwd_kernel))[(NT, B * H)](
+    capture_triton(_unwrap(chunk_scaled_dot_kkt_fwd_kernel))[(NT, B * H)](
         k=k,
         g=g_cumsum,
         beta=beta,
@@ -150,7 +160,7 @@ def chunk_gated_delta_rule(
     # 3. solve_tril: (I + A)^{-1} via block triangular solve
     # Output in k.dtype (not float32) to match FLA's solve_tril(output_dtype=k.dtype)
     Ai = torch.zeros_like(A, dtype=k.dtype)
-    wrap_triton(_unwrap(merge_16x16_to_64x64_inverse_kernel))[NT, B * H](
+    capture_triton(_unwrap(merge_16x16_to_64x64_inverse_kernel))[NT, B * H](
         A=A,
         Ai=Ai,
         cu_seqlens=0,
@@ -165,7 +175,7 @@ def chunk_gated_delta_rule(
     # 4. recompute_w_u: WY representation
     w = torch.empty_like(k)
     u = torch.empty_like(v)
-    wrap_triton(_unwrap(recompute_w_u_fwd_kernel))[(NT, B * H)](
+    capture_triton(_unwrap(recompute_w_u_fwd_kernel))[(NT, B * H)](
         k=k,
         v=v,
         beta=beta,
@@ -194,7 +204,7 @@ def chunk_gated_delta_rule(
     def grid_h(meta):
         return (triton.cdiv(V, meta["BV"]), B * H)
 
-    wrap_triton(_unwrap(chunk_gated_delta_rule_fwd_kernel_h_blockdim64))[grid_h](
+    capture_triton(_unwrap(chunk_gated_delta_rule_fwd_kernel_h_blockdim64))[grid_h](
         k=k,
         v=u,
         w=w,
@@ -227,7 +237,7 @@ def chunk_gated_delta_rule(
     def grid_o(meta):
         return (triton.cdiv(V, meta["BV"]), NT, B * H)
 
-    wrap_triton(_unwrap(chunk_fwd_kernel_o))[grid_o](
+    capture_triton(_unwrap(chunk_fwd_kernel_o))[grid_o](
         q=q,
         k=k,
         v=v_new,
@@ -261,9 +271,7 @@ def _chunk_gated_delta_rule_fake(
     beta: torch.Tensor,
     initial_state: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    B, T, H, K = q.shape
-    V = v.shape[-1]
     return (
-        torch.empty(B, T, H, V, dtype=q.dtype, device=q.device),
-        torch.empty(B, H, K, V, dtype=torch.float32, device=q.device),
+        v.new_empty(v.shape),
+        initial_state.new_empty(initial_state.shape, dtype=torch.float32),
     )

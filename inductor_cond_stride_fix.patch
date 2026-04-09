@@ -1,0 +1,23 @@
+--- a/torch/_inductor/ir.py
++++ b/torch/_inductor/ir.py
+@@ -9039,6 +9039,20 @@ class Conditional(ExternKernel):
+         fake_operands = [cast(Node, x).meta["val"] for x in fx_operands]
+         fake_outputs = V.graph.current_node.meta["val"]
+
++        # Force operands to match the strides expected by branch subgraphs.
++        # Without this, Inductor's layout optimizer may fuse upstream ops and
++        # produce buffers with different strides, causing the branch kernels
++        # (compiled with FixedLayout from fake_operands) to read wrong data.
++        constrained_operands = []
++        for op, fake in zip(operands, fake_operands):
++            if isinstance(op, ShapeAsConstantBuffer) or not isinstance(fake, torch.Tensor):
++                constrained_operands.append(op)
++            else:
++                constrained_operands.append(
++                    ExternKernel.require_exact_strides(
++                        TensorBox(op), fake.stride(), allow_padding=False
++                    )
++                )
++        operands = constrained_operands
++
+         def _require_exact_strides(

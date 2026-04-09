@@ -24,6 +24,15 @@ except ImportError:
     pass
 
 try:
+    from executorch.backends.cuda.triton.kernels.fused_recurrent_gated_delta_rule import (  # noqa: F401
+        fused_recurrent_gated_delta_rule,
+    )
+
+    __all__.append("fused_recurrent_gated_delta_rule")
+except ImportError:
+    pass
+
+try:
     from executorch.backends.cuda.triton.kernels.tq4_sdpa import tq4_sdpa  # noqa: F401
 
     __all__.append("tq4_sdpa")
