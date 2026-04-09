@@ -129,6 +129,12 @@ ET_NODISCARD Error validateTensorLayout(
       "Dim mismatch. Expected %d, got %zu.",
       dim,
       expected_layout.sizes().size());
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->dim_order()->size() == static_cast<size_t>(dim),
+      InvalidExternalData,
+      "Dim order size mismatch. Expected %d, got %u.",
+      dim,
+      s_tensor->dim_order()->size());
   for (int i = 0; i < dim; i++) {
     ET_CHECK_OR_RETURN_ERROR(
         s_tensor->sizes()->Get(i) == expected_layout.sizes()[i],
@@ -158,6 +164,14 @@ NamedData* get_data_by_key(const char* key, Span<NamedData> entries) {
   }
   return nullptr;
 }
+
+// Suppress a GCC 11 false positive -Wstringop-overread triggered by
+// flatbuffers' GetPointer inlining into string_view construction.
+// Guarded to GCC >= 11 since the warning doesn't exist on older GCC or Clang.
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 11
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overread"
+#endif
 
 ET_NODISCARD Result<void*> getTensorDataPtr(
     const executorch_flatbuffer::Tensor* s_tensor,
@@ -258,6 +272,10 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
     return nullptr;
   }
 }
+
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 11
+#pragma GCC diagnostic pop
+#endif
 
 } // namespace deserialization
 } // namespace ET_RUNTIME_NAMESPACE

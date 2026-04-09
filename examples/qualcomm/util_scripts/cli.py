@@ -38,7 +38,11 @@ from executorch.backends.qualcomm.utils.utils import (
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.examples.qualcomm.qaihub_scripts.utils.utils import preprocess_binary
-from executorch.examples.qualcomm.utils import make_quantizer, SimpleADB
+from executorch.examples.qualcomm.utils import (
+    get_backend_type,
+    make_quantizer,
+    SimpleADB,
+)
 from executorch.exir import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torchao.quantization import pt2e
@@ -109,6 +113,20 @@ def get_io_info(pte_path, compiler_specs):
     return tensor_info
 
 
+def get_input_list_description(type: str):
+    return (
+        f"List of input files specified for {type}. Two content formats are supported. "
+        "Format 1: Positional Input Mapping. Each line lists input files in positional order. "
+        'e.g. File content with: "input_0_0.pt input_0_1.pt\\ninput_1_0.pt input_1_1.pt" '
+        "indicates that there are two data sets for a graph with two inputs. Notes that "
+        "the order of input files in each line must exactly match the order of the graph inputs. "
+        "Format 2: Named Input Mapping. Each input file is explicitly associated with a graph input name. "
+        'e.g. File content with: "pixel_values:=input_0_0.pt depth:=input_0_1.pt\\npixel_values:=input_1_0.pt depth:=input_1_1.pt" '
+        "indicates that there are two data sets for a graph with two named inputs: pixel_values and depth. "
+        "Notes that the input name specified in the file must exactly match the corresponding graph input name."
+    )
+
+
 class InputListParser:
     def __init__(self, input_list):
         self.input_list = input_list
@@ -131,7 +149,6 @@ class InputListParser:
 
 def quantize(args):
     logger = get_logger()
-
     # get corresponding QnnQuantizer
     try:
         quant_dtype = getattr(QuantDtype, args.config)
@@ -141,6 +158,9 @@ def quantize(args):
             per_channel_conv=args.per_channel,
             per_channel_linear=args.per_row,
             act_observer=act_observer,
+            backend=get_backend_type(args.backend),
+            soc_model=args.model,
+            eps=args.eps,
         )
     except Exception:
         logger.error(
@@ -405,11 +425,7 @@ def main():
         "--input_list",
         type=str,
         required=True,
-        help=(
-            "List of input files specified for calibration. "
-            'e.g. File content with: "input_0_0.pt2 input_0_1.pt2\\ninput_1_0.pt2 input_1_1.pt2" '
-            "means there are 2 sets of data for calibration on a graph with 2 inputs."
-        ),
+        help=get_input_list_description("quantize"),
     )
     sub_quantize.add_argument(
         "--per_channel",
@@ -429,6 +445,26 @@ def main():
             "Activation observer for PTQ "
             "(MinMaxObserver / MovingAverageMinMaxObserver / HistogramObserver)."
         ),
+    )
+    sub_quantize.add_argument(
+        "-m",
+        "--model",
+        type=str,
+        required=True,
+        help="SoC model. e.g. SM8750",
+    )
+    sub_quantize.add_argument(
+        "--backend",
+        type=str,
+        choices=["htp", "gpu"],
+        default="htp",
+        help="Backend to be deployed ('htp'/'gpu' are currently supported).",
+    )
+    sub_quantize.add_argument(
+        "--eps",
+        help="EPS value for quantizer. Accepts floating‑point literal. E.g., 0.0009765625.",
+        type=float,
+        default=None,
     )
     sub_quantize.set_defaults(callback=quantize)
 
@@ -494,11 +530,7 @@ def main():
         "-i",
         "--input_list",
         type=str,
-        help=(
-            "List of input files specified for execution. "
-            'e.g. File content with: "input_0_0.pt2 input_0_1.pt2\\ninput_1_0.pt2 input_1_1.pt2" '
-            "means there are 2 sets of data for execution on a graph with 2 inputs.\n"
-        ),
+        help=get_input_list_description("execute"),
     )
     sub_execute.add_argument(
         "-m",

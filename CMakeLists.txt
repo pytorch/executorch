@@ -50,6 +50,17 @@ project(executorch)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
+# Hexagon toolchain with release build complains about code in third party
+# libraries.
+if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "Hexagon" AND "${CMAKE_BUILD_TYPE}"
+                                                     STREQUAL "Release"
+)
+  add_compile_options(
+    -Wno-error=format -Wno-error=implicit-int-conversion
+    -Wno-error=unused-variable -Wno-error=unused-function
+  )
+endif()
+
 # --- ExecuTorch Version ---
 # Parse version from version.txt (single source of truth)
 file(READ "${EXECUTORCH_ROOT}/version.txt" ET_VERSION_STRING)
@@ -220,6 +231,23 @@ else()
 endif()
 
 add_subdirectory(third-party)
+
+# Size-optimized builds disable exceptions, RTTI, and unwind tables.
+# ExecuTorch's runtime uses Result<T>/Error instead of exceptions, so
+# -fno-exceptions is safe. Suppressing .eh_frame via -fno-unwind-tables is safe
+# because exceptions are disabled. Placed after add_subdirectory(third-party) to
+# avoid leaking into third-party configure checks (e.g. gflags).
+if(EXECUTORCH_OPTIMIZE_SIZE
+   AND NOT WIN32
+   AND NOT MSVC
+)
+  set(CMAKE_CXX_FLAGS_RELEASE
+      "${CMAKE_CXX_FLAGS_RELEASE} -fno-exceptions -fno-rtti -fno-asynchronous-unwind-tables -fno-unwind-tables"
+  )
+  set(CMAKE_C_FLAGS_RELEASE
+      "${CMAKE_C_FLAGS_RELEASE} -fno-asynchronous-unwind-tables -fno-unwind-tables"
+  )
+endif()
 
 if(NOT DEFINED FXDIV_SOURCE_DIR)
   set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
@@ -477,6 +505,9 @@ target_include_directories(
 target_compile_definitions(
   executorch_core PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
 )
+if(NOT EXECUTORCH_ENABLE_LOGGING)
+  target_compile_definitions(executorch_core PUBLIC ET_LOG_ENABLED=0)
+endif()
 target_compile_options(executorch_core PUBLIC ${_common_compile_options})
 if(MAX_KERNEL_NUM)
   target_compile_definitions(
@@ -525,6 +556,9 @@ add_library(executorch ${_executorch__srcs})
 target_link_libraries(executorch PRIVATE executorch_core)
 target_include_directories(executorch PUBLIC ${_common_include_directories})
 target_compile_definitions(executorch PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
+if(NOT EXECUTORCH_ENABLE_LOGGING)
+  target_compile_definitions(executorch PUBLIC ET_LOG_ENABLED=0)
+endif()
 target_compile_options(executorch PUBLIC ${_common_compile_options})
 executorch_target_link_options_shared_lib(executorch)
 
@@ -657,6 +691,11 @@ endif()
 if(EXECUTORCH_BUILD_MPS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/mps)
   list(APPEND _executorch_backends mpsdelegate)
+endif()
+
+if(EXECUTORCH_BUILD_MLX)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mlx)
+  list(APPEND _executorch_backends mlxdelegate)
 endif()
 
 if(EXECUTORCH_BUILD_NEURON)
@@ -823,6 +862,9 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
   set(TORCHAO_ENABLE_ARM_NEON_DOT ON)
   set(TORCHAO_BUILD_KLEIDIAI ON)
 
+  # TorchAO requires find_package(Torch) for include dirs; add its cmake path.
+  add_torch_to_cmake_prefix_path()
+
   # TorchAO kernels look for EXECUTORCH_INCLUDE_DIRS
   if(DEFINED EXECUTORCH_INCLUDE_DIRS)
     message(FATAL_ERROR "EXECUTORCH_INCLUDE_DIRS is already defined")
@@ -956,6 +998,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs mpsdelegate)
   endif()
 
+  if(EXECUTORCH_BUILD_MLX)
+    list(APPEND _dep_libs mlxdelegate)
+  endif()
+
   if(EXECUTORCH_BUILD_OPENVINO)
     list(APPEND _dep_libs openvino_backend)
   endif()
@@ -1056,6 +1102,12 @@ if(EXECUTORCH_BUILD_PYBIND)
   install(TARGETS data_loader
           LIBRARY DESTINATION executorch/extension/pybindings
   )
+
+  # Copy MLX metallib next to _portable_lib.so for editable installs. MLX uses
+  # dladdr() to find the directory containing the library with MLX code, then
+  # looks for mlx.metallib in that directory. When MLX is statically linked into
+  # _portable_lib.so, we need the metallib colocated with it.
+  executorch_target_copy_mlx_metallib(portable_lib)
 endif()
 
 if(EXECUTORCH_BUILD_WASM)

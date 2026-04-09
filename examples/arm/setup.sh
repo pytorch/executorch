@@ -200,6 +200,12 @@ function create_setup_path(){
     clear_setup_path
     log_step "path" "Generating setup path scripts at ${setup_path_script}"
 
+    if [[ -n "${VIRTUAL_ENV:-}" && -d "${VIRTUAL_ENV}/bin" ]]; then
+        prepend_env_in_setup_path PATH "${VIRTUAL_ENV}/bin"
+    elif [[ -d "${et_dir}/env/bin" ]]; then
+        prepend_env_in_setup_path PATH "${et_dir}/env/bin"
+    fi
+
     local use_mlsdk_pip=0
     if use_mlsdk_pip_package; then
         use_mlsdk_pip=1

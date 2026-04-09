@@ -68,6 +68,7 @@ OPERATORS = [
     "quantized_depthwise_conv2d",
     "quantized_transpose_conv2d",
     "quantized_avg_pool2d",
+    "quantized_batch_matmul",
     "quantized_max_pool2d",
 ]
 

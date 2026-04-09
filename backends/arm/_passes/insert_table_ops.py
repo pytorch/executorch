@@ -35,9 +35,11 @@ class TableOps:
         exir_ops.edge.aten.erf.default: torch.erf,
         exir_ops.edge.aten.exp.default: torch.exp,
         exir_ops.edge.aten.expm1.default: torch.expm1,
+        exir_ops.edge.aten.erfinv.default: torch.erfinv,
         exir_ops.edge.aten.floor.default: torch.floor,
         exir_ops.edge.aten.log.default: torch.log,
         exir_ops.edge.aten.log1p.default: torch.log1p,
+        exir_ops.edge.aten.log10.default: torch.log10,
         exir_ops.edge.aten.reciprocal.default: torch.reciprocal,
         exir_ops.edge.aten.rsqrt.default: torch.rsqrt,
         exir_ops.edge.aten.sigmoid.default: torch.sigmoid,
@@ -63,6 +65,7 @@ class TableOps:
         exir_ops.edge.aten.pow.Tensor_Scalar,
         exir_ops.edge.aten.gelu.default,
         exir_ops.edge.aten.elu.default,
+        exir_ops.edge.aten.remainder.Scalar,
     }
 
     def __init__(self, exported_program: ExportedProgram):
@@ -101,6 +104,9 @@ class TableOps:
                     return lambda x: torch.nn.functional.elu(
                         x, alpha=input_alpha
                     ).flatten()
+                case exir_ops.edge.aten.remainder.Scalar:
+                    divisor = cast(float | int, node.args[1])
+                    return lambda x: torch.remainder(x, divisor).flatten()
                 case _:
                     # Op must be handled if it's inside self.special_ops
                     raise AssertionError("Unhandled table operation")

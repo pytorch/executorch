@@ -25,13 +25,11 @@ def get_meandim_decomposition(op) -> tuple:
     if op in (exir_ops.edge.aten.mean.dim, exir_ops.edge.aten.mean.default):
         return (
             exir_ops.edge.aten.sum.dim_IntList,
-            exir_ops.edge.aten.full.default,
             exir_ops.edge.aten.mul.Tensor,
         )
     if op in (torch.ops.aten.mean.dim, torch.ops.aten.mean.default):
         return (
             torch.ops.aten.sum.dim_IntList,
-            torch.ops.aten.full.default,
             torch.ops.aten.mul.Tensor,
         )
     raise RuntimeError(f"Can't get meandim decomposition for op {op}")
@@ -123,7 +121,6 @@ class DecomposeMeanDimPass(ArmPass):
         dims_to_reduce = [dim % len(input_shape) for dim in dims_to_reduce]
         dims_to_reduce = [dim for dim in dims_to_reduce if input_shape[dim] != 1]
 
-        dtype = meta["val"].dtype
         view_op = get_view(op)
 
         # Reshape to 4D
@@ -155,7 +152,7 @@ class DecomposeMeanDimPass(ArmPass):
             x = super().call_operator(view_op, (x, temp_shape), {}, meta, True)
             x = self._maybe_insert_q_dq_after(x, meta)
         # Reduce remaining dims by sum
-        x = self._reduce_by_sum(op, x, dims_to_reduce, meta, dtype)
+        x = self._reduce_by_sum(op, x, dims_to_reduce, meta)
 
         # Reshape to correct output shape if necessary
         if list(x.data.shape) != output_shape:
@@ -163,48 +160,20 @@ class DecomposeMeanDimPass(ArmPass):
 
         return x
 
-    def _reduce_by_sum(self, op, input_node, dims, meta, dtype):
+    def _reduce_by_sum(self, op, input_node, dims, meta):
         if len(dims) == 0:
             return input_node
 
         input_shape = input_node.data.size()
-        output_shape = meta["val"].size()
         N = prod((n for i, n in enumerate(input_shape) if i in dims))
-        sum_op, full_op, mul_op = get_meandim_decomposition(op)
+        sum_op, mul_op = get_meandim_decomposition(op)
 
         sum = super().call_operator(sum_op, (input_node, dims, True), {}, meta, True)
-        full = super().call_operator(
-            full_op,
-            ([1] * len(output_shape), 1 / N),
-            {"dtype": dtype, "device": input_node.data.device},
-            meta,
-            True,
-        )
+        divisor = super().call_scalar(1 / N, meta)
         if (quant_ops := get_quantization(input_node.node.target)) is not None:
-            # Insert Q and DQ nodes after full op.
-            # Since the value of full is known, we can compute quant params such that dq(q_max_value)
             q_op, dq_op = quant_ops
-            qmax = input_node.node.args[4]
-            full_quant_args = (
-                1 / (N * qmax),  # Scale to map qmax to 1/N
-                0,  # Zero point
-                *input_node.node.args[3:],
-            )
-            q_args = (full, *full_quant_args)
-            full = super().call_operator(
-                q_op,
-                q_args,
-                kwargs={},
-                meta=meta,
-                updated=True,
-            )
-            dq_args = (full, *full_quant_args)
-            full = super().call_operator(
-                dq_op, dq_args, kwargs={}, meta=meta, updated=True
-            )
-
-            # Insert Q and DQ nodes after sum op.
-            # Scale needs to be adjusted with N, since it was computed on data after the division with N.
+            # Scale needs to be adjusted with N, since it was computed on data
+            # after the division with N.
             sum_quant_args = (input_node.node.args[1] * N, *input_node.node.args[2:])
             q_args = (sum, *sum_quant_args)
             sum = super().call_operator(
@@ -219,7 +188,7 @@ class DecomposeMeanDimPass(ArmPass):
                 dq_op, dq_args, kwargs={}, meta=meta, updated=True
             )
 
-        return super().call_operator(mul_op, (sum, full), {}, meta, True)
+        return super().call_operator(mul_op, (sum, divisor), {}, meta, True)
 
     def _reduce_by_average_pool(self, op, input_node, dims, meta):
         dims_to_reduce_by_avgpool = [dim for dim in dims if dim >= 2]

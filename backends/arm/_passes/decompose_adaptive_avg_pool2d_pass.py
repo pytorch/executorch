@@ -49,7 +49,7 @@ class DecomposeAdaptiveAvgPool2dPass(ArmPass):
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeAvgPool2dPass}
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
-        if op not in (edge_ops + aten_ops):
+        if op not in (edge_ops + aten_ops) or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta, updated)
 
         avg_pool2d_op, slice_op, cat_op = _get_decomposition(op)
@@ -98,15 +98,20 @@ class DecomposeAdaptiveAvgPool2dPass(ArmPass):
                     avg_pool2d_op, pool_args, kwargs, meta, True
                 )
                 row.append(pooled)
-
-            # Concatenate row results along width (dim=3)
-            row_tensor = super().call_operator(
-                cat_op, (row, 3), kwargs, meta_with_no_qparams, True
-            )
+            # Concatenate row results along width (dim=3) if more than one.
+            if len(row) > 1:
+                row_tensor = super().call_operator(
+                    cat_op, (row, 3), kwargs, meta_with_no_qparams, True
+                )
+            else:
+                row_tensor = row[0]
             res.append(row_tensor)
 
-        # Concatenate all rows along height (dim=2)
-        out = super().call_operator(
-            cat_op, (res, 2), kwargs, meta_with_no_qparams, True
-        )
+        # Concatenate all rows along height (dim=2) if more than one.
+        if len(res) > 1:
+            out = super().call_operator(
+                cat_op, (res, 2), kwargs, meta_with_no_qparams, True
+            )
+        else:
+            out = res[0]
         return out

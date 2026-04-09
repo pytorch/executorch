@@ -148,7 +148,7 @@ TestCase create_test_case_from_config(
       input_dtype,
       storage_type,
       utils::kWidthPacked,
-      DataGenType::ZEROS);
+      config.has_bias ? DataGenType::RANDOM : DataGenType::ZEROS);
   bias.set_constant(true);
   if (!config.has_bias) {
     bias.set_none(true);
@@ -237,9 +237,10 @@ std::vector<TestCase> generate_quantized_linear_test_cases() {
       {32, 64, 32, 16},
       {32, 128, 64, 32},
       {32, 256, 128, 64},
-      // No bias tests
-      {32, 128, 64, 32, false},
-      {32, 256, 128, 64, false},
+      // With bias
+      {4, 64, 32, 16, true},
+      {4, 128, 64, 32, true},
+      {32, 128, 64, 32, true},
       // Performance test cases
       {1, 2048, 2048, 128},
       {128, 2048, 2048, 128},
@@ -499,13 +500,6 @@ void reference_impl(TestCase& test_case) {
 }
 
 int64_t quantized_linear_flop_calculator(const TestCase& test_case) {
-  int input_idx = 0;
-  int weight_idx = 1;
-  if (test_case.operator_name().find("dq8ca") != std::string::npos) {
-    input_idx = 0;
-    weight_idx = 3; // Weight comes after input, input_scale, input_zero_point
-  }
-
   // Get input and weight dimensions
   const auto& input_sizes = test_case.inputs()[0].get_tensor_sizes();
   const auto& output_sizes = test_case.outputs()[0].get_tensor_sizes();

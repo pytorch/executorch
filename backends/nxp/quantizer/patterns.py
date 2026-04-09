@@ -298,6 +298,29 @@ class AddTensorPattern(QuantizationPattern):
         )
 
 
+class BMMPattern(QuantizationPattern):
+    """
+    Quantizer for BatchMatMul operator.
+    """
+
+    def partition_types(self) -> list[torch.nn.Module]:
+        return [torch.ops.aten.bmm.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        bmm_node = fused_partition[0].nodes[-1]
+
+        return PartitionAnchors(
+            inputs=[
+                (bmm_node, NodeArgsIdx(0)),
+                (bmm_node, NodeArgsIdx(1)),
+            ],
+            biases=[],
+            output=[(bmm_node,)],
+        )
+
+
 class SubTensorPattern(QuantizationPattern):
     """
     Quantization pattern for Sub Tensor quantization. Accepts 1 or 2 input nodes.
@@ -738,10 +761,15 @@ class LinearPattern(QuantizationPattern):
         )
 
 
-class MaxPoolPattern(SharedSpecPattern):
-    """
-    Quantizer for MaxPool2D operator.
-    """
+class MaxPool1DPattern(SharedSpecPattern):
+    """Quantizer for the MaxPool1D operator."""
+
+    def partition_types(self):
+        return [torch.ops.aten.max_pool1d.default]
+
+
+class MaxPool2DPattern(SharedSpecPattern):
+    """Quantizer for the MaxPool2D operator."""
 
     def partition_types(self):
         return [torch.ops.aten.max_pool2d.default]

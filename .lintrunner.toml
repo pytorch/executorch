@@ -8,6 +8,7 @@ exclude_patterns = [
     '**/third-party/**',
     '.github/scripts/**',
     'exir/serde/**',
+    'exir/_serialize/generated/executorch_flatbuffer/**',
 ]
 command = [
     'python',
@@ -39,6 +40,7 @@ exclude_patterns = [
     'third-party/**',
     '**/third-party/**',
     'exir/serde/**',
+    'exir/_serialize/generated/executorch_flatbuffer/**',
 ]
 command = [
     'python',
@@ -221,6 +223,7 @@ exclude_patterns = [
     '**/*.gif',
     'extension/llm/tokenizers',
     'extension/llm/tokenizers/**',
+    'backends/cadence/utils/FACTO',
     'examples/cuda',
     'kernels/portable',
     # File contains @generated
@@ -349,6 +352,7 @@ include_patterns = [
     # TODO(https://github.com/pytorch/executorch/issues/7441): Gradually start enabling all folders.
     # 'backends/**/*.py',
     'backends/arm/**/*.py',
+    'backends/cortex_m/**/*.py',
     'backends/openvino/**/*.py',
     'build/**/*.py',
     'codegen/**/*.py',
@@ -401,6 +405,7 @@ code = 'BANDIT'
 include_patterns = [
     'backends/arm/**/*.py',
     'examples/arm/**/*.py',
+    'backends/cortex_m/**/*.py',
 ]
 exclude_patterns = [
     'third-party/**',

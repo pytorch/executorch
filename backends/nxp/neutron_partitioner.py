@@ -205,6 +205,7 @@ supported_ops = {
     exir_ops.edge.aten.addmm.default: AddMMConverter,  # noqa F405
     exir_ops.edge.aten.add.Tensor: AddTensorConverter,  # noqa F405
     exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,  # noqa F405
+    exir_ops.edge.aten.bmm.default: BMMConverter,  # noqa F405
     exir_ops.edge.aten.cat.default: CatConverter,  # noqa F405
     exir_ops.edge.aten.clamp.default: ClampConverter,  # noqa F405
     exir_ops.edge.aten.clone.default: CloneConverter,  # noqa F405
@@ -213,8 +214,7 @@ supported_ops = {
     exir_ops.edge.aten.convolution.default: ConvolutionConverter,  # noqa F405
     exir_ops.edge.aten.hardtanh.default: HardTanhConverter,  # noqa F405
     exir_ops.edge.aten.leaky_relu.default: LeakyReluConverter,  # noqa F405
-    exir_ops.edge.aten.max_pool2d.default: MaxPool2dConverter,  # noqa F405
-    exir_ops.edge.aten.max_pool2d_with_indices.default: MaxPool2dConverter,  # noqa F405
+    exir_ops.edge.aten.max_pool2d_with_indices.default: MaxPool2DWithIndicesConverter,  # noqa F405
     exir_ops.edge.aten.mean.dim: MeanDimConverter,  # noqa F405
     exir_ops.edge.aten.mm.default: MMConverter,  # noqa F405
     exir_ops.edge.aten.mul.Tensor: MulTensorConverter,  # noqa F405

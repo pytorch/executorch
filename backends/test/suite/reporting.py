@@ -60,6 +60,8 @@ OP_COUNT_IGNORED_OPS = {
 class TestResult(IntEnum):
     """Represents the result of a test case run, indicating success or a specific failure reason."""
 
+    __test__ = False
+
     SUCCESS = 0
     """ The test succeeded with the backend delegate part or all of the graph. """
 
@@ -155,6 +157,8 @@ class TestCaseSummary:
     Contains summary results for the execution of a single test case.
     """
 
+    __test__ = False
+
     backend: str
     """ The name of the target backend. """
 
@@ -210,6 +214,8 @@ class TestCaseSummary:
 
 @dataclass
 class TestSessionState:
+    __test__ = False
+
     seed: int
 
     # True if the CSV header has been written to report__path.

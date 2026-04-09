@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,6 +11,7 @@ import importlib.resources
 import os
 import re
 import shutil
+import stat
 import subprocess
 
 import tempfile
@@ -94,6 +96,28 @@ class _SchemaMaxAlignmentGetter:
         return schema
 
 
+class _SchemaFileIdentifierGetter:
+    """Finds the file_identifier value in flatbuffer schemas."""
+
+    def __init__(self) -> None:
+        self.file_identifier: Optional[bytes] = None
+
+    def __call__(self, schema: bytes) -> bytes:
+        identifiers = re.findall(rb'file_identifier\s+"([^"]+)"', schema)
+        for file_identifier in identifiers:
+            if len(file_identifier) != 4:
+                raise ValueError(
+                    f"Invalid file_identifier length {len(file_identifier)} in schema"
+                )
+            if self.file_identifier is None:
+                self.file_identifier = file_identifier
+            elif self.file_identifier != file_identifier:
+                raise ValueError(
+                    f"Mismatched file_identifier {file_identifier} != {self.file_identifier}"
+                )
+        return schema
+
+
 class _ResourceFiles:
     """Manages a collection of python resources that will be written to files."""
 
@@ -111,6 +135,10 @@ class _ResourceFiles:
         """
         for name in self._files.keys():
             self._files[name] = patch_fn(self._files[name])
+
+    def get(self, name: str) -> bytes:
+        """Returns the current contents of the named file."""
+        return self._files[name]
 
     def write_to(self, out_dir: str) -> None:
         """Writes the files to the specified directory. File names are based on
@@ -130,6 +158,15 @@ class _SchemaInfo:
     # An alignment value that can satisfy all "force_align" entries found in the
     # schema files.
     max_alignment: int
+
+    # The file identifier declared in the root schema.
+    file_identifier: bytes
+
+    # The alignment for constant tensor data in the schema.
+    tensor_alignment: int
+
+    # The alignment for delegate data in the schema.
+    delegate_alignment: int
 
 
 def _prepare_schema(
@@ -158,6 +195,26 @@ def _prepare_schema(
     # Find the largest alignment used in the patched schema files.
     get_alignments = _SchemaMaxAlignmentGetter()
     schemas.patch_files(get_alignments)
+    get_file_identifier = _SchemaFileIdentifierGetter()
+    schemas.patch_files(get_file_identifier)
+    if get_file_identifier.file_identifier is None:
+        raise ValueError("Missing file_identifier in schema files.")
+
+    def extract_alignment(schema: bytes, marker: bytes) -> int:
+        for line in schema.splitlines():
+            if marker in line:
+                match = re.search(rb"force_align\s*:\s*(\d+)", line)
+                if match:
+                    return int(match.group(1))
+        raise RuntimeError(f"Failed to find marker {marker!r} in program.fbs")
+
+    program_schema_data = schemas.get(program_schema)
+    tensor_alignment = extract_alignment(
+        program_schema_data, b"@executorch-tensor-alignment"
+    )
+    effective_delegate_alignment = extract_alignment(
+        program_schema_data, b"@executorch-delegate-alignment"
+    )
 
     # Write the patched schema files to the filesystem.
     schemas.write_to(out_dir)
@@ -165,6 +222,9 @@ def _prepare_schema(
     return _SchemaInfo(
         root_path=os.path.join(out_dir, program_schema),
         max_alignment=get_alignments.max_alignment,
+        file_identifier=get_file_identifier.file_identifier,
+        tensor_alignment=tensor_alignment,
+        delegate_alignment=effective_delegate_alignment,
     )
 
 
@@ -193,6 +253,15 @@ def _run_flatc(args: Sequence[str]) -> None:
     if flatc_resource.is_file():
         # Use the provided flatc binary.
         with importlib.resources.as_file(flatc_resource) as flatc_path:
+            # Ensure the binary has execute permissions (needed for PAR files)
+            try:
+                current_mode = flatc_path.stat().st_mode
+                if not (current_mode & stat.S_IXUSR):
+                    flatc_path.chmod(
+                        current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+                    )
+            except OSError:
+                pass
             subprocess.run([flatc_path] + list(args), check=True)
     else:
         # Expect the `flatc` tool to be on the system path or set as an env var.

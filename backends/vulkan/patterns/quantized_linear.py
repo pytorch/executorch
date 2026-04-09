@@ -5,28 +5,22 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
-
 from typing import Optional
 
 import executorch.backends.vulkan.utils as utils
-
 import torch
 import torch.nn.functional as F
-
 from executorch.backends.transforms.utils import (
     create_constant_placeholder,
     get_param_tensor,
 )
-
 from executorch.backends.vulkan.patterns.pattern_registry import (
     PatternMatch,
     register_pattern_detector,
     register_pattern_replacement,
 )
-
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
-
 from torch.export.graph_signature import InputKind
 
 
@@ -89,6 +83,11 @@ class QuantizedLinearMatch(PatternMatch):
 
         # Identify output node
         self.output_node = self.anchor_node
+
+        # bmm with batch dim > 1 is not supported
+        is_bmm = self.anchor_node.target == exir_ops.edge.aten.bmm.default
+        if is_bmm and self.output_node.meta["val"].shape[0] != 1:
+            return
 
         # Identify primary input node of the anchor. Due to decomposition of aten.linear
         # there may be a view_copy node between the original input tensor to the linear
@@ -174,12 +173,21 @@ class QuantizedLinearMatch(PatternMatch):
 
         # Check if the output is also quantized (q → dq → linear → q pattern)
         # Also handle fused linear+relu (q → dq → linear → relu → q pattern)
+        # Due to decomposition of aten.linear for 3D+ inputs, there may be a
+        # view_copy between the mm output and the quantize node.
         self.quantize_output_node = None
         self.output_scales_node = None
         self.output_zeros_node = None
         self.relu_node = None
+        self.output_view_copy_node = None
         if len(self.output_node.users) == 1:
             cur_node = list(self.output_node.users)[0]
+            # Skip potential view_copy between linear and output quantize
+            if utils.is_view_copy_node(cur_node) and len(cur_node.users) == 1:
+                self.output_view_copy_node = cur_node
+                self.all_nodes.append(self.output_view_copy_node)
+                self.output_node = self.output_view_copy_node
+                cur_node = list(cur_node.users)[0]
             if cur_node.target == exir_ops.edge.aten.relu.default:
                 self.relu_node = cur_node
                 if len(cur_node.users) == 1:
@@ -259,6 +267,7 @@ linear_anchor_nodes = {
     exir_ops.edge.aten.linear.default,
     exir_ops.edge.aten.mm.default,
     exir_ops.edge.aten.addmm.default,
+    exir_ops.edge.aten.bmm.default,
 }
 
 
@@ -383,6 +392,12 @@ def make_linear_q4gsw_op(
         force_update=True,
     )
 
+    # Pad bias to multiple of 4 if present
+    if match.bias_node is not None:
+        bias_tensor = get_param_tensor(ep, match.bias_node)
+        if bias_tensor is not None:
+            utils.align_width_and_update_state_dict(ep, match.bias_node, bias_tensor)
+
     with graph_module.graph.inserting_before(match.output_node):
         linear_q4gsw_node = graph_module.graph.create_node(
             "call_function",
@@ -392,6 +407,7 @@ def make_linear_q4gsw_op(
                 match.weight_node,
                 match.weight_scales_node,
                 group_size,
+                match.bias_node,
             ),
         )
 
@@ -430,6 +446,12 @@ def make_linear_dq8ca_q4gsw_op(
         force_update=True,
     )
 
+    # Pad bias to multiple of 4 if present
+    if match.bias_node is not None:
+        bias_tensor = get_param_tensor(ep, match.bias_node)
+        if bias_tensor is not None:
+            utils.align_width_and_update_state_dict(ep, match.bias_node, bias_tensor)
+
     first_graph_node = list(graph_module.graph.nodes)[0]
     with graph_module.graph.inserting_before(first_graph_node):
         weight_tensor_name = utils.get_tensor_name(ep, match.weight_node)
@@ -459,6 +481,7 @@ def make_linear_dq8ca_q4gsw_op(
                 weight_sums_node,
                 match.weight_scales_node,
                 group_size,
+                match.bias_node,
             ),
         )
 
@@ -523,6 +546,7 @@ def make_linear_q8ta_q8csw_custom_op(
                 match.weight_node,
                 weight_sums_node,
                 match.weight_scales_node,
+                match.bias_node,
             ),
         )
 
@@ -622,17 +646,12 @@ def replace_quantized_linear_patterns(
     assert weight_zeros_tensor is not None
 
     # Route to appropriate custom op.
-    # q8ta_linear supports bias, so check it first before the bias guard.
     if (
         match.is_input_static_per_tensor_quantized()
         and match.is_weight_perchannel_quantized()
         and match.has_output_quantization()
     ):
         make_q8ta_linear_custom_op(ep, graph_module, match, weight_tensor)
-        return
-
-    # Remaining ops do not support bias
-    if match.bias_node is not None:
         return
 
     if (

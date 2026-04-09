@@ -11,6 +11,7 @@ import torch
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 
 from torch._subclasses.fake_tensor import FakeTensorMode
 
@@ -142,6 +143,5 @@ class RecomposePadMaxPool2d(ExportPass):
                         for user in node.users.copy():
                             user.replace_input_with(node, maxpool2d_node_tuple)
 
-        graph.eliminate_dead_code()
-        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)

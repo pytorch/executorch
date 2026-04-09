@@ -410,6 +410,7 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
   const size_t n_value = flatbuffer_values->size();
   values_ = memory_manager_->method_allocator()->allocateList<EValue>(n_value);
   if (values_ == nullptr) {
+    ET_LOG(Error, "Failed to allocate values array of size %zu", n_value);
     return Error::MemoryAllocationFailed;
   }
   const size_t n_input = inputs_size();
@@ -417,6 +418,7 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
     input_set_ =
         memory_manager_->method_allocator()->allocateList<bool>(n_input);
     if (input_set_ == nullptr) {
+      ET_LOG(Error, "Failed to allocate input_set array of size %zu", n_input);
       return Error::MemoryAllocationFailed;
     }
     for (size_t i = 0; i < n_input; ++i) {
@@ -440,6 +442,10 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
         memory_manager_->method_allocator()->allocateList<NamedData>(
             max_external_constants.get());
     if (external_constants_ == nullptr) {
+      ET_LOG(
+          Error,
+          "Failed to allocate external_constants array of size %zu",
+          max_external_constants.get());
       return Error::MemoryAllocationFailed;
     }
     Error err = parse_external_constants(external_data_map);
@@ -814,6 +820,7 @@ Result<Method> Method::load(
         memory_manager->method_allocator()
             ->allocateInstance<PlatformMemoryAllocator>();
     if (platform_allocator == nullptr) {
+      ET_LOG(Error, "Failed to allocate PlatformMemoryAllocator");
       return Error::MemoryAllocationFailed;
     }
     new (platform_allocator) PlatformMemoryAllocator();
@@ -829,6 +836,15 @@ Result<Method> Method::load(
     return method;
   }
 }
+
+/// Validate that a value index from a FlatBuffer instruction is in bounds.
+#define ET_CHECK_VALID_VALUE_INDEX(index, n_value)            \
+  ET_CHECK_OR_RETURN_ERROR(                                   \
+      (index) >= 0 && static_cast<size_t>(index) < (n_value), \
+      InvalidProgram,                                         \
+      "Index %zd negative or >= %" ET_PRIsize_t,              \
+      static_cast<ssize_t>(index),                            \
+      (n_value))
 
 Error Method::init(
     executorch_flatbuffer::ExecutionPlan* s_plan,
@@ -863,6 +879,8 @@ Error Method::init(
     size_t n_delegate = delegates->size();
     delegates_ = method_allocator->allocateList<BackendDelegate>(n_delegate);
     if (delegates_ == nullptr) {
+      ET_LOG(
+          Error, "Failed to allocate delegates array of size %zu", n_delegate);
       return Error::MemoryAllocationFailed;
     }
 
@@ -886,6 +904,7 @@ Error Method::init(
       merged_data_map_ =
           method_allocator->allocateInstance<internal::MergedDataMap>();
       if (merged_data_map_ == nullptr) {
+        ET_LOG(Error, "Failed to allocate MergedDataMap");
         return Error::MemoryAllocationFailed;
       }
       new (merged_data_map_) internal::MergedDataMap(std::move(merged.get()));
@@ -938,6 +957,7 @@ Error Method::init(
     n_chains_ = chains->size();
     chains_ = method_allocator->allocateList<Chain>(n_chains_);
     if (chains_ == nullptr) {
+      ET_LOG(Error, "Failed to allocate chains array of size %zu", n_chains_);
       return Error::MemoryAllocationFailed;
     }
 
@@ -957,11 +977,15 @@ Error Method::init(
       auto chain_instruction_kernels =
           method_allocator->allocateList<OpFunction>(num_instructions);
       if (chain_instruction_kernels == nullptr) {
+        ET_LOG(
+            Error, "Failed to allocate instruction kernels for chain %zu", i);
         return Error::MemoryAllocationFailed;
       }
       auto chain_instruction_arg_lists =
           method_allocator->allocateList<InstructionArgs>(num_instructions);
       if (chain_instruction_arg_lists == nullptr) {
+        ET_LOG(
+            Error, "Failed to allocate instruction arg lists for chain %zu", i);
         return Error::MemoryAllocationFailed;
       }
 
@@ -1031,23 +1055,34 @@ Error Method::init(
             chain_instruction_arg_lists[instr_idx] = res.get();
           } break;
           case executorch_flatbuffer::InstructionArguments::JumpFalseCall: {
-            // Validate the index at load time so we can trust it during
-            // execution.
             auto index =
                 static_cast<const executorch_flatbuffer::JumpFalseCall*>(
                     instr_args)
                     ->cond_value_index();
-            ET_CHECK_OR_RETURN_ERROR(
-                index >= 0 && static_cast<size_t>(index) < n_value_,
-                InvalidProgram,
-                "Index %zd negative or >= %" ET_PRIsize_t,
-                static_cast<ssize_t>(index),
-                n_value_);
+            ET_CHECK_VALID_VALUE_INDEX(index, n_value_);
+            chain_instruction_arg_lists[instr_idx] = InstructionArgs();
+          } break;
+          case executorch_flatbuffer::InstructionArguments::MoveCall: {
+            auto move_call =
+                static_cast<const executorch_flatbuffer::MoveCall*>(instr_args);
+            ET_CHECK_VALID_VALUE_INDEX(move_call->move_from(), n_value_);
+            ET_CHECK_VALID_VALUE_INDEX(move_call->move_to(), n_value_);
+            chain_instruction_arg_lists[instr_idx] = InstructionArgs();
+          } break;
+          case executorch_flatbuffer::InstructionArguments::FreeCall: {
+            auto index =
+                static_cast<const executorch_flatbuffer::FreeCall*>(instr_args)
+                    ->value_index();
+            ET_CHECK_VALID_VALUE_INDEX(index, n_value_);
             chain_instruction_arg_lists[instr_idx] = InstructionArgs();
           } break;
           default: {
-            chain_instruction_arg_lists[instr_idx] = InstructionArgs();
-          } break;
+            ET_LOG(
+                Error,
+                "Invalid instruction type %hhu",
+                static_cast<uint8_t>(instruction->instr_args_type()));
+            return Error::InvalidProgram;
+          }
         }
       }
       chains_[i] = Chain{
@@ -1486,7 +1521,7 @@ Error Method::execute_instruction() {
       // We know that instr_args_as_FreeCall is non-null because it was checked
       // at init time.
       auto free_call = instruction->instr_args_as_FreeCall();
-      auto t = values_[free_call->value_index()].toTensor();
+      auto t = mutable_value(free_call->value_index()).toTensor();
       internal::reset_data_ptr(t);
     } break;
     default:
