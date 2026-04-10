@@ -64,6 +64,8 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   std::memcpy(mapped, &params, sizeof(AddParams));
   wgpuBufferUnmap(uniform_buffer);
 
+  graph.add_uniform_buffer_bytes(sizeof(AddParams));
+
   // Create shader module from built-in WGSL source
   WGPUShaderSourceWGSL wgsl_desc = {};
   wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
@@ -99,8 +101,7 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   WGPUBindGroupLayoutDescriptor bgl_desc = {};
   bgl_desc.entryCount = 4;
   bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl =
-      wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
+  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
 
   // Create pipeline layout
   WGPUPipelineLayoutDescriptor pl_desc = {};

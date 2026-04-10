@@ -11,6 +11,9 @@
 
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
 
+#include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
+#include <webgpu/wgpu.h>
+
 #include <cstring>
 #include <stdexcept>
 
@@ -18,7 +21,8 @@ namespace executorch {
 namespace backends {
 namespace webgpu {
 
-// vkgraph namespace is declared at global scope in the generated FlatBuffer header
+// vkgraph namespace is declared at global scope in the generated FlatBuffer
+// header
 
 namespace {
 
@@ -70,6 +74,13 @@ void WebGPUGraph::build(
     const void* flatbuffer_data,
     const uint8_t* constant_data) {
   if (!device_) {
+    auto* ctx = get_default_webgpu_context();
+    if (ctx) {
+      device_ = ctx->device;
+      instance_ = ctx->instance;
+    }
+  }
+  if (!device_) {
     throw std::runtime_error(
         "WebGPU device not available. "
         "Call set_default_webgpu_context() before loading.");
@@ -113,8 +124,7 @@ void WebGPUGraph::build(
         // Create GPU buffer
         WGPUBufferDescriptor buf_desc = {};
         buf_desc.size = tensor.nbytes > 0 ? tensor.nbytes : 4;
-        buf_desc.usage =
-            WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
+        buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
             WGPUBufferUsage_CopySrc;
         buf_desc.mappedAtCreation = false;
         tensor.buffer = wgpuDeviceCreateBuffer(device_, &buf_desc);
@@ -123,8 +133,7 @@ void WebGPUGraph::build(
         int constant_id = vk_tensor->constant_id();
         if (constant_id >= 0 && constant_data) {
           const auto* constants = graph->constants();
-          if (constants &&
-              constant_id < static_cast<int>(constants->size())) {
+          if (constants && constant_id < static_cast<int>(constants->size())) {
             const auto* vk_bytes = constants->Get(constant_id);
             // Only upload from embedded bytes (not named data map)
             if (vk_bytes->offset() != UINT64_MAX) {
@@ -188,8 +197,7 @@ void WebGPUGraph::build(
       std::string op_name = op_call->name()->str();
 
       if (!webgpu_operator_registry().has_op(op_name)) {
-        throw std::runtime_error(
-            "WebGPU backend: unsupported op: " + op_name);
+        throw std::runtime_error("WebGPU backend: unsupported op: " + op_name);
       }
 
       const auto* fb_args = op_call->args();
@@ -226,7 +234,8 @@ void WebGPUGraph::execute() {
 
   for (const auto& dispatch : dispatches_) {
     wgpuComputePassEncoderSetPipeline(pass, dispatch.pipeline);
-    wgpuComputePassEncoderSetBindGroup(pass, 0, dispatch.bind_group, 0, nullptr);
+    wgpuComputePassEncoderSetBindGroup(
+        pass, 0, dispatch.bind_group, 0, nullptr);
     wgpuComputePassEncoderDispatchWorkgroups(
         pass, dispatch.workgroup_count_x, 1, 1);
   }
@@ -273,8 +282,7 @@ void buffer_map_callback(
 
 } // namespace
 
-void WebGPUGraph::copy_outputs(
-    std::vector<std::pair<void*, size_t>>& outputs) {
+void WebGPUGraph::copy_outputs(std::vector<std::pair<void*, size_t>>& outputs) {
   for (size_t i = 0; i < outputs.size() && i < output_staging_buffers_.size();
        i++) {
     MapCallbackData cb_data;
@@ -289,15 +297,34 @@ void WebGPUGraph::copy_outputs(
         outputs[i].second,
         cb_info);
 
+    // Poll until the map callback fires.
+    wgpuDevicePoll(device_, true, nullptr);
+
     if (cb_data.status == WGPUMapAsyncStatus_Success) {
-      const void* mapped =
-          wgpuBufferGetConstMappedRange(output_staging_buffers_[i], 0, outputs[i].second);
+      const void* mapped = wgpuBufferGetConstMappedRange(
+          output_staging_buffers_[i], 0, outputs[i].second);
       std::memcpy(outputs[i].first, mapped, outputs[i].second);
       wgpuBufferUnmap(output_staging_buffers_[i]);
     } else {
       throw std::runtime_error("WebGPU buffer map failed for output");
     }
   }
+}
+
+WebGPUMemoryStats WebGPUGraph::memory_stats() const {
+  WebGPUMemoryStats stats;
+  for (size_t i = 0; i < value_types_.size(); i++) {
+    if (value_types_[i] == ValueType::Tensor && tensors_[i].nbytes > 0) {
+      stats.tensor_buffer_bytes += tensors_[i].nbytes;
+      stats.num_tensors++;
+    }
+  }
+  for (size_t i = 0; i < output_ids_.size(); i++) {
+    stats.staging_buffer_bytes += tensors_[output_ids_[i]].nbytes;
+  }
+  stats.uniform_buffer_bytes = uniform_buffer_bytes_;
+  stats.num_dispatches = static_cast<int>(dispatches_.size());
+  return stats;
 }
 
 } // namespace webgpu

@@ -30,6 +30,18 @@ struct WebGPUDispatch {
   uint32_t workgroup_count_x = 1;
 };
 
+struct WebGPUMemoryStats {
+  size_t tensor_buffer_bytes = 0;
+  size_t staging_buffer_bytes = 0;
+  size_t uniform_buffer_bytes = 0;
+  int num_tensors = 0;
+  int num_dispatches = 0;
+
+  size_t total_bytes() const {
+    return tensor_buffer_bytes + staging_buffer_bytes + uniform_buffer_bytes;
+  }
+};
+
 class WebGPUGraph {
  public:
   WebGPUGraph();
@@ -83,6 +95,19 @@ class WebGPUGraph {
     dispatches_.push_back(dispatch);
   }
 
+  void add_uniform_buffer_bytes(size_t bytes) {
+    uniform_buffer_bytes_ += bytes;
+  }
+
+  void set_instance(WGPUInstance instance) {
+    instance_ = instance;
+  }
+  void set_device(WGPUDevice device) {
+    device_ = device;
+  }
+
+  WebGPUMemoryStats memory_stats() const;
+
   int num_values() const {
     return static_cast<int>(value_types_.size());
   }
@@ -94,6 +119,7 @@ class WebGPUGraph {
   }
 
  private:
+  WGPUInstance instance_ = nullptr;
   WGPUDevice device_ = nullptr;
   WGPUQueue queue_ = nullptr;
 
@@ -112,6 +138,8 @@ class WebGPUGraph {
   std::vector<WGPUBuffer> output_staging_buffers_;
 
   std::vector<WebGPUDispatch> dispatches_;
+
+  size_t uniform_buffer_bytes_ = 0;
 };
 
 } // namespace webgpu
