@@ -89,9 +89,9 @@ target_include_directories(
 # Custom ops that are needed to run the test model.
 add_library(
   custom_ops
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/quantized_linear_out.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/quantized_add_out.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/quantized_conv2d_nchw_out.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_linear.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_add.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_conv2d.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/quantized_conv2d_nchw_out_per_tensor.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_kernel_dispatcher.c"
   "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_exec_7x7j2d1.c"
@@ -99,16 +99,15 @@ add_library(
   "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_exec_1x1j2d1.c"
   "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_exec_3x3j1d1.c"
   "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_exec_3x3j2d1.c"
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/quantized_conv2d_nhwc_out.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/quantized_relu_out.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/quantized_layer_norm.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_relu.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_layer_norm.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/quantize_per_tensor.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/quantized_linear_out.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/quantized_fully_connected_out.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_fully_connected.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/dequantize_per_tensor.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/quantized_matmul_out.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_requantize_out.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/im2row_out.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_matmul.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_requantize.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_im2row.cpp"
 )
 target_link_libraries(custom_ops PUBLIC executorch)
 target_link_libraries(custom_ops PRIVATE xa_nnlib cadence_kernels idma xai)
