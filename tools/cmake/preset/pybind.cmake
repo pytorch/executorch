@@ -7,10 +7,11 @@
 set_overridable_option(EXECUTORCH_BUILD_PYBIND ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT ON)
-# Enable logging even when in release mode. We are building for desktop, where
-# saving a few kB is less important than showing useful error information to
-# users.
+# Enable logging and program verification even when in release mode. We are
+# building for desktop, where saving a few kB is less important than showing
+# useful error information to users.
 set_overridable_option(EXECUTORCH_ENABLE_LOGGING ON)
+set_overridable_option(EXECUTORCH_ENABLE_PROGRAM_VERIFICATION ON)
 set_overridable_option(EXECUTORCH_LOG_LEVEL Info)
 set_overridable_option(EXECUTORCH_BUILD_XNNPACK ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
@@ -31,6 +32,24 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM ON)
+  # MLX requires Apple Silicon (ARM64) and the Metal compiler (xcrun -sdk macosx
+  # metal) which is only available with Xcode, not Command Line Tools
+  if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+    execute_process(
+      COMMAND xcrun -sdk macosx --find metal
+      RESULT_VARIABLE _metal_compiler_result
+      OUTPUT_QUIET ERROR_QUIET
+    )
+    if(_metal_compiler_result EQUAL 0)
+      set_overridable_option(EXECUTORCH_BUILD_MLX ON)
+      set_overridable_option(ET_MLX_ENABLE_OP_LOGGING ON)
+    else()
+      message(
+        STATUS
+          "Metal compiler not found, disabling MLX backend. Install Xcode to enable MLX."
+      )
+    endif()
+  endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
