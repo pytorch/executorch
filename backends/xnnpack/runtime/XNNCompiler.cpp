@@ -1927,6 +1927,12 @@ ET_NODISCARD Error XNNCompiler::compileModel(
       flatbuffers::GetBufferIdentifier(flatbuffer_data));
 
   auto flatbuffer_graph = fb_xnnpack::GetXNNGraph(flatbuffer_data);
+  ET_CHECK_OR_RETURN_ERROR(
+      flatbuffer_graph != nullptr && flatbuffer_graph->xvalues() != nullptr &&
+          flatbuffer_graph->xnodes() != nullptr,
+      InvalidProgram,
+      "Failed to deserialize XNNPACK flatbuffer graph; null graph, xvalues, or xnodes.");
+
   // initialize xnnpack
   xnn_status status = xnn_initialize(/*allocator =*/nullptr);
   ET_CHECK_OR_RETURN_ERROR(
@@ -1936,9 +1942,18 @@ ET_NODISCARD Error XNNCompiler::compileModel(
       xnn_status_to_string(status));
 
   // create xnnpack subgraph
+  uint32_t num_externs = flatbuffer_graph->num_externs();
+  uint32_t num_values = flatbuffer_graph->xvalues()->size();
+  ET_CHECK_OR_RETURN_ERROR(
+      num_externs <= num_values,
+      InvalidProgram,
+      "num_externs (%u) exceeds total number of values (%u)",
+      num_externs,
+      num_values);
+
   xnn_subgraph_t subgraph_ptr = nullptr;
   status = xnn_create_subgraph(
-      /*external_value_ids=*/flatbuffer_graph->num_externs(),
+      /*external_value_ids=*/num_externs,
       /*flags=*/0,
       &subgraph_ptr);
   ET_CHECK_OR_RETURN_ERROR(
