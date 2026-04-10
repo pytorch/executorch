@@ -13,6 +13,8 @@
 #include <executorch/extension/llm/sampler/util.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
+#include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/platform/log.h>
 #include <pytorch/tokenizers/hf_tokenizer.h>
 
@@ -28,6 +30,7 @@ DEFINE_string(tokenizer_path, "", "HuggingFace tokenizer.json path.");
 DEFINE_string(prompt, "Hello", "Prompt text.");
 DEFINE_double(temperature, 0.8, "Sampling temperature (0 = greedy).");
 DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
+DEFINE_bool(cuda_graph, false, "Enable CUDA graph for decode method.");
 
 namespace llm = ::executorch::extension::llm;
 using ::executorch::extension::from_blob;
@@ -85,6 +88,14 @@ int main(int argc, char** argv) {
   auto metadata = metadata_result.get();
 
   printf("Loading methods...\n");
+
+  // Set CUDA graph option if requested (must be before load_method)
+  if (FLAGS_cuda_graph) {
+    executorch::runtime::BackendOptions<2> cuda_opts;
+    cuda_opts.set_option("enable_cuda_graph_for_method", "decode");
+    executorch::runtime::set_option("CudaBackend", cuda_opts.view());
+    printf("CUDA graph enabled for decode method\n");
+  }
 
   // Try loading both methods; fall back to single "forward" method
   bool dual_method = true;

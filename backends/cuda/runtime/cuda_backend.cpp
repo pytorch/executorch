@@ -80,6 +80,9 @@ namespace {
 constexpr char kSkipCopyOutputToCpuForMethod[] =
     "skip_copy_output_to_cpu_for_method";
 constexpr char kUseSharedCudaStream[] = "use_shared_cuda_stream";
+constexpr char kEnableCudaGraphForMethod[] =
+    "enable_cuda_graph_for_method";
+constexpr int kCudaGraphWarmupSteps = 3;
 } // anonymous namespace
 
 class ET_EXPERIMENTAL CudaBackend final
@@ -144,6 +147,20 @@ class ET_EXPERIMENTAL CudaBackend final
     }
     std::lock_guard<std::mutex> guard(skip_copy_method_mutex_);
     return method_in_csv(method_name, skip_copy_method_);
+  }
+
+  void set_cuda_graph_method(
+      const std::array<char, kMaxOptionValueLength>& raw) {
+    std::lock_guard<std::mutex> guard(cuda_graph_method_mutex_);
+    cuda_graph_method_ = std::string(raw.data());
+  }
+
+  bool should_use_cuda_graph_for_method(const std::string& method_name) const {
+    if (method_name.empty()) {
+      return false;
+    }
+    std::lock_guard<std::mutex> guard(cuda_graph_method_mutex_);
+    return method_in_csv(method_name, cuda_graph_method_);
   }
 
   // Create the shared CUDA stream. Called when use_shared_cuda_stream option
@@ -262,6 +279,17 @@ class ET_EXPERIMENTAL CudaBackend final
           }
         } else {
           ET_LOG(Error, "Option %s must be a boolean.", kUseSharedCudaStream);
+          return Error::InvalidArgument;
+        }
+      } else if (std::strcmp(option.key, kEnableCudaGraphForMethod) == 0) {
+        if (auto* val = std::get_if<std::array<char, kMaxOptionValueLength>>(
+                &option.value)) {
+          set_cuda_graph_method(*val);
+        } else {
+          ET_LOG(
+              Error,
+              "Option %s must be a method name string.",
+              kEnableCudaGraphForMethod);
           return Error::InvalidArgument;
         }
       }
@@ -510,6 +538,17 @@ class ET_EXPERIMENTAL CudaBackend final
           method_name.c_str());
     }
 
+    // Initialize CUDA graph state if enabled for this method.
+    if (should_use_cuda_graph_for_method(method_name)) {
+      handle->cuda_graph_phase = 1; // warmup
+      handle->cuda_graph_warmup_remaining = kCudaGraphWarmupSteps;
+      ET_LOG(
+          Info,
+          "CUDA graph enabled for method '%s' (warmup=%d)",
+          method_name.c_str(),
+          kCudaGraphWarmupSteps);
+    }
+
     return (DelegateHandle*)handle; // Return the handle post-processing
   }
 
@@ -536,6 +575,59 @@ class ET_EXPERIMENTAL CudaBackend final
         n_outputs,
         args.size())
 
+    // ---------------------------------------------------------------
+    // CUDA graph REPLAY path — skip all tensor setup and just replay
+    // ---------------------------------------------------------------
+    if (handle->cuda_graph_phase == 2) {
+      Result<cudaStream_t> csr = getCurrentCUDAStream(0);
+      cudaStream_t cs = csr.get();
+      ET_CHECK_OK_OR_RETURN_ERROR(csr.error());
+
+      // Copy new input data into static input buffers
+      for (size_t i = 0; i < n_inputs; i++) {
+        auto* cpu_tensor = &(args[i]->toTensor());
+        cudaMemcpyAsync(
+            handle->static_input_ptrs[i],
+            cpu_tensor->const_data_ptr(),
+            handle->static_input_nbytes[i],
+            cudaMemcpyHostToDevice,
+            cs);
+      }
+
+      // Replay the captured graph
+      cudaError_t gerr = cudaGraphLaunch(handle->cuda_graph_exec, cs);
+      ET_CHECK_OR_RETURN_ERROR(
+          gerr == cudaSuccess,
+          Internal,
+          "cudaGraphLaunch failed: %s",
+          cudaGetErrorString(gerr));
+
+      // Copy outputs back to CPU
+      const bool copy_outputs =
+          !should_skip_copy_for_method(handle->method_name);
+      if (copy_outputs) {
+        for (size_t i = 0; i < n_outputs; i++) {
+          auto* cpu_out = &(args[i + n_inputs]->toTensor());
+          cudaMemcpyAsync(
+              cpu_out->mutable_data_ptr(),
+              handle->static_output_ptrs[i],
+              handle->static_output_nbytes[i],
+              cudaMemcpyDeviceToHost,
+              cs);
+        }
+        cudaStreamSynchronize(cs);
+      }
+
+      return Error::Ok;
+    }
+
+    // ---------------------------------------------------------------
+    // Normal path (also used for WARMUP and CAPTURE phases)
+    // ---------------------------------------------------------------
+    bool is_capture_step =
+        (handle->cuda_graph_phase == 1 &&
+         handle->cuda_graph_warmup_remaining == 0);
+
     // NOTE: ExecuTorch tensors may be on CPU or GPU due to the skip-copy
     // optimization. We need to create GPU copies for CUDA kernel execution
     // using SlimTensor.
@@ -545,6 +637,41 @@ class ET_EXPERIMENTAL CudaBackend final
     // Process input tensors: convert ETensor (CPU) to SlimTensor (GPU)
     for (size_t i = 0; i < n_inputs; i++) {
       auto* cpu_tensor = &(args[i]->toTensor());
+
+      // CAPTURE step: allocate persistent static GPU buffers
+      if (is_capture_step) {
+        auto sizes = cpu_tensor->sizes();
+        auto strides = cpu_tensor->strides();
+        std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
+        std::vector<int64_t> strides_vec(strides.begin(), strides.end());
+        size_t nbytes = cpu_tensor->nbytes();
+
+        void* static_ptr = nullptr;
+        cudaError_t merr = cudaMalloc(&static_ptr, nbytes);
+        ET_CHECK_OR_RETURN_ERROR(
+            merr == cudaSuccess, Internal,
+            "cudaMalloc for static input %zu failed: %s",
+            i, cudaGetErrorString(merr));
+
+        cudaMemcpy(
+            static_ptr, cpu_tensor->const_data_ptr(),
+            nbytes, cudaMemcpyHostToDevice);
+
+        handle->static_input_ptrs.push_back(static_ptr);
+        handle->static_input_sizes.push_back(sizes_vec);
+        handle->static_input_strides.push_back(strides_vec);
+        handle->static_input_scalar_types.push_back(
+            static_cast<int>(cpu_tensor->scalar_type()));
+        handle->static_input_nbytes.push_back(nbytes);
+
+        gpu_inputs[i] = new SlimTensor(slim::from_blob(
+            static_ptr,
+            slim::makeArrayRef(sizes_vec),
+            slim::makeArrayRef(strides_vec),
+            static_cast<slim::c10::ScalarType>(cpu_tensor->scalar_type()),
+            DEFAULT_CUDA_DEVICE, 0));
+        continue;
+      }
 
       // Check if input data is already on GPU (skip-copy optimization for
       // inputs) This can happen when the caller has pre-staged data on GPU
@@ -620,6 +747,23 @@ class ET_EXPERIMENTAL CudaBackend final
     Result<cudaStream_t> cuda_stream_ret = getCurrentCUDAStream(0);
     cudaStream_t cuda_stream = cuda_stream_ret.get();
     ET_CHECK_OK_OR_RETURN_ERROR(cuda_stream_ret.error());
+
+    if (is_capture_step) {
+      // ----- CUDA graph CAPTURE -----
+      ET_LOG(
+          Info,
+          "CUDA graph: beginning stream capture for '%s'",
+          handle->method_name.c_str());
+
+      cudaError_t cerr = cudaStreamBeginCapture(
+          cuda_stream, cudaStreamCaptureModeRelaxed);
+      ET_CHECK_OR_RETURN_ERROR(
+          cerr == cudaSuccess,
+          Internal,
+          "cudaStreamBeginCapture failed: %s",
+          cudaGetErrorString(cerr));
+    }
+
     AOTIRuntimeError error = handle->run(
         handle->container_handle,
         reinterpret_cast<Tensor**>(gpu_inputs.data()),
@@ -644,6 +788,88 @@ class ET_EXPERIMENTAL CudaBackend final
         Internal,
         "AOTInductorModelContainerRun failed with error code %d",
         error);
+
+    if (is_capture_step) {
+      // End capture → instantiate graph
+      cudaError_t gerr =
+          cudaStreamEndCapture(cuda_stream, &handle->cuda_graph);
+      ET_CHECK_OR_RETURN_ERROR(
+          gerr == cudaSuccess,
+          Internal,
+          "cudaStreamEndCapture failed: %s",
+          cudaGetErrorString(gerr));
+
+      gerr = cudaGraphInstantiate(
+          &handle->cuda_graph_exec, handle->cuda_graph,
+          cudaGraphInstantiateFlagAutoFreeOnLaunch);
+      ET_CHECK_OR_RETURN_ERROR(
+          gerr == cudaSuccess,
+          Internal,
+          "cudaGraphInstantiate failed: %s",
+          cudaGetErrorString(gerr));
+
+      // Record static output pointers (stable under graph replay)
+      for (size_t i = 0; i < n_outputs; i++) {
+        SlimTensor* out = gpu_outputs[i];
+        handle->static_output_ptrs.push_back(out->data_ptr());
+
+        auto out_sizes = out->sizes();
+        auto out_strides = out->strides();
+        handle->static_output_sizes.push_back(
+            std::vector<int64_t>(out_sizes.begin(), out_sizes.end()));
+        handle->static_output_strides.push_back(
+            std::vector<int64_t>(out_strides.begin(), out_strides.end()));
+        handle->static_output_scalar_types.push_back(
+            static_cast<int>(out->dtype()));
+        handle->static_output_nbytes.push_back(out->nbytes());
+      }
+
+      handle->cuda_graph_phase = 2; // switch to replay mode
+      ET_LOG(
+          Info,
+          "CUDA graph: captured and instantiated for '%s'",
+          handle->method_name.c_str());
+
+      // Replay once to actually produce output (capture doesn't execute)
+      gerr = cudaGraphLaunch(handle->cuda_graph_exec, cuda_stream);
+      ET_CHECK_OR_RETURN_ERROR(
+          gerr == cudaSuccess,
+          Internal,
+          "cudaGraphLaunch (first replay) failed: %s",
+          cudaGetErrorString(gerr));
+
+      // Copy capture-step outputs to CPU
+      const bool copy_outputs =
+          !should_skip_copy_for_method(handle->method_name);
+      if (copy_outputs) {
+        for (size_t i = 0; i < n_outputs; i++) {
+          auto* cpu_out = &(args[i + n_inputs]->toTensor());
+          cudaMemcpyAsync(
+              cpu_out->mutable_data_ptr(),
+              handle->static_output_ptrs[i],
+              handle->static_output_nbytes[i],
+              cudaMemcpyDeviceToHost,
+              cuda_stream);
+          // Don't delete — static buffers are owned by the handle
+          gpu_outputs[i] = nullptr;
+        }
+      }
+
+      return Error::Ok;
+    }
+
+    // ----- Normal / WARMUP execution continues here -----
+
+    // Decrement warmup counter if in warmup phase
+    if (handle->cuda_graph_phase == 1 &&
+        handle->cuda_graph_warmup_remaining > 0) {
+      handle->cuda_graph_warmup_remaining--;
+      ET_LOG(
+          Info,
+          "CUDA graph warmup: %d steps remaining for '%s'",
+          handle->cuda_graph_warmup_remaining,
+          handle->method_name.c_str());
+    }
 
     const bool copy_outputs = !should_skip_copy_for_method(handle->method_name);
 
@@ -738,6 +964,9 @@ class ET_EXPERIMENTAL CudaBackend final
  private:
   mutable std::mutex skip_copy_method_mutex_;
   std::string skip_copy_method_;
+
+  mutable std::mutex cuda_graph_method_mutex_;
+  std::string cuda_graph_method_;
 
   // Shared CUDA stream for all methods. When set (non-null), all methods use
   // the same stream to ensure proper ordering (critical for skip-copy
