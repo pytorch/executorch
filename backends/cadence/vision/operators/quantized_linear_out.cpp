@@ -99,11 +99,6 @@ void quantized_linear_per_tensor_out(
     const int8_t* weight_data = weight.const_data_ptr<int8_t>();
     const int32_t* bias_data = bias.const_data_ptr<int32_t>();
     int8_t* out_data = out.mutable_data_ptr<int8_t>();
-
-    // Cache coherency: invalidate inputs that may have been DMA-written by prior ops
-    xthal_dcache_region_invalidate((void*)in_data, sizeof(int8_t) * src.numel());
-    xthal_dcache_region_invalidate((void*)weight_data, sizeof(int8_t) * weight.numel());
-    xthal_dcache_region_invalidate((void*)bias_data, sizeof(int32_t) * bias.numel());
     
     const int32_t in_zp = static_cast<int32_t>(src_zero_point);
     const int32_t weight_zp = static_cast<int32_t>(weight_zero_point);
@@ -167,6 +162,10 @@ void quantized_linear_per_tensor_out(
     }
     
     // Fallback: No DMA or multi-sample - use direct SIMD
+    // Invalidate input cache: previous op may have written via DMA, CPU must not see stale cache
+    xthal_dcache_region_invalidate((void*)in_data, sizeof(int8_t) * src.numel());
+    xthal_dcache_region_invalidate((void*)weight_data, sizeof(int8_t) * weight.numel());
+    xthal_dcache_region_invalidate((void*)bias_data, sizeof(int32_t) * bias.numel());
     for (size_t i = 0; i < leading_dims; ++i) {
       const int8_t* in_row = &in_data[i * in_dim];
       

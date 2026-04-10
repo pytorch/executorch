@@ -356,9 +356,6 @@ XAI_ERR_TYPE conv_exec_7x7j2d1VQ(
     // Wait for final output DMA to complete before returning
     idma_hw_wait_all(0);
 
-    // Invalidate cached copies of dst so next operator reads fresh DMA-written data
-    xthal_dcache_region_invalidate(dst, config->dst_dim2_pitch * config->dst_dim3_size);
-
     return XAI_ERR_OK;
 }
 
@@ -670,9 +667,6 @@ XAI_ERR_TYPE conv_exec_7x7j2d1(
     
     // Wait for final output DMA to complete before returning
     idma_hw_wait_all(0);
-
-    // Invalidate cached copies of dst so next operator reads fresh DMA-written data
-    xthal_dcache_region_invalidate(dst, config->dst_dim2_pitch * config->dst_dim3_size);
 
     return XAI_ERR_OK;
 }

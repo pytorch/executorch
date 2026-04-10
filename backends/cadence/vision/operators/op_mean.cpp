@@ -91,9 +91,6 @@ Tensor& mean_out(
     int channels = in.size(1);
     int total_channels = batch_size * channels;
 
-    // Invalidate input cache so DMA reads fresh data from system memory
-    xthal_dcache_region_invalidate((void*)input_data, sizeof(float) * in.numel());
-    
     // Check if DRAM buffers are available for DMA
     bool dram0_available = (ptr_dram0 != nullptr) && (IDMA_BUFFER_SIZE_DRAM0 > 0);
     bool dram1_available = (ptr_dram1 != nullptr) && (IDMA_BUFFER_SIZE_DRAM1 > 0);
@@ -134,6 +131,8 @@ Tensor& mean_out(
     }
     
     // Fallback: Direct SIMD without DMA (data fits or no DRAM)
+    // Invalidate input cache: previous op may have written via DMA, CPU must not see stale cache
+    xthal_dcache_region_invalidate((void*)input_data, sizeof(float) * in.numel());
     simd_mean_pool_2x2_to_1x1_float32(out_data, input_data, total_channels * 4);
     xthal_dcache_region_writeback(out_data, sizeof(float) * out.numel());
 

@@ -129,9 +129,6 @@ Tensor& quantize_per_tensor_out(
         // Load first chunk via ch0
         size_t current_chunk = (numel < chunk_size) ? numel : chunk_size;
 
-        // Invalidate input cache: previous op wrote via DMA, CPU must not see stale cache
-        xthal_dcache_region_invalidate((void*)ptr_inp, FLT32_SIZE * numel);
-
         dma_1dm(0, ptr_in, inp_buff[pp_swap], FLT32_SIZE * current_chunk);
 
         size_t remaining = numel - current_chunk;
@@ -171,9 +168,6 @@ Tensor& quantize_per_tensor_out(
         dma_1dm(1, out_buff[pp_swap], ptr_out, sizeof(int8_t) * current_chunk);
         idma_hw_wait_all(1);
         
-        // Invalidate cache for DMA-written output so next operator sees fresh data
-        xthal_dcache_region_invalidate(out_data, sizeof(int8_t) * numel);
-        
         TIME_END(quantize_asym8s);
         TIME_DISPLAY(quantize_asym8s, numel, "elements (DMA ping-pong)");
       } 
@@ -204,9 +198,6 @@ Tensor& quantize_per_tensor_out(
           remaining -= current_chunk;
         }
         idma_hw_wait_all(1);
-        
-        // Invalidate cache for DMA-written output so next operator sees fresh data
-        xthal_dcache_region_invalidate(out_data, sizeof(int8_t) * numel);
         
         TIME_END(quantize_asym8s);
         TIME_DISPLAY(quantize_asym8s, numel, "elements (DMA ping-process-pong)");
