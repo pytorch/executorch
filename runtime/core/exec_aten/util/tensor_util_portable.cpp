@@ -137,6 +137,32 @@ bool tensors_have_same_dim_order(
 
 namespace internal {
 
+Error check_tensor_data_layout(
+    const torch::executor::Tensor& t_src,
+    executorch::runtime::Span<const uint8_t> expected_dim_order) {
+  // Input tensors don't actually have to have a dim order, so we can't check.
+  // Tech debt from dim order being a later addition to the tensor spec.
+  if (t_src.dim_order().data() == nullptr) {
+    return Error::Ok;
+  }
+
+  auto src_dim_order = t_src.dim_order();
+  ET_CHECK_OR_RETURN_ERROR(
+      expected_dim_order.size() == src_dim_order.size(),
+      InvalidArgument,
+      "Input dim order size (%zu) != expected (%zu).",
+      src_dim_order.size(),
+      expected_dim_order.size());
+  ET_CHECK_OR_RETURN_ERROR(
+      std::equal(
+          expected_dim_order.begin(),
+          expected_dim_order.end(),
+          src_dim_order.data()),
+      InvalidArgument,
+      "Input dim order does not match the model.");
+  return Error::Ok;
+}
+
 Error share_tensor_data(
     const torch::executor::Tensor& t_dst,
     const torch::executor::Tensor& t_src) {
