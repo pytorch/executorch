@@ -27,8 +27,9 @@ class XNNCompiler {
       const void* buffer_pointer,
       size_t num_bytes,
       XNNExecutor* executor,
-      MemoryAllocator* runtime_allocator,
-      xnn_workspace_t workspace);
+      XNNWeightsCache* weights_cache,
+      xnn_workspace_t workspace,
+      const NamedDataMap* named_data_map);
 };
 
 } // namespace delegate

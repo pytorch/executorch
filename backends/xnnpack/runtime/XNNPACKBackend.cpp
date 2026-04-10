@@ -58,25 +58,6 @@ class XnnpackBackend final
     }
   }
 
-  XnnpackBackend() {
-      // Initialize XNNPACK
-      xnn_status status = xnn_initialize(/*allocator=*/nullptr);
-      if (status != xnn_status_success) {
-        ET_LOG(Error, "Failed to initialize, XNNPACK status: 0x%x", (unsigned int)status);
-        return;
-      }
-
-      // Create a workspace for the XNNExecutor to use. This workspace will be
-      // shared across all delegate instances.
-      status = xnn_create_workspace(&workspace_);
-      if (status != xnn_status_success) {
-        ET_LOG(Error, "Failed to create XNN workspace, XNNPACK status: 0x%x", (unsigned int)status);
-        workspace_ = nullptr;
-        return;
-      }
-      ET_LOG(Debug, "Created XNN workspace: %p", workspace_); 
-  }
-
   bool is_available() const override {
     return xnn_status_success == xnn_initialize(/*allocator=*/nullptr);
   }
@@ -122,15 +103,14 @@ class XnnpackBackend final
     // nullptr by constructing it in place here. NOTE: Since we use placement
     // new and since this type is not trivially destructible, we must call the
     // destructor manually in destroy().
-    new (executor) xnnpack::delegate::XNNExecutor;
-  
-    ET_CHECK_OR_RETURN_ERROR(workspace_ != nullptr, Internal, "Failed to create XNN workspace");
+    new (executor) xnnpack::delegate::XNNExecutor(workspace);
     Error err = xnnpack::delegate::XNNCompiler::compileModel(
         processed->data(),
         processed->size(),
         executor,
-        context.get_runtime_allocator(),
-        workspace_);
+        weights_cache_.get(),
+        workspace_ptr,
+        named_data_map);
     // This backend does not need its processed data after compiling the model.
     processed->Free();
 
@@ -206,10 +186,42 @@ class XnnpackBackend final
     }
   }
 
-  private:
-    // Global state for the backend.
-    xnn_workspace_t workspace_;
-    // TODO - Add support for weight cache
+  Error get_option(
+      BackendOptionContext& context,
+      Span<BackendOption>& backend_options) override {
+    for (size_t i = 0; i < backend_options.size(); ++i) {
+      Error err = options_.get_option(backend_options[i]);
+      if (err != Error::Ok) {
+        return err;
+      }
+    }
+    return Error::Ok;
+  }
+
+  Error set_option(
+      BackendOptionContext& context,
+      const Span<BackendOption>& backend_options) override {
+    for (const auto& option : backend_options) {
+      Error err = options_.set_option(option);
+      if (err != Error::Ok) {
+        return err;
+      }
+    }
+    return Error::Ok;
+  }
+
+ private:
+  mutable xnnpack::XnnpackBackendOptions options_;
+
+  // Weights cache is global to all delegate instances.
+  mutable std::mutex weights_cache_mutex_;
+  std::unique_ptr<XNNWeightsCache> weights_cache_ =
+      std::make_unique<XNNWeightsCache>();
+
+  // Lock Hiearchy for Mutexes:
+  // weights_cache_mutex_
+  // workspace_meta_mutex_
+  // workspace_mutex_ (owned by executor)
 };
 
 namespace {

@@ -149,6 +149,16 @@ union XNodeUnion {
   XNNStaticSlice,
   XNNScaledDotProductAttention,
   XNNBatchMatrixMultiply: _XNNNode2x1,
+  XNNConcatenate5: _XNNCat,
+  XNNConvTranspose2d: _XNNNodeConv,
+  XNNReciprocalSquareRoot: _XNNNode1x1,
+  XNNLog: _XNNNode1x1,
+  XNNGelu: _XNNNode1x1,
+  XNNTanh: _XNNNode1x1,
+  XNNExp: _XNNNode1x1,
+  XNNSin: _XNNNode1x1,
+  XNNCopy: _XNNNode1x1,
+  XNNCos: _XNNNode1x1,
 }
 
 union XValueUnion {
