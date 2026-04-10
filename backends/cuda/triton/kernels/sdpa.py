@@ -1390,39 +1390,67 @@ def sdpa_decode_splitk(
     key: torch.Tensor,
     value: torch.Tensor,
     attn_mask: Optional[torch.Tensor] = None,
+    dropout_p: float = 0.0,
+    is_causal: bool = False,
     scale: float = 0.0,
+    enable_gqa: bool = False,
 ) -> torch.Tensor:
+    """Split-K flash-decoding SDPA for L_q=1 (decode step).
+
+    Signature mirrors sdpa() for drop-in use with torch.cond dispatch.
+    enable_gqa is accepted but ignored — GQA is handled natively via
+    H_q // H_kv grouping; no packed-GQA tradeoff exists at L_q=1.
+    """
+    _validate_sdpa_inputs(query, key, value, dropout_p, enable_gqa)
+
     B, H_q, L_q, D = query.shape
     _, H_kv, L_kv, _ = key.shape
+
+    out = torch.empty((B, H_q, L_q, D), device=query.device, dtype=query.dtype)
 
     # is_causal is a no-op at L_q=1 (single query can't attend to future
     # positions), so we accept it silently for API compatibility with callers
     # that always pass is_causal=True for decode.
 
-    if L_q != 1:
-        raise RuntimeError(
-            f"sdpa_decode_splitk requires L_q == 1 (decode); got L_q={L_q}"
-        )
-    if H_q % H_kv != 0:
-        raise RuntimeError(
-            f"H_q must be divisible by H_kv; got H_q={H_q}, H_kv={H_kv}"
-        )
-    if not _is_power_of_2(D):
-        raise RuntimeError(
-            f"sdpa_decode_splitk requires power-of-2 head dim; got D={D}"
-        )
+    # Validation — only check at runtime (concrete shapes), not during AOTI
+    # tracing where shapes are symbolic. torch.cond traces both branches with
+    # the same symbolic L_q, so L_q is not necessarily 1 during tracing.
+    if isinstance(L_q, int):
+        if L_q != 1:
+            raise RuntimeError(
+                f"sdpa_decode_splitk requires L_q == 1 (decode); got L_q={L_q}"
+            )
+        if H_q % H_kv != 0:
+            raise RuntimeError(
+                f"H_q must be divisible by H_kv; got H_q={H_q}, H_kv={H_kv}"
+            )
+        if not _is_power_of_2(D):
+            raise RuntimeError(
+                f"sdpa_decode_splitk requires power-of-2 head dim; got D={D}"
+            )
 
     num_groups = H_q // H_kv
-    out = torch.empty((B, H_q, L_q, D), device=query.device, dtype=query.dtype)
     sm_scale = 1.0 / math.sqrt(D) if scale == 0.0 else scale
     HAS_MASK, Mask_ptr, stride_mb, stride_mq, stride_mk = _prepare_mask_params(
         attn_mask, B, L_q, L_kv
     )
 
     _launch_decode_splitk(
-        query, key, value, out,
-        B, H_q, H_kv, L_kv, D, sm_scale,
-        HAS_MASK, Mask_ptr, stride_mb, stride_mq, stride_mk,
+        query,
+        key,
+        value,
+        out,
+        B,
+        H_q,
+        H_kv,
+        L_kv,
+        D,
+        sm_scale,
+        HAS_MASK,
+        Mask_ptr,
+        stride_mb,
+        stride_mq,
+        stride_mk,
         num_groups,
     )
     return out
@@ -1434,7 +1462,10 @@ def _sdpa_decode_splitk_abstract(
     key: torch.Tensor,
     value: torch.Tensor,
     attn_mask: Optional[torch.Tensor] = None,
+    dropout_p: float = 0.0,
+    is_causal: bool = False,
     scale: float = 0.0,
+    enable_gqa: bool = False,
 ) -> torch.Tensor:
     assert query.dtype == key.dtype == value.dtype, "Q, K, V must have the same dtype"
     B, H_q, L_q, D = query.shape
