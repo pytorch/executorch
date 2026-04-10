@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 # Copyright 2023-2026 Arm Limited and/or its affiliates.
