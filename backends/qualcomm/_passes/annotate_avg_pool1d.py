@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import dq_ops, q_ops
 from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
@@ -13,21 +14,29 @@ from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 from .utils import get_quant_attrs
 
 
-class AnnotateAdaptiveAvgPool1D(ExportPass):
+class AnnotateAvgPool1D(ExportPass):
     """
     Add "quant_attrs" to graph nodes' meta from the QDQ information
     generated after quantization process.
-    adaptive_avg_pool1d got decomposed to unsqueeze -> adaptive_avg_pool2d -> squeeze
+    avg_pool1d and adaptive_avg_pool1d get decomposed to:
+        unsqueeze -> avg_pool2d/adaptive_avg_pool2d -> squeeze
     """
 
+    _SOURCE_OPS = [
+        torch.ops.aten.avg_pool1d.default,
+        torch.avg_pool1d,
+        torch.ops.aten.adaptive_avg_pool1d.default,
+        torch.adaptive_avg_pool1d,
+    ]
+
     def __init__(self, edge_program: torch.export.ExportedProgram):
-        super(AnnotateAdaptiveAvgPool1D, self).__init__()
+        super(AnnotateAvgPool1D, self).__init__()
         self.edge_program = edge_program
 
-    def _annotate_adaptive_avg_pool1d(self, graph_module: torch.fx.GraphModule):
+    def _annotate(self, graph_module: torch.fx.GraphModule):
         partitions = get_source_partitions(
             graph_module.graph,
-            [torch.ops.aten.adaptive_avg_pool1d.default, torch.adaptive_avg_pool1d],
+            self._SOURCE_OPS,
         )
         for src_partitions in partitions.values():
             for src_partition in src_partitions:
@@ -44,11 +53,11 @@ class AnnotateAdaptiveAvgPool1D(ExportPass):
                         self.edge_program, list(output.users)[0]
                     )
                     for n in src_partition.nodes:
-                        # For adaptive_avg_pool2d and squeeze
+                        # For avg_pool2d/adaptive_avg_pool2d and squeeze
                         if n.target != exir_ops.edge.aten.unsqueeze_copy.default:
                             n.meta[QCOM_QUANT_ATTRS] = quant_attrs.copy()
 
     def call(self, graph_module: torch.fx.GraphModule):
-        self._annotate_adaptive_avg_pool1d(graph_module)
+        self._annotate(graph_module)
         graph_module.recompile()
         return PassResult(graph_module, True)

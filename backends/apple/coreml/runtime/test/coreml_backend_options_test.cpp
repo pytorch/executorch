@@ -141,3 +141,83 @@ TEST_F(CoreMLBackendOptionsTest, SetComputeUnitMultipleTimes) {
         FAIL() << "Expected string value for compute_unit";
     }
 }
+
+// Test setCacheDirectory
+TEST_F(CoreMLBackendOptionsTest, SetCacheDirectory) {
+    LoadOptionsBuilder builder;
+    builder.setCacheDirectory("/path/to/cache");
+
+    auto options = builder.view();
+    EXPECT_EQ(options.size(), 1);
+    EXPECT_STREQ(options[0].key, "cache_dir");
+
+    if (auto* arr = std::get_if<std::array<char, kMaxOptionValueLength>>(&options[0].value)) {
+        EXPECT_STREQ(arr->data(), "/path/to/cache");
+    } else {
+        FAIL() << "Expected string value for cache_dir";
+    }
+}
+
+// Test setCacheDirectory method chaining
+TEST_F(CoreMLBackendOptionsTest, SetCacheDirectoryChaining) {
+    LoadOptionsBuilder builder;
+    auto& result = builder.setCacheDirectory("/tmp/cache");
+
+    // Should return reference to the same builder
+    EXPECT_EQ(&result, &builder);
+}
+
+// Test combining setComputeUnit and setCacheDirectory
+TEST_F(CoreMLBackendOptionsTest, CombinedOptions) {
+    LoadOptionsBuilder builder;
+    builder.setComputeUnit(LoadOptionsBuilder::ComputeUnit::CPU_AND_NE).setCacheDirectory("/data/experiment_cache");
+
+    auto options = builder.view();
+    EXPECT_EQ(options.size(), 2);
+
+    // Verify compute_unit
+    EXPECT_STREQ(options[0].key, "compute_unit");
+    if (auto* arr = std::get_if<std::array<char, kMaxOptionValueLength>>(&options[0].value)) {
+        EXPECT_STREQ(arr->data(), "cpu_and_ne");
+    } else {
+        FAIL() << "Expected string value for compute_unit";
+    }
+
+    // Verify cache_dir
+    EXPECT_STREQ(options[1].key, "cache_dir");
+    if (auto* arr = std::get_if<std::array<char, kMaxOptionValueLength>>(&options[1].value)) {
+        EXPECT_STREQ(arr->data(), "/data/experiment_cache");
+    } else {
+        FAIL() << "Expected string value for cache_dir";
+    }
+}
+
+// Test integration with LoadBackendOptionsMap including cache_dir
+TEST_F(CoreMLBackendOptionsTest, IntegrationWithOptionsMapCacheDir) {
+    LoadOptionsBuilder coreml_opts;
+    coreml_opts.setComputeUnit(LoadOptionsBuilder::ComputeUnit::ALL).setCacheDirectory("/custom/cache/path");
+
+    LoadBackendOptionsMap map;
+    EXPECT_EQ(map.set_options(coreml_opts), Error::Ok);
+
+    EXPECT_EQ(map.size(), 1);
+    EXPECT_TRUE(map.has_options("CoreMLBackend"));
+
+    auto retrieved = map.get_options("CoreMLBackend");
+    EXPECT_EQ(retrieved.size(), 2);
+
+    // Find cache_dir option
+    bool found_cache_dir = false;
+    for (size_t i = 0; i < retrieved.size(); ++i) {
+        if (std::strcmp(retrieved[i].key, "cache_dir") == 0) {
+            found_cache_dir = true;
+            if (auto* arr = std::get_if<std::array<char, kMaxOptionValueLength>>(&retrieved[i].value)) {
+                EXPECT_STREQ(arr->data(), "/custom/cache/path");
+            } else {
+                FAIL() << "Expected string value for cache_dir";
+            }
+            break;
+        }
+    }
+    EXPECT_TRUE(found_cache_dir) << "cache_dir option not found";
+}
