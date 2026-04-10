@@ -342,28 +342,22 @@ silero-vad-cpu:
 	@echo "  Binary: cmake-out/examples/models/silero_vad/silero_vad_stream_runner"
 
 llama-cpu:
-	@echo "==> Building and installing ExecuTorch..."
-	cmake --workflow --preset llm-release
 	@echo "==> Building Llama runner (CPU)..."
-	cd examples/models/llama && cmake --workflow --preset llama-release
+	cmake --workflow --preset llama-release
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/llama/llama_main"
 
 llama-cuda:
-	@echo "==> Building and installing ExecuTorch with CUDA..."
-	cmake --workflow --preset llm-release-cuda
 	@echo "==> Building Llama runner with CUDA..."
-	cd examples/models/llama && cmake --workflow --preset llama-cuda
+	cmake --workflow --preset llama-cuda
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/llama/llama_main"
 
 llama-cuda-debug:
-	@echo "==> Building and installing ExecuTorch with CUDA (debug mode)..."
-	cmake --workflow --preset llm-debug-cuda
 	@echo "==> Building Llama runner with CUDA (debug mode)..."
-	cd examples/models/llama && cmake --workflow --preset llama-cuda-debug
+	cmake --workflow --preset llama-cuda-debug
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/llama/llama_main"

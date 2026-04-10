@@ -9,20 +9,15 @@ set -exu
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-cmake_install_executorch_libraries() {
-    echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
-    rm -rf cmake-out
-    cmake --preset llm-release -DEXECUTORCH_ENABLE_LOGGING=ON
-    cmake --build --preset llm-release-install
-}
-
-cmake_build_llama_runner() {
+cmake_build_llama() {
     echo "Building llama runner"
     pushd extension/llm/tokenizers
     echo "Updating tokenizers submodule"
     git submodule update --init
     popd
-    make llama-cpu
+    rm -rf cmake-out
+    cmake --preset llm-release -DEXECUTORCH_ENABLE_LOGGING=ON
+    cmake --build cmake-out -j9 --target llama_main --config Release
 }
 
 cleanup_files() {
@@ -55,8 +50,7 @@ $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
     --config examples/models/qwen3/config/qwen3_multimethod.yaml
 
 ### BUILD LLAMA RUNNER ###
-cmake_install_executorch_libraries
-cmake_build_llama_runner
+cmake_build_llama
 
 # Runner constants.
 RUNTIME_ARGS="--tokenizer_path=${HF_QWEN_PATH}/ --temperature=0 --seq_len=100 --warmup=1"

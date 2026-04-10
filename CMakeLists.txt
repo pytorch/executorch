@@ -1140,6 +1140,7 @@ endif()
 if(EXECUTORCH_BUILD_KERNELS_LLM)
   # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/custom_ops)
+  executorch_target_link_options_shared_lib(custom_ops)
   list(APPEND _executorch_kernels custom_ops_aot_lib)
 endif()
 
@@ -1271,7 +1272,7 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
 
   if(EXECUTORCH_BUILD_KERNELS_LLM)
-    list(APPEND _executor_runner_libs $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
+    list(APPEND _executor_runner_libs custom_ops)
   endif()
 
   if(EXECUTORCH_ENABLE_EVENT_TRACER)
@@ -1321,6 +1322,12 @@ endif()
 if(EXECUTORCH_BUILD_ANDROID_JNI)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
 endif()
+
+# Examples — EXCLUDE_FROM_ALL so they only build when explicitly requested
+# (e.g., cmake --build cmake-out --target llama_main).
+add_subdirectory(
+  ${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama EXCLUDE_FROM_ALL
+)
 
 include(Test.cmake)
 
