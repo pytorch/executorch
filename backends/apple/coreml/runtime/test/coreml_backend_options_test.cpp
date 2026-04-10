@@ -221,3 +221,121 @@ TEST_F(CoreMLBackendOptionsTest, IntegrationWithOptionsMapCacheDir) {
     }
     EXPECT_TRUE(found_cache_dir) << "cache_dir option not found";
 }
+
+// Test setUseNewCache with true
+TEST_F(CoreMLBackendOptionsTest, SetUseNewCacheTrue) {
+    LoadOptionsBuilder builder;
+    builder.setUseNewCache(true);
+
+    auto options = builder.view();
+    EXPECT_EQ(options.size(), 1);
+    EXPECT_STREQ(options[0].key, "_use_new_cache");
+
+    if (auto* val = std::get_if<bool>(&options[0].value)) {
+        EXPECT_TRUE(*val);
+    } else {
+        FAIL() << "Expected bool value for _use_new_cache";
+    }
+}
+
+// Test setUseNewCache with false
+TEST_F(CoreMLBackendOptionsTest, SetUseNewCacheFalse) {
+    LoadOptionsBuilder builder;
+    builder.setUseNewCache(false);
+
+    auto options = builder.view();
+    EXPECT_EQ(options.size(), 1);
+    EXPECT_STREQ(options[0].key, "_use_new_cache");
+
+    if (auto* val = std::get_if<bool>(&options[0].value)) {
+        EXPECT_FALSE(*val);
+    } else {
+        FAIL() << "Expected bool value for _use_new_cache";
+    }
+}
+
+// Test setUseNewCache method chaining
+TEST_F(CoreMLBackendOptionsTest, SetUseNewCacheChaining) {
+    LoadOptionsBuilder builder;
+    auto& result = builder.setUseNewCache(true);
+
+    // Should return reference to the same builder
+    EXPECT_EQ(&result, &builder);
+}
+
+// Test combining setComputeUnit, setCacheDirectory, and setUseNewCache
+TEST_F(CoreMLBackendOptionsTest, AllOptionsCombined) {
+    LoadOptionsBuilder builder;
+    builder.setComputeUnit(LoadOptionsBuilder::ComputeUnit::CPU_AND_GPU)
+        .setCacheDirectory("/path/to/cache")
+        .setUseNewCache(true);
+
+    auto options = builder.view();
+    EXPECT_EQ(options.size(), 3);
+
+    // Find and verify each option
+    bool found_compute_unit = false;
+    bool found_cache_dir = false;
+    bool found_use_new_cache = false;
+
+    for (size_t i = 0; i < options.size(); ++i) {
+        if (std::strcmp(options[i].key, "compute_unit") == 0) {
+            found_compute_unit = true;
+            if (auto* arr = std::get_if<std::array<char, kMaxOptionValueLength>>(&options[i].value)) {
+                EXPECT_STREQ(arr->data(), "cpu_and_gpu");
+            }
+        } else if (std::strcmp(options[i].key, "cache_dir") == 0) {
+            found_cache_dir = true;
+            if (auto* arr = std::get_if<std::array<char, kMaxOptionValueLength>>(&options[i].value)) {
+                EXPECT_STREQ(arr->data(), "/path/to/cache");
+            }
+        } else if (std::strcmp(options[i].key, "_use_new_cache") == 0) {
+            found_use_new_cache = true;
+            if (auto* val = std::get_if<bool>(&options[i].value)) {
+                EXPECT_TRUE(*val);
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_compute_unit) << "compute_unit option not found";
+    EXPECT_TRUE(found_cache_dir) << "cache_dir option not found";
+    EXPECT_TRUE(found_use_new_cache) << "_use_new_cache option not found";
+}
+
+// Test integration with LoadBackendOptionsMap including _use_new_cache
+TEST_F(CoreMLBackendOptionsTest, IntegrationWithOptionsMapUseNewCache) {
+    LoadOptionsBuilder coreml_opts;
+    coreml_opts.setUseNewCache(true);
+
+    LoadBackendOptionsMap map;
+    EXPECT_EQ(map.set_options(coreml_opts), Error::Ok);
+
+    EXPECT_EQ(map.size(), 1);
+    EXPECT_TRUE(map.has_options("CoreMLBackend"));
+
+    auto retrieved = map.get_options("CoreMLBackend");
+    EXPECT_EQ(retrieved.size(), 1);
+    EXPECT_STREQ(retrieved[0].key, "_use_new_cache");
+
+    if (auto* val = std::get_if<bool>(&retrieved[0].value)) {
+        EXPECT_TRUE(*val);
+    } else {
+        FAIL() << "Expected bool value for _use_new_cache";
+    }
+}
+
+// Test setUseNewCache updates when called multiple times
+TEST_F(CoreMLBackendOptionsTest, SetUseNewCacheMultipleTimes) {
+    LoadOptionsBuilder builder;
+    builder.setUseNewCache(true);
+    builder.setUseNewCache(false);
+
+    auto options = builder.view();
+    EXPECT_EQ(options.size(), 1);
+
+    if (auto* val = std::get_if<bool>(&options[0].value)) {
+        EXPECT_FALSE(*val); // Last value wins
+    } else {
+        FAIL() << "Expected bool value for _use_new_cache";
+    }
+}

@@ -96,6 +96,21 @@ public:
     }
 
     /**
+     * Controls whether to use the new filesystem cache (ETCoreMLModelCache).
+     *
+     * This is a temporary runtime option for A/B testing the new cache
+     * implementation. It will be removed once the new cache is fully rolled out.
+     *
+     * @param enabled If true, uses the new filesystem cache.
+     *                If false (default), uses the legacy asset manager.
+     * @return Reference to this builder for chaining.
+     */
+    LoadOptionsBuilder& setUseNewCache(bool enabled) {
+        options_.set_option("_use_new_cache", enabled);
+        return *this;
+    }
+
+    /**
      * Returns the backend identifier for this options builder.
      */
     static constexpr const char* backend_id() { return "CoreMLBackend"; }
