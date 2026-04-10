@@ -58,7 +58,7 @@ class Program final {
      */
     Minimal,
     /**
-     * When ET_ENABLE_PROGRAM_VERIFICATION is enabled,
+     * When ET_ENABLE_PROGRAM_VERIFICATION is enabled (the default),
      * Do full verification of the data, ensuring that internal pointers are
      * self-consistent and that the data has not been truncated or obviously
      * corrupted. May not catch all types of corruption, but should guard
@@ -86,12 +86,12 @@ class Program final {
    */
   ET_NODISCARD static Result<Program> load(
       DataLoader* loader,
-      Verification verification = Verification::Minimal);
+      Verification verification = Verification::InternalConsistency);
 
   /// DEPRECATED: Use the lowercase `load()` instead.
   ET_DEPRECATED ET_NODISCARD static Result<Program> Load(
       DataLoader* loader,
-      Verification verification = Verification::Minimal) {
+      Verification verification = Verification::InternalConsistency) {
     return load(loader, verification);
   }
 

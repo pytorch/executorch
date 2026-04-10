@@ -20,9 +20,10 @@
 #include <executorch/schema/program_generated.h>
 
 /*
- * Program verification can increase code size by ~30k. Targets that need to
- * save this space can avoid building it by passing
- * -DET_ENABLE_PROGRAM_VERIFICATION=0 on the compile line.
+ * Program verification adds ~8kB to .text (~4kB stripped). Targets that need
+ * to save this space can avoid building it by passing
+ * -DET_ENABLE_PROGRAM_VERIFICATION=0 on the compile line. When disabled,
+ * requesting Verification::InternalConsistency will return Error::NotSupported.
  */
 #ifndef ET_ENABLE_PROGRAM_VERIFICATION
 #define ET_ENABLE_PROGRAM_VERIFICATION 1
@@ -185,18 +186,15 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
         "Program validation failed: likely a corrupt file");
 #else
     ET_LOG(
-        Info,
-        "InternalConsistency verification requested but not available; "
-        "falling back to Minimal verification. "
-        "Build with ET_ENABLE_PROGRAM_VERIFICATION=1 for full verification.");
+        Error,
+        "InternalConsistency verification requested but not available. "
+        "Build with ET_ENABLE_PROGRAM_VERIFICATION=1 or "
+        "use Verification::Minimal to skip verification.");
+    return Error::NotSupported;
 #endif
   }
 
-  if (verification == Verification::Minimal
-#if !ET_ENABLE_PROGRAM_VERIFICATION
-      || verification == Verification::InternalConsistency
-#endif
-  ) {
+  if (verification == Verification::Minimal) {
     // Verify that the root table offset is within bounds.
     // In InternalConsistency mode this is done by VerifyProgramBuffer above.
     uint32_t root_offset =

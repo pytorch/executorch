@@ -183,9 +183,11 @@ endif()
 add_definitions(-DET_MIN_LOG_LEVEL=${ET_MIN_LOG_LEVEL})
 
 if(NOT EXECUTORCH_ENABLE_PROGRAM_VERIFICATION)
-  # Avoid pulling in the flatbuffer data verification logic, which can add about
-  # 20kB. Note that this will set the compiler flag for all targets in this
-  # directory, and for all subdirectories included after this point.
+  # Disabling program verification saves ~4kB (stripped) by removing the
+  # flatbuffer data verification logic. Note that this will set the compiler
+  # flag for all targets in this directory, and for all subdirectories included
+  # after this point. When disabled, requesting
+  # Verification::InternalConsistency at runtime will return an error.
   add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
 endif()
 
