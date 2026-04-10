@@ -1,0 +1,233 @@
+I 00:00:00.198448 executorch:executor_runner.cpp:258] Model file operator_and_model_testing/resnet18/pte/resnet18_quantized.pte is loaded.
+I 00:00:00.201610 executorch:executor_runner.cpp:267] Using method forward
+I 00:00:00.204215 executorch:executor_runner.cpp:318] Setting up planned buffer 0, size 458752.
+I 00:00:00.454018 executorch:executor_runner.cpp:346] Method loaded.
+I 00:00:00.456195 executorch:executor_runner.cpp:350] Number of operators: 8
+I 00:00:00.458678 executorch:executor_runner.cpp:354] Operator[0]: cadence::quantize_per_tensor
+I 00:00:00.461090 executorch:executor_runner.cpp:354] Operator[1]: cadence::quantized_conv2d_nchw
+I 00:00:00.463437 executorch:executor_runner.cpp:354] Operator[2]: cadence::quantized_relu
+I 00:00:00.465898 executorch:executor_runner.cpp:354] Operator[3]: cadence::dequantize_per_tensor
+I 00:00:00.468260 executorch:executor_runner.cpp:354] Operator[4]: aten::max_pool2d_with_indices
+I 00:00:00.470592 executorch:executor_runner.cpp:354] Operator[5]: aten::add
+I 00:00:00.472842 executorch:executor_runner.cpp:354] Operator[6]: aten::mean
+I 00:00:00.475103 executorch:executor_runner.cpp:354] Operator[7]: cadence::quantized_linear
+PERF_LOG : quantize_asym8s : 12288 : elements (DMA ping-pong) : 2855 : cycles : 4.30 : elements (DMA ping-pong)/cycle : 0.23 : cycles/elements (DMA ping-pong)
+CONV_QUANT [3x64x64 -> 64x32x32 k=7x7 s=2 p=3]: eff_scale=0.00341019 accum_shift=7 out_shift=17 out_scale=57213 max_acc=2416402 num_prod=147 out_zp=-8 in_zp=10 max_abs_bias=7954 overflow_24bit=0/64
+CONV_LAYER_CMP [layer=1 3x64x64->64x32x32 k=7x7]: max_diff=48 avg_diff=4.8052 >1:23597/65536 accSh=7 outSh=17 outSc=57213
+PERF_LOG : conv2d : 12288 : elements : 143647962 : cycles : 0.00 : elements/cycle : 11690.10 : cycles/elements
+PERF_LOG : quantized_relu : 65536 : elements (DMA ping-pong) : 18008 : cycles : 3.64 : elements (DMA ping-pong)/cycle : 0.27 : cycles/elements (DMA ping-pong)
+PERF_LOG : dequantize_asym8s : 65536 : elements (DMA ping-pong) : 9860 : cycles : 6.65 : elements (DMA ping-pong)/cycle : 0.15 : cycles/elements (DMA ping-pong)
+PERF_LOG : maxpool : 65536 : floats : 41900 : cycles : 1.56 : floats/cycle : 0.64 : cycles/floats
+PERF_LOG : quantize_asym8s : 16384 : elements (DMA ping-pong) : 3847 : cycles : 4.26 : elements (DMA ping-pong)/cycle : 0.23 : cycles/elements (DMA ping-pong)
+CONV_QUANT [64x16x16 -> 64x16x16 k=3x3 s=1 p=1]: eff_scale=0.00251206 accum_shift=9 out_shift=15 out_scale=42145 max_acc=9549664 num_prod=576 out_zp=51 in_zp=-128 max_abs_bias=112480 overflow_24bit=0/64
+CONV_LAYER_CMP [layer=2 64x16x16->64x16x16 k=3x3]: max_diff=1 avg_diff=0.2828 >1:0/16384 accSh=9 outSh=15 outSc=42145
+PERF_LOG : conv2d : 16384 : elements : 156769527 : cycles : 0.00 : elements/cycle : 9568.45 : cycles/elements
+PERF_LOG : quantized_relu : 16384 : elements (DMA ping-pong) : 5195 : cycles : 3.15 : elements (DMA ping-pong)/cycle : 0.32 : cycles/elements (DMA ping-pong)
+CONV_QUANT [64x16x16 -> 64x16x16 k=3x3 s=1 p=1]: eff_scale=0.00185610 accum_shift=9 out_shift=15 out_scale=31140 max_acc=9555839 num_prod=576 out_zp=-27 in_zp=-128 max_abs_bias=118655 overflow_24bit=0/64
+CONV_LAYER_CMP [layer=3 64x16x16->64x16x16 k=3x3]: max_diff=27 avg_diff=1.2706 >1:805/16384 accSh=9 outSh=15 outSc=31140
+PERF_LOG : conv2d : 16384 : elements : 156769332 : cycles : 0.00 : elements/cycle : 9568.44 : cycles/elements
+PERF_LOG : dequantize_asym8s : 16384 : elements (DMA ping-pong) : 3164 : cycles : 5.18 : elements (DMA ping-pong)/cycle : 0.19 : cycles/elements (DMA ping-pong)
+PERF_LOG : add_float : 16384 : elements (DMA ping-pong) : 3577 : cycles : 4.58 : elements (DMA ping-pong)/cycle : 0.22 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantize_asym8s : 16384 : elements (DMA ping-pong) : 3847 : cycles : 4.26 : elements (DMA ping-pong)/cycle : 0.23 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantized_relu : 16384 : elements (DMA ping-pong) : 5195 : cycles : 3.15 : elements (DMA ping-pong)/cycle : 0.32 : cycles/elements (DMA ping-pong)
+CONV_QUANT [64x16x16 -> 64x16x16 k=3x3 s=1 p=1]: eff_scale=0.00192388 accum_shift=9 out_shift=15 out_scale=32277 max_acc=9540370 num_prod=576 out_zp=7 in_zp=-128 max_abs_bias=103186 overflow_24bit=0/64
+CONV_LAYER_CMP [layer=4 64x16x16->64x16x16 k=3x3]: max_diff=1 avg_diff=0.2377 >1:0/16384 accSh=9 outSh=15 outSc=32277
+PERF_LOG : conv2d : 16384 : elements : 156769542 : cycles : 0.00 : elements/cycle : 9568.45 : cycles/elements
+PERF_LOG : quantized_relu : 16384 : elements (DMA ping-pong) : 5195 : cycles : 3.15 : elements (DMA ping-pong)/cycle : 0.32 : cycles/elements (DMA ping-pong)
+CONV_QUANT [64x16x16 -> 64x16x16 k=3x3 s=1 p=1]: eff_scale=0.00273630 accum_shift=9 out_shift=15 out_scale=45907 max_acc=9612995 num_prod=576 out_zp=39 in_zp=-128 max_abs_bias=175811 overflow_24bit=0/64
+CONV_LAYER_CMP [layer=5 64x16x16->64x16x16 k=3x3]: max_diff=39 avg_diff=0.4227 >1:66/16384 accSh=9 outSh=15 outSc=45907
+PERF_LOG : conv2d : 16384 : elements : 156769231 : cycles : 0.00 : elements/cycle : 9568.43 : cycles/elements
+PERF_LOG : dequantize_asym8s : 16384 : elements (DMA ping-pong) : 3164 : cycles : 5.18 : elements (DMA ping-pong)/cycle : 0.19 : cycles/elements (DMA ping-pong)
+PERF_LOG : dequantize_asym8s : 16384 : elements (DMA ping-pong) : 3164 : cycles : 5.18 : elements (DMA ping-pong)/cycle : 0.19 : cycles/elements (DMA ping-pong)
+PERF_LOG : add_float : 16384 : elements (DMA ping-pong) : 3577 : cycles : 4.58 : elements (DMA ping-pong)/cycle : 0.22 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantize_asym8s : 16384 : elements (DMA ping-pong) : 3847 : cycles : 4.26 : elements (DMA ping-pong)/cycle : 0.23 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantized_relu : 16384 : elements (DMA ping-pong) : 5195 : cycles : 3.15 : elements (DMA ping-pong)/cycle : 0.32 : cycles/elements (DMA ping-pong)
+CONV_QUANT [64x16x16 -> 128x8x8 k=1x1 s=2 p=0]: eff_scale=0.00546281 accum_shift=6 out_shift=17 out_scale=45825 max_acc=1093892 num_prod=64 out_zp=7 in_zp=-128 max_abs_bias=45316 overflow_24bit=0/128
+CONV_LAYER_CMP [layer=6 64x16x16->128x8x8 k=1x1]: max_diff=7 avg_diff=0.0894 >1:8/8192 accSh=6 outSh=17 outSc=45825
+PERF_LOG : conv2d : 16384 : elements : 11027879 : cycles : 0.00 : elements/cycle : 673.09 : cycles/elements
+CONV_QUANT [64x16x16 -> 128x8x8 k=3x3 s=2 p=1]: eff_scale=0.00199578 accum_shift=9 out_shift=15 out_scale=33483 max_acc=9515084 num_prod=576 out_zp=9 in_zp=-128 max_abs_bias=77900 overflow_24bit=0/128
+CONV_LAYER_CMP [layer=7 64x16x16->128x8x8 k=3x3]: max_diff=9 avg_diff=0.2587 >1:7/8192 accSh=9 outSh=15 outSc=33483
+PERF_LOG : conv2d : 16384 : elements : 78449578 : cycles : 0.00 : elements/cycle : 4788.18 : cycles/elements
+PERF_LOG : quantized_relu : 8192 : elements (DMA ping-pong) : 3147 : cycles : 2.60 : elements (DMA ping-pong)/cycle : 0.38 : cycles/elements (DMA ping-pong)
+CONV_QUANT [128x8x8 -> 128x8x8 k=3x3 s=1 p=1]: eff_scale=0.00248363 accum_shift=10 out_shift=14 out_scale=41668 max_acc=19192964 num_prod=1152 out_zp=-16 in_zp=-128 max_abs_bias=318597 overflow_24bit=0/128
+CONV_LAYER_CMP [layer=8 128x8x8->128x8x8 k=3x3]: max_diff=16 avg_diff=0.6519 >1:276/8192 accSh=10 outSh=14 outSc=41668
+PERF_LOG : conv2d : 8192 : elements : 147061938 : cycles : 0.00 : elements/cycle : 17951.90 : cycles/elements
+PERF_LOG : dequantize_asym8s : 8192 : elements (DMA ping-pong) : 1946 : cycles : 4.21 : elements (DMA ping-pong)/cycle : 0.24 : cycles/elements (DMA ping-pong)
+PERF_LOG : dequantize_asym8s : 8192 : elements (DMA ping-pong) : 1946 : cycles : 4.21 : elements (DMA ping-pong)/cycle : 0.24 : cycles/elements (DMA ping-pong)
+PERF_LOG : add_float : 8192 : elements (DMA ping-pong) : 2155 : cycles : 3.80 : elements (DMA ping-pong)/cycle : 0.26 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantize_asym8s : 8192 : elements (DMA ping-pong) : 2289 : cycles : 3.58 : elements (DMA ping-pong)/cycle : 0.28 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantized_relu : 8192 : elements (DMA ping-pong) : 3147 : cycles : 2.60 : elements (DMA ping-pong)/cycle : 0.38 : cycles/elements (DMA ping-pong)
+CONV_QUANT [128x8x8 -> 128x8x8 k=3x3 s=1 p=1]: eff_scale=0.00176260 accum_shift=10 out_shift=15 out_scale=59143 max_acc=19285600 num_prod=1152 out_zp=17 in_zp=-128 max_abs_bias=411233 overflow_24bit=0/128
+CONV_LAYER_CMP [layer=9 128x8x8->128x8x8 k=3x3]: max_diff=1 avg_diff=0.4491 >1:0/8192 accSh=10 outSh=15 outSc=59143
+PERF_LOG : conv2d : 8192 : elements : 147062567 : cycles : 0.00 : elements/cycle : 17951.97 : cycles/elements
+PERF_LOG : quantized_relu : 8192 : elements (DMA ping-pong) : 3147 : cycles : 2.60 : elements (DMA ping-pong)/cycle : 0.38 : cycles/elements (DMA ping-pong)
+CONV_QUANT [128x8x8 -> 128x8x8 k=3x3 s=1 p=1]: eff_scale=0.00325195 accum_shift=10 out_shift=14 out_scale=54558 max_acc=19329570 num_prod=1152 out_zp=18 in_zp=-128 max_abs_bias=455202 overflow_24bit=0/128
+CONV_LAYER_CMP [layer=10 128x8x8->128x8x8 k=3x3]: max_diff=18 avg_diff=1.0127 >1:1158/8192 accSh=10 outSh=14 outSc=54558
+PERF_LOG : conv2d : 8192 : elements : 147061523 : cycles : 0.00 : elements/cycle : 17951.85 : cycles/elements
+PERF_LOG : dequantize_asym8s : 8192 : elements (DMA ping-pong) : 1946 : cycles : 4.21 : elements (DMA ping-pong)/cycle : 0.24 : cycles/elements (DMA ping-pong)
+PERF_LOG : dequantize_asym8s : 8192 : elements (DMA ping-pong) : 1946 : cycles : 4.21 : elements (DMA ping-pong)/cycle : 0.24 : cycles/elements (DMA ping-pong)
+PERF_LOG : add_float : 8192 : elements (DMA ping-pong) : 2155 : cycles : 3.80 : elements (DMA ping-pong)/cycle : 0.26 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantize_asym8s : 8192 : elements (DMA ping-pong) : 2289 : cycles : 3.58 : elements (DMA ping-pong)/cycle : 0.28 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantized_relu : 8192 : elements (DMA ping-pong) : 3147 : cycles : 2.60 : elements (DMA ping-pong)/cycle : 0.38 : cycles/elements (DMA ping-pong)
+CONV_QUANT [128x8x8 -> 256x4x4 k=1x1 s=2 p=0]: eff_scale=0.00860068 accum_shift=7 out_shift=15 out_scale=36073 max_acc=2160163 num_prod=128 out_zp=30 in_zp=-128 max_abs_bias=63011 overflow_24bit=0/256
+CONV_LAYER_CMP [layer=11 128x8x8->256x4x4 k=1x1]: max_diff=30 avg_diff=0.5691 >1:49/4096 accSh=7 outSh=15 outSc=36073
+PERF_LOG : conv2d : 8192 : elements : 10899697 : cycles : 0.00 : elements/cycle : 1330.53 : cycles/elements
+CONV_QUANT [128x8x8 -> 256x4x4 k=3x3 s=2 p=1]: eff_scale=0.00243327 accum_shift=10 out_shift=14 out_scale=40823 max_acc=19141148 num_prod=1152 out_zp=22 in_zp=-128 max_abs_bias=266779 overflow_24bit=0/256
+CONV_LAYER_CMP [layer=12 128x8x8->256x4x4 k=3x3]: max_diff=22 avg_diff=0.7859 >1:165/4096 accSh=10 outSh=14 outSc=40823
+PERF_LOG : conv2d : 8192 : elements : 73733987 : cycles : 0.00 : elements/cycle : 9000.73 : cycles/elements
+PERF_LOG : quantized_relu : 4096 : elements (DMA ping-pong) : 2123 : cycles : 1.93 : elements (DMA ping-pong)/cycle : 0.52 : cycles/elements (DMA ping-pong)
+CONV_QUANT [256x4x4 -> 256x4x4 k=3x3 s=1 p=1]: eff_scale=0.00136668 accum_shift=11 out_shift=14 out_scale=45858 max_acc=38043040 num_prod=2304 out_zp=-9 in_zp=-128 max_abs_bias=294306 overflow_24bit=0/256
+CONV_LAYER_CMP [layer=13 256x4x4->256x4x4 k=3x3]: max_diff=9 avg_diff=0.7419 >1:247/4096 accSh=11 outSh=14 outSc=45858
+PERF_LOG : conv2d : 4096 : elements : 129685966 : cycles : 0.00 : elements/cycle : 31661.61 : cycles/elements
+PERF_LOG : dequantize_asym8s : 4096 : elements (DMA ping-pong) : 1466 : cycles : 2.79 : elements (DMA ping-pong)/cycle : 0.36 : cycles/elements (DMA ping-pong)
+PERF_LOG : dequantize_asym8s : 4096 : elements (DMA ping-pong) : 1466 : cycles : 2.79 : elements (DMA ping-pong)/cycle : 0.36 : cycles/elements (DMA ping-pong)
+PERF_LOG : add_float : 4096 : elements (DMA ping-pong) : 1440 : cycles : 2.84 : elements (DMA ping-pong)/cycle : 0.35 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantize_asym8s : 4096 : elements (DMA ping-pong) : 1649 : cycles : 2.48 : elements (DMA ping-pong)/cycle : 0.40 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantized_relu : 4096 : elements (DMA ping-pong) : 2123 : cycles : 1.93 : elements (DMA ping-pong)/cycle : 0.52 : cycles/elements (DMA ping-pong)
+CONV_QUANT [256x4x4 -> 256x4x4 k=3x3 s=1 p=1]: eff_scale=0.00148256 accum_shift=11 out_shift=14 out_scale=49746 max_acc=38310012 num_prod=2304 out_zp=34 in_zp=-128 max_abs_bias=561277 overflow_24bit=0/256
+CONV_LAYER_CMP [layer=14 256x4x4->256x4x4 k=3x3]: max_diff=34 avg_diff=1.0029 >1:394/4096 accSh=11 outSh=14 outSc=49746
+PERF_LOG : conv2d : 4096 : elements : 129685351 : cycles : 0.00 : elements/cycle : 31661.46 : cycles/elements
+PERF_LOG : quantized_relu : 4096 : elements (DMA ping-pong) : 2123 : cycles : 1.93 : elements (DMA ping-pong)/cycle : 0.52 : cycles/elements (DMA ping-pong)
+CONV_QUANT [256x4x4 -> 256x4x4 k=3x3 s=1 p=1]: eff_scale=0.00205066 accum_shift=11 out_shift=13 out_scale=34404 max_acc=38428300 num_prod=2304 out_zp=48 in_zp=-128 max_abs_bias=679565 overflow_24bit=0/256
+CONV_LAYER_CMP [layer=15 256x4x4->256x4x4 k=3x3]: max_diff=48 avg_diff=1.0996 >1:1111/4096 accSh=11 outSh=13 outSc=34404
+PERF_LOG : conv2d : 4096 : elements : 129685607 : cycles : 0.00 : elements/cycle : 31661.53 : cycles/elements
+PERF_LOG : dequantize_asym8s : 4096 : elements (DMA ping-pong) : 1466 : cycles : 2.79 : elements (DMA ping-pong)/cycle : 0.36 : cycles/elements (DMA ping-pong)
+PERF_LOG : dequantize_asym8s : 4096 : elements (DMA ping-pong) : 1466 : cycles : 2.79 : elements (DMA ping-pong)/cycle : 0.36 : cycles/elements (DMA ping-pong)
+PERF_LOG : add_float : 4096 : elements (DMA ping-pong) : 1440 : cycles : 2.84 : elements (DMA ping-pong)/cycle : 0.35 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantize_asym8s : 4096 : elements (DMA ping-pong) : 1649 : cycles : 2.48 : elements (DMA ping-pong)/cycle : 0.40 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantized_relu : 4096 : elements (DMA ping-pong) : 2123 : cycles : 1.93 : elements (DMA ping-pong)/cycle : 0.52 : cycles/elements (DMA ping-pong)
+CONV_QUANT [256x4x4 -> 512x2x2 k=1x1 s=2 p=0]: eff_scale=0.00394307 accum_shift=8 out_shift=15 out_scale=33076 max_acc=4243390 num_prod=256 out_zp=8 in_zp=-128 max_abs_bias=49086 overflow_24bit=0/512
+CONV_LAYER_CMP [layer=16 256x4x4->512x2x2 k=1x1]: max_diff=8 avg_diff=0.3398 >1:27/2048 accSh=8 outSh=15 outSc=33076
+PERF_LOG : conv2d : 4096 : elements : 10981153 : cycles : 0.00 : elements/cycle : 2680.95 : cycles/elements
+CONV_QUANT [256x4x4 -> 512x2x2 k=3x3 s=2 p=1]: eff_scale=0.00223489 accum_shift=11 out_shift=13 out_scale=37495 max_acc=38165256 num_prod=2304 out_zp=17 in_zp=-128 max_abs_bias=416521 overflow_24bit=0/512
+CONV_LAYER_CMP [layer=17 256x4x4->512x2x2 k=3x3]: max_diff=27 avg_diff=2.2534 >1:785/2048 accSh=11 outSh=13 outSc=37495
+PERF_LOG : conv2d : 4096 : elements : 65813632 : cycles : 0.00 : elements/cycle : 16067.78 : cycles/elements
+PERF_LOG : quantized_relu : 2048 : elements (DMA ping-pong) : 1611 : cycles : 1.27 : elements (DMA ping-pong)/cycle : 0.79 : cycles/elements (DMA ping-pong)
+CONV_QUANT [512x2x2 -> 512x2x2 k=3x3 s=1 p=1]: eff_scale=0.00178301 accum_shift=12 out_shift=13 out_scale=59827 max_acc=76141392 num_prod=4608 out_zp=-28 in_zp=-128 max_abs_bias=643921 overflow_24bit=0/512
+CONV_LAYER_CMP [layer=18 512x2x2->512x2x2 k=3x3]: max_diff=57 avg_diff=4.6865 >1:1273/2048 accSh=12 outSh=13 outSc=59827
+PERF_LOG : conv2d : 2048 : elements : 100990637 : cycles : 0.00 : elements/cycle : 49311.83 : cycles/elements
+PERF_LOG : dequantize_asym8s : 2048 : elements (DMA ping-pong) : 1226 : cycles : 1.67 : elements (DMA ping-pong)/cycle : 0.60 : cycles/elements (DMA ping-pong)
+PERF_LOG : dequantize_asym8s : 2048 : elements (DMA ping-pong) : 1226 : cycles : 1.67 : elements (DMA ping-pong)/cycle : 0.60 : cycles/elements (DMA ping-pong)
+PERF_LOG : add_float : 2048 : elements (DMA ping-pong) : 1248 : cycles : 1.64 : elements (DMA ping-pong)/cycle : 0.61 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantize_asym8s : 2048 : elements (DMA ping-pong) : 1329 : cycles : 1.54 : elements (DMA ping-pong)/cycle : 0.65 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantized_relu : 2048 : elements (DMA ping-pong) : 1611 : cycles : 1.27 : elements (DMA ping-pong)/cycle : 0.79 : cycles/elements (DMA ping-pong)
+CONV_QUANT [512x2x2 -> 512x2x2 k=3x3 s=1 p=1]: eff_scale=0.00247468 accum_shift=12 out_shift=12 out_scale=41518 max_acc=76402040 num_prod=4608 out_zp=19 in_zp=-128 max_abs_bias=904571 overflow_24bit=0/512
+CONV_LAYER_CMP [layer=19 512x2x2->512x2x2 k=3x3]: max_diff=58 avg_diff=4.7065 >1:1516/2048 accSh=12 outSh=12 outSc=41518
+PERF_LOG : conv2d : 2048 : elements : 100990343 : cycles : 0.00 : elements/cycle : 49311.69 : cycles/elements
+PERF_LOG : quantized_relu : 2048 : elements (DMA ping-pong) : 1611 : cycles : 1.27 : elements (DMA ping-pong)/cycle : 0.79 : cycles/elements (DMA ping-pong)
+CONV_QUANT [512x2x2 -> 512x2x2 k=3x3 s=1 p=1]: eff_scale=0.00225000 accum_shift=12 out_shift=12 out_scale=37748 max_acc=75709632 num_prod=4608 out_zp=-40 in_zp=-128 max_abs_bias=212164 overflow_24bit=0/512
+CONV_LAYER_CMP [layer=20 512x2x2->512x2x2 k=3x3]: max_diff=20 avg_diff=2.6846 >1:1398/2048 accSh=12 outSh=12 outSc=37748
+PERF_LOG : conv2d : 2048 : elements : 100989713 : cycles : 0.00 : elements/cycle : 49311.38 : cycles/elements
+PERF_LOG : dequantize_asym8s : 2048 : elements (DMA ping-pong) : 1226 : cycles : 1.67 : elements (DMA ping-pong)/cycle : 0.60 : cycles/elements (DMA ping-pong)
+PERF_LOG : dequantize_asym8s : 2048 : elements (DMA ping-pong) : 1226 : cycles : 1.67 : elements (DMA ping-pong)/cycle : 0.60 : cycles/elements (DMA ping-pong)
+PERF_LOG : add_float : 2048 : elements (DMA ping-pong) : 1248 : cycles : 1.64 : elements (DMA ping-pong)/cycle : 0.61 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantize_asym8s : 2048 : elements (DMA ping-pong) : 1329 : cycles : 1.54 : elements (DMA ping-pong)/cycle : 0.65 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantized_relu : 2048 : elements (DMA ping-pong) : 1611 : cycles : 1.27 : elements (DMA ping-pong)/cycle : 0.79 : cycles/elements (DMA ping-pong)
+PERF_LOG : dequantize_asym8s : 2048 : elements (DMA ping-pong) : 1226 : cycles : 1.67 : elements (DMA ping-pong)/cycle : 0.60 : cycles/elements (DMA ping-pong)
+PERF_LOG : quantize_asym8s : 512 : elements (HW-optimized, no DMA) : 161 : cycles : 3.18 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 1000 : elements (HW-optimized, no DMA) : 206 : cycles : 4.85 : elements (HW-optimized, no DMA)/cycle : 0.21 : cycles/elements (HW-optimized, no DMA)
+I 00:00:56.309607 executorch:executor_runner.cpp:398] Model executed successfully 1 time(s) in 55699.781000 ms.
+I 00:00:56.314140 executorch:executor_runner.cpp:402] 1 outputs: 
+Output 0: tensor(sizes=[1, 1000], [
+  -1.8831, 0., -1.37611, -3.04193, -0.0724269, 2.10038, -2.24523, -0.94155, -2.53494, -2.02795, 
+  -1.01398, -1.66582, -1.8831, -2.60737, -2.9695, 0.217281, -1.37611, -3.91105, -1.81067, -2.82465, 
+  -3.7662, -0.724269, -0.796696, -2.02795, -2.75222, -1.95553, -0.0724269, 0.0724269, -1.15883, -1.0864, 
+  -1.73825, 0.506988, -1.37611, -2.46252, -1.73825, -3.33164, -1.44854, -4.20076, -1.37611, -0.434561, 
+  0.362135, -2.10038, -2.46252, -0.362135, -1.81067, -1.95553, 0.144854, 0., -3.04193, -2.89708, 
+  -3.18678, -1.01398, -0.506988, -1.0864, -1.81067, 0.869123, -3.11436, -4.27319, -3.98348, 2.31766, 
+  -0.289708, -2.24523, -1.66582, 1.15883, 2.39009, -1.59339, -0.289708, -3.91105, -0.724269, -1.44854, 
+  -1.01398, 1.8831, 0.651842, 3.04193, 0.362135, -0.0724269, 0., -0.506988, 0.434561, 0.94155, 
+  -2.24523, -2.82465, -2.46252, -2.9695, -3.62135, -2.31766, -2.46252, -1.37611, -0.217281, -1.37611, 
+  -1.59339, -2.53494, 1.73825, -1.95553, 0.869123, -1.15883, -0.506988, -3.54892, -3.11436, -3.40407, 
+  -1.37611, -1.66582, -3.04193, -0.579415, -2.9695, -3.40407, -1.15883, 0.869123, -0.217281, -0.796696, 
+  0.94155, 3.69377, 0.506988, -0.579415, -1.66582, -0.0724269, -2.60737, 1.01398, -2.10038, -2.60737, 
+  -1.66582, -1.59339, -1.59339, -2.31766, -2.53494, -1.44854, 0.0724269, -2.10038, -0.506988, -2.02795, 
+  -1.81067, -3.11436, -0.94155, -4.12833, -3.33164, -1.15883, -2.46252, -2.02795, -4.41804, -2.6798, 
+  -3.04193, -1.73825, -2.6798, -0.94155, -2.53494, -2.31766, -1.37611, -2.82465, -2.9695, -1.37611, 
+  -2.39009, 1.52097, -0.796696, 0.796696, -1.01398, -1.15883, -1.15883, 0.579415, 0., -0.796696, 
+  -1.66582, -1.59339, -0.724269, -0.434561, -1.01398, 0.144854, -2.60737, -0.94155, -0.94155, -0.94155, 
+  -2.53494, -1.30368, -2.75222, -1.59339, -1.81067, -0.796696, -1.15883, -2.6798, -1.0864, -1.30368, 
+  -2.6798, -1.37611, -0.506988, -0.362135, -0.289708, 0.434561, 0.144854, 0.579415, -2.10038, 0.289708, 
+  -0.796696, -1.52097, -2.24523, -1.81067, -0.94155, -0.434561, -1.52097, -1.52097, -0.506988, -1.30368, 
+  -1.73825, -1.37611, -1.0864, 1.0864, 0.579415, -1.81067, -0.434561, 0., -0.289708, -2.9695, 
+  -3.04193, -1.01398, -1.81067, -0.144854, -0.289708, -0.869123, -0.94155, -2.46252, -2.46252, -0.579415, 
+  0.144854, 0., 0.579415, -0.579415, 0.0724269, -2.60737, -0.434561, -0.651842, -0.94155, -2.46252, 
+  -2.24523, -1.15883, -1.73825, -0.869123, -0.579415, -1.59339, -0.144854, -0.506988, -0.651842, -0.651842, 
+  0.579415, 0.217281, -0.434561, -2.02795, -0.579415, -1.30368, -1.23126, -2.75222, -1.73825, -2.17281, 
+  -2.02795, -0.651842, 1.23126, -0.362135, 1.0864, -2.31766, -2.24523, -0.796696, -1.30368, 0.0724269, 
+  -0.506988, -1.73825, 1.44854, -2.9695, -1.81067, 0.506988, -0.579415, -0.651842, -1.30368, -1.23126, 
+  -1.52097, -0.869123, -2.10038, -0.144854, -0.869123, -1.73825, -1.66582, -2.17281, -2.75222, -1.0864, 
+  -1.52097, -0.289708, -1.95553, 1.44854, -1.15883, 0.144854, -1.66582, -2.6798, 0.144854, -1.95553, 
+  -1.81067, -1.95553, -2.24523, 0.724269, -2.10038, -2.39009, -1.59339, -2.24523, -1.81067, -0.217281, 
+  -0.94155, -0.289708, 0.506988, -0.217281, -1.0864, -1.52097, -0.362135, -0.94155, 0.434561, -1.0864, 
+  3.04193, 0.0724269, 0.724269, 1.66582, 0.144854, 3.40407, -2.53494, -1.73825, 0.869123, 1.59339, 
+  -0.217281, -1.37611, -3.62135, 0.506988, -0.362135, -0.434561, 0.0724269, 0.362135, 0.579415, -1.52097, 
+  -1.23126, -0.796696, -1.59339, -0.362135, -2.39009, -1.73825, -3.25921, -1.30368, -1.52097, -0.724269, 
+  -2.6798, -3.40407, -2.75222, -1.81067, -2.39009, -2.17281, -2.75222, -2.46252, -4.41804, -2.6798, 
+  -2.9695, -2.17281, -1.0864, -0.506988, 0., -1.73825, -0.724269, -1.44854, -1.44854, -1.44854, 
+  -2.17281, -1.59339, -2.9695, -1.95553, -0.434561, 0.434561, -1.59339, -1.23126, -1.37611, -1.23126, 
+  -2.53494, -0.724269, -0.434561, -1.8831, -1.52097, -2.60737, -1.59339, -2.46252, -2.82465, -2.17281, 
+  -2.24523, -1.0864, -1.66582, -1.8831, -1.8831, -1.52097, -1.59339, -1.30368, -1.8831, -2.39009, 
+  -2.17281, -3.40407, 0.506988, -1.30368, -4.05591, -2.24523, -1.8831, -2.24523, 3.54892, 3.25921, 
+  1.37611, 2.39009, 0.506988, -1.95553, -0.362135, -0.506988, -0.651842, -0.217281, -2.24523, 5.57687, 
+  -1.66582, -0.579415, 0.217281, 2.75222, -0.651842, -1.44854, 3.33164, 1.81067, 3.62135, 4.5629, 
+  0.217281, 1.37611, -0.579415, 0.579415, 0.796696, -0.289708, 2.82465, 0.0724269, -2.02795, 1.8831, 
+  0.289708, -1.15883, 2.31766, 0.0724269, -0.869123, 0.651842, -1.73825, 1.30368, 1.01398, 0., 
+  0.579415, 0.724269, 0.217281, 0.289708, -2.02795, 1.81067, 4.99746, 0.796696, -1.23126, -1.52097, 
+  -2.60737, 0.869123, -1.01398, 0.651842, -0.362135, -0.651842, 3.62135, -0.289708, -0.144854, 3.18678, 
+  -3.25921, 0.217281, 1.15883, 0.144854, 1.81067, 1.01398, 0.144854, -2.24523, 2.02795, 0.94155, 
+  5.6493, -1.30368, -0.289708, 0.724269, -0.869123, 1.81067, -1.8831, -0.362135, 1.8831, 1.59339, 
+  3.54892, 2.89708, 1.66582, 0.579415, -1.30368, 2.9695, 0.94155, 4.20076, 2.9695, 2.10038, 
+  2.02795, 0.796696, -0.579415, -0.506988, 4.49047, -2.24523, -0.94155, 0.651842, 4.78018, 2.9695, 
+  -0.651842, 1.23126, -2.17281, -0.144854, 1.52097, -0.434561, 2.24523, 1.66582, 3.83863, -1.37611, 
+  -1.23126, 0.144854, 0.579415, 1.52097, -1.01398, 1.23126, -0.869123, 1.66582, 0.362135, -0.94155, 
+  -0.94155, -1.37611, 1.81067, 0.289708, -0.796696, -3.47649, 2.46252, 4.8526, 0.869123, -0.217281, 
+  5.86658, 2.89708, -0.144854, 1.30368, -1.01398, 0.94155, -2.24523, -2.75222, 0.217281, 3.98348, 
+  -0.651842, 1.95553, 3.18678, 0.0724269, -1.01398, 0.0724269, 2.60737, -3.47649, 0.434561, 5.86658, 
+  -0.289708, 4.78018, -0.651842, 1.59339, -2.6798, -0.869123, 2.6798, -0.289708, 2.46252, 2.46252, 
+  -0.217281, -1.59339, 2.10038, 4.20076, -1.15883, -1.66582, -0.94155, -0.724269, -1.52097, -2.24523, 
+  0.506988, 0., -0.0724269, -2.53494, 3.25921, -3.62135, -3.40407, 2.9695, 2.02795, 1.30368, 
+  -0.217281, -0.579415, 0.144854, 3.11436, 2.89708, 2.89708, -3.7662, 2.10038, 0.506988, 1.73825, 
+  3.69377, 2.17281, 3.62135, 1.44854, 2.02795, -1.37611, 1.44854, -1.66582, 4.20076, 3.7662, 
+  3.83863, 0.869123, 2.6798, -3.54892, 5.6493, 4.92503, 1.95553, 0.724269, 0.289708, -2.31766, 
+  1.52097, 2.82465, -1.23126, 3.69377, -0.0724269, 0.144854, 2.24523, 0.362135, -0.289708, 4.41804, 
+  4.34561, -2.31766, 0.506988, 2.39009, -1.23126, -3.11436, 5.14231, -1.15883, 0.0724269, 4.78018, 
+  -0.362135, 1.8831, 3.47649, 4.41804, -3.98348, 2.75222, 2.39009, -0.796696, 1.95553, 0.651842, 
+  -2.24523, 1.81067, 2.46252, -0.144854, 7.96696, -0.144854, 2.39009, 0.217281, 1.23126, -1.23126, 
+  4.20076, 0.289708, -2.02795, -1.37611, -0.869123, 0.362135, -1.52097, 1.8831, -0.217281, -1.73825, 
+  -1.66582, -3.7662, 3.33164, -0.144854, 6.22871, -2.02795, 1.66582, 1.15883, -0.217281, -2.10038, 
+  -1.37611, -1.52097, 0.796696, 3.04193, 2.9695, -1.95553, -0.94155, 2.53494, 1.15883, 0.796696, 
+  0.289708, 4.5629, 0.796696, 1.8831, 2.89708, 2.31766, 2.46252, -1.37611, 3.54892, -0.0724269, 
+  -4.05591, 0.94155, 4.20076, 0., -3.83863, 1.66582, 3.18678, -0.651842, 0.362135, 4.27319, 
+  1.59339, 0.94155, 1.37611, 0.506988, -0.217281, -2.24523, -1.01398, 1.0864, 0.579415, 2.17281, 
+  3.04193, 3.54892, 4.12833, 1.37611, 4.05591, -0.94155, 0.579415, -2.02795, 0.144854, 1.44854, 
+  4.27319, -0.144854, 0.724269, 1.0864, -1.37611, 0.144854, -2.02795, 1.52097, 1.01398, 0.796696, 
+  -0.289708, 2.60737, 1.15883, 2.24523, -2.60737, -1.01398, 3.18678, -1.01398, 0.506988, -0.0724269, 
+  0.651842, 1.44854, 1.30368, 1.59339, 2.17281, 3.33164, 1.01398, -0.289708, -0.144854, 1.37611, 
+  1.30368, -1.15883, 1.01398, -1.44854, 3.18678, 0.869123, -1.59339, -1.73825, 1.15883, 1.81067, 
+  1.66582, 4.20076, 1.23126, 1.95553, 2.10038, 0.869123, -1.01398, 4.41804, -0.506988, 5.06988, 
+  -1.37611, -0.869123, 3.25921, 0.506988, -0.651842, -0.217281, 2.24523, -0.362135, 0.217281, 0.651842, 
+  -1.23126, 4.41804, 5.79415, 2.89708, 2.17281, 0.362135, 0.217281, 1.30368, -0.651842, 5.35959, 
+  0., -0.724269, 0.362135, -0.362135, 1.01398, 1.23126, 0.0724269, 0., 2.46252, 1.8831, 
+  3.33164, -0.289708, -2.17281, -3.47649, 0.94155, -0.506988, 0.869123, 2.24523, 1.0864, 2.02795, 
+  3.25921, 1.23126, 3.54892, 0., -1.30368, 2.89708, -2.24523, 1.37611, 7.38755, 2.39009, 
+  -1.73825, 0.506988, 1.01398, 1.81067, 0.217281, -2.31766, 4.27319, 1.23126, 1.01398, -1.44854, 
+  0.144854, 0.724269, 0.434561, -1.8831, 1.30368, 0.217281, 3.98348, 2.75222, 2.02795, 0.506988, 
+  0.144854, 1.23126, -1.01398, 1.15883, 2.53494, 3.25921, 5.21474, -0.869123, 1.8831, 0.506988, 
+  -1.37611, 5.21474, 3.25921, -2.10038, 6.30114, 1.23126, -1.8831, 0.362135, -0.362135, -0.362135, 
+  0.434561, 2.10038, 3.11436, -1.44854, -2.46252, -2.24523, -0.796696, -0.434561, 2.75222, 0.362135, 
+  -2.53494, -1.44854, 1.8831, -0.796696, -1.59339, 1.52097, 0., 0.217281, 1.81067, 2.39009, 
+  -1.01398, 1.37611, 0.362135, 0.0724269, -1.0864, 0.869123, 1.66582, -2.39009, 0.362135, 0.434561, 
+  0.796696, -2.82465, 3.91105, 1.8831, -0.434561, -0.144854, 1.59339, 0.144854, 1.15883, 0.651842, 
+  0.217281, 0., 1.73825, 2.31766, 3.04193, 4.27319, 2.39009, 2.10038, 1.59339, -0.144854, 
+  -0.796696, -1.23126, -1.01398, -1.95553, -2.17281, -1.30368, 8.90851, 3.33164, 5.6493, 4.05591, 
+  4.92503, 4.8526, 5.57687, 4.12833, 0.94155, 3.11436, -1.15883, 0., 0.869123, 2.17281, 
+  0.724269, -1.15883, 0.506988, -1.81067, -0.362135, -0.144854, 1.73825, 2.75222, 2.6798, -1.0864, 
+  -0.724269, -2.02795, -1.73825, 1.81067, 1.44854, 1.23126, 2.10038, 1.23126, 2.10038, 3.69377, 
+  3.33164, 2.60737, 1.01398, -1.15883, 2.75222, -0.94155, 2.02795, 0.289708, 0.144854, 1.15883, 
+  2.17281, -1.15883, 0.869123, -0.869123, 0.144854, -0.506988, 3.62135, 0.94155, 2.82465, 2.75222, 
+  -0.506988, 2.24523, -1.23126, 0.0724269, -0.724269, 1.15883, -0.217281, 0.724269, 3.7662, -0.434561, 
+  1.81067, 1.23126, 2.46252, -0.869123, 0.724269, 2.02795, -0.724269, 1.66582, 0., 0.144854, 
+  0.869123, -1.95553, -1.81067, -1.66582, -2.10038, -0.434561, -0.289708, -2.02795, 0.651842, 0.506988, 
+])
+I 00:01:14.092340 executorch:executor_runner.cpp:570] Input and output written to CSV file: operator_and_model_testing/resnet18/pte/resnet18_quantized.csv

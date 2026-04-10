@@ -1,0 +1,17 @@
+I 00:00:01.011132 executorch:executor_runner.cpp:258] Model file operator_and_model_testing/resnet18/pte/resnet18_quantized.pte is loaded.
+I 00:00:01.058081 executorch:executor_runner.cpp:267] Using method forward
+I 00:00:01.103246 executorch:executor_runner.cpp:318] Setting up planned buffer 0, size 458752.
+I 00:00:04.285501 executorch:executor_runner.cpp:346] Method loaded.
+I 00:00:04.324334 executorch:executor_runner.cpp:350] Number of operators: 8
+I 00:00:04.366780 executorch:executor_runner.cpp:354] Operator[0]: cadence::quantize_per_tensor
+I 00:00:04.409384 executorch:executor_runner.cpp:354] Operator[1]: cadence::quantized_conv2d_nchw
+I 00:00:04.451666 executorch:executor_runner.cpp:354] Operator[2]: cadence::quantized_relu
+I 00:00:04.493772 executorch:executor_runner.cpp:354] Operator[3]: cadence::dequantize_per_tensor
+I 00:00:04.536038 executorch:executor_runner.cpp:354] Operator[4]: aten::max_pool2d_with_indices
+I 00:00:04.578506 executorch:executor_runner.cpp:354] Operator[5]: aten::add
+I 00:00:04.620090 executorch:executor_runner.cpp:354] Operator[6]: aten::mean
+I 00:00:04.662948 executorch:executor_runner.cpp:354] Operator[7]: cadence::quantized_linear
+PERF_LOG : quantize_asym8s : 12288 : elements (DMA ping-pong) : 3242 : cycles : 3.79 : elements (DMA ping-pong)/cycle : 0.26 : cycles/elements (DMA ping-pong)
+DIAG: conv2d entry [n=1 c=3 h=64 w=64 oc=64]
+DIAG: conv2d entry [n=1 c=3 h=64 w=64 oc=64]
+PERF_LOG : conv2d : 12288 : elements : 175937217 : cycles : 0.00 : elements/cycle : 14317.81 : cycles/elements

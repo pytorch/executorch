@@ -1,0 +1,277 @@
+PERF_LOG : quantize_per_tensor : 12288 : elements : 639277 : cycles : 0.02 : elements/cycle : 52.02 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 65536 : elements : 171255025 : cycles : 0.00 : elements/cycle : 2613.14 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 65536 : elements : 6768466 : cycles : 0.01 : elements/cycle : 103.28 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 65536 : elements : 1245274 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+PERF_LOG : max_pool2d : 16384 : elements : 10016621 : cycles : 0.00 : elements/cycle : 611.37 : cycles/elements
+PERF_LOG : quantize_per_tensor : 16384 : elements : 852273 : cycles : 0.02 : elements/cycle : 52.02 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 65536 : elements : 97659391 : cycles : 0.00 : elements/cycle : 1490.16 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 16384 : elements : 24415039 : cycles : 0.00 : elements/cycle : 1490.18 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 16384 : elements : 1517320 : cycles : 0.01 : elements/cycle : 92.61 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 16384 : elements : 191513463 : cycles : 0.00 : elements/cycle : 11689.05 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 16384 : elements : 1592028 : cycles : 0.01 : elements/cycle : 97.17 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 65536 : elements : 97659391 : cycles : 0.00 : elements/cycle : 1490.16 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 65536 : elements : 1245274 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 65536 : elements : 1245274 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+PERF_LOG : add : 65536 : elements : 18547601 : cycles : 0.00 : elements/cycle : 283.01 : cycles/elements
+PERF_LOG : quantize_per_tensor : 65536 : elements : 3408173 : cycles : 0.02 : elements/cycle : 52.00 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 65536 : elements : 6055362 : cycles : 0.01 : elements/cycle : 92.40 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 16384 : elements : 93621055 : cycles : 0.00 : elements/cycle : 5714.18 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 16384 : elements : 1520988 : cycles : 0.01 : elements/cycle : 92.83 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 16384 : elements : 191513463 : cycles : 0.00 : elements/cycle : 11689.05 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 16384 : elements : 1610812 : cycles : 0.01 : elements/cycle : 98.32 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 65536 : elements : 97659391 : cycles : 0.00 : elements/cycle : 1490.16 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 65536 : elements : 1245274 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 65536 : elements : 1245274 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+PERF_LOG : add : 65536 : elements : 18547601 : cycles : 0.00 : elements/cycle : 283.01 : cycles/elements
+PERF_LOG : quantize_per_tensor : 65536 : elements : 3408175 : cycles : 0.02 : elements/cycle : 52.00 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 65536 : elements : 6205920 : cycles : 0.01 : elements/cycle : 94.69 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 16384 : elements : 93621055 : cycles : 0.00 : elements/cycle : 5714.18 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 16384 : elements : 1566296 : cycles : 0.01 : elements/cycle : 95.60 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 16384 : elements : 191513463 : cycles : 0.00 : elements/cycle : 11689.05 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 16384 : elements : 1537260 : cycles : 0.01 : elements/cycle : 93.83 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 65536 : elements : 97659391 : cycles : 0.00 : elements/cycle : 1490.16 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 65536 : elements : 1245274 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 65536 : elements : 1245274 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+PERF_LOG : add : 65536 : elements : 18547601 : cycles : 0.00 : elements/cycle : 283.01 : cycles/elements
+PERF_LOG : quantize_per_tensor : 65536 : elements : 3408182 : cycles : 0.02 : elements/cycle : 52.00 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 65536 : elements : 6218432 : cycles : 0.01 : elements/cycle : 94.89 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 32768 : elements : 187282178 : cycles : 0.00 : elements/cycle : 5715.40 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 32768 : elements : 187241855 : cycles : 0.00 : elements/cycle : 5714.17 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 32768 : elements : 2853266 : cycles : 0.01 : elements/cycle : 87.07 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 8192 : elements : 190216153 : cycles : 0.00 : elements/cycle : 23219.75 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 8192 : elements : 798616 : cycles : 0.01 : elements/cycle : 97.49 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 32768 : elements : 95007490 : cycles : 0.00 : elements/cycle : 2899.40 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 32768 : elements : 622682 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 32768 : elements : 622682 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+PERF_LOG : add : 32768 : elements : 9274257 : cycles : 0.00 : elements/cycle : 283.03 : cycles/elements
+PERF_LOG : quantize_per_tensor : 32768 : elements : 1704236 : cycles : 0.02 : elements/cycle : 52.01 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 32768 : elements : 3083596 : cycles : 0.01 : elements/cycle : 94.10 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 8192 : elements : 92958082 : cycles : 0.00 : elements/cycle : 11347.42 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 8192 : elements : 747120 : cycles : 0.01 : elements/cycle : 91.20 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 8192 : elements : 181106647 : cycles : 0.00 : elements/cycle : 22107.74 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 8192 : elements : 753112 : cycles : 0.01 : elements/cycle : 91.93 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 32768 : elements : 95007490 : cycles : 0.00 : elements/cycle : 2899.40 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 32768 : elements : 622682 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 32768 : elements : 622682 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+PERF_LOG : add : 32768 : elements : 9274257 : cycles : 0.00 : elements/cycle : 283.03 : cycles/elements
+PERF_LOG : quantize_per_tensor : 32768 : elements : 1704236 : cycles : 0.02 : elements/cycle : 52.01 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 32768 : elements : 3071556 : cycles : 0.01 : elements/cycle : 93.74 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 8192 : elements : 92958082 : cycles : 0.00 : elements/cycle : 11347.42 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 8192 : elements : 735670 : cycles : 0.01 : elements/cycle : 89.80 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 8192 : elements : 181106647 : cycles : 0.00 : elements/cycle : 22107.74 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 8192 : elements : 752972 : cycles : 0.01 : elements/cycle : 91.92 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 32768 : elements : 95007490 : cycles : 0.00 : elements/cycle : 2899.40 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 32768 : elements : 622682 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 32768 : elements : 622682 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+PERF_LOG : add : 32768 : elements : 9274257 : cycles : 0.00 : elements/cycle : 283.03 : cycles/elements
+PERF_LOG : quantize_per_tensor : 32768 : elements : 1704243 : cycles : 0.02 : elements/cycle : 52.01 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 32768 : elements : 3025804 : cycles : 0.01 : elements/cycle : 92.34 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 8192 : elements : 92958082 : cycles : 0.00 : elements/cycle : 11347.42 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 8192 : elements : 737854 : cycles : 0.01 : elements/cycle : 90.07 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 8192 : elements : 181106647 : cycles : 0.00 : elements/cycle : 22107.74 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 8192 : elements : 747740 : cycles : 0.01 : elements/cycle : 91.28 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 32768 : elements : 95007490 : cycles : 0.00 : elements/cycle : 2899.40 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 32768 : elements : 622682 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 32768 : elements : 622682 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+PERF_LOG : add : 32768 : elements : 9274257 : cycles : 0.00 : elements/cycle : 283.03 : cycles/elements
+PERF_LOG : quantize_per_tensor : 32768 : elements : 1704236 : cycles : 0.02 : elements/cycle : 52.01 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 32768 : elements : 2992932 : cycles : 0.01 : elements/cycle : 91.34 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 16384 : elements : 185959685 : cycles : 0.00 : elements/cycle : 11350.08 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 16384 : elements : 185915906 : cycles : 0.00 : elements/cycle : 11347.41 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 16384 : elements : 1358394 : cycles : 0.01 : elements/cycle : 82.91 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 4096 : elements : 179605657 : cycles : 0.00 : elements/cycle : 43849.04 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 4096 : elements : 418554 : cycles : 0.01 : elements/cycle : 102.19 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 16384 : elements : 93684994 : cycles : 0.00 : elements/cycle : 5718.08 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 16384 : elements : 311386 : cycles : 0.05 : elements/cycle : 19.01 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 16384 : elements : 311386 : cycles : 0.05 : elements/cycle : 19.01 : cycles/elements
+PERF_LOG : add : 16384 : elements : 4637585 : cycles : 0.00 : elements/cycle : 283.06 : cycles/elements
+PERF_LOG : quantize_per_tensor : 16384 : elements : 852272 : cycles : 0.02 : elements/cycle : 52.02 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 16384 : elements : 1453648 : cycles : 0.01 : elements/cycle : 88.72 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 4096 : elements : 92627458 : cycles : 0.00 : elements/cycle : 22614.13 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 4096 : elements : 356200 : cycles : 0.01 : elements/cycle : 86.96 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 4096 : elements : 162566295 : cycles : 0.00 : elements/cycle : 39689.04 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 4096 : elements : 363954 : cycles : 0.01 : elements/cycle : 88.86 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 16384 : elements : 93684994 : cycles : 0.00 : elements/cycle : 5718.08 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 16384 : elements : 311386 : cycles : 0.05 : elements/cycle : 19.01 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 16384 : elements : 311386 : cycles : 0.05 : elements/cycle : 19.01 : cycles/elements
+PERF_LOG : add : 16384 : elements : 4637585 : cycles : 0.00 : elements/cycle : 283.06 : cycles/elements
+PERF_LOG : quantize_per_tensor : 16384 : elements : 852271 : cycles : 0.02 : elements/cycle : 52.02 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 16384 : elements : 1499038 : cycles : 0.01 : elements/cycle : 91.49 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 4096 : elements : 92627458 : cycles : 0.00 : elements/cycle : 22614.13 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 4096 : elements : 349758 : cycles : 0.01 : elements/cycle : 85.39 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 4096 : elements : 162566295 : cycles : 0.00 : elements/cycle : 39689.04 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 4096 : elements : 365186 : cycles : 0.01 : elements/cycle : 89.16 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 16384 : elements : 93684994 : cycles : 0.00 : elements/cycle : 5718.08 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 16384 : elements : 311386 : cycles : 0.05 : elements/cycle : 19.01 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 16384 : elements : 311386 : cycles : 0.05 : elements/cycle : 19.01 : cycles/elements
+PERF_LOG : add : 16384 : elements : 4637585 : cycles : 0.00 : elements/cycle : 283.06 : cycles/elements
+PERF_LOG : quantize_per_tensor : 16384 : elements : 852268 : cycles : 0.02 : elements/cycle : 52.02 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 16384 : elements : 1512952 : cycles : 0.01 : elements/cycle : 92.34 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 4096 : elements : 92627458 : cycles : 0.00 : elements/cycle : 22614.13 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 4096 : elements : 357458 : cycles : 0.01 : elements/cycle : 87.27 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 4096 : elements : 162566295 : cycles : 0.00 : elements/cycle : 39689.04 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 4096 : elements : 363366 : cycles : 0.01 : elements/cycle : 88.71 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 16384 : elements : 93684994 : cycles : 0.00 : elements/cycle : 5718.08 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 16384 : elements : 311386 : cycles : 0.05 : elements/cycle : 19.01 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 16384 : elements : 311386 : cycles : 0.05 : elements/cycle : 19.01 : cycles/elements
+PERF_LOG : add : 16384 : elements : 4637585 : cycles : 0.00 : elements/cycle : 283.06 : cycles/elements
+PERF_LOG : quantize_per_tensor : 16384 : elements : 852271 : cycles : 0.02 : elements/cycle : 52.02 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 16384 : elements : 1460678 : cycles : 0.01 : elements/cycle : 89.15 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 4096 : elements : 92627458 : cycles : 0.00 : elements/cycle : 22614.13 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 4096 : elements : 356896 : cycles : 0.01 : elements/cycle : 87.13 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 4096 : elements : 162566295 : cycles : 0.00 : elements/cycle : 39689.04 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 4096 : elements : 352952 : cycles : 0.01 : elements/cycle : 86.17 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 16384 : elements : 93684994 : cycles : 0.00 : elements/cycle : 5718.08 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 16384 : elements : 311386 : cycles : 0.05 : elements/cycle : 19.01 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 16384 : elements : 311386 : cycles : 0.05 : elements/cycle : 19.01 : cycles/elements
+PERF_LOG : add : 16384 : elements : 4637585 : cycles : 0.00 : elements/cycle : 283.06 : cycles/elements
+PERF_LOG : quantize_per_tensor : 16384 : elements : 852279 : cycles : 0.02 : elements/cycle : 52.02 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 16384 : elements : 1442702 : cycles : 0.01 : elements/cycle : 88.06 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 4096 : elements : 92627458 : cycles : 0.00 : elements/cycle : 22614.13 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 4096 : elements : 362272 : cycles : 0.01 : elements/cycle : 88.45 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 4096 : elements : 162566295 : cycles : 0.00 : elements/cycle : 39689.04 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 4096 : elements : 355692 : cycles : 0.01 : elements/cycle : 86.84 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 16384 : elements : 93684994 : cycles : 0.00 : elements/cycle : 5718.08 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 16384 : elements : 311386 : cycles : 0.05 : elements/cycle : 19.01 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 16384 : elements : 311386 : cycles : 0.05 : elements/cycle : 19.01 : cycles/elements
+PERF_LOG : add : 16384 : elements : 4637585 : cycles : 0.00 : elements/cycle : 283.06 : cycles/elements
+PERF_LOG : quantize_per_tensor : 16384 : elements : 852275 : cycles : 0.02 : elements/cycle : 52.02 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 16384 : elements : 1487724 : cycles : 0.01 : elements/cycle : 90.80 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 8192 : elements : 185305349 : cycles : 0.00 : elements/cycle : 22620.28 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 8192 : elements : 185254661 : cycles : 0.00 : elements/cycle : 22614.09 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 8192 : elements : 720104 : cycles : 0.01 : elements/cycle : 87.90 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 2048 : elements : 160369183 : cycles : 0.00 : elements/cycle : 78305.27 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 2048 : elements : 196366 : cycles : 0.01 : elements/cycle : 95.88 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 8192 : elements : 93030661 : cycles : 0.00 : elements/cycle : 11356.28 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 8192 : elements : 155738 : cycles : 0.05 : elements/cycle : 19.01 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 8192 : elements : 155738 : cycles : 0.05 : elements/cycle : 19.01 : cycles/elements
+PERF_LOG : add : 8192 : elements : 2319249 : cycles : 0.00 : elements/cycle : 283.11 : cycles/elements
+PERF_LOG : quantize_per_tensor : 8192 : elements : 426285 : cycles : 0.02 : elements/cycle : 52.04 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 8192 : elements : 683982 : cycles : 0.01 : elements/cycle : 83.49 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 2048 : elements : 92463877 : cycles : 0.00 : elements/cycle : 45148.38 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 2048 : elements : 174388 : cycles : 0.01 : elements/cycle : 85.15 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 2048 : elements : 131009053 : cycles : 0.00 : elements/cycle : 63969.26 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 2048 : elements : 172874 : cycles : 0.01 : elements/cycle : 84.41 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 8192 : elements : 93030661 : cycles : 0.00 : elements/cycle : 11356.28 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 8192 : elements : 155738 : cycles : 0.05 : elements/cycle : 19.01 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 8192 : elements : 155738 : cycles : 0.05 : elements/cycle : 19.01 : cycles/elements
+PERF_LOG : add : 8192 : elements : 2319249 : cycles : 0.00 : elements/cycle : 283.11 : cycles/elements
+PERF_LOG : quantize_per_tensor : 8192 : elements : 426284 : cycles : 0.02 : elements/cycle : 52.04 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 8192 : elements : 675694 : cycles : 0.01 : elements/cycle : 82.48 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 2048 : elements : 92463877 : cycles : 0.00 : elements/cycle : 45148.38 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 2048 : elements : 168394 : cycles : 0.01 : elements/cycle : 82.22 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 2048 : elements : 131009053 : cycles : 0.00 : elements/cycle : 63969.26 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 2048 : elements : 172988 : cycles : 0.01 : elements/cycle : 84.47 : cycles/elements
+PERF_LOG : quantized_conv2d_nchw : 8192 : elements : 93030661 : cycles : 0.00 : elements/cycle : 11356.28 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 8192 : elements : 155738 : cycles : 0.05 : elements/cycle : 19.01 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 8192 : elements : 155738 : cycles : 0.05 : elements/cycle : 19.01 : cycles/elements
+PERF_LOG : add : 8192 : elements : 2319249 : cycles : 0.00 : elements/cycle : 283.11 : cycles/elements
+PERF_LOG : quantize_per_tensor : 8192 : elements : 426286 : cycles : 0.02 : elements/cycle : 52.04 : cycles/elements
+PERF_LOG : quantized_relu_per_tensor : 8192 : elements : 657998 : cycles : 0.01 : elements/cycle : 80.32 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 8192 : elements : 155738 : cycles : 0.05 : elements/cycle : 19.01 : cycles/elements
+PERF_LOG : mean : 2048 : elements : 1685023 : cycles : 0.00 : elements/cycle : 822.77 : cycles/elements
+PERF_LOG : quantize_per_tensor : 2048 : elements : 106801 : cycles : 0.02 : elements/cycle : 52.15 : cycles/elements
+PERF_LOG : quantized_linear_per_tensor : 1000 : elements : 5722886 : cycles : 0.00 : elements/cycle : 5722.89 : cycles/elements
+PERF_LOG : dequantize_per_tensor : 1000 : elements : 19090 : cycles : 0.05 : elements/cycle : 19.09 : cycles/elements
+Output 0: tensor(sizes=[1, 1000], [
+  -0.853235, -0.548508, 0.121891, 0.853235, 0.548508, -0.670399, -0.0609454, -0.79229, 0.243781, -0.0609454, 
+  2.5597, 3.71767, 3.35199, 2.5597, 2.6816, 2.92538, 4.87563, 1.88931, 4.08334, 2.74254, 
+  1.21891, 6.03359, 4.32712, 4.08334, 2.37687, -0.487563, -0.548508, -0.853235, -1.03607, -0.182836, 
+  0., -0.609454, -0.91418, 0.0609454, 0.670399, -0.853235, -0.487563, -1.52363, 0.243781, -0.853235, 
+  -0.0609454, 0., 0.609454, -0.0609454, -0.182836, -0.182836, 0.121891, 0.121891, -0.426617, -1.40174, 
+  -0.243781, -0.182836, -0.548508, 0.0609454, 0.670399, -0.365672, 0.304727, -0.426617, 0.975126, 0.731344, 
+  -0.487563, 0., -0.182836, 0.548508, 0.182836, 0.426617, 0.121891, 0.487563, 1.15796, 0.670399, 
+  -0.426617, -0.243781, 0.243781, 0.121891, -0.121891, 0.304727, -0.548508, -0.243781, 1.3408, 1.40174, 
+  1.52363, 2.07214, 2.07214, 1.88931, 0.609454, 4.08334, 1.64552, 2.5597, 0.79229, 3.35199, 
+  0.731344, 2.43781, 4.99752, 1.70647, 4.02239, 0.79229, 1.52363, 1.3408, 0.609454, 1.88931, 
+  0.426617, -0.609454, 0.243781, 1.40174, -0.0609454, 0.121891, -1.09702, 1.40174, -0.975126, -0.426617, 
+  0.304727, 7.06966, 0.670399, -0.487563, 0.609454, -1.03607, -0.121891, 0.121891, -0.91418, 0.121891, 
+  0.487563, -1.03607, -0.975126, -1.15796, -1.03607, 0.426617, 0.548508, 3.9005, 3.16916, 2.62065, 
+  -0.79229, 1.82836, 2.43781, 2.25498, 2.25498, 1.3408, 0.121891, 0.91418, 2.07214, 1.82836, 
+  2.13309, 2.19403, 1.52363, 1.95025, 2.6816, 0.670399, 3.9005, 0.243781, -0.182836, -1.09702, 
+  -0.304727, 0., -0.670399, 0.487563, -0.182836, 0.121891, 0.121891, -0.0609454, 0.487563, -0.0609454, 
+  -1.09702, 0.487563, 2.19403, -1.09702, -0.304727, -1.27985, -0.243781, -0.121891, -0.182836, 0.365672, 
+  0., 2.19403, 1.46269, 0.548508, -0.426617, -0.670399, -0.79229, -0.670399, 1.82836, -0.487563, 
+  1.40174, -0.731344, -0.182836, -0.975126, -0.853235, -0.548508, -0.609454, -0.426617, -0.182836, 0.426617, 
+  -0.548508, -1.64552, -0.365672, -0.0609454, -0.426617, 0., -0.243781, -1.52363, -0.670399, -0.0609454, 
+  -0.121891, -1.21891, 0.243781, 2.31592, 0.365672, -1.46269, -1.09702, 0.182836, 0.243781, -0.365672, 
+  0., -1.70647, 0.609454, -1.03607, -1.46269, 1.15796, -0.243781, 0.731344, 0.365672, -0.487563, 
+  -1.95025, -1.03607, -0.243781, -1.09702, -1.82836, -1.09702, -1.03607, -0.853235, -0.853235, -0.79229, 
+  0.182836, -0.426617, -0.853235, -1.3408, -2.19403, -0.975126, -0.121891, -0.609454, -0.0609454, -1.64552, 
+  0.304727, -0.853235, -0.365672, -0.853235, -2.07214, 0.975126, -0.304727, -0.365672, 0.426617, 0.365672, 
+  0.0609454, 1.3408, -0.426617, 0.304727, 0.975126, -2.31592, -0.609454, -0.0609454, 0.243781, -0.0609454, 
+  -0.853235, -0.426617, -1.52363, 0.487563, 0.487563, -0.121891, -0.121891, -0.731344, -1.52363, -0.79229, 
+  -0.548508, -1.03607, -1.09702, -0.304727, -1.52363, -0.426617, 0.0609454, -0.91418, -0.79229, -0.304727, 
+  -0.79229, -0.121891, -0.91418, 0., 1.95025, 1.21891, -0.731344, -0.548508, 1.21891, -1.95025, 
+  -0.243781, -0.79229, -1.40174, 0.79229, -1.03607, -0.975126, -1.27985, -0.91418, 0.79229, 1.27985, 
+  -0.243781, 1.03607, -0.365672, 0.0609454, -0.304727, 0.487563, 0.548508, 0.91418, 0.121891, -0.91418, 
+  -0.121891, -0.304727, -0.426617, 0.731344, 0.243781, 0.548508, 0.182836, 0.365672, 1.09702, 1.40174, 
+  0.487563, -0.365672, -0.79229, 0.182836, -0.548508, -0.670399, 0.0609454, 1.27985, 0.0609454, -0.243781, 
+  -0.365672, 0.243781, -0.731344, -0.487563, -0.121891, -0.182836, -0.548508, 0.0609454, -0.121891, -1.40174, 
+  -0.670399, -0.731344, -0.670399, -1.21891, -0.91418, -1.64552, -0.670399, -1.46269, -0.304727, 0.0609454, 
+  1.52363, -0.426617, -0.79229, -0.182836, 0., -0.79229, 0.121891, -0.91418, -0.365672, -0.182836, 
+  -0.609454, -0.182836, 0.121891, 1.88931, 1.27985, -0.79229, -0.548508, -0.91418, -0.182836, -0.609454, 
+  0.365672, -0.975126, -0.609454, -0.0609454, 0.365672, -0.548508, -0.243781, -0.487563, -0.853235, -0.487563, 
+  -0.0609454, -0.304727, 0.121891, 0.426617, -0.365672, -0.975126, -0.79229, -0.79229, -0.91418, -0.426617, 
+  0.304727, -0.731344, -1.03607, -0.487563, -0.731344, -0.670399, -1.03607, 0.365672, -0.670399, 0.121891, 
+  -1.09702, -1.03607, 0.365672, -0.548508, 1.64552, 2.31592, -0.365672, -0.487563, -1.27985, 0.304727, 
+  -0.79229, 1.21891, 0.609454, -0.121891, -0.426617, -1.09702, -0.91418, 0.731344, 1.82836, 0.365672, 
+  0.426617, 0.426617, -1.09702, -1.21891, -1.88931, -0.304727, -0.121891, -0.426617, -0.548508, 0.121891, 
+  -0.0609454, -0.853235, 0.121891, -0.365672, -0.182836, -1.76742, -0.487563, 1.27985, 0.0609454, -1.03607, 
+  0.304727, -1.21891, 1.70647, 2.74254, -0.609454, -1.09702, 2.92538, 0.243781, 1.58458, -1.27985, 
+  -0.975126, 0.548508, 1.15796, -1.27985, -0.487563, 1.21891, -0.487563, -0.121891, 1.95025, 0.426617, 
+  0.365672, 0., -0.731344, -0.731344, -0.243781, -1.21891, -0.79229, -1.64552, -0.182836, -0.365672, 
+  0.0609454, -0.853235, -0.853235, 0.853235, 2.31592, -0.609454, -1.03607, 0.0609454, -0.182836, -0.853235, 
+  0.243781, 0.609454, -0.731344, -0.609454, 0.79229, -0.243781, 0., 0., 2.86443, -0.731344, 
+  4.87563, -1.15796, 0., -1.03607, 0.670399, -1.21891, 0.609454, 0.426617, 0.670399, -0.243781, 
+  -1.27985, -0.853235, -0.670399, -0.121891, -0.548508, -0.487563, 0.0609454, 0.548508, 0.609454, -1.09702, 
+  -0.182836, -0.975126, 1.40174, 0.121891, -0.79229, -0.426617, -0.975126, 1.95025, -1.03607, -1.40174, 
+  -0.487563, -0.548508, -0.731344, -0.0609454, -1.21891, -0.91418, 0.0609454, -0.121891, 0.121891, -0.304727, 
+  0.487563, -0.91418, -1.27985, 0.487563, -0.487563, -0.609454, -1.3408, -0.548508, 0.487563, 1.27985, 
+  0.670399, -0.0609454, 0.182836, 0.243781, -0.91418, 2.0112, 0.304727, -0.79229, -0.548508, 2.43781, 
+  -0.79229, 0., -0.79229, 1.03607, -0.426617, -0.365672, 1.52363, 2.07214, -0.243781, -0.731344, 
+  -0.0609454, -1.21891, -0.91418, 2.19403, -0.79229, -0.548508, -0.487563, -0.609454, -1.27985, -0.731344, 
+  -0.365672, -0.487563, 0.548508, -0.365672, 1.03607, -1.09702, -0.548508, -0.731344, -0.609454, -0.731344, 
+  -0.548508, -1.21891, -0.731344, -0.426617, 1.27985, -0.91418, -0.426617, 1.3408, 0., 0.304727, 
+  -1.58458, -0.243781, 1.88931, -0.79229, -0.91418, -0.426617, -0.182836, 0.182836, 0.0609454, 0.487563, 
+  2.31592, -0.304727, -0.121891, -1.15796, -0.487563, 0.609454, 0.487563, -0.0609454, -0.121891, -0.243781, 
+  0.304727, 1.40174, -1.03607, 0.731344, -1.3408, -0.304727, 1.40174, -0.609454, 0.731344, 0.487563, 
+  0.548508, -1.15796, 1.21891, 1.21891, -0.365672, -0.365672, 0.609454, -0.609454, 0.548508, 0.91418, 
+  0.0609454, 0.304727, 2.80349, 0.609454, -1.15796, 0., 0.731344, -0.609454, 0.304727, -0.426617, 
+  0.975126, -0.365672, -0.365672, 0.304727, 1.3408, -0.182836, -0.79229, -0.121891, -0.0609454, -0.548508, 
+  3.04727, -1.03607, -0.975126, -0.79229, -1.3408, 0.304727, -0.731344, 2.25498, 0.731344, 0., 
+  -0.609454, -1.15796, 0.79229, -0.548508, -0.426617, -0.731344, -0.853235, -0.548508, 2.62065, -0.79229, 
+  -1.27985, -0.731344, -1.09702, 0.182836, 0.304727, -1.03607, -0.731344, 0.182836, -0.731344, 3.2301, 
+  -0.548508, 0.91418, 3.71767, 0., -0.121891, 0.426617, -0.975126, -1.27985, -0.243781, -1.21891, 
+  -1.03607, -1.21891, 0.121891, 0.365672, -0.91418, -0.548508, 1.09702, 0.121891, -0.487563, -1.03607, 
+  0.670399, 2.92538, 0.182836, 0., -0.91418, -0.91418, -0.304727, -1.21891, 0.853235, 1.64552, 
+  1.03607, 0.548508, 0.487563, -0.609454, 0.91418, -0.975126, -0.182836, -0.91418, 0.609454, 0.121891, 
+  0.670399, 2.6816, 0.975126, 0.365672, 0., -0.670399, -0.731344, 0.365672, -0.487563, -0.365672, 
+  -0.609454, 0.0609454, 0.853235, 0.975126, -0.365672, 1.64552, -0.670399, 0.365672, 0.365672, -1.03607, 
+  0.0609454, 0.548508, 0.304727, -1.27985, 1.76742, 0., -1.03607, -1.09702, 0.853235, 0.79229, 
+  -0.853235, -1.09702, -0.79229, -0.487563, 0.853235, 0.304727, -0.365672, -0.91418, -0.121891, 0.79229, 
+  1.09702, 0.548508, -0.91418, 0.853235, 0.182836, 0.426617, -1.95025, 1.09702, -0.243781, 2.25498, 
+  0.79229, 0.365672, 1.3408, -0.182836, 0.975126, -0.609454, 0.731344, 1.64552, -0.0609454, -0.548508, 
+  -0.0609454, -0.243781, -0.609454, 1.76742, 1.40174, -0.609454, -0.182836, -0.670399, -0.0609454, -0.975126, 
+  -1.09702, -1.09702, 0., 0.365672, 0.182836, 0.91418, 1.58458, 0.0609454, -0.243781, -0.304727, 
+  -1.46269, -0.79229, -0.304727, -0.121891, 1.09702, -0.182836, 0.243781, -0.182836, -0.79229, -0.975126, 
+  -0.182836, 0.79229, 2.74254, 0.243781, -0.426617, 0.487563, 0.548508, -1.09702, 0.975126, -1.03607, 
+  -0.670399, -0.670399, -0.853235, 0.487563, 0.365672, -1.58458, -0.853235, 0., 0.365672, -0.487563, 
+  -0.182836, -1.21891, 1.21891, -0.731344, -0.0609454, 0., -0.365672, -0.182836, -0.548508, -0.121891, 
+  -0.609454, -0.731344, -0.731344, -0.731344, 3.04727, 1.46269, 0.487563, -0.731344, 0., 0.304727, 
+  0.182836, -0.548508, 0.609454, -0.426617, -1.27985, 0.609454, -0.548508, -0.91418, 0.243781, -0.243781, 
+  -1.3408, 0.426617, 1.15796, 1.15796, -0.975126, -1.3408, -1.40174, -0.609454, 0.853235, -1.27985, 
+  -0.426617, -0.182836, 0.365672, 0.243781, -1.64552, -0.731344, -0.426617, -1.15796, -0.426617, 0.0609454, 
+  0.0609454, -1.09702, 0.487563, -0.731344, -0.548508, -1.3408, -1.3408, -1.27985, -0.853235, -0.670399, 
+  -0.365672, -0.548508, 2.43781, 2.62065, -0.853235, 2.86443, 0.0609454, -0.182836, 0.304727, 0.121891, 
+  1.88931, -1.27985, 0.548508, -0.670399, 1.64552, -0.0609454, -0.182836, 0.182836, 2.07214, -0.853235, 
+  1.3408, -0.670399, -1.09702, 0.365672, -0.426617, -1.03607, 0.0609454, -0.121891, 0.243781, 1.27985, 
+  0.975126, 1.09702, 0.426617, -0.670399, -0.975126, 0.0609454, -1.21891, -0.365672, -0.243781, 0.182836, 
+  -0.853235, -0.975126, -0.426617, -1.09702, -1.09702, -0.853235, -0.975126, -0.487563, -0.79229, -0.243781, 
+  -0.91418, -0.548508, -0.487563, -0.975126, -1.21891, -0.548508, -0.487563, -0.670399, -0.853235, -0.609454, 
+  -0.853235, 0.243781, -0.731344, -0.548508, 0.548508, -0.121891, -0.91418, -0.670399, 0.121891, -0.670399, 
+  -0.426617, -0.487563, -0.670399, -0.79229, -0.731344, -1.3408, -1.03607, -0.182836, -0.670399, -0.548508, 
+  -1.21891, -0.853235, -0.79229, -1.40174, -0.426617, -0.182836, -0.304727, 0.975126, -0.609454, -1.40174, 
+  -0.426617, -0.487563, -2.0112, -0.731344, -0.121891, -0.487563, -1.27985, -1.15796, 0.121891, 0.487563, 
+  -0.91418, -0.670399, -0.91418, -0.731344, -0.731344, -0.304727, -0.731344, -0.79229, -1.21891, 1.88931, 
+])

@@ -1,0 +1,48 @@
+PERF_LOG : quantize_per_tensor : 12288 : elements : 639297 : cycles : 0.02 : elements/cycle : 52.03 : cycles/elements
+LAYER_DUMP : quantize_per_tensor : 12288 : dtype=1 : first=[12,17,29,13,31,15,6,3,16,21,11,9,3,15,33,36] : sum=223800 : min=0 : max=36
+PERF_LOG : quantized_conv2d_nchw : 65536 : elements : 171061649 : cycles : 0.00 : elements/cycle : 2610.19 : cycles/elements
+LAYER_DUMP : quantized_conv2d_nchw : 65536 : dtype=1 : first=[2,15,12,5,3,22,11,1,3,4,29,16,7,0,2,9] : sum=364187 : min=-49 : max=78
+PERF_LOG : quantized_relu_per_tensor : 65536 : elements : 6702930 : cycles : 0.01 : elements/cycle : 102.28 : cycles/elements
+LAYER_DUMP : quantized_relu_per_tensor : 65536 : dtype=1 : first=[-115,-89,-95,-109,-113,-76,-97,-116,-113,-111,-63,-88,-105,-118,-115,-101] : sum=-6764179 : min=-128 : max=32
+PERF_LOG : dequantize_per_tensor : 65536 : elements : 1245296 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+LAYER_DUMP : dequantize_per_tensor : 65536 : dtype=6 : first=[1.746061,5.238183,4.432309,2.551935,2.014686,6.984244,4.163684,1.611749,2.014686,2.283311,8.730306,5.372496,3.089185,1.343124,1.746061,3.626435] : sum=218180.9437 : min=0.000000 : max=21.489983
+PERF_LOG : max_pool2d : 16384 : elements : 10016613 : cycles : 0.00 : elements/cycle : 611.37 : cycles/elements
+LAYER_DUMP : max_pool2d : 16384 : dtype=6 : first=[5.238183,5.372496,6.984244,6.984244,7.252869,8.730306,5.372496,5.372496,6.446995,6.446995,3.089185,4.969559,4.969559,5.238183,5.238183,5.238183] : sum=79858.5213 : min=0.000000 : max=21.489983
+PERF_LOG : quantize_per_tensor : 16384 : elements : 852293 : cycles : 0.02 : elements/cycle : 52.02 : cycles/elements
+LAYER_DUMP : quantize_per_tensor : 16384 : dtype=1 : first=[-93,-92,-82,-82,-80,-70,-92,-92,-85,-85,-108,-95,-95,-93,-93,-93] : sum=-1568146 : min=-128 : max=14
+PERF_LOG : quantized_conv2d_nchw : 65536 : elements : 97245437 : cycles : 0.00 : elements/cycle : 1483.85 : cycles/elements
+LAYER_DUMP : quantized_conv2d_nchw : 65536 : dtype=1 : first=[15,9,32,13,18,29,17,23,25,24,28,26,26,19,20,24] : sum=2557469 : min=-17 : max=79
+PERF_LOG : quantized_conv2d_nchw : 16384 : elements : 24311549 : cycles : 0.00 : elements/cycle : 1483.86 : cycles/elements
+LAYER_DUMP : quantized_conv2d_nchw : 16384 : dtype=1 : first=[59,58,58,57,57,58,56,56,55,57,55,54,55,57,56,48] : sum=786062 : min=-17 : max=107
+PERF_LOG : quantized_relu_per_tensor : 16384 : elements : 1500938 : cycles : 0.01 : elements/cycle : 91.61 : cycles/elements
+LAYER_DUMP : quantized_relu_per_tensor : 16384 : dtype=1 : first=[-98,-101,-101,-105,-105,-101,-108,-108,-111,-105,-111,-115,-111,-105,-108,-128] : sum=-1830842 : min=-128 : max=61
+PERF_LOG : quantized_conv2d_nchw : 16384 : elements : 191469430 : cycles : 0.00 : elements/cycle : 11686.37 : cycles/elements
+LAYER_DUMP : quantized_conv2d_nchw : 16384 : dtype=1 : first=[2,6,6,7,7,5,6,6,6,7,5,3,6,6,6,-1] : sum=234111 : min=-128 : max=125
+PERF_LOG : quantized_relu_per_tensor : 16384 : elements : 1575644 : cycles : 0.01 : elements/cycle : 96.17 : cycles/elements
+LAYER_DUMP : quantized_relu_per_tensor : 16384 : dtype=1 : first=[-128,-128,-128,-128,-128,-128,-128,-128,-128,-128,-128,-128,-128,-128,-128,-128] : sum=-1592789 : min=-128 : max=120
+PERF_LOG : quantized_conv2d_nchw : 65536 : elements : 97245437 : cycles : 0.00 : elements/cycle : 1483.85 : cycles/elements
+LAYER_DUMP : quantized_conv2d_nchw : 65536 : dtype=1 : first=[-7,-3,0,0,0,-2,-5,0,3,-1,0,-3,-3,1,-3,2] : sum=-2680809 : min=-128 : max=103
+PERF_LOG : dequantize_per_tensor : 65536 : elements : 1245296 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+LAYER_DUMP : dequantize_per_tensor : 65536 : dtype=6 : first=[-5.564731,-6.955914,-1.623047,-6.028458,-4.869139,-2.318638,-5.101003,-3.709821,-3.246093,-3.477957,-2.550502,-3.014229,-3.014229,-4.637276,-4.405412,-3.477957] : sum=362.8668 : min=-12.984372 : max=9.274551
+PERF_LOG : dequantize_per_tensor : 65536 : elements : 1245296 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+LAYER_DUMP : dequantize_per_tensor : 65536 : dtype=6 : first=[3.101038,3.476922,3.758835,3.758835,3.758835,3.570893,3.288980,3.758835,4.040747,3.664864,3.758835,3.476922,3.476922,3.852805,3.476922,3.946776] : sum=-5578.9563 : min=-8.269436 : max=13.437834
+PERF_LOG : add : 65536 : elements : 18547607 : cycles : 0.00 : elements/cycle : 283.01 : cycles/elements
+LAYER_DUMP : add : 65536 : dtype=6 : first=[-2.463692,-3.478992,2.135788,-2.269624,-1.110305,1.252255,-1.812023,0.049014,0.794654,0.186907,1.208333,0.462693,0.462693,-0.784470,-0.928490,0.468820] : sum=-5216.0895 : min=-10.588074 : max=11.814787
+PERF_LOG : quantize_per_tensor : 65536 : elements : 3408193 : cycles : 0.02 : elements/cycle : 52.00 : cycles/elements
+LAYER_DUMP : quantize_per_tensor : 65536 : dtype=1 : first=[25,20,46,26,31,42,28,36,40,37,41,38,38,32,32,38] : sum=2335293 : min=-12 : max=90
+PERF_LOG : quantized_relu_per_tensor : 65536 : elements : 5989828 : cycles : 0.01 : elements/cycle : 91.40 : cycles/elements
+LAYER_DUMP : quantized_relu_per_tensor : 65536 : dtype=1 : first=[-128,-128,-100,-128,-128,-111,-128,-128,-117,-125,-114,-122,-122,-128,-128,-122] : sum=-7843694 : min=-128 : max=24
+PERF_LOG : quantized_conv2d_nchw : 16384 : elements : 93517565 : cycles : 0.00 : elements/cycle : 5707.86 : cycles/elements
+LAYER_DUMP : quantized_conv2d_nchw : 16384 : dtype=1 : first=[55,52,48,49,47,49,52,51,53,48,51,52,47,47,51,46] : sum=750846 : min=-19 : max=88
+PERF_LOG : quantized_relu_per_tensor : 16384 : elements : 1504606 : cycles : 0.01 : elements/cycle : 91.83 : cycles/elements
+LAYER_DUMP : quantized_relu_per_tensor : 16384 : dtype=1 : first=[-100,-109,-122,-119,-125,-119,-109,-113,-106,-122,-113,-109,-125,-125,-113,-128] : sum=-1892047 : min=-128 : max=2
+PERF_LOG : quantized_conv2d_nchw : 16384 : elements : 191469430 : cycles : 0.00 : elements/cycle : 11686.37 : cycles/elements
+LAYER_DUMP : quantized_conv2d_nchw : 16384 : dtype=1 : first=[50,25,26,15,10,40,30,17,20,21,14,32,23,10,19,23] : sum=616365 : min=-40 : max=101
+PERF_LOG : quantized_relu_per_tensor : 16384 : elements : 1594430 : cycles : 0.01 : elements/cycle : 97.32 : cycles/elements
+LAYER_DUMP : quantized_relu_per_tensor : 16384 : dtype=1 : first=[-80,-128,-128,-128,-128,-107,-128,-128,-128,-128,-128,-128,-128,-128,-128,-128] : sum=-1660827 : min=-128 : max=57
+PERF_LOG : quantized_conv2d_nchw : 65536 : elements : 97245437 : cycles : 0.00 : elements/cycle : 1483.85 : cycles/elements
+LAYER_DUMP : quantized_conv2d_nchw : 65536 : dtype=1 : first=[55,53,55,56,56,56,56,54,52,55,56,56,55,54,54,53] : sum=3580008 : min=-104 : max=106
+PERF_LOG : dequantize_per_tensor : 65536 : elements : 1245296 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+LAYER_DUMP : dequantize_per_tensor : 65536 : dtype=6 : first=[0.000000,0.000000,2.192832,0.000000,0.000000,1.331362,0.000000,0.000000,0.861470,0.234946,1.096416,0.469893,0.469893,0.000000,0.000000,0.469893] : sum=42675.1654 : min=0.000000 : max=11.903943
+PERF_LOG : dequantize_per_tensor : 65536 : elements : 1245296 : cycles : 0.05 : elements/cycle : 19.00 : cycles/elements
+LAYER_DUMP : dequantize_per_tensor : 65536 : dtype=6 : first=[-0.302580,-0.605160,-0.302580,-0.151290,-0.151290,-0.151290,-0.151290,-0.453870,-0.756450,-0.302580,-0.151290,-0.151290,-0.302580,-0.453870,-0.453870,-0.605160] : sum=-23532.2447 : min=-24.357683 : max=7.413208

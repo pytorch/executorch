@@ -1,0 +1,959 @@
+[  4%] Built target flatbuffers_ep
+[  4%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xai_common.dir/libxai_common/src/cnn_cast.c.o
+[  4%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xa_nnlib.dir/library/api/maxpool2df.c.o
+[  4%] Building CXX object third-party/gflags/CMakeFiles/gflags_nothreads_static.dir/src/gflags.cc.o
+[  4%] Built target cadence_kernels
+[  4%] Building CXX object third-party/gflags/CMakeFiles/gflags_nothreads_static.dir/src/gflags_reporting.cc.o
+[  4%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xa_nnlib.dir/library/api/quanitze_relu.c.o
+[  7%] Building CXX object third-party/gflags/CMakeFiles/gflags_nothreads_static.dir/src/gflags_completions.cc.o
+[  7%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xa_nnlib.dir/library/api/quantizef.c.o
+[  9%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xa_nnlib.dir/library/api/tensor_transposef.c.o
+[  9%] Linking CXX static library libgflags_nothreads.a
+[  9%] Built target gflags_nothreads_static
+[  9%] Built target scalar_type_schema
+[  9%] Built target common_schema
+[  9%] Built target flat_tensor_schema
+[  9%] Built target program_schema
+[  9%] Building CXX object CMakeFiles/executorch_core.dir/runtime/backend/interface.cpp.o
+[ 14%] Linking C static library libxai_common.a
+[ 14%] Built target xai_common
+[ 14%] Building CXX object CMakeFiles/executorch_core.dir/runtime/core/evalue.cpp.o
+[ 14%] Building CXX object CMakeFiles/executorch_core.dir/runtime/core/exec_aten/util/tensor_shape_to_c_string.cpp.o
+[ 17%] Building CXX object CMakeFiles/executorch_core.dir/runtime/core/exec_aten/util/tensor_util_portable.cpp.o
+[ 17%] Building CXX object CMakeFiles/executorch_core.dir/runtime/core/portable_type/tensor_impl.cpp.o
+[ 17%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xa_nnlib.dir/library/api/vaddf.c.o
+[ 19%] Building CXX object CMakeFiles/executorch_core.dir/runtime/core/tag.cpp.o
+[ 19%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xa_nnlib.dir/library/api/vsoftmaxf.c.o
+[ 19%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xa_nnlib.dir/library/tables/expf_tbl.c.o
+[ 19%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xa_nnlib.dir/library/tables/inff_tbl.c.o
+[ 21%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xa_nnlib.dir/library/tables/nanf_tbl.c.o
+[ 26%] Building CXX object CMakeFiles/executorch_core.dir/runtime/core/tensor_layout.cpp.o
+[ 26%] Building CXX object CMakeFiles/executorch_core.dir/runtime/executor/method.cpp.o
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:9:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/method.h:22:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:65:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        buffers_.size());
+        ^~~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:9:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/method.h:22:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:74:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        offset_bytes,
+        ^~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:9:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/method.h:22:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:75:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        size_bytes,
+        ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:9:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/method.h:22:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:76:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        buffer.size(),
+        ^~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+[ 26%] Building CXX object CMakeFiles/executorch_core.dir/runtime/executor/method_meta.cpp.o
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:247:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        num_values);
+        ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:313:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        i);
+        ^~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:487:13: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+            i);
+            ^~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:506:15: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+              i,
+              ^~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:507:15: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+              j);
+              ^~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:524:13: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+            i);
+            ^~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:546:13: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+            i);
+            ^~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:562:13: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+            i);
+            ^~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+[ 26%] Linking C static library bin/libxa_nnlib.a
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:581:15: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+              i,
+              ^~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:604:15: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+              i,
+              ^~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:633:15: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+              i,
+              ^~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:656:13: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+            i);
+            ^~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:701:7: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      operator_name_size);
+      ^~~~~~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:772:11: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+          i,
+          ^~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:787:9: warning: format specifies type 'long' but the argument has type 'ssize_t' (aka 'int') [-Wformat]
+        static_cast<ssize_t>(op_index),
+        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:944:11: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+          i);
+          ^~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:967:13: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+            instr_idx);
+            ^~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1034:17: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+                n_value_);
+                ^~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1082:7: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      input_idx,
+      ^~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1083:7: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      inputs_size());
+      ^~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1095:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        input_idx,
+        ^~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1131:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        input_idx,
+        ^~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1139:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        input_idx);
+        ^~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:209:40: note: expanded from macro 'ET_CHECK_OK_OR_RETURN_ERROR'
+  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR(__VA_ARGS__)
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:238:9: note: expanded from macro 'ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR'
+      )(__VA_ARGS__))
+      ~~^~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:254:34: note: expanded from macro 'ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                          \
+                                 ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:218:31: note: expanded from macro 'ET_INTERNAL_EXPAND'
+#define ET_INTERNAL_EXPAND(x) x
+                              ^
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1145:11: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+          input_idx);
+          ^~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:209:40: note: expanded from macro 'ET_CHECK_OK_OR_RETURN_ERROR'
+  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR(__VA_ARGS__)
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:238:9: note: expanded from macro 'ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR'
+      )(__VA_ARGS__))
+      ~~^~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:254:34: note: expanded from macro 'ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                          \
+                                 ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:218:31: note: expanded from macro 'ET_INTERNAL_EXPAND'
+#define ET_INTERNAL_EXPAND(x) x
+                              ^
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1150:11: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+          input_idx);
+          ^~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:209:40: note: expanded from macro 'ET_CHECK_OK_OR_RETURN_ERROR'
+  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR(__VA_ARGS__)
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:238:9: note: expanded from macro 'ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR'
+      )(__VA_ARGS__))
+      ~~^~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:254:34: note: expanded from macro 'ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                          \
+                                 ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:218:31: note: expanded from macro 'ET_INTERNAL_EXPAND'
+#define ET_INTERNAL_EXPAND(x) x
+                              ^
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1160:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        input_idx,
+        ^~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1170:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        input_idx,
+        ^~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1198:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        input_idx,
+        ^~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1207:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        input_idx,
+        ^~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1232:7: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      n_input,
+      ^~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1233:7: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      input_evalues.size());
+      ^~~~~~~~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1253:7: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      output_idx,
+      ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1254:7: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      outputs_size());
+      ^~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1274:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        output_idx);
+        ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1294:7: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      size,
+      ^~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1295:7: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      t.nbytes());
+      ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1352:7: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      step_state_.instr_idx,
+      ^~~~~~~~~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1353:7: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      step_state_.chain_idx,
+      ^~~~~~~~~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1354:7: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      (size_t)instructions->size());
+      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1380:13: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+            step_state_.chain_idx,
+            ^~~~~~~~~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1381:13: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+            step_state_.instr_idx,
+            ^~~~~~~~~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1411:11: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+          n_delegate_,
+          ^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1412:11: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+          step_state_.instr_idx);
+          ^~~~~~~~~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1425:13: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+            step_state_.instr_idx,
+            ^~~~~~~~~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1593:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        i);
+        ^~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1610:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        step_state_.chain_idx);
+        ^~~~~~~~~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1650:60: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      i < n_value_, "%" ET_PRIsize_t " >= %" ET_PRIsize_t, i, n_value_);
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/assert.h:39:59: note: expanded from macro 'ET_CHECK_MSG'
+      ET_ASSERT_MESSAGE_EMIT(" (%s): " _format, #_cond, ##__VA_ARGS__); \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/assert.h:26:9: note: expanded from macro 'ET_ASSERT_MESSAGE_EMIT'
+      ##__VA_ARGS__)
+      ~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1650:63: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      i < n_value_, "%" ET_PRIsize_t " >= %" ET_PRIsize_t, i, n_value_);
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/assert.h:39:59: note: expanded from macro 'ET_CHECK_MSG'
+      ET_ASSERT_MESSAGE_EMIT(" (%s): " _format, #_cond, ##__VA_ARGS__); \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/assert.h:26:9: note: expanded from macro 'ET_ASSERT_MESSAGE_EMIT'
+      ##__VA_ARGS__)
+      ~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1656:60: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      i < n_value_, "%" ET_PRIsize_t " >= %" ET_PRIsize_t, i, n_value_);
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/assert.h:39:59: note: expanded from macro 'ET_CHECK_MSG'
+      ET_ASSERT_MESSAGE_EMIT(" (%s): " _format, #_cond, ##__VA_ARGS__); \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/assert.h:26:9: note: expanded from macro 'ET_ASSERT_MESSAGE_EMIT'
+      ##__VA_ARGS__)
+      ~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1656:63: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      i < n_value_, "%" ET_PRIsize_t " >= %" ET_PRIsize_t, i, n_value_);
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/assert.h:39:59: note: expanded from macro 'ET_CHECK_MSG'
+      ET_ASSERT_MESSAGE_EMIT(" (%s): " _format, #_cond, ##__VA_ARGS__); \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/assert.h:26:9: note: expanded from macro 'ET_ASSERT_MESSAGE_EMIT'
+      ##__VA_ARGS__)
+      ~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1669:7: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      i,
+      ^~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/assert.h:39:59: note: expanded from macro 'ET_CHECK_MSG'
+      ET_ASSERT_MESSAGE_EMIT(" (%s): " _format, #_cond, ##__VA_ARGS__); \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/assert.h:26:9: note: expanded from macro 'ET_ASSERT_MESSAGE_EMIT'
+      ##__VA_ARGS__)
+      ~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1670:7: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      inputs_size());
+      ^~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/assert.h:39:59: note: expanded from macro 'ET_CHECK_MSG'
+      ET_ASSERT_MESSAGE_EMIT(" (%s): " _format, #_cond, ##__VA_ARGS__); \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/assert.h:26:9: note: expanded from macro 'ET_ASSERT_MESSAGE_EMIT'
+      ##__VA_ARGS__)
+      ~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1727:7: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      i,
+      ^~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/assert.h:39:59: note: expanded from macro 'ET_CHECK_MSG'
+      ET_ASSERT_MESSAGE_EMIT(" (%s): " _format, #_cond, ##__VA_ARGS__); \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/assert.h:26:9: note: expanded from macro 'ET_ASSERT_MESSAGE_EMIT'
+      ##__VA_ARGS__)
+      ~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/method.cpp:1728:7: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      outputs_size());
+      ^~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/assert.h:39:59: note: expanded from macro 'ET_CHECK_MSG'
+      ET_ASSERT_MESSAGE_EMIT(" (%s): " _format, #_cond, ##__VA_ARGS__); \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/assert.h:26:9: note: expanded from macro 'ET_ASSERT_MESSAGE_EMIT'
+      ##__VA_ARGS__)
+      ~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+[ 26%] Built target xa_nnlib
+[ 26%] Building CXX object CMakeFiles/executorch_core.dir/runtime/executor/program.cpp.o
+[ 26%] Building CXX object CMakeFiles/executorch_core.dir/runtime/executor/pte_data_map.cpp.o
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/program.cpp:9:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/program.h:20:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:65:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        buffers_.size());
+        ^~~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/program.cpp:9:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/program.h:20:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:74:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        offset_bytes,
+        ^~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/program.cpp:9:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/program.h:20:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:75:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        size_bytes,
+        ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/program.cpp:9:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/program.h:20:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:76:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        buffer.size(),
+        ^~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+[ 29%] Building CXX object CMakeFiles/executorch_core.dir/runtime/executor/tensor_parser_exec_aten.cpp.o
+[ 29%] Building CXX object CMakeFiles/executorch_core.dir/runtime/executor/tensor_parser_portable.cpp.o
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/tensor_parser_exec_aten.cpp:9:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/tensor_parser.h:19:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:65:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        buffers_.size());
+        ^~~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/tensor_parser_exec_aten.cpp:9:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/tensor_parser.h:19:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:74:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        offset_bytes,
+        ^~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/tensor_parser_exec_aten.cpp:9:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/tensor_parser.h:19:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:75:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        size_bytes,
+        ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/tensor_parser_exec_aten.cpp:9:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/tensor_parser.h:19:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:76:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        buffer.size(),
+        ^~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/tensor_parser_portable.cpp:9:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/tensor_parser.h:19:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:65:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        buffers_.size());
+        ^~~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/tensor_parser_portable.cpp:9:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/tensor_parser.h:19:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:74:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        offset_bytes,
+        ^~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/tensor_parser_portable.cpp:9:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/tensor_parser.h:19:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:75:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        size_bytes,
+        ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/runtime/executor/tensor_parser_portable.cpp:9:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/tensor_parser.h:19:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:76:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        buffer.size(),
+        ^~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+58 warnings generated.
+[ 31%] Building CXX object CMakeFiles/executorch_core.dir/runtime/kernel/operator_registry.cpp.o
+4 warnings generated.
+[ 34%] Building CXX object CMakeFiles/executorch_core.dir/runtime/platform/log.cpp.o
+4 warnings generated.
+[ 34%] Building CXX object CMakeFiles/executorch_core.dir/runtime/platform/profiler.cpp.o
+[ 34%] Building CXX object CMakeFiles/executorch_core.dir/runtime/platform/default/posix.cpp.o
+4 warnings generated.
+[ 36%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xai.dir/libxai/cnn/src/cnn_conv.c.o
+[ 36%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xai.dir/libxai/cnn/src/cnn_conv_VQ.c.o
+[ 36%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xai.dir/libxai/cnn/src/cnn_conv_MOD.c.o
+[ 39%] Linking CXX static library libexecutorch_core.a
+[ 39%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xai.dir/libxai/cnn/src/cnn_conv_MOW.c.o
+[ 39%] Built target executorch_core
+[ 41%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_VQ_MOW.c.o
+[ 41%] Building CXX object extension/runner_util/CMakeFiles/extension_runner_util.dir/inputs.cpp.o
+[ 41%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_VQ_MOD.c.o
+[ 41%] Building CXX object extension/runner_util/CMakeFiles/extension_runner_util.dir/inputs_portable.cpp.o
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/extension/runner_util/inputs.cpp:10:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/extension/runner_util/inputs.h:15:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/method.h:22:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:65:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        buffers_.size());
+        ^~~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/extension/runner_util/inputs.cpp:10:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/extension/runner_util/inputs.h:15:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/method.h:22:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:74:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        offset_bytes,
+        ^~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/extension/runner_util/inputs.cpp:10:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/extension/runner_util/inputs.h:15:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/method.h:22:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:75:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        size_bytes,
+        ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/extension/runner_util/inputs.cpp:10:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/extension/runner_util/inputs.h:15:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/method.h:22:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:76:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        buffer.size(),
+        ^~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/extension/runner_util/inputs_portable.cpp:10:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/extension/runner_util/inputs.h:15:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/method.h:22:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:65:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        buffers_.size());
+        ^~~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/extension/runner_util/inputs_portable.cpp:10:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/extension/runner_util/inputs.h:15:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/method.h:22:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:74:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        offset_bytes,
+        ^~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/extension/runner_util/inputs_portable.cpp:10:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/extension/runner_util/inputs.h:15:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/method.h:22:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:75:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        size_bytes,
+        ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/extension/runner_util/inputs_portable.cpp:10:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/extension/runner_util/inputs.h:15:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/method.h:22:
+In file included from /home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/executor/memory_manager.h:11:
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/hierarchical_allocator.h:76:9: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+        buffer.size(),
+        ^~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/error.h:178:34: note: expanded from macro 'ET_CHECK_OR_RETURN_ERROR'
+      ET_LOG(Error, message__, ##__VA_ARGS__);                    \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/extension/runner_util/inputs_portable.cpp:39:31: warning: implicit conversion from 'int' to 'float' changes value from 1073741823 to 1073741824 [-Wimplicit-const-int-float-conversion]
+    return (float)std::rand()/RAND_MAX;
+                             ~^~~~~~~~
+/fac/proj_apps_dspqa/xtensa/XtDevTools/install/builds/RJ-2024.4-linux/Vision_130_64k_iDMA_Cache/xtensa-elf/include/stdlib.h:29:20: note: expanded from macro 'RAND_MAX'
+  #define RAND_MAX      0x3fffffff
+                        ^~~~~~~~~~
+4 warnings generated.
+[ 41%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_VQ_MOD_S16.c.o
+5 warnings generated.
+[ 41%] Linking CXX static library libextension_runner_util.a
+[ 41%] Built target extension_runner_util
+[ 41%] Building CXX object CMakeFiles/executorch.dir/kernels/prim_ops/et_copy_index.cpp.o
+[ 41%] Building CXX object CMakeFiles/executorch.dir/kernels/prim_ops/et_view.cpp.o
+/home/kvariar/ExecuTorch/find_stable/executorch/kernels/prim_ops/et_view.cpp:109:7: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      static_cast<size_t>(self.numel()),
+      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/exec_aten/util/tensor_util.h:385:61: note: expanded from macro 'ET_KERNEL_CHECK_MSG'
+      ET_LOG(Error, "Check failed (%s): " message, #cond, ##__VA_ARGS__); \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/kernels/prim_ops/et_view.cpp:110:7: warning: format specifies type 'unsigned long' but the argument has type 'size_t' (aka 'unsigned int') [-Wformat]
+      static_cast<size_t>(out.numel()));
+      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/core/exec_aten/util/tensor_util.h:385:61: note: expanded from macro 'ET_KERNEL_CHECK_MSG'
+      ET_LOG(Error, "Check failed (%s): " message, #cond, ##__VA_ARGS__); \
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+/home/kvariar/ExecuTorch/find_stable/executorch/../executorch/runtime/platform/log.h:181:13: note: expanded from macro 'ET_LOG'
+          ##__VA_ARGS__);                                            \
+            ^~~~~~~~~~~
+2 warnings generated.
+[ 41%] Building CXX object CMakeFiles/executorch.dir/kernels/prim_ops/register_prim_ops.cpp.o
+[ 43%] Linking CXX static library libexecutorch.a
+[ 43%] Built target executorch
+[ 43%] Building CXX object extension/evalue_util/CMakeFiles/extension_evalue_util.dir/print_evalue.cpp.o
+[ 43%] Linking CXX static library libextension_evalue_util.a
+[ 43%] Built target extension_evalue_util
+[ 43%] Building CXX object extension/flat_tensor/CMakeFiles/extension_flat_tensor.dir/flat_tensor_data_map.cpp.o
+[ 46%] Building CXX object extension/flat_tensor/CMakeFiles/extension_flat_tensor.dir/serialize/flat_tensor_header.cpp.o
+[ 46%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_VQ_MOW_S16.c.o
+[ 46%] Linking CXX static library libextension_flat_tensor.a
+[ 46%] Built target extension_flat_tensor
+[ 46%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/op_softmax.cpp.o
+[ 46%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/op_max_pool2d_with_indices.cpp.o
+[ 46%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/op_add.cpp.o
+[ 48%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/quantized_relu.cpp.o
+[ 48%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/util/activation_ops_util.cpp.o
+[ 48%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/util/copy_ops_util.cpp.o
+[ 48%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/util/broadcast_util.cpp.o
+[ 51%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/util/dtype_util.cpp.o
+[ 51%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/util/index_util.cpp.o
+[ 51%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/util/kernel_ops_util.cpp.o
+[ 51%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/util/matmul_ops_util.cpp.o
+[ 53%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/util/reduce_util.cpp.o
+[ 53%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/util/repeat_util.cpp.o
+[ 53%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/util/slice_util.cpp.o
+[ 53%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_VQ_SO.c.o
+[ 53%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/pattern/unary_ufunc_realhbbf16_to_floathbf16.cpp.o
+[ 58%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_add.cpp.o
+[ 58%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_bmm.cpp.o
+[ 58%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_MOW.c.o
+[ 58%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_cat.cpp.o
+[ 58%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_clone.cpp.o
+[ 60%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_div.cpp.o
+[ 60%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_embedding.cpp.o
+[ 60%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_full.cpp.o
+[ 60%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_hardtanh.cpp.o
+[ 63%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_mean.cpp.o
+[ 63%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_mul.cpp.o
+[ 63%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_permute_copy.cpp.o
+[ 63%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_rsqrt.cpp.o
+[ 65%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_sigmoid.cpp.o
+[ 65%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_slice_copy.cpp.o
+[ 65%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_split_with_sizes_copy.cpp.o
+[ 65%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_sub.cpp.o
+[ 68%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_to_copy.cpp.o
+[ 68%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_where.cpp.o
+[ 68%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_expand_copy.cpp.o
+[ 68%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_gelu.cpp.o
+[ 70%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_empty.cpp.o
+[ 70%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_transpose_copy.cpp.o
+[ 70%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_eq.cpp.o
+[ 70%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_logical_not.cpp.o
+[ 73%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_any.cpp.o
+[ 73%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_native_group_norm.cpp.o
+[ 73%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_MOD.c.o
+[ 73%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_sum.cpp.o
+[ 73%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_select_copy.cpp.o
+[ 75%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/op_view_copy.cpp.o
+[ 75%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/util/delinearize_index.cpp.o
+[ 75%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/util/normalization_ops_util.cpp.o
+[ 75%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/__/__/__/__/kernels/portable/cpu/util/select_copy_util.cpp.o
+[ 78%] Linking CXX static library libaten_ops_cadence.a
+[ 78%] Built target aten_ops_cadence
+[ 78%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_MOD_S16.c.o
+[ 78%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_MOW_S16.c.o
+[ 80%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xai.dir/libxai/cnn/src/cnn_dilated_conv_SO.c.o
+[ 80%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xai.dir/libxai/cnn/src/cnn_datatransform.c.o
+[ 80%] Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xai.dir/libxai/cnn/src/cnn_helper.c.o

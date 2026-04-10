@@ -1,0 +1,13 @@
+( [ Vision_130_64k_iDMA_Cache ] load_elf ) *WARNING* Xtensa configuration may be incompatible (configuration ID does not match) for ./cmake-out-generic/executor_runner
+I 00:00:00.072170 executorch:executor_runner.cpp:257] Model file /home/sraut/ext_main/cad_rlc/executorch/operator_and_model_testing/conv2d/pte/CadenceDemoModel.pte is loaded.
+I 00:00:00.076379 executorch:executor_runner.cpp:266] Using method forward
+I 00:00:00.079461 executorch:executor_runner.cpp:317] Setting up planned buffer 0, size 4014080.
+I 00:00:00.749449 executorch:executor_runner.cpp:345] Method loaded.
+I 00:00:00.752281 executorch:executor_runner.cpp:349] Number of operators: 3
+I 00:00:00.755314 executorch:executor_runner.cpp:353] Operator[0]: cadence::quantize_per_tensor
+I 00:00:00.758312 executorch:executor_runner.cpp:353] Operator[1]: cadence::quantized_conv2d_nchw
+I 00:00:00.761588 executorch:executor_runner.cpp:353] Operator[2]: cadence::dequantize_per_tensor
+quantized_conv2d_nchw: n=1, c=3, h=224, w=224, oc=64, wc=3, wh=7, ww=7, oh=112, ow=112
+quantized_conv2d_nchw: groups=1, in_zero_point=2, weight_zero_point=0, bias_scale=0.000020, output_scale=0.017547
+quantized_conv2d_nchw: output dtype=1
+quantized_conv2d_nchw: Using generic conv2d implementation (CADENCE_CONV2D_GENERIC enabled)

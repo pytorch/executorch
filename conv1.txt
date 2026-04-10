@@ -1,0 +1,40 @@
+[  2%] Built target flatbuffers_ep
+[  4%] Built target flatcc_ep
+[  4%] Built target common_schema
+[  4%] Built target scalar_type_schema
+[ 11%] Built target program_schema
+[ 11%] Built target xai_common
+[ 11%] Built target xa_nnlib
+[ 11%] Built target flat_tensor_schema
+[ 13%] Built target flatccrt
+[ 17%] Built target xai
+[ 17%] Built target cadence_kernels
+[ 18%] Built target gflags_nothreads_static
+[ 24%] Built target executorch_core
+[ 24%] Built target extension_data_loader
+[ 26%] Built target extension_runner_util
+[ 26%] Built target extension_flat_tensor
+[ 26%] Built target extension_evalue_util
+[ 27%] Built target executorch
+[ 32%] Built target kernels_util_all_deps
+[ 36%] Built target custom_ops
+[ 48%] Built target aten_ops_cadence
+[ 49%] Built target cadence_ops_lib
+[ 49%] Linking CXX executable executor_runner
+Warning: The location of this program does not match the Xtensa Tools
+location specified in the Xtensa registry entry:
+
+  program prefix: /fac/proj_apps_dspqa/xtensa/XtDevTools/install/tools/RJ-2024.4-linux/XtensaTools/bin/..
+  registry value: /././home/xpgcust/tree/RJ-2024.4/tb/tools/swtools-x86_64-linux
+
+Either the current Xtensa configuration is not properly installed or you
+are using Xtensa Tools from a different location than you specified when
+installing the configuration.
+
+Error: configuration-specific files are not properly installed
+(expected to find them in /././project/cust/genapp/RJ-2024.4/build/ttiEng/kvariar/Vision_130_AO_iDMA_Cache/439576/RJ-2024.4/Vision_130_AO_iDMA_Cache)
+gmake[2]: *** [CMakeFiles/executor_runner.dir/build.make:144: executor_runner] Error 1
+gmake[1]: *** [CMakeFiles/Makefile2:619: CMakeFiles/executor_runner.dir/all] Error 2
+gmake[1]: *** Waiting for unfinished jobs....
+[ 98%] Built target portable_kernels
+gmake: *** [Makefile:136: all] Error 2

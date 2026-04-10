@@ -266,6 +266,22 @@ class MethodMeta final {
   ET_EXPERIMENTAL size_t num_instructions() const;
 
   /**
+   * Get the number of operators in this method.
+   *
+   * @returns The number of operators.
+   */
+  size_t num_operators() const;
+
+  /**
+   * Get the operator name at the given index.
+   *
+   * @param[in] index The index of the operator.
+   * @returns A Result wrapping the operator name as a C-style string
+   * on success, or an error if the index is invalid.
+   */
+  Result<const char*> get_operator_name(size_t index) const;
+
+  /**
    * DEPRECATED: Use num_memory_planned_buffers() instead.
    */
   ET_DEPRECATED size_t num_non_const_buffers() const {

@@ -30,7 +30,6 @@ build-profiling/
 *.model
 *.etdump
 tokenizer.json
-*.pte
 *.ptd
 !test_bpe_tokenizer.bin
 !test_tiktoken_tokenizer.model
@@ -67,6 +66,11 @@ xcuserdata/
 /src/executorch/share/
 /src/executorch/version.py
 *_etdump
+/runtime/core/portable_type/c10/CMakeFiles/
+/runtime/core/portable_type/c10/bin/
+/runtime/core/portable_type/c10/Makefile
+/runtime/core/portable_type/c10/cmake_install.cmake
+/runtime/core/portable_type/c10/*.a
 
 # Android
 *.aar

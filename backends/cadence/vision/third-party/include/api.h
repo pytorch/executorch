@@ -69,12 +69,65 @@ N      multiple of BBE_SIMD_WIDTH (vsoftmax)
 void vsoftmaxf(float32_t *y, const float32_t *x, int N);
 
 void tensor_transposef(float32_t *restrict ptr_out
-    ,const int *const ptr_out_shape
-    ,const float32_t *restrict ptr_inp
-    ,const int *const ptr_inp_shape
-    ,const int *restrict ptr_permute_vec
-    ,int num_out_dims
-    ,int num_inp_dims);
+  ,const int *const ptr_out_shape
+  ,const float32_t *restrict ptr_inp
+  ,const int *const ptr_inp_shape
+  ,const int *restrict ptr_permute_vec
+  ,int num_out_dims
+  ,int num_inp_dims);
+
+void quantize_f32_asym8s(int8_t *restrict ptr_out
+  ,const float32_t *restrict ptr_inp
+  ,float32_t scale
+  ,int zero_bias
+  ,int N);
+
+void dequantize_asym8s_f32(float32_t *restrict ptr_out
+  ,const int8_t *restrict ptr_inp
+  ,float32_t scale
+  ,int zero_bias
+  ,int N);
+
+void maxpool2d_with_indices_j2x2_f32(float32_t *restrict ptr_out
+  ,const float32_t *restrict ptr_inp
+  ,int *restrict ptr_indices
+  ,int inp_height ,int inp_width
+  ,int out_height ,int out_width
+  ,int32_t in_pitch_width, int32_t in_pitch_height
+  ,int32_t out_pitch_width, int32_t out_pitch_height
+  ,uint8_t kernel_height
+  ,uint8_t kernel_width);
+
+void maxpool2d_j2x2_f32(float32_t *restrict ptr_out
+  ,const float32_t *restrict ptr_inp
+  ,int inp_height ,int inp_width
+  ,int out_height ,int out_width
+  ,int32_t in_pitch_width, int32_t in_pitch_height
+  ,int32_t out_pitch_width, int32_t out_pitch_height
+  ,uint8_t kernel_height
+  ,uint8_t kernel_width);
+
+void vrelU_quantized(
+		    int8_t* restrict ptr_out,
+		        const int8_t* restrict ptr_inp,
+			    int32_t in_zero_point,
+			        int32_t out_zero_point,
+				    float32_t out_scale,
+				        int N);
+void rvaddf(float32_t *restrict z, const float32_t *restrict x,
+		            const float32_t *restrict y, int N);
+
+void simd_mean_pool_2x2_to_1x1_float32(float32_t* restrict output, 
+                                       const float32_t* restrict input,
+                                       int N);
+
+int32_t rvdot_zeropt(
+    int32_t init_acc,
+    const int8_t *restrict x,
+    const int8_t *restrict y,
+    int8_t x_zp,
+    int8_t y_zp,
+    int N);
 
 #ifdef __cplusplus
 };
