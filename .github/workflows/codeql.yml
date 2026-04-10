@@ -1,0 +1,53 @@
+name: "CodeQL"
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '25 7 * * 1'
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: java-kotlin
+            build-mode: manual
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Build Java/Kotlin (Android library, no native)
+        if: matrix.language == 'java-kotlin'
+        working-directory: extension/android
+        run: |
+          # Create empty native lib dir so Gradle doesn't warn
+          mkdir -p ../../cmake-out-android-so
+          # Compile Java/Kotlin only — no native libs needed for CodeQL
+          # Skip lint and tests (unit tests require native .so at runtime)
+          ./gradlew :executorch_android:assembleDebug \
+            -x lint -x lintDebug -x test -x testDebugUnitTest
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
