@@ -144,16 +144,29 @@ def _fused_moe_kernel(
         b = tl.load(b_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0)
         b = (b >> b_shifter) & 0xF
 
-        # Load per-group scales [BLOCK_SIZE_K, BLOCK_SIZE_N]
-        scale_ptrs = (
-            B_scale
-            + expert_id * stride_bse
-            + offs_n[None, :] * stride_bsn
-            + ((offs_k[:, None] + BLOCK_SIZE_K * k_step) // group_size) * stride_bsk
-        )
-        b_scale = tl.load(
-            scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
-        ).to(tl.float32)
+        # Load per-group scales and dequantize
+        if BLOCK_SIZE_K <= group_size:
+            # All K values in this tile share one scale group — load [1, N]
+            group_idx = (BLOCK_SIZE_K * k_step) // group_size
+            scale_ptrs = (
+                B_scale
+                + expert_id * stride_bse
+                + offs_n[None, :] * stride_bsn
+                + group_idx * stride_bsk
+            )
+            b_scale = tl.load(scale_ptrs, mask=n_mask[None, :], other=0.0).to(
+                tl.float32
+            )
+        else:
+            scale_ptrs = (
+                B_scale
+                + expert_id * stride_bse
+                + offs_n[None, :] * stride_bsn
+                + ((offs_k[:, None] + BLOCK_SIZE_K * k_step) // group_size) * stride_bsk
+            )
+            b_scale = tl.load(
+                scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
+            ).to(tl.float32)
 
         # Dequantize and accumulate: vector-matrix multiply
         b_dequant = ((b.to(tl.float32) - 8.0) * b_scale).to(compute_type)
@@ -252,15 +265,27 @@ def _fused_moe_silu_kernel(
         b = tl.load(b_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0)
         b = (b >> b_shifter) & 0xF
 
-        scale_ptrs = (
-            B_scale
-            + expert_id * stride_bse
-            + offs_n[None, :] * stride_bsn
-            + ((offs_k[:, None] + BLOCK_SIZE_K * k_step) // group_size) * stride_bsk
-        )
-        b_scale = tl.load(
-            scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
-        ).to(tl.float32)
+        if BLOCK_SIZE_K <= group_size:
+            group_idx = (BLOCK_SIZE_K * k_step) // group_size
+            scale_ptrs = (
+                B_scale
+                + expert_id * stride_bse
+                + offs_n[None, :] * stride_bsn
+                + group_idx * stride_bsk
+            )
+            b_scale = tl.load(scale_ptrs, mask=n_mask[None, :], other=0.0).to(
+                tl.float32
+            )
+        else:
+            scale_ptrs = (
+                B_scale
+                + expert_id * stride_bse
+                + offs_n[None, :] * stride_bsn
+                + ((offs_k[:, None] + BLOCK_SIZE_K * k_step) // group_size) * stride_bsk
+            )
+            b_scale = tl.load(
+                scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
+            ).to(tl.float32)
 
         b_dequant = ((b.to(tl.float32) - 8.0) * b_scale).to(compute_type)
         acc += tl.sum(a[:, None].to(compute_type) * b_dequant, axis=0)
