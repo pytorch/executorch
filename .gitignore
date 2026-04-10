@@ -16,6 +16,7 @@ cmake-android-out/
 cmake-ios-out/
 cmake-out*
 cmake-out-android/
+backends/webgpu/third-party/
 build-android/
 build-x86/
 build-hexagon/
