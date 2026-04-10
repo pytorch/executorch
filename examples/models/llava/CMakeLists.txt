@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 #
-# Simple CMake build system for llava runner.
+# Simple CMake build system for multimodal runner.
 #
 # ### Editing this file ###
 #
@@ -15,11 +15,13 @@
 # ~~~
 # It should also be cmake-lint clean.
 #
-cmake_minimum_required(VERSION 3.24) # 3.24 is required for WHOLE_ARCHIVE
-project(llava)
+cmake_minimum_required(VERSION 3.19)
+project(multimodal)
 
 # Duplicating options as root CMakeLists.txt
 option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
+
+option(EXECUTORCH_USE_TIKTOKEN "Use Tiktoken as a tokenizer" OFF)
 
 include(CMakeDependentOption)
 #
@@ -42,8 +44,9 @@ if(NOT PYTHON_EXECUTABLE)
 endif()
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
+set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 
-include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -70,17 +73,46 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
 find_package(gflags REQUIRED)
 
+find_package(Torch CONFIG REQUIRED)
+add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
+
 #
-# llava_main: test binary to run llava, with tokenizer and sampler integrated
+# llama_main: test binary to run llama, with tokenizer and sampler integrated
 #
 
 # find `executorch` libraries Same as for gflags
-list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
-find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
-executorch_target_link_options_shared_lib(executorch)
+set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/ExecuTorch)
+find_package(executorch CONFIG REQUIRED)
+if(CMAKE_TOOLCHAIN_IOS OR ANDROID)
+  target_link_options_shared_lib(executorch)
+endif()
 
-set(LINK_LIBS executorch gflags extension_llm_runner)
-set(link_libraries ${LINK_LIBS})
+# custom ops library
+if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../llama2/custom_ops custom_ops)
+endif()
+
+# multimodal_runner library
+add_subdirectory(runner)
+if(EXECUTORCH_USE_TIKTOKEN)
+  # find RE2 for tokenizer
+  set(ABSL_ENABLE_INSTALL ON)
+  set(ABSL_PROPAGATE_CXX_STD ON)
+  set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/third-party/abseil-cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
+  )
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/third-party/re2
+    ${CMAKE_CURRENT_BINARY_DIR}/re2
+  )
+  set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
+  target_link_libraries(multimodal_runner PUBLIC re2::re2)
+endif()
+
+set(link_libraries gflags torch)
 set(_srcs main.cpp)
 
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
@@ -93,24 +125,32 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     cpublas
     eigen_blas
   )
-  executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+  target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 else()
   list(APPEND link_libraries portable_ops_lib portable_kernels)
-  executorch_target_link_options_shared_lib(portable_ops_lib)
+  target_link_options_shared_lib(portable_ops_lib)
 endif()
 
 # quantized_ops_lib: Register quantized op kernels into the runtime
-executorch_target_link_options_shared_lib(quantized_ops_lib)
+target_link_options_shared_lib(quantized_ops_lib)
 list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
-if(EXECUTORCH_BUILD_KERNELS_LLM)
-  list(APPEND link_libraries $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
+if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+  target_link_options_shared_lib(custom_ops)
+  list(APPEND link_libraries custom_ops)
 endif()
 
 set(XNNPACK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack)
 # Extra compile option and include dir for pthreadpool
 if(EXECUTORCH_BUILD_PTHREADPOOL)
-  list(APPEND link_libraries extension_threadpool pthreadpool)
+  list(APPEND _common_compile_options -DET_USE_THREADPOOL)
+  list(APPEND link_libraries pthreadpool)
+  # These 2 source files are included in xnnpack_backend
+  if(NOT TARGET xnnpack_backend)
+    list(APPEND _srcs ${XNNPACK_ROOT}/threadpool/threadpool.cpp
+         ${XNNPACK_ROOT}/threadpool/threadpool_guard.cpp
+    )
+  endif()
   list(APPEND _common_include_directories
        ${XNNPACK_ROOT}/third-party/pthreadpool/include
   )
@@ -118,7 +158,8 @@ endif()
 
 # Extra sources for cpuinfo
 if(EXECUTORCH_BUILD_CPUINFO)
-  list(APPEND link_libraries extension_threadpool cpuinfo)
+  list(APPEND link_libraries cpuinfo)
+  list(APPEND _srcs ${XNNPACK_ROOT}/threadpool/cpuinfo_utils.cpp)
   list(APPEND _common_include_directories
        ${XNNPACK_ROOT}/third-party/cpuinfo/include
   )
@@ -126,24 +167,21 @@ endif()
 
 # XNNPACK
 if(TARGET xnnpack_backend)
-  set(xnnpack_backend_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
-  if(TARGET kleidiai)
-    list(APPEND xnnpack_backend_libs kleidiai)
-  endif()
+  set(xnnpack_backend_libs xnnpack_backend XNNPACK)
   list(APPEND link_libraries ${xnnpack_backend_libs})
-  executorch_target_link_options_shared_lib(xnnpack_backend)
+  target_link_options_shared_lib(xnnpack_backend)
 endif()
 
 # Vulkan backend
 if(TARGET vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
-  executorch_target_link_options_shared_lib(vulkan_backend)
+  target_link_options_shared_lib(vulkan_backend)
 endif()
 
 # Qnn backend
 if(TARGET qnn_executorch_backend)
   list(APPEND link_libraries qnn_executorch_backend)
-  executorch_target_link_options_shared_lib(qnn_executorch_backend)
+  target_link_options_shared_lib(qnn_executorch_backend)
 endif()
 
 # MPS backend
@@ -157,7 +195,7 @@ if(TARGET mpsdelegate)
     "-weak_framework MetalPerformanceShadersGraph"
     "-weak_framework Metal"
   )
-  executorch_target_link_options_shared_lib(mpsdelegate)
+  target_link_options_shared_lib(mpsdelegate)
 endif()
 
 if(TARGET coremldelegate)
@@ -171,7 +209,7 @@ if(TARGET coremldelegate)
     "-framework CoreML"
     "-framework Accelerate"
   )
-  executorch_target_link_options_shared_lib(coremldelegate)
+  target_link_options_shared_lib(coremldelegate)
 endif()
 
 # This one is needed for cpuinfo where it uses android specific log lib
@@ -179,27 +217,18 @@ if(ANDROID)
   list(APPEND link_libraries log)
 endif()
 
-# stb_image: a lightweight library to load images
-include(FetchContent)
-FetchContent_Declare(
-  stb
-  GIT_REPOSITORY https://github.com/nothings/stb.git
-  GIT_TAG f0569113c93ad095470c54bf34a17b36646bbbb5
-)
-FetchContent_MakeAvailable(stb)
-# Add deprecated/ to use stb_image_resize.h for internal compatibility
-list(APPEND _common_include_directories ${stb_SOURCE_DIR}
-     ${stb_SOURCE_DIR}/deprecated
-)
-
-add_executable(llava_main ${_srcs})
-if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-  target_link_options_gc_sections(llava_main)
-  if(NOT APPLE)
-    target_link_options(llava_main PRIVATE "LINKER:-s")
-  endif()
+add_executable(multimodal_main ${_srcs})
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+  target_link_options(multimodal_main PRIVATE "LINKER:--gc-sections,-s")
 endif()
 
-target_include_directories(llava_main PUBLIC ${_common_include_directories})
-target_link_libraries(llava_main PUBLIC ${link_libraries})
-target_compile_options(llava_main PUBLIC ${_common_compile_options})
+target_include_directories(multimodal_main PUBLIC ${_common_include_directories})
+target_link_libraries(multimodal_main PUBLIC multimodal_runner ${link_libraries})
+target_compile_options(multimodal_main PUBLIC ${_common_compile_options})
+
+if(APPLE)
+  target_link_options_shared_lib(executorch)
+endif()
+
+# Print all summary
+executorch_print_configuration_summary()

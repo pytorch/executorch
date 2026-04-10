@@ -182,14 +182,10 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
   add_definitions(-DET_EVENT_TRACER_ENABLED)
 endif()
 
-if(EXECUTORCH_ENABLE_BUNDLE_IO)
-  add_definitions(-DET_BUNDLE_IO_ENABLED)
+option(EXECUTORCH_DO_NOT_USE_CXX11_ABI "Define _GLIBCXX_USE_CXX11_ABI=0 if ON" OFF)
+if(EXECUTORCH_DO_NOT_USE_CXX11_ABI)
+  add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
 endif()
-
-if(EXECUTORCH_BUILD_CUDA)
-  add_definitions(-DCUDA_AVAILABLE=1)
-endif()
-
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
 # they can be properly gc'd. -s: strip symbol.
 if(WIN32)
