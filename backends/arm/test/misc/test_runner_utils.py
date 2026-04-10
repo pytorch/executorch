@@ -17,7 +17,7 @@ class _FakeExecutorchProgramManager:
         return object()
 
 
-def test_run_corstone_no_target_uses_short_input_aliases_in_semihosting_cmd(
+def test_run_corstone_uses_short_input_aliases_in_semihosting_cmd(
     monkeypatch, tmp_path: Path
 ) -> None:
     long_input_paths = [

@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 set -e
 
-pip install pydot
+pip install -r backends/qualcomm/requirements.txt
 
 # Check if running on macOS/Darwin
 if [[ "$(uname -s)" == "Darwin" ]]; then
@@ -364,6 +364,7 @@ if [ "$BUILD_X86_64" = true ]; then
         -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
         -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
         -DEXECUTORCH_ENABLE_LOGGING=ON \
@@ -375,6 +376,7 @@ if [ "$BUILD_X86_64" = true ]; then
 
     rm -f $PRJ_ROOT/backends/qualcomm/python/*
     cp -fv $BUILD_ROOT/backends/qualcomm/Py* "$PRJ_ROOT/backends/qualcomm/python"
+    cp -fv $BUILD_ROOT/kernels/quantized/libquantized_ops_aot_lib.so "$PRJ_ROOT/kernels/quantized"
     cp -fv "$PRJ_ROOT/schema/program.fbs" "$PRJ_ROOT/exir/_serialize/program.fbs"
     cp -fv "$PRJ_ROOT/schema/scalar_type.fbs" "$PRJ_ROOT/exir/_serialize/scalar_type.fbs"
 
