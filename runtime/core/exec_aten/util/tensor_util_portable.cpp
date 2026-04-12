@@ -164,12 +164,12 @@ bool tensors_share_legacy_format_family(
   for (const auto i : c10::irange(tensor_list.size())) {
     all_contiguous = all_contiguous &&
         is_contiguous_dim_order(
-            tensor_list[i].dim_order().data(),
-            tensor_list[i].dim_order().size());
+                         tensor_list[i].dim_order().data(),
+                         tensor_list[i].dim_order().size());
     all_channels_last = all_channels_last &&
         is_channels_last_dim_order(
-            tensor_list[i].dim_order().data(),
-            tensor_list[i].dim_order().size());
+                            tensor_list[i].dim_order().data(),
+                            tensor_list[i].dim_order().size());
   }
   return all_contiguous || all_channels_last;
 }
@@ -189,8 +189,8 @@ bool tensors_have_same_dim_order(
   const executorch::aten::Tensor& ref = tensor_list[0];
   const bool ref_contiguous =
       is_contiguous_dim_order(ref.dim_order().data(), ref.dim_order().size());
-  const bool ref_channels_last =
-      is_channels_last_dim_order(ref.dim_order().data(), ref.dim_order().size());
+  const bool ref_channels_last = is_channels_last_dim_order(
+      ref.dim_order().data(), ref.dim_order().size());
 
   for (size_t i = 1; i < tensor_list.size(); ++i) {
     const executorch::aten::Tensor& t = tensor_list[i];
@@ -205,10 +205,9 @@ bool tensors_have_same_dim_order(
     } else {
       const bool t_contiguous =
           is_contiguous_dim_order(t.dim_order().data(), t.dim_order().size());
-      const bool t_channels_last =
-          is_channels_last_dim_order(t.dim_order().data(), t.dim_order().size());
-      const bool ok =
-          (ref_contiguous && t_contiguous) ||
+      const bool t_channels_last = is_channels_last_dim_order(
+          t.dim_order().data(), t.dim_order().size());
+      const bool ok = (ref_contiguous && t_contiguous) ||
           (ref_channels_last && t_channels_last);
       if (!ok) {
         ET_LOG(
