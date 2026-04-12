@@ -35,7 +35,7 @@ class _EmitShapePass(ArmPass):
             return super().call_operator(op, args, kwargs, meta, updated)
 
 
-def test_const_shape_injects_meta_no_target():
+def test_const_shape_injects_meta():
     class M(torch.nn.Module):
         def forward(self, x):
             return x + 1
