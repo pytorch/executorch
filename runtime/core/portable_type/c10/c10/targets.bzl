@@ -78,7 +78,7 @@ def define_common_targets():
             "fbsource//xplat/caffe2/c10:c10_headers",
         ] + select({
             "DEFAULT": ["fbsource//xplat/caffe2:generated_aten_config_header"],
-            "ovr_config//build_mode:arvr_mode": ["fbsource//xplat/caffe2:ovrsource_aten_Config.h"],
+            "ovr_config//build_mode:arvr_mode[enabled]": ["fbsource//xplat/caffe2:ovrsource_aten_Config.h"],
         }) + get_sleef_deps(),
         fbcode_exported_deps = ([
             "//caffe2:aten-headers-cpu",
