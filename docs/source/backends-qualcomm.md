@@ -27,9 +27,9 @@ Qualcomm AI Engine Direct is also referred to as QNN in the source and documenta
 is designed to provide unified, low-level APIs for AI development.
 
 Developers can interact with various accelerators on Qualcomm SoCs with these set of APIs, including
-Kryo CPU, Adreno GPU, and Hexagon processors. More details can be found [here](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/overview.html).
+Kryo CPU, Adreno GPU, and Hexagon processors. More details can be found [here](https://docs.qualcomm.com/doc/80-63442-10/topic/QNN_general_overview.html).
 
-Currently, this ExecuTorch Backend can delegate AI computations to Hexagon processors through Qualcomm AI Engine Direct APIs.
+Currently, this ExecuTorch Backend can delegate AI computations to Hexagon processors and Adreno GPU through Qualcomm AI Engine Direct APIs.
 
 
 ## Prerequisites (Hardware and Software)
@@ -59,21 +59,7 @@ For more details and troubleshooting, refer to the official Microsoft WSL instal
 👉 [Install WSL | Microsoft Learn](https://learn.microsoft.com/en-us/windows/wsl/install)
 
 ### Hardware:
-You will need an Android / Linux device with adb-connected running on one of below Qualcomm SoCs:
- - SA8295
- - SA8797 (also used by SA8397)
- - SM8450 (Snapdragon 8 Gen 1)
- - SM8475 (Snapdragon 8 Gen 1+)
- - SM8550 (Snapdragon 8 Gen 2)
- - SM8650 (Snapdragon 8 Gen 3)
- - SM8750 (Snapdragon 8 Elite)
- - SSG2115P
- - SSG2125P
- - SXR1230P (Linux Embedded)
- - SXR2230P
- - SXR2330P
- - QCM6490
- - QCS9100
+You will need an Android / Linux device with adb-connected running on one of Qualcomm SoCs listed in `QcomChipset`. Please navigate to [qc_schema.py](https://github.com/pytorch/executorch/blob/main/backends/qualcomm/serialization/qc_schema.py).
 
 This example is verified with SM8550 and SM8450.
 
@@ -169,20 +155,15 @@ You might see something like below:
 [INFO][Qnn ExecuTorch] Destroy Qnn device
 [INFO][Qnn ExecuTorch] Destroy Qnn backend
 
-opcode         name                      target                       args                           kwargs
--------------  ------------------------  ---------------------------  -----------------------------  --------
-placeholder    arg684_1                  arg684_1                     ()                             {}
-get_attr       lowered_module_0          lowered_module_0             ()                             {}
-call_function  executorch_call_delegate  executorch_call_delegate     (lowered_module_0, arg684_1)   {}
-call_function  getitem                   <built-in function getitem>  (executorch_call_delegate, 0)  {}
-call_function  getitem_1                 <built-in function getitem>  (executorch_call_delegate, 1)  {}
-output         output                    output                       ([getitem_1, getitem],)        {}
+Finish compile_only and save to ./deeplab_v3/dlv3_qnn.pte
 ```
 
 The compiled model is `./deeplab_v3/dlv3_qnn.pte`.
 
+Note that the model is compiled for specific backend (e.g., HTP), so you can specify the target backend via `--backend gpu` or `--backend lpai`. If not specified, it will be default to HTP.
 
-### Test model inference on QNN HTP emulator
+
+### Test model inference on QNN HTP emulator / QNN LPAI emulator
 
 We can test model inferences before deploying it to a device by HTP emulator.
 
@@ -203,12 +184,12 @@ cmake --build examples/qualcomm -j$(nproc)
 ls examples/qualcomm/executor_runner
 ```
 
-To run the HTP emulator, the dynamic linker needs to access QNN libraries and `libqnn_executorch_backend.so`.
+To run the HTP emulator / LPAI emulator, the dynamic linker needs to access QNN libraries and `libqnn_executorch_backend.so`.
 We set the below two paths to `LD_LIBRARY_PATH` environment variable:
   1. `$QNN_SDK_ROOT/lib/x86_64-linux-clang/`
   2. `$EXECUTORCH_ROOT/build-x86/lib/`
 
-The first path is for QNN libraries including HTP emulator. It has been configured in the AOT compilation section.
+The first path is for QNN libraries including emulator. It has been configured in the AOT compilation section.
 
 The second path is for `libqnn_executorch_backend.so`.
 
@@ -242,6 +223,9 @@ I 00:01:09.328159 executorch:qnn_executor_runner.cpp:421] Write etdump to etdump
 # make sure you have write-permission on below path.
 DEVICE_DIR=/data/local/tmp/executorch_qualcomm_tutorial/
 adb shell "mkdir -p ${DEVICE_DIR}"
+```
+#### For HTP
+```bash
 adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtp.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnSystem.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV69Stub.so ${DEVICE_DIR}
@@ -253,6 +237,19 @@ adb push ${QNN_SDK_ROOT}/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so ${DEVICE_D
 adb push ${QNN_SDK_ROOT}/lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/hexagon-v79/unsigned/libQnnHtpV79Skel.so ${DEVICE_DIR}
 ```
+#### For GPU
+```bash
+adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnGpu.so ${DEVICE_DIR}
+```
+
+#### For LPAI
+```bash
+adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnLpai.so ${DEVICE_DIR}
+adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnLpaiStub.so ${DEVICE_DIR}
+adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnSystem.so ${DEVICE_DIR}
+# make sure the skel lib is signed for LPAI backend.
+adb push ${QNN_SDK_ROOT}/lib/lpai-v6/signed/libQnnLpaiSkel.so ${DEVICE_DIR}
+```
 
 ***Step 2***.  We also need to indicate dynamic linkers on Android and Hexagon
 where to find these libraries by setting `ADSP_LIBRARY_PATH` and `LD_LIBRARY_PATH`.
@@ -261,7 +258,7 @@ So, we can run `qnn_executor_runner` like
 ```bash
 adb push ./deeplab_v3/dlv3_qnn.pte ${DEVICE_DIR}
 adb push ${EXECUTORCH_ROOT}/build-android/examples/qualcomm/executor_runner/qnn_executor_runner ${DEVICE_DIR}
-adb push ${EXECUTORCH_ROOT}/build-android/lib/libqnn_executorch_backend.so ${DEVICE_DIR}
+adb push ${EXECUTORCH_ROOT}/build-android/backends/qualcomm/libqnn_executorch_backend.so ${DEVICE_DIR}
 adb shell "cd ${DEVICE_DIR} \
            && export LD_LIBRARY_PATH=${DEVICE_DIR} \
            && export ADSP_LIBRARY_PATH=${DEVICE_DIR} \
@@ -607,7 +604,7 @@ Supports:
 For details, see: backends/qualcomm/quantizer/quantizer.py
 
 ### Operator Support
-[The full operator support matrix](https://github.com/pytorch/executorch/tree/f32cdc3de6f7176d70a80228f1a60bcd45d93437/backends/qualcomm/builders#operator-support-status is tracked and frequently updated in the ExecuTorch repository.
+[The full operator support matrix](https://github.com/pytorch/executorch/tree/f32cdc3de6f7176d70a80228f1a60bcd45d93437/backends/qualcomm/builders#operator-support-status) is tracked and frequently updated in the ExecuTorch repository.
 
 It lists:
 - Supported PyTorch ops (aten.*, custom ops)

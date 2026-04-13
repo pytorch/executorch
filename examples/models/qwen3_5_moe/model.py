@@ -350,6 +350,12 @@ class GatedDeltaNet(nn.Module):
         )
 
     def forward(self, x, input_pos):
+        """GatedDeltaNet with trace-time dispatch.
+
+        When traced with T=1: uses native PyTorch recurrent delta rule
+        (AOTI fuses with surrounding ops for maximum decode throughput).
+        When traced with T>1: uses chunked FLA via triton_op.
+        """
         B, T, _ = x.size()
 
         # Reset state at position 0
@@ -406,13 +412,43 @@ class GatedDeltaNet(nn.Module):
         beta = b.sigmoid()
         g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
 
-        # FLA Triton kernel (returns final_state separately, does not mutate initial_state)
-        output, state = torch.ops.triton.chunk_gated_delta_rule(
-            q, k, v, g, beta, self.recurrent_state[:B]
-        )
+        if T == 1:
+            # Native recurrent delta rule — AOTI fuses with surrounding ops
+            scale = self.head_k_dim**-0.5
 
-        with torch.no_grad():
-            self.recurrent_state[:B].copy_(state)
+            q_s = q[:, 0].float()  # [B, H, K]
+            k_s = k[:, 0].float()  # [B, H, K]
+            v_s = v[:, 0].float()  # [B, H, V]
+            g_s = g[:, 0]  # [B, H]
+            beta_s = beta[:, 0]  # [B, H]
+
+            state = self.recurrent_state[:B].float()  # [B, H, K, V]
+
+            # Decay state by exp(g)
+            decay = torch.exp(g_s).unsqueeze(-1).unsqueeze(-1)  # [B, H, 1, 1]
+            state = state * decay
+
+            # Sk = state @ k (project state by key)
+            Sk = torch.einsum("bhkv,bhk->bhv", state, k_s)
+
+            # Delta rule state update
+            delta = beta_s.unsqueeze(-1) * (v_s - Sk)  # [B, H, V]
+            state = state + torch.einsum("bhk,bhv->bhkv", k_s, delta)
+
+            # Output = state @ q * scale
+            output = torch.einsum("bhkv,bhk->bhv", state, q_s) * scale
+            output = output.unsqueeze(1).to(q.dtype)  # [B, 1, H, V]
+
+            with torch.no_grad():
+                self.recurrent_state[:B].copy_(state.to(self.recurrent_state.dtype))
+        else:
+            # Chunked FLA triton_op for prefill
+            output, new_state = torch.ops.triton.chunk_gated_delta_rule(
+                q, k, v, g, beta, self.recurrent_state[:B]
+            )
+
+            with torch.no_grad():
+                self.recurrent_state[:B].copy_(new_state)
 
         # Output: RMSNorm(output) * silu(z)
         output = output.reshape(-1, self.head_v_dim)
