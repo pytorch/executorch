@@ -146,7 +146,7 @@ pip install scikit-learn pandas graphviz
 
 ## Limitation
 
-1. QNN 2.28 is used for all examples. Newer or older QNN might work,
+1. QNN 2.37 is used for all examples. Newer or older QNN might work,
 but the performance and accuracy number can differ.
 
 2. The mobilebert example is on QNN HTP fp16, which is only supported by a limited
