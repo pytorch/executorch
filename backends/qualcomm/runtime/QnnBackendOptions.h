@@ -31,10 +31,11 @@ struct RuntimeOption {
  * If runtime option is provided, it will have a higher priority.
  *
  * @param aot_option The flatbuffer option under qc_compiler_spec.fbs.
+ * @param aot_key The key for the AOT option.
  */
 
 template <typename T>
-T get_option(T aot_option);
+T get_option(T aot_option, const char* aot_key);
 
 } // namespace qnn
 } // namespace backends
