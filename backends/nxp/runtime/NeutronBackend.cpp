@@ -42,27 +42,27 @@ namespace neutron {
      +-----------------------------------------------------------------------------------+
 */
 // clang-format on
-#define ITEM_SIZE 1 // 1 Byte
-#define INPUT_TENSOR_FORMAT_LEN_POS 0
-#define OUTPUT_TENSOR_FORMAT_LEN_POS 1
-#define INPUT_ARGS_LEN_POS 2
-#define INPUT_TENSOR_FORMAT_ARRAY_ADDR(base) (base + 3 * ITEM_SIZE)
+#define ITEM_SIZE 1U // 1 Byte
+#define INPUT_TENSOR_FORMAT_LEN_POS 0U
+#define OUTPUT_TENSOR_FORMAT_LEN_POS 1U
+#define INPUT_ARGS_LEN_POS 2U
+#define INPUT_TENSOR_FORMAT_ARRAY_ADDR(base) (base + 3U * ITEM_SIZE)
 #define OUTPUT_TENSOR_FORMAT_ARRAY_ADDR(base) \
-  (base + 3 * ITEM_SIZE + base[INPUT_TENSOR_FORMAT_LEN_POS])
-#define INPUT_TENSOR_MAP_ARRAY_ADDR(base)                         \
-  (base + 3 * ITEM_SIZE + 1 * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
-   1 * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
-#define OUTPUT_TENSOR_MAP_ARRAY_ADDR(base)                        \
-  (base + 3 * ITEM_SIZE + 2 * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
-   1 * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
-#define PAYLOAD_VERSION_ADDR(base)                                \
-  (base + 3 * ITEM_SIZE + 2 * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
-   2 * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
-#define PAYLOAD_ADDR(base)                                     \
-  (base +                                                      \
-   ALIGN_SIZE(                                                 \
-       4 * ITEM_SIZE + 2 * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
-       2 * base[OUTPUT_TENSOR_FORMAT_LEN_POS]))
+  (base + 3U * ITEM_SIZE + base[INPUT_TENSOR_FORMAT_LEN_POS])
+#define INPUT_TENSOR_MAP_ARRAY_ADDR(base)                           \
+  (base + 3U * ITEM_SIZE + 1U * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
+   1U * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
+#define OUTPUT_TENSOR_MAP_ARRAY_ADDR(base)                          \
+  (base + 3U * ITEM_SIZE + 2U * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
+   1U * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
+#define PAYLOAD_VERSION_ADDR(base)                                  \
+  (base + 3U * ITEM_SIZE + 2U * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
+   2U * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
+#define PAYLOAD_ADDR(base)                                       \
+  (base +                                                        \
+   ALIGN_SIZE(                                                   \
+       4U * ITEM_SIZE + 2U * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
+       2U * base[OUTPUT_TENSOR_FORMAT_LEN_POS]))
 
 // Aggregate neutron model handle and data structures into one.
 typedef struct {
@@ -252,7 +252,7 @@ bool multipleChannelsPresent(const ArrayRef<exec_aten::SizesType>& sizes) {
   if (length < 3) {
     return true;
   }
-  size_t C = sizes[length - 3];
+  exec_aten::SizesType C = sizes[length - 3];
   return C != 1;
 }
 
