@@ -41,7 +41,12 @@ except:
 
     libs = list(package_path.glob("**/*custom_ops_aot_lib.*"))
 
-    assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
+    assert len(libs) == 1, (
+        f"Expected 1 custom_ops_aot_lib library but got {len(libs)} "
+        f"(searched in {package_path}). "
+        "If building from source, re-build with "
+        "-DEXECUTORCH_BUILD_KERNELS_LLM_AOT=ON or use the pybind cmake preset."
+    )
     logging.info(f"Loading custom ops library: {libs[0]}")
     torch.ops.load_library(libs[0])
     op = torch.ops.llama.sdpa_with_kv_cache.default
