@@ -56,7 +56,7 @@ QnnManager::QnnManager(
   QnnExecuTorchBackendType backend_type =
       options->backend_options()->backend_type();
 
-  if (get_option(options_->log_level()) >=
+  if (get_option(options_->log_level(), QNN_RUNTIME_LOG_LEVEL) >=
       QnnExecuTorchLogLevel::kLogLevelInfo) {
     QNN_EXECUTORCH_LOG_INFO(
         "soc_model in soc_info: %s",
@@ -68,11 +68,12 @@ QnnManager::QnnManager(
     QNN_EXECUTORCH_LOG_INFO("dump intermediate outputs: %s", IsTensorDump());
     QNN_EXECUTORCH_LOG_INFO(
         "log_level: %s",
-        EnumNameQnnExecuTorchLogLevel(get_option(options_->log_level())));
+        EnumNameQnnExecuTorchLogLevel(
+            get_option(options_->log_level(), QNN_RUNTIME_LOG_LEVEL)));
     QNN_EXECUTORCH_LOG_INFO(
         "profile_level: %s",
         EnumNameQnnExecuTorchProfileLevel(
-            get_option(options_->profile_level())));
+            get_option(options_->profile_level(), QNN_RUNTIME_PROFILE_LEVEL)));
     QNN_EXECUTORCH_LOG_INFO(
         "the size of qnn context binary: %d",
         qnn_executorch_context_binary.nbytes);
@@ -128,7 +129,7 @@ Error QnnManager::RegisterIonMem(
     return Error::Internal;
   } else if (backend_params_ptr_->qnn_mem_manager_ptr_->IsRegistered(
                  tensor_wrapper->GetMemHandle(), data_ptr)) {
-    if (get_option(options_->log_level()) >=
+    if (get_option(options_->log_level(), QNN_RUNTIME_LOG_LEVEL) >=
         QnnExecuTorchLogLevel::kLogLevelInfo)
       QNN_EXECUTORCH_LOG_INFO(
           "Tensor name %s has been registered shared memory.",
@@ -158,7 +159,7 @@ Error QnnManager::RegisterCustomMem(
     const std::shared_ptr<TensorWrapper>& tensor_wrapper) {
   if (backend_params_ptr_->qnn_mem_manager_ptr_->IsRegistered(
           tensor_wrapper->GetMemHandle(), data_ptr)) {
-    if (get_option(options_->log_level()) >=
+    if (get_option(options_->log_level(), QNN_RUNTIME_LOG_LEVEL) >=
         QnnExecuTorchLogLevel::kLogLevelInfo)
       QNN_EXECUTORCH_LOG_INFO(
           "Tensor name %s has been registered shared memory.",
@@ -182,7 +183,7 @@ Error QnnManager::RegisterCustomMem(
   // This applies when running llama in lookahead mode with the same AR-N model
   // handling both the prompt processor and the token generator.
   if (pre_registered_handle != nullptr) {
-    if (get_option(options_->log_level()) >=
+    if (get_option(options_->log_level(), QNN_RUNTIME_LOG_LEVEL) >=
         QnnExecuTorchLogLevel::kLogLevelInfo) {
       QNN_EXECUTORCH_LOG_INFO(
           "Tensor name %s found a pre-registered memHandle.",
@@ -462,7 +463,7 @@ Error QnnManager::ProfileExecuteData(
     const std::string& graph_name,
     executorch::runtime::EventTracer* event_tracer) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
-  if (get_option(options_->profile_level()) !=
+  if (get_option(options_->profile_level(), QNN_RUNTIME_PROFILE_LEVEL) !=
       QnnExecuTorchProfileLevel::kProfileOff) {
     error = backend_params_ptr_->qnn_graph_ptr_->ProfileExecuteData(
         graph_name, event_tracer);
