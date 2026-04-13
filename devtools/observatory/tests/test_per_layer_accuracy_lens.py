@@ -11,12 +11,12 @@ from typing import List
 
 import torch
 
-from executorch.backends.qualcomm.debugger.observatory.interfaces import (
+from executorch.devtools.observatory.interfaces import (
     ObservationContext,
     RecordDigest,
 )
-from executorch.backends.qualcomm.debugger.observatory.lenses.accuracy import AccuracyLens
-from executorch.backends.qualcomm.debugger.observatory.lenses.per_layer_accuracy import (
+from executorch.devtools.observatory.lenses.accuracy import AccuracyLens
+from executorch.devtools.observatory.lenses.per_layer_accuracy import (
     PerLayerAccuracyLens,
 )
 

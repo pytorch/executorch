@@ -14,8 +14,8 @@ import base64
 import json
 import os
 
-from executorch.backends.qualcomm.debugger.observatory.html_template import get_html_template
-from executorch.backends.qualcomm.utils.fx_viewer.exporter import FXGraphExporter
+from executorch.devtools.observatory.html_template import get_html_template
+from executorch.devtools.fx_viewer.exporter import FXGraphExporter
 
 
 def _sample_graph_assets() -> dict:

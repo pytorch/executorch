@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 
 import torch
 
-from executorch.backends.qualcomm.utils.fx_viewer import FXGraphExporter
+from executorch.devtools.fx_viewer import FXGraphExporter
 
 from ..interfaces import Frontend, GraphView, Lens, ObservationContext, ViewList
 

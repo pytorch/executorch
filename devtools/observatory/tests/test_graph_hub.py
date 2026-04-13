@@ -4,9 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from executorch.backends.qualcomm.debugger.observatory.graph_hub import GraphHub
-from executorch.backends.qualcomm.debugger.observatory.interfaces import RecordAnalysis
-from executorch.backends.qualcomm.utils.fx_viewer import (
+from executorch.devtools.observatory.graph_hub import GraphHub
+from executorch.devtools.observatory.interfaces import RecordAnalysis
+from executorch.devtools.fx_viewer import (
     GraphExtensionNodePayload,
     GraphExtensionPayload,
 )

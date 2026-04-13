@@ -411,6 +411,9 @@ class AccuracyLens(Lens):
 
     _installed: bool = False
     _originals: Dict[str, Any] = {}
+    # Backend-specific dataset patch installers.
+    _dataset_patch_installers: List[Callable] = []
+    _dataset_uninstallers: List[Callable] = []
 
     _float_model: Any = None  # cached GraphModule from "Exported Float" ExportedProgram
     _captured_dataset: Optional[List[Any]] = None
@@ -422,6 +425,19 @@ class AccuracyLens(Lens):
     _worst_indices: Dict[str, int] = {}  # {metric_name: worst_input_index}
 
     @classmethod
+    def register_dataset_patches(
+        cls, installer: Callable[["AccuracyLens"], None]
+    ) -> None:
+        """Register a backend-specific dataset patch installer.
+
+        The installer receives the AccuracyLens class and should set
+        cls._captured_targets and cls._task_type when dataset functions
+        are called. It may also append to cls._dataset_uninstallers.
+        """
+        if installer not in cls._dataset_patch_installers:
+            cls._dataset_patch_installers.append(installer)
+
+    @classmethod
     def get_name(cls) -> str:
         return "accuracy"
 
@@ -429,7 +445,13 @@ class AccuracyLens(Lens):
     def on_session_start(cls, context: ObservationContext) -> None:
         if cls._installed:
             return
-        cls._install_dataset_patches()
+        for installer in cls._dataset_patch_installers:
+            try:
+                installer(cls)
+            except Exception as exc:
+                logging.warning(
+                    "[AccuracyLens] Dataset patch installer failed: %s", exc
+                )
         cls._installed = True
 
     @classmethod
@@ -441,6 +463,8 @@ class AccuracyLens(Lens):
     def clear(cls) -> None:
         cls._uninstall_all()
         cls._clear_state()
+        cls._dataset_patch_installers.clear()
+        cls._dataset_uninstallers.clear()
 
     @classmethod
     def _clear_state(cls) -> None:
@@ -649,68 +673,15 @@ class AccuracyLens(Lens):
     # ------------------------------------------------------------------
 
     @classmethod
-    def _install_dataset_patches(cls) -> None:
-        # get target (model output GT) and task_type (classification, mlm)
-        # from dataset function
-        # `get_imagenet_dataset` and `get_masked_language_model_dataset`
-        try:
-            import executorch.examples.qualcomm.utils as utils_module
-
-            # get_imagenet_dataset
-            if hasattr(utils_module, "get_imagenet_dataset"):
-                original = utils_module.get_imagenet_dataset
-                cls._originals["get_imagenet_dataset"] = original
-
-                def patched_imagenet(*args, **kwargs):
-                    inputs, targets = original(*args, **kwargs)
-                    cls._captured_targets = targets
-                    cls._task_type = "classification"
-                    logging.info(
-                        "[AccuracyLens] Captured ImageNet targets (%d samples)",
-                        len(targets),
-                    )
-                    return inputs, targets
-
-                utils_module.get_imagenet_dataset = patched_imagenet
-                logging.info("[AccuracyLens] Installed patch: get_imagenet_dataset")
-
-            # get_masked_language_model_dataset
-            if hasattr(utils_module, "get_masked_language_model_dataset"):
-                original_mlm = utils_module.get_masked_language_model_dataset
-                cls._originals["get_masked_language_model_dataset"] = original_mlm
-
-                def patched_mlm(*args, **kwargs):
-                    inputs, targets = original_mlm(*args, **kwargs)
-                    cls._captured_targets = targets
-                    cls._task_type = "mlm"
-                    logging.info(
-                        "[AccuracyLens] Captured MLM targets (%d samples)",
-                        len(targets),
-                    )
-                    return inputs, targets
-
-                utils_module.get_masked_language_model_dataset = patched_mlm
-                logging.info(
-                    "[AccuracyLens] Installed patch: get_masked_language_model_dataset"
-                )
-        except ImportError:
-            logging.debug(
-                "[AccuracyLens] qualcomm utils not available, skipping dataset patches"
-            )
-
-
-    @classmethod
     def _uninstall_all(cls) -> None:
         if not cls._installed:
             return
-        try:
-            import executorch.examples.qualcomm.utils as utils_module
-
-            for key, original in cls._originals.items():
-                if hasattr(utils_module, key):
-                    setattr(utils_module, key, original)
-        except ImportError:
-            pass
+        for uninstaller in cls._dataset_uninstallers:
+            try:
+                uninstaller()
+            except Exception:
+                pass
+        cls._dataset_uninstallers.clear()
         cls._originals.clear()
         cls._installed = False
         logging.info("[AccuracyLens] Uninstalled all patches")
