@@ -30,7 +30,7 @@ Verify the Metal compiler is available:
 xcrun -sdk macosx --find metal
 ```
 
-If this prints a path (e.g., `/Applications/Xcode.app/.../metal`), you're set. If it errors, install Xcode from the [App Store](https://apps.apple.com/us/app/xcode/id497799835) or [developer.apple.com](https://developer.apple.com/xcode/), then switch the active developer directory:
+If this prints a path (e.g., `/Applications/Xcode.app/.../metal`), you're set. If it errors, install Xcode from [developer.apple.com](https://developer.apple.com/xcode/), then switch the active developer directory:
 
 ```bash
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
@@ -101,19 +101,18 @@ cmake --workflow --preset mlx-release
 
 This configures and builds a Release build of the ExecuTorch runtime with the MLX delegate and installs artifacts into `cmake-out/`. The preset enables the MLX delegate along with commonly needed extensions (module, data loader, flat tensor, LLM runner, etc.).
 
-Downstream C++ apps can then `find_package(executorch)` and link against `mlxdelegate` and `mlx`:
+Downstream C++ apps can then `find_package(executorch)` and link against `mlxdelegate` and `mlx`. The `executorch_target_link_options_shared_lib` utility handles whole-archive linkage (required for static initializer registration) cross-platform, and `executorch_target_copy_mlx_metallib` copies the Metal kernel library next to the binary so MLX can find it at runtime:
 
 ```cmake
 # CMakeLists.txt
 find_package(executorch REQUIRED)
-...
-target_link_libraries(
-    my_target
-    PRIVATE executorch
-    extension_module_static
-    extension_tensor
-    optimized_native_cpu_ops_lib
-    "$<LINK_LIBRARY:WHOLE_ARCHIVE,mlxdelegate>")
+
+# Link MLX delegate (with whole-archive for static initializer registration)
+target_link_libraries(my_target PRIVATE mlxdelegate mlx)
+executorch_target_link_options_shared_lib(mlxdelegate)
+
+# Copy mlx.metallib next to the binary for runtime
+executorch_target_copy_mlx_metallib(my_target)
 ```
 
 No additional steps are necessary to use the backend beyond linking the target. An MLX-delegated `.pte` file will automatically run on the registered backend.

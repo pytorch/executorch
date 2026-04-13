@@ -116,19 +116,3 @@ et_program = to_edge_transform_and_lower(
     partitioner=[MLXPartitioner()],
 ).to_executorch()
 ```
-
-### Unsupported ops falling back to CPU
-
-If some ops in your model are not supported by the MLX delegate, they will automatically fall back to ExecuTorch's portable CPU runtime. This is expected behavior but may impact performance.
-
-To see which ops are unsupported, enable debug logging:
-
-```bash
-ET_MLX_DEBUG=1 python my_export_script.py
-```
-
-The partitioner logs a summary of unsupported ops with reasons during partitioning. You can also check the [supported operators](mlx-op-support.md) page.
-
-### Dynamic shapes not preserved
-
-If dynamic shapes are being lost during export, ensure you are using `to_edge_transform_and_lower()` (not the legacy workflow). The MLX partitioner's `ops_to_not_decompose()` mechanism preserves higher-level ops that carry shape information, and it pulls `sym_size` nodes into the delegate partition to keep shapes dynamic at runtime.
