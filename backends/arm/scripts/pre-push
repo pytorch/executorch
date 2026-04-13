@@ -177,7 +177,7 @@ for COMMIT in ${COMMITS}; do
     for committed_file in "${license_files[@]}"; do
         # Skip files with certain extensions
         case "$committed_file" in
-            *.md|*.md.in|*.json|*.yml|*.yaml|*.cmake|*.patch|.gitignore)
+            *.md|*.md.in|*.json|*.yml|*.yaml|*.cmake|*.patch|.gitignore|*.bzl)
                 echo -e "${INFO} Skipping license check for ${committed_file} (excluded extension)"
                 continue
                 ;;
