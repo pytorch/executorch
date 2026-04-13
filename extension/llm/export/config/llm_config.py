@@ -429,6 +429,7 @@ class QuantizationConfig:
     calibration_limit: Optional[int] = None
     calibration_seq_length: Optional[int] = None
     calibration_data: str = "Once upon a time"
+    use_hqq: bool = True
 
     def __post_init__(self):
         if self.qmode:
