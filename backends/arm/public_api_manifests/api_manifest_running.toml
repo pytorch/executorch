@@ -22,11 +22,15 @@ signature = "EthosUCompileSpec(target: str, system_config: str | None = None, me
 
 [python.EthosUCompileSpec.DebugMode]
 kind = "enum"
-signature = "EthosUCompileSpec.DebugMode(value, names=None, *, module=None, qualname=None, type=None, start=1)"
+signature = "EthosUCompileSpec.DebugMode(*values)"
 
 [python.EthosUCompileSpec.__eq__]
 kind = "function"
 signature = "EthosUCompileSpec.__eq__(self, other)"
+
+[python.EthosUCompileSpec.__replace__]
+kind = "function"
+signature = "EthosUCompileSpec.__replace__(self, /, **changes)"
 
 [python.EthosUCompileSpec.__repr__]
 kind = "function"
@@ -55,6 +59,10 @@ signature = "EthosUPartitioner.ops_to_not_decompose(self, ep: torch.export.expor
 [python.EthosUPartitioner.partition]
 kind = "function"
 signature = "EthosUPartitioner.partition(self, exported_program: torch.export.exported_program.ExportedProgram) -> executorch.exir.backend.partitioner.PartitionResult"
+
+[python.EthosUPartitioner.register_custom_partition_op]
+kind = "function"
+signature = "EthosUPartitioner.register_custom_partition_op(self, op: torch._ops.OpOverload) -> None"
 
 [python.EthosUQuantizer]
 kind = "class"
@@ -102,11 +110,15 @@ signature = "VgfCompileSpec(tosa_spec: executorch.backends.arm.tosa.specificatio
 
 [python.VgfCompileSpec.DebugMode]
 kind = "enum"
-signature = "VgfCompileSpec.DebugMode(value, names=None, *, module=None, qualname=None, type=None, start=1)"
+signature = "VgfCompileSpec.DebugMode(*values)"
 
 [python.VgfCompileSpec.__eq__]
 kind = "function"
 signature = "VgfCompileSpec.__eq__(self, other)"
+
+[python.VgfCompileSpec.__replace__]
+kind = "function"
+signature = "VgfCompileSpec.__replace__(self, /, **changes)"
 
 [python.VgfCompileSpec.__repr__]
 kind = "function"
@@ -135,6 +147,10 @@ signature = "VgfPartitioner.ops_to_not_decompose(self, ep: torch.export.exported
 [python.VgfPartitioner.partition]
 kind = "function"
 signature = "VgfPartitioner.partition(self, exported_program: torch.export.exported_program.ExportedProgram) -> executorch.exir.backend.partitioner.PartitionResult"
+
+[python.VgfPartitioner.register_custom_partition_op]
+kind = "function"
+signature = "VgfPartitioner.register_custom_partition_op(self, op: torch._ops.OpOverload) -> None"
 
 [python.VgfQuantizer]
 kind = "class"
