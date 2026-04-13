@@ -19,7 +19,7 @@ OS_VERSION=22.04
 CLANG_VERSION=""
 GCC_VERSION=""
 PYTHON_VERSION=3.10
-MINICONDA_VERSION=23.10.0-1
+MINIFORGE_VERSION=24.11.3-0
 BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
 
 case "${IMAGE_NAME}" in
@@ -106,7 +106,7 @@ docker build \
   --build-arg "CLANG_VERSION=${CLANG_VERSION}" \
   --build-arg "GCC_VERSION=${GCC_VERSION}" \
   --build-arg "PYTHON_VERSION=${PYTHON_VERSION}" \
-  --build-arg "MINICONDA_VERSION=${MINICONDA_VERSION}" \
+  --build-arg "MINIFORGE_VERSION=${MINIFORGE_VERSION}" \
   --build-arg "TORCH_VERSION=${TORCH_VERSION}" \
   --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
   --build-arg "LINTRUNNER=${LINTRUNNER:-}" \
