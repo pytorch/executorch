@@ -22,15 +22,11 @@ signature = "EthosUCompileSpec(target: str, system_config: str | None = None, me
 
 [python.EthosUCompileSpec.DebugMode]
 kind = "enum"
-signature = "EthosUCompileSpec.DebugMode(*values)"
+signature = "EthosUCompileSpec.DebugMode(value, names=None, *, module=None, qualname=None, type=None, start=1)"
 
 [python.EthosUCompileSpec.__eq__]
 kind = "function"
 signature = "EthosUCompileSpec.__eq__(self, other)"
-
-[python.EthosUCompileSpec.__replace__]
-kind = "function"
-signature = "EthosUCompileSpec.__replace__(self, /, **changes)"
 
 [python.EthosUCompileSpec.__repr__]
 kind = "function"
@@ -110,15 +106,11 @@ signature = "VgfCompileSpec(tosa_spec: executorch.backends.arm.tosa.specificatio
 
 [python.VgfCompileSpec.DebugMode]
 kind = "enum"
-signature = "VgfCompileSpec.DebugMode(*values)"
+signature = "VgfCompileSpec.DebugMode(value, names=None, *, module=None, qualname=None, type=None, start=1)"
 
 [python.VgfCompileSpec.__eq__]
 kind = "function"
 signature = "VgfCompileSpec.__eq__(self, other)"
-
-[python.VgfCompileSpec.__replace__]
-kind = "function"
-signature = "VgfCompileSpec.__replace__(self, /, **changes)"
 
 [python.VgfCompileSpec.__repr__]
 kind = "function"
