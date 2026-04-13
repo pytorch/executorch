@@ -183,11 +183,10 @@ int main(int argc, char** argv) {
 
   // Use a very small temperature for greedy to avoid division by zero
   // while keeping the Gumbel noise negligible relative to logit differences.
-  float temp_val = FLAGS_temperature <= 0.0
-      ? 1e-6f
-      : static_cast<float>(FLAGS_temperature);
-  auto temp_tensor = from_blob(
-      &temp_val, {1}, executorch::aten::ScalarType::Float);
+  float temp_val =
+      FLAGS_temperature <= 0.0 ? 1e-6f : static_cast<float>(FLAGS_temperature);
+  auto temp_tensor =
+      from_blob(&temp_val, {1}, executorch::aten::ScalarType::Float);
 
   // ---------------------------------------------------------------
   // Prefill
