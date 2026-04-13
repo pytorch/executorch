@@ -758,5 +758,6 @@ def test_convolution_2d_u85_INT_a16w8(test_data: input_t):
         a16w8_quantization=True,
         use_to_edge_transform_and_lower=True,
         per_channel_quantization=per_channel_quantization,
+        custom_path="TEMP",
     )
     pipeline.run()

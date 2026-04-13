@@ -7,6 +7,7 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm.constants import NHWC_INVERSE_ORDER, NHWC_ORDER
 from executorch.backends.arm.operators.operator_validation_utils import (
     adjust_pooling_pad_if_needed,
 )
@@ -32,13 +33,13 @@ class RewriteAvgPool2dPass(ArmPass):
             return super().call_operator(op, args, kwargs, meta, updated)
 
         x = args[0]
-        pad_h, pad_w = args[3]
+        pad_h, pad_w = args[3] if len(args) > 3 else (0, 0)
         # Make sure pad corresponds to TOSA
         pad = [pad_h, pad_w, pad_h, pad_w]
 
         _, _, h, w = x.data.shape
         kernel_h, kernel_w = args[1]
-        stride_h, stride_w = args[2]
+        stride_h, stride_w = args[2] if len(args) > 2 else (1, 1)
 
         ceil_mode = args[4] if len(args) > 4 else False
 
@@ -63,13 +64,36 @@ class RewriteAvgPool2dPass(ArmPass):
         else:
             acc_type = torch.float32
 
-        tosa_args = (args[0], input_zp, output_zp, *args[1:3], pad, acc_type)
+        pre_permute = super().call_operator(
+            exir_ops.edge.aten.permute_copy.default,
+            (x, list(NHWC_ORDER)),
+            {},
+            meta,
+            updated=True,
+        )
+
+        tosa_args = (
+            pre_permute,
+            input_zp,
+            output_zp,
+            [kernel_h, kernel_w],
+            [stride_h, stride_w],
+            pad,
+            acc_type,
+        )
 
         # Emit TOSA AVG_POOL2D with normalized args
-        return super().call_operator(
+        tosa_avg_pool = super().call_operator(
             exir_ops.backend.tosa.AVG_POOL2D.default,
             tosa_args,
             {},
             meta,
             True,
+        )
+        return super().call_operator(
+            exir_ops.edge.aten.permute_copy.default,
+            (tosa_avg_pool, list(NHWC_INVERSE_ORDER)),
+            {},
+            meta,
+            updated=True,
         )

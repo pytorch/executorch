@@ -37,6 +37,8 @@ class RewriteUpsamplePass(ArmPass):
     )
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    _NHWC_ORDER = (0, 2, 3, 1)
+    _NHWC_INVERSE_ORDER = (0, 3, 1, 2)
 
     @staticmethod
     def get_resize_parameters_1d(
@@ -188,17 +190,34 @@ class RewriteUpsamplePass(ArmPass):
                         from_node=node,
                     )
 
+                pre_permute = create_node(
+                    graph_module.graph,
+                    op_target=exir_ops.edge.aten.permute_copy.default,
+                    args=(x, list(self._NHWC_ORDER)),
+                    from_node=node,
+                )
+                pre_permute.meta["val"] = exir_ops.edge.aten.permute_copy.default(
+                    get_first_fake_tensor(x), list(self._NHWC_ORDER)
+                )
+
                 tosa_resize_node = create_node(
                     graph_module.graph,
                     op_target=exir_ops.backend.tosa.RESIZE.default,
-                    args=(x, scale, offset, border),
+                    args=(pre_permute, scale, offset, border),
                     kwargs={"resize_mode": resize_mode},
                     from_node=node,
                     inherit_qparams=True,
                 )
-                node.replace_all_uses_with(tosa_resize_node)
-                graph_module.graph.erase_node(node)
+                tosa_resize_node.meta["val"] = exir_ops.backend.tosa.RESIZE.default(
+                    pre_permute.meta["val"],
+                    scale if isinstance(scale, list) else scale.args[0],
+                    offset if isinstance(offset, list) else offset.args[0],
+                    border if isinstance(border, list) else border.args[0],
+                    resize_mode=resize_mode,
+                )
             input_dtype = get_first_fake_tensor(x).dtype
+            node_replacement = tosa_resize_node
+            node_replacement_fake = tosa_resize_node.meta["val"]
             if (
                 input_dtype == torch.int8 or input_dtype == torch.int16
             ) and resize_mode == "bilinear":
@@ -209,7 +228,6 @@ class RewriteUpsamplePass(ArmPass):
                         graph_module.graph,
                         exir_ops.backend.tosa.RESCALE.default,
                     )
-                    tosa_resize_node.replace_all_uses_with(rescale_node)
                     if input_dtype == torch.int16:
                         tosa_resize_node.meta[TosaSpecialDtype.meta_key()] = (
                             TosaSpecialDtype.INT48
@@ -222,6 +240,24 @@ class RewriteUpsamplePass(ArmPass):
                         0,  # zero point
                         0,  # zero point
                     )
+                    node_replacement = rescale_node
+                    node_replacement_fake = exir_ops.backend.tosa.RESCALE.default(
+                        tosa_resize_node.meta["val"], output_dtype, [output_scale], 0, 0
+                    )
+
+            with graph_module.graph.inserting_after(node_replacement):
+                post_permute = create_node(
+                    graph=graph_module.graph,
+                    op_target=exir_ops.edge.aten.permute_copy.default,
+                    args=(node_replacement, list(self._NHWC_INVERSE_ORDER)),
+                    from_node=node,
+                )
+            post_permute.meta["val"] = exir_ops.edge.aten.permute_copy.default(
+                node_replacement_fake,
+                list(self._NHWC_INVERSE_ORDER),
+            )
+            node.replace_all_uses_with(post_permute)
+            graph_module.graph.erase_node(node)
 
         if modified:
             graph_module = super().call(graph_module).graph_module

@@ -169,7 +169,7 @@ class CumsumModule(torch.nn.Module):
         return torch.cumsum(x, dim)
 
 
-class Model1ConvMaxPoolResidualLinear(torch.nn.Module):
+class ConvMaxPoolResidualLinear(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.conv = torch.nn.Conv1d(8, 8, kernel_size=3, padding=1)
@@ -335,13 +335,13 @@ cases = {
     "conv1d_rank3": TransposeCountCase(Conv1dModule(), (torch.randn(1, 2, 8),), 2),
     "conv2d_rank3": TransposeCountCase(Conv2dModule(), (torch.randn(2, 8, 8),), 2),
     "conv2d_rank4": TransposeCountCase(Conv2dModule(), (torch.randn(1, 2, 8, 8),), 2),
-    "conv3d_rank4": TransposeCountCase(Conv3dModule(), (torch.randn(2, 6, 6, 6),), 5),
+    "conv3d_rank4": TransposeCountCase(Conv3dModule(), (torch.randn(2, 6, 6, 6),), 2),
     "conv3d_rank5": TransposeCountCase(
         Conv3dModule(), (torch.randn(1, 2, 6, 6, 6),), 2
     ),
     "linear_rank2": TransposeCountCase(LinearModule(), (torch.randn(2, 8),), 0),
     "linear_rank3": TransposeCountCase(LinearModule(), (torch.randn(2, 2, 8),), 0),
-    "linear_rank4": TransposeCountCase(LinearModule(), (torch.randn(1, 2, 2, 8),), 3),
+    "linear_rank4": TransposeCountCase(LinearModule(), (torch.randn(1, 2, 2, 8),), 0),
     "matmul_rank2": TransposeCountCase(
         MatmulModule(),
         (torch.randn(2, 3), torch.randn(3, 4)),
@@ -350,7 +350,7 @@ cases = {
     "matmul_rank4": TransposeCountCase(
         MatmulModule(),
         (torch.randn(2, 2, 2, 3), torch.randn(2, 2, 3, 4)),
-        5,
+        0,
     ),
     "index_put": TransposeCountCase(
         IndexPutModule(),
@@ -368,7 +368,7 @@ cases = {
     "pixel_shuffle": TransposeCountCase(
         PixelShuffleModule(),
         (torch.randn(1, 8, 2, 2),),
-        7,
+        1,
     ),
     "index_select": TransposeCountCase(
         IndexSelectModule(),
@@ -378,23 +378,23 @@ cases = {
     "grouped_conv": TransposeCountCase(
         GroupedConvModule(),
         (torch.randn(1, 4, 8, 8),),
-        2,
+        4,
     ),
     "transpose_conv": TransposeCountCase(
         TransposeConvModule(),
         (torch.randn(1, 2, 8, 8),),
         2,
     ),
-    "views": TransposeCountCase(ViewsModule(), (torch.rand(1, 2, 2, 4),), 6),
+    "views": TransposeCountCase(ViewsModule(), (torch.rand(1, 2, 2, 4),), 4),
     "transposes": TransposeCountCase(
         TransposesModule(),
         (torch.randn(1, 2, 3, 4),),
-        4,
+        1,
     ),
     "maxpool2d_dilation": TransposeCountCase(
         MaxPool2dDilatedModule(),
         (torch.randn(1, 2, 8, 8),),
-        8,
+        4,
     ),
     "lstm": TransposeCountCase(
         LstmModule(),
@@ -404,17 +404,17 @@ cases = {
     "groupnorm": TransposeCountCase(
         GroupNormModule(),
         (torch.randn(1, 4, 4, 4),),
-        5,
+        1,
     ),
     "multihead_attention_rank2": TransposeCountCase(
         MultiheadAttentionModule(),
         (torch.randn(4, 8),),
-        14,
+        4,
     ),
     "multihead_attention_rank3": TransposeCountCase(
         MultiheadAttentionModule(),
         (torch.randn(2, 4, 8),),
-        22,
+        8,
     ),
     "cumsum_rank3_dim0": TransposeCountCase(
         CumsumModule(),
@@ -424,22 +424,22 @@ cases = {
     "cumsum_rank4_dim3": TransposeCountCase(
         CumsumModule(),
         (torch.randn(1, 2, 3, 4), 3),
-        3,
+        0,
     ),
     "model_1_conv_maxpool_residual_linear": TransposeCountCase(
-        Model1ConvMaxPoolResidualLinear(), (torch.randn(2, 8, 64),), 5
+        ConvMaxPoolResidualLinear(), (torch.randn(2, 8, 64),), 5
     ),
     "model_2_conv_mha_linear_layernorm": TransposeCountCase(
-        Model2ConvMhaLinearLayerNorm(), (torch.randn(2, 8, 32),), 27
+        Model2ConvMhaLinearLayerNorm(), (torch.randn(2, 8, 32),), 11
     ),
     "model_3_lstm_linear": TransposeCountCase(
         Model3LstmLinear(), (torch.randn(2, 16, 8),), 2
     ),
     "model_4_conv_lstm_linear_layernorm": TransposeCountCase(
-        Model4ConvLstmLinearLayerNorm(), (torch.randn(2, 8, 32),), 7
+        Model4ConvLstmLinearLayerNorm(), (torch.randn(2, 8, 32),), 5
     ),
     "model_5_dwconv_gelu_layernorm_avgpool": TransposeCountCase(
-        Model5DwConvGeluLayerNormAvgPool(), (torch.randn(1, 8, 16, 16),), 4
+        Model5DwConvGeluLayerNormAvgPool(), (torch.randn(1, 8, 16, 16),), 6
     ),
     "model_6_gru_linear": TransposeCountCase(
         Model6GruLinear(), (torch.randn(2, 16, 8),), 2
@@ -448,10 +448,10 @@ cases = {
         Model7DwConvBatchNormLinear(), (torch.randn(2, 8, 64),), 3
     ),
     "model_8_conv_batchnorm_maxpool_residual": TransposeCountCase(
-        Model8ConvBatchNormMaxPoolResidual(), (torch.randn(1, 8, 16, 16),), 2
+        Model8ConvBatchNormMaxPoolResidual(), (torch.randn(1, 8, 16, 16),), 6
     ),
     "model_9_dilated_conv_batchnorm_avgpool_residual": TransposeCountCase(
-        Model9DilatedConvBatchNormAvgPoolResidual(), (torch.randn(1, 8, 16, 16),), 2
+        Model9DilatedConvBatchNormAvgPoolResidual(), (torch.randn(1, 8, 16, 16),), 6
     ),
     "model_10_dwconv_batchnorm_linear_cat": TransposeCountCase(
         Model10DwConvBatchNormLinearCat(), (torch.randn(2, 8, 64),), 3
@@ -468,17 +468,17 @@ cases_channels_last = {
     "conv3d_rank4_channels_last": TransposeCountCase(
         Conv3dModule(),
         (torch.randn(2, 6, 6, 6).to(memory_format=torch.channels_last),),
-        4,
+        2,
     ),
     "conv3d_rank5_channels_last": TransposeCountCase(
         Conv3dModule(),
         (torch.randn(1, 2, 6, 6, 6).to(memory_format=torch.channels_last_3d),),
-        1,
+        3,
     ),
     "linear_rank4_channels_last": TransposeCountCase(
         LinearModule(),
         (torch.randn(1, 2, 2, 8).to(memory_format=torch.channels_last),),
-        -1,  # The test crashes before reaching the transpose count
+        1,
     ),
     "matmul_rank4_channels_last": TransposeCountCase(
         MatmulModule(),
@@ -486,17 +486,17 @@ cases_channels_last = {
             torch.randn(2, 2, 2, 3).to(memory_format=torch.channels_last),
             torch.randn(2, 2, 3, 4).to(memory_format=torch.channels_last),
         ),
-        -1,  # The test crashes before reaching the transpose count
+        2,  # The test crashes before reaching the transpose count
     ),
     "pixel_shuffle_channels_last": TransposeCountCase(
         PixelShuffleModule(),
         (torch.randn(1, 8, 2, 2).to(memory_format=torch.channels_last),),
-        5,
+        3,
     ),
     "grouped_conv_channels_last": TransposeCountCase(
         GroupedConvModule(),
         (torch.randn(1, 4, 8, 8).to(memory_format=torch.channels_last),),
-        0,
+        3,
     ),
     "transpose_conv_channels_last": TransposeCountCase(
         TransposeConvModule(),
@@ -511,7 +511,7 @@ cases_channels_last = {
     "transposes_channels_last": TransposeCountCase(
         TransposesModule(),
         (torch.randn(1, 2, 3, 4).to(memory_format=torch.channels_last),),
-        3,
+        1,
     ),
     "maxpool2d_dilation_channels_last": TransposeCountCase(
         MaxPool2dDilatedModule(),
@@ -521,12 +521,12 @@ cases_channels_last = {
     "groupnorm_channels_last": TransposeCountCase(
         GroupNormModule(),
         (torch.randn(1, 4, 4, 4).to(memory_format=torch.channels_last),),
-        4,
+        3,
     ),
     "cumsum_rank4_dim3_channels_last": TransposeCountCase(
         CumsumModule(),
         (torch.randn(1, 2, 3, 4).to(memory_format=torch.channels_last), 3),
-        -1,  # The test crashes before reaching the transpose count
+        1,  # The test crashes before reaching the transpose count
     ),
 }
 
@@ -540,19 +540,12 @@ def test_transpose_counts_tosa_FP(case: TransposeCountCase) -> None:
 
 xfails = {
     "conv3d_rank5_channels_last": "Numerical error",
-    "linear_rank4_channels_last": "DecomposeLinearPass: Tries inserting a view not supported in channels last format",
-    "matmul_rank4_channels_last": "ToTosaMemoryFormatPass: Tries inserting view not supported in channels last format",
     "views_channels_last": "Torch.export: View not supported by torch.export in channels last format",
-    "cumsum_rank4_dim3_channels_last": "DecomposeCumssumPass: Tries inserting a view not supported in channels last format",
 }
 
 
 @common.parametrize("case", cases_channels_last, xfails=xfails)  # type: ignore[arg-type]
 def test_transpose_counts_tosa_FP_channels_last(case: TransposeCountCase) -> None:
-    pipeline = TosaPipelineFP[InputT](
-        case.module,
-        case.inputs,
-        aten_op=[],
-    )
+    pipeline = TosaPipelineFP[InputT](case.module, case.inputs, aten_op=[])
     pipeline.count_tosa_ops({"TRANSPOSE": case.expected_transposes})
     pipeline.run()

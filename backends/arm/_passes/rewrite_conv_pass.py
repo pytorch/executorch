@@ -12,16 +12,18 @@ from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     expand_around_channel,
+    get_constant_placeholder_kind,
     get_first_fake_tensor,
     get_param_tensor,
     is_buffer,
     is_param,
+    is_persistent_buffer,
 )
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
     get_output_qparams,
 )
-from executorch.backends.arm.constants import HWCM_ORDER, NHWC_INVERSE_ORDER
+from executorch.backends.arm.constants import HWCM_ORDER, NHWC_INVERSE_ORDER, NHWC_ORDER
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import get_context_shape_env
 from executorch.backends.transforms.utils import create_constant_placeholder
@@ -41,6 +43,9 @@ class RewriteConvPass(ArmPass):
         self.exported_program = exported_program
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    _OUTPUT_DIM_ORDER_META_KEY = "arm_output_dim_order"
+    _NDHWC_ORDER = (0, 2, 3, 4, 1)
+    _NDHWC_INVERSE_ORDER = (0, 4, 1, 2, 3)
 
     # torch.nn.Conv2d does not require the result of
     # `(input + 2 * pad - dilation * (weight - 1) - 1) / stride`
@@ -194,13 +199,143 @@ class RewriteConvPass(ArmPass):
                 persistent_buffer=True,
                 name=f"{node.name}_bias",
             )
-            if node.all_input_nodes[0].meta["val"].dtype == torch.int16:
-                bias_node.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.INT48
+            self._mark_bias_as_int48_if_needed(node, bias_node)
         node.update_arg(2, bias_node)
         return bias_node
 
+    def _rewrite_conv2d_weight_to_ohwi(
+        self,
+        graph_module: torch.fx.GraphModule,
+        weight_node: torch.fx.Node,
+        conv_node: torch.fx.Node,
+    ) -> torch.fx.Node:
+        """Create a Conv2D-local OIHW->OHWI rewritten weight placeholder."""
+        weight_tensor = get_param_tensor(self.exported_program, weight_node)  # type: ignore[arg-type]
+        if weight_tensor is None:
+            raise RuntimeError(
+                f"Weight node {weight_node.name} is not a parameter or buffer"
+            )
+
+        rewritten_weight = weight_tensor.permute(0, 2, 3, 1).contiguous()
+        kind = get_constant_placeholder_kind(self.exported_program, weight_node)
+        persistent_buffer = is_persistent_buffer(self.exported_program, weight_node)
+
+        with graph_module.graph.inserting_after(weight_node):
+            rewritten_weight_node = create_constant_placeholder(
+                self.exported_program,
+                graph=graph_module.graph,
+                name=f"{conv_node.name}_weight_ohwi",
+                kind=kind,
+                data=rewritten_weight,
+                persistent_buffer=persistent_buffer,
+            )
+        if special_dtype := weight_node.meta.get(TosaSpecialDtype.meta_key()):
+            rewritten_weight_node.meta[TosaSpecialDtype.meta_key()] = special_dtype
+        return rewritten_weight_node
+
+    def _rewrite_conv3d_weight_to_okdhwi(
+        self,
+        graph_module: torch.fx.GraphModule,
+        weight_node: torch.fx.Node,
+        conv_node: torch.fx.Node,
+    ) -> torch.fx.Node:
+        """Create a Conv3D-local OIDHW->OKDHWI rewritten weight placeholder."""
+        weight_tensor = get_param_tensor(self.exported_program, weight_node)  # type: ignore[arg-type]
+        if weight_tensor is None:
+            raise RuntimeError(
+                f"Weight node {weight_node.name} is not a parameter or buffer"
+            )
+        rewritten_weight = weight_tensor.permute(0, 2, 3, 4, 1).contiguous()
+        kind = get_constant_placeholder_kind(self.exported_program, weight_node)
+        persistent_buffer = is_persistent_buffer(self.exported_program, weight_node)
+        with graph_module.graph.inserting_after(weight_node):
+            rewritten_weight_node = create_constant_placeholder(
+                self.exported_program,
+                graph=graph_module.graph,
+                name=f"{conv_node.name}_weight_okdhwi",
+                kind=kind,
+                data=rewritten_weight,
+                persistent_buffer=persistent_buffer,
+            )
+        if special_dtype := weight_node.meta.get(TosaSpecialDtype.meta_key()):
+            rewritten_weight_node.meta[TosaSpecialDtype.meta_key()] = special_dtype
+        return rewritten_weight_node
+
+    def _rewrite_depthwise_weight_to_hwicm(
+        self,
+        graph_module: torch.fx.GraphModule,
+        weight_node: torch.fx.Node,
+        conv_node: torch.fx.Node,
+        in_channels: int,
+    ) -> torch.fx.Node:
+        """Create a depthwise Conv2D-local [KH,KW,IC,M] rewritten weight."""
+        weight_tensor = get_param_tensor(self.exported_program, weight_node)  # type: ignore[arg-type]
+        if weight_tensor is None:
+            raise RuntimeError(
+                f"Weight node {weight_node.name} is not a parameter or buffer"
+            )
+        kh, kw = weight_tensor.shape[2], weight_tensor.shape[3]
+        m_length = weight_tensor.shape[0] // in_channels
+        rewritten_weight = (
+            weight_tensor.permute(2, 3, 0, 1).reshape(kh, kw, in_channels, m_length)
+        ).contiguous()
+        kind = get_constant_placeholder_kind(self.exported_program, weight_node)
+        persistent_buffer = is_persistent_buffer(self.exported_program, weight_node)
+        with graph_module.graph.inserting_after(weight_node):
+            rewritten_weight_node = create_constant_placeholder(
+                self.exported_program,
+                graph=graph_module.graph,
+                name=f"{conv_node.name}_weight_hwicm",
+                kind=kind,
+                data=rewritten_weight,
+                persistent_buffer=persistent_buffer,
+            )
+        if special_dtype := weight_node.meta.get(TosaSpecialDtype.meta_key()):
+            rewritten_weight_node.meta[TosaSpecialDtype.meta_key()] = special_dtype
+        return rewritten_weight_node
+
+    def _rewrite_transpose_conv2d_weight_to_ohwi(
+        self,
+        graph_module: torch.fx.GraphModule,
+        weight_node: torch.fx.Node,
+        conv_node: torch.fx.Node,
+    ) -> torch.fx.Node:
+        """Create transpose Conv2D-local [OC,KH,KW,IC] rewritten weight."""
+        weight_tensor = get_param_tensor(self.exported_program, weight_node)  # type: ignore[arg-type]
+        if weight_tensor is None:
+            raise RuntimeError(
+                f"Weight node {weight_node.name} is not a parameter or buffer"
+            )
+        rewritten_weight = weight_tensor.permute(1, 2, 3, 0).contiguous()
+        kind = get_constant_placeholder_kind(self.exported_program, weight_node)
+        persistent_buffer = is_persistent_buffer(self.exported_program, weight_node)
+        with graph_module.graph.inserting_after(weight_node):
+            rewritten_weight_node = create_constant_placeholder(
+                self.exported_program,
+                graph=graph_module.graph,
+                name=f"{conv_node.name}_weight_ohwi",
+                kind=kind,
+                data=rewritten_weight,
+                persistent_buffer=persistent_buffer,
+            )
+        if special_dtype := weight_node.meta.get(TosaSpecialDtype.meta_key()):
+            rewritten_weight_node.meta[TosaSpecialDtype.meta_key()] = special_dtype
+        return rewritten_weight_node
+
     def _is_quantized_conv(self, node: torch.fx.Node) -> bool:
         return bool(node.meta.get("input_qparams", {}))
+
+    def _is_int16_activation_conv(self, node: torch.fx.Node) -> bool:
+        input_qparams = node.meta.get("input_qparams", {})
+        if 0 in input_qparams:
+            return input_qparams[0].dtype == torch.int16
+        return get_first_fake_tensor(node.all_input_nodes[0]).dtype == torch.int16
+
+    def _mark_bias_as_int48_if_needed(
+        self, node: torch.fx.Node, bias_node: torch.fx.Node
+    ) -> None:
+        if self._is_int16_activation_conv(node):
+            bias_node.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.INT48
 
     def _get_effective_output_qparams(self, node: torch.fx.Node):
         """Return the quantized output domain for a conv node.
@@ -230,7 +365,13 @@ class RewriteConvPass(ArmPass):
 
         return get_output_qparams(node)
 
-    def insert_output_rescale(self, graph_module, source_node, conv_node):
+    def insert_output_rescale(
+        self,
+        graph_module,
+        source_node,
+        conv_node,
+        conv_fake_tensor: torch.Tensor,
+    ):
         input_qparams = get_input_qparams(source_node)
         output_qparams = self._get_effective_output_qparams(source_node)[0]
         weight_qparams = input_qparams[1]
@@ -262,7 +403,66 @@ class RewriteConvPass(ArmPass):
                 ),
                 from_node=source_node,
             )
-        return rescale_node
+        rescale_fake_tensor = exir_ops.backend.tosa.RESCALE.default(
+            conv_fake_tensor,
+            output_qparams.dtype,
+            post_conv2d_scale,
+            0,
+            output_qparams.get_zp_per_tensor(),
+        )
+        return rescale_node, rescale_fake_tensor
+
+    def insert_identity_int32_rescale(
+        self,
+        graph_module,
+        source_node,
+        conv_node,
+        conv_fake_tensor: torch.Tensor,
+    ):
+        with graph_module.graph.inserting_after(conv_node):
+            rescale_node = create_node(
+                graph=graph_module.graph,
+                op_target=exir_ops.backend.tosa.RESCALE.default,
+                args=(
+                    conv_node,
+                    torch.int32,
+                    [1.0],
+                    0,
+                    0,
+                ),
+                from_node=source_node,
+            )
+        rescale_fake_tensor = exir_ops.backend.tosa.RESCALE.default(
+            conv_fake_tensor,
+            torch.int32,
+            [1.0],
+            0,
+            0,
+        )
+        return rescale_node, rescale_fake_tensor
+
+    def _has_int32_rescale_user(self, node: torch.fx.Node) -> bool:
+        for user in node.users:
+            if (
+                user.op == "call_function"
+                and user.target == exir_ops.backend.tosa.RESCALE.default
+                and len(user.args) > 1
+                and user.args[1] == torch.int32
+            ):
+                return True
+            if (
+                user.op == "call_function"
+                and user.target == exir_ops.edge.aten.permute_copy.default
+            ):
+                for inner_user in user.users:
+                    if (
+                        inner_user.op == "call_function"
+                        and inner_user.target == exir_ops.backend.tosa.RESCALE.default
+                        and len(inner_user.args) > 1
+                        and inner_user.args[1] == torch.int32
+                    ):
+                        return True
+        return False
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
         modified = False
@@ -301,8 +501,14 @@ class RewriteConvPass(ArmPass):
             has_bias = bias is not None
             if not has_bias:
                 bias = self._add_bias(graph_module, node, weight)
+            elif isinstance(bias, torch.fx.Node):
+                self._mark_bias_as_int48_if_needed(node, bias)
 
             conv_args: tuple[Any, ...]
+            input_tensor_for_tosa_fake: torch.Tensor = input_fake_tensor
+            rewrite_with_explicit_permute = False
+            pre_permute_dims: tuple[int, ...] | None = None
+            post_permute_dims: tuple[int, ...] | None = None
             if transposed:
                 if spatial_rank != 2:
                     raise RuntimeError(
@@ -322,6 +528,26 @@ class RewriteConvPass(ArmPass):
                     -pad_list[1] + output_padding_list[1],
                 ]
                 target_op = exir_ops.backend.tosa.TRANSPOSE_CONV2D.default
+                rewrite_with_explicit_permute = True
+                pre_permute_dims = NHWC_ORDER
+                post_permute_dims = NHWC_INVERSE_ORDER
+                if pre_permute_dims is None:
+                    raise RuntimeError("Expected pre permute dims for explicit layout")
+                with graph_module.graph.inserting_before(node):
+                    x = create_node(
+                        graph=graph_module.graph,
+                        op_target=exir_ops.edge.aten.permute_copy.default,
+                        args=(x, list(pre_permute_dims)),
+                        from_node=node,
+                    )
+                x.meta["val"] = exir_ops.edge.aten.permute_copy.default(
+                    input_fake_tensor, list(pre_permute_dims)
+                )
+                weight = self._rewrite_transpose_conv2d_weight_to_ohwi(
+                    graph_module, weight, node
+                )
+                input_tensor_for_tosa_fake = input_fake_tensor.permute(pre_permute_dims)
+                weight_fake_tensor = get_first_fake_tensor(weight)
                 conv_args = (
                     x,
                     weight,
@@ -351,14 +577,82 @@ class RewriteConvPass(ArmPass):
 
                 if self._is_conv3d(len(input_shape), group):
                     target_op = exir_ops.backend.tosa.CONV3D.default
+                    rewrite_with_explicit_permute = True
+                    pre_permute_dims = self._NDHWC_ORDER
+                    post_permute_dims = self._NDHWC_INVERSE_ORDER
+                    if pre_permute_dims is None:
+                        raise RuntimeError(
+                            "Expected pre permute dims for explicit layout"
+                        )
+                    with graph_module.graph.inserting_before(node):
+                        x = create_node(
+                            graph=graph_module.graph,
+                            op_target=exir_ops.edge.aten.permute_copy.default,
+                            args=(x, list(pre_permute_dims)),
+                            from_node=node,
+                        )
+                    x.meta["val"] = exir_ops.edge.aten.permute_copy.default(
+                        input_fake_tensor, list(pre_permute_dims)
+                    )
+                    weight = self._rewrite_conv3d_weight_to_okdhwi(
+                        graph_module, weight, node
+                    )
+                    input_tensor_for_tosa_fake = input_fake_tensor.permute(
+                        pre_permute_dims
+                    )
+                    weight_fake_tensor = get_first_fake_tensor(weight)
                 elif self._is_depthwise_conv2d(node):
                     target_op = exir_ops.backend.tosa.DEPTHWISE_CONV2D.default
-                    # If there are any TOSA.DEPTHWISE_CONV2D nodes using the weights, we've already reshaped them.
-                    if all(user.target != target_op for user in weight.users):
-                        self._reshape_weights(weight, input_fake_tensor.shape[1])
+                    rewrite_with_explicit_permute = True
+                    pre_permute_dims = NHWC_ORDER
+                    post_permute_dims = NHWC_INVERSE_ORDER
+                    if pre_permute_dims is None:
+                        raise RuntimeError(
+                            "Expected pre permute dims for explicit layout"
+                        )
+                    with graph_module.graph.inserting_before(node):
+                        x = create_node(
+                            graph=graph_module.graph,
+                            op_target=exir_ops.edge.aten.permute_copy.default,
+                            args=(x, list(pre_permute_dims)),
+                            from_node=node,
+                        )
+                    x.meta["val"] = exir_ops.edge.aten.permute_copy.default(
+                        input_fake_tensor, list(pre_permute_dims)
+                    )
+                    weight = self._rewrite_depthwise_weight_to_hwicm(
+                        graph_module, weight, node, input_fake_tensor.shape[1]
+                    )
+                    input_tensor_for_tosa_fake = input_fake_tensor.permute(
+                        pre_permute_dims
+                    )
                     weight_fake_tensor = get_first_fake_tensor(weight)
                 else:
                     target_op = exir_ops.backend.tosa.CONV2D.default
+                    rewrite_with_explicit_permute = True
+                    pre_permute_dims = NHWC_ORDER
+                    post_permute_dims = NHWC_INVERSE_ORDER
+                    if pre_permute_dims is None:
+                        raise RuntimeError(
+                            "Expected pre permute dims for explicit layout"
+                        )
+                    with graph_module.graph.inserting_before(node):
+                        x = create_node(
+                            graph=graph_module.graph,
+                            op_target=exir_ops.edge.aten.permute_copy.default,
+                            args=(x, list(pre_permute_dims)),
+                            from_node=node,
+                        )
+                    x.meta["val"] = exir_ops.edge.aten.permute_copy.default(
+                        input_fake_tensor, list(pre_permute_dims)
+                    )
+                    weight = self._rewrite_conv2d_weight_to_ohwi(
+                        graph_module, weight, node
+                    )
+                    input_tensor_for_tosa_fake = input_fake_tensor.permute(
+                        pre_permute_dims
+                    )
+                    weight_fake_tensor = get_first_fake_tensor(weight)
 
                 conv_args = (
                     x,
@@ -379,33 +673,84 @@ class RewriteConvPass(ArmPass):
                 )
             bias_fake_tensor = get_first_fake_tensor(bias) if bias else None
             tosa_node_fake_tensor = target_op(
-                input_fake_tensor,
+                input_tensor_for_tosa_fake,
                 weight_fake_tensor,
                 bias_fake_tensor,
                 *conv_args[3:],
             )
+            tosa_op.meta["val"] = tosa_node_fake_tensor
 
+            node_replacement: torch.fx.Node = tosa_op
+            node_replacement_fake_tensor = tosa_node_fake_tensor
             if (
                 tosa_node_fake_tensor.dtype == torch.int32
                 and input_fake_tensor.dtype == torch.int8
             ):
-                output_rescale = self.insert_output_rescale(graph_module, node, tosa_op)
-                node.replace_all_uses_with(output_rescale)
+                output_rescale, output_rescale_fake = self.insert_output_rescale(
+                    graph_module, node, tosa_op, tosa_node_fake_tensor
+                )
+                node_replacement = output_rescale
+                node_replacement_fake_tensor = output_rescale_fake
             elif (
                 tosa_node_fake_tensor.dtype == torch.int32
                 and input_fake_tensor.dtype == torch.int16
             ):
-                has_bias = len(node.meta["input_qparams"]) > 2
-                if not has_bias:
-                    output_rescale = self.insert_output_rescale(
-                        graph_module, node, tosa_op
-                    )
-                    node.replace_all_uses_with(output_rescale)
+                # Explicit layout paths require a post-conv permute, which does
+                # not support INT48. Always rescale before post-permute.
+                if rewrite_with_explicit_permute:
+                    if self._has_int32_rescale_user(node):
+                        output_rescale, output_rescale_fake = (
+                            self.insert_identity_int32_rescale(
+                                graph_module, node, tosa_op, tosa_node_fake_tensor
+                            )
+                        )
+                    else:
+                        output_rescale, output_rescale_fake = (
+                            self.insert_output_rescale(
+                                graph_module, node, tosa_op, tosa_node_fake_tensor
+                            )
+                        )
+                    node_replacement = output_rescale
+                    node_replacement_fake_tensor = output_rescale_fake
                 else:
-                    node.replace_all_uses_with(tosa_op)
+                    has_bias = len(node.meta["input_qparams"]) > 2
+                    if not has_bias:
+                        output_rescale, output_rescale_fake = (
+                            self.insert_output_rescale(
+                                graph_module, node, tosa_op, tosa_node_fake_tensor
+                            )
+                        )
+                        node_replacement = output_rescale
+                        node_replacement_fake_tensor = output_rescale_fake
+                    else:
+                        node_replacement = tosa_op
                 tosa_op.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.INT48
-            else:
-                node.replace_all_uses_with(tosa_op)
+
+            if rewrite_with_explicit_permute:
+                if post_permute_dims is None:
+                    raise RuntimeError("Expected post permute dims for explicit layout")
+                post_permute_input = node_replacement
+                with graph_module.graph.inserting_after(node_replacement):
+                    node_replacement = create_node(
+                        graph=graph_module.graph,
+                        op_target=exir_ops.edge.aten.permute_copy.default,
+                        args=(node_replacement, list(post_permute_dims)),
+                        from_node=node,
+                    )
+                if special_dtype := post_permute_input.meta.get(
+                    TosaSpecialDtype.meta_key()
+                ):
+                    node_replacement.meta[TosaSpecialDtype.meta_key()] = special_dtype
+                original_output_fake = node.meta.get("val")
+                if isinstance(original_output_fake, torch.Tensor):
+                    node_replacement.meta[self._OUTPUT_DIM_ORDER_META_KEY] = tuple(
+                        original_output_fake.dim_order()
+                    )
+                node_replacement.meta["val"] = exir_ops.edge.aten.permute_copy.default(
+                    node_replacement_fake_tensor, list(post_permute_dims)
+                )
+
+            node.replace_all_uses_with(node_replacement)
 
             graph_module.graph.erase_node(node)
 

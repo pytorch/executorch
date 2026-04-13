@@ -6,6 +6,7 @@
 from typing import Set, Type
 
 from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm.constants import NHWC_INVERSE_ORDER, NHWC_ORDER
 from executorch.backends.arm.operators.operator_validation_utils import (
     adjust_pooling_pad_if_needed,
 )
@@ -35,7 +36,7 @@ class RewriteMaxPool2dPass(ArmPass):
         x = args[0]
         kernel = _to_2tuple(args[1])
 
-        if len(args) > 2 and args[2] is not None and len(args[2]) > 0:
+        if len(args) > 2 and args[2] is not None:
             stride = _to_2tuple(args[2])
         else:
             stride = kernel
@@ -56,9 +57,28 @@ class RewriteMaxPool2dPass(ArmPass):
             x.data.shape[3], kernel[1], stride[1], pad[3], ceil_mode
         )
 
-        return super().call_operator(
+        pre_permute = super().call_operator(
+            exir_ops.edge.aten.permute_copy.default,
+            (x, list(NHWC_ORDER)),
+            {},
+            meta,
+            updated=True,
+        )
+        tosa_pool = super().call_operator(
             exir_ops.backend.tosa.MAX_POOL2D.default,
-            (x, list(kernel), list(stride), pad),
+            (
+                pre_permute,
+                list(kernel),
+                list(stride),
+                pad,
+            ),
+            {},
+            meta,
+            updated=True,
+        )
+        return super().call_operator(
+            exir_ops.edge.aten.permute_copy.default,
+            (tosa_pool, list(NHWC_INVERSE_ORDER)),
             {},
             meta,
             updated=True,
