@@ -74,6 +74,7 @@ dependencies=[
   "scikit-learn==1.7.1",
   "hydra-core>=1.3.0",
   "omegaconf>=2.3.0",
+  "cmsis_nn @ git+https://github.com/ARM-software/CMSIS-NN.git@ba16fde665262d2ca3cc5074e1b4894461e06a2f",
 ]
 
 [project.optional-dependencies]

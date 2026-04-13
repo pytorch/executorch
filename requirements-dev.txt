@@ -15,3 +15,6 @@ pytest<9.0
 pytest-xdist
 pytest-rerunfailures==15.1
 pytest-json-report
+
+pybind11>=2.10 # Required to build cmsis_nn pybindings.
+scikit-build-core>=0.7 # Required to build cmsis_nn pybindings.
