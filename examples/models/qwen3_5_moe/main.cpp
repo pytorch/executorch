@@ -87,8 +87,6 @@ int main(int argc, char** argv) {
   }
   auto metadata = metadata_result.get();
 
-  printf("Loading methods...\n");
-
   // Set CUDA graph option if requested (must be before load_method)
   if (FLAGS_cuda_graph) {
     executorch::runtime::BackendOptions<2> cuda_opts;
@@ -97,27 +95,17 @@ int main(int argc, char** argv) {
     printf("CUDA graph enabled for decode method\n");
   }
 
-  // Try loading both methods; fall back to single "forward" method
-  bool dual_method = true;
-  std::string prefill_method = "prefill";
+  printf("Loading methods...\n");
+
   auto err = module->load_method("prefill");
   if (err != Error::Ok) {
-    // Try "forward" for single-method export
-    err = module->load_method("forward");
-    if (err != Error::Ok) {
-      ET_LOG(Error, "Failed to load prefill/forward method");
-      return 1;
-    }
-    prefill_method = "forward";
-    dual_method = false;
-    printf("Using single-method mode (forward)\n");
+    ET_LOG(Error, "Failed to load prefill method");
+    return 1;
   }
-  if (dual_method) {
-    err = module->load_method("decode");
-    if (err != Error::Ok) {
-      ET_LOG(Error, "Failed to load decode method");
-      return 1;
-    }
+  err = module->load_method("decode");
+  if (err != Error::Ok) {
+    ET_LOG(Error, "Failed to load decode method");
+    return 1;
   }
 
   // Get EOS ids
@@ -160,7 +148,7 @@ int main(int argc, char** argv) {
   prefill_inputs.push_back(tokens_tensor);
   prefill_inputs.push_back(pos_tensor);
 
-  auto prefill_result = module->execute(prefill_method, prefill_inputs);
+  auto prefill_result = module->execute("prefill", prefill_inputs);
   if (prefill_result.error() != Error::Ok) {
     ET_LOG(Error, "Prefill failed");
     return 1;
@@ -186,11 +174,6 @@ int main(int argc, char** argv) {
   // buffers (KV cache, conv_state, recurrent_state) are visible to the
   // decode method, which may run on a different CUDA stream.
   cudaDeviceSynchronize();
-
-  if (!dual_method) {
-    printf("Single-method mode: skipping decode\n");
-    return 0;
-  }
 
   // ---------------------------------------------------------------
   // Decode — generate tokens one at a time

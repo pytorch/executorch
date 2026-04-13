@@ -68,6 +68,7 @@ using executorch::runtime::Span;
 using executorch::runtime::etensor::Tensor;
 
 // SlimTensor type aliases
+using cuda::CudaGraphPhase;
 using slim::CPU_DEVICE;
 using slim::DEFAULT_CUDA_DEVICE;
 using slim::DeviceTraits;
@@ -80,8 +81,7 @@ namespace {
 constexpr char kSkipCopyOutputToCpuForMethod[] =
     "skip_copy_output_to_cpu_for_method";
 constexpr char kUseSharedCudaStream[] = "use_shared_cuda_stream";
-constexpr char kEnableCudaGraphForMethod[] =
-    "enable_cuda_graph_for_method";
+constexpr char kEnableCudaGraphForMethod[] = "enable_cuda_graph_for_method";
 constexpr int kCudaGraphWarmupSteps = 3;
 } // anonymous namespace
 
@@ -410,7 +410,9 @@ class ET_EXPERIMENTAL CudaBackend final
       cudaDeviceSynchronize();
       buffer_res->Free();
     } else {
-      ET_LOG(Info, "weights_blob '%s' not found or update fn is null",
+      ET_LOG(
+          Info,
+          "weights_blob '%s' not found or update fn is null",
           weights_blob_key.c_str());
     }
 
@@ -540,8 +542,8 @@ class ET_EXPERIMENTAL CudaBackend final
 
     // Initialize CUDA graph state if enabled for this method.
     if (should_use_cuda_graph_for_method(method_name)) {
-      handle->cuda_graph_phase = 1; // warmup
-      handle->cuda_graph_warmup_remaining = kCudaGraphWarmupSteps;
+      handle->cuda_graph_state.phase = CudaGraphPhase::Warmup;
+      handle->cuda_graph_state.warmup_remaining = kCudaGraphWarmupSteps;
       ET_LOG(
           Info,
           "CUDA graph enabled for method '%s' (warmup=%d)",
@@ -578,7 +580,7 @@ class ET_EXPERIMENTAL CudaBackend final
     // ---------------------------------------------------------------
     // CUDA graph REPLAY path — skip all tensor setup and just replay
     // ---------------------------------------------------------------
-    if (handle->cuda_graph_phase == 2) {
+    if (handle->cuda_graph_state.phase == CudaGraphPhase::Replay) {
       Result<cudaStream_t> csr = getCurrentCUDAStream(0);
       cudaStream_t cs = csr.get();
       ET_CHECK_OK_OR_RETURN_ERROR(csr.error());
@@ -587,15 +589,16 @@ class ET_EXPERIMENTAL CudaBackend final
       for (size_t i = 0; i < n_inputs; i++) {
         auto* cpu_tensor = &(args[i]->toTensor());
         cudaMemcpyAsync(
-            handle->static_input_ptrs[i],
+            handle->cuda_graph_state.static_input_ptrs[i],
             cpu_tensor->const_data_ptr(),
-            handle->static_input_nbytes[i],
+            handle->cuda_graph_state.static_input_nbytes[i],
             cudaMemcpyHostToDevice,
             cs);
       }
 
       // Replay the captured graph
-      cudaError_t gerr = cudaGraphLaunch(handle->cuda_graph_exec, cs);
+      cudaError_t gerr =
+          cudaGraphLaunch(handle->cuda_graph_state.graph_exec, cs);
       ET_CHECK_OR_RETURN_ERROR(
           gerr == cudaSuccess,
           Internal,
@@ -610,8 +613,8 @@ class ET_EXPERIMENTAL CudaBackend final
           auto* cpu_out = &(args[i + n_inputs]->toTensor());
           cudaMemcpyAsync(
               cpu_out->mutable_data_ptr(),
-              handle->static_output_ptrs[i],
-              handle->static_output_nbytes[i],
+              handle->cuda_graph_state.static_output_ptrs[i],
+              handle->cuda_graph_state.static_output_nbytes[i],
               cudaMemcpyDeviceToHost,
               cs);
         }
@@ -625,8 +628,8 @@ class ET_EXPERIMENTAL CudaBackend final
     // Normal path (also used for WARMUP and CAPTURE phases)
     // ---------------------------------------------------------------
     bool is_capture_step =
-        (handle->cuda_graph_phase == 1 &&
-         handle->cuda_graph_warmup_remaining == 0);
+        (handle->cuda_graph_state.phase == CudaGraphPhase::Warmup &&
+         handle->cuda_graph_state.warmup_remaining == 0);
 
     // NOTE: ExecuTorch tensors may be on CPU or GPU due to the skip-copy
     // optimization. We need to create GPU copies for CUDA kernel execution
@@ -649,27 +652,32 @@ class ET_EXPERIMENTAL CudaBackend final
         void* static_ptr = nullptr;
         cudaError_t merr = cudaMalloc(&static_ptr, nbytes);
         ET_CHECK_OR_RETURN_ERROR(
-            merr == cudaSuccess, Internal,
+            merr == cudaSuccess,
+            Internal,
             "cudaMalloc for static input %zu failed: %s",
-            i, cudaGetErrorString(merr));
+            i,
+            cudaGetErrorString(merr));
 
         cudaMemcpy(
-            static_ptr, cpu_tensor->const_data_ptr(),
-            nbytes, cudaMemcpyHostToDevice);
+            static_ptr,
+            cpu_tensor->const_data_ptr(),
+            nbytes,
+            cudaMemcpyHostToDevice);
 
-        handle->static_input_ptrs.push_back(static_ptr);
-        handle->static_input_sizes.push_back(sizes_vec);
-        handle->static_input_strides.push_back(strides_vec);
-        handle->static_input_scalar_types.push_back(
+        handle->cuda_graph_state.static_input_ptrs.push_back(static_ptr);
+        handle->cuda_graph_state.static_input_sizes.push_back(sizes_vec);
+        handle->cuda_graph_state.static_input_strides.push_back(strides_vec);
+        handle->cuda_graph_state.static_input_scalar_types.push_back(
             static_cast<int>(cpu_tensor->scalar_type()));
-        handle->static_input_nbytes.push_back(nbytes);
+        handle->cuda_graph_state.static_input_nbytes.push_back(nbytes);
 
         gpu_inputs[i] = new SlimTensor(slim::from_blob(
             static_ptr,
             slim::makeArrayRef(sizes_vec),
             slim::makeArrayRef(strides_vec),
             static_cast<slim::c10::ScalarType>(cpu_tensor->scalar_type()),
-            DEFAULT_CUDA_DEVICE, 0));
+            DEFAULT_CUDA_DEVICE,
+            0));
         continue;
       }
 
@@ -755,8 +763,8 @@ class ET_EXPERIMENTAL CudaBackend final
           "CUDA graph: beginning stream capture for '%s'",
           handle->method_name.c_str());
 
-      cudaError_t cerr = cudaStreamBeginCapture(
-          cuda_stream, cudaStreamCaptureModeRelaxed);
+      cudaError_t cerr =
+          cudaStreamBeginCapture(cuda_stream, cudaStreamCaptureModeRelaxed);
       ET_CHECK_OR_RETURN_ERROR(
           cerr == cudaSuccess,
           Internal,
@@ -792,7 +800,7 @@ class ET_EXPERIMENTAL CudaBackend final
     if (is_capture_step) {
       // End capture → instantiate graph
       cudaError_t gerr =
-          cudaStreamEndCapture(cuda_stream, &handle->cuda_graph);
+          cudaStreamEndCapture(cuda_stream, &handle->cuda_graph_state.graph);
       ET_CHECK_OR_RETURN_ERROR(
           gerr == cudaSuccess,
           Internal,
@@ -800,7 +808,8 @@ class ET_EXPERIMENTAL CudaBackend final
           cudaGetErrorString(gerr));
 
       gerr = cudaGraphInstantiate(
-          &handle->cuda_graph_exec, handle->cuda_graph,
+          &handle->cuda_graph_state.graph_exec,
+          handle->cuda_graph_state.graph,
           cudaGraphInstantiateFlagAutoFreeOnLaunch);
       ET_CHECK_OR_RETURN_ERROR(
           gerr == cudaSuccess,
@@ -811,27 +820,27 @@ class ET_EXPERIMENTAL CudaBackend final
       // Record static output pointers (stable under graph replay)
       for (size_t i = 0; i < n_outputs; i++) {
         SlimTensor* out = gpu_outputs[i];
-        handle->static_output_ptrs.push_back(out->data_ptr());
+        handle->cuda_graph_state.static_output_ptrs.push_back(out->data_ptr());
 
         auto out_sizes = out->sizes();
         auto out_strides = out->strides();
-        handle->static_output_sizes.push_back(
+        handle->cuda_graph_state.static_output_sizes.push_back(
             std::vector<int64_t>(out_sizes.begin(), out_sizes.end()));
-        handle->static_output_strides.push_back(
+        handle->cuda_graph_state.static_output_strides.push_back(
             std::vector<int64_t>(out_strides.begin(), out_strides.end()));
-        handle->static_output_scalar_types.push_back(
+        handle->cuda_graph_state.static_output_scalar_types.push_back(
             static_cast<int>(out->dtype()));
-        handle->static_output_nbytes.push_back(out->nbytes());
+        handle->cuda_graph_state.static_output_nbytes.push_back(out->nbytes());
       }
 
-      handle->cuda_graph_phase = 2; // switch to replay mode
+      handle->cuda_graph_state.phase = CudaGraphPhase::Replay;
       ET_LOG(
           Info,
           "CUDA graph: captured and instantiated for '%s'",
           handle->method_name.c_str());
 
       // Replay once to actually produce output (capture doesn't execute)
-      gerr = cudaGraphLaunch(handle->cuda_graph_exec, cuda_stream);
+      gerr = cudaGraphLaunch(handle->cuda_graph_state.graph_exec, cuda_stream);
       ET_CHECK_OR_RETURN_ERROR(
           gerr == cudaSuccess,
           Internal,
@@ -846,8 +855,8 @@ class ET_EXPERIMENTAL CudaBackend final
           auto* cpu_out = &(args[i + n_inputs]->toTensor());
           cudaMemcpyAsync(
               cpu_out->mutable_data_ptr(),
-              handle->static_output_ptrs[i],
-              handle->static_output_nbytes[i],
+              handle->cuda_graph_state.static_output_ptrs[i],
+              handle->cuda_graph_state.static_output_nbytes[i],
               cudaMemcpyDeviceToHost,
               cuda_stream);
           // Don't delete — static buffers are owned by the handle
@@ -861,13 +870,13 @@ class ET_EXPERIMENTAL CudaBackend final
     // ----- Normal / WARMUP execution continues here -----
 
     // Decrement warmup counter if in warmup phase
-    if (handle->cuda_graph_phase == 1 &&
-        handle->cuda_graph_warmup_remaining > 0) {
-      handle->cuda_graph_warmup_remaining--;
+    if (handle->cuda_graph_state.phase == CudaGraphPhase::Warmup &&
+        handle->cuda_graph_state.warmup_remaining > 0) {
+      handle->cuda_graph_state.warmup_remaining--;
       ET_LOG(
           Info,
           "CUDA graph warmup: %d steps remaining for '%s'",
-          handle->cuda_graph_warmup_remaining,
+          handle->cuda_graph_state.warmup_remaining,
           handle->method_name.c_str());
     }
 
