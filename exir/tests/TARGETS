@@ -238,6 +238,7 @@ python_unittest(
         "//executorch/exir:pass_manager",
         "//executorch/exir/passes:lib",
         "//executorch/exir/passes:pass_registry",
+        "//executorch/exir:edge_program_manager_pass_base",
     ],
 )
 
