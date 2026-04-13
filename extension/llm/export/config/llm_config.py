@@ -218,9 +218,9 @@ class ModelConfig:
     def _validate_attention_sink(self):
         if self.use_attention_sink:
             attention_sink_params = self.use_attention_sink.split(",")
-            if len(attention_sink_params) != 3:
+            if len(attention_sink_params) < 2:
                 raise ValueError(
-                    "The value of use_attention_sink must be structured like '<sink_size>,<window_size>,<batch_eviction_size>'"
+                    "The value of use_attention_sink must be structured like '<sink_size>,<window_size>'"
                 )
 
 
