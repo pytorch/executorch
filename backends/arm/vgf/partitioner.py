@@ -3,9 +3,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-
 from typing import final, Optional, Sequence
 
+import torch
 from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 from executorch.backends.arm.vgf import VgfBackend, VgfCompileSpec
 from executorch.exir.backend.partitioner import DelegationSpec

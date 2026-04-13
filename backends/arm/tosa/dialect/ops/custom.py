@@ -88,7 +88,7 @@ def register_fake_tosa(operator_name: str) -> Callable[[Callable], Callable]:
         returning ``list[Tensor]``.
 
     Example:
-        ``@register_fake_tosa("thribrary::threee_pleee")``
+        ``@register_fake_tosa("my_namespace::my_op")``
 
     """
     normalized_name = _normalize_tosa_custom_operator_name(operator_name)
