@@ -32,8 +32,8 @@ from typing import Any, Dict
 
 import torch
 
-from executorch.backends.qualcomm.debugger.observatory import Observatory
-from executorch.backends.qualcomm.debugger.observatory.interfaces import (
+from executorch.devtools.observatory import Observatory
+from executorch.devtools.observatory.interfaces import (
     AnalysisResult,
     Frontend,
     Lens,
@@ -44,7 +44,7 @@ from executorch.backends.qualcomm.debugger.observatory.interfaces import (
     TableRecordSpec,
     ViewList,
 )
-from executorch.backends.qualcomm.utils.fx_viewer import (
+from executorch.devtools.fx_viewer import (
     GraphExtensionNodePayload,
     GraphExtensionPayload,
 )

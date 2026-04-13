@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from executorch.backends.qualcomm.debugger.observatory.interfaces import (
+from executorch.devtools.observatory.interfaces import (
     AnalysisResult,
     Frontend,
     Lens,
@@ -14,8 +14,8 @@ from executorch.backends.qualcomm.debugger.observatory.interfaces import (
     RecordDigest,
     SessionResult,
 )
-from executorch.backends.qualcomm.debugger.observatory.observatory import Observatory
-from executorch.backends.qualcomm.utils.fx_viewer import (
+from executorch.devtools.observatory.observatory import Observatory
+from executorch.devtools.fx_viewer import (
     FXGraphExporter,
     GraphExtensionNodePayload,
     GraphExtensionPayload,

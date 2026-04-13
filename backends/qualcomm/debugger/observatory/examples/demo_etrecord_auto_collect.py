@@ -28,8 +28,8 @@ import os
 
 import torch
 
-from executorch.backends.qualcomm.debugger.observatory import Observatory
-from executorch.backends.qualcomm.debugger.observatory.lenses.pipeline_graph_collector import (
+from executorch.devtools.observatory import Observatory
+from executorch.devtools.observatory.lenses.pipeline_graph_collector import (
     PipelineGraphCollectorLens,
 )
 from executorch.devtools.etrecord import ETRecord

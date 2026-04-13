@@ -30,7 +30,7 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Any, ContextManager, Dict, List, Optional, Set, Type
 
-from executorch.backends.qualcomm.utils.fx_viewer.exporter import FXGraphExporter
+from executorch.devtools.fx_viewer.exporter import FXGraphExporter
 
 from .graph_hub import GraphHub
 from .interfaces import (

@@ -32,7 +32,7 @@ from typing import Any
 
 import torch
 
-from executorch.backends.qualcomm.utils.fx_viewer import (
+from executorch.devtools.fx_viewer import (
     CategoricalColorRule,
     FXGraphExporter,
     GraphExtension,

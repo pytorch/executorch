@@ -14,11 +14,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from executorch.backends.qualcomm.utils.fx_viewer.color_rules import (
+from executorch.devtools.fx_viewer.color_rules import (
     CategoricalColorRule,
 )
-from executorch.backends.qualcomm.utils.fx_viewer.extension import GraphExtension
-from executorch.backends.qualcomm.utils.fx_viewer.models import (
+from executorch.devtools.fx_viewer.extension import GraphExtension
+from executorch.devtools.fx_viewer.models import (
     GraphExtensionNodePayload,
     GraphExtensionPayload,
 )

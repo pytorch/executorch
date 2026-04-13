@@ -52,7 +52,7 @@ from executorch.exir.passes.debug_handle_generator_pass import (  # noqa: E402
     generate_missing_debug_handles,
 )
 
-from executorch.backends.qualcomm.utils.fx_viewer import (  # noqa: E402
+from executorch.devtools.fx_viewer import (  # noqa: E402
     FXGraphExporter,
     GraphExtension,
     NumericColorRule,

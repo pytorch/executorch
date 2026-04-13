@@ -24,8 +24,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Union
 
 if TYPE_CHECKING:
-    from executorch.backends.qualcomm.utils.fx_viewer.extension import GraphExtension
-    from executorch.backends.qualcomm.utils.fx_viewer.models import GraphExtensionPayload
+    from executorch.devtools.fx_viewer.extension import GraphExtension
+    from executorch.devtools.fx_viewer.models import GraphExtensionPayload
 
 
 # Type Alias for JSON-serializable leaf/object values.
@@ -399,8 +399,8 @@ class GraphLayerContribution:
     def to_payload(self) -> "GraphExtensionPayload":
         """Resolve contribution into a `GraphExtensionPayload`."""
 
-        from executorch.backends.qualcomm.utils.fx_viewer.extension import GraphExtension
-        from executorch.backends.qualcomm.utils.fx_viewer.models import GraphExtensionPayload
+        from executorch.devtools.fx_viewer.extension import GraphExtension
+        from executorch.devtools.fx_viewer.models import GraphExtensionPayload
 
         payload: GraphExtensionPayload
         if isinstance(self.extension, GraphExtensionPayload):

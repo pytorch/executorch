@@ -45,6 +45,24 @@ class PipelineGraphCollectorLens(Lens):
     _collect_fn: Optional[Callable[[str, Any], None]] = None
     # Cross-lens contract for AccuracyLens fallback dataset.
     _last_calibration_dataset: Optional[list] = None
+    # Backend-specific patch installers registered via register_backend_patches().
+    _backend_patch_installers: List[Callable] = []
+    # Backend-specific uninstallers registered during patch installation.
+    _backend_uninstallers: List[Callable] = []
+
+    @classmethod
+    def register_backend_patches(
+        cls, installer: Callable[["PipelineGraphCollectorLens"], None]
+    ) -> None:
+        """Register a backend-specific patch installer.
+
+        The installer receives the lens class and should use cls._originals,
+        cls._collect_fn, and cls._set_accuracy_fallback_dataset() for
+        standard integration. It may also append to cls._backend_uninstallers
+        to register cleanup logic.
+        """
+        if installer not in cls._backend_patch_installers:
+            cls._backend_patch_installers.append(installer)
 
     @classmethod
     def get_name(cls) -> str:
@@ -62,8 +80,14 @@ class PipelineGraphCollectorLens(Lens):
         cls._install_quantizer_patches()
         cls._install_edge_lower_patch()
         cls._install_etrecord_patches()
-        # Install backend-specific patches last (QNN currently).
-        cls._install_backend_specific_patches()
+        # Install backend-specific patches registered via register_backend_patches().
+        for installer in cls._backend_patch_installers:
+            try:
+                installer(cls)
+            except Exception as exc:
+                logging.warning(
+                    "[PipelineGraphCollector] Backend patch failed: %s", exc
+                )
         cls._installed = True
 
     @classmethod
@@ -74,6 +98,8 @@ class PipelineGraphCollectorLens(Lens):
     def clear(cls) -> None:
         cls._uninstall_all()
         cls._last_calibration_dataset = None
+        cls._backend_patch_installers.clear()
+        cls._backend_uninstallers.clear()
 
     @classmethod
     def observe(cls, artifact: Any, context: ObservationContext) -> Any:
@@ -107,128 +133,6 @@ class PipelineGraphCollectorLens(Lens):
         except Exception:
             # Best-effort only; collection flow must not fail on dataset capture.
             pass
-
-    # ------------------------------------------------------------------
-    # Backend-specific patches
-    # ------------------------------------------------------------------
-
-    @classmethod
-    def _install_backend_specific_patches(cls) -> None:
-        # QNN backend specific hooks.
-        cls._install_qnn_ptq_calibrate_patch()
-        # XNNPACK backend specific hooks.
-        cls._install_xnnpack_quantize_patch()
-
-    # ------------------------------------------------------------------
-    # QNN Patch: ptq_calibrate
-    # Captures the float ExportedProgram with from_node metadata populated.
-    # Fires after quantization calibration, when from_node is available.
-    # ------------------------------------------------------------------
-
-    @classmethod
-    def _install_qnn_ptq_calibrate_patch(cls) -> None:
-        try:
-            import executorch.examples.qualcomm.utils as qnn_utils_module
-
-            original = qnn_utils_module.ptq_calibrate
-            cls._originals["qnn.ptq_calibrate"] = original
-
-            def patched_ptq_calibrate(captured_model, quantizer, dataset):
-                # Store dataset for AccuracyLens fallback
-                cls._set_accuracy_fallback_dataset(
-                    dataset, source="qnn.ptq_calibrate"
-                )
-
-                # Re-export with dataset[0] to get from_node metadata
-                collect_target = captured_model
-                try:
-                    sample = cls._last_calibration_dataset[0] if cls._last_calibration_dataset else None
-                    if sample is not None:
-                        import torch
-                        ep = torch.export.export(captured_model, sample, strict=False)
-                        collect_target = ep.run_decompositions({})
-                except Exception as exc:
-                    logging.debug(
-                        "[PipelineGraphCollector] from_node re-export skipped: %s", exc
-                    )
-
-                try:
-                    cls._collect_fn("Exported Float", collect_target)
-                except Exception as exc:
-                    logging.debug(
-                        "[PipelineGraphCollector] collect skipped (Exported Float): %s", exc
-                    )
-
-                return original(captured_model, quantizer, dataset)
-
-            qnn_utils_module.ptq_calibrate = patched_ptq_calibrate
-            logging.info("[PipelineGraphCollector] Installed QNN patch: ptq_calibrate")
-        except Exception as exc:
-            logging.warning(
-                "[PipelineGraphCollector] Failed to patch QNN ptq_calibrate: %s", exc
-            )
-
-    # ------------------------------------------------------------------
-    # XNNPACK Patch: quantize
-    # Captures the float ExportedProgram with from_node metadata populated.
-    # Also stores example inputs as fallback dataset for AccuracyLens.
-    # ------------------------------------------------------------------
-
-    @classmethod
-    def _install_xnnpack_quantize_patch(cls) -> None:
-        try:
-            import executorch.examples.xnnpack.quantization.utils as xnnpack_qutils
-
-            original = xnnpack_qutils.quantize
-            cls._originals["xnnpack.quantize"] = original
-
-            def patched_quantize(model, example_inputs, quant_type=None):
-                # Store a single-sample fallback dataset for AccuracyLens.
-                sample = None
-                try:
-                    if isinstance(example_inputs, (tuple, list)):
-                        sample = tuple(example_inputs)
-                    else:
-                        sample = (example_inputs,)
-                    cls._set_accuracy_fallback_dataset(
-                        [sample], source="xnnpack.quantize"
-                    )
-                except Exception:
-                    pass
-
-                # Re-export before quantization to collect an "Exported Float" record
-                # with from_node metadata populated.
-                collect_target = model
-                try:
-                    import torch
-
-                    if sample is not None:
-                        ep = torch.export.export(model, sample, strict=False)
-                        collect_target = ep.run_decompositions({})
-                except Exception as exc:
-                    logging.debug(
-                        "[PipelineGraphCollector] XNNPACK from_node re-export skipped: %s",
-                        exc,
-                    )
-
-                try:
-                    cls._collect_fn("Exported Float", collect_target)
-                except Exception as exc:
-                    logging.debug(
-                        "[PipelineGraphCollector] collect skipped (Exported Float): %s",
-                        exc,
-                    )
-
-                if quant_type is None:
-                    return original(model, example_inputs)
-                return original(model, example_inputs, quant_type)
-
-            xnnpack_qutils.quantize = patched_quantize
-            logging.info("[PipelineGraphCollector] Installed XNNPACK patch: quantize")
-        except Exception as exc:
-            logging.warning(
-                "[PipelineGraphCollector] Failed to patch XNNPACK quantize: %s", exc
-            )
 
     # ------------------------------------------------------------------
     # Patch: prepare_pt2e, convert_pt2e
@@ -449,14 +353,7 @@ class PipelineGraphCollectorLens(Lens):
 
         for key, original in cls._originals.items():
             try:
-                if key in ("ptq_calibrate", "qnn.ptq_calibrate"):
-                    import executorch.examples.qualcomm.utils as qnn_utils_module
-                    qnn_utils_module.ptq_calibrate = original
-                elif key == "xnnpack.quantize":
-                    import executorch.examples.xnnpack.quantization.utils as xnnpack_qutils
-
-                    xnnpack_qutils.quantize = original
-                elif key == "prepare_pt2e":
+                if key == "prepare_pt2e":
                     import torchao.quantization.pt2e.quantize_pt2e as qt_module
 
                     qt_module.prepare_pt2e = original
@@ -466,7 +363,7 @@ class PipelineGraphCollectorLens(Lens):
                     qt_module.convert_pt2e = original
                 elif key.startswith("to_edge_transform_and_lower"):
                     import executorch.exir.program._program as program_module
-                    import executorch.exir as exir_module 
+                    import executorch.exir as exir_module
                     for i, module in enumerate([program_module, exir_module]):
                         if str(i) == key[-1]:
                             module.to_edge_transform_and_lower = original
@@ -479,6 +376,11 @@ class PipelineGraphCollectorLens(Lens):
                         setattr(ETRecord, method_name, original)
                     except Exception:
                         pass
+                else:
+                    # Backend-specific patches store (module_attr, module) tuples
+                    # or are handled by their own uninstall logic via _originals.
+                    # Generic fallback: skip keys we don't recognize.
+                    pass
             except Exception as exc:
                 logging.warning(
                     "[PipelineGraphCollector] Failed to restore %s: %s", key, exc
@@ -487,5 +389,12 @@ class PipelineGraphCollectorLens(Lens):
         cls._originals.clear()
         cls._collect_fn = None
         cls._last_calibration_dataset = None
+        for uninstaller in cls._backend_uninstallers:
+            try:
+                uninstaller()
+            except Exception as exc:
+                logging.warning(
+                    "[PipelineGraphCollector] Backend uninstall failed: %s", exc
+                )
         cls._installed = False
         logging.info("[PipelineGraphCollector] Uninstalled all patches")

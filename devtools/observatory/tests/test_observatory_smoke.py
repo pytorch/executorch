@@ -6,7 +6,7 @@
 
 import torch
 
-from executorch.backends.qualcomm.debugger.observatory import Observatory
+from executorch.devtools.observatory import Observatory
 
 
 class _SmokeModel(torch.nn.Module):

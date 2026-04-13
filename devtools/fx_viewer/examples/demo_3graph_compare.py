@@ -26,7 +26,7 @@ from typing import Any, Dict
 import torch
 import torch.fx
 
-from executorch.backends.qualcomm.utils.fx_viewer import (
+from executorch.devtools.fx_viewer import (
     FXGraphExporter,
     GraphExtension,
     NumericColorRule,

@@ -1,19 +1,19 @@
-# Copyright (c) Qualcomm Innovation Center, Inc.
-# All rights reserved
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Qualcomm Observatory CLI — QNN-specific lens configuration.
+"""XNNPACK Observatory CLI — XNNPACK-specific lens configuration.
 
 Graph collection only (default):
-    python -m executorch.backends.qualcomm.debugger.observatory SCRIPT [ARGS...]
+    python -m executorch.backends.xnnpack.debugger.observatory SCRIPT [ARGS...]
 
 With accuracy debugging:
-    python -m executorch.backends.qualcomm.debugger.observatory --accuracy SCRIPT [ARGS...]
+    python -m executorch.backends.xnnpack.debugger.observatory --accuracy SCRIPT [ARGS...]
 
 Visualize mode (JSON -> HTML):
-    python -m executorch.backends.qualcomm.debugger.observatory visualize \\
+    python -m executorch.backends.xnnpack.debugger.observatory visualize \\
         --input report.json --output report.html [--title "My Report"]
 """
 
@@ -35,7 +35,7 @@ def main():
 
     if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
         print(
-            "Usage: python -m executorch.backends.qualcomm.debugger.observatory "
+            "Usage: python -m executorch.backends.xnnpack.debugger.observatory "
             "[--accuracy] [--json-only] [--no-report] "
             "[--report-title TITLE] [--report-dir DIR] "
             "[--report-html PATH] [--report-json PATH] "
@@ -44,7 +44,7 @@ def main():
         sys.exit(0)
 
     usage = (
-        "Usage: python -m executorch.backends.qualcomm.debugger.observatory "
+        "Usage: python -m executorch.backends.xnnpack.debugger.observatory "
         "[--accuracy] [--json-only] [--no-report] "
         "[--report-title TITLE] [--report-dir DIR] "
         "[--report-html PATH] [--report-json PATH] "
@@ -57,19 +57,16 @@ def main():
         PipelineGraphCollectorLens,
     )
 
-    from .lenses.qnn_patches import install_qnn_patches
+    from .lenses.xnnpack_patches import install_xnnpack_patches
 
     Observatory.clear()
 
-    PipelineGraphCollectorLens.register_backend_patches(install_qnn_patches)
+    PipelineGraphCollectorLens.register_backend_patches(install_xnnpack_patches)
     Observatory.register_lens(PipelineGraphCollectorLens)
 
     if obs_flags["--accuracy"]:
         from executorch.devtools.observatory.lenses.accuracy import AccuracyLens
 
-        from .lenses.qnn_dataset_patches import install_qnn_dataset_patches
-
-        AccuracyLens.register_dataset_patches(install_qnn_dataset_patches)
         Observatory.register_lens(AccuracyLens)
 
     run_observatory(obs_flags, script_path, script_argv, Observatory)

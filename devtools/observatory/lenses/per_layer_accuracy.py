@@ -23,8 +23,8 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import torch
 
-from executorch.backends.qualcomm.utils.fx_viewer.color_rules import ColorRule
-from executorch.backends.qualcomm.utils.fx_viewer.extension import GraphExtension
+from executorch.devtools.fx_viewer.color_rules import ColorRule
+from executorch.devtools.fx_viewer.extension import GraphExtension
 
 from ..interfaces import (
     AnalysisResult,
