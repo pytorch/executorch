@@ -41,6 +41,22 @@ class Abs(torch.nn.Module):
         return torch.abs(x)
 
 
+class Acos(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.acos(x)
+
+
+class AcosMultiNode(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.acos(x), torch.acos(y)
+
+
 class AdaptiveMaxPool2D(torch.nn.Module):
     def __init__(self, output_size, return_indices=False):
         super().__init__()
@@ -245,6 +261,15 @@ class Atan(torch.nn.Module):
 
     def forward(self, x):
         return torch.atan(x)
+
+
+class AvgPool1D(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.pool = torch.nn.AvgPool1d(kernel_size=3, stride=2, padding=1)
+
+    def forward(self, x):
+        return self.pool(x)
 
 
 class AvgPool3d(torch.nn.Module):
@@ -1496,6 +1521,14 @@ class LogSoftmax(torch.nn.Module):
 
     def forward(self, x):
         return torch.nn.functional.log_softmax(x, dim=-1)
+
+
+class LogVariantsMultiNode(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.log10(x), torch.log10(y), torch.log2(x), torch.log1p(x)
 
 
 class Log10(torch.nn.Module):

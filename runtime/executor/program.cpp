@@ -92,6 +92,12 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
       // is positive (0-value may indicate no segments)
       if ((segment_data_size == 0 && segment_base_offset == 0) ||
           segment_data_size > 0) {
+        ET_CHECK_OR_RETURN_ERROR(
+            segment_base_offset <= SIZE_MAX - segment_data_size,
+            InvalidProgram,
+            "segment_base_offset %zu + segment_data_size %zu overflows",
+            segment_base_offset,
+            segment_data_size);
         size_t expected = segment_base_offset == 0
             ? program_size
             : segment_base_offset + segment_data_size;
@@ -179,14 +185,20 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
         "Program validation failed: likely a corrupt file");
 #else
     ET_LOG(
-        Error,
+        Info,
         "InternalConsistency verification requested but not available; "
-        "build with ET_ENABLE_PROGRAM_VERIFICATION=1");
-    return Error::NotSupported;
+        "falling back to Minimal verification. "
+        "Build with ET_ENABLE_PROGRAM_VERIFICATION=1 for full verification.");
 #endif
-  } else {
-    // Verification::Minimal: Verify that the root table offset is within
-    // bounds. This is done in InternalConsistency by VerifyProgramBuffer.
+  }
+
+  if (verification == Verification::Minimal
+#if !ET_ENABLE_PROGRAM_VERIFICATION
+      || verification == Verification::InternalConsistency
+#endif
+  ) {
+    // Verify that the root table offset is within bounds.
+    // In InternalConsistency mode this is done by VerifyProgramBuffer above.
     uint32_t root_offset =
         flatbuffers::ReadScalar<flatbuffers::uoffset_t>(program_data->data());
     // The root table is at buf + root_offset. It must not point into the
@@ -423,7 +435,7 @@ Result<const void*> Program::get_constant_buffer_data(
 
     size_t size = constant_segment_data_.size();
     ET_CHECK_OR_RETURN_ERROR(
-        offset + nbytes <= size,
+        offset <= size && nbytes <= size - offset,
         InvalidArgument,
         "Constant segment offset %" PRIu64
         " + size_bytes %zu invalid for program constant segment size %zu",
