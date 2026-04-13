@@ -45,3 +45,4 @@ target_link_libraries(
     ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc++.so.1
     ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc++abi.so.1
 )
+target_compile_options(qnn_executorch_skel PRIVATE "-fvisibility=default")

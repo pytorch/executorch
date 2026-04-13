@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
 import unittest
 
 import executorch.exir.tests.models as models
@@ -205,3 +206,82 @@ class TestBackendAPI(unittest.TestCase):
 
             program = nested_lowered_model.program()
             self.validate_lowered_module_program(program)
+
+    def test_arrange_graph_outputs_reorders_mutations_before_user_outputs(self):
+        """
+        Directly test that arrange_graph_outputs correctly reorders a
+        submodule's output tuple so that BUFFER_MUTATION outputs come before
+        USER_OUTPUT outputs, and that getitem indices in the parent graph are
+        remapped accordingly.
+        """
+        from executorch.exir.lowered_backend_module import arrange_graph_outputs
+        from torch.export.exported_program import OutputKind, OutputSpec, TensorArgument
+
+        # Build a submodule graph with 3 outputs in order:
+        #   [user_out_0, buffer_mut_1, user_out_2]
+        # The expected reordering is:
+        #   [buffer_mut_1, user_out_0, user_out_2]
+        sub_graph = torch.fx.Graph()
+        x = sub_graph.placeholder("x")
+        buf = sub_graph.placeholder("buf")
+        add_node = sub_graph.call_function(torch.ops.aten.add.Tensor, (x, x))
+        mul_node = sub_graph.call_function(torch.ops.aten.mul.Tensor, (buf, x))
+        sub_node = sub_graph.call_function(torch.ops.aten.sub.Tensor, (x, x))
+        # Output order: user, mutation, user
+        sub_graph.output((add_node, mul_node, sub_node))
+        sub_gm = torch.fx.GraphModule({}, sub_graph)
+
+        output_specs = [
+            OutputSpec(
+                kind=OutputKind.USER_OUTPUT,
+                arg=TensorArgument(name="add"),
+                target=None,
+            ),
+            OutputSpec(
+                kind=OutputKind.BUFFER_MUTATION,
+                arg=TensorArgument(name="mul"),
+                target="buf",
+            ),
+            OutputSpec(
+                kind=OutputKind.USER_OUTPUT,
+                arg=TensorArgument(name="sub"),
+                target=None,
+            ),
+        ]
+
+        # Build a parent graph with a call_module node and getitem users
+        parent_graph = torch.fx.Graph()
+        px = parent_graph.placeholder("x")
+        call_mod = parent_graph.call_module("sub_mod", (px,))
+        gi0 = parent_graph.call_function(operator.getitem, (call_mod, 0))
+        gi1 = parent_graph.call_function(operator.getitem, (call_mod, 1))
+        gi2 = parent_graph.call_function(operator.getitem, (call_mod, 2))
+        parent_graph.output((gi0, gi1, gi2))
+
+        # Run arrange_graph_outputs
+        arrange_graph_outputs(sub_gm, output_specs, call_mod)
+
+        # Verify output_specs are reordered: mutation first
+        self.assertEqual(output_specs[0].kind, OutputKind.BUFFER_MUTATION)
+        self.assertEqual(output_specs[1].kind, OutputKind.USER_OUTPUT)
+        self.assertEqual(output_specs[2].kind, OutputKind.USER_OUTPUT)
+        self.assertEqual(output_specs[0].target, "buf")
+
+        # Verify the submodule graph output tuple is reordered
+        output_node = None
+        for node in sub_gm.graph.nodes:
+            if node.op == "output":
+                output_node = node
+                break
+        reordered = list(output_node.args[0])
+        self.assertIs(reordered[0], mul_node)  # buffer mutation first
+        self.assertIs(reordered[1], add_node)  # then user outputs
+        self.assertIs(reordered[2], sub_node)
+
+        # Verify getitem indices were remapped:
+        #   old 0 (user) -> new 1
+        #   old 1 (mutation) -> new 0
+        #   old 2 (user) -> new 2 (unchanged)
+        self.assertEqual(gi0.args[1], 1)
+        self.assertEqual(gi1.args[1], 0)
+        self.assertEqual(gi2.args[1], 2)
