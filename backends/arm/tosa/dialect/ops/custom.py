@@ -5,7 +5,7 @@
 """Fake-op support for the generic TOSA ``CUSTOM`` dialect op.
 
 The serialized TOSA ``CUSTOM`` op is intentionally generic: it carries a
-stable operator identity (for example ``thribrary.threee_pleee``) plus an
+stable operator identity (for example ``myns.my_op``) plus an
 opaque payload in ``implementation_attrs``. That is enough for serialization,
 but not enough for FakeTensor propagation unless we also teach the compiler how
 to model the output tensors of the specific wrapped op.
