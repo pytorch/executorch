@@ -197,7 +197,9 @@ __attribute__((noinline)) void conv2d_nhwc_core_generic(
     int32_t weight_zero_point = 0,
     float bias_scale = 1,
     float out_scale = 1,
-    OT out_zero_point = 0) {
+    OT out_zero_point = 0,
+    // Whether this is a depthwise conv with [KH, KW, OC] weight layout
+    bool depthwise_hwc_weight = false) {
   float inv_out_scale = 1.f / out_scale;
   bool zero_pad_unit_dilation = d0 == 1 && d1 == 1 && p0 == 0 && p1 == 0;
 
@@ -220,29 +222,23 @@ __attribute__((noinline)) void conv2d_nhwc_core_generic(
           int soc = _g * ocpg;
           // Populate all the output channels in the group
           for (int _oc = soc; _oc < soc + ocpg; ++_oc) {
-            const WT* weight_batch = p_weight + _oc * wh * ww * wc;
-            // We compute one output channel at a time. The computation can be
-            // thought of as a stencil computation: we iterate over an input of
-            // size h x w x icpg, with a stencil of size wh x ww x icpg, to
-            // compute an output channel of size oh x ow x 1.
             float acc = p_bias[_oc];
-            // Below is the stencil computation that performs the hadamard
-            // product+accumulation of each input channel (contributing to
-            // the output channel being computed) with the corresponding
-            // weight channel. If the padding is 0, and dilation is 1, then
-            // we can remove the unnecessary checks, and simplify the code
-            // so that it can be vectorized by Tensilica compiler.
             if (zero_pad_unit_dilation) {
               for (int _wh = 0; _wh < wh; ++_wh) {
                 for (int _ww = 0; _ww < ww; ++_ww) {
                   const IT* in_line =
                       in_batch + (_h + _wh) * w * c + (_w + _ww) * c;
-                  const WT* weight_line =
-                      weight_batch + _wh * ww * wc + _ww * wc;
                   for (int _ic = sic; _ic < sic + icpg; ++_ic) {
                     float lhs = in_line[_ic] - in_zero_point;
-                    float rhs = weight_line[_ic - sic] -
-                        (quantized ? weight_zero_point : 0);
+                    float rhs;
+                    if (depthwise_hwc_weight) {
+                      rhs = p_weight[_wh * ww * oc + _ww * oc + _oc];
+                    } else {
+                      const WT* weight_line = p_weight + _oc * wh * ww * wc +
+                          _wh * ww * wc + _ww * wc;
+                      rhs = weight_line[_ic - sic];
+                    }
+                    rhs -= (quantized ? weight_zero_point : 0);
                     acc += lhs * rhs;
                   }
                 }
@@ -256,12 +252,17 @@ __attribute__((noinline)) void conv2d_nhwc_core_generic(
                       ((_w + d1 * _ww - p1) < w)) {
                     const IT* in_line = in_batch +
                         (_h + d0 * _wh - p0) * w * c + (_w + d1 * _ww - p1) * c;
-                    const WT* weight_line =
-                        weight_batch + _wh * ww * wc + _ww * wc;
                     for (int _ic = sic; _ic < sic + icpg; ++_ic) {
                       float lhs = in_line[_ic] - in_zero_point;
-                      float rhs = weight_line[_ic - sic] -
-                          (quantized ? weight_zero_point : 0);
+                      float rhs;
+                      if (depthwise_hwc_weight) {
+                        rhs = p_weight[_wh * ww * oc + _ww * oc + _oc];
+                      } else {
+                        const WT* weight_line = p_weight + _oc * wh * ww * wc +
+                            _wh * ww * wc + _ww * wc;
+                        rhs = weight_line[_ic - sic];
+                      }
+                      rhs -= (quantized ? weight_zero_point : 0);
                       acc += lhs * rhs;
                     }
                   }
@@ -392,6 +393,101 @@ void quantized_conv2d_nchw(
 #undef typed_quantized_conv2d_nchw
 }
 
+// Depthwise NHWC convolution.
+// Weight layout is [*kernel_size, OC]:
+//   2D: [KH, KW, OC] (3D tensor)
+//   1D: [K, OC] (2D tensor)
+// This differs from regular NHWC conv where weight is [OC, KH, KW, IC].
+void quantized_conv2d_nhwc_depthwise(
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int16_t groups,
+    int32_t in_zero_point,
+    int32_t weight_zero_point,
+    float bias_scale,
+    float output_scale,
+    int32_t output_zero_point,
+    Tensor& out) {
+  const bool conv1d = input.dim() == 3;
+
+  // input NHWC: [N, H, W, C] or [N, W, C] for 1D
+  const int n = static_cast<int>(input.size(0));
+  const int h = static_cast<int>(conv1d ? 1 : input.size(1));
+  const int w = static_cast<int>(conv1d ? input.size(1) : input.size(2));
+  const int c = static_cast<int>(conv1d ? input.size(2) : input.size(3));
+
+  // Depthwise weight: [KH, KW, OC] or [K, OC] for 1D
+  const int kh = conv1d ? 1 : static_cast<int>(weight.size(0));
+  const int kw = conv1d ? static_cast<int>(weight.size(0))
+                        : static_cast<int>(weight.size(1));
+  const int oc = conv1d ? static_cast<int>(weight.size(1))
+                        : static_cast<int>(weight.size(2));
+
+  // output NHWC: [N, OH, OW, OC] or [N, OW, OC] for 1D
+  const int oh = static_cast<int>(conv1d ? 1 : out.size(1));
+  const int ow = static_cast<int>(conv1d ? out.size(1) : out.size(2));
+
+  const float inv_out_scale = 1.f / output_scale;
+
+  // Depthwise: each output channel depends on exactly one input channel.
+  // ocpg = oc / groups output channels per group.
+  const int ocpg = oc / groups;
+
+#define typed_quantized_conv2d_nhwc_depthwise(ctype, dtype)                  \
+  case ScalarType::dtype: {                                                  \
+    const auto* p_in = input.const_data_ptr<ctype>();                        \
+    const auto* p_weight = weight.const_data_ptr<ctype>();                   \
+    const auto* p_bias = bias.const_data_ptr<int32_t>();                     \
+    auto* p_out = out.mutable_data_ptr<ctype>();                             \
+    for (int _n = 0; _n < n; ++_n) {                                         \
+      const ctype* in_batch = p_in + _n * h * w * c;                         \
+      ctype* out_batch = p_out + _n * oh * ow * oc;                          \
+      for (int _oh = 0; _oh < oh; ++_oh) {                                   \
+        for (int _ow = 0; _ow < ow; ++_ow) {                                 \
+          ctype* out_pixel = out_batch + (_oh * ow + _ow) * oc;              \
+          for (int _g = 0; _g < groups; ++_g) {                              \
+            int soc = _g * ocpg;                                             \
+            for (int _oc = soc; _oc < soc + ocpg; ++_oc) {                   \
+              float acc = p_bias[_oc];                                       \
+              for (int _kh = 0; _kh < kh; ++_kh) {                           \
+                for (int _kw = 0; _kw < kw; ++_kw) {                         \
+                  int ih = _oh * stride[0] + _kh * dilation[0] - padding[0]; \
+                  int iw = _ow * stride[1] + _kw * dilation[1] - padding[1]; \
+                  if (ih >= 0 && ih < h && iw >= 0 && iw < w) {              \
+                    float lhs =                                              \
+                        in_batch[ih * w * c + iw * c + _g] - in_zero_point;  \
+                    float rhs = p_weight[_kh * kw * oc + _kw * oc + _oc] -   \
+                        weight_zero_point;                                   \
+                    acc += lhs * rhs;                                        \
+                  }                                                          \
+                }                                                            \
+              }                                                              \
+              float val = bias_scale * acc;                                  \
+              out_pixel[_oc] = quantize<ctype>(                              \
+                  val, inv_out_scale, (ctype)output_zero_point);             \
+            }                                                                \
+          }                                                                  \
+        }                                                                    \
+      }                                                                      \
+    }                                                                        \
+    break;                                                                   \
+  }
+
+  ScalarType dtype = out.scalar_type();
+  switch (dtype) {
+    ET_FORALL_CADENCE_QUANTIZED_TYPES(typed_quantized_conv2d_nhwc_depthwise);
+    default:
+      ET_DCHECK_MSG(
+          false, "Unhandled dtype %s", torch::executor::toString(dtype));
+  }
+
+#undef typed_quantized_conv2d_nhwc_depthwise
+}
+
 void quantized_conv2d_nhwc(
     const Tensor& input,
     const Tensor& weight,
@@ -406,19 +502,32 @@ void quantized_conv2d_nhwc(
     float output_scale,
     int32_t output_zero_point,
     Tensor& out) {
+  const bool conv1d = input.dim() == 3;
   // input = [n, h, w, c]
-  const int n = input.size(0);
-  const int h = input.size(1);
-  const int w = input.size(2);
-  const int c = input.size(3);
-  // weight = [oc, wh, ww, wc]
-  const int oc = weight.size(0);
-  const int wh = weight.size(1);
-  const int ww = weight.size(2);
-  const int wc = weight.size(3);
+  const int n = static_cast<int>(input.size(0));
+  const int h = static_cast<int>(conv1d ? 1 : input.size(1));
+  const int w = static_cast<int>(conv1d ? input.size(1) : input.size(2));
+  const int c = static_cast<int>(conv1d ? input.size(2) : input.size(3));
+  // Depthwise is defined by in_channels == groups; depthwise weights have one
+  // fewer dim than regular weights because the IC dim (always 1) was squeezed.
+  const bool is_depthwise = c == groups && weight.dim() < input.dim();
+  int oc, wh, ww, wc;
+  if (is_depthwise) {
+    // Depthwise weight: conv2d=[KH, KW, OC], conv1d=[K, OC]
+    wh = static_cast<int>(conv1d ? 1 : weight.size(0));
+    ww = static_cast<int>(conv1d ? weight.size(0) : weight.size(1));
+    oc = static_cast<int>(conv1d ? weight.size(1) : weight.size(2));
+    wc = 1;
+  } else {
+    // Regular weight is [OC, WH, WW, WC] or for conv1d [OC, WW, WC]
+    oc = static_cast<int>(weight.size(0));
+    wh = static_cast<int>(conv1d ? 1 : weight.size(1));
+    ww = static_cast<int>(conv1d ? weight.size(1) : weight.size(2));
+    wc = static_cast<int>(conv1d ? weight.size(2) : weight.size(3));
+  }
   // output = [n, oh, ow, oc]
-  const int oh = out.size(1);
-  const int ow = out.size(2);
+  const int oh = static_cast<int>(conv1d ? 1 : out.size(1));
+  const int ow = static_cast<int>(conv1d ? out.size(1) : out.size(2));
 
   // Handle W8A16 heterogeneous type (int16_t activations, int8_t weights)
   if (out.scalar_type() == ScalarType::Short &&
@@ -450,7 +559,8 @@ void quantized_conv2d_nhwc(
         static_cast<int8_t>(weight_zero_point),
         bias_scale,
         output_scale,
-        static_cast<int16_t>(output_zero_point));
+        static_cast<int16_t>(output_zero_point),
+        is_depthwise);
     return;
   }
 
@@ -482,7 +592,8 @@ void quantized_conv2d_nhwc(
         weight_zero_point,                                        \
         bias_scale,                                               \
         output_scale,                                             \
-        (ctype)output_zero_point);                                \
+        (ctype)output_zero_point,                                 \
+        is_depthwise);                                            \
     break;                                                        \
   }
   ScalarType dtype = out.scalar_type();
@@ -927,7 +1038,7 @@ Tensor& quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_out(
     ET_UNUSED int64_t out_multiplier,
     ET_UNUSED int64_t out_shift,
     Tensor& out) {
-  quantized_conv2d_nhwc(
+  quantized_conv2d_nhwc_depthwise(
       input,
       weight,
       bias,
@@ -961,7 +1072,7 @@ Tensor& quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_out(
     ET_UNUSED int64_t out_multiplier,
     ET_UNUSED int64_t out_shift,
     Tensor& out) {
-  quantized_conv2d_nhwc(
+  quantized_conv2d_nhwc_depthwise(
       input,
       weight,
       bias,

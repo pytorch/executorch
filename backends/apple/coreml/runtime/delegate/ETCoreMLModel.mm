@@ -41,7 +41,7 @@ __attribute__((objc_subclassing_restricted))
         _shape = shape;
         _dataType = dataType;
     }
-    
+
     return self;
 }
 
@@ -49,11 +49,11 @@ __attribute__((objc_subclassing_restricted))
     if (object == self) {
         return YES;
     }
-    
+
     if (![object isKindOfClass:self.class]) {
         return NO;
     }
-    
+
     ETCoreMLMultiArrayDescriptor *other = (ETCoreMLMultiArrayDescriptor *)object;
     return [self.shape isEqualToArray:other.shape] && self.dataType == other.dataType;
 }
@@ -97,18 +97,18 @@ std::vector<size_t> calculate_strides(const std::vector<size_t>& shape) {
     if (shape.size() == 0) {
         return {};
     }
-    
+
     if (shape.size() == 1) {
         return {1};
     }
-    
+
     std::vector<size_t> strides(shape.size(), 1);
     size_t product = 1;
     for (size_t i = shape.size(); i > 0; i--) {
         strides[i - 1] = product;
         product *= shape[i - 1];
     }
-    
+
     return strides;
 }
 
@@ -126,7 +126,7 @@ MLMultiArray * _Nullable make_ml_multi_array(const std::vector<size_t>& shape,
         size_t n = std::accumulate(shape.cbegin(), shape.cend(), 1, std::multiplies<size_t>{});
         backing_storage = [[NSMutableData alloc] initWithLength:n * get_number_of_bytes(dataType)];
     }
-    
+
     __weak NSCache<ETCoreMLMultiArrayDescriptor *, NSMutableData *> *weakCache = cache;
     // Add the storage back to the cache when it gets deallocated, the next prediction would use the same storage.
     MLMultiArray *result = [[MLMultiArray alloc] initWithDataPointer:backing_storage.mutableBytes
@@ -135,7 +135,7 @@ MLMultiArray * _Nullable make_ml_multi_array(const std::vector<size_t>& shape,
                                                              strides:to_array(calculate_strides(shape))
                                                          deallocator:^(void * _Nonnull bytes) {[weakCache setObject:backing_storage forKey:descriptor];}
                                                                error:error];
-    
+
     return result;
 }
 
@@ -145,7 +145,7 @@ get_multi_array_constraints_by_name(NSDictionary<NSString *, MLFeatureDescriptio
     [feature_descriptions enumerateKeysAndObjectsUsingBlock:^(NSString *key, MLFeatureDescription *description, BOOL * _Nonnull stop) {
         result[key] = description.multiArrayConstraint;
     }];
-    
+
     return result;
 }
 
@@ -178,6 +178,7 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
 @property (strong, readonly, nonatomic) NSCache<ETCoreMLMultiArrayDescriptor *, NSMutableData *> *cache;
 @property (copy, readonly, nonatomic) NSDictionary<NSString *, MLMultiArrayConstraint *> *inputConstraintsByName;
 @property (copy, readonly, nonatomic) NSDictionary<NSString *, MLMultiArrayConstraint *> *outputConstraintsByName;
+@property (copy, readwrite, nonatomic, nullable) NSString *identifierStorage;
 
 @end
 
@@ -192,20 +193,35 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
     if (![asset keepAliveAndReturnError:error]) {
         return nil;
     }
-    
+
     MLModel *mlModel = [MLModel modelWithContentsOfURL:asset.contentURL
                                          configuration:configuration
                                                  error:error];
     if (!mlModel) {
         return nil;
     }
-    
+
+    if (orderedInputNames == nil) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorCorruptedModel,
+                                      "orderedInputNames must not be nil");
+        return nil;
+    }
+
+    if (orderedOutputNames == nil) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorCorruptedModel,
+                                      "orderedOutputNames must not be nil");
+        return nil;
+    }
+
     self = [super init];
     if (self) {
         _mlModel = mlModel;
         _asset = asset;
         _orderedInputNames = [orderedInputNames copy];
         _orderedOutputNames = [orderedOutputNames copy];
+
         _cache = [[NSCache alloc] init];
         _inputConstraintsByName = get_multi_array_input_constraints_by_name(mlModel.modelDescription);
         _outputConstraintsByName = get_multi_array_output_constraints_by_name(mlModel.modelDescription);
@@ -215,12 +231,61 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
         }
 #endif
     }
-    
+
     return self;
 }
 
 - (NSString *)identifier {
-    return self.asset.identifier;
+    // For URL-based loading, identifierStorage is set directly
+    // For asset-based loading, derive from asset
+    return self.identifierStorage ?: self.asset.identifier;
+}
+
+- (nullable instancetype)initWithCompiledModelURL:(NSURL *)compiledModelURL
+                                       identifier:(NSString *)identifier
+                                    configuration:(MLModelConfiguration *)configuration
+                                orderedInputNames:(NSOrderedSet<NSString *> *)orderedInputNames
+                               orderedOutputNames:(NSOrderedSet<NSString *> *)orderedOutputNames
+                                            error:(NSError * __autoreleasing *)error {
+    MLModel *mlModel = [MLModel modelWithContentsOfURL:compiledModelURL
+                                         configuration:configuration
+                                                 error:error];
+    if (!mlModel) {
+        return nil;
+    }
+
+    if (orderedInputNames == nil) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorCorruptedModel,
+                                      "orderedInputNames must not be nil");
+        return nil;
+    }
+
+    if (orderedOutputNames == nil) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorCorruptedModel,
+                                      "orderedOutputNames must not be nil");
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        _mlModel = mlModel;
+        _identifierStorage = [identifier copy];
+        _orderedInputNames = [orderedInputNames copy];
+        _orderedOutputNames = [orderedOutputNames copy];
+
+        _cache = [[NSCache alloc] init];
+        _inputConstraintsByName = get_multi_array_input_constraints_by_name(mlModel.modelDescription);
+        _outputConstraintsByName = get_multi_array_output_constraints_by_name(mlModel.modelDescription);
+#if MODEL_STATE_IS_SUPPORTED
+        if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *)) {
+            _state = mlModel.modelDescription.stateDescriptionsByName.count > 0 ? [_mlModel newState] : nil;
+        }
+#endif
+    }
+
+    return self;
 }
 
 - (nullable NSArray<MLMultiArray *> *)prepareArgs:(const std::vector<executorchcoreml::MultiArray>&)args
@@ -234,6 +299,15 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
         BOOL lCopyData = copyData;
         NSString *argName = [nameEnumerator nextObject];
         MLMultiArrayConstraint *constraint = argConstraintsByName[argName];
+
+        if (constraint == nil) {
+            ETCoreMLLogErrorAndSetNSError(error,
+                                          ETCoreMLErrorCorruptedModel,
+                                          "No constraint found for arg '%@'. Model may have mismatched input/output names.",
+                                          argName);
+            return nil;
+        }
+
         const auto& layout = arg.layout();
         auto dataType = to_ml_multiarray_data_type(layout.dataType());
         MLMultiArray *multiArrayArg = nil;
@@ -250,11 +324,11 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
             // We can't use the same data storage, data types are not the same.
             multiArrayArg = ::make_ml_multi_array(layout.shape(), constraint.dataType, self.cache, error);
         }
-        
+
         if (!multiArrayArg) {
             return nil;
         }
-        
+
         if (multiArrayArg && lCopyData) {
             void (^copy_data)(void *, NSArray<NSNumber *> *) = ^(void *bytes, NSArray<NSNumber *> *strides) {
                 MultiArray buffer(bytes, MultiArray::MemoryLayout(to_multiarray_data_type(constraint.dataType).value(),
@@ -274,10 +348,10 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
                 copy_data(multiArrayArg.dataPointer, multiArrayArg.strides);
             }
         }
-        
+
         [result addObject:multiArrayArg];
     }
-    
+
     return result;
 }
 
@@ -288,7 +362,7 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
         argConstraintsByName:self.inputConstraintsByName
                     copyData:YES
                        error:error];
-    
+
 }
 
 - (nullable NSArray<MLMultiArray *> *)prepareOutputBackings:(const std::vector<executorchcoreml::MultiArray>&)outputs
@@ -298,7 +372,7 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
         argConstraintsByName:self.outputConstraintsByName
                     copyData:NO
                        error:error];
-    
+
 }
 
 - (nullable id<MLFeatureProvider>)predictionFromFeatures:(id<MLFeatureProvider>)input

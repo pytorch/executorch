@@ -8,6 +8,7 @@
 
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 
+#include <cstdint>
 #include <cstring>
 
 #include <gtest/gtest.h>
@@ -128,6 +129,35 @@ TEST_F(BufferDataLoaderTest, OutOfBoundsLoadFails) {
     Result<FreeableBuffer> fb = edl.load(
         /*offset=*/sizeof(data) + 1,
         /*size=*/0,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+    EXPECT_NE(fb.error(), Error::Ok);
+  }
+}
+
+TEST_F(BufferDataLoaderTest, OverflowLoadFails) {
+  // Wrap some data in a loader.
+  uint8_t data[256] = {};
+  BufferDataLoader edl(data, sizeof(data));
+
+  // Loading with offset + size that would overflow should fail.
+  // Use a small valid offset but a size that causes overflow.
+  // If overflow wasn't checked, 1 + SIZE_MAX would wrap to 0, which is <= 256.
+  {
+    Result<FreeableBuffer> fb = edl.load(
+        /*offset=*/1,
+        /*size=*/SIZE_MAX,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+    EXPECT_NE(fb.error(), Error::Ok);
+  }
+
+  // Another overflow case: offset within bounds, size causes overflow.
+  // 128 + (SIZE_MAX - 127) wraps to 0.
+  {
+    Result<FreeableBuffer> fb = edl.load(
+        /*offset=*/128,
+        /*size=*/SIZE_MAX - 127,
         /*segment_info=*/
         DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_NE(fb.error(), Error::Ok);

@@ -50,6 +50,7 @@ import contextlib
 
 # Import this before distutils so that setuptools can intercept the distuils
 # imports.
+import importlib.util
 import logging
 import os
 import re
@@ -61,6 +62,16 @@ from distutils import log  # type: ignore[import-not-found]
 from distutils.sysconfig import get_python_lib  # type: ignore[import-not-found]
 from pathlib import Path
 from typing import List, Optional
+
+# Clean dynamic import using importlib
+_install_utils_path = Path(__file__).parent / "install_utils.py"
+_spec = importlib.util.spec_from_file_location("install_utils", _install_utils_path)
+if _spec is None:
+    raise ImportError(f"Could not create module spec for {_install_utils_path}")
+install_utils = importlib.util.module_from_spec(_spec)
+if _spec.loader is None:
+    raise ImportError(f"Module spec has no loader for {_install_utils_path}")
+_spec.loader.exec_module(install_utils)
 
 from setuptools import Extension, setup
 from setuptools.command.build import build
@@ -613,6 +624,26 @@ class CustomBuildPy(build_py):
             # the input file is read-only.
             self.copy_file(src, dst, preserve_mode=False)
 
+        # Copy CMake-generated Python directories that setuptools missed.
+        # Setuptools discovers packages at configuration time, before CMake
+        # runs. Directories created by CMake during the build (e.g. by
+        # generate.py) are not in the package list and must be copied manually.
+        generated_dirs = [
+            "backends/mlx/serialization/_generated",
+        ]
+        for rel_dir in generated_dirs:
+            src_dir = os.path.join("src/executorch", rel_dir)
+            if not os.path.isdir(src_dir):
+                continue
+            dst_dir = os.path.join(dst_root, rel_dir)
+            for dirpath, _dirnames, filenames in os.walk(src_dir):
+                for filename in filenames:
+                    src_file = os.path.join(dirpath, filename)
+                    rel_path = os.path.relpath(src_file, src_dir)
+                    dst_file = os.path.join(dst_dir, rel_path)
+                    self.mkpath(os.path.dirname(dst_file))
+                    self.copy_file(src_file, dst_file, preserve_mode=False)
+
 
 class Buck2EnvironmentFixer(contextlib.AbstractContextManager):
     """Removes HOME from the environment when running as root.
@@ -688,6 +719,33 @@ class CustomBuild(build):
             item for item in re.split(r"\s+", os.environ.get("CMAKE_ARGS", "")) if item
         ]
 
+        # Check if CUDA is available, and if so, enable building the CUDA
+        # backend by default.
+        if install_utils.is_cuda_available() and install_utils.is_cmake_option_on(
+            cmake_configuration_args, "EXECUTORCH_BUILD_CUDA", default=True
+        ):
+            cmake_configuration_args += ["-DEXECUTORCH_BUILD_CUDA=ON"]
+
+        # Check if QNN SDK is available (via QNN_SDK_ROOT env var), and if so,
+        # enable building the Qualcomm backend by default.
+        qnn_sdk_root = os.environ.get("QNN_SDK_ROOT", "").strip()
+        if qnn_sdk_root and install_utils.is_cmake_option_on(
+            cmake_configuration_args, "EXECUTORCH_BUILD_QNN", default=True
+        ):
+            cmake_configuration_args += [
+                "-DEXECUTORCH_BUILD_QNN=ON",
+                f"-DQNN_SDK_ROOT={qnn_sdk_root}",
+            ]
+
+        # Enable OpenVINO backend on Linux. The backend uses dlopen at
+        # runtime so it has no build-time SDK dependency.
+        if sys.platform == "linux" and install_utils.is_cmake_option_on(
+            cmake_configuration_args,
+            "EXECUTORCH_BUILD_OPENVINO",
+            default=True,
+        ):
+            cmake_configuration_args += ["-DEXECUTORCH_BUILD_OPENVINO=ON"]
+
         with Buck2EnvironmentFixer():
             # Generate the cmake cache from scratch to ensure that the cache state
             # is predictable.
@@ -738,10 +796,15 @@ class CustomBuild(build):
 
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_PYBIND"):
             cmake_build_args += ["--target", "portable_lib"]
+            cmake_build_args += ["--target", "data_loader"]
             cmake_build_args += ["--target", "selective_build"]
 
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER"):
             cmake_build_args += ["--target", "_llm_runner"]
+
+        if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
+            cmake_build_args += ["--target", "aoti_cuda_backend"]
+            cmake_build_args += ["--target", "aoti_common_shims_slim"]
 
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_MODULE"):
             cmake_build_args += ["--target", "extension_module"]
@@ -752,6 +815,9 @@ class CustomBuild(build):
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_COREML"):
             cmake_build_args += ["--target", "executorchcoreml"]
 
+        if cmake_cache.is_enabled("EXECUTORCH_BUILD_MLX"):
+            cmake_build_args += ["--target", "mlxdelegate"]
+
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
             cmake_build_args += ["--target", "custom_ops_aot_lib"]
             cmake_build_args += ["--target", "quantized_ops_aot_lib"]
@@ -759,6 +825,9 @@ class CustomBuild(build):
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_QNN"):
             cmake_build_args += ["--target", "qnn_executorch_backend"]
             cmake_build_args += ["--target", "PyQnnManagerAdaptor"]
+
+        if cmake_cache.is_enabled("EXECUTORCH_BUILD_OPENVINO"):
+            cmake_build_args += ["--target", "openvino_backend"]
 
         # Set PYTHONPATH to the location of the pip package.
         os.environ["PYTHONPATH"] = (
@@ -805,6 +874,23 @@ setup(
             modpath="executorch.extension.pybindings._portable_lib",
             dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
         ),
+        # Install the data_loader pybindings extension which provides the
+        # PyDataLoader type for external pybinding extensions.
+        BuiltExtension(
+            src="data_loader.cp*" if _is_windows() else "data_loader.*",
+            modpath="executorch.extension.pybindings.data_loader",
+            dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
+        ),
+        # MLX metallib (Metal GPU kernels) must be colocated with _portable_lib.so
+        # because MLX uses dladdr() to find the directory containing the library,
+        # then looks for mlx.metallib in that directory at runtime.
+        # After submodule migration, the path is backends/mlx/mlx/...
+        BuiltFile(
+            src_dir="%CMAKE_CACHE_DIR%/backends/mlx/mlx/mlx/backend/metal/kernels/",
+            src_name="mlx.metallib",
+            dst="executorch/extension/pybindings/",
+            dependent_cmake_flags=["EXECUTORCH_BUILD_MLX"],
+        ),
         BuiltExtension(
             src="extension/training/_training_lib.*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh
             modpath="executorch.extension.training.pybindings._training_lib",
@@ -846,6 +932,13 @@ setup(
             src_name="aoti_cuda_shims.lib",
             dst="executorch/data/lib/",
             dependent_cmake_flags=[],
+        ),
+        BuiltFile(
+            src_dir="%CMAKE_CACHE_DIR%/backends/cuda/%BUILD_TYPE%/",
+            src_name="aoti_cuda_shims",
+            dst="executorch/backends/cuda/",
+            is_dynamic_lib=True,
+            dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],
         ),
         BuiltFile(
             src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/%BUILD_TYPE%/",

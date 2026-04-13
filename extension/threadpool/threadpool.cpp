@@ -36,7 +36,7 @@
 
 namespace executorch::extension::threadpool {
 
-#if !(defined(WIN32))
+#if !defined(WIN32) && !defined(__EMSCRIPTEN__)
 namespace {
 // After fork, the child process inherits the data-structures of the parent
 // process' thread-pool, but since those threads don't exist, the thread-pool
@@ -73,6 +73,12 @@ bool ThreadPool::_unsafe_reset_threadpool(uint32_t new_thread_count) {
 
   threadpool_.reset(pthreadpool_create(new_thread_count));
   return true;
+}
+
+void ThreadPool::_unsafe_destroy_threadpool() {
+  std::lock_guard<std::mutex> lock{mutex_};
+  ET_LOG(Info, "Destroying threadpool.");
+  threadpool_.reset();
 }
 
 void ThreadPool::run(
@@ -147,7 +153,7 @@ ThreadPool* get_threadpool() {
 
 // Inheriting from old threadpool to get around segfault issue
 // commented above at child_atfork
-#if !(defined(WIN32))
+#if !defined(WIN32) && !defined(__EMSCRIPTEN__)
   // @lint-ignore CLANGTIDY facebook-hte-std::once_flag
   static std::once_flag flag;
   // @lint-ignore CLANGTIDY facebook-hte-std::call_once

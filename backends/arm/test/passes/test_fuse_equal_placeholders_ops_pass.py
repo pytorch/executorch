@@ -108,7 +108,7 @@ parametrize_constants = _typed_parametrize(constants_modules)
 
 
 @parametrize_constants
-def test_fuse_equal_placeholders_constants_tosa_FP(
+def test_fuse_equal_placeholders_tosa_FP_constants(
     module: ModuleWithEqualPlaceholderAttrs,
 ) -> None:
     pipeline = PassPipeline[input_t](
@@ -129,7 +129,7 @@ def test_fuse_equal_placeholders_constants_tosa_FP(
     assert "_common" in constant_keys[1], "FuseEqualPlaceholders constants failed"
 
 
-def test_fuse_equal_placeholders_state_dict_tosa_FP() -> None:
+def test_fuse_equal_placeholders_tosa_FP_state_dict() -> None:
     module = FuseWeightsStateDict()
     pipeline = PassPipeline[input_t](
         module,
@@ -149,7 +149,7 @@ def test_fuse_equal_placeholders_state_dict_tosa_FP() -> None:
     assert "_common" in state_dict_keys[1], "FuseEqualPlaceholders state_dict failed"
 
 
-def test_not_fuse_tensor_with_different_type_FP():
+def test_fuse_equal_placeholders_tosa_FP_no_fuse_type_diff():
     module = NotFuseTensorWithDifferentType()
     data = (
         torch.rand(

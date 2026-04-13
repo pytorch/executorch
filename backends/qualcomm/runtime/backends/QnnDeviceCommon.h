@@ -20,8 +20,10 @@ namespace backends {
 namespace qnn {
 class QnnDevice {
  public:
-  explicit QnnDevice(const QnnImplementation& implementation, QnnLogger* logger)
+  explicit QnnDevice(QnnImplementation* implementation, QnnLogger* logger)
       : implementation_(implementation), handle_(nullptr), logger_(logger) {}
+  QnnDevice(const QnnDevice&) = delete; // Delete copy constructor
+  QnnDevice& operator=(const QnnDevice&) = delete; // Delete assignment operator
 
   virtual ~QnnDevice();
 
@@ -40,7 +42,7 @@ class QnnDevice {
   virtual executorch::runtime::Error AfterCreateDevice() {
     return executorch::runtime::Error::Ok;
   };
-  const QnnImplementation& implementation_;
+  QnnImplementation* implementation_;
 
  private:
   Qnn_DeviceHandle_t handle_;

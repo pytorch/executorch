@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,12 +14,12 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 
 @final
 class VgfPartitioner(TOSAPartitioner):
-    """
-    Partitions subgraphs supported by the Arm Vgf backend.
+    """Partitions subgraphs supported by the Arm Vgf backend.
 
     Args:
         compile_spec: The Vgf compilation specification.
         additional_checks: Optional sequence of additional operator support checks.
+
     """
 
     def __init__(
@@ -29,7 +29,7 @@ class VgfPartitioner(TOSAPartitioner):
     ) -> None:
         # Override the delegation spec for Vgf
         self.delegation_spec = DelegationSpec(
-            VgfBackend.__name__, compile_spec.to_list()
+            VgfBackend.__name__, compile_spec._to_list()
         )
         self.additional_checks = additional_checks
         self.tosa_spec = compile_spec.tosa_spec

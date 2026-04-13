@@ -11,6 +11,7 @@
 #import "ETCoreMLAssetManager.h"
 #import "ETCoreMLLogging.h"
 #import "ETCoreMLModel.h"
+#import "ETCoreMLModelCache.h"
 #import "ETCoreMLModelManager.h"
 #import "ETCoreMLStrings.h"
 #import "model_event_logger.h"
@@ -19,7 +20,7 @@
 namespace  {
 using namespace executorchcoreml;
 
-MLComputeUnits get_compute_units(const Buffer& buffer) {
+std::optional<MLComputeUnits> get_compute_units(const Buffer& buffer) {
     std::string value(reinterpret_cast<const char *>(buffer.data()), buffer.size());
     if (value == std::string(ETCoreMLStrings.cpuComputeUnitName.UTF8String)) {
         return MLComputeUnitsCPUOnly;
@@ -27,21 +28,41 @@ MLComputeUnits get_compute_units(const Buffer& buffer) {
         return MLComputeUnitsCPUAndGPU;
     } else if (value == std::string(ETCoreMLStrings.cpuAndNeuralEngineComputeUnitsName.UTF8String)) {
         return MLComputeUnitsCPUAndNeuralEngine;
-    } else {
+    } else if (value == std::string(ETCoreMLStrings.allComputeUnitsName.UTF8String)) {
         return MLComputeUnitsAll;
+    } else {
+        return std::nullopt;
     }
 }
 
-MLModelConfiguration *get_model_configuration(const std::unordered_map<std::string, Buffer>& specs) {
-    std::string key_name(ETCoreMLStrings.computeUnitsKeyName.UTF8String);
+MLModelConfiguration * _Nullable get_model_configuration(const std::unordered_map<std::string, Buffer>& specs,
+                                                         NSError * __autoreleasing *error) {
+    std::string compute_units_key(ETCoreMLStrings.computeUnitsKeyName.UTF8String);
     MLModelConfiguration *configuration = [[MLModelConfiguration alloc] init];
+
     for (const auto& [key, buffer] : specs) {
-        if (key == key_name) {
-            configuration.computeUnits = get_compute_units(buffer);
+        if (key == compute_units_key) {
+            auto compute_units = get_compute_units(buffer);
+            if (!compute_units.has_value()) {
+                std::string value(reinterpret_cast<const char *>(buffer.data()), buffer.size());
+                NSString *errorMessage = [NSString stringWithFormat:@"Invalid compute_unit value: '%s'. Valid values are: %@, %@, %@, %@",
+                    value.c_str(),
+                    ETCoreMLStrings.cpuComputeUnitName,
+                    ETCoreMLStrings.cpuAndGpuComputeUnitsName,
+                    ETCoreMLStrings.cpuAndNeuralEngineComputeUnitsName,
+                    ETCoreMLStrings.allComputeUnitsName];
+                if (error) {
+                    *error = [NSError errorWithDomain:ETCoreMLStrings.productIdentifier
+                                                 code:-1
+                                             userInfo:@{NSLocalizedDescriptionKey: errorMessage}];
+                }
+                return nil;
+            }
+            configuration.computeUnits = compute_units.value();
             break;
         }
     }
-    
+
     return configuration;
 }
 
@@ -78,6 +99,19 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
 
 - (ModelHandle*)loadModelFromAOTData:(NSData*)data
                        configuration:(MLModelConfiguration*)configuration
+                          methodName:(nullable NSString*)methodName
+                        functionName:(nullable NSString*)functionName
+                                error:(NSError* __autoreleasing*)error;
+
+- (ModelHandle*)loadModelFromAOTData:(NSData*)data
+                       configuration:(MLModelConfiguration*)configuration
+                          methodName:(nullable NSString*)methodName
+                        functionName:(nullable NSString*)functionName
+                           cachePath:(nullable NSString*)cachePath
+                                error:(NSError* __autoreleasing*)error;
+
+- (ModelHandle*)loadModelFromAOTData:(NSData*)data
+                       configuration:(MLModelConfiguration*)configuration
                                error:(NSError* __autoreleasing*)error;
 
 - (BOOL)executeModelWithHandle:(ModelHandle*)handle
@@ -93,6 +127,7 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
 @property (assign, readonly, nonatomic) BackendDelegate::Config config;
 @property (strong, readonly, nonatomic) dispatch_queue_t syncQueue;
 @property (strong, nonatomic, nullable) ETCoreMLModelManager *impl;
+@property (strong, nonatomic, nullable) ETCoreMLModelCache *defaultCache;
 @property (assign, readonly, nonatomic) BOOL isAvailable;
 
 @end
@@ -105,7 +140,7 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
         _config = std::move(config);
         _syncQueue = dispatch_queue_create("com.executorchcoreml.modelmanagerdelegate.sync", DISPATCH_QUEUE_SERIAL_WITH_AUTORELEASE_POOL);
     }
-    
+
     return self;
 }
 
@@ -113,7 +148,7 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
     if (self.impl != nil) {
         return YES;
     }
-    
+
     ETCoreMLAssetManager *assetManager = create_asset_manager(ETCoreMLStrings.assetsDirectoryPath,
                                                               ETCoreMLStrings.trashDirectoryPath,
                                                               ETCoreMLStrings.databaseDirectoryPath,
@@ -123,14 +158,24 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
     if (!assetManager) {
         return NO;
     }
-    
+
     ETCoreMLModelManager *modelManager = [[ETCoreMLModelManager alloc] initWithAssetManager:assetManager];
     if (!modelManager) {
         return NO;
     }
-    
+
     self.impl = modelManager;
-    
+
+    // Create default filesystem cache at the same location as assets
+    NSURL *defaultCacheURL = [NSURL fileURLWithPath:ETCoreMLStrings.assetsDirectoryPath isDirectory:YES];
+    ETCoreMLModelCache *defaultCache = [[ETCoreMLModelCache alloc] initWithCacheRootDirectory:defaultCacheURL];
+    if (defaultCache.isReady) {
+        self.defaultCache = defaultCache;
+    } else {
+        ETCoreMLLogError(defaultCache.initializationError,
+                         "Default cache initialization failed, will use asset manager as fallback");
+    }
+
     if (self.config.should_prewarm_asset) {
         [modelManager prewarmRecentlyUsedAssetsWithMaxCount:1];
     }
@@ -144,11 +189,11 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
     dispatch_sync(self.syncQueue, ^{
         result = [self _loadAndReturnError:&localError];
     });
-    
+
     if (error) {
         *error = localError;
     }
-    
+
     return result;
 }
 
@@ -160,13 +205,91 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
 
 - (ModelHandle*)loadModelFromAOTData:(NSData*)data
                        configuration:(MLModelConfiguration*)configuration
+                                error:(NSError* __autoreleasing*)error {
+    return [self loadModelFromAOTData:data
+                        configuration:configuration
+                           methodName:nil
+                         functionName:nil
+                            cachePath:nil
+                                error:error];
+}
+
+- (ModelHandle*)loadModelFromAOTData:(NSData*)data
+                       configuration:(MLModelConfiguration*)configuration
+                          methodName:(nullable NSString*)methodName
+                        functionName:(nullable NSString*)functionName
+                               error:(NSError* __autoreleasing*)error {
+    return [self loadModelFromAOTData:data
+                        configuration:configuration
+                           methodName:methodName
+                         functionName:functionName
+                            cachePath:nil
+                                error:error];
+}
+
+- (ModelHandle*)loadModelFromAOTData:(NSData*)data
+                       configuration:(MLModelConfiguration*)configuration
+                          methodName:(nullable NSString*)methodName
+                        functionName:(nullable NSString*)functionName
+                           cachePath:(nullable NSString*)cachePath
+                               error:(NSError* __autoreleasing*)error {
+    // Default to using the old cache (useNewCache = NO)
+    return [self loadModelFromAOTData:data
+                        configuration:configuration
+                           methodName:methodName
+                         functionName:functionName
+                            cachePath:cachePath
+                          useNewCache:NO
+                                error:error];
+}
+
+- (ModelHandle*)loadModelFromAOTData:(NSData*)data
+                       configuration:(MLModelConfiguration*)configuration
+                          methodName:(nullable NSString*)methodName
+                        functionName:(nullable NSString*)functionName
+                           cachePath:(nullable NSString*)cachePath
+                         useNewCache:(BOOL)useNewCache
                                error:(NSError* __autoreleasing*)error {
     if (![self loadAndReturnError:error]) {
         return nil;
     }
-    
+
+    id<ETCoreMLCache> cache = nil;
+    if (cachePath != nil) {
+        // Use NEW filesystem cache at specified path
+        NSURL *cacheURL = [NSURL fileURLWithPath:cachePath isDirectory:YES];
+        ETCoreMLModelCache *modelCache = [[ETCoreMLModelCache alloc] initWithCacheRootDirectory:cacheURL];
+        if (!modelCache.isReady) {
+            // Fallback error if initializationError is unexpectedly nil
+            NSError *cacheError = modelCache.initializationError
+                ?: [NSError errorWithDomain:ETCoreMLModelCacheErrorDomain
+                                       code:ETCoreMLModelCacheErrorCodeInitializationFailed
+                                   userInfo:@{NSLocalizedDescriptionKey: @"Cache initialization failed"}];
+            if (error) *error = cacheError;
+            return nil;
+        }
+        cache = modelCache;
+    } else if (useNewCache) {
+        if (self.defaultCache != nil) {
+            // Use default filesystem cache
+            cache = self.defaultCache;
+} else {
+            // Fallback: useNewCache requested but default cache unavailable
+            NSError *fallbackError = [NSError errorWithDomain:ETCoreMLErrorDomain
+                                                         code:ETCoreMLErrorInternalError
+                                                     userInfo:@{NSLocalizedDescriptionKey: @"Default cache unavailable"}];
+            ETCoreMLLogError(fallbackError,
+                             "useNewCache=YES but default cache is unavailable, falling back to asset manager");
+        }
+    }
+    // If useNewCache is false or defaultCache is nil, cache remains nil
+    // and loadModelFromAOTData will use the asset manager path
+
     auto handle = [self.impl loadModelFromAOTData:data
                                     configuration:configuration
+                                       methodName:methodName
+                                     functionName:functionName
+                                            cache:cache
                                             error:error];
     if ((handle != NULL) && self.config.should_prewarm_model) {
         [self.impl prewarmModelWithHandle:handle error:nil];
@@ -202,7 +325,7 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
     if (![self loadAndReturnError:error]) {
         return NO;
     }
-    
+
     return [self.impl purgeModelsCacheAndReturnError:error];;
 }
 
@@ -210,7 +333,7 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
     if (![self loadAndReturnError:nil]) {
         return NO;
     }
-    
+
     return YES;
 }
 
@@ -246,25 +369,57 @@ public:
     {
         [model_manager_ loadAsynchronously];
     }
-    
+
     BackendDelegateImpl(BackendDelegateImpl const&) = delete;
     BackendDelegateImpl& operator=(BackendDelegateImpl const&) = delete;
-    
-    Handle *init(Buffer processed,const std::unordered_map<std::string, Buffer>& specs) const noexcept override {
+
+Handle *init(Buffer processed,
+             const std::unordered_map<std::string, Buffer>& specs,
+             const char* method_name = nullptr,
+             const char* function_name = nullptr,
+             executorch::runtime::Span<const executorch::runtime::BackendOption> runtime_specs = {}) const noexcept override {
         NSError *localError = nil;
-        MLModelConfiguration *configuration = get_model_configuration(specs);
+        MLModelConfiguration *configuration = get_model_configuration(specs, &localError);
+        if (configuration == nil) {
+            ETCoreMLLogError(localError, "Invalid model configuration");
+            return nullptr;
+        }
+
+        NSString *methodNameStr = method_name ? @(method_name) : nil;
+        NSString *functionNameStr = function_name ? @(function_name) : nil;
+
+        // Parse cache_dir and _use_new_cache from runtime_specs
+        NSString *cachePath = nil;
+        BOOL useNewCache = NO; // Default to using the old cache (asset manager)
+        for (size_t i = 0; i < runtime_specs.size(); ++i) {
+            const auto& opt = runtime_specs[i];
+            if (std::strcmp(opt.key, "cache_dir") == 0) {
+                if (auto* arr = std::get_if<std::array<char, executorch::runtime::kMaxOptionValueLength>>(&opt.value)) {
+                    cachePath = @(arr->data());
+                }
+            } else if (std::strcmp(opt.key, "_use_new_cache") == 0) {
+                if (auto* val = std::get_if<bool>(&opt.value)) {
+                    useNewCache = *val ? YES : NO;
+                }
+            }
+        }
+
         NSData *data = [NSData dataWithBytesNoCopy:const_cast<void *>(processed.data())
                                             length:processed.size()
                                       freeWhenDone:NO];
         ModelHandle *modelHandle = [model_manager_ loadModelFromAOTData:data
                                                           configuration:configuration
+                                                             methodName:methodNameStr
+                                                           functionName:functionNameStr
+                                                              cachePath:cachePath
+                                                            useNewCache:useNewCache
                                                                   error:&localError];
         if (localError != nil) {
             ETCoreMLLogError(localError, "Model init failed");
         }
         return modelHandle;
     }
-    
+
     bool execute(Handle* handle,
                  std::vector<MultiArray>& args,
                  const ModelLoggingOptions& logging_options,
@@ -279,36 +434,36 @@ public:
             if (localError != nil) {
                 ETCoreMLLogError(localError, "Model execution failed");
                 ec = static_cast<ErrorCode>(localError.code);
-            }                                    
+            }
             return false;
         }
-        
+
         return true;
     }
-    
+
     bool is_valid_handle(Handle* handle) const noexcept override {
         return [model_manager_ modelWithHandle:handle] != nil;
     }
-    
+
     bool is_available() const noexcept override {
         return static_cast<bool>(model_manager_.isAvailable);
     }
-    
+
     std::pair<size_t, size_t> get_num_arguments(Handle* handle) const noexcept override {
         ETCoreMLModel *model = [model_manager_ modelWithHandle:handle];
         return {model.orderedInputNames.count, model.orderedOutputNames.count};
     }
-    
+
     void destroy(Handle* handle) const noexcept override {
         [model_manager_ unloadModelWithHandle:handle];
     }
-    
+
     bool purge_models_cache() const noexcept override {
         NSError *localError = nil;
         bool result = static_cast<bool>([model_manager_ purgeModelsCacheAndReturnError:&localError]);
         return result;
     }
-    
+
     ETCoreMLModelManagerDelegate *model_manager_;
     Config config_;
 };

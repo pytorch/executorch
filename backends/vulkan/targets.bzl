@@ -20,6 +20,7 @@ def get_vulkan_preprocessor_flags(no_volk, is_fbcode):
     android_flags = []
 
     debug_mode = read_config("etvk", "debug", "0") == "1"
+    force_no_extensions = read_config("etvk", "force_no_extensions", "0") == "1"
 
     if not no_volk:
         for flags in [default_flags, android_flags]:
@@ -68,6 +69,13 @@ def get_vulkan_preprocessor_flags(no_volk, is_fbcode):
         if debug_mode:
             VK_API_PREPROCESSOR_FLAGS += ["-DVULKAN_DEBUG"]
 
+    vma_dep = read_config("etvk", "vma_dep", "xplat")
+    if vma_dep == "instantiated":
+        VK_API_PREPROCESSOR_FLAGS += ["-DETVK_USE_META_VMA"]
+
+    if force_no_extensions:
+        VK_API_PREPROCESSOR_FLAGS += ["-DETVK_FORCE_NO_EXTENSIONS"]
+
     return VK_API_PREPROCESSOR_FLAGS
 
 def get_labels(no_volk):
@@ -93,12 +101,18 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
     for target, subpath in spv_filegroups.items():
         glsl_paths.append("$(location {})/{}".format(target, subpath))
 
+    # Default to single-threaded shader compilation on macOS to avoid
+    # multiprocessing issues with the local build toolchain.
+    default_nthreads = "1" if host_info().os.is_macos else "-1"
+    nthreads = read_config("etvk", "shader_compile_nthreads", default_nthreads)
+
     genrule_cmd = (
         "$(exe {}) ".format(gen_vulkan_spv_target) +
         "--glsl-paths {} ".format(" ".join(glsl_paths)) +
         "--output-path $OUT " +
         "--glslc-path=$(exe {}) ".format(glslc_path) +
         "--tmp-dir-path=shader_cache " +
+        "--nthreads {} ".format(nthreads) +
         ("-f " if read_config("etvk", "force_shader_rebuild", "0") == "1" else " ") +
         select({
             "DEFAULT": "",
@@ -142,6 +156,7 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
 
 def define_common_targets(is_fbcode = False):
     debug_mode = read_config("etvk", "debug", "0") == "1"
+    vma_dep = read_config("etvk", "vma_dep", "xplat")
 
     runtime.python_library(
         name = "gen_vulkan_spv_lib",
@@ -155,10 +170,7 @@ def define_common_targets(is_fbcode = False):
     runtime.python_binary(
         name = "gen_vulkan_spv_bin",
         main_module = "runtime.gen_vulkan_spv",
-        visibility = [
-            "//executorch/backends/vulkan/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             ":gen_vulkan_spv_lib",
         ],
@@ -178,9 +190,14 @@ def define_common_targets(is_fbcode = False):
 
         suffix = "_no_volk" if no_volk else ""
 
-        VK_API_DEPS = [
-            "fbsource//third-party/VulkanMemoryAllocator/3.0.1:VulkanMemoryAllocator_xplat",
-        ]
+        if vma_dep == "instantiated":
+            VK_API_DEPS = [
+                "fbsource//third-party/VulkanMemoryAllocator/3.0.1:VulkanMemoryAllocatorInstantiated",
+            ]
+        else:
+            VK_API_DEPS = [
+                "fbsource//third-party/VulkanMemoryAllocator/3.2.0:VulkanMemoryAllocator_xplat",
+            ]
 
         default_deps = []
         android_deps = ["fbsource//third-party/toolchains:android"]
@@ -205,7 +222,7 @@ def define_common_targets(is_fbcode = False):
             mac_deps = default_deps
             if link_moltenvk:
                 mac_deps = [
-                    "//third-party/khronos:moltenVK_static"
+                    "//third-party/khronos:moltenVK_static_unexported"
                 ]
 
             if debug_mode:
@@ -238,10 +255,7 @@ def define_common_targets(is_fbcode = False):
             ]),
             labels = get_labels(no_volk),
             platforms = get_platforms(),
-            visibility = [
-                "//executorch/backends/vulkan/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             fbobjc_frameworks = select({
                 "DEFAULT": [],
                 "ovr_config//os:macos": [
@@ -267,12 +281,7 @@ def define_common_targets(is_fbcode = False):
             ]),
             labels = get_labels(no_volk),
             platforms = get_platforms(),
-            visibility = [
-                "//executorch/backends/...",
-                "//executorch/extension/pybindings/...",
-                "//executorch/test/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 ":vulkan_graph_runtime_shaderlib{}".format(suffix),
                 "//executorch/runtime/backend:interface",
@@ -306,12 +315,7 @@ def define_common_targets(is_fbcode = False):
             ]),
             labels = get_labels(no_volk),
             platforms = get_platforms(),
-            visibility = [
-                "//executorch/backends/...",
-                "//executorch/extension/pybindings/...",
-                "//executorch/test/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 ":vulkan_graph_runtime{}".format(suffix),
                 "//executorch/backends/vulkan/serialization:vk_delegate_schema",
@@ -350,11 +354,7 @@ def define_common_targets(is_fbcode = False):
             srcs = [
                 "custom_ops_lib.py"
             ],
-            visibility = [
-                "//executorch/...",
-                "//executorch/vulkan/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 "//caffe2:torch",
                 "//executorch/backends/vulkan/patterns:vulkan_patterns",
@@ -366,11 +366,7 @@ def define_common_targets(is_fbcode = False):
             srcs = [
                 "op_registry.py",
             ],
-            visibility = [
-                "//executorch/...",
-                "//executorch/vulkan/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 ":custom_ops_lib",
                 ":utils_lib",
@@ -385,11 +381,7 @@ def define_common_targets(is_fbcode = False):
             srcs = [
                 "vulkan_preprocess.py",
             ],
-            visibility = [
-                "//executorch/...",
-                "//executorch/vulkan/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 "//executorch/backends/transforms:addmm_mm_to_linear",
                 "//executorch/backends/transforms:fuse_batch_norm_with_conv",

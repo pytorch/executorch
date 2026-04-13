@@ -13,7 +13,6 @@ from copy import deepcopy
 from typing import List, Optional, Tuple
 
 import executorch.exir as exir
-
 import executorch.exir.schema as schema
 import executorch.exir.tests.models as models
 import pytest
@@ -63,9 +62,7 @@ from executorch.extension.pybindings.portable_lib import (
 )
 from executorch.runtime import Runtime
 from torch import nn
-
 from torch._higher_order_ops import cond as torch_cond, map as torch_map
-
 from torch.export import Dim, export
 from torch.export.experimental import _export_forward_backward
 
@@ -2403,3 +2400,121 @@ class TestEmit(unittest.TestCase):
                 # Compare results
                 self.assertTrue(expected.shape == et_result.shape)
                 self.assertTrue(torch.allclose(expected, et_result))
+
+    def test_emit_channels_last_constant(self) -> None:
+        """Test that channels-last constant tensors are emitted correctly.
+
+        The dim_order and storage data must be consistent - if storage is in
+        channels-last physical layout, dim_order should reflect that, and vice versa.
+        """
+        import struct
+
+        class ChannelsLastConstant(nn.Module):
+            def __init__(self):
+                super().__init__()
+                # Create a constant tensor with channels-last memory format
+                self.constant = (
+                    torch.arange(2 * 3 * 4)
+                    .reshape(1, 2, 3, 4)
+                    .to(torch.float32)
+                    .to(memory_format=torch.channels_last)
+                )
+
+            def forward(self):
+                return self.constant
+
+        model = ChannelsLastConstant()
+        eager_out = model()
+
+        program = to_edge(export(model, (), strict=True)).to_executorch()
+        # Run the model and verify output matches eager.
+        et_module = _load_for_executorch_from_buffer(program.buffer)
+        self.assertTrue(torch.allclose(eager_out, et_module()[0]))
+
+        # Verify the dim_order is channels-last.
+        exec_plan = program.executorch_program.execution_plan[0]
+        output_idx = exec_plan.outputs[0]
+        tensor_val = exec_plan.values[output_idx].val
+        self.assertIsInstance(tensor_val, Tensor)
+        self.assertEqual(list(tensor_val.dim_order), [0, 2, 3, 1])
+
+        # Verify storage is in channels-last (NHWC) physical layout.
+        storage_bytes = program.executorch_program.constant_buffer[
+            tensor_val.data_buffer_idx
+        ].storage
+        num_floats = len(storage_bytes) // 4
+        storage_values = list(struct.unpack(f"{num_floats}f", storage_bytes))
+        expected_nhwc_storage = [
+            0,
+            12,
+            1,
+            13,
+            2,
+            14,
+            3,
+            15,
+            4,
+            16,
+            5,
+            17,
+            6,
+            18,
+            7,
+            19,
+            8,
+            20,
+            9,
+            21,
+            10,
+            22,
+            11,
+            23,
+        ]
+        self.assertEqual([int(v) for v in storage_values], expected_nhwc_storage)
+
+    def test_emit_custom_dimorder(self) -> None:
+        """Test that non-contiguous constant tensors are made contiguous during emit."""
+        import struct
+
+        class TransposedConstant(nn.Module):
+            def __init__(self):
+                super().__init__()
+                # Original: shape (2, 16), strides (16, 1), contiguous
+                # After transpose: shape (16, 2), strides (1, 16), non-contiguous
+                self.constant = torch.arange(32).reshape(2, 16).float().transpose(1, 0)
+
+            def forward(self):
+                return self.constant
+
+        model = TransposedConstant()
+        eager_out = model()
+
+        # Verify the tensor is not contiguous.
+        self.assertFalse(model.constant.is_contiguous())
+
+        program = to_edge(export(model, (), strict=True)).to_executorch()
+        # Run the model and verify output matches eager.
+        et_module = _load_for_executorch_from_buffer(program.buffer)
+        self.assertTrue(torch.allclose(eager_out, et_module()[0]))
+
+        # Check that tensor is now contiguous.
+        exec_plan = program.executorch_program.execution_plan[0]
+        output_idx = exec_plan.outputs[0]
+        tensor_val = exec_plan.values[output_idx].val
+        self.assertIsInstance(tensor_val, Tensor)
+        self.assertEqual(list(tensor_val.dim_order), [0, 1])
+
+        # Verify storage is contiguous in physical memory.
+        storage_bytes = program.executorch_program.constant_buffer[
+            tensor_val.data_buffer_idx
+        ].storage
+        num_floats = len(storage_bytes) // 4
+        storage_values = list(struct.unpack(f"{num_floats}f", storage_bytes))
+
+        # The transposed tensor has shape (16, 2), so contiguous storage
+        # iterates row by row: [0, 16, 1, 17, 2, 18, ...].
+        expected_storage = []
+        for i in range(16):
+            for j in range(2):
+                expected_storage.append(j * 16 + i)
+        self.assertEqual([int(v) for v in storage_values], expected_storage)

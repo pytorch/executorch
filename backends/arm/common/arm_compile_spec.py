@@ -1,4 +1,4 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,12 +11,17 @@
 #
 
 import json
+import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 
-from executorch.backends.arm.common.pipeline_config import ArmPassPipelineConfig
+from executorch.backends.arm.common.pipeline_config import (
+    ArmPassPipelineConfig,
+    SoftmaxDecompositionConfig,
+)
 from executorch.backends.arm.tosa import TosaSpecification
+from executorch.exir._warnings import deprecated
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
@@ -46,7 +51,7 @@ class ArmCompileSpec(ABC):
         compiler_flags: list[str],
         path_for_intermediates: str | None = None,
         tosa_debug_mode: DebugMode | None = None,
-        output_order_workaround: bool = True,
+        output_order_workaround: bool = False,
         pipeline_config: ArmPassPipelineConfig | None = None,
     ):
         """Set all values of dataclass directly."""
@@ -54,17 +59,24 @@ class ArmCompileSpec(ABC):
         self.compiler_flags = compiler_flags
         self.path_for_intermediates = path_for_intermediates
         self.tosa_debug_mode = tosa_debug_mode
-        self.output_order_workaround = output_order_workaround
         self._pipeline_config = pipeline_config
+        self.output_order_workaround = output_order_workaround
+        if output_order_workaround:
+            warnings.warn(
+                "ArmCompileSpec(output_order_workaround=True) is deprecated and will be "
+                "removed in v1.5; please remove this flag.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
     @classmethod
-    def from_list(cls, compile_specs: list[CompileSpec]):  # noqa: C901
+    def _from_list(cls, compile_specs: list[CompileSpec]):  # noqa: C901
         tosa_spec: TosaSpecification | None = None
         output_format: str | None = None
         compiler_flags: list[str] | None = None
         path_for_intermediates: str | None = None
         tosa_debug_mode: ArmCompileSpec.DebugMode | None = None
-        output_order_workaround: bool = True
+        output_order_workaround: bool = False
         pipeline_config: ArmPassPipelineConfig | None = None
         unknown_specs: dict[str, str] = {}
         for spec in compile_specs:
@@ -104,6 +116,12 @@ class ArmCompileSpec(ABC):
                 tosa_debug_mode = ArmCompileSpec.DebugMode[val]
             elif key == ArmCompileSpec._OUTPUT_REORDER_KEY:
                 output_order_workaround = val  # type: ignore[assignment]
+                if output_order_workaround:
+                    warnings.warn(
+                        "The 'output_order_workaround' compile spec entry is deprecated and will be removed in v1.5; please remove this entry.",
+                        DeprecationWarning,
+                        stacklevel=2,
+                    )
             elif key == ArmCompileSpec._TRANSFORM_PIPELINE_CONFIG_KEY:
                 if pipeline_config is not None:
                     raise ValueError(
@@ -117,9 +135,9 @@ class ArmCompileSpec(ABC):
             raise ValueError("No tosa_spec in compile spec.")
         if output_format is None:
             raise ValueError("No output_format in compile spec.")
-        if output_format != cls.get_output_format():
+        if output_format != cls._get_output_format():
             raise ValueError(
-                f"Incorrect output format '{output_format}' for {cls.__name__}, expected '{cls.get_output_format()}'"
+                f"Incorrect output format '{output_format}' for {cls.__name__}, expected '{cls._get_output_format()}'"
             )
         if compiler_flags is None:
             compiler_flags = []
@@ -134,23 +152,23 @@ class ArmCompileSpec(ABC):
             output_order_workaround=output_order_workaround,
             pipeline_config=pipeline_config,
         )
-        cls.from_list_hook(compile_spec, unknown_specs)
-        compile_spec.validate()
+        cls._from_list_hook(compile_spec, unknown_specs)
+        compile_spec._validate()
         return compile_spec
 
     @classmethod
-    def from_list_hook(cls, compile_spec, specs: dict[str, str]):  # noqa: B027
+    def _from_list_hook(cls, compile_spec, specs: dict[str, str]):  # noqa: B027
         """Allows subclasses to hook into parsing compile spec lists."""
         pass
 
     @abstractmethod
-    def validate(self):
+    def _validate(self):
         """Throws an error if the compile spec is not valid."""
 
-    def to_list(self):
+    def _to_list(self):
         """Get the ArmCompileSpec in list form."""
         if not self.tosa_spec:
-            raise ValueError("tosa_spec must be set before calling to_list()")
+            raise ValueError("tosa_spec must be set before calling _to_list()")
 
         # Always supply a TOSA version
         compile_spec = [
@@ -170,7 +188,7 @@ class ArmCompileSpec(ABC):
         # Add output format to identify kind of compile spec.
         compile_spec.append(
             CompileSpec(
-                ArmCompileSpec._OUTPUT_FORMAT_KEY, self.get_output_format().encode()
+                ArmCompileSpec._OUTPUT_FORMAT_KEY, self._get_output_format().encode()
             )
         )
 
@@ -198,7 +216,7 @@ class ArmCompileSpec(ABC):
             compile_spec.append(
                 CompileSpec(
                     ArmCompileSpec._OUTPUT_REORDER_KEY,
-                    self.output_order_workaround,
+                    bytes(self.output_order_workaround),
                 )
             )
 
@@ -211,61 +229,88 @@ class ArmCompileSpec(ABC):
             )
         return compile_spec
 
-    def get_pass_pipeline_config(self) -> ArmPassPipelineConfig:
-        """
-        Returns configuration that controls how the Arm pass pipeline should behave.
+    def _get_pass_pipeline_config(self) -> ArmPassPipelineConfig:
+        """Returns configuration that controls how the Arm pass pipeline should
+        behave.
+
         Subclasses may override to tweak defaults for specific targets.
+
         """
         if self._pipeline_config is None:
             self._pipeline_config = self._create_default_pipeline_config()
         return self._pipeline_config
 
     def set_pass_pipeline_config(self, config: ArmPassPipelineConfig) -> None:
+        """Sets the configuration that controls how the Arm pass pipeline should
+        behave. Subclasses may override to tweak defaults for specific targets.
+
+        Args:
+            config: The custom ArmPassPipelineConfig to set.
+
+        """
         self._pipeline_config = config
 
     def _create_default_pipeline_config(self) -> ArmPassPipelineConfig:
         config = ArmPassPipelineConfig()
         if self.tosa_spec.is_U55_subset:
-            config.disable_masked_softmax()
+            # Keep U55 on STABLE instead of the generic MASKED default:
+            # MASKED also enables masked_fill decomposition, which lowers to
+            # where/full_like and is not a good default fit for U55.
+            config.softmax = SoftmaxDecompositionConfig.STABLE
         return config
 
-    def get_intermediate_path(self) -> str | None:
-        """
-        Gets the path used for dumping intermediate results such as tosa and pte.
+    def _get_intermediate_path(self) -> str | None:
+        """Gets the path used for dumping intermediate results such as tosa and
+        pte.
 
         Returns:
             Path where intermediate results are saved.
+
         """
         return self.path_for_intermediates
 
     def dump_intermediate_artifacts_to(self, output_path: str | None):
-        """
-        Sets a path for dumping intermediate results during such as tosa and pte.
+        """Sets a path for dumping intermediate results during such as tosa and
+        pte.
 
         Args:
             output_path: Path to dump intermediate results to.
+
         """
         self.path_for_intermediates = output_path
         return self
 
     def dump_debug_info(self, debug_mode: DebugMode | None):
-        """
-        Dump debugging information into the intermediates path.
+        """Dump debugging information into the intermediates path.
 
         Args:
             debug_mode: The debug mode to use for dumping debug information.
+
         """
         self.tosa_debug_mode = debug_mode
         return self
 
+    @deprecated(
+        "set_output_order_workaround() is deprecated and will be removed in v1.5; please remove this call."
+    )
     def set_output_order_workaround(self, output_order_workaround: bool):
+        """Sets whether to apply the output order workaround.
+
+        Args:
+            output_order_workaround: Boolean indicating whether to apply the workaround.
+
+        """
         self.output_order_workaround = output_order_workaround
         return self
 
+    @deprecated(
+        "get_output_order_workaround() is deprecated and will be removed in v1.5; please remove this call."
+    )
     def get_output_order_workaround(self) -> bool:
+        """Gets whether the output order workaround is being applied."""
         return self.output_order_workaround
 
     @classmethod
     @abstractmethod
-    def get_output_format(cls) -> str:
+    def _get_output_format(cls) -> str:
         """Returns a constant string that is the output format of the class."""

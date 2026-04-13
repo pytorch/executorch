@@ -168,7 +168,7 @@ def main(args):
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
-    adb.pull(output_path=args.artifact)
+    adb.pull(host_output_path=args.artifact)
 
     predictions = []
     for i in range(data_num):

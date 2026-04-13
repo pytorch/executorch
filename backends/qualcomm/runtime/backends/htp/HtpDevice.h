@@ -24,7 +24,7 @@ namespace qnn {
 class HtpDevice : public QnnDevice {
  public:
   HtpDevice(
-      const QnnImplementation& implementation,
+      QnnImplementation* implementation,
       QnnLogger* logger,
       const SocInfo* soc_info,
       const QnnExecuTorchHtpBackendOptions* htp_options)
@@ -56,7 +56,9 @@ class HtpDevice : public QnnDevice {
   void ReleasePerformanceVote();
 
   inline bool IsPerfModeEnabled() {
-    return get_option(htp_options_->performance_mode()) !=
+    return get_option(
+               htp_options_->performance_mode(),
+               QNN_RUNTIME_HTP_PERFORMANCE_MODE) !=
         QnnExecuTorchHtpPerformanceMode::kHtpDefault;
   }
 

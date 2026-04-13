@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -17,14 +17,12 @@ logger = logging.getLogger(__name__)
 
 
 class CastInt64BuffersToInt32Pass(ArmPass):
-    """
-    Cast int64 buffers to int32 if the int64 data is in int32 range.
-    """
+    """Cast int64 buffers to int32 if the int64 data is in int32 range."""
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    def __init__(self, exported_program: ExportedProgram):
-        super().__init__()
+    def __init__(self, exported_program: ExportedProgram, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
     def _assert_within_int32(self, tensor: torch.Tensor, node: torch.fx.Node):

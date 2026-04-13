@@ -7,9 +7,7 @@
  */
 package org.pytorch.executorch
 
-import android.Manifest
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.rule.GrantPermissionRule
 import java.io.File
 import java.io.IOException
 import java.net.URISyntaxException
@@ -20,7 +18,6 @@ import org.apache.commons.io.FileUtils
 import org.junit.Assert
 import org.junit.Before
 import org.junit.Ignore
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.pytorch.executorch.TestFileUtils.getTestFilePath
@@ -42,10 +39,6 @@ class ModuleInstrumentationTest {
     FileUtils.copyInputStreamToFile(inputStream, nonPteFile)
     inputStream.close()
   }
-
-  @get:Rule
-  var runtimePermissionRule: GrantPermissionRule =
-      GrantPermissionRule.grant(Manifest.permission.READ_EXTERNAL_STORAGE)
 
   @Ignore(
       "The forward has failure that needs to be fixed before enabling this test: [Executorch Error 0x12] Invalid argument: Execution failed for method: forward "
@@ -177,7 +170,7 @@ class ModuleInstrumentationTest {
   }
 
   companion object {
-    private const val TEST_FILE_NAME = "/ModuleAdd.pte"
+    private const val TEST_FILE_NAME = "/mobilenet_v2.pte"
     private const val MISSING_FILE_NAME = "/missing.pte"
     private const val NON_PTE_FILE_NAME = "/test.txt"
     private const val FORWARD_METHOD = "forward"

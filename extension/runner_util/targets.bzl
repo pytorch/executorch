@@ -17,10 +17,7 @@ def define_common_targets():
                 "inputs{}.cpp".format("_aten" if aten_mode else "_portable"),
             ],
             exported_headers = ["inputs.h"],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/executor:program_no_prim_ops" + aten_suffix,

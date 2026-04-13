@@ -27,27 +27,37 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
     quantize_param_wrapper = std::make_unique<UndefinedQuantizeParamsWrapper>();
   } else if (encoding == QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET) {
     int32_t axis = quant_info["axis"].cast<int32_t>();
-    std::vector<Qnn_ScaleOffset_t> scale_offset =
-        quant_info["scale_offset"].cast<std::vector<Qnn_ScaleOffset_t>>();
-
+    auto so_arr =
+        quant_info["scale_offset"].cast<py::array_t<Qnn_ScaleOffset_t>>();
+    auto so_buf = so_arr.request();
+    const Qnn_ScaleOffset_t* so_ptr =
+        static_cast<const Qnn_ScaleOffset_t*>(so_buf.ptr);
+    std::vector<Qnn_ScaleOffset_t> scale_offset(so_ptr, so_ptr + so_buf.size);
     quantize_param_wrapper =
         std::make_unique<AxisScaleOffsetQuantizeParamsWrapper>(
-            axis, scale_offset);
+            axis, std::move(scale_offset));
   } else if (encoding == QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET) {
     uint32_t bitwidth = quant_info["bitwidth"].cast<uint32_t>();
     int32_t axis = quant_info["axis"].cast<int32_t>();
-    std::vector<Qnn_ScaleOffset_t> scale_offset =
-        quant_info["scale_offset"].cast<std::vector<Qnn_ScaleOffset_t>>();
-    uint32_t num_elements = scale_offset.size();
-    std::vector<float> scales;
-    std::vector<int32_t> offsets;
-    for (const auto& scale_offset : scale_offset) {
-      scales.push_back(scale_offset.scale);
-      offsets.push_back(scale_offset.offset);
+    auto so_arr =
+        quant_info["scale_offset"].cast<py::array_t<Qnn_ScaleOffset_t>>();
+    auto so_buf = so_arr.request();
+    const Qnn_ScaleOffset_t* so_ptr =
+        static_cast<const Qnn_ScaleOffset_t*>(so_buf.ptr);
+    uint32_t num_elements = static_cast<uint32_t>(so_buf.size);
+    std::vector<float> scales(num_elements);
+    std::vector<int32_t> offsets(num_elements);
+    for (uint32_t i = 0; i < num_elements; ++i) {
+      scales[i] = so_ptr[i].scale;
+      offsets[i] = so_ptr[i].offset;
     }
     quantize_param_wrapper =
         std::make_unique<BwAxisScaleOffsetQuantizeParamsWrapper>(
-            bitwidth, axis, num_elements, scales, offsets);
+            bitwidth,
+            axis,
+            num_elements,
+            std::move(scales),
+            std::move(offsets));
   } else if (encoding == QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET) {
     uint32_t bitwidth = quant_info["bitwidth"].cast<uint32_t>();
     float scale = quant_info["scale"].cast<float>();
@@ -62,8 +72,12 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
         std::make_unique<ScaleOffsetQuantizeParamsWrapper>(scale, offset);
   } else if (encoding == QNN_QUANTIZATION_ENCODING_BLOCKWISE_EXPANSION) {
     int32_t axis = quant_info["axis"].cast<int32_t>();
-    std::vector<Qnn_ScaleOffset_t> scale_offset =
-        quant_info["block_scale_offset"].cast<std::vector<Qnn_ScaleOffset_t>>();
+    auto so_arr =
+        quant_info["block_scale_offset"].cast<py::array_t<Qnn_ScaleOffset_t>>();
+    auto so_buf = so_arr.request();
+    const Qnn_ScaleOffset_t* so_ptr =
+        static_cast<const Qnn_ScaleOffset_t*>(so_buf.ptr);
+    std::vector<Qnn_ScaleOffset_t> scale_offset(so_ptr, so_ptr + so_buf.size);
     uint32_t num_blocks_per_axis =
         quant_info["num_blocks_per_axis"].cast<uint32_t>();
     uint32_t block_scale_bitwidth =
@@ -71,17 +85,19 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
     Qnn_BlockwiseExpansionBlockScaleStorageType_t block_storage_type =
         quant_info["block_storage_type"]
             .cast<Qnn_BlockwiseExpansionBlockScaleStorageType_t>();
-    std::vector<uint8_t> buf =
-        quant_info["block_scales"].cast<std::vector<uint8_t>>();
+    py::array_t<uint8_t> block_scales_arr =
+        quant_info["block_scales"].cast<py::array_t<uint8_t>>();
+    auto buf_info = block_scales_arr.request();
+    const uint8_t* ptr = static_cast<const uint8_t*>(buf_info.ptr);
+    std::vector<uint8_t> block_scales_vec(ptr, ptr + buf_info.size);
     quantize_param_wrapper =
         std::make_unique<BlockwiseExpansionQuantizeParamsWrapper>(
             axis,
-            scale_offset,
+            std::move(scale_offset),
             num_blocks_per_axis,
             block_scale_bitwidth,
             block_storage_type,
-            buf.data(),
-            buf.size());
+            std::move(block_scales_vec));
   } else {
     QNN_EXECUTORCH_LOG_ERROR(
         "Unknown the encoding of quantization: %d", encoding);
@@ -147,6 +163,10 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(
       copy_data);
 }
 
+int GetQNNCtxBinAlignment() {
+  return QNN_CTX_BIN_ALIGNMENT;
+}
+
 std::string GetQnnSdkBuildId(std::string library_path) {
   QnnImplementation qnn_loaded_backend = QnnImplementation(library_path);
   ET_CHECK_MSG(
@@ -159,16 +179,44 @@ std::string GetQnnSdkBuildId(std::string library_path) {
   if (err != QNN_SUCCESS || id == nullptr) {
     throw std::runtime_error("Failed to get QNN backend build ID");
   }
-  qnn_loaded_backend.TerminateAllBackends();
-  return std::string(id);
+  // Copy id to avoid dangling pointer.
+  std::string build_id(id);
+  qnn_loaded_backend.Unload();
+  return build_id;
+}
+
+py::array_t<char> StripProtocol(const py::bytes& preprocessed_binary) {
+  py::buffer_info info(py::buffer(preprocessed_binary).request());
+
+  void* buf_ptr = nullptr;
+  size_t buf_size = 0;
+  // check if it's a qnn context binary
+  auto [status, signature, ctx_size, ctx_bin] =
+      QnnContextCustomProtocol().DeserializeContextCustomBuffer(info.ptr);
+
+  if (status == Error::Ok) {
+    buf_size = ctx_size;
+    buf_ptr = ctx_bin;
+  } else {
+    // the format should be DLC, return nothing here
+    return py::array_t<char>(0);
+  }
+
+  auto result = py::array_t<char>(buf_size);
+  auto result_buffer = result.request();
+  std::memcpy(result_buffer.ptr, buf_ptr, buf_size);
+  return result;
 }
 
 PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
   // TODO: Add related documents for configurations listed below
   using namespace qnn_delegate;
   PYBIND11_NUMPY_DTYPE(PyQnnTensorWrapper::EncodingData, scale, offset);
+  PYBIND11_NUMPY_DTYPE(Qnn_ScaleOffset_t, scale, offset);
 
+  m.def("GetQNNCtxBinAlignment", &GetQNNCtxBinAlignment);
   m.def("GetQnnSdkBuildId", &GetQnnSdkBuildId);
+  m.def("StripProtocol", &StripProtocol);
   py::class_<QnnExecuTorchContextBinary>(m, "QnnExecuTorchContextBinary")
       .def(py::init<>());
 
@@ -181,6 +229,9 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .def(py::init<const py::bytes&>())
       .def(py::init<const py::bytes&, const py::bytes&>())
       .def("Init", &PyQnnManager::Init)
+      .def("InitBackend", &PyQnnManager::InitBackend)
+      .def("InitContext", &PyQnnManager::InitContext)
+      .def("InitContextCache", &PyQnnManager::InitContextCache)
       .def("IsNodeSupportedByBackend", &PyQnnManager::IsNodeSupportedByBackend)
       .def(
           "Compile",
@@ -189,6 +240,7 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
               std::vector<std::vector<std::shared_ptr<OpWrapper>>>&>(
               &PyQnnManager::Compile))
       .def("Destroy", &PyQnnManager::Destroy)
+      .def("DestroyContext", &PyQnnManager::DestroyContext)
       .def("IsAvailable", &PyQnnManager::IsAvailable)
       .def("IsTensorDump", &PyQnnManager::IsTensorDump)
       .def("AllocateTensor", &PyQnnManager::AllocateTensor)
@@ -198,8 +250,7 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .def("GetSpillFillBufferSize", &PyQnnManager::GetSpillFillBufferSize)
       .def(
           "MakeBinaryInfo",
-          py::overload_cast<const py::bytes&>(&PyQnnManager::MakeBinaryInfo))
-      .def("StripProtocol", &PyQnnManager::StripProtocol);
+          py::overload_cast<const py::bytes&>(&PyQnnManager::MakeBinaryInfo));
 
   py::enum_<Qnn_TensorType_t>(m, "Qnn_TensorType_t")
       .value(

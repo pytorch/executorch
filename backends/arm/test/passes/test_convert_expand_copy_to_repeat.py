@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,9 +16,7 @@ input_t = Tuple[torch.Tensor]  # Input x
 
 
 class Expand(torch.nn.Module):
-    """
-    Basic expand model using torch.Tensor.expand function
-    """
+    """Basic expand model using torch.Tensor.expand function."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -30,7 +28,7 @@ class Expand(torch.nn.Module):
         return (torch.rand(3, 1),)
 
 
-def test_expand_to_repeat_tosa_INT() -> None:
+def test_convert_expand_copy_to_repeat_tosa_INT() -> None:
     module = Expand()
     pipeline = PassPipeline[input_t](
         module,

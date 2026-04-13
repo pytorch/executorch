@@ -37,10 +37,24 @@ class HtpInfo:
 
 
 @unique
+class LpaiHardwareVersion(IntEnum):
+    NONE = 0
+    V6 = 6
+    V7 = 7
+
+
+@dataclass
+class LpaiInfo:
+    lpai_hardware_version: LpaiHardwareVersion = LpaiHardwareVersion.NONE
+    # TODO: see if we need to expose num_cores of adsp
+
+
+@unique
 class QcomChipset(IntEnum):
     UNKNOWN_SM = 0
     SA8295 = 39  # v68
-    SM8350 = 35  # v68
+    SA8797 = 72  # v81
+    SM8350 = 30  # v68
     SM8450 = 36  # v69
     SM8475 = 42  # v69
     SM8550 = 43  # v73
@@ -56,16 +70,20 @@ class QcomChipset(IntEnum):
     SAR2230P = 95  # v81
     SA8255 = 52  # v73
     SW6100 = 96  # v81
+    QCM6490 = 93  # v68
+    SM8845 = 97  # v81
 
 
 @dataclass
 class SocInfo:
     soc_model: QcomChipset = QcomChipset.UNKNOWN_SM
     htp_info: HtpInfo = field(default_factory=HtpInfo)
+    lpai_info: Optional[LpaiInfo] = None
 
 
 _soc_info_table = {
     QcomChipset.SA8295: SocInfo(QcomChipset.SA8295, HtpInfo(HtpArch.V68, 8)),
+    QcomChipset.SA8797: SocInfo(QcomChipset.SA8797, HtpInfo(HtpArch.V81, 16)),
     QcomChipset.SM8350: SocInfo(QcomChipset.SM8350, HtpInfo(HtpArch.V68, 4)),
     QcomChipset.SM8450: SocInfo(QcomChipset.SM8450, HtpInfo(HtpArch.V69, 8)),
     QcomChipset.SM8475: SocInfo(QcomChipset.SM8475, HtpInfo(HtpArch.V69, 8)),
@@ -73,15 +91,21 @@ _soc_info_table = {
     QcomChipset.SA8255: SocInfo(QcomChipset.SA8255, HtpInfo(HtpArch.V73, 8)),
     QcomChipset.SM8650: SocInfo(QcomChipset.SM8650, HtpInfo(HtpArch.V75, 8)),
     QcomChipset.SM8750: SocInfo(QcomChipset.SM8750, HtpInfo(HtpArch.V79, 8)),
-    QcomChipset.SM8850: SocInfo(QcomChipset.SM8850, HtpInfo(HtpArch.V81, 8)),
+    QcomChipset.SM8850: SocInfo(
+        QcomChipset.SM8850, HtpInfo(HtpArch.V81, 8), LpaiInfo(LpaiHardwareVersion.V6)
+    ),
     QcomChipset.SSG2115P: SocInfo(QcomChipset.SSG2115P, HtpInfo(HtpArch.V73, 2)),
     QcomChipset.SSG2125P: SocInfo(QcomChipset.SSG2125P, HtpInfo(HtpArch.V73, 2)),
     QcomChipset.SXR1230P: SocInfo(QcomChipset.SXR1230P, HtpInfo(HtpArch.V73, 2)),
     QcomChipset.SXR2230P: SocInfo(QcomChipset.SXR2230P, HtpInfo(HtpArch.V69, 8)),
     QcomChipset.SXR2330P: SocInfo(QcomChipset.SXR2330P, HtpInfo(HtpArch.V79, 8)),
     QcomChipset.QCS9100: SocInfo(QcomChipset.QCS9100, HtpInfo(HtpArch.V73, 8)),
-    QcomChipset.SAR2230P: SocInfo(QcomChipset.SAR2230P, HtpInfo(HtpArch.V81, 4)),
+    QcomChipset.SAR2230P: SocInfo(
+        QcomChipset.SAR2230P, HtpInfo(HtpArch.V81, 4), LpaiInfo(LpaiHardwareVersion.V6)
+    ),
     QcomChipset.SW6100: SocInfo(QcomChipset.SW6100, HtpInfo(HtpArch.V81, 4)),
+    QcomChipset.QCM6490: SocInfo(QcomChipset.QCM6490, HtpInfo(HtpArch.V68, 2)),
+    QcomChipset.SM8845: SocInfo(QcomChipset.SM8845, HtpInfo(HtpArch.V81, 8)),
 }
 
 
@@ -145,6 +169,16 @@ class QnnExecuTorchBackendType(IntEnum):
     kGpuBackend = 1
     kHtpBackend = 2
     kDspBackend = 3
+    kLpaiBackend = 4
+
+    def __str__(self) -> str:
+        return {
+            QnnExecuTorchBackendType.kUndefinedBackend: "undefined",
+            QnnExecuTorchBackendType.kGpuBackend: "gpu",
+            QnnExecuTorchBackendType.kHtpBackend: "htp",
+            QnnExecuTorchBackendType.kDspBackend: "dsp",
+            QnnExecuTorchBackendType.kLpaiBackend: "lpai",
+        }[self]
 
 
 @dataclass
@@ -155,12 +189,45 @@ class QnnExecuTorchHtpBackendOptions:
     )
     precision: QnnExecuTorchHtpPrecision = QnnExecuTorchHtpPrecision.kHtpQuantized
     pd_session: QnnExecuTorchHtpPdSession = QnnExecuTorchHtpPdSession.kHtpUnsignedPd
-    skel_library_dir: str = ""
     use_conv_hmx: bool = True
     use_dlbc: bool = False
     use_fold_relu: bool = True
     use_multi_contexts: bool = False
     use_weight_sharing: bool = False
+    use_slc_allocator: bool = False
+
+
+@unique
+class QnnExecuTorchLpaiClientPerf(IntEnum):
+    kUndefined = 0
+    kRealTime = 1
+    kNonRealTime = 2
+
+
+@unique
+class QnnExecuTorchLpaiCoreAffinity(IntEnum):
+    kUndefined = 0
+    kSoft = 1
+    kHard = 2
+
+
+@unique
+class QnnExecuTorchLpaiTargetEnv(IntEnum):
+    kX86 = 0
+    kArm = 1
+    kAdsp = 2
+
+
+@dataclass
+class QnnExecuTorchLpaiBackendOptions:
+    fps: int = 1
+    ftrt_ratio: int = 10
+    client_perf_type: QnnExecuTorchLpaiClientPerf = (
+        QnnExecuTorchLpaiClientPerf.kRealTime
+    )
+    affinity: QnnExecuTorchLpaiCoreAffinity = QnnExecuTorchLpaiCoreAffinity.kSoft
+    core_selection: int = 0
+    target_env: QnnExecuTorchLpaiTargetEnv = QnnExecuTorchLpaiTargetEnv.kArm
 
 
 @unique
@@ -186,6 +253,7 @@ class QnnExecuTorchBackendOptions:
     backend_type: QnnExecuTorchBackendType
     htp_options: Optional[QnnExecuTorchHtpBackendOptions] = None
     gpu_options: Optional[QnnExecuTorchGpuBackendOptions] = None
+    lpai_options: Optional[QnnExecuTorchLpaiBackendOptions] = None
 
 
 @unique
@@ -222,7 +290,6 @@ class QnnExecuTorchOpPackageOptions:
 class QnnExecuTorchOptions:
     soc_info: SocInfo
     backend_options: QnnExecuTorchBackendOptions
-    graph_name: List[str] = field(default_factory=lambda: ["forward"])
     library_path: str = ""
     log_level: QnnExecuTorchLogLevel = QnnExecuTorchLogLevel.kLogOff
     online_prepare: bool = False

@@ -17,10 +17,20 @@
 # See the README.md file in this directory for a description of the syntax used
 # by this file.
 
+- op: _adaptive_avg_pool2d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_adaptive_avg_pool2d_out
+
 - op: _cdist_forward.out
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::_cdist_forward_out
+
+- op: _conj_physical.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_conj_physical_out
 
 - op: _log_softmax.out
   kernels:
@@ -1004,6 +1014,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::var_correction_out
+
+- op: var_mean.correction_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::var_mean_correction_out
 
 - op: var.out
   kernels:

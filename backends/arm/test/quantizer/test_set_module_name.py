@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -113,16 +113,16 @@ def validate_node(
     if len(node.all_input_nodes) == 3:
         input_node, weight_node, bias_node = node.all_input_nodes
         bias_qspec = quantization_config.get_bias_qspec(node)
-        validate_input(bias_node, bias_qspec)
+        validate_input(bias_node, bias_qspec)  # type: ignore[arg-type]
     else:
         input_node, weight_node = node.all_input_nodes
 
-    validate_input(input_node, input_qspec)
-    validate_input(weight_node, weight_qspec)
-    validate_output(node, output_qspec)
+    validate_input(input_node, input_qspec)  # type: ignore[arg-type]
+    validate_input(weight_node, weight_qspec)  # type: ignore[arg-type]
+    validate_output(node, output_qspec)  # type: ignore[arg-type]
 
 
-def test_set_module_name() -> None:
+def test_set_module_name_tosa_INT() -> None:
     model = ConvModel()
     model.eval()
 

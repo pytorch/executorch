@@ -1,11 +1,27 @@
+import os
 from typing import Any
 
 import pytest
 import torch
 
-from executorch.backends.test.suite.flow import all_flows
+from executorch.backends.test.suite.flow import all_flows, TestFlow
 from executorch.backends.test.suite.reporting import _sum_op_counts
 from executorch.backends.test.suite.runner import run_test
+
+
+def pytest_collection_modifyitems(config, items):
+    for item in items:
+        callspec = getattr(item, "callspec", None)
+        if callspec is None:
+            continue
+        flow = callspec.params.get("test_runner")
+        if not isinstance(flow, TestFlow):
+            continue
+        test_name = item.originalname or item.name
+        if flow.should_skip_test(test_name):
+            item.add_marker(
+                pytest.mark.skip(reason=f"Skipped by {flow.name} skip_patterns")
+            )
 
 
 def pytest_configure(config):
@@ -32,6 +48,13 @@ class TestRunner:
         self._test_base_name = test_base_name
         self._subtest = 0
         self._results = []
+        self._artifact_dir = self._resolve_artifact_dir()
+
+    def _resolve_artifact_dir(self) -> str | None:
+        base = os.environ.get("GOLDEN_ARTIFACTS_DIR")
+        if not base:
+            return None
+        return os.path.join(base, self._flow.name)
 
     def lower_and_run_model(
         self,
@@ -50,6 +73,7 @@ class TestRunner:
             None,
             generate_random_test_inputs=generate_random_test_inputs,
             dynamic_shapes=dynamic_shapes,
+            artifact_dir=self._artifact_dir,
         )
 
         self._subtest += 1
@@ -79,7 +103,8 @@ class TestRunner:
     ids=str,
 )
 def test_runner(request):
-    return TestRunner(request.param, request.node.name, request.node.originalname)
+    flow = request.param
+    return TestRunner(flow, request.node.name, request.node.originalname)
 
 
 @pytest.hookimpl(optionalhook=True)

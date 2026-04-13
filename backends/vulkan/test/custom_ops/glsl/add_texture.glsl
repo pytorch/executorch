@@ -13,7 +13,7 @@
 #define VEC4_T ${texel_type(DTYPE)}
 
 ${define_active_storage_type("texture3d")}
-${define_required_extensions(DTYPE)}
+${define_required_extensions("texture3d", DTYPE)}
 
 layout(std430) buffer;
 

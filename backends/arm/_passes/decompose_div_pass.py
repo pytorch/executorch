@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -18,9 +18,8 @@ aten_div_ops = (torch.ops.aten.div.Tensor, torch.ops.aten.div_.Tensor)
 
 
 def get_div_decomposition(op) -> tuple:
-    """
-    Returns the the (reciprocal_op, mul_op), where the ops depends on if
-    the div op is in exir_ops torch.ops.aten.
+    """Returns the (reciprocal_op, mul_op), where the ops depends on if the div
+    op is in exir_ops torch.ops.aten.
     """
     if op in edge_div_ops:
         return (exir_ops.edge.aten.reciprocal.default, exir_ops.edge.aten.mul.Tensor)
@@ -30,20 +29,22 @@ def get_div_decomposition(op) -> tuple:
 
 
 class DecomposeDivPass(ArmPass):
-    """
-    This pass decomposes div into a mul and a reciprocal node.
+    """This pass decomposes div into a mul and a reciprocal node.
 
     Example:
         y = div(a,b)
     Becomes:
         x = reciprocal(b)
         y = mul(a,x)
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {InsertTableOpsPass}
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (edge_div_ops + aten_div_ops):
+        if op not in (edge_div_ops + aten_div_ops) or not self.allowed_to_transform(
+            meta
+        ):
             return super().call_operator(op, args, kwargs, meta)
 
         reciprocal_op, mul_op = get_div_decomposition(op)

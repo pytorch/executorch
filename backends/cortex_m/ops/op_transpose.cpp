@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Arm Limited and/or its affiliates.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -10,11 +10,6 @@
 #include <array>
 #include <limits>
 #include <vector>
-
-// Include CMSIS-NN headers with C linkage
-extern "C" {
-#include "arm_nnfunctions.h"
-}
 
 namespace cortex_m {
 namespace native {
@@ -30,7 +25,7 @@ constexpr size_t kMaxSupportedDims = 4;
 Tensor& transpose_out(
     KernelRuntimeContext& context,
     const Tensor& input,
-    const IntArrayRef perm,
+    const Int64ArrayRef perm,
     Tensor& out) {
   if (input.scalar_type() != ScalarType::Char ||
       out.scalar_type() != ScalarType::Char) {

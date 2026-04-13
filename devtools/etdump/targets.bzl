@@ -47,7 +47,7 @@ def define_common_targets():
     """
     runtime.export_file(
         name = ETDUMP_SCHEMA_FLATCC,
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     generate_schema_header_flatcc(
@@ -73,7 +73,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = ETDUMP_STEM_FLATCC,
         srcs = [],
-        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
         exported_headers = {
             ETDUMP_SCHEMA_FLATCC_BUILDER: ":{}[{}]".format(ETDUMP_GEN_RULE_NAME_FLATCC, ETDUMP_SCHEMA_FLATCC_BUILDER),
             ETDUMP_SCHEMA_FLATCC_READER: ":{}[{}]".format(ETDUMP_GEN_RULE_NAME_FLATCC, ETDUMP_SCHEMA_FLATCC_READER),
@@ -116,10 +116,7 @@ def define_common_targets():
                 "fbsource//third-party/re2:re2",
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
             ],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
         )
 
         runtime.cxx_library(
@@ -145,8 +142,5 @@ def define_common_targets():
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
             ],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
         )

@@ -268,11 +268,11 @@ class CortexMConv2DHardswish(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
     }
 
-    def __init__(self, in_channels=1, out_channels=1):
+    def __init__(self):
         super().__init__()
-        self.conv = torch.nn.Conv2d(1, 1, 1, padding=0, bias=False)
+        self.conv = torch.nn.Conv2d(2, 1, 1, padding=0, bias=False)
         self.act = torch.nn.Hardswish()
-        self.conv.weight.data.fill_(1)
+        self.conv.weight.data.fill_(0.5)
 
     def forward(self, x):
         return self.act(self.conv(x))
@@ -344,9 +344,9 @@ class CortexMConv2DHardsigmoid(torch.nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.conv = torch.nn.Conv2d(1, 1, 1, bias=False)
+        self.conv = torch.nn.Conv2d(2, 1, 1, bias=False)
         self.act = torch.nn.Hardsigmoid(inplace=True)
-        self.conv.weight.data.fill_(1)
+        self.conv.weight.data.fill_(0.5)
 
     def forward(self, x):
         return self.act(self.conv(x))
@@ -369,8 +369,8 @@ class CortexMConv2DClampInplace(torch.nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.conv = torch.nn.Conv2d(1, 1, 1, bias=False)
-        self.conv.weight.data.fill_(1)
+        self.conv = torch.nn.Conv2d(2, 1, 1, bias=False)
+        self.conv.weight.data.fill_(0.5)
 
     def forward(self, x):
         return torch.clamp_(self.conv(x), min=0.0, max=None)
@@ -490,19 +490,19 @@ test_cases = {
     "conv2d_hardsigmoid_inplace": McuTestCase(
         model=CortexMConv2DHardsigmoid(),
         example_inputs=(
-            ramp_tensor(-4, 4, (1, 1, 6, 6)).to(memory_format=torch.channels_last),
+            ramp_tensor(-4, 4, (1, 2, 6, 6)).to(memory_format=torch.channels_last),
         ),
     ),
     "conv2d_hardswish": McuTestCase(
-        model=CortexMConv2DHardswish(in_channels=1, out_channels=1),
+        model=CortexMConv2DHardswish(),
         example_inputs=(
-            ramp_tensor(-3, 0, (1, 1, 1, 100)).to(memory_format=torch.channels_last),
+            ramp_tensor(-3, 0, (1, 2, 1, 100)).to(memory_format=torch.channels_last),
         ),
     ),
     "conv2d_clamp_inplace": McuTestCase(
         model=CortexMConv2DClampInplace(),
         example_inputs=(
-            ramp_tensor(-4, 4, (1, 1, 1, 10)).to(memory_format=torch.channels_last),
+            ramp_tensor(-4, 4, (1, 2, 1, 10)).to(memory_format=torch.channels_last),
         ),
     ),
     "linear_clamp": McuTestCase(

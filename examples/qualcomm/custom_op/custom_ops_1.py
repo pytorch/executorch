@@ -27,6 +27,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
     generate_inputs,
+    get_backend_type,
     make_output_dir,
     make_quantizer,
     setup_common_args_and_variables,
@@ -69,16 +70,12 @@ def annotate_custom(gm: torch.fx.GraphModule) -> None:
     This function is specific for custom op.
     The source_fn of the rewritten nn module turns out to be "my_ops.mul3.default"
     """
-    from executorch.backends.qualcomm.quantizer.annotators import (
-        _is_annotated,
-        QUANT_ANNOTATION_KEY,
-    )
-
     from executorch.backends.qualcomm.quantizer.qconfig import (
         get_ptq_per_channel_quant_config,
     )
     from torch.fx import Node
     from torchao.quantization.pt2e.quantizer import QuantizationAnnotation
+    from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
     quantization_config = get_ptq_per_channel_quant_config()
     for node in gm.graph.nodes:
@@ -86,7 +83,7 @@ def annotate_custom(gm: torch.fx.GraphModule) -> None:
             continue
 
         # skip annotation if it is already annotated
-        if _is_annotated([node]):
+        if Q_ANNOTATION_KEY in node.meta and node.meta[Q_ANNOTATION_KEY]._annotated:
             continue
 
         input_qspec_map = {}
@@ -95,7 +92,7 @@ def annotate_custom(gm: torch.fx.GraphModule) -> None:
         input_spec = quantization_config.input_activation
         input_qspec_map[input_act] = input_spec
 
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,
             _annotated=True,
@@ -180,10 +177,6 @@ def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    quant_dtype = QuantDtype.use_8a8w
-    if args.use_fp16:
-        quant_dtype = None
-
     instance = Model()
     pte_filename = "custom_qnn"
     sample_input = (torch.ones(1, 32, 28, 28),)
@@ -197,9 +190,17 @@ def main(args):
         soc_info.htp_info.htp_arch,
         args.build_op_package,
     )
-    quantizer = make_quantizer(
-        quant_dtype=quant_dtype, custom_annotations=(annotate_custom,)
-    )
+
+    quant_dtype = QuantDtype.use_8a8w
+    if args.use_fp16:
+        quantizer = None
+    else:
+        quantizer = make_quantizer(
+            quant_dtype=quant_dtype,
+            custom_annotations=(annotate_custom,),
+            backend=get_backend_type(args.backend),
+            soc_model=args.model,
+        )
 
     build_executorch_binary(
         instance,
@@ -262,8 +263,18 @@ def main(args):
             target=args.target,
         )
         adb.push(inputs=sample_input, files=op_package_paths)
+        if args.debug:
+            adb.execute(custom_runner_cmd="logcat -c")
+            adb.execute(
+                custom_runner_cmd=f"echo 0x1f > {workspace}/qnn_executor_runner.farf"
+            )
+
         adb.execute()
-        adb.pull(output_path=args.artifact)
+        if args.debug:
+            adb.execute(
+                custom_runner_cmd=f"logcat -d -v time >{workspace}/outputs/debug_logs.txt"
+            )
+        adb.pull(host_output_path=args.artifact)
 
     x86_golden = instance(*sample_input)
     device_output = torch.from_numpy(
@@ -322,6 +333,13 @@ if __name__ == "__main__":
         "`HEXAGON_SDK_ROOT` and `ANDROID_NDK_ROOT` environment variable. "
         "And add clang compiler into `PATH`. Please refer to  Qualcomm AI Engine "
         "Direct SDK document to get more details",
+        action="store_true",
+        default=False,
+    )
+
+    parser.add_argument(
+        "--debug",
+        help="Enable device logging",
         action="store_true",
         default=False,
     )

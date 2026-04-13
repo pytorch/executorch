@@ -179,6 +179,9 @@ class Adapter final {
   // Physical Device Features
 
   inline bool supports_16bit_storage_buffers() {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
 #ifdef VK_KHR_16bit_storage
     return physical_device_.shader_16bit_storage.storageBuffer16BitAccess ==
         VK_TRUE;
@@ -188,6 +191,9 @@ class Adapter final {
   }
 
   inline bool supports_8bit_storage_buffers() {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
 #ifdef VK_KHR_8bit_storage
     return physical_device_.shader_8bit_storage.storageBuffer8BitAccess ==
         VK_TRUE;
@@ -197,6 +203,9 @@ class Adapter final {
   }
 
   inline bool supports_float16_shader_types() {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
 #ifdef VK_KHR_shader_float16_int8
     return physical_device_.shader_float16_int8_types.shaderFloat16 == VK_TRUE;
 #else
@@ -205,6 +214,9 @@ class Adapter final {
   }
 
   inline bool supports_int8_shader_types() {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
 #ifdef VK_KHR_shader_float16_int8
     return physical_device_.shader_float16_int8_types.shaderInt8 == VK_TRUE;
 #else
@@ -213,6 +225,9 @@ class Adapter final {
   }
 
   inline bool supports_int8_dot_product() {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
 #ifdef VK_KHR_shader_integer_dot_product
     return physical_device_.shader_int_dot_product_features
                .shaderIntegerDotProduct == VK_TRUE;
@@ -221,15 +236,40 @@ class Adapter final {
 #endif /* VK_KHR_shader_integer_dot_product */
   }
 
+  inline bool supports_nv_cooperative_matrix2() {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_NV_cooperative_matrix2
+    return physical_device_.cooperative_matrix2_features
+               .cooperativeMatrixWorkgroupScope == VK_TRUE &&
+        physical_device_.cooperative_matrix2_features
+            .cooperativeMatrixFlexibleDimensions == VK_TRUE &&
+        physical_device_.cooperative_matrix2_features
+            .cooperativeMatrixTensorAddressing == VK_TRUE;
+#else
+    return false;
+#endif /* VK_NV_cooperative_matrix2 */
+  }
+
   inline bool supports_int16_shader_types() {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
     return physical_device_.supports_int16_shader_types;
   }
 
   inline bool supports_int64_shader_types() {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
     return physical_device_.supports_int64_shader_types;
   }
 
   inline bool supports_float64_shader_types() {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
     return physical_device_.supports_float64_shader_types;
   }
 
@@ -265,6 +305,8 @@ class Adapter final {
       VkFence fence = VK_NULL_HANDLE,
       VkSemaphore wait_semaphore = VK_NULL_HANDLE,
       VkSemaphore signal_semaphore = VK_NULL_HANDLE);
+
+  void override_device_name(const std::string& new_name);
 
   std::string stringize() const;
   friend std::ostream& operator<<(std::ostream&, const Adapter&);

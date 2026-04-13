@@ -16,10 +16,7 @@ def define_common_targets():
         exported_deps = [
             "//executorch/runtime/core:memory_allocator",
         ],
-        visibility = [
-            "//executorch/extension/memory_allocator/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -34,8 +31,5 @@ def define_common_targets():
         exported_deps = [
             "//executorch/runtime/core:memory_allocator",
         ],
-        visibility = [
-            "//executorch/extension/memory_allocator/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )

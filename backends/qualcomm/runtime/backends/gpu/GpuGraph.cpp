@@ -15,7 +15,7 @@ namespace qnn {
 using executorch::runtime::Error;
 
 GpuGraph::GpuGraph(
-    const QnnImplementation& implementation,
+    QnnImplementation* implementation,
     QnnBackend* backend,
     QnnContext* context,
     const QnnExecuTorchProfileLevel& profile_level,

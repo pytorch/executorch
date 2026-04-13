@@ -14,6 +14,8 @@ Before executing the scripts and runner, please ensure that you are using the QN
 
 4. scripts: This folder contains scripts to build models provided by ExecuTorch.
 
+5. util_scripts: This folder includes tutorial example scripts designed to showcase the utilities we've developed. For example, we provide a debugging tool [qnn_intermediate_debugger](./util_scripts/qnn_intermediate_debugger_demo.py) that allow users to compare the intermediate outputs of QNNs V.S. CPUs. By reviewing these scripts, we aim to help users smoothly integrate these utilities into their own projects.
+
 
 
 Please check helper of each examples for detailed arguments.
@@ -144,7 +146,7 @@ pip install scikit-learn pandas graphviz
 
 ## Limitation
 
-1. QNN 2.28 is used for all examples. Newer or older QNN might work,
+1. QNN 2.37 is used for all examples. Newer or older QNN might work,
 but the performance and accuracy number can differ.
 
 2. The mobilebert example is on QNN HTP fp16, which is only supported by a limited

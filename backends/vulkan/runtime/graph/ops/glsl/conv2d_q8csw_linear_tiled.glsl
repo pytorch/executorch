@@ -8,6 +8,8 @@
 
 #version 450 core
 
+${define_required_extensions(OUTPUT_STORAGE, DTYPE)}
+
 #define PRECISION ${PRECISION}
 #define VEC4_T ${texel_load_type(DTYPE, OUTPUT_STORAGE)}
 #define T ${texel_load_component_type(DTYPE, OUTPUT_STORAGE)}
@@ -27,8 +29,6 @@ $if WEIGHT_STORAGE == "buffer":
 #define TILE_K ${TILE_K4 * 4}
 #define TILE_N ${TILE_N4 * 4}
 
-${define_required_extensions(DTYPE)}
-
 layout(std430) buffer;
 
 #include "conv2d_common.glslh"
@@ -41,11 +41,27 @@ ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer", is_scalar_array=False
 
 ${layout_declare_ubo(B, "ivec4", "output_sizes")}
 ${layout_declare_ubo(B, "ivec4", "input_sizes")}
-${layout_declare_ubo(B, "Conv2DParams", "conv2d_params")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "int", "apply_bias", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_stride_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_stride_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_padding_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_padding_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_dilation_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_dilation_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_kernel_size_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_kernel_size_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_in_channels_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_out_channels_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K4_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K4", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_logical_K", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_logical_K_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_groups", "1")}
+
 
 #include "linear_fp_input_tile_load.glslh"
 #include "linear_int8_weight_tile_load.glslh"
@@ -75,10 +91,10 @@ void main() {
     return;
   }
 
-  const int group_idx = n / conv2d_params.out_channels_per_group;
-  const int input_k4_offset = conv2d_params.K4_per_group * group_idx;
+  const int group_idx = n / conv2d_params_out_channels_per_group;
+  const int input_k4_offset = conv2d_params_K4_per_group * group_idx;
 
-  const int K4 = conv2d_params.K4;
+  const int K4 = conv2d_params_K4;
   const int N4 = div_up_4(N);
 
   FPOutTile out_tile;
@@ -90,13 +106,13 @@ void main() {
   const bool dont_check_bounds = (M - m) >= TILE_M;
 
   if (dont_check_bounds) {
-    for (int k4 = 0; k4 < conv2d_params.K4_per_group; k4++) {
+    for (int k4 = 0; k4 < conv2d_params_K4_per_group; k4++) {
       load_input_tile_no_checks(in_tile, k4 + input_k4_offset, m, K4, M);
       load_int8_weight_tile(int8_weight_tile, n4, k4, N4);
       fp_accumulate_with_int8_weight(out_tile, in_tile, int8_weight_tile);
     }
   } else {
-    for (int k4 = 0; k4 < conv2d_params.K4_per_group; k4++) {
+    for (int k4 = 0; k4 < conv2d_params_K4_per_group; k4++) {
       load_input_tile_with_checks(in_tile, k4 + input_k4_offset, m, K4, M);
       load_int8_weight_tile(int8_weight_tile, n4, k4, N4);
       fp_accumulate_with_int8_weight(out_tile, in_tile, int8_weight_tile);

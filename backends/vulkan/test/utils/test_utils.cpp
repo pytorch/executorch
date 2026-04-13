@@ -25,17 +25,14 @@ bool is_bitw8(vkapi::ScalarType dtype) {
 
 vkapi::ShaderInfo get_nchw_to_tensor_shader(
     const api::vTensor& v_dst,
-    bool int8_buffer_enabled,
-    bool push_constant_variant) {
+    bool int8_buffer_enabled) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
   if (is_bitw8(v_dst.dtype()) && v_dst.storage_type() != utils::kBuffer &&
       !int8_buffer_enabled) {
-    kernel_name = "nchw_to_bitw8_image_nobitw8buffer";
-    if (!push_constant_variant) {
-      kernel_name += "_no_pc";
-    }
+    // Use _no_pc variant since submit_compute_job only supports UBOs
+    kernel_name = "nchw_to_bitw8_image_nobitw8buffer_no_pc";
     add_storage_type_suffix(kernel_name, v_dst.storage_type());
     add_dtype_suffix(kernel_name, v_dst.dtype());
     return VK_KERNEL_FROM_STR(kernel_name);
@@ -49,9 +46,6 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
   }
 
   kernel_name = "nchw_to_image";
-  if (!push_constant_variant) {
-    kernel_name += "_no_pc";
-  }
   add_storage_type_suffix(kernel_name, v_dst.storage_type());
   add_dtype_suffix(kernel_name, v_dst.dtype());
   add_dtype_suffix(kernel_name, v_dst.dtype());
@@ -61,17 +55,14 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
 
 vkapi::ShaderInfo get_tensor_to_nchw_shader(
     const api::vTensor& v_src,
-    bool int8_buffer_enabled,
-    bool push_constant_variant) {
+    bool int8_buffer_enabled) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
   if (is_bitw8(v_src.dtype()) && v_src.storage_type() != utils::kBuffer &&
       !int8_buffer_enabled) {
-    kernel_name = "bitw8_image_to_nchw_nobitw8buffer";
-    if (!push_constant_variant) {
-      kernel_name += "_no_pc";
-    }
+    // Use _no_pc variant since submit_compute_job only supports UBOs
+    kernel_name = "bitw8_image_to_nchw_nobitw8buffer_no_pc";
     add_storage_type_suffix(kernel_name, v_src.storage_type());
     add_dtype_suffix(kernel_name, v_src.dtype());
     return VK_KERNEL_FROM_STR(kernel_name);
@@ -85,9 +76,6 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
   }
 
   kernel_name = "image_to_nchw";
-  if (!push_constant_variant) {
-    kernel_name += "_no_pc";
-  }
   add_storage_type_suffix(kernel_name, v_src.storage_type());
   add_dtype_suffix(kernel_name, v_src.dtype());
   add_dtype_suffix(kernel_name, v_src.dtype());
@@ -106,7 +94,7 @@ void record_nchw_to_buffer_op(
   vkapi::SpecVarList specialization_constants = {v_dst.hashed_layout()};
 
   context->submit_compute_job(
-      get_nchw_to_tensor_shader(v_dst, true, false),
+      get_nchw_to_tensor_shader(v_dst, true),
       pipeline_barrier,
       {uint32_t(v_dst.numel()), 1, 1},
       {64, 1, 1},
@@ -127,7 +115,7 @@ void record_buffer_to_nchw_op(
     vkapi::VulkanBuffer& dst_buffer) {
   vkapi::PipelineBarrier pipeline_barrier{};
   context->submit_compute_job(
-      get_tensor_to_nchw_shader(v_src, true, false),
+      get_tensor_to_nchw_shader(v_src, true),
       pipeline_barrier,
       {uint32_t(v_src.numel()), 1, 1},
       {64, 1, 1},
@@ -146,23 +134,46 @@ void record_nchw_to_image_op(
   vkapi::PipelineBarrier pipeline_barrier{};
   vkapi::SpecVarList specialization_constants = {v_dst.hashed_layout()};
 
-  context->submit_compute_job(
-      get_nchw_to_tensor_shader(
-          v_dst,
-          context->adapter_ptr()->has_full_int8_buffers_support(),
-          false),
-      pipeline_barrier,
-      v_dst.logical_limits(),
-      adaptive_work_group_size(v_dst.logical_limits()),
-      specialization_constants,
-      VK_NULL_HANDLE,
-      0,
-      v_dst.image(
-          pipeline_barrier,
-          vkapi::PipelineStage::COMPUTE,
-          vkapi::MemoryAccessType::WRITE),
-      src_buffer,
-      v_dst.sizes_ubo());
+  bool int8_buffer_enabled =
+      context->adapter_ptr()->has_full_int8_buffers_support();
+  auto shader = get_nchw_to_tensor_shader(v_dst, int8_buffer_enabled);
+
+  // bitw8 _no_pc shaders expect ivec4 sizes UBO; regular shaders expect
+  // TextureMetadata UBO. The bitw8 path is only used when int8 buffers are
+  // NOT supported.
+  bool use_bitw8 = is_bitw8(v_dst.dtype()) && !int8_buffer_enabled;
+
+  if (use_bitw8) {
+    context->submit_compute_job(
+        shader,
+        pipeline_barrier,
+        v_dst.logical_limits(),
+        adaptive_work_group_size(v_dst.logical_limits()),
+        specialization_constants,
+        VK_NULL_HANDLE,
+        0,
+        v_dst.image(
+            pipeline_barrier,
+            vkapi::PipelineStage::COMPUTE,
+            vkapi::MemoryAccessType::WRITE),
+        src_buffer,
+        v_dst.sizes_ubo());
+  } else {
+    context->submit_compute_job(
+        shader,
+        pipeline_barrier,
+        v_dst.logical_limits(),
+        adaptive_work_group_size(v_dst.logical_limits()),
+        specialization_constants,
+        VK_NULL_HANDLE,
+        0,
+        v_dst.image(
+            pipeline_barrier,
+            vkapi::PipelineStage::COMPUTE,
+            vkapi::MemoryAccessType::WRITE),
+        src_buffer,
+        v_dst.texture_meta_ubo());
+  }
 }
 
 void record_image_to_nchw_op(
@@ -172,17 +183,40 @@ void record_image_to_nchw_op(
   vkapi::PipelineBarrier pipeline_barrier{};
   vkapi::SpecVarList specialization_constants = {v_src.hashed_layout()};
 
-  context->submit_compute_job(
-      get_tensor_to_nchw_shader(v_src, true, false),
-      pipeline_barrier,
-      v_src.logical_limits(),
-      adaptive_work_group_size(v_src.logical_limits()),
-      specialization_constants,
-      VK_NULL_HANDLE,
-      0,
-      dst_buffer,
-      v_src.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
-      v_src.sizes_ubo());
+  bool int8_buffer_enabled =
+      context->adapter_ptr()->has_full_int8_buffers_support();
+  auto shader = get_tensor_to_nchw_shader(v_src, int8_buffer_enabled);
+
+  // bitw8 _no_pc shaders expect ivec4 sizes UBO; regular shaders expect
+  // TextureMetadata UBO. The bitw8 path is only used when int8 buffers are
+  // NOT supported.
+  bool use_bitw8 = is_bitw8(v_src.dtype()) && !int8_buffer_enabled;
+
+  if (use_bitw8) {
+    context->submit_compute_job(
+        shader,
+        pipeline_barrier,
+        v_src.logical_limits(),
+        adaptive_work_group_size(v_src.logical_limits()),
+        specialization_constants,
+        VK_NULL_HANDLE,
+        0,
+        dst_buffer,
+        v_src.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
+        v_src.sizes_ubo());
+  } else {
+    context->submit_compute_job(
+        shader,
+        pipeline_barrier,
+        v_src.logical_limits(),
+        adaptive_work_group_size(v_src.logical_limits()),
+        specialization_constants,
+        VK_NULL_HANDLE,
+        0,
+        dst_buffer,
+        v_src.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
+        v_src.texture_meta_ubo());
+  }
 }
 
 void record_bitw8_image_to_nchw_nobitw8buffer_op(
@@ -357,33 +391,76 @@ void record_matmul_texture3d(
     api::Context* context,
     api::vTensor& out,
     api::vTensor& mat1,
-    api::vTensor& mat2) {
-  std::string kernel_name = "matmul_naive";
+    api::vTensor& mat2,
+    bool mat2_is_transposed) {
+  std::string kernel_name =
+      mat2_is_transposed ? "matmul_transposed_naive" : "matmul_naive";
   kernel_name.reserve(kShaderNameReserve);
   add_storage_type_suffix(kernel_name, out.storage_type());
   add_dtype_suffix(kernel_name, out.dtype());
 
   utils::uvec3 global_wg_size = out.logical_limits();
 
+  struct PushConstants {
+    utils::ivec4 out_sizes;
+    utils::ivec4 mat1_sizes;
+    utils::ivec4 mat2_sizes;
+    utils::ivec3 out_limits;
+  };
+
+  auto make_ivec4 = [](const std::vector<int64_t>& sizes) -> utils::ivec4 {
+    utils::ivec4 result{1, 1, 1, 1};
+    for (size_t i = 0; i < std::min(sizes.size(), size_t(4)); ++i) {
+      result.data[i] = static_cast<int32_t>(sizes[i]);
+    }
+    return result;
+  };
+
+  auto make_ivec3 = [](const utils::uvec3& v) -> utils::ivec3 {
+    return {
+        static_cast<int32_t>(v.data[0]),
+        static_cast<int32_t>(v.data[1]),
+        static_cast<int32_t>(v.data[2])};
+  };
+
+  PushConstants push_constants{
+      make_ivec4(out.sizes()),
+      make_ivec4(mat1.sizes()),
+      make_ivec4(mat2.sizes()),
+      make_ivec3(out.logical_limits()),
+  };
+
   vkapi::PipelineBarrier pipeline_barrier{};
-  api::context()->submit_compute_job(
+
+  vkapi::SpecVarList specialization_constants = {
+      out.hashed_layout(), mat1.hashed_layout(), mat2.hashed_layout()};
+
+  utils::uvec3 local_wg_size = {8, 8, 1};
+
+  vkapi::DescriptorSet descriptor_set = api::context()->get_descriptor_set(
       VK_KERNEL_FROM_STR(kernel_name),
-      pipeline_barrier,
-      global_wg_size,
-      {8, 8, 1},
-      {out.hashed_layout(), mat1.hashed_layout(), mat2.hashed_layout()},
-      VK_NULL_HANDLE,
+      utils::WorkgroupSize(local_wg_size),
+      specialization_constants,
+      sizeof(push_constants));
+
+  descriptor_set.bind(
       0,
       out.image(
           pipeline_barrier,
           vkapi::PipelineStage::COMPUTE,
-          vkapi::MemoryAccessType::WRITE),
-      mat1.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
-      mat2.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
-      out.sizes_ubo(),
-      out.logical_limits_ubo(),
-      mat1.sizes_ubo(),
-      mat2.sizes_ubo());
+          vkapi::MemoryAccessType::WRITE));
+  descriptor_set.bind(
+      1, mat1.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE));
+  descriptor_set.bind(
+      2, mat2.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE));
+
+  api::context()->register_shader_dispatch(
+      descriptor_set,
+      pipeline_barrier,
+      VK_KERNEL_FROM_STR(kernel_name),
+      global_wg_size,
+      &push_constants,
+      sizeof(push_constants));
 }
 
 //
@@ -485,7 +562,8 @@ void fill_vtensor(
     std::fill(data.begin(), data.end(), val);
   }
 
-  graph.copy_into_staging(idx.staging, data.data(), data.size());
+  graph.maybe_cast_and_copy_into_staging(
+      idx.staging, data.data(), data.size(), vkapi::kFloat);
 }
 
 void extract_vtensor(api::vTensor& vten, std::vector<float>& data) {
@@ -570,8 +648,11 @@ void execute_graph_and_check_output(
     IOValueRef out_ioval = graph.outputs().at(i);
     std::vector<float> output_data(
         graph.staging_buffer_numel_of(out_ioval.value));
-    graph.copy_from_staging(
-        out_ioval.staging, output_data.data(), output_data.size());
+    graph.maybe_cast_and_copy_from_staging(
+        out_ioval.staging,
+        output_data.data(),
+        output_data.size(),
+        vkapi::kFloat);
 
     for (size_t j = 0; j < graph.numel_of(out_ioval.value); ++j) {
       CHECK_VALUE(output_data, j, expected_outputs.at(i));

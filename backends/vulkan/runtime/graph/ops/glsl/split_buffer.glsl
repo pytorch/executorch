@@ -8,14 +8,14 @@
 
 #version 450 core
 
+${define_required_extensions("buffer", DTYPE)}
+#extension GL_EXT_control_flow_attributes : require
+
 #define PRECISION ${PRECISION}
 
 #define T ${buffer_scalar_type(DTYPE)}
 
 ${define_active_storage_type("buffer")}
-${define_required_extensions(DTYPE)}
-
-#extension GL_EXT_control_flow_attributes : require
 
 layout(std430) buffer;
 
@@ -29,9 +29,9 @@ ${layout_declare_ubo(B, "BufferMetadata", "inp")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int split_dim = 0;
-layout(constant_id = 4) const int split_idx = 0;
-layout(constant_id = 5) const int split_offset = 0;
+${layout_declare_spec_const(C, "int", "split_dim", "0")}
+${layout_declare_spec_const(C, "int", "split_idx", "0")}
+${layout_declare_spec_const(C, "int", "split_offset", "0")}
 
 void main() {
   const uint out_bufi = gl_GlobalInvocationID.x;

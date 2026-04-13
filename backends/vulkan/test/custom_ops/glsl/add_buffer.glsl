@@ -14,7 +14,7 @@
 #define T ${buffer_scalar_type(DTYPE)}
 
 ${define_active_storage_type("buffer")}
-${define_required_extensions(DTYPE)}
+${define_required_extensions("buffer", DTYPE)}
 
 layout(std430) buffer;
 

@@ -22,7 +22,7 @@ def define_common_targets():
         ],
         define_static_target = True,
         platforms = [ANDROID],
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
         deps = [
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
@@ -47,9 +47,11 @@ def define_common_targets():
                     "backends/gpu/*.cpp",
                     "backends/htp/*.cpp",
                     "backends/ir/*.cpp",
-                ] + (["backends/gpu/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/gpu/aarch64/*.cpp"]) + (
-                    ["backends/htp/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/htp/aarch64/*.cpp"]) + (
-                    ["backends/ir/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/ir/aarch64/*.cpp"]
+                    "backends/lpai/*.cpp",
+                ] + (["backends/gpu/host/*.cpp"] if include_aot_qnn_lib else ["backends/gpu/target/*.cpp"]) + (
+                    ["backends/htp/host/*.cpp"] if include_aot_qnn_lib else ["backends/htp/target/*.cpp"]) + (
+                    ["backends/ir/host/*.cpp"] if include_aot_qnn_lib else ["backends/ir/target/*.cpp"]) + (
+                    ["backends/lpai/host/*.cpp"] if include_aot_qnn_lib else ["backends/lpai/target/*.cpp"]
                 ),
                 exclude = ["Logging.cpp"],
             ),
@@ -60,13 +62,14 @@ def define_common_targets():
                     "backends/gpu/*.h",
                     "backends/htp/*.h",
                     "backends/ir/*.h",
+                    "backends/lpai/*.h",
                 ],
                 exclude = ["Logging.h"],
             ),
             define_static_target = True,
             link_whole = True,  # needed for executorch/examples/models/llama:main to register QnnBackend
             platforms = [ANDROID],
-            visibility = ["@EXECUTORCH_CLIENTS"],
+            visibility = ["PUBLIC"],
             resources = ({
                 "qnn_lib": "fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs".format(get_qnn_library_version()),
                 } if include_aot_qnn_lib else {

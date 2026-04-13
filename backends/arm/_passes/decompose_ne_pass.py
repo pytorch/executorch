@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -15,9 +15,8 @@ aten_ne_ops = (torch.ops.aten.ne.Tensor, torch.ops.aten.ne_.Tensor)
 
 
 def get_ne_decomposition(op) -> tuple:
-    """
-    Returns the decomposition of the given aten.ne operation into its equivalent
-    TOSA-supported operations.
+    """Returns the decomposition of the given aten.ne operation into its
+    equivalent TOSA-supported operations.
 
     This handles both edge dialect ops and core PyTorch ops. The decomposition strategy
     is:
@@ -29,6 +28,7 @@ def get_ne_decomposition(op) -> tuple:
 
     Raises:
         RuntimeError: If the provided operator is not a supported ne variant.
+
     """
     if op in edge_ne_ops:
         return (exir_ops.edge.aten.eq.Tensor, exir_ops.edge.aten.logical_not.default)
@@ -39,9 +39,8 @@ def get_ne_decomposition(op) -> tuple:
 
 
 class DecomposeNotEqualPass(ArmPass):
-    """
-    A transformation pass that decomposes unsupported `aten.ne` operations into a
-    combination of supported TOSA-equivalent operations.
+    """A transformation pass that decomposes unsupported `aten.ne` operations
+    into a combination of supported TOSA-equivalent operations.
 
     Since TOSA does not provide a native NOT_EQUAL operator, this pass rewrites:
         ne(x, y) → logical_not(eq(x, y))
@@ -54,12 +53,13 @@ class DecomposeNotEqualPass(ArmPass):
     These are replaced with:
         - aten.eq.Tensor or exir_ops.edge.aten.eq.Tensor
         - followed by aten.logical_not.default or its edge equivalent
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (edge_ne_ops + aten_ne_ops):
+        if op not in (edge_ne_ops + aten_ne_ops) or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         lhs, rhs = args

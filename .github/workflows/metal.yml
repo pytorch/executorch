@@ -1,15 +1,22 @@
 name: Test Metal Backend
 
 on:
-  pull_request:
   push:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/metal/*
+  pull_request:
+    paths:
+      - .github/workflows/metal.yml
+      - backends/apple/metal/**
+      - backends/aoti/**
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   test-metal-builds:
@@ -28,9 +35,33 @@ jobs:
         PYTHON_EXECUTABLE=python CMAKE_ARGS="-DEXECUTORCH_BUILD_METAL=ON" ${CONDA_RUN} --no-capture-output ./install_executorch.sh
         echo "::endgroup::"
 
+  test-metal-modules:
+    name: test-metal-backend-modules
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      runner: macos-m2-stable
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        set -eux
+
+        echo "::group::Setup ExecuTorch"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Build Metal Runtime"
+        ${CONDA_RUN} backends/apple/metal/tests/run_metal_test.sh --build
+        echo "::endgroup::"
+
+        echo "::group::Run Metal Backend Module Tests"
+        ${CONDA_RUN} python -m unittest backends.apple.metal.tests.test_modules.TestMetalBackendModules
+        echo "::endgroup::"
+
   export-model-metal-artifact:
     name: export-model-metal-artifact
-      # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
+    # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
@@ -40,12 +71,23 @@ jobs:
         model:
           - repo: "mistralai"
             name: "Voxtral-Mini-3B-2507"
+          - repo: "mistralai"
+            name: "Voxtral-Mini-4B-Realtime-2602"
           - repo: "openai"
             name: "whisper-small"
           - repo: "openai"
             name: "whisper-large-v3-turbo"
+          - repo: "nvidia"
+            name: "parakeet-tdt"
         quant:
           - "non-quantized"
+          - "quantized-int4-metal"
+        exclude:
+          # Exclude non-quantized for Voxtral Realtime (too large)
+          - model:
+              repo: "mistralai"
+              name: "Voxtral-Mini-4B-Realtime-2602"
+            quant: "non-quantized"
     with:
       runner: macos-m2-stable
       python-version: '3.11'
@@ -69,13 +111,19 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Setup ExecuTorch"
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} ./install_executorch.sh
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_executorch.sh
         echo "::endgroup::"
 
         echo "::group::Pip List"
         ${CONDA_RUN} pip list
         echo "::endgroup::"
 
+        # Isolate Inductor cache and precompiled headers (PCH) per job to prevent
+        # PCH mtime conflicts between parallel matrix jobs on the same runner.
+        # TORCHINDUCTOR_CACHE_DIR isolates the code cache; setting TMPDIR isolates
+        # the PCH dir, which PyTorch derives from tempfile.gettempdir() independently.
+        export TMPDIR=$(mktemp -d "${RUNNER_TEMP}/tmpdir_XXXXXX")
+        export TORCHINDUCTOR_CACHE_DIR=$(mktemp -d "${RUNNER_TEMP}/inductor_cache_XXXXXX")
         ${CONDA_RUN} bash .ci/scripts/export_model_artifact.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
 
   test-model-metal-e2e:
@@ -88,12 +136,23 @@ jobs:
         model:
           - repo: "mistralai"
             name: "Voxtral-Mini-3B-2507"
+          - repo: "mistralai"
+            name: "Voxtral-Mini-4B-Realtime-2602"
           - repo: "openai"
             name: "whisper-small"
           - repo: "openai"
             name: "whisper-large-v3-turbo"
+          - repo: "nvidia"
+            name: "parakeet-tdt"
         quant:
           - "non-quantized"
+          - "quantized-int4-metal"
+        exclude:
+          # Exclude non-quantized for Voxtral Realtime (too large)
+          - model:
+              repo: "mistralai"
+              name: "Voxtral-Mini-4B-Realtime-2602"
+            quant: "non-quantized"
     with:
       runner: macos-m2-stable
       python-version: '3.11'

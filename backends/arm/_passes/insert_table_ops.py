@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -25,8 +25,8 @@ from torch.fx.node import Node
 
 
 class TableOps:
-    """
-    Helper class for finding the corresponding table operator for a given Node.
+    """Helper class for finding the corresponding table operator for a given
+    Node.
     """
 
     # Targets that follow a straigtforward one-to-one mapping to their table op
@@ -35,8 +35,11 @@ class TableOps:
         exir_ops.edge.aten.erf.default: torch.erf,
         exir_ops.edge.aten.exp.default: torch.exp,
         exir_ops.edge.aten.expm1.default: torch.expm1,
+        exir_ops.edge.aten.erfinv.default: torch.erfinv,
         exir_ops.edge.aten.floor.default: torch.floor,
         exir_ops.edge.aten.log.default: torch.log,
+        exir_ops.edge.aten.log1p.default: torch.log1p,
+        exir_ops.edge.aten.log10.default: torch.log10,
         exir_ops.edge.aten.reciprocal.default: torch.reciprocal,
         exir_ops.edge.aten.rsqrt.default: torch.rsqrt,
         exir_ops.edge.aten.sigmoid.default: torch.sigmoid,
@@ -53,6 +56,8 @@ class TableOps:
         exir_ops.edge.aten.asinh.default: torch.asinh,
         exir_ops.edge.aten.cosh.default: torch.cosh,
         exir_ops.edge.aten.acos.default: torch.acos,
+        exir_ops.edge.aten.tan.default: torch.tan,
+        exir_ops.edge.aten.silu.default: torch.nn.functional.silu,
     }
 
     # Targets that must be treated explicitly
@@ -60,6 +65,7 @@ class TableOps:
         exir_ops.edge.aten.pow.Tensor_Scalar,
         exir_ops.edge.aten.gelu.default,
         exir_ops.edge.aten.elu.default,
+        exir_ops.edge.aten.remainder.Scalar,
     }
 
     def __init__(self, exported_program: ExportedProgram):
@@ -98,6 +104,9 @@ class TableOps:
                     return lambda x: torch.nn.functional.elu(
                         x, alpha=input_alpha
                     ).flatten()
+                case exir_ops.edge.aten.remainder.Scalar:
+                    divisor = cast(float | int, node.args[1])
+                    return lambda x: torch.remainder(x, divisor).flatten()
                 case _:
                     # Op must be handled if it's inside self.special_ops
                     raise AssertionError("Unhandled table operation")
@@ -110,11 +119,13 @@ class TableOps:
 
 
 class InsertTableOpsPass(ArmPass):
-    """
-    For ops in self.table_ops they need to be serialized as a TOSA TABLE. This pass replaces these
-    edge ops with a tosa._table(input: Tensor, target_str: str) where target_str == str(node.target).
-    When lowering the _table node target_str will be used to find the corresponding torch operator
+    """For ops in self.table_ops they need to be serialized as a TOSA TABLE.
+
+    This pass replaces these edge ops with a tosa._table(input: Tensor,
+    target_str: str) where target_str == str(node.target). When lowering the
+    _table node target_str will be used to find the corresponding torch operator
     which will be used to produce the table values in operators/op_table.py.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -125,9 +136,7 @@ class InsertTableOpsPass(ArmPass):
         self.table_ops = TableOps(exported_program)
 
     def register_buffer(self, buffer_name: str, buffer: torch.Tensor) -> None:
-        """
-        Add buffer to self.exported_program.state_dict
-        """
+        """Add buffer to self.exported_program.state_dict."""
         self.exported_program.state_dict[buffer_name] = buffer
 
     def generate_8bit_table_values(
@@ -136,8 +145,11 @@ class InsertTableOpsPass(ArmPass):
         in_quantargs: QuantArgs,
         out_quantargs: QuantArgs,
     ) -> tuple[torch.Tensor, int]:
-        """Compute LUT values for a INT8 TOSA.TABLE. Also returns 0 since no shifting is required after 8bit table.
-        The INT8 table is a simple 256 value 1-1 LUT.
+        """Compute LUT values for a INT8 TOSA.TABLE.
+
+        Also returns 0 since no shifting is required after 8bit table. The INT8
+        table is a simple 256 value 1-1 LUT.
+
         """
 
         def f(x: torch.Tensor) -> torch.Tensor:

@@ -1,0 +1,15 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "operators",
+    srcs = glob(["*.py"]),
+    visibility = ["PUBLIC"],
+    deps = [
+        "//executorch/backends/xnnpack/utils:xnnpack_utils",
+        "//executorch/exir:graph_module",
+        "//executorch/exir/backend:backend_details",
+    ],
+)

@@ -28,11 +28,13 @@ def insert_transition_node(
     node: torch.fx.Node,
     arg: torch.fx.Node,
     arg_node_repr: utils.TensorRepr,
-) -> None:
+) -> torch.fx.Node:
     """
     Insert a clone node to transition the tensor associated with `arg` to a tensor with
     the requested representation `arg_node_repr`, and use the cloned node as an argument
     to `node` instead of `arg`.
+
+    Returns the newly created clone node.
     """
     with graph_module.graph.inserting_before(node):
         clone_node = graph_module.graph.create_node(
@@ -45,6 +47,7 @@ def insert_transition_node(
         clone_node.meta["spec"].const = False
         utils.set_node_repr(clone_node, arg_node_repr)
         arg.replace_all_uses_with(clone_node, lambda x, y=node: x == y)
+    return clone_node
 
 
 def set_arg_node_repr_or_transition(
@@ -53,6 +56,7 @@ def set_arg_node_repr_or_transition(
     arg_i: int,
     arg_node_repr: utils.TensorRepr,
     dirty: bool,
+    transition_cache: dict | None = None,
 ) -> bool:
     """
     Does one of following:
@@ -60,7 +64,8 @@ def set_arg_node_repr_or_transition(
        does not currently have a `node_repr`
     2. No-op if the current `node_repr` is already the same as the requested represetnation.
     3. Insert a transition node to create a copy of the argument with the desired `node_repr`
-       if the current `node_repr` is different than what is needed.
+       if the current `node_repr` is different than what is needed. If a transition clone
+       already exists for the same (source, target_repr) pair, reuse it.
     """
     arg_node = op_node.args[arg_i]
 
@@ -78,15 +83,33 @@ def set_arg_node_repr_or_transition(
         if cur_node_repr == arg_node_repr:
             return False
 
+        assert utils.is_single_tensor_node(node)
+
+        # Check if a transition clone already exists for this (source, target_repr).
+        cache_key = (
+            node,
+            arg_node_repr.storage_type,
+            arg_node_repr.memory_layout,
+        )
+        if transition_cache is not None and cache_key in transition_cache:
+            cached_clone = transition_cache[cache_key]
+            node.replace_all_uses_with(cached_clone, lambda x, y=op_node: x == y)
+            if not dirty:
+                logger.info(
+                    f"[Vulkan Delegate] Reusing transition for {op_node.format_node()}:"
+                )
+            logger.info(f"   arg {arg_i} ({node}): reusing {cached_clone}")
+            return True
+
         if not dirty:
             logger.info(
                 f"[Vulkan Delegate] Inserting transition(s) for {op_node.format_node()}:"
             )
 
-        # Existing node representation is different; insert a transition node
-        # Currently, the transition node insertion logic can only handle single tensor nodes
-        assert utils.is_single_tensor_node(node)
-        insert_transition_node(graph_module, op_node, node, arg_node_repr)
+        clone_node = insert_transition_node(graph_module, op_node, node, arg_node_repr)
+
+        if transition_cache is not None:
+            transition_cache[cache_key] = clone_node
 
         logger.info(f"   arg {arg_i} ({node}): ({cur_node_repr}) -> ({arg_node_repr})")
 
@@ -132,9 +155,10 @@ class TagMemoryMetaPass(ExportPass):
         self.texture_limits = texture_limits
         self.force_fp16 = force_fp16
 
-        # Magic number to limit "lookahead" when tracing through users of an operator
-        # to constrain the representation of its arguments/outputs.
-        self.max_trace_search_depth = None
+        # Limit the total number of nodes explored when tracing through users of
+        # an operator to constrain the representation of its arguments/outputs.
+        # Without a limit, transformer-style graphs cause exponential blowup.
+        self.max_trace_search_depth = 64
 
     def is_valid_op_node(self, node: Any) -> bool:
         """
@@ -261,7 +285,7 @@ class TagMemoryMetaPass(ExportPass):
         current_node: torch.fx.Node,
         arg_i: int,
         arg_repset: utils.TensorRepSet,
-        search_depth: int = 0,
+        search_depth: list[int] | None = None,
     ) -> utils.TensorRepSet:
         """
         Attempts to constrain `arg_repset` based on the required repset of the argument
@@ -301,11 +325,11 @@ class TagMemoryMetaPass(ExportPass):
             current_node, arg_repset, search_depth
         )
 
-    def trace_node_users_to_constrain_repset(
+    def trace_node_users_to_constrain_repset(  # noqa: C901
         self,
         origin_node: torch.fx.Node,
         repset: utils.TensorRepSet,
-        search_depth: int = 0,
+        search_depth: list[int] | None = None,
     ) -> utils.TensorRepSet:
         """
         For an ambiguous repset, try to constrain the repset by tracing the required
@@ -313,9 +337,14 @@ class TagMemoryMetaPass(ExportPass):
         that can be used the longest without needing user nodes to insert a transition
         for its arguments.
         """
-        # Optionally limit the search depth to improve export time
+        # Optionally limit the total number of nodes explored to improve export
+        # time. search_depth is a mutable list so that all branches of a fan-out
+        # share a single counter, preventing exponential blowup.
         if self.max_trace_search_depth is not None:
-            if search_depth > self.max_trace_search_depth:
+            if search_depth is None:
+                search_depth = [self.max_trace_search_depth]
+            search_depth[0] -= 1
+            if search_depth[0] <= 0:
                 return repset
 
         users_to_trace = origin_node.users
@@ -339,7 +368,7 @@ class TagMemoryMetaPass(ExportPass):
 
             if arg_i_in_user is not None:
                 repset = self.constrain_repset_with_user(
-                    usage_node, arg_i_in_user, repset, search_depth + 1
+                    usage_node, arg_i_in_user, repset, search_depth
                 )
 
             if repset.is_constrained():
@@ -394,21 +423,17 @@ class TagMemoryMetaPass(ExportPass):
         op_repsets.try_constrain_with_out_repset(out_respset)
 
     def constrain_op_repsets(self, op_repsets: utils.OpRepSets) -> None:
-        # For most ops, constraining the argument repsets will also contrain the output
-        # repset due to OpRepSets maintaining synchronization rules.
         for i in range(len(op_repsets.op_node.args)):
             if utils.is_tensor_arg_node(op_repsets.op_node.args[i]):
                 self.constrain_op_arg_repset(i, op_repsets)
 
-        # However, some operators do not sync input and output representations and also
-        # define ambiguous repsets for the output tensor(s). In those cases we will need
-        # to execute additional logic to constrain the output repsets separately from
-        # the input repsets.
-        if not op_repsets.sync_primary_io_repr and op_repsets.sync_outs_repr:
-            self.constrain_op_out_repset(op_repsets)
+        self.constrain_op_out_repset(op_repsets)
 
     def set_op_node_tensor_reprs(
-        self, graph_module: torch.fx.GraphModule, op_node: torch.fx.Node
+        self,
+        graph_module: torch.fx.GraphModule,
+        op_node: torch.fx.Node,
+        transition_cache: dict | None = None,
     ) -> None:
         """
         For an operator representated by `op_node`, get the OpRepSets associated with
@@ -459,7 +484,12 @@ class TagMemoryMetaPass(ExportPass):
             if isinstance(arg_node, torch.fx.Node):
                 transitions_inserted = (
                     set_arg_node_repr_or_transition(
-                        graph_module, op_node, i, arg_node_repr, transitions_inserted
+                        graph_module,
+                        op_node,
+                        i,
+                        arg_node_repr,
+                        transitions_inserted,
+                        transition_cache,
                     )
                     or transitions_inserted
                 )
@@ -474,12 +504,14 @@ class TagMemoryMetaPass(ExportPass):
                             i,
                             arg_node_repr,
                             transitions_inserted,
+                            transition_cache,
                         )
                         or transitions_inserted
                     )
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        transition_cache: dict = {}
         for node in graph_module.graph.nodes:
-            self.set_op_node_tensor_reprs(graph_module, node)
+            self.set_op_node_tensor_reprs(graph_module, node, transition_cache)
 
         return PassResult(graph_module, True)

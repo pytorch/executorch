@@ -23,22 +23,8 @@ namespace {
         for (const auto& value : values) {
             [result addObject:@(value.c_str())];
         }
-        
-        return result;
-    }
 
-    ETCoreMLModel * _Nullable get_model_from_asset(ETCoreMLAsset *asset,
-                                                   MLModelConfiguration *configuration,
-                                                   const executorchcoreml::ModelMetadata& metadata,
-                                                   NSError * __autoreleasing *error) {
-        NSOrderedSet<NSString *> *orderedInputNames = ::get_ordered_set(metadata.input_names);
-        NSOrderedSet<NSString *> *orderedOutputNames = ::get_ordered_set(metadata.output_names);
-        ETCoreMLModel *model = [[ETCoreMLModel alloc] initWithAsset:asset
-                                                      configuration:configuration
-                                                  orderedInputNames:orderedInputNames
-                                                 orderedOutputNames:orderedOutputNames
-                                                              error:error];
-        return model;
+        return result;
     }
 } // namespace
 
@@ -48,17 +34,33 @@ namespace {
                                           configuration:(MLModelConfiguration *)configuration
                                                metadata:(const executorchcoreml::ModelMetadata&)metadata
                                                 error:(NSError * __autoreleasing *)error {
+    if (compiledAsset == nil) {
+        return nil;
+    }
+
+    // Use the metadata's ordered input/output names.
+    // For multifunction models, the caller should load the per-method metadata
+    // which contains the correct input/output names for that method.
+    NSOrderedSet<NSString *> *orderedInputNames = ::get_ordered_set(metadata.input_names);
+    NSOrderedSet<NSString *> *orderedOutputNames = ::get_ordered_set(metadata.output_names);
+
     NSError *localError = nil;
-    ETCoreMLModel *model = (compiledAsset != nil) ? get_model_from_asset(compiledAsset, configuration, metadata, &localError) : nil;
+    ETCoreMLModel *model = [[ETCoreMLModel alloc] initWithAsset:compiledAsset
+                                                  configuration:configuration
+                                              orderedInputNames:orderedInputNames
+                                             orderedOutputNames:orderedOutputNames
+                                                          error:&localError];
     if (model) {
         return model;
     }
+
     if (error) {
         *error = localError;
     }
+
     return nil;
 }
-                                        
+
 
 + (nullable ETCoreMLModel *)loadModelWithContentsOfURL:(NSURL *)compiledModelURL
                                          configuration:(MLModelConfiguration *)configuration
@@ -73,7 +75,7 @@ namespace {
     } else {
         asset = [assetManager storeAssetAtURL:compiledModelURL withIdentifier:identifier error:&localError];
     }
-    
+
     ETCoreMLModel *model;
     if (asset != nil) {
         model = [self loadModelWithCompiledAsset:asset configuration:configuration metadata:metadata error:&localError];

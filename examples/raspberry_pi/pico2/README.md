@@ -15,11 +15,15 @@ This demo demonstrates ExecuTorch's ability to bring your own PyTorch model and 
 - Build firmware with one command and pass the model file (.pte) as an argument
 - Deploy directly to Pico2
 
+### Adapting to Other Baremetal Architectures
+
+While this example targets the Pico2 board, the same pattern — embedding the `.pte` model as a C array, using `BufferDataLoader`, and statically allocating memory — can be adapted to other baremetal targets (e.g., RISC-V) by providing your own CMake toolchain file. The key requirement is a correct selective build (see below) so all operators your model needs are included.
+
 ### Important Caveats
 
 - Memory constraints - Models must fit in 520KB SRAM (Pico2)
-- Missing operators - Some ops may not be supported
-- Selective builds - Include only operators your model uses if you want to reduce binary size
+- Missing operators - If you get "Operator missing" (error 20) at runtime, your build is missing operators that the model needs. Use `EXECUTORCH_SELECT_OPS_MODEL` (see below) to auto-detect the required operators from your `.pte` file.
+- Selective builds - Include only operators your model uses to reduce binary size
 
 ## Memory Constraints & Optimization
 
@@ -36,16 +40,36 @@ Large models will not fit. Keep your `.pte` files small!
 - Operator fusion
 - Selective builds (include only needed operators)
 
-For more details , refer to the following guides:
+### Selective Build: Choosing the Right Operators
+
+When cross-compiling ExecuTorch for baremetal targets, you need to register the operators your model uses. There are three approaches:
+
+1. **`EXECUTORCH_SELECT_OPS_MODEL` (recommended)** — Point to your `.pte` file and the build system auto-detects all required operators:
+   ```bash
+   cmake ... -DEXECUTORCH_SELECT_OPS_MODEL=/path/to/model.pte
+   ```
+   This is the most reliable approach because it reads the exact operators from the serialized model, including any operators introduced by compiler passes or edge IR lowering that may not be obvious from the original PyTorch model.
+
+2. **`EXECUTORCH_SELECT_OPS_LIST`** — Manually specify operators by name:
+   ```bash
+   cmake ... -DEXECUTORCH_SELECT_OPS_LIST="aten::addmm.out,aten::relu.out,..."
+   ```
+   This requires you to know the exact operator names (including `.out` suffixes). If you miss any, you'll get "Operator missing" (error 20) at runtime.
+
+3. **All portable operators (no selective build)** — Omit any `EXECUTORCH_SELECT_OPS_*` options when configuring CMake. This registers all portable operators, which is simple but produces larger binaries, an important consideration on memory-constrained targets.
+
+The `build_firmware_pico.sh` script uses `EXECUTORCH_SELECT_OPS_MODEL` by default when a model file is provided.
+
+For more details, refer to the following guides:
 
 - [ExecuTorch Quantization Optimization Guide](https://docs.pytorch.org/executorch/1.0/quantization-optimization.html)
-- [Model Export & Lowering](https://docs.pytorch.org/executorch/1.0/using-executorch-export.html) and
+- [Model Export & Lowering](https://docs.pytorch.org/executorch/1.0/using-executorch-export.html)
 - [Selective Build support](https://docs.pytorch.org/executorch/1.0/kernel-library-selective-build.html)
 
 ## (Prerequisites) Prepare the Environment for Arm
 
 Setup executorch development environment. Also see instructions for setting up the environment for Arm.
-Make sure you have the toolchain configured correctly. Refer to this [setup](https://docs.pytorch.org/executorch/main/backends-arm-ethos-u.html#development-requirements) for more details.
+Make sure you have the toolchain configured correctly. Refer to this [setup](https://docs.pytorch.org/executorch/main/backends/arm-ethos-u/arm-ethos-u-overview.html#development-requirements) for more details.
 
 ```bash
 which arm-none-eabi-gcc
@@ -67,7 +91,7 @@ python export_mlp_mnist.py # Creates balanced_tiny_mlp_mnist.pte
 
 ```bash
 # In the dir examples/raspberry_pi/pico2
-build_firmware_pico.sh --model=balanced_tiny_mlp_mnist.pte # This creates executorch_pico.uf2, a firmware image for Pico2
+./build_firmware_pico.sh --model=balanced_tiny_mlp_mnist.pte # This creates executorch_pico.uf2, a firmware image for Pico2
 ```
 
 ### Flash Firmware

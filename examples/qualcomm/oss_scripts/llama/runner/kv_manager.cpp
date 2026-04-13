@@ -104,8 +104,10 @@ void KVManager<T>::init_attention_mask(
     int32_t available_context_len = position_offset.empty()
         ? sliding_window - (i + 1) - n_past
         : sliding_window - (position_offset[i] + 1) - n_past;
-    if (n_past > available_context_len) {
-      std::fill_n(past_ptr, n_past - available_context_len, neg_val);
+    // if available_context_len is less than 0, it means we need to mask some
+    // tokens in the past to avoid exceeding the sliding window
+    if (available_context_len < 0) {
+      std::fill_n(past_ptr, -available_context_len, neg_val);
     }
 
     past_ptr += metadata_.context_len;
@@ -348,16 +350,20 @@ void KVManager<T>::update_value(
     }
   } else {
     int32_t update_times = n_update;
-    auto wp = write_ptr, rp = read_ptr;
-    for (auto sel : selected) {
-      if (sel) {
-        std::memcpy(wp, rp, metadata_.head_dim * sizeof(T));
-        wp += metadata_.head_dim;
-        update_times--;
-        if (update_times == 0)
-          break;
+    for (int i = 0; i < n_iter; ++i) {
+      auto wp = write_ptr, rp = read_ptr;
+      for (auto sel : selected) {
+        if (sel) {
+          std::memcpy(wp, rp, metadata_.head_dim * sizeof(T));
+          wp += metadata_.head_dim;
+          update_times--;
+          if (update_times == 0)
+            break;
+        }
+        rp += metadata_.head_dim;
       }
-      rp += metadata_.head_dim;
+      write_ptr += iter_size;
+      read_ptr += out_size;
     }
   }
 }

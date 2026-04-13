@@ -74,6 +74,53 @@ optimum-cli export executorch \
 
 See the "Building the multimodal runner" section below for instructions on building with CUDA support, and the "Running the model" section for runtime instructions.
 
+### Exporting with CUDA-Windows
+
+Before running `cuda-windows` export, make sure these requirements are set up:
+- `x86_64-w64-mingw32-g++` is installed and on `PATH` (mingw-w64 cross-compiler).
+- `WINDOWS_CUDA_HOME` points to the extracted Windows CUDA package directory.
+
+Example setup on Ubuntu:
+
+```bash
+# 1) Install cross-compiler + extraction tools
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends \
+  g++-mingw-w64-x86-64-posix mingw-w64-tools p7zip-full wget
+
+# 2) Verify cross-compiler
+x86_64-w64-mingw32-g++ --version
+
+# 3) Download and extract Windows CUDA installer package
+CUDA_VERSION=12.8.1
+CUDA_DRIVER_VERSION=572.61
+CUDA_INSTALLER="cuda_${CUDA_VERSION}_${CUDA_DRIVER_VERSION}_windows.exe"
+CUDA_URL="https://developer.download.nvidia.com/compute/cuda/${CUDA_VERSION}/local_installers/${CUDA_INSTALLER}"
+
+mkdir -p /opt/cuda-windows
+cd /opt/cuda-windows
+wget -q "${CUDA_URL}" -O "${CUDA_INSTALLER}"
+7z x "${CUDA_INSTALLER}" -oextracted -y
+
+# 4) Point WINDOWS_CUDA_HOME to extracted Windows CUDA payload
+export WINDOWS_CUDA_HOME=/opt/cuda-windows/extracted/cuda_cudart/cudart
+```
+
+```
+optimum-cli export executorch \
+  --model "mistralai/Voxtral-Mini-3B-2507" \
+  --task "multimodal-text-to-text" \
+  --recipe "cuda-windows" \
+  --dtype bfloat16 \
+  --device cuda \
+  --max_seq_len 1024 \
+  --output_dir="voxtral_windows"
+```
+
+This will generate:
+- `model.pte` - The exported model
+- `aoti_cuda_blob.ptd` - The CUDA kernel blob required for runtime
+
 ## Metal Support
 On Apple Silicon, you can enable the runner to run on Metal. Follow the export and runtime commands below:
 
@@ -89,10 +136,54 @@ optimum-cli export executorch \
 ```
 
 This will generate:
-- `model.pte` - The exported model
-- `aoti_metal_blob.ptd` - The Metal kernel blob required for runtime
+- `model.pte` - The exported model (includes Metal kernel blob)
 
 See the "Building the multimodal runner" section below for instructions on building with Metal support, and the "Running the model" section for runtime instructions.
+
+## MLX Support (macOS)
+On Apple Silicon, you can export and run Voxtral using the [MLX backend](../../../backends/mlx), which provides accelerated inference via Apple's MLX framework.
+
+### Exporting with MLX
+The MLX export script produces two `.pte` files — the model and the audio preprocessor — both delegated to MLX:
+```
+python -m executorch.backends.mlx.examples.voxtral.export_voxtral_hf \
+  --output-dir mlx_voxtral_int4_bf16 \
+  --dtype bf16 \
+  --quantize-linear int4
+```
+
+This will generate:
+- `model.pte` - The exported model with MLX delegate (audio_encoder, token_embedding, text_decoder)
+- `preprocessor.pte` - The mel spectrogram audio preprocessor with MLX delegate
+
+#### Export arguments
+
+| Argument | Description |
+|----------|-------------|
+| `--model-id` | HuggingFace model ID (default: `mistralai/Voxtral-Mini-3B-2507`) |
+| `--output-dir` | Output directory for `.pte` files (default: `voxtral_mlx`) |
+| `--dtype` | Model dtype: `fp32`, `fp16`, `bf16` (default: `bf16`) |
+| `--max-seq-len` | Maximum sequence length for KV cache (default: `1024`) |
+| `--quantize-linear` | Quantization for linear layers: `int4`, `int8` (default: none) |
+| `--quantize-linear-group-size` | Group size for linear quantization (default: `32`) |
+| `--max-audio-len` | Maximum audio length in seconds for preprocessor (default: `300`) |
+
+### Building for MLX
+From the ExecuTorch root directory:
+```
+make voxtral-mlx
+```
+
+### Running with MLX
+```
+./cmake-out/examples/models/voxtral/voxtral_runner \
+  --model_path mlx_voxtral_int4_bf16/model.pte \
+  --tokenizer_path path/to/tekken.json \
+  --prompt "What is happening in this audio?" \
+  --audio_path path/to/audio.wav \
+  --processor_path mlx_voxtral_int4_bf16/preprocessor.pte \
+  --temperature 0
+```
 
 # Running the model
 To run the model, we will use the Voxtral runner, which utilizes ExecuTorch's MultiModal runner API.
@@ -132,6 +223,14 @@ make voxtral-cpu
 make voxtral-cuda
 ```
 
+### Building for CUDA on Windows (PowerShell)
+```
+cmake --workflow --preset llm-release-cuda
+Push-Location examples/models/voxtral
+cmake --workflow --preset voxtral-cuda
+Pop-Location
+```
+
 ### Building for Metal
 ```
 # Build Voxtral runner with Metal
@@ -162,10 +261,30 @@ If you already have a preprocessed mel spectrogram saved as a `.bin` file, you c
   --audio_path path/to/preprocessed_audio.bin
 ```
 
-### Running on CUDA or Metal:
-Add the `--data_path` argument to provide the appropriate data blob to the commands above:
-- For CUDA: `--data_path path/to/aoti_cuda_blob.ptd`
-- For Metal: `--data_path path/to/aoti_metal_blob.ptd`
+### Running on CUDA:
+Add the `--data_path` argument to provide the CUDA data blob:
+```
+./cmake-out/examples/models/voxtral/voxtral_runner \
+  --model_path path/to/model.pte \
+  --data_path path/to/aoti_cuda_blob.ptd \
+  --tokenizer_path path/to/tekken.json \
+  --prompt "What can you tell me about this audio?" \
+  --audio_path path/to/audio_input.wav \
+  --processor_path path/to/voxtral_preprocessor.pte
+```
+
+### Running on CUDA-Windows (PowerShell):
+```
+.\cmake-out\examples\models\voxtral\Release\voxtral_runner.exe `
+  --model_path C:\path\to\voxtral_windows\model.pte `
+  --data_path C:\path\to\voxtral_windows\aoti_cuda_blob.ptd `
+  --tokenizer_path C:\path\to\tekken.json `
+  --prompt "What can you tell me about this audio?" `
+  --audio_path C:\path\to\audio_input.wav `
+  --processor_path C:\path\to\voxtral_preprocessor.pte
+```
+
+If your generator is single-config, the runner may be at `.\cmake-out\examples\models\voxtral\voxtral_runner.exe` instead.
 
 ### Example output:
 ```

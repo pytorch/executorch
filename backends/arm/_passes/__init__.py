@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,11 +6,13 @@
 
 from . import arm_pass_utils  # noqa
 from .arm_pass import ArmPass  # noqa  # usort: skip
-from .annotate_decomposed_matmul import AnnotateDecomposedMatmulPass  # noqa
+from .accumulate_index_put_pass import AccumulateIndexPutPass  # noqa
 from .annotate_output_dim_order_pass import AnnotateOutputDimOrderPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
+from .canonicalize_gather_pass import CanonicalizeGatherPass  # noqa
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
+from .constant_folding_pass import ConstantFoldingPass  # noqa
 from .conv1d_unsqueeze_pass import Conv1dUnsqueezePass  # noqa
 from .convert_elu_params import ConvertELUParamsPass  # noqa
 from .convert_expand_copy_to_repeat import ConvertExpandCopyToRepeatPass  # noqa
@@ -29,6 +31,7 @@ from .decompose_adaptive_avg_pool2d_pass import DecomposeAdaptiveAvgPool2dPass  
 from .decompose_add_sub_alpha_pass import DecomposeAddSubAlphaPass  # noqa
 from .decompose_addmm_pass import DecomposeAddmmPass  # noqa
 from .decompose_any_pass import DecomposeAnyPass  # noqa
+from .decompose_as_strided_copy_pass import DecomposeAsStridedCopyPass  # noqa
 from .decompose_asin_and_acos_pass import DecomposeAsinAndAcosPass  # noqa
 from .decompose_asinh_pass import DecomposeAsinhPass  # noqa
 from .decompose_atan_pass import DecomposeAtanPass  # noqa
@@ -40,25 +43,35 @@ from .decompose_cosine_similarity_pass import DecomposeCosineSimilarityPass  # n
 from .decompose_cumsum_pass import DecomposeCumsumPass  # noqa
 from .decompose_div_pass import DecomposeDivPass  # noqa
 from .decompose_div_tensor_mode import DecomposeDivTensorModePass  # noqa
+from .decompose_einsum_pass import DecomposeEinsumPass  # noqa
 from .decompose_elu_pass import DecomposeEluPass  # noqa
 from .decompose_embedding_pass import DecomposeEmbeddingPass  # noqa  # noqa
+from .decompose_erfinv_pass import DecomposeErfinvPass  # noqa
 from .decompose_expm1_pass import DecomposeExpm1Pass  # noqa
 from .decompose_floor_divide_pass import DecomposeFloorDividePass  # noqa
 from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_glu_pass import DecomposeGluPass  # noqa
 from .decompose_grouped_conv_pass import DecomposeGroupedConvPass  # noqa
 from .decompose_groupnorm_pass import DecomposeGroupNormPass  # noqa
+from .decompose_index_copy_pass import DecomposeIndexCopyPass  # noqa
+from .decompose_index_select_to_gather_pass import (  # noqa
+    DecomposeIndexSelectToGatherPass,
+)
+from .decompose_index_tensor_to_gather_pass import (  # noqa
+    DecomposeIndexTensorToGatherPass,
+)
 from .decompose_int16_activation_conv_pass import (  # noqa
     DecomposeConvWithInt16ActivationPass,
 )
-from .decompose_int32_clamp_pass import DecomposeInt32ClampPass  # noqa
 from .decompose_int_pow_pass import DecomposeIntPowPass  # noqa
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
 from .decompose_leaky_relu_pass import DecomposeLeakyReLUPass  # noqa
 from .decompose_linalg_vector_norm_pass import DecomposeLinalgVectorNormPass  # noqa
 from .decompose_linear_pass import DecomposeLinearPass  # noqa
+from .decompose_log1p_pass import DecomposeLog1pPass  # noqa
 from .decompose_logit_pass import DecomposeLogitPass  # noqa
 from .decompose_masked_fill_pass import DecomposeMaskedFillPass  # noqa
+from .decompose_matmul import DecomposeMatmulPass  # noqa
 from .decompose_maxpool2d_with_dilation_pass import DecomposeMaxPool2dPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
@@ -69,19 +82,28 @@ from .decompose_sdpa_pass import DecomposeScaledDotProductAttentionPass  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa
 from .decompose_select_scatter_pass import DecomposeSelectScatterPass  # noqa
 from .decompose_sign_pass import DecomposeSignPass  # noqa
-from .decompose_silu_pass import DecomposeSiluPass  # noqa
 from .decompose_sinh_pass import DecomposeSinhPass  # noqa
+from .decompose_slice_scatter_pass import DecomposeSliceScatterPass  # noqa
 from .decompose_softmax_pass import DecomposeSoftmaxPass  # noqa
-from .decompose_softmax_unstable_pass import DecomposeSoftmaxUnstablePass  # noqa
 from .decompose_sqrt_pass import DecomposeSqrtPass  # noqa
+from .decompose_strided_slice_copy_pass import DecomposeStridedSliceCopyPass  # noqa
 from .decompose_sum_pass import DecomposeSumPass  # noqa
+from .decompose_tan_pass import DecomposeTanPass  # noqa
+from .decompose_tosa_unsupported_clamp_pass import (  # noqa
+    DecomposeTOSAUnsupportedClampPass,
+)
+from .decompose_tril_pass import DecomposeTrilPass  # noqa
+from .decompose_unfold_to_gather_pass import DecomposeUnfoldToGatherPass  # noqa
 from .decompose_var_pass import DecomposeVarPass  # noqa
+from .decompose_where_scalar_other_pass import DecomposeWhereScalarOtherPass  # noqa
 from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass  # noqa
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,
     QuantizeClampArgumentsPass,
 )
 from .fuse_batch_norm2d_pass import FuseBatchNorm2dPass  # noqa
+from .fuse_consecutive_concat_shapes import FuseConsecutiveConcatShapesPass  # noqa
+from .fuse_consecutive_rescales_pass import FuseConsecutiveRescalesPass  # noqa
 from .fuse_constant_ops_pass import (  # noqa
     ComputeConstantOpsAOTPass,
     FuseConstantArgsPass,
@@ -90,6 +112,8 @@ from .fuse_duplicate_users_pass import FuseDuplicateUsersPass  # noqa
 from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
 from .fuse_view_copy_transform_pass import FuseViewCopyTransformPass  # noqa
+from .insert_const_shapes import InsertConstShapesPass  # noqa
+from .insert_dynamic_padding import InsertDynamicPaddingPass  # noqa
 from .insert_int32_casts_after_int64_placeholders import (  # noqa
     InsertInt32CastsAfterInt64PlaceholdersPass,
 )
@@ -102,6 +126,13 @@ from .insert_table_ops import InsertTableOpsPass  # noqa
 from .match_arg_dtype_pass import MatchArgDtypePass  # noqa
 from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
+from .normalize_index_put_bool_index_tensor_pass import (  # noqa
+    NormalizeIndexPutBoolIndexTensorPass,
+)
+from .normalize_index_put_none_indices_pass import (  # noqa
+    NormalizeIndexPutNoneIndicesPass,
+)
+from .normalize_while_initial_args_pass import NormalizeWhileInitialArgsPass  # noqa
 from .promote_bool_operands_pass import PromoteBoolOperandsPass  # noqa
 from .remove_getitem_pass import RemoveGetItemPass  # noqa
 from .remove_graph_asserts_pass import RemoveGraphAssertsPass  # noqa
@@ -109,8 +140,22 @@ from .remove_noop_pass import RemoveNoopPass  # noqa
 from .replace_scalar_with_tensor_pass import (  # noqa
     ReplaceScalarWithTensorByProfilePass,
 )
+from .rewrite_bool_bitwise_to_logical_pass import (  # noqa
+    RewriteBoolBitwiseToLogicalPass,
+)
+from .rewrite_bool_to_fp32_cast_via_int8_pass import (  # noqa
+    RewriteBoolToFp32CastViaInt8Pass,
+)
 from .rewrite_conv_pass import RewriteConvPass  # noqa
+from .rewrite_high_rank_singleton_permute_pass import (  # noqa
+    RewriteHighRankSingletonPermutePass,
+)
+from .rewrite_index_put_pass import RewriteIndexPutPass  # noqa
+from .rewrite_inplace_arithmetic_pass import RewriteInplaceArithmeticPass  # noqa
+from .rewrite_le_lt_to_ge_gt_pass import RewriteLeLtToGeGtPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
+from .rewrite_pad import RewritePadPass  # noqa
+from .rewrite_slice import RewriteSlicePass  # noqa
 from .rewrite_upsample import RewriteUpsamplePass  # noqa
 from .scalars_to_attribute_pass import ScalarsToAttributePass  # noqa
 from .size_adjust_input_pass import SizeAdjustInputPass  # noqa
@@ -120,4 +165,16 @@ from .unsqueeze_scalar_placeholders_pass import UnsqueezeScalarPlaceholdersPass 
 from .replace_inf_and_limit_values_pass import (  # noqa  # usort: skip
     ReplaceInfAndLimitValuesPass,
 )
-from .arm_pass_manager import ArmPassManager  # noqa  # usort: skip
+from .control_flow_const_inline import (  # noqa  # usort: skip
+    ControlFlowConstInlinePass,
+)
+
+# Import all subpackages to allow extensions to patch classes
+import importlib  # noqa: E402
+import pkgutil  # noqa: E402
+
+for _, _modname, _ispkg in pkgutil.iter_modules(__path__, __name__ + "."):
+    if _ispkg:
+        importlib.import_module(_modname)
+
+from .arm_pass_manager import ArmPassManager  # noqa

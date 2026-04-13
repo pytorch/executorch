@@ -29,6 +29,7 @@ set(_test_srcs
     hierarchical_allocator_test.cpp
     memory_allocator_test.cpp
     span_test.cpp
+    version_test.cpp
 )
 
 et_cxx_test(runtime_core_test SOURCES ${_test_srcs} EXTRA_LIBS)

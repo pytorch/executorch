@@ -1,12 +1,16 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
+import os
+import re
 from dataclasses import dataclass
 from functools import partial
 from typing import Callable
 
+import eiq_neutron_sdk
 import torch
 
 from executorch import exir
@@ -24,7 +28,11 @@ from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
     RemoveIOQuantOpsPass,
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
-from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
+
+from executorch.backends.nxp.nxp_backend import (
+    core_aten_ops_exception_list,
+    generate_neutron_compile_spec,
+)
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 from executorch.exir import (
@@ -38,16 +46,38 @@ from torch import nn
 from torch.export import export
 from torchao.quantization.pt2e.quantizer import Quantizer
 
-neutron_converter_flavor = "SDK_25_09"
-neutron_target_spec = NeutronTargetSpec(
-    target="imxrt700", neutron_converter_flavor=neutron_converter_flavor
-)
+neutron_target_spec = NeutronTargetSpec(target="imxrt700")
 
 
 @dataclass
 class ModelInputSpec:
     shape: tuple[int, ...]
     dtype: torch.dtype = torch.float32
+
+
+def handle_kernel_selection(model_name: str = ""):
+    # Collect all kernel selection files in the current working directory
+    kernel_selection_files = [
+        fname
+        for fname in os.listdir(".")
+        if re.search("_kernel_selection.*\\.c$", fname)
+    ]
+
+    if not kernel_selection_files:
+        raise RuntimeError(
+            "No kernel_selection files found in the current directory."
+        )  # Should never happen.
+
+    output_mask = model_name + "_kernel_selection.c"
+    eiq_neutron_sdk.merge_kernel_selection_files(kernel_selection_files, output_mask)
+
+    if not logging.root.isEnabledFor(logging.DEBUG):
+        for fname in kernel_selection_files:
+            os.remove(fname)
+    else:
+        logging.debug(
+            f"Debug mode enabled, keeping intermediate kernel_selection.c files: {kernel_selection_files}"
+        )
 
 
 def get_random_calibration_inputs(
@@ -91,15 +121,17 @@ def to_quantized_edge_program(
     get_calibration_inputs_fn: Callable[
         [tuple[ModelInputSpec, ...]], list[tuple[torch.Tensor, ...]]
     ] = get_random_calibration_inputs,
-    target="imxrt700",
-    neutron_converter_flavor=neutron_converter_flavor,
-    use_qat=False,
-    remove_quant_io_ops=False,
-    custom_delegation_options=CustomDelegationOptions(),  # noqa B008
-    get_quantizer_fn=None,
-    use_neutron_for_format_conversion=True,
+    target: str = "imxrt700",
+    use_qat: bool = False,
+    remove_quant_io_ops: bool = False,
+    custom_delegation_options: CustomDelegationOptions = CustomDelegationOptions(),  # noqa B008
+    get_quantizer_fn: Callable[[], Quantizer] | None = None,
+    use_neutron_for_format_conversion: bool = True,
+    use_quant_state_dict: bool = True,
+    fetch_constants_to_sram: bool = False,
+    dump_kernel_selection_code: bool = False,
 ) -> EdgeProgramManager:
-    _neutron_target_spec = NeutronTargetSpec(target, neutron_converter_flavor)
+    _neutron_target_spec = NeutronTargetSpec(target)
     if get_quantizer_fn is None:
         get_quantizer_fn = partial(
             _get_default_quantizer, _neutron_target_spec, use_qat
@@ -120,15 +152,25 @@ def to_quantized_edge_program(
         is_qat=use_qat,
     )
 
+    # List of operators to not decompose during the lowering.
+    preserve_ops = [torch.ops.aten.prelu.default]
     compile_spec = generate_neutron_compile_spec(
         target,
         operators_not_to_delegate=operators_not_to_delegate,
-        neutron_converter_flavor=neutron_converter_flavor,
         use_neutron_for_format_conversion=use_neutron_for_format_conversion,
+        fetch_constants_to_sram=fetch_constants_to_sram,
+        dump_kernel_selection_code=dump_kernel_selection_code,
+    )
+    post_quant_state_dict = (
+        exir_program_aten__module_quant.state_dict() if use_quant_state_dict else None
     )
     partitioners = [
         NeutronPartitioner(
-            compile_spec, _neutron_target_spec, custom_delegation_options
+            compile_spec,
+            _neutron_target_spec,
+            custom_delegation_options,
+            post_quant_state_dict,
+            preserve_ops=preserve_ops,
         )
     ]
 
@@ -136,7 +178,10 @@ def to_quantized_edge_program(
         export(exir_program_aten__module_quant, example_input, strict=True),
         transform_passes=NeutronEdgePassManager(),
         partitioner=partitioners,
-        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        compile_config=EdgeCompileConfig(
+            _check_ir_validity=False,
+            _core_aten_ops_exception_list=core_aten_ops_exception_list,
+        ),
     )
 
     if remove_quant_io_ops:
@@ -147,6 +192,9 @@ def to_quantized_edge_program(
     edge_program_manager = edge_program_manager.transform(
         NeutronEdgePassManager([RemoveAdditionalQDQClustersPass()])
     )
+
+    if dump_kernel_selection_code:
+        handle_kernel_selection()
 
     return edge_program_manager
 

@@ -11,6 +11,7 @@
 #include <executorch/runtime/core/result.h>
 #include <xnnpack.h>
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <utility>
@@ -24,7 +25,8 @@ using WorkspacePtr =
 /// with appropriate synchronization.
 class XNNWorkspace {
  public:
-  XNNWorkspace(WorkspacePtr workspace) : workspace_(std::move(workspace)){};
+  XNNWorkspace(WorkspacePtr workspace)
+      : id_(next_id_++), workspace_(std::move(workspace)){};
   XNNWorkspace(const XNNWorkspace&) = delete;
   XNNWorkspace& operator=(const XNNWorkspace&) = delete;
   // Not moveable due to std::mutex.
@@ -32,6 +34,9 @@ class XNNWorkspace {
   XNNWorkspace& operator=(XNNWorkspace&&) = delete;
 
   std::pair<std::unique_lock<std::mutex>, xnn_workspace_t> acquire() {
+    if (!lock_required_) {
+      return {std::unique_lock<std::mutex>{}, workspace_.get()};
+    }
     auto lock = std::unique_lock<std::mutex>(mutex_);
     return {std::move(lock), workspace_.get()};
   }
@@ -41,6 +46,17 @@ class XNNWorkspace {
   // used concurrently.s
   xnn_workspace_t unsafe_get_workspace() {
     return workspace_.get();
+  }
+
+  // Returns a unique ID for this workspace instance. This can be used to
+  // distinguish between different workspace objects even if they happen to
+  // have the same raw pointer due to memory reuse.
+  uint64_t id() const {
+    return id_;
+  }
+
+  void disable_locking() {
+    lock_required_ = false;
   }
 
   static runtime::Result<std::shared_ptr<XNNWorkspace>> create() {
@@ -60,7 +76,10 @@ class XNNWorkspace {
   }
 
  private:
+  static inline std::atomic<uint64_t> next_id_{0};
   std::mutex mutex_;
+  uint64_t id_;
+  bool lock_required_ = true;
   WorkspacePtr workspace_;
 };
 

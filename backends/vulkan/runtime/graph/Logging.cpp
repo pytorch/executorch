@@ -17,6 +17,85 @@
 
 namespace vkcompute {
 
+std::ostream& operator<<(std::ostream& os, const std::vector<int64_t>& sizes) {
+  if (sizes.size() == 0) {
+    os << "[]";
+    return os;
+  }
+  os << "[";
+  for (int i = 0; i < sizes.size() - 1; ++i) {
+    os << sizes.at(i) << ", ";
+  }
+  os << sizes.at(sizes.size() - 1);
+  os << "]";
+  return os;
+}
+
+std::string make_arg_json(ComputeGraph* const compute_graph, ValueRef arg) {
+  std::stringstream ss;
+  ss << "{\"type\": \"" << compute_graph->get_val_type(arg) << "\", ";
+  ss << "\"value_ref\": " << arg;
+  if (compute_graph->val_is_tensor(arg)) {
+    ss << ", \"dtype\": \"";
+    ss << compute_graph->dtype_of(arg) << "\"";
+    ss << ", \"sizes\": ";
+    ss << compute_graph->sizes_of(arg);
+    ss << ", \"storage\": \"";
+    ss << compute_graph->storage_type_of(arg) << "\"";
+    ss << ", \"packed_dim\": ";
+    ss << compute_graph->packed_dim_of(arg);
+  } else if (compute_graph->val_is_tref(arg)) {
+    ss << ", \"sizes\": ";
+    ss << compute_graph->sizes_of(arg);
+    ss << ", \"dtype\": \"";
+    ss << compute_graph->dtype_of(arg) << "\"";
+  } else if (compute_graph->val_is_value_list(arg)) {
+    ValueListPtr val_list = compute_graph->get_value_list(arg);
+    ss << ", \"values\": [";
+    for (size_t i = 0; i < val_list->size(); ++i) {
+      ss << val_list->at(i);
+      if (i + 1 < val_list->size()) {
+        ss << ", ";
+      }
+    }
+    ss << "]";
+  } else if (compute_graph->val_is_int_list(arg)) {
+    ss << ", \"values\": ";
+    ss << *compute_graph->get_int_list(arg);
+  } else if (compute_graph->val_is_int(arg)) {
+    ss << ", \"value\": ";
+    ss << compute_graph->get_int(arg);
+  } else if (compute_graph->val_is_double(arg)) {
+    ss << ", \"value\": ";
+    ss << compute_graph->get_double(arg);
+  } else if (compute_graph->val_is_bool(arg)) {
+    ss << ", \"value\": ";
+    ss << compute_graph->get_bool(arg);
+  } else if (compute_graph->val_is_symint(arg)) {
+    ss << ", \"value\": ";
+    ss << compute_graph->read_symint(arg);
+  }
+  ss << "}";
+
+  return ss.str();
+}
+
+std::string make_operator_json(
+    ComputeGraph* const compute_graph,
+    std::string& op_name,
+    std::vector<ValueRef>& args) {
+  std::stringstream ss;
+  ss << "\"name\": \"" << op_name << "\", \"args\": [";
+  for (size_t i = 0; i < args.size(); ++i) {
+    ss << make_arg_json(compute_graph, args[i]);
+    if (i + 1 < args.size()) {
+      ss << ", ";
+    }
+  }
+  ss << "]";
+  return ss.str();
+}
+
 void ComputeGraph::print_readable() {
   std::set<ValueRef> input_set;
   for (const IOValueRef& io_val : inputs()) {

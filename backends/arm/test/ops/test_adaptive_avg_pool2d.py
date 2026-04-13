@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,6 +7,9 @@ from typing import Tuple
 
 import torch
 
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -172,8 +175,10 @@ for key in ["high_channel_count", "output_1x1_from_19"]:
 
 @common.parametrize("test_module", u55_test_modules)
 @common.XfailIfNoCorstone300
-def test_adaptive_avg_pool2d_16a8w_u55_INT16(test_module):
-    """Test adaptive_avg_pool2d with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+def test_adaptive_avg_pool2d_u55_INT_a16w8(test_module):
+    """Test adaptive_avg_pool2d with 16A8W quantization on U55 (16-bit
+    activations, 8-bit weights)
+    """
     model, input_tensor = test_module()
     pipeline = EthosU55PipelineINT[input_t](
         model,
@@ -201,8 +206,10 @@ def test_adaptive_avg_pool2d_u85_INT(test_module):
 
 @common.parametrize("test_module", test_modules)
 @common.XfailIfNoCorstone320
-def test_adaptive_avg_pool2d_16a8w_u85_INT16(test_module):
-    """Test adaptive_avg_pool2d with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+def test_adaptive_avg_pool2d_u85_INT_a16w8(test_module):
+    """Test adaptive_avg_pool2d with 16A8W quantization on U85 (16-bit
+    activations, 8-bit weights)
+    """
     model, input_tensor = test_module()
     pipeline = EthosU85PipelineINT[input_t](
         model,
@@ -239,4 +246,20 @@ def test_adaptive_avg_pool2d_vgf_quant(test_module):
         exir_op,
         quantize=True,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.SkipIfNoModelConverter
+def test_adaptive_avg_pool2d_vgf_quant_a16w8(test_module):
+    model, input_tensor = test_module()
+    pipeline = VgfPipeline[input_t](
+        model,
+        input_tensor,
+        [],
+        exir_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
     pipeline.run()

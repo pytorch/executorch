@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,33 +18,34 @@ logger = logging.getLogger(__name__)
 
 
 class VgfCompileSpec(ArmCompileSpec):
-    """Compile specification for VGF-compatible targets."""
+    """Normalise inputs and populate the underlying Arm compile spec.
+
+    Args:
+        tosa_spec (TosaSpecification | str | None): TOSA specification to
+            target. Strings are parsed via ``TosaSpecification.create_from_string``.
+            Defaults to ``"TOSA-1.0+FP+INT+int4+int16"``.
+        compiler_flags (list[str] | None): Optional converter-backend flags.
+
+    """
 
     def __init__(
         self,
         tosa_spec: TosaSpecification | str | None = None,
         compiler_flags: list[str] | None = None,
     ):
-        """Normalise inputs and populate the underlying Arm compile spec.
-
-        Args:
-            tosa_spec (TosaSpecification | str | None): TOSA specification to
-                target. Strings are parsed via
-                :meth:`TosaSpecification.create_from_string`. Defaults to
-                ``"TOSA-1.0+FP+INT"``.
-            compiler_flags (list[str] | None): Optional converter-backend flags.
-        """
         if tosa_spec is None:
-            tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+FP+INT")
+            tosa_spec = TosaSpecification.create_from_string(
+                "TOSA-1.0+FP+INT+int4+int16"
+            )
         elif isinstance(tosa_spec, str):
             tosa_spec = TosaSpecification.create_from_string(tosa_spec)
 
         if compiler_flags is None:
             compiler_flags = []
         self._set_compile_specs(tosa_spec, compiler_flags)
-        self.validate()
+        self._validate()
 
-    def validate(self):
+    def _validate(self):
         """Validate the configuration against VGF-supported TOSA profiles."""
         tosa_version = self.tosa_spec.version  # type: ignore[attr-defined]
         tosa_profiles = self.tosa_spec.profiles  # type: ignore[attr-defined]
@@ -62,7 +63,7 @@ class VgfCompileSpec(ArmCompileSpec):
             )
 
     @classmethod
-    def get_output_format(cls) -> str:
+    def _get_output_format(cls) -> str:
         """Return the artifact format emitted by this compile spec."""
         return "vgf"
 

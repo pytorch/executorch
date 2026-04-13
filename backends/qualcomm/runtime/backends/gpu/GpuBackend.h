@@ -17,7 +17,7 @@ namespace qnn {
 class GpuBackend : public QnnBackend {
  public:
   GpuBackend(
-      const QnnImplementation& implementation,
+      QnnImplementation* implementation,
       QnnLogger* logger,
       const QnnExecuTorchGpuBackendOptions* gpu_options);
 

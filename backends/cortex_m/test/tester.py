@@ -1,9 +1,10 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -11,7 +12,6 @@ import torch
 from executorch.backends.arm.test.common import get_u55_compile_spec
 from executorch.backends.arm.test.tester.arm_tester import Serialize
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
-
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.test.harness import Tester as TesterBase
 from executorch.backends.test.harness.stages import (
@@ -22,14 +22,13 @@ from executorch.backends.test.harness.stages import (
     ToEdge,
     ToExecutorch,
 )
-
 from executorch.exir import EdgeCompileConfig
 
 
 class CortexMQuantize(Quantize):
-    def __init__(self):
+    def __init__(self, calibration_samples=None):
         quantizer = CortexMQuantizer()
-        super().__init__(quantizer)
+        super().__init__(quantizer, calibration_samples=calibration_samples)
 
 
 class CortexMToEdge(ToEdge):
@@ -41,7 +40,9 @@ class CortexMToEdge(ToEdge):
                 torch.ops.aten.hardsigmoid_.default,
                 torch.ops.aten.hardswish.default,
                 torch.ops.aten.hardswish_.default,
-            ]
+            ],
+            _check_ir_validity=False,
+            _core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
         )
         super().__init__(config)
 
@@ -73,40 +74,74 @@ cortex_m_stage_classes = {
 
 class CortexMTester(TesterBase):
     def __init__(self, module, example_inputs):
-        super().__init__(module, example_inputs, cortex_m_stage_classes)
+        if callable(example_inputs):
+            resolved_example_inputs = example_inputs()
+        else:
+            resolved_example_inputs = example_inputs
+        super().__init__(module, resolved_example_inputs, cortex_m_stage_classes)
 
-    def test_dialect(self, ops_before_transforms, ops_after_transforms, qtol=0):
+    def test_dialect(
+        self,
+        ops_before_transforms,
+        ops_after_transforms,
+        qtol=0,
+        atol=1e-03,
+        calibration_samples=None,
+    ):
         """
         Test the python dialect op implementation.
         """
-        self.quantize()
+        if calibration_samples is not None:
+            quantization_stage = CortexMQuantize(
+                calibration_samples=calibration_samples
+            )
+        else:
+            quantization_stage = None
+
+        self.quantize(quantization_stage)
         self.export()
         self.to_edge()
         self.check_count(ops_before_transforms)
         self.run_passes()
         self.check_count(ops_after_transforms)
-        self.run_method_and_compare_outputs(inputs=self.example_inputs, qtol=qtol)
+        self.run_method_and_compare_outputs(
+            inputs=self.example_inputs, qtol=qtol, atol=atol
+        )
 
-    def test_implementation(self, qtol=0):
+    def test_implementation(self, qtol=0, atol=1e-03, calibration_samples=None):
         """
         Test the optimized op implementation in simulation
         """
-        self.quantize()
+
+        if calibration_samples is not None:
+            quantization_stage = CortexMQuantize(
+                calibration_samples=calibration_samples
+            )
+        else:
+            quantization_stage = None
+
+        self.quantize(quantization_stage)
         self.export()
         self.to_edge()
         self.run_passes()
         self.to_executorch()
         self.serialize()
-        self.run_method_and_compare_outputs(inputs=self.example_inputs, qtol=qtol)
+        self.run_method_and_compare_outputs(
+            inputs=self.example_inputs, qtol=qtol, atol=atol
+        )
 
 
 @dataclass
 class McuTestCase:
     model: torch.nn.Module
-    example_inputs: tuple[Any]
+    example_inputs: tuple[Any, ...] | Callable[[], tuple[Any, ...]]
+
+    def get_example_inputs(self) -> tuple[Any, ...]:
+        if callable(self.example_inputs):
+            return self.example_inputs()
+        return self.example_inputs
 
 
-def ramp_tensor(start: int, end: int, shape: tuple[int]) -> torch.Tensor:
-    return torch.linspace(start, end, steps=torch.prod(torch.tensor(shape))).reshape(
-        shape
-    )
+def ramp_tensor(start: float, end: float, shape: tuple[int, ...]) -> torch.Tensor:
+    steps = int(torch.prod(torch.tensor(shape)).item())
+    return torch.linspace(start, end, steps=steps).reshape(shape)

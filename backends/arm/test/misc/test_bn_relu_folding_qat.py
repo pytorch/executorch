@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,7 +14,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import TosaPipelineINT
 from executorch.backends.arm.tosa import TosaSpecification
 
-from executorch.backends.xnnpack.test.tester.tester import Quantize
+from executorch.backends.test.harness.tester import Quantize
 from torch import nn
 
 
@@ -108,7 +108,7 @@ models = {
     "test_data",
     models,
 )
-def test_qat_tosa_INT(test_data):
+def test_bn_relu_folding_qat_tosa_INT(test_data):
     model, per_channel = test_data
     pipeline = TosaPipelineINT[input_t1](model, model.test_data, [], [], qtol=1)
     quantizer = TOSAQuantizer(TosaSpecification.create_from_string("TOSA-1.0+INT"))

@@ -8,6 +8,7 @@ exclude_patterns = [
     '**/third-party/**',
     '.github/scripts/**',
     'exir/serde/**',
+    'exir/_serialize/generated/executorch_flatbuffer/**',
 ]
 command = [
     'python',
@@ -39,6 +40,7 @@ exclude_patterns = [
     'third-party/**',
     '**/third-party/**',
     'exir/serde/**',
+    'exir/_serialize/generated/executorch_flatbuffer/**',
 ]
 command = [
     'python',
@@ -203,6 +205,8 @@ include_patterns = ['**']
 exclude_patterns = [
     'third-party/**',
     '**/third-party/**',
+    'shim/**',
+    'shim',
     '**/*.png',
     '**/*.webp',
     '**/*.jpeg',
@@ -219,7 +223,9 @@ exclude_patterns = [
     '**/*.gif',
     'extension/llm/tokenizers',
     'extension/llm/tokenizers/**',
+    'backends/cadence/utils/FACTO',
     'examples/cuda',
+    'kernels/portable',
     # File contains @generated
     'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
     'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',
@@ -262,6 +268,8 @@ exclude_patterns = [
     'kernels/portable/cpu/op_lt.cpp',
     'kernels/portable/cpu/op_ne.cpp',
     'runtime/kernel/thread_parallel_interface.h',
+    # Zephyr sample application can use std::vector in the sample code
+    'zephyr/samples/**',
     'scripts/**',
     'third-party/**',
     'util/**',
@@ -344,6 +352,7 @@ include_patterns = [
     # TODO(https://github.com/pytorch/executorch/issues/7441): Gradually start enabling all folders.
     # 'backends/**/*.py',
     'backends/arm/**/*.py',
+    'backends/cortex_m/**/*.py',
     'backends/openvino/**/*.py',
     'build/**/*.py',
     'codegen/**/*.py',
@@ -380,6 +389,38 @@ command = [
     '--',
     '--explicit-package-bases',
     '@{{PATHSFILE}}'
+]
+init_command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--requirement=requirements-lintrunner.txt',
+]
+
+[[linter]]
+code = 'BANDIT'
+include_patterns = [
+    'backends/arm/**/*.py',
+    'examples/arm/**/*.py',
+    'backends/cortex_m/**/*.py',
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'bandit_linter',
+    '--configfile',
+    '.bandit.yaml',
+    '--',
+    '@{{PATHSFILE}}',
 ]
 init_command = [
     'python',
@@ -470,3 +511,20 @@ command = [
     '--',
     '@{{PATHSFILE}}',
 ]
+
+[[linter]]
+code = 'DOCFORMATTER'
+include_patterns = ['backends/arm/**/*.py']
+exclude_patterns = [
+  'third-party/**',
+  '**/third-party/**',
+]
+command = [
+  'python','-m','lintrunner_adapters','run','docformatter_linter','--config=pyproject.toml','--','@{{PATHSFILE}}'
+]
+init_command = [
+  'python','-m','lintrunner_adapters','run','pip_init',
+  '--dry-run={{DRYRUN}}',
+  '--requirement=requirements-lintrunner.txt',
+]
+is_formatter = true
