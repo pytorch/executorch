@@ -77,11 +77,12 @@ if(${ANDROID})
   find_library(android_log log)
 endif()
 
-add_compile_options("-Wall" "-Werror" "-Wno-sign-compare")
+add_compile_options("-Wall" "-Werror" "-fvisibility=hidden")
 add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
-# GNU emit wanring for ignored attributes Unfortunately, we use [[maybe_unused]]
-# which can be ignored by GNU. So we make it a warning, not an error in GNU.
+# GNU emits warning for ignored attributes Unfortunately, we use
+# [[maybe_unused]] which can be ignored by GNU. So we make it a warning, not an
+# error in GNU.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   add_compile_options("-Wno-error=attributes")
   add_link_options("-flto=auto")
@@ -89,10 +90,21 @@ endif()
 
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   # strip symbols
-  add_link_options("-s")
+  add_link_options(LINKER:-s,--gc-sections)
+  if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)
+    add_compile_options(
+      "-Os"
+      "-ffunction-sections"
+      "-fdata-sections"
+      "-frtti"
+      "-fno-exceptions"
+      "-fomit-frame-pointer"
+      "-fno-asynchronous-unwind-tables"
+    )
+  else()
 
-  # --gc-sections is added by torch.
-  add_compile_options("-O3" "-ffunction-sections" "-fdata-sections" "-frtti")
+    add_compile_options("-O3" "-ffunction-sections" "-fdata-sections" "-frtti")
+  endif()
 endif()
 
 include_directories(
@@ -230,9 +242,8 @@ target_link_libraries(
                       qnn_schema shared_buffer qnn_dlc_manager
 )
 target_link_libraries(
-  qnn_executorch_backend
-  PRIVATE qnn_executorch_header qnn_schema qnn_manager executorch_core
-          extension_tensor qnn_backend_options
+  qnn_executorch_backend PRIVATE qnn_executorch_header qnn_schema qnn_manager
+                                 executorch_core qnn_backend_options
 )
 
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)

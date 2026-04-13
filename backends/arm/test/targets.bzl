@@ -22,6 +22,7 @@ def define_arm_tests():
         "ops/test_cat.py",
         "ops/test_conv2d.py",
         "ops/test_linear.py",
+        "ops/test_log10.py",
         "ops/test_max_pool1d.py",
         "ops/test_mul.py",
         "ops/test_permute.py",
@@ -73,7 +74,7 @@ def define_arm_tests():
             env = {} if runtime.is_oss else ({
                 "MODEL_CONVERTER_PATH": "$(location fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.8.0:model-converter-bin)",
                 "MODEL_CONVERTER_LIB_DIR": "$(location fbsource//third-party/nvidia-nsight-systems:linux-x86_64)/host-linux-x64",
-                "LAVAPIPE_LIB_PATH": "$(location fbsource//third-party/mesa/src/gallium/frontends/lavapipe:vulkan_lvp)",
+                "LAVAPIPE_LIB_PATH": "$(location fbsource//third-party/mesa:vulkan_lvp)",
                 "EMULATION_LAYER_TENSOR_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Tensor)",
                 "EMULATION_LAYER_GRAPH_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Graph)",
                 "EMULATION_LAYER_TENSOR_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Tensor_json)",
