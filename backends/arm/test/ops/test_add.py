@@ -279,6 +279,22 @@ def test_add_tensor_vgf_quant(test_data: input_t1):
 
 
 @common.parametrize("test_data", Add.test_data)
+@common.SkipIfNoModelConverter
+def test_add_tensor_vgf_quant_a16w8(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        Add(),
+        test_data(),
+        aten_op,
+        exir_op,
+        run_on_vulkan_runtime=True,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
+    pipeline.run()
+
+
+@common.parametrize("test_data", Add.test_data)
 def test_add_tensor_tosa_INT_16a8w(test_data: input_t1):
     """Test add operation with 16A8W quantization (16-bit activations, 8-bit
     weights)
