@@ -17,7 +17,7 @@ from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.specification import TosaSpecification
 
 
-def test_pipeline_config_override_outside_compile_spec_no_target():
+def test_pipeline_config_override_outside_compile_spec():
     compile_spec = TosaCompileSpec(
         TosaSpecification.create_from_string("TOSA-1.00+INT")
     )

@@ -46,7 +46,7 @@ def _needs_truncation(input_length, kernel_size, stride, padding):
     return _greater_than((input_length + 2 * padding - kernel_size) % stride, padding)
 
 
-def test_size_adjust_input_no_target_static_conv2d():
+def test_size_adjust_input_static_conv2d():
     kernel_size, stride, padding = 3, 3, 1
     model = ConvModule(kernel_size=kernel_size, stride=stride, padding=padding)
     example_inputs = (torch.randn(1, 3, 9, 9),)
@@ -77,7 +77,7 @@ def test_size_adjust_input_no_target_static_conv2d():
     ), "Input width should not need truncation after transformation"
 
 
-def test_size_adjust_input_no_target_static_conv_no_adjustment_needed():
+def test_size_adjust_input_static_conv_no_adjustment_needed():
     kernel_size, stride, padding = 3, 1, 1
     model = ConvModule(kernel_size=kernel_size, stride=stride, padding=padding)
     example_inputs = (torch.randn(1, 3, 9, 9),)
@@ -115,7 +115,7 @@ def test_size_adjust_input_no_target_static_conv_no_adjustment_needed():
     ), "No slice nodes should be inserted when no adjustment is needed"
 
 
-def test_size_adjust_input_no_target_dynamic_conv2d():
+def test_size_adjust_input_dynamic_conv2d():
     kernel_size, stride, padding = 3, 3, 1
     model = ConvModule(kernel_size=kernel_size, stride=stride, padding=padding)
     example_inputs = (torch.randn(1, 3, 14, 15),)
@@ -159,7 +159,7 @@ def test_size_adjust_input_no_target_dynamic_conv2d():
         ), "Two slice nodes should be inserted when adjustment is needed"
 
 
-def test_size_adjust_input_no_target_dynamic_conv_no_adjustment_needed():
+def test_size_adjust_input_dynamic_conv_no_adjustment_needed():
     kernel_size, stride, padding = 3, 1, 1
     model = ConvModule(kernel_size=kernel_size, stride=stride, padding=padding)
     example_inputs = (torch.randn(1, 3, 9, 9),)
@@ -227,7 +227,7 @@ class PoolingModule(torch.nn.Module):
         return self.pool(x)
 
 
-def test_size_adjust_input_no_target_static_pooling():
+def test_size_adjust_input_static_pooling():
     kernel_size, stride, padding = 3, 3, 1
     model = PoolingModule(kernel_size=kernel_size, stride=stride, padding=padding)
     example_inputs = (torch.randn(1, 3, 9, 9),)
@@ -261,7 +261,7 @@ def test_size_adjust_input_no_target_static_pooling():
     ), "Input width should not need truncation after transformation"
 
 
-def test_size_adjust_input_no_target_static_pooling_no_adjustment_needed():
+def test_size_adjust_input_static_pooling_no_adjustment_needed():
     kernel_size, stride, padding = 3, 1, 1
     model = PoolingModule(kernel_size=kernel_size, stride=stride, padding=padding)
     example_inputs = (torch.randn(1, 3, 9, 9),)
@@ -303,7 +303,7 @@ def test_size_adjust_input_no_target_static_pooling_no_adjustment_needed():
     ), "No slice nodes should be inserted when no adjustment is needed"
 
 
-def test_size_adjust_input_no_target_dynamic_pooling():
+def test_size_adjust_input_dynamic_pooling():
     kernel_size, stride, padding = 3, 3, 1
     model = PoolingModule(kernel_size=kernel_size, stride=stride, padding=padding)
     example_inputs = (torch.randn(1, 3, 18, 18),)
@@ -355,7 +355,7 @@ def test_size_adjust_input_no_target_dynamic_pooling():
         ), "Two slice nodes should be inserted when adjustment is needed"
 
 
-def test_size_adjust_input_no_target_dynamic_pooling_no_adjustment_needed():
+def test_size_adjust_input_dynamic_pooling_no_adjustment_needed():
     kernel_size, stride, padding = 3, 1, 1
     model = PoolingModule(kernel_size=kernel_size, stride=stride, padding=padding)
     example_inputs = (torch.randn(1, 3, 18, 18),)

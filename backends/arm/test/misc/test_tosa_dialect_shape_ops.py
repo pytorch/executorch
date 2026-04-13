@@ -41,7 +41,7 @@ def _expr_equals(sym: torch.SymInt, expected: sympy.Expr) -> bool:
 
 
 # Test that DIM can extract a symbolic dimension from a tensor when the TOSA specification supports the shape extension.
-def test_dim_extracts_symbolic_dimension_no_target():
+def test_dim_extracts_symbolic_dimension():
     shape_env = ShapeEnv()
     s0 = _make_symint(shape_env, "s0", hint=4)
 
@@ -59,7 +59,7 @@ def test_dim_extracts_symbolic_dimension_no_target():
 
 # Test that DIM raises an error when the TOSA specification doesn't support the shape extension, as DIM relies on shape
 # expressions to return symbolic dimensions.
-def test_dim_requires_shape_extension_no_target():
+def test_dim_requires_shape_extension():
     spec_no_shape = TosaSpecification.create_from_string("TOSA-1.0+FP")
     shape_env = ShapeEnv()
     s0 = _make_symint(shape_env, "s0", hint=3)
@@ -74,7 +74,7 @@ def test_dim_requires_shape_extension_no_target():
 
 
 # Test that CONST_SHAPE creates a constant shape tensor and returns the expected shape list.
-def test_const_shape_no_target():
+def test_const_shape():
     with TosaLoweringContext(
         TosaSpecification.create_from_string("TOSA-1.1+FP+shape")
     ), FakeTensorMode():
@@ -83,7 +83,7 @@ def test_const_shape_no_target():
 
 
 # Test that CONCAT_SHAPE with constant shapes performs concatenation and returns a constant shape.
-def test_concat_const_shapes_no_target():
+def test_concat_const_shapes():
     with TosaLoweringContext(
         TosaSpecification.create_from_string("TOSA-1.1+FP+shape")
     ), FakeTensorMode():
@@ -96,7 +96,7 @@ def test_concat_const_shapes_no_target():
 
 
 # Test that CONCAT_SHAPE with symbolic shapes produces a symbolic expression concatenating the dimensions.
-def test_concat_symbolic_shape_no_target():
+def test_concat_symbolic_shape():
     shape_env = ShapeEnv()
     s0 = _make_symint(shape_env, "s0", hint=2)
     s1 = _make_symint(shape_env, "s1", hint=3)
@@ -116,7 +116,7 @@ def test_concat_symbolic_shape_no_target():
     assert _expr(result[1]) == "s1"
 
 
-def test_concat_mixed_shape_no_target():
+def test_concat_mixed_shape():
     shape_env = ShapeEnv()
     s0 = _make_symint(shape_env, "s0", hint=2)
 
@@ -136,7 +136,7 @@ def test_concat_mixed_shape_no_target():
 
 # Test that CONCAT_SHAPE raises an error when given fewer than 2 shape tensors, as it requires at least 2 to
 # concatenate.
-def test_concat_shape_requires_arguments_no_target():
+def test_concat_shape_requires_arguments():
     with pytest.raises(
         TosaValueError, match="CONCAT_SHAPE expected 2 or more shape tensors"
     ):
@@ -147,7 +147,7 @@ def test_concat_shape_requires_arguments_no_target():
 
 
 # Test ADD_SHAPE with constant values, which should perform elementwise addition and return a constant shape.
-def test_add_const_shape_no_target():
+def test_add_const_shape():
     shape_env = ShapeEnv()
     with TosaLoweringContext(
         TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), shape_env
@@ -160,7 +160,7 @@ def test_add_const_shape_no_target():
 
 
 # Test ADD_SHAPE with symbolic values, which should produce a symbolic expression adding the two dimensions.
-def test_add_symbolic_shape_no_target():
+def test_add_symbolic_shape():
     shape_env = ShapeEnv()
     s0 = _make_symint(shape_env, "s0", hint=2)
     s1 = _make_symint(shape_env, "s1", hint=3)
@@ -179,7 +179,7 @@ def test_add_symbolic_shape_no_target():
     assert _expr_equals(result[0], sympy.Symbol("s0") + sympy.Symbol("s1"))
 
 
-def test_add_mixed_shape_no_target():
+def test_add_mixed_shape():
     shape_env = ShapeEnv()
     s0 = _make_symint(shape_env, "s0", hint=2)
 
@@ -197,7 +197,7 @@ def test_add_mixed_shape_no_target():
 
 
 # Test SUB_SHAPE with constant values, which should perform subtraction and return a constant shape.
-def test_sub_const_shape_no_target():
+def test_sub_const_shape():
     shape_env = ShapeEnv()
     with TosaLoweringContext(
         TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), shape_env
@@ -210,7 +210,7 @@ def test_sub_const_shape_no_target():
 
 
 # Test SUB_SHAPE with symbolic values, which should produce a Sub expression.
-def test_sub_symbolic_shape_no_target():
+def test_sub_symbolic_shape():
     shape_env = ShapeEnv()
     s0 = _make_symint(shape_env, "s0", hint=2)
     s1 = _make_symint(shape_env, "s1", hint=3)
@@ -230,7 +230,7 @@ def test_sub_symbolic_shape_no_target():
     assert _expr_equals(result[0], sympy.Symbol("s0") - sympy.Symbol("s1"))
 
 
-def test_sub_mixed_shape_no_target():
+def test_sub_mixed_shape():
     shape_env = ShapeEnv()
     s0 = _make_symint(shape_env, "s0", hint=3)
 
@@ -249,7 +249,7 @@ def test_sub_mixed_shape_no_target():
 
 
 # Test MUL_SHAPE with constant values, which should perform multiplication and return a constant shape.
-def test_mul_const_shape_no_target():
+def test_mul_const_shape():
     shape_env = ShapeEnv()
     with TosaLoweringContext(
         TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), shape_env
@@ -262,7 +262,7 @@ def test_mul_const_shape_no_target():
 
 
 # Test MUL_SHAPE with symbolic values, which should produce a Mul expression.
-def test_mul_symbolic_shape_no_target():
+def test_mul_symbolic_shape():
     shape_env = ShapeEnv()
     s0 = _make_symint(shape_env, "s0", hint=2)
     s1 = _make_symint(shape_env, "s1", hint=3)
@@ -281,7 +281,7 @@ def test_mul_symbolic_shape_no_target():
     assert _expr_equals(result[0], sympy.Symbol("s0") * sympy.Symbol("s1"))
 
 
-def test_mul_mixed_shape_no_target():
+def test_mul_mixed_shape():
     shape_env = ShapeEnv()
     s0 = _make_symint(shape_env, "s0", hint=4)
 
@@ -299,7 +299,7 @@ def test_mul_mixed_shape_no_target():
 
 
 # Test DIV_FLOOR_SHAPE with constant values, which should perform floor division and return a constant shape.
-def test_div_floor_const_shape_no_target():
+def test_div_floor_const_shape():
     shape_env = ShapeEnv()
     with TosaLoweringContext(
         TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), shape_env
@@ -312,7 +312,7 @@ def test_div_floor_const_shape_no_target():
 
 
 # Test DIV_FLOOR_SHAPE with symbolic values, which should produce a FloorDiv expression.
-def test_div_floor_symbolic_shape_no_target():
+def test_div_floor_symbolic_shape():
     shape_env = ShapeEnv()
     s0 = _make_symint(shape_env, "s0", hint=8)
     s1 = _make_symint(shape_env, "s1", hint=3)
@@ -330,7 +330,7 @@ def test_div_floor_symbolic_shape_no_target():
     assert _expr_equals(result[0], sympy.sympify("(s0//s1)"))
 
 
-def test_div_floor_mixed_shape_no_target():
+def test_div_floor_mixed_shape():
     shape_env = ShapeEnv()
     s0 = _make_symint(shape_env, "s0", hint=4)
 
