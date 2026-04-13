@@ -621,13 +621,24 @@ class Qwen35MoE(nn.Module):
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
     def forward(
-        self, tokens: torch.LongTensor, input_pos: torch.LongTensor
+        self,
+        tokens: torch.LongTensor,
+        input_pos: torch.LongTensor,
+        temperature: torch.Tensor,
     ) -> torch.Tensor:
         x = self.embed_tokens(tokens)
         for layer in self.layers:
             x = layer(x, input_pos)
         x = self.norm(x)
-        return self.lm_head(x)
+        # Only compute logits for the last token position — avoids
+        # materializing the full [B, T, V] tensor during prefill.
+        logits = self.lm_head(x[:, -1, :]).float()  # [B, V] float32
+        # GPU-side Gumbel-max sampling: argmax(logits/T + gumbel_noise)
+        # Equivalent to sampling from softmax(logits/T) but fully on-device.
+        logits = logits / temperature.clamp(min=1e-6)
+        noise = torch.rand_like(logits)
+        gumbel = -torch.log(-torch.log(noise + 1e-20) + 1e-20)
+        return (logits + gumbel).argmax(dim=-1, keepdim=True).float()  # [B, 1]
 
     @staticmethod
     def from_hf_checkpoint(model_dir, max_seq_len=4096):
