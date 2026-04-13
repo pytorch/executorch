@@ -4,9 +4,9 @@ The MLX backend supports weight-only quantization via [TorchAO](https://github.c
 
 ## `quantize_`
 
-The MLX backend uses TorchAO's [`quantize_`](https://docs.pytorch.org/ao/main/generated/torchao.quantization.quantize_.html) API under the hood. You can call it directly for full control over quantization configs and granularity. The key TorchAO configs are:
+The MLX backend uses TorchAO's [`quantize_`](https://github.com/pytorch/ao/blob/main/torchao/quantization/quant_api.py) API under the hood. You can call it directly for full control over quantization configs and granularity. The key TorchAO configs are:
 
-- [`IntxWeightOnlyConfig`](https://docs.pytorch.org/ao/main/generated/torchao.quantization.IntxWeightOnlyConfig.html) — for INT2/INT4/INT8 weight-only quantization with per-group granularity (group sizes 32, 64, 128)
+- [`IntxWeightOnlyConfig`](https://github.com/pytorch/ao/blob/main/torchao/quantization/quant_api.py) — for INT2/INT4/INT8 weight-only quantization with per-group granularity (group sizes 32, 64, 128)
 - [`ExportableNVFP4Config`](https://github.com/pytorch/executorch/blob/main/extension/llm/export/nvfp4.py) — for NVFP4 weight-only quantization
 
 ```python
