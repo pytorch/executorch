@@ -167,8 +167,8 @@ class RewriteConvPass(ArmPass):
         weight_node: torch.fx.Node,
     ) -> torch.fx.Node:
         output_channels = get_first_fake_tensor(node).shape[1]
-        # add a node containging zeros if quantized, use int32, otherwise use float32
-        if "output_qparams" in node.meta and len(node.meta["output_qparams"]) > 0:
+        # add a node containing zeros if quantized, use int32, otherwise use float32
+        if self._is_quantized_conv(node):
             bias_data = torch.zeros(size=(output_channels,), dtype=torch.int32)
         else:
             output_dtype = node.meta["val"].dtype
@@ -188,9 +188,40 @@ class RewriteConvPass(ArmPass):
         node.update_arg(2, bias_node)
         return bias_node
 
-    def insert_output_rescale(self, graph_module, node):
-        input_qparams = get_input_qparams(node)
-        output_qparams = get_output_qparams(node)[0]
+    def _is_quantized_conv(self, node: torch.fx.Node) -> bool:
+        return bool(node.meta.get("input_qparams", {}))
+
+    def _get_effective_output_qparams(self, node: torch.fx.Node):
+        """Return the quantized output domain for a conv node.
+
+        Quantization annotation may place output qparams on a following
+        activation instead of on the conv itself. If that activation is not
+        fuseable, it survives as a quantized ``clamp`` and still owns the
+        branch output qparams needed for the conv output rescale.
+
+        """
+        output_qparams = node.meta.get("output_qparams", {})
+        if output_qparams:
+            return output_qparams
+
+        users = list(node.users)
+        if len(users) != 1:
+            raise ValueError(
+                f"RewriteConvPass: No output quantization parameter found in node {node}\n"
+                f"original_aten={node.meta.get('original_aten', 'None')}"
+            )
+
+        activation = users[0]
+        if activation.target == exir_ops.edge.aten.clamp.default:
+            activation_output_qparams = activation.meta.get("output_qparams", {})
+            if activation_output_qparams:
+                return activation_output_qparams
+
+        return get_output_qparams(node)
+
+    def insert_output_rescale(self, graph_module, source_node, conv_node):
+        input_qparams = get_input_qparams(source_node)
+        output_qparams = self._get_effective_output_qparams(source_node)[0]
         weight_qparams = input_qparams[1]
         input_qparams = input_qparams[0]
         is_per_channel = weight_qparams.per_channel
@@ -207,18 +238,18 @@ class RewriteConvPass(ArmPass):
                 itertools.cycle([output_qparams.get_scale_per_tensor()]),
             )
         ]
-        with graph_module.graph.inserting_after(node):
+        with graph_module.graph.inserting_after(conv_node):
             rescale_node = create_node(
                 graph=graph_module.graph,
                 op_target=exir_ops.backend.tosa.RESCALE.default,
                 args=(
-                    node,
+                    conv_node,
                     output_qparams.dtype,
                     post_conv2d_scale,
                     0,
                     output_qparams.get_zp_per_tensor(),
                 ),
-                from_node=node,
+                from_node=source_node,
             )
         return rescale_node
 
@@ -347,7 +378,7 @@ class RewriteConvPass(ArmPass):
                 tosa_node_fake_tensor.dtype == torch.int32
                 and input_fake_tensor.dtype == torch.int8
             ):
-                output_rescale = self.insert_output_rescale(graph_module, tosa_op)
+                output_rescale = self.insert_output_rescale(graph_module, node, tosa_op)
                 node.replace_all_uses_with(output_rescale)
             elif (
                 tosa_node_fake_tensor.dtype == torch.int32
@@ -355,7 +386,9 @@ class RewriteConvPass(ArmPass):
             ):
                 has_bias = len(node.meta["input_qparams"]) > 2
                 if not has_bias:
-                    output_rescale = self.insert_output_rescale(graph_module, tosa_op)
+                    output_rescale = self.insert_output_rescale(
+                        graph_module, node, tosa_op
+                    )
                     node.replace_all_uses_with(output_rescale)
                 else:
                     node.replace_all_uses_with(tosa_op)

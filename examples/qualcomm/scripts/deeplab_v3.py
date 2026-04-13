@@ -82,10 +82,11 @@ def main(args):
             data_size=data_num, dataset_dir=args.artifact, download=args.download
         )
 
-    pte_filename = "dl3_qnn"
+    pte_filename = "dlv3_qnn"
     instance = DeepLabV3ResNet101Model()
     backend = get_backend_type(args.backend)
     quant_dtype = {
+        QnnExecuTorchBackendType.kLpaiBackend: QuantDtype.use_8a8w,
         QnnExecuTorchBackendType.kGpuBackend: None,
         QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_8a8w,
     }[backend]
@@ -104,6 +105,7 @@ def main(args):
     )
 
     if args.compile_only:
+        print(f"Finish compile_only and save to {args.artifact}/{pte_filename}.pte")
         return
 
     adb = SimpleADB(
