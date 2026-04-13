@@ -224,6 +224,11 @@ make parakeet-cuda
 make parakeet-mlx
 ```
 
+Each Parakeet build now produces both:
+
+- `parakeet_runner` for one-shot CLI transcription from an audio file
+- `parakeet_helper` for long-lived host integrations that keep the model warm and stream PCM requests over stdin/stdout
+
 On Windows (PowerShell), use CMake workflow presets directly:
 
 ```powershell
@@ -285,6 +290,26 @@ If your generator is single-config, the runner may be at `.\cmake-out\examples\m
 | `--tokenizer_path` | Path to tokenizer file (default: `tokenizer.json`) |
 | `--data_path` | Path to data file (.ptd) for delegate data (required for CUDA/CUDA-Windows) |
 | `--timestamps`     | Timestamp output mode: `none\|token\|word\|segment\|all` (default: `segment`) |
+
+### Persistent Helper
+
+The helper binary uses the same Parakeet transcription stack as `parakeet_runner`,
+but keeps the model loaded across multiple requests so host apps can avoid repeated
+startup and model load overhead.
+
+Example:
+
+```bash
+# Metal
+DYLD_LIBRARY_PATH=/usr/lib ./cmake-out/examples/models/parakeet/parakeet_helper \
+  --model_path examples/models/parakeet/parakeet_metal/model.pte \
+  --tokenizer_path examples/models/parakeet/parakeet_metal/tokenizer.model
+```
+
+The helper accepts framed requests over stdin, validates 16 kHz mono float32 PCM
+payloads, and returns status/result messages over stdout. It is intended for app
+integrations such as the macOS `ExecuWhisper` frontend in the separate
+`executorch-examples` repository.
 
 ### Mobile App
 
