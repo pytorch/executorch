@@ -379,6 +379,7 @@ EXTENSION_THREADPOOL_SRCS = ["extension/threadpool/" + x for x in THREADPOOL_SRC
 
 EXTENSION_TRAINING_SRCS = [
     "extension/training/module/training_module.cpp",
+    "extension/training/optimizer/adamw.cpp",
     "extension/training/optimizer/sgd.cpp",
 ]
 
