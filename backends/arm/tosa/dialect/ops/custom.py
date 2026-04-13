@@ -2,7 +2,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
 """Fake-op support for the generic TOSA ``CUSTOM`` dialect op.
 
 The serialized TOSA ``CUSTOM`` op is intentionally generic: it carries a
@@ -25,6 +24,7 @@ The adapter should stay thin: it should only translate from the generic TOSA
 CUSTOM signature back to the wrapped op's fake semantics. The real semantic
 logic should continue to live in the original fake implementation where
 possible.
+
 """
 
 import inspect
@@ -55,11 +55,11 @@ def validate_tosa_custom_fake_impl(fake_impl: object) -> Callable:
     ``(inputs, operator_name, domain_name, implementation_attrs)``
 
     and return ``list[Tensor]``.
+
     """
     if not callable(fake_impl):
         raise TypeError(
-            "Expected tosa.CUSTOM fake impl to be callable, "
-            f"got {type(fake_impl)}"
+            "Expected tosa.CUSTOM fake impl to be callable, " f"got {type(fake_impl)}"
         )
 
     params = tuple(inspect.signature(fake_impl).parameters.values())
@@ -89,6 +89,7 @@ def register_fake_tosa(operator_name: str) -> Callable[[Callable], Callable]:
 
     Example:
         ``@register_fake_tosa("thribrary::threee_pleee")``
+
     """
     normalized_name = _normalize_tosa_custom_operator_name(operator_name)
 
@@ -122,8 +123,7 @@ def run_registered_fake_tosa_impl(
     outputs = fake_impl(inputs, operator_name, domain_name, implementation_attrs)
     if not isinstance(outputs, list):
         raise TypeError(
-            "tosa.CUSTOM fake impl must return list[Tensor], "
-            f"got {type(outputs)}"
+            "tosa.CUSTOM fake impl must return list[Tensor], " f"got {type(outputs)}"
         )
     if not outputs:
         raise RuntimeError("tosa.CUSTOM fake impl must return at least one output")
@@ -146,6 +146,7 @@ def CUSTOM(
 
     The CUSTOM op is backend-defined. The fake implementation dispatches to a
     registered compiler-side fake implementation for the specific custom op.
+
     """
     _ = get_context_spec()  # ensure a spec context exists
     if not inputs:

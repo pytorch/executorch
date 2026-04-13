@@ -44,9 +44,9 @@ from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
-from torch.fx.passes.operator_support import OperatorSupportBase
 
 logger = logging.getLogger(__name__)
+
 
 def _is_custom_partition_op(
     custom_ops: set[torch._ops.OpOverload], target: object
@@ -165,7 +165,9 @@ class TOSAPartitioner(Partitioner):
         self._custom_partition_ops: set[torch._ops.OpOverload] = set()
 
     def register_custom_partition_op(self, op: torch._ops.OpOverload) -> None:
-        """Register a custom op to be considered supported by this partitioner."""
+        """Register a custom op to be considered supported by this
+        partitioner.
+        """
         self._custom_partition_ops.add(op)
 
     def _detag_boundary_nodes(
