@@ -257,17 +257,20 @@ Expected result: 1 delegated node, only placeholders/output nodes remain outside
 
 Some torch ops are in ExecuTorch's default decomposition table and will be broken into primitives **before** the QNN partitioner sees them. If QNN has a native op for it, you must explicitly skip decomposition.
 
-**Check first** using the helper script:
+**Check first** with a quick Python snippet (run from the executorch root with the `executorch` conda env active):
 
-```bash
-PYTHONPATH=/local/mnt/workspace/shewu \
-python /local/mnt/workspace/shewu/executorch_artifacts/hutton_scripts/check_op_decomposed.py \
-    aten.channel_shuffle.default
+```python
+import torch
+from executorch.exir.tracer import _default_decomposition_table
+
+decomp_table = _default_decomposition_table()
+op = torch.ops.aten.channel_shuffle.default
+print(op in decomp_table)  # True → will be decomposed
 ```
 
 Output:
 ```
-aten.channel_shuffle.default: True  (in ExecuTorch decomp table)
+True  # in ExecuTorch decomp table
 ```
 
 If `True`, add the op to `get_skip_decomp_table()` in `partition/utils.py` (alphabetical order):

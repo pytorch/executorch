@@ -85,11 +85,12 @@ m = convert_pt2e(m)
 
 | QuantDtype | Activation | Weight |
 |---|---|---|
-| `use_16a16w` | fp16 | fp16 |
-| `use_16a8w` | fp16 | int8 |
-| `use_16a4w` | fp16 | int4 |
-| `use_8a8w` | int8 | int8 |
-| `use_8a4w` | int8 | int4 |
+| `use_16a16w` | uint16 | int16 |
+| `use_16a8w` | uint16 | int8 |
+| `use_16a4w` | uint16 | int4 |
+| `use_16a4w_block` | uint16 | int4 (block-wise) |
+| `use_8a8w` | uint8 | int8 |
+| `use_8a4w` | uint8 | int4 |
 
 **Fine-grained control with QuantRecipe:**
 
