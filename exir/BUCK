@@ -260,6 +260,17 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "edge_program_manager_pass_base",
+    srcs = [
+        "edge_program_manager_pass_base.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "pass_manager",
     srcs = [
         "pass_manager.py",
@@ -267,6 +278,7 @@ fbcode_target(_kind = runtime.python_library,
     deps = [
         "fbsource//third-party/pypi/typing-extensions:typing-extensions",
         ":error",
+        ":pass_base",
         "//caffe2:torch",
     ],
 )
