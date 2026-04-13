@@ -50,7 +50,7 @@ class ParallelConv(torch.nn.Module):
         return self.conv_bf16(x), self.conv_fp32(y)
 
 
-def test_mixed_fp32_bf16_inputs_rejected_no_target():
+def test_mixed_fp32_bf16_inputs_rejected():
     test_data = (torch.randn(1, 3, 8, 8, dtype=torch.float32),)
     exported_program = to_edge(
         export(MixedConv(torch.bfloat16), test_data, strict=True),
@@ -68,7 +68,7 @@ def test_mixed_fp32_bf16_inputs_rejected_no_target():
     assert "Mixed floating-point input" in reporter.get_table_report()
 
 
-def test_mixed_bf16_cast_fp32_inputs_accepted_no_target():
+def test_mixed_bf16_cast_fp32_inputs_accepted():
     test_data = (torch.randn(1, 3, 8, 8, dtype=torch.float32),)
     exported_program = to_edge(
         export(CastInputConv(torch.bfloat16), test_data, strict=True)
@@ -84,7 +84,7 @@ def test_mixed_bf16_cast_fp32_inputs_accepted_no_target():
     assert support.is_node_supported(exported_program.graph_module, conv_node) is True
 
 
-def test_bf16_rejected_without_tosa_support_no_target():
+def test_bf16_rejected_without_tosa_support():
     test_data = (torch.randn(1, 3, 8, 8, dtype=torch.bfloat16),)
     exported_program = to_edge(
         export(MixedConv(torch.bfloat16), test_data, strict=True)
@@ -101,7 +101,7 @@ def test_bf16_rejected_without_tosa_support_no_target():
     assert "Had torch.bfloat16 input" in reporter.get_table_report()
 
 
-def test_parallel_bf16_fp32_inputs_accepted_no_target():
+def test_parallel_bf16_fp32_inputs_accepted():
     test_data = (
         torch.randn(1, 3, 8, 8, dtype=torch.bfloat16),
         torch.randn(1, 3, 8, 8, dtype=torch.float32),
