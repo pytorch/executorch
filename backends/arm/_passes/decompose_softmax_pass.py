@@ -77,6 +77,7 @@ class DecomposeSoftmaxPass(ArmPass):
         DecomposeSumPass,
         InsertTableOpsPass,
     }
+    targeted_ops = {*torch_softmax, *edge_softmax}
 
     def __init__(self, skip_safe_softmax: bool = False, **kwargs):
         super().__init__(**kwargs)

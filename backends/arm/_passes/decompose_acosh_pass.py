@@ -37,6 +37,8 @@ class DecomposeAcoshPass(ArmPass):
         MatchArgDtypePass,
     }
 
+    targeted_ops = {edge_acosh_op}
+
     def call_operator(self, op, args, kwargs, meta, updated=False):
 
         if op is not edge_acosh_op:

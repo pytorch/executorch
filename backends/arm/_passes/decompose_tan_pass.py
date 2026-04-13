@@ -18,6 +18,8 @@ class DecomposeTanPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeDivPass}
 
+    targeted_ops = {edge_tan_op}
+
     def call_operator(self, op, args, kwargs, meta, updated=False):
         if op != edge_tan_op:
             return super().call_operator(op, args, kwargs, meta, updated)

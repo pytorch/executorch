@@ -542,6 +542,79 @@ class TestPasses(unittest.TestCase):
             self.assertEqual(new_node.op, old_node.op)
             self.assertEqual(new_node.target, old_node.target)
 
+    def test_export_pass_should_run_skip(self) -> None:
+        """Test that should_run=False skips FakeTensor re-interpretation."""
+
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + x
+
+        class AlwaysSkipPass(ExportPass):
+            def should_run(self, graph_module) -> bool:
+                return False
+
+            def call_operator(self, op, args, kwargs, meta):
+                raise AssertionError("call_operator should never be reached")
+
+        prog = to_edge(export(Foo(), (torch.ones(3, 2),), strict=True))
+        original_gm = prog.exported_program().graph_module
+
+        result = AlwaysSkipPass()(original_gm)
+        self.assertIsNotNone(result)
+        self.assertFalse(result.modified)
+        self.assertIs(result.graph_module, original_gm)
+
+    def test_export_pass_should_run_op_predicate(self) -> None:
+        """Test should_run with op-based predicate: skip when irrelevant ops."""
+
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + x
+
+        class MulOnlyPass(ExportPass):
+            """A pass that only cares about mul ops."""
+
+            def should_run(self, graph_module) -> bool:
+                return any(
+                    node.target == torch.ops.aten.mul.Tensor
+                    for node in graph_module.graph.nodes
+                    if node.op == "call_function"
+                )
+
+            def call_operator(self, op, args, kwargs, meta):
+                raise AssertionError("call_operator should never be reached")
+
+        # Foo only has add ops, so MulOnlyPass should be skipped
+        prog = to_edge(export(Foo(), (torch.ones(3, 2),), strict=True))
+        gm = prog.exported_program().graph_module
+
+        result = MulOnlyPass()(gm)
+        self.assertIsNotNone(result)
+        self.assertFalse(result.modified)
+        self.assertIs(result.graph_module, gm)
+
+    def test_export_pass_should_run_true_still_runs(self) -> None:
+        """Test that should_run=True (default) still runs the pass normally."""
+
+        call_count = 0
+
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + x
+
+        class CountingPass(ExportPass):
+            def call_operator(self, op, args, kwargs, meta):
+                nonlocal call_count
+                call_count += 1
+                return super().call_operator(op, args, kwargs, meta)
+
+        prog = to_edge(export(Foo(), (torch.ones(3, 2),), strict=True))
+        gm = prog.exported_program().graph_module
+
+        result = CountingPass()(gm)
+        self.assertIsNotNone(result)
+        self.assertGreater(call_count, 0)
+
     def test_export_scalar_to_tensor_pass(self) -> None:
         # Build a graph with a scalar argument where schema expects tensor
         graph = torch.fx.Graph()

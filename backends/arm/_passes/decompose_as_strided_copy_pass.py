@@ -6,7 +6,6 @@
 from typing import Dict, Optional, Set, Tuple, Type
 
 import torch
-
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm.common.as_strided_utils import (
     contiguous_strides,

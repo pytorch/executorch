@@ -58,6 +58,8 @@ class DecomposeDivTensorModePass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeDivPass}
 
+    targeted_ops = {*edge_div_mode_ops, *aten_div_mode_ops}
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in (
             edge_div_mode_ops + aten_div_mode_ops

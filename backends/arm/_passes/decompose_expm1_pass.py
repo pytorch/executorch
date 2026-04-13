@@ -88,6 +88,8 @@ class DecomposeExpm1Pass(ArmPass):
         MatchArgRanksPass,
     }
 
+    targeted_ops = {*edge_expm1_ops}
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in edge_expm1_ops:
             return super().call_operator(op, args, kwargs, meta, updated=False)

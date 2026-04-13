@@ -54,6 +54,7 @@ class DecomposeTrilPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOTPass}
+    targeted_ops = {torch.ops.aten.tril.default}
 
     def call_operator(self, op, args, kwargs, meta):
         handled_ops = [torch.ops.aten.tril.default]

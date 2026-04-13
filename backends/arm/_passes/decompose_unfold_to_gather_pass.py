@@ -8,7 +8,6 @@ import math
 from typing import Set, Type
 
 import torch
-
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.replace_scalar_with_tensor_pass import (
     ReplaceScalarWithTensorByProfilePass,

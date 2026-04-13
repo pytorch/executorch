@@ -89,6 +89,12 @@ class DecomposeMeanDimPass(ArmPass):
         DecomposeSumPass,
         SizeAdjustInputPass,
     }
+    targeted_ops = {
+        exir_ops.edge.aten.mean.dim,
+        torch.ops.aten.mean.dim,
+        exir_ops.edge.aten.mean.default,
+        torch.ops.aten.mean.default,
+    }
 
     def __init__(self, graph_module, tosa_spec, *args, **kwargs):
         super().__init__(*args, **kwargs)

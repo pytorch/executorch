@@ -6,7 +6,6 @@
 from typing import Set, Type
 
 import torch
-
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.accumulate_index_put_pass import (
     AccumulateIndexPutPass,
@@ -71,6 +70,8 @@ class DecomposeSliceScatterPass(ArmPass):
         AccumulateIndexPutPass,
         RewriteIndexPutPass,
     }
+
+    targeted_ops = {*edge_slice_scatter_ops, *aten_slice_scatter_ops}
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in (edge_slice_scatter_ops + aten_slice_scatter_ops):

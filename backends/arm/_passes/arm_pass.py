@@ -20,6 +20,25 @@ from torch.fx.passes.infra.pass_base import PassResult
 class ArmPass(ExportPass):
     """Base class for Arm passes."""
 
+    def __init_subclass__(cls, **kwargs) -> None:
+        super().__init_subclass__(**kwargs)
+        if getattr(cls, "targeted_ops", None) is not None:
+            return
+        # Only auto-discover targeted_ops for passes that use the standard
+        # call_operator() pattern. Passes that override call() use _TARGET_OPS
+        # for their own graph manipulation logic, not as a fast-copy declaration.
+        if "call" in cls.__dict__:
+            return
+        for attr in ("_TARGET_OPS", "_supported_ops"):
+            ops = getattr(cls, attr, None)
+            if ops:
+                cls.targeted_ops = set(ops) if not isinstance(ops, set) else ops  # type: ignore[attr-defined]
+                return
+        edge = getattr(cls, "_EDGE_OPS", None)
+        aten = getattr(cls, "_ATEN_OPS", None)
+        if edge or aten:
+            cls.targeted_ops = {*(edge or ()), *(aten or ())}  # type: ignore[attr-defined]
+
     def __init__(self, tfa_pass: bool = False, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.submodule_depth = 0
@@ -77,6 +96,34 @@ class ArmPass(ExportPass):
             raise ValueError(
                 f"Cannot get name for pass: {pass_}. It must be an instance of ExportPass or have a __name__ attribute."
             )
+
+    def should_run(self, graph_module: GraphModule) -> bool:
+        """Skip this pass if the graph contains none of its targeted ops.
+
+        Subclasses that define a ``targeted_ops`` class attribute (a set of
+        op overloads) get this check for free via inheritance.  Passes
+        without ``targeted_ops`` always run (the default).
+
+        Recursively checks control flow submodules (cond/while_loop) so
+        passes are not incorrectly skipped when targeted ops are nested.
+
+        """
+        targeted = getattr(self, "targeted_ops", None)
+        if targeted is None:
+            return True
+
+        from executorch.exir.graph_module import get_control_flow_submodules
+
+        def _has_targeted_op(gm: GraphModule) -> bool:
+            for node in gm.graph.nodes:
+                if node.op == "call_function" and node.target in targeted:
+                    return True
+            for _, submod, _ in get_control_flow_submodules(gm):
+                if _has_targeted_op(submod):
+                    return True
+            return False
+
+        return _has_targeted_op(graph_module)
 
     def call_operator(self, op, args, kwargs, meta, updated: Optional[bool] = False):
         if not updated:

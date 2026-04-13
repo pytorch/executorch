@@ -32,6 +32,8 @@ class DecomposeLinearPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = {InsertRescaleInt32Pass}
 
+    targeted_ops = {exir_ops.edge.aten.linear.default}
+
     def call(self, graph_module):
         for node in graph_module.graph.nodes:
             if node.op != "call_function":

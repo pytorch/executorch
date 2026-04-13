@@ -20,6 +20,7 @@ class DecomposeIntPowPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    targeted_ops = {exir_ops.edge.aten.pow.Tensor_Scalar}
 
     def call_operator(self, op, args, kwargs, meta):
         if op != exir_ops.edge.aten.pow.Tensor_Scalar:

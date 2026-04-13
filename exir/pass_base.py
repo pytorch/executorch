@@ -9,7 +9,7 @@
 
 import operator
 import traceback
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from typing import (
     Any,
     Callable,
@@ -27,9 +27,7 @@ from typing import (
 
 import torch
 from executorch.exir import memory
-
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
-
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType
 from torch import fx
@@ -155,6 +153,113 @@ class ProxyValue:
 
 class ExportPassBaseError(RuntimeError):
     pass
+
+
+# Namespaces of ops that are safe to cache in the FakeTensor dispatch cache.
+# By default, FakeTensorMode only caches ops in {"aten", "prim", "prims"}.
+# ExecuTorch passes commonly use quantization and TOSA ops that are
+# deterministic and shape-preserving, so we extend caching to cover them
+# during pass execution to avoid redundant FakeTensor dispatches.
+_EXTRA_CACHEABLE_NAMESPACES: frozenset[str] = frozenset(
+    {
+        "quantized_decomposed",
+        "tosa",
+        "dim_order_ops",
+        "cortex_m",
+    }
+)
+
+
+@contextmanager
+# pyre-ignore[3]
+def _extend_faketensor_cache_builtins():  # noqa: C901
+    """Temporarily extend FakeTensor dispatch cache to cover ExecuTorch ops.
+
+    The FakeTensor dispatch cache (``FakeTensorMode``) only caches "builtin"
+    ops whose namespace is in ``{"aten", "prim", "prims"}``.  ExecuTorch
+    passes operate on graphs that contain ``quantized_decomposed``, ``tosa``,
+    and other non-builtin ops that are nonetheless safe to cache -- they are
+    deterministic and their output metadata depends only on input metadata.
+
+    Without caching these ops, every pass re-dispatches them through the full
+    PyTorch stack (~0.5 ms each), leading to tens of seconds of overhead
+    across 50+ passes on a ~1200-node graph.
+
+    This context manager monkey-patches ``torch._library.utils.is_builtin``
+    so that the cache also covers the extra namespaces, then restores the
+    original function on exit.
+    """
+    import torch._library.utils as _library_utils
+
+    _original_is_builtin = _library_utils.is_builtin
+
+    def _extended_is_builtin(op: torch._ops.OpOverload) -> bool:
+        if not isinstance(op, torch._ops.OpOverload):
+            raise AssertionError(f"op must be OpOverload, got {type(op)}")
+        return op.namespace in {"aten", "prim", "prims"} or (
+            op.namespace in _EXTRA_CACHEABLE_NAMESPACES
+        )
+
+    _library_utils.is_builtin = _extended_is_builtin  # pyre-ignore[8]
+
+    # Evict negative cache entries ("non-builtin" bypass entries) that were
+    # stored before the extension was active.  FakeTensorMode stores
+    # _DispatchCacheBypassEntry objects as negative cache hits — once stored,
+    # _validate_cache_key is never re-evaluated for that key.  We must evict
+    # these so the first dispatch under the extension re-evaluates is_builtin
+    # and creates a proper positive cache entry instead.
+    #
+    # There are TWO caches that can hold negative entries:
+    #   1. FakeTensorMode.cache -- the global (class-level) cache, used when
+    #      the dispatch has no SymInt inputs.
+    #   2. shape_env.fake_tensor_cache -- per-ShapeEnv cache, used when the
+    #      dispatch involves SymInt/SymFloat inputs (cache_on_shape_env=True).
+    # We must evict from both.
+    try:
+        from torch._subclasses.fake_tensor import (
+            _DispatchCacheBypassEntry,
+            FakeTensorMode,
+        )
+
+        def _is_nonbuiltin_bypass(v: object) -> bool:
+            return (
+                isinstance(v, _DispatchCacheBypassEntry) and v.reason == "non-builtin"
+            )
+
+        # 1. Evict from the global class-level cache.
+        FakeTensorMode.cache = {
+            k: v
+            for k, v in FakeTensorMode.cache.items()
+            if not _is_nonbuiltin_bypass(v)
+        }
+
+        # 2. Evict from the per-ShapeEnv cache of the currently active
+        #    FakeTensorMode (if any).  When ExportPass enters _fx(), the
+        #    FakeTensorMode is already on the dispatch stack before this CM
+        #    is entered, so we can reach its shape_env cache.
+        try:
+            from torch.utils._python_dispatch import _get_current_dispatch_mode_stack
+
+            for mode in _get_current_dispatch_mode_stack():
+                if isinstance(mode, FakeTensorMode):
+                    se = getattr(mode, "shape_env", None)
+                    if se is not None:
+                        se_cache = getattr(se, "fake_tensor_cache", None)
+                        if se_cache:
+                            se.fake_tensor_cache = {
+                                k: v
+                                for k, v in se_cache.items()
+                                if not _is_nonbuiltin_bypass(v)
+                            }
+        except (ImportError, AttributeError):
+            pass
+    except (ImportError, AttributeError):
+        pass  # Graceful degradation if internals change
+
+    try:
+        yield
+    finally:
+        _library_utils.is_builtin = _original_is_builtin  # pyre-ignore[8]
 
 
 class _ExportPassBase(PassBase):
@@ -290,11 +395,44 @@ class _ExportPassBase(PassBase):
 
             node.meta["tensor_meta"] = pytree.tree_map(make_tensor_meta, value)
 
+    # Types whose nodes are eligible for the fast-copy optimisation in
+    # ``run_node``.  Subclass interpreters (e.g. ``ExportPass``) extend
+    # this tuple to include dialect-specific overload types such as
+    # ``EdgeOpOverload``.
+    _OPERATOR_TARGET_TYPES: Tuple[type, ...] = (
+        torch._ops.OpOverload,
+        torch._ops.OpOverloadPacket,
+    )
+
     class ExportInterpreter(fx.Interpreter):
         def __init__(self, callback: "_ExportPassBase", gm: fx.GraphModule) -> None:
             super().__init__(gm)
             self.callback = callback
             self.node: torch.fx.Node = next(iter(gm.graph.nodes))
+
+            # --- fast-copy bookkeeping ---------------------------------
+            # When the owning pass declares ``targeted_ops``, cold nodes
+            # (those whose target is *not* in the set) can be copied into
+            # the new graph without an expensive FakeTensor dispatch.
+            targeted: Optional[Set[Any]] = getattr(callback, "targeted_ops", None)
+            self._targeted_ops: Optional[Set[Any]] = targeted if targeted else None
+
+            # Fast-copy relies on the existing ``n.meta["val"]`` being
+            # correct for cold nodes.  If the pass overrides ``call()``
+            # it may modify the graph (e.g. insert nodes with metadata
+            # copied from unrelated ops) before calling ``super().call()``,
+            # which would make cold-node metadata unreliable.  Disable the
+            # optimisation in that case.
+            call_overridden = type(callback).call is not _ExportPassBase.call
+            self._fast_copy_enabled: bool = (
+                self._targeted_ops is not None and not call_overridden
+            )
+
+            # Maps old-graph nodes to their new-graph equivalents so that
+            # ``_fast_copy_node`` can remap arguments (including get_attr
+            # nodes that are stored in ``self.env`` as raw tensors rather
+            # than ProxyValues).
+            self._node_remap: Dict[torch.fx.Node, torch.fx.Node] = {}
 
         def placeholder(  # pyre-fixme[14]
             self,
@@ -389,10 +527,113 @@ class _ExportPassBase(PassBase):
         ) -> None:
             raise ExportPassBaseError("call_method is not supported.")
 
+        # -- fast-copy helpers ------------------------------------------
+
+        def _fast_copy_node(self, n: torch.fx.Node) -> "ProxyValue":
+            """Copy *n* into the new graph without FakeTensor dispatch.
+
+            This is the fast path for "cold" nodes — nodes whose target is
+            not in the pass's ``targeted_ops``.  Instead of running the
+            full ``_fx`` pipeline (unwrap → dispatch → create_proxy →
+            set_metadata), we use ``graph.node_copy`` to clone the node
+            directly and reuse the original ``val`` metadata.
+
+            Typical savings: ~0.4 ms → ~0.02 ms per node.
+            """
+
+            tracer = self.callback.tracer
+
+            def _arg_transform(old_node: torch.fx.Node) -> torch.fx.Node:
+                # 1. Check the remap dict (populated for processed nodes
+                #    whose result is a ProxyValue).
+                new_node = self._node_remap.get(old_node)
+                if new_node is not None:
+                    return new_node
+                # 2. Fallback: extract from ProxyValue in env.
+                pv = self.env.get(old_node)
+                if pv is not None and hasattr(pv, "proxy"):
+                    mapped = pv.proxy.node
+                    self._node_remap[old_node] = mapped
+                    return mapped
+                # 3. For get_attr / placeholder nodes that were processed
+                #    via the normal path but returned raw tensors (not
+                #    ProxyValue), they won't be in _node_remap.  Copy
+                #    them into the new graph on demand.
+                if old_node.op in ("get_attr", "placeholder"):
+                    copied = tracer.graph.node_copy(
+                        old_node, lambda x: self._node_remap.get(x, x)
+                    )
+                    self._node_remap[old_node] = copied
+                    # For get_attr, also register the attribute on the
+                    # new module so GraphModule.__init__ can find it.
+                    if old_node.op == "get_attr":
+                        val = self.fetch_attr(old_node.target)
+                        target_atoms = old_node.target.split(".")
+                        root = tracer.root
+                        for atom in target_atoms[:-1]:
+                            if not hasattr(root, atom):
+                                setattr(root, atom, torch.nn.Module())
+                            root = getattr(root, atom)
+                        setattr(root, target_atoms[-1], val)
+                    return copied
+                return old_node
+
+            new_node = tracer.graph.node_copy(n, _arg_transform)
+            # node_copy already does copy.copy(node.meta)
+
+            val = n.meta.get("val")
+            proxy = torch.fx.Proxy(new_node, tracer)
+            result = ProxyValue(val, proxy)
+            self._node_remap[n] = new_node
+            return result
+
         def run_node(self, n: torch.fx.Node) -> Argument:
             self.node = n
             self.callback.node_debug_str = n.format_node()
-            return super().run_node(n)
+
+            # Fast-copy path: skip the full interpreter dispatch for cold
+            # call_function nodes whose operator is not targeted by this
+            # pass.  This avoids the expensive FakeTensor re-dispatch and
+            # proxy reconstruction for nodes the pass will not modify.
+            if (
+                self._fast_copy_enabled
+                and n.op == "call_function"
+                and isinstance(n.target, self.callback._OPERATOR_TARGET_TYPES)
+                and n.target not in self._targeted_ops  # type: ignore[operator]
+                and n.meta.get("val") is not None
+            ):
+                return self._fast_copy_node(n)
+
+            result = super().run_node(n)
+
+            # Record old→new node mapping for fast-copy arg remapping.
+            if self._fast_copy_enabled and isinstance(result, ProxyValue):
+                self._node_remap[n] = result.proxy.node
+
+            # After a hot node runs through full dispatch, verify that
+            # it did not change output shapes.  If it did, downstream
+            # cold nodes' original ``val`` metadata would be stale, so
+            # we disable the fast-copy optimisation for the remainder
+            # of this interpreter walk.
+            if (
+                self._fast_copy_enabled
+                and n.op == "call_function"
+                and self._targeted_ops is not None
+                and n.target in self._targeted_ops
+                and isinstance(result, ProxyValue)
+            ):
+                original_val = n.meta.get("val")
+                new_val = result.data
+                if isinstance(original_val, torch.Tensor) and isinstance(
+                    new_val, torch.Tensor
+                ):
+                    if (
+                        original_val.shape != new_val.shape
+                        or original_val.dtype != new_val.dtype
+                    ):
+                        self._fast_copy_enabled = False
+
+            return result
 
     def __init__(self) -> None:
         self.interpreter = torch.fx.Interpreter(
@@ -601,13 +842,17 @@ class _ExportPassBase(PassBase):
     def call_submodule(
         self, graph_module: fx.GraphModule, inputs: Tuple[Argument, ...]
     ) -> PassResult:
-        prev_tracer, self.tracer = self.tracer, self.ExportTracer(
-            self, graph_module.graph._codegen
+        prev_tracer, self.tracer = (
+            self.tracer,
+            self.ExportTracer(self, graph_module.graph._codegen),
         )
         self.tracer.fake_tensor_mode = prev_tracer.fake_tensor_mode
         interpreter = self.ExportInterpreter(self, graph_module)
-        prev_interpreter, self.interpreter = self.interpreter, torch.fx.Interpreter(
-            torch.fx.GraphModule(torch.nn.Module(), torch.fx.Graph())
+        prev_interpreter, self.interpreter = (
+            self.interpreter,
+            torch.fx.Interpreter(
+                torch.fx.GraphModule(torch.nn.Module(), torch.fx.Graph())
+            ),
         )
         inputs_data = pytree.tree_map_only(ProxyValue, lambda x: x.data, inputs)
         with fx_traceback.preserve_node_meta():
@@ -622,11 +867,32 @@ class _ExportPassBase(PassBase):
             True,
         )
 
+    def should_run(self, graph_module: fx.GraphModule) -> bool:
+        """Override to declare when this pass can be skipped entirely.
+
+        When this method returns False, the expensive FakeTensor graph
+        re-interpretation is bypassed and the original graph module is returned
+        unchanged.  Subclasses should override this to inspect the graph cheaply
+        (e.g. checking whether any node targets an op this pass cares about).
+
+        The default implementation returns True so existing passes are
+        unaffected.
+        """
+        return True
+
     def call(self, graph_module: fx.GraphModule) -> PassResult:
         if not getattr(self, "_initialized", False):
             raise ExportPassBaseError(
                 "ExportPass is not initialized with __init__().",
             )
+
+        if not getattr(self, "_skip_should_run", False) and not self.should_run(
+            graph_module
+        ):
+            return PassResult(graph_module, False)
+
+        prev_skip = getattr(self, "_skip_should_run", False)
+        self._skip_should_run = True
 
         inputs = self.inputs(graph_module)
 
@@ -647,12 +913,22 @@ class _ExportPassBase(PassBase):
         self.fake_tensor_mode = fake_tensor_mode
 
         with fake_tensor_mode, dispatcher_mode:  # type: ignore[assignment, union-attr]
-            result = self.call_submodule(graph_module, tuple(inputs))
+            with _extend_faketensor_cache_builtins():
+                result = self.call_submodule(graph_module, tuple(inputs))
 
+        self._skip_should_run = prev_skip
         return result
 
 
 class ExportPass(_ExportPassBase):
+    # Extend operator target types to include the Edge dialect overloads so
+    # that the fast-copy optimisation in ``run_node`` also covers Edge ops.
+    _OPERATOR_TARGET_TYPES: Tuple[type, ...] = (
+        torch._ops.OpOverload,
+        torch._ops.OpOverloadPacket,
+        EdgeOpOverload,
+    )
+
     class ExportTracer(_ExportPassBase.ExportTracer):
         def create_arg(self, a: Argument) -> torch.fx.Node:
             if isinstance(a, torch.nn.Module):
