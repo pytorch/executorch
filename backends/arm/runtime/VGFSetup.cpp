@@ -173,7 +173,12 @@ VkResult allocate_tensor(
       .memoryTypeIndex = memory_index,
   };
 
-  vkAllocateMemory(device, &allocate_info, nullptr, memory);
+  result = vkAllocateMemory(device, &allocate_info, nullptr, memory);
+  if (result != VK_SUCCESS) {
+    ET_LOG(Error, "Failed to allocate tensor memory, error %d", result);
+    vkDestroyTensorARM(device, *tensor, nullptr);
+    return result;
+  }
 
   // Bind tensor to memory
   const VkBindTensorMemoryInfoARM bind_info = {
@@ -183,7 +188,13 @@ VkResult allocate_tensor(
       .memory = *memory,
       .memoryOffset = 0,
   };
-  vkBindTensorMemoryARM(device, 1, &bind_info);
+  result = vkBindTensorMemoryARM(device, 1, &bind_info);
+  if (result != VK_SUCCESS) {
+    ET_LOG(Error, "Failed to bind tensor memory, error %d", result);
+    vkDestroyTensorARM(device, *tensor, nullptr);
+    vkFreeMemory(device, *memory, nullptr);
+    return result;
+  }
 
   VkTensorViewCreateInfoARM tensor_view_info = {
       .sType = VK_STRUCTURE_TYPE_TENSOR_VIEW_CREATE_INFO_ARM,
@@ -799,7 +810,10 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
         .bindPoint = bind_point_requirement.bindPoint,
         .objectIndex = 0, // NOTE: tied to numObjects assert above
     };
-    VkMemoryRequirements2 memory_requirements;
+    VkMemoryRequirements2 memory_requirements = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
+        .pNext = nullptr,
+    };
     vkGetDataGraphPipelineSessionMemoryRequirementsARM(
         vk_device, &memory_requirements_info, &memory_requirements);
 
