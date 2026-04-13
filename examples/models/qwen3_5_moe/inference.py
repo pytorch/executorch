@@ -75,9 +75,8 @@ def generate(
 ):
     """Generate text autoregressively with KV cache.
 
-    Prefills one token at a time (the chunk_gated_delta_rule kernel's chunked
-    path has numerical issues with T>1 in eager mode; token-by-token uses the
-    stable recurrent path).
+    Prefills one token at a time (the recurrent path; chunked FLA via
+    @triton_op is used for T>1 prefill in the exported PTE).
     """
     if eos_token_ids is None:
         eos_token_ids = set()

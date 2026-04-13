@@ -603,6 +603,19 @@ Error defineTensor(
 
 #define MAYBE_UNUSED(x) (void)(x)
 
+// Safe lookup in remapped_ids that returns an error instead of throwing
+// from std::unordered_map::at() in noexcept functions.
+inline Result<uint32_t> remapId(
+    const std::unordered_map<uint32_t, uint32_t>& map,
+    uint32_t key) {
+  auto it = map.find(key);
+  if (it == map.end()) {
+    ET_LOG(Error, "Remapped id not found for key %u", key);
+    return Error::Internal;
+  }
+  return it->second;
+}
+
 #ifdef ENABLE_XNNPACK_KLEIDI
 bool isQP8(const fb_xnnpack::XNNGraph* graph, const NodePtr node) {
   assert(node->xnode_union_type() == fb_xnnpack::XNodeUnion::XNNConvert);
@@ -679,11 +692,12 @@ Error defineConvertNode(
   }
 #endif
 
-  xnn_status status = xnn_define_convert(
-      subgraph_ptr,
-      remapped_ids.at(graph_node->input_id()),
-      remapped_ids.at(graph_node->output_id()),
-      flags);
+  auto cvt_input_id = ET_UNWRAP(remapId(remapped_ids, graph_node->input_id()));
+  auto cvt_output_id =
+      ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
+
+  xnn_status status =
+      xnn_define_convert(subgraph_ptr, cvt_input_id, cvt_output_id, flags);
 
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
@@ -708,14 +722,19 @@ Error defineFullyConnectedNode(
 
   auto graph_node = node->xnode_union_as_XNNFullyConnected();
   std::pair<float, float> min_max = getOutputMinMax(node);
+  auto fc_input1 = ET_UNWRAP(remapId(remapped_ids, graph_node->input1_id()));
+  auto fc_filter = ET_UNWRAP(remapId(remapped_ids, graph_node->filter_id()));
+  auto fc_bias = ET_UNWRAP(remapId(remapped_ids, graph_node->bias_id()));
+  auto fc_output = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
+
   xnn_status status = xnn_define_fully_connected(
       subgraph_ptr,
       min_max.first,
       min_max.second,
-      remapped_ids.at(graph_node->input1_id()),
-      remapped_ids.at(graph_node->filter_id()),
-      remapped_ids.at(graph_node->bias_id()),
-      remapped_ids.at(graph_node->output_id()),
+      fc_input1,
+      fc_filter,
+      fc_bias,
+      fc_output,
       graph_node->flags());
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
@@ -740,11 +759,11 @@ Error defineSoftmaxNode(
   MAYBE_UNUSED(graph);
 
   auto graph_node = node->xnode_union_as_XNNSoftmax();
+  auto sm_input = ET_UNWRAP(remapId(remapped_ids, graph_node->input_id()));
+  auto sm_output = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
+
   xnn_status status = xnn_define_softmax(
-      subgraph_ptr,
-      remapped_ids.at(graph_node->input_id()),
-      remapped_ids.at(graph_node->output_id()),
-      graph_node->flags());
+      subgraph_ptr, sm_input, sm_output, graph_node->flags());
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
       Internal,
@@ -764,12 +783,15 @@ Error defineGlobalAvgPooling2dNode(
 
   auto graph_node = node->xnode_union_as_XNNGlobalAvgPooling2d();
   std::pair<float, float> min_max = getOutputMinMax(node);
+  auto gap_input = ET_UNWRAP(remapId(remapped_ids, graph_node->input_id()));
+  auto gap_output = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
+
   xnn_status status = xnn_define_global_average_pooling_2d(
       subgraph_ptr,
       min_max.first,
       min_max.second,
-      remapped_ids.at(graph_node->input_id()),
-      remapped_ids.at(graph_node->output_id()),
+      gap_input,
+      gap_output,
       graph_node->flags());
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
@@ -790,6 +812,9 @@ Error defineAvgPooling2dNode(
 
   auto graph_node = node->xnode_union_as_XNNAvgPooling2d();
   std::pair<float, float> min_max = getOutputMinMax(node);
+  auto ap_input = ET_UNWRAP(remapId(remapped_ids, graph_node->input_id()));
+  auto ap_output = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
+
   xnn_status status = xnn_define_average_pooling_2d(
       subgraph_ptr,
       graph_node->padding_top(),
@@ -802,8 +827,8 @@ Error defineAvgPooling2dNode(
       graph_node->stride_width(),
       min_max.first,
       min_max.second,
-      remapped_ids.at(graph_node->input_id()),
-      remapped_ids.at(graph_node->output_id()),
+      ap_input,
+      ap_output,
       graph_node->flags());
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
@@ -829,6 +854,11 @@ Error defineConv2dNode(
 
   auto graph_node = node->xnode_union_as_XNNConv2d();
   std::pair<float, float> min_max = getOutputMinMax(node);
+  auto conv_input1 = ET_UNWRAP(remapId(remapped_ids, graph_node->input1_id()));
+  auto conv_filter = ET_UNWRAP(remapId(remapped_ids, graph_node->filter_id()));
+  auto conv_bias = ET_UNWRAP(remapId(remapped_ids, graph_node->bias_id()));
+  auto conv_output = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
+
   xnn_status status = xnn_define_convolution_2d(
       subgraph_ptr,
       graph_node->padding_top(),
@@ -846,10 +876,10 @@ Error defineConv2dNode(
       graph_node->group_output_channels(),
       min_max.first,
       min_max.second,
-      remapped_ids.at(graph_node->input1_id()),
-      remapped_ids.at(graph_node->filter_id()),
-      remapped_ids.at(graph_node->bias_id()),
-      remapped_ids.at(graph_node->output_id()),
+      conv_input1,
+      conv_filter,
+      conv_bias,
+      conv_output,
       graph_node->flags());
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
@@ -875,6 +905,11 @@ Error defineConvTranspose2dNode(
   auto graph_node = node->xnode_union_as_XNNConvTranspose2d();
 
   std::pair<float, float> min_max = getOutputMinMax(node);
+  auto dconv_input1 = ET_UNWRAP(remapId(remapped_ids, graph_node->input1_id()));
+  auto dconv_filter = ET_UNWRAP(remapId(remapped_ids, graph_node->filter_id()));
+  auto dconv_bias = ET_UNWRAP(remapId(remapped_ids, graph_node->bias_id()));
+  auto dconv_output = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
+
   xnn_status status = xnn_define_deconvolution_2d(
       subgraph_ptr,
       graph_node->padding_top(),
@@ -894,10 +929,10 @@ Error defineConvTranspose2dNode(
       graph_node->group_output_channels(),
       min_max.first,
       min_max.second,
-      remapped_ids.at(graph_node->input1_id()),
-      remapped_ids.at(graph_node->filter_id()),
-      remapped_ids.at(graph_node->bias_id()),
-      remapped_ids.at(graph_node->output_id()),
+      dconv_input1,
+      dconv_filter,
+      dconv_bias,
+      dconv_output,
       graph_node->flags());
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
@@ -923,6 +958,9 @@ Error defineMaxPooling2dNode(
 
   auto graph_node = node->xnode_union_as_XNNMaxPooling2d();
   std::pair<float, float> min_max = getOutputMinMax(node);
+  auto mp_input = ET_UNWRAP(remapId(remapped_ids, graph_node->input_id()));
+  auto mp_output = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
+
   xnn_status status = xnn_define_max_pooling_2d(
       subgraph_ptr,
       graph_node->padding_top(),
@@ -937,8 +975,8 @@ Error defineMaxPooling2dNode(
       graph_node->dilation_width(),
       min_max.first,
       min_max.second,
-      remapped_ids.at(graph_node->input_id()),
-      remapped_ids.at(graph_node->output_id()),
+      mp_input,
+      mp_output,
       graph_node->flags());
 
   ET_CHECK_OR_RETURN_ERROR(
@@ -967,12 +1005,16 @@ Error defineStaticTransposeNode(
 
   // Get tensor dims, we need to convert the uint32_t* to size_t*
   std::vector<size_t> dims_data = flatbufferDimsToVector(graph_node->perm());
+
+  auto st_input = ET_UNWRAP(remapId(remapped_ids, graph_node->input_id()));
+  auto st_output = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
+
   xnn_status status = xnn_define_static_transpose(
       subgraph_ptr,
       graph_node->num_dims(),
       dims_data.data(),
-      remapped_ids.at(graph_node->input_id()),
-      remapped_ids.at(graph_node->output_id()),
+      st_input,
+      st_output,
       graph_node->flags());
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
@@ -998,13 +1040,15 @@ Error defineStaticResizeBilinear2DNode(
 
   const fb_xnnpack::XNNStaticResizeBilinear2D* graph_node =
       node->xnode_union_as_XNNStaticResizeBilinear2D();
+  auto rb_input = ET_UNWRAP(remapId(remapped_ids, graph_node->input_id()));
+  auto rb_output = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
 
   xnn_status status = xnn_define_static_resize_bilinear_2d(
       subgraph_ptr,
       graph_node->new_height(),
       graph_node->new_width(),
-      remapped_ids.at(graph_node->input_id()),
-      remapped_ids.at(graph_node->output_id()),
+      rb_input,
+      rb_output,
       graph_node->flags());
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
@@ -1036,13 +1080,16 @@ Error defineStaticConstantPadNode(
   std::vector<size_t> post_paddings_dims =
       flatbufferDimsToVector(graph_node->post_paddings());
 
+  auto scp_input = ET_UNWRAP(remapId(remapped_ids, graph_node->input_id()));
+  auto scp_output = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
+
   xnn_status status = xnn_define_static_constant_pad(
       subgraph_ptr,
       pre_paddings_dims.data(),
       post_paddings_dims.data(),
       graph_node->padding_value(),
-      remapped_ids.at(graph_node->input_id()),
-      remapped_ids.at(graph_node->output_id()),
+      scp_input,
+      scp_output,
       graph_node->flags());
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
@@ -1068,6 +1115,11 @@ Error defineDepthwiseConv2dNode(
 
   auto graph_node = node->xnode_union_as_XNNDepthwiseConv2d();
   std::pair<float, float> min_max = getOutputMinMax(node);
+  auto dw_input1 = ET_UNWRAP(remapId(remapped_ids, graph_node->input1_id()));
+  auto dw_filter = ET_UNWRAP(remapId(remapped_ids, graph_node->filter_id()));
+  auto dw_bias = ET_UNWRAP(remapId(remapped_ids, graph_node->bias_id()));
+  auto dw_output = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
+
   xnn_status status = xnn_define_depthwise_convolution_2d(
       subgraph_ptr,
       graph_node->padding_top(),
@@ -1085,10 +1137,10 @@ Error defineDepthwiseConv2dNode(
       graph_node->groups(), // input_channels = groups for depthwise conv
       min_max.first,
       min_max.second,
-      remapped_ids.at(graph_node->input1_id()),
-      remapped_ids.at(graph_node->filter_id()),
-      remapped_ids.at(graph_node->bias_id()),
-      remapped_ids.at(graph_node->output_id()),
+      dw_input1,
+      dw_filter,
+      dw_bias,
+      dw_output,
       graph_node->flags());
 
   ET_CHECK_OR_RETURN_ERROR(
@@ -1113,12 +1165,16 @@ Error defineStaticReshapeNode(
   // Get tensor dims, we need to convert the uint32_t* to size_t*
   std::vector<size_t> dims_data =
       flatbufferDimsToVector(graph_node->new_shape());
+
+  auto sr_input = ET_UNWRAP(remapId(remapped_ids, graph_node->input_id()));
+  auto sr_output = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
+
   xnn_status status = xnn_define_static_reshape(
       subgraph_ptr,
       graph_node->num_dims(),
       dims_data.data(),
-      remapped_ids.at(graph_node->input_id()),
-      remapped_ids.at(graph_node->output_id()),
+      sr_input,
+      sr_output,
       graph_node->flags());
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
@@ -1143,6 +1199,11 @@ Error defineArgMaxPooling2dNode(
   MAYBE_UNUSED(graph);
 
   auto graph_node = node->xnode_union_as_XNNArgMaxPooling2d();
+  auto amp_input = ET_UNWRAP(remapId(remapped_ids, graph_node->input_id()));
+  auto amp_out_val =
+      ET_UNWRAP(remapId(remapped_ids, graph_node->output_value_id()));
+  auto amp_out_idx =
+      ET_UNWRAP(remapId(remapped_ids, graph_node->output_index_id()));
 
   xnn_status status = xnn_define_argmax_pooling_2d(
       subgraph_ptr,
@@ -1152,9 +1213,9 @@ Error defineArgMaxPooling2dNode(
       graph_node->padding_left(),
       graph_node->pooling_height(),
       graph_node->pooling_width(),
-      remapped_ids.at(graph_node->input_id()),
-      remapped_ids.at(graph_node->output_value_id()),
-      remapped_ids.at(graph_node->output_index_id()),
+      amp_input,
+      amp_out_val,
+      amp_out_idx,
       graph_node->flags());
 
   ET_CHECK_OR_RETURN_ERROR(
@@ -1180,12 +1241,11 @@ Error defineExpNode(
   MAYBE_UNUSED(graph);
 
   auto graph_node = node->xnode_union_as_XNNExp();
+  auto exp_input = ET_UNWRAP(remapId(remapped_ids, graph_node->input_id()));
+  auto exp_output = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
 
-  xnn_status status = xnn_define_exp(
-      subgraph_ptr,
-      remapped_ids.at(graph_node->input_id()),
-      remapped_ids.at(graph_node->output_id()),
-      graph_node->flags());
+  xnn_status status =
+      xnn_define_exp(subgraph_ptr, exp_input, exp_output, graph_node->flags());
 
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
@@ -1210,12 +1270,11 @@ Error defineTanhNode(
   MAYBE_UNUSED(graph);
 
   auto graph_node = node->xnode_union_as_XNNTanh();
+  auto tanh_input = ET_UNWRAP(remapId(remapped_ids, graph_node->input_id()));
+  auto tanh_output = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
 
   xnn_status status = xnn_define_tanh(
-      subgraph_ptr,
-      remapped_ids.at(graph_node->input_id()),
-      remapped_ids.at(graph_node->output_id()),
-      graph_node->flags());
+      subgraph_ptr, tanh_input, tanh_output, graph_node->flags());
 
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
@@ -1240,12 +1299,15 @@ Error definePReLUNode(
   MAYBE_UNUSED(graph);
 
   auto graph_node = node->xnode_union_as_XNNPReLU();
+  auto prelu_input1 = ET_UNWRAP(remapId(remapped_ids, graph_node->input1_id()));
+  auto prelu_input2 = ET_UNWRAP(remapId(remapped_ids, graph_node->input2_id()));
+  auto prelu_output = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
 
   xnn_status status = xnn_define_prelu(
       subgraph_ptr,
-      remapped_ids.at(graph_node->input1_id()),
-      remapped_ids.at(graph_node->input2_id()),
-      remapped_ids.at(graph_node->output_id()),
+      prelu_input1,
+      prelu_input2,
+      prelu_output,
       graph_node->flags());
 
   ET_CHECK_OR_RETURN_ERROR(
@@ -1271,13 +1333,16 @@ Error defineConcatenate2Node(
   MAYBE_UNUSED(graph);
 
   auto graph_node = node->xnode_union_as_XNNConcatenate2();
+  auto cat2_in1 = ET_UNWRAP(remapId(remapped_ids, graph_node->input1_id()));
+  auto cat2_in2 = ET_UNWRAP(remapId(remapped_ids, graph_node->input2_id()));
+  auto cat2_out = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
 
   xnn_status status = xnn_define_concatenate2(
       subgraph_ptr,
       graph_node->axis(),
-      remapped_ids.at(graph_node->input1_id()),
-      remapped_ids.at(graph_node->input2_id()),
-      remapped_ids.at(graph_node->output_id()),
+      cat2_in1,
+      cat2_in2,
+      cat2_out,
       graph_node->flags());
 
   ET_CHECK_OR_RETURN_ERROR(
@@ -1303,14 +1368,18 @@ Error defineConcatenate3Node(
   MAYBE_UNUSED(graph);
 
   auto graph_node = node->xnode_union_as_XNNConcatenate3();
+  auto cat3_in1 = ET_UNWRAP(remapId(remapped_ids, graph_node->input1_id()));
+  auto cat3_in2 = ET_UNWRAP(remapId(remapped_ids, graph_node->input2_id()));
+  auto cat3_in3 = ET_UNWRAP(remapId(remapped_ids, graph_node->input3_id()));
+  auto cat3_out = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
 
   xnn_status status = xnn_define_concatenate3(
       subgraph_ptr,
       graph_node->axis(),
-      remapped_ids.at(graph_node->input1_id()),
-      remapped_ids.at(graph_node->input2_id()),
-      remapped_ids.at(graph_node->input3_id()),
-      remapped_ids.at(graph_node->output_id()),
+      cat3_in1,
+      cat3_in2,
+      cat3_in3,
+      cat3_out,
       graph_node->flags());
 
   ET_CHECK_OR_RETURN_ERROR(
@@ -1336,15 +1405,20 @@ Error defineConcatenate4Node(
   MAYBE_UNUSED(graph);
 
   auto graph_node = node->xnode_union_as_XNNConcatenate4();
+  auto cat4_in1 = ET_UNWRAP(remapId(remapped_ids, graph_node->input1_id()));
+  auto cat4_in2 = ET_UNWRAP(remapId(remapped_ids, graph_node->input2_id()));
+  auto cat4_in3 = ET_UNWRAP(remapId(remapped_ids, graph_node->input3_id()));
+  auto cat4_in4 = ET_UNWRAP(remapId(remapped_ids, graph_node->input4_id()));
+  auto cat4_out = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
 
   xnn_status status = xnn_define_concatenate4(
       subgraph_ptr,
       graph_node->axis(),
-      remapped_ids.at(graph_node->input1_id()),
-      remapped_ids.at(graph_node->input2_id()),
-      remapped_ids.at(graph_node->input3_id()),
-      remapped_ids.at(graph_node->input4_id()),
-      remapped_ids.at(graph_node->output_id()),
+      cat4_in1,
+      cat4_in2,
+      cat4_in3,
+      cat4_in4,
+      cat4_out,
       graph_node->flags());
 
   ET_CHECK_OR_RETURN_ERROR(
@@ -1370,16 +1444,22 @@ Error defineConcatenate5Node(
   MAYBE_UNUSED(graph);
 
   auto graph_node = node->xnode_union_as_XNNConcatenate5();
+  auto cat5_in1 = ET_UNWRAP(remapId(remapped_ids, graph_node->input1_id()));
+  auto cat5_in2 = ET_UNWRAP(remapId(remapped_ids, graph_node->input2_id()));
+  auto cat5_in3 = ET_UNWRAP(remapId(remapped_ids, graph_node->input3_id()));
+  auto cat5_in4 = ET_UNWRAP(remapId(remapped_ids, graph_node->input4_id()));
+  auto cat5_in5 = ET_UNWRAP(remapId(remapped_ids, graph_node->input5_id()));
+  auto cat5_out = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
 
   xnn_status status = xnn_define_concatenate5(
       subgraph_ptr,
       graph_node->axis(),
-      remapped_ids.at(graph_node->input1_id()),
-      remapped_ids.at(graph_node->input2_id()),
-      remapped_ids.at(graph_node->input3_id()),
-      remapped_ids.at(graph_node->input4_id()),
-      remapped_ids.at(graph_node->input5_id()),
-      remapped_ids.at(graph_node->output_id()),
+      cat5_in1,
+      cat5_in2,
+      cat5_in3,
+      cat5_in4,
+      cat5_in5,
+      cat5_out,
       graph_node->flags());
 
   ET_CHECK_OR_RETURN_ERROR(
@@ -1409,13 +1489,16 @@ Error defineStaticSliceNode(
   std::vector<size_t> offsets = flatbufferDimsToVector(graph_node->offsets());
   std::vector<size_t> sizes = flatbufferDimsToVector(graph_node->sizes());
 
+  auto ss_input = ET_UNWRAP(remapId(remapped_ids, graph_node->input_id()));
+  auto ss_output = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
+
   xnn_status status = xnn_define_static_slice(
       subgraph_ptr,
       graph_node->num_dims(),
       offsets.data(),
       sizes.data(),
-      remapped_ids.at(graph_node->input_id()),
-      remapped_ids.at(graph_node->output_id()),
+      ss_input,
+      ss_output,
       graph_node->flags());
 
   ET_CHECK_OR_RETURN_ERROR(
@@ -1441,13 +1524,12 @@ Error defineBatchMatrixMultiplyNode(
   MAYBE_UNUSED(graph);
 
   auto graph_node = node->xnode_union_as_XNNBatchMatrixMultiply();
+  auto bmm_in1 = ET_UNWRAP(remapId(remapped_ids, graph_node->input1_id()));
+  auto bmm_in2 = ET_UNWRAP(remapId(remapped_ids, graph_node->input2_id()));
+  auto bmm_out = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
 
   xnn_status status = xnn_define_batch_matrix_multiply(
-      subgraph_ptr,
-      remapped_ids.at(graph_node->input1_id()),
-      remapped_ids.at(graph_node->input2_id()),
-      remapped_ids.at(graph_node->output_id()),
-      graph_node->flags());
+      subgraph_ptr, bmm_in1, bmm_in2, bmm_out, graph_node->flags());
 
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
@@ -1470,12 +1552,11 @@ Error defineCopyNode(
   MAYBE_UNUSED(graph);
 
   auto graph_node = node->xnode_union_as_XNNCopy();
+  auto copy_input = ET_UNWRAP(remapId(remapped_ids, graph_node->input_id()));
+  auto copy_output = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
 
   xnn_status status = xnn_define_copy(
-      subgraph_ptr,
-      remapped_ids.at(graph_node->input_id()),
-      remapped_ids.at(graph_node->output_id()),
-      graph_node->flags());
+      subgraph_ptr, copy_input, copy_output, graph_node->flags());
 
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
@@ -1517,13 +1598,11 @@ Error defineGenericUnaryNode(
     const union xnn_unary_params* params,
     fb_xnnpack::XNodeUnion node_type,
     uint32_t debug_handle) noexcept {
+  auto remapped_input = ET_UNWRAP(remapId(remapped_ids, input_id));
+  auto remapped_output = ET_UNWRAP(remapId(remapped_ids, output_id));
+
   xnn_status status = xnn_define_unary(
-      subgraph_ptr,
-      op_type,
-      params,
-      remapped_ids.at(input_id),
-      remapped_ids.at(output_id),
-      flags);
+      subgraph_ptr, op_type, params, remapped_input, remapped_output, flags);
 
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
@@ -1637,13 +1716,17 @@ Error defineGenericBinaryNode(
     const struct xnn_binary_params* params,
     fb_xnnpack::XNodeUnion node_type,
     uint32_t debug_handle) noexcept {
+  auto bin_in1 = ET_UNWRAP(remapId(remapped_ids, graph_node->input1_id()));
+  auto bin_in2 = ET_UNWRAP(remapId(remapped_ids, graph_node->input2_id()));
+  auto bin_out = ET_UNWRAP(remapId(remapped_ids, graph_node->output_id()));
+
   xnn_status status = xnn_define_binary(
       subgraph_ptr,
       op_type,
       params,
-      remapped_ids.at(graph_node->input1_id()),
-      remapped_ids.at(graph_node->input2_id()),
-      remapped_ids.at(graph_node->output_id()),
+      bin_in1,
+      bin_in2,
+      bin_out,
       graph_node->flags());
 
   ET_CHECK_OR_RETURN_ERROR(
@@ -1844,6 +1927,12 @@ ET_NODISCARD Error XNNCompiler::compileModel(
       flatbuffers::GetBufferIdentifier(flatbuffer_data));
 
   auto flatbuffer_graph = fb_xnnpack::GetXNNGraph(flatbuffer_data);
+  ET_CHECK_OR_RETURN_ERROR(
+      flatbuffer_graph != nullptr && flatbuffer_graph->xvalues() != nullptr &&
+          flatbuffer_graph->xnodes() != nullptr,
+      InvalidProgram,
+      "Failed to deserialize XNNPACK flatbuffer graph; null graph, xvalues, or xnodes.");
+
   // initialize xnnpack
   xnn_status status = xnn_initialize(/*allocator =*/nullptr);
   ET_CHECK_OR_RETURN_ERROR(
@@ -1853,9 +1942,18 @@ ET_NODISCARD Error XNNCompiler::compileModel(
       xnn_status_to_string(status));
 
   // create xnnpack subgraph
+  uint32_t num_externs = flatbuffer_graph->num_externs();
+  uint32_t num_values = flatbuffer_graph->xvalues()->size();
+  ET_CHECK_OR_RETURN_ERROR(
+      num_externs <= num_values,
+      InvalidProgram,
+      "num_externs (%u) exceeds total number of values (%u)",
+      num_externs,
+      num_values);
+
   xnn_subgraph_t subgraph_ptr = nullptr;
   status = xnn_create_subgraph(
-      /*external_value_ids=*/flatbuffer_graph->num_externs(),
+      /*external_value_ids=*/num_externs,
       /*flags=*/0,
       &subgraph_ptr);
   ET_CHECK_OR_RETURN_ERROR(

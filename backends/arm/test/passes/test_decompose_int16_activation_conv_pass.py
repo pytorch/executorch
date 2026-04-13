@@ -106,7 +106,7 @@ class Conv2dMultipleConvs(torch.nn.Module):
         return x
 
 
-def test_decompose_conv_with_int16_activation_no_target_fp32_no_decomposition() -> None:
+def test_decompose_conv_with_int16_activation_fp32_no_decomposition() -> None:
     """Test that DecomposeConvWithInt16ActivationPass does NOT decompose
     convolution when using FP32 (no quantization).
     """
