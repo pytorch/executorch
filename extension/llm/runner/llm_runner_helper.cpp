@@ -121,9 +121,11 @@ get_llm_metadata(tokenizers::Tokenizer* tokenizer, Module* module) {
     auto& value = pair.second;
 
     if (method_names.count(method_name)) {
-      value = ET_UNWRAP(module->get(method_name))
-                  .toScalar()
-                  .to<decltype(metadata)::mapped_type>();
+      auto get_result = module->get(method_name);
+      if (!get_result.ok()) {
+        return get_result.error();
+      }
+      value = get_result->toScalar().to<decltype(metadata)::mapped_type>();
     } else {
       ET_LOG(
           Info,
