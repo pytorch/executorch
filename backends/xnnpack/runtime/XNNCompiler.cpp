@@ -1859,18 +1859,9 @@ ET_NODISCARD Error XNNCompiler::compileModel(
       xnn_status_to_string(status));
 
   // create xnnpack subgraph
-  uint32_t num_externs = flatbuffer_graph->num_externs();
-  uint32_t num_values = flatbuffer_graph->xvalues()->size();
-  ET_CHECK_OR_RETURN_ERROR(
-      num_externs <= num_values,
-      InvalidProgram,
-      "num_externs (%u) exceeds total number of values (%u)",
-      num_externs,
-      num_values);
-
   xnn_subgraph_t subgraph_ptr = nullptr;
   status = xnn_create_subgraph(
-      /*external_value_ids=*/num_externs,
+      /*external_value_ids=*/flatbuffer_graph->num_externs(),
       /*flags=*/0,
       &subgraph_ptr);
   ET_CHECK_OR_RETURN_ERROR(
