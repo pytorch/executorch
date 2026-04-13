@@ -783,9 +783,9 @@ Examples:
     parser.add_argument(
         "--delegate-index",
         type=int,
-        default=None,
+        default=0,
         metavar="N",
-        help="Index of delegate to extract (0-based). If not specified, extracts first matching delegate.",
+        help="Index of delegate to extract (0-based, default: 0).",
     )
     parser.add_argument(
         "--parse-mlx",

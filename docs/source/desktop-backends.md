@@ -11,6 +11,7 @@ Available hardware acceleration backends for desktop platforms.
 ## macOS Backends
 
 - {doc}`backends/coreml/coreml-overview` — CoreML (recommended for Apple Silicon)
+- {doc}`backends/mlx/mlx-overview` — MLX (Apple Silicon GPU)
 - {doc}`backends/mps/mps-overview` — Metal Performance Shaders (Apple Silicon GPU)
 - {doc}`desktop-xnnpack` — XNNPACK (CPU acceleration)
 
