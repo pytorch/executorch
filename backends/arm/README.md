@@ -106,6 +106,13 @@ Setup:
 ./examples/arm/setup.sh --disable-ethos-u-deps --enable-mlsdk-deps
 ```
 
+This is the default setup path and installs the MLSDK components from pip.
+Developers who need local source builds can use:
+
+```
+./backends/arm/scripts/setup-mlsdk-from-source.sh
+```
+
 The current flow lowers to TOSA and converts to VGF for use in external projects,
 so the `executor_runner` is not typically used here.
 
