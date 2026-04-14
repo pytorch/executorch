@@ -347,7 +347,7 @@ def eval_llama_with_attention_sink(model_name: str, args: argparse.ArgumentParse
     assert llm_config.model.use_attention_sink is not None
     assert args.attention_sink_eval_tokens > 0
     attention_sink_params = llm_config.model.use_attention_sink.split(",")
-    assert len(attention_sink_params) == 3
+    assert len(attention_sink_params) == 2
     sink_size = int(attention_sink_params[0])
     window_size = int(attention_sink_params[1])
 

@@ -18,7 +18,7 @@ We implement the two main range setting methods:
 import torch
 import torch.nn as nn
 from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
-    PerChannelParamObserver,
+    PerChannelParamObserverWithLossEvaluation,
 )
 
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -68,7 +68,7 @@ class WrappedLlamaModel(nn.Module):
         return self.model.forward(tokens, self.atten_mask)
 
 
-class PerChannelMSEObserver(PerChannelParamObserver):
+class PerChannelMSEObserver(PerChannelParamObserverWithLossEvaluation):
 
     def forward(self, x_orig):
         # since params are static, one calibration is enough

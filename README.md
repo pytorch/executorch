@@ -187,9 +187,9 @@ See [examples/models/llama](examples/models/llama/README.md) for complete workfl
 | **Platform**     | **Supported Backends**                                   |
 |------------------|----------------------------------------------------------|
 | Android          | XNNPACK, Vulkan, Qualcomm, MediaTek, Samsung Exynos      |
-| iOS              | XNNPACK, MPS, CoreML (Neural Engine)                     |
+| iOS              | XNNPACK, CoreML (Neural Engine), MPS *(deprecated)*      |
 | Linux / Windows  | XNNPACK, OpenVINO, CUDA *(experimental)*                 |
-| macOS            | XNNPACK, MPS, Metal *(experimental)*                     |
+| macOS            | XNNPACK, Metal *(experimental)*, MPS *(deprecated)*      |
 | Embedded / MCU   | XNNPACK, ARM Ethos-U, NXP, Cadence DSP                   |
 
 See [Backend Documentation](https://docs.pytorch.org/executorch/main/backends-overview.html) for detailed hardware requirements and optimization guides. For desktop/laptop GPU inference with CUDA and Metal, see the [Desktop Guide](desktop/README.md). For Zephyr RTOS integration, see the [Zephyr Guide](zephyr/README.md).

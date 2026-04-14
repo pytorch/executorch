@@ -212,12 +212,27 @@ class TestQNN(unittest.TestCase):
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
         for i in range(len(ref_output)):
-            self.assertTrue(
-                torch.allclose(
-                    model_output[i], ref_output[i], atol=self.atol, rtol=self.rtol
-                ),
-                msg=f"ref_output:\n{ref_output[i]}\n\nmodel_output:\n{model_output[i]}",
-            )
+            if model_output[i].dtype == torch.bool or ref_output[i].dtype == torch.bool:
+                model_bool = model_output[i].to(torch.bool)
+                ref_bool = ref_output[i].to(torch.bool)
+                model_bool, ref_bool = torch.broadcast_tensors(model_bool, ref_bool)
+                self.assertTrue(
+                    torch.equal(model_bool, ref_bool),
+                    msg=f"Output {i} does not match reference output.\n"
+                    f"\tOutput tensor shape: {model_output[i].shape}, dtype: {model_output[i].dtype}\n"
+                    f"\tReference tensor shape: {ref_output[i].shape}, dtype: {ref_output[i].dtype}\n"
+                    f"\tMismatch count: {torch.count_nonzero(model_bool ^ ref_bool).item()} / {model_bool.numel()}\n",
+                )
+            else:
+                self.assertTrue(
+                    torch.allclose(
+                        model_output[i],
+                        ref_output[i],
+                        atol=self.atol,
+                        rtol=self.rtol,
+                    ),
+                    msg=f"ref_output:\n{ref_output[i]}\n\nmodel_output:\n{model_output[i]}",
+                )
 
     def _save_model_and_expected_output(
         self,
@@ -519,6 +534,7 @@ class TestQNN(unittest.TestCase):
                     adb.extra_cmds += (
                         f" --performance_output_path {self.inference_speed_output_path}"
                     )
+                adb.execute(custom_runner_cmd=f"rm -rf {adb.output_folder}")
                 adb.execute(method_index=method_index, output_callback=output_callback)
                 adb.pull(host_output_path=tmp_dir, callback=post_process)
                 self._assert_outputs_equal(outputs, ref_outputs)
@@ -642,6 +658,7 @@ class TestQNN(unittest.TestCase):
         inputs: Tuple[torch.Tensor],
         is_conv_per_channel: Optional[bool] = True,
         is_linear_per_channel: Optional[bool] = False,
+        is_embedding_per_channel: Optional[bool] = False,
         custom_quant_annotations: Tuple[Callable] = (),
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
         dynamic_shapes: Dict = None,
@@ -658,6 +675,7 @@ class TestQNN(unittest.TestCase):
             custom_annotations=custom_quant_annotations,
             per_channel_conv=is_conv_per_channel,
             per_channel_linear=is_linear_per_channel,
+            per_channel_embedding=is_embedding_per_channel,
             submodule_qconfig_list=submodule_qconfig_list,
             backend=get_backend_type(self.backend),
             soc_model=self.model,

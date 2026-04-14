@@ -54,7 +54,9 @@ runtime.python_library(
     name = "triton_kernels",
     srcs = [
         "triton/kernels/__init__.py",
+        "triton/kernels/fused_moe.py",
         "triton/kernels/sdpa.py",
+        "triton/kernels/topk.py",
     ],
     visibility = [
         "//executorch/backends/cuda/...",
