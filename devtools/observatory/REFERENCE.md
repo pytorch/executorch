@@ -447,9 +447,10 @@ Fields:
 1. `mode: "auto" | "disabled" | "custom"`
 2. `max_parallel: int >= 1`
 3. `sync_toggle: bool`
-4. `viewer_options_compare: dict`
-5. `js_func: str | None`
-6. `args: dict`
+4. `default_sync: dict` — initial `FXGraphCompare` sync config passed as `config.sync`. Keys: `mode` (`"auto"`, `"id"`, `"layer"`, `"none"`), `layer` (extension id), `field` (info key). Empty dict (default) falls back to `{ mode: "auto" }`.
+5. `viewer_options_compare: dict`
+6. `js_func: str | None`
+7. `args: dict`
 
 #### 2. Validation API
 

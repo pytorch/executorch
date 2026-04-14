@@ -189,6 +189,7 @@ class GraphCompareSpec:
     mode: Literal["auto", "disabled", "custom"] = "auto"
     max_parallel: int = 2
     sync_toggle: bool = True
+    default_sync: Dict[str, str] = field(default_factory=dict)
     viewer_options_compare: Dict[str, Serializable] = field(default_factory=dict)
     js_func: Optional[str] = None
     args: Dict[str, Serializable] = field(default_factory=dict)

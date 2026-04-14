@@ -436,7 +436,9 @@
     const compare = CompareCtor.create({
       viewers: viewerMap,
       layout: { container: content },
-      sync: { mode: 'auto' },
+      sync: compareSpec.default_sync && compareSpec.default_sync.mode
+        ? compareSpec.default_sync
+        : { mode: 'auto' },
     });
 
     state.graphCompareInstances.set(cacheKey, { compare, nameToIndex });
