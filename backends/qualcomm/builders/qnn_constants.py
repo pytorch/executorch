@@ -588,6 +588,17 @@ class OpRmsNorm:
 
 
 @dataclass(init=False, frozen=True)
+class OpScatterElements:
+    op_name: str = "ScatterElements"
+    param_axis: str = "axis"
+    param_reduction: str = "reduction"
+
+    @unique
+    class Reduction(IntEnum):
+        NONE = 0
+
+
+@dataclass(init=False, frozen=True)
 class OpScatterNd:
     op_name: str = "ScatterNd"
     param_reduction: str = "reduction"

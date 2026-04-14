@@ -368,7 +368,7 @@ Please help update following table if you are contributing new operators:
 + &#128683; = Deprecated, supported with other QNN Ops
 
 
-| Operators | HTP - 98/119 Enabled |
+| Operators | HTP - 99/119 Enabled |
 |-----------|---------|
 | Argmax | &check; |
 | Argmin | &check; |
@@ -472,7 +472,7 @@ Please help update following table if you are contributing new operators:
 | ResizeNearestNeighbor | &check; |
 | RoiAlign | &cross; |
 | RmsNorm | &check; |
-| ScatterElements | &cross; |
+| ScatterElements | &check; |
 | ScatterNd | &check; |
 | Sigmoid | &check; |
 | Softmax | &check; |

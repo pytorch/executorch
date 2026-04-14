@@ -2168,6 +2168,15 @@ class ScaledDotProductAttention(torch.nn.Module):
         return attn_output
 
 
+class ScatterSrc(torch.nn.Module):
+    def __init__(self, dim=1):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, data, index, src):
+        return torch.scatter(data, self.dim, index, src)
+
+
 class SelectCopy(torch.nn.Module):
     def __init__(self):
         super().__init__()
