@@ -400,6 +400,15 @@ class Ceil(torch.nn.Module):
         return torch.ceil(x)
 
 
+class ChannelShuffle(torch.nn.Module):
+    def __init__(self, groups):
+        super().__init__()
+        self.channel_shuffle = torch.nn.ChannelShuffle(groups)
+
+    def forward(self, x):
+        return self.channel_shuffle(x)
+
+
 class Chunk(torch.nn.Module):
     def __init__(self):
         super().__init__()
