@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/extension/tensor/tensor_ptr.h>
 #include <executorch/extension/training/optimizer/adamw.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
@@ -33,10 +34,11 @@ class AdamWOptimizerTest : public ::testing::Test {
 };
 
 TEST_F(AdamWOptimizerTest, AdamWParamStateTest) {
-  TensorFactory<ScalarType::Float> tf;
-  Tensor exp_avg = tf.make({2, 2}, {0, 0, 0, 0});
-  Tensor exp_avg_sq = tf.make({2, 2}, {0, 0, 0, 0});
-  AdamWParamState state(exp_avg, exp_avg_sq);
+  auto exp_avg =
+      executorch::extension::make_tensor_ptr({2, 2}, {0.f, 0.f, 0.f, 0.f});
+  auto exp_avg_sq =
+      executorch::extension::make_tensor_ptr({2, 2}, {0.f, 0.f, 0.f, 0.f});
+  AdamWParamState state(std::move(exp_avg), std::move(exp_avg_sq));
 
   EXPECT_EQ(state.step_count(), 0);
   state.increment_step_count();
@@ -78,8 +80,8 @@ TEST_F(AdamWOptimizerTest, AdamWOptimizerSimple) {
     optimizer.step(named_gradients);
   }
 
-  auto p1 = static_cast<const float*>(
-      named_parameters.at("param1").const_data_ptr());
+  auto p1 =
+      static_cast<const float*>(named_parameters.at("param1").const_data_ptr());
   // With a constant gradient of -1 and no weight decay, the bias-corrected
   // m_hat / sqrt(v_hat) is ~= -1 at every step, so each step shifts p by
   // +lr. After 10 steps of lr=0.1, p should be near 2.0.
@@ -103,8 +105,8 @@ TEST_F(AdamWOptimizerTest, AdamWOptimizerDecoupledWeightDecay) {
   named_gradients.insert({"param1", tf.make({1, 1}, {0.0})});
   optimizer.step(named_gradients);
 
-  auto p1 = static_cast<const float*>(
-      named_parameters.at("param1").const_data_ptr());
+  auto p1 =
+      static_cast<const float*>(named_parameters.at("param1").const_data_ptr());
   EXPECT_NEAR(p1[0], 0.95, 1e-5);
 }
 
@@ -124,10 +126,10 @@ TEST_F(AdamWOptimizerTest, AdamWOptimizerMultipleParams) {
     optimizer.step(named_gradients);
   }
 
-  auto p1 = static_cast<const float*>(
-      named_parameters.at("param1").const_data_ptr());
-  auto p2 = static_cast<const float*>(
-      named_parameters.at("param2").const_data_ptr());
+  auto p1 =
+      static_cast<const float*>(named_parameters.at("param1").const_data_ptr());
+  auto p2 =
+      static_cast<const float*>(named_parameters.at("param2").const_data_ptr());
   // Each param sees a constant gradient of +/- 1 for 5 steps -> p shifts by
   // roughly +/- 5 * lr = +/- 0.5. State is tracked independently per param.
   EXPECT_NEAR(p1[0], 1.5, 0.1);

@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include <executorch/extension/tensor/tensor_ptr.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <cstdint>
@@ -41,16 +42,18 @@ class ET_EXPERIMENTAL AdamWParamState {
    * @param[in] exp_avg_sq The second moment (EMA of squared gradients) buffer.
    */
   AdamWParamState(
-      executorch::aten::Tensor& exp_avg,
-      executorch::aten::Tensor& exp_avg_sq)
-      : exp_avg_(exp_avg), exp_avg_sq_(exp_avg_sq), step_count_(0) {}
+      executorch::extension::TensorPtr exp_avg,
+      executorch::extension::TensorPtr exp_avg_sq)
+      : exp_avg_(std::move(exp_avg)),
+        exp_avg_sq_(std::move(exp_avg_sq)),
+        step_count_(0) {}
 
   executorch::aten::Tensor& exp_avg() {
-    return exp_avg_;
+    return *exp_avg_;
   }
 
   executorch::aten::Tensor& exp_avg_sq() {
-    return exp_avg_sq_;
+    return *exp_avg_sq_;
   }
 
   int64_t step_count() const {
@@ -62,8 +65,8 @@ class ET_EXPERIMENTAL AdamWParamState {
   }
 
  private:
-  executorch::aten::Tensor exp_avg_;
-  executorch::aten::Tensor exp_avg_sq_;
+  executorch::extension::TensorPtr exp_avg_;
+  executorch::extension::TensorPtr exp_avg_sq_;
   int64_t step_count_;
 };
 
@@ -179,7 +182,7 @@ class ET_EXPERIMENTAL AdamW {
   explicit AdamW(
       const std::vector<AdamWParamGroup>& param_groups,
       AdamWOptions defaults)
-      : defaults_(std::make_unique<AdamWOptions>(defaults)) {
+      : defaults_(defaults) {
     for (const auto& param_group : param_groups) {
       add_param_group(param_group);
     }
@@ -209,7 +212,7 @@ class ET_EXPERIMENTAL AdamW {
  private:
   std::vector<AdamWParamGroup> param_groups_;
   std::unordered_map<void*, std::unique_ptr<AdamWParamState>> state_;
-  std::unique_ptr<AdamWOptions> defaults_;
+  AdamWOptions defaults_;
 };
 
 } // namespace optimizer

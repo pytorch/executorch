@@ -8,13 +8,15 @@
 
 #include <executorch/extension/training/optimizer/adamw.h>
 
+#include <executorch/extension/tensor/tensor_ptr.h>
 #include <executorch/runtime/core/error.h>
 
 #include <cmath>
 #include <cstring>
 
 using executorch::aten::Tensor;
-using executorch::aten::TensorImpl;
+using executorch::extension::make_tensor_ptr;
+using executorch::extension::TensorPtr;
 using ::executorch::runtime::Error;
 
 namespace executorch {
@@ -116,16 +118,15 @@ AdamWParamGroup::named_parameters() const {
 void AdamW::add_param_group(const AdamWParamGroup& param_group) {
   AdamWParamGroup param_group_(param_group.named_parameters());
   if (!param_group.has_options()) {
-    param_group_.set_options(defaults_->clone());
+    param_group_.set_options(defaults_.clone());
   } else {
     param_group_.set_options(param_group.options().clone());
   }
   param_groups_.emplace_back(std::move(param_group_));
 }
 
-Error AdamW::step(
-    const std::map<std::string_view, executorch::aten::Tensor>&
-        named_gradients) {
+Error AdamW::step(const std::map<std::string_view, executorch::aten::Tensor>&
+                      named_gradients) {
   for (auto& group : param_groups_) {
     auto& options = static_cast<AdamWOptions&>(group.options());
     const double lr = options.lr();
@@ -162,29 +163,23 @@ Error AdamW::step(
         std::memset(m_buf_ptr, 0, g.nbytes());
         std::memset(v_buf_ptr, 0, g.nbytes());
 
-        Tensor m_buf(nullptr);
-        Tensor v_buf(nullptr);
-#ifdef USE_ATEN_LIB
-        std::vector<int64_t> sizes(g.sizes().begin(), g.sizes().end());
-        m_buf = torch::from_blob(m_buf_ptr, sizes, g.scalar_type());
-        v_buf = torch::from_blob(v_buf_ptr, sizes, g.scalar_type());
-#else
-        TensorImpl* m_impl = new TensorImpl(
-            g.scalar_type(),
-            g.sizes().size(),
-            const_cast<TensorImpl::SizesType*>(g.sizes().data()),
+        std::vector<executorch::aten::SizesType> sizes(
+            g.sizes().begin(), g.sizes().end());
+        auto m_ptr = make_tensor_ptr(
+            sizes,
             m_buf_ptr,
-            const_cast<TensorImpl::DimOrderType*>(g.dim_order().data()));
-        TensorImpl* v_impl = new TensorImpl(
             g.scalar_type(),
-            g.sizes().size(),
-            const_cast<TensorImpl::SizesType*>(g.sizes().data()),
+            executorch::aten::TensorShapeDynamism::STATIC,
+            [](void* p) { free(p); });
+        auto v_ptr = make_tensor_ptr(
+            sizes,
             v_buf_ptr,
-            const_cast<TensorImpl::DimOrderType*>(g.dim_order().data()));
-        m_buf = Tensor(m_impl);
-        v_buf = Tensor(v_impl);
-#endif
-        auto state = std::make_unique<AdamWParamState>(m_buf, v_buf);
+            g.scalar_type(),
+            executorch::aten::TensorShapeDynamism::STATIC,
+            [](void* p) { free(p); });
+
+        auto state = std::make_unique<AdamWParamState>(
+            std::move(m_ptr), std::move(v_ptr));
         state_ptr = state.get();
         state_[p.unsafeGetTensorImpl()] = std::move(state);
       } else {
@@ -214,17 +209,7 @@ Error AdamW::step(
   return Error::Ok;
 }
 
-AdamW::~AdamW() {
-  for (const auto& state_kv : state_) {
-    auto& state = *state_kv.second;
-    free(state.exp_avg().unsafeGetTensorImpl()->mutable_data());
-    free(state.exp_avg_sq().unsafeGetTensorImpl()->mutable_data());
-#ifndef USE_ATEN_LIB
-    delete state.exp_avg().unsafeGetTensorImpl();
-    delete state.exp_avg_sq().unsafeGetTensorImpl();
-#endif
-  }
-}
+AdamW::~AdamW() = default;
 
 } // namespace optimizer
 } // namespace training
