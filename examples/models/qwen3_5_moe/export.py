@@ -70,8 +70,8 @@ def _prepare_and_quantize_mlx(model, config, args):
 
 def _prepare_and_quantize_metal(model, config, args):
     """Metal: apply source transforms, quantize experts + non-expert layers."""
-    import executorch.backends.apple.metal.ops.gather_qmv  # noqa: F401
     import executorch.backends.apple.metal.ops.gated_delta_rule  # noqa: F401
+    import executorch.backends.apple.metal.ops.gather_qmv  # noqa: F401
     from executorch.examples.models.qwen3_5_moe.metal_source_transformations import (
         metal_source_transformations,
         quantize_experts_metal,
@@ -89,10 +89,9 @@ def _prepare_and_quantize_metal(model, config, args):
     # Custom filter skips shared_expert_gate (N=1) which violates fpa4w's
     # N%4==0 constraint during prefill (M>1).
     if args.qlinear:
-        from torchao.quantization.quant_api import quantize_
-
         import torchao.experimental.ops.mps  # noqa: F401
         from torchao.experimental.quant_api import UIntxWeightOnlyConfig
+        from torchao.quantization.quant_api import quantize_
 
         fpa4w_config = UIntxWeightOnlyConfig(
             group_size=args.qlinear_group_size,
@@ -113,7 +112,10 @@ def _prepare_and_quantize_metal(model, config, args):
         for i, layer in enumerate(model.layers):
             layer.to(dtype=torch.bfloat16)
             quantize_(layer, fpa4w_config, filter_fn=_fpa4w_filter)
-            print(f"  Quantized layer {i + 1}/{config.num_hidden_layers} (fpa4w)", end="\r")
+            print(
+                f"  Quantized layer {i + 1}/{config.num_hidden_layers} (fpa4w)",
+                end="\r",
+            )
         print()
 
         # Quantize lm_head
@@ -122,7 +124,11 @@ def _prepare_and_quantize_metal(model, config, args):
 
         model.lm_head.to(dtype=torch.bfloat16)
         wrapper = nn.ModuleDict({"lm_head": model.lm_head})
-        quantize_model_(wrapper, qlinear_config="fpa4w", qlinear_group_size=args.qlinear_group_size)
+        quantize_model_(
+            wrapper,
+            qlinear_config="fpa4w",
+            qlinear_group_size=args.qlinear_group_size,
+        )
         model.lm_head = wrapper.lm_head
 
     # Quantize embedding
@@ -139,7 +145,7 @@ def _prepare_and_quantize_metal(model, config, args):
     metal_source_transformations(model, config=config)
 
 
-def load_and_quantize(args):
+def load_and_quantize(args):  # noqa: C901
     """Load model from checkpoint, optionally quantize.
 
     For CUDA: quantizes experts with packed INT4, then transformer layers on CUDA.
@@ -692,8 +698,10 @@ def _export_metal(model, config, args):
     prefill_dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
     with torch.no_grad():
         prefill_ep = export(
-            model, (prefill_tokens, prefill_pos),
-            dynamic_shapes=prefill_dynamic_shapes, strict=True,
+            model,
+            (prefill_tokens, prefill_pos),
+            dynamic_shapes=prefill_dynamic_shapes,
+            strict=True,
         )
     print("Prefill export successful!")
 
@@ -878,10 +886,8 @@ def _export_cuda(model, config, args):
 # ---------------------------------------------------------------------------
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Export Qwen3.5 MoE to ExecuTorch"
-    )
+def main():  # noqa: C901
+    parser = argparse.ArgumentParser(description="Export Qwen3.5 MoE to ExecuTorch")
     parser.add_argument(
         "--model-dir",
         default=None,
