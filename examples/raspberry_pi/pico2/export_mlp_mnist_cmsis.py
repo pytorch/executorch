@@ -28,9 +28,9 @@ from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPas
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
 from executorch.extension.export_util.utils import save_pte_program
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from export_mlp_mnist import create_balanced_model, IMAGE_SIZE, test_comprehensive
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)

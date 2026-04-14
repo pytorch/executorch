@@ -125,17 +125,24 @@ target_compile_options(
 
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections")
 
-set(BAREMETAL_BUILD_DIR ${EXECUTORCH_ROOT}/executorch/cmake-out/ CACHE STRING "ExecuTorch baremetal build dir")
+set(BAREMETAL_BUILD_DIR
+    ${EXECUTORCH_ROOT}/executorch/cmake-out/
+    CACHE STRING "ExecuTorch baremetal build dir"
+)
 
 # CMSIS-NN support: link quantized cortex_m kernels instead of portable ops
-option(USE_CMSIS_NN "Link CMSIS-NN INT8 kernels for Cortex-M33 acceleration" OFF)
-option(USE_SELECTIVE_BUILD "Use selective build (only link model-required ops)" OFF)
+option(USE_CMSIS_NN "Link CMSIS-NN INT8 kernels for Cortex-M33 acceleration"
+       OFF
+)
+option(USE_SELECTIVE_BUILD "Use selective build (only link model-required ops)"
+       OFF
+)
 
 if(USE_CMSIS_NN)
   message(STATUS "CMSIS-NN enabled: linking cortex_m_ops_lib + cmsis-nn")
   if(USE_SELECTIVE_BUILD)
-    # CMSIS-NN model uses only cortex_m:: ops, no portable ops needed.
-    # Skip --whole-archive on portable_ops_lib to avoid pulling unused ops.
+    # CMSIS-NN model uses only cortex_m:: ops, no portable ops needed. Skip
+    # --whole-archive on portable_ops_lib to avoid pulling unused ops.
     message(STATUS "Selective build: CMSIS-NN only (no portable ops)")
     target_link_libraries(
       executorch_pico
