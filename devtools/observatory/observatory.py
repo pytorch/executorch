@@ -165,6 +165,7 @@ class Observatory:
         Notes:
         1. No-op when context is disabled.
         2. Record name is exposed via `context.shared_state['record_name']`.
+        3. Duplicate names are auto-suffixed with #2, #3, … to prevent overwrites.
         """
 
         if any(ignored in name for ignored in cls._ignored_graphs):
@@ -172,6 +173,13 @@ class Observatory:
 
         if not cls._config_stack:
             return
+
+        # Deduplicate: if name exists, suffix with #2, #3, ...
+        if name in cls._records:
+            n = 2
+            while f"{name} #{n}" in cls._records:
+                n += 1
+            name = f"{name} #{n}"
 
         active_config = cls._config_stack[-1]
         ctx = ObservationContext(config=active_config)
