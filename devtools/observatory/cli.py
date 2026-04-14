@@ -4,21 +4,20 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Observatory CLI — generic runner with shared helpers for backend CLIs.
+"""Observatory CLI -- generic runner with shared helpers for backend CLIs.
 
-Run mode (default):
+Collection mode (default):
     python -m executorch.devtools.observatory \\
-        [--accuracy] [--json-only] [--report-title TITLE] \\
-        [--report-dir DIR] [--report-html PATH] [--report-json PATH] \\
-        SCRIPT [SCRIPT_ARGS...]
+        [--output-html PATH] [--output-json PATH] SCRIPT [SCRIPT_ARGS...]
 
 Visualize mode (JSON -> HTML, no script execution):
     python -m executorch.devtools.observatory visualize \\
-        --input report.json --output report.html [--title "My Report"]
+        --input-json report.json --output-html report.html
 """
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import runpy
@@ -32,214 +31,101 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 # ---------------------------------------------------------------------------
 
 
-def _read_value(argv: list[str], index: int, flag_name: str) -> tuple[str, int]:
-    if index + 1 >= len(argv):
-        print(f"Missing value for {flag_name}")
-        sys.exit(1)
-    return argv[index + 1], index + 1
+def make_collect_parser(prog=None):
+    """Create the base argparse parser for collection mode.
+
+    Backend CLIs can extend this with additional arguments before calling
+    parse_args, e.g.::
+
+        parser = make_collect_parser(prog="my-backend")
+        parser.add_argument("--lense_recipe", choices=["accuracy"])
+        args = parser.parse_args(sys.argv[1:])
+    """
+    parser = argparse.ArgumentParser(
+        prog=prog,
+        description="Run a script under Observatory and export reports.",
+    )
+    parser.add_argument("--output-html", default=None, help="HTML report output path")
+    parser.add_argument("--output-json", default=None, help="JSON report output path")
+    parser.add_argument("script", help="Script to run under Observatory")
+    parser.add_argument(
+        "script_args",
+        nargs=argparse.REMAINDER,
+        help="Arguments passed to the script",
+    )
+    return parser
 
 
-def parse_visualize_args() -> tuple[str, str, str]:
-    """Parse argv for: cli visualize --input X --output Y [--title T]"""
-    argv = sys.argv[2:]
-    input_path = None
-    output_path = None
-    title = "Observatory Report"
-
-    i = 0
-    while i < len(argv):
-        arg = argv[i]
-        if arg in ("--input", "-i"):
-            input_path, i = _read_value(argv, i, arg)
-        elif arg.startswith("--input="):
-            input_path = arg.split("=", 1)[1]
-        elif arg in ("--output", "-o"):
-            output_path, i = _read_value(argv, i, arg)
-        elif arg.startswith("--output="):
-            output_path = arg.split("=", 1)[1]
-        elif arg == "--title":
-            title, i = _read_value(argv, i, arg)
-        elif arg.startswith("--title="):
-            title = arg.split("=", 1)[1]
-        elif arg in ("-h", "--help"):
-            print(
-                "Usage: ... visualize --input report.json --output report.html [--title TITLE]"
-            )
-            sys.exit(0)
-        else:
-            print(f"Unknown flag for visualize: {arg}")
-            sys.exit(1)
-        i += 1
-
-    if not input_path or not output_path:
-        print("visualize requires --input and --output")
-        sys.exit(1)
-
-    return input_path, output_path, title
+def make_visualize_parser(prog=None):
+    """Create the argparse parser for visualize mode."""
+    parser = argparse.ArgumentParser(
+        prog=prog,
+        description="Generate an HTML report from an existing JSON export.",
+    )
+    parser.add_argument("--input-json", required=True, help="Input JSON report path")
+    parser.add_argument(
+        "--output-html", required=True, help="Output HTML report path"
+    )
+    return parser
 
 
-def run_visualize() -> None:
-    input_path, output_path, title = parse_visualize_args()
-
-    if not os.path.isfile(input_path):
-        logging.error("[Observatory CLI] Input JSON not found: %s", input_path)
+def run_visualize(input_json: str, output_html: str) -> None:
+    if not os.path.isfile(input_json):
+        logging.error("[Observatory CLI] Input JSON not found: %s", input_json)
         sys.exit(1)
 
     from .observatory import Observatory
 
     Observatory.clear()
-    Observatory.generate_html_from_json(input_path, output_path, title=title)
+    Observatory.generate_html_from_json(input_json, output_html)
     logging.info(
-        "[Observatory CLI] visualize: html=%s from json=%s", output_path, input_path
+        "[Observatory CLI] visualize: html=%s from json=%s", output_html, input_json
     )
 
 
-def parse_observatory_args(usage_str: str | None = None):
-    """Extract observatory flags from argv before SCRIPT.
-
-    Returns (obs_flags, script_path, script_argv).
-    """
-    obs_flags = {
-        "--accuracy": False,
-        "--no-report": False,
-        "--json-only": False,
-        "--report-title": None,
-        "--report-dir": None,
-        "--report-html": None,
-        "--report-json": None,
-    }
-    script_path = None
-    script_argv: list[str] = []
-    argv = list(sys.argv[1:])
-
-    if usage_str is None:
-        usage_str = (
-            "Usage: python -m executorch.devtools.observatory "
-            "[--accuracy] [--json-only] [--no-report] "
-            "[--report-title TITLE] [--report-dir DIR] "
-            "[--report-html PATH] [--report-json PATH] "
-            "SCRIPT [SCRIPT_ARGS...]"
-        )
-
-    i = 0
-    while i < len(argv):
-        arg = argv[i]
-        if script_path is not None:
-            script_argv.append(arg)
-            i += 1
-            continue
-
-        if arg == "--":
-            if i + 1 >= len(argv):
-                print(usage_str)
-                sys.exit(1)
-            script_path = argv[i + 1]
-            script_argv.extend(argv[i + 2 :])
-            break
-        if arg == "--accuracy":
-            obs_flags["--accuracy"] = True
-        elif arg == "--no-report":
-            obs_flags["--no-report"] = True
-        elif arg == "--json-only":
-            obs_flags["--json-only"] = True
-        elif arg in ("--report-title", "--obs-report-title"):
-            value, i = _read_value(argv, i, arg)
-            obs_flags["--report-title"] = value
-        elif arg.startswith("--report-title=") or arg.startswith(
-            "--obs-report-title="
-        ):
-            obs_flags["--report-title"] = arg.split("=", 1)[1]
-        elif arg in ("--report-dir", "--obs-report-dir"):
-            value, i = _read_value(argv, i, arg)
-            obs_flags["--report-dir"] = value
-        elif arg.startswith("--report-dir=") or arg.startswith("--obs-report-dir="):
-            obs_flags["--report-dir"] = arg.split("=", 1)[1]
-        elif arg in ("--report-html", "--obs-report-html"):
-            value, i = _read_value(argv, i, arg)
-            obs_flags["--report-html"] = value
-        elif arg.startswith("--report-html=") or arg.startswith("--obs-report-html="):
-            obs_flags["--report-html"] = arg.split("=", 1)[1]
-        elif arg in ("--report-json", "--obs-report-json"):
-            value, i = _read_value(argv, i, arg)
-            obs_flags["--report-json"] = value
-        elif arg.startswith("--report-json=") or arg.startswith("--obs-report-json="):
-            obs_flags["--report-json"] = arg.split("=", 1)[1]
-        elif arg.startswith("-"):
-            print(f"Unknown observatory flag before SCRIPT: {arg}")
-            print(usage_str)
-            sys.exit(1)
-        else:
-            script_path = arg
-        i += 1
-
-    if script_path is None:
-        print(usage_str)
-        sys.exit(1)
-
-    return obs_flags, script_path, script_argv
-
-
-def resolve_report_paths(
-    obs_flags: dict[str, object], script_argv: list[str]
-) -> tuple[str, str]:
-    report_dir = obs_flags["--report-dir"]
-    report_html = obs_flags["--report-html"]
-    report_json = obs_flags["--report-json"]
-
-    if report_html is None:
-        report_html = os.path.join(str(report_dir), "observatory_report.html")
-    if report_json is None:
-        if report_html.endswith(".html"):
-            report_json = report_html[:-5] + ".json"
-        else:
-            report_json = os.path.join(str(report_dir), "observatory_report.json")
-
-    return str(report_html), str(report_json)
-
-
-def run_observatory(obs_flags, script_path, script_argv, Observatory):
+def run_observatory(
+    script_path: str,
+    script_argv: list[str],
+    Observatory,
+    output_html: str | None = None,
+    output_json: str | None = None,
+) -> None:
     """Shared run logic for all CLIs."""
     sys.argv = [script_path] + script_argv
 
-    config: dict = {}
-    report_html, report_json = resolve_report_paths(obs_flags, script_argv)
-    title = obs_flags["--report-title"] or f"Observatory: {os.path.basename(script_path)}"
+    if output_html is None:
+        output_html = "observatory_report.html"
+    if output_json is None:
+        if output_html.endswith(".html"):
+            output_json = output_html[:-5] + ".json"
+        else:
+            output_json = "observatory_report.json"
+
+    title = f"Observatory: {os.path.basename(script_path)}"
 
     try:
-        with Observatory.enable_context(config=config):
+        with Observatory.enable_context(config={}):
             runpy.run_path(script_path, run_name="__main__")
     except SystemExit:
         pass
     except Exception as exc:
         logging.error("[Observatory CLI] Script raised: %s", exc)
     finally:
-        if not obs_flags["--no-report"]:
-            os.makedirs(os.path.dirname(report_html) or ".", exist_ok=True)
-            os.makedirs(os.path.dirname(report_json) or ".", exist_ok=True)
-            Observatory.export_json(report_json)
-            collected = Observatory.list_collected()
-            if not obs_flags["--json-only"]:
-                Observatory.export_html_report(
-                    report_html, title=title, config=config
-                )
-            if collected:
-                if obs_flags["--json-only"]:
-                    logging.info(
-                        "[Observatory CLI] Reports: json=%s (%d records: %s)",
-                        report_json,
-                        len(collected),
-                        ", ".join(collected),
-                    )
-                else:
-                    logging.info(
-                        "[Observatory CLI] Reports: html=%s json=%s (%d records: %s)",
-                        report_html,
-                        report_json,
-                        len(collected),
-                        ", ".join(collected),
-                    )
-            else:
-                logging.warning("[Observatory CLI] No records collected")
+        os.makedirs(os.path.dirname(output_html) or ".", exist_ok=True)
+        os.makedirs(os.path.dirname(output_json) or ".", exist_ok=True)
+        Observatory.export_json(output_json)
+        Observatory.export_html_report(output_html, title=title, config={})
+        collected = Observatory.list_collected()
+        if collected:
+            logging.info(
+                "[Observatory CLI] Reports: html=%s json=%s (%d records: %s)",
+                output_html,
+                output_json,
+                len(collected),
+                ", ".join(collected),
+            )
+        else:
+            logging.warning("[Observatory CLI] No records collected")
 
 
 # ---------------------------------------------------------------------------
@@ -249,20 +135,13 @@ def run_observatory(obs_flags, script_path, script_argv, Observatory):
 
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "visualize":
-        run_visualize()
+        parser = make_visualize_parser()
+        args = parser.parse_args(sys.argv[2:])
+        run_visualize(args.input_json, args.output_html)
         return
 
-    if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
-        print(
-            "Usage: python -m executorch.devtools.observatory "
-            "[--accuracy] [--json-only] [--no-report] "
-            "[--report-title TITLE] [--report-dir DIR] "
-            "[--report-html PATH] [--report-json PATH] "
-            "SCRIPT [SCRIPT_ARGS...]"
-        )
-        sys.exit(0)
-
-    obs_flags, script_path, script_argv = parse_observatory_args()
+    parser = make_collect_parser()
+    args = parser.parse_args(sys.argv[1:])
 
     from .observatory import Observatory
     from .lenses.pipeline_graph_collector import PipelineGraphCollectorLens
@@ -270,13 +149,9 @@ def main():
     Observatory.clear()
     Observatory.register_lens(PipelineGraphCollectorLens)
 
-    if obs_flags["--accuracy"]:
-        from .lenses.accuracy import AccuracyLens
-        Observatory.register_lens(AccuracyLens)
-        from .lenses.per_layer_accuracy import PerLayerAccuracyLens
-        cls.register_lens(PerLayerAccuracyLens)
-
-    run_observatory(obs_flags, script_path, script_argv, Observatory)
+    run_observatory(
+        args.script, args.script_args, Observatory, args.output_html, args.output_json
+    )
 
 
 if __name__ == "__main__":

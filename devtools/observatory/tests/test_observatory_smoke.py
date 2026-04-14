@@ -5,8 +5,12 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+import json
 
 from executorch.devtools.observatory import Observatory
+from executorch.devtools.observatory.observatory import (
+    _NonFiniteFloatAsStringJSONEncoder,
+)
 
 
 class _SmokeModel(torch.nn.Module):
@@ -48,6 +52,23 @@ def test_observatory_collect_and_export_html(tmp_path) -> None:
 
 def test_observatory_merges_analyze_only_graph_layers_and_defaults() -> None:
     Observatory.clear()
+
+
+def test_nonfinite_floats_are_serialized_as_strings() -> None:
+    payload = {
+        "nan_value": float("nan"),
+        "pos_inf": float("inf"),
+        "neg_inf": float("-inf"),
+        "finite": 1.25,
+    }
+
+    encoded = json.dumps(payload, cls=_NonFiniteFloatAsStringJSONEncoder)
+    decoded = json.loads(encoded)
+
+    assert decoded["nan_value"] == "nan"
+    assert decoded["pos_inf"] == "inf"
+    assert decoded["neg_inf"] == "-inf"
+    assert decoded["finite"] == 1.25
 
     model = _SmokeModel().eval()
     graph_module = torch.fx.symbolic_trace(model)

@@ -175,20 +175,17 @@ Each backend maintains its own CLI that registers the appropriate lenses. Featur
 # Generic (framework lenses only, graph collection)
 python -m executorch.devtools.observatory SCRIPT [ARGS...]
 
-# Generic with accuracy debugging
-python -m executorch.devtools.observatory --accuracy SCRIPT [ARGS...]
-
 # Qualcomm — graph collection only (default)
 python -m executorch.backends.qualcomm.debugger.observatory SCRIPT [ARGS...]
 
 # Qualcomm — with accuracy debugging
-python -m executorch.backends.qualcomm.debugger.observatory --accuracy SCRIPT [ARGS...]
+python -m executorch.backends.qualcomm.debugger.observatory --lense_recipe=accuracy SCRIPT [ARGS...]
 
 # XNNPACK — graph collection only (default)
 python -m executorch.backends.xnnpack.debugger.observatory SCRIPT [ARGS...]
 
 # XNNPACK — with accuracy debugging
-python -m executorch.backends.xnnpack.debugger.observatory --accuracy SCRIPT [ARGS...]
+python -m executorch.backends.xnnpack.debugger.observatory --lense_recipe=accuracy SCRIPT [ARGS...]
 ```
 
 ### 6.7 fx_viewer Extension API
@@ -433,7 +430,7 @@ Rejected: Adds maintenance burden and delays migration. A clean break is simpler
 
 1. Should the generic CLI (`python -m executorch.devtools.observatory`) auto-discover backend patches if the backend package is installed, or should it always require explicit backend CLI usage?
 2. Should Observatory integrate with the existing Inspector API, or remain a parallel workflow?
-3. What is the right granularity for the `--accuracy` flag? Should there be finer-grained lens selection (e.g., `--lenses graph,metadata`)?
+3. ~~What is the right granularity for the `--accuracy` flag?~~ Resolved: backend CLIs use `--lense_recipe=accuracy` to opt-in to accuracy lenses. The generic CLI has no accuracy flag.
 
 ## 15. Expected Outcome
 
