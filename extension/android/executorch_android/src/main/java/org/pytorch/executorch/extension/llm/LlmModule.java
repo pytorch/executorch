@@ -301,6 +301,7 @@ public class LlmModule {
     }
   }
 
+  @DoNotStrip
   private native int generateNative(
       String prompt,
       int seqLen,
@@ -688,6 +689,7 @@ public class LlmModule {
     resetContextNative();
   }
 
+  @DoNotStrip
   private native void resetContextNative();
 
   /** Stop current generate() before it finishes. */
@@ -704,5 +706,6 @@ public class LlmModule {
     }
   }
 
+  @DoNotStrip
   private native int loadNative();
 }

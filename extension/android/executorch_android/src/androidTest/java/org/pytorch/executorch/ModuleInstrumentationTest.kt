@@ -100,7 +100,9 @@ class ModuleInstrumentationTest {
           module.loadMethod(NONE_METHOD)
         }
     Assert.assertEquals(
-        ExecutorchRuntimeException.ErrorCode.INVALID_ARGUMENT, exception.getErrorCode())
+        ExecutorchRuntimeException.ErrorCode.INVALID_ARGUMENT,
+        exception.getErrorCode(),
+    )
   }
 
   @Test(expected = RuntimeException::class)
@@ -130,7 +132,7 @@ class ModuleInstrumentationTest {
 
     module.destroy()
 
-    Assert.assertThrows(RuntimeException::class.java) { module.forward() }
+    Assert.assertThrows(IllegalStateException::class.java) { module.forward() }
   }
 
   @Ignore(
