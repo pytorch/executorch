@@ -5,7 +5,9 @@
 
 
 import inspect
-from typing import Callable, cast, Optional, Type
+from typing import Any, Optional, Type
+
+import cmsis_nn  # type: ignore[import-not-found, import-untyped]
 
 from executorch.backends.arm._passes import (
     FoldAndAnnotateQParamsPass,
@@ -19,13 +21,11 @@ from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.program._program import _transform, lift_constant_tensor_pass
 from torch.export import ExportedProgram
-from torch.fx.passes.infra.pass_base import PassResult
-
-from torch.nn import Module
 
 from .activation_fusion_pass import ActivationFusionPass
 from .clamp_hardswish_pass import ClampHardswishPass
 from .convert_to_cortex_m_pass import ConvertToCortexMPass
+from .cortex_m_configuration import CortexMConfiguration
 from .decompose_hardswish_pass import DecomposeHardswishPass
 from .decompose_mean_pass import DecomposeMeanPass
 from .quantized_clamp_activation_pass import QuantizedClampActivationPass
@@ -57,34 +57,57 @@ class CortexMPassManager(PassManager):
     ]
 
     def __init__(
-        self, exported_program, passes: Optional[list[PassClass]] = None
+        self,
+        exported_program: ExportedProgram | None,
+        passes: Optional[list[PassClass]] = None,
+        cortex_m: CortexMConfiguration = CortexMConfiguration.ANY,
     ) -> None:
         super().__init__(passes=[])
         self.exported_program = exported_program
+        self.cortex_m_config = cortex_m
+        if self.cortex_m_config.backend != cmsis_nn.Backend.MVE:
+            raise NotImplementedError(
+                "Currently, the Cortex-M pass manager only supports MVE."
+                f"Got {self.cortex_m_config.name} with {self.cortex_m_config.backend.name}"
+            )
+
         # PassManager.passes is typed as callables; this manager stores pass classes which are initialized at transform time with the exported_program.
         self.passes: list[PassClass] = (  # type: ignore[assignment]
             passes if passes is not None else self.pass_list  # type: ignore[assignment]
         )
 
     def transform_for_annotation(self, model):
+
         passes = self.pass_list_transform_for_annotation
         for p in passes:
             model = p().call(model).graph_module
         return model
 
     def transform(self) -> ExportedProgram:
-        ep = self.exported_program
+        exported_program = self.exported_program
+        if not isinstance(exported_program, ExportedProgram):
+            raise ValueError(
+                f"{self.__class__.__name__} needs an exported_program to run transform, got {exported_program=}"
+            )
+
         for pass_cls in self.passes:
+            if not isinstance(pass_cls, type):
+                raise ValueError(
+                    f"{self.__class__.__name__} can't have instansiated passes in pass list, got {pass_cls}."
+                )
+
             signature = inspect.signature(pass_cls)
+            kwargs: dict[str, Any] = {}
             if "exported_program" in signature.parameters:
-                ep_pass_ctor = cast(Callable[[ExportedProgram], ExportPass], pass_cls)
-                transform_pass = ep_pass_ctor(ep)
-            else:
-                transform_pass = pass_cls()
-            pass_callable = cast(Callable[[Module], PassResult], transform_pass)
-            ep = _transform(ep, pass_callable)
+                kwargs["exported_program"] = exported_program
+            if "cortex_m_config" in signature.parameters:
+                kwargs["cortex_m_config"] = self.cortex_m_config
+
+            transform_pass = pass_cls(**kwargs)
+            exported_program = _transform(exported_program, transform_pass)
 
         # All constant tensors should be lifted to buffers at this point, re-run
         # lift_constant_tensor_pass in case new ones have been introduced by the passes above.
-        ep = lift_constant_tensor_pass(ep)
-        return ep
+        exported_program = lift_constant_tensor_pass(exported_program)
+
+        return exported_program
