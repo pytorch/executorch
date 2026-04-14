@@ -42,10 +42,18 @@ list(
   extension_flat_tensor
 )
 
-# CUDA backend (required)
-find_package(CUDAToolkit REQUIRED)
-list(APPEND link_libraries aoti_cuda_backend)
-executorch_target_link_options_shared_lib(aoti_cuda_backend)
+# Backend selection
+if(EXECUTORCH_BUILD_METAL)
+  list(APPEND link_libraries metal_backend)
+  executorch_target_link_options_shared_lib(metal_backend)
+elseif(EXECUTORCH_BUILD_CUDA)
+  find_package(CUDAToolkit REQUIRED)
+  list(APPEND link_libraries aoti_cuda_backend)
+  executorch_target_link_options_shared_lib(aoti_cuda_backend)
+  add_compile_definitions(EXECUTORCH_BUILD_CUDA)
+else()
+  message(FATAL_ERROR "Set EXECUTORCH_BUILD_CUDA=ON or EXECUTORCH_BUILD_METAL=ON")
+endif()
 
 # Tokenizer
 list(APPEND link_libraries tokenizers::tokenizers)
