@@ -38,5 +38,6 @@ runtime.python_library(
     srcs = ["utils.py"],
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/qualcomm:export_utils",
     ],
 )

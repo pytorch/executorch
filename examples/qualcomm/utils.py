@@ -17,6 +17,8 @@ import numpy as np
 import torch
 import transformers
 
+from executorch.backends.qualcomm.export_utils import *  # noqa: F401,F403
+
 
 def replace_module_with_custom_class(
     model: torch.nn.Module,
