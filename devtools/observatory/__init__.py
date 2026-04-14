@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from .observe_pass import observe_pass
 from .observatory import Observatory
 
-__all__ = ["Observatory"]
+__all__ = ["Observatory", "observe_pass"]

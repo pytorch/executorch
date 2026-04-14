@@ -159,19 +159,62 @@ Observatory.export_json("pass_debug.json")
 
 ### Pass transform debugging
 
-To compare graphs before and after a specific pass:
+Use `observe_pass` to automatically collect graphs before and after a pass.
+Wrap any `PassBase` subclass instance, callable, or use it as a class decorator:
 
 ```python
+from executorch.devtools.observatory import Observatory, observe_pass
+from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 
-from executorch.devtools.observatory import Observatory
+# Wrap pass instances — default collects both input and output graphs
+pass_a = observe_pass(RemoveGraphAssertsPass())
+pass_b = observe_pass(MyCustomPass())
+
+Observatory.clear()
 with Observatory.enable_context():
-    for name, module in model.named_modules():
-        before = torch.fx.symbolic_trace(module)
-        Observatory.collect(f"{name}/before", before)
+    result_a = pass_a(graph_module)
+    # collects "RemoveGraphAssertsPass/input" and "RemoveGraphAssertsPass/output"
 
-        after = my_transform(before)
-        Observatory.collect(f"{name}/after", after)
+    result_b = pass_b(result_a.graph_module)
+    # collects "MyCustomPass/input" and "MyCustomPass/output"
+
+    # Call again — names auto-deduplicate
+    result_c = pass_a(result_b.graph_module)
+    # collects "RemoveGraphAssertsPass/input #2" and "RemoveGraphAssertsPass/output #2"
+
+Observatory.export_html_report("pass_debug.html")
 ```
+
+Control what is collected with boolean flags:
+
+```python
+# Collect only the output graph
+observed = observe_pass(SomePass(), collect_input=False)
+
+# Collect only the input graph
+observed = observe_pass(SomePass(), collect_output=False)
+
+# Override the record name
+observed = observe_pass(SomePass(), name="step_1")
+```
+
+Use as a class decorator to make all instances observable:
+
+```python
+@observe_pass
+class MyPass(PassBase):
+    def call(self, gm):
+        # ... transform logic ...
+        return PassResult(gm, True)
+
+# Or with parameters:
+@observe_pass(name="Quantize", collect_input=False)
+class QuantizePass(PassBase):
+    def call(self, gm):
+        ...
+```
+
+`observe_pass` is a no-op when no Observatory context is active.
 
 ### Inside the CLI-wrapped script (zero-code-change)
 

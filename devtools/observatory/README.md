@@ -71,7 +71,10 @@ This produces:
 ### Python API
 
 ```python
-from executorch.devtools.observatory import Observatory
+from executorch.devtools.observatory import Observatory, observe_pass
+
+# Wrap passes for automatic graph collection
+pass_a = observe_pass(SomePass())
 
 Observatory.clear()
 with Observatory.enable_context():
@@ -79,10 +82,26 @@ with Observatory.enable_context():
     # Manual: Insert the collection point anywhere
     Observatory.collect("step_0", graph_module)
 
+    # observe_pass: auto-collects input and output graphs
+    result = pass_a(graph_module)
+    # collects "SomePass/input" and "SomePass/output"
+
 Observatory.export_html_report("/tmp/report.html")
 ```
 
 ## Core concepts
+
+### `observe_pass` decorator
+
+The `observe_pass` decorator wraps any pass (PassBase subclass or callable) to automatically collect graphs via Observatory. By default it captures both input and output graphs, making pass debugging a one-line change:
+
+```python
+observed = observe_pass(SomePass())  # wrap once
+result = observed(graph_module)       # auto-collects input + output
+```
+
+Record names are derived from the class name and auto-deduplicated on repeat calls.
+See [USAGE.md](USAGE.md) for the full decorator reference.
 
 ### Lenses
 
