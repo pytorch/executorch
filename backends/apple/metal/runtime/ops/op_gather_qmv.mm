@@ -67,6 +67,44 @@ static std::string get_gather_qmv_metal_source() {
       return scale * accum + sum * bias;
     }
 
+    // 4-bit load_vector_safe: same as load_vector_4bit but handles partial reads.
+    template <typename T, typename U, int values_per_thread>
+    inline U load_vector_safe_4bit(constant T* x, thread U* x_thread, int N) {
+      U sum = 0;
+      for (int i = 0; i < N; i += 4) {
+        sum += x[i] + x[i + 1] + x[i + 2] + x[i + 3];
+        x_thread[i] = x[i];
+        x_thread[i + 1] = x[i + 1] / 16.0f;
+        x_thread[i + 2] = x[i + 2] / 256.0f;
+        x_thread[i + 3] = x[i + 3] / 4096.0f;
+      }
+      for (int i = N; i < values_per_thread; i++) {
+        x_thread[i] = 0;
+      }
+      return sum;
+    }
+
+    // 4-bit qdot_safe: handles partial K dimension.
+    template <typename U, int values_per_thread>
+    inline U qdot_safe_4bit(
+        constant uint8_t* w,
+        const thread U* x_thread,
+        U scale,
+        U bias,
+        U sum,
+        int N) {
+      U accum = 0;
+      constant uint16_t* ws = (constant uint16_t*)w;
+      for (int i = 0; i < (N / 4); i++) {
+        accum +=
+            (x_thread[4 * i] * (ws[i] & 0x000f) +
+            x_thread[4 * i + 1] * (ws[i] & 0x00f0) +
+            x_thread[4 * i + 2] * (ws[i] & 0x0f00) +
+            x_thread[4 * i + 3] * (ws[i] & 0xf000));
+      }
+      return scale * accum + sum * bias;
+    }
+
     // gather_qmv_fast: per-expert quantized GEMV for MoE.
     //
     // Same as qmv_fast but offsets w/scales/biases by expert_indices[tid.x]
@@ -179,6 +217,155 @@ static std::string get_gather_qmv_metal_source() {
     INSTANTIATE_GATHER_QMV_FAST(bfloat, 64);
     INSTANTIATE_GATHER_QMV_FAST(bfloat, 128);
 
+    // gather_qmv_impl: generic-K fallback (handles any K, any N).
+    // Same as qmv_impl in op_linear_4bit.mm but with expert index offset.
+    template <typename T, int group_size>
+    [[kernel]] void gather_qmv_impl(
+        constant T* x [[buffer(0)]],
+        constant uchar* w [[buffer(1)]],
+        constant T* scales [[buffer(2)]],
+        constant T* biases [[buffer(3)]],
+        device T* y [[buffer(4)]],
+        constant uint3 &sizes [[buffer(5)]],
+        constant uint32_t* expert_indices [[buffer(6)]],
+        constant uint3 &expert_strides [[buffer(7)]],
+        uint3 tid [[threadgroup_position_in_grid]],
+        uint simd_gid [[simdgroup_index_in_threadgroup]],
+        uint simd_lid [[thread_index_in_simdgroup]]) {
+      const int in_vec_size = static_cast<int>(sizes.y); // K
+      const int out_vec_size = static_cast<int>(sizes.z); // N
+
+      constexpr int bits = 4;
+      constexpr int packs_per_thread = 2;
+      constexpr int num_simdgroups = 2;
+      constexpr int results_per_simdgroup = 4;
+      constexpr int pack_factor = 32 / bits; // 8
+      constexpr int bytes_per_pack = 4;
+      constexpr int values_per_thread = pack_factor * packs_per_thread; // 16
+      constexpr int block_size = values_per_thread * SIMD_SIZE;
+      constexpr int scale_step_per_thread = group_size / values_per_thread;
+
+      // Offset to this expert's weights
+      uint expert_idx = expert_indices[tid.x];
+      constant uint8_t* ws = (constant uint8_t*)w + expert_idx * expert_strides.x;
+      constant T* sc = scales + expert_idx * expert_strides.y;
+      constant T* bi = biases + expert_idx * expert_strides.z;
+
+      typedef float U;
+
+      thread U x_thread[values_per_thread];
+      thread U result[results_per_simdgroup] = {0};
+
+      const int in_vec_size_w = in_vec_size * bytes_per_pack / pack_factor;
+      const int in_vec_size_g = (in_vec_size + group_size - 1) / group_size;
+      const int out_row = tid.y * (num_simdgroups * results_per_simdgroup) +
+          simd_gid * results_per_simdgroup;
+      const int used_out_row = min(out_vec_size - results_per_simdgroup, out_row);
+
+      if (out_row >= out_vec_size) {
+        return;
+      }
+
+      // Small N path: fewer than 1 tile of output rows
+      if (out_vec_size < (num_simdgroups * results_per_simdgroup)) {
+        ws += out_row * in_vec_size_w + simd_lid * packs_per_thread * bytes_per_pack;
+        sc += out_row * in_vec_size_g + simd_lid / scale_step_per_thread;
+        bi += out_row * in_vec_size_g + simd_lid / scale_step_per_thread;
+        x += tid.x * in_vec_size + simd_lid * values_per_thread;
+        y += tid.x * out_vec_size + out_row;
+
+        int k = 0;
+        for (; k < in_vec_size - block_size; k += block_size) {
+          U sum = load_vector_4bit<T, U, values_per_thread>(x, x_thread);
+          for (int row = 0; out_row + row < out_vec_size; row++) {
+            auto wl = (constant uint8_t*)(ws + row * in_vec_size_w);
+            constant T* sl = sc + row * in_vec_size_g;
+            constant T* bl = bi + row * in_vec_size_g;
+            result[row] += qdot_4bit<U, values_per_thread>(wl, x_thread, sl[0], bl[0], sum);
+          }
+          ws += block_size * bytes_per_pack / pack_factor;
+          sc += block_size / group_size;
+          bi += block_size / group_size;
+          x += block_size;
+        }
+        const int remaining = clamp(
+            static_cast<int>(in_vec_size - k - simd_lid * values_per_thread), 0, values_per_thread);
+        if (remaining > 0) {
+          U sum = load_vector_safe_4bit<T, U, values_per_thread>(x, x_thread, remaining);
+          for (int row = 0; out_row + row < out_vec_size; row++) {
+            auto wl = (constant uint8_t*)(ws + row * in_vec_size_w);
+            constant T* sl = sc + row * in_vec_size_g;
+            constant T* bl = bi + row * in_vec_size_g;
+            result[row] += qdot_safe_4bit<U, values_per_thread>(wl, x_thread, sl[0], bl[0], sum, remaining);
+          }
+        }
+        for (int row = 0; out_row + row < out_vec_size; row++) {
+          result[row] = simd_sum(result[row]);
+          if (simd_lid == 0) { y[row] = static_cast<T>(result[row]); }
+        }
+      }
+      // Normal path: last tile may overlap with previous
+      else {
+        ws += used_out_row * in_vec_size_w + simd_lid * packs_per_thread * bytes_per_pack;
+        sc += used_out_row * in_vec_size_g + simd_lid / scale_step_per_thread;
+        bi += used_out_row * in_vec_size_g + simd_lid / scale_step_per_thread;
+        x += tid.x * in_vec_size + simd_lid * values_per_thread;
+        y += tid.x * out_vec_size + used_out_row;
+
+        int k = 0;
+        for (; k < in_vec_size - block_size; k += block_size) {
+          U sum = load_vector_4bit<T, U, values_per_thread>(x, x_thread);
+          for (int row = 0; row < results_per_simdgroup; row++) {
+            auto wl = (constant uint8_t*)(ws + row * in_vec_size_w);
+            constant T* sl = sc + row * in_vec_size_g;
+            constant T* bl = bi + row * in_vec_size_g;
+            result[row] += qdot_4bit<U, values_per_thread>(wl, x_thread, sl[0], bl[0], sum);
+          }
+          ws += block_size * bytes_per_pack / pack_factor;
+          sc += block_size / group_size;
+          bi += block_size / group_size;
+          x += block_size;
+        }
+        const int remaining = clamp(
+            static_cast<int>(in_vec_size - k - simd_lid * values_per_thread), 0, values_per_thread);
+        if (remaining > 0) {
+          U sum = load_vector_safe_4bit<T, U, values_per_thread>(x, x_thread, remaining);
+          for (int row = 0; row < results_per_simdgroup; row++) {
+            auto wl = (constant uint8_t*)(ws + row * in_vec_size_w);
+            constant T* sl = sc + row * in_vec_size_g;
+            constant T* bl = bi + row * in_vec_size_g;
+            result[row] += qdot_safe_4bit<U, values_per_thread>(wl, x_thread, sl[0], bl[0], sum, remaining);
+          }
+        }
+        for (int row = 0; row < results_per_simdgroup; row++) {
+          result[row] = simd_sum(result[row]);
+          if (simd_lid == 0) { y[row] = static_cast<T>(result[row]); }
+        }
+      }
+    }
+
+    #define INSTANTIATE_GATHER_QMV_IMPL(DTYPE, GSIZE)                                       \
+      template [[host_name("gather_qmv_impl_4bit_" #GSIZE "_" #DTYPE)]] kernel void         \
+      gather_qmv_impl<DTYPE, GSIZE>(                                                         \
+          constant DTYPE * x [[buffer(0)]],                                                  \
+          constant uchar * w [[buffer(1)]],                                                  \
+          constant DTYPE * scales [[buffer(2)]],                                             \
+          constant DTYPE * biases [[buffer(3)]],                                             \
+          device DTYPE * y [[buffer(4)]],                                                    \
+          constant uint3 & sizes [[buffer(5)]],                                              \
+          constant uint32_t * expert_indices [[buffer(6)]],                                  \
+          constant uint3 & expert_strides [[buffer(7)]],                                     \
+          uint3 tid [[threadgroup_position_in_grid]],                                        \
+          uint simd_gid [[simdgroup_index_in_threadgroup]],                                  \
+          uint simd_lid [[thread_index_in_simdgroup]])
+
+    INSTANTIATE_GATHER_QMV_IMPL(float, 32);
+    INSTANTIATE_GATHER_QMV_IMPL(float, 64);
+    INSTANTIATE_GATHER_QMV_IMPL(float, 128);
+    INSTANTIATE_GATHER_QMV_IMPL(bfloat, 32);
+    INSTANTIATE_GATHER_QMV_IMPL(bfloat, 64);
+    INSTANTIATE_GATHER_QMV_IMPL(bfloat, 128);
+
   )";
 }
 
@@ -280,8 +467,11 @@ AOTITorchError aoti_torch_mps_gather_qmv(
         return Error::Internal;
       }
 
-      // Select kernel (M=1 GEMV path)
-      std::string kernel_name = "gather_qmv_fast_4bit_" + std::to_string(group_size) + "_" + type_str;
+      // Select kernel: fast path for aligned K, impl path for generic K
+      bool use_fast = (N % 8 == 0 && K % 512 == 0);
+      std::string kernel_name = use_fast
+          ? "gather_qmv_fast_4bit_" + std::to_string(group_size) + "_" + type_str
+          : "gather_qmv_impl_4bit_" + std::to_string(group_size) + "_" + type_str;
       ET_LOG(Debug, "aoti_torch_mps_gather_qmv: Using kernel: %s", kernel_name.c_str());
 
       auto kernel_func = library->getKernelFunction(kernel_name);
