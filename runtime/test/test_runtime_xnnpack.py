@@ -4,33 +4,33 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""End-to-end tests that export models with XNNPACK delegation and verify
-them through the Python runtime.
+"""Python runtime end-to-end tests for the XNNPACK backend on Linux.
 
-Covers the export → .pte → Python runtime flow that developers use to
-validate exported models before deploying to device.  Complements the
-existing C++ runner tests in .ci/scripts/test_model.sh.
+Covers the export -> .pte -> Python runtime flow that developers use to
+validate exported models before deploying to device. Placing these tests
+under ``runtime/test`` lets the standard unittest jobs collect them cleanly.
 
 See https://github.com/pytorch/executorch/issues/11225
 """
 
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 import torch
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-    XnnpackPartitioner,
-)
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from executorch.runtime import Runtime, Verification
 from torch.export import export
 
 
-def _export_and_load(model: torch.nn.Module, example_inputs: tuple):
-    """Export *model* with XNNPACK, save to a temp .pte, load via Runtime."""
-    model.eval()
-    with torch.no_grad():
+def _export_and_execute(
+    model: torch.nn.Module, example_inputs: tuple[torch.Tensor, ...]
+):
+    """Export *model* with XNNPACK, save to a temp .pte, and run it via Runtime."""
+    with tempfile.TemporaryDirectory() as temp_dir, torch.no_grad():
+        model.eval()
         aten = export(model, example_inputs, strict=True)
         edge = to_edge_transform_and_lower(
             aten,
@@ -39,16 +39,19 @@ def _export_and_load(model: torch.nn.Module, example_inputs: tuple):
         )
         et = edge.to_executorch()
 
-    with tempfile.NamedTemporaryFile(suffix=".pte", delete=False) as f:
-        pte_path = f.name
-    et.save(pte_path)
+        pte_path = Path(temp_dir) / "xnnpack_runtime_test.pte"
+        et.save(str(pte_path))
 
-    rt = Runtime.get()
-    program = rt.load_program(Path(pte_path), verification=Verification.Minimal)
-    return program.load_method("forward"), pte_path
+        runtime = Runtime.get()
+        program = runtime.load_program(pte_path, verification=Verification.Minimal)
+        return program.load_method("forward").execute(example_inputs)
 
 
-class TestPythonRuntimeXNNPACK(unittest.TestCase):
+@unittest.skipUnless(
+    sys.platform == "linux",
+    "XNNPACK Python runtime end-to-end coverage in this batch targets Linux only",
+)
+class RuntimeXNNPACKTest(unittest.TestCase):
     """Export → .pte → Python Runtime tests for XNNPACK on Linux."""
 
     # ------------------------------------------------------------------
@@ -61,10 +64,9 @@ class TestPythonRuntimeXNNPACK(unittest.TestCase):
 
         model = Add()
         inputs = (torch.randn(2, 3), torch.randn(2, 3))
-        method, _ = _export_and_load(model, inputs)
 
         expected = model(*inputs)
-        actual = method.execute(inputs)
+        actual = _export_and_execute(model, inputs)
         torch.testing.assert_close(actual[0], expected, atol=1e-4, rtol=1e-4)
 
     # ------------------------------------------------------------------
@@ -73,11 +75,10 @@ class TestPythonRuntimeXNNPACK(unittest.TestCase):
     def test_linear(self):
         model = torch.nn.Linear(16, 8)
         inputs = (torch.randn(4, 16),)
-        method, _ = _export_and_load(model, inputs)
 
         with torch.no_grad():
             expected = model(*inputs)
-        actual = method.execute(inputs)
+        actual = _export_and_execute(model, inputs)
         torch.testing.assert_close(actual[0], expected, atol=1e-4, rtol=1e-4)
 
     # ------------------------------------------------------------------
@@ -89,11 +90,10 @@ class TestPythonRuntimeXNNPACK(unittest.TestCase):
             torch.nn.ReLU(),
         )
         inputs = (torch.randn(1, 3, 8, 8),)
-        method, _ = _export_and_load(model, inputs)
 
         with torch.no_grad():
             expected = model(*inputs)
-        actual = method.execute(inputs)
+        actual = _export_and_execute(model, inputs)
         torch.testing.assert_close(actual[0], expected, atol=1e-3, rtol=1e-3)
 
     # ------------------------------------------------------------------
@@ -106,11 +106,10 @@ class TestPythonRuntimeXNNPACK(unittest.TestCase):
             torch.nn.Linear(64, 10),
         )
         inputs = (torch.randn(2, 32),)
-        method, _ = _export_and_load(model, inputs)
 
         with torch.no_grad():
             expected = model(*inputs)
-        actual = method.execute(inputs)
+        actual = _export_and_execute(model, inputs)
         torch.testing.assert_close(actual[0], expected, atol=1e-3, rtol=1e-3)
 
     # ------------------------------------------------------------------
@@ -127,11 +126,10 @@ class TestPythonRuntimeXNNPACK(unittest.TestCase):
         )
         model.eval()
         inputs = (torch.randn(1, 3, 8, 8),)
-        method, _ = _export_and_load(model, inputs)
 
         with torch.no_grad():
             expected = model(*inputs)
-        actual = method.execute(inputs)
+        actual = _export_and_execute(model, inputs)
         torch.testing.assert_close(actual[0], expected, atol=1e-3, rtol=1e-3)
 
     # ------------------------------------------------------------------
@@ -147,11 +145,10 @@ class TestPythonRuntimeXNNPACK(unittest.TestCase):
             torch.nn.ReLU(),
         )
         inputs = (torch.randn(1, 16, 8, 8),)
-        method, _ = _export_and_load(model, inputs)
 
         with torch.no_grad():
             expected = model(*inputs)
-        actual = method.execute(inputs)
+        actual = _export_and_execute(model, inputs)
         torch.testing.assert_close(actual[0], expected, atol=1e-3, rtol=1e-3)
 
     # ------------------------------------------------------------------
@@ -171,11 +168,10 @@ class TestPythonRuntimeXNNPACK(unittest.TestCase):
 
         model = ClassifierHead()
         inputs = (torch.randn(1, 32, 8, 8),)
-        method, _ = _export_and_load(model, inputs)
 
         with torch.no_grad():
             expected = model(*inputs)
-        actual = method.execute(inputs)
+        actual = _export_and_execute(model, inputs)
         torch.testing.assert_close(actual[0], expected, atol=1e-3, rtol=1e-3)
 
 
