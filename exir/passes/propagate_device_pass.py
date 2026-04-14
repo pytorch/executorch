@@ -144,7 +144,11 @@ class PropagateDevicePass(PassBase):
             if node.op == "call_function" and node.target == executorch_call_delegate:
                 lowered_module = _get_lowered_module(graph_module, node)
                 if lowered_module is None:
-                    continue
+                    raise RuntimeError(
+                        f"executorch_call_delegate node '{node.name}' does not reference "
+                        "a valid LoweredBackendModule. The first argument must be a "
+                        "get_attr node pointing to a LoweredBackendModule attribute."
+                    )
 
                 result = _get_target_device_from_compile_specs(lowered_module)
                 if result is None:
