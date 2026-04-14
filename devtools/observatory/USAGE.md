@@ -6,28 +6,32 @@ automatically collecting graph snapshots and accuracy metrics at each compilatio
 ## 1. Zero-Config E2E Workflow
 
 The simplest invocation: point the CLI at your script and pass its arguments through.
-The CLI infers the output directory from the script's `-a`/`--artifact` or `-o`/`--output_dir` flag.
-
+Use `--report-html` to set output paths explicitly:
 ```bash
-python -m backends.qualcomm.debugger.observatory.cli \
-    examples/qualcomm/oss_scripts/swin_v2_t.py \
-    --model SM8650 -b ./build-android -d imagenet-mini/val -a ./swin_v2_t
+python -m devtools.observatory.cli \
+    {your original script and arguments}
 ```
-
-Output (inferred from `-a ./swin_v2_t`):
-- `./swin_v2_t/observatory_report.html` — interactive report
-- `./swin_v2_t/observatory_report.json` — raw data for later re-analysis
-
-To set paths explicitly:
+For example:
 
 ```bash
-python -m backends.qualcomm.debugger.observatory.cli \
+python -m devtools.observatory.cli \
     --report-html /tmp/obs/report.html \
     --report-json /tmp/obs/report.json \
     --report-title "Swin V2-T Qualcomm" \
     examples/qualcomm/oss_scripts/swin_v2_t.py \
     --model SM8650 -b ./build-android -d imagenet-mini/val -a ./swin_v2_t
 ```
+
+Use backend-specific observatory cli for additional customized lenses and hooks (qualcomm for example)
+
+```bash
+python -m backends.xnnpack.debugger.observatory.cli \
+    --report-html /tmp/obs/report.html \
+    --accuracy \
+    examples/xnnpack/aot_compiler.py \
+    --model_name=mv2 --delegate --quantize --output_dir /tmp/mv2
+```
+
 
 ## 2. JSON-Only Export (CI / Storage)
 
@@ -82,8 +86,8 @@ python -m backends.qualcomm.debugger.observatory.cli visualize \
     --title "My Model Report"
 ```
 
-This separates the expensive on-device execution (Step 1) from the interactive
-visualization (Step 2), which can be re-run any number of times.
+This separates the history archive results of on-device execution (Step 1) from the interactive
+visualization (Step 2), which can be re-run on demand (e.g. comparing models between 2 history commits).
 
 ## 5. Disabling Lenses
 
@@ -109,7 +113,8 @@ When using the Observatory Python API directly, pass a config dict to
 `enable_context()` or `export_html_report()`:
 
 ```python
-from executorch.backends.qualcomm.debugger.observatory import Observatory
+from executorch.devtools.observatory import Observatory
+
 
 config = {
     "accuracy": {"enabled": False},
@@ -135,7 +140,7 @@ custom lowering steps.
 
 ```python
 import torch
-from executorch.backends.qualcomm.debugger.observatory import Observatory
+from executorch.devtools.observatory import Observatory
 
 model = MyModel().eval()
 graph = torch.fx.symbolic_trace(model)
@@ -157,6 +162,8 @@ Observatory.export_json("pass_debug.json")
 To compare graphs before and after a specific pass:
 
 ```python
+
+from executorch.devtools.observatory import Observatory
 with Observatory.enable_context():
     for name, module in model.named_modules():
         before = torch.fx.symbolic_trace(module)
@@ -173,55 +180,13 @@ You can add collection points to your script without any setup:
 
 ```python
 # In your export script (e.g., my_model.py):
-from executorch.backends.qualcomm.debugger.observatory import Observatory
+from executorch.devtools.observatory import Observatory
 
 # This fires only when Observatory context is active (i.e., when run via CLI).
 # It is a no-op otherwise.
 Observatory.collect("pre_quantize", exported_program)
 ```
-
-## 7. Demo Script Modes
-
-The batch demo script (`scripts/generate_observatory_demo.py`) supports three modes:
-
-### Default: run all jobs
-
-```bash
-python scripts/generate_observatory_demo.py \
-    --xnn-models mv2 \
-    --qualcomm-models mobilenet_v2 \
-    --qnn-sdk-root /path/to/qairt/2.37.0
-```
-
-Runs each job, writes HTML + JSON reports, and refreshes `index.html`.
-
-### `--plan-only`: register without running
-
-```bash
-python scripts/generate_observatory_demo.py \
-    --plan-only \
-    --xnn-models mv2,resnet18 \
-    --qualcomm-models mobilenet_v2,roberta
-```
-
-Creates output directories and writes `manifest.json` + `index.html` with all
-jobs listed as `"planned"` status. No scripts are executed. Useful for previewing
-the job plan or pre-creating the index before a long run.
-
-### `--visualize-only`: re-render HTML from existing JSON
-
-```bash
-python scripts/generate_observatory_demo.py --visualize-only
-```
-
-Reads `manifest.json`, calls `cli visualize` for each job that has an existing
-JSON file, and refreshes `index.html`. Jobs without a JSON file are skipped with
-a warning. Requires a prior successful run (or manually placed JSON files).
-
-Use this after updating lens code to regenerate all HTML reports without
-re-running the expensive export scripts.
-
-## 8. Quick Reference
+## 7. Quick Reference
 
 | Scenario | Command |
 |----------|---------|
@@ -231,7 +196,3 @@ re-running the expensive export scripts.
 | JSON → HTML | `cli visualize --input X.json --output X.html` |
 | No accuracy metrics | `cli --no-accuracy script.py ...` |
 | No output files | `cli --no-report script.py ...` |
-| Batch plan (no run) | `generate_observatory_demo.py --plan-only` |
-| Batch run | `generate_observatory_demo.py` |
-| Batch re-render HTML | `generate_observatory_demo.py --visualize-only` |
-| Single model batch | `generate_observatory_demo.py --xnn-models mv2 --qualcomm-models mobilenet_v2` |

@@ -207,7 +207,7 @@ future lenses can access them during their own `observe()` call without
 re-running inference:
 
 ```python
-from executorch.backends.qualcomm.debugger.observatory.lenses.accuracy import AccuracyLens
+from executorch.devtools.observatory.lenses.accuracy import AccuracyLens
 
 class PerLayerAccuracyLens(Lens):
     @classmethod
@@ -328,8 +328,8 @@ For scripts with custom datasets not covered by the auto-patches, users can
 provide their own evaluator via the Observatory config:
 
 ```python
-from executorch.backends.qualcomm.debugger.observatory import Observatory
-from executorch.backends.qualcomm.debugger.observatory.lenses.accuracy import (
+from executorch.devtools.observatory import Observatory
+from executorch.devtools.observatory.lenses.accuracy import (
     StandardEvaluator, TopKAccuracy, PSNR, CosineSimilarity
 )
 
@@ -357,7 +357,7 @@ with Observatory.enable_context(config=config):
 ### Using MLMEvaluator for Language Models
 
 ```python
-from executorch.backends.qualcomm.debugger.observatory.lenses.accuracy import (
+from executorch.devtools.observatory.lenses.accuracy import (
     MLMEvaluator, MaskedTokenAccuracy, PSNR
 )
 
@@ -394,94 +394,10 @@ evaluator = StandardEvaluator(
 
 Via CLI:
 ```bash
-python -m executorch.backends.qualcomm.debugger.observatory.cli --no-accuracy script.py ...
+python -m executorch.devtools.observatory.cli --no-accuracy script.py ...
 ```
 
 Via config:
 ```python
 config = {"accuracy": {"enabled": False}}
 ```
-
----
-
-## Design Notes: AccuracyLens Correctness Invariants
-
-This section documents three correctness issues discovered during development
-and the design decisions made to fix them.  They are preserved here so future
-contributors understand *why* the code is structured the way it is.
-
-### Problem: Float model shows non-perfect PSNR / cosine similarity
-
-The "Exported Float" record is the golden reference — PSNR should be infinite
-(reported as 100.0) and cosine similarity should be 1.0.  Three bugs combined
-to violate this invariant.
-
-### Bug 1 — Double `ExportedProgram.module()` call (primary cause)
-
-**Root cause:** `ExportedProgram.module()` creates a **new GraphModule** on
-every call via `copy.deepcopy(graph)` + `_unlift_exported_program_lifted_states`.
-The golden outputs were computed from GraphModule #1 (inside
-`_configure_from_float_model`), but the evaluator called `.module()` again on
-the same ExportedProgram, producing GraphModule #2.  Although both share the
-same parameter tensors, the deep-copied graph and re-created module can
-introduce floating-point non-determinism from different execution ordering.
-
-**Fix:** `_configure_from_float_model` caches the extracted GraphModule as
-`_float_model`.  In `observe()`, when the record is "Exported Float", the
-cached GraphModule is passed to the evaluator instead of the raw
-ExportedProgram.  This guarantees golden == prediction for the float model.
-
-**Execution trace (after fix):**
-
-```
-_configure_from_float_model(artifact):
-  model = artifact.module()          → GraphModule #1 (cached as _float_model)
-  golden = model(dataset)            → golden outputs from GraphModule #1
-
-observe("Exported Float"):
-  eval_artifact = cls._float_model   → GraphModule #1 (same instance!)
-  evaluator.evaluate(GraphModule #1) → predictions == golden → PSNR=inf, cosine=1.0
-
-observe("Quantized Model"):
-  evaluator.evaluate(quantized_gm)   → predictions != golden → shows real degradation
-```
-
-### Bug 2 — MLMEvaluator ignored `self.post_process`
-
-**Root cause:** `MLMEvaluator.run_inference()` had hardcoded
-`out.logits if hasattr(out, "logits") else out` instead of using
-`self.post_process`.  Golden outputs were computed with `_auto_detect_post_process`
-(which might return `lambda x: x.logits`, identity, or `lambda x: x[0]`), but
-the evaluator used a different extraction path.
-
-For GraphModules from ExportedProgram this happened to work (traced graphs
-return plain tensors, so both paths fell through to identity).  But for
-original `nn.Module` models (e.g., HuggingFace), the output has `.logits` and
-the hardcoded path diverged from whatever `_auto_detect_post_process` detected.
-
-**Fix:** MLMEvaluator now uses `self.post_process(raw_out)` identically to
-StandardEvaluator.  The `.logits` extraction is handled by
-`_auto_detect_post_process` which returns `lambda x: x.logits` when it detects
-a `.logits` attribute on the model output.
-
-### Bug 3 — Missing `torch.no_grad()` in evaluator inference
-
-**Root cause:** `_compute_golden_outputs` runs inside `torch.no_grad()`, but
-`StandardEvaluator.run_inference()` and `MLMEvaluator.run_inference()` did not.
-The autograd context can cause subtle numerical differences and wastes memory
-on gradient tracking during evaluation.
-
-**Fix:** Both evaluators now wrap their inference loop in `torch.no_grad()`.
-
-### Expected metric behavior after fixes
-
-| Pipeline Stage | PSNR | Cosine Sim | MSE | Why |
-|---------------|------|------------|-----|-----|
-| Exported Float | 100.0 (capped) | 1.0 | 0.0 | Same model instance as golden |
-| Annotated Model | 100.0 (capped) | ~1.0 | ~0.0 | Observers in eval mode are pass-through |
-| Calibrated Model | 100.0 (capped) | ~1.0 | ~0.0 | Same as annotated (post-calibration) |
-| Quantized Model | degraded | < 1.0 | > 0.0 | Q/DQ ops introduce quantization error |
-| Edge | degraded | < 1.0 | > 0.0 | Additional lowering transforms |
-
-PSNR is capped at 100.0 — values above 100 dB (e.g., 128 dB for near-zero error
-from annotated model observers) are clamped to give a uniform display ceiling.
