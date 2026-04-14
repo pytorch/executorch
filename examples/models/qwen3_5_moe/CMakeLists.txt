@@ -52,7 +52,9 @@ elseif(EXECUTORCH_BUILD_CUDA)
   executorch_target_link_options_shared_lib(aoti_cuda_backend)
   add_compile_definitions(EXECUTORCH_BUILD_CUDA)
 else()
-  message(FATAL_ERROR "Set EXECUTORCH_BUILD_CUDA=ON or EXECUTORCH_BUILD_METAL=ON")
+  message(
+    FATAL_ERROR "Set EXECUTORCH_BUILD_CUDA=ON or EXECUTORCH_BUILD_METAL=ON"
+  )
 endif()
 
 # Tokenizer
