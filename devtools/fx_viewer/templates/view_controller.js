@@ -150,8 +150,8 @@ class ViewerController {
     }
 
     zoomToFit() {
-        const padding = 50;
         const rect = this.viewer.canvasContainer.getBoundingClientRect();
+        const padding = Math.min(50, rect.width/5, rect.height/5);
         const availableW = rect.width - padding * 2;
         const availableH = rect.height - padding * 2;
 

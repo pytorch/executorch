@@ -179,22 +179,10 @@ def parse_observatory_args(usage_str: str | None = None):
     return obs_flags, script_path, script_argv
 
 
-def infer_report_dir(script_argv: list[str]) -> str:
-    keys = ("-a", "--artifact", "-o", "--output_dir")
-    for idx, arg in enumerate(script_argv):
-        if arg in keys and idx + 1 < len(script_argv):
-            return script_argv[idx + 1]
-        if arg.startswith("--artifact="):
-            return arg.split("=", 1)[1]
-        if arg.startswith("--output_dir="):
-            return arg.split("=", 1)[1]
-    return "."
-
-
 def resolve_report_paths(
     obs_flags: dict[str, object], script_argv: list[str]
 ) -> tuple[str, str]:
-    report_dir = obs_flags["--report-dir"] or infer_report_dir(script_argv)
+    report_dir = obs_flags["--report-dir"]
     report_html = obs_flags["--report-html"]
     report_json = obs_flags["--report-json"]
 

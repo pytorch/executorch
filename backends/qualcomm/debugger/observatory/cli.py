@@ -72,8 +72,8 @@ def main():
         AccuracyLens.register_dataset_patches(install_qnn_dataset_patches)
         Observatory.register_lens(AccuracyLens)
 
-        from .lenses.per_layer_accuracy import PerLayerAccuracyLens
-        cls.register_lens(PerLayerAccuracyLens)
+        from executorch.devtools.observatory.lenses.per_layer_accuracy import PerLayerAccuracyLens
+        Observatory.register_lens(PerLayerAccuracyLens)
 
 
 

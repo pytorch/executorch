@@ -57,12 +57,15 @@ class Observatory:
     _config_stack: List[Dict[str, Any]] = []
 
     @classmethod
-    def register_lens(cls, lens_cls: Type[Lens]) -> None:
+    def register_lens(cls, lens_cls: Type[Lens], append=True) -> None:
         """Register lens class and run one-time setup."""
 
         if lens_cls in cls._lens_registry:
             return
-        cls._lens_registry.append(lens_cls)
+        if append:
+            cls._lens_registry.append(lens_cls)
+        else:
+            cls._lens_registry.insert(0, lens_cls)
         try:
             lens_cls.setup()
         except Exception as exc:
@@ -80,10 +83,11 @@ class Observatory:
         from .lenses.metadata import MetadataLens
         from .lenses.stack_trace import StackTraceLens
 
-        cls.register_lens(GraphLens)
-        cls.register_lens(MetadataLens)
-        cls.register_lens(StackTraceLens)
-        cls.register_lens(GraphColorLens)
+        # defaut lenses should stay in front in case other lenses depends on their data
+        cls.register_lens(GraphColorLens, append=False)
+        cls.register_lens(StackTraceLens, append=False)
+        cls.register_lens(GraphLens, append=False)
+        cls.register_lens(MetadataLens, append=False)
         cls._lenses_initialized = True
 
     @classmethod
