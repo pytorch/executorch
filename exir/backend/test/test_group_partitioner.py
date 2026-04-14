@@ -1712,21 +1712,15 @@ class TestGroupPartitioner(unittest.TestCase):
                 self.norm1 = torch.nn.LayerNorm(d)
                 self.norm2 = torch.nn.LayerNorm(d)
 
-            def forward(
-                self, x: torch.Tensor, mem: torch.Tensor
-            ) -> torch.Tensor:
+            def forward(self, x: torch.Tensor, mem: torch.Tensor) -> torch.Tensor:
                 q = self.q_proj(x)
                 k = self.k_proj(mem)
                 v = self.v_proj(mem)
-                attn = torch.bmm(
-                    q, k.transpose(-2, -1)
-                ) / math.sqrt(q.size(-1))
+                attn = torch.bmm(q, k.transpose(-2, -1)) / math.sqrt(q.size(-1))
                 attn = torch.softmax(attn, dim=-1)
                 out = self.out_proj(torch.bmm(attn, v))
                 x = self.norm1(x + out)
-                x = self.norm2(
-                    x + self.ffn2(torch.relu(self.ffn1(x)))
-                )
+                x = self.norm2(x + self.ffn2(torch.relu(self.ffn1(x))))
                 return x
 
         class TwoLayerDecoder(torch.nn.Module):
@@ -1735,18 +1729,16 @@ class TestGroupPartitioner(unittest.TestCase):
                 self.layer0 = DecoderLayer()
                 self.layer1 = DecoderLayer()
 
-            def forward(
-                self, query: torch.Tensor, memory: torch.Tensor
-            ) -> torch.Tensor:
+            def forward(self, query: torch.Tensor, memory: torch.Tensor) -> torch.Tensor:
                 x = self.layer0(query, memory)
                 x = self.layer1(x, memory)
                 return x
 
-        from torch.ao.quantization.quantize_pt2e import (
+        from torchao.quantization.pt2e.quantize_pt2e import (
             convert_pt2e,
             prepare_pt2e,
         )
-        from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
             XNNPACKQuantizer,
             get_symmetric_quantization_config,
         )
