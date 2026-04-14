@@ -94,6 +94,8 @@ layout.container
 | `'layer'` | Ext: \<extId\>.\<field\> | Matches by `extensions[layer].nodes[nodeId].info[field]` value equality; picks last in topo order on multiple matches |
 | `'none'` | Don't sync | No cross-viewer selection propagation |
 
+The initial sync mode can be set programmatically via `config.sync` at construction time. Observatory's `GraphCompareSpec.default_sync` maps directly to this field, allowing lenses to declare their preferred default sync strategy.
+
 #### `debug_handle` normalization (`mode: 'auto'`)
 
 `debug_handle` in `node.info` is `int` (scalar) or `int[]` (list, for fused nodes). The sync engine normalizes both to a `Set<int>` and uses **set intersection** to find matches:

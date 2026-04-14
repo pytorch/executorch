@@ -29,6 +29,7 @@ from executorch.devtools.fx_viewer.extension import GraphExtension
 from ..interfaces import (
     AnalysisResult,
     Frontend,
+    GraphCompareSpec,
     GraphView,
     HtmlBlock,
     HtmlRecordSpec,
@@ -811,6 +812,13 @@ class PerLayerAccuracyLens(Lens):
                     graph_ref=graph_ref,
                     default_layers=[f"{lens_name}/cosine_sim"],
                     default_color_by=f"{lens_name}/cosine_sim",
+                    compare=GraphCompareSpec(
+                        default_sync={
+                            "mode": "layer",
+                            "layer": f"{lens_name}/cosine_sim",
+                            "field": "sparse_match_key",
+                        }
+                    ),
                     order=21,
                 ).as_block(),
                 HtmlBlock(
