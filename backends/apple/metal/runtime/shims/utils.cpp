@@ -37,10 +37,7 @@ AOTITorchError validate_dtype(int32_t dtype) {
     return Error::Ok;
   }
 
-  ET_LOG(
-      Error,
-      "Unsupported dtype: %d",
-      dtype);
+  ET_LOG(Error, "Unsupported dtype: %d", dtype);
   return Error::InvalidArgument;
 }
 
