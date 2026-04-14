@@ -36,6 +36,7 @@ class ArmCompileSpec(ABC):
     compiler_flags: list[str] = field(default_factory=list)
     path_for_intermediates: str | None = None
     tosa_debug_mode: DebugMode | None = None
+    tosa_dev_mode: bool | None = None
 
     _TOSA_SPEC_KEY = "tosa_spec"
     _COMPILE_FLAGS_KEY = "compile_flags"
@@ -44,6 +45,7 @@ class ArmCompileSpec(ABC):
     _DEBUG_MODE_KEY = "dump_debug_info"
     _OUTPUT_REORDER_KEY = "ouput_reorder_workaround"
     _TRANSFORM_PIPELINE_CONFIG_KEY = "transform_pipeline_config"
+    _TOSA_DEV_MODE = "tosa_sw_dev_mode"
 
     def _set_compile_specs(
         self,
@@ -53,6 +55,7 @@ class ArmCompileSpec(ABC):
         tosa_debug_mode: DebugMode | None = None,
         output_order_workaround: bool = False,
         pipeline_config: ArmPassPipelineConfig | None = None,
+        tosa_dev_mode: bool | None = None,
     ):
         """Set all values of dataclass directly."""
         self.tosa_spec = tosa_spec
@@ -61,6 +64,7 @@ class ArmCompileSpec(ABC):
         self.tosa_debug_mode = tosa_debug_mode
         self._pipeline_config = pipeline_config
         self.output_order_workaround = output_order_workaround
+        self.tosa_dev_mode = tosa_dev_mode
         if output_order_workaround:
             warnings.warn(
                 "ArmCompileSpec(output_order_workaround=True) is deprecated and will be "
@@ -78,6 +82,7 @@ class ArmCompileSpec(ABC):
         tosa_debug_mode: ArmCompileSpec.DebugMode | None = None
         output_order_workaround: bool = False
         pipeline_config: ArmPassPipelineConfig | None = None
+        tosa_dev_mode: bool | None = None
         unknown_specs: dict[str, str] = {}
         for spec in compile_specs:
             key = spec.key
@@ -128,6 +133,20 @@ class ArmCompileSpec(ABC):
                         "More than one transform pipeline entry in compile spec."
                     )
                 pipeline_config = ArmPassPipelineConfig.from_dict(json.loads(val))
+            elif key == ArmCompileSpec._TOSA_DEV_MODE:
+                if tosa_dev_mode is not None:
+                    raise ValueError(
+                        "More than one tosa_sw_dev_mode entry in compile spec."
+                    )
+                raw = bytes(spec.value)
+                if raw == b"\x01":
+                    tosa_dev_mode = True
+                elif raw == b"\x00":
+                    tosa_dev_mode = False
+                else:
+                    raise ValueError(
+                        f"Invalid tosa_sw_dev_mode byte value: {raw!r}, expected b'\\x00' or b'\\x01'."
+                    )
             else:
                 unknown_specs[key] = val
 
@@ -151,6 +170,7 @@ class ArmCompileSpec(ABC):
             tosa_debug_mode=tosa_debug_mode,
             output_order_workaround=output_order_workaround,
             pipeline_config=pipeline_config,
+            tosa_dev_mode=tosa_dev_mode,
         )
         cls._from_list_hook(compile_spec, unknown_specs)
         compile_spec._validate()
@@ -227,6 +247,15 @@ class ArmCompileSpec(ABC):
                     self._pipeline_config.serialize(),
                 )
             )
+
+        if self.tosa_dev_mode is not None:
+            compile_spec.append(
+                CompileSpec(
+                    ArmCompileSpec._TOSA_DEV_MODE,
+                    b"\x01" if self.tosa_dev_mode else b"\x00",
+                )
+            )
+
         return compile_spec
 
     def _get_pass_pipeline_config(self) -> ArmPassPipelineConfig:
@@ -288,6 +317,16 @@ class ArmCompileSpec(ABC):
 
         """
         self.tosa_debug_mode = debug_mode
+        return self
+
+    def _set_tosa_dev_mode(self, tosa_dev_mode: bool):
+        """Sets whether to enable TOSA software development mode.
+
+        Args:
+            tosa_dev_mode: Boolean indicating whether to enable TOSA software development mode.
+
+        """
+        self.tosa_dev_mode = tosa_dev_mode
         return self
 
     @deprecated(
