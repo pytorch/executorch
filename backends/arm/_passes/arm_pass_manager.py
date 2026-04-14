@@ -487,7 +487,7 @@ class ArmPassManager(PassManager):
         # Aten -> TOSA transformation passes
         self.add_passes(
             [
-                FuseConcatPass(),
+                # FuseConcatPass(),
                 RewriteUpsamplePass(),
                 RewriteConvPass(exported_program),
                 RewriteMatmulPass(),
