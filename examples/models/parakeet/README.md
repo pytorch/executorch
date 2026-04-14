@@ -52,10 +52,10 @@ The export script supports quantizing encoder and decoder linear layers using [t
 
 | Config | Description | Backends |
 |--------|-------------|----------|
-| `4w` | 4-bit weight only quantization | CUDA |
-| `8w` | 8-bit weight only quantization | CUDA |
-| `8da4w` | 8-bit dynamic activation, 4-bit weight | CUDA |
-| `8da8w` | 8-bit dynamic activation, 8-bit weight | CUDA |
+| `4w` | 4-bit weight only quantization | CUDA, CUDA-Windows |
+| `8w` | 8-bit weight only quantization | CUDA, CUDA-Windows |
+| `8da4w` | 8-bit dynamic activation, 4-bit weight | CUDA, CUDA-Windows |
+| `8da8w` | 8-bit dynamic activation, 8-bit weight | CUDA, CUDA-Windows |
 | `fpa4w` | Floating point activation, 4-bit weight | Metal |
 
 #### Example: Dynamic Quantization for XNNPACK
@@ -86,6 +86,22 @@ python export_parakeet_tdt.py \
 ```
 
 **Note:** The `tile_packed_to_4d` packing format is optimized for CUDA.
+
+#### Example: 4-bit Weight Quantization for CUDA-Windows
+
+```bash
+python export_parakeet_tdt.py \
+    --backend cuda-windows \
+    --dtype bf16 \
+    --qlinear_encoder 4w \
+    --qlinear_encoder_group_size 32 \
+    --qlinear 4w \
+    --qlinear_group_size 32 \
+    --qembedding 8w \
+    --output-dir ./parakeet_cuda_windows_quantized
+```
+
+**Note:** CUDA-Windows uses cross-compilation and does not support `--qlinear_packing_format tile_packed_to_4d` (requires CUDA tensors at export time). Use `4w`/`8w`/`8da4w`/`8da8w` without a packing format.
 
 #### Example: Metal 4-bit Quantization
 
@@ -150,8 +166,8 @@ sudo apt-get install -y --no-install-recommends \
 x86_64-w64-mingw32-g++ --version
 
 # 3) Download and extract Windows CUDA installer package
-CUDA_VERSION=12.8.1
-CUDA_DRIVER_VERSION=572.61
+CUDA_VERSION=12.9.1
+CUDA_DRIVER_VERSION=576.57
 CUDA_INSTALLER="cuda_${CUDA_VERSION}_${CUDA_DRIVER_VERSION}_windows.exe"
 CUDA_URL="https://developer.download.nvidia.com/compute/cuda/${CUDA_VERSION}/local_installers/${CUDA_INSTALLER}"
 
