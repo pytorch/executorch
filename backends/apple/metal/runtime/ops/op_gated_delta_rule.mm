@@ -290,13 +290,15 @@ AOTITorchError aoti_torch_mps_gated_delta_rule(
         kernel_func->setArg(8, T_uint);
 
         // Grid: [32, Dv, B*Hv]  Threadgroup: [32, 4, 1]
+        // Grid: [32, Dv, B*Hv] total threads, threadgroup: [32, 4, 1]
+        // dispatchThreadgroups takes threadgroup counts, not thread counts
         kernel_func->dispatchThreadgroups(
-            1,                       // gridX (32 threads in threadgroup.x)
-            Dv,                      // gridY: one per value dim
-            B * Hv,                  // gridZ: one per (batch, head)
-            32,                      // threadsX: simdgroup size
-            4,                       // threadsY
-            1);                      // threadsZ
+            1,                       // gridX: 1 group × 32 threads = 32 threads
+            (Dv + 3) / 4,           // gridY: ceil(Dv/4) groups × 4 threads = Dv threads
+            B * Hv,                  // gridZ: B*Hv groups × 1 thread = B*Hv threads
+            32,                      // threadsPerGroupX
+            4,                       // threadsPerGroupY
+            1);                      // threadsPerGroupZ
       });
 
       *retY = y_handle;
