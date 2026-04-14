@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/qualcomm/aot/wrappers/TensorWrapper.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
 
 #include <atomic>
 #include <cstring>
@@ -115,19 +116,24 @@ TensorWrapper::TensorWrapper(
   }
 }
 
-Error TensorWrapper::FillDataBuffer(const void* data, bool copy_data) {
+Error TensorWrapper::FillDataBuffer(const void* data) {
   if (data != nullptr) {
     QNN_TENSOR_VER_PTR(tensor_)->memType = QNN_TENSORMEMTYPE_RAW;
+#ifdef __hexagon__
+    // data's address is already aligned in idl skel implementation. e.g.
+    // QnnExecuTorchIdlWrapper.cpp Here, we are ensuring we pass data size that
+    // is also multiple of 64. QnnExecuTorchIdlWrapper.cpp should have created
+    // sufficient space for tensor.
+    auto align_size = [](size_t alignment, size_t sz) {
+      return (sz + (alignment - 1)) & ~(alignment - 1);
+    };
+    QNN_TENSOR_VER_PTR(tensor_)->clientBuf.dataSize =
+        align_size(QNN_TENSOR_ALIGNMENT, bytes_);
+#else
     QNN_TENSOR_VER_PTR(tensor_)->clientBuf.dataSize = bytes_;
-    if (copy_data) {
-      owned_data_ = std::make_unique<char[]>(bytes_);
-      const char* src_data = static_cast<const char*>(data);
-      std::memcpy(owned_data_.get(), src_data, bytes_);
-      QNN_TENSOR_VER_PTR(tensor_)->clientBuf.data = owned_data_.get();
-    } else {
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-      QNN_TENSOR_VER_PTR(tensor_)->clientBuf.data = const_cast<void*>(data);
-    }
+#endif
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+    QNN_TENSOR_VER_PTR(tensor_)->clientBuf.data = const_cast<void*>(data);
   } else {
     QNN_EXECUTORCH_LOG_WARN("Data pointer is nullptr");
   }

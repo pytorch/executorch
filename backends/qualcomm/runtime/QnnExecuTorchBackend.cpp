@@ -148,8 +148,7 @@ Error QnnExecuTorchBackend::execute(
           Error::Ok) {
         // update data ptr only should be fine
         input_tensor->FillDataBuffer(
-            args[args_index]->toTensor().const_data_ptr(),
-            false /* copy_data */);
+            args[args_index]->toTensor().const_data_ptr());
         // use the real input shape instead of nominal one to make sure
         // dynamic shape is functional
         auto dims = args[args_index]->toTensor().sizes();
@@ -167,7 +166,7 @@ Error QnnExecuTorchBackend::execute(
       void* mutable_data_ptr = args[args_index]->toTensor().mutable_data_ptr();
       if (qnn_manager->RegisterMem(mutable_data_ptr, output_tensor) !=
           Error::Ok) {
-        output_tensor->FillDataBuffer(mutable_data_ptr, false /* copy_data */);
+        output_tensor->FillDataBuffer(mutable_data_ptr);
       }
       args_index++;
     }

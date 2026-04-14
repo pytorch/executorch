@@ -36,8 +36,8 @@ from executorch.backends.qualcomm.export_utils import (
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
     QnnExecuTorchHtpPerformanceMode,
-    QnnExecuTorchLpaiTargetEnv,
 )
+
 from executorch.backends.qualcomm.tests.utils import (
     convert_pt2e,
     generate_context_binary,
@@ -2400,11 +2400,7 @@ class TestQNNQuantizedOperator(TestQNN):
                 backend_options = generate_htp_compiler_spec(use_fp16=False)
             case QnnExecuTorchBackendType.kLpaiBackend:
                 backend_options = generate_lpai_compiler_spec(
-                    target_env=(
-                        QnnExecuTorchLpaiTargetEnv.kX86
-                        if self.enable_x86_64
-                        else QnnExecuTorchLpaiTargetEnv.kArm
-                    )
+                    target_env=self.get_lpai_target_env()
                 )
             case _:
                 raise ValueError("Backend is not implemented yet")
@@ -4750,11 +4746,7 @@ class TestQNNQuantizedModel(TestQNN):
                 backend_options = generate_htp_compiler_spec(use_fp16=False)
             case QnnExecuTorchBackendType.kLpaiBackend:
                 backend_options = generate_lpai_compiler_spec(
-                    target_env=(
-                        QnnExecuTorchLpaiTargetEnv.kX86
-                        if self.enable_x86_64
-                        else QnnExecuTorchLpaiTargetEnv.kArm
-                    )
+                    target_env=self.get_lpai_target_env()
                 )
             case _:
                 raise ValueError("Backend is not implemented yet")
@@ -5860,11 +5852,7 @@ class TestQNNQuantizedUtils(TestQNN):
                 backend_options = generate_htp_compiler_spec(use_fp16=False)
             case QnnExecuTorchBackendType.kLpaiBackend:
                 backend_options = generate_lpai_compiler_spec(
-                    target_env=(
-                        QnnExecuTorchLpaiTargetEnv.kX86
-                        if self.enable_x86_64
-                        else QnnExecuTorchLpaiTargetEnv.kArm
-                    )
+                    target_env=self.get_lpai_target_env()
                 )
             case _:
                 raise ValueError("Backend is not implemented yet")
@@ -6102,11 +6090,7 @@ class TestQNNQuantizedUtils(TestQNN):
                 backend_options = generate_htp_compiler_spec(use_fp16=False)
             case QnnExecuTorchBackendType.kLpaiBackend:
                 backend_options = generate_lpai_compiler_spec(
-                    target_env=(
-                        QnnExecuTorchLpaiTargetEnv.kX86
-                        if self.enable_x86_64
-                        else QnnExecuTorchLpaiTargetEnv.kArm
-                    )
+                    target_env=self.get_lpai_target_env()
                 )
             case _:
                 raise ValueError("Backend is not implemented yet")
@@ -6160,11 +6144,7 @@ class TestQNNQuantizedUtils(TestQNN):
                 backend_options = generate_htp_compiler_spec(use_fp16=False)
             case QnnExecuTorchBackendType.kLpaiBackend:
                 backend_options = generate_lpai_compiler_spec(
-                    target_env=(
-                        QnnExecuTorchLpaiTargetEnv.kX86
-                        if self.enable_x86_64
-                        else QnnExecuTorchLpaiTargetEnv.kArm
-                    )
+                    target_env=self.get_lpai_target_env()
                 )
             case _:
                 raise ValueError("Backend is not implemented yet")

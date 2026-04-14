@@ -34,10 +34,10 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QcomChipset,
     QnnExecuTorchBackendType,
     QnnExecuTorchHtpPerformanceMode,
+    QnnExecuTorchLpaiTargetEnv,
     QnnExecuTorchOpPackageOptions,
 )
 from executorch.backends.qualcomm.utils.constants import (
-    DSP_VERSION,
     HEXAGON_SDK_ROOT,
     HEXAGON_TOOLS_ROOT,
 )
@@ -76,7 +76,7 @@ class QnnConfig:
         backend (str): The target backend, such as htp, gpu, etc. QnnConfig will then parse this to type QnnExecuTorchBackendType.
         soc_model (QcomChipset): The target Qualcomm System on Chip (SoC) model.
         build_folder (str): Path to cmake binary directory for target platform, e.g., /path/to/build-android.
-        direct_build_folder (str): Path to cmake binary directory for direct_mode. E.g., path/to/build-hexagon.
+        direct_build_folder (str): Path to cmake binary directory for direct_mode. E.g., path/to/build-direct.
         target (str): Target platform for deployment.
         online_prepare (bool): Compose QNN graph on device if set to True.
         shared_buffer (bool): Enables usage of shared buffer(zero-copy mechanism) between application and backend for graph I/O during runtime.
@@ -235,16 +235,14 @@ class SimpleADB:
             )
         self.runner = runner
         if qnn_config.direct_build_folder:
-            required_env = [HEXAGON_SDK_ROOT, HEXAGON_TOOLS_ROOT, DSP_VERSION]
+            required_env = [HEXAGON_SDK_ROOT, HEXAGON_TOOLS_ROOT]
             assert all(
                 var in os.environ for var in required_env
             ), f"Please ensure the following environment variables are set: {required_env}"
             self.hexagon_sdk_root = os.getenv(HEXAGON_SDK_ROOT)
             self.hexagon_tools_root = os.getenv(HEXAGON_TOOLS_ROOT)
-            self.dsp_arch = os.getenv(DSP_VERSION)
             logging.info(f"{HEXAGON_SDK_ROOT}={self.hexagon_sdk_root}")
             logging.info(f"{HEXAGON_TOOLS_ROOT}={self.hexagon_tools_root}")
-            logging.info(f"{DSP_VERSION}={self.dsp_arch}")
         self.qnn_config = qnn_config
         self.qnn_sdk = os.getenv("QNN_SDK_ROOT")
         self.build_path = qnn_config.build_folder
@@ -287,17 +285,25 @@ class SimpleADB:
         if self.direct_build_folder:
             direct_general_artifacts = [
                 f"{self.build_path}/examples/qualcomm/direct_executor_runner/libqnn_executorch_stub.so",
-                f"{self.direct_build_folder}/backends/qualcomm/libqnn_executorch_backend.so",
-                f"{self.direct_build_folder}/backends/qualcomm/qnn_executorch/direct_mode/libqnn_executorch_skel.so",
             ]
             self.backend_library_paths.update(
                 {
                     QnnExecuTorchBackendType.kHtpBackend: [
+                        f"{self.direct_build_folder}/backends/qualcomm/libqnn_executorch_backend.so",
+                        f"{self.direct_build_folder}/backends/qualcomm/qnn_executorch/direct_mode/libqnn_executorch_skel.so",
                         f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/unsigned/libQnnHtpV{self.htp_arch}.so",
                         f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/unsigned/libQnnSystem.so",
                         f"{self.hexagon_tools_root}/Tools/target/hexagon/lib/v{self.htp_arch}/G0/pic/libc++abi.so.1",
                         f"{self.hexagon_tools_root}/Tools/target/hexagon/lib/v{self.htp_arch}/G0/pic/libc++.so.1",
-                    ]
+                    ],
+                    QnnExecuTorchBackendType.kLpaiBackend: [
+                        f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/signed/libqnn_executorch_backend.so",
+                        f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/signed/libqnn_executorch_skel.so",
+                        f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/signed/libQnnLpai.so",
+                        f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/signed/libQnnSystem.so",
+                        f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/signed/libc++abi.so.1",
+                        f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/signed/libc++.so.1",
+                    ],
                 }
             )
             for _, library_paths in self.backend_library_paths.items():
@@ -378,6 +384,12 @@ class SimpleADB:
             # backend libraries
             for backend in backends:
                 artifacts.extend(self.backend_library_paths[backend])
+
+            # Ensure that all necessary library artifacts exists.
+            missing = [path for path in artifacts if not os.path.exists(path)]
+            assert not missing, "Missing the following libraries:\n" + "\n".join(
+                f"  {p}" for p in missing
+            )
         with tempfile.TemporaryDirectory() as tmp_dir:
             input_list_file, input_files = generate_inputs(
                 tmp_dir, self.input_list_filename, inputs
@@ -440,6 +452,13 @@ class SimpleADB:
                 )
                 + self.extra_cmds
             )
+            if self.qnn_config.direct_build_folder:
+                qnn_executor_runner_args = " ".join(
+                    [
+                        qnn_executor_runner_args,
+                        f"--domain_id {get_dsp_id(self.qnn_config.backend)}",
+                    ]
+                )
             qnn_executor_runner_cmds = " ".join(
                 [
                     f"cd {self.workspace} &&",
@@ -526,7 +545,9 @@ def build_executorch_binary(
     ):
         raise RuntimeError("Currently LPAI backend only supports offline_prepare.")
     backend_options = {
-        QnnExecuTorchBackendType.kLpaiBackend: generate_lpai_compiler_spec(),
+        QnnExecuTorchBackendType.kLpaiBackend: generate_lpai_compiler_spec(
+            target_env=get_lpai_target_env(qnn_config)
+        ),
         QnnExecuTorchBackendType.kGpuBackend: generate_gpu_compiler_spec(),
         QnnExecuTorchBackendType.kHtpBackend: generate_htp_compiler_spec(
             use_fp16=False if quant_dtype is not None else True,
@@ -652,8 +673,29 @@ def make_quantizer(
     return quantizer
 
 
+def get_lpai_target_env(qnn_config: QnnConfig):
+    if qnn_config.enable_x86_64:
+        return QnnExecuTorchLpaiTargetEnv.kX86
+    elif qnn_config.direct_build_folder:
+        return QnnExecuTorchLpaiTargetEnv.kAdsp
+    return QnnExecuTorchLpaiTargetEnv.kArm
+
+
 def get_backend_type(backend: str):
     return getattr(QnnExecuTorchBackendType, f"k{backend.title()}Backend")
+
+
+def get_dsp_id(backend):
+    dsp_id_map = {
+        QnnExecuTorchBackendType.kLpaiBackend: 0,
+        QnnExecuTorchBackendType.kHtpBackend: 3,
+    }
+    if backend not in dsp_id_map:
+        raise ValueError(
+            f"Unsupported backend {backend} for direct mode. "
+            f"Supported: {list(dsp_id_map.keys())}"
+        )
+    return dsp_id_map[backend]
 
 
 def setup_common_args_and_variables():
@@ -822,7 +864,7 @@ def setup_common_args_and_variables():
 
     parser.add_argument(
         "--direct_build_folder",
-        help="Path to cmake binary directory for direct_mode. E.g., path/to/build-hexagon."
+        help="Path to cmake binary directory for direct_mode. E.g., path/to/build-direct."
         "If enabled, run self-defined protocol to control fastrpc communication.",
         type=str,
     )

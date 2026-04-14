@@ -36,9 +36,7 @@ class TensorWrapper {
       const void* data = nullptr,
       bool copy_data = false);
 
-  executorch::runtime::Error FillDataBuffer(
-      const void* data,
-      bool copy_data = false);
+  executorch::runtime::Error FillDataBuffer(const void* data);
 
   executorch::runtime::Error AllocateDataBuffer();
 
