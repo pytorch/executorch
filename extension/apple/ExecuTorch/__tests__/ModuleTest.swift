@@ -193,4 +193,82 @@ class ModuleTest: XCTestCase {
     XCTAssertNoThrow(try module.setInputs(Tensor<Float>([2]), Tensor<Float>([3])))
     XCTAssertEqual(try module.forward(), Tensor<Float>([5]))
   }
+
+  func testBackendOptionCreation() {
+    let boolOption = BackendOption("use_cache", true)
+    XCTAssertEqual(boolOption.key, "use_cache")
+    XCTAssertEqual(boolOption.type, .boolean)
+    XCTAssertTrue(boolOption.boolValue)
+
+    let intOption = BackendOption("num_threads", 4)
+    XCTAssertEqual(intOption.key, "num_threads")
+    XCTAssertEqual(intOption.type, .integer)
+    XCTAssertEqual(intOption.intValue, 4)
+
+    let stringOption = BackendOption("compute_unit", "cpu_and_gpu")
+    XCTAssertEqual(stringOption.key, "compute_unit")
+    XCTAssertEqual(stringOption.type, .string)
+    XCTAssertEqual(stringOption.stringValue, "cpu_and_gpu")
+  }
+
+  func testLoadWithBackendOptions() {
+    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
+      XCTFail("Couldn't find the model file")
+      return
+    }
+    let module = Module(filePath: modelPath)
+    let backendOptions: [String: [BackendOption]] = [
+      "SomeBackend": [
+        BackendOption("num_threads", 4),
+        BackendOption("use_cache", true),
+      ]
+    ]
+    XCTAssertNoThrow(try module.load(backendOptions: backendOptions))
+    XCTAssertTrue(module.isLoaded())
+  }
+
+  func testLoadWithEmptyBackendOptions() {
+    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
+      XCTFail("Couldn't find the model file")
+      return
+    }
+    let module = Module(filePath: modelPath)
+    let backendOptions: [String: [BackendOption]] = [:]
+    XCTAssertNoThrow(try module.load(backendOptions: backendOptions))
+    XCTAssertTrue(module.isLoaded())
+  }
+
+  func testLoadMethodWithBackendOptions() {
+    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
+      XCTFail("Couldn't find the model file")
+      return
+    }
+    let module = Module(filePath: modelPath)
+    let backendOptions: [String: [BackendOption]] = [
+      "SomeBackend": [
+        BackendOption("compute_unit", "cpu_and_gpu"),
+      ]
+    ]
+    XCTAssertNoThrow(try module.load("forward", backendOptions: backendOptions))
+    XCTAssertTrue(module.isLoaded("forward"))
+  }
+
+  func testLoadWithBackendOptionsThenExecute() {
+    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
+      XCTFail("Couldn't find the model file")
+      return
+    }
+    let module = Module(filePath: modelPath)
+    let backendOptions: [String: [BackendOption]] = [
+      "SomeBackend": [
+        BackendOption("num_threads", 4),
+      ]
+    ]
+    XCTAssertNoThrow(try module.load(backendOptions: backendOptions))
+
+    let inputs: [Tensor<Float>] = [Tensor([1]), Tensor([1])]
+    var outputs: [Value]?
+    XCTAssertNoThrow(outputs = try module.forward(inputs))
+    XCTAssertEqual(outputs?.first?.tensor(), Tensor([Float(2)]))
+  }
 }
