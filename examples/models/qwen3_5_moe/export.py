@@ -113,7 +113,6 @@ def load_prequantized_model(prequantized_dir, max_seq_len=4096):
         ".conv_state",
         ".recurrent_state",
         ".cache_positions",
-        ".inv_freq",
     )
     expected_missing = {k for k in missing if any(p in k for p in runtime_prefixes)}
     weight_missing = set(missing) - expected_missing

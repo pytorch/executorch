@@ -392,57 +392,41 @@ class GatedDeltaNet(nn.Module):
             acc = acc + conv_input[:, :, k : k + T_conv].float() * w[:, k : k + 1]
         qkv_conv = F.silu(acc[:, :, -T:]).to(conv_input.dtype).transpose(1, 2)
 
-        # Split via slicing (torch.split produces split_copy which lacks AOTI fallback)
-        kd = self.key_dim
-        q = qkv_conv[..., :kd].reshape(B, T, self.num_k_heads, self.head_k_dim)
-        k = qkv_conv[..., kd : 2 * kd].reshape(B, T, self.num_k_heads, self.head_k_dim)
-        v = qkv_conv[..., 2 * kd :].reshape(B, T, self.num_v_heads, self.head_v_dim)
-
-        # L2-normalize Q and K (the FLA kernel expects pre-normalized inputs;
-        # HF reference uses use_qk_l2norm_in_kernel=True which does this inside)
-        q = F.normalize(q, p=2, dim=-1)
-        k = F.normalize(k, p=2, dim=-1)
-
-        # head_repeat for k_heads != v_heads
-        if self.head_repeat > 1:
-            q = q.repeat_interleave(self.head_repeat, dim=2)
-            k = k.repeat_interleave(self.head_repeat, dim=2)
-
-        # Mamba-style gating
-        beta = b.sigmoid()
-        g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
-
         if T == 1:
-            # Native recurrent delta rule — AOTI fuses with surrounding ops
-            scale = self.head_k_dim**-0.5
-
-            q_s = q[:, 0].float()  # [B, H, K]
-            k_s = k[:, 0].float()  # [B, H, K]
-            v_s = v[:, 0].float()  # [B, H, V]
-            g_s = g[:, 0]  # [B, H]
-            beta_s = beta[:, 0]  # [B, H]
-
-            state = self.recurrent_state[:B].float()  # [B, H, K, V]
-
-            # Decay state by exp(g)
-            decay = torch.exp(g_s).unsqueeze(-1).unsqueeze(-1)  # [B, H, 1, 1]
-            state = state * decay
-
-            # Sk = state @ k (project state by key)
-            Sk = torch.einsum("bhkv,bhk->bhv", state, k_s)
-
-            # Delta rule state update
-            delta = beta_s.unsqueeze(-1) * (v_s - Sk)  # [B, H, V]
-            state = state + torch.einsum("bhk,bhv->bhkv", k_s, delta)
-
-            # Output = state @ q * scale
-            output = torch.einsum("bhkv,bhk->bhv", state, q_s) * scale
-            output = output.unsqueeze(1).to(q.dtype)  # [B, 1, H, V]
+            # Fully-fused Triton decode kernel: Q/K/V split, L2 norm,
+            # head repeat, gating, and delta rule recurrence in one kernel.
+            # State is mutated in-place (CUDA Graph compatible).
+            output, new_state = torch.ops.triton.fused_deltanet_decode(
+                qkv_conv[:, 0],  # [B, conv_dim] — squeeze T=1
+                a[:, 0],  # [B, H] raw alpha
+                b[:, 0],  # [B, H] raw beta
+                self.A_log,  # [H] nn.Parameter
+                self.dt_bias,  # [H] nn.Parameter
+                self.recurrent_state[:B],  # [B, H, K, V]
+            )
+            output = output.unsqueeze(1).to(qkv_conv.dtype)  # [B, 1, H, V]
 
             with torch.no_grad():
-                self.recurrent_state[:B].copy_(state.to(self.recurrent_state.dtype))
+                self.recurrent_state[:B].copy_(new_state)
         else:
-            # Chunked FLA triton_op for prefill
+            # Chunked FLA triton_op for prefill — needs pre-processed inputs
+            kd = self.key_dim
+            q = qkv_conv[..., :kd].reshape(B, T, self.num_k_heads, self.head_k_dim)
+            k = qkv_conv[..., kd : 2 * kd].reshape(
+                B, T, self.num_k_heads, self.head_k_dim
+            )
+            v = qkv_conv[..., 2 * kd :].reshape(B, T, self.num_v_heads, self.head_v_dim)
+
+            q = F.normalize(q, p=2, dim=-1)
+            k = F.normalize(k, p=2, dim=-1)
+
+            if self.head_repeat > 1:
+                q = q.repeat_interleave(self.head_repeat, dim=2)
+                k = k.repeat_interleave(self.head_repeat, dim=2)
+
+            beta = b.sigmoid()
+            g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
+
             output, new_state = torch.ops.triton.chunk_gated_delta_rule(
                 q, k, v, g, beta, self.recurrent_state[:B]
             )
