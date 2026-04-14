@@ -429,9 +429,9 @@ class ET_EXPERIMENTAL CudaBackend final
     // UpdateUserManagedConstantBufferPairs (user_managed = true → no copy,
     // the source container retains ownership).
     // ---------------------------------------------------------------
-    if (share_kv_cache &&
-        handle->get_num_constants && handle->get_constant_name &&
-        handle->get_constant_original_fqn && handle->extract_constants_map &&
+    if (share_kv_cache && handle->get_num_constants &&
+        handle->get_constant_name && handle->get_constant_original_fqn &&
+        handle->extract_constants_map &&
         handle->update_user_managed_constant_buffer_pairs) {
       size_t num_constants = 0;
       handle->get_num_constants(handle->container_handle, &num_constants);
