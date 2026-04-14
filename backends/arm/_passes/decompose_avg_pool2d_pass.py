@@ -67,7 +67,7 @@ class DecomposeAvgPool2dPass(ArmPass):
         post_pad_w, post_pad_h = (0, 0)
 
         # Count_include_pad == False means that we use a different divisor for edge elements
-        # When divisor_override is set, this will be overriden anyways.
+        # When divisor_override is set, this will be overridden anyways.
         # It is easier to replace a constant divisor, so set count_include_pad == True
         if divisor_override is not None:
             count_include_pad = True
