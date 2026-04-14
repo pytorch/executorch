@@ -9,7 +9,7 @@ import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass
+from executorch.exir.pass_base import ExportPass, NodeMetadata
 
 
 class InsertDataLayoutCastsPass(ArmPass):
@@ -55,6 +55,7 @@ class InsertDataLayoutCastsPass(ArmPass):
     }
 
     _int_to_fp_map = {
+        torch.int8: torch.float16,  # This doubles the size after casting, but is very unlikely to occur in practice since int8 is only ever used by LOGICAL_SHIFT and CAST/RESCALE ops in PRO-FP.
         torch.int16: torch.float16,
         torch.int32: torch.float32,
     }
@@ -63,9 +64,15 @@ class InsertDataLayoutCastsPass(ArmPass):
         if op not in self.targeted_ops:
             return super().call_operator(op, args, kwargs, meta)
 
-        dtype = args[0].data.dtype
-        spec = get_context_spec()
+        if op in self._concat_ops:
+            # Cast to largest dtype
+            dtypes = [arg.data.dtype for arg in args[0]]
+            dtype_sizes = [dtype.itemsize for dtype in dtypes]
+            dtype = dtypes[dtype_sizes.index(max(dtype_sizes))]
+        else:
+            dtype = args[0].data.dtype
 
+        spec = get_context_spec()
         dtype_is_integer = not dtype.is_floating_point and dtype != torch.bool
         if dtype_is_integer and not spec.support_integer():
             supported_dtype = self._int_to_fp_map.get(dtype, None)
@@ -93,16 +100,30 @@ class InsertDataLayoutCastsPass(ArmPass):
             for arg in args[0]:
                 x_casted.append(
                     super().call_operator(
-                        self._cast_op, (arg,), {"dtype": supported_dtype}, meta
+                        self._cast_op,
+                        (arg,),
+                        {"dtype": supported_dtype},
+                        NodeMetadata(arg.node.meta),
+                        updated=True,
                     )
                 )
-            y_casted = super().call_operator(op, (x_casted,), kwargs, meta)
+            y_casted = super().call_operator(
+                op, (x_casted, *args[1:]), kwargs, meta, updated=True
+            )
 
         else:
             x_casted = super().call_operator(
-                self._cast_op, (args[0],), {"dtype": supported_dtype}, meta
+                self._cast_op,
+                (args[0],),
+                {"dtype": supported_dtype},
+                NodeMetadata(args[0].node.meta),
+                updated=True,
             )
-            y_casted = super().call_operator(op, (x_casted, *args[1:]), kwargs, meta)
+            y_casted = super().call_operator(
+                op, (x_casted, *args[1:]), kwargs, meta, updated=True
+            )
 
-        y = super().call_operator(self._cast_op, (y_casted,), {"dtype": dtype}, meta)
+        y = super().call_operator(
+            self._cast_op, (y_casted,), {"dtype": dtype}, meta, updated=True
+        )
         return y
