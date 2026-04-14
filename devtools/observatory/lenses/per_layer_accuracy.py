@@ -101,7 +101,9 @@ class _MetricNumericColorRule(ColorRule):
         for data in nodes_data.values():
             v = data.get(self.attribute)
             if isinstance(v, (int, float)):
-                vals.append(float(v))
+                fv = float(v)
+                if math.isfinite(fv):
+                    vals.append(fv)
         if not vals:
             return {}, []
 
@@ -114,7 +116,10 @@ class _MetricNumericColorRule(ColorRule):
             v = data.get(self.attribute)
             if not isinstance(v, (int, float)):
                 continue
-            ratio = (float(v) - vmin) / (vmax - vmin)
+            fv = float(v)
+            if not math.isfinite(fv):
+                continue
+            ratio = (fv - vmin) / (vmax - vmin)
             if self.inverse:
                 ratio = 1.0 - ratio
             node_colors[node_id] = self._color(ratio)
@@ -268,6 +273,14 @@ class PerLayerAccuracyLens(Lens):
         return 0, "default(0)"
 
     @staticmethod
+    def _safe_float(value: Any, default: float = 0.0) -> float:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return default
+        return parsed if math.isfinite(parsed) else default
+
+    @staticmethod
     def _normalize_sample(sample: Any) -> Tuple[Any, ...]:
         if isinstance(sample, tuple):
             return sample
@@ -337,19 +350,10 @@ class PerLayerAccuracyLens(Lens):
         predictions = [target_vec]
         golden = [anchor_vec]
 
-        psnr = PSNR(golden).calculate(predictions)
-        cosine = CosineSimilarity(golden).calculate(predictions)
-        mse = MSE(golden).calculate(predictions)
-        abs_err = AbsErr(golden).calculate(predictions)
-
-        if not math.isfinite(psnr):
-            psnr = 0.0
-        if not math.isfinite(cosine):
-            cosine = 0.0
-        if not math.isfinite(mse):
-            mse = 0.0
-        if not math.isfinite(abs_err):
-            abs_err = 0.0
+        psnr = cls._safe_float(PSNR(golden).calculate(predictions))
+        cosine = cls._safe_float(CosineSimilarity(golden).calculate(predictions))
+        mse = cls._safe_float(MSE(golden).calculate(predictions))
+        abs_err = cls._safe_float(AbsErr(golden).calculate(predictions))
 
         return {
             "numel_compared": int(compared),
@@ -374,16 +378,16 @@ class PerLayerAccuracyLens(Lens):
             }
 
         def _values(k: str) -> List[float]:
-            return [float(r.get(k, 0.0)) for r in rows]
+            return [PerLayerAccuracyLens._safe_float(r.get(k, 0.0)) for r in rows]
 
         psnr_vals = _values("psnr")
         return {
-            "psnr_mean": float(sum(psnr_vals) / len(psnr_vals)),
-            "psnr_min": float(min(psnr_vals)),
-            "psnr_max": float(max(psnr_vals)),
-            "cosine_sim_mean": float(sum(_values("cosine_sim")) / len(rows)),
-            "mse_mean": float(sum(_values("mse")) / len(rows)),
-            "abs_err_mean": float(sum(_values("abs_err")) / len(rows)),
+            "psnr_mean": f"{float(sum(psnr_vals) / len(psnr_vals)):.4f}",
+            "psnr_min": f"{float(min(psnr_vals)):.4f}",
+            "psnr_max": f"{float(max(psnr_vals)):.4f}",
+            "cosine_sim_mean": f"{float(sum(_values('cosine_sim')) / len(rows)):.4f}",
+            "mse_mean": f"{float(sum(_values('mse')) / len(rows)):.4f}",
+            "abs_err_mean": f"{float(sum(_values('abs_err')) / len(rows)):.4f}",
         }
 
     @classmethod
@@ -541,10 +545,10 @@ class PerLayerAccuracyLens(Lens):
                 "numel_compared": row.get("numel_compared", 0),
                 "anchor_shape": row.get("anchor_shape", "n/a"),
                 "target_shape": row.get("target_shape", "n/a"),
-                "psnr": row.get("psnr", 0.0),
-                "cosine_sim": row.get("cosine_sim", 0.0),
-                "mse": row.get("mse", 0.0),
-                "abs_err": row.get("abs_err", 0.0),
+                "psnr": cls._safe_float(row.get("psnr", 0.0)),
+                "cosine_sim": cls._safe_float(row.get("cosine_sim", 0.0)),
+                "mse": cls._safe_float(row.get("mse", 0.0)),
+                "abs_err": cls._safe_float(row.get("abs_err", 0.0)),
             }
             ext.add_node_data(node_id, info)
 
@@ -556,14 +560,14 @@ class PerLayerAccuracyLens(Lens):
             return f"{value:.6f}" if tooltip else f"{value:.4f}"
 
         def _label_formatter(d: Dict[str, Any]) -> List[str]:
-            primary = float(d.get(metric_name, 0.0))
+            primary = cls._safe_float(d.get(metric_name, 0.0))
             primary_label = str(spec["label"])
             return [f"{primary_label}={_format_metric_value(primary)}"]
 
         ext.set_label_formatter(_label_formatter)
 
         def _tooltip_formatter(d: Dict[str, Any]) -> List[str]:
-            primary = float(d.get(metric_name, 0.0))
+            primary = cls._safe_float(d.get(metric_name, 0.0))
             primary_label = str(spec["label"])
             return [
                 f"target_node={d.get('target_node', 'n/a')}",
@@ -651,10 +655,15 @@ class PerLayerAccuracyLens(Lens):
             high_rgb: Tuple[int, int, int],
             inverse: bool,
         ) -> str:
+            value = PerLayerAccuracyLens._safe_float(value)
+            vmin = PerLayerAccuracyLens._safe_float(vmin)
+            vmax = PerLayerAccuracyLens._safe_float(vmax)
             if vmax <= vmin:
                 ratio = 0.0
             else:
                 ratio = (value - vmin) / (vmax - vmin)
+            if not math.isfinite(ratio):
+                ratio = 0.0
             if inverse:
                 ratio = 1.0 - ratio
             bg = cls._interp_color(ratio, low_rgb, high_rgb)
@@ -672,16 +681,16 @@ class PerLayerAccuracyLens(Lens):
             # Worst -> best ranking uses PSNR primarily (lower is worse).
             row_list.sort(
                 key=lambda r: (
-                    float(r.get("psnr", 0.0)),
-                    -float(r.get("mse", 0.0)),
-                    -float(r.get("abs_err", 0.0)),
-                    float(r.get("cosine_sim", 0.0)),
+                    PerLayerAccuracyLens._safe_float(r.get("psnr", 0.0)),
+                    -PerLayerAccuracyLens._safe_float(r.get("mse", 0.0)),
+                    -PerLayerAccuracyLens._safe_float(r.get("abs_err", 0.0)),
+                    PerLayerAccuracyLens._safe_float(r.get("cosine_sim", 0.0)),
                 )
             )
 
             def _minmax(k: str) -> Tuple[float, float]:
-                vals = [float(r.get(k, 0.0)) for r in row_list]
-                return (min(vals), max(vals))
+                vals = [PerLayerAccuracyLens._safe_float(r.get(k, 0.0)) for r in row_list]
+                return (min(vals), max(vals)) if vals else (0.0, 0.0)
 
             psnr_min, psnr_max = _minmax("psnr")
             cos_min, cos_max = _minmax("cosine_sim")
@@ -700,10 +709,10 @@ class PerLayerAccuracyLens(Lens):
                 node = html.escape(str(row.get("target_node", "")))
                 anchor = html.escape(str(row.get("anchor_node", "")))
                 root = html.escape(str(row.get("from_node_root") or "n/a"))
-                psnr = float(row.get("psnr", 0.0))
-                cosine = float(row.get("cosine_sim", 0.0))
-                mse = float(row.get("mse", 0.0))
-                abs_err = float(row.get("abs_err", 0.0))
+                psnr = PerLayerAccuracyLens._safe_float(row.get("psnr", 0.0))
+                cosine = PerLayerAccuracyLens._safe_float(row.get("cosine_sim", 0.0))
+                mse = PerLayerAccuracyLens._safe_float(row.get("mse", 0.0))
+                abs_err = PerLayerAccuracyLens._safe_float(row.get("abs_err", 0.0))
 
                 psnr_style = cls._metric_cell_style(
                     psnr,

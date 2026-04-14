@@ -22,12 +22,14 @@ import copy
 import gzip
 import json
 import logging
+import math
 import os
 import time
 import traceback
 from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import datetime
+from json.encoder import _make_iterencode, encode_basestring, encode_basestring_ascii
 from typing import Any, ContextManager, Dict, List, Optional, Set, Type
 
 from executorch.devtools.fx_viewer.exporter import FXGraphExporter
@@ -44,6 +46,38 @@ from .interfaces import (
     ViewList,
     validate_view_list,
 )
+
+
+class _NonFiniteFloatAsStringJSONEncoder(json.JSONEncoder):
+    """JSON encoder that emits non-finite floats as strings."""
+
+    def iterencode(self, o: Any, _one_shot: bool = False):
+        markers = {} if self.check_circular else None
+        _encoder = encode_basestring_ascii if self.ensure_ascii else encode_basestring
+
+        def floatstr(
+            value: float,
+            _repr=float.__repr__,
+        ) -> str:
+            if math.isnan(value):
+                return '"nan"'
+            if math.isinf(value):
+                return '"inf"' if value > 0 else '"-inf"'
+            return _repr(value)
+
+        _iterencode = _make_iterencode(
+            markers,
+            self.default,
+            _encoder,
+            self.indent,
+            floatstr,
+            self.key_separator,
+            self.item_separator,
+            self.sort_keys,
+            self.skipkeys,
+            _one_shot,
+        )
+        return _iterencode(o, 0)
 
 
 class Observatory:
@@ -502,7 +536,9 @@ class Observatory:
 
         from .html_template import get_html_template
 
-        json_data = json.dumps(payload, default=str).replace("</", "<\\/")
+        json_data = json.dumps(payload, cls=_NonFiniteFloatAsStringJSONEncoder).replace(
+            "</", "<\\/"
+        )
         payload_str, is_compressed = Observatory._compress_payload(json_data)
         html_content = get_html_template(title, payload_str, is_compressed=is_compressed)
 
@@ -527,7 +563,7 @@ class Observatory:
 
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+            json.dump(data, f, indent=2, cls=_NonFiniteFloatAsStringJSONEncoder)
 
         logging.info("[Observatory] Exported raw data to %s", output_path)
 
@@ -558,7 +594,9 @@ class Observatory:
 
         from .html_template import get_html_template
 
-        json_data = json.dumps(payload, default=str).replace("</", "<\\/")
+        json_data = json.dumps(payload, cls=_NonFiniteFloatAsStringJSONEncoder).replace(
+            "</", "<\\/"
+        )
         payload_str, is_compressed = Observatory._compress_payload(json_data)
         html_content = get_html_template(title, payload_str, is_compressed=is_compressed)
 

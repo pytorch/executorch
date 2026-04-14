@@ -36,37 +36,32 @@ A standalone HTML report containing:
 ### CLI (zero-config)
 
 Point the CLI at any ExecuTorch export script:
-The simplest invocation: point the CLI at your script and pass its arguments through.
-Use `--report-html` to set output paths explicitly:
 ```bash
-python -m devtools.observatory.cli \
-    --report-html /path/to/output_report.html \
-    {your original script and arguments}
+python -m executorch.devtools.observatory SCRIPT [SCRIPT_ARGS...]
 ```
-For example:
+Use `--output-html` / `--output-json` to set output paths explicitly:
 
 ```bash
-python -m devtools.observatory.cli \
-    --report-html /tmp/obs/report.html \
-    --report-json /tmp/obs/report.json \
-    --report-title "Swin V2-T Qualcomm" \
+python -m executorch.devtools.observatory \
+    --output-html /tmp/obs/report.html \
+    --output-json /tmp/obs/report.json \
     examples/qualcomm/oss_scripts/swin_v2_t.py \
-    --model SM8650 -b ./build-android -d imagenet-mini/val -a ./swin_v2_t 
+    --model SM8650 -b ./build-android -d imagenet-mini/val -a ./swin_v2_t
 ```
 
 Use backend-specific observatory cli for additional customized lenses and hooks (for example, xnnpack backend with per-layer accuracy analysis)
 
 ```bash
-python -m backends.xnnpack.debugger.observatory.cli \
-    --report-html /tmp/obs/report.html \
-    --accuracy \
+python -m executorch.backends.xnnpack.debugger.observatory \
+    --output-html /tmp/obs/report.html \
+    --lense_recipe=accuracy \
     examples/xnnpack/aot_compiler.py \
     --model_name=mv2 --delegate --quantize --output_dir /tmp/mv2
 ```
 
 This produces:
-- `/tmp/mv2/observatory_report.html` (interactive report)
-- `/tmp/mv2/observatory_report.json` (raw data)
+- `/tmp/obs/report.html` (interactive report)
+- `/tmp/obs/report.json` (raw data, path auto-derived from HTML path)
 
 ### Python API
 
@@ -125,18 +120,18 @@ See [lenses/LENSES.md](lenses/LENSES.md) for detailed lens documentation.
 
 Observatory separates **runtime collection** from **report generation**:
 
-1. **Step 1**: Run your script, collect data, export JSON (`--json-only`)
-2. **Step 2**: Convert JSON to HTML any time later (`cli visualize`)
+1. **Step 1**: Run your script — both JSON and HTML are exported automatically
+2. **Step 2**: Re-generate HTML any time later from the JSON (`cli visualize`)
 
-This means you can collect data in CI and generate reports locally, or regenerate HTML after updating lens code without re-running expensive export scripts.
+This means you can collect data in CI and re-generate reports locally, or regenerate HTML after updating lens code without re-running expensive export scripts.
 
 ```bash
 # Step 1: collect (e.g., in CI)
-python -m devtools.observatory.cli --json-only script.py ...
+python -m executorch.devtools.observatory script.py ...
 
-# Step 2: visualize (e.g., locally)
-python -m devtools.observatory.cli visualize \
-    --input report.json --output report.html
+# Step 2: re-visualize (e.g., locally)
+python -m executorch.devtools.observatory visualize \
+    --input-json observatory_report.json --output-html report.html
 ```
 
 ### Fx-Viewer
@@ -148,9 +143,7 @@ Fx-Viewer (`devtools/utils/fx_viewer`) is the graph visualization component used
 See [USAGE.md](USAGE.md) for the full CLI usage guide, including:
 
 - Zero-config e2e workflow
-- JSON-only export for CI
 - Visualize mode (JSON to HTML)
-- Disabling lenses
 - Manual collection points in arbitrary code
 - Demo script batch modes
 

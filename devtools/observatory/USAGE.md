@@ -1,23 +1,23 @@
 # Observatory CLI Usage Guide
 
 The Observatory CLI wraps any ExecuTorch export script in an Observatory context,
-automatically collecting graph snapshots and accuracy metrics at each compilation stage.
+automatically collecting graph snapshots at each compilation stage.
 
 ## 1. Zero-Config E2E Workflow
 
 The simplest invocation: point the CLI at your script and pass its arguments through.
-Use `--report-html` to set output paths explicitly:
-```bash
-python -m devtools.observatory.cli \
-    {your original script and arguments}
-```
-For example:
 
 ```bash
-python -m devtools.observatory.cli \
-    --report-html /tmp/obs/report.html \
-    --report-json /tmp/obs/report.json \
-    --report-title "Swin V2-T Qualcomm" \
+python -m executorch.devtools.observatory \
+    my_export_script.py [SCRIPT_ARGS...]
+```
+
+Use `--output-html` / `--output-json` to control output paths:
+
+```bash
+python -m executorch.devtools.observatory \
+    --output-html /tmp/obs/report.html \
+    --output-json /tmp/obs/report.json \
     examples/qualcomm/oss_scripts/swin_v2_t.py \
     --model SM8650 -b ./build-android -d imagenet-mini/val -a ./swin_v2_t
 ```
@@ -25,89 +25,50 @@ python -m devtools.observatory.cli \
 Use backend-specific observatory cli for additional customized lenses and hooks (qualcomm for example)
 
 ```bash
-python -m backends.xnnpack.debugger.observatory.cli \
-    --report-html /tmp/obs/report.html \
-    --accuracy \
+python -m executorch.backends.xnnpack.debugger.observatory \
+    --output-html /tmp/obs/report.html \
+    --lense_recipe=accuracy \
     examples/xnnpack/aot_compiler.py \
     --model_name=mv2 --delegate --quantize --output_dir /tmp/mv2
 ```
 
-
-## 2. JSON-Only Export (CI / Storage)
-
-Use `--json-only` to collect data and export only the raw JSON, skipping HTML generation.
-This is useful in CI pipelines where you want to store a compact artifact and generate
-the HTML report locally later.
-
-```bash
-python -m backends.qualcomm.debugger.observatory.cli \
-    --json-only \
-    --report-json /tmp/obs/report.json \
-    examples/qualcomm/oss_scripts/swin_v2_t.py \
-    --model SM8650 -b ./build-android -d imagenet-mini/val -a ./swin_v2_t
-```
-
-The JSON file contains all raw lens digests and session data. No HTML is written.
-
-## 3. Convert JSON to HTML (Visualize Mode)
+## 2. Convert JSON to HTML (Visualize Mode)
 
 Use the `visualize` subcommand to convert an existing JSON file to HTML without
 re-running the export script. This re-runs the analysis phase (lens `analyze()` methods)
 against the persisted data, so HTML reports can be updated after lens code changes.
 
 ```bash
-python -m backends.qualcomm.debugger.observatory.cli visualize \
-    --input /tmp/obs/report.json \
-    --output /tmp/obs/report.html \
-    --title "Swin V2-T Qualcomm"
+python -m executorch.backends.qualcomm.debugger.observatory visualize \
+    --input-json /tmp/obs/report.json \
+    --output-html /tmp/obs/report.html
 ```
 
 Options:
-- `--input` / `-i` — path to the raw JSON file (required)
-- `--output` / `-o` — path for the generated HTML file (required)
-- `--title` — report title shown in the HTML header (default: "Observatory Report")
+- `--input-json` — path to the raw JSON file (required)
+- `--output-html` — path for the generated HTML file (required)
 
-## 4. Two-Step Workflow (CI collect, local visualize)
+## 3. Two-Step Workflow (CI collect, local visualize)
 
-Combine steps 2 and 3 for a CI-collect / local-visualize pattern:
-
-**Step 1 — CI: collect and export JSON only**
+**Step 1 — CI: collect and export**
 ```bash
-python -m backends.qualcomm.debugger.observatory.cli \
-    --json-only --report-json artifacts/report.json \
+python -m executorch.backends.qualcomm.debugger.observatory \
+    --output-json artifacts/report.json \
+    --output-html artifacts/report.html \
     my_export_script.py --output_dir artifacts/
 ```
 
-**Step 2 — Local: convert JSON to HTML**
+**Step 2 — Local: re-generate HTML from JSON**
 ```bash
-python -m backends.qualcomm.debugger.observatory.cli visualize \
-    --input artifacts/report.json \
-    --output artifacts/report.html \
-    --title "My Model Report"
+python -m executorch.backends.qualcomm.debugger.observatory visualize \
+    --input-json artifacts/report.json \
+    --output-html artifacts/report_v2.html
 ```
 
 This separates the history archive results of on-device execution (Step 1) from the interactive
 visualization (Step 2), which can be re-run on demand (e.g. comparing models between 2 history commits).
 
-## 5. Disabling Lenses
-
-### Disable accuracy collection (faster runs, no accuracy metrics)
-
-```bash
-python -m backends.qualcomm.debugger.observatory.cli \
-    --no-accuracy \
-    my_script.py [script_args...]
-```
-
-### Skip all report output (collect only, no files written)
-
-```bash
-python -m backends.qualcomm.debugger.observatory.cli \
-    --no-report \
-    my_script.py [script_args...]
-```
-
-### Disable lenses via config in custom scripts
+## 4. Disabling Lenses via Config
 
 When using the Observatory Python API directly, pass a config dict to
 `enable_context()` or `export_html_report()`:
@@ -130,7 +91,7 @@ Observatory.export_html_report("report.html", config=config)
 Config keys correspond to lens names returned by `lens.get_name()`. Each lens
 checks `config.get(lens_name, {}).get("enabled", True)` during setup.
 
-## 6. Manual Observation Collection Points
+## 5. Manual Observation Collection Points
 
 You can insert `Observatory.collect()` calls anywhere in your code to capture
 intermediate graph states. This is useful for debugging pass transforms or
@@ -229,13 +190,11 @@ from executorch.devtools.observatory import Observatory
 # It is a no-op otherwise.
 Observatory.collect("pre_quantize", exported_program)
 ```
-## 7. Quick Reference
+## 6. Quick Reference
 
 | Scenario | Command |
 |----------|---------|
-| E2E single script | `cli script.py [script_args]` |
-| E2E with explicit paths | `cli --report-html X.html --report-json X.json script.py ...` |
-| JSON only (no HTML) | `cli --json-only --report-json X.json script.py ...` |
-| JSON → HTML | `cli visualize --input X.json --output X.html` |
-| No accuracy metrics | `cli --no-accuracy script.py ...` |
-| No output files | `cli --no-report script.py ...` |
+| E2E single script | `cli SCRIPT [SCRIPT_ARGS]` |
+| E2E with explicit paths | `cli --output-html X.html --output-json X.json SCRIPT ...` |
+| JSON -> HTML | `cli visualize --input-json X.json --output-html X.html` |
+| With accuracy (backend CLI) | `backend-cli --lense_recipe=accuracy SCRIPT ...` |

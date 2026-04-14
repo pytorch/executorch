@@ -392,12 +392,10 @@ evaluator = StandardEvaluator(
 
 ### Disabling Accuracy Evaluation
 
-Via CLI:
-```bash
-python -m executorch.devtools.observatory.cli --no-accuracy script.py ...
-```
+Accuracy lenses are opt-in via `--lense_recipe=accuracy` on backend CLIs. When
+omitted, no accuracy evaluation runs. To disable accuracy when using the Python
+API directly:
 
-Via config:
 ```python
 config = {"accuracy": {"enabled": False}}
 ```
