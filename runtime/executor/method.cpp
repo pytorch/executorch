@@ -837,6 +837,15 @@ Result<Method> Method::load(
   }
 }
 
+/// Validate that a value index from a FlatBuffer instruction is in bounds.
+#define ET_CHECK_VALID_VALUE_INDEX(index, n_value)            \
+  ET_CHECK_OR_RETURN_ERROR(                                   \
+      (index) >= 0 && static_cast<size_t>(index) < (n_value), \
+      InvalidProgram,                                         \
+      "Index %zd negative or >= %" ET_PRIsize_t,              \
+      static_cast<ssize_t>(index),                            \
+      (n_value))
+
 Error Method::init(
     executorch_flatbuffer::ExecutionPlan* s_plan,
     const NamedDataMap* external_data_map,
@@ -1046,35 +1055,34 @@ Error Method::init(
             chain_instruction_arg_lists[instr_idx] = res.get();
           } break;
           case executorch_flatbuffer::InstructionArguments::JumpFalseCall: {
-            // Validate the index at load time so we can trust it during
-            // execution.
             auto index =
                 static_cast<const executorch_flatbuffer::JumpFalseCall*>(
                     instr_args)
                     ->cond_value_index();
-            ET_CHECK_OR_RETURN_ERROR(
-                index >= 0 && static_cast<size_t>(index) < n_value_,
-                InvalidProgram,
-                "Index %zd negative or >= %" ET_PRIsize_t,
-                static_cast<ssize_t>(index),
-                n_value_);
+            ET_CHECK_VALID_VALUE_INDEX(index, n_value_);
+            chain_instruction_arg_lists[instr_idx] = InstructionArgs();
+          } break;
+          case executorch_flatbuffer::InstructionArguments::MoveCall: {
+            auto move_call =
+                static_cast<const executorch_flatbuffer::MoveCall*>(instr_args);
+            ET_CHECK_VALID_VALUE_INDEX(move_call->move_from(), n_value_);
+            ET_CHECK_VALID_VALUE_INDEX(move_call->move_to(), n_value_);
             chain_instruction_arg_lists[instr_idx] = InstructionArgs();
           } break;
           case executorch_flatbuffer::InstructionArguments::FreeCall: {
             auto index =
                 static_cast<const executorch_flatbuffer::FreeCall*>(instr_args)
                     ->value_index();
-            ET_CHECK_OR_RETURN_ERROR(
-                index >= 0 && static_cast<size_t>(index) < n_value_,
-                InvalidProgram,
-                "Index %zd negative or >= %" ET_PRIsize_t,
-                static_cast<ssize_t>(index),
-                n_value_);
+            ET_CHECK_VALID_VALUE_INDEX(index, n_value_);
             chain_instruction_arg_lists[instr_idx] = InstructionArgs();
           } break;
           default: {
-            chain_instruction_arg_lists[instr_idx] = InstructionArgs();
-          } break;
+            ET_LOG(
+                Error,
+                "Invalid instruction type %hhu",
+                static_cast<uint8_t>(instruction->instr_args_type()));
+            return Error::InvalidProgram;
+          }
         }
       }
       chains_[i] = Chain{
@@ -1513,8 +1521,17 @@ Error Method::execute_instruction() {
       // We know that instr_args_as_FreeCall is non-null because it was checked
       // at init time.
       auto free_call = instruction->instr_args_as_FreeCall();
-      auto t = mutable_value(free_call->value_index()).toTensor();
-      internal::reset_data_ptr(t);
+      auto& val = mutable_value(free_call->value_index());
+      if (val.isTensor()) {
+        auto& t = val.toTensor();
+        internal::reset_data_ptr(t);
+      } else {
+        ET_LOG(
+            Error,
+            "FreeCall target at index %u is not a Tensor",
+            static_cast<unsigned int>(free_call->value_index()));
+        err = Error::InvalidProgram;
+      }
     } break;
     default:
       ET_LOG(

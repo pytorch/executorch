@@ -1844,6 +1844,12 @@ ET_NODISCARD Error XNNCompiler::compileModel(
       flatbuffers::GetBufferIdentifier(flatbuffer_data));
 
   auto flatbuffer_graph = fb_xnnpack::GetXNNGraph(flatbuffer_data);
+  ET_CHECK_OR_RETURN_ERROR(
+      flatbuffer_graph != nullptr && flatbuffer_graph->xvalues() != nullptr &&
+          flatbuffer_graph->xnodes() != nullptr,
+      InvalidProgram,
+      "Failed to deserialize XNNPACK flatbuffer graph; null graph, xvalues, or xnodes.");
+
   // initialize xnnpack
   xnn_status status = xnn_initialize(/*allocator =*/nullptr);
   ET_CHECK_OR_RETURN_ERROR(

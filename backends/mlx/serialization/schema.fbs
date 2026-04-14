@@ -1,0 +1,1216 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+//
+// FlatBuffer schema for MLX delegate - THIS IS THE SOURCE OF TRUTH
+// Defines the IR that gets serialized into the .pte file and executed by MLX runtime
+//
+// After editing this file, regenerate dependent files with:
+//     python backends/mlx/serialization/generate.py
+//
+// BACKWARD COMPATIBILITY RULES:
+//   - New fields in tables: APPEND ONLY (add at the end, with a default value)
+//   - New union members:    APPEND ONLY (add at the end of the union)
+//   - New tables:           Safe to add freely
+//   - New enum values:      APPEND ONLY
+//   - NEVER remove, reorder, or change the type of existing fields/members
+
+namespace mlx_delegate;
+
+// =============================================================================
+// Core types
+// =============================================================================
+
+// We use ET's ScalarType (int8) directly.
+// See runtime/core/portable_type/scalar_type.h for ScalarType values.
+
+// Tensor slot identifier - indexes into tensors array
+struct Tid {
+    idx: uint32;
+}
+
+// Value slot identifier - indexes into values array
+// Values are stored as variant<int64, double, bool> at runtime
+struct Vid {
+    idx: uint32;
+}
+
+// NOTE: These compound types use tables with manual discriminators rather than
+// FlatBuffers unions because IntOrVid is used in vectors ([IntOrVid]), and
+// FlatBuffers does not support vectors of unions.
+
+// For fields that can be either a literal int or a runtime Vid
+table IntOrVid {
+    literal: int64;  // widened to int64 for future-proofing
+    vid: Vid;
+    is_vid: bool = false;
+}
+
+// For fields that can be either a literal float or a runtime Vid
+table FloatOrVid {
+    literal: double;  // widened to double for future-proofing
+    vid: Vid;
+    is_vid: bool = false;
+}
+
+// For fields that can be either a tensor (Tid) or a scalar value (Vid)
+table VidOrTid {
+    vid: Vid;
+    tid: Tid;
+    is_vid: bool = false;  // false = use tid, true = use vid
+}
+
+// For fields that can be a literal int, a runtime Vid, or a tensor (Tid)
+table IntOrVidOrTid {
+    literal: int64;
+    vid: Vid;
+    tid: Tid;
+    kind: uint8 = 0;  // 0 = literal int, 1 = vid, 2 = tid
+}
+
+// =============================================================================
+// Op nodes - mirrors ops_schema.py dataclasses
+// =============================================================================
+
+table NoopNode {}
+
+table IdCopyNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table AddmmNode {
+    mat1: Tid (required);      // First matrix
+    mat2: Tid (required);      // Second matrix
+    out: Tid (required);
+    bias: Tid;                 // optional - added to result
+    alpha: float = 1.0;        // Scalar multiplier for mat1 @ mat2
+    beta: float = 1.0;         // Scalar multiplier for bias
+}
+
+table ItemIntNode {
+    x: Tid (required);
+    out: Vid (required);
+}
+
+table ExpandDimsNode {
+    x: Tid (required);
+    out: Tid (required);
+    axis: int32;
+}
+
+table TileNode {
+    x: Tid (required);
+    out: Tid (required);
+    reps: [IntOrVid] (required);
+}
+
+table TakeAlongAxisNode {
+    x: Tid (required);
+    indices: Tid (required);
+    out: Tid (required);
+    axis: int32;
+}
+
+table TakeNode {
+    x: Tid (required);
+    out: Tid (required);
+    index: IntOrVidOrTid (required);  // Scalar int, dynamic Vid, or tensor of indices
+    axis: int32;   // Axis along which to select
+}
+
+table RMSNormNode {
+    x: Tid (required);
+    weight: Tid;  // optional (None = no per-element scaling, same as ones)
+    out: Tid (required);
+    eps: float;
+}
+
+table LayerNormNode {
+    x: Tid (required);
+    out: Tid (required);
+    weight: Tid;  // optional
+    bias: Tid;    // optional
+    eps: float;
+}
+
+table RopeNode {
+    x: Tid (required);
+    out: Tid (required);
+    dims: int32;
+    offset: VidOrTid (required);  // Position offset: scalar (Vid) or tensor of positions (Tid)
+    freqs: Tid;  // optional
+    traditional: bool = false;
+    base: float = 500000.0;  // Llama 3 default
+    scale: float = 1.0;
+}
+
+table SdpaNode {
+    q: Tid (required);
+    k: Tid (required);
+    v: Tid (required);
+    out: Tid (required);
+    scale: float;
+    mask: Tid;  // optional
+    causal: bool = false;
+}
+
+table AddNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table AddIntNode {
+    a: IntOrVid (required);
+    b: IntOrVid (required);
+    out: Vid (required);
+}
+
+table SubtractIntNode {
+    a: IntOrVid (required);
+    b: IntOrVid (required);
+    out: Vid (required);
+}
+
+table MultiplyIntNode {
+    a: IntOrVid (required);
+    b: IntOrVid (required);
+    out: Vid (required);
+}
+
+table FloorDivideIntNode {
+    a: IntOrVid (required);
+    b: IntOrVid (required);
+    out: Vid (required);
+}
+
+table ModIntNode {
+    a: IntOrVid (required);
+    b: IntOrVid (required);
+    out: Vid (required);
+}
+
+table SymSizeNode {
+    a: Tid (required);
+    dim: int32;
+    out: Vid (required);
+}
+
+table MultiplyNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table DivideNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table SubtractNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table Conv1DNode {
+    x: Tid (required);
+    w: Tid (required);
+    out: Tid (required);
+    stride: int32 = 1;
+    padding: int32 = 0;
+    dilation: int32 = 1;
+    groups: int32 = 1;
+}
+
+table Conv2DNode {
+    x: Tid (required);
+    w: Tid (required);
+    out: Tid (required);
+    stride_h: int32 = 1;
+    stride_w: int32 = 1;
+    padding_h: int32 = 0;
+    padding_w: int32 = 0;
+    dilation_h: int32 = 1;
+    dilation_w: int32 = 1;
+    groups: int32 = 1;
+}
+
+table Conv3DNode {
+    x: Tid (required);
+    w: Tid (required);
+    out: Tid (required);
+    stride_d: int32 = 1;
+    stride_h: int32 = 1;
+    stride_w: int32 = 1;
+    padding_d: int32 = 0;
+    padding_h: int32 = 0;
+    padding_w: int32 = 0;
+    dilation_d: int32 = 1;
+    dilation_h: int32 = 1;
+    dilation_w: int32 = 1;
+    groups: int32 = 1;
+}
+
+table ConvTranspose1DNode {
+    x: Tid (required);
+    w: Tid (required);
+    out: Tid (required);
+    stride: int32 = 1;
+    padding: int32 = 0;
+    dilation: int32 = 1;
+    output_padding: int32 = 0;
+    groups: int32 = 1;
+}
+
+table ConvTranspose2DNode {
+    x: Tid (required);
+    w: Tid (required);
+    out: Tid (required);
+    stride_h: int32 = 1;
+    stride_w: int32 = 1;
+    padding_h: int32 = 0;
+    padding_w: int32 = 0;
+    dilation_h: int32 = 1;
+    dilation_w: int32 = 1;
+    output_padding_h: int32 = 0;
+    output_padding_w: int32 = 0;
+    groups: int32 = 1;
+}
+
+table ConvTranspose3DNode {
+    x: Tid (required);
+    w: Tid (required);
+    out: Tid (required);
+    stride_d: int32 = 1;
+    stride_h: int32 = 1;
+    stride_w: int32 = 1;
+    padding_d: int32 = 0;
+    padding_h: int32 = 0;
+    padding_w: int32 = 0;
+    dilation_d: int32 = 1;
+    dilation_h: int32 = 1;
+    dilation_w: int32 = 1;
+    output_padding_d: int32 = 0;
+    output_padding_h: int32 = 0;
+    output_padding_w: int32 = 0;
+    groups: int32 = 1;
+}
+
+table GeluNode {
+    x: Tid (required);
+    out: Tid (required);
+    approximate: string (required);  // "none" or "tanh"
+}
+
+table ARangeNode {
+    out: Tid (required);
+    start: IntOrVid (required);  // Can be literal or dynamic (from item())
+    stop: IntOrVid (required);   // Can be literal or dynamic (from item())
+    step: IntOrVid (required);   // Can be literal or dynamic
+    scalar_type: int8 = null;    // ET ScalarType (optional - None means infer from context)
+}
+
+table SiluNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table SigmoidNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table TanhNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table SqueezeNode {
+    x: Tid (required);
+    out: Tid (required);
+    dims: [int32];  // Optional list of dimensions to squeeze. If empty, squeeze all dims of size 1
+}
+
+table SplitNode {
+    x: Tid (required);
+    outs: [Tid] (required);  // Multiple output tensor IDs (one for each split chunk)
+    sizes: [IntOrVid] (required);  // Split sizes (can be dynamic)
+    axis: int32;
+}
+
+table RsqrtNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table MaximumNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table MinimumNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table LogNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table SoftmaxNode {
+    x: Tid (required);
+    out: Tid (required);
+    axis: int32;  // Dimension to compute softmax over
+    precise: bool = false;  // Use precise (slow) implementation
+}
+
+table BroadcastToNode {
+    x: Tid (required);
+    out: Tid (required);
+    shape: [IntOrVid] (required);  // Target shape to broadcast to
+}
+
+table PadNode {
+    x: Tid (required);
+    out: Tid (required);
+    pad_width: [IntOrVid] (required);  // Padding pairs: [(before_0, after_0), (before_1, after_1), ...]
+    mode: string (required);        // "constant" or "edge"
+    constant_value: float = 0.0;    // Value to pad with (for constant mode)
+}
+
+table WhereNode {
+    condition: Tid (required);
+    x: Tid (required);
+    y: Tid (required);
+    out: Tid (required);
+}
+
+table ReshapeNode {
+    x: Tid (required);
+    out: Tid (required);
+    shape: [IntOrVid] (required);
+}
+
+table TransposeNode {
+    x: Tid (required);
+    out: Tid (required);
+    perm: [int32] (required);
+}
+
+table AsStridedNode {
+    x: Tid (required);
+    out: Tid (required);
+    shape: [IntOrVid] (required);    // Output view shape (can be dynamic)
+    strides: [IntOrVid] (required);  // Element strides per dimension (can be dynamic)
+    offset: uint64 = 0;             // Element offset into source
+}
+
+table ContiguousNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table GatherNode {
+    x: Tid (required);
+    indices: [Tid] (required);   // Index tensors (one per indexed axis)
+    out: Tid (required);
+    axes: [int32] (required);    // Which axes to gather along
+    slice_sizes: [int32] (required);  // Size of slice per dimension of x
+}
+
+table SliceNode {
+    x: Tid (required);
+    out: Tid (required);
+    axis: IntOrVid (required);
+    start: IntOrVid (required);
+    stop: IntOrVid (required);
+    step: int32 = 1;
+}
+
+table AsTypeNode {
+    x: Tid (required);
+    out: Tid (required);
+    scalar_type: int8;           // ET ScalarType
+}
+
+table QuantizedMatmulNode {
+    x: Tid (required);
+    w: Tid (required);
+    scales: Tid (required);
+    out: Tid (required);
+    biases: Tid;              // optional - required for affine mode, null for nvfp4
+    group_size: int32;
+    bits: int32;
+    mode: string (required);
+    transpose: bool = true;
+}
+
+// Scatter-add: accumulate updates into input at index positions along an axis
+// Maps to mlx::scatter_add(a, indices, updates, axis)
+table ScatterAddNode {
+    x: Tid (required);          // Input tensor to scatter into
+    indices: Tid (required);    // Index tensor
+    updates: Tid (required);    // Values to accumulate
+    out: Tid (required);
+    axis: int32;                // Dimension to scatter along
+}
+
+table ConcatenateNode {
+    tensors: [Tid] (required);  // List of tensors to concatenate
+    out: Tid (required);
+    axis: int32;
+}
+
+table FullNode {
+    out: Tid (required);
+    shape: [IntOrVid] (required);
+    v: FloatOrVid (required);  // Fill value (can be dynamic from item())
+    scalar_type: int8;           // ET ScalarType
+}
+
+table FullLikeNode {
+    x: Tid (required);          // Input tensor to copy shape from
+    out: Tid (required);
+    v: FloatOrVid (required);   // Fill value (can be dynamic from item())
+    scalar_type: int8 = null;   // ET ScalarType (optional - if null, use x's dtype)
+}
+
+table ArgmaxNode {
+    x: Tid (required);
+    out: Tid (required);
+    axis: int32;
+    keepdims: bool = false;
+}
+
+table SliceUpdateNode {
+    dst: Tid (required);
+    update: Tid (required);
+    out: Tid (required); // Can be same as dst
+    axis: IntOrVid (required);
+    start: IntOrVid (required);
+    stop: IntOrVid (required);
+    step: int32 = 1;
+}
+
+// Index-based update: copies update tensor into dst at positions specified by 1D indices
+// Runtime optimizes these into slice_update calls for contiguous runs
+table IndexCopyNode {
+    dst: Tid (required);       // destination tensor to update
+    update: Tid (required);    // source tensor to copy from
+    indices: Tid (required);   // 1D tensor of indices along axis
+    out: Tid (required);       // output tensor (can be same as dst)
+    axis: int32;               // dimension to index along
+}
+
+
+table DequantizeNode {
+    w: Tid (required);           // Quantized matrix to dequantize
+    scales: Tid (required);      // Scales per group_size elements
+    out: Tid (required);
+    biases: Tid;                 // optional - biases per group_size elements
+    group_size: int32;
+    bits: int32;
+    mode: string (required);     // Quantization mode (e.g. "affine")
+    global_scale: Tid;           // optional - global scale for nvfp4
+    dtype: int8 = null;          // ET ScalarType for output dtype
+}
+
+// Comparison ops (return bool arrays)
+table LessNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table LessEqualNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table GreaterNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table GreaterEqualNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table EqualNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table NotEqualNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+// Logical ops
+table LogicalNotNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table LogicalAndNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table LogicalOrNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+// Triangular matrix ops
+table TriNode {
+    out: Tid (required);
+    n: IntOrVid (required);   // Number of rows
+    m: IntOrVid (required);   // Number of columns
+    k: int32 = 0;             // Diagonal offset: 0=main, +above, -below
+    scalar_type: int8;        // ET ScalarType
+}
+
+table TrilNode {
+    x: Tid (required);
+    out: Tid (required);
+    k: int32 = 0;  // Diagonal offset: 0=main, +above, -below
+}
+
+table TriuNode {
+    x: Tid (required);
+    out: Tid (required);
+    k: int32 = 0;  // Diagonal offset: 0=main, +above, -below
+}
+
+table ClipNode {
+    x: Tid (required);
+    out: Tid (required);
+    a_min: Tid;  // optional lower bound
+    a_max: Tid;  // optional upper bound
+}
+
+table CumsumNode {
+    x: Tid (required);
+    out: Tid (required);
+    axis: int32;
+    reverse: bool = false;
+    inclusive: bool = true;
+}
+
+table StackNode {
+    tensors: [Tid] (required);
+    out: Tid (required);
+    axis: int32 = 0;
+}
+
+table SignNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table AnyNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+}
+
+table AllNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+}
+
+table RepeatNode {
+    x: Tid (required);
+    out: Tid (required);
+    repeats: IntOrVid (required);  // Number of times to repeat each element (can be dynamic)
+    axis: int32;             // Axis along which to repeat
+}
+
+table SortNode {
+    x: Tid (required);
+    out: Tid (required);
+    axis: int32;
+}
+
+table ArgsortNode {
+    x: Tid (required);
+    out: Tid (required);
+    axis: int32;
+}
+
+table PartitionNode {
+    x: Tid (required);
+    out: Tid (required);
+    kth: IntOrVid (required);  // Partition index
+    axis: int32;
+}
+
+table ArgPartitionNode {
+    x: Tid (required);
+    out: Tid (required);
+    kth: IntOrVid (required);  // Partition index
+    axis: int32;
+}
+
+
+// =============================================================================
+// Math ops - Unary element-wise
+// =============================================================================
+
+table FloorNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table CeilNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table SquareNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table ExpNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table SinNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table CosNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table TanNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table ArcsinNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table ArccosNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table ArctanNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table SinhNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table CoshNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table ArcsinhNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table ArccoshNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table ArctanhNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table Log2Node {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table Log10Node {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table Log1pNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table ErfNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table Expm1Node {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table RoundNode {
+    x: Tid (required);
+    out: Tid (required);
+    decimals: int32 = 0;
+}
+
+table ReciprocalNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table SqrtNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table AbsNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table NegNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+// =============================================================================
+// Math ops - Binary element-wise
+// =============================================================================
+
+table Atan2Node {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table LogAddExpNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table FloorDivideNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table RemainderNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table PowerNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+// =============================================================================
+// Math ops - Reduction
+// =============================================================================
+
+table LogSumExpNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];
+    keepdims: bool = false;
+}
+
+table SumNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+}
+
+table MeanNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+}
+
+table VarNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+    ddof: int32 = 0;         // Delta degrees of freedom (0=population var, 1=sample var)
+}
+
+table StdNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+    ddof: int32 = 0;         // Delta degrees of freedom
+}
+
+table ProdNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+}
+
+table MaxNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+}
+
+table MinNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+}
+
+table ArgminNode {
+    x: Tid (required);
+    out: Tid (required);
+    axis: int32;
+    keepdims: bool = false;
+}
+
+table MedianNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32];           // Empty = reduce all
+    keepdims: bool = false;
+}
+
+table GatherMmNode {
+    a: Tid (required);          // Input activations
+    b: Tid (required);          // Weight matrix [E, out, in] or similar
+    out: Tid (required);
+    lhs_indices: Tid;           // optional - LHS gather indices
+    rhs_indices: Tid;           // optional - RHS gather indices (expert selection)
+    sorted_indices: bool = false;
+}
+
+table GatherQmmNode {
+    x: Tid (required);          // Input activations
+    w: Tid (required);          // Quantized weight matrix [E, out, in_packed]
+    scales: Tid (required);     // Quantization scales [E, out, in//gs]
+    out: Tid (required);
+    mode: string (required);    // "affine", "fp", etc.
+    biases: Tid;                // optional - for affine mode
+    lhs_indices: Tid;           // optional - LHS gather indices
+    rhs_indices: Tid;           // optional - RHS gather indices (expert selection)
+    transpose: bool = true;
+    group_size: int32;
+    bits: int32;
+    sorted_indices: bool = false;
+}
+
+table ScanNode {
+    originals: [Tid] (required);       // [B, T, ...] — read-only, not modified
+    sliced: [Tid] (required);          // runtime writes per-step slices here (same length as originals)
+    outputs: [Tid] (required);         // body writes [B, ...] per step, runtime stacks to [B, T, ...]
+    carry: [Tid] (required);           // body reads/writes in place, persists across steps
+
+    body_chain_idx: int32;             // index into MLXGraph.instruction_chains
+    scan_axis: int32 = 1;              // dimension to iterate over
+}
+
+// Custom Metal kernel execution via mlx::core::fast::metal_kernel().
+// Two-phase API:
+//   1. Factory: metal_kernel(name, input_names, output_names, source, header,
+//                            ensure_row_contiguous, atomic_outputs) -> kernel_fn
+//   2. Invocation: kernel_fn(inputs, output_shapes, output_dtypes, grid,
+//                            threadgroup, template_args, init_value)
+//
+// Output shapes are flattened: output_shapes_flat contains all shape dims
+// concatenated, output_shape_lengths gives the rank of each output.
+// E.g. shapes [[B,T,H,D], [B,H,D,K]] -> flat=[B,T,H,D,B,H,D,K], lengths=[4,4]
+//
+// Template args are parallel arrays: template_arg_names[i] paired with
+// template_arg_kinds[i] (0=int, 1=bool, 2=dtype/ScalarType) and
+// template_arg_values[i] (int value, bool as 0/1, or ScalarType enum).
+table MetalKernelNode {
+    // Required fields (no defaults) — must come first for Python dataclass ordering
+    name: string (required);
+    source: string (required);
+    inputs: [Tid] (required);
+    outputs: [Tid] (required);
+    grid: [IntOrVid] (required);
+    threadgroup: [IntOrVid] (required);
+
+    // Optional / defaulted fields
+    header: string;
+    input_names: [string];
+    output_names: [string];
+    ensure_row_contiguous: bool = true;
+    atomic_outputs: bool = false;
+    output_shapes_flat: [IntOrVid];
+    output_shape_lengths: [int32];
+    output_dtypes: [int8];
+    template_arg_names: [string];
+    template_arg_kinds: [int8];      // 0=int, 1=bool, 2=dtype (ScalarType)
+    template_arg_values: [int32];    // int value, bool as 0/1, or ScalarType enum
+    init_value: float = null;
+}
+
+// =============================================================================
+// Union of all op types
+// =============================================================================
+
+// BC: APPEND ONLY — new op nodes must be added at the end of this union.
+// Reordering or removing members changes numeric type IDs and breaks existing .pte files.
+union OpNode {
+    NoopNode,
+    IdCopyNode,
+    AddmmNode,
+    ItemIntNode,
+    ExpandDimsNode,
+    TileNode,
+    TakeAlongAxisNode,
+    TakeNode,
+    RMSNormNode,
+    LayerNormNode,
+    RopeNode,
+    SdpaNode,
+    AddNode,
+    AddIntNode,
+    SubtractIntNode,
+    MultiplyIntNode,
+    FloorDivideIntNode,
+    SymSizeNode,
+    MultiplyNode,
+    DivideNode,
+    SubtractNode,
+    Conv1DNode,
+    Conv2DNode,
+    Conv3DNode,
+    GeluNode,
+    ARangeNode,
+    SiluNode,
+    SigmoidNode,
+    TanhNode,
+    SqueezeNode,
+    SplitNode,
+    RsqrtNode,
+    MaximumNode,
+    MinimumNode,
+    LogNode,
+    SoftmaxNode,
+    BroadcastToNode,
+    PadNode,
+    WhereNode,
+    ReshapeNode,
+    TransposeNode,
+    AsStridedNode,
+    ContiguousNode,
+    GatherNode,
+    SliceNode,
+    AsTypeNode,
+    ConcatenateNode,
+    FullNode,
+    FullLikeNode,
+    ArgmaxNode,
+    SliceUpdateNode,
+    IndexCopyNode,
+    DequantizeNode,
+    LessNode,
+    LessEqualNode,
+    GreaterNode,
+    GreaterEqualNode,
+    EqualNode,
+    NotEqualNode,
+    LogicalNotNode,
+    LogicalAndNode,
+    LogicalOrNode,
+    TriNode,
+    TrilNode,
+    TriuNode,
+    FloorNode,
+    CeilNode,
+    SquareNode,
+    ExpNode,
+    SinNode,
+    CosNode,
+    TanNode,
+    ArcsinNode,
+    ArccosNode,
+    ArctanNode,
+    SinhNode,
+    CoshNode,
+    ArcsinhNode,
+    ArccoshNode,
+    ArctanhNode,
+    Log2Node,
+    Log10Node,
+    Log1pNode,
+    ErfNode,
+    Expm1Node,
+    RoundNode,
+    ReciprocalNode,
+    SqrtNode,
+    AbsNode,
+    NegNode,
+    Atan2Node,
+    LogAddExpNode,
+    FloorDivideNode,
+    PowerNode,
+    LogSumExpNode,
+    SumNode,
+    MeanNode,
+    VarNode,
+    StdNode,
+    ProdNode,
+    MaxNode,
+    MinNode,
+    ArgminNode,
+    MedianNode,
+    ModIntNode,
+    RemainderNode,
+    ConvTranspose1DNode,
+    ConvTranspose2DNode,
+    ConvTranspose3DNode,
+    ClipNode,
+    CumsumNode,
+    StackNode,
+    SignNode,
+    AnyNode,
+    AllNode,
+    RepeatNode,
+    SortNode,
+    ArgsortNode,
+    PartitionNode,
+    ArgPartitionNode,
+    QuantizedMatmulNode,
+    ScatterAddNode,
+    GatherMmNode,
+    GatherQmmNode,
+    ScanNode,
+    MetalKernelNode
+    // BC: Add new op nodes here (append only)
+}
+
+// =============================================================================
+// Instruction wrapper
+// =============================================================================
+
+table Instruction {
+    op: OpNode (required);
+}
+
+// =============================================================================
+// Instruction chain (basic block of sequential instructions)
+// =============================================================================
+
+table InstructionChain {
+    instructions: [Instruction] (required);
+    // BC: New fields must be appended here with a default value
+}
+
+// =============================================================================
+// Tensor metadata
+// =============================================================================
+
+// Shape dimension: static value, or dynamic with optional bounds
+table ShapeDim {
+    value: int32 = -1;      // Static dim (>= 0), or -1 for dynamic
+    min_value: int32 = 0;   // Lower bound (only when value == -1)
+    max_value: int32 = -1;  // Upper bound (-1 = unbounded, only when value == -1)
+}
+
+table TensorMeta {
+    shape: [ShapeDim] (required);  // Dimension info with static/dynamic distinction
+    scalar_type: int8;             // ET ScalarType value (see runtime/core/portable_type/scalar_type.h)
+    dim_order: [uint8];            // Memory layout order (matches TensorLayout.dim_order, DimOrderType = uint8_t)
+}
+
+// =============================================================================
+// Slot variant for I/O mapping
+// =============================================================================
+
+enum SlotType : byte {
+    TensorSlot = 0,
+    IntValueSlot = 1,
+    FloatValueSlot = 2,
+    BoolValueSlot = 3
+}
+
+table SlotVariant {
+    idx: uint32;
+    slot_type: SlotType = TensorSlot;
+}
+
+// =============================================================================
+// Name to slot mapping entry
+// =============================================================================
+
+table NamedSlot {
+    name: string (required);
+    slot: SlotVariant (required);
+}
+
+// =============================================================================
+// Root type: MLX Graph
+// =============================================================================
+
+// BC: New fields must be appended at the end of this table with a default value.
+table MLXGraph {
+    // Version for compatibility
+    version: string;
+
+    // Tensor slot counts
+
+    num_constant_tensors: uint32;
+    num_input_tensors: uint32;
+    num_output_tensors: uint32;
+    num_mutable_buffer_tensors: uint32;
+    num_temp_tensors: uint32;
+    num_values: uint32;
+
+    // Instruction chains (basic blocks of sequential instructions)
+    instruction_chains: [InstructionChain] (required);
+    main_chain_idx: uint32 = 0;                  // Chain to run every execute() call
+    init_chain_idx: int32 = -1;                  // Chain to run once at init(), -1 = none
+
+    // I/O mappings
+    input_map: [SlotVariant];
+    output_map: [SlotVariant];
+    mutable_buffer_map: [SlotVariant];
+
+    // Name to slot lookup (used for constant/mutable buffer keys in named_data_map)
+    named_slots: [NamedSlot];
+
+    // Tensor metadata (for non-temp tensors), indexed by Tid
+    tensor_meta: [TensorMeta];
+
+    // BC: New fields must be appended here with a default value
+}
+
+root_type MLXGraph;
