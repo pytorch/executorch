@@ -36,9 +36,30 @@ A standalone HTML report containing:
 ### CLI (zero-config)
 
 Point the CLI at any ExecuTorch export script:
+The simplest invocation: point the CLI at your script and pass its arguments through.
+Use `--report-html` to set output paths explicitly:
+```bash
+python -m devtools.observatory.cli \
+    --report-html /path/to/output_report.html \
+    {your original script and arguments}
+```
+For example:
 
 ```bash
-python -m backends.qualcomm.debugger.observatory.cli \
+python -m devtools.observatory.cli \
+    --report-html /tmp/obs/report.html \
+    --report-json /tmp/obs/report.json \
+    --report-title "Swin V2-T Qualcomm" \
+    examples/qualcomm/oss_scripts/swin_v2_t.py \
+    --model SM8650 -b ./build-android -d imagenet-mini/val -a ./swin_v2_t 
+```
+
+Use backend-specific observatory cli for additional customized lenses and hooks (for example, xnnpack backend with per-layer accuracy analysis)
+
+```bash
+python -m backends.xnnpack.debugger.observatory.cli \
+    --report-html /tmp/obs/report.html \
+    --accuracy \
     examples/xnnpack/aot_compiler.py \
     --model_name=mv2 --delegate --quantize --output_dir /tmp/mv2
 ```
@@ -50,10 +71,12 @@ This produces:
 ### Python API
 
 ```python
-from executorch.backends.qualcomm.debugger.observatory import Observatory
+from executorch.devtools.observatory import Observatory
 
 Observatory.clear()
 with Observatory.enable_context():
+    # Auto: Lenses can auto-insert collection points by monkey patching when entering context
+    # Manual: Insert the collection point anywhere
     Observatory.collect("step_0", graph_module)
 
 Observatory.export_html_report("/tmp/report.html")
@@ -90,16 +113,16 @@ This means you can collect data in CI and generate reports locally, or regenerat
 
 ```bash
 # Step 1: collect (e.g., in CI)
-python -m backends.qualcomm.debugger.observatory.cli --json-only script.py ...
+python -m devtools.observatory.cli --json-only script.py ...
 
 # Step 2: visualize (e.g., locally)
-python -m backends.qualcomm.debugger.observatory.cli visualize \
+python -m devtools.observatory.cli visualize \
     --input report.json --output report.html
 ```
 
 ### Fx-Viewer
 
-Fx-Viewer (`backends/qualcomm/utils/fx_viewer`) is the graph visualization component used inside Observatory's Graph View. Observatory owns the workflow; Fx-Viewer provides the interactive graph rendering, node inspection, and highlighting within that workflow.
+Fx-Viewer (`devtools/utils/fx_viewer`) is the graph visualization component used inside Observatory's Graph View. Observatory owns the workflow; Fx-Viewer provides the interactive graph rendering, node inspection, and highlighting within that workflow.
 
 ## How to use it
 
@@ -117,7 +140,7 @@ See [USAGE.md](USAGE.md) for the full CLI usage guide, including:
 A lens implements the `observe -> digest -> analyze -> frontend` lifecycle:
 
 ```python
-from executorch.backends.qualcomm.debugger.observatory.interfaces import (
+from executorch.devtools.observatory.interfaces import (
     AnalysisResult, Frontend, TableBlock, TableRecordSpec, ViewList,
 )
 
@@ -164,7 +187,7 @@ Lenses can contribute colored graph overlays during the `analyze()` phase:
 from executorch.backends.qualcomm.debugger.observatory.interfaces import (
     AnalysisResult, RecordAnalysis,
 )
-from executorch.backends.qualcomm.utils.fx_viewer import (
+from executorch.devtools.fx_viewer import (
     GraphExtensionPayload, GraphExtensionNodePayload,
 )
 
@@ -208,5 +231,5 @@ return AnalysisResult(per_record_data={"step_1": record_analysis})
 ## Tests
 
 ```bash
-pytest -q backends/qualcomm/debugger/observatory/tests
+pytest -q backends/devtools/observatory/tests
 ```
