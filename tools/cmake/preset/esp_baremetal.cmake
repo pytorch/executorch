@@ -10,7 +10,9 @@ set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER OFF)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL ON)
 set_overridable_option(EXECUTORCH_ENABLE_LOGGING ON)
-define_overridable_option(EXECUTORCH_ENABLE_EVENT_TRACER "Enable event tracer support" BOOL OFF)
+define_overridable_option(
+  EXECUTORCH_ENABLE_EVENT_TRACER "Enable event tracer support" BOOL OFF
+)
 
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
   set(EXECUTORCH_BUILD_DEVTOOLS ON)
