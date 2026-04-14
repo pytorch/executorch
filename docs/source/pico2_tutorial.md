@@ -80,7 +80,7 @@ Output: **executorch_pico.uf2** firmware file (examples/raspberry_pi/pico2/build
 |------|-------------|
 | `--model=FILE` | Specify model file to embed (relative to pico2/) |
 | `--cmsis` | Build with CMSIS-NN INT8 kernels for Cortex-M33 acceleration |
-| `--clean` | Clean build directories before building |
+| `--clean` | Clean build directories and exit; run separately before building if needed |
 
 **Note:** '[build_firmware_pico.sh](https://github.com/pytorch/executorch/blob/main/examples/raspberry_pi/pico2/build_firmware_pico.sh)' script converts given model pte to hex array and generates C code for the same via this helper [script](https://github.com/pytorch/executorch/blob/main/examples/raspberry_pi/pico2/pte_to_array.py). This C code is then compiled to generate final .uf2 binary which is then flashed to Pico2.
 

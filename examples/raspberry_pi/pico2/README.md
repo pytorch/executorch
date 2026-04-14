@@ -113,7 +113,7 @@ python export_mlp_mnist_cmsis.py # Creates balanced_tiny_mlp_mnist_cmsis.pte
 |------|-------------|
 | `--model=FILE` | Specify model file to embed (relative to pico2/) |
 | `--cmsis` | Build with CMSIS-NN INT8 kernels for Cortex-M33 acceleration |
-| `--clean` | Clean build directories before building |
+| `--clean` | Clean build directories and exit (run separately before building) |
 
 ### Flash Firmware
 
