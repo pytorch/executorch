@@ -72,6 +72,7 @@ from executorch.backends.arm._passes import (
     DecomposeLinearPass,
     DecomposeLog1pPass,
     DecomposeLogitPass,
+    DecomposeLstmPass,
     DecomposeMaskedFillPass,
     DecomposeMatmulPass,
     DecomposeMaxPool2dPass,
@@ -363,6 +364,7 @@ class ArmPassManager(PassManager):
                 DecomposeTOSAUnsupportedClampPass(),
                 DecomposeGroupNormPass(),
                 DecomposeGruPass(),
+                DecomposeLstmPass(),
                 DecomposeRnnPass(),
                 DecomposeLayerNormPass(),
                 DecomposeVarPass(),
@@ -583,6 +585,7 @@ class ArmPassManager(PassManager):
             [
                 NormalizeWhileInitialArgsPass(use_exir_clone=False, tfa_pass=True),
                 DecomposeGruPass(tfa_pass=True),
+                DecomposeLstmPass(tfa_pass=True),
                 DecomposeRnnPass(tfa_pass=True),
                 DecomposeNotEqualPass(tfa_pass=True),
                 DecomposeCosineSimilarityPass(tfa_pass=True),
