@@ -68,6 +68,77 @@ def _prepare_and_quantize_mlx(model, config, args):
     pack_all_switch_linears(model)
 
 
+def _prepare_and_quantize_metal(model, config, args):
+    """Metal: apply source transforms, quantize experts + non-expert layers."""
+    import executorch.backends.apple.metal.ops.gather_qmv  # noqa: F401
+    import executorch.backends.apple.metal.ops.gated_delta_rule  # noqa: F401
+    from executorch.examples.models.qwen3_5_moe.metal_source_transformations import (
+        metal_source_transformations,
+        quantize_experts_metal,
+    )
+
+    # Quantize expert weights to Metal-compatible INT4 format
+    if args.qlinear:
+        quantize_experts_metal(model, config, args.qlinear_group_size)
+
+    # Untie lm_head/embedding for independent quantization
+    if model.lm_head.weight.data_ptr() == model.embed_tokens.weight.data_ptr():
+        model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+
+    # Quantize non-expert layers with fpa4w (Metal-compatible, no CUDA needed).
+    # Custom filter skips shared_expert_gate (N=1) which violates fpa4w's
+    # N%4==0 constraint during prefill (M>1).
+    if args.qlinear:
+        from torchao.quantization.quant_api import quantize_
+
+        import torchao.experimental.ops.mps  # noqa: F401
+        from torchao.experimental.quant_api import UIntxWeightOnlyConfig
+
+        fpa4w_config = UIntxWeightOnlyConfig(
+            group_size=args.qlinear_group_size,
+            bitwidth=4,
+            uintx_choose_qparams_algorithm="hqq",
+        )
+
+        def _fpa4w_filter(mod, fqn):
+            if not isinstance(mod, nn.Linear):
+                return False
+            n, k = mod.weight.shape
+            if k % args.qlinear_group_size != 0:
+                return False
+            if n < 4:
+                return False
+            return True
+
+        for i, layer in enumerate(model.layers):
+            layer.to(dtype=torch.bfloat16)
+            quantize_(layer, fpa4w_config, filter_fn=_fpa4w_filter)
+            print(f"  Quantized layer {i + 1}/{config.num_hidden_layers} (fpa4w)", end="\r")
+        print()
+
+        # Quantize lm_head
+        print("Quantizing lm_head (fpa4w)...")
+        from executorch.extension.llm.export.quantize import quantize_model_
+
+        model.lm_head.to(dtype=torch.bfloat16)
+        wrapper = nn.ModuleDict({"lm_head": model.lm_head})
+        quantize_model_(wrapper, qlinear_config="fpa4w", qlinear_group_size=args.qlinear_group_size)
+        model.lm_head = wrapper.lm_head
+
+    # Quantize embedding
+    if args.qembedding:
+        from executorch.extension.llm.export.quantize import quantize_model_
+
+        print(f"Quantizing embeddings ({args.qembedding})...")
+        model.embed_tokens.to(dtype=torch.bfloat16)
+        quantize_model_(model, qembedding_config=args.qembedding)
+
+    model.norm.to(dtype=torch.bfloat16)
+
+    _materialize_buffers(model, config)
+    metal_source_transformations(model, config=config)
+
+
 def load_and_quantize(args):
     """Load model from checkpoint, optionally quantize.
 
@@ -145,6 +216,11 @@ def load_and_quantize(args):
                 "MLX backend does not support custom prequantized weights. Use a prequantized torchao checkpoint instead."
             )
         _prepare_and_quantize_mlx(model, config, args)
+
+    elif backend == "metal":
+        if args.prequantized:
+            return load_prequantized_model(args.prequantized, args.max_seq_len)
+        _prepare_and_quantize_metal(model, config, args)
 
     elif backend == "cuda":
         if args.prequantized:
@@ -497,6 +573,8 @@ def export_and_lower(model, config, args):
 
     if backend == "mlx":
         _export_mlx(model, config, args)
+    elif backend == "metal":
+        _export_metal(model, config, args)
     else:
         _export_cuda(model, config, args)
 
@@ -566,6 +644,98 @@ def _export_mlx(model, config, args):
     del et_prog
     gc.collect()
 
+    os.makedirs(args.output_dir, exist_ok=True)
+    pte_path = os.path.join(args.output_dir, "model.pte")
+    print(f"Saving to {pte_path}...")
+    with open(pte_path, "wb") as f:
+        et_program.write_to_file(f)
+    size_mb = os.path.getsize(pte_path) / (1024 * 1024)
+    print(f"Saved {size_mb:.1f} MB")
+
+    if et_program._tensor_data:
+        et_program.write_tensor_data_to_file(args.output_dir)
+        print(f"Saved tensor data to {args.output_dir}/")
+
+    print("Done!")
+
+
+def _export_metal(model, config, args):
+    """Export model to .pte via torch.export + Metal backend."""
+    import torch._inductor.config as inductor_config
+
+    from executorch.backends.apple.metal.metal_backend import MetalBackend
+    from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
+    from executorch.exir import (
+        EdgeCompileConfig,
+        ExecutorchBackendConfig,
+        to_edge_transform_and_lower,
+    )
+    from executorch.exir.passes import MemoryPlanningPass
+    from torch.export import Dim, export
+
+    inductor_config.coordinate_descent_tuning = False
+    inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
+
+    # --- Decode method (T=1, static shape) ---
+    print("Exporting decode method...")
+    decode_tokens = torch.tensor([[0]], dtype=torch.long)
+    decode_pos = torch.tensor([0], dtype=torch.long)
+    with torch.no_grad():
+        decode_ep = export(model, (decode_tokens, decode_pos), strict=True)
+    print("Decode export successful!")
+
+    # --- Prefill method (T>=2, dynamic shape) ---
+    print("Exporting prefill method...")
+    prefill_tokens = torch.tensor([[0, 1]], dtype=torch.long)
+    prefill_pos = torch.tensor([0, 1], dtype=torch.long)
+    seq_dim = Dim("seq_len", min=2, max=config.max_seq_len - 1)
+    prefill_dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
+    with torch.no_grad():
+        prefill_ep = export(
+            model, (prefill_tokens, prefill_pos),
+            dynamic_shapes=prefill_dynamic_shapes, strict=True,
+        )
+    print("Prefill export successful!")
+
+    # Lower with Metal backend
+    print("Lowering to ExecuTorch with Metal...")
+    metadata = {
+        "get_max_seq_len": config.max_seq_len,
+        "get_vocab_size": config.vocab_size,
+        "get_n_layers": config.num_hidden_layers,
+        "use_kv_cache": True,
+        "use_sdpa_with_kv_cache": False,
+        "enable_dynamic_shape": True,
+    }
+    et_prog = to_edge_transform_and_lower(
+        {"decode": decode_ep, "prefill": prefill_ep},
+        partitioner={
+            "decode": [
+                MetalPartitioner(
+                    [MetalBackend.generate_method_name_compile_spec("decode")]
+                )
+            ],
+            "prefill": [
+                MetalPartitioner(
+                    [MetalBackend.generate_method_name_compile_spec("prefill")]
+                )
+            ],
+        },
+        compile_config=EdgeCompileConfig(
+            _check_ir_validity=False,
+            _skip_dim_order=True,
+        ),
+        constant_methods=metadata,
+    )
+    et_program = et_prog.to_executorch(
+        config=ExecutorchBackendConfig(
+            extract_delegate_segments=True,
+            do_quant_fusion_and_const_prop=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+        ),
+    )
+
+    # Save .pte
     os.makedirs(args.output_dir, exist_ok=True)
     pte_path = os.path.join(args.output_dir, "model.pte")
     print(f"Saving to {pte_path}...")
@@ -710,7 +880,7 @@ def _export_cuda(model, config, args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Export Qwen3.5 MoE to ExecuTorch (CUDA or MLX)"
+        description="Export Qwen3.5 MoE to ExecuTorch"
     )
     parser.add_argument(
         "--model-dir",
@@ -729,8 +899,8 @@ def main():
     parser.add_argument(
         "--backend",
         default="cuda",
-        choices=["cuda", "mlx"],
-        help="Backend for export: cuda (default) or mlx.",
+        choices=["cuda", "mlx", "metal"],
+        help="Backend for export: cuda (default), mlx, or metal.",
     )
     parser.add_argument(
         "--qlinear",
@@ -804,6 +974,10 @@ def main():
             parser.error("--prequantized is not supported with --backend mlx")
         if args.turboquant:
             parser.error("--turboquant is not supported with --backend mlx")
+
+    if args.backend == "metal":
+        if args.turboquant:
+            parser.error("--turboquant is not supported with --backend metal")
 
     model, config = load_and_quantize(args)
 
