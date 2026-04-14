@@ -10,7 +10,7 @@ from executorch.backends.arm.quantizer.arm_quantizer_utils import (
     _get_int32_per_channel_bias_qspec,
 )
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
-from executorch.backends.cortex_m.quantizer.quantizer_reporter import (
+from executorch.backends.cortex_m.quantizer_reporter import (
     SUPPORTED_QCONFIGS,
     SUPPORTED_QSPECS,
 )

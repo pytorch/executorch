@@ -39,7 +39,7 @@ from executorch.backends.cortex_m.quantizer.node_finders import (
 )
 from executorch.backends.cortex_m.quantizer.pattern_matcher import PatternMatcher
 
-from executorch.backends.cortex_m.quantizer.quantizer_reporter import (
+from executorch.backends.cortex_m.quantizer_reporter import (
     QuantizerReporter,
     SUPPORTED_QCONFIGS,
     SUPPORTED_QSPECS,

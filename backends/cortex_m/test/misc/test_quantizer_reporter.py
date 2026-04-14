@@ -11,7 +11,7 @@ from executorch.backends.cortex_m.quantizer.quantization_configs import (
     INT8_WEIGHT_PER_TENSOR_QSPEC,
 )
 from executorch.backends.cortex_m.quantizer.quantizer import mark_node_as_annotated
-from executorch.backends.cortex_m.quantizer.quantizer_reporter import (
+from executorch.backends.cortex_m.quantizer_reporter import (
     logger as quantizer_logger,
     QuantizerInfo,
     QuantizerReport,

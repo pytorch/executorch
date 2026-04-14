@@ -271,7 +271,7 @@ class PatternQuantizer(Quantizer, _QuantizerReporterUserMixin):
         self.pattern_matcher: "PatternMatcher" = pattern_matcher
 
     def get_quantizer_info(self):
-        from executorch.backends.cortex_m.quantizer.quantizer_reporter import (
+        from executorch.backends.cortex_m.quantizer_reporter import (
             QuantizerInfo,
             SUPPORTED_QCONFIGS,
         )
@@ -508,9 +508,7 @@ class SharedQspecQuantizer(Quantizer, _QuantizerReporterUserMixin):
             )
 
     def get_quantizer_info(self):
-        from executorch.backends.cortex_m.quantizer.quantizer_reporter import (
-            QuantizerInfo,
-        )
+        from executorch.backends.cortex_m.quantizer_reporter import QuantizerInfo
 
         name = self.__class__.__name__
         targeted_nodes_description = ""
