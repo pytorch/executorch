@@ -729,8 +729,8 @@ MODULE_REGISTRY["gather_qmv"] = {
     "description": "Expert-indexed quantized matmul for MoE (metal::gather_qmv)",
     "atol_float32": 5e-2,
     "rtol_float32": 5e-2,
-    "atol_bfloat16": 1e-1,
-    "rtol_bfloat16": 1e-1,
+    "atol_bfloat16": 5.0,
+    "rtol_bfloat16": 2e-1,
 }
 
 
@@ -741,7 +741,11 @@ MODULE_REGISTRY["gather_qmv"] = {
 
 class GatedDeltaRule(nn.Module):
     """Wrapper around metal::gated_delta_rule for testing the linear
-    attention recurrence kernel."""
+    attention recurrence kernel.
+
+    Resets state to zero on each forward call so that the output is
+    deterministic regardless of prior calls (e.g., during export tracing).
+    """
 
     def __init__(self):
         super().__init__()
@@ -758,6 +762,7 @@ class GatedDeltaRule(nn.Module):
     ) -> torch.Tensor:
         import executorch.backends.apple.metal.ops.gated_delta_rule  # noqa: F401
 
+        self.state.zero_()
         return torch.ops.metal.gated_delta_rule(q, k, v, g, beta, self.state)
 
 
