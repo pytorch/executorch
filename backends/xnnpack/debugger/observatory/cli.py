@@ -23,7 +23,7 @@ import sys
 
 
 def main():
-    from executorch.devtools.observatory.cli import (
+    from devtools.observatory.cli import (
         parse_observatory_args,
         run_observatory,
         run_visualize,
@@ -52,8 +52,8 @@ def main():
     )
     obs_flags, script_path, script_argv = parse_observatory_args(usage_str=usage)
 
-    from executorch.devtools.observatory.observatory import Observatory
-    from executorch.devtools.observatory.lenses.pipeline_graph_collector import (
+    from devtools.observatory.observatory import Observatory
+    from devtools.observatory.lenses.pipeline_graph_collector import (
         PipelineGraphCollectorLens,
     )
 
@@ -65,12 +65,12 @@ def main():
     Observatory.register_lens(PipelineGraphCollectorLens)
 
     if obs_flags["--accuracy"]:
-        from executorch.devtools.observatory.lenses.accuracy import AccuracyLens
+        from devtools.observatory.lenses.accuracy import AccuracyLens
 
         Observatory.register_lens(AccuracyLens)
 
-        from .lenses.per_layer_accuracy import PerLayerAccuracyLens
-        cls.register_lens(PerLayerAccuracyLens)
+        from devtools.observatory.lenses.per_layer_accuracy import PerLayerAccuracyLens
+        Observatory.register_lens(PerLayerAccuracyLens)
 
 
 

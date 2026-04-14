@@ -241,12 +241,6 @@ return AnalysisResult(per_record_data={"step_1": record_analysis})
 | [REFERENCE.md](REFERENCE.md) | Contract tables, API reference, JS callbacks, performance notes |
 | [lenses/DEBUG_HANDLE_SYNC_ANALYSIS.md](lenses/DEBUG_HANDLE_SYNC_ANALYSIS.md) | Technical analysis of debug_handle consistency across pipeline stages |
 
-## Demos
-
-1. `examples/demo_graphview_accuracy_compare.py` — custom accuracy lens with per-layer graph overlays
-2. `examples/demo_etrecord_auto_collect.py` — ETRecord auto-collection workflow
-3. `examples/generate_ui_test_harness.py` — UI testing utilities
-
 ## Tests
 
 ```bash
