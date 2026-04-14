@@ -369,14 +369,14 @@ Please help update following table if you are contributing new operators:
 + &#128683; = Deprecated, supported with other QNN Ops
 
 
-| Operators | HTP - 94/116 Enabled |
+| Operators | HTP - 98/119 Enabled |
 |-----------|---------|
 | Argmax | &check; |
 | Argmin | &check; |
 | BatchNorm | &check; |
 | BatchToSpace | &cross; |
 | Cast | &check; |
-| ChannelShuffle | &cross; |
+| ChannelShuffle | &check; |
 | Concat | &check; |
 | Conv2d | &check; |
 | Conv3d | &check; |
@@ -430,7 +430,7 @@ Please help update following table if you are contributing new operators:
 | ExtractPatches | &cross; |
 | FullyConnected | &check; |
 | Gather | &check; |
-| GatherElements | &cross; |
+| GatherElements | &check; |
 | GatherNd | &check; |
 | Gelu | &check; |
 | GetSparseIndices | &cross; |
