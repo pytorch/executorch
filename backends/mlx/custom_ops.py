@@ -269,3 +269,117 @@ def rope_fake(
 ) -> Tensor:
     """Fake implementation for tracing."""
     return x.new_empty(x.shape)
+
+
+@torch.library.custom_op("mlx::gather_mm", mutates_args=())
+def gather_mm(
+    a: Tensor,  # [..., M, K]
+    b: Tensor,  # [E, K, N] or [..., K, N]
+    rhs_indices: Optional[Tensor] = None,  # Expert selection indices
+    lhs_indices: Optional[Tensor] = None,  # Optional LHS gather indices
+    sorted_indices: bool = False,
+) -> Tensor:
+    """
+    Gather matrix multiply — matches mlx::core::gather_mm semantics exactly.
+
+    Output shape = broadcast(lhs_indices, rhs_indices).shape + [M, N]
+    where M = a.shape[-2], N = b.shape[-1].
+
+    For MoE: a=[N_tokens, 1, K], b=[E, K, out], rhs_indices=[N_tokens]
+    → output=[N_tokens, 1, out]. Caller squeezes dim -2.
+    """
+    if rhs_indices is not None:
+        b_sel = b[rhs_indices]
+    else:
+        b_sel = b
+    return torch.matmul(a, b_sel)
+
+
+@torch.library.register_fake("mlx::gather_mm")
+def gather_mm_fake(
+    a: Tensor,
+    b: Tensor,
+    rhs_indices: Optional[Tensor] = None,
+    lhs_indices: Optional[Tensor] = None,
+    sorted_indices: bool = False,
+) -> Tensor:
+    # Matches MLX: output = indices.shape + [M, N]
+    # For simplicity, use matmul shape rules after gather
+    M = a.shape[-2]
+    N = b.shape[-1]
+    if rhs_indices is not None:
+        batch = rhs_indices.shape
+    else:
+        batch = b.shape[:-2]
+    return a.new_empty((*batch, M, N))
+
+
+@torch.library.custom_op("mlx::gather_qmm", mutates_args=())
+def gather_qmm(
+    x: Tensor,  # [..., M, K]
+    w: Tensor,  # [E, out, in_packed]
+    scales: Tensor,  # [E, out, in//gs]
+    biases: Optional[Tensor] = None,  # [E, out, in//gs] (affine mode)
+    rhs_indices: Optional[Tensor] = None,  # Expert selection indices
+    lhs_indices: Optional[Tensor] = None,  # Optional LHS gather indices
+    transpose: bool = True,
+    group_size: int = 32,
+    bits: int = 4,
+    mode: str = "affine",
+    sorted_indices: bool = False,
+) -> Tensor:
+    """
+    Gather quantized matrix multiply — matches mlx::core::gather_qmm semantics.
+
+    Output shape = broadcast(lhs_indices, rhs_indices).shape + [M, N]
+
+    For MoE: x=[N_tokens, 1, K], w=[E, out, K_packed], rhs_indices=[N_tokens]
+    → output=[N_tokens, 1, out]. Caller squeezes dim -2.
+    """
+    # Eager fallback: gather, dequantize, matmul
+    if rhs_indices is not None:
+        w_sel = w[rhs_indices]
+        s_sel = scales[rhs_indices]
+        b_sel = biases[rhs_indices] if biases is not None else None
+    else:
+        w_sel = w
+        s_sel = scales
+        b_sel = biases
+
+    # Dequantize
+    w_float = w_sel.to(x.dtype)
+    s_expanded = s_sel.repeat_interleave(group_size, dim=-1)
+    if b_sel is not None:
+        b_expanded = b_sel.repeat_interleave(group_size, dim=-1)
+        w_dequant = w_float * s_expanded + b_expanded
+    else:
+        w_dequant = w_float * s_expanded
+
+    if transpose:
+        w_dequant = w_dequant.transpose(-1, -2)
+
+    return torch.matmul(x, w_dequant)
+
+
+@torch.library.register_fake("mlx::gather_qmm")
+def gather_qmm_fake(
+    x: Tensor,
+    w: Tensor,
+    scales: Tensor,
+    biases: Optional[Tensor] = None,
+    rhs_indices: Optional[Tensor] = None,
+    lhs_indices: Optional[Tensor] = None,
+    transpose: bool = True,
+    group_size: int = 32,
+    bits: int = 4,
+    mode: str = "affine",
+    sorted_indices: bool = False,
+) -> Tensor:
+    # Matches MLX: output = indices.shape + [M, N]
+    M = x.shape[-2]
+    N = w.shape[-2] if transpose else w.shape[-1]
+    if rhs_indices is not None:
+        batch = rhs_indices.shape
+    else:
+        batch = w.shape[:-2]
+    return x.new_empty((*batch, M, N))

@@ -378,6 +378,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         )
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_channel_shuffle(self):
+        module = ChannelShuffle(2)  # noqa: F405
+        sample_input = (torch.randn(1, 4, 3, 3),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_chunk_single(self):
         module = Chunk()  # noqa: F405
         sample_input = (torch.randn(1, 1, 4, 3),)
@@ -2672,6 +2677,12 @@ class TestQNNQuantizedOperator(TestQNN):
             torch.randn(1, 125, 256),
             torch.randn(1, 2048, 256),
         )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_channel_shuffle(self):
+        module = ChannelShuffle(2)  # noqa: F405
+        sample_input = (torch.randn(1, 4, 3, 3),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
