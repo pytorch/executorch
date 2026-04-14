@@ -53,6 +53,13 @@ class Conv2dVisitor(NodeVisitor):
         padding = cast(List[int], node.args[4])
         dilation = cast(List[int], node.args[5])
         groups = cast(int, node.args[8])
+        if is_transpose_conv and groups != 1:
+            logging.warning("Don't support groups for transpose conv.")
+            return False
+        output_padding = cast(List[int], node.args[7])
+        if is_transpose_conv and output_padding != [0, 0]:
+            logging.warning("Don't support output padding for transpose conv.")
+            return False
         if len(padding) < 2:
             logging.warning(
                 "For conv1d decomposed to conv2d(with conv1d params), Conv1dToConv2d pass will update the params."
@@ -61,6 +68,9 @@ class Conv2dVisitor(NodeVisitor):
         explicit_padding = [padding[0], padding[1], padding[0], padding[1]]
 
         input_shape = get_shape(input)
+        if len(input_shape) > 4:
+            logging.warning("Currently, only conv2d is supported.")
+            return False
         kernel_shape = get_shape(weight_node)
         params = {}
         self._update_params_qdtype(node, params)

@@ -48,7 +48,7 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
         params = {
             "align_corners": align_corners,
             "upsampling_factor": scale_factor,
-            "half_pixel_centers": True,
+            "half_pixel_centers": not align_corners,
         }
         self._update_params_qdtype(node, params)
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)

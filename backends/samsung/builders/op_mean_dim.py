@@ -12,6 +12,7 @@ from executorch.backends.samsung.builders.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.samsung.builders.utils import get_tensor
 from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 from executorch.backends.transforms import get_shape
 
@@ -29,6 +30,10 @@ class ReduceMeanVisitor(NodeVisitor):
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
     ) -> bool:
+        output_tensor = get_tensor(self.exported_program, node)
+        if output_tensor.dtype == torch.float64:
+            logging.warning("float64 for mean has not supported yet.")
+            return False
         # input
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
