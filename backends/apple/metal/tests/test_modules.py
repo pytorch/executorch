@@ -718,8 +718,12 @@ class GatherQMV(nn.Module):
         P = x.shape[0]
         indices = torch.arange(P, dtype=torch.int32, device=x.device) % self.num_experts
         return torch.ops.metal.gather_qmv(
-            x, self.w, self.scales.to(x.dtype), self.biases.to(x.dtype),
-            indices, self.group_size,
+            x,
+            self.w,
+            self.scales.to(x.dtype),
+            self.biases.to(x.dtype),
+            indices,
+            self.group_size,
         )
 
 
