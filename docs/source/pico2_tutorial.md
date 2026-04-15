@@ -107,6 +107,10 @@ screen /dev/tty.usbmodem1101 115200
 
 Something like:
 
+📊 Memory usage after method load:
+   Method allocator: 45632 / 204800 bytes used
+   Activation pool: 204800 bytes allocated
+
 === Digit 7 ===
 ############################
 ############################
@@ -152,7 +156,7 @@ Running neural network inference...
   Digit 8: -3.000
   Digit 9: -3.000
 
-PREDICTED: 7 (Expected: 7) ✅ CORRECT!
+🎯 PREDICTED: 7 (Expected: 7) ✅ CORRECT!
 
 ==================================================
 
@@ -162,10 +166,6 @@ PREDICTED: 7 (Expected: 7) ✅ CORRECT!
   Digit 4: 267 us
   Digit 7: 245 us
   Average: 255 us
-
-📊 Memory usage after method load:
-   Method allocator: 45632 / 131072 bytes used
-   Activation pool: 4096 bytes allocated
 ```
 
 ## Memory Optimization Tips

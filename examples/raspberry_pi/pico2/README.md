@@ -126,9 +126,13 @@ The Pico2 LED blinks 10 times at 500ms intervals for successful execution. Via s
 ```bash
 ...
 ...
-PREDICTED: 4 (Expected: 4) ✅ CORRECT!
+🎯 PREDICTED: 4 (Expected: 4) ✅ CORRECT!
 
 ==================================================
+
+📊 Memory usage after method load:
+   Method allocator: 45632 / 204800 bytes used
+   Activation pool: 204800 bytes allocated
 
 === Digit 7 ===
 ############################
@@ -175,7 +179,7 @@ Running neural network inference...
   Digit 8: -3.000
   Digit 9: -3.000
 
-PREDICTED: 7 (Expected: 7) ✅ CORRECT!
+🎯 PREDICTED: 7 (Expected: 7) ✅ CORRECT!
 
 ==================================================
 
@@ -185,10 +189,6 @@ PREDICTED: 7 (Expected: 7) ✅ CORRECT!
   Digit 4: 267 us
   Digit 7: 245 us
   Average: 255 us
-
-📊 Memory usage after method load:
-   Method allocator: 45632 / 131072 bytes used
-   Activation pool: 4096 bytes allocated
 
 🎉 All tests complete! ExecuTorch inference of neural network works on Pico2!
 ```
