@@ -27,6 +27,9 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.graph_signature import InputKind
 from torch.fx.passes.infra.pass_manager import PassResult
 
+UNINITIALIZED_ALLOC_ARGS = (((0,), torch.uint8),)
+""" Args of alloc are overwritten with planned size at a later point."""
+
 
 class ConvertToCortexMPass(CortexMPass):
     """
@@ -243,11 +246,9 @@ class ConvertToCortexMPass(CortexMPass):
             )
 
         with node.graph.inserting_before(node):
-            # Args of alloc are overwritten with planned size at a later point.
-            uninitialized_args = (((0,), torch.uint8),)
             scratch = node.graph.call_function(
                 exir.memory.alloc,
-                args=uninitialized_args,
+                args=UNINITIALIZED_ALLOC_ARGS,
                 kwargs={},
             )
 
@@ -450,6 +451,13 @@ class ConvertToCortexMPass(CortexMPass):
                     args=(rhs_node, [0, 2, 1]),
                 )
 
+        with node.graph.inserting_before(node):
+            scratch = node.graph.call_function(
+                exir.memory.alloc,
+                args=UNINITIALIZED_ALLOC_ARGS,
+                kwargs={},
+            )
+
         args = (
             lhs_node,
             -lhs_zp,
@@ -458,6 +466,7 @@ class ConvertToCortexMPass(CortexMPass):
             output_zp,
             output_mult,
             output_shift,
+            scratch,
         )
         return exir_ops.edge.cortex_m.quantized_batch_matmul.default, args
 

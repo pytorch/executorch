@@ -35,7 +35,6 @@ def _shape_from_node(node: torch.fx.Node) -> torch.Size:
 
 
 def _get_common_conv_buffer_size_inputs(
-    *,
     conv_node: torch.fx.Node,
 ) -> tuple[
     list[int],
@@ -159,9 +158,30 @@ def cmsis_nn_depthwise_conv_buffer_size(
     ]
 
 
+def cmsis_nn_batch_matmul_buffer_size(
+    backend: cmsis_nn.Backend,
+    matmul_node: torch.fx.Node,
+) -> list[int]:
+    rhs_transposed = cast(torch.fx.Node, matmul_node.args[2])
+    rhs_shape = _shape_from_node(rhs_transposed)
+
+    _, rhs_cols, inner = rhs_shape
+
+    return [
+        int(
+            cmsis_nn.fully_connected_buffer_size(
+                backend,
+                cmsis_nn.DataType.A8W8,
+                filter_nhwc=[inner, -1, -1, rhs_cols],  # H and W values are unused.
+            )
+        )
+    ]
+
+
 _target_to_buffer_sizes_registry = {
     exir_ops.edge.cortex_m.quantized_conv2d.default: cmsis_nn_conv_buffer_size,
     exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default: cmsis_nn_depthwise_conv_buffer_size,
+    exir_ops.edge.cortex_m.quantized_batch_matmul.default: cmsis_nn_batch_matmul_buffer_size,
 }
 
 
