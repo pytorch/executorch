@@ -225,15 +225,6 @@ class ET_EXPERIMENTAL CudaBackend final
         get_constant_original_fqn,
         AOTInductorModelContainerGetConstantOriginalFQN);
     LOAD_OPTIONAL_SYMBOL(
-        get_constant_data_size,
-        AOTInductorModelContainerGetConstantDataSize);
-    LOAD_OPTIONAL_SYMBOL(
-        get_constant_from_folded,
-        AOTInductorModelContainerGetConstantFromFolded);
-    LOAD_OPTIONAL_SYMBOL(
-        get_constants_blob_size,
-        AOTInductorModelContainerGetConstantsBlobSize);
-    LOAD_OPTIONAL_SYMBOL(
         extract_constants_map, AOTInductorModelContainerExtractConstantsMap);
     LOAD_OPTIONAL_SYMBOL(
         update_user_managed_constant_buffer_pairs,
@@ -657,45 +648,7 @@ class ET_EXPERIMENTAL CudaBackend final
   // Only constants not in the cache are loaded from the blob and added
   // to the cache. This avoids duplicate GPU allocations when multiple
   // methods (e.g., prefill/decode) share the same weights.
-  //
-  // allocate_constant_on_gpu() is the allocation primitive — kept as a
-  // separate function so the strategy can be swapped later (e.g., pool
-  // allocator, unified memory, sub-allocation from a slab).
   // ---------------------------------------------------------------
-
-  // Allocate a single constant from the blob onto GPU and return its
-  // raw GPU pointer. Caller is responsible for lifetime management.
-  // Returns nullptr on failure or if data_size is 0.
-  static void* allocate_constant_on_gpu(
-      const uint8_t* blob_ptr,
-      size_t blob_offset,
-      size_t data_size) {
-    if (data_size == 0) {
-      return nullptr;
-    }
-    void* gpu_ptr = nullptr;
-    cudaError_t err = cudaMalloc(&gpu_ptr, data_size);
-    if (err != cudaSuccess) {
-      ET_LOG(
-          Error,
-          "cudaMalloc failed for constant (%zu bytes): %s",
-          data_size,
-          cudaGetErrorString(err));
-      return nullptr;
-    }
-    err = cudaMemcpy(
-        gpu_ptr, blob_ptr + blob_offset, data_size, cudaMemcpyHostToDevice);
-    if (err != cudaSuccess) {
-      ET_LOG(
-          Error,
-          "cudaMemcpy failed for constant (%zu bytes): %s",
-          data_size,
-          cudaGetErrorString(err));
-      cudaFree(gpu_ptr);
-      return nullptr;
-    }
-    return gpu_ptr;
-  }
 
   // Load constants for a method using per-weight caching.
   // Returns Error::Ok on success.

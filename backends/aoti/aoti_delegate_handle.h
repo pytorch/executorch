@@ -104,23 +104,6 @@ using AOTInductorModelContainerGetConstantOriginalFQNFunc =
         size_t idx,
         const char** original_fqn);
 
-// Retrieves a constant's data size in bytes by index.
-using AOTInductorModelContainerGetConstantDataSizeFunc = AOTIRuntimeError (*)(
-    AOTInductorModelContainerHandle container_handle,
-    size_t idx,
-    size_t* data_size);
-
-// Retrieves whether a constant was produced by constant folding.
-using AOTInductorModelContainerGetConstantFromFoldedFunc = AOTIRuntimeError (*)(
-    AOTInductorModelContainerHandle container_handle,
-    size_t idx,
-    bool* from_folded);
-
-// Retrieves the total size of the constants blob.
-using AOTInductorModelContainerGetConstantsBlobSizeFunc = AOTIRuntimeError (*)(
-    AOTInductorModelContainerHandle container_handle,
-    uint64_t* ret_size);
-
 // Extracts the constants map from the container (active or inactive buffer).
 // constant_map_handle should point to a
 // std::unordered_map<std::string, AtenTensorHandle>.
@@ -160,9 +143,6 @@ struct AOTIDelegateHandle {
   AOTInductorModelContainerGetNumConstantsFunc get_num_constants;
   AOTInductorModelContainerGetConstantNameFunc get_constant_name;
   AOTInductorModelContainerGetConstantOriginalFQNFunc get_constant_original_fqn;
-  AOTInductorModelContainerGetConstantDataSizeFunc get_constant_data_size;
-  AOTInductorModelContainerGetConstantFromFoldedFunc get_constant_from_folded;
-  AOTInductorModelContainerGetConstantsBlobSizeFunc get_constants_blob_size;
   AOTInductorModelContainerExtractConstantsMapFunc extract_constants_map;
   AOTInductorModelContainerUpdateUserManagedConstantBufferPairsFunc
       update_user_managed_constant_buffer_pairs;
