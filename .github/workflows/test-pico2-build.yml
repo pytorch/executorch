@@ -1,11 +1,6 @@
 name: Pico2 Build Validation
 
 on:
-  pull_request:
-    paths:
-      - .github/workflows/test-pico2-build.yml
-      - examples/raspberry_pi/pico2/**
-      - backends/cortex_m/**
   push:
     branches: [main, release/*]
     paths:
@@ -32,7 +27,7 @@ jobs:
       runner: linux.2xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
-      ref: ${{ github.sha }}
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       script: |
         # Activate conda environment from the docker image
@@ -101,7 +96,7 @@ jobs:
       runner: linux.2xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
-      ref: ${{ github.sha }}
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       script: |
         # Activate conda environment from the docker image
