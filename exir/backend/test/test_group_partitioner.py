@@ -1729,46 +1729,38 @@ class TestGroupPartitioner(unittest.TestCase):
                 self.layer0 = DecoderLayer()
                 self.layer1 = DecoderLayer()
 
-            def forward(self, query: torch.Tensor, memory: torch.Tensor) -> torch.Tensor:
+            def forward(
+                self, query: torch.Tensor, memory: torch.Tensor
+            ) -> torch.Tensor:
                 x = self.layer0(query, memory)
                 x = self.layer1(x, memory)
                 return x
 
-        from torchao.quantization.pt2e.quantize_pt2e import (
-            convert_pt2e,
-            prepare_pt2e,
-        )
-        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
-            XNNPACKQuantizer,
-            get_symmetric_quantization_config,
-        )
-
         from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
             XnnpackDynamicallyQuantizedPartitioner,
         )
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+            get_symmetric_quantization_config,
+            XNNPACKQuantizer,
+        )
         from executorch.exir import to_edge_transform_and_lower
+        from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
         model = TwoLayerDecoder().eval()
         query = torch.randn(1, 10, 256)
         memory = torch.randn(1, 20, 256)
 
-        exported = torch.export.export(
-            model, (query, memory), strict=False
-        )
+        exported = torch.export.export(model, (query, memory), strict=False)
 
         quantizer = XNNPACKQuantizer().set_global(
-            get_symmetric_quantization_config(
-                is_per_channel=True, is_dynamic=True
-            )
+            get_symmetric_quantization_config(is_per_channel=True, is_dynamic=True)
         )
         prepared = prepare_pt2e(exported.module(), quantizer)
         with torch.no_grad():
             prepared(query, memory)
         converted = convert_pt2e(prepared)
 
-        re_exported = torch.export.export(
-            converted, (query, memory), strict=False
-        )
+        re_exported = torch.export.export(converted, (query, memory), strict=False)
 
         # Before the fix this raised:
         #   AssertionError: Invalid partition, found dependency cycles
