@@ -44,7 +44,9 @@ def _export_and_execute(
 
         runtime = Runtime.get()
         program = runtime.load_program(pte_path, verification=Verification.Minimal)
-        return program.load_method("forward").execute(example_inputs)
+        method = program.load_method("forward")
+        assert method is not None, "forward method should exist in exported program"
+        return method.execute(example_inputs)
 
 
 @unittest.skipUnless(
