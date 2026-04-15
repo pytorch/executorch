@@ -249,5 +249,15 @@ int main(int argc, char** argv) {
       num_generated * 1000.0 / decode_ms);
   printf("Prompt tokens: %ld\n", num_prompt_tokens);
 
+  // Print peak GPU memory usage
+  {
+    size_t free_bytes = 0, total_bytes = 0;
+    if (cudaMemGetInfo(&free_bytes, &total_bytes) == cudaSuccess) {
+      double used_mb =
+          static_cast<double>(total_bytes - free_bytes) / (1024.0 * 1024.0);
+      printf("GPU peak memory usage: %.1f MiB\n", used_mb);
+    }
+  }
+
   return 0;
 }

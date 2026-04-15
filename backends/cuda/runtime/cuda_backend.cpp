@@ -80,7 +80,6 @@ namespace {
 constexpr char kSkipCopyOutputToCpuForMethod[] =
     "skip_copy_output_to_cpu_for_method";
 constexpr char kUseSharedCudaStream[] = "use_shared_cuda_stream";
-constexpr char kShareKvCacheAcrossMethods[] = "share_kv_cache_across_methods";
 } // anonymous namespace
 
 class ET_EXPERIMENTAL CudaBackend final
@@ -226,6 +225,15 @@ class ET_EXPERIMENTAL CudaBackend final
         get_constant_original_fqn,
         AOTInductorModelContainerGetConstantOriginalFQN);
     LOAD_OPTIONAL_SYMBOL(
+        get_constant_data_size,
+        AOTInductorModelContainerGetConstantDataSize);
+    LOAD_OPTIONAL_SYMBOL(
+        get_constant_from_folded,
+        AOTInductorModelContainerGetConstantFromFolded);
+    LOAD_OPTIONAL_SYMBOL(
+        get_constants_blob_size,
+        AOTInductorModelContainerGetConstantsBlobSize);
+    LOAD_OPTIONAL_SYMBOL(
         extract_constants_map, AOTInductorModelContainerExtractConstantsMap);
     LOAD_OPTIONAL_SYMBOL(
         update_user_managed_constant_buffer_pairs,
@@ -288,17 +296,11 @@ class ET_EXPERIMENTAL CudaBackend final
       ArrayRef<CompileSpec> compile_specs // This will be my empty list
   ) const override {
     std::string method_name;
-    bool share_kv_cache = false;
     for (const CompileSpec& spec : compile_specs) {
       if (std::strcmp(spec.key, "method_name") == 0) {
         method_name.assign(
             static_cast<const char*>(spec.value.buffer),
             spec.value.nbytes); // no nullptr guarantee, so pass size
-      } else if (std::strcmp(spec.key, kShareKvCacheAcrossMethods) == 0) {
-        if (spec.value.nbytes >= 1) {
-          share_kv_cache =
-              static_cast<const uint8_t*>(spec.value.buffer)[0] != 0;
-        }
       }
     }
 
@@ -369,30 +371,11 @@ class ET_EXPERIMENTAL CudaBackend final
 
     handle->container_handle = container_handle;
 
-    // Look into named data map for constant data
-    std::string weights_blob_key =
-        method_name.empty() ? "weights_blob" : method_name + "_weights_blob";
-    auto buffer_res = named_data_map->get_data(weights_blob_key.c_str());
-    if (buffer_res.ok() && handle->update_constants_from_blob != nullptr) {
-      ET_LOG(Info, "Found %s in named data map", weights_blob_key.c_str());
-      const void* weights_blob = buffer_res->data();
-      // Feed the weights blob into the container. Under the hood it's copying
-      // weights, so we should free the buffer immediately.
-      auto update_err = handle->update_constants_from_blob(
-          handle->container_handle, static_cast<const uint8_t*>(weights_blob));
-      if (update_err != Error::Ok) {
-        ET_LOG(Error, "update_constants_from_blob failed");
-        return update_err;
-      }
-      // Ensure all weight transfers are complete before execution
-      cudaDeviceSynchronize();
-      buffer_res->Free();
-    } else {
-      ET_LOG(
-          Info,
-          "weights_blob '%s' not found or update fn is null",
-          weights_blob_key.c_str());
-    }
+    // Load constants with per-weight caching.
+    // This replaces the old update_constants_from_blob + cross-method sharing
+    // with a unified approach that avoids duplicate GPU allocations.
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        load_constants_with_cache(handle, named_data_map, method_name));
 
     // Use shared CUDA stream if enabled via options, otherwise create one.
     // A shared stream ensures proper ordering across multiple methods
@@ -416,119 +399,6 @@ class ET_EXPERIMENTAL CudaBackend final
           Info,
           "Created new CUDA stream %p for method %s",
           handle->get_cuda_stream(),
-          method_name.c_str());
-    }
-
-    // ---------------------------------------------------------------
-    // Cross-method constant sharing (e.g., KV cache between prefill/decode).
-    //
-    // Only enabled when share_kv_cache_across_methods compile spec is set.
-    // The first container to initialize extracts its constants (keyed by
-    // original FQN) and stores the AtenTensorHandle's. Subsequent containers
-    // with matching FQNs are updated to point to the same GPU tensors via
-    // UpdateUserManagedConstantBufferPairs (user_managed = true → no copy,
-    // the source container retains ownership).
-    // ---------------------------------------------------------------
-    if (share_kv_cache && handle->get_num_constants &&
-        handle->get_constant_name && handle->get_constant_original_fqn &&
-        handle->extract_constants_map &&
-        handle->update_user_managed_constant_buffer_pairs) {
-      size_t num_constants = 0;
-      handle->get_num_constants(handle->container_handle, &num_constants);
-
-      if (num_constants > 0) {
-        // Build FQN → internal_name mapping for this container.
-        std::unordered_map<std::string, std::string> fqn_to_name;
-        for (size_t i = 0; i < num_constants; i++) {
-          const char* name = nullptr;
-          const char* fqn = nullptr;
-          handle->get_constant_name(handle->container_handle, i, &name);
-          handle->get_constant_original_fqn(handle->container_handle, i, &fqn);
-          if (name && fqn && fqn[0] != '\0') {
-            fqn_to_name[fqn] = name;
-          }
-        }
-
-        std::lock_guard<std::mutex> guard(shared_constants_mutex_);
-
-        if (!constants_extracted_) {
-          // First container: extract its constants and store by FQN.
-          std::unordered_map<std::string, AtenTensorHandle> extracted_map;
-          auto extract_err = handle->extract_constants_map(
-              handle->container_handle,
-              reinterpret_cast<AOTInductorConstantMapHandle>(&extracted_map),
-              /*use_inactive=*/false);
-
-          if (extract_err == Error::Ok) {
-            for (const auto& [fqn, internal_name] : fqn_to_name) {
-              auto it = extracted_map.find(fqn);
-              if (it != extracted_map.end()) {
-                shared_constant_tensors_[fqn] = it->second;
-              }
-            }
-            constants_extracted_ = true;
-            ET_LOG(
-                Info,
-                "Extracted %zu shared constants from method '%s'",
-                shared_constant_tensors_.size(),
-                method_name.c_str());
-          } else {
-            ET_LOG(
-                Error,
-                "Failed to extract constants from '%s'",
-                method_name.c_str());
-            delete handle;
-            return Error::Internal;
-          }
-        } else {
-          // Subsequent container: share matching constants from the first.
-          std::vector<AOTInductorConstantMapEntry> pairs;
-          for (const auto& [fqn, internal_name] : fqn_to_name) {
-            auto it = shared_constant_tensors_.find(fqn);
-            if (it != shared_constant_tensors_.end()) {
-              // UpdateUserManagedConstantBufferPairs matches against the
-              // codegen constant name (underscored), not the original FQN.
-              pairs.push_back({internal_name.c_str(), it->second});
-            }
-          }
-
-          if (!pairs.empty()) {
-            auto update_err = handle->update_user_managed_constant_buffer_pairs(
-                handle->container_handle,
-                pairs.data(),
-                pairs.size(),
-                /*use_inactive=*/false,
-                /*validate_full_update=*/false);
-
-            if (update_err == Error::Ok) {
-              ET_LOG(
-                  Info,
-                  "Shared %zu constants into method '%s'",
-                  pairs.size(),
-                  method_name.c_str());
-            } else {
-              ET_LOG(
-                  Error,
-                  "Failed to share constants into '%s'",
-                  method_name.c_str());
-              delete handle;
-              return Error::Internal;
-            }
-          }
-        }
-      }
-    } else if (share_kv_cache) {
-      ET_LOG(
-          Error,
-          "share_kv_cache_across_methods requested but constant sharing APIs "
-          "not available for method '%s'",
-          method_name.c_str());
-      delete handle;
-      return Error::Internal;
-    } else {
-      ET_LOG(
-          Info,
-          "Constant sharing not requested for method '%s'",
           method_name.c_str());
     }
 
@@ -778,11 +648,256 @@ class ET_EXPERIMENTAL CudaBackend final
       unordered_map<cuda::CudaDelegateHandle*, std::vector<SlimTensor*>>
           cached_outputs_;
 
-  // Cross-method constant sharing state.
-  // When multiple AOTI containers share mutable buffers (e.g., KV cache),
-  // the first container's constants are extracted and stored here. Subsequent
-  // containers with matching FQNs share the same GPU tensors via
-  // UpdateUserManagedConstantBufferPairs.
+  // ---------------------------------------------------------------
+  // Per-weight constant cache.
+  //
+  // Maintains a singleton FQN → AtenTensorHandle cache across methods.
+  // When loading constants for a method, constants already in the cache
+  // are reused (zero-copy via update_user_managed_constant_buffer_pairs).
+  // Only constants not in the cache are loaded from the blob and added
+  // to the cache. This avoids duplicate GPU allocations when multiple
+  // methods (e.g., prefill/decode) share the same weights.
+  //
+  // allocate_constant_on_gpu() is the allocation primitive — kept as a
+  // separate function so the strategy can be swapped later (e.g., pool
+  // allocator, unified memory, sub-allocation from a slab).
+  // ---------------------------------------------------------------
+
+  // Allocate a single constant from the blob onto GPU and return its
+  // raw GPU pointer. Caller is responsible for lifetime management.
+  // Returns nullptr on failure or if data_size is 0.
+  static void* allocate_constant_on_gpu(
+      const uint8_t* blob_ptr,
+      size_t blob_offset,
+      size_t data_size) {
+    if (data_size == 0) {
+      return nullptr;
+    }
+    void* gpu_ptr = nullptr;
+    cudaError_t err = cudaMalloc(&gpu_ptr, data_size);
+    if (err != cudaSuccess) {
+      ET_LOG(
+          Error,
+          "cudaMalloc failed for constant (%zu bytes): %s",
+          data_size,
+          cudaGetErrorString(err));
+      return nullptr;
+    }
+    err = cudaMemcpy(
+        gpu_ptr, blob_ptr + blob_offset, data_size, cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+      ET_LOG(
+          Error,
+          "cudaMemcpy failed for constant (%zu bytes): %s",
+          data_size,
+          cudaGetErrorString(err));
+      cudaFree(gpu_ptr);
+      return nullptr;
+    }
+    return gpu_ptr;
+  }
+
+  // Load constants for a method using per-weight caching.
+  // Returns Error::Ok on success.
+  //
+  // Flow:
+  //   1. Enumerate this method's constants and their FQNs.
+  //   2. For each constant:
+  //      - If FQN is in shared_constant_tensors_ → reuse (cache hit).
+  //      - Otherwise → mark as needing loading (cache miss).
+  //   3. If all constants are cached → skip blob loading entirely.
+  //      Otherwise → call update_constants_from_blob to load all, then
+  //      extract and cache the new constants.
+  //   4. For cached constants, call update_user_managed_constant_buffer_pairs
+  //      to point the container to the shared GPU tensors.
+  Error load_constants_with_cache(
+      cuda::CudaDelegateHandle* handle,
+      const NamedDataMap* named_data_map,
+      const std::string& method_name) const {
+    // Check if the required APIs are available
+    if (!handle->get_num_constants || !handle->get_constant_name ||
+        !handle->get_constant_original_fqn ||
+        !handle->extract_constants_map ||
+        !handle->update_user_managed_constant_buffer_pairs) {
+      // Fall back to the legacy path
+      return load_constants_legacy(handle, named_data_map, method_name);
+    }
+
+    // Step 1: Enumerate constants and partition into cached/uncached
+    size_t num_constants = 0;
+    handle->get_num_constants(handle->container_handle, &num_constants);
+    if (num_constants == 0) {
+      ET_LOG(Info, "No constants for method '%s'", method_name.c_str());
+      return Error::Ok;
+    }
+
+    // Build FQN → internal_name mapping and determine cache hits/misses
+    std::unordered_map<std::string, std::string> fqn_to_name;
+    std::vector<std::string> uncached_fqns;
+
+    {
+      std::lock_guard<std::mutex> guard(shared_constants_mutex_);
+      for (size_t i = 0; i < num_constants; i++) {
+        const char* name = nullptr;
+        const char* fqn = nullptr;
+        handle->get_constant_name(handle->container_handle, i, &name);
+        handle->get_constant_original_fqn(handle->container_handle, i, &fqn);
+        if (name && fqn && fqn[0] != '\0') {
+          fqn_to_name[fqn] = name;
+          if (shared_constant_tensors_.find(fqn) ==
+              shared_constant_tensors_.end()) {
+            uncached_fqns.push_back(fqn);
+          }
+        }
+      }
+    }
+
+    size_t num_cached = fqn_to_name.size() - uncached_fqns.size();
+    ET_LOG(
+        Info,
+        "Method '%s': %zu constants, %zu cached, %zu uncached",
+        method_name.c_str(),
+        fqn_to_name.size(),
+        num_cached,
+        uncached_fqns.size());
+
+    // Step 2: Load uncached constants from blob (if any)
+    if (!uncached_fqns.empty()) {
+      // Need to load from blob — use update_constants_from_blob for all,
+      // then extract the new constants into the cache.
+      std::string weights_blob_key =
+          method_name.empty() ? "weights_blob" : method_name + "_weights_blob";
+      auto buffer_res = named_data_map->get_data(weights_blob_key.c_str());
+
+      if (buffer_res.ok() && handle->update_constants_from_blob != nullptr) {
+        ET_LOG(
+            Info,
+            "Loading constants from blob '%s' for method '%s'",
+            weights_blob_key.c_str(),
+            method_name.c_str());
+        const void* weights_blob = buffer_res->data();
+        auto update_err = handle->update_constants_from_blob(
+            handle->container_handle,
+            static_cast<const uint8_t*>(weights_blob));
+        if (update_err != Error::Ok) {
+          ET_LOG(Error, "update_constants_from_blob failed");
+          return update_err;
+        }
+        cudaDeviceSynchronize();
+        buffer_res->Free();
+      } else {
+        ET_LOG(
+            Error,
+            "weights_blob '%s' not found or update fn is null",
+            weights_blob_key.c_str());
+        return Error::NotFound;
+      }
+
+      // Extract all constants and cache the newly loaded ones
+      std::unordered_map<std::string, AtenTensorHandle> extracted_map;
+      auto extract_err = handle->extract_constants_map(
+          handle->container_handle,
+          reinterpret_cast<AOTInductorConstantMapHandle>(&extracted_map),
+          /*use_inactive=*/false);
+
+      if (extract_err == Error::Ok) {
+        std::lock_guard<std::mutex> guard(shared_constants_mutex_);
+        for (const auto& fqn : uncached_fqns) {
+          auto it_name = fqn_to_name.find(fqn);
+          if (it_name == fqn_to_name.end()) continue;
+          // extract_constants_map returns entries keyed by FQN
+          auto it = extracted_map.find(fqn);
+          if (it != extracted_map.end()) {
+            shared_constant_tensors_[fqn] = it->second;
+          }
+        }
+        ET_LOG(
+            Info,
+            "Cached %zu new constants from method '%s' (total cache: %zu)",
+            uncached_fqns.size(),
+            method_name.c_str(),
+            shared_constant_tensors_.size());
+      } else {
+        ET_LOG(Error, "Failed to extract constants from '%s'", method_name.c_str());
+        return Error::Internal;
+      }
+    } else {
+      // All constants are cached — skip blob loading entirely!
+      ET_LOG(
+          Info,
+          "All %zu constants cached — skipping blob load for method '%s'",
+          fqn_to_name.size(),
+          method_name.c_str());
+    }
+
+    // Step 3: Point the container to cached tensors via user_managed pairs
+    if (num_cached > 0 || uncached_fqns.empty()) {
+      std::vector<AOTInductorConstantMapEntry> pairs;
+      {
+        std::lock_guard<std::mutex> guard(shared_constants_mutex_);
+        for (const auto& [fqn, internal_name] : fqn_to_name) {
+          auto it = shared_constant_tensors_.find(fqn);
+          if (it != shared_constant_tensors_.end()) {
+            pairs.push_back({internal_name.c_str(), it->second});
+          }
+        }
+      }
+
+      if (!pairs.empty()) {
+        auto update_err = handle->update_user_managed_constant_buffer_pairs(
+            handle->container_handle,
+            pairs.data(),
+            pairs.size(),
+            /*use_inactive=*/false,
+            /*validate_full_update=*/false);
+
+        if (update_err != Error::Ok) {
+          ET_LOG(
+              Error,
+              "Failed to set cached constants for method '%s'",
+              method_name.c_str());
+          return Error::Internal;
+        }
+        ET_LOG(
+            Info,
+            "Shared %zu cached constants into method '%s'",
+            pairs.size(),
+            method_name.c_str());
+      }
+    }
+
+    return Error::Ok;
+  }
+
+  // Legacy constant loading: load the entire blob without caching.
+  // Used as fallback when constant management APIs are unavailable.
+  Error load_constants_legacy(
+      cuda::CudaDelegateHandle* handle,
+      const NamedDataMap* named_data_map,
+      const std::string& method_name) const {
+    std::string weights_blob_key =
+        method_name.empty() ? "weights_blob" : method_name + "_weights_blob";
+    auto buffer_res = named_data_map->get_data(weights_blob_key.c_str());
+    if (buffer_res.ok() && handle->update_constants_from_blob != nullptr) {
+      ET_LOG(Info, "Found %s in named data map", weights_blob_key.c_str());
+      const void* weights_blob = buffer_res->data();
+      auto update_err = handle->update_constants_from_blob(
+          handle->container_handle,
+          static_cast<const uint8_t*>(weights_blob));
+      if (update_err != Error::Ok) {
+        ET_LOG(Error, "update_constants_from_blob failed");
+        return update_err;
+      }
+      cudaDeviceSynchronize();
+      buffer_res->Free();
+    } else {
+      ET_LOG(
+          Info,
+          "weights_blob '%s' not found or update fn is null",
+          weights_blob_key.c_str());
+    }
+    return Error::Ok;
+  }
   mutable std::mutex shared_constants_mutex_;
 
   // FQN → AtenTensorHandle from the source (first) container.
@@ -790,9 +905,6 @@ class ET_EXPERIMENTAL CudaBackend final
   // explicitly deleted — see destroy() comment).
   mutable std::unordered_map<std::string, AtenTensorHandle>
       shared_constant_tensors_;
-
-  // Whether we've already extracted constants from a source container.
-  mutable bool constants_extracted_ = false;
 };
 
 } // namespace executorch::backends::cuda

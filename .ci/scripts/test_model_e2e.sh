@@ -397,6 +397,27 @@ if [ -n "$EXPECTED_OUTPUT" ]; then
 else
   echo "SUCCESS: Runner completed successfully"
 fi
+
+# Validate GPU peak memory usage for models with known memory budgets.
+# The runner prints "GPU peak memory usage: XXXX.X MiB" at the end.
+case "$MODEL_NAME" in
+  qwen3_5_moe)
+    MAX_MEMORY_MIB=20480  # 20 GB — must fit on a single GPU (e.g. 4090)
+    PEAK_MEM=$(echo "$OUTPUT" | grep -oP 'GPU peak memory usage: \K[0-9.]+' || true)
+    if [ -n "$PEAK_MEM" ]; then
+      # Compare as integers (truncate decimals)
+      PEAK_MEM_INT=${PEAK_MEM%%.*}
+      if [ "$PEAK_MEM_INT" -gt "$MAX_MEMORY_MIB" ]; then
+        echo "FAIL: GPU peak memory ${PEAK_MEM} MiB exceeds budget ${MAX_MEMORY_MIB} MiB"
+        exit 1
+      else
+        echo "Success: GPU peak memory ${PEAK_MEM} MiB within budget (max ${MAX_MEMORY_MIB} MiB)"
+      fi
+    else
+      echo "WARNING: GPU peak memory usage not found in output"
+    fi
+    ;;
+esac
 echo "::endgroup::"
 
 popd
