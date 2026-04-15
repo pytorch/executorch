@@ -14,14 +14,37 @@ from executorch.backends.samsung.test.tester import SamsungTester
 from executorch.backends.samsung.test.utils.utils import TestConfig
 
 from executorch.examples.samsung.scripts.mobilebert_finetune import MobileBertFinetune
+from transformers import AutoTokenizer
+
+
+def patch_mobilebert_finetuning():
+    def _monkeypatch_load_tokenizer(self):
+        tokenizer = AutoTokenizer.from_pretrained(
+            do_lower_case=True,
+        )
+        return tokenizer
+
+    old_func = MobileBertFinetune.load_tokenizer
+    MobileBertFinetune.load_tokenizer = _monkeypatch_load_tokenizer
+    return old_func
+
+
+def recover_mobilebert_finetuning(old_func):
+    MobileBertFinetune.load_tokenizer = old_func
 
 
 class Test_Milestone_MobileBertFinetune(unittest.TestCase):
-    # This model need to be fixed according new transformer version
-    @unittest.skip
+    @classmethod
+    def setUpClass(cls):
+        cls._old_func = patch_mobilebert_finetuning(cls.model_cache_dir)
+
+    @classmethod
+    def tearDownClass(cls):
+        recover_mobilebert_finetuning(cls._old_func)
+
     def test_mobilebert_finetuning_fp16(self):
         mobilebert_finetune = MobileBertFinetune()
-        model, _ = mobilebert_finetune.get_finetune_mobilebert(self.model_cache_dir)
+        model, _ = mobilebert_finetune.get_finetune_mobilebert(None)
         example_input = mobilebert_finetune.get_example_inputs()
         tester = SamsungTester(
             model, example_input, [gen_samsung_backend_compile_spec(TestConfig.chipset)]
