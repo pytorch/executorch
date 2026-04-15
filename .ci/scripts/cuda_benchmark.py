@@ -721,7 +721,7 @@ def compute_summary(
             {"trimmed_runs": len(trimmed_throughput)},
         ),
         prefill_throughput=create_metric_stats(
-            "prefill_throughput(tokens/sec)",
+            "prefill_encoder_throughput(tokens/sec)",
             [r.prefill_tokens_per_sec for r in results],
             "t/s",
         ),

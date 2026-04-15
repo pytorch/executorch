@@ -242,7 +242,6 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
   ET_CHECK_OK_OR_RETURN_ERROR(encoder_result.error());
 
   stats_.prompt_eval_end_ms = ::executorch::extension::llm::time_in_ms();
-  stats_.num_prompt_tokens = 0;
 
   auto encoder_outputs = std::move(*encoder_result);
   ET_CHECK_OR_RETURN_ERROR(
@@ -253,6 +252,11 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
 
   ::executorch::aten::Tensor encoder_output_tensor =
       std::move(encoder_outputs[0]).toTensor();
+
+  // Use encoder output sequence length as "prompt tokens" for throughput
+  stats_.num_prompt_tokens =
+      static_cast<int64_t>(encoder_output_tensor.size(1));
+  std::move(encoder_outputs[0]).toTensor();
 
   ET_LOG(
       Info,
