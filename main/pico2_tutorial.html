@@ -1972,6 +1972,7 @@ document.write(`
 <li><p>Input: ASCII art digits (0, 1, 4, 7)</p></li>
 <li><p>Output: Real-time predictions via USB serial</p></li>
 <li><p>Memory: &lt;400KB total footprint</p></li>
+<li><p>Two variants: FP32 (portable ops) and INT8 (CMSIS-NN accelerated)</p></li>
 </ul>
 </section>
 <section id="prerequisites">
@@ -1987,30 +1988,79 @@ document.write(`
 </section>
 <section id="step-1-generate-pte-from-given-example-model">
 <h2>Step 1: Generate pte from given example Model<a class="headerlink" href="#step-1-generate-pte-from-given-example-model" title="Link to this heading">#</a></h2>
+<section id="fp32-model-default">
+<h3>FP32 model (default)<a class="headerlink" href="#fp32-model-default" title="Link to this heading">#</a></h3>
 <ul class="simple">
 <li><p>Use the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/raspberry_pi/pico2/export_mlp_mnist.py">provided example model</a></p></li>
 </ul>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>export_mlp_mnist.py<span class="w"> </span><span class="c1"># Creates balanced_tiny_mlp_mnist.pte</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>examples/raspberry_pi/pico2
+python<span class="w"> </span>export_mlp_mnist.py<span class="w"> </span><span class="c1"># Creates balanced_tiny_mlp_mnist.pte</span>
 </pre></div>
 </div>
 <ul class="simple">
 <li><p><strong>Note:</strong> This is hand-crafted MNIST Classifier (proof-of-concept), and not production trained. This tiny MLP recognizes digits 0, 1, 4, and 7 using manually designed feature detectors.</p></li>
 </ul>
 </section>
+<section id="int8-quantized-model-cmsis-nn-accelerated">
+<h3>INT8 quantized model (CMSIS-NN accelerated)<a class="headerlink" href="#int8-quantized-model-cmsis-nn-accelerated" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p>Use the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/raspberry_pi/pico2/export_mlp_mnist_cmsis.py">CMSIS-NN export script</a></p></li>
+</ul>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>examples/raspberry_pi/pico2
+python<span class="w"> </span>export_mlp_mnist_cmsis.py<span class="w"> </span><span class="c1"># Creates balanced_tiny_mlp_mnist_cmsis.pte</span>
+</pre></div>
+</div>
+<p>This uses the <code class="docutils literal notranslate"><span class="pre">CortexMQuantizer</span></code> to produce INT8 quantized ops that map to CMSIS-NN kernels on Cortex-M33. The model I/O stays float — quantize and dequantize nodes are inserted inside the graph.</p>
+</section>
+</section>
 <section id="step-2-build-firmware-for-pico2">
 <h2>Step 2: Build Firmware for Pico2<a class="headerlink" href="#step-2-build-firmware-for-pico2" title="Link to this heading">#</a></h2>
+<section id="fp32-build">
+<h3>FP32 build<a class="headerlink" href="#fp32-build" title="Link to this heading">#</a></h3>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Generate model (Creates balanced_tiny_mlp_mnist.pte)</span>
 <span class="nb">cd</span><span class="w"> </span>./examples/raspberry_pi/pico2
 python<span class="w"> </span>export_mlp_mnist.py
 <span class="nb">cd</span><span class="w"> </span>-
 
 <span class="c1"># Build Pico2 firmware (one command!)</span>
+./examples/raspberry_pi/pico2/build_firmware_pico.sh<span class="w"> </span>--model<span class="o">=</span>balanced_tiny_mlp_mnist.pte
+</pre></div>
+</div>
+</section>
+<section id="int8-cmsis-nn-build">
+<h3>INT8 CMSIS-NN build<a class="headerlink" href="#int8-cmsis-nn-build" title="Link to this heading">#</a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Generate INT8 quantized model</span>
+<span class="nb">cd</span><span class="w"> </span>./examples/raspberry_pi/pico2
+python<span class="w"> </span>export_mlp_mnist_cmsis.py
+<span class="nb">cd</span><span class="w"> </span>-
 
-./examples/raspberry_pi/pico2/build_firmware_pico.sh<span class="w"> </span>--model<span class="o">=</span>balanced_tiny_mlp_mnist.pte<span class="w">   </span><span class="c1"># This creates executorch_pico.uf2, a firmware image for Pico2</span>
+<span class="c1"># Build with CMSIS-NN backend</span>
+./examples/raspberry_pi/pico2/build_firmware_pico.sh<span class="w"> </span>--cmsis<span class="w"> </span>--model<span class="o">=</span>balanced_tiny_mlp_mnist_cmsis.pte
 </pre></div>
 </div>
 <p>Output: <strong>executorch_pico.uf2</strong> firmware file (examples/raspberry_pi/pico2/build/)</p>
+<p><strong>Script options:</strong></p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Flag</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--model=FILE</span></code></p></td>
+<td><p>Specify model file to embed (relative to pico2/)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">--cmsis</span></code></p></td>
+<td><p>Build with CMSIS-NN INT8 kernels for Cortex-M33 acceleration</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--clean</span></code></p></td>
+<td><p>Clean build directories and exit; run separately before building if needed</p></td>
+</tr>
+</tbody>
+</table>
+</div>
 <p><strong>Note:</strong> ‘<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/raspberry_pi/pico2/build_firmware_pico.sh">build_firmware_pico.sh</a>’ script converts given model pte to hex array and generates C code for the same via this helper <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/raspberry_pi/pico2/pte_to_array.py">script</a>. This C code is then compiled to generate final .uf2 binary which is then flashed to Pico2.</p>
+</section>
 </section>
 <section id="step-3-flash-to-pico2">
 <h2>Step 3: Flash to Pico2<a class="headerlink" href="#step-3-flash-to-pico2" title="Link to this heading">#</a></h2>
@@ -2032,6 +2082,10 @@ screen<span class="w"> </span>/dev/tty.usbmodem1101<span class="w"> </span><span
 <span class="c1"># Expected output:</span>
 
 Something<span class="w"> </span>like:
+
+📊<span class="w"> </span>Memory<span class="w"> </span>usage<span class="w"> </span>after<span class="w"> </span>method<span class="w"> </span>load:
+<span class="w">   </span>Method<span class="w"> </span>allocator:<span class="w"> </span><span class="m">45632</span><span class="w"> </span>/<span class="w"> </span><span class="m">204800</span><span class="w"> </span>bytes<span class="w"> </span>used
+<span class="w">   </span>Activation<span class="w"> </span>pool:<span class="w"> </span><span class="m">204800</span><span class="w"> </span>bytes<span class="w"> </span><span class="nv">allocated</span>
 
 <span class="o">===</span><span class="w"> </span>Digit<span class="w"> </span><span class="nv">7</span><span class="w"> </span><span class="o">===</span>
 <span class="c1">############################</span>
@@ -2065,6 +2119,7 @@ Something<span class="w"> </span>like:
 
 Input<span class="w"> </span>stats:<span class="w"> </span><span class="m">159</span><span class="w"> </span>white<span class="w"> </span>pixels<span class="w"> </span>out<span class="w"> </span>of<span class="w"> </span><span class="m">784</span><span class="w"> </span>total
 Running<span class="w"> </span>neural<span class="w"> </span>network<span class="w"> </span>inference...
+⏱️<span class="w">  </span>Inference<span class="w"> </span>time:<span class="w"> </span><span class="m">245</span><span class="w"> </span>us
 ✅<span class="w"> </span>Neural<span class="w"> </span>network<span class="w"> </span>results:
 <span class="w">  </span>Digit<span class="w"> </span><span class="m">0</span>:<span class="w"> </span><span class="m">370</span>.000
 <span class="w">  </span>Digit<span class="w"> </span><span class="m">1</span>:<span class="w"> </span><span class="m">0</span>.000
@@ -2077,7 +2132,16 @@ Running<span class="w"> </span>neural<span class="w"> </span>network<span class=
 <span class="w">  </span>Digit<span class="w"> </span><span class="m">8</span>:<span class="w"> </span>-3.000
 <span class="w">  </span>Digit<span class="w"> </span><span class="m">9</span>:<span class="w"> </span>-3.000
 
-�<span class="w"> </span>PREDICTED:<span class="w"> </span><span class="m">7</span><span class="w"> </span><span class="o">(</span>Expected:<span class="w"> </span><span class="m">7</span><span class="o">)</span><span class="w"> </span>✅<span class="w"> </span>CORRECT!
+🎯<span class="w"> </span>PREDICTED:<span class="w"> </span><span class="m">7</span><span class="w"> </span><span class="o">(</span>Expected:<span class="w"> </span><span class="m">7</span><span class="o">)</span><span class="w"> </span>✅<span class="w"> </span>CORRECT!
+
+<span class="o">==================================================</span>
+
+📊<span class="w"> </span>Inference<span class="w"> </span>latency<span class="w"> </span>summary:
+<span class="w">  </span>Digit<span class="w"> </span><span class="m">0</span>:<span class="w"> </span><span class="m">312</span><span class="w"> </span>us
+<span class="w">  </span>Digit<span class="w"> </span><span class="m">1</span>:<span class="w"> </span><span class="m">198</span><span class="w"> </span>us
+<span class="w">  </span>Digit<span class="w"> </span><span class="m">4</span>:<span class="w"> </span><span class="m">267</span><span class="w"> </span>us
+<span class="w">  </span>Digit<span class="w"> </span><span class="m">7</span>:<span class="w"> </span><span class="m">245</span><span class="w"> </span>us
+<span class="w">  </span>Average:<span class="w"> </span><span class="m">255</span><span class="w"> </span>us
 </pre></div>
 </div>
 </section>
@@ -2152,13 +2216,34 @@ ls<span class="w"> </span>-al<span class="w"> </span>examples/raspberry_pi/pico2
 </div>
 </section>
 </section>
+<section id="cmsis-nn-int8-acceleration">
+<h2>CMSIS-NN INT8 Acceleration<a class="headerlink" href="#cmsis-nn-int8-acceleration" title="Link to this heading">#</a></h2>
+<p>The Pico2 uses an RP2350 SoC with a Cortex-M33 core. The CMSIS-NN library provides optimized INT8 kernels that leverage the Cortex-M33’s DSP instructions for faster inference compared to FP32 portable ops.</p>
+<section id="how-it-works">
+<h3>How it works<a class="headerlink" href="#how-it-works" title="Link to this heading">#</a></h3>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">export_mlp_mnist_cmsis.py</span></code> uses <code class="docutils literal notranslate"><span class="pre">CortexMQuantizer</span></code> to quantize the model to INT8</p></li>
+<li><p>The model I/O remains float — quantize/dequantize nodes are inserted inside the graph</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--cmsis</span></code> flag builds ExecuTorch with the Cortex-M backend and links CMSIS-NN kernels</p></li>
+<li><p>At runtime, quantized linear ops dispatch to CMSIS-NN instead of portable kernels</p></li>
+</ol>
+</section>
+<section id="when-to-use-cmsis-nn">
+<h3>When to use CMSIS-NN<a class="headerlink" href="#when-to-use-cmsis-nn" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p>Lower latency on supported ops (linear, conv2d)</p></li>
+<li><p>Smaller model size (INT8 weights vs FP32)</p></li>
+<li><p>Trade-off: slight accuracy loss from quantization</p></li>
+</ul>
+</section>
+</section>
 <section id="next-steps">
 <h2>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading">#</a></h2>
 <section id="scale-up-your-deployment">
 <h3>Scale up your deployment<a class="headerlink" href="#scale-up-your-deployment" title="Link to this heading">#</a></h3>
 <ul class="simple">
 <li><p>Use real production trained model</p></li>
-<li><p>Optimize further → INT8 quantization, pruning</p></li>
+<li><p>Optimize further → INT8 quantization with CMSIS-NN, pruning</p></li>
 </ul>
 </section>
 <section id="happy-inference">
@@ -2289,8 +2374,16 @@ Total tutorial time: ~15 minutes</p>
     <ul class="visible nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#what-you-ll-build">What You’ll Build</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisites">Prerequisites</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-1-generate-pte-from-given-example-model">Step 1: Generate pte from given example Model</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-2-build-firmware-for-pico2">Step 2: Build Firmware for Pico2</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-1-generate-pte-from-given-example-model">Step 1: Generate pte from given example Model</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#fp32-model-default">FP32 model (default)</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#int8-quantized-model-cmsis-nn-accelerated">INT8 quantized model (CMSIS-NN accelerated)</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-2-build-firmware-for-pico2">Step 2: Build Firmware for Pico2</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#fp32-build">FP32 build</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#int8-cmsis-nn-build">INT8 CMSIS-NN build</a></li>
+</ul>
+</li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-3-flash-to-pico2">Step 3: Flash to Pico2</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-4-verify-deployment">Step 4: Verify Deployment</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#memory-optimization-tips">Memory Optimization Tips</a><ul class="visible nav section-nav flex-column">
@@ -2298,6 +2391,11 @@ Total tutorial time: ~15 minutes</p>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#common-issues">Common Issues</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#firmware-size-analysis">Firmware Size Analysis</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#model-memory-footprint">Model Memory Footprint</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#cmsis-nn-int8-acceleration">CMSIS-NN INT8 Acceleration</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#how-it-works">How it works</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#when-to-use-cmsis-nn">When to use CMSIS-NN</a></li>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#next-steps">Next Steps</a><ul class="visible nav section-nav flex-column">
@@ -2530,7 +2628,7 @@ Total tutorial time: ~15 minutes</p>
        "headline": "Pico2: A simple MNIST Tutorial",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
        "url": "/pico2_tutorial.html",
-       "articleBody": "Pico2: A simple MNIST Tutorial# Deploy your PyTorch models directly to Raspberry Pi Pico2 microcontroller with ExecuTorch. What You\u2019ll Build# A 28\u00d728 MNIST digit classifier running on memory constrained, low power microcontrollers: Input: ASCII art digits (0, 1, 4, 7) Output: Real-time predictions via USB serial Memory: \u003c400KB total footprint Prerequisites# Environment Setup section Refer to this link on how to accept \u2018EULA\u2019 agreement and setup toolchain link Verify ARM toolchain which arm-none-eabi-gcc # --\u003e arm/arm-scratch/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi/bin/ Step 1: Generate pte from given example Model# Use the provided example model python export_mlp_mnist.py # Creates balanced_tiny_mlp_mnist.pte Note: This is hand-crafted MNIST Classifier (proof-of-concept), and not production trained. This tiny MLP recognizes digits 0, 1, 4, and 7 using manually designed feature detectors. Step 2: Build Firmware for Pico2# # Generate model (Creates balanced_tiny_mlp_mnist.pte) cd ./examples/raspberry_pi/pico2 python export_mlp_mnist.py cd - # Build Pico2 firmware (one command!) ./examples/raspberry_pi/pico2/build_firmware_pico.sh --model=balanced_tiny_mlp_mnist.pte # This creates executorch_pico.uf2, a firmware image for Pico2 Output: executorch_pico.uf2 firmware file (examples/raspberry_pi/pico2/build/) Note: \u2018build_firmware_pico.sh\u2019 script converts given model pte to hex array and generates C code for the same via this helper script. This C code is then compiled to generate final .uf2 binary which is then flashed to Pico2. Step 3: Flash to Pico2# Hold BOOTSEL button on Pico2 Connect USB \u2192 Mounts as ^RPI-RP2^ drive Drag \u0026 drop ^executorch_pico.uf2^ file Release BOOTSEL \u2192 Pico2 reboots with your model Step 4: Verify Deployment# Success indicators: LED blinks 10\u00d7 at 500ms \u2192 Model running \u2705 LED blinks 10\u00d7 at 100ms \u2192 Error, check serial \u274c View predictions: # Connect serial terminal screen /dev/tty.usbmodem1101 115200 # Expected output: Something like: === Digit 7 === ############################ ############################ #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ### Input stats: 159 white pixels out of 784 total Running neural network inference... \u2705 Neural network results: Digit 0: 370.000 Digit 1: 0.000 Digit 2: -3.000 Digit 3: -3.000 Digit 4: 860.000 Digit 5: -3.000 Digit 6: -3.000 Digit 7: 1640.000 \u2190 PREDICTED Digit 8: -3.000 Digit 9: -3.000 \ufffd PREDICTED: 7 (Expected: 7) \u2705 CORRECT! Memory Optimization Tips# Pico2 Constraints# 520KB SRAM (runtime memory) 4MB Flash (model storage) Keep models small: Common Issues# \u201cMemory allocation failed\u201d \u2192 Reduce model size and use quantization \u201cOperator missing\u201d \u2192 Use selective build: ^\u2013operators=add,mul,relu^ \u201cImport error\u201d \u2192 Check ^arm-none-eabi-gcc^ toolchain setup. In order to resolve some of the issues above, refer to the following guides: ExecuTorch Quantization Optimization Guide Model Export \u0026 Lowering and Selective Build support Firmware Size Analysis# cd \u003croot of executorch repo\u003e ls -al examples/raspberry_pi/pico2/build/executorch_pico.elf Overall section sizes arm-none-eabi-size -A examples/raspberry_pi/pico2/build/executorch_pico.elf Detailed section breakdown arm-none-eabi-objdump -h examples/raspberry_pi/pico2/build/executorch_pico.elf Symbol sizes (largest consumers) arm-none-eabi-nm --print-size --size-sort --radix=d examples/raspberry_pi/pico2/build/executorch_pico.elf | tail -20 Model Memory Footprint# Model data specifically arm-none-eabi-nm --print-size --size-sort --radix=d examples/raspberry_pi/pico2/build/executorch_pico.elf | grep -i model Check what\u2019s in .bss (uninitialized data) arm-none-eabi-objdump -t examples/raspberry_pi/pico2/build/executorch_pico.elf | grep \".bss\" | head -10 Memory map overview arm-none-eabi-readelf -l examples/raspberry_pi/pico2/build/executorch_pico.elf Next Steps# Scale up your deployment# Use real production trained model Optimize further \u2192 INT8 quantization, pruning Happy Inference!# Result: PyTorch model \u2192 Pico2 deployment in 4 simple steps \ud83d\ude80 Total tutorial time: ~15 minutes Conclusion: Real-time inference on memory constrained, low power microcontrollers, a complete PyTorch \u2192 ExecuTorch \u2192 Pico2 demo MNIST deployment",
+       "articleBody": "Pico2: A simple MNIST Tutorial# Deploy your PyTorch models directly to Raspberry Pi Pico2 microcontroller with ExecuTorch. What You\u2019ll Build# A 28\u00d728 MNIST digit classifier running on memory constrained, low power microcontrollers: Input: ASCII art digits (0, 1, 4, 7) Output: Real-time predictions via USB serial Memory: \u003c400KB total footprint Two variants: FP32 (portable ops) and INT8 (CMSIS-NN accelerated) Prerequisites# Environment Setup section Refer to this link on how to accept \u2018EULA\u2019 agreement and setup toolchain link Verify ARM toolchain which arm-none-eabi-gcc # --\u003e arm/arm-scratch/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi/bin/ Step 1: Generate pte from given example Model# FP32 model (default)# Use the provided example model cd examples/raspberry_pi/pico2 python export_mlp_mnist.py # Creates balanced_tiny_mlp_mnist.pte Note: This is hand-crafted MNIST Classifier (proof-of-concept), and not production trained. This tiny MLP recognizes digits 0, 1, 4, and 7 using manually designed feature detectors. INT8 quantized model (CMSIS-NN accelerated)# Use the CMSIS-NN export script cd examples/raspberry_pi/pico2 python export_mlp_mnist_cmsis.py # Creates balanced_tiny_mlp_mnist_cmsis.pte This uses the CortexMQuantizer to produce INT8 quantized ops that map to CMSIS-NN kernels on Cortex-M33. The model I/O stays float \u2014 quantize and dequantize nodes are inserted inside the graph. Step 2: Build Firmware for Pico2# FP32 build# # Generate model (Creates balanced_tiny_mlp_mnist.pte) cd ./examples/raspberry_pi/pico2 python export_mlp_mnist.py cd - # Build Pico2 firmware (one command!) ./examples/raspberry_pi/pico2/build_firmware_pico.sh --model=balanced_tiny_mlp_mnist.pte INT8 CMSIS-NN build# # Generate INT8 quantized model cd ./examples/raspberry_pi/pico2 python export_mlp_mnist_cmsis.py cd - # Build with CMSIS-NN backend ./examples/raspberry_pi/pico2/build_firmware_pico.sh --cmsis --model=balanced_tiny_mlp_mnist_cmsis.pte Output: executorch_pico.uf2 firmware file (examples/raspberry_pi/pico2/build/) Script options: Flag Description --model=FILE Specify model file to embed (relative to pico2/) --cmsis Build with CMSIS-NN INT8 kernels for Cortex-M33 acceleration --clean Clean build directories and exit; run separately before building if needed Note: \u2018build_firmware_pico.sh\u2019 script converts given model pte to hex array and generates C code for the same via this helper script. This C code is then compiled to generate final .uf2 binary which is then flashed to Pico2. Step 3: Flash to Pico2# Hold BOOTSEL button on Pico2 Connect USB \u2192 Mounts as ^RPI-RP2^ drive Drag \u0026 drop ^executorch_pico.uf2^ file Release BOOTSEL \u2192 Pico2 reboots with your model Step 4: Verify Deployment# Success indicators: LED blinks 10\u00d7 at 500ms \u2192 Model running \u2705 LED blinks 10\u00d7 at 100ms \u2192 Error, check serial \u274c View predictions: # Connect serial terminal screen /dev/tty.usbmodem1101 115200 # Expected output: Something like: \ud83d\udcca Memory usage after method load: Method allocator: 45632 / 204800 bytes used Activation pool: 204800 bytes allocated === Digit 7 === ############################ ############################ #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ### Input stats: 159 white pixels out of 784 total Running neural network inference... \u23f1\ufe0f Inference time: 245 us \u2705 Neural network results: Digit 0: 370.000 Digit 1: 0.000 Digit 2: -3.000 Digit 3: -3.000 Digit 4: 860.000 Digit 5: -3.000 Digit 6: -3.000 Digit 7: 1640.000 \u2190 PREDICTED Digit 8: -3.000 Digit 9: -3.000 \ud83c\udfaf PREDICTED: 7 (Expected: 7) \u2705 CORRECT! ================================================== \ud83d\udcca Inference latency summary: Digit 0: 312 us Digit 1: 198 us Digit 4: 267 us Digit 7: 245 us Average: 255 us Memory Optimization Tips# Pico2 Constraints# 520KB SRAM (runtime memory) 4MB Flash (model storage) Keep models small: Common Issues# \u201cMemory allocation failed\u201d \u2192 Reduce model size and use quantization \u201cOperator missing\u201d \u2192 Use selective build: ^\u2013operators=add,mul,relu^ \u201cImport error\u201d \u2192 Check ^arm-none-eabi-gcc^ toolchain setup. In order to resolve some of the issues above, refer to the following guides: ExecuTorch Quantization Optimization Guide Model Export \u0026 Lowering and Selective Build support Firmware Size Analysis# cd \u003croot of executorch repo\u003e ls -al examples/raspberry_pi/pico2/build/executorch_pico.elf Overall section sizes arm-none-eabi-size -A examples/raspberry_pi/pico2/build/executorch_pico.elf Detailed section breakdown arm-none-eabi-objdump -h examples/raspberry_pi/pico2/build/executorch_pico.elf Symbol sizes (largest consumers) arm-none-eabi-nm --print-size --size-sort --radix=d examples/raspberry_pi/pico2/build/executorch_pico.elf | tail -20 Model Memory Footprint# Model data specifically arm-none-eabi-nm --print-size --size-sort --radix=d examples/raspberry_pi/pico2/build/executorch_pico.elf | grep -i model Check what\u2019s in .bss (uninitialized data) arm-none-eabi-objdump -t examples/raspberry_pi/pico2/build/executorch_pico.elf | grep \".bss\" | head -10 Memory map overview arm-none-eabi-readelf -l examples/raspberry_pi/pico2/build/executorch_pico.elf CMSIS-NN INT8 Acceleration# The Pico2 uses an RP2350 SoC with a Cortex-M33 core. The CMSIS-NN library provides optimized INT8 kernels that leverage the Cortex-M33\u2019s DSP instructions for faster inference compared to FP32 portable ops. How it works# export_mlp_mnist_cmsis.py uses CortexMQuantizer to quantize the model to INT8 The model I/O remains float \u2014 quantize/dequantize nodes are inserted inside the graph --cmsis flag builds ExecuTorch with the Cortex-M backend and links CMSIS-NN kernels At runtime, quantized linear ops dispatch to CMSIS-NN instead of portable kernels When to use CMSIS-NN# Lower latency on supported ops (linear, conv2d) Smaller model size (INT8 weights vs FP32) Trade-off: slight accuracy loss from quantization Next Steps# Scale up your deployment# Use real production trained model Optimize further \u2192 INT8 quantization with CMSIS-NN, pruning Happy Inference!# Result: PyTorch model \u2192 Pico2 deployment in 4 simple steps \ud83d\ude80 Total tutorial time: ~15 minutes Conclusion: Real-time inference on memory constrained, low power microcontrollers, a complete PyTorch \u2192 ExecuTorch \u2192 Pico2 demo MNIST deployment",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
