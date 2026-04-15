@@ -8,6 +8,7 @@ on:
       - backends/cortex_m/**
       - .ci/scripts/**
       - examples/arm/**
+      - .github/workflows/test-pico2-build.yml
   schedule:
     # Run daily at 3 AM UTC to catch upstream breakages
     - cron: '0 3 * * *'
@@ -30,6 +31,7 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       script: |
+        set -euo pipefail
         # Activate conda environment from the docker image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
@@ -99,6 +101,7 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       script: |
+        set -euo pipefail
         # Activate conda environment from the docker image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
