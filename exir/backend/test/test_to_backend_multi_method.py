@@ -57,7 +57,7 @@ class TestToBackendMultiMethod(unittest.TestCase):
     - (backend_id)#(total_number_ops across methods)#[op_target_name;]#[compile_spec.key:compile_spec.value;]
 
     We leverage the above expectation to test various lowering across different modules, and ensure
-    that the right exported programs and compile specs are given when lowering a specifed exported program
+    that the right exported programs and compile specs are given when lowering a specified exported program
 
     We leverage the demo partitioner BackendWithPreprocessAll which partitions add + sin nodes to
     FirstBackendWithPreprocessAll and sub + cos nodes to SecondBackendWithPreprocessAll. This allows
